@@ -13,34 +13,45 @@
         "branch": "main",
         "commit": "d14efff8ed1faa4187f004f79926f428c8074ec7",
         "license": "MIT",
-        "stars": 139282,
-        "stars_measured_at": "2026-10-23T14:17:00+00:00",
+        "stars": 139301,
+        "stars_measured_at": "2026-10-23T15:26:31+00:00",
         "vendored": [
-          ".claude/skills/banner-design/SKILL.md",
-          ".claude/skills/brand/SKILL.md",
-          ".claude/skills/design-system/SKILL.md",
-          ".claude/skills/design-system/references/primitive-tokens.md",
-          ".claude/skills/design-system/references/semantic-tokens.md",
-          ".claude/skills/design-system/references/token-architecture.md",
-          ".claude/skills/design/SKILL.md",
-          ".claude/skills/ui-ux-pro-max/SKILL.md",
-          "LICENSE"
-        ]
+          "LICENSE",
+          "skills/banner-design/SKILL.md",
+          "skills/brand/SKILL.md",
+          "skills/design-system/SKILL.md",
+          "skills/design-system/references/primitive-tokens.md",
+          "skills/design-system/references/semantic-tokens.md",
+          "skills/design-system/references/token-architecture.md",
+          "skills/design/SKILL.md",
+          "skills/ui-ux-pro-max/SKILL.md"
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "skills/banner-design/SKILL.md": ".claude/skills/banner-design/SKILL.md",
+          "skills/brand/SKILL.md": ".claude/skills/brand/SKILL.md",
+          "skills/design-system/SKILL.md": ".claude/skills/design-system/SKILL.md",
+          "skills/design-system/references/primitive-tokens.md": ".claude/skills/design-system/references/primitive-tokens.md",
+          "skills/design-system/references/semantic-tokens.md": ".claude/skills/design-system/references/semantic-tokens.md",
+          "skills/design-system/references/token-architecture.md": ".claude/skills/design-system/references/token-architecture.md",
+          "skills/design/SKILL.md": ".claude/skills/design/SKILL.md",
+          "skills/ui-ux-pro-max/SKILL.md": ".claude/skills/ui-ux-pro-max/SKILL.md"
+        }
       },
       "files": {
-        "NOTICE.md": "875f0210b04eaa4e42ded2b26c2f4417b4be91839ffcfde0cdd068379a6cc33c",
-        "SKILL.md": "31e8a3cdf681d6774c5abccf1c28368b5bf1b15a5d670d22856c7f28b11670cd",
-        "upstream/.claude/skills/banner-design/SKILL.md": "ccb89ddc848f60bfe630cb19dfe3e062df94a029467a9b15259f2761019ac5c4",
-        "upstream/.claude/skills/brand/SKILL.md": "1c24139633e2ebf11da4f97eaeb1c0564f8658a40b3ad779387a5b8c6cb76dbc",
-        "upstream/.claude/skills/design/SKILL.md": "e93fe3683b7fa18a9bfcd00c0dc6e12c6859be07b7bfe20145f96ea49b72da13",
-        "upstream/.claude/skills/design-system/SKILL.md": "8aa5ff93320559a6e5289d37b6b06b3307737dbfb4a6f3fc44135c705613c511",
-        "upstream/.claude/skills/design-system/references/primitive-tokens.md": "91e6caa12646c08c8aadf8e09399aed65760a25c8d80595936d81a9131118fc3",
-        "upstream/.claude/skills/design-system/references/semantic-tokens.md": "97e16d8061bbc22e82b51966a7015e3fc990932902e4647843506669a1cdebcc",
-        "upstream/.claude/skills/design-system/references/token-architecture.md": "925f4049c4c4313d9fd5df98cdfd52004112aca49fba1664ad85e76bc9dce4d3",
-        "upstream/.claude/skills/ui-ux-pro-max/SKILL.md": "ea087c341bfb5b23195c7302027268ede86da802554c18a5c4896a6017b439f9",
-        "upstream/LICENSE": "738f69dfa83db5c347c678fb9d90e560877059f0de93a327c39001bff92dc014"
+        "NOTICE.md": "a49d84ac858f24da462a4d29001dcac0a0c0a9fc62fdbcd74dec97cded4efac5",
+        "SKILL.md": "e4d9dc4af7c24cb7c2a5aa5be2a2f6adc0c6bf18656ed4d8a906f8830b8f310b",
+        "upstream/LICENSE": "738f69dfa83db5c347c678fb9d90e560877059f0de93a327c39001bff92dc014",
+        "upstream/skills/banner-design/SKILL.md": "ccb89ddc848f60bfe630cb19dfe3e062df94a029467a9b15259f2761019ac5c4",
+        "upstream/skills/brand/SKILL.md": "1c24139633e2ebf11da4f97eaeb1c0564f8658a40b3ad779387a5b8c6cb76dbc",
+        "upstream/skills/design/SKILL.md": "e93fe3683b7fa18a9bfcd00c0dc6e12c6859be07b7bfe20145f96ea49b72da13",
+        "upstream/skills/design-system/SKILL.md": "8aa5ff93320559a6e5289d37b6b06b3307737dbfb4a6f3fc44135c705613c511",
+        "upstream/skills/design-system/references/primitive-tokens.md": "91e6caa12646c08c8aadf8e09399aed65760a25c8d80595936d81a9131118fc3",
+        "upstream/skills/design-system/references/semantic-tokens.md": "97e16d8061bbc22e82b51966a7015e3fc990932902e4647843506669a1cdebcc",
+        "upstream/skills/design-system/references/token-architecture.md": "925f4049c4c4313d9fd5df98cdfd52004112aca49fba1664ad85e76bc9dce4d3",
+        "upstream/skills/ui-ux-pro-max/SKILL.md": "ea087c341bfb5b23195c7302027268ede86da802554c18a5c4896a6017b439f9"
       },
-      "tree_sha256": "4d27b2faec9df9fbde853255b00cddcea175b450aa85f66e63d36365b920a19e"
+      "tree_sha256": "a45245e7bb8895879e76f7c5590a0872b5376e6a1ba075107623681aaf0fdff3"
     },
     {
       "id": "awesome-design-md",
@@ -52,26 +63,33 @@
         "branch": "main",
         "commit": "3b605329240ce735b510037cca322f1831fdd7f8",
         "license": "MIT",
-        "stars": 123097,
-        "stars_measured_at": "2026-10-23T14:17:10+00:00",
+        "stars": 123108,
+        "stars_measured_at": "2026-10-23T15:32:12+00:00",
         "vendored": [
           "LICENSE",
           "README.md",
           "design-md/meta/DESIGN.md",
           "design-md/raycast/DESIGN.md",
           "design-md/vercel/DESIGN.md"
-        ]
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "README.md": "README.md",
+          "design-md/meta/DESIGN.md": "design-md/meta/DESIGN.md",
+          "design-md/raycast/DESIGN.md": "design-md/raycast/DESIGN.md",
+          "design-md/vercel/DESIGN.md": "design-md/vercel/DESIGN.md"
+        }
       },
       "files": {
-        "NOTICE.md": "93f7d316494642061e0d3508da05feaaa3adf76051043e45230dc80895a94a0e",
-        "SKILL.md": "300d389cee24915707709f84053ded2b71911aadc173f0e02604f7052a6da980",
+        "NOTICE.md": "194d3de5e43d6a9e07663a05b63c4002567c610d5847182a43ab5fe184ad4488",
+        "SKILL.md": "dd83bf6f0809917fce80976763f8c9ba9cec4249469ff9c8e759effb13941bd6",
         "upstream/LICENSE": "6d4bdc9a9cf30e7beb593475fdcdbf29f981ea6bd7923f202866145409f87b44",
         "upstream/README.md": "3847536c93a8262b779ee04692fe0efb4bfa644ffcfb8c43565576f00a4a32e0",
         "upstream/design-md/meta/DESIGN.md": "306dfad97c006d47b134fb0dbd55ff68d3baa526844d6eb37346373c9ef35339",
         "upstream/design-md/raycast/DESIGN.md": "6e2c5137e4d914b70996d589688374a801b6f29a35c9c019c22abb5e0170bda3",
         "upstream/design-md/vercel/DESIGN.md": "d0951b93c2b4ce9840c715c9f9b3e58a386c6c58ae5cc0f804dec3b116b95bd8"
       },
-      "tree_sha256": "d4290ed58fba6e7840ae7b86df689bbe3f87a46e709a2d4187e713e94c520986"
+      "tree_sha256": "50458bb8895405969465e7ee84c3cc237d22ef886cc3719c02f87c73fccb97d4"
     },
     {
       "id": "open-design",
@@ -83,8 +101,8 @@
         "branch": "main",
         "commit": "e03d5c23f308c39f4de7c057568df66c29a84385",
         "license": "Apache-2.0",
-        "stars": 103523,
-        "stars_measured_at": "2026-10-23T14:17:31+00:00",
+        "stars": 103540,
+        "stars_measured_at": "2026-10-23T15:32:22+00:00",
         "vendored": [
           "LICENSE",
           "README.md",
@@ -95,11 +113,22 @@
           "skills/design-brief/SKILL.md",
           "skills/design-md/SKILL.md",
           "skills/design-review/SKILL.md"
-        ]
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "README.md": "README.md",
+          "skills/brandkit/SKILL.md": "skills/brandkit/SKILL.md",
+          "skills/color-expert/SKILL.md": "skills/color-expert/SKILL.md",
+          "skills/copywriting/SKILL.md": "skills/copywriting/SKILL.md",
+          "skills/creative-director/SKILL.md": "skills/creative-director/SKILL.md",
+          "skills/design-brief/SKILL.md": "skills/design-brief/SKILL.md",
+          "skills/design-md/SKILL.md": "skills/design-md/SKILL.md",
+          "skills/design-review/SKILL.md": "skills/design-review/SKILL.md"
+        }
       },
       "files": {
-        "NOTICE.md": "e19e9685e5b5bf706ed34ea1e03c9649a007770313389dcf7c6eb7c6f6b40d57",
-        "SKILL.md": "c042ebdb9db121f10734ed9d147b853925e79d407c2f3f51a0056181c51c7289",
+        "NOTICE.md": "55ba4f323acc41323990153a5d32ed7e10419df5a731eb54d4cc69089cc829f7",
+        "SKILL.md": "08cc303e46a1f01dc3a53ac09e561dc4217561069c5a23fc1f502bccf3786825",
         "upstream/LICENSE": "9d95806a26532623360eb84bb17d298f394b55ef73fb4c0796d99b4319b2b0da",
         "upstream/README.md": "dbd9cd62043f52a7c38af33b10dc6dd66f7c01a88211d2a3ce8dbfd5a00ed74a",
         "upstream/skills/brandkit/SKILL.md": "22dd701e88695e8559527461f6b0f56f272fc583fb2133845d3307d7c5785b2a",
@@ -110,7 +139,7 @@
         "upstream/skills/design-md/SKILL.md": "972cf7ae6091014224afcf61a8ce7989a3b71c18af7a25cbce1de77752376d2b",
         "upstream/skills/design-review/SKILL.md": "53abfb13efdc895b2aac9d38d5f23ec6392c3b342b8df23feb56df08b0a53ad1"
       },
-      "tree_sha256": "b4a447cb0639ed04917624e2d8ebc21136cd763029cce5a2564e1dc20907f874"
+      "tree_sha256": "0135ed8fe41897053004726149c6d510f7c113e74c4fa0c4be1ad43e0c8d672b"
     },
     {
       "id": "taste",
@@ -122,8 +151,8 @@
         "branch": "main",
         "commit": "6010f91a9935f1c167dfc500fb1a475681892e6b",
         "license": "MIT",
-        "stars": 101447,
-        "stars_measured_at": "2026-10-23T14:16:34+00:00",
+        "stars": 101484,
+        "stars_measured_at": "2026-10-23T15:32:31+00:00",
         "vendored": [
           "LICENSE",
           "skills/taste-skill/README.md",
@@ -132,11 +161,20 @@
           "skills/taste-skill/references/layout.md",
           "skills/taste-skill/references/tells.md",
           "skills/taste-skill/references/type.md"
-        ]
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "skills/taste-skill/README.md": "skills/taste-skill/README.md",
+          "skills/taste-skill/SKILL.md": "skills/taste-skill/SKILL.md",
+          "skills/taste-skill/references/critique.md": "skills/taste-skill/references/critique.md",
+          "skills/taste-skill/references/layout.md": "skills/taste-skill/references/layout.md",
+          "skills/taste-skill/references/tells.md": "skills/taste-skill/references/tells.md",
+          "skills/taste-skill/references/type.md": "skills/taste-skill/references/type.md"
+        }
       },
       "files": {
-        "NOTICE.md": "4bcba69d9e0242d46d621ad87d0135aaf05c6ab4b27c50171582d7813c8d1cd8",
-        "SKILL.md": "85ebb1350a03faf5d3918c6c2f53fc4416401ccea207b63ae0f0990084a938b2",
+        "NOTICE.md": "7f0d73119ee10a9f7ad55b27970747fc948747e578c24b0e087450aebc416386",
+        "SKILL.md": "fc15a4c07ae8cf574187fe3abaffbecec1ecea9f8fca2415afaacd2cbe0f409d",
         "upstream/LICENSE": "4575a543ab88dad12ccea7d97e563d0bce5b448b06072e65d3264497dad326df",
         "upstream/skills/taste-skill/README.md": "5e33fd716b3e1ffaca9340f645d44c193f9b446107fa67f0cce498d33025672c",
         "upstream/skills/taste-skill/SKILL.md": "d955dae4ba8ab2d994f4bb06b4bf412a1d9875433a8597939c391f4bae91dd7a",
@@ -145,7 +183,7 @@
         "upstream/skills/taste-skill/references/tells.md": "8e6de4411c43d3108f832b3f33bb1a2a838148a72b92a176df893b67d99a0da9",
         "upstream/skills/taste-skill/references/type.md": "6353ff1d0ce2f9913628c88fbcb7dad3cc3877e61196848bce99e33a17d20611"
       },
-      "tree_sha256": "9248ea0d91aa268d8e2e8c77d0dac11a1d0198cf6dd72a27ddd6dd427e8bfb0e"
+      "tree_sha256": "7dfb8c246b0995903e707a9e2e5c1a53c2f4265aa14c74538fa288914a989305"
     },
     {
       "id": "impeccable",
@@ -157,8 +195,8 @@
         "branch": "main",
         "commit": "5cb95eea9c96479f57afe0732a45470d30183326",
         "license": "Apache-2.0",
-        "stars": 85295,
-        "stars_measured_at": "2026-10-23T14:18:01+00:00",
+        "stars": 85322,
+        "stars_measured_at": "2026-10-23T15:32:49+00:00",
         "vendored": [
           ".agent/skills/impeccable/SKILL.md",
           ".agent/skills/impeccable/reference/audit.md",
@@ -167,11 +205,20 @@
           ".agent/skills/impeccable/reference/critique.md",
           ".agent/skills/impeccable/reference/new-work.md",
           "LICENSE"
-        ]
+        ],
+        "path_map": {
+          ".agent/skills/impeccable/SKILL.md": ".agent/skills/impeccable/SKILL.md",
+          ".agent/skills/impeccable/reference/audit.md": ".agent/skills/impeccable/reference/audit.md",
+          ".agent/skills/impeccable/reference/component-review.md": ".agent/skills/impeccable/reference/component-review.md",
+          ".agent/skills/impeccable/reference/craft-floor.md": ".agent/skills/impeccable/reference/craft-floor.md",
+          ".agent/skills/impeccable/reference/critique.md": ".agent/skills/impeccable/reference/critique.md",
+          ".agent/skills/impeccable/reference/new-work.md": ".agent/skills/impeccable/reference/new-work.md",
+          "LICENSE": "LICENSE"
+        }
       },
       "files": {
-        "NOTICE.md": "cec1071d826dad63f8f9305b68bad0f4561128dda50d25f7d172306189b91cbb",
-        "SKILL.md": "2e23821ae5cd005709dd9168ca071e0db60aa1f0d2b3732f12b3178933fd3432",
+        "NOTICE.md": "e8bcd50392f580ebb0440ed8a02c98ef037bad13f7519406e649c9cebaf20725",
+        "SKILL.md": "238411ff80bd39b4368de52a9e060ab42011d2d234ccf3b660c41d081cce2794",
         "upstream/.agent/skills/impeccable/SKILL.md": "24e83f13e3f3c7ca11acd76ae55fd917f7f491799bc90e5d9d37dcdf4e2e59c6",
         "upstream/.agent/skills/impeccable/reference/audit.md": "a4ac48f323e63b5ef00e38c68e280281d73791d00ba1a956621aae72c8044db7",
         "upstream/.agent/skills/impeccable/reference/component-review.md": "acb4250c33edccb84bd47ab06c3d9ecceb35d063cd3cf839b63f2124b75dd99e",
@@ -180,7 +227,7 @@
         "upstream/.agent/skills/impeccable/reference/new-work.md": "56423f0f9384f46246c88f6d1e2ddd7c1c69a039d04d6dc0fad57d8205137d59",
         "upstream/LICENSE": "02bb8c3b4e70190e3986c0404ad2fd8d639b4f534252d82379cc1b502b6d1812"
       },
-      "tree_sha256": "3e57f4d9923400d81c1c9a68e89ab21368236ec3b693ae3e2d1d1a673b252ba4"
+      "tree_sha256": "2f5fe4ce1525f50a6b98b8590509c1763682846b1089b1d8e271525768046eb6"
     },
     {
       "id": "react-bits",
@@ -192,22 +239,27 @@
         "branch": "main",
         "commit": "e12c22192ac7b4b452c5e2feb9b586d74765d696",
         "license": "NOASSERTION",
-        "stars": 50055,
-        "stars_measured_at": "2026-10-23T14:18:06+00:00",
+        "stars": 50059,
+        "stars_measured_at": "2026-10-23T15:32:55+00:00",
         "vendored": [
           "LICENSE.md",
           "README.md",
           "src/tools/shape-magic/README.md"
-        ]
+        ],
+        "path_map": {
+          "LICENSE.md": "LICENSE.md",
+          "README.md": "README.md",
+          "src/tools/shape-magic/README.md": "src/tools/shape-magic/README.md"
+        }
       },
       "files": {
-        "NOTICE.md": "435a9bd26cd385dbecbe086255473b1fd65b27c87361e382c04e8331d6d11089",
-        "SKILL.md": "fdaded6ca17c19b7db145f82d514f3be5cb50155b2fe22b5c3347fb283fe83ec",
+        "NOTICE.md": "de54aa12ea0a29356bea98e01198249e210f76374f5baa96edeae0ba3b2d0ee9",
+        "SKILL.md": "2ce322ce6d8a5e409bd99467fc1cec8021017ca2502a1bec31c5763fa17ae5f3",
         "upstream/LICENSE.md": "4bdd1fa59a6b7d5954bc3b213dbc34e455c635a94bbcecf9293553797d0fad02",
         "upstream/README.md": "bae3d1fb884e9058d9945ced238520a7d0e41a2b04c11f294e165842596d5ce4",
         "upstream/src/tools/shape-magic/README.md": "fc703c06d83bb855193503a1858f3758f35b561beaed8ee502c1ebf9ee1be5fe"
       },
-      "tree_sha256": "bff11cb78b11c19315f934a8f8c8b5404eefc66a7a89f3dcd19c8040b7030858"
+      "tree_sha256": "4ada0369028f9a1cab54c8f57786b3a66927996dc3d9ac355a5c16e5c84a7634"
     },
     {
       "id": "emil-design-skills",
@@ -219,8 +271,8 @@
         "branch": "main",
         "commit": "2d228630ba1446365f614a108cb8252f1feda202",
         "license": "MIT",
-        "stars": 48928,
-        "stars_measured_at": "2026-10-23T14:18:18+00:00",
+        "stars": 48955,
+        "stars_measured_at": "2026-10-23T15:33:05+00:00",
         "vendored": [
           "LICENSE",
           "skills/animate/SKILL.md",
@@ -232,11 +284,23 @@
           "skills/mobile-native/SKILL.md",
           "skills/prototype/SKILL.md",
           "skills/review-animations/SKILL.md"
-        ]
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "skills/animate/SKILL.md": "skills/animate/SKILL.md",
+          "skills/animation-performance/SKILL.md": "skills/animation-performance/SKILL.md",
+          "skills/animation-vocabulary/SKILL.md": "skills/animation-vocabulary/SKILL.md",
+          "skills/apple-design/SKILL.md": "skills/apple-design/SKILL.md",
+          "skills/break-ui/SKILL.md": "skills/break-ui/SKILL.md",
+          "skills/emil-design-eng/SKILL.md": "skills/emil-design-eng/SKILL.md",
+          "skills/mobile-native/SKILL.md": "skills/mobile-native/SKILL.md",
+          "skills/prototype/SKILL.md": "skills/prototype/SKILL.md",
+          "skills/review-animations/SKILL.md": "skills/review-animations/SKILL.md"
+        }
       },
       "files": {
-        "NOTICE.md": "ee266f175b45a28d8aa3dd23833e4954994a585b3ad934cd933ab2b13b473c41",
-        "SKILL.md": "da0144489a164c46b78a0370164c01e48e150b5c723346077f93f9f012378dea",
+        "NOTICE.md": "e5789131819faae67fe46eb388e254e91b7cb3f891e9f8ab2037f282fd660ad4",
+        "SKILL.md": "1add5799d8d29d0f6eac25e1837f81fe8ef69780aff8959aefff31bf3b83e6b2",
         "upstream/LICENSE": "4ff5bdb7887ec1435c9cab0e8d1a7caee704d894d65c2a008ccc68b1cc2f260b",
         "upstream/skills/animate/SKILL.md": "b8ede161270458e6ae2e45e8a1985373515d4c63de5568ddb0f9012d7634356c",
         "upstream/skills/animation-performance/SKILL.md": "ceb9dd3fe912615830f725a0120ccf8d012d15a6218001a5cd6c15d38e39a957",
@@ -248,7 +312,7 @@
         "upstream/skills/prototype/SKILL.md": "bba39c955eb1871c5a02733976ceec5d0324198e0812e667604756489c89f7b9",
         "upstream/skills/review-animations/SKILL.md": "6ff590d29e436766135aa3d137be1fac2a867165c7257fc315b189361f1873af"
       },
-      "tree_sha256": "5293b60d151a2846a63428fe85e06688967ca322d12a130a59675803ec699992"
+      "tree_sha256": "dd42135a55ce4e51763917eb0a73ac498dd1c0e42a617da4f7cffe24c407c01d"
     },
     {
       "id": "hallmark",
@@ -260,8 +324,8 @@
         "branch": "main",
         "commit": "7ec868225c6caa040558c321ee0fefa0e73f83a8",
         "license": "MIT",
-        "stars": 31111,
-        "stars_measured_at": "2026-10-23T14:18:29+00:00",
+        "stars": 31159,
+        "stars_measured_at": "2026-10-23T15:33:28+00:00",
         "vendored": [
           "LICENSE",
           "skills/hallmark/SKILL.md",
@@ -272,11 +336,22 @@
           "skills/hallmark/references/gates.md",
           "skills/hallmark/references/layout.md",
           "skills/hallmark/references/macrostructures.md"
-        ]
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "skills/hallmark/SKILL.md": "skills/hallmark/SKILL.md",
+          "skills/hallmark/references/anatomy.md": "skills/hallmark/references/anatomy.md",
+          "skills/hallmark/references/craft.md": "skills/hallmark/references/craft.md",
+          "skills/hallmark/references/design-md.md": "skills/hallmark/references/design-md.md",
+          "skills/hallmark/references/flow.md": "skills/hallmark/references/flow.md",
+          "skills/hallmark/references/gates.md": "skills/hallmark/references/gates.md",
+          "skills/hallmark/references/layout.md": "skills/hallmark/references/layout.md",
+          "skills/hallmark/references/macrostructures.md": "skills/hallmark/references/macrostructures.md"
+        }
       },
       "files": {
-        "NOTICE.md": "dcfe54467ebbab3c7a8e461b00833e441afdd2fb8cfae05854afddcd014ee167",
-        "SKILL.md": "ebabfb35bfe81d175261fef81a8b09eb92b92ce9b5cd267ef3aecc353fe9f379",
+        "NOTICE.md": "06931b0915f683f3cde5934f15058d76b40cf37b6a42d90261c072ae12b84319",
+        "SKILL.md": "5774b1fd66428432f8bdec08f494dd9a529458fe5068ae0da9dde258d874e614",
         "upstream/LICENSE": "06088a8b94598626f27612dea42300154bf7be967c85d9d3eee4490cb056af7d",
         "upstream/skills/hallmark/SKILL.md": "25a1ff92d925b2389e8409f42fb8ad7e033fceca8b5d1f07ed4ca4c28da53dc3",
         "upstream/skills/hallmark/references/anatomy.md": "70f570279d42ac0bef4af809c80b522e550c6dacaaa0a93349a0fff0d5b93500",
@@ -287,7 +362,7 @@
         "upstream/skills/hallmark/references/layout.md": "2724768fe7249ab3e941923f2c42bc2ff2ff529eeb672cfa30e00c72f627a0e4",
         "upstream/skills/hallmark/references/macrostructures.md": "3389dbc0434bd9a6161896a19b4ec6664859d49f1b0329cd0e8fae6f045e1c43"
       },
-      "tree_sha256": "c8bc697fc59d4ceb5d7169a79c37a0f144f2ceea4ebd79da031482a636ac7fb9"
+      "tree_sha256": "fb7276baae532645954b2554a0bb560ba7cea2e92506713736aac411f30cc4b1"
     },
     {
       "id": "design-md",
@@ -299,8 +374,8 @@
         "branch": "main",
         "commit": "6e5da5382f41edbba9d73b2c62f33f32e9971f15",
         "license": "Apache-2.0",
-        "stars": 28497,
-        "stars_measured_at": "2026-10-23T14:18:57+00:00",
+        "stars": 28498,
+        "stars_measured_at": "2026-10-23T15:33:36+00:00",
         "vendored": [
           ".agents/skills/agent-dx-cli-scale/SKILL.md",
           ".agents/skills/ink/SKILL.md",
@@ -308,11 +383,19 @@
           "README.md",
           "docs/spec.md",
           "examples/totality-festival/DESIGN.md"
-        ]
+        ],
+        "path_map": {
+          ".agents/skills/agent-dx-cli-scale/SKILL.md": ".agents/skills/agent-dx-cli-scale/SKILL.md",
+          ".agents/skills/ink/SKILL.md": ".agents/skills/ink/SKILL.md",
+          "LICENSE": "LICENSE",
+          "README.md": "README.md",
+          "docs/spec.md": "docs/spec.md",
+          "examples/totality-festival/DESIGN.md": "examples/totality-festival/DESIGN.md"
+        }
       },
       "files": {
-        "NOTICE.md": "b3134befe31be4aa5e8fbad89a5dd03d7a69dff5e620a0b7b8e1bc343d4d62b5",
-        "SKILL.md": "3f8307516deefc4eb4a66349f226ecb61a0a180b56288ec48c867daf4302b8e7",
+        "NOTICE.md": "d26f68bec907a145ffb24dc1fb73a14467c753894b47a4bdb4d25372c7772ec2",
+        "SKILL.md": "64245b6d313fcdc85a0c8d8a0651791cc4c1f9cabbcbaf09fd6b09ec3bd51cd9",
         "upstream/.agents/skills/agent-dx-cli-scale/SKILL.md": "2020ed49b5987c281a2e1ccd8f3ae2b6d189091c2928aed81e5b96f4254af14f",
         "upstream/.agents/skills/ink/SKILL.md": "4e27370b39769827cfda349efc3039921c60973b31f8885cc3bceab5196672e7",
         "upstream/LICENSE": "1bdd03995456d191707e379eb06ceac20cf30d520bec90c97c2b6d220906c66e",
@@ -320,7 +403,7 @@
         "upstream/docs/spec.md": "9894f2021da2fa3b0a17bc87625813957981bf684587eafbe255e6a360875d03",
         "upstream/examples/totality-festival/DESIGN.md": "aa255842f7059ba1d463e5dab408fff427d95312c6cb503e1dfde16dc9cf5619"
       },
-      "tree_sha256": "eddebdb355f048d9157f5924e835981bdfce261989ac30bea7396cf30c516a5e"
+      "tree_sha256": "8d69bc99a9cb49e6c28cf52c14b0e75a9f1655513c440a0e54a3b9fb43981769"
     },
     {
       "id": "gsap-skills",
@@ -332,8 +415,8 @@
         "branch": "main",
         "commit": "aed9cfd3277740755f6bfc1155c7aa645403b760",
         "license": "MIT",
-        "stars": 16975,
-        "stars_measured_at": "2026-10-23T14:19:07+00:00",
+        "stars": 16981,
+        "stars_measured_at": "2026-10-23T15:33:47+00:00",
         "vendored": [
           "LICENSE",
           "skills/gsap-core/SKILL.md",
@@ -344,11 +427,22 @@
           "skills/gsap-scrolltrigger/SKILL.md",
           "skills/gsap-timeline/SKILL.md",
           "skills/gsap-utils/SKILL.md"
-        ]
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "skills/gsap-core/SKILL.md": "skills/gsap-core/SKILL.md",
+          "skills/gsap-frameworks/SKILL.md": "skills/gsap-frameworks/SKILL.md",
+          "skills/gsap-performance/SKILL.md": "skills/gsap-performance/SKILL.md",
+          "skills/gsap-plugins/SKILL.md": "skills/gsap-plugins/SKILL.md",
+          "skills/gsap-react/SKILL.md": "skills/gsap-react/SKILL.md",
+          "skills/gsap-scrolltrigger/SKILL.md": "skills/gsap-scrolltrigger/SKILL.md",
+          "skills/gsap-timeline/SKILL.md": "skills/gsap-timeline/SKILL.md",
+          "skills/gsap-utils/SKILL.md": "skills/gsap-utils/SKILL.md"
+        }
       },
       "files": {
-        "NOTICE.md": "d9d682b3c34ebc3d59b85a7000ba69b0dcc362b3af544ee9bfde1cb7ae6f1d4c",
-        "SKILL.md": "a169b6b129bd75ebb0a176057ed612d05db48438a2085b26ef87087cc786be1b",
+        "NOTICE.md": "20b866820d671a00dce88bd272a3eb2e8bea2051c0d1ed0942d3a94d4cb798ef",
+        "SKILL.md": "3d10ede1b3d9a567e3f3451a5a3338ba95fa59292af3dc8c6dc908094d329059",
         "upstream/LICENSE": "51b04b06556662dd817e8f4aa6d06bc7139dc73739e1319a7233cfde3e147b90",
         "upstream/skills/gsap-core/SKILL.md": "3887b47e050ab5afbe2a9a820f23d39fa02ab785e06a343be44c6f91d84d12b3",
         "upstream/skills/gsap-frameworks/SKILL.md": "842d9d3659ec3ddc8abbdc524708f8facf81f468ac25d0577f48c759c4fa31e6",
@@ -359,7 +453,7 @@
         "upstream/skills/gsap-timeline/SKILL.md": "1a8b0f39cc4be3ed3d834b89672e4ae2f151b901dc3450bebf10bbc45379fe02",
         "upstream/skills/gsap-utils/SKILL.md": "1927bcc4ea95b38203404ad5ea1d060b15c4a886c65ae53e885ff1793aabe0ba"
       },
-      "tree_sha256": "2f4b79f64dce9e765f0d1c805ab250b3095805557e60dc822d18eaa092c72bd1"
+      "tree_sha256": "c438fe5762ab519795acb7c4b1b5a5745939b237f7a4484527b7d37bee873168"
     },
     {
       "id": "scroll-world",
@@ -371,24 +465,30 @@
         "branch": "main",
         "commit": "71cc36d3bb150248ae36a2c552f9cbf88802a79c",
         "license": "MIT",
-        "stars": 10385,
-        "stars_measured_at": "2026-10-23T14:19:13+00:00",
+        "stars": 10386,
+        "stars_measured_at": "2026-10-23T15:34:03+00:00",
         "vendored": [
           "LICENSE",
           "skills/scroll-world/SKILL.md",
           "skills/scroll-world/references/pipeline.md",
           "skills/scroll-world/references/prompts.md"
-        ]
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "skills/scroll-world/SKILL.md": "skills/scroll-world/SKILL.md",
+          "skills/scroll-world/references/pipeline.md": "skills/scroll-world/references/pipeline.md",
+          "skills/scroll-world/references/prompts.md": "skills/scroll-world/references/prompts.md"
+        }
       },
       "files": {
-        "NOTICE.md": "8ea1e8027f69eb2754f32f48b8fbbfeaddf4148fce54a67d41485cc8c46a2806",
-        "SKILL.md": "621d275a1bf721e8b0733f6d4bddda161c6390e25eb317d103b606a4a2013398",
+        "NOTICE.md": "adb73e405f9bc0e7a7cee7eed701baafa25579e4effbb8a248d08252b860f6d9",
+        "SKILL.md": "b316661692cdc7733665471e4a9bf976f679cff22a894ccb147640251491cf0d",
         "upstream/LICENSE": "c4b96a7a050b85026eb68ac5b5fee2778384b14371aaeac50891dbadd848d309",
         "upstream/skills/scroll-world/SKILL.md": "e56fe396c1fa258278289cfa9cbf17253519f11f4856535f7709dd2368e3e65e",
         "upstream/skills/scroll-world/references/pipeline.md": "447d642733b527c149c52d303ff9ec3d697ed667e12ea137a2ce40d64d1db304",
         "upstream/skills/scroll-world/references/prompts.md": "fca079691f7f3b470edb81f620e4143877d267afe0fcd3ea51af81b0c108f377"
       },
-      "tree_sha256": "7a3e5559c0252fbb3092383594eee8665bd9687345ef27472406de53cf9f6ec9"
+      "tree_sha256": "6ce18a4f7618aec114381052380cd3b8330fc5fc2936501c449f649bcf6e91d2"
     },
     {
       "id": "canvas-ui",
@@ -400,22 +500,27 @@
         "branch": "main",
         "commit": "a04a99b235299ee79a123a16ccb2e6cf9da74b6b",
         "license": "NOASSERTION",
-        "stars": 5068,
-        "stars_measured_at": "2026-10-23T14:19:18+00:00",
+        "stars": 5070,
+        "stars_measured_at": "2026-10-23T15:34:07+00:00",
         "vendored": [
           "LICENSE.md",
           "README.md",
           "public/assets/models/LICENSE.md"
-        ]
+        ],
+        "path_map": {
+          "LICENSE.md": "LICENSE.md",
+          "README.md": "README.md",
+          "public/assets/models/LICENSE.md": "public/assets/models/LICENSE.md"
+        }
       },
       "files": {
-        "NOTICE.md": "60ca9834326e6b0d8c2ed20ea34defcf5cd62bdffa2052c7d61e3f63c18c4c39",
-        "SKILL.md": "abe77c65ce76cd617d5773745f8872ad03cf7b41aec2c66196b6b2f8fbf65187",
+        "NOTICE.md": "bf252daf94f1879cee655ab2e24d52379c8fe90e771b2624f5e63bb74da4ad25",
+        "SKILL.md": "300822a13ff80c77ab09ab1619b85d26d74651382c3247a84ccc218489c392ad",
         "upstream/LICENSE.md": "2a9a221a47f581d7984ca3a568e38fb17d5b6e43164db3f3482b4767c8e8e5b3",
         "upstream/README.md": "b3e78e48b5c570a15e47604e0463b561816a8eaef15ff162e376681c85bd3e3f",
         "upstream/public/assets/models/LICENSE.md": "6c5e5051532c41ce2d1dca907bfe337d578bde63e1696021c1cdbf78a7b65da5"
       },
-      "tree_sha256": "5c21902eafe98567ed9aa2780ce94c8d84c3dd35a8a406449edd11e72ff31d08"
+      "tree_sha256": "84c8be3f11c6efcbe1f36b6ea1f31c6400d74ffc15df0c2792a95c1912a36f76"
     },
     {
       "id": "estate-research",

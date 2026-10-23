@@ -19,13 +19,13 @@ kit that the rest of the estate can point at.
 
 ## How to use it
 
-1. Start with `upstream/.claude/skills/ui-ux-pro-max/SKILL.md` for the method.
-2. Shape the token layers with `upstream/.claude/skills/design-system/references/token-architecture.md`,
+1. Start with `upstream/skills/ui-ux-pro-max/SKILL.md` for the method.
+2. Shape the token layers with `upstream/skills/design-system/references/token-architecture.md`,
    `primitive-tokens.md` and `semantic-tokens.md`.
 3. Carry the result into `packages/estate-ui-kit/tokens.json` -- the estate's one
    token file -- rather than into a new file beside it.
-4. Use `upstream/.claude/skills/brand/SKILL.md` when the work carries a brand, and
-   `upstream/.claude/skills/banner-design/SKILL.md` for a banner or hero image brief.
+4. Use `upstream/skills/brand/SKILL.md` when the work carries a brand, and
+   `upstream/skills/banner-design/SKILL.md` for a banner or hero image brief.
 5. Grade the result with `ui.review`.
 
 ## Estate rules that bind this pack
@@ -42,17 +42,24 @@ kit that the rest of the estate can point at.
 - **One of each layer.** If the estate already owns a component, a token or a
   pattern, this pack informs it; it does not become a second copy of it.
 
+<!-- provenance:begin -->
 ## Upstream material
 
 Vendored verbatim from `nextlevelbuilder/ui-ux-pro-max-skill` at commit `d14efff8ed1faa4187f004f79926f428c8074ec7`
-(MIT, 139282 stars at 2026-10-23T14:17:00+00:00). See `NOTICE.md`.
+(MIT, 139301 stars at 2026-10-23T15:26:31+00:00). See `NOTICE.md`.
 
-- `upstream/.claude/skills/banner-design/SKILL.md`
-- `upstream/.claude/skills/brand/SKILL.md`
-- `upstream/.claude/skills/design-system/SKILL.md`
-- `upstream/.claude/skills/design-system/references/primitive-tokens.md`
-- `upstream/.claude/skills/design-system/references/semantic-tokens.md`
-- `upstream/.claude/skills/design-system/references/token-architecture.md`
-- `upstream/.claude/skills/design/SKILL.md`
-- `upstream/.claude/skills/ui-ux-pro-max/SKILL.md`
+The upstream ships these under `.claude/`; the estate refuses a harness
+folder in the tree, so the bytes live under a plain path. `NOTICE.md`
+names the upstream path for every file.
+
 - `upstream/LICENSE`
+- `upstream/skills/banner-design/SKILL.md`
+- `upstream/skills/brand/SKILL.md`
+- `upstream/skills/design-system/SKILL.md`
+- `upstream/skills/design-system/references/primitive-tokens.md`
+- `upstream/skills/design-system/references/semantic-tokens.md`
+- `upstream/skills/design-system/references/token-architecture.md`
+- `upstream/skills/design/SKILL.md`
+- `upstream/skills/ui-ux-pro-max/SKILL.md`
+
+<!-- provenance:end -->

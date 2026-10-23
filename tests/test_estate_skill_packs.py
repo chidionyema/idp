@@ -24,7 +24,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 SKILLS = REPO / "platform" / "estate" / "skills"
@@ -142,6 +141,60 @@ def test_the_installer_refuses_a_drifted_pack(tmp_path: Path):
     )
     assert result.returncode == 1, "a drifted pack must never be installed"
     assert not (tmp_path / ".pi" / "agent" / "skills" / "taste").exists()
+
+
+# --- the harness folder the estate refuses -------------------------------------
+def test_no_pack_carries_a_harness_folder():
+    """Founder 2026-09-30: no `.claude` anywhere in the tree.
+
+    Several upstreams ship their skills under `.claude/skills/`. The estate
+    vendors the bytes under a plain path instead, so the bytes are kept and the
+    law is kept.
+    """
+    offenders = [
+        str(p.relative_to(SKILLS))
+        for p in SKILLS.rglob("*")
+        if p.is_file()
+        and any(part == ".claude" for part in p.relative_to(SKILLS).parts)
+    ]
+    assert not offenders, f"harness folder in the tree: {offenders}"
+
+
+def test_a_harness_folder_in_a_pack_is_refused(tmp_path: Path):
+    """A pack that grows one is caught by the gate, not by a human."""
+    skills = tmp_path / "skills"
+    shutil.copytree(SKILLS, skills)
+    hidden = skills / "packs" / "taste" / ".claude" / "skills" / "x" / "SKILL.md"
+    hidden.parent.mkdir(parents=True)
+    hidden.write_text("---\nname: x\ndescription: x\n---\n")
+    result = run("verify", skills=skills)
+    assert result.returncode == 1, "a harness folder in a pack must be refused"
+    assert "harness folder in the pack" in result.stderr
+
+
+def test_every_moved_file_keeps_its_upstream_path():
+    """Provenance survives the move: the upstream path is named in the registry."""
+    for pack in registry()["packs"]:
+        upstream = pack.get("upstream") or {}
+        path_map = upstream.get("path_map") or {}
+        for rel in upstream.get("vendored", []):
+            assert rel in path_map, f"{pack['id']}: {rel} has no upstream path recorded"
+            assert (SKILLS / "packs" / pack["id"] / "upstream" / rel).exists()
+        for rel, upstream_rel in path_map.items():
+            if rel != upstream_rel:
+                assert ".claude" not in rel.split("/"), (
+                    f"{pack['id']}: {rel} still carries a harness folder"
+                )
+
+
+def test_no_front_door_points_at_a_file_that_is_not_there():
+    """A front door that names a missing file sends the agent nowhere."""
+    missing = []
+    for front in sorted((SKILLS / "packs").glob("*/SKILL.md")):
+        for ref in re.findall(r"`(upstream/[^`]+)`", front.read_text()):
+            if not (front.parent / ref).exists():
+                missing.append(f"{front.parent.name}: {ref}")
+    assert not missing, f"front doors point at files that are not there: {missing}"
 
 
 # --- the install ----------------------------------------------------------------

@@ -42,10 +42,11 @@ pass before it ships.
 - **One of each layer.** If the estate already owns a component, a token or a
   pattern, this pack informs it; it does not become a second copy of it.
 
+<!-- provenance:begin -->
 ## Upstream material
 
 Vendored verbatim from `Nutlope/hallmark` at commit `7ec868225c6caa040558c321ee0fefa0e73f83a8`
-(MIT, 31111 stars at 2026-10-23T14:18:29+00:00). See `NOTICE.md`.
+(MIT, 31159 stars at 2026-10-23T15:33:28+00:00). See `NOTICE.md`.
 
 - `upstream/LICENSE`
 - `upstream/skills/hallmark/SKILL.md`
@@ -56,3 +57,5 @@ Vendored verbatim from `Nutlope/hallmark` at commit `7ec868225c6caa040558c321ee0
 - `upstream/skills/hallmark/references/gates.md`
 - `upstream/skills/hallmark/references/layout.md`
 - `upstream/skills/hallmark/references/macrostructures.md`
+
+<!-- provenance:end -->

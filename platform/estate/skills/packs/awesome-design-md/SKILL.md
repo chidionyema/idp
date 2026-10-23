@@ -41,13 +41,16 @@ precedent for structure and depth.
 - **One of each layer.** If the estate already owns a component, a token or a
   pattern, this pack informs it; it does not become a second copy of it.
 
+<!-- provenance:begin -->
 ## Upstream material
 
 Vendored verbatim from `VoltAgent/awesome-design-md` at commit `3b605329240ce735b510037cca322f1831fdd7f8`
-(MIT, 123097 stars at 2026-10-23T14:17:10+00:00). See `NOTICE.md`.
+(MIT, 123108 stars at 2026-10-23T15:32:12+00:00). See `NOTICE.md`.
 
 - `upstream/LICENSE`
 - `upstream/README.md`
 - `upstream/design-md/meta/DESIGN.md`
 - `upstream/design-md/raycast/DESIGN.md`
 - `upstream/design-md/vercel/DESIGN.md`
+
+<!-- provenance:end -->

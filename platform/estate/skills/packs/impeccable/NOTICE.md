@@ -2,7 +2,7 @@
 
 Upstream: pbakaus/impeccable (branch main, commit `5cb95eea9c96479f57afe0732a45470d30183326`)
 Licence: Apache-2.0
-Stars at measurement: 85295 (measured 2026-10-23T14:18:01+00:00)
+Stars at measurement: 85322 (measured 2026-10-23T15:32:49+00:00)
 
 The files under `upstream/` are vendored verbatim from the upstream repository
 at the commit named above, under that repository's licence. They are the

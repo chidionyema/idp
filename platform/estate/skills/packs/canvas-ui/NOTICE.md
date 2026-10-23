@@ -2,7 +2,7 @@
 
 Upstream: DavidHDev/canvas-ui (branch main, commit `a04a99b235299ee79a123a16ccb2e6cf9da74b6b`)
 Licence: NOASSERTION
-Stars at measurement: 5068 (measured 2026-10-23T14:19:18+00:00)
+Stars at measurement: 5070 (measured 2026-10-23T15:34:07+00:00)
 
 The files under `upstream/` are vendored verbatim from the upstream repository
 at the commit named above, under that repository's licence. They are the

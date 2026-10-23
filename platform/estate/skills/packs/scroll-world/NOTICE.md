@@ -2,7 +2,7 @@
 
 Upstream: oso95/scroll-world (branch main, commit `71cc36d3bb150248ae36a2c552f9cbf88802a79c`)
 Licence: MIT
-Stars at measurement: 10385 (measured 2026-10-23T14:19:13+00:00)
+Stars at measurement: 10386 (measured 2026-10-23T15:34:03+00:00)
 
 The files under `upstream/` are vendored verbatim from the upstream repository
 at the commit named above, under that repository's licence. They are the

@@ -38,11 +38,14 @@ product, with the primitives and the model licensing to check.
 - **One of each layer.** If the estate already owns a component, a token or a
   pattern, this pack informs it; it does not become a second copy of it.
 
+<!-- provenance:begin -->
 ## Upstream material
 
 Vendored verbatim from `DavidHDev/canvas-ui` at commit `a04a99b235299ee79a123a16ccb2e6cf9da74b6b`
-(NOASSERTION, 5068 stars at 2026-10-23T14:19:18+00:00). See `NOTICE.md`.
+(NOASSERTION, 5070 stars at 2026-10-23T15:34:07+00:00). See `NOTICE.md`.
 
 - `upstream/LICENSE.md`
 - `upstream/README.md`
 - `upstream/public/assets/models/LICENSE.md`
+
+<!-- provenance:end -->

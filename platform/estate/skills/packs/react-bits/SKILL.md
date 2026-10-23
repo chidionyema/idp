@@ -40,11 +40,14 @@ adapting one: a library of animated React components and the tools behind them.
 - **One of each layer.** If the estate already owns a component, a token or a
   pattern, this pack informs it; it does not become a second copy of it.
 
+<!-- provenance:begin -->
 ## Upstream material
 
 Vendored verbatim from `DavidHDev/react-bits` at commit `e12c22192ac7b4b452c5e2feb9b586d74765d696`
-(NOASSERTION, 50055 stars at 2026-10-23T14:18:06+00:00). See `NOTICE.md`.
+(NOASSERTION, 50059 stars at 2026-10-23T15:32:55+00:00). See `NOTICE.md`.
 
 - `upstream/LICENSE.md`
 - `upstream/README.md`
 - `upstream/src/tools/shape-magic/README.md`
+
+<!-- provenance:end -->

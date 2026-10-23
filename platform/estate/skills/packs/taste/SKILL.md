@@ -39,10 +39,11 @@ that make a design read as careless.
 - **One of each layer.** If the estate already owns a component, a token or a
   pattern, this pack informs it; it does not become a second copy of it.
 
+<!-- provenance:begin -->
 ## Upstream material
 
 Vendored verbatim from `Leonxlnx/taste-skill` at commit `6010f91a9935f1c167dfc500fb1a475681892e6b`
-(MIT, 101447 stars at 2026-10-23T14:16:34+00:00). See `NOTICE.md`.
+(MIT, 101484 stars at 2026-10-23T15:32:31+00:00). See `NOTICE.md`.
 
 - `upstream/LICENSE`
 - `upstream/skills/taste-skill/README.md`
@@ -51,3 +52,5 @@ Vendored verbatim from `Leonxlnx/taste-skill` at commit `6010f91a9935f1c167dfc50
 - `upstream/skills/taste-skill/references/layout.md`
 - `upstream/skills/taste-skill/references/tells.md`
 - `upstream/skills/taste-skill/references/type.md`
+
+<!-- provenance:end -->

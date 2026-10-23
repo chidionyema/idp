@@ -2,7 +2,7 @@
 
 Upstream: google-labs-code/design.md (branch main, commit `6e5da5382f41edbba9d73b2c62f33f32e9971f15`)
 Licence: Apache-2.0
-Stars at measurement: 28497 (measured 2026-10-23T14:18:57+00:00)
+Stars at measurement: 28498 (measured 2026-10-23T15:33:36+00:00)
 
 The files under `upstream/` are vendored verbatim from the upstream repository
 at the commit named above, under that repository's licence. They are the

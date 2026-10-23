@@ -2,7 +2,7 @@
 
 Upstream: Leonxlnx/taste-skill (branch main, commit `6010f91a9935f1c167dfc500fb1a475681892e6b`)
 Licence: MIT
-Stars at measurement: 101447 (measured 2026-10-23T14:16:34+00:00)
+Stars at measurement: 101484 (measured 2026-10-23T15:32:31+00:00)
 
 The files under `upstream/` are vendored verbatim from the upstream repository
 at the commit named above, under that repository's licence. They are the

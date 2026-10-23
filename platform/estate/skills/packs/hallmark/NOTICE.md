@@ -2,7 +2,7 @@
 
 Upstream: Nutlope/hallmark (branch main, commit `7ec868225c6caa040558c321ee0fefa0e73f83a8`)
 Licence: MIT
-Stars at measurement: 31111 (measured 2026-10-23T14:18:29+00:00)
+Stars at measurement: 31159 (measured 2026-10-23T15:33:28+00:00)
 
 The files under `upstream/` are vendored verbatim from the upstream repository
 at the commit named above, under that repository's licence. They are the

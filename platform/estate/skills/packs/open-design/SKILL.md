@@ -40,10 +40,11 @@ code is written -- the working skills of a design workspace, taken one at a time
 - **One of each layer.** If the estate already owns a component, a token or a
   pattern, this pack informs it; it does not become a second copy of it.
 
+<!-- provenance:begin -->
 ## Upstream material
 
 Vendored verbatim from `nexu-io/open-design` at commit `e03d5c23f308c39f4de7c057568df66c29a84385`
-(Apache-2.0, 103523 stars at 2026-10-23T14:17:31+00:00). See `NOTICE.md`.
+(Apache-2.0, 103540 stars at 2026-10-23T15:32:22+00:00). See `NOTICE.md`.
 
 - `upstream/LICENSE`
 - `upstream/README.md`
@@ -54,3 +55,5 @@ Vendored verbatim from `nexu-io/open-design` at commit `e03d5c23f308c39f4de7c057
 - `upstream/skills/design-brief/SKILL.md`
 - `upstream/skills/design-md/SKILL.md`
 - `upstream/skills/design-review/SKILL.md`
+
+<!-- provenance:end -->

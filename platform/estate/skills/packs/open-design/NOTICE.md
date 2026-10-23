@@ -2,7 +2,7 @@
 
 Upstream: nexu-io/open-design (branch main, commit `e03d5c23f308c39f4de7c057568df66c29a84385`)
 Licence: Apache-2.0
-Stars at measurement: 103523 (measured 2026-10-23T14:17:31+00:00)
+Stars at measurement: 103540 (measured 2026-10-23T15:32:22+00:00)
 
 The files under `upstream/` are vendored verbatim from the upstream repository
 at the commit named above, under that repository's licence. They are the

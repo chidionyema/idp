@@ -177,6 +177,13 @@ def verify_pack(pack: dict) -> Tuple[bool, List[str]]:
         if rel not in registered:
             problems.append(f"{pid}: file on disk is not in the registry: {rel}")
 
+    # The estate refuses a harness folder anywhere in the tree (founder 2026-09-30),
+    # so the packs are refused it too: an upstream that ships `.claude/skills/...`
+    # is vendored under a plain path, and a pack that grows one is caught here.
+    for rel in sorted(on_disk):
+        if any(part == ".claude" for part in rel.split("/")):
+            problems.append(f"{pid}: harness folder in the pack: {rel}")
+
     return (not problems), problems
 
 
@@ -412,6 +419,19 @@ def gh_json(*args: str):
     return json.loads(gh(*args))
 
 
+def safe_rel(rel: str) -> str:
+    """Strip the harness folders the estate refuses.
+
+    Founder 2026-09-30: no `.claude` path anywhere in the tree -- knowledge hidden
+    in a harness folder is invisible to every other model, and the branch ruleset
+    refuses the merge. Several upstreams ship their skills under `.claude/skills/`;
+    the estate vendors the bytes under a plain path and keeps the upstream path in
+    the registry's path_map, so provenance survives the move.
+    """
+    parts = [p for p in rel.split("/") if p and p != ".claude"]
+    return "/".join(parts)
+
+
 def cmd_vendor(args: argparse.Namespace) -> int:
     """Re-fetch the upstream files a pack pins, and rewrite its provenance."""
     reg = load_registry()
@@ -441,6 +461,7 @@ def cmd_vendor(args: argparse.Namespace) -> int:
 
         out_root = pack_dir(pid) / "upstream"
         vendored: List[str] = []
+        path_map: Dict[str, str] = {}
         for rel in wanted:
             entry = blobs.get(rel)
             if not entry:
@@ -454,7 +475,10 @@ def cmd_vendor(args: argparse.Namespace) -> int:
                 continue
             content = gh_json("api", f"repos/{repo}/contents/{rel}?ref={branch}")
             data = base64.b64decode(content["content"])
+            upstream_rel = rel
+            rel = safe_rel(rel)
             dest = out_root / rel
+            path_map[rel] = upstream_rel
             if args.dry_run:
                 print(f"would vendor {pid}: {rel} ({len(data)}B)")
                 vendored.append(rel)
@@ -475,6 +499,7 @@ def cmd_vendor(args: argparse.Namespace) -> int:
             "stars": meta.get("stargazers_count"),
             "stars_measured_at": now(),
             "vendored": sorted(vendored),
+            "path_map": dict(sorted(path_map.items())),
         }
         write_notice(pack, src)
         write_skill_md(pack, src, out_root)
@@ -507,8 +532,66 @@ def write_notice(pack: dict, src: dict) -> None:
     ]
     for rel in up.get("vendored", []):
         lines.append(f"- `upstream/{rel}`")
+    path_map = up.get("path_map") or {}
+    moved = {k: v for k, v in path_map.items() if k != v}
+    if moved:
+        lines += [
+            "",
+            "Moved on the way in: the upstream path is kept here because the estate",
+            "refuses a harness folder in the tree, so `.claude/` was dropped from the",
+            "vendored path. The bytes are the upstream bytes.",
+            "",
+        ]
+        for vendored_rel, upstream_rel in sorted(moved.items()):
+            lines.append(f"- `{upstream_rel}` -> `upstream/{vendored_rel}`")
     lines.append("")
     (pack_dir(pid) / "NOTICE.md").write_text("\n".join(lines))
+
+
+PROVENANCE_BEGIN = "<!-- provenance:begin -->"
+PROVENANCE_END = "<!-- provenance:end -->"
+
+
+def render_provenance_block(pack: dict) -> List[str]:
+    """The 'Upstream material' section, generated from the registry.
+
+    The commit, the licence and the star count are measurements; they live in the
+    registry and are written here from it, so a re-vendor refreshes them instead of
+    leaving a stale number in a hand-written file.
+    """
+    up = pack.get("upstream") or {}
+    pid = pack["id"]
+    lines = [
+        PROVENANCE_BEGIN,
+        "## Upstream material",
+        "",
+    ]
+    if up.get("repo"):
+        lines += [
+            f"Vendored verbatim from `{up.get('repo')}` at commit `{up.get('commit')}`",
+            f"({up.get('license')}, {up.get('stars')} stars at {up.get('stars_measured_at')})."
+            " See `NOTICE.md`.",
+            "",
+        ]
+        path_map = up.get("path_map") or {}
+        moved = {k: v for k, v in path_map.items() if k != v}
+        if moved:
+            lines += [
+                "The upstream ships these under `.claude/`; the estate refuses a harness",
+                "folder in the tree, so the bytes live under a plain path. `NOTICE.md`",
+                "names the upstream path for every file.",
+                "",
+            ]
+        for rel in up.get("vendored", []):
+            lines.append(f"- `upstream/{rel}`")
+        lines.append("")
+    else:
+        lines += [
+            "Estate-native: this pack was written inside the estate, not vendored.",
+            "",
+        ]
+    lines.append(PROVENANCE_END)
+    return lines
 
 
 def write_skill_md(pack: dict, src: dict, out_root: Path) -> None:
@@ -516,10 +599,17 @@ def write_skill_md(pack: dict, src: dict, out_root: Path) -> None:
 
     Hand-written front doors are never overwritten: an agent that improved a pack's
     SKILL.md keeps its words, and the registry's checksum covers whatever is there.
+    The one exception is the marked provenance block, which is generated from the
+    registry so a re-vendor cannot leave a stale measurement behind.
     """
     pid = pack["id"]
     path = pack_dir(pid) / "SKILL.md"
     if path.exists():
+        text = path.read_text()
+        if PROVENANCE_BEGIN in text and PROVENANCE_END in text:
+            head, _, rest = text.partition(PROVENANCE_BEGIN)
+            _, _, tail = rest.partition(PROVENANCE_END)
+            path.write_text(head + "\n".join(render_provenance_block(pack)) + tail)
         return
     title = src.get("title", pid)
     capability = src.get("capability", "")
@@ -544,20 +634,8 @@ def write_skill_md(pack: dict, src: dict, out_root: Path) -> None:
         body = body.replace("{UPSTREAM_DIR}", "upstream")
         front.extend([body, ""])
     if up.get("repo"):
-        front.extend(
-            [
-                "## Upstream material",
-                "",
-                f"Vendored verbatim from `{up.get('repo')}` at commit `{up.get('commit')}`",
-                f"({up.get('license')}). See `NOTICE.md`.",
-                "",
-            ]
-        )
-        if out_root.exists():
-            for p in sorted(out_root.rglob("*")):
-                if p.is_file():
-                    front.append(f"- `upstream/{p.relative_to(out_root)}`")
-            front.append("")
+        front.extend(render_provenance_block(pack))
+        front.append("")
     path.write_text("\n".join(front))
 
 

@@ -42,10 +42,11 @@ break the look of a template.
 - **One of each layer.** If the estate already owns a component, a token or a
   pattern, this pack informs it; it does not become a second copy of it.
 
+<!-- provenance:begin -->
 ## Upstream material
 
 Vendored verbatim from `emilkowalski/skills` at commit `2d228630ba1446365f614a108cb8252f1feda202`
-(MIT, 48928 stars at 2026-10-23T14:18:18+00:00). See `NOTICE.md`.
+(MIT, 48955 stars at 2026-10-23T15:33:05+00:00). See `NOTICE.md`.
 
 - `upstream/LICENSE`
 - `upstream/skills/animate/SKILL.md`
@@ -57,3 +58,5 @@ Vendored verbatim from `emilkowalski/skills` at commit `2d228630ba1446365f614a10
 - `upstream/skills/mobile-native/SKILL.md`
 - `upstream/skills/prototype/SKILL.md`
 - `upstream/skills/review-animations/SKILL.md`
+
+<!-- provenance:end -->

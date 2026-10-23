@@ -40,10 +40,11 @@ DESIGN.md specification, worked examples, and the skills that write one at scale
 - **One of each layer.** If the estate already owns a component, a token or a
   pattern, this pack informs it; it does not become a second copy of it.
 
+<!-- provenance:begin -->
 ## Upstream material
 
 Vendored verbatim from `google-labs-code/design.md` at commit `6e5da5382f41edbba9d73b2c62f33f32e9971f15`
-(Apache-2.0, 28497 stars at 2026-10-23T14:18:57+00:00). See `NOTICE.md`.
+(Apache-2.0, 28498 stars at 2026-10-23T15:33:36+00:00). See `NOTICE.md`.
 
 - `upstream/.agents/skills/agent-dx-cli-scale/SKILL.md`
 - `upstream/.agents/skills/ink/SKILL.md`
@@ -51,3 +52,5 @@ Vendored verbatim from `google-labs-code/design.md` at commit `6e5da5382f41edbba
 - `upstream/README.md`
 - `upstream/docs/spec.md`
 - `upstream/examples/totality-festival/DESIGN.md`
+
+<!-- provenance:end -->

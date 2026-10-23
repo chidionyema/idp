@@ -41,10 +41,11 @@ library's authors intend, with the performance rules attached.
 - **One of each layer.** If the estate already owns a component, a token or a
   pattern, this pack informs it; it does not become a second copy of it.
 
+<!-- provenance:begin -->
 ## Upstream material
 
 Vendored verbatim from `greensock/gsap-skills` at commit `aed9cfd3277740755f6bfc1155c7aa645403b760`
-(MIT, 16975 stars at 2026-10-23T14:19:07+00:00). See `NOTICE.md`.
+(MIT, 16981 stars at 2026-10-23T15:33:47+00:00). See `NOTICE.md`.
 
 - `upstream/LICENSE`
 - `upstream/skills/gsap-core/SKILL.md`
@@ -55,3 +56,5 @@ Vendored verbatim from `greensock/gsap-skills` at commit `aed9cfd3277740755f6bfc
 - `upstream/skills/gsap-scrolltrigger/SKILL.md`
 - `upstream/skills/gsap-timeline/SKILL.md`
 - `upstream/skills/gsap-utils/SKILL.md`
+
+<!-- provenance:end -->

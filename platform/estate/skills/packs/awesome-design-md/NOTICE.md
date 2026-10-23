@@ -2,7 +2,7 @@
 
 Upstream: VoltAgent/awesome-design-md (branch main, commit `3b605329240ce735b510037cca322f1831fdd7f8`)
 Licence: MIT
-Stars at measurement: 123097 (measured 2026-10-23T14:17:10+00:00)
+Stars at measurement: 123108 (measured 2026-10-23T15:32:12+00:00)
 
 The files under `upstream/` are vendored verbatim from the upstream repository
 at the commit named above, under that repository's licence. They are the

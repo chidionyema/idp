@@ -41,12 +41,15 @@ world, with the engine and the prompts that produce it.
 - **One of each layer.** If the estate already owns a component, a token or a
   pattern, this pack informs it; it does not become a second copy of it.
 
+<!-- provenance:begin -->
 ## Upstream material
 
 Vendored verbatim from `oso95/scroll-world` at commit `71cc36d3bb150248ae36a2c552f9cbf88802a79c`
-(MIT, 10385 stars at 2026-10-23T14:19:13+00:00). See `NOTICE.md`.
+(MIT, 10386 stars at 2026-10-23T15:34:03+00:00). See `NOTICE.md`.
 
 - `upstream/LICENSE`
 - `upstream/skills/scroll-world/SKILL.md`
 - `upstream/skills/scroll-world/references/pipeline.md`
 - `upstream/skills/scroll-world/references/prompts.md`
+
+<!-- provenance:end -->

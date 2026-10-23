@@ -39,10 +39,11 @@ new-work playbook.
 - **One of each layer.** If the estate already owns a component, a token or a
   pattern, this pack informs it; it does not become a second copy of it.
 
+<!-- provenance:begin -->
 ## Upstream material
 
 Vendored verbatim from `pbakaus/impeccable` at commit `5cb95eea9c96479f57afe0732a45470d30183326`
-(Apache-2.0, 85295 stars at 2026-10-23T14:18:01+00:00). See `NOTICE.md`.
+(Apache-2.0, 85322 stars at 2026-10-23T15:32:49+00:00). See `NOTICE.md`.
 
 - `upstream/.agent/skills/impeccable/SKILL.md`
 - `upstream/.agent/skills/impeccable/reference/audit.md`
@@ -51,3 +52,5 @@ Vendored verbatim from `pbakaus/impeccable` at commit `5cb95eea9c96479f57afe0732
 - `upstream/.agent/skills/impeccable/reference/critique.md`
 - `upstream/.agent/skills/impeccable/reference/new-work.md`
 - `upstream/LICENSE`
+
+<!-- provenance:end -->
