@@ -1,0 +1,14 @@
+# Prove the packs still match the registry. This is a gate that can fail: it recomputes
+# every sha256 the registry claims and exits non-zero on any drift, on a file that is
+# missing, and on a file that is on disk but was never registered.
+name: skill.verify
+description: >
+  Verify the estate skill packs against the registry's checksums. Recomputes every
+  file's sha256 and exits non-zero on any drift, any missing file and any unregistered
+  file. Use to prove a pack is exactly what the estate reviewed before installing or
+  trusting it.
+args:
+  pack: {type: string, default: "", help: "Comma-separated pack ids. Default: all."}
+steps:
+  - name: verify
+    cmd: python3 ~/.estate/libexec/skill-packs.py verify --pack {{pack}}

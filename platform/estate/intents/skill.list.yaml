@@ -1,0 +1,19 @@
+# The estate's one skill layer. `skill.list` names the packs every agent can have and
+# says where they came from, so an agent discovers the capability instead of installing
+# a copy of it by hand (AGENTS.md §6: one of each layer).
+name: skill.list
+description: >
+  List the estate skill packs: the twelve vendored upstream UI/design/architecture
+  capabilities plus the estate's own research and architecture packs. Each entry names
+  the upstream repository, its licence, the star count measured when it was vendored,
+  and the runtimes it is already installed into. Use when an agent needs a design,
+  research or architecture capability and should not install one by hand.
+args:
+  pack:     {type: string, default: "", help: "Comma-separated pack ids. Default: all."}
+  category: {type: string, default: "", help: "ui | design | research | architecture. Default: all."}
+  json:     {type: string, default: "", help: "'true' for machine-readable output."}
+steps:
+  - name: list
+    cmd: >
+      python3 ~/.estate/libexec/skill-packs.py list
+      --pack {{pack}} --category {{category}} --json {{json}}

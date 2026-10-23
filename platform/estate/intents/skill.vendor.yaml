@@ -1,0 +1,18 @@
+# Re-fetch a pack's upstream files and rewrite its provenance. This is how a vendored
+# pack is updated: the upstream commit is pinned in the registry, the bytes are
+# re-fetched through the GitHub CLI, and the registry's checksums are rewritten to
+# match. Dry run by default, because it rewrites files in the repository.
+name: skill.vendor
+description: >
+  Re-fetch the upstream files a skill pack pins and rewrite the pack's provenance
+  (upstream commit, licence, measured star count) and the registry's checksums. Dry run
+  unless apply=true. Use when a vendored pack is behind its upstream.
+args:
+  pack:  {type: string, default: "", help: "Comma-separated pack ids. Default: all."}
+  apply: {type: string, default: "", help: "'true' to write. Default: dry run."}
+steps:
+  - name: vendor
+    cmd: >
+      set -- ;
+      [ -n {{apply}} ] && set -- "$@" --apply ;
+      python3 ~/.estate/libexec/skill-packs.py vendor --pack {{pack}} "$@"

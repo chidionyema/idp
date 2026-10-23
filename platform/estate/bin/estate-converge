@@ -272,7 +272,7 @@ def update_links(home: Path, uid: int, gid: int, ts: str) -> List[str]:
             _owned(d, uid, gid)
     cur = current_link()
     drifted = []
-    for name in ("intents", "libexec"):
+    for name in ("intents", "libexec", "skills"):
         if ensure_link(cur / name, estate / name, ts, uid, gid):
             drifted.append(name)
     bin_dir = cur / "bin"
