@@ -213,6 +213,17 @@ To invoke: `estate_invoke { intent: <name> }` via MCP, or `estate-execute <name>
 
 Design spec: `docs/specs/2026-09-24-estate-agent-enforcement-platform.md`
 
+**The estate's one skill layer.** The twelve UI/design/research/architecture capabilities
+the founder named live once, in `platform/estate/skills/`, and they reach an agent through
+four intents: `skill.list` (what exists, where it came from, where it is installed),
+`skill.verify` (the checksums and the front doors), `skill.install` (put a pack in a
+runtime's skills directory), `skill.vendor` (re-fetch a pack's upstream at its pinned
+commit). Do not fetch a skill from the network and do not copy one into a runtime by hand —
+that is a second copy of a layer the estate already owns (§6). Run
+`estate-execute skill.list` first, then
+`estate-execute skill.install pack=<id> runtime=<pi|claude|codex|agents> apply=true`.
+Spec: `docs/specs/2026-10-23-estate-skill-layer.md`.
+
 **Lost work: `estate-execute work-audit` (days=28).** Before saying work is done, missing or
 "never landed", run it. For every closed-unmerged PR, stash, local-only branch and uncommitted
 worktree it measures how many added lines are on origin/main now, or were and got deleted:

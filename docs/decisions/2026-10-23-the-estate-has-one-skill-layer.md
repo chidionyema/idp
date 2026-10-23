@@ -61,6 +61,16 @@ installer.**
    design is; it cannot make a screen good. `ui.review` and `ui.scaffold` still decide, and a
    pack that contradicts them is wrong.
 
+6. **A pack that a runtime cannot load does not exist, and the gate says so.** A front
+   door's `description` is a quoted YAML scalar, always: a plain scalar cannot contain
+   `": "`, and a YAML parser that meets one refuses the whole frontmatter. This was measured
+   on 2026-10-23, not assumed — pi's own loader discovered 4 of the estate's 14 packs and
+   refused the other 10 with "Nested mappings are not allowed in compact mappings", while
+   every checksum said the packs were intact. `skill-packs.py verify` now parses each front
+   door the way the runtimes do and refuses a pack a runtime would ignore, and
+   `skill-packs.py manifest` may re-pin the estate-authored front door only: a hand edit to
+   vendored upstream is a fork, and the registry refuses to bless it.
+
 ## What this costs, stated honestly
 
 - **The estate now carries 1.4MB of vendored third-party material** in the repository, and a
@@ -87,3 +97,15 @@ records.
 - `platform/estate/skills/sources.json` — where each vendored file came from.
 - `docs/specs/2026-10-23-estate-skill-layer.md` — the architecture, the intents, the adoption
   path, and what to do when a pack drifts.
+
+## The proof it works
+
+Not "the packs are in the repository" — that is where they were written. The proof is the
+runtime's own answer:
+
+- `skill-packs.py verify` — 14 of 14 packs ok, no drift, no front-door problems.
+- pi's own loader over `~/.pi/agent/skills` — 14 skills discovered, 0 diagnostics, named one
+  by one. The same loader found 4 of 14 before the frontmatter was fixed.
+- `skill.install pack=all runtime=pi apply=true` and the same for `claude` — 14 installs each,
+  each with a receipt naming the tree hash and the upstream commit.
+- `~/.claude/skills` carries the same 14 packs for the Claude runtime.

@@ -68,6 +68,15 @@ it says when to use the pack, how to use it, and which estate rules bind it — 
 literals, voice first, proof, performance budgets — and it names `ui.review` and `ui.scaffold`
 as the gates that decide. The upstream material is the *method*; the front door is the *law*.
 
+**The front door has to load, and that is measured, not assumed.** A description is written as
+a quoted YAML scalar, always. A plain scalar cannot contain `": "` — a YAML parser reads the
+colon as a nested mapping and refuses the *whole* frontmatter, so the runtime never offers
+the skill to an agent. This was not theoretical: on 2026-10-23, pi's own loader discovered
+4 of the estate's 14 packs and refused the other 10 with "Nested mappings are not allowed in
+compact mappings", while every checksum said the packs were intact. `skill-packs.py verify`
+now parses each front door's frontmatter the way the runtimes do and refuses a pack a
+runtime would ignore; the test suite parses YAML rather than matching a regex.
+
 ## 3. The registry contract
 
 `registry.json` records, per pack:
@@ -82,6 +91,19 @@ as the gates that decide. The upstream material is the *method*; the front door 
 
 `skill-packs.py verify` recomputes all of it and exits non-zero on any drift. A gate that
 cannot fail is not a gate; this one fails on a single edited byte.
+
+`verify` does two things, and both can fail:
+
+1. **Checksums.** Every file under `packs/<id>/` is hashed and compared with the registry.
+2. **The front door.** The frontmatter is parsed as YAML and must yield `name` equal to the
+   pack id and a non-empty `description` string of at most 1024 characters. A pack that a
+   runtime would ignore is refused.
+
+**Re-pinning is a narrow door.** `skill-packs.py manifest` rewrites the registry's checksums
+from what is on disk, and it may only re-pin the estate-authored front door and `NOTICE.md`.
+Upstream bytes are re-pinned by `skill.vendor`, which fetched them from the pinned commit: a
+hand edit to vendored upstream is not a new version of the upstream, it is a fork, and the
+registry refuses to bless it.
 
 ## 4. The intents
 
@@ -125,6 +147,20 @@ estate-execute skill.install pack=all runtime=agents apply=true
 Each install writes a receipt at `~/.estate/skills-state/<runtime>/<pack>.json` naming the
 pack, the tree hash and the upstream commit it came from. `skill.list` reads those receipts,
 so "what can this agent see?" is answerable from the estate's own records.
+
+**The proof that a runtime can see them.** An install is not an adoption until the runtime
+itself lists the packs. pi's own loader is callable without a model:
+
+```bash
+PI=$(npm root -g)/@earendil-works/pi-coding-agent/dist/index.js
+node -e "import('$PI').then(m => { const r = m.loadSkills({cwd: process.cwd(),
+  agentDir: process.env.HOME + '/.pi/agent', skillPaths: [], includeDefaults: true});
+  console.log('discovered', r.skills.length, 'diagnostics', r.diagnostics.length);
+  console.log(r.skills.map(s => s.name).join(' ')); })"
+```
+
+On 2026-10-23 that printed 14 of 14 with no diagnostics, from `~/.pi/agent/skills`. The
+same frontmatter is what Claude Code reads from `~/.claude/skills`.
 
 The four roots are the Agent Skills standard: `<skills-dir>/<name>/SKILL.md` with YAML
 frontmatter (`name`, `description`).
