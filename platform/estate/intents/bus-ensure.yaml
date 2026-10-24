@@ -1,0 +1,15 @@
+name: bus-ensure
+description: >-
+  Make the estate bus beside the door answer, or say why it cannot. Probes the NATS protocol on
+  loopback (a socket that opens but never sends INFO is silent, not alive), and if nothing answers
+  starts the broker detached from any job's process group. A broker is never started twice: the
+  probe runs first and an answering broker is left alone. Exit 0 when the bus answers, 1 when it
+  stays silent, 2 when it cannot even try.
+class: mutate
+args:
+  port: {type: int, default: 4222}
+halt_on_failure: true
+steps:
+  - name: bus-ensure
+    cmd: >
+      bash ~/.estate/libexec/bus-ensure.sh
