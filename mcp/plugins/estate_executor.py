@@ -96,11 +96,106 @@ _TIMEOUT_RE = re.compile(r"\b(?:timeout|gtimeout)\b([^;|&]*)")
 # Commands that have no return path: they wait on something outside the process. Refused at the
 # door, because a detached run of `sleep 900` is still a job nobody is waiting for, and the
 # executor's job is execution, not parking.
+#
+# EACH PATTERN MATCHES A COMMAND TOKEN, NEVER A WORD IN THE TEXT (measured 2026-10-24). The old
+# bare `\bwatch\b` was a substring test over the whole command string, so the door refused six
+# correct commands: `rg -c . ~/.estate/disk-watch.out.log`, `launchctl list | rg disk-watch`, and a
+# `git commit -m` whose message said the founder "cannot watch it deciding" -- refused twice while
+# the agent was landing the commit that put the door's own decisions on /fleet. A guard that
+# refuses a command for the prose in it teaches rewording, not work (R38), and the cost is paid in
+# retries the founder reads as slowness. The token must now START a command -- start-of-line, `;`,
+# `&`, `|`, `(` -- which is what the watch(1) binary looks like and what `disk-watch.log` is not.
+#
+# `sleep` is refused in any command position for the same reason: `echo x; sleep 900` slipped past
+# the `^\s*sleep` anchor and was SIGTERMed at the 100s ceiling instead of refused (job
+# exec-1792820291-8, 2026-10-24) -- the doctrine held for `sleep 1` and not for `; sleep 900`.
 _NEVER = (
-    re.compile(r"^\s*sleep\b"),
-    re.compile(r"\bwatch\b"),
+    re.compile(r"(?:^|[;&|(])\s*watch\s"),
     re.compile(r"\bgh\s+run\s+watch\b"),
+    re.compile(r"(?:^|[;&|(])\s*tail\s+-[fF]\b"),
 )
+
+# A sleep is not one thing. `launchctl kickstart -k …; sleep 2; check` paces a restart and is work;
+# `sleep 900` is parking, and a job that parks is the thing this door exists to prevent. The line is
+# drawn at 10s, above every pacing wait in the estate's own scripts and far below any wait for an
+# event, and a sleep whose duration is not a literal number is refused because the door cannot bound
+# it (gate 2: quantify the threshold rather than assert "no sleeping").
+_PARKING_SLEEP_SEC = 10
+_SLEEP = re.compile(r"(?:^|[;&|(])\s*sleep\s+([^\s;&|)]+)")
+
+
+def parking_sleep(command: str) -> Optional[str]:
+    """The sleep argument if this command parks, else None."""
+    for match in _SLEEP.finditer(unquoted(command)):
+        arg = match.group(1).strip("'\"")
+        if not arg.isdigit():
+            return arg
+        if int(arg) >= _PARKING_SLEEP_SEC:
+            return arg
+    return None
+
+
+_HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+
+
+def strip_heredocs(command: str) -> str:
+    """Remove heredoc bodies: they are stdin to the command, not the command.
+
+    A commit message passed as a heredoc IS the message, so the waits it quotes are data about
+    waits. Without this the door refused its own fix commit a second time, this time because the
+    backticked example in the heredoc body matched (measured 2026-10-24). Only the marker line's
+    command text is kept; everything between the marker and its terminator is dropped.
+    """
+    lines = command.splitlines()
+    kept: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        marker = _HEREDOC.search(line)
+        kept.append(line[: marker.start()] if marker else line)
+        index += 1
+        if not marker:
+            continue
+        terminator = marker.group(2)
+        while index < len(lines) and lines[index].strip() != terminator:
+            index += 1
+        index += 1
+    return "\n".join(kept)
+
+
+def unquoted(command: str) -> str:
+    """The command with every quoted segment removed, so prose is never read as syntax.
+
+    WHY (measured 2026-10-24, the same hour as the token fix above). With the patterns matching
+    command tokens, the door then refused THIS guard's own fix commit, because the message quoted
+    the very commands it was fixing -- `echo start; sleep 900` inside the -m string matched the
+    sleep token. A refusal caused by text that is data, not instruction, is the same defect as
+    `\\bwatch\\b` one level down, and it would have refused every commit that documents a wait.
+
+    Removing quoted runs first means `git commit -m "... sleep 900 ..."` is a commit, while
+    `sleep 900` after a real `;` is still a wait. It is not a full shell parse -- heredocs and
+    nested substitutions are not modelled -- and it does not need to be: it has to be right about
+    the case that was wrong, and conservative in the direction that refuses.
+    """
+    out: list[str] = []
+    quote: Optional[str] = None
+    escaped = False
+    for ch in strip_heredocs(command):
+        if escaped:
+            escaped = False
+            continue
+        if ch == "\\" and quote:
+            escaped = True
+            continue
+        if quote:
+            if ch == quote:
+                quote = None
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            continue
+        out.append(ch)
+    return "".join(out)
 
 # STEERING, NOT A BLUNT NO. Measured 2026-10-23 over 24h of live transcripts (bin/process-census,
 # job exec-1792784032-4447): 1,277 tool calls were agents asking "has my branch landed yet?" in
@@ -566,14 +661,28 @@ def execute_command(
         return steer
 
     # 2. A command with no return path is refused at the door, whatever ceiling is on it.
+    #    Matched against the UNQUOTED command: a wait written inside a string is data (a commit
+    #    message about waits), not a job that parks an agent. See unquoted().
+    bare = unquoted(command)
+    parked = parking_sleep(command)
     for pattern in _NEVER:
-        if pattern.search(command):
+        if pattern.search(bare):
             record_friction("refuse-wait", command, detail=f"matched {pattern.pattern}")
             return _refusal(
                 "this command waits on something outside the process; the executor runs work, it "
                 "does not park an agent",
                 detail=f"matched {pattern.pattern}",
             )
+
+    # 2b. A sleep long enough to park the job, or one the door cannot bound: 10s is the divider
+    #     between a pace (`kickstart; sleep 2`) and a park (`sleep 900`).
+    if parked:
+        record_friction("refuse-wait", command, detail=f"sleep {parked}")
+        return _refusal(
+            "this command waits on something outside the process; the executor runs work, it "
+            f"does not park an agent (sleep {parked} is a park, not a pace)",
+            detail=f"sleep {parked}: >= {_PARKING_SLEEP_SEC}s or unbounded",
+        )
 
     # 2. The caller's own ceiling may never exceed the estate ceiling, in any spelling.
     written = explicit_ceiling_sec(command)
