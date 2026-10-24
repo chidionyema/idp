@@ -13,6 +13,7 @@
     "guard:contrast": "node guards/contrast.mjs",
     "guard:purity": "node guards/purity.mjs src gallery scaffold",
     "guard:import": "node guards/kit-import.mjs",
+    "test": "node --test guards/*.test.mjs",
     "guard": "npm run -s build && npm run -s guard:contrast && npm run -s guard:purity && npm run -s guard:import"
   },
   "exports": {
