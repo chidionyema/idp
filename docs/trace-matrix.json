@@ -2082,6 +2082,22 @@
   "ticket": "crew#286"
  },
  {
+  "feature": "features/gates/launchd-off-documents.feature",
+  "title": "launchd jobs run from the runtime tree, never from ~/Documents",
+  "scenarios": [
+   "The installer points jobs at ~/.estate/runtime/idp",
+   "The installer refuses a tree launchd cannot read",
+   "Jobs the cluster owns are never loaded on the Mac"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_gate_launchd_off_documents.py"
+  ],
+  "status": "BOUND",
+  "added_in": "fbc7f44f9",
+  "pr": 6028,
+  "ticket": null
+ },
+ {
   "feature": "features/gates/llm-admission.feature",
   "title": "The LiteLLM router is admitted by the cluster's policies before it is merged",
   "scenarios": [
