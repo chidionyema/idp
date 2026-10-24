@@ -8,8 +8,21 @@ mechanical builds at cheap tier; deep/high-risk work uses frontier. Two failed g
 require frontier re-planning before another build. Explicit planner/builder names remain a
 manual override. A step is done when its done-check exits 0, not when the builder says so.
 
-Every model call is a `claude -p` child. It reads ~/.claude/settings.json, so it goes through the
-estate gateway (ANTHROPIC_BASE_URL, litellm-local on :4000) like this session does.
+Every model call is a `claude -p` child. It reads the estate harness configuration, whose settings
+carry the estate gateway (ANTHROPIC_BASE_URL, litellm-local on :4000) like this session does, so
+the call arrives at the router and the artifact policy decides its tier.
+
+Measured 2026-10-24, two ways a delegated call used to die before the model was ever reached.
+(1) The child was refused by the estate's interactive plan gate: it has no plan tools, so every
+tool call was refused and the delegated planner spent its turns arguing with the gate instead of
+writing a plan. The delegate is the plan authority for its own children -- it validates every step
+(files named, done-check named) and the dispatcher decides a step is done by the done-check exiting
+0 -- so the child runs with the interactive plan gate off. (2) The child failed at startup
+("error: An unknown error occurred (Unexpected)", exit 1, no output at all) for forty minutes in
+one door and not in another; the environment was identical, so the cause was the CLI's own
+startup, not the estate's. A startup failure costs nothing (the model never ran), so the call is
+retried with backoff and every failure is kept in the usage record: a silent outage became a
+bounded, diagnosable one.
 
 The reality interface (docs/tickets/2026-09-27-reality-interface.md): a builder's attempt is a
 hypothesis; the done-check is reality. A failed attempt is rewound out of the tree (only the
@@ -31,6 +44,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -38,6 +52,26 @@ HOME = Path.home()
 ROOT = Path(os.environ.get("ESTATE_DELEGATE_ROOT", str(HOME / ".estate" / "delegate")))
 TREES = Path(os.environ.get("ESTATE_DELEGATE_TREES", str(HOME / "Documents" / "code")))
 MAX_PARALLEL = 3  # the estate's agent spawn budget
+
+# The estate harness configuration. Its settings carry the router address, so a delegated call
+# that reads it arrives at the router -- and a delegated call that does not arrive at the router
+# is not routed by the artifact policy at all.
+HARNESS_CC = HOME / ".estate" / "harness" / "cc"
+# A CLI that dies at startup is retried: the failure costs nothing (no model ran) and it clears
+# on its own. Three attempts over about 85 seconds, then the failure is reported, not hidden.
+CHILD_STARTUP_ATTEMPTS = 3
+CHILD_STARTUP_BACKOFF_S = (5, 20, 60)
+
+
+def startup_backoff():
+    """Seconds to wait before each retry. Overridable so a test does not wait for the clock."""
+    raw = os.environ.get("ESTATE_DELEGATE_STARTUP_BACKOFF", "")
+    try:
+        values = [float(x) for x in raw.split(",") if x.strip()]
+    except ValueError:
+        values = []
+    return tuple(values) if values else CHILD_STARTUP_BACKOFF_S
+
 
 PLAN_SHAPE = """{
   "branch": "delegate/<slug>",
@@ -222,61 +256,132 @@ def validate_replan(original, replacement):
     return errors
 
 
-def claude(prompt, model, cwd, max_turns, tools, stream=False):
+def child_env():
+    """The environment a delegated model call runs in.
+
+    ESTATE_PLAN_LOCK=off: the estate's plan gate refuses every tool until an interactive agent
+    has declared a plan with a BDD scenario. A delegated child has no plan tools, so the gate
+    refuses it forever -- measured 2026-10-24, the delegated planner spent its whole turn budget
+    arguing with the gate and never wrote a plan. The delegate is the plan authority for its own
+    children (every step names its files and a done-check; validate_plan refuses the rest) and the
+    dispatcher decides a step is done when the done-check exits 0, so the interactive gate is off
+    for the child.
+
+    CLAUDE_CONFIG_DIR: pinned to the estate harness, whose settings carry the router address. A
+    delegated call that does not arrive at the router is not routed by the artifact policy.
+    """
+    env = dict(os.environ)
+    env["ESTATE_PLAN_LOCK"] = "off"
+    if HARNESS_CC.is_dir():
+        env["CLAUDE_CONFIG_DIR"] = str(HARNESS_CC)
+    return env
+
+
+def claude(
+    prompt, model, cwd, max_turns, tools, stream=False, attempts=CHILD_STARTUP_ATTEMPTS
+):
     """One headless model call. Returns (final reply, usage dict, every assistant text).
 
     stream=True reads --output-format stream-json, so every text the model wrote is kept, not
     only the last reply. Measured 2026-09-27 (vendor-self-setup): the planner wrote its plan, then
     a cross-session message arrived and its LAST reply answered that message, so the plan was lost
-    though the model had written it."""
+    though the model had written it.
+
+    A child that dies at startup (exit non-zero, no model output) is retried with backoff: the
+    model never ran, so nothing was spent, and the failure clears on its own. Every startup
+    failure is kept in the usage record under "startup_failures"; when every attempt fails the
+    error names the CLI startup failure instead of returning an empty reply.
+    """
     fmt = ["stream-json", "--verbose"] if stream else ["json"]
-    r = subprocess.run(  # noqa: S603 -- fixed argv (git/claude), no shell
-        [  # noqa: S607 -- git and claude resolve from PATH on purpose
-            "claude",
-            "-p",
-            prompt,
-            "--model",
-            model,
-            "--output-format",
-            *fmt,
-            "--max-turns",
-            str(max_turns),
-            "--permission-mode",
-            "acceptEdits",
-            "--allowedTools",
-            tools,
-        ],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        timeout=3600,
-    )
-    texts, out = [], None
-    for line in r.stdout.splitlines() if stream else [r.stdout]:
-        try:
-            e = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if e.get("type") == "assistant":
-            texts += [
-                c.get("text", "")
-                for c in e.get("message", {}).get("content", [])
-                if c.get("type") == "text"
-            ]
-        elif not stream or e.get("type") == "result":
-            out = e
-    if out is None:
-        return "", {"error": (r.stderr or r.stdout)[-2000:]}, texts
-    usage = out.get("usage", {})
+    env = child_env()
+    startup_failures = []
+    for attempt in range(1, max(1, attempts) + 1):
+        r = subprocess.run(  # noqa: S603 -- fixed argv (git/claude), no shell
+            [  # noqa: S607 -- git and claude resolve from PATH on purpose
+                "claude",
+                "-p",
+                prompt,
+                "--model",
+                model,
+                "--output-format",
+                *fmt,
+                "--max-turns",
+                str(max_turns),
+                "--permission-mode",
+                "acceptEdits",
+                "--allowedTools",
+                tools,
+            ],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=3600,
+            env=env,
+        )
+        texts, out = [], None
+        for line in r.stdout.splitlines() if stream else [r.stdout]:
+            try:
+                e = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if e.get("type") == "assistant":
+                texts += [
+                    c.get("text", "")
+                    for c in e.get("message", {}).get("content", [])
+                    if c.get("type") == "text"
+                ]
+            elif not stream or e.get("type") == "result":
+                out = e
+        if out is not None:
+            usage = out.get("usage", {})
+            return (
+                out.get("result", ""),
+                {
+                    "cost_usd": out.get("total_cost_usd"),
+                    "input_tokens": usage.get("input_tokens"),
+                    "output_tokens": usage.get("output_tokens"),
+                    "turns": out.get("num_turns"),
+                    "startup_failures": startup_failures,
+                },
+                texts or [out.get("result", "")],
+            )
+        if r.returncode == 0:
+            # The child answered and the answer could not be read. Not a startup failure: the
+            # caller decides what to do with an unreadable reply.
+            return (
+                "",
+                {
+                    "error": (r.stderr or r.stdout)[-2000:],
+                    "startup_failures": startup_failures,
+                },
+                texts,
+            )
+        failure = {
+            "attempt": attempt,
+            "exit": r.returncode,
+            "stderr": (r.stderr or r.stdout)[-800:],
+        }
+        startup_failures.append(failure)
+        print(
+            f"warn  delegated model call failed at startup "
+            f"(attempt {attempt}/{max(1, attempts)}, exit {r.returncode}): "
+            f"{failure['stderr'][-200:].strip()}",
+            file=sys.stderr,
+        )
+        if attempt < max(1, attempts):
+            backoff = startup_backoff()
+            delay = backoff[min(attempt - 1, len(backoff) - 1)]
+            time.sleep(delay)
     return (
-        out.get("result", ""),
+        "",
         {
-            "cost_usd": out.get("total_cost_usd"),
-            "input_tokens": usage.get("input_tokens"),
-            "output_tokens": usage.get("output_tokens"),
-            "turns": out.get("num_turns"),
+            "error": (
+                f"the claude CLI failed at startup {len(startup_failures)} times "
+                f"(exit {startup_failures[-1]['exit']}): {startup_failures[-1]['stderr'][-400:]}"
+            ),
+            "startup_failures": startup_failures,
         },
-        texts or [out.get("result", "")],
+        [],
     )
 
 
@@ -395,6 +500,9 @@ def cmd_plan(a):
         usage["routing"] = routing.as_dict()
     # Every text the planner wrote, kept: a lost plan is read back from here, not re-bought.
     (d / "plan-raw.txt").write_text("\n\n---\n\n".join(texts))
+    # The usage record is written before the plan is judged: a failed call is exactly the record
+    # that says why (a CLI that died at startup, a model that answered nothing).
+    (d / "plan-usage.json").write_text(json.dumps(usage))
     plan = find_plan(texts)
     if plan is None:
         print(
@@ -405,7 +513,6 @@ def cmd_plan(a):
     plan.setdefault("branch", f"delegate/{slug}")
     errors = validate(plan)
     (d / "plan.json").write_text(json.dumps(plan, indent=2))
-    (d / "plan-usage.json").write_text(json.dumps(usage))
     print(
         f"plan: {d / 'plan.json'}  steps={len(plan.get('steps', []))}  planner={usage}"
     )
