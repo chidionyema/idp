@@ -8,7 +8,12 @@ description: >-
   only_below_mb=N applies only while free space is under N MB (the scheduled row uses the
   guard's 10G floor). worktrees=true also removes settled agent worktrees: clean, every commit on
   a branch/tag/remote, unlocked, idle 6h, no process inside, via `git worktree remove` without
-  --force (restorable with `git worktree add`). bin/idp-disk-guard reports the pressure; this acts on it.
+  --force (restorable with `git worktree add`). Under a critical floor (DISK_CLEANUP_CRIT_MB,
+  default 10240M free) it also reclaims regenerable toolchain weight: ~/.ollama/models when no
+  ollama server runs, old ~/.nvm/versions/node/*, old ~/.rustup/toolchains/*, old
+  ~/.local/share/claude/versions/* -- keeping the newest of each family, any version the estate's
+  own runtime names, anything a running process holds open, and rustup's default toolchain.
+  bin/idp-disk-guard reports the pressure; this acts on it.
 class: mutate
 args:
   apply: {type: bool, default: false}

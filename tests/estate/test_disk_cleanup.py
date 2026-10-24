@@ -64,6 +64,9 @@ def _run(home: Path, *args: str) -> subprocess.CompletedProcess:
         "DISK_CLEANUP_RUST_ROOTS": str(home / "Documents/code"),
         "DISK_CLEANUP_TMP_ROOT": "",
         "DISK_CLEANUP_SYSTEM_SPOTS": "",
+        # The critical tier is off here: these tests are about the allow-list, and the tier must
+        # not fire because of whatever free space the machine running them happens to have.
+        "DISK_CLEANUP_CRIT_MB": "1",
     }
     return subprocess.run(
         ["bash", str(SCRIPT), *args],
@@ -306,7 +309,7 @@ APPLY_WT = ("true", "false", "0", "true")
 def _age(root: Path, days: float) -> None:
     """Back-date root and everything under it, so the idle and stale windows read it as old."""
     t = os.path.getmtime(root) - days * 86400
-    for d, dirs, files in os.walk(root):
+    for d, _dirs, files in os.walk(root):
         for f in files:
             os.utime(Path(d) / f, (t, t), follow_symlinks=False)
         os.utime(d, (t, t))
@@ -864,3 +867,121 @@ def test_system_spots_print_megabytes_or_unreadable(tmp_path):
     assert re.search(r"  system  \d+M  " + re.escape(str(spot)) + r"\n", p.stdout), (
         p.stdout
     )
+
+
+# THE CRITICAL TIER. Measured 2026-10-24 on the founder's laptop: 7.7Gi free of 113Gi (92% used)
+# with every allow-list cache empty, because the growers were never on it -- ~/.nvm/versions/node
+# 2570M, ~/.rustup/toolchains 2659M, ~/.local/share/claude/versions 545M, ~/.ollama/models 3.5G
+# before the founder killed the laptop's ollama on 2026-09-10. The tier exists for that, and it
+# keeps four things for stated reasons: the newest of a family, a version the estate's own
+# runtime names, anything a running process holds open, and rustup's default toolchain.
+OLD_NODE = ".nvm/versions/node/v20.11.1"
+NEW_NODE = ".nvm/versions/node/v22.15.1"
+OLD_RUST = ".rustup/toolchains/1.70.0-x86_64-apple-darwin"
+DEFAULT_RUST = ".rustup/toolchains/stable-aarch64-apple-darwin"
+OLD_CLAUDE = ".local/share/claude/versions/2.1.307"
+NEW_CLAUDE = ".local/share/claude/versions/2.1.400"
+OLLAMA = ".ollama/models"
+
+
+def _crit_home(tmp_path: Path) -> Path:
+    home = tmp_path / "home"
+    for d in (
+        OLD_NODE,
+        NEW_NODE,
+        OLD_RUST,
+        DEFAULT_RUST,
+        OLD_CLAUDE,
+        NEW_CLAUDE,
+        OLLAMA,
+    ):
+        (home / d).mkdir(parents=True)
+        (home / d / "blob").write_bytes(os.urandom(2 * 1024 * 1024))
+    (home / ".rustup/settings.toml").write_text(
+        '[toolchain]\ndefault_toolchain = "stable"\n'
+    )
+    (home / ".estate/libexec").mkdir(parents=True)
+    return home
+
+
+def _crit_run(home: Path, apply: str = "true", crit_mb: str = "999999999"):
+    env = {
+        **os.environ,
+        "HOME": str(home),
+        "DISK_GUARD_PATH": str(home),
+        "DISK_CLEANUP_RUST_ROOTS": str(home / "Documents/code"),
+        "DISK_CLEANUP_TMP_ROOT": "",
+        "DISK_CLEANUP_SYSTEM_SPOTS": "",
+        "DISK_CLEANUP_CRIT_MB": crit_mb,
+    }
+    return subprocess.run(
+        ["bash", str(SCRIPT), apply, "false"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+
+
+def test_the_critical_tier_is_off_above_the_floor(tmp_path):
+    home = _crit_home(tmp_path)
+    r = _crit_run(home, "true", "1")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "critical tier" not in r.stdout, r.stdout
+    for d in (
+        OLD_NODE,
+        NEW_NODE,
+        OLD_RUST,
+        DEFAULT_RUST,
+        OLD_CLAUDE,
+        NEW_CLAUDE,
+        OLLAMA,
+    ):
+        assert (home / d / "blob").exists(), d
+
+
+def test_the_critical_tier_reclaims_the_old_toolchains_and_keeps_the_rest(tmp_path):
+    home = _crit_home(tmp_path)
+    r = _crit_run(home, "true")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "critical tier" in r.stdout, r.stdout
+    # gone: the superseded node version, the superseded rustup toolchain, the superseded claude
+    # build, and ollama's weights (no ollama server is running in the test)
+    for d in (OLD_NODE, OLD_RUST, OLD_CLAUDE, OLLAMA):
+        assert not (home / d).exists() or not any((home / d).iterdir()), d
+    # kept: the newest of each family, and rustup's default toolchain
+    for d in (NEW_NODE, NEW_CLAUDE, DEFAULT_RUST):
+        assert (home / d / "blob").exists(), d
+    assert "  freed  node-version" in r.stdout, r.stdout
+    assert "  freed  rust-toolchain" in r.stdout, r.stdout
+    assert "  freed  claude-version" in r.stdout, r.stdout
+    assert "  freed  ollama-models" in r.stdout, r.stdout
+    assert "(nvm install v20.11.1)" in r.stdout, r.stdout
+    assert "rustup's default toolchain" in r.stdout, r.stdout
+
+
+def test_the_version_the_estate_runtime_names_is_kept(tmp_path):
+    home = _crit_home(tmp_path)
+    # this is what ~/.estate/libexec/pi-real looks like: a pinned node path
+    (home / ".estate/libexec/pi-real").write_text(
+        '#!/bin/bash\nexec "$HOME"/.nvm/versions/node/v20.11.1/bin/pi "$@"\n'
+    )
+    r = _crit_run(home, "true")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (home / OLD_NODE / "blob").exists(), "the pinned node version must survive"
+    assert "the estate's runtime names it" in r.stdout, r.stdout
+
+
+def test_the_critical_tier_dry_run_reclaims_nothing(tmp_path):
+    home = _crit_home(tmp_path)
+    r = _crit_run(home, "false")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "  would  node-version" in r.stdout, r.stdout
+    for d in (OLD_NODE, OLD_RUST, OLD_CLAUDE, OLLAMA):
+        assert (home / d / "blob").exists(), d
+
+
+def test_a_non_numeric_critical_floor_is_refused(tmp_path):
+    home = _crit_home(tmp_path)
+    r = _crit_run(home, "true", "soon")
+    assert r.returncode == 1 and "REFUSED" in r.stdout, r.stdout
