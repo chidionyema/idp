@@ -20,10 +20,10 @@ documents it points to.
 
 | document | what it is | how long it is |
 |---|---|---|
-| `docs/specs/2026-10-23-estate-as-movie-director-engine.md` | the master spec: vision, laws, 40 requirements, architecture, the two surface integrations, five slices, the delivery contract, the kill criterion | the main read |
+| `docs/specs/2026-10-23-estate-as-movie-director-engine.md` | the master spec: vision, laws, 49 requirements (RN/RD/RT/RP/RI/RG/RB — six each — plus the demo spine DS1–DS7), architecture, the two surface integrations, six slices, the delivery contract, the kill criterion | the main read |
 | `docs/research/2026-10-23-cinematic-agent-interface-research.md` | the research digest: 41 arXiv records, what each one changes, and where the literature has nothing to say | supporting |
 | `docs/reviews/2026-10-23-consultant-review-packet.md` | this file | now |
-| `docs/decisions/0037-…0040-*.md` | four decision records: the four forks that were taken, and what would reverse each | supporting |
+| `docs/decisions/0037-…0041-*.md` | five decision records: the five forks that were taken, and what would reverse each | supporting |
 | `docs/research/2026-10-23-arxiv-cinematic-agent-harvest.json` | the raw harvest: id, title, published date, first sentence for each cited record | evidence |
 
 **Read the honesty ledger first.** Every factual claim in the spec is tagged `[M]` (measured on
@@ -72,10 +72,11 @@ build does not make those two things faster, the film is decoration.
 | the phone | `backstage/packages/app/src/modules/home/FacePage.tsx` | live at `catalogue.mumchimp.com/face/` |
 | the news interrupt | `room/ui/newsRundown.ts` | `shouldInterrupt` — a story already re-cuts the room |
 | the SSE multiplex | `fleetview_backend/{routes,serve}.py` | one endpoint, four frame types |
+| live estate state in the room already | `room/ui/Delivery.tsx`, `room/ui/GreenlaneHud.tsx`, `room/ui/ClaimsPanel.tsx` | the room already shows the real merged→operating beam, the lane's brief and the live claims. The artifact plane extends this pattern to **the thing an agent built**. Note: there is **no iframe in the room today** (`rg -n "iframe" backstage/packages/app/src/modules/room/ui/` → no hits) `[M]` |
 
 ---
 
-## 4. The ten questions the review must answer
+## 4. The thirteen questions the review must answer
 
 Answer each **numbered**, with a verdict and an argument. A verdict is one of: **AGREE**,
 **AGREE WITH CHANGES** (list them), **DISAGREE** (say what you would do instead), or
@@ -135,6 +136,35 @@ flattered.
 document does not mention? Name at least three things the spec is confidently wrong about, if you
 can find them. A review that finds nothing is not a review.
 
+**Q11 — The founder's demo (the one that decides the product).** The founder's words: *"one good
+demo of this is seeing an agent build something in a movie and then seeing the same thing, e.g. UI,
+in real life / realtime."* The spec turns that into law L11 and seven requirements (DS1–DS7): one
+take, no edits; the artifact in the film is the **real** artifact (same sha, same url, same
+process); the build runs through the governed path with a row id for every step; the artifact
+appears *while it is being built*; a failed build looks failed; a stranger can follow it; and it
+re-runs live on demand. Attack it: **is the artifact plane (a live embedded url in the room, §5.8)
+implementable without a second execution boundary and without a mock?** If you believe a picture of
+a UI is the only affordable answer, say so plainly and say what the founder loses — because a
+drawn UI is a theme park, and the founder has been told that risk in writing (RB5).
+
+**Q12 — The cost of "in real life".** The estate's deploy path is minutes (merge → build → Trivy/
+cosign → ghcr → Flux → live) `[M: AGENTS.md §2]`, while the founder's "realtime" implies seconds.
+What is the fastest **real** path to "the artifact is live in the room while it is being built" —
+dev server plus a route to the laptop, a preview deployment, something else? And what does each
+cost, in the founder's browser? Answer with a number and a mechanism, not a preference. This
+question decides DS4 and the demo's shape.
+
+**Q13 — Is the conjunction new?** The founder calls this pioneering: *"innovating and pioneering the
+interaction with agents using film/movies, bleeding edge"*. The spec's §10.5 answers honestly:
+each part exists in the literature (agents making films — `2503.07314v1`, `2603.14790v2`; cinematic
+language in models — `2604.09195v1`; voice steering — `2107.00690v2`; duplex speech —
+`2205.15060v4`; human/agent co-generation of an interface — `2509.13444v2`), and the claim is the
+**conjunction**: a source-id-carrying cinematic render of a live system, where speech is causally
+upstream of behaviour, and the artifact on screen is the real one. Attack it: find the paper that
+already does all three, or say the conjunction is real and name what it is worth. If you think
+the claim is inflated, say exactly which part is inflated — the founder asked for pioneering and
+deserves the truth, not the flattery.
+
 ---
 
 ## 5. Scope of the work
@@ -147,6 +177,8 @@ can find them. A review that finds nothing is not a review.
 * narration that is template-over-ledger, interruptible, and traceable to a source;
 * the referent resolver and the directive path (founder speech → audit → `/nudge`);
 * the `/fleet` integration and the `/face` console strip;
+* the **artifact plane** (§5.8): a live pane in the room showing the real thing an agent built —
+  a real url, a real console, never a picture of it (L11, DS1–DS7);
 * the slice-by-slice delivery, with each acceptance met as written.
 
 **Out of scope**
@@ -185,7 +217,8 @@ a transcript that reported "ALL PASS" for changes that were never in the file.
 | **S1** | the scene: contract, cast, placement, states, the cut | sessions appear in the right state and place; every cut carries its reason; a silent stream reads as silent; ≥ 30 fps with 12 sessions |
 | **S2** | the mouth: template-over-ledger narration, interruptible | every line resolves to a source row; a quiet minute is silent; a failure is narrated as a failure; a barge stops the audio ≤ 250 ms |
 | **S3** | the chair: referents, ambiguity questions, the phone console | RD1–RD6 with transcript evidence; the console works at 390 px; two tabs, one voice |
-| **S4** | optional: the premiere (replay of the frames) | only after S0–S3 are green. **Do not start S4 first.** |
+| **S3.5** | the build: the artifact plane and the flagship demo | DS1–DS7 with the recording and the row ids; the artifact in the room is the real artifact (same sha, same url) |
+| **S4** | optional: the premiere (replay of the frames) | only after S0–S3.5 are green. **Do not start S4 first.** |
 
 **Report format per slice:** what was built, the command and its output that proves each
 acceptance, what was not done, and what you would do differently. "Built" and "operating" are
@@ -196,7 +229,7 @@ different facts; say which one you mean, and prove the one you claim.
 ## 7. How to file the review
 
 Create one issue in `chidionyema/idp`, claim it with `bin/claim-open --title "…"`, and answer
-**Q1–Q10** in it, in order, with a verdict on each and the evidence you used. Attach: the
+**Q1–Q13** in it, in order, with a verdict on each and the evidence you used. Attach: the
 measured numbers you re-checked and the ones that turned out different from `[M]`, and the `[R]`
 claims that did not survive re-verification.
 
@@ -209,6 +242,12 @@ honest answer to Q1 and Q8 may both be "measure this before designing that".
 ## 8. What the founder cares about, in the founder's words
 
 * *"I want to be the director of the movie; the agents are the cast."*
+* *"one good demo of this is seeing an agent build something in a movie and then seeing the same
+  thing, e.g. UI, in real life / realtime"* — the demo is one object seen twice, not a picture of
+  it. That is law L11 and requirements DS1–DS7.
+* *"this is exciting and truly pioneering"*, *"innovating and pioneering the interaction with
+  agents using film/movies, bleeding edge"* — a claim to be tested against the literature, not
+  flattered (§10.5, and the review's Q13).
 * *"best-of-breed bleeding-edge engine"*, *"future proof"* — this is a **business and moat play**,
   not a demo. Say what it is worth, and what it is not worth, plainly.
 * The work surface is `/fleet`, and it must be watchable live. A capability the founder cannot
