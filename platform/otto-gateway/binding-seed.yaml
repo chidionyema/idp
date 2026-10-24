@@ -58,6 +58,21 @@ data:
     -- and carries the untrusted taint, which caps the envelope's authority at T1. The
     -- identifier is read from the vault at run time, exactly like external_id, so it
     -- appears in neither this file nor the table's definition.
+    --
+    -- The last row is the public API door itself, and it was live in the database and in no
+    -- file here -- created by hand before this row existed, so a re-provisioned cluster would
+    -- have answered 401 to every API caller while the running one kept working. That is the
+    -- drift this row removes, not a new capability.
+    --
+    -- Two things about its shape. outbound_secret_ref is NULL on purpose: this channel has no
+    -- address to push an answer to, so it is pullable, and the answer is read back by task id at
+    -- GET /turns/<id> -- the rule the HTTPRoute beside this file carries. And its allow-list
+    -- names the caller the estate's own surfaces present, because that entry is what the turn
+    -- is answered with: an unlisted caller normalises to an unknown principal, the untrusted
+    -- taint caps the envelope at T1, and `note` -- the one tool the answering lane calls, which
+    -- records the turn -- is T2. Measured 2026-10-24 on main-111: the door accepted the POST
+    -- (202, task id), logged gateway.denied TIER_INSUFFICIENT, and posted its designed answer
+    -- to an unauthorised sender, silence -- which from outside looks exactly like a down door.
     INSERT INTO channel_binding
         (tenant_id, channel, external_id, secret_ref, token_fingerprint, status,
          outbound_secret_ref, principal_allowlist)
@@ -69,7 +84,11 @@ data:
         ('estate', 'telegram', 'alerts-bot:' || :'chat_id',
          'vault://flux-telegram/webhook_secret', :'fingerprint_alerts', 'active',
          'vault://flux-telegram/token',
-         jsonb_build_object(:'chat_id', 'founder'))
+         jsonb_build_object(:'chat_id', 'founder')),
+        ('estate', 'http', 'harness',
+         'vault://otto-staging-telegram/webhook_secret', :'fingerprint', 'active',
+         NULL,
+         jsonb_build_object('harness', 'harness'))
     ON CONFLICT (channel, external_id) DO UPDATE SET
         tenant_id = excluded.tenant_id,
         secret_ref = excluded.secret_ref,
