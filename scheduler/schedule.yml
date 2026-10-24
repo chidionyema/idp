@@ -98,19 +98,14 @@ jobs:
     cwd: ~/.claude/scripts
     skip_on_battery: false
     timeout_s: 1800
-  ai.estate.friction-relay:
-    runs_on: mac
-    runs_on_ref: crew#396
-    command:
-    - ~/.claude/scripts/hc-wrap.sh
-    - friction-relay
-    - /usr/local/bin/python3
-    - ~/.claude/scripts/friction-relay.py
-    - --refresh
-    cron: '*/10 * * * *'
-    cwd: '~'
-    skip_on_battery: false
-    timeout_s: 1800
+  # ai.estate.friction-relay was deleted here, not repaired: it ran
+  # ~/.claude/scripts/hc-wrap.sh, a home-directory script git does not track, and that
+  # directory no longer exists -- so the job exited 78 on every tick and never fired.
+  # The friction ranking it refreshed is derived from ~/.estate/friction/events.jsonl,
+  # which the executor door writes as it acts; a scheduled laptop copy is a second
+  # layer over data that already has an owner (AGENTS.md section 6), and the ranking is
+  # read on demand by the /fleet friction panel. Measured 2026-10-24: no scheduled job
+  # may have its command outside this repo -- 44 of 51 did, and this was the dead one.
   ai.estate.idp:
     runs_on: retire
     runs_on_ref: crew#458
