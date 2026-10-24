@@ -643,6 +643,28 @@ def build_app() -> FastAPI:
 
         return JSONResponse(content=vm.log(limit=limit))
 
+    @app.get("/friction")
+    async def friction(window_hours: float = 24.0):
+        """What the doors refused, ranked -- read from the ledger the door wrote, never re-derived.
+
+        `available: false` means the ledger could not be read (BLIND). It does not mean zero: an
+        empty board and a broken board are different facts, and the page renders them differently.
+        """
+        from fleetview_backend import friction_feed
+
+        return JSONResponse(
+            content=await asyncio.to_thread(friction_feed.summary, window_hours)
+        )
+
+    @app.get("/friction/stream")
+    async def friction_stream(window_hours: float = 24.0):
+        """One `friction` frame per tick, so the tile moves with nobody reloading it."""
+        from fleetview_backend import friction_feed
+
+        return StreamingResponse(
+            friction_feed.stream(window_hours), media_type="text/event-stream"
+        )
+
     @app.get("/efficiency")
     async def efficiency(since: str = "1h"):
         from fleetview_backend import efficiency_feed

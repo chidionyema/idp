@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# idp-ts-owner: of the staged .ts/.tsx paths on stdin, print the ones backstage's tsc owns.
+#
+# WHY THIS EXISTS. The pre-commit hook ran `bin/idp-backstage-tsc` -- a whole-workspace
+# `tsc --noEmit` -- whenever ANY staged file ended in .ts/.tsx. backstage/tsconfig.json includes
+# only `packages/*` and `plugins/*` under backstage/, so a .ts file anywhere else (a pi extension
+# under extensions/, a script under bin/) started a typecheck that could not see the file it was
+# started for.
+#
+# MEASURED COST, 2026-10-23, on this laptop: three consecutive `git commit` calls through the
+# executor door touching extensions/estate-capabilities/index.ts were SIGTERMed at the door's 100s
+# ceiling and threw the staged work away, because the whole-workspace typecheck (borrowing the main
+# checkout's node_modules from a worktree) does not finish inside it. The commit cannot be made
+# through the governed door at all, so the only paths left are `--no-verify` (bypassing every guard)
+# or flailing -- which is the friction this estate keeps re-measuring.
+#
+# The fix is not "skip the typecheck": it is to ask the typecheck about the files it owns. A file
+# under backstage/packages/ or backstage/plugins/ is still gated exactly as before. A file outside
+# that project is named by the hook as unchecked, out loud, with the reason -- visible, never silent.
+set -euo pipefail
+
+owner_of() {
+  case "$1" in
+  backstage/packages/* | backstage/plugins/*) printf '%s\n' "$1" ;;
+  *) : ;; # not this project's file
+  esac
+}
+
+if [ "$#" -gt 0 ]; then
+  # Explicit paths as arguments, for a caller that already has a list.
+  for f in "$@"; do owner_of "$f"; done
+  exit 0
+fi
+
+# Otherwise read paths from stdin, one per line.
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  owner_of "$f"
+done < /dev/stdin

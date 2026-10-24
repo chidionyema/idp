@@ -61,6 +61,28 @@ except ImportError:  # pragma: no cover - datasette-less CI venv
 # caller sends can exceed the door.
 CEILING_SEC = 100
 
+# The free-space floor below which this door refuses to start work. 1500 MB is ~1.3% of the 113 GB
+# volume: below it macOS cannot grow a swapfile, the compile/bundler caches of a single job are enough
+# to fill it, and every other agent's job slows down. Env-overridable for a test and for a machine
+# with a different volume.
+MIN_FREE_MB = int(os.environ.get("ESTATE_MIN_FREE_MB", "1500"))
+
+
+def _free_mb(path: str = "/") -> Optional[int]:
+    """Free space on the volume that holds `path`, in MB, or None if it cannot be read.
+
+    None is not zero: a door that cannot measure must not invent a floor breach and refuse a job
+    that would have run (the estate's rule that an unmeasurable grader is UNKNOWN, never a pass or
+    a fail). The measured case above is a real number, and it is only ever used as a real number.
+    """
+    try:
+        import shutil
+
+        return int(shutil.disk_usage(path).free / (1024 * 1024))
+    except Exception:
+        return None
+
+
 # A floor under the ceiling for the one case where a caller asks for less: a command bounded to
 # zero seconds never runs, which would be a guard that refuses correct work (R38).
 MIN_CEILING_SEC = 1
@@ -79,6 +101,68 @@ _NEVER = (
     re.compile(r"\bwatch\b"),
     re.compile(r"\bgh\s+run\s+watch\b"),
 )
+
+# STEERING, NOT A BLUNT NO. Measured 2026-10-23 over 24h of live transcripts (bin/process-census,
+# job exec-1792784032-4447): 1,277 tool calls were agents asking "has my branch landed yet?" in
+# 418 different commands, 108 of them hand-written `for i in ...; do sleep; done` loops -- and the
+# door that answers it (`bin/lane-where`) did not exist, while `bin/idp-greenlane status` (lane-wide)
+# did and was used 16 times against 1,277 polls. So a plain refusal is not the fix: it would be a
+# guard that rejects correct intent (R38) and leaves the agent to guess again. Each pattern here
+# names the door, and the refusal returns it in `detail` so the caller's next call is the right one
+# rather than a variation of the wrong one. The `_NEVER` patterns below stay blunt because there is
+# no door to name: a command with no return path has no replacement, only a different shape.
+_STEER = (
+    (
+        re.compile(r"gh\s+api\s+[^;|&]*/commits/[^;|&]*/status"),
+        "bin/lane-where <branch> -- one observation, exit 0 landed / 3 pending / 4 red / 2 blind; "
+        "do not poll the status API, the lane converges on its own (AGENTS.md section 2)",
+    ),
+    (
+        re.compile(r"gh\s+api\s+[^;|&]*/check-runs"),
+        "estate_invoke ci.status sha=<sha> (all check runs, failures with URLs), or bin/lane-where <branch> "
+        "for the head verdict",
+    ),
+    (
+        re.compile(r"\bgh\s+run\s+(view|list)\b"),
+        "estate_invoke ci.status sha=<sha> -- it returns the failures with their URLs; `gh run view` "
+        "costs a call per run and is what the census measured 261 times in 24h",
+    ),
+    (
+        re.compile(r"\bgh\s+pr\s+checks\b"),
+        "bin/lane-where <branch>",
+    ),
+    (
+        # A shell loop that waits. The first version of this pattern was `\b(?:for|while)\b[^;|&]*\bsleep\b`,
+        # which failed on the real shape that motivated it (observed live 2026-10-23):
+        #   for i in $(seq 1 40); do if git log -1 --format=%s | grep -q x; then break; fi; sleep 2; done
+        # `[^;|&]*` cannot cross the `;` before `do`, so the loop that was the whole point went
+        # through while the cheaper `gh api` polls were caught. `.*` crosses anything but a newline.
+        re.compile(r"\b(?:for|while)\b.*\bsleep\b"),
+        "remove the loop: ask once (`bin/lane-where <branch>`, estate_invoke lane) and act on the verdict. "
+        "A polling loop is the fourth rung no agent is allowed to invent -- measured 145 calls / 108 forms in 24h",
+    ),
+    (
+        re.compile(r"api\.github\.com/[^\s;|&]*(?:/status|/check-runs)"),
+        "bin/lane-where <branch> (or estate_invoke ci.status sha=<sha>) -- one observation, the lane "
+        "converges on its own; do not poll the GitHub API",
+    ),
+)
+
+
+def _steer_for(command: str) -> Optional[dict]:
+    """The door that answers this command, when the command is a shape a door already owns.
+
+    Returns the refusal body with the replacement in `detail`, or None. Deliberately placed BEFORE
+    the ceiling and `_NEVER` checks: an agent that composed a poll loop should be told which door
+    answers the question, not merely that its command was too long.
+    """
+    for pattern, replacement in _STEER:
+        if pattern.search(command):
+            return _refusal(
+                "this shape already has a door: do not compose it, run the door",
+                detail=replacement,
+            )
+    return None
 
 
 def explicit_ceiling_sec(command: str) -> Optional[int]:
@@ -290,11 +374,99 @@ class LocalExecutor(Executor):
         return job
 
 
-def _refusal(reason: str, *, detail: str = "") -> dict:
+def _refusal(reason: str, *, detail: str = "", **extra) -> dict:
     out = {"accepted": False, "error": reason}
     if detail:
         out["detail"] = detail
+    out.update(extra)
     return out
+
+
+# ---------------------------------------------------------------------------------------------
+# THE FRICTION LEDGER
+#
+# Why this exists: the 24h census (docs/diagnoses/2026-10-23-agent-process-friction.yaml) measured
+# 1,277 polls of an answer a door already had, and separately measured that the estate's own guards
+# can be unsatisfiable through this door (three commits SIGTERMed at the ceiling; a gate budgeting
+# 115s inside a 100s cap, idp#7013). Both classes were found by reading transcripts afterwards.
+# A number reconstructed after the fact is an audit; a number written as it happens is a metric.
+#
+# This ledger is the second kind: one JSON line per refusal and per ceiling kill, at the instant it
+# happens, in a shape that can be counted without judgement. It is the same idea as the census
+# classifier -- the shape is derived deterministically (tool name plus the first tokens of the
+# first argument, with paths, SHAs and numbers placeholdered), never from a model's opinion -- so
+# two identical repetitions collapse to one key and a repetition is a number rather than a memory.
+#
+# It is the raw material a goal/reward signal needs, and it is deliberately not a score: nothing
+# here decides whether work was good, only what the door did and why. Reward logic reads this; it
+# never writes it.
+FRICTION_ENV = "ESTATE_FRICTION"  # a test points this at a temporary file
+
+_SHAPE_RULES = (
+    (re.compile(r"/Users/[^\s'\"]+"), "<path>"),
+    (re.compile(r"(?<![\w/])/(?:[A-Za-z0-9._-]+/){2,}[A-Za-z0-9._-]*"), "<path>"),
+    (re.compile(r"\b[0-9a-f]{7,40}\b"), "<sha>"),
+    (re.compile(r"\b\d+\b"), "<n>"),
+)
+
+
+def friction_path():
+    """Where the ledger lives -- read from the environment, never a literal (LAW 46)."""
+    from pathlib import Path as _Path
+
+    override = os.environ.get(FRICTION_ENV)
+    if override:
+        return _Path(override)
+    return _Path.home() / ".estate" / "friction" / "events.jsonl"
+
+
+def command_shape(command: str, tokens: int = 3, _depth: int = 0) -> str:
+    """The countable identity of a command: its first `tokens` words, placeholdered.
+
+    Deliberately blunt. `gh api repos/x/y/commits/<sha>/status` and the same call for another sha
+    are one shape, because the agent's repetition is the shape and the sha is the incident.
+
+    A LOOP IS THE WORST CASE AND GETS HANDLED EXPLICITLY. "for i in" is true of every loop and is
+    therefore useless as a key: the 145 calls of `for i in ...; do sleep` in the 24h census were all
+    polling the *same* question with different loop counters. So a loop's shape is the loop keyword
+    plus the shape of what it repeats -- still derived from the text alone, by splitting on `do`.
+    """
+    words = (command or "").strip().split()
+    if not words:
+        return ""
+    if _depth < 2 and words[0] in {"for", "while"} and " do " in f" {' '.join(words)} ":
+        inner = f" {' '.join(words)} ".split(" do ", 1)[1].strip()
+        return f"{words[0]} <loop> do {command_shape(inner, tokens, _depth + 1)}"[:120]
+    head = " ".join(words[:tokens])
+    for pattern, replacement in _SHAPE_RULES:
+        head = pattern.sub(replacement, head)
+    return head[:120]
+
+
+def record_friction(kind: str, command: str = "", detail: str = "", **extra) -> None:
+    """Append one line to the friction ledger. Best-effort by construction.
+
+    A ledger that can refuse a command is worse than no ledger: it would put a second, uninspected
+    guard in front of the door it is supposed to observe. Every failure here -- no permission, no
+    disk, a serialisation error -- is swallowed, and the door's answer is unchanged either way.
+    """
+    try:
+        record = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "kind": kind,
+            "shape": command_shape(command),
+        }
+        if detail:
+            record["detail"] = detail[:300]
+        for key, value in extra.items():
+            if value is not None:
+                record[key] = value
+        path = friction_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
+    except Exception:  # noqa: S110, BLE001 - observe the door, never stand in front of it
+        pass
 
 
 def execute_command(
@@ -355,9 +527,48 @@ def execute_command(
     if not isinstance(command, str) or not command.strip():
         return _refusal("empty command")
 
-    # 1. A command with no return path is refused at the door, whatever ceiling is on it.
+    # 0b. A MACHINE WITH NO FREE SPACE CANNOT RUN A JOB, SO THE DOOR REFUSES INSTEAD OF ADDING TO IT.
+    #
+    #     Measured 2026-10-23 on this laptop: 197 MB free of 113 GB, 8 GB of swap exhausted, load
+    #     average 476 -- and 17 pi sessions plus the executor kept accepting work, each one writing
+    #     logs and state into a volume with no room, so every job was slower than the one before it.
+    #     Nothing in the estate refused for lack of space. The reaper (bin/idp-disk-guard, 10 GB
+    #     floor) only ever advised; scheduler/schedule.yml's ai.estate.disk-cleanup was not installed
+    #     on this machine at all, so the advice was never acted on.
+    #
+    #     The refusal is stated in the units the caller can act on (MB free, the floor, and the one
+    #     command that frees space), and the cleanup itself is let through, or the door would refuse
+    #     the only call that fixes the condition it is complaining about (R38).
+    free_mb = _free_mb()
+    if free_mb is not None and free_mb < MIN_FREE_MB and "disk-cleanup" not in command:
+        record_friction(
+            "refuse-disk", command, detail=f"{free_mb} MB free, floor {MIN_FREE_MB} MB"
+        )
+        return _refusal(
+            f"the volume has {free_mb} MB free, under this door's {MIN_FREE_MB} MB floor; a job "
+            "started now makes the machine slower for every other agent running on it. Free space "
+            "first -- the estate's own cleaner is the door that does it",
+            detail="run: estate-execute disk-cleanup apply=true only_below_mb=10240 worktrees=true",
+            free_mb=free_mb,
+            floor_mb=MIN_FREE_MB,
+        )
+
+    # 1. A command whose question a door already answers is steered to that door, not merely
+    # refused: the door is what makes the answer one call instead of a loop.
+    steer = _steer_for(command)
+    if steer:
+        record_friction(
+            "steer",
+            command,
+            detail=steer.get("detail", ""),
+            reason=steer.get("reason"),
+        )
+        return steer
+
+    # 2. A command with no return path is refused at the door, whatever ceiling is on it.
     for pattern in _NEVER:
         if pattern.search(command):
+            record_friction("refuse-wait", command, detail=f"matched {pattern.pattern}")
             return _refusal(
                 "this command waits on something outside the process; the executor runs work, it "
                 "does not park an agent",
@@ -367,6 +578,7 @@ def execute_command(
     # 2. The caller's own ceiling may never exceed the estate ceiling, in any spelling.
     written = explicit_ceiling_sec(command)
     if written is not None and written > CEILING_SEC:
+        record_friction("refuse-ceiling", command, detail=f"written {written}s")
         return _refusal(
             f"a ceiling of {written}s is longer than the {CEILING_SEC}s cap no command in this "
             f"estate may exceed; nothing may be raised, not with a different unit and not with a "
@@ -470,6 +682,18 @@ def _report_failure(
     """
     if exit_code == 0:
         return  # Primitive D learns from failures; a clean exit is not a signature to extract
+    # 124 is the code this estate's supervisor records when IT killed the job at the ceiling
+    # (platform/executor/run.py). That is a guard-versus-guard failure, not the command's fault, and
+    # it is exactly the class that cost three commits on 2026-10-23 -- so it is counted as friction
+    # at the moment it happens rather than rediscovered by reading transcripts a day later.
+    if exit_code == 124:
+        tail = (log_text or "").strip().splitlines()
+        record_friction(
+            "ceiling-kill",
+            command,
+            detail=(tail[-1][:200] if tail else ""),
+            ceiling_sec=CEILING_SEC,
+        )
     try:
         import redis  # lazy: read_job must keep working with no redis installed or reachable
 
@@ -755,6 +979,9 @@ def _refusals_for(
     if not isinstance(command, str) or not command.strip():
         reasons.append(_refusal("empty command"))
         return reasons
+    steer = _steer_for(command)
+    if steer:
+        reasons.append(steer)
     for pattern in _NEVER:
         if pattern.search(command):
             reasons.append(

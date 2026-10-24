@@ -68,7 +68,7 @@ USAGE
   bin/pi-observe --json            # one receipt, for a panel or a bus
   bin/pi-observe --live | --sessions | --repetition
   bin/pi-observe --window-hours 24 --reindex   # re-read the last day from the start
-  bin/pi-observe --install         # a 5-minute LaunchAgent, so this is always on, not a command
+  bin/pi-observe --install         # refuses, and names the scheduler job that runs it instead
   bin/pi-observe --reap            # SIGTERM headless-leaked processes (default: name them only)
 """
 from __future__ import annotations
@@ -91,6 +91,10 @@ SESSIONS = HOME / ".pi" / "agent" / "sessions"
 STATE_DIR = HOME / ".estate" / "pi-observe"
 RECEIPT_DEFAULT = str(STATE_DIR / "latest.json")
 STATE_DEFAULT = str(STATE_DIR / "state.json")
+# The other half of the monitor: the door's own ledger (mcp/plugins/estate_executor.py writes it as
+# refusals and ceiling kills happen). Transcripts say what an agent asked for; the ledger says what
+# the estate's guards did about it, which is the half a reward signal has to be able to trust.
+FRICTION_DEFAULT = str(HOME / ".estate" / "friction" / "events.jsonl")
 
 _PATH_RE = re.compile(r"(/Users/[^/\s\"']+|/home/[^/\s\"']+)")
 _NUM_RE = re.compile(r"\b\d{2,}\b")
@@ -487,7 +491,81 @@ def print_repetition(agg: dict[str, Any], top: int = 15) -> None:
 # ----------------------------------------------------------------- main
 
 
-def one_pass(args: argparse.Namespace, state: dict[str, Any], do_live: bool, do_sess: bool, do_rep: bool) -> tuple[int, dict[str, Any]]:
+def read_friction(path: str, window_hours: float) -> list[dict[str, Any]] | None:
+    """Every ledger line inside the window, newest last. None when the file cannot be read at all.
+
+    A missing file is not blindness: it means the door has refused nothing since the ledger was
+    introduced. An unreadable file IS blindness, because the difference between "no friction" and
+    "no measurement" decides whether an eval may trust a zero.
+    """
+    cutoff = time.time() - window_hours * 3600
+    try:
+        text = Path(path).read_text(errors="replace")
+    except FileNotFoundError:
+        return []
+    except OSError:
+        return None
+    rows: list[dict[str, Any]] = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        try:
+            stamped = dt.datetime.strptime(str(rec.get("ts", "")), "%Y-%m-%dT%H:%M:%SZ")
+            when = stamped.replace(tzinfo=dt.timezone.utc).timestamp()
+        except (TypeError, ValueError):
+            when = None
+        if when is not None and when < cutoff:
+            continue
+        rows.append(rec)
+    return rows
+
+
+def aggregate_friction(rows: list[dict[str, Any]], window_hours: float) -> dict[str, Any]:
+    """Collapse the ledger into counted shapes. Deterministic: the key is (kind, shape)."""
+    by_shape: dict[tuple[str, str], dict[str, Any]] = {}
+    by_kind: dict[str, int] = {}
+    for rec in rows:
+        kind = str(rec.get("kind", "unknown"))
+        shape = str(rec.get("shape", ""))
+        entry = by_shape.setdefault(
+            (kind, shape),
+            {"kind": kind, "shape": shape, "count": 0, "first": rec.get("ts"), "last": None, "detail": ""},
+        )
+        entry["count"] += 1
+        entry["last"] = rec.get("ts") or entry["last"]
+        if rec.get("detail"):
+            entry["detail"] = str(rec["detail"])[:160]
+        by_kind[kind] = by_kind.get(kind, 0) + 1
+    ranked = sorted(by_shape.values(), key=lambda e: (-e["count"], e["kind"], e["shape"]))
+    return {"window_hours": window_hours, "events": len(rows), "by_kind": by_kind, "shapes": ranked}
+
+
+def print_friction(agg: dict[str, Any], path: str, top: int = 15) -> None:
+    print(f"\nfriction at the door over the last {agg['window_hours']:g}h: {agg['events']} event(s) from {path}")
+    if not agg["events"]:
+        print("  none recorded. A zero here is a measurement only if the door was actually used.")
+        return
+    by_kind = ", ".join(f"{k}={v}" for k, v in sorted(agg["by_kind"].items(), key=lambda kv: -kv[1]))
+    print(f"  by kind: {by_kind}")
+    print(f"{'count':>6}  {'kind': <13}  shape")
+    for r in agg["shapes"][:top]:
+        print(f"{r['count']:>6}  {r['kind']: <13}  {r['shape'] or '(unshaped)'}")
+        if r["detail"]:
+            print(f"        {r['detail']}")
+
+
+def one_pass(
+    args: argparse.Namespace,
+    state: dict[str, Any],
+    do_live: bool,
+    do_sess: bool,
+    do_rep: bool,
+    do_fric: bool = False,
+) -> tuple[int, dict[str, Any]]:
     receipt: dict[str, Any] = {"observed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "host": os.uname().nodename}
     rc = 0
     if do_live:
@@ -512,6 +590,13 @@ def one_pass(args: argparse.Namespace, state: dict[str, Any], do_live: bool, do_
                 "in_window": moved.get("in_window", 0),
                 "totals": agg,
             }
+    if do_fric:
+        rows = read_friction(args.friction_path, args.window_hours)
+        if rows is None:
+            receipt["friction"], receipt["blind"] = None, f"cannot read {args.friction_path}"
+            rc = 2
+        else:
+            receipt["friction"] = aggregate_friction(rows, args.window_hours)
     receipt["verdict"] = {0: "ok", 1: "defect", 2: "BLIND"}[rc]
     save_state(args.state, state)
     try:
@@ -535,54 +620,37 @@ def one_pass(args: argparse.Namespace, state: dict[str, Any], do_live: bool, do_
                 print_repetition(receipt["sessions"]["totals"])
         elif do_sess or do_rep:
             print(f"BLIND  {receipt.get('blind')}")
+        if do_fric:
+            if receipt.get("friction") is not None:
+                print_friction(receipt["friction"], args.friction_path)
+            else:
+                print(f"BLIND  {receipt.get('blind')}")
     return rc, receipt
 
 
-LABEL = "com.estate.pi-observe"
-PLIST = HOME / "Library" / "LaunchAgents" / f"{LABEL}.plist"
+def explain_install() -> int:
+    """There is no --install: this runs on the estate's one scheduler, not on launchd.
 
+    The first version of this monitor shipped a `--install` that wrote
+    ~/Library/LaunchAgents/com.estate.pi-observe.plist and bootstrapped it. That was a second
+    scheduling layer beside the estate's one scheduler (scheduler/schedule.yml -> Dagster, crew#989),
+    and it inherited none of what that layer already does: the load gate, skip_on_battery, the
+    circuit breaker after three failures, the concurrency queue and one log per run. A monitor that
+    patches launchd is the exact repetition the monitor exists to measure.
 
-def plist_xml(script: Path) -> str:
-    return f'''<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>{LABEL}</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>{sys.executable}</string>
-    <string>{script}</string>
-    <string>--json</string>
-  </array>
-  <key>StartInterval</key><integer>300</integer>
-  <key>RunAtLoad</key><true/>
-  <key>StandardOutPath</key><string>{STATE_DIR}/observe.log</string>
-  <key>StandardErrorPath</key><string>{STATE_DIR}/observe.log</string>
-</dict>
-</plist>
-'''
-
-
-def install() -> int:
-    """Write and load a LaunchAgent, so the observer runs whether or not anyone asks it to.
-
-    A monitor that must be invoked is a tool, and a tool is what the estate already has too many
-    of: the founder asked for monitoring "like we did with greenlane", which runs on its own. An
-    interval of 300s is chosen against the state file rather than against taste: every pass is
-    incremental, so the cost of a pass is the bytes appended since the last one.
+    The door stays here so that whoever reaches for it is told where the job actually lives, rather
+    than left to re-invent the plist from the docstring. The entry to add is printed below and is
+    also already in scheduler/schedule.yml, so in practice this should be a no-op path.
     """
-    script = Path(__file__).resolve()
-    PLIST.parent.mkdir(parents=True, exist_ok=True)
-    PLIST.write_text(plist_xml(script))
-    print(f"wrote {PLIST}")
-    uid = os.getuid()
-    rc, out = _run(["launchctl", "bootout", f"gui/{uid}/{LABEL}"])
-    rc, out = _run(["launchctl", "bootstrap", f"gui/{uid}", str(PLIST)])
-    print(f"launchctl bootstrap: exit {rc} {out.strip()}")
-    rc2, out2 = _run(["launchctl", "print", f"gui/{uid}/{LABEL}"])
-    state = next((ln.strip() for ln in out2.splitlines() if "state =" in ln), "state = ?")
-    print(f"launchctl print: exit {rc2} {state}")
-    return 0 if rc2 == 0 else 1
+    print(
+        "pi-observe is scheduled by the estate's one scheduler, not by launchd.\n"
+        "Its job is ai.estate.pi-observe in scheduler/schedule.yml: a Dagster job + cron, with the\n"
+        "load gate, the circuit breaker and one log per run. Nothing to install. To see the job:\n"
+        "  dagster job list  # or the Dagster UI\n"
+        "To run one pass by hand exactly as the schedule does:\n"
+        "  /usr/bin/python3 $CODE/idp/bin/pi-observe --json"
+    )
+    return 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -590,6 +658,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--live", action="store_true", help="processes only")
     ap.add_argument("--sessions", action="store_true", help="transcripts only")
     ap.add_argument("--repetition", action="store_true", help="repeated shapes only")
+    ap.add_argument("--friction", action="store_true", help="the door's own ledger: refusals and ceiling kills only")
+    ap.add_argument("--friction-path", default=FRICTION_DEFAULT, help="ledger written by estate_executor (default ~/.estate/friction/events.jsonl)")
     ap.add_argument("--json", action="store_true", help="emit one JSON receipt instead of tables")
     ap.add_argument("--watch", type=float, default=0.0, metavar="SECONDS", help="repeat every N seconds")
     ap.add_argument("--sample", type=float, default=2.0, help="CPU delta window in seconds (default 2)")
@@ -601,14 +671,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--receipt", default=RECEIPT_DEFAULT, help="JSON receipt path")
     ap.add_argument("--state", default=STATE_DEFAULT, help="offsets and totals path")
     ap.add_argument("--reap", action="store_true", help="SIGTERM headless-leaked processes")
-    ap.add_argument("--install", action="store_true", help="write and load a 5-minute LaunchAgent")
+    ap.add_argument("--install", action="store_true", help="refused: the job lives in scheduler/schedule.yml, not launchd")
     args = ap.parse_args(argv)
     if args.install:
-        return install()
-    if args.live or args.sessions or args.repetition:
-        do_live, do_sess, do_rep = args.live, args.sessions, args.repetition
+        return explain_install()
+    if args.live or args.sessions or args.repetition or args.friction:
+        do_live, do_sess, do_rep, do_fric = args.live, args.sessions, args.repetition, args.friction
     else:
         do_live = do_sess = do_rep = True
+        do_fric = False
     if args.reindex:
         try:
             os.unlink(args.state)
@@ -616,11 +687,11 @@ def main(argv: list[str] | None = None) -> int:
             pass
     state = load_state(args.state)
     if not args.watch:
-        return one_pass(args, state, do_live, do_sess, do_rep)[0]
+        return one_pass(args, state, do_live, do_sess, do_rep, do_fric)[0]
     rc = 0
     try:
         while True:
-            rc, receipt = one_pass(args, state, do_live, do_sess, do_rep)
+            rc, receipt = one_pass(args, state, do_live, do_sess, do_rep, do_fric)
             sys.stdout.flush()
             time.sleep(max(1.0, args.watch))
     except KeyboardInterrupt:

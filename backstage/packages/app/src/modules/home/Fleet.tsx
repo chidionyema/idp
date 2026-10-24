@@ -35,6 +35,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import { Chip, EstatePage, Fold, Section, Sheet, Summary } from '../shell';
 import { EfficiencyPanel } from './EfficiencyPanel';
+import { FrictionPanel } from './FrictionPanel';
 import { EstateStrip } from './EstateStrip';
 import { GatesPanel } from './GatesPanel';
 import { openSse, type SseHandle } from './sse';
@@ -477,6 +478,11 @@ export function Fleet() {
       </Section>
       <Section title="Token efficiency (live)">
         <EfficiencyPanel />
+      </Section>
+      {/* What the doors refused, as they refuse it. Above "Sessions" on purpose: the founder's
+          question is what the estate is stopping and why, and that answer should not need a scroll. */}
+      <Section title="Doors (live)">
+        <FrictionPanel />
       </Section>
       <Section title="Sessions">
         <Summary>{board.summary}</Summary>
