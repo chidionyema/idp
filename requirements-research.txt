@@ -18,7 +18,7 @@ jupyter==1.0.0
 ipykernel==6.29.4
 
 # --- experiment tracking ---
-mlflow==3.17.0
+mlflow==3.17.2
 wandb==0.30.0
 
 # --- LLM / LiteLLM (already in main requirements, but pinned here for research) ---
