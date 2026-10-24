@@ -203,6 +203,119 @@
       "capability": "Architecture inside the estate: one of each layer, a spec before the build, a decision record for every fork, and the gates that prove the shape is right.",
       "description": "How architecture is decided and recorded in the estate: one of each layer, spec before build, a decision doc for every fork, and the gates that prove a shape. Use when choosing a shape, not when writing the code.",
       "native": true
+    },
+    "superpowers": {
+      "title": "Superpowers -- plan first, test first, subagent-driven development",
+      "category": "engineering",
+      "repo": "obra/superpowers",
+      "license_file": "LICENSE",
+      "capability": "The staff engineer's daily loop, as skills: brainstorm the approach, write the plan, execute it in steps, drive it with tests, and review the result before it is called done.",
+      "description": "Staff-level engineering practice as skills: brainstorming, plan writing, plan execution, test-driven development, subagent-driven development and skill authoring. Use when starting any non-trivial change, or when a build has to be driven by a plan rather than by improvisation.",
+      "include": [
+        "skills/brainstorming/SKILL.md",
+        "skills/writing-plans/SKILL.md",
+        "skills/executing-plans/SKILL.md",
+        "skills/test-driven-development/SKILL.md",
+        "skills/subagent-driven-development/SKILL.md",
+        "skills/writing-skills/SKILL.md"
+      ],
+      "skill_md_body": "## When to use this\n\nBefore any change that is more than a one-liner, and whenever a build is going wrong:\nthe failure mode this pack removes is an agent that starts editing before it has agreed\nwhat it is building.\n\n## How to use it\n\n1. `{UPSTREAM_DIR}/skills/brainstorming/SKILL.md` - agree the approach before any code.\n2. `{UPSTREAM_DIR}/skills/writing-plans/SKILL.md` - the plan the estate's `delegate-build` consumes.\n3. `{UPSTREAM_DIR}/skills/executing-plans/SKILL.md` - run the plan in steps with checkpoints.\n4. `{UPSTREAM_DIR}/skills/test-driven-development/SKILL.md` - the test decides, not the builder.\n5. `{UPSTREAM_DIR}/skills/subagent-driven-development/SKILL.md` - how a plan is driven by builders.\n6. `{UPSTREAM_DIR}/skills/writing-skills/SKILL.md` - how a pack like this one is written.\n\n## Estate rules that bind this pack\n\n- **Proof, not assertion.** A claim about this skill's effect is a command and its output.\n- **One of each layer.** If the estate already owns the capability, use it; a pack never\n  becomes a second copy of a layer.\n- **Voice first.** A surface the founder cannot speak to and watch live is not finished.\n- **The claim is the contract.** Work lands only against a live claim (AGENTS.md 5)."
+    },
+    "spec-driven": {
+      "title": "Spec-Driven Development -- specify, plan, task, implement, verify",
+      "category": "engineering",
+      "repo": "github/spec-kit",
+      "license_file": "LICENSE",
+      "capability": "GitHub's spec-driven method: a specification template, a plan template, a task breakdown, a checklist generator and the commands that drive them, so an agent works from an agreed spec instead of an impression.",
+      "description": "Spec-driven development templates and commands from GitHub's spec-kit: spec, plan, tasks, checklist, constitution, and the analyze/converge commands that keep a spec honest. Use when a piece of work needs an agreed specification before implementation.",
+      "include": [
+        "templates/spec-template.md",
+        "templates/plan-template.md",
+        "templates/tasks-template.md",
+        "templates/checklist-template.md",
+        "templates/constitution-template.md",
+        "templates/commands/checklist.md",
+        "templates/commands/analyze.md",
+        "templates/commands/converge.md",
+        ".github/skills/code-review/SKILL.md"
+      ],
+      "skill_md_body": "## When to use this\n\nWhen the work is bigger than a bug fix: the spec, the plan and the checklist are what\nthe founder and the agent agree on before the first line of code.\n\n## How to use it\n\n1. `{UPSTREAM_DIR}/templates/spec-template.md` - the spec, written before the plan.\n2. `{UPSTREAM_DIR}/templates/plan-template.md` and `templates/tasks-template.md` - the plan and the task breakdown.\n3. `{UPSTREAM_DIR}/templates/commands/checklist.md` - the checklist that grades \"ready\".\n4. `{UPSTREAM_DIR}/templates/commands/analyze.md` - consistency check across spec, plan and tasks.\n5. `{UPSTREAM_DIR}/templates/commands/converge.md` - bring the three back into line.\n6. `{UPSTREAM_DIR}/.github/skills/code-review/SKILL.md` - the review that closes the loop.\n\n## Estate rules that bind this pack\n\n- **Proof, not assertion.** A claim about this skill's effect is a command and its output.\n- **One of each layer.** If the estate already owns the capability, use it; a pack never\n  becomes a second copy of a layer.\n- **Voice first.** A surface the founder cannot speak to and watch live is not finished.\n- **The claim is the contract.** Work lands only against a live claim (AGENTS.md 5)."
+    },
+    "agent-cookbooks": {
+      "title": "Anthropic's agent cookbook -- prompts, review and research patterns",
+      "category": "agent-runtime",
+      "repo": "anthropics/claude-cookbooks",
+      "license_file": "LICENSE",
+      "capability": "Worked patterns for building agents: a code-reviewer agent, a research lead and subagent pair, and a cookbook audit that grades a prompt against a style guide.",
+      "description": "Worked agent patterns from Anthropic's cookbook: a code-reviewer agent, research lead and subagent prompts, and a cookbook-audit skill that grades a prompt. Use when writing or reviewing an agent prompt, a reviewer, or a research pipeline.",
+      "include": [
+        ".claude/agents/code-reviewer.md",
+        ".claude/skills/cookbook-audit/SKILL.md",
+        ".claude/skills/cookbook-audit/style_guide.md",
+        "patterns/agents/prompts/research_lead_agent.md",
+        "patterns/agents/prompts/research_subagent.md"
+      ],
+      "skill_md_body": "## When to use this\n\nWhen the thing being built is an agent: a reviewer, a research pipeline, a router, a\nvoice surface. These are worked examples, not advice.\n\n## How to use it\n\n1. `{UPSTREAM_DIR}/.claude/agents/code-reviewer.md` - a reviewer agent, written out.\n2. `{UPSTREAM_DIR}/.claude/skills/cookbook-audit/SKILL.md` and `style_guide.md` - grade a prompt against a guide.\n3. `{UPSTREAM_DIR}/patterns/agents/prompts/research_lead_agent.md` - the lead that plans a research run.\n4. `{UPSTREAM_DIR}/patterns/agents/prompts/research_subagent.md` - the subagent that does the reading.\n\nThe estate's own `research` pack governs what a research claim needs; this pack is how\nthe agents that do the reading are written.\n\n## Estate rules that bind this pack\n\n- **Proof, not assertion.** A claim about this skill's effect is a command and its output.\n- **One of each layer.** If the estate already owns the capability, use it; a pack never\n  becomes a second copy of a layer.\n- **Voice first.** A surface the founder cannot speak to and watch live is not finished.\n- **The claim is the contract.** Work lands only against a live claim (AGENTS.md 5)."
+    },
+    "security-engineering": {
+      "title": "Security engineering -- threat modelling, requirements, SAST configuration",
+      "category": "security",
+      "repo": "wshobson/agents",
+      "license_file": "LICENSE",
+      "capability": "Threat modelling as a repeatable craft: attack trees, STRIDE analysis, security requirements extracted from the design, SAST configuration, and a mitigation map that ties each threat to its control.",
+      "description": "Security engineering skills: attack-tree construction, STRIDE analysis patterns, security-requirement extraction, SAST configuration and threat-mitigation mapping. Use when a change touches authentication, secrets, supply chain, input handling or the cluster's trust boundary.",
+      "include": [
+        "plugins/security-scanning/skills/attack-tree-construction/SKILL.md",
+        "plugins/security-scanning/skills/stride-analysis-patterns/SKILL.md",
+        "plugins/security-scanning/skills/security-requirement-extraction/SKILL.md",
+        "plugins/security-scanning/skills/sast-configuration/SKILL.md",
+        "plugins/security-scanning/skills/threat-mitigation-mapping/SKILL.md"
+      ],
+      "skill_md_body": "## When to use this\n\nBefore a change lands in the trust boundary: anything that authenticates, holds a\nsecret, takes input, ships an image or changes what an agent may do.\n\n## How to use it\n\n1. `{UPSTREAM_DIR}/plugins/security-scanning/skills/attack-tree-construction/SKILL.md` - the attack surface.\n2. `.../stride-analysis-patterns/SKILL.md` - the classification of each path.\n3. `.../security-requirement-extraction/SKILL.md` - requirements the design implies.\n4. `.../sast-configuration/SKILL.md` - make the scanner say something true.\n5. `.../threat-mitigation-mapping/SKILL.md` - the control for each threat, named.\n\nThe estate's `estate-secrets`, `break-glass` and `security-scan` intents are the\ncontrols; this pack is how the threats against them are found.\n\n## Estate rules that bind this pack\n\n- **Proof, not assertion.** A claim about this skill's effect is a command and its output.\n- **One of each layer.** If the estate already owns the capability, use it; a pack never\n  becomes a second copy of a layer.\n- **Voice first.** A surface the founder cannot speak to and watch live is not finished.\n- **The claim is the contract.** Work lands only against a live claim (AGENTS.md 5)."
+    },
+    "evaluation-rubrics": {
+      "title": "Evaluation methodology -- rubrics, scoring and improving a score",
+      "category": "verification",
+      "repo": "wshobson/agents",
+      "license_file": "LICENSE",
+      "capability": "How to grade an agent or a model against a rubric, how to write that rubric, and what to do when the score is wrong: the methodology, the rubric reference and the score-improvement loop.",
+      "description": "Evaluation methodology for agents and models: how to build a rubric, how to score against it, and how to raise a score that is too low. Use when a change to a prompt, a model route or a policy has to be graded, not asserted.",
+      "include": [
+        "plugins/plugin-eval/skills/evaluation-methodology/SKILL.md",
+        "plugins/plugin-eval/skills/evaluation-methodology/references/rubrics.md",
+        "plugins/plugin-eval/skills/evaluation-methodology/references/improving-scores.md"
+      ],
+      "skill_md_body": "## When to use this\n\nWhenever the question is \"is this better?\" - a new prompt, a new model route, a new\npolicy. The estate's answer is a rubric and a score, not an opinion.\n\n## How to use it\n\n1. `{UPSTREAM_DIR}/plugins/plugin-eval/skills/evaluation-methodology/SKILL.md` - the method.\n2. `.../references/rubrics.md` - rubric shapes, read before writing one.\n3. `.../references/improving-scores.md` - what to do when the score is low.\n\n## Estate rules that bind this pack\n\n- **Proof, not assertion.** A claim about this skill's effect is a command and its output.\n- **One of each layer.** If the estate already owns the capability, use it; a pack never\n  becomes a second copy of a layer.\n- **Voice first.** A surface the founder cannot speak to and watch live is not finished.\n- **The claim is the contract.** Work lands only against a live claim (AGENTS.md 5)."
+    },
+    "ui-proof": {
+      "title": "Playwright skills -- drive the real page, read the trace, prove the fix",
+      "category": "verification",
+      "repo": "microsoft/playwright",
+      "license_file": "LICENSE",
+      "capability": "Proving a UI change on the real page: drive it with Playwright, read the trace, triage a failure, and read the test results - so a UI claim is a screenshot or a trace, never a description.",
+      "description": "Playwright's own agent skills: driving a page, the trace system guide, triaging a failing test, reading test results, and the Playwright CLI. Use when a surface changed and the only honest proof is the page itself.",
+      "include": [
+        ".claude/skills/playwright-dev/SKILL.md",
+        ".claude/skills/playwright-dev/trace_system_guide.md",
+        ".claude/skills/playwright-triage/SKILL.md",
+        ".claude/skills/playwright-triage/triage.md",
+        ".claude/skills/playwright-test-results/SKILL.md",
+        "packages/playwright-core/src/tools/skills/playwright-cli/SKILL.md"
+      ],
+      "skill_md_body": "## When to use this\n\nAfter any change to a surface the founder can see: the proof is the page, not a\ndescription of the page.\n\n## How to use it\n\n1. `{UPSTREAM_DIR}/.claude/skills/playwright-dev/SKILL.md` - drive the page.\n2. `.../playwright-dev/trace_system_guide.md` - read the trace when it goes wrong.\n3. `.../playwright-triage/SKILL.md` and `triage.md` - triage a failing run.\n4. `.../playwright-test-results/SKILL.md` - read the results an artefact.\n5. `.../playwright-cli/SKILL.md` - the CLI an agent drives.\n\nThe estate's `ui.review` grades token purity; this pack produces the artefact the\ngrade is about.\n\n## Estate rules that bind this pack\n\n- **Proof, not assertion.** A claim about this skill's effect is a command and its output.\n- **One of each layer.** If the estate already owns the capability, use it; a pack never\n  becomes a second copy of a layer.\n- **Voice first.** A surface the founder cannot speak to and watch live is not finished.\n- **The claim is the contract.** Work lands only against a live claim (AGENTS.md 5)."
+    },
+    "k8s-hardening": {
+      "title": "Kubernetes hardening checklist -- the cluster's own security baseline",
+      "category": "infrastructure",
+      "repo": "kubernetes/website",
+      "license_file": "LICENSE",
+      "capability": "The upstream Kubernetes security checklist and pod security standards: the baseline the estate's cluster is held to, so an agent reviews a manifest against the standard rather than against memory.",
+      "description": "Upstream Kubernetes security guidance: the cluster security checklist and pod security standards. Use when a change touches a manifest, a workload's privileges, RBAC, secrets in a cluster, or a node's configuration.",
+      "include": [
+        "content/en/docs/concepts/security/security-checklist.md",
+        "content/en/docs/concepts/workloads/pod-security-standards.md"
+      ],
+      "skill_md_body": "## When to use this\n\nWhen a manifest, a workload's privileges, an RBAC rule or a node's configuration\nchanges. The estate runs Flux on a single node; the standard is what makes that node\nsafe to expose to an agent.\n\n## How to use it\n\n1. `{UPSTREAM_DIR}/content/en/docs/concepts/security/security-checklist.md` - the baseline.\n2. `.../content/en/docs/concepts/workloads/pod-security-standards.md` - what a pod may do.\n\nThe estate's own placement ladder (docs/decisions/0034) decides where a workload runs;\nthis pack decides how safely it runs once it is there.\n\n## Estate rules that bind this pack\n\n- **Proof, not assertion.** A claim about this skill's effect is a command and its output.\n- **One of each layer.** If the estate already owns the capability, use it; a pack never\n  becomes a second copy of a layer.\n- **Voice first.** A surface the founder cannot speak to and watch live is not finished.\n- **The claim is the contract.** Work lands only against a live claim (AGENTS.md 5)."
     }
   }
 }
