@@ -537,6 +537,13 @@ def _refusal(reason: str, *, detail: str = "", **extra) -> dict:
 # here decides whether work was good, only what the door did and why. Reward logic reads this; it
 # never writes it.
 FRICTION_ENV = "ESTATE_FRICTION"  # a test points this at a temporary file
+# Where the bus is. Unset means the laptop's own broker (which is what the door runs beside); an
+# empty string or "off" disables publishing outright, which is how a test or an air-gapped run
+# keeps the ledger purely local.
+BUS_ENV = "ESTATE_BUS_URL"
+BUS_DEFAULT_URL = "nats://127.0.0.1:4222"
+FRICTION_SUBJECT = "estate.friction.v1"
+BUS_TIMEOUT_S = 0.2
 
 _SHAPE_RULES = (
     (re.compile(r"/Users/[^\s'\"]+"), "<path>"),
@@ -579,6 +586,63 @@ def command_shape(command: str, tokens: int = 3, _depth: int = 0) -> str:
     return head[:120]
 
 
+def bus_publish(subject: str, payload: bytes, url: Optional[str] = None) -> bool:
+    """Publish one payload to the estate bus over the core NATS protocol.
+
+    Why this exists. The ledger was a file on this laptop, and the only thing that could read it was
+    a process on the same laptop: when the machine was saturated or the store was corrupt the
+    measurement went blind exactly when it mattered (2026-10-24). A record that only exists where
+    the incident happened is not a record. The bus is shared, so a refusal written here is readable
+    from the fleet surface, from a voice session, and from any other machine.
+
+    Why it is written by hand rather than with a client library: the door must keep working when a
+    dependency is missing, and a thirty-line publisher that speaks the protocol cannot fail to
+    import. The acknowledgement waited for is the server's PONG, so a `True` here means the broker
+    took the bytes -- not that a socket opened.
+
+    Never raises. A bus that is down is a missing copy, never a refused command.
+    """
+    import socket
+    from urllib.parse import urlsplit
+
+    target = url if url is not None else os.environ.get(BUS_ENV, BUS_DEFAULT_URL)
+    if not target or target.strip().lower() in {"off", "none", "disabled"}:
+        return False
+    try:
+        parts = urlsplit(target if "://" in target else f"nats://{target}")
+        host = parts.hostname or "127.0.0.1"
+        port = parts.port or 4222
+        with socket.create_connection((host, port), timeout=BUS_TIMEOUT_S) as sock:
+            sock.settimeout(BUS_TIMEOUT_S)
+            greeting = b""
+            while b"\r\n" not in greeting:
+                chunk = sock.recv(1024)
+                if not chunk:
+                    return False
+                greeting += chunk
+            # proto 1 rejects a client that talks over the server's INFO greeting.
+            if not greeting.startswith(b"INFO "):
+                return False
+            sock.sendall(
+                b'CONNECT {"verbose":false}\r\nPUB '
+                + subject.encode()
+                + b" "
+                + str(len(payload)).encode()
+                + b"\r\n"
+                + payload
+                + b"\r\nPING\r\n"
+            )
+            seen = b""
+            while b"PONG" not in seen:
+                chunk = sock.recv(1024)
+                if not chunk:
+                    return False
+                seen += chunk
+            return True
+    except Exception:  # noqa: S110, BLE001 - a missing copy is not a refused command
+        return False
+
+
 def record_friction(kind: str, command: str = "", detail: str = "", **extra) -> None:
     """Append one line to the friction ledger. Best-effort by construction.
 
@@ -599,8 +663,12 @@ def record_friction(kind: str, command: str = "", detail: str = "", **extra) -> 
                 record[key] = value
         path = friction_path()
         path.parent.mkdir(parents=True, exist_ok=True)
+        line = json.dumps(record, sort_keys=True)
         with path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, sort_keys=True) + "\n")
+            handle.write(line + "\n")
+        # The local file is the durable record; the bus is the shareable one. Best-effort by the
+        # same rule as the append: the door's answer does not depend on either succeeding.
+        bus_publish(FRICTION_SUBJECT, line.encode("utf-8"))
     except Exception:  # noqa: S110, BLE001 - observe the door, never stand in front of it
         pass
 
