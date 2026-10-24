@@ -68,7 +68,7 @@ USAGE
   bin/pi-observe --json            # one receipt, for a panel or a bus
   bin/pi-observe --live | --sessions | --repetition
   bin/pi-observe --window-hours 24 --reindex   # re-read the last day from the start
-  bin/pi-observe --install         # refuses, and names the scheduler job that runs it instead
+  bin/pi-observe --install         # refuses, and names the runner that actually fires on this host
   bin/pi-observe --reap            # SIGTERM headless-leaked processes (default: name them only)
 """
 from __future__ import annotations
@@ -78,6 +78,7 @@ import datetime as dt
 import glob
 import json
 import os
+import plistlib
 import re
 import signal
 import subprocess
@@ -291,6 +292,178 @@ def save_state(path: str, state: dict[str, Any]) -> None:
         tmp.replace(p)
     except OSError:
         pass
+
+
+# ------------------------------------------------------------ who ran this pass
+# A receipt with no author cannot be trusted at a panel. Measured 2026-10-24: the /fleet freshness
+# of this monitor was attributed to the estate's one scheduler while the job that actually fires on
+# this laptop is a launchd one, so "who wrote the number" was a guess. These read the process table
+# and the launchd plists, and the receipt carries the answer with its evidence.
+
+LAUNCHD_DIRS = (
+    HOME / "Library" / "LaunchAgents",
+    Path("/Library/LaunchAgents"),
+    Path("/Library/LaunchDaemons"),
+)
+
+
+def _proc_ancestry(limit: int = 6) -> list[dict[str, Any]]:
+    """This process and its parents, oldest last, from the process table."""
+    chain: list[dict[str, Any]] = []
+    pid = os.getpid()
+    for _ in range(limit):
+        rc, out = _run(["ps", "-o", "ppid=,command=", "-p", str(pid)], timeout=5)
+        if rc != 0 or not out.strip():
+            break
+        ppid_text, _, command = out.strip().splitlines()[0].strip().partition(" ")
+        try:
+            ppid = int(ppid_text)
+        except ValueError:
+            break
+        chain.append({"pid": pid, "ppid": ppid, "command": command[:150]})
+        if ppid <= 1:
+            break
+        pid = ppid
+    return chain
+
+
+def _read_plist(path: str) -> dict[str, Any] | None:
+    """A plist as a dict, parsed by the OS when the stdlib refuses it.
+
+    Measured 2026-10-24: ai.estate.pi-reaper.plist is not well-formed XML -- its own comment
+    contains a double hyphen -- so plistlib raises while launchd and plutil load it fine (plutil
+    -lint: OK). Before this fallback this monitor could not name the job that runs it, which is the
+    blindness the receipt's provenance exists to end.
+    """
+    try:
+        with open(path, "rb") as fh:
+            return plistlib.load(fh)
+    except Exception:
+        pass
+    rc, out = _run(["plutil", "-convert", "json", "-o", "-", path], timeout=5)
+    if rc == 0 and out.strip():
+        try:
+            return json.loads(out)
+        except ValueError:
+            return None
+    return None
+
+
+def launchd_jobs_mentioning(needle: str = "pi-observe") -> list[dict[str, Any]]:
+    """Every launchd job on this host whose command mentions `needle`, with its interval.
+
+    Read from the plists because `ps` does not carry a launchd label. `loaded` is `launchctl list
+    <label>`'s exit code, so "installed on disk" and "loaded in launchd" stay separate facts.
+    """
+    jobs: list[dict[str, Any]] = []
+    for directory in LAUNCHD_DIRS:
+        for path in sorted(glob.glob(str(directory / "*.plist"))):
+            body = _read_plist(path)
+            if body is None:
+                continue
+            args = [str(a) for a in (body.get("ProgramArguments") or [])]
+            blob = " ".join(args + [str(body.get("Program") or "")])
+            if needle not in blob:
+                continue
+            label = str(body.get("Label") or Path(path).stem)
+            rc, _ = _run(["launchctl", "list", label], timeout=5)
+            jobs.append(
+                {
+                    "label": label,
+                    "plist": path,
+                    "interval_s": body.get("StartInterval"),
+                    "program": blob[:200],
+                    "loaded": rc == 0,
+                }
+            )
+    return jobs
+
+
+def _repo_root() -> Path | None:
+    """The checkout this script belongs to, or the installed one it is a copy of.
+
+    The launchd job runs ~/.estate/bin/pi-observe, a copy, so `parents[1]` there is ~/.estate and
+    not a checkout at all. Walk up for a real scheduler/schedule.yml first, then fall back to the
+    estate's checkout, so the same measurement works from the repo, a worktree, and the copy.
+    """
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "scheduler" / "schedule.yml").is_file():
+            return parent
+    code = os.environ.get("CODE")
+    candidates = ([Path(code) / "idp"] if code else []) + [HOME / "Documents" / "code" / "idp"]
+    for base in candidates:
+        if (base / "scheduler" / "schedule.yml").is_file():
+            return base
+    return None
+
+
+def local_scheduler() -> dict[str, Any]:
+    """Whether the estate's own scheduler entry for this job can actually run here."""
+    repo = _repo_root()
+    if repo is None:
+        return {
+            "schedule_yml": "(no checkout found)",
+            "entry_declared": False,
+            "runner": "(unknown)",
+            "runner_executable": False,
+        }
+    schedule = repo / "scheduler" / "schedule.yml"
+    python = repo / ".venv" / "bin" / "python"
+    return {
+        "schedule_yml": str(schedule),
+        "entry_declared": "ai.estate.pi-observe" in schedule.read_text(),
+        "runner": str(python),
+        "runner_executable": python.is_file() and os.access(python, os.X_OK),
+    }
+
+
+def provenance(argv: list[str]) -> dict[str, Any]:
+    """Who wrote this receipt: the caller, the ancestor chain, and the job that owns it.
+
+    The caller is decided from the ancestor whose parent IS launchd, not from "an ancestor reaches
+    pid 1": the executor daemon is itself a launchd job, so a hand run inside it reaches pid 1 too
+    and the first version of this function called that `started_by: launchd` (measured 2026-10-24 on
+    its own output). The owning ancestor's command decides: a command that mentions pi-observe is
+    the monitor's own scheduled job; the executor daemon is the executor; anything else is a shell.
+    """
+    chain = _proc_ancestry()
+    jobs = launchd_jobs_mentioning()
+    owner_link = next((link for link in chain if link["ppid"] == 1), None)
+    owner_cmd = owner_link["command"] if owner_link else ""
+    if owner_link is None:
+        started_by = "unknown"
+    elif "pi-observe" in owner_cmd:
+        started_by = "launchd"
+    elif "executor" in owner_cmd or "estate-execute" in owner_cmd:
+        started_by = "estate-executor"
+    else:
+        started_by = "hand-run"
+    owner = None
+    if started_by == "launchd":
+        owner = next(
+            (j for j in jobs if j["program"] and j["program"].split()[-1][:60] in owner_cmd),
+            jobs[0] if len(jobs) == 1 else None,
+        )
+    return {
+        "written_by": "bin/pi-observe",
+        "pid": os.getpid(),
+        "argv": [Path(sys.argv[0]).name] + list(argv)[:12],
+        "started_by": started_by,
+        "job": None
+        if owner is None
+        else {
+            "label": owner["label"],
+            "interval_s": owner["interval_s"],
+            "loaded": owner["loaded"],
+            "plist": owner["plist"],
+        },
+        "ancestry": chain,
+        "launchd_jobs": [
+            {"label": j["label"], "interval_s": j["interval_s"], "loaded": j["loaded"]}
+            for j in jobs
+        ],
+    }
 
 
 def observe(state: dict[str, Any], budget: int, window_hours: float) -> tuple[dict[str, Any], int]:
@@ -566,7 +739,11 @@ def one_pass(
     do_rep: bool,
     do_fric: bool = False,
 ) -> tuple[int, dict[str, Any]]:
-    receipt: dict[str, Any] = {"observed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "host": os.uname().nodename}
+    receipt: dict[str, Any] = {
+        "observed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "host": os.uname().nodename,
+        "provenance": provenance(sys.argv[1:]),
+    }
     rc = 0
     if do_live:
         rows, summary = live_report(args.sample, args.grace, args.long_lived_after, args.reap)
@@ -629,27 +806,46 @@ def one_pass(
 
 
 def explain_install() -> int:
-    """There is no --install: this runs on the estate's one scheduler, not on launchd.
+    """There is no --install; this names the runner that actually fires, measured here.
 
-    The first version of this monitor shipped a `--install` that wrote
-    ~/Library/LaunchAgents/com.estate.pi-observe.plist and bootstrapped it. That was a second
-    scheduling layer beside the estate's one scheduler (scheduler/schedule.yml -> Dagster, crew#989),
-    and it inherited none of what that layer already does: the load gate, skip_on_battery, the
-    circuit breaker after three failures, the concurrency queue and one log per run. A monitor that
-    patches launchd is the exact repetition the monitor exists to measure.
+    The first version of this monitor shipped an `--install` that wrote
+    ~/Library/LaunchAgents/com.estate.pi-observe.plist and bootstrapped it -- a second scheduling
+    layer beside the estate's one scheduler (scheduler/schedule.yml -> Dagster, crew#989), missing
+    the load gate, skip_on_battery, the circuit breaker and one log per run. The replacement said
+    "scheduled by the estate's one scheduler" -- and that was false in the other direction on this
+    laptop: schedule.yml does declare ai.estate.pi-observe, but the runner its commands need is the
+    repo's .venv, and where that is missing or stale the declared job never starts. What fires
+    instead is a launchd job, which is the duplication this monitor exists to measure.
 
-    The door stays here so that whoever reaches for it is told where the job actually lives, rather
-    than left to re-invent the plist from the docstring. The entry to add is printed below and is
-    also already in scheduler/schedule.yml, so in practice this should be a no-op path.
+    So the door does not assert either home: it reads the launchd plists, checks whether the
+    scheduler's runner is executable here, and prints what it found. A refusal that names a runner
+    which does not run is the friction, not the fix.
     """
-    print(
-        "pi-observe is scheduled by the estate's one scheduler, not by launchd.\n"
-        "Its job is ai.estate.pi-observe in scheduler/schedule.yml: a Dagster job + cron, with the\n"
-        "load gate, the circuit breaker and one log per run. Nothing to install. To see the job:\n"
-        "  dagster job list  # or the Dagster UI\n"
-        "To run one pass by hand exactly as the schedule does:\n"
-        "  /usr/bin/python3 $CODE/idp/bin/pi-observe --json"
-    )
+    jobs = launchd_jobs_mentioning()
+    sched = local_scheduler()
+    print("Nothing to install: a second launchd job for this monitor would be the duplication")
+    print("this monitor exists to measure. What runs it on this host, measured just now:\n")
+    if jobs:
+        for job in jobs:
+            every = f"every {job['interval_s']}s" if job["interval_s"] else "on demand"
+            state = "loaded" if job["loaded"] else "installed, NOT loaded"
+            print(f"  launchd    {job['label']}  {every}, {state}")
+            print(f"             {job['plist']}")
+            print(f"             {job['program']}")
+    else:
+        print("  launchd    none -- no plist on this host mentions pi-observe, so nothing refreshes")
+        print("             this monitor except an agent running it by hand or --watch in a terminal")
+    declared = "declared" if sched["entry_declared"] else "NOT declared"
+    print(f"\n  scheduler  {sched['schedule_yml']}: ai.estate.pi-observe {declared}")
+    if sched["entry_declared"]:
+        if sched["runner_executable"]:
+            print(f"             runner {sched['runner']} is executable here")
+        else:
+            print(f"             runner {sched['runner']} is NOT executable here, so the declared job")
+            print("             cannot start -- the launchd row above is the one that fires")
+    print("\nTo run one pass by hand exactly as the firing job does:")
+    print("  bin/pi-observe --reap --json   # the receipt, with provenance.job naming who wrote it")
+    print("  bin/pi-observe --json          # the same, without reaping")
     return 1
 
 
@@ -671,7 +867,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--receipt", default=RECEIPT_DEFAULT, help="JSON receipt path")
     ap.add_argument("--state", default=STATE_DEFAULT, help="offsets and totals path")
     ap.add_argument("--reap", action="store_true", help="SIGTERM headless-leaked processes")
-    ap.add_argument("--install", action="store_true", help="refused: the job lives in scheduler/schedule.yml, not launchd")
+    ap.add_argument("--install", action="store_true", help="refused: prints the runner that actually fires on this host; installs nothing")
     args = ap.parse_args(argv)
     if args.install:
         return explain_install()

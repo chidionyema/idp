@@ -75,8 +75,22 @@ def test_a_steered_poll_is_recorded_with_the_door_that_answers_it(ledger):
 
 def test_a_bare_wait_is_recorded_as_its_own_kind(ledger):
     door = _door()
-    door.execute_command("sleep 30")
+    door.execute_command("sleep 90")
     assert [r["kind"] for r in _rows(ledger)] == ["refuse-wait"]
+
+
+def test_the_parking_line_is_pinned_on_both_sides():
+    """The line moved 10s -> 60s (6bd80e2bb) and this suite kept asserting a 30s wait was refused:
+    the door was right, the proof was stale, and three red tests sat on main. Pin the number and
+    both sides of it -- through the pure function, so proving the boundary costs no wall clock. A
+    suite that really waited 59s to prove 59s is a pace would itself be the park the door forbids."""
+    door = _door()
+    assert door._PARKING_SLEEP_SEC == 60
+    assert door.parking_sleep("launchctl kickstart -k gui/501/x; sleep 59") is None
+    assert door.parking_sleep("sleep 60") == "60"
+    assert door.parking_sleep("sleep 900") == "900"
+    # unbounded stays refused: the door cannot put a number on it
+    assert door.parking_sleep("sleep $N") == "$N"
 
 
 def test_a_ceiling_above_the_cap_is_recorded(ledger):
@@ -117,7 +131,7 @@ def test_an_unwritable_ledger_does_not_change_the_door_s_answer(tmp_path, monkey
     blocked.mkdir()
     monkeypatch.setenv("ESTATE_FRICTION", str(blocked))
     door = _door()
-    answer = door.execute_command("sleep 30")
+    answer = door.execute_command("sleep 90")
     assert answer["accepted"] is False
     assert "waits on something outside the process" in answer["error"]
 
@@ -182,7 +196,7 @@ def test_the_reader_ranks_repeated_friction(ledger):
     door = _door()
     for sha in ("aaa1111", "bbb2222", "ccc3333"):
         door.execute_command(f"gh api repos/x/y/commits/{sha}/status")
-    door.execute_command("sleep 30")
+    door.execute_command("sleep 90")
     out = _observe(ledger)
     assert out.returncode == 0, out.stderr
     assert "4 event(s)" in out.stdout
@@ -316,4 +330,3 @@ def test_publishing_can_be_turned_off(monkeypatch):
     monkeypatch.setenv("ESTATE_BUS_URL", "off")
     door = _door()
     assert door.bus_publish("estate.friction.v1", b"{}") is False
-

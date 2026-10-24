@@ -106,9 +106,10 @@ _TIMEOUT_RE = re.compile(r"\b(?:timeout|gtimeout)\b([^;|&]*)")
 # retries the founder reads as slowness. The token must now START a command -- start-of-line, `;`,
 # `&`, `|`, `(` -- which is what the watch(1) binary looks like and what `disk-watch.log` is not.
 #
-# `sleep` is refused in any command position for the same reason: `echo x; sleep 900` slipped past
-# the `^\s*sleep` anchor and was SIGTERMed at the 100s ceiling instead of refused (job
-# exec-1792820291-8, 2026-10-24) -- the doctrine held for `sleep 1` and not for `; sleep 900`.
+# A wait is graded in every command position too, but it is not a blunt refusal: a `sleep` after `;`
+# or inside a loop is measured against the parking line below, so a `; sleep 900` is refused where a
+# `; sleep 2` paces a restart (job exec-1792820291-8, 2026-10-24: `; sleep 900` slipped past a
+# `^\s*sleep` anchor and was SIGTERMed at the ceiling instead of refused).
 _NEVER = (
     re.compile(r"(?:^|[;&|(\n])\s*watch\s"),
     re.compile(r"\bgh\s+run\s+watch\b"),
@@ -117,9 +118,16 @@ _NEVER = (
 
 # A sleep is not one thing. `launchctl kickstart -k …; sleep 2; check` paces a restart and is work;
 # `sleep 900` is parking, and a job that parks is the thing this door exists to prevent. The line is
-# drawn at 10s, above every pacing wait in the estate's own scripts and far below any wait for an
-# event, and a sleep whose duration is not a literal number is refused because the door cannot bound
-# it (gate 2: quantify the threshold rather than assert "no sleeping").
+# drawn at 60s (moved from 10s on 2026-10-24, when 10s refused real bounded retries): above the
+# slowest pace in the estate's own scripts (15s bin/idp-verify, 20s
+# .github/workflows/bytesync-web-deploy.yml, 30s bin/idp-oci-login) and well below a park. A sleep
+# whose duration is not a literal number is refused because the door cannot bound it (gate 2:
+# quantify the threshold rather than assert "no sleeping").
+# The limit is stated here so nobody has to rediscover it: text cannot tell a 59s pace from a 59s
+# park, so a park that stays under the line is graded where it can be measured -- a job killed at
+# the ceiling having printed nothing is recorded as a `ceiling-kill` row, not guessed at by this
+# rule. The audit that grades the whole arrangement is
+# docs/diagnoses/2026-10-23-agent-process-friction.yaml.
 # A newline is a command boundary too (a heredoc that IS a program puts each command on its own
 # line), which is why the separator class is `; & | (` AND newline.
 _PARKING_SLEEP_SEC = 60
@@ -140,7 +148,19 @@ def parking_sleep(command: str) -> Optional[str]:
 _HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 
 
-_DATA_WORDS = {"-m", "--message", "-F", "--file", "-f", "--body", "body=", "-q", "--title", "--desc", "--jq"}
+_DATA_WORDS = {
+    "-m",
+    "--message",
+    "-F",
+    "--file",
+    "-f",
+    "--body",
+    "body=",
+    "-q",
+    "--title",
+    "--desc",
+    "--jq",
+}
 _DATA_CMDS = {"echo", "printf", "rg", "grep", "journal", "growmos", "remember"}
 
 
@@ -783,7 +803,7 @@ def execute_command(
                 detail=f"matched {pattern.pattern}",
             )
 
-    # 2b. A sleep long enough to park the job, or one the door cannot bound: 10s is the divider
+    # 2b. A sleep long enough to park the job, or one the door cannot bound: 60s is the divider
     #     between a pace (`kickstart; sleep 2`) and a park (`sleep 900`).
     if parked:
         record_friction("refuse-wait", command, detail=f"sleep {parked}")
