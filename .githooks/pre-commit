@@ -21,6 +21,21 @@ staged_py=$(git diff --cached --name-only --diff-filter=ACM -- '*.py' || true)
 # is the SyntaxError test case for bin/catalog-projection). Exclude it from formatting.
 staged_py=$(echo "$staged_py" | grep -v 'tests/fixtures/projection/broken.py' || true)
 staged_ts=$(git diff --cached --name-only --diff-filter=ACM -- '*.ts' '*.tsx' || true)
+# A whole-workspace typecheck may only be asked about the files that project includes.
+# backstage/tsconfig.json includes `packages/*` and `plugins/*` under backstage/ and nothing else,
+# so a staged .ts anywhere else (extensions/estate-capabilities/index.ts, a script under bin/)
+# used to start a typecheck that could not see it. On 2026-10-23 that stopped work outright: the
+# whole-workspace tsc does not finish inside the executor's 100s ceiling, so three `git commit`
+# calls were SIGTERMed at the door and their staged work thrown away -- leaving `--no-verify` or
+# flailing as the only ways to land a change. bin/idp-ts-owner answers "which of these does this
+# project own?" so the guard keeps its full strength for its own files and says out loud what it
+# is not checking. Detection lives in one testable place rather than in the hook's control flow.
+staged_ts_owned=$(printf '%s\n' "$staged_ts" | "$repo_root/bin/idp-ts-owner" || true)
+if [ -n "$staged_ts_owned" ]; then
+  staged_ts_other=$(printf '%s\n' "$staged_ts" | grep -vxF -f <(printf '%s\n' "$staged_ts_owned") || true)
+else
+  staged_ts_other="$staged_ts"
+fi
 staged_all=$(git diff --cached --name-only --diff-filter=ACM || true)
 # bin/idp-always-on-guard etc: extensionless files under bin/ or .githooks/ are not all shell
 # (a Python script with no .py extension matched here and was shellchecked as bash -- SC1071).
@@ -83,16 +98,21 @@ if [ -n "$staged_py" ]; then
   fi
 fi
 
-# 3. tsc --noEmit on staged .ts/.tsx. Use the project tsconfig so --jsx is set;
-#    per-file tsc invocation needs flags the project tsconfig already provides.
+# 3. tsc --noEmit on staged .ts/.tsx that backstage's project owns. Use the project tsconfig so
+#    --jsx is set; per-file tsc invocation needs flags the project tsconfig already provides.
 #    If only test files are staged, run against their tsconfig if it exists.
-if [ -n "$staged_ts" ]; then
+if [ -n "$staged_ts_owned" ]; then
   # No skip: a worktree borrows the main checkout's node_modules; with none, the commit is refused.
-  echo "  tsc --noEmit (whole project, catches staged)"
+  echo "  tsc --noEmit (backstage workspace, catches staged)"
   "$repo_root/bin/idp-backstage-tsc" || {
     echo "pre-commit: tsc red or blind (project-wide). fix the types, or yarn install in backstage/" >&2
     exit 1
   }
+fi
+# Named, not silent: a .ts file inside no project's tsconfig is not typechecked here, and the
+# commit says so rather than implying a check that did not run.
+if [ -n "$staged_ts_other" ]; then
+  echo "  tsc: no tsconfig owns these, so not typechecked here: $(printf '%s ' $staged_ts_other)"
 fi
 
 # 4. shellcheck on staged shell files (same detection as bin/idp-ci --check: *.sh/*.bash

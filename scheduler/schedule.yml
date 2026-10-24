@@ -29,6 +29,20 @@ jobs:
     cron: 33 5,11,17,23 * * *
     skip_on_battery: false
     timeout_s: 1800
+  # The pi session monitor (--json one pass). Mac-only state: it reads ~/.pi session transcripts and
+  # the process table, neither of which exists on the cluster, so runs_on is mac until transcripts
+  # leave the laptop. It was first shipped with its own launchd plist, which is the second scheduling
+  # layer crew#989 exists to retire; this entry is that monitor's home.
+  ai.estate.pi-observe:
+    runs_on: mac
+    runs_on_ref: crew#989
+    command:
+    - /usr/bin/python3
+    - $CODE/idp/bin/pi-observe
+    - --json
+    cron: '*/5 * * * *'
+    skip_on_battery: true
+    timeout_s: 300
   ai.estate.checkout-drift:
     runs_on: retire
     runs_on_ref: crew#479
