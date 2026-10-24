@@ -796,19 +796,38 @@ def main(argv: Optional[List[str]] = None) -> int:
     sub = ap.add_subparsers(dest="verb", required=True)
 
     p = sub.add_parser("list", help="list the packs")
-    p.add_argument("--pack", default="", help="comma-separated pack ids")
+    p.add_argument(
+        "--pack", nargs="?", const="", default="", help="comma-separated pack ids"
+    )
     p.add_argument("--category", default="")
-    p.add_argument("--json", default="", help="'true' for machine-readable output")
+    p.add_argument(
+        "--json",
+        nargs="?",
+        const="",
+        default="",
+        help="'true' for machine-readable output",
+    )
     p.set_defaults(func=cmd_list)
 
     p = sub.add_parser("verify", help="verify pack checksums against the registry")
-    p.add_argument("--pack", default="", help="comma-separated pack ids")
+    p.add_argument(
+        "--pack", nargs="?", const="", default="", help="comma-separated pack ids"
+    )
     p.set_defaults(func=cmd_verify)
 
     p = sub.add_parser(
         "install", help="install a pack into a runtime's skills directory"
     )
-    p.add_argument("--pack", default="", help="comma-separated pack ids, or 'all'")
+    # nargs="?": the intents pass --pack unconditionally, and an empty value vanishes in
+    # the shell, leaving "--pack" with the next flag behind it. With an optional value the
+    # flag simply means "no filter" instead of refusing the whole run.
+    p.add_argument(
+        "--pack",
+        nargs="?",
+        const="",
+        default="",
+        help="comma-separated pack ids, or 'all'",
+    )
     p.add_argument("--all", action="store_true")
     p.add_argument("--runtime", default="all", choices=sorted(RUNTIMES) + ["all"])
     p.add_argument(
@@ -818,7 +837,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.set_defaults(func=cmd_install)
 
     p = sub.add_parser("vendor", help="re-fetch a pack's upstream files")
-    p.add_argument("--pack", default="", help="comma-separated pack ids")
+    p.add_argument(
+        "--pack", nargs="?", const="", default="", help="comma-separated pack ids"
+    )
     p.add_argument(
         "--apply",
         dest="dry_run",
