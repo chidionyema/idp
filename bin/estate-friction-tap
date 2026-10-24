@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""Materialise the friction bus into the ledger that /fleet and pi-observe already read.
+
+The door (`mcp/plugins/estate_executor.py`) writes every refusal twice: a row in
+`~/.estate/friction/events.jsonl` (the durable copy) and the same bytes on `estate.friction.v1`
+(the shareable copy). /fleet's friction tile and `bin/pi-observe --friction` both read the FILE, so
+until this existed the shareable copy was a dead end: a refusal made by a door in another process --
+or on another machine publishing to this broker -- was invisible on the founder's work surface.
+
+WHY A TAP AND NOT A SECOND RANKING. AGENTS.md section 6: one of each layer. The ranking lives in
+`bin/pi-observe`; the read model is the ledger; the transport is the bus. This file is the join
+between the last two and nothing else -- it appends and dedupes, it does not count, rank or judge.
+
+Deduped on (ts, kind, shape) against what is already on disk, because the door's own backends
+publish AND append: without this the same refusal would be counted twice the moment anything else
+consumed the bus. A row that is already present is not rewritten, so the file stays a set of facts
+rather than a log of deliveries.
+
+Run it detached beside the broker; `platform/estate/libexec/bus-ensure.sh` keeps both alive.
+"""
+from __future__ import annotations
+
+import json
+import os
+import pathlib
+import socket
+import sys
+import time
+
+HOST = os.environ.get("ESTATE_NATS_HOST", "127.0.0.1")
+PORT = int(os.environ.get("ESTATE_NATS_PORT", "4222"))
+SUBJECT = os.environ.get("ESTATE_FRICTION_SUBJECT", "estate.friction.v1")
+LEDGER = pathlib.Path(
+    os.environ.get("ESTATE_FRICTION")
+    or pathlib.Path.home() / ".estate" / "friction" / "events.jsonl"
+)
+PIDFILE = pathlib.Path.home() / ".estate" / "friction-tap.pid"
+
+
+def _key(row: dict) -> tuple:
+    return (row.get("ts"), row.get("kind"), row.get("shape"))
+
+
+def _known() -> set:
+    if not LEDGER.exists():
+        return set()
+    out = set()
+    for line in LEDGER.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.add(_key(json.loads(line)))
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
+def run(seconds: float | None = None) -> int:
+    """Subscribe and append until the deadline (None means forever)."""
+    LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    seen = _known()
+    sock = socket.create_connection((HOST, PORT), timeout=3)
+    sock.settimeout(1.0)
+    greeting = b""
+    while b"\r\n" not in greeting:
+        greeting += sock.recv(1024)
+    if not greeting.startswith(b"INFO "):
+        print(f"BLIND friction-tap: broker said {greeting[:80]!r}", file=sys.stderr)
+        return 2
+    sock.sendall(b'CONNECT {"verbose":false}\r\nSUB ' + SUBJECT.encode() + b" 1\r\nPING\r\n")
+
+    deadline = None if seconds is None else time.monotonic() + seconds
+    written = 0
+    buf = b""
+    while deadline is None or time.monotonic() < deadline:
+        try:
+            buf += sock.recv(65536)
+        except socket.timeout:
+            continue
+        while True:
+            at = buf.find(b"MSG ")
+            if at == -1:
+                break
+            end = buf.find(b"\r\n", at)
+            if end == -1:
+                break
+            size = int(buf[at:end].split()[-1])
+            body = buf[end + 2 : end + 2 + size]
+            if len(body) < size:
+                break
+            buf = buf[end + 2 + size :]
+            try:
+                row = json.loads(body)
+            except json.JSONDecodeError:
+                continue
+            key = _key(row)
+            if key in seen:
+                continue
+            seen.add(key)
+            with LEDGER.open("a") as handle:
+                handle.write(json.dumps(row, sort_keys=True) + "\n")
+            written += 1
+    sock.close()
+    print(f"friction-tap: appended {written} row(s) to {LEDGER}")
+    return 0
+
+
+def main() -> int:
+    args = sys.argv[1:]
+    if "--once" in args:
+        return run(seconds=float(args[args.index("--once") + 1]) if len(args) > 1 else 2.0)
+    # Detached: this outlives the job that started it, like the broker it reads.
+    if os.fork() > 0:
+        time.sleep(0.2)
+        return 0
+    os.setsid()
+    if os.fork() > 0:
+        os._exit(0)
+    os.dup2(os.open(os.devnull, os.O_RDONLY), 0)
+    log = os.open(
+        pathlib.Path.home() / ".estate" / "friction-tap.log",
+        os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+        0o644,
+    )
+    os.dup2(log, 1)
+    os.dup2(log, 2)
+    PIDFILE.write_text(str(os.getpid()))
+    return run()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
