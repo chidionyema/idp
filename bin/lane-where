@@ -117,7 +117,22 @@ def main() -> int:
          "refs/heads/main:refs/remotes/origin/main"])
     rc, _ = run(["git", "merge-base", "--is-ancestor", head, f"origin/main"])
     landed = head == main_sha or rc == 0
+    # SQUASH-LANDING MAKES ANCESTRY LIE. The greenlane lands a lane by squash, so the lane's head
+    # commit is never an ancestor of main even though its content is -- measured 2026-10-24: this
+    # door answered "NOT in main" for a change that had landed minutes earlier as #7039, which is
+    # precisely the answer that makes an agent redo work and raise a second, conflicting PR. The
+    # subject line survives a squash (it becomes the squash commit's subject), so the second test is
+    # the subject shared by the lane head and some commit on main.
+    if not landed:
+        subject = run(["git", "log", "-1", "--format=%s", head])[1].strip()
+        if subject:
+            seen = run(["git", "log", "origin/main", "-F", f"--grep={subject}",
+                        "--format=%h", "-1"])[1].strip()
+            if seen:
+                landed = True
+                receipt["landed_by"] = f"subject match at {seen} (squash-landed; head is not an ancestor)"
     receipt["landed"] = landed
+    receipt.setdefault("landed_by", "ancestry" if landed else None)
 
     status = gh_json(f"repos/{a.repo}/commits/{head}/status")
     st_state, st_url, st_ctx = "absent", None, None
