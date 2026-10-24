@@ -47,6 +47,9 @@ be a faithful view of what the estate actually did — never a dramatisation of 
    the console.
 5. An **evidence layer**: every line and every cut traceable to the event or ledger row that
    caused it.
+6. An **artifact plane**: the real thing an agent built, live in the same room — the same sha, the
+   same url, the same running process. The film never redraws what the estate made, and never
+   shows a picture of it.
 
 ### 1.2 What it is not
 
@@ -133,6 +136,7 @@ These bind the build. A build that breaks one of them is wrong, however good it 
 | **L8** | **Governance.** Every directive is a governed action: attributed author, audit row first, then the action. The Director reads and proposes; it never writes to an agent. | A directive row exists in the audit ledger **before** the nudge is sent. |
 | **L9** | **Placement.** The Director runs on the laptop until the loop is proven (`docs/decisions/0034-*.md`). No cluster workload before S1 is green. | `kubectl get deploy -n voice-router` shows nothing new until S1 is green. |
 | **L10** | **Measured or absent.** Every claim carries `[M]`/`[R]`/`[A]`. `[R]` claims are re-verified before they are built on. | The consultant's first commit re-verifies every `[R]` this spec depends on, and says which were wrong. |
+| **L11** | **The same thing twice.** The artifact on the screen is the real artifact: the same commit, the same url, the same running process. The film never shows a drawing of what the estate built, and never a mock of it. | The frame's artifact reference resolves to a real object — a sha that is on `main`, a url that answers, a process that is running. No fixture, no seed, no screenshot in the artifact path. |
 
 ---
 
@@ -224,6 +228,31 @@ requirements that make the thing worth owning.
 
 **RB5 is the important one.** It is the difference between a build and a business decision. See
 §8.2.
+
+### 4.8 The demo spine — the flagship demo
+
+The founder's demo, in one sentence (2026-10-23): *"one good demo of this is seeing an agent build
+something in a movie and then seeing the same thing, e.g. UI, in real life / realtime."*
+
+That is stricter than "the film is live". The film is not a monitor of the build; it is the **site**
+of it — and the thing the agent built is one object seen twice: the same sha, the same url, the
+same running process, in the room and in the world. A demo where the film draws a UI and a browser
+then shows the real one is two demos; the founder's is one thing.
+
+| id | requirement | acceptance (evidence) |
+|---|---|---|
+| DS1 | The flagship demo is **one take**: the founder speaks a build request, the film shows the agent building it, and the built thing appears live in the same room. No edits, no cuts, no post-production. | A 90-second recording: the utterance, the agent's work, and the artifact's first paint, all inside one live session. |
+| DS2 | The artifact in the film is the **real artifact**. | The frame carries the artifact's reference (sha, url, service); the sha is on `main`; the url answers 200 and serves what the agent built; the room's pane is that url, not a picture of it. |
+| DS3 | The build runs through the **governed path**, and the film shows each gate deciding. | Every step the film narrates has a row id — the claim comment, the `claim-gate` run, the greenlane status, the Flux `lastAppliedRevision` — and the line carries that id (L2). |
+| DS4 | The artifact appears **while it is being built**, not only after it is deployed. | The room's pane shows the running surface within 60 s of the agent's first file write, and it changes again on the next write without a re-deploy. |
+| DS5 | A build that fails looks like a failure, in the film, in place. | The failing test is narrated with its name and reason, the stage shows the failing state, and the film does not cut away. |
+| DS6 | A stranger can watch the demo and say what is being built and whether it worked. | RB3's test, run on this demo, with a person who has never seen the estate. |
+| DS7 | The demo is **reproducible on demand**: the founder says "show me the demo" and the estate runs it again, live, in the ordinary path. | The spoken intent re-runs the scenario against a real runtime and a real claim; nothing about it is scripted theatre. |
+
+**DS2 is the one that decides whether this is pioneering or a theme park.** A cinematic surface that
+*draws* a UI is a picture. A cinematic surface in which the UI is real, live, and the same object
+is a new kind of interface. §10.5 says what in this is new and what is not, and the consultant's
+job is to attack both.
 
 ---
 
@@ -422,6 +451,41 @@ voice router, because:
 
 Escalate to the cluster only when S1 is green and the load number is re-measured.
 
+### 5.8 The two planes — the estate, and the thing it built
+
+The film has two planes, and they obey different laws.
+
+```
+ THE FILM (on /fleet)                         THE REALITY
+ ┌────────────────────────────┐                ┌───────────────────────────────┐
+ │  estate plane  (rendered)  │  source ids    │  the estate, unchanged        │
+ │  cast · camera · narration │ ────────────▶  │  agents build real things     │
+ │  ← from estate.agent events│                │  claim → gate → lane → merge  │
+ ├────────────────────────────┤                │  → image → Flux → live        │
+ │  artifact plane  (live)    │                └───────────────────────────────┘
+ │  the real surface, embedded│                          ▲
+ │  real url · real console   │──────────────────────────┘
+ └────────────────────────────┘   the SAME object, not a picture of it
+```
+
+1. **The estate plane is rendered**, deterministically, from the event spine (L3). This is the
+   film's own material: the cast, the camera, the narration.
+2. **The artifact plane is not rendered.** It is the real surface — an embedded live url, a real
+   console strip, a real diff — placed in the room as a screen in the world. `[M]` there is no
+   iframe in the room today (`rg -n "iframe" backstage/packages/app/src/modules/room/ui/` → no
+   hits), so this is new work; and `[M]` the room already renders the estate's real state in live
+   panels (`room/ui/Delivery.tsx` merged→operating, `room/ui/GreenlaneHud.tsx` the lane's brief,
+   `room/ui/ClaimsPanel.tsx`), so "live truth in the room" is a pattern the estate already owns.
+3. **An artifact enters the artifact plane only by a resolvable reference** — a url, a sha, or a
+   service name that resolves. A screenshot is a mock and is refused (L11, DS2). `[A]`
+4. **The artifact plane is a view, not a door.** It does not accept input that changes the estate.
+   The founder's input goes through the voice path and the governed doors (L5, L8).
+5. **Reachability is part of the design.** A deployed service is reachable from the founder's
+   browser (`catalogue.mumchimp.com/face/` `[R]`); a laptop dev server is not, without a
+   port-forward. So the artifact plane prefers deployed urls, and the build-in-progress view
+   (DS4) needs the dev-server path — or the founder's browser needs a route to the laptop. That is
+   a real question for the consultant, not a detail (§12, Q8).
+
 ---
 
 ## 6. Integration — `/fleet`
@@ -438,6 +502,7 @@ The room already renders cues, stories, refusals and sessions. The film is what 
 | F6 | `room/ui/newsRundown.ts` | `shouldInterrupt` | the story interrupt rule; the scene frame's `interrupted` carries the reason |
 | F7 | `room/ui/NewsDesk.tsx` | the news surface inside the room | unchanged; it is a surface of the same stream |
 | F8 | `room/ui/RadialMenu.tsx` | the radial verbs (nudge / steer / stop / approve / deny) | the steer verb's typed text becomes the same door the voice directive uses (one path, L5) |
+| F9 | the artifact pane (new, in the room's UI) | **no iframe in the room today** (`rg -n "iframe" backstage/packages/app/src/modules/room/ui/` → no hits) `[M]`; the room already renders live estate state in panels (`Delivery.tsx`, `GreenlaneHud.tsx`, `ClaimsPanel.tsx`) `[M]` | the artifact plane's surface: a live pane in the room that resolves the frame's `artifact` reference. It shows the **real** surface — never a picture of it (L11) |
 
 Backend:
 
@@ -466,6 +531,24 @@ The founder's real needs, from the 1,473-message analysis `[R]`, mapped to the f
 Every one of those is a **steer or a question**, not a page of controls. That is why the film is
 the right vehicle: the founder's own words are the interface.
 
+### 6.2 The artifact pane — "in real life", in the same room
+
+The founder's demo has two halves: the agent builds it **in the movie**, and the founder then sees
+**the same thing, in real life, realtime**. The artifact plane (§5.8) is where the second half
+lives, and it has three candidate mechanisms, in rising order of honesty and falling order of
+cheapness:
+
+| mechanism | what the founder sees | cost | verdict |
+|---|---|---|---|
+| a drawn mock of the UI in the room | a picture of a UI, made by us | cheap | **refused** — it is the thing law L11 exists to refuse (decision 0041). It is also the thing the founder's sentence rules out. |
+| a **live embedded url** in the room (an iframe or a live-mounted surface) | the real surface, in the room, updating as the agent writes | needs the founder's browser to reach the artifact, and the room's own auth/CSP to allow it | the proposed default; the pane is switchable off, and a frame whose artifact reference no longer resolves is dropped rather than shown stale |
+| the **url, opened in any browser** — the "in real life" half | the real surface, in the founder's own browser or on the phone | nothing to build; the founder taps or says the url | the floor the demo must clear at minimum: DS2 is satisfied by the sha being on `main` and the url answering 200 |
+
+The demo therefore needs **both**: the pane in the room, and the same url in a plain browser. The
+consultant is asked (review packet Q12) for the fastest **real** path to the second half, with a
+number and a mechanism, because the deploy path is minutes (K10) and the build-in-progress
+surface is seconds (DS4).
+
 ---
 
 ## 7. Integration — the Face
@@ -482,6 +565,12 @@ director's console and the narrator's mouth when the founder is away from the de
    on the desk, which means the phone shows the stage geometry too, or the phone only offers
    *named* targets `[A]` (the phone is too small to resolve "left"; the console shows names, the
    desk shows positions).
+4. **The artifact, "in real life"** — the phone is where the founder's demo lands hardest: the
+   agent built a surface, and the phone can hand it over as a **url** the founder opens in any
+   browser, or show it in the console strip if the surface is phone-shaped. The same
+   `artifact` reference the room resolves; no second mechanism, no picture of it (L11, decision
+   0041). The Face's own catalogue 404 (§7.3) is a reason to keep this to a url and a tap, not a
+   reason to mock.
 
 ### 7.2 One mouth: the sink problem
 
@@ -580,6 +669,17 @@ the Face's directive door.
 
 **Acceptance:** RD1–RD6, all of them, with the transcript evidence; RI2–RI4 on a 390 px viewport;
 two tabs, one voice (RI3).
+
+### S3.5 — The Build (the flagship demo)
+
+**Build:** the artifact plane (a live pane in the room: an embedded url, a real console strip); the
+artifact reference carried in the scene frame (`artifact: {kind, url, sha, ref}`); the demo itself
+as an ordinary estate run — a claim, a lane, a merge, a deploy — narrated from the ledger; the
+founder's "show me the demo" intent, routed through the ordinary intent door.
+
+**Acceptance:** DS1–DS7, all of them, with the recording and the row ids. The demo lands the way
+every other change lands: claimed, gated, merged, deployed — and the film shows each step as it
+happens, because each step is a row.
 
 ### S4 — The Premiere (optional, lowest priority)
 
@@ -699,6 +799,39 @@ Not "we picked the newest model". It means:
   replayed as a film at any time, and a new agent runtime is a new event source, not a new
   director.
 
+### 10.5 What is actually new here — the founder's frame, tested
+
+The founder's framing (2026-10-23): *"this is exciting and truly pioneering"*, *"basically
+innovating and pioneering the interaction with agents using film/movies, bleeding edge"*.
+
+The honest accounting, against the 41 harvested records:
+
+| part of the idea | already in the literature? | record |
+|---|---|---|
+| agents making movies | yes | `2503.07314v1` (multi-agent movie generation), `2501.12909v1` (FilmAgent), `2603.14790v2` (Mind-of-Director: an agent-driven director for previz) |
+| models that know cinematic language | yes | `2604.09195v1`, `2506.21356v2`, `2609.28813v1` |
+| a human steering agents by voice | yes | `2107.00690v2` (locus of control in mixed-initiative systems), `2301.08038v2` (dynamic role allocation), `2509.19152v2` (mixed-initiative visual analytics) |
+| duplex speech with a system | yes | `2205.15060v4`, `2505.15670v4`, `2610.26233v1` (heartbeat thinking) |
+| human and agent co-generating an interface | closest | `2509.13444v2` (DuetUI: a bidirectional context loop for co-generating task-oriented interfaces) |
+
+**So none of the parts is new. The conjunction is the claim.** `[A]` What this spec asserts is
+that these three have never been in one surface: a cinematic view of a live system where every
+frame carries the source id of a real event, where the founder's speech is **causally upstream** of
+the agents' behaviour, and where the artifact the agent built is the real artifact on the screen
+(L11).
+
+That is the claim the consultant must attack, and the attack has two forms: find the paper that
+already does it (the harvest found none — that absence is in the digest's gap section), or build
+it and find that it does not work. The second form is the S0 kill criterion (RB5): if speech
+cannot be made upstream of behaviour, the film is a screensaver, and that is a legitimate outcome.
+
+**Why it is worth pioneering, in the founder's business terms.** The interface to agents is still
+a chat box. A chat box cannot show the estate, cannot be interrupted cleanly, does not scale past
+one session, and tells the founder nothing about what the other twenty agents are doing. The film
+is the first surface where the founder watches many agents and speaks to them in the same breath —
+and where the thing an agent made appears, live, as it is made. That is the product: not a
+renderer, a way of running an estate by talking to it.
+
 ---
 
 ## 11. Risks
@@ -714,6 +847,8 @@ Not "we picked the newest model". It means:
 | K7 | **A pending BDD feature reddens `main`.** | `[M]` `SB_BDD_STRICT=1` on `main`; spec gate refuses unbound features | bind the feature with its implementation (§8.1). |
 | K8 | **The film becomes theatre** — beautiful, true of nothing. | the Deploy River's own failure `[R]` | S0's acceptance; RB5's kill criterion. |
 | K9 | **The founder speaks and nothing happens** (the Face's 404, the router's stalls). | `[R]` 416 API-error turns across 76 of 83 sessions; 311 founder messages were the first reply after an error | the film shows the estate's *real* state, including router trouble — the founder can see the router is down before they speak. |
+| K10 | **The artifact plane is new work, and the deploy path is minutes.** A merge → build → Flux deploy is not seconds. | `[M]` AGENTS.md §2 (merge to main → build → Trivy/cosign → ghcr tag → Flux image-automation → deploy-when-green) | DS4 asks for the artifact *while it is being built*: the dev-server path, with the founder's browser able to reach the laptop (Q8). The demo states which plane it is showing. |
+| K11 | **The demo becomes theatre.** A "cinematic" build that is really a scripted playback would satisfy every requirement except the ones that matter. | the Deploy River's own failure `[R]` | DS1 (one take, no edits), DS2 (the artifact is the real one), DS3 (every step has a row id), DS7 (re-runnable live). A demo that cannot be re-run live is refused. |
 
 ---
 
@@ -730,6 +865,8 @@ Each has a default answer so the build is never blocked waiting for the founder.
 | Q5 | What is the film's minimum cast — one agent or the whole estate? | the whole estate, but the camera only frames what is happening |
 | Q6 | Does S4 (the premiere) exist at all? | no, until S0–S3 are green |
 | Q7 | Who owns the noun "movie" in the estate — does `/fleet` get renamed? | no rename; the estate's surfaces keep their names |
+| Q8 | Which artifact plane does the demo use: the deployed url (real, minutes) or the dev server (live, seconds, needs a route to the laptop)? | the deployed url for the proof (DS2), the dev server for the build-in-progress view (DS4), with the reachability cost stated in the demo itself |
+| Q9 | Is the artifact pane inside the 3D room (a screen in the world) or beside it (a panel)? | a screen in the room — the estate's own idiom — with the real url embedded, and the pane switchable off |
 
 ---
 
@@ -755,10 +892,14 @@ All `[M]` claims in this spec came from these, run on 2026-10-23 in
 | the room's size | `wc -l FleetReactorApp.tsx` → 3019 |
 | the founder's message counts (1,473 msgs / 83 sessions; 416 error turns in 76; 311 first-reply-after-error; 158 Esc; 177 new task; 47 stop; 96 alive; 59 ownership; 73 logs/errors) | read `docs/specs/2026-09-29-fleet-voice-session-control-requirements.md:26,41,45,59,82-83,94` — the figures agree with the document this spec quotes |
 | the Face's figures (64 arg-free, 91 committed intents, 333 laptop intents, "name-token subset" matcher, "only 8 of 64 run without a confirmation", catalogue 404 in production and on the laptop, gaps S1–S7) | read `docs/specs/2026-10-22-face-superpowers-audit.md:22-33,96-100,117,129,132,136-138,196-198,326-407`. **Note:** that file is **untracked** in the tree at the time of writing — another agent's work in flight. Re-verify before relying on it. |
+| the room has no iframe today | `rg -n "iframe" backstage/packages/app/src/modules/room/ui/` → no hits |
+| the room already renders the estate's real state in live panels | `room/ui/Delivery.tsx` (the merged→operating beam), `room/ui/GreenlaneHud.tsx` (the lane's brief), `room/ui/ClaimsPanel.tsx` |
+| the deploy path, and its cost | AGENTS.md §2 — merge to main → build-multiarch → Trivy/cosign → ghcr tag → Flux image-automation → deploy-when-green. Minutes, not seconds `[A]` |
 
 **Not measured, do not assume:** how the page renders 12 sessions at 30 fps; what the founder's
 latency really is end to end; whether the Face's console fits 390 px in practice; whether a
-`sovereign` steer is causal on this laptop (S0's first task).
+`sovereign` steer is causal on this laptop (S0's first task); whether an embedded live url survives
+the room's own auth and CSP (the artifact plane's first unknown).
 
 ## Appendix B — the arXiv records behind §10 and §5
 
@@ -777,3 +918,4 @@ Every id resolves at `https://arxiv.org/abs/<id>`.
 | `docs/decisions/0038-*.md` | one scene contract, one path; the cue topic retires in the same change |
 | `docs/decisions/0039-*.md` | one mouth: the router owns the estate's voice |
 | `docs/decisions/0040-*.md` | the Director runs on the laptop until the loop is proven |
+| `docs/decisions/0041-*.md` | the artifact on screen is the real artifact, not a picture of it |
