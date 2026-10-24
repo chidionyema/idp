@@ -1,0 +1,74 @@
+description: 'A delegated build could change capability class on the way to the model,
+  and the delegation had no tier for the router to hold: the planner and builder named
+  model strings outright, and when the router rescued a dead model group it re-routed
+  through the legacy `default` and `fast` pools, whose members are of two different
+  capability classes. Question: which of those two facts explains the loss of the
+  delegated call''s capability tier? (The evidence below was gathered by reading the
+  pre-change tree; the likelihoods were written per item, before the counts were read.)
+
+  '
+hypotheses:
+- name: H1
+  description: the delegation named models outright, so the router was never asked
+    for a class and there was nothing for it to preserve
+  prior: 0.4
+- name: H2
+  description: the rescue pools are mixed-class, so a rescued delegated call changes
+    class whatever it asked for
+  prior: 0.35
+- name: H3
+  description: the router carried no artifact-class dimension at all, so no tier could
+    be requested, held or preserved
+  prior: 0.25
+evidence:
+- name: the delegation's own model arguments, read from the pre-change tree -- two
+    explicit model names (the planner default and the builder default) and no class
+    request anywhere
+  observed:
+    explicit_model_name: 2
+  likelihoods:
+    H1:
+      explicit_model_name: 0.97
+      other: 0.03
+    H2:
+      explicit_model_name: 0.45
+      other: 0.55
+    H3:
+      explicit_model_name: 0.35
+      other: 0.65
+- name: the router's rescue pools, read from the pre-change platform/llm/config.yaml
+    -- eight member rows across the two legacy groups (default and fast), of which
+    two are a frontier-class model (minimax) and six are a cheap open-weight 120b
+    model on four vendors
+  observed:
+    mixed_class_pool_rows: 8
+  likelihoods:
+    H1:
+      mixed_class_pool_rows: 0.5
+      other: 0.5
+    H2:
+      mixed_class_pool_rows: 0.97
+      other: 0.03
+    H3:
+      mixed_class_pool_rows: 0.6
+      other: 0.4
+- name: the router's configuration carries no artifact-class dimension -- no row,
+    group or alias anywhere in it names an artifact class or a capability tier
+  observed:
+    no_artifact_class_dimension: 1
+  likelihoods:
+    H1:
+      no_artifact_class_dimension: 0.55
+      other: 0.45
+    H2:
+      no_artifact_class_dimension: 0.6
+      other: 0.4
+    H3:
+      no_artifact_class_dimension: 0.97
+      other: 0.03
+posteriors:
+  H1: 0.0233450955
+  H2: 0.9622494388
+  H3: 0.0144054658
+winner: H2
+computed_at: '2026-10-24T11:02:43Z'

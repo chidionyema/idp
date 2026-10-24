@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""delegate-build: a strong model plans, a cheap model builds, and a test decides.
+"""delegate-build: artifact policy routes planning/building; a test decides.
 
 WHY. On 2026-09-27 two builders went out on Opus with a spec and no plan. They explored the repo
 on their own, made their own design calls, and burned tokens. The founder had asked for a cheap
-builder from the start. This makes the right way the only way: the planner (default Opus) reads
-the code once and writes a plan in which every step names its files and its done-check; builders
-(default Sonnet) open only those files; a step is done when its done-check exits 0, not when the
-builder says so.
+builder from the start. Automatic routing starts ordinary planning at mid tier and gated
+mechanical builds at cheap tier; deep/high-risk work uses frontier. Two failed gated attempts
+require frontier re-planning before another build. Explicit planner/builder names remain a
+manual override. A step is done when its done-check exits 0, not when the builder says so.
 
 Every model call is a `claude -p` child. It reads ~/.claude/settings.json, so it goes through the
 estate gateway (ANTHROPIC_BASE_URL, litellm-local on :4000) like this session does.
@@ -25,6 +25,7 @@ step's files) and the next attempt gets the original instructions plus the raw c
   status    slug=<name>
 """
 
+import importlib.util
 import json
 import os
 import re
@@ -56,6 +57,9 @@ PLAN_SHAPE = """{
       "files": ["repo-relative paths this step may create or edit -- and nothing else"],
       "read": ["repo-relative paths the builder may read for context (keep it short)"],
       "depends_on": [],
+      "artifact_class": "build | edit | author",
+      "reasoning": "standard | deep",
+      "risk": "standard | high",
       "instructions": "exact change: signatures, message shapes, names, edge cases. No design left to the builder.",
       "done_check": "shell command run from the repo root; exit 0 means the step is done (a real test that executes the new code)"
     }
@@ -84,6 +88,8 @@ Rules for the plan:
   (go test -run X, pytest path::test, CI=1 yarn backstage-cli package test --watchAll=false file).
   A check that cannot fail is not a check.
 - Small steps: each one a builder can finish in under 30 tool calls.
+- Set artifact_class to build/edit for mechanical gated edits or author for new-file design.
+  Use deep reasoning or high risk only with concrete evidence; standard is the default.
 - The last step opens nothing; opening the PR is the dispatcher's job.
 
 Reply with ONLY the JSON, in this shape:
@@ -110,9 +116,96 @@ When you are done, this must exit 0 from the repo root:
 Run it yourself and fix your change until it passes. Never use --no-verify. Never print secrets.
 Reply with one line: what you changed."""
 
+REPLAN_STEP_PROMPT = """You are the frontier re-planner. A gated builder failed twice.
+Re-plan only step {step_id} from the original plan and the dispatcher's empirical output.
+Do not trust or reproduce the builder's self-assessment. Preserve the step's id, files,
+read scope, depends_on, done_check, artifact_class, reasoning, and risk exactly. You may
+rewrite only its title and instructions to remove ambiguity and name the next hypothesis.
+Read only the declared scope. Reply with ONLY the replacement step JSON object.
+
+Original plan:
+{plan}
+
+Dispatcher-recorded failures:
+{failures}
+"""
+
 
 def kv(argv):
     return dict(a.split("=", 1) for a in argv if "=" in a)
+
+
+def artifact_policy(repo):
+    """Load the canonical checkout policy in both source and installed layouts."""
+    source = Path(repo) / "platform/llm/artifact_tier.py"
+    if not source.exists():
+        source = Path(__file__).resolve().parents[2] / "llm/artifact_tier.py"
+    spec = importlib.util.spec_from_file_location("_estate_artifact_tier", source)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load artifact routing policy from {source}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module.default_policy()
+
+
+def resolve_model(value, request, policy):
+    if value != "auto":
+        return value, None
+    decision = policy.route(request)
+    if decision.alias is None:
+        raise RuntimeError(f"{request.artifact_class} requires no model call")
+    return decision.alias, decision
+
+
+def step_request(step, policy):
+    return policy.request(
+        artifact_class=step.get("artifact_class", "build"),
+        reasoning=step.get("reasoning", "standard"),
+        risk=step.get("risk", "standard"),
+        deterministic_gate=bool(step.get("done_check")),
+    )
+
+
+def find_step(texts, step_id):
+    for text in reversed(texts):
+        match = re.search(r"\{.*\}", text, re.S)
+        if not match:
+            continue
+        try:
+            step = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(step, dict) and step.get("id") == step_id:
+            return step
+    return None
+
+
+def validate_replan(original, replacement):
+    if replacement is None:
+        return ["frontier re-planner wrote no replacement step JSON"]
+    errors = []
+    protected = {
+        field: original.get(field)
+        for field in ("id", "files", "read", "depends_on", "done_check")
+    }
+    protected["read"] = original.get("read", [])
+    protected["depends_on"] = original.get("depends_on", [])
+    protected.update(
+        artifact_class=original.get("artifact_class", "build"),
+        reasoning=original.get("reasoning", "standard"),
+        risk=original.get("risk", "standard"),
+    )
+    for field, expected in protected.items():
+        actual = replacement.get(field)
+        if field in ("artifact_class", "reasoning", "risk"):
+            actual = replacement.get(field, expected)
+        if actual != expected:
+            errors.append(f"replan changed protected field {field}")
+    for field in ("title", "instructions"):
+        if not replacement.get(field):
+            errors.append(f"replan missing {field}")
+    return errors
 
 
 def claude(prompt, model, cwd, max_turns, tools, stream=False):
@@ -268,14 +361,24 @@ def cmd_plan(a):
     spec = Path(os.path.expanduser(a["spec"])).read_text()
     d = ROOT / slug
     d.mkdir(parents=True, exist_ok=True)
+    policy = artifact_policy(repo)
+    planner, routing = resolve_model(
+        a.get("planner", "auto"),
+        policy.request(
+            "plan", a.get("reasoning", "standard"), a.get("risk", "standard")
+        ),
+        policy,
+    )
     text, usage, texts = claude(
         PLANNER_PROMPT.replace("{shape}", PLAN_SHAPE).replace("{spec}", spec),
-        a.get("planner", "claude-opus-5-5"),
+        planner,
         repo,
         int(a.get("max_turns", 60)),
         PLANNER_TOOLS,
         stream=True,
     )
+    if routing:
+        usage["routing"] = routing.as_dict()
     # Every text the planner wrote, kept: a lost plan is read back from here, not re-bought.
     (d / "plan-raw.txt").write_text("\n\n---\n\n".join(texts))
     plan = find_plan(texts)
@@ -322,7 +425,9 @@ def cmd_dispatch(a):
             ],
             check=True,
         )
-    builder = a.get("builder", "claude-sonnet-5")
+    builder = a.get("builder", "auto")
+    replanner = a.get("planner", "auto")
+    policy = artifact_policy(repo) if builder == "auto" else None
     turns = int(a.get("max_turns", 30))
     par = min(int(a.get("parallel", MAX_PARALLEL)), MAX_PARALLEL)
     results = (
@@ -371,7 +476,11 @@ def cmd_dispatch(a):
             == 0
             for f in s["files"]
         }
-        usage_all, empirical = [], []
+        request = step_request(s, policy) if policy else None
+        step_builder, routing = (
+            resolve_model(builder, request, policy) if policy else (builder, None)
+        )
+        usage_all, empirical, replanning = [], [], []
         rc, out = None, None
         for attempt in range(1, attempts + 1):
             prompt = BUILDER_PROMPT.format(
@@ -393,8 +502,10 @@ Output:
 [/EMPIRICAL_STATE]
 The previous attempt's reasoning was deleted on purpose. Form a new hypothesis from the instructions and this output alone."""
             text, usage, _ = claude(
-                prompt, builder, tree, turns, "Read,Edit,Write,Bash"
+                prompt, step_builder, tree, turns, "Read,Edit,Write,Bash"
             )
+            if routing:
+                usage["routing"] = routing.as_dict()
             usage_all.append(usage)
             ok, rc, out = check(s)
             empirical.append({"attempt": attempt, "check_rc": rc, "check_output": out})
@@ -408,17 +519,53 @@ The previous attempt's reasoning was deleted on purpose. Form a new hypothesis f
                         "note": "the builder's own words; unverified, never used as evidence",
                     },
                     "usage": usage_all,
+                    "replanning": replanning,
                 }
             rewind(s["files"], existed, base)
+            if policy and attempt == policy.document["gated_attempts_before_replan"]:
+                replan_decision = policy.replan_after_failures(request, attempt)
+                replan_model = (
+                    replan_decision.alias if replanner == "auto" else replanner
+                )
+                replan_prompt = REPLAN_STEP_PROMPT.format(
+                    step_id=s["id"],
+                    plan=json.dumps(plan, indent=2),
+                    failures=json.dumps(empirical, indent=2),
+                )
+                _, replan_usage, replan_texts = claude(
+                    replan_prompt,
+                    replan_model,
+                    tree,
+                    int(a.get("max_turns", 60)),
+                    PLANNER_TOOLS,
+                    stream=True,
+                )
+                replan_usage["routing"] = replan_decision.as_dict()
+                usage_all.append(replan_usage)
+                replacement = find_step(replan_texts, s["id"])
+                replan_errors = validate_replan(s, replacement)
+                record = {
+                    "after_attempt": attempt,
+                    "routing": replan_decision.as_dict(),
+                    "valid": not replan_errors,
+                }
+                if replan_errors:
+                    record["errors"] = replan_errors
+                    replanning.append(record)
+                    break  # no blind third attempt when frontier re-planning fails
+                s = replacement
+                record["step"] = replacement
+                replanning.append(record)
         return s["id"], {
             "done": False,
-            "attempts": attempts,
+            "attempts": len(empirical),
             "empirical": empirical,
             "scratchpad": {
                 "said": text[-300:],
                 "note": "the builder's own words; unverified, never used as evidence",
             },
             "usage": usage_all,
+            "replanning": replanning,
         }
 
     for wave in waves(plan["steps"]):
@@ -428,6 +575,13 @@ The previous attempt's reasoning was deleted on purpose. Form a new hypothesis f
                 print(
                     f"{sid}: {'done' if res['done'] else 'FAILED'} attempts={res['attempts']} check_rc={last_rc(res)} usage={res['usage']}"
                 )
+                valid_replans = [r for r in res.get("replanning", []) if r.get("valid")]
+                if valid_replans:
+                    plan["steps"] = [
+                        valid_replans[-1]["step"] if step["id"] == sid else step
+                        for step in plan["steps"]
+                    ]
+        (d / "plan.json").write_text(json.dumps(plan, indent=2))
         (d / "results.json").write_text(json.dumps(results, indent=2))
         if not all(results[s["id"]]["done"] for s in wave):
             print(

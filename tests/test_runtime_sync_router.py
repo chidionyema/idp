@@ -69,6 +69,17 @@ def test_a_changed_module_reaches_the_router_and_restarts_it(tmp_path, monkeypat
     assert "deployed com.estate.litellm-local" in notes[0]
 
 
+def test_a_changed_artifact_policy_reaches_the_router(tmp_path, monkeypatch):
+    _estate(tmp_path, live="same", main="same")
+    (tmp_path / "tree/platform/llm/artifact-tier.yaml").write_text("new policy")
+    (tmp_path / "router/modules/artifact-tier.yaml").write_text("old policy")
+    mod = _load(tmp_path, monkeypatch)
+    calls = _stub(mod, monkeypatch, comes_back=True)
+    mod.sync_router()
+    assert (tmp_path / "router/modules/artifact-tier.yaml").read_text() == "new policy"
+    assert calls["kick"] == 1
+
+
 def test_an_unchanged_router_is_left_running(tmp_path, monkeypatch):
     _estate(tmp_path, live="same", main="same")
     mod = _load(tmp_path, monkeypatch)
