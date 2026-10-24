@@ -42,6 +42,32 @@ agent runs, and aborts the gate (spec G1: "a verifier that cannot fail is a defe
 | A probe that bypasses the door is rejected | only `StubAgent` (replay) and the door are adapters |
 | A run that never reached the task is named, not scored | `run.run_suite` writes `cause` and `gradable: false` |
 | A gate graded on its own proofs says so | `run.py` writes `live_exercised`, and prints the note |
+| A suite where nothing was asked is 0.0, never 1.0 | `run.run_suite` counts `runs_never_asked`; `all([])` is True |
+
+## On the founder's surface, live
+
+Founder, 2026-10-23: *"every agent under continuous evaluation and recursive self-improvement; the
+founder surface must monitor evals across the estate in real time."* So the round is not a report
+read afterwards:
+
+* `run.py` writes `rounds.json` (one row per round: `g1`, `perf`, `pass_rate`, `green`, the latency
+  percentiles, the improvement items the next round must close) and, per turn, one line in
+  `reports/live.jsonl` through `gate_live.emit`  --  `round.start`, `run.end`, `round.end`.
+* `gate_live.publish` pushes the same envelope to the estate bus on
+  `estate.agent.founder-agent-eval.<round>.<kind>` when `ESTATE_FOUNDER_EVAL_NATS` names a bus it
+  can reach. With no bus it records `feed.not_published` **in the feed, once per reason**: a feed
+  that stops on a dead bus is indistinguishable from an idle estate.
+* `GET /evals/founder-agent` on FleetView reads the ledger and the feed and renders them on the
+  Reactor (`FounderEvalsPanel`), polled every 5s; `GET /evals/founder-agent/stream` is the same
+  snapshot as SSE, emitted when either file changes. A ledger that is not in the deployment is a
+  **503 naming the path it looked for**  --  never an empty board that reads as green.
+
+Run a round the surface will show:
+
+```bash
+python3 eval/founder-agent/run.py --suite --round 1 --agent door --runs 3
+# then, from the checkout: bin/serve-fleetview, and /fleet renders the round as it runs
+```
 
 ## Round 0  -  measured 2026-10-23, red
 

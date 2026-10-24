@@ -61,6 +61,7 @@ import ConciergeTasks from './ConciergeTasks';
 import KeySync from './KeySync';
 import ResearchFindings from './ResearchFindings';
 import EfficiencyHud from './EfficiencyHud';
+import { FounderEvalsPanel } from '../../home/FounderEvalsPanel';
 // --- ADDED: whether main is green and what each lane's tick decided, and who holds which files
 // right now. AGENTS.md section 5 promises the founder sees every live claim on /fleet; until
 // these two panels no fleet surface rendered either fact. ---
@@ -2071,6 +2072,21 @@ export default function FleetReactorApp() {
       <ErrorBoundary componentName="EfficiencyHud">
         <EfficiencyHud />
       </ErrorBoundary>
+
+      {/* EVALS: every agent is under continuous evaluation (founder 2026-10-23), and this is the
+          surface that reports it while a round runs -- the harness's own verdicts and latencies,
+          polled from /evals/founder-agent, with a 503 rendered as the path it looked for. */}
+      <div
+        data-testid="founder-evals"
+        className="w-full rounded-xl bg-black/55 border border-white/10 backdrop-blur-md p-2 select-none pointer-events-none"
+      >
+        <div className="flex items-baseline gap-2 px-1 pb-1">
+          <span className="text-[12px] font-mono uppercase tracking-widest text-white/60 flex-1">evals · live</span>
+        </div>
+        <ErrorBoundary componentName="FounderEvalsPanel">
+          <FounderEvalsPanel />
+        </ErrorBoundary>
+      </div>
 
       {/* SAFEGUARDS: every gate decision on a real turn, newest first, as it lands on
           the bus. Nothing here is sampled or seeded; an empty panel says the bus has carried none. */}

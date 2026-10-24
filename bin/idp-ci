@@ -1060,6 +1060,42 @@ elif command -v mkdocs >/dev/null; then
   fi
 else say "BLIND docs     mkdocs not installed; the docs site was not built"; fail=1; fi
 
+# 8e. The founder-agent eval harness, run by the estate's own gate (2026-10-24). The harness
+#     landed on main with its proof (`tests/test_founder_agent_gate.py`, 44 tests) and NOTHING ran
+#     it: bin/idp-tests-for collects only `tests/test_*.py` and `sovereign/tests/*/*.py`, both
+#     pytest rungs here named their files one by one, and so a suite whose whole purpose is to
+#     refuse a fake green was itself unenforced -- the "a gate that cannot fail" defect one level
+#     up. It runs the harness's own proof plus the two endpoint suites the founder's live eval
+#     panel reads (503-not-empty, the real ledger's `g1`/`perf` shape, the feed tail). Scoped on a
+#     pull request to the paths that can change the verdict.
+if ! touched eval/founder-agent/ \
+      tests/test_founder_agent_gate.py \
+      backstage/plugins/fleetview-backend/src/fleetview_backend/founder_agent_evals.py \
+      backstage/plugins/fleetview-backend/tests/test_founder_agent_evals_feed.py \
+      backstage/plugins/fleetview-backend/tests/test_founder_agent_evals_http.py \
+      backstage/packages/app/src/modules/home/FounderEvalsPanel.tsx \
+      bin/idp-ci; then
+  say "ok    founder-evals  no eval harness, panel or gate change against $IDP_CI_BASE"
+elif ! "$MPY" -c 'import fastapi, httpx' >/dev/null 2>&1; then
+  say "BLIND founder-evals  fastapi/httpx not installed: pip install -r backstage/plugins/fleetview-backend/requirements.txt"
+else
+  # Two invocations, not one: pytest takes rootdir and its config from the arguments, and
+  # `backstage/plugins/fleetview-backend/pyproject.toml` is where `pythonpath = ["src"]` lives.
+  # Handed the repo-root test file as well, pytest chose the repo root and the endpoint suites
+  # failed to import `fleetview_backend` -- measured, rc=2 on collection. Each root runs itself.
+  fe=$("$MPY" -m pytest -q -p no:cacheprovider $XD "$IDP/tests/test_founder_agent_gate.py" 2>&1); fe_rc=$?
+  fv=$( cd "$IDP/backstage/plugins/fleetview-backend" && "$MPY" -m pytest -q -p no:cacheprovider $XD \
+          tests/test_founder_agent_evals_feed.py tests/test_founder_agent_evals_http.py 2>&1 ); fv_rc=$?
+  if [ "$fe_rc" -eq 0 ] && [ "$fv_rc" -eq 0 ]; then
+    say "ok    founder-evals $(printf '%s' "$fe" | grep -oE '[0-9]+ passed' | head -1) harness proof, $(printf '%s' "$fv" | grep -oE '[0-9]+ passed' | head -1) on the founder's evals endpoints"
+  else
+    say "FAIL  founder-evals harness proof (rc=$fe_rc) / eval endpoints (rc=$fv_rc)"
+    [ "$fe_rc" -eq 0 ] || printf '%s\n' "$fe" | tail -15 | sed 's/^/      /'
+    [ "$fv_rc" -eq 0 ] || printf '%s\n' "$fv" | tail -15 | sed 's/^/      /'
+    fail=1
+  fi
+fi
+
 # 9. Every Flux HelmRelease under platform/ renders clean against the cluster's Kyverno
 #    ClusterPolicies (helm template + the release's own postRenderers), both ways: the
 #    unpatched-chart fixture must be refused. Kyverno judges at admission, after merge;
