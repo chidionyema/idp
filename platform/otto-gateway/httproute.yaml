@@ -67,6 +67,31 @@ spec:
       backendRefs:
         - name: otto-gateway
           port: 8080
+    # The answer to an accepted turn, read back by its task id. `POST /webhook/<channel>` ends at
+    # 202 and hands the caller a task id; the answer is written against that id by the answering
+    # lane, and this is the route that makes it reachable. Without it the read-back was a 404 at
+    # the edge for every caller outside the cluster -- measured 2026-10-24, with the in-cluster
+    # read of the same id answering the door's own JSON instead. A GET under its own prefix, not a
+    # path under /webhook/: reading an answer is not posting an event, and what identifies the
+    # request is the task id, not a channel name.
+    #
+    # No credential is matched here either, for the reason above: the door checks the presented
+    # credential against the binding registry and answers 401 without one, and reports another
+    # tenant's turn as absent rather than forbidden. An edge rule matching a header would put the
+    # customer list back into this file.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /turns/
+          method: GET
+      filters:
+        - type: ExtensionRef
+          extensionRef: { group: traefik.io, kind: Middleware, name: friendly-errors }
+        - type: ExtensionRef
+          extensionRef: { group: traefik.io, kind: Middleware, name: edge-headers }
+      backendRefs:
+        - name: otto-gateway
+          port: 8080
     # There is deliberately no public health path here. otto-golden already answers the exact
     # path /healthz on this same host, and two routes claiming one exact path on one host is
     # a precedence puzzle nobody should have to reason about during an incident. This door's
