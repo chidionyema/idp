@@ -110,9 +110,9 @@ _TIMEOUT_RE = re.compile(r"\b(?:timeout|gtimeout)\b([^;|&]*)")
 # the `^\s*sleep` anchor and was SIGTERMed at the 100s ceiling instead of refused (job
 # exec-1792820291-8, 2026-10-24) -- the doctrine held for `sleep 1` and not for `; sleep 900`.
 _NEVER = (
-    re.compile(r"(?:^|[;&|(])\s*watch\s"),
+    re.compile(r"(?:^|[;&|(\n])\s*watch\s"),
     re.compile(r"\bgh\s+run\s+watch\b"),
-    re.compile(r"(?:^|[;&|(])\s*tail\s+-[fF]\b"),
+    re.compile(r"(?:^|[;&|(\n])\s*tail\s+-[fF]\b"),
 )
 
 # A sleep is not one thing. `launchctl kickstart -k …; sleep 2; check` paces a restart and is work;
@@ -120,8 +120,10 @@ _NEVER = (
 # drawn at 10s, above every pacing wait in the estate's own scripts and far below any wait for an
 # event, and a sleep whose duration is not a literal number is refused because the door cannot bound
 # it (gate 2: quantify the threshold rather than assert "no sleeping").
-_PARKING_SLEEP_SEC = 10
-_SLEEP = re.compile(r"(?:^|[;&|(])\s*sleep\s+([^\s;&|)]+)")
+# A newline is a command boundary too (a heredoc that IS a program puts each command on its own
+# line), which is why the separator class is `; & | (` AND newline.
+_PARKING_SLEEP_SEC = 60
+_SLEEP = re.compile(r"(?:^|[;&|(\n])\s*sleep\s+([^\s;&|)]+)")
 
 
 def parking_sleep(command: str) -> Optional[str]:
@@ -138,13 +140,36 @@ def parking_sleep(command: str) -> Optional[str]:
 _HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 
 
-def strip_heredocs(command: str) -> str:
-    """Remove heredoc bodies: they are stdin to the command, not the command.
+_DATA_WORDS = {"-m", "--message", "-F", "--file", "-f", "--body", "body=", "-q", "--title", "--desc", "--jq"}
+_DATA_CMDS = {"echo", "printf", "rg", "grep", "journal", "growmos", "remember"}
 
-    A commit message passed as a heredoc IS the message, so the waits it quotes are data about
-    waits. Without this the door refused its own fix commit a second time, this time because the
-    backticked example in the heredoc body matched (measured 2026-10-24). Only the marker line's
-    command text is kept; everything between the marker and its terminator is dropped.
+
+def _is_data_context(prefix: str) -> bool:
+    """Is the quoted text about to open an ARGUMENT, or is it a program to run?
+
+    THE ADVERSARIAL REVIEW FOUND THIS HOLE (measured 2026-10-24, live door): stripping every quoted
+    run made `bash -c 'sleep 11'` and `bash <<EOF … sleep 11 … EOF` run a park the door is supposed
+    to refuse, and made `bash -c 'watch --help'` pass where the old guard had refused it. Data and
+    code are the same bytes inside quotes; only the word BEFORE the quote tells them apart, so the
+    door now looks at it and treats the text as CODE unless the caller is a known prose consumer.
+
+    Default is code, because the failure we can survive is a refusal we explain; the failure we
+    cannot survive is a parked agent that the guard said was fine.
+    """
+    tokens = [t for t in re.split(r"[\s;|&()]+", prefix.strip()) if t]
+    if not tokens:
+        return False
+    if tokens[0].rsplit("/", 1)[-1] in _DATA_CMDS:
+        return True
+    return any(token in _DATA_WORDS for token in tokens)
+
+
+def strip_heredocs(command: str) -> str:
+    """Drop a heredoc BODY only where the body is data; keep it where it is a program.
+
+    A commit message written as a heredoc is the message (drop it). `bash <<EOF` is a script the
+    shell will execute (KEEP it, so the waits inside are refused). Same rule as _is_data_context,
+    applied to the line that opens the heredoc.
     """
     lines = command.splitlines()
     kept: list[str] = []
@@ -157,7 +182,10 @@ def strip_heredocs(command: str) -> str:
         if not marker:
             continue
         terminator = marker.group(2)
+        body_is_code = not _is_data_context(line[: marker.start()])
         while index < len(lines) and lines[index].strip() != terminator:
+            if body_is_code:
+                kept.append(lines[index])
             index += 1
         index += 1
     return "\n".join(kept)
@@ -179,6 +207,7 @@ def unquoted(command: str) -> str:
     """
     out: list[str] = []
     quote: Optional[str] = None
+    skip_quote = False
     escaped = False
     for ch in strip_heredocs(command):
         if escaped:
@@ -190,12 +219,24 @@ def unquoted(command: str) -> str:
         if quote:
             if ch == quote:
                 quote = None
+                if not skip_quote:
+                    # A code quote CLOSES as a command boundary, so `bash -c 'x; y'` leaves y at a
+                    # command position rather than mid-argument (measured: without this,
+                    # `bash -c 'watch --help'` passed a guard that refuses `watch`).
+                    out.append(" ; ")
+            if not skip_quote:
+                out.append(ch)
             continue
         if ch in ("'", '"'):
+            # CODE BY DEFAULT: only a prose consumer's quoted argument is data.
+            skip_quote = _is_data_context("".join(out))
             quote = ch
+            if not skip_quote:
+                out.append(" ; ")
             continue
         out.append(ch)
     return "".join(out)
+
 
 # STEERING, NOT A BLUNT NO. Measured 2026-10-23 over 24h of live transcripts (bin/process-census,
 # job exec-1792784032-4447): 1,277 tool calls were agents asking "has my branch landed yet?" in

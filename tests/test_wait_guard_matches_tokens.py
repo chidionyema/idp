@@ -56,12 +56,16 @@ ALLOWED = [
     # fix commit was refused by the guard it was fixing.
     'git commit -m "door: echo start; sleep 900 was not refused; tail -f too"',
     # A heredoc body is stdin, not the command: this is how a commit message is written.
-    'git commit -F - <<MSG\ndocs: echo start; sleep 900 was refused; tail -f too\nMSG',
+    "git commit -F - <<MSG\ndocs: echo start; sleep 900 was refused; tail -f too\nMSG",
     # A single bounded sleep inside a real command is still bounded by the ceiling.
     "curl -sf --max-time 5 http://127.0.0.1:8091/health",
     # Pacing a restart is work, not parking: the door refused this while reloading itself.
     "launchctl kickstart -k gui/501/ai.estate.executor; sleep 2; launchctl print gui/501/x",
     "sleep 5",
+    # MEASURED 2026-10-24: 26 refusals in 17 minutes, every one a launch-then-check paced by a
+    # sleep under a minute (`nohup …; sleep 30`). That is the estate's own idiom and it is work;
+    # the threshold is 60s so the idiom runs and a park is still caught.
+    "nohup python3 /tmp/land_builders.py > /tmp/x.log 2>&1 & sleep 30; tail -n 3 /tmp/x.log",
 ]
 
 
@@ -69,7 +73,11 @@ ALLOWED = [
 REFUSED = [
     "watch -n 1 ls",
     "echo start; sleep 900",
-    "sleep 30",
+    "sleep 90",
+    "bash -c 'sleep 900'",
+    "bash <<'EOF'\nsleep 900\nEOF",
+    "bash -c 'watch --help'",
+    "sh -c 'tail -f /tmp/x.log'",
     "echo start; sleep $DURATION",
     "gh run watch 12345",
     "tail -f /tmp/x.log",
