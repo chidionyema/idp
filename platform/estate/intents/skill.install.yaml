@@ -9,7 +9,7 @@ description: >
   written, and a pack that has drifted is refused. Dry run unless apply=true. Use when
   an agent needs a capability the estate already owns instead of installing its own copy.
 args:
-  pack:    {type: string, default: "", help: "Comma-separated pack ids, or 'all'."}
+  pack:    {type: string, default: "all", help: "Comma-separated pack ids, or 'all'."}
   runtime: {type: string, default: "all", help: "pi | claude | codex | agents | all."}
   apply:   {type: string, default: "", help: "'true' to write. Default: dry run."}
   force:   {type: string, default: "", help: "'true' to replace an installed pack."}
