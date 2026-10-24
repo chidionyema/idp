@@ -14,6 +14,29 @@ problem-solving playbook (`docs/specs/2026-10-19-problem-solving-playbook.md`), 
 Appendix B). Statements I could not measure are marked **[unverified]**. No secret value appears
 anywhere in this document; keys are referenced by name only.
 
+**Amendment 2 (2026-10-23, later the same day).** After the founder read the first version, three
+requirements were added and are answered here: **R17** — a *discovery plane*: "a super accurate mega
+oracle that can answer any question, super accurately, in real time", with "nothing can escape it";
+**R18** — every source of estate knowledge redesigned into **one place**, with agents **forced** to
+use one source; **R19** — a **console surface**, answerable from any terminal in any harness. The
+new material is §0.1 (the whole picture), §0.2 (the requirements ledger), §2.10 (the measured
+review of every data source), §3.7 (the seventh gap), §4.12 (the Discovery Plane), §6.8–§6.10
+(integration, the discovery-first contract, the console surface), §7.9 (the oracle, with seven
+proving measurements) and decisions D11–D16. The first version's content is unchanged; this
+amendment only adds.
+
+**Amendment 3 (2026-10-23, later still).** Two more founder requirements: **R20** — *real-time
+communication between models and harnesses*, estate-wide, with broadcast, peer-to-peer channels and
+the founder inside them; and **R21** — *integrate and operationalise the Quad (DROS) so agent
+identity is solved*. The new material is §3.8 (the eighth gap), §3.9 (the ninth gap — the Quad is
+built, deployed and idle: zero ledger rows), §4.13 (the message plane: one bus, one envelope, three
+channel kinds, a deadline plus a documented default on every escalation, per-copy cost on
+broadcast), §4.14 (the Quad inside the delegation plane: one URN, one registry, one signed chain,
+two attestation tiers), §6.11–§6.13, §7.10–§7.11, §8.1.2–§8.1.3, the roadmap's phases 0.5, 0.75 and
+1.5, B20–B27, D17–D22 and the measurements A29–A33 (taken live against the cluster this
+session). The founder's three surfaces — **/fleet, the Face, and the console on the Mac** — are
+named explicitly wherever identity or messages reach the founder.
+
 ---
 
 ## 0. One page
@@ -25,7 +48,9 @@ agent's position and ownership is known at all times; a session that dies mid-fl
 without redoing work; the estate keeps driving until the work is operating; the routing is
 "ultra intelligent" and "ultra resilient"; the whole thing must work like electricity — the
 founder never chooses a model, never sees a mode switch, never waits on a laptop door; and
-everything must be visible on **/fleet** and spoken on **face**, with monitoring.
+everything must be visible on **/fleet** and spoken on **face**, with monitoring. **And every
+agent must be able to ask the estate anything, through one door, in real time, with an answer that
+carries its evidence** — "a super accurate mega oracle", with "nothing can escape it".
 
 **The honest answer.** About two thirds of the machinery already exists and is measured working:
 a router with 35 live aliases and per-alias fallback chains (§2.1), a cost ladder and routing
@@ -47,7 +72,16 @@ claims and the greenlane that already exist. The intelligence lives in a **role�
 (§4.2) and in the **hard-problem mechanisms** (§7); both are config and contracts, not new
 infrastructure.
 
-**The six hard problems the founder named** (§7), and the short answers:
+**And three more gaps the founder named in the same session.** Real-time communication *between*
+models and harnesses, with broadcast and the founder inside it (§4.13) — the transport exists, the
+contract does not. An estate-wide **discovery plane** that answers any question about the estate
+with its evidence (§4.12) — nine sources, no cross-source answer, agents that poll. And **agent
+identity**: the Quad (DROS) is built, deployed and *idle* — its ledger runs and verifies green with
+**zero** rows, its registry tables do not exist, its signing proxy and kernel enforcer are not
+deployed (§4.14, A29–A33) — so the estate has an identity substrate with no identities in it.
+
+**The hard problems the founder named** (§7) — six at first, then portability, real-time
+communication and identity — and the short answers:
 
 | Hard problem | Why it is hard | Mechanism | Proving measurement |
 |---|---|---|---|
@@ -58,6 +92,8 @@ infrastructure.
 | Driving to completion despite setbacks | blind retry burns budget on deterministic failures; stopping early is the default failure | cause classification before reaction (environment / plan / execution / gate defect), a bounded setback budget, the estate's five-check "done" (§7.5) | a gate that fails twice is re-planned, not retried, and the plan's other sub-tasks continue |
 | Resiliency routing | health checks that ask "can I connect?" cannot see saturation | latency/saturation health (not connect-refused), a warm standby door, load-shedding to the free tier (§7.6) | stop the primary door mid-plan; the plan completes on the standby |
 | Portability and interoperability (the last challenge) | the estate's brain and hands are laptop-bound; the cloud side already runs a *second* router-side layer (ZeroEdge) that the local harness cannot share | late binding, **one policy and many renderers**, per-sphere lane discovery, transport extension instead of a second implementation, isolation-aware evidence (§4.11, §7.7, §7.8) | the same packet runs in two spheres with identical acceptance and different bindings; a config-drift check proves the spheres share one policy |
+| Real-time communication between models and harnesses (broadcast, peer-to-peer, founder inside) | every message that reaches a model is a paid call; a silent timeout is worse than a slow answer; the laptop cannot reach the bus; a broadcast that wakes everyone is the 2026-10-21 saturation | one bus, one envelope, three channel kinds (point-to-point, role, broadcast); **a deadline plus a documented default on every escalation**, so no wait is unbounded and no answer is guessed; per-copy cost on broadcast; the founder as a channel participant (§4.13) | an escalation answered inside its deadline; a broadcast acked by every live subscriber with the cost charged per copy; the founder's note visible in the plan's row |
+| Agent identity (the Quad, operationalised) | an agent that says who it is is an assertion; a laptop agent can never have kernel attestation; an empty ledger is not evidence | one registry with URNs; one signed-action chain and its external anchor; **two attestation tiers recorded honestly** (kernel, door); the URN in every packet, message, claim and plan row (§4.14) | `agent_actions` goes from 0 to ≥1 with the verify door green; a planted fault turns it red; a cheap executor is refused a frontier-only action |
 
 **Recommendation: Option A** (§5) — a thin delegation layer in `idp` that reuses the router, the
 verifier, the claims and the greenlane. Estimated: 3–5 days to a first operational proof, then
@@ -91,10 +127,116 @@ policy, or stays off — never a second routing policy beside the platform's rou
 Evidence stays comparable across spheres because every gate verdict records the substrate it ran
 under. Full mechanism and proof: §4.11, §7.7, §7.8.
 
-**Ten decisions are needed** to start work; they are numbered D1–D10 in §10, each with options,
-a recommended default, and what the choice costs. This document is written so that those ten
-answers are sufficient to begin, and so a reader with no prior context can choose Option A, B
-or C without asking a question this document fails to answer.
+**Twenty-two decisions are recorded** in §10, each with options, a recommended default and what
+the choice costs: **D1–D10** start the delegation layer, **D11–D16** the discovery plane,
+**D17–D18** the message plane, **D19–D22** identity. D1–D10 alone are sufficient to begin; the
+rest are decided with the consultant. This document is written so that a reader with no prior
+context can choose Option A, B or C without asking a question this document fails to answer.
+
+---
+
+### 0.1 The whole picture — every problem of this session, and the one architecture that answers them
+
+This section is the map for a reader who has followed none of the reasoning and wants the shape
+before the detail. Everything below is argued, cited and measured in the sections it points to.
+
+```
+                      ┌────────────────────────────────────────────────────────┐
+  founder ──voice──►  │  ONE SURFACE: /fleet (the board) · the Face (tap-to-talk)│
+                      └───────────────────────────┬────────────────────────────┘
+                                  reads the same rows, never a second truth
+  ┌───────────────────────────────────────────▼────────────────────────────────────┐
+  │ DISCOVERY PLANE (§4.12) — "the oracle": one place, one door, nothing escapes     │
+  │  ingest → canonical entity resolution → index → query planner → cited answer     │
+  │  every answer carries source · locator · as-of · epistemic state (confirmed /     │
+  │  corrected) · a "the estate does not know this" is a valid, required answer       │
+  └──┬────────────┬───────────────┬──────────────┬──────────────┬───────────────┬───┘
+     │            │               │              │              │               │
+ event spine   estate-memory   knowledge      action ledger   git (code)    live state
+ (NATS, the    (the MCP door:   graph          (estate.db     + claims,     (claims, lanes,
+  epistemic     brief/recall/    (growmos,      step_runs)     specs, ADRs)   runs, pods)
+  states)       remember)        10,772 nodes
+     │
+  ┌──▼──────────────────────────────────────────────────────────────────────────────┐
+  │ DELEGATION PLANE (§4.1–§4.10) — packets · role→tier table · adapters · task graph│
+  └──┬───────────────┬───────────────┬──────────────┬──────────────┬──────────────┘
+     │               │               │              │              │
+  the router     the verifier     the claims     the greenlane   the harnesses
+ (tiers, lanes,  (deterministic,   (one owner     (prove green,   (claude · opencode ·
+  fallbacks)      a gate, not a      per path)      then land)      pi) in any sphere
+                 vote)                                                    (laptop · cluster)
+```
+
+**The problems of this session, each with the mechanism that answers it and the measurement that
+proves it.** This is the founder's "are we tracking all the requirements?" answer, in one table.
+
+| # | The problem as it was stated | The mechanism | Where | The proving measurement |
+|---|---|---|---|---|
+| 1 | Routing must be "ultra intelligent" and "ultra resilient" | a role→tier table (a *policy*), a measured per-lane posterior, Jev as arbiter only when available, health classes that see saturation | §4.2, §7.2, §7.6 | a routing decision log; per-lane, per-class success; a plan that completes after the primary door dies |
+| 2 | "the cheapest models and harnesses if necessary" | artifact-role tiering: the cheapest tier that can produce this artifact class, with the acceptance owned by a deterministic gate | §4.2, §4.6 | a diff produced by the free tier that passes the acceptance |
+| 3 | "the most intelligent models should plan and reason" | frontier tier plans, decomposes, assigns; the mid tier writes files; the cheapest tier emits diffs | §4.3, §4.4 | a plan whose decomposition was produced by the frontier tier and whose artifacts came from the cheap tier |
+| 4 | "invoke parallel per sub-task" | a task graph with fan-out and join, one packet per sub-task, one owner each | §4.4, §4.8 | N sub-tasks running at once, joined, one result |
+| 5 | "agents and harnesses can fail mid-session for any reason" | one state row per sub-task, a resume token, a checkpoint, and rewind | §4.7, §7.4 | SIGKILL a harness mid-sub-task; restart; no passed gate is redone |
+| 6 | "models running out of credit mid-session" | pre-flight reservation + a degradation ladder + "checkpoint and hand back" as a terminal state | §4.9, §7.3 | a plan that loses a paid lane and *finishes* on the next rung |
+| 7 | "driving to completion despite setbacks" | cause classification before reaction, a bounded setback budget, the estate's five-check "done" | §7.5 | a gate that fails twice is re-planned, not retried |
+| 8 | "feedback loops between models" | bounded rounds, family-diverse reviewers, a deterministic gate between rounds | §7.1 | the false-accept rate of a collapsed reviewer pool vs a diverse one |
+| 9 | "coordination and ownership fully operational" | one issue = one claim = one packet; the claims reader keeps the newest claim per issue | §4.8 | two agents cannot touch the same file; the claim is always live |
+| 10 | "should know exactly where any agent is and where they left off" | the same state rows drive /fleet, the Face and the plan-level verbs | §4.7, §6.4 | "where is everyone" answered from the board's own rows |
+| 11 | "smoothly and seamlessly like electricity" | UX-01 no visible mode switch, UX-02 every edge case has a named degradation, UX-03 a floor lane config cannot switch off | §6.5 | the founder never chooses a model and never sees a mode switch |
+| 12 | "portable across spheres", "not coupled to the current situation" | one policy, many renderers; late binding; transport extension, not a second implementation | §4.11, §7.7, §7.8 | the same packet runs in two spheres with the same acceptance |
+| 13 | "monitoring and visibility to other systems like fleet and face" | every plane writes the same event kinds; the surfaces read the same rows | §6.4 | a decision on /fleet explains itself from its evidence |
+| 14 | **"discovery": one place, one source, real time, super accurate, nothing escapes it** | the **Discovery Plane**: one adapter per source, canonical entity resolution, a tiered query planner, mandatory provenance, retraction on correction, and a gate that makes discovery the only door | **§4.12, §7.9** | a question answered with citations in one call; the estate's "I don't know" counted and correct; a retracted fact never served again |
+| 15 | **"the executor model needs to communicate in real time with the mid or frontier model … enterprise peer-to-peer realtime comms with broadcast, and also founder inclusive"** | the **message plane**: one bus, one envelope, three channel kinds (point-to-point, role, broadcast), deadline+default on every escalation, the founder as a channel participant, every message a live row on /fleet and in the Face | **§4.13, §6.11, §7.10** | an escalation answered inside its deadline; a broadcast delivered to every live subscriber with the cost charged per copy; the founder's note visible in the plan's row |
+| 16 | **"integrate and operationalise the quad solution so agent identity is solved"** | the **Quad inside the delegation plane**: one URN per agent, one registry, one signed-action ledger; two attestation tiers (kernel, door); the registry as the resolver for role channels | **§4.14, §6.12, §7.11** | the first signed action lands in `agent_actions` and the chain verifies against its anchor; a tampered row turns the verify door red; every packet, message and claim is attributable to a URN on /fleet, the Face and the Mac console |
+
+**The three invariants that keep this one system and not fourteen:**
+
+1. **One of each layer.** The Discovery Plane is the *only* reader of the raw sources; the router is
+   the only model door; the verifier is the only gate; the claims are the only ownership; the
+   greenlane is the only landing path. Every addition above is an adapter *into* an existing layer,
+   never a second copy of one.
+2. **Every fact carries provenance.** An answer without (source, locator, as-of, epistemic state)
+   is not an answer. This is what turns "super accurate" from a claim into a measurement, and it
+   is why the oracle is allowed to say "the estate does not know this".
+3. **Every action goes through a door.** Discovery is an intent and an MCP tool like every other
+   capability; the estate's executor refuses what is not an intent, so the discovery plane is
+   reachable the same way from every runtime.
+
+Not shown in the diagram, because both cut across every box: the **message plane** (§4.13) is the
+wire between the boxes — how an executor talks to a frontier reasoner mid-flight — and the
+**identity substrate** (§4.14) is the signature on every line that crosses a box.
+
+### 0.2 The requirements ledger — every founder requirement, and where it is answered
+
+The founder asked (2026-10-23): *"i hope we are tracking all requirements for this epic"*. This is
+the ledger. Every requirement the founder stated in this session, in the order it was stated, with
+the section that answers it and its state. Nothing here is a new requirement: R1–R16 are the
+founder's words decoded in §1; R17–R18 were added during the review when the founder raised
+discovery and the single-source mandate, and are argued in §3.7, §4.12 and §7.9.
+
+| Req | The founder's words (abridged) | Answered in | State |
+|---|---|---|---|
+| R1 | "truly ultra intelligent ultra resilient routing that truly standardises planning, execution and verification" | §4.2, §7.2, §7.6 | designed, not built |
+| R2 | "plays well with our goals, subgoals, BDD, edge cases" | §4.1, §9 | designed, not built |
+| R3 | "using Jev and ultra intelligent routing" | §4.3, §7.2 | designed, not built |
+| R4 | "the most intelligent models should plan, reason, create goals, subgoals to the correct degree of decomposition" | §4.3, §4.4 | designed, not built |
+| R5 | "invoke the cheapest models and harnesses if necessary to get it done" | §4.2, §4.6 | designed, not built |
+| R6 | "frontier, mid, cheapest/free tier" | §4.2 | designed, not built |
+| R7 | "output most of the time should be a diff by the cheapest tier; new files by mid tier" | §4.2, §4.5 | designed, not built |
+| R8 | "invoke parallel per sub-task to get things done faster" | §4.4 | designed, not built |
+| R9 | "coordination and ownership to fully operational … agents and harnesses can fail mid-session" | §4.7, §4.8, §7.4 | designed, not built |
+| R10 | "know exactly where any agent is and where they left off" | §4.7, §6.4 | designed, not built |
+| R11 | "restart in interruptions to drive to fully operational" | §4.7, §7.5 | designed, not built |
+| R12 | "models running out of credit mid-session", "resiliency routing", "driving to completion despite setbacks" | §4.9, §7.3, §7.5, §7.6 | designed, not built |
+| R13 | "smoothly and seamlessly like electricity" | §6.5 | designed, not built |
+| R14 | "monitoring and visibility to other systems like fleet and face" | §6.4 | designed, not built |
+| R15 | "the core engine and intelligence needs to work across spheres and be fully portable anywhere" | §4.11, §7.7 | designed, not built |
+| R16 | "cloud harnesses like zero edge don't work with our local harness" | §7.8 | designed, not built |
+| **R17** | **"one last problem we need to solve once and for all … discovery of anything happening in the estate of source code seamlessly, without having to search different sources"; "super accurate mega oracle that can answer any question, super accurately, in real time"; "nothing can escape it"** | **§3.7, §4.12, §7.9, §6.8** | **designed, not built** |
+| **R18** | **"these sources should be designed so everything that can be known about the estate is in one place and every agent is forced to use one source"; "radical and deep research on discovery … uniformly forcing it across platform and agents"** | **§2.10, §4.12, §6.8, §7.9** | **designed, not built** |
+| **R19** | **"another surface should be direct from console like i am doing now, from any harness if possible"** | **§6.10** | **designed, not built** |
+| **R20** | **"the executor model needs to communicate in real time with the mid or frontier model or vice versa … any communication real time across models and harnesses … estate-wide … including broadcast, enterprise peer-to-peer realtime comms with broadcast, and also founder inclusive"** | **§4.13, §6.11, §7.10** | **designed, not built** |
+| **R21** | **"integrate and operationalise the quad solution so agent identity is solved"** | **§4.14, §6.12, §7.11** | **measured idle; integration designed, not built** |
 
 ---
 
@@ -110,18 +252,23 @@ the rest of the document argues the "gap" column.
 | R2 | "plays well with our goals, subgoals, BDD, edge cases" | `declare_plan` / `add_bdd` / `address_edgecases` / `complete_goal` exist as the seven gates of the agent harness | The plan is per-agent and lives in a context window; it is not a first-class, shareable, machine-readable artifact a cheap tier can execute |
 | R3 | "using Jev and ultra intelligent routing" | ADR 0030, `mcp/plugins/jev.py`, the `jev.decide` intent, `sovereign/consensus/`, the `estate.db jev_decisions` table | **Jev is not live in this environment**: `TYPESAFE_API_KEY` is unset, so every decision returns `{escalated: true, _fallback: "jev_unavailable", confidence: null}` (measured §11 A6). Tier policy must have a deterministic default that does not depend on it |
 | R4 | "the most intelligent models should plan, reason, create goals, subgoals to the correct degree of decomposition" | The problem-solving playbook (2026-10-19) is already a model-agnostic seven-move method distilled from real transcripts | No *decomposition policy*: nothing defines what makes a good sub-goal split, and nothing bounds granularity |
-| R5 | "invoke the cheapest models and harnesses if necessary to get it done" | Live aliases include free Groq (`gpt-oss-120b`), free OpenRouter (`nemotron-3.5-lightning:free`) and local Ollama (`llama3.2`, `moondream` for vision) — all in `lanes.json` | No **task→tier assignment**: the router picks a model per *request*, not per *artifact role* |
+| R5 | "invoke the cheapest models and harnesses if necessary to get it done" | Live aliases include free Groq (`gpt-oss-120b`), free OpenRouter (`nemotron-3.5-lightning:free`) and local Ollama (`llama3.2`, `moondream` for vision) — all in `~/.estate/router-state/lanes.json` | No **task→tier assignment**: the router picks a model per *request*, not per *artifact role* |
 | R6 | "frontier, mid, cheapest/free tier" | `platform/llm/cost-ladder.yaml` rungs 0–3 and `platform/llm/routing-matrix.yaml` axes (resource tier × candidate volume × selection method × escalation pattern) | The matrix's `resource_tier` is a **compute** tier (local / router / flat-rate box / GPU), not a **capability** tier (frontier reasoner / mid author / cheap executor). The two are conflated |
 | R7 | "the output most of the time should be a diff by cheapest tier; new file creations can be done by mid tier; frontier plans, reasons, assigns, invokes" | — | This rule exists nowhere. It is the sharpest and cheapest win in the whole message (§4.2) |
 | R8 | "invoke parallel per sub-task to get things done faster" | Greenlane batches lanes (§2.6); `sovereign/engine/dag.py` is a **content-addressed diff DAG**, not a task DAG | No task-graph fan-out. `sovereign/engine/runners.py:159` `REGISTRY` = `echo, sleep, ask, burn, llm` — one runner, one repo, sequential steps (`workflow.py`) |
-| R9 | "coordination and ownership to fully operational, considering agents and harnesses can fail mid-session for any reason" | Claims (`bin/claim-open`, `bin/claim-gate`), the `/fleet` claims panel, `bin/estate-checkpoint`, `bin/estate-work-audit` | Ownership is **per issue**, and the claims reader keeps the **newest claim per issue** (`backstage/plugins/fleetview-backend/src/fleetview_backend/claims.py:106-109`) — two agents cannot hold disjoint path claims on one issue. No per-sub-task owner, no "where is everyone", no resume token |
+| R9 | "coordination and ownership to fully operational, considering agents and harnesses can fail mid-session for any reason" | Claims (`bin/claim-open`, `bin/claim-gate`), the `/fleet` claims panel, `bin/estate-checkpoint`, `platform/estate/libexec/work-audit.py` (the `work-audit` intent) | Ownership is **per issue**, and the claims reader keeps the **newest claim per issue** (`backstage/plugins/fleetview-backend/src/fleetview_backend/claims.py:106-109`) — two agents cannot hold disjoint path claims on one issue. No per-sub-task owner, no "where is everyone", no resume token |
 | R10 | "should know exactly where any agent is and where they left off" | `bin/estate-checkpoint` writes branch/HEAD/dirty files/open PR to the issue; `/fleet` shows claims with heartbeat age | Live *position* is visible per issue only, not per running sub-task, and not while the agent is mid-flight |
 | R11 | "should be able to restart in interruptions to drive to fully operational" | `sovereign/engine/checkpoint.py` (rewind/recover/audit), Temporal session durability, `bin/estate-checkpoint` | Nothing joins a *delegated sub-task* to a resumable token. All three harnesses can resume (measured: `claude --resume`, `opencode -s/--session`, `pi --resume/-r`) — nobody uses it |
 | R12 | "models running out of credit mid-session", "resiliency routing", "driving to completion despite setbacks" | Lane registry with error classes (`402/429/401` → dead/exhausted) and per-alias fallback chains | The **plan** has no funding model: a plan may start on a metered lane and die at step 7 with no credit and no rung to fall to |
 | R13 | "smoothly and seamlessly like electricity" | The Battalion spec §10 already turns this into UX-01/02/03 with acceptance criteria | The bar has never been applied to the *end-to-end* path (router → orchestrator → harness → gate → /fleet → face) |
-| R15 | "the core engine and intelligence needs to work across spheres and be fully portable anywhere"; "we can't be fully coupled to the current situation" | The estate's policy is already portable in principle (`AGENTS.md` §11 one block; `platform/estate/memory/runtimes.json` — "a new runtime is a new entry, not a new integration"); the cluster already runs `estate-mcp` (ns `mcp`) and the harness inventory already specifies `where: laptop | cloud | both` plus an `isolation` field | The *implementations* are bound early: local router (`front.py` → `127.0.0.1:4000`), local binaries, local worktrees, and a second cost/routing layer in the cluster (ZeroEdge) that the local harness does not share. There is no sphere-neutral unit of work and no per-sphere lane discovery |
+| R15 | "the core engine and intelligence needs to work across spheres and be fully portable anywhere"; "we can't be fully coupled to the current situation" | The estate's policy is already portable in principle (`AGENTS.md` §11 one block; `platform/estate/memory/runtimes.json` — "a new runtime is a new entry, not a new integration"); the cluster already runs `estate-mcp` (ns `mcp`) and the harness inventory already specifies `where: laptop \| cloud \| both` plus an `isolation` field | The *implementations* are bound early: local router (`front.py` → `127.0.0.1:4000`), local binaries, local worktrees, and a second cost/routing layer in the cluster (ZeroEdge) that the local harness does not share. There is no sphere-neutral unit of work and no per-sphere lane discovery |
 | R16 | "cloud harnesses like zero edge … don't work with our local harness" | The estate's own interop law: a runtime without an MCP client gets a transport extension, never a second implementation (`runtimes.json`); opencode already speaks ACP | The harness registry has no `transports` or `resumable` field, and the "one of each layer" question for ZeroEdge is explicitly unresolved (harness inventory, 2026-10-23) |
 | R14 | "monitoring and visibility to other systems like fleet and face" | `/fleet` claims panel; the Face at `catalogue.mumchimp.com/face/`; the live-mind event contract `estate.agent.event` (kinds `phase/tool/wait/done/steer/gate`) | The Face can run 64 **arg-free** intents by name but "cannot pass an argument to anything … cannot choose or steer or stop an agent, cannot start a fleet session, cannot claim work or land it" (Face audit §1). The plan layer has no voice/board surface, and no delegated decision is emitted as a live-mind row |
+| R17 | "one last problem we need to solve once and for all … discovery of anything happening in the estate of source code seamlessly, without having to search different sources"; "a super accurate mega oracle that can answer any question, super accurately, in real time"; "nothing can escape it" | nine sources exist, each authoritative for one thing (§2.10); `rg`, memory recall, the graph and the ledger are four partial answers to one question | there is **no single door** that answers across all sources with a citation, a freshness stamp and a retraction state — §3.7, §4.12, §6.8, §7.9 |
+| R18 | "these sources should be designed so everything that can be known about the estate is in one place and every agent is forced to use one source" | the enforce gate already exists and writes every decision to a ledger (717 rows) | the gate enforces *writes*; nothing enforces *knowledge* — the plane and its enforcement rules are the answer (§4.12 L7, §6.9) |
+| R19 | "another surface should be direct from console like i am doing now from any harness if possible" | the estate already has zero-config console doors: `bin/estate-brief`, `bin/estate-checkpoint`, `bin/lane-where`, `bin/claim-open` | the discovery plane needs the same kind of console client, beside the MCP tool — §6.10 |
+| R20 | "the executor model needs to communicate in real time with the mid or frontier model or vice versa … any communication real time across models and harnesses … an estate-wide, well-thought-out and architected feature including broadcast, enterprise peer-to-peer realtime comms with broadcast, and also founder inclusive" | the transport exists: NATS in the cluster, subjects `estate.agent.{runtime}.{session}.{kind}`; the live-mind contract `estate.agent.event` already carries a `steer` kind | there is **no inter-agent message contract**: no escalation channel from a cheap executor to a frontier reasoner mid-flight, no broadcast with a cost cap, no founder join, no ack/deadline semantics, and the laptop cannot reach the bus at all (A23) — §4.13, §6.11, §7.10 |
+| R21 | "integrate and operationalise the quad solution so agent identity is solved" | the Quad (DROS): bootstrapper → registry → Elpis signing proxy → kernel enforcer, plus the layer-4 ledger (`cmd/quad-ledger`), the registry DDL (`schema/identity0_registry.sql`), SPIRE running in the cluster, and four identity intents | **measured idle**: the ledger runs and verifies green but `agent_actions` = **0** and `merkle_anchors` = **0** (A30–A31); the registry tables `agents`/`sessions` **do not exist** (A32); Elpis, the bootstrapper and the kernel enforcer are **not deployed** (A33); ADR 0035 is still PROPOSED — §4.14, §6.12, §7.11 |
 
 ---
 
@@ -274,7 +421,70 @@ harness — it needs a contract that drives these three CLIs.
 
 ---
 
-## 3. What is genuinely missing — the six gaps
+### 2.10 The estate's data sources, reviewed against reality
+
+The founder asked (2026-10-23) for an architecture review of *all* the estate's data sources and how
+they can be streamlined, improved and optimised — "before solutionising". Method: every source was
+**measured**, not described, on 2026-10-23 (commands and outputs in Appendix A). The question each
+source must answer is: *what is this the authority for, and what does it stop being?*
+
+| Source | What it really is (measured 2026-10-23) | Authoritative for | Where it costs the agent | The improvement |
+|---|---|---|---|---|
+| **Git** (56 repos under `~/Documents/code`; 9,269 `.py` files at depth ≤4) | the only source whose every fact is signed, versioned and diffable | what the code *is*, and who owns each line | an agent must clone, grep, and read whole files to learn one fact; there is no index of symbols, ownership or history | a **code index** built from the trees (symbol, path, owner, last-change), refreshed on merge, queried by the plane (§4.12) — the code stays the truth, the index is only its address book |
+| **`rg`/grep** (the search the estate's own law mandates, AGENTS.md §10) | a fast *text* matcher: <1 s across the tree, no ranking, no provenance, no semantics | raw text presence | the agent reads the match and then the file: two steps, one answer, no citation | keep as the **deep-read fallback** of the plane (tier 3), never as the entry point |
+| **Knowledge graph** (`growmos`, `estate-graph`) | 10,772 entities, 14,154 relations; a query returns 636 nodes / 2,469 edges in **15.4 s** | durable, provenance-carrying *relations* between named things | far too slow to be a lookup; it answers "what is related" not "what is true now" | keep as the **durable provenance backbone**; feed the plane from its JSONL; `growmos query` becomes a *tier* inside the planner, not the front door |
+| **Estate memory** (the unified memory server behind one MCP door; three live `estate-memory-mcp` processes) | semantic recall over what agents *said*; `bin/estate-brief --task` returns live claims in **3.20 s** | narrative context and shared meaning across surfaces | the brief is a *summary of a summary*: it names claims but not the facts behind them; nothing here knows about code or events | keep as the **meaning tier**; the plane composes it with the code index and the event spine so one call answers "what is true" instead of "what was said" |
+| **Action ledger** (`~/.estate/estate.db`, local sqlite) | the estate's own record of what actually happened: `step_runs` **3,828**, `intent_tickets` **2,648**, `policy_decisions` **790** | decisions taken and their verdicts | an agent wanting "what did we decide about X" must know the schema and write SQL; the ledger is local, so it is invisible to the cluster | keep as the **decision tier**; index it, and let the plane answer decision questions without SQL |
+| **Event spine** (NATS in the cluster: `estate.agent.*`, `estate.news.story`, `metrics.*`, `epistemic.*`; 3 hard schemas in `platform/event-bus/contract/`) | the estate's real-time nervous system — but it lives **behind cluster DNS**: `nc nats.event-bus.svc 4222` from the laptop fails | live state, at the moment it happened | *the laptop cannot see the estate live at all*; agents reconstruct liveness by polling (1,277 hand-rolled lane/CI polls in 24 h, per the estate's own memory) | run the plane's **ingest beside the bus** and expose a relay/stream to the laptop — the bus stays the spine, the plane becomes the laptop's window onto it |
+| **Epistemic layer** (newsroom/epistemic: `reported → confirmed → corrected`) | the estate already has *correction semantics* — a fact can be retracted | whether a claim is true, corrected, or withdrawn | nothing consumes it as a general primitive, so a corrected fact can still be served by every other surface | reuse it as the **retraction primitive** of the plane: a correction tombstones the fact everywhere it was indexed (§4.12 L6) |
+| **Claims / lanes / focus** (`~/.estate/memory/focus-register.json`, rewritten live; `claims.py` newest-claim-per-issue; `bin/lane-where`) | the estate's live ownership and CI state | who owns what, and whether a lane is green | agents read ownership from issue comments (slow, lossy) or re-derive it | keep as the **live-state tier**; the plane reads the register directly and never re-derives it |
+| **Surfaces** (`/fleet`, the Face at `catalogue.mumchimp.com/face/`, Otto) | *views* over the above — each with its own query path | presentation | each surface re-queries the sources its own way, so two surfaces can disagree | surfaces become **read-only views of the plane's rows**; no surface keeps its own query path |
+
+**What the review says, in four findings.**
+
+1. **Every source is authoritative for something and for nothing else.** No single source can answer
+   a cross-source question: *"which agent touched this file, what was decided about it, and was that
+   decision later corrected?"* needs git **and** the ledger **and** the epistemic layer. That
+   question is unanswerable in one call today, and it is the most common question in the estate.
+2. **Real time is cluster-bound; the agents are laptop-bound.** The event spine and the epistemic
+   layer are unreachable from the laptop, so the agent's view of the estate is a **poll** — and the
+   estate has already measured what polling costs (1,277 hand-rolled polls in 24 h). Any design that
+   leaves the plane laptop-bound inherits that cost.
+3. **Two sources search without provenance; two carry provenance without speed.** `rg` and memory
+   recall answer "where is it"; the graph and the ledger answer "what is related" / "what happened";
+   neither pair can answer "what is true, right now, and how do I cite it".
+4. **The estate already owns the three hardest parts of the oracle** — a semantic memory with one
+   door, an enforcement gate with a decision ledger (717 rows, 524 pass / 169 refuse / 24 unknown),
+   and correction semantics in the epistemic layer. The discovery plane is therefore **mostly
+   plumbing and an index**, not a new invention — which is the cheapest possible way to buy the
+   founder's "super accurate mega oracle".
+
+**What the enforcement ledger shows (measured).** The estate already measures agent friction, and the
+ledger is the best evidence in the repo (`~/.estate/memory/enforce-ledger.jsonl`, 717 rows on
+2026-10-23):
+
+| Observed | Count | What it says | The mechanism that removes it |
+|---|---|---|---|
+| `pass — covered by a live claim` | 336 | the gate works; the happy path is the common one | keep |
+| `refuse — no live claim covers <path>` | 30+ | agents spend turns discovering they may not write, after the fact | **discovery-first**: the claim surface answers "may I write here?" *before* the agent writes, from the same live register (§4.12, §6.8) |
+| `refuse — No plan declared, so Bash is refused` | 21 | the seven-gate plan is discovered by being refused | the plan is **published to the plane** at `declare_plan`, so the agent *reads* its obligations instead of hitting them (§4.1, §6.8) |
+| `unknown — claim ledger unreadable` / `transcript unreadable` | 12 + 12 | the enforcement plane itself has **24 blind spots**: it cannot distinguish "refused" from "could not read" | the plane keeps its own health row: a source that is unreadable is reported as *stale*, never as *absent* (§4.12 L5) |
+| a turn's context priming | `estate-brief` **3.20 s**; a graph query **15.4 s** | every agent turn pays up to ~19 s before acting | the plane answers in one call, and caches what is stable (§4.12 L4) |
+
+### 2.11 Where the estate already solved this, three times, in pieces
+
+Three doors built on 2026-10-23 are the shape of the oracle, in miniature, and the discovery plane
+must **generalise them, not replace them**:
+
+| Door (landed) | What it solved | The generalisation |
+|---|---|---|
+| `estate-memory-enforce` (claim #6857) | one gate that refuses an unclaimed write, with every decision written to a ledger | the same gate, answering *questions*, not only refusals: "what is true here?" gets the same enforcement and the same ledger |
+| `bin/lane-where` (claim #7003) | "where is my branch" in one observation — LANDED/PENDING/GREEN/RED/GONE — replacing 1,277 hand-rolled polls in 24 h | the same idea for *every* liveness question, including the ones with no door yet |
+| the skill layer (claim #6984, in flight) | one governed pack layer for every runtime | skills say **how to act**; discovery says **what is true** — adjacent, not duplicate |
+
+---
+
+## 3. What is genuinely missing — the nine gaps
 
 **Gap 1 — There is no unit of delegated work.** Every executor in the estate takes a *string*.
 `sovereign/engine/runners.py` runners receive `(task: str, repo, step, steer)` and return
@@ -307,11 +517,70 @@ no notion of what it can afford to redo and what it can afford to continue.
 
 ---
 
+### 3.7 The seventh gap: the estate is searchable, but it is not *discoverable*
+
+The six gaps above are all about **doing work**. This one is about **knowing** — and it is the gap
+that makes the other six expensive.
+
+Measured, in one afternoon (full table and commands in §2.10 and Appendix A):
+
+- The estate has **nine** data sources, each authoritative for something and for nothing else.
+- **No source can answer a cross-source question.** "Which agent touched this file, what was decided
+  about it, and was that decision later corrected?" needs git, the ledger and the epistemic layer
+  together. Today that is three searches, three mental joins and one uncited answer.
+- **Real time is cluster-bound and the agents are laptop-bound.** The event spine and the epistemic
+  layer sit behind cluster DNS; the laptop cannot see them, so agents *poll* — 1,277 hand-rolled
+  lane/CI polls in 24 h, per the estate's own memory.
+- **Two sources search without provenance; two carry provenance without speed.** `rg` finds text,
+  memory recall finds meaning, the graph and the ledger carry the truth — and none of them can
+  answer "what is true right now, and how do I cite it".
+- **The estate pays for its own ignorance in enforcement.** The enforce ledger has **24 `unknown`
+  rows** — decisions the gate could not take because a source was unreadable — and **30+ refusals**
+  for "no live claim covers this path", i.e. the agent discovered the rule *after* trying.
+
+The founder's requirement is therefore three-part and it is stricter than "add a search box":
+
+> "one place … everything that can be known about the estate is in one place and every agent is
+> forced to use one source" · "super accurate mega oracle that can answer any question, super
+> accurately, in real time" · **"nothing can escape it."**
+
+The gap, stated exactly: **there is no single door that answers a question across all nine sources,
+carries a citation, a freshness stamp and a retraction state for every sentence it returns, and is
+forced on every agent without being copied into every runtime.** Everything the estate has today is
+a *capability*; what is missing is the *one layer* those capabilities are read through.
+
+### 3.8 The eighth gap: there is no way for one agent to talk to another in real time
+
+The bus exists; the *contract* does not. Today an agent that needs a frontier decision has three
+options and all three are bad: guess, hand the work back, or wait for a human. The estate's own
+live-mind contract has a `steer` kind, so the *idea* of an agent-to-agent message was anticipated —
+but there is no envelope, no channel model, no deadline, no default, no cost rule, no broadcast and
+no place for the founder (§4.13). The consequence is the failure mode the founder named: the
+executor and the planner cannot talk while the work runs, so every semantic decision either
+stalls the plan or leaks into the cheap tier's guess.
+
+### 3.9 The ninth gap: the estate has an identity substrate with no identities in it
+
+The Quad was built (DROS ticket, 2026-09-28; `cmd/identity-bootstrapper`, `cmd/elpis-proxy`,
+`cmd/dros-daemon`, `cmd/quad-ledger`; the registry DDL; ADR 0035). Measured on 2026-10-23: the
+ledger **runs** (Deployment 1/1, anchor + verify CronJobs every 15 min) and the verify door
+**passes** — with **0 rows** in `agent_actions` and **0** in `merkle_anchors` (A30, A31). The
+registry tables `agents` and `sessions` **do not exist** (A32). Elpis, the bootstrapper and the
+kernel enforcer are **not deployed** (A33), and ADR 0035 is still PROPOSED. So: the machinery to
+prove *who did what* is running, and it has never proved anything, because no agent signs.
+
+This is the gap that makes the delegation layer's ownership claims cheap to assert and expensive to
+believe. A delegated packet that says `owner: pi` is a string; a delegated packet signed by a URN
+whose session is in the anchored chain is evidence (§4.14).
+
+---
+
 ## 4. Target design
 
 ### 4.1 The Delegation Contract (the one new artifact)
 
-One JSON document, one schema (`docs/schemas/delegation-packet.schema.json`), versioned. It is
+One JSON document, one schema (`docs/schemas/delegation-packet.schema.json` — **to be added**;
+it does not exist today), versioned. It is
 the only thing that crosses a harness or model boundary: written by a planner (frontier tier),
 read by an executor (cheap tier) that has no other context.
 
@@ -372,7 +641,8 @@ Rules that make it a contract and not a suggestion:
 
 This is R7, the sharpest win in the founder's message. The rule is a table, in the same discipline
 as `cost-ladder.yaml` (config, versioned, with `grade:` and `source:`), and it lives in **one**
-place: `platform/llm/artifact-tier.yaml`. The router's lanes are the *implementation* of each
+place: `platform/llm/artifact-tier.yaml` (a file **to be added**; the tier table is new, the lanes
+it names are not). The router's lanes are the *implementation* of each
 tier; the table says which role uses which.
 
 | Artifact class | Tier | Candidate lanes (live) | Why | Cost |
@@ -556,7 +826,7 @@ does not understand the laptop's harness at all.
 **The portability architecture in five rules.**
 
 1. **The policy is portable; the implementation is local.** What must be identical in every
-   sphere is the *policy*: the lane namespace and its aliases (`lanes.json`), the health classes and
+   sphere is the *policy*: the lane namespace and its aliases (`~/.estate/router-state/lanes.json`), the health classes and
    fallback chains, the artifact-role tier table (§4.2), the budget ceilings, and the acceptance
    contract. These live in the repo and in `AGENTS.md` §11's single policy block. What is local is
    the *renderer*: a router process in each sphere that reads the same policy and serves it over
@@ -570,7 +840,7 @@ does not understand the laptop's harness at all.
    is the current state — an optimizer that changes routing in one sphere under a policy the other
    sphere does not have. (This is decision D9.)
 3. **The harness registry gains three fields, and the delegation layer reads it.** The inventory
-   already specifies the shape: `name`, `where: laptop | cloud | both`, and
+   already specifies the shape: `name`, `where: laptop \| cloud \| both`, and
    `isolation: temp_tree | docker | gvisor | firecracker`, read from the substrate that will
    actually run it, so a request for `firecracker` on this laptop is **refused with the reason**
    (`/dev/kvm absent`) instead of silently running in `temp_tree`. The delegation layer adds two
@@ -596,6 +866,378 @@ a *binding* change, not a rewrite: the packets, the tier table, the lanes and th
 sphere changes; the binder re-resolves harness, lane, isolation and price. And the estate already
 has the doors in both spheres — the cluster runs `estate-mcp` (ns `mcp`), the laptop runs the
 `fleetview-backend` and the executor intents — so the same three intents are reachable from either.
+
+### 4.12 The Discovery Plane — one place, one door, nothing escapes
+
+This is the layer that makes the other sections possible: the router's intelligence is bounded by
+what it knows (§7.2), a delegation packet's context is only as good as what was found (§4.1), and a
+verdict is only as good as its evidence (§4.6). So the discovery plane is specified **first**, and
+the delegation plane is specified as its consumer.
+
+**The shape.** A service with one wire contract (`estate.discover`), eight layers, and *no source of
+truth of its own*: everything it says is a pointer into a source it did not change.
+
+```
+ question ──► L3 planner ──► L2 indexes ──► L0 adapters ──► sources
+                  │              │              │
+                  │              │              └─ git · graph · memory · ledger · bus · claims
+                  │              └─ code · doc · event · semantic · decision · live-state
+                  └─ tier ladder: exact → semantic → deep read → synthesis
+                                    │
+                            L4 answer object ──► L5 verify ──► L6 freshness/retraction
+                                    │
+                            L7 enforcement (the door every agent uses)
+```
+
+#### L0 — Ingest: one adapter per source, read-only, always with provenance
+
+Each adapter is a small, declarative reader for exactly one source, and it is the **only** thing
+allowed to read that source raw. Every fact it emits is a **document**:
+
+```json
+{
+  "source_id": "git:idp:platform/llm/watchdog.py",
+  "source_kind": "code|doc|event|memory|decision|live_state|graph",
+  "locator": "platform/llm/watchdog.py:88",
+  "span": "…the watched text…",
+  "as_of": "2026-10-23T20:41:14Z",
+  "epistemic_state": "reported|confirmed|corrected|retracted",
+  "sha": "…",
+  "content_hash": "…"
+}
+```
+
+Rules, all deterministic: an adapter **never writes** to its source; it **never invents** a fact it
+did not read; a document with no `locator` is rejected at ingest (a fact without an address is not a
+fact); and a source that cannot be read produces a `stale` marker for that source — never an empty
+result, because "unreadable" and "absent" are different answers (this is the defect the enforce
+ledger's 24 `unknown` rows show the estate has today).
+
+#### L1 — Canonical entity resolution: one thing, one id, everywhere
+
+The same thing appears under many names: `idp`, `chidionyema/idp`, `the platform repo`; `pi`,
+`pi-parity`, `agent pi`; issue `#7001` and `idp#7001`. Discovery requires **one entity id per
+thing**, with aliases, so a question can join across sources:
+
+- `discovery.entity(id, kind, canonical_name, created_at)` — kinds: `repo`, `path`, `symbol`,
+  `service`, `issue`, `agent`, `runtime`, `model`, `lane`, `decision`, `spec`.
+- `discovery.alias(entity_id, alias, source_id)` — every surface name ever seen, and where it was seen.
+- Resolution rules: (1) exact alias match wins; (2) a canonical-name normalisation (repo slug,
+  issue number, symbol path) wins over free text; (3) **ambiguity is never resolved by guessing** —
+  the answer returns both candidates and asks which one, because a wrong join is worse than a
+  question.
+
+#### L2 — Indexes: six indexes over one document stream
+
+| Index | Built from | Serves | Baseline today |
+|---|---|---|---|
+| **code** | git trees + symbol extraction | "where is X defined", "who owns this file" | `rg` + read (two steps, uncited) |
+| **doc** | specs, ADRs, decisions, runbooks | "what does the estate say about X" | `rg` over `docs/` |
+| **event** | the bus, by subject and kind | "what happened at 20:41" | cluster-only, unreachable from the laptop |
+| **semantic** | memory bodies (embeddings) | "anything like X" | `brief`/`recall` (3.20 s, semantic only) |
+| **decision** | the action ledger | "what was decided, and with what verdict" | SQL by hand (790 policy decisions) |
+| **live_state** | claims, lanes, focus register | "is it green, who owns it" | 1,277 polls / 24 h |
+
+All six are **derived**: delete the index and it is rebuilt from the sources. The plane holds no
+truth of its own — that is what makes it portable (§4.12 portability paragraph) and disposable.
+
+#### L3 — The planner: a question class picks a tier ladder, and the ladder stops on sufficiency
+
+| Question class | Example | Ladder (cheapest first) | Stop condition |
+|---|---|---|---|
+| **what-is / where-is** | "where is the retry budget set?" | code index → doc index → deep read | an exact locator match |
+| **who-does / owns** | "who owns `platform/llm`?" | live-state → code index → ledger | an owner with a live claim |
+| **what-happened** | "what did we decide about the router?" | decision index → event index → semantic | a verdict + its decision id |
+| **why** | "why is the floor lane free?" | doc index → graph → semantic → synthesis | a cited rationale |
+| **what-changed** | "what changed in the estate in the last hour?" | event index → live-state → decision | a bounded time window |
+| **is-it-true** | "is the claim still live?" | live-state + epistemic | a confirmed/corrected state |
+
+The planner's stop condition is **deterministic**, not a model's opinion: a tier stops when the
+answer contains the fields the question asked for (a locator for "where", a claim id for "who", a
+verdict for "what was decided"). If no tier produces a sufficient answer, the planner **escalates**;
+if the last tier still fails, it returns "the estate does not know this" with the search it performed.
+Every escalation is logged with its latency and cost, because the cost of the plane is exactly the
+sum of its escalations.
+
+#### L4 — The answer object: prose plus per-sentence evidence
+
+```json
+{
+  "question": "where is the retry budget set?",
+  "answer": "platform/llm/watchdog.py:88, in WatchdogPolicy.retry_budget_usd.",
+  "claims": [
+    {"statement": "the retry budget is 0.50 USD",
+     "source_id": "git:idp:platform/llm/watchdog.py",
+     "locator": "platform/llm/watchdog.py:88",
+     "as_of": "2026-10-23T20:41:14Z",
+     "epistemic_state": "confirmed",
+     "content_hash": "…"}
+  ],
+  "unknowns": [],
+  "contradictions": [],
+  "searched": ["code", "doc"],
+  "elapsed_ms": 240
+}
+```
+
+The answer is never prose alone: `claims` is the substance, and each claim carries the four things
+that make it checkable — **where**, **when**, **what state**, **which exact bytes**. `unknowns` and
+`contradictions` are first-class fields, because the two most dangerous answers in an estate are
+"it is definitely X" when it is not, and "X" when two sources disagree.
+
+#### L5 — Verification, and the right to refuse
+
+Four deterministic checks, all machine-checkable, no model in the loop:
+
+1. **No citation, no claim.** Every statement in `claims` has a `source_id`, a `locator` and an
+   `as_of`. A statement without one is dropped from the answer and counted as a defect.
+2. **Locators must resolve.** The locator is re-read from the source at answer time; if the bytes
+   changed, the claim is re-labelled `stale` rather than served as fact.
+3. **Contradictions surface.** If two claims about the same entity conflict, both are returned with
+   their states, and the conflict is ranked by epistemic state and `as_of`.
+4. **Refusal is a first-class answer.** "The estate does not know this" is a valid, successful
+   result — with the searched sources listed. An oracle that cannot say *no* is a guess generator.
+
+This is the whole accuracy story, and it is worth stating plainly to the founder and the
+consultant: **the oracle's accuracy does not come from a larger model.** It comes from (a) mandatory
+provenance, (b) the right to refuse, (c) contradiction surfacing, (d) retraction, and (e) a measured
+refusal/retraction rate. A model is used only at tier 4, to *phrase* retrieved spans — never to
+produce a fact.
+
+#### L6 — Freshness and retraction: the estate's own epistemic semantics, reused
+
+The estate already knows what a corrected fact is: the epistemic layer has
+`reported → confirmed → corrected`. The plane reuses it as the retraction primitive:
+
+- each source has a **watermark**; a document is served only with the `as_of` the source gives it;
+- a `corrected` fact **tombstones** every index entry that quoted it (`discovery.tombstone`);
+- an answer that cited a tombstoned fact is re-issued as `stale` to every caller that received it
+  (the query log carries the answer ids, so re-issue is a join, not a broadcast);
+- a source whose watermark has not moved in N minutes is served with `freshness: stale` **and** the
+  source is reported as unreadable if it cannot be reached at all.
+
+#### L7 — Enforcement: how agents are *forced* to use one source
+
+The founder's word is "forced", so this is not a recommendation; it is a gate, and the estate
+already has the machinery for it (the enforce hook and its ledger):
+
+| Rule | Mechanism | Where it is enforced | Failure it prevents |
+|---|---|---|---|
+| **Discovery-first** | the session brief is a discovery call; the plane's answer is the session's context | the runtime bridge (`bin/estate-brief` already is one) | an agent acting on a stale mental model |
+| **Ask before you write** | "may I write here?" is a discovery call against the live-state index | the enforce hook refuses a write whose path has no live claim — **the same rule, answered before the attempt** | the 30+ "no live claim covers …" refusals (friction, not safety) |
+| **Cite to finish** | a plan may not be `complete_goal`-ed without at least one discovery id in its evidence | `complete_goal` (the same seven gates that already refuse a missing `add_bdd`) | an uncited conclusion, in the report or in the code |
+| **One door, not N doors** | every runtime gets **one** discovery tool from the runtime manifest; a runtime without MCP gets a transport extension | `platform/estate/memory/runtimes.json` + `bin/estate-memory-install` (the estate's existing rule) | a per-runtime bespoke integration (the duplication the estate's law forbids) |
+| **Raw reads are visible, not forbidden** | direct source reads are recorded in the query log as "bypassed the plane" | the same ledger | silent divergence between what an agent read and what the estate knows |
+
+The fifth rule is deliberate: blocking the founder's own exploration would be a law the estate
+cannot keep. The gate's job is to make the plane the *fast path*, not to imprison the agent.
+
+#### Portability of the plane
+
+The plane is portable because it has no home:
+
+- **No local state.** All six indexes are derived; the plane can be rebuilt from the sources on any
+  machine. The laptop copy and the cluster copy answer the same questions, and the cluster copy is
+  the fresher one for events.
+- **One wire contract, many deployments.** `estate.discover` is a request/response contract over the
+  estate's existing door (the same door the memory MCP uses), so a laptop agent, a cluster agent
+  and a cloud sandbox agent call the same thing. This is the estate's existing rule — *one bridge
+  per runtime*, transport extension, never a second implementation.
+- **One policy, many renderers** (§4.11): the tiers, budgets and escalation rules live in the same
+  policy file the router reads, so a sphere cannot drift into a different discovery behaviour.
+- **Placement by the free-tier ladder** (§4.10): the ingest and the indexer run where the sources
+  are (the cluster, beside the bus); the query path runs where the agents are (the laptop, or the
+  cloud); the relay between them is one small service, not a new plane.
+- **Sphere-local sources are first-class**: a cloud sandbox's own repo and logs are indexed by the
+  same adapter contract, so "what is true" means "true in this sphere, plus what the estate knows".
+
+#### The state it owns (four tables, all derived)
+
+| Table | Rows | Written by | Read by |
+|---|---|---|---|
+| `discovery.document` | every fact ingested | adapters | planner |
+| `discovery.entity` + `discovery.alias` | canonical things and their names | resolver | planner, answer layer |
+| `discovery.tombstone` | retracted facts | epistemic adapter | answer layer, re-issue |
+| `discovery.query_log` | every query: class, tiers tried, latency, cost, answer id, whether the answer was cited | planner | cost model, friction measurement, re-issue |
+
+Plus one **non-table** obligation: the plane answers the estate's own question — *what does the
+estate know, how fresh is it, and what does it not know?* — as a first-class query class
+("coverage"), because an oracle that cannot measure its own blind spots is decoration.
+
+---
+
+### 4.13 The message plane — real-time communication between models, harnesses and the founder
+
+**The requirement, in the founder's words (2026-10-23).** "The executor model needs to communicate in
+real time with the mid or frontier model or vice versa … any communication real time across models
+and harnesses … this needs to be an estate-wide, well-thought-out and architected feature,
+including broadcast, enterprise peer-to-peer realtime comms with broadcast, and also founder
+inclusive."
+
+**What the estate already has.** The transport: NATS in the cluster, subjects
+`estate.agent.{runtime}.{session}.{kind}`. The event contract: `estate.agent.event`, whose kinds
+already include `steer`. The founder's standing law: *"real-time or invalid. Every agent run, PR,
+queue step, CI result, deploy, cluster change and rule refusal is visible live on FleetView, from
+the event itself"* (founder rule, 2026-09-30).
+
+**What is missing.** A *message* is not an *event*. Events are broadcast facts about what happened;
+messages are addressed requests that expect an answer, with a deadline, a default and a cost. Today
+an agent that needs a frontier decision has no door: it either guesses, or it hands work back, or it
+waits on a human. So the message plane is specified here, in the same "one of each layer" spirit:
+**one bus, one envelope, one policy.**
+
+**The envelope.** One JSON document, one schema (`estate.agent.message`), versioned — the same
+discipline as the delegation packet (§4.1):
+
+```json
+{
+  "message_version": 1,
+  "id": "msg-7042-03-0007",
+  "channel": "plan:idp-7042",
+  "from": {"agent": "pi", "runtime": "pi", "sphere": "laptop", "role": "implementer"},
+  "to": {"kind": "role", "role": "frontier_reasoner"},
+  "class": "escalate",
+  "body": {
+    "question": "the retry budget is a per-call or per-plan ceiling?",
+    "packet": "idp-7042/03",
+    "citations": ["git:idp:platform/llm/watchdog.py:88"],
+    "default_if_unanswered": "refuse_and_hand_back",
+    "deadline_s": 30
+  },
+  "reply_to": null,
+  "as_of": "2026-10-23T21:04:00Z",
+  "expires_at": "2026-10-23T21:04:30Z"
+}
+```
+
+`citations` are **discovery ids** (§4.12): a message that asserts something carries the same evidence
+obligation as an answer. A message without citations is a question, not a claim.
+
+**Three channel kinds, and nothing else.**
+
+| Kind | Who it reaches | Use | Cost rule |
+|---|---|---|---|
+| **point-to-point** | one named agent | a hand-off, a targeted ask | one wake-up |
+| **role channel** | whoever currently holds the role (frontier reasoner, verifier) | escalation, review, arbitration | one wake-up; the *router* picks the lane (§4.2), so a role channel works even when the named model is down |
+| **broadcast** | every live subscriber in scope | an estate-wide or plan-wide notice | **per copy**: the publisher is charged N times for N subscribers |
+
+A role channel is the important one: it makes the *role* the address, not the model, so the estate
+never hard-codes "ask `gpt-5`" — the same late binding the packets use (§4.11).
+
+**The escalation pattern** — the founder's own example, made deterministic:
+
+1. a cheap executor hits a decision it is not allowed to make (a semantic or architectural choice,
+   not a mechanical one);
+2. it publishes `escalate` to the plan's **role channel**, carrying the packet id, its citations, a
+   **deadline** and a **documented default**;
+3. the frontier reasoner (whichever lane is healthy) replies `answer`, and the executor applies it;
+4. if the deadline passes with no reply, the executor **takes the default** — normally
+   `refuse_and_hand_back` — and records that it did. It never guesses and it never waits forever.
+
+This is the same "no half-funded work" rule as §7.3, applied to a different resource: attention.
+
+**Delivery semantics** (deterministic, not "best effort"):
+
+- **at-most-once with explicit ack** for point-to-point and role messages: an unanswered escalation
+  is an *event* ("escalation timed out, default applied"), never a silent loss;
+- **per-channel ordering** by sequence number, so a plan's messages read in order;
+- **dead-letter** after N delivery attempts, with the dead letter visible on /fleet;
+- **expiry**: every message carries `expires_at`; an expired message is never delivered to a
+  newcomer (a channel is not a backlog);
+- **every message becomes a live row**: the same `estate.agent.event` kinds the estate already
+  publishes, so the founder sees the exchange live on /fleet and hears it on the Face, exactly as
+  the "real-time or invalid" law requires.
+
+**Founder-inclusive.** The founder is a first-class participant, not an observer of logs:
+
+- **observe**: any live plan channel is visible on **/fleet**, audible on the **Face** ("what is the
+  plan saying?" — arg-free, per the Face's constraint, §6.4) and readable from the **console on the
+  Mac** (`bin/estate-brief`-style, §6.10);
+- **steer**: the founder's note is injected into the channel as a `founder_note` and is bound to the
+  plan; a `steer` from the founder interrupts the plan's next decision point (this is what the
+  live-mind `steer` kind was for);
+- **instruct**: an instruction that changes scope becomes an **issue comment** — the estate's
+  existing authority model — not free-form chat, so it is recorded, cited and auditable;
+- **cost**: a founder steer wakes exactly the agents in the channel it targets; it never wakes the
+  estate.
+
+**Why this is not a second bus, a second workflow engine, or a second event contract:** the bus
+carries it, Temporal still sequences plans, `estate.agent.event` still carries the rows, and the
+message envelope is the only new artifact — one document, one schema, one policy.
+
+### 4.14 Identity — the Quad inside the delegation plane
+
+**The requirement (founder, 2026-10-23).** "This may be a good time to think about how to integrate and
+operationalise the Quad solution, so agents' identity is solved."
+
+**What the Quad already is.** A four-layer identity substrate plus a ledger, written down in the
+DROS ticket (2026-09-28) and implemented in `cmd/`:
+
+| Layer | Component | What it does | State, measured 2026-10-23 |
+|---|---|---|---|
+| 1 | `cmd/identity-bootstrapper` | SPIRE Workload API → JWT-SVID → RFC 8693 token exchange → Ed25519 key in tmpfs, never in the agent's filesystem | code present, **not deployed** (A33) |
+| 2 | `schema/identity0_registry.sql` | the registry: `agents` (URN primary key, public key, fingerprint, lineage, authority scope, operator), `sessions` (SPIFFE id, harness, model) | **the DDL was never applied** — `agents`/`sessions` do not exist in any database (A32) |
+| 3 | `cmd/elpis-proxy` | signs every request an agent makes (Method + URI + Timestamp + BodyHash + AgentURN + SessionID) and injects `X-Agent-Id`, `X-Agent-Signature` | code present, **not deployed** (A33) |
+| 4 | `cmd/dros-daemon` (BPF LSM) | kernel egress enforcement: an unregistered process gets `-EPERM` | code present, **not deployed**; ADR 0035 (one DaemonSet per node) is still **PROPOSED**, founder decides |
+| 4′ | `cmd/quad-ledger` | the single writer that turns signed actions into a hash chain in `estate-db`, anchors the chain head outside the cluster, and verifies it | **running** — Deployment `quad-ledger` 1/1, anchor + verify CronJobs every 15 min; the `quad.ledger-verify` intent passes — but with **0 rows** (A29–A31) |
+
+**The honest finding.** The Quad is *built and idle*: the machinery runs, the verification door
+passes, and the ledger is empty, because nothing signs an action yet. The estate therefore has an
+identity substrate with **no identities in it** — the delegation plane cannot lean on it today.
+
+**The integration, in one rule.** *Every actor in the delegation plane is a URN, and every action it
+takes is a signed row.* Concretely:
+
+| Where identity appears | Today | With the Quad |
+|---|---|---|
+| the delegation packet's `owner` | a free-text agent name ("pi", "claude") | the **agent URN** (`urn:aid:<sphere>:<agent>`), resolvable in the registry |
+| the message envelope's `from` / `to` | names, and a role | URNs; a **role channel** resolves to the URNs whose registry `authority_scope` holds that role |
+| the claim trailer (`Claim: <owner>/<repo>#<n>`) | an owner name | the URN plus the human-readable owner — the gate checks the URN, humans read the name |
+| the discovery answer | prose with citations | the same, plus the **acting URN** and the attestation tier of the answerer |
+| the plan row on /fleet | a runtime name | the URN, the role, the attestation tier, and the session id |
+| the audit trail | a git history | the ledger's hash chain + the external anchor — **history that cannot be quietly edited** |
+
+**Two attestation tiers, one model.** The Quad's layers 1–4 assume a cluster pod with a SPIFFE
+identity. The estate's other half — the laptop agents (pi, claude, opencode, and the executor the
+delegation layer adds) — cannot have kernel attestation, and pretending otherwise would be a lie in
+the ledger. So:
+
+- **kernel-attested**: a cluster pod with a SPIRE SVID; its requests are signed by the Elpis proxy;
+  the kernel refuses unsigned egress. Strength: the strongest available.
+- **door-attested**: a laptop agent whose every action goes through the **executor door**
+  (`estate-execute`), which signs the request with a device key and writes the same
+  `agent_actions` row. Strength: attested at the door, not by the kernel; recorded honestly as such.
+
+Both tiers write the **same** table, the same signature envelope and the same chain. The row
+carries the tier, so a reader can always tell how strong an attestation was — the ledger records
+what is true, not what is convenient (the Quad's own principle).
+
+**Operationalising it — the order that works** (each step is a claim, a lane and a proof):
+
+| # | Step | What it proves | Why in this order |
+|---|---|---|---|
+| 0 | apply the registry DDL and **register the estate's agents** with URNs, keys, roles and authority scopes | `agents` and `sessions` exist and hold the estate's real agents | identity must exist before anything can reference it |
+| 1 | deploy the **Elpis proxy** as the only egress for the delegation executor in-cluster, with the executor talking to the router through it | the first signed action lands in `agent_actions` | the executor is the first actor the delegation plane adds; identity is proven on the new path, not retrofitted |
+| 2 | run the ledger for real: the first signed action, the chain, the anchor, the **verify** | `quad.ledger-verify` passes with **rows > 0** (A30's zero becomes non-zero) | an empty chain is not evidence of integrity |
+| 3 | **door-attested tier** for the laptop: the executor signs and writes the same rows | a laptop action appears in the same ledger, tagged `door` | this is how the founder's own agents become attributable |
+| 4 | **kernel enforcer** (ADR 0035) as the final closure | an unsigned process gets `-EPERM` | last, because it is the step that can break working agents; 0035 already measured two bypasses (unknown PIDs, IPv6) |
+| 5 | **founder-facing identity**: /fleet shows URN + tier + role; the Face names the agent it is talking to; the **console on the Mac** answers "who am I" and "who did that" | the founder can see *who* acted, on the surface they are already using | identity the founder cannot see is identity the founder does not have |
+
+**What identity buys the delegation plane** (why this is not a detour):
+
+1. **attribution** — every diff, message and dollar is attributable to an agent and a session
+   (the delegation layer's "who owns this packet", §7.4);
+2. **authority** — a packet's `owner` URN and the registry's `authority_scope` decide what that
+   agent may do, so a cheap executor *cannot* take a frontier-only action (§4.2's tiering becomes
+   enforceable, not advisory);
+3. **continuity** — `sessions` + `lineage_parent` prove that a resumed run is the same agent
+   (the "continuity and ownership" problem, §7.4);
+4. **proof** — the chain and its external anchor make the estate's own history non-editable, so a
+   claim's provenance can be *proved* to a consultant or an auditor, not asserted;
+5. **cost** — an action row carries the session, so spend is attributable to an agent rather than
+   to a token bucket (§8).
+
+---
 
 ## 5. Options
 
@@ -678,7 +1320,7 @@ or C now would rebuild the router's job inside a new engine and violate that law
 
 | Existing component | Its role today | What the delegation layer adds | What it must NOT do |
 |---|---|---|---|
-| `platform/llm/front.py` + LiteLLM | the single model door; per-request routing; per-alias fallbacks | asks it for the alias the *packet* names | never choose a model outside `lanes.json`; never hold a vendor key |
+| `platform/llm/front.py` + LiteLLM | the single model door; per-request routing; per-alias fallbacks | asks it for the alias the *packet* names | never choose a model outside `~/.estate/router-state/lanes.json`; never hold a vendor key |
 | `platform/llm/lane_registry.py`, `watchdog.py` | lane health, error classes, failover | consumes lane health as the fan-out bound (§4.4) | never implement its own health probe |
 | `platform/llm/cost-ladder.yaml` | compute rungs and prices | adds `platform/llm/artifact-tier.yaml` (capability tiers) beside it | never restate a price; reference the ladder |
 | `platform/llm/routing-matrix.yaml` | axes: tier × N × selection × escalation | the artifact-role table becomes the semantic `filter_depth` axis that is currently a **named gap** (`ROUTE-05`) | never enable `filter_depth` before the classifier exists |
@@ -840,7 +1482,7 @@ is why §7.6 is in this proposal and not deferred.
   router's aliases into every installed harness's picker, so the harnesses already speak the
   router's model names.
 * **The router's config is not changed in phases 1–3.** The artifact-tier table only *names*
-  aliases that `lanes.json` already serves, and a check refuses an alias the live registry does
+  aliases that `~/.estate/router-state/lanes.json` already serves, and a check refuses an alias the live registry does
   not serve — a check, not a comment.
 * **`AGENTS.md` §11 gains one `[artifact_tier]` block**; `sovereign/policy.py` parses it; the
   existing drift test (`sovereign/tests/bdd/test_policy.py`) is extended to it. The policy stays
@@ -863,15 +1505,158 @@ Each phase is a claim, a lane and a green proof; each phase's acceptance is a me
 | Phase | What ships | Acceptance criterion (measurable) | Days |
 |---|---|---|---|
 | 0 — observe | a read-only shadow mode that *predicts* the tier each real task would have used, and records the prediction | 50 real tasks classified; the prediction log published; **no change to any execution path** | 1 |
-| 1 — the contract | `delegation-packet.schema.json`, the artifact-tier table, and their tests | schema test green; **every tier-table alias is present in the live `lanes.json`**; the tier table is parsed by `sovereign/policy.py` and the drift test fails when they disagree | 1 |
+| 0.5 — the discovery plane | the cross-source index and the cited-answer door, in shadow mode beside the existing searches | 30 real questions answered with a citation each; **the estate's "I don't know" answers counted** (currently unmeasurable) | 2–3 |
+| 0.75 — the Quad, operationalised | the registry DDL applied, the estate's agents registered with URNs, and the first signed action written by the ledger | `agents`/`sessions` exist; `agent_actions` goes from **0** (A31) to ≥1; `quad.ledger-verify` still exits 0 | 1–2 |
+| 1 — the contract | `delegation-packet.schema.json`, the artifact-tier table, and their tests | schema test green; **every tier-table alias is present in the live `~/.estate/router-state/lanes.json`**; the tier table is parsed by `sovereign/policy.py` and the drift test fails when they disagree | 1 |
+| 1.5 — the message plane | the message envelope, the role channel, the deadline+default rule and the founder's channel; the bus already carries it | one escalation answered inside its deadline; one broadcast acked by every live subscriber; the founder's note visible in the plan's row | 1–2 |
 | 2 — one adapter | the `opencode` adapter (`invoke`/`capture`/`resume`), in shadow mode beside the normal path | on 10 real `edit_diff` sub-tasks: the cheap diff is produced, its scope gate passes, and its acceptance gate result is recorded — with **no** adoption | 1–2 |
 | 3 — one real delegated sub-task | a two-sub-task plan, one per tier, landed through the greenlane with the claim gate live | the plan's acceptance passes; `claim-gate` green; the change lands on `main` via the lane; the state rows and the live-mind rows are visible on /fleet | 1 |
 | 4 — fan-out | three or four concurrent sub-tasks, with the measured machine-capacity bound live | a fan-out at the bound completes with no swap pressure above the 2026-10-21 baseline; killing one worker mid-flight leaves the plan completable by resume | 1 |
 | 5 — voice and monitoring | the four arg-free Face verbs, the /fleet plan panel, the decision log | the founder can ask "where is everyone" and get the truth from the board's own rows; a tier decision can be explained after the fact with its evidence | 1 |
 | 6 — spheres | the config-drift check; the registry's `transports`/`resumable` fields; one packet bound in a second sphere | the same packet body runs in two spheres, both pass the **same** acceptance commands, the bindings differ, no path/binary/key crosses spheres; the drift check is green across the live spheres | 1–2 |
 
-**Total: 6–9 days, one operator, no new always-on cost.** The phases are ordered so that phase 0
-and phase 1 are worthless on their own but make every later phase cheap.
+**Total: 9–14 days, one operator, no new always-on cost.** The phases are ordered so that phase 0
+and phase 1 are worthless on their own but make every later phase cheap. The discovery, identity and
+message phases are *cross-cutting*: they can run in parallel with the delegation phases, and each
+one makes the delegation layer more trustworthy rather than more complex.
+
+---
+
+### 6.8 The discovery plane in the stack — what plugs in, and what it must not do
+
+The plane is a **reader**, not a writer. It sits beside every source and inside no source's job.
+
+| Existing component | Its role today | What the discovery plane adds | What it must NOT do |
+|---|---|---|---|
+| **NATS event spine** (cluster) | the estate's live nervous system | the plane subscribes to the same subjects and turns events into documents with `as_of` | not publish, not own a subject, not become a second bus |
+| **estate-memory** (the MCP door) | semantic recall of what agents said | the plane *uses* memory as its semantic tier and adds code, event and decision tiers around it | not replace the memory store, not write memories, not fork the bridge |
+| **growmos graph** | durable provenance-carrying relations | the plane reads its JSONL as one index; `growmos query` becomes a planner tier | not re-implement extraction, not write `.growmos/` directly |
+| **`estate.db` action ledger** | step runs, intent tickets, policy decisions | the plane indexes it as the decision tier ("what was decided, with what verdict") | not own a second decision log |
+| **git (56 repos)** | the truth about code | the plane builds the code index (symbol, path, owner, last change) | not modify a tree, not be a second source of truth, not reimplement `git` |
+| **claims / focus register / lanes** | live ownership and CI state | the plane serves "may I write here?" and "is it green?" before the agent acts | not decide ownership, not replace `bin/claim-gate` |
+| **`sovereign/verifier.py` + the deterministic gates** | acceptance | the plane supplies the *evidence* the verifier reads | not verify, not pass a gate, not vote |
+| **greenlane** | prove green, then land | the plane supplies the context a lane needs to avoid re-reading the world | not merge, not push, not raise PRs |
+| **`/fleet`, the Face, Otto** | views for the founder | both read the plane's rows and the plane's query log | not query the raw sources their own way |
+
+**New intents (three, all read-only except the last):**
+
+| Intent | Args | Returns |
+|---|---|---|
+| `discover.query` | `question`, optional `sphere`, `freshness`, `max_escalations` | the answer object (§4.12 L4) |
+| `discover.cover` | `subject` | what the estate knows about the subject, from which sources, how fresh, and the blind spots |
+| `discover.index.status` | optional `source_id` | per source: last watermark, staleness, last error, document count |
+
+The MCP surface is **one** tool, `discover`, added to every runtime through the existing runtime
+manifest (`platform/estate/memory/runtimes.json` + `bin/estate-memory-install`); a runtime without
+MCP gets a transport extension to the same door. That is the estate's own one-bridge rule
+(Appendix B), applied to discovery.
+
+**Where it sits in the sequence (§6.7 amended):** after the router is live and before the fleet
+fan-out is trusted. The delegation plane consumes the plane's answers for context and for
+"where is everyone"; the plane consumes the delegation plane's events for the event index. The
+dependency is one-way per query and one-way per event — **no cycle**, so the plane can be built
+and shipped independently.
+
+### 6.9 The discovery-first contract, in the founder's own terms
+
+The founder asked that agents be "forced to use one source". In practice, for a task, that is five
+moments:
+
+1. **Before planning**: the brief *is* a discovery call — it already returns live claims and
+   pending work; the plane adds the "what is already known about this" tier.
+2. **Before touching a file**: "may I write here?" — one discovery call against the live-state
+   index; the claim surface answers instead of the write being refused afterwards.
+3. **Before spending**: the pre-flight (§4.9) asks the plane what this lane has cost and what it
+   failed on before, so the plan starts from measured history instead of a guess.
+4. **Before concluding**: the completion of a goal carries the discovery ids that support it — the
+   same rule that already refuses a goal with no `add_bdd`.
+5. **Before reporting**: the report's claims cite discovery ids, so a reader can re-ask the plane
+   the same question and get the same answer (or its corrected version).
+
+---
+
+### 6.10 The console surface — asking the estate from any terminal, in any harness
+
+The founder asked (2026-10-23): *"another surface should be direct from console like i am doing now,
+from any harness if possible."* The estate already has this pattern — `bin/estate-brief`,
+`bin/estate-checkpoint`, `bin/lane-where`, `bin/claim-open` — and it works in every runtime because
+it needs no MCP client, no configuration and no key in a repository.
+
+So the discovery plane ships with a **console client** as a first-class surface, beside the MCP
+tool, not after it:
+
+```
+bin/estate-discover "where is the retry budget set?"              # the answer, with its evidence
+bin/estate-discover --json "what did we decide about the router?"  # machine form
+bin/estate-discover --explain "is the claim still live?"            # the search it performed, tier by tier
+bin/estate-discover --cover platform/llm                            # what the estate knows here, and its blind spots
+bin/estate-discover --source git --reindex                          # (admin) rebuild one index
+```
+
+The rules that make it work "from any harness":
+
+- **no configuration** — it reads the same door the memory bridge reads (the key by name, never in a
+  repository), so it works on a laptop, in CI, and in a sandbox;
+- **no MCP required** — it speaks the `estate.discover` wire contract directly, so `pi`, `claude`,
+  `opencode`, a bare shell, a Makefile, a CI step and the founder's terminal are all first-class
+  callers;
+- **one implementation** — the console client and the MCP tool are the same call; there is no second
+  query path (the same discipline as one bridge per runtime);
+- **exit codes carry truth** (the `lane-where` precedent): `0` answered, `3` not found, `4` partial
+  (some sources stale), `5` the plane is unreachable — a script can branch without parsing prose;
+- **`--explain` is how the founder audits the oracle**: it prints the tiers tried, the documents
+  read, each source's freshness, and why the answer stopped where it did.
+
+This is also the answer to "how do agents discover": **the same door from every surface** — a
+terminal, an MCP runtime, `/fleet`, the Face. The Face's arg-free verbs ("where is everyone") are
+the live-state class with an implicit newest target; the console is the same call with an explicit
+question.
+
+---
+
+### 6.11 The message plane in the stack
+
+| Existing component | Its role | What the message plane adds | What it must NOT do |
+|---|---|---|---|
+| **NATS (cluster)** | the transport for everything live | the message subjects (`estate.msg.{channel}.{class}`) and the ack/dead-letter semantics | not a second bus, not a second event contract |
+| **`estate.agent.event`** (live-mind) | the event rows /fleet and the Face read | the message plane publishes its exchanges as the *same* rows (kind `steer`, and the new kinds the contract allows) | not invent a parallel row type the surfaces must learn |
+| **the router** (`platform/llm/front.py`) | picks the lane per request | a role channel resolves to a lane through the router, so an escalation to "the frontier reasoner" works when the named model is down | not choose a lane outside the live registry |
+| **the delegation packet** (§4.1) | the unit of work | a message references a packet id; the packet stays the only thing that crosses a harness boundary | not carry code or prose blobs in the message body |
+| **the discovery plane** (§4.12) | facts with provenance | a message's `citations` are discovery ids; a message may carry an answer object | not be a message bus |
+| **Temporal / the sovereign engine** | sequences plans, durable workflows | the message plane is *within* a step, for the parts a workflow cannot express (ask a peer, escalate a decision) | not re-implement durable timers or retries |
+| **`/fleet`, the Face** | the founder's surfaces | both show the live exchange: who asked, who answered, what it cost, what the default was | not require a form, a table dump or a report to read later |
+
+**New intents (two):** `msg.send` (channel, class, body, deadline, default) and `msg.listen`
+(channel, since) — plus the surface-level verbs the founder uses by voice, which stay **argument-free**
+because the Face cannot pass arguments (§6.4): "what is the plan saying", "tell the plan to hold",
+"who is waiting on what".
+
+**Where it sits in the sequence (§6.7 amended):** the message plane is **phase 1.5** — it needs the
+bus (which exists) and the plan state rows (§4.7); it does not need the delegation layer to be
+complete, and the delegation layer becomes far better once escalations have a door. The discovery
+plane is phase 0.5 for the same reason: a message with citations needs the plane to be honest.
+
+### 6.12 The Quad in the stack
+
+| Existing component | Its role | What the delegation plane adds | What it must NOT do |
+|---|---|---|---|
+| **the registry** (`schema/identity0_registry.sql`) | the authoritative agent list (URN → key, role, authority) | the resolver behind every role channel; the source of the packet's `owner` | not duplicate identity in `estate.db` |
+| **Elpis** (`cmd/elpis-proxy`) | signs each request (URN, session, body hash, timestamp) | the executor's egress becomes the signing proxy, so every delegated action is attributable | not sign on the agent's behalf without the agent's key |
+| **the Quad ledger** (`cmd/quad-ledger`) | the single writer; hash chain; external anchor; verify | the delegation plane's actions, messages and plan transitions are the rows | not become a second audit store; the git history stays the code's history |
+| **DROS kernel enforcer** (`cmd/dros-daemon`, ADR 0035) | kernel egress refusal for unregistered processes | the final closure of step 4 — not a prerequisite for the delegation plane | not be switched on before 0035's two measured bypasses are fixed |
+| **SPIRE** (spire-server, two agents, CSI driver — running, A33) | the workload identity | the kernel-attested tier's source of truth | not be replaced by the registry's keys |
+| **`estate.db`** | the estate's own state | the delegation, plan and message tables (they live here) | not absorb the Quad's tables (they live in `quad_ledger`, A31) |
+| **`/fleet`, the Face, the Mac console** | the founder's surfaces | all three render the acting URN, its role and its attestation tier | not show a name where a URN is the fact |
+
+**Founder inclusion, on the three surfaces the founder actually has** (/fleet, the Face, and the
+console on the Mac): the identity of every actor is visible on all three, and the Face's verbs stay
+**argument-free** (§6.4) — "who is running the plan", "what did the executor just do", "who am I".
+
+### 6.13 Where this sits in the sequence
+
+The Quad is **phase 0.75**: it needs only the registry and the ledger, both of which exist as code
+and a running deployment. It does not wait for the delegation layer — and the delegation layer
+becomes trustworthy because of it.
 
 ---
 
@@ -1121,7 +1906,7 @@ acceptance") is portable.
    `harness` and `model` fields in §4.1 become **optional hints**, resolved at bind time. A packet
    with an absolute path from sphere A is a schema violation, refused by the schema.
 2. **Each sphere advertises its lanes.** A *lane descriptor* = (sphere, provider, alias, price,
-   health, capabilities, tools). The estate already has most of this: `lanes.json` is a lane
+   health, capabilities, tools). The estate already has most of this: `~/.estate/router-state/lanes.json` is a lane
    registry with health, error classes and fallbacks; the sphere adds the identity of where it is
    running and what it can reach. Discovery is a **probe**, exactly as this session probed the
    harnesses (§11 A2): on the laptop the probe finds `claude`, `opencode`, `pi`, `ollama` and the
@@ -1227,6 +2012,106 @@ config change on the laptop. (d) ZeroEdge, when enabled in the cluster, changes 
 
 ---
 
+### 7.9 The oracle: super accurate, real time, and nothing escapes it
+
+**The difficulty, stated honestly.** "A super accurate oracle that answers any question about
+anything, in real time" is not a search problem; it is a *truthfulness* problem under three
+adversaries: a **stale** estate, a **partial** estate (a source that cannot be read), and a
+**model** that will confidently fill a gap with something plausible. Any design that answers from
+one index, without provenance, without the right to refuse and without retraction, will be wrong
+often and *will not know it is wrong* — which is the failure mode that actually hurts an estate.
+
+**The mechanism** is §4.12 in full. Its five load-bearing parts, restated as the oracle's contract:
+
+1. **Provenance is mandatory** — every claim carries source, locator, `as_of`, epistemic state.
+2. **Refusal is a success** — "the estate does not know this" is a first-class answer, with the
+   search performed.
+3. **Contradictions are surfaced, not smoothed** — two claims about one entity are returned with
+   their states and times.
+4. **Retraction propagates** — a `corrected` fact tombstones every index entry that quoted it and
+   re-issues the affected answers as stale.
+5. **Nothing escapes the door** — every agent's reads are recorded; every write is preceded by a
+   live-state answer; every conclusion cites a discovery id.
+
+**The proving measurement.** Seven numbers, all measurable, none of them "the model felt good":
+
+| # | Measurement | How | Target | Failure it catches |
+|---|---|---|---|---|
+| M1 | **citation coverage** | of every answer's claims, the fraction with a locator that re-resolves to the same bytes | 100 % | the planner answering from the model's head |
+| M2 | **stale detection** | replay a labelled question set against a snapshot, then mutate 5 % of the source facts; re-query | 100 % of mutated facts re-labelled stale within one watermark interval | a plane that serves yesterday's truth |
+| M3 | **refusal correctness** | 100 questions about things that never existed, hand-labelled | 0 fabricated answers; ≥95 % correct refusals | a confident guess engine |
+| M4 | **retrieval sufficiency** | 50 questions with a known gold locator; compare top-1 | ≥90 % exact locator match; report p50/p95 latency and cost | a plane that finds *a* thing rather than *the* thing |
+| M5 | **real-time lag** | publish an event on the bus, ask the plane, measure the lag | p95 < 2 s | a "real-time" claim that is really a poll (the 1,277-polls failure mode) |
+| M6 | **coverage and blind spots** | the `discover.cover` query per source | every source either indexed with a live watermark or explicitly marked stale/unreadable — never silently absent | the 24 `unknown` rows in the enforce ledger repeating at a larger scale |
+| M7 | **answer cost** | per answer: tiers tried, escalations, wall-clock, tokens, and the cost of the sources read | p95 latency inside the tier budget; escalations logged per class (the plane's cost *is* its escalations) | a plane that is slower or dearer than the searches it replaces |
+
+M1–M4 and M6 are deterministic and belong in CI (they are a test suite, not a judgement). M5 is a
+property of the deployment (it needs the cluster-side ingest), and M7 is the number that decides
+whether the plane earns its keep.
+
+---
+
+### 7.10 Real-time communication between models and harnesses
+
+**The difficulty.** Real-time agent-to-agent communication is easy to demo and hard to make
+*correct*, because four things go wrong at once: (1) **a wake-up costs money** — every message that
+reaches a model is a paid call, and an estate-wide broadcast is N paid calls; (2) **a silent
+timeout is worse than a slow answer** — an executor that waits forever on a frontier decision is a
+stalled plan; (3) **the laptop cannot reach the bus** (A23: the spine is cluster-only today), so
+"real time" for a laptop agent is currently a poll; (4) **a broadcast that wakes everyone is the
+2026-10-21 saturation waiting to happen** — load average 95, 473M swapouts (A15).
+
+**The mechanism** (§4.13): one bus, one envelope, three channel kinds; role channels so the address
+is a role and the router picks the lane; a **deadline plus a documented default** on every
+escalation, so no wait is unbounded and no answer is guessed; explicit acks, dead letters and
+expiry, so nothing is silently lost; **per-copy cost** on broadcast with a cap; every exchange
+published as live rows, so the founder watches the estate talk to itself.
+
+**The proving measurement.**
+
+| # | Measurement | How | Target | Failure it catches |
+|---|---|---|---|---|
+| M8 | **publish → ack latency** | publish on a role channel from inside the sphere, measure to the ack | p95 < 200 ms in-sphere; < 2 s across spheres via the relay | "real time" that is really a poll |
+| M9 | **escalation round-trip** | force an escalation with a 30 s deadline and a default | p95 round-trip < 30 s; **100 % of timeouts apply the documented default and record it** | a stalled plan waiting on a model that never answered |
+| M10 | **broadcast delivery** | broadcast to N live subscribers, count acks | 100 % of live subscribers ack within 1 s; the cost charged per copy | a broadcast that reaches some agents and starves others |
+| M11 | **loss under failure** | kill a subscriber mid-broadcast; kill the publisher mid-escalation | the publisher sees the ack gap and the dead letter; the plan's state row shows the default applied | a message that vanishes with no trace |
+| M12 | **cost per message** | tokens and dollars per class | an escalation ≤ the packet's `max_usd`; a broadcast ≤ its cap; every spend visible on /fleet | a messaging layer that spends the estate's daily budget on chatter |
+
+M8 is a **baseline this proposal does not have**: the bus pod carries no NATS client CLI (A23), so
+the in-sphere latency must be measured from a pod that links the client, and that measurement is a
+precondition of phase 1.5. Inventing a number here would be exactly the failure this document
+refuses (§7.9, D14).
+
+### 7.11 Agent identity, solved
+
+**The difficulty.** Identity is easy to *claim* and hard to *believe*: an agent that says who it is
+is an assertion; an agent whose every request is signed by a key only it can read, whose actions are
+chained and anchored outside the cluster, and whose unregistered egress is refused by the kernel, is
+evidence. And the estate is half in the cluster and half on a laptop — a laptop agent can never have
+kernel attestation, so a design that pretends otherwise produces a ledger full of claims.
+
+**The mechanism** (§4.14): one registry with URNs as primary keys; one signing path per attestation
+tier, both writing the same signed rows; the chain anchored outside the cluster and verified on a
+cron; the tier recorded on every row so the strength is visible; the delegation plane's `owner`,
+`from`, `to` and claim trailers all resolving to URNs; and the founder seeing the URN, the role and
+the tier on /fleet, the Face and the Mac console.
+
+**The proving measurement.**
+
+| # | Measurement | How | Target | Failure it catches |
+|---|---|---|---|---|
+| M13 | **the first signed action** | run one delegated action through the signing path | `agent_actions` goes from **0** (A31) to ≥ 1, and the verify door still passes | an identity story with no identity in it |
+| M14 | **tamper detection** | plant the fault the Quad's own chain test uses (altered row, deleted-and-relinked row, truncated chain) | `quad.ledger-verify` exits non-zero on each | a chain that cannot fail is not a chain |
+| M15 | **attribution end-to-end** | take a landed change and follow it to the agent | the URN, session id and attestation tier are readable on /fleet, in the ledger row and in the commit's claim trailer | attribution that stops at the git author |
+| M16 | **authority enforcement** | give a cheap executor a frontier-only packet | it is refused by `authority_scope`, and the refusal is a ledger row and a live event | tiering that is advisory only |
+| M17 | **cross-sphere continuity** | resume a laptop run after a crash | the resumed session carries the same URN and `lineage_parent`, and the ledger shows both sessions | a resumed plan that nobody can attribute |
+
+M13–M14 are the gates for step 2 of the operationalisation table; M15–M17 are the gates for the
+delegation layer's phase 3. ADR 0035's measured bypasses (unknown PIDs allowed; IPv6 unchecked)
+mean the kernel tier is **not** claimed until they are fixed.
+
+---
+
 ## 8. Cost, risks, non-goals
 
 ### 8.1 Cost model
@@ -1254,6 +2139,58 @@ scarce (it was, on 2026-10-21), the cheap tier is right. The default should ther
 cheapest tier whose acceptance gate is deterministic**, with the frontier tier bought deliberately
 rather than by default. That is the trade-off the founder is actually making (decision D2).
 
+### 8.1.1 The discovery plane's cost
+
+Three cost centres, and the honest answer that the plane is *cheaper* than the searches it
+replaces only if it is actually used:
+
+| Cost | What it is | Measured by | Order of magnitude, from the measured baselines |
+|---|---|---|---|
+| **Index build** | one pass per source: git trees + symbol extraction, doc text, event replay, memory embeddings, ledger scan, claims snapshot | minutes of CPU per source, once per change | the code index is the expensive one (56 repos, 9,269 `.py` files at depth ≤4); the others are seconds |
+| **Storage** | the six indexes plus the query log | bytes per document | roughly an order of magnitude above the raw text (embeddings + entity links), plus the query log — the only unbounded table, so it needs a retention rule (D16) |
+| **Query** | per answer: the tiers tried, the documents read, the embedding, and (at tier 4) one synthesis call | p50/p95 latency and tokens per answer | the plane's own budget is the same policy file the router reads (one policy): a discovery call is capped like any other model call, and the free local floor serves the exact tiers |
+
+The arithmetic that matters: a graph query costs **15.4 s** and returns 636 nodes / 2,469 edges
+that the agent must then read; `estate-brief` costs **3.20 s**; a `rg` sweep is fast but returns
+text the agent must read before it can cite it. The plane's claim is therefore **not** "one call is
+free" — it is that one call replaces two to five reads with one cited answer, and that every
+escalation it performs is logged, so its cost is visible instead of hidden in an agent's context.
+
+### 8.1.2 The message plane's cost
+
+Every message that reaches a model is a paid call, so the cost model is about *waking*, not about
+bytes:
+
+| Cost centre | What it is | Measured by | Rule |
+|---|---|---|---|
+| **escalation** | one frontier wake-up per unresolved decision | tokens/dollars per escalation, by class | bounded by the packet's `max_usd`; the plan's budget reserves for it (§4.9) |
+| **broadcast** | N wakes for N subscribers | cost per copy × copies | a per-publisher cap and a max fan-out (D17); a broadcast that no one acts on expires |
+| **idle standing by** | an agent that waits to be messaged | open sessions × duration | the plan layer wakes an agent **only** on a message; it never polls (this is what replaces the 1,277 hand-rolled polls, A22's context) |
+| **transport** | the bus | messages/sec, bytes | free tier: the cluster's own NATS; no new always-on resource (Decision 0034) |
+
+The honest statement for the consultant: **real-time messaging does not reduce token spend; it
+replaces polling and human latency with explicit, capped, measurable wake-ups.** The saving is in
+*elapsed time* and in *fewer stalls*, and the cost is bounded by construction (per-copy cost, caps,
+deadlines, defaults).
+
+### 8.1.3 The Quad's cost
+
+The identity substrate is the cheapest of the three new layers, because it is mostly code that
+already exists and a workload that already runs:
+
+| Cost | What it is | Measured by | Order of magnitude |
+|---|---|---|---|
+| **ledger** | one writer Deployment + two CronJobs every 15 min, already running | `kubectl get deploy -n quad` (1/1, 20d) and the CronJob history | **zero new cost** — it is already deployed; the change is rows, not resources |
+| **signing** | one Elpis sidecar per agent pod | sidecar CPU/memory and added latency per request | one process per pod; the request adds one Ed25519 sign (microseconds) |
+| **registry** | one table set in the Quad's own database | rows (agents, sessions) | tens of rows today, thousands later; negligible storage |
+| **kernel enforcer** | one DaemonSet per node (ADR 0035) | node CPU/memory and the risk of refusing a working agent | **deferred to step 4** precisely because it is the only part that can break running work |
+| **door tier** | signing inside the existing executor | one signature + one row per action | no new process — the executor is already the only door |
+
+The honest line for the consultant: **identity is the cheapest layer to operationalise and the most
+expensive to get wrong.** Its cost is not money; it is the risk of a ledger that says more than it
+proves, which is why §7.11's gate M14 (a planted fault must turn the verify door red) comes before
+any claim that history cannot be quietly edited.
+
 ### 8.2 Risks
 
 | # | Risk | Likelihood (evidence) | Impact | Mitigation | Who decides |
@@ -1266,7 +2203,7 @@ rather than by default. That is the trade-off the founder is actually making (de
 | K6 | Jev stays unavailable, so the arbiter never speaks | measured today (`TYPESAFE_API_KEY` unset) | ambiguous routing decisions stay low-confidence | the deterministic table is the primary; every decision records what Jev *would* have said, so the value is measurable when the key lands (§7.2) | D4 |
 | K7 | The plan's fan-in waits on a sub-task that is stuck | possible | the plan stalls | the setback budget (§7.5); blocked sub-tasks are visible on /fleet and spoken by the Face; the plan continues with independent sub-tasks | D5 |
 | K8 | Scope creep into "build the whole matrix" (Option B) | real — the Battalion spec already asks for it | 30+ days, a paid rung, and a second selection layer | Option A first; the artifact-tier table is designed as the axis B wants, so B is a superset, not a rewrite | D1 |
-| K9 | The proposal is read as "the estate already does this" | possible | the gap is dismissed | §3's six gaps, each with a citation; the gap is a *unit of work*, not the absence of capability | — |
+| K9 | The proposal is read as "the estate already does this" | possible | the gap is dismissed | §3's seven gaps, each with a citation; the gap is a *unit of work*, not the absence of capability | — |
 | K10 | Voice reachability dies with the Mac (the Face forwards intents to the laptop over Tailscale) | measured (Face audit §2) | the founder's hands go quiet | the cluster already runs `estate-mcp`; make the plan verbs reachable from the cluster door (D8) | D8 |
 
 ### 8.3 Non-goals (so the scope is not read larger than it is)
@@ -1289,7 +2226,7 @@ requirement.
 | # | Given | When | Then |
 |---|---|---|---|
 | B1 | a goal and a live claim for the paths involved | `plan.delegate` runs | a plan is returned whose sub-tasks have **disjoint** path sets, each with exactly one deterministic acceptance command, and one issue + one claim per sub-task |
-| B2 | a plan with an `edit_diff` sub-task and the cheap tier live in `lanes.json` | `subtask.run` runs | the packet names a cheap alias; the executor runs it on the cheap lane; the estate runs the acceptance; the model is never asked whether it passed |
+| B2 | a plan with an `edit_diff` sub-task and the cheap tier live in `~/.estate/router-state/lanes.json` | `subtask.run` runs | the packet names a cheap alias; the executor runs it on the cheap lane; the estate runs the acceptance; the model is never asked whether it passed |
 | B3 | a sub-task whose diff touches a path outside the packet's `paths` | the scope gate runs | the gate **refuses**, the packet is `blocked` with the offending path named, and no change is offered for landing |
 | B4 | a cheap-tier sub-task that fails the same acceptance twice | the driver reacts | the failure is classified, the sub-task is **re-planned** (not retried), the frontier tier is asked for a new decomposition, and the plan's other sub-tasks continue |
 | B5 | a harness process killed mid-sub-task | the plan is restarted | the same sub-task resumes with the same issue, claim, worktree and session key; already-passed gates are not re-run; no second claim is opened |
@@ -1300,6 +2237,21 @@ requirement.
 | B10 | a reviewer pool that would collapse onto one model family (e.g. `gpt-oss-120b` under groq, cerebras and sambanova) | the loop config is loaded | the config is **rejected** (diversity rule), and the run falls back to a distinct-family pool |
 | B11 | the founder asks "where is everyone" by voice | the Face answers | the answer is read from the same state rows the /fleet panel reads, naming each agent, its harness, its state and its heartbeat age — with no argument required |
 | B12 | a plan whose sub-tasks all pass their gates | the fan-in runs | the change lands through a lane on `main`; the plan state becomes `landed` and then `operating` only after the estate's five checks; never before |
+| B13 | a question whose answer spans code, a decision and a live event | `discover.query` runs | one answer object returns claims from all three, each with source, locator, `as_of` and epistemic state, plus the list of tiers tried |
+| B14 | a question about something the estate never recorded | `discover.query` runs | the answer is "the estate does not know this", with the searched sources listed and no claim returned (exit code 3) |
+| B15 | a fact the epistemic layer has marked `corrected` | the same question is asked again | the claim is labelled `stale`, the tombstone is shown, and no un-retracted variant of that fact is served |
+| B16 | a source that cannot be read | `discover.index.status` runs | the source is reported `unreadable` with its last watermark and last error — never as empty — and answers depending on it are `partial` (exit code 4) |
+| B17 | an agent about to write a path with no live claim | the pre-flight discovery call runs | it answers "may I write here?" **before** the attempt, and the enforcement ledger records the discovery id that answered it |
+| B18 | the founder asks a question in a terminal, from any harness | `bin/estate-discover "<question>"` runs | the answer is identical to the MCP tool's answer for the same question (one implementation), exit codes 0/3/4/5, and `--explain` prints the tiers tried and each source's freshness |
+| B19 | a goal with no discovery id in its evidence | `complete_goal` runs | it refuses — the same refusal shape as a goal with no `add_bdd` |
+| B20 | a cheap executor blocked on a semantic decision it may not make | it escalates to the plan's role channel | the frontier reasoner receives it with the packet id and citations, replies within the deadline, and the executor applies the answer |
+| B21 | no reply by the deadline | the deadline passes | the executor takes the **documented default** (`refuse_and_hand_back`), records that it did, and the plan's state row shows the timeout — it never guesses and never waits unbounded |
+| B22 | an estate-wide broadcast with a token cap | it is published | every live subscriber receives and acks it within 1 s, the cost is charged **per copy**, and the spend appears on /fleet |
+| B23 | the founder speaks to the Face while a plan is running | the note is issued | the note lands in the plan's channel as a `founder_note`, appears in the plan's row on /fleet, and steers the plan's next decision point |
+| B24 | the registry has no row for the agent that is about to act | the agent tries to open a session | it is refused with a named reason ("unregistered URN"); no session, no action, no row |
+| B25 | an agent signs an action and the chain is later tampered with | `quad.ledger-verify` runs | it exits non-zero and the fault is named — the ledger is not decorative |
+| B26 | a cheap executor is handed a packet its authority does not cover | it tries to act | the registry's `authority_scope` refuses it, and the refusal is a ledger row and a live row on /fleet |
+| B27 | the founder asks "who did that" from the Mac console | the console is asked | it answers with the URN, the role, the attestation tier and the session id — the same facts /fleet and the Face show |
 
 ---
 
@@ -1320,6 +2272,18 @@ recommendation is the proposer's; the owner is who must sign.
 | D8 | Where the engine runs | laptop only / laptop + cluster dual-plane / cloud only | **dual-plane** (laptop now, cloud as a peer sphere), with plan state carried in the issue so the estate can move without a cutover; **no new always-on deployment** (Decision 0034) | founder |
 | D9 | ZeroEdge, the second router-side layer | keep it beside the platform router / fold it into the cluster renderer under one policy / retire it | **fold it in** (one policy, many renderers) — the one-of-each-layer law decides this; a second optimizer with its own routing policy is what "coupled to the current situation" looks like | founder + consultant |
 | D10 | Budget posture for delegation | keep the current caps / raise the frontier cap / reserve per plan | **keep the caps** and have each plan *reserve* from them, so a plan cannot spend the estate's daily frontier budget twice over | founder |
+| D11 | Where the discovery plane runs | laptop only / cluster only / split (ingest beside the bus, query by the agents) | **split** — the ingest must sit beside the bus (the only way to see events in real time: the laptop cannot reach NATS today, A23); the query path runs where the agents are; one relay between them | founder + consultant |
+| D12 | May the plane answer *from* a model | never (index only) / model synthesis over retrieved spans / free-form model answer | **model synthesis only at tier 4, over retrieved spans, always cited** — the model phrases retrieved facts and is never the source of one | consultant |
+| D13 | What happens when two sources disagree | pick the newest / pick the most authoritative / surface both | **surface both**, ranked by epistemic state then `as_of` — an estate answer must be auditable, not silently chosen | consultant |
+| D14 | Which measurements must exist before anyone says "accurate" | none / M1–M7 | **M1–M7 first** (§7.9) — the estate has no such numbers today, and a proposal that invents them is exactly what this document refuses to report | founder + consultant |
+| D15 | The plane's own budget | uncapped / capped by the router policy / a fixed per-call ceiling | **capped by the same policy file the router reads**; when the cap is hit, the plane returns the best partial answer and states what it did not do | founder |
+| D16 | The query log's retention | forever / 30 days / sampled | **30 days**, with the answer ids and citations kept in the estate's evidence store — the log is the only unbounded table | founder |
+| D17 | Broadcast scope and cap | estate-wide by default / plan-scoped by default / founder-requested only | **plan-scoped by default**; an estate-wide broadcast requires an explicit intent with a per-publisher token cap and a max fan-out (D17) — an estate-wide wake of N agents is N times the cost and is the 2026-10-21 saturation waiting to happen (A15) | founder + consultant |
+| D18 | The founder's power in a channel | observe / observe + steer / observe + steer + instruct | **observe + steer**; an instruction that changes scope becomes an **issue comment** — the estate's existing authority model — so it is recorded, cited and auditable | founder |
+| D19 | Which attestation tier the laptop agents get | kernel only (no laptop agents) / door-attested (signed at the executor) / claim-only | **door-attested**: the executor signs every laptop action into the same ledger, and the tier is recorded honestly; the laptop is where the founder's own agents run | founder + consultant |
+| D20 | Whether identity gates the delegation layer from day one | identity optional / identity required for in-cluster delegation only / identity required everywhere | **required for in-cluster delegation** (it is already there), **advisory for the laptop** until the door-attested tier lands (step 3) — a hard gate the estate cannot yet meet would stall the work | founder + consultant |
+| D21 | Where the registry lives | in `estate.db` / in the Quad's own database | **the Quad's own database** (`quad_ledger`, measured A31): one registry, one chain, one place; no second copy of identity in `estate.db` | founder |
+| D22 | Whether the kernel enforcer gates the launch | yes / no, ADR 0035 first | **no**: 0035 measured two bypasses and is still PROPOSED; the kernel tier is step 4, after the ledger proves itself with real rows | founder |
 
 ---
 
@@ -1347,17 +2311,37 @@ says "not re-measured".
 | A13 | The claim model | `backstage/plugins/fleetview-backend/src/fleetview_backend/claims.py:109`, `:192` | "Newest claim per issue. A refresh is a new comment, not an edit, so the newest wins."; `claims_snapshot(now)` returns the live claims |
 | A14 | The runner registry | `sovereign/engine/runners.py:159` | `REGISTRY: dict[str, RunnerFn]` — the estate's registry pattern this proposal follows |
 | A15 | The 2026-10-21 saturation (the fan-out evidence) | the estate's own incident record — **not re-measured this session** | 4 cores / 8 GB; load average **95**; swap **3.3–4 GB** of 4–5 GB; **473M** swapouts; `front.py`'s health check took **4.2 s**; 2 h 20 m of "probe slow curl=28"; `front.py` fails over only on connect-refused or a 5 s connect timeout — a starved router does **not** fail over |
+| A16 | The size of the estate's source tree | `ls -d ~/Documents/code/*/ \| wc -l` | **56** repositories |
+| A17 | The volume of code to index | `find ~/Documents/code -maxdepth 4 -name "*.py" -not -path "*/node_modules/*" \| wc -l` | **9,269** Python files at depth ≤ 4 |
+| A18 | The knowledge graph's size | growmos entity/relation counts over `~/Documents/code/estate-graph` | **10,772** entities, **14,154** relations |
+| A19 | What a graph query costs | `growmos --root ~/Documents/code/estate-graph query "discovery plane"` | **15.4 s**, returning 636 nodes / 2,469 edges — a summary, not a lookup |
+| A20 | What the brief costs | `/usr/bin/time -p bin/estate-brief --task "discovery plane design"` | **real 3.20 s** (user 0.31 s, sys 0.24 s) |
+| A21 | What the action ledger holds | `sqlite3 ~/.estate/estate.db` counts | `step_runs` **3,828**, `intent_tickets` **2,648**, `policy_decisions` **790** |
+| A22 | What the enforcement ledger holds | a python pass over `~/.estate/memory/enforce-ledger.jsonl` | **717** rows — **524** pass, **169** refuse, **24** unknown; top reasons: 336 "pass — covered by a live claim", 186 "pass — wrote back", 21 "refuse — No plan declared, so Bash is refused", 30+ "refuse — no live claim covers …", 12 "unknown — claim ledger unreadable", 12 "unknown — transcript unreadable" |
+| A23 | Whether the laptop can see the event spine | `kubectl exec -n event-bus nats-0 -- nats stream ls`; `nc nats.event-bus.svc 4222` | the bus pod has **no `nats` CLI** ("executable file not found in $PATH"), and the laptop **cannot reach** the cluster's NATS service by cluster DNS — the spine is cluster-only today |
+| A24 | The bus's hard contracts | `ls platform/event-bus/contract/` | **3** schemas: `estate.agent.event.json`, `estate.commerce.order_paid.json`, `estate.news.story.json` |
+| A25 | The live memory service | `ps ax \| rg estate-memory-mcp`; `ls ~/.estate/memory` | **3** live `estate-memory-mcp` processes (`~/.estate/memory/bin/estate-memory-mcp`); `~/.estate/memory/` holds `bin/`, `enforce-ledger.jsonl` (207 KB, live), `focus-register.json` (12,975 bytes, rewritten 21:49), `claims-noted.json`, `platform/` |
+| A26 | The console-door precedent | `bin/estate-brief`, `bin/estate-checkpoint`, `bin/claim-open` | the zero-config CLI pattern §6.10 follows (no MCP required, key read by name) |
+| A27 | The `lane-where` door in this checkout | `bin/lane-where` | "No such file or directory" here — the door landed on `main` under claim #7003 while this worktree sits behind it; the console design does not depend on it |
+| A28 | The event bus's in-sphere latency | publish → ack from inside the cluster | **not measured this session** — the bus pod has no NATS client CLI (A23) and the laptop cannot reach the service, so the baseline must be taken from a pod that links the client; it is a precondition of phase 1.5 and is marked **[unverified]** rather than estimated |
+| A29 | The Quad ledger, live | `kubectl get deploy -n quad` | `quad-ledger` **1/1 Ready**, 20d; pod age 19h; `anchor` and `verify` CronJobs every 15 min, last runs 13m and 7m ago, both `Completed` |
+| A30 | The Quad ledger's content | intent `quad.ledger-verify` (exit 0) | `quad-ledger: 0 rows verified, head 000000000000 matches anchor` — **the chain verifies and it is empty** |
+| A31 | The Quad's tables, live | `kubectl exec -n estate-db estate-1 -- psql -d quad_ledger` | database `quad_ledger` exists in estate-db and holds exactly `agent_actions` and `merkle_anchors`; `agent_actions` = **0**, `merkle_anchors` = **0** |
+| A32 | The identity registry, live | `psql -d estate -c "select … from sessions"` | `ERROR: relation "sessions" does not exist` — and no `agents` table in any database: the registry DDL was never applied |
+| A33 | The Quad's other layers, live | pod list across all namespaces | no `elpis-proxy`, no `identity-bootstrapper`, no `dros-daemon` pod anywhere; SPIRE **is** running (`spire-server-0`, two `spire-agent`s, two CSI drivers, 27d/45d); ADR 0035 (kernel enforcer as a node DaemonSet) is still **PROPOSED** |
 
 ### B. Citations (every load-bearing claim in this document points at one)
 
-* Routing and lanes: `platform/llm/front.py`, `platform/llm/lanes.json`, `platform/llm/cost-ladder.yaml`, `platform/llm/routing-matrix.yaml`, `platform/llm/availability.yaml`, `platform/llm/zeroedge.yaml`, `platform/llm/zeroedge_gateway.py`, `~/.estate/router-state/lanes.json`, `~/.estate/router-state/active`
+* Routing and lanes: `platform/llm/front.py`, `platform/llm/cost-ladder.yaml`, `platform/llm/routing-matrix.yaml`, `platform/llm/availability.yaml`, `platform/llm/zeroedge.yaml`, `platform/llm/zeroedge_gateway.py`, `~/.estate/router-state/lanes.json`, `~/.estate/router-state/active`
 * Policy: `AGENTS.md` §11 (the single toml block), `sovereign/policy.py`, `sovereign/config.py`, `sovereign/tests/bdd/test_policy.py`
 * Claims and landing: `bin/claim-open`, `bin/claim-gate`, `backstage/plugins/fleetview-backend/src/fleetview_backend/claims.py`, `greenlane/engine.py`, `.github/workflows/greenlane.yml`, `docs/runbooks/greenlane.md`
-* Verification: `sovereign/verifier.py`, `sovereign/engine/`, `bin/idp-ci`, `bin/verify`, `sovereign/tests/bdd/`
+* Verification: `sovereign/verifier.py`, `sovereign/engine/`, `bin/idp-ci`, `sovereign/tests/bdd/`
 * Execution and isolation: `platform/executor/sandbox.py`, `factory/sandbox.py`, `platform/sandbox/vcluster/`
 * Harnesses and portability: `docs/specs/2026-10-23-harness-inventory-and-how-a-harness-is-swapped.md` (on `main`), `platform/estate/memory/runtimes.json`, `docs/synthesis/factory-inventory.md`
-* Voice and visibility: the Face audit spec (2026-10-23), `platform/llm/availability.yaml`, the Fleet board (`backstage/plugins/fleetview-*`), `bin/idp-brief`
+* Voice and visibility: the Face audit spec (2026-10-23), `platform/llm/availability.yaml`, the Fleet board (`backstage/plugins/fleetview-*`), `bin/estate-brief`
 * Prior art for the desired behaviour: `docs/specs/2026-09-15-asymmetric-compute-leverage-spec-v0.1.md` (Status: PROPOSED — the same proposal genre, and the source of the "like electricity" language in its §10), `docs/specs/2026-10-22-*.md` (the idp-mode/voice/workforce series), `docs/diagnoses/*.yaml` (the hypothesis-race genre used for the gap analysis)
+* The data sources reviewed in §2.10: `~/.estate/memory/enforce-ledger.jsonl` (717 rows), `~/.estate/memory/focus-register.json`, `~/.estate/estate.db` (`step_runs`, `intent_tickets`, `policy_decisions`), `platform/event-bus/contract/` (3 schemas), `platform/estate/memory/door.py` (the https door the bridge forwards to), `platform/estate/memory/runtimes.json`, `~/Documents/code/estate-graph` (growmos: 10,772 entities), `bin/estate-brief`, `bin/estate-memory-install`, `backstage/plugins/fleetview-backend/src/fleetview_backend/claims.py`, `docs/decisions/0034-workloads-are-placed-by-the-free-tier-not-by-the-cluster.md`
+* In flight, not relied on: `docs/decisions/0037-the-film-is-a-deterministic-twin-of-the-event-spine.md` (read on disk under claim #7000; **not merged**, so nothing in this proposal depends on it)
 * Placement: `docs/decisions/0034-workloads-are-placed-by-the-free-tier-not-by-the-cluster.md`
 
 ### C. Glossary
