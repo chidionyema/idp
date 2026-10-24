@@ -1,5 +1,6 @@
 [
-  { "root": "backstage/packages/app", "css": "src/styles.css", "migrate_by": "2026-10-31", "note": "portal and /fleet; its tokens.ts seeded the kit and is replaced by it" },
-  { "root": "~/Documents/code/prospector/store_platform/src/Store.Web", "css": "src/styles/tokens.css", "migrate_by": "2026-10-31", "note": "mumchimp.com; crew#700 CP1 rebuilds home and pack page on the kit" },
-  { "root": "~/Documents/code/bytesync-web", "css": "src/app/globals.css", "migrate_by": "2026-10-15", "note": "company site; crew#690" }
+  { "root": "backstage/packages/app", "css": "src/styles.css", "brand": null, "migrate_by": "2026-10-31", "note": "portal, /fleet and the Face; its tokens.ts seeded the kit and is replaced by it" },
+  { "root": "web", "css": "app/globals.css", "brand": "meridian", "migrate_by": "2026-10-31", "note": "meridian.intelligence; the estate's public face, a brand of the kit" },
+  { "root": "~/Documents/code/prospector/store_platform/src/Store.Web", "css": "src/styles/tokens.css", "brand": "mumchimp", "migrate_by": "2026-10-31", "note": "mumchimp.com; crew#700 CP1 rebuilds home and pack page on the kit" },
+  { "root": "~/Documents/code/bytesync-web", "css": "src/app/globals.css", "brand": null, "migrate_by": "2026-11-15", "note": "company site; crew#690. Deadline extended from 2026-10-15 on 2026-10-24: it is not a founder surface, the five founder surfaces come first, and a passed deadline that no checkout can see is not a gate." }
 ]
