@@ -280,6 +280,30 @@ def router_files() -> list[tuple[Path, str]]:
 
 VOICE_PROBE = "http://127.0.0.1:8091/readyz"
 
+# The installed delegate-build runs from ~/.estate/libexec and loads the artifact policy from
+# ~/.estate/llm, next to itself (its parents[1]/llm). The policy was only staged into the
+# router's modules dir, so the intent's planner had no policy to read and every delegated plan
+# died on a missing file: the router and the delegator must run the same bytes.
+POLICY_DIR = ROUTER.parent / "llm"
+
+
+def sync_artifact_policy() -> list[str]:
+    # Stage the canonical policy (platform/llm/artifact_tier.py + its YAML) into the installed
+    # layout the delegate-build reads. Copied only when the bytes differ, so an unchanged policy
+    # is not rewritten under a running delegate.
+    notes = []
+    for name in ("artifact_tier.py", "artifact-tier.yaml"):
+        src = TREE / "platform/llm" / name
+        dst = POLICY_DIR / name
+        if not src.is_file():
+            continue
+        if dst.exists() and filecmp.cmp(src, dst, False):
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        notes.append(f"policy {name}")
+    return notes
+
 
 def router_accepted(voice_was_ready: bool, within_s: int) -> bool:
     # Acceptance, not liveness: the router answering /health/liveliness proved nothing while voice
@@ -563,6 +587,10 @@ def main() -> int:
     elif broke:
         alert(f"runtime sync: {', '.join(broke)} did not come back")
     notes += sync_memory()
+    try:
+        notes += sync_artifact_policy()
+    except OSError as exc:
+        notes.append(f"artifact policy sync failed: {exc}")
     try:
         notes += sync_router()
     except (OSError, subprocess.SubprocessError) as exc:

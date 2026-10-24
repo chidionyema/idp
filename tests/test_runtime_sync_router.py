@@ -80,6 +80,31 @@ def test_a_changed_artifact_policy_reaches_the_router(tmp_path, monkeypatch):
     assert calls["kick"] == 1
 
 
+def test_the_artifact_policy_reaches_the_installed_delegate_layout(
+    tmp_path, monkeypatch
+):
+    # 2026-10-24: the policy reached the router's modules but not ~/.estate/llm, where the
+    # installed delegate-build (which loads the policy from next to itself) looks for it -- so
+    # every delegated plan died on a missing policy before it made a model call.
+    _estate(tmp_path, live="same", main="same")
+    (tmp_path / "tree/platform/llm/artifact_tier.py").write_text("module")
+    (tmp_path / "tree/platform/llm/artifact-tier.yaml").write_text("policy")
+    mod = _load(tmp_path, monkeypatch)
+    notes = mod.sync_artifact_policy()
+    assert (tmp_path / "llm/artifact_tier.py").read_text() == "module"
+    assert (tmp_path / "llm/artifact-tier.yaml").read_text() == "policy"
+    assert notes == ["policy artifact_tier.py", "policy artifact-tier.yaml"]
+
+
+def test_an_unchanged_artifact_policy_is_not_rewritten(tmp_path, monkeypatch):
+    _estate(tmp_path, live="same", main="same")
+    (tmp_path / "tree/platform/llm/artifact_tier.py").write_text("module")
+    (tmp_path / "tree/platform/llm/artifact-tier.yaml").write_text("policy")
+    mod = _load(tmp_path, monkeypatch)
+    mod.sync_artifact_policy()
+    assert mod.sync_artifact_policy() == []
+
+
 def test_an_unchanged_router_is_left_running(tmp_path, monkeypatch):
     _estate(tmp_path, live="same", main="same")
     mod = _load(tmp_path, monkeypatch)
