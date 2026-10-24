@@ -1,0 +1,58 @@
+{
+  "why": "The plan a delegate-build run consumes. Copy it, fill it, and let `delegate.plan` refuse it if a field is empty. The estate's rules are in the fields, not in the prose: prior_art says the work was not reinvented, staff_bar says the senior judgement was actually applied, skills says which packs the step leaned on, and done_check is the command that decides.",
+  "branch": "lane/<slug>",
+  "prior_art": {
+    "searches": [
+      {
+        "kind": "prs",
+        "query": "the exact command run",
+        "found": [
+          "#NNNN state title"
+        ]
+      },
+      {
+        "kind": "tickets",
+        "query": "the exact command run",
+        "found": [
+          "docs/tickets/..."
+        ]
+      },
+      {
+        "kind": "code",
+        "query": "the exact command run",
+        "found": [
+          "path -> the PR that added it"
+        ]
+      }
+    ],
+    "verdict": "new | extend | exists",
+    "reuse": [
+      "what existing code, PR or ticket this plan builds on"
+    ]
+  },
+  "staff_bar": {
+    "design_note": "the decision, in one paragraph, and the alternative rejected",
+    "blast_radius": "what else in the estate this touches, by path",
+    "rollback": "how this is undone if it is wrong",
+    "observability": "the log line, metric or surface that proves it works live",
+    "simplification": "what was left out, and why that is enough"
+  },
+  "steps": [
+    {
+      "id": "s1",
+      "title": "one line",
+      "files": [
+        "repo-relative paths this step may create or edit -- and nothing else"
+      ],
+      "read": [
+        "repo-relative paths the builder may read for context"
+      ],
+      "depends_on": [],
+      "skills": [
+        "pack ids this step leans on, from `skill-packs.py list`"
+      ],
+      "instructions": "exact change: signatures, message shapes, names, edge cases. No design left to the builder.",
+      "done_check": "shell command run from the repo root; exit 0 means the step is done (a real test that executes the new code)"
+    }
+  ]
+}
