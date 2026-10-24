@@ -42,6 +42,12 @@ def _load():
 
 ex = _load()
 
+# The door refuses work below a free-space floor (added 2026-10-23, when this laptop reached 197 MB
+# free of 113 GB and every agent kept accepting jobs). This suite is about the door's ceilings, its
+# steering and its job records, so it declares a volume with room. The floor has its own suite:
+# tests/test_door_refuses_a_full_volume.py.
+ex._free_mb = lambda path="/": 500_000
+
 
 @pytest.fixture()
 def executor():
