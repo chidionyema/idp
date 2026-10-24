@@ -48,6 +48,9 @@ def _ledger(tmp_path, monkeypatch):
     """A ledger in a temporary directory, and the door pointed at it."""
     path = tmp_path / "events.jsonl"
     monkeypatch.setenv("ESTATE_FRICTION", str(path))
+    # LAW 45: this suite is offline. The bus is opted out here and opted back in only by the three
+    # tests below that are about publishing, one of which brings its own broker.
+    monkeypatch.setenv("ESTATE_BUS_URL", "off")
     return path
 
 
@@ -222,3 +225,95 @@ def test_the_reader_honours_the_window(ledger):
     out = _observe(ledger)
     assert "1 event(s)" in out.stdout
     assert "gh run view <n>" in out.stdout
+
+
+# --- the bus: the ledger's copy that leaves this machine ---------------------------------------
+
+
+def _fake_broker():
+    """A broker that speaks just enough protocol to be a witness, not a simulation.
+
+    It sends INFO, reads the PUB line and its payload, and answers the PING with PONG -- the same
+    acknowledgement a real server gives. The received payload is the evidence: a test that only
+    checked `bus_publish() is True` would grade a socket, not a publish.
+    """
+    import socket
+    import threading
+
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    received: list[bytes] = []
+
+    def serve():
+        conn, _ = listener.accept()
+        with conn:
+            conn.sendall(b'INFO {"server_id":"fake","proto":1}\r\n')
+            buf = b""
+            pub_line = None
+            body_start = 0
+            # The client sends CONNECT, then the PUB. Find the PUB line itself rather than assuming
+            # the first line in the buffer is the one carrying the payload size.
+            while pub_line is None:
+                chunk = conn.recv(4096)
+                if not chunk:
+                    break
+                buf += chunk
+                at = buf.find(b"PUB ")
+                end = buf.find(b"\r\n", at) if at != -1 else -1
+                if end != -1:
+                    pub_line = buf[at:end]
+                    body_start = end + 2
+            if pub_line is not None:
+                size = int(pub_line.rsplit(b" ", 1)[1])
+                body = buf[body_start:]
+                while len(body) < size:
+                    chunk = conn.recv(4096)
+                    if not chunk:
+                        break
+                    body += chunk
+                received.append(body[:size])
+            conn.sendall(b"PONG\r\n")
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    return listener.getsockname(), received, listener, thread
+
+
+def test_a_recorded_event_reaches_the_bus(ledger, monkeypatch):
+    (host, port), received, listener, thread = _fake_broker()
+    monkeypatch.setenv("ESTATE_BUS_URL", f"nats://{host}:{port}")
+    try:
+        door = _door()
+        door.record_friction("refuse-wait", "sleep 30", detail="sleep 30")
+        thread.join(timeout=2)
+    finally:
+        listener.close()
+    assert received, "no publish reached the broker"
+    published = json.loads(received[0])
+    on_disk = _rows(ledger)
+    assert published["kind"] == "refuse-wait"
+    # The bus carries exactly the row the file holds: two copies of one record, not two records.
+    assert published == on_disk[0]
+
+
+def test_the_ledger_is_written_when_the_bus_is_unreachable(ledger, monkeypatch):
+    import socket
+
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    probe.bind(("127.0.0.1", 0))
+    dead_port = probe.getsockname()[1]
+    probe.close()  # a port nothing listens on: the bus is down, not absent
+    monkeypatch.setenv("ESTATE_BUS_URL", f"nats://127.0.0.1:{dead_port}")
+    door = _door()
+    assert door.bus_publish("estate.friction.v1", b"{}") is False
+    door.record_friction("refuse-wait", "sleep 30")
+    assert [r["kind"] for r in _rows(ledger)] == ["refuse-wait"]
+
+
+def test_publishing_can_be_turned_off(monkeypatch):
+    monkeypatch.setenv("ESTATE_BUS_URL", "off")
+    door = _door()
+    assert door.bus_publish("estate.friction.v1", b"{}") is False
+
