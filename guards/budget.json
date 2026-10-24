@@ -1,0 +1,11 @@
+{
+  "$description": "The ratchet (crew#7019): every path and the number of violations it may still have. The guard refuses a path only when it is above its number, so today's measurements start green and a surface that reaches zero turns its entry into a refusal. Entries are a partition: a nested entry owns its own files, so each scope's number is its own. The numbers are the counts measured on main today (2026-10-24, main b55225844) and the guard judges a branch against the base it measures on origin/main, so a lane is never red for main's own violations; see guards/purity.mjs for the three rules (cap, teeth, fresh).",
+  "packages/estate-ui-kit/src": 0,
+  "packages/estate-ui-kit/gallery": 0,
+  "packages/estate-ui-kit/scaffold": 0,
+  "backstage/packages/app/src/modules/room": 128,
+  "backstage/packages/app/src/modules/home": 80,
+  "backstage/packages/app/src": 186,
+  "web/app": 87,
+  "store_platform/src/Store.Web/src": { "max": 215, "repo": "prospector", "root": "~/Documents/code/prospector" }
+}
