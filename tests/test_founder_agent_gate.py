@@ -19,10 +19,21 @@ sys.path.insert(0, str(HERE))
 
 import gate_agents as agents  # noqa: E402
 import gate_gates as gates  # noqa: E402
+import gate_perf as perf  # noqa: E402
 import gate_suite as suite_mod  # noqa: E402
 from gate_schema import Event, Run, verdict  # noqa: E402
 
 TASKS = suite_mod.load_tasks()
+
+
+def load_live_module():
+    """`gate_live`, loaded the same way (the harness is a directory of scripts, not a package)."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("fag_live", HERE / "gate_live.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def load_run_module():
@@ -274,6 +285,292 @@ def test_command_agent_reads_one_json_run(tmp_path):
     assert run.status == "ok"
     assert run.events[0].text == "done"
     assert run.cost_usd == 0.01
+
+
+# ------------------------------------------------------------------- the pull surface (s4)
+class _FakeDoor:
+    """A door that behaves like the deployed one: 202 + task id, then a read-back by task id.
+
+    Real HTTP over a real socket, because the adapter's whole job is the wire: a stub that answers
+    a function call would prove nothing about a 202, a 404-then-200 poll, or a 503.
+    """
+
+    def __init__(self, answers=None, accept=202, readback=(200,), store_down=False):
+        import http.server
+        import threading
+
+        self.accept = accept
+        self.readback = list(readback)
+        self.store_down = store_down
+        self.answers = answers or {
+            "task_id": "01TEST",
+            "asked": "p",
+            "answered": "Booked it: 19:30, table for two.",
+            "lane": "comms",
+            "model": "minimax",
+            "attempts": 1,
+            "verified": True,
+            "outcome_state": "answered",
+            "cost_usd": 0.004,
+        }
+        self.polled = 0
+        door = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def _send(self, code, body):
+                payload = json.dumps(body).encode()
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def do_POST(self):
+                self._send(door.accept, {"ok": True, "task_id": "01TEST"})
+
+            def do_GET(self):
+                door.polled += 1
+                code = door.readback.pop(0) if door.readback else 200
+                if door.store_down:
+                    self._send(503, {"ok": False, "reason": "store unavailable"})
+                elif code == 404:
+                    self._send(404, {"ok": False, "reason": "no such answered turn"})
+                else:
+                    self._send(200, door.answers)
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.server.shutdown()
+        self.server.server_close()
+
+    @property
+    def url(self):
+        return f"http://127.0.0.1:{self.port}"
+
+
+def _pull_agent(door, **kw):
+    return agents.DoorAgent(
+        door=door.url,
+        channel="http",
+        surface="http",
+        allow_door=True,
+        pull=True,
+        poll_interval_s=0.01,
+        **kw,
+    )
+
+
+def test_pull_door_reads_the_answer_back_by_task_id(monkeypatch):
+    monkeypatch.setenv("OTTO_HTTP_SECRET", "test-credential")
+    with _FakeDoor(readback=(404, 404, 200)) as door:
+        run = _pull_agent(door, deadline_s=5.0).turn("gym-offer", "book me")
+    assert run.status == "ok", [e.text for e in run.of("error")]
+    assert run.of("assistant")[0].text.startswith("Booked it")
+    assert run.artifacts["evidence"] == "door.answer"
+    assert run.artifacts["task_id_at_door"] == "01TEST"
+    # The answer was legitimately absent twice and present on the third read: a 404 is "not yet".
+    assert door.polled == 3
+    # What the door measured travels with the run, so performance is graded on it (G6/G10).
+    assert run.metrics["model"] == "minimax"
+    assert run.metrics["answered_ms"] > 0
+    assert run.metrics["accepted_ms"] >= 0
+    assert run.metrics["verified"] is True
+    assert run.cost_usd == 0.004
+
+
+def test_pull_door_reports_a_dead_bus_as_a_refusal_not_a_202(monkeypatch):
+    """The exact production fault: an accepted turn nobody can answer. Now the door says 503 and
+    the gate records a refusal, instead of a 202 the harness would have to call ungradable."""
+    monkeypatch.setenv("OTTO_HTTP_SECRET", "test-credential")
+    with _FakeDoor(accept=503) as door:
+        run = _pull_agent(door).turn("gym-offer", "book me")
+    assert run.status == "refused"
+    assert any("HTTP 503" in e.text for e in run.of("error"))
+
+
+def test_pull_door_without_a_credential_is_a_refusal(monkeypatch):
+    monkeypatch.delenv("OTTO_HTTP_SECRET", raising=False)
+    with _FakeDoor() as door:
+        run = _pull_agent(door).turn("gym-offer", "book me")
+    assert run.status == "refused"
+    assert any("OTTO_HTTP_SECRET" in e.text for e in run.of("error"))
+
+
+def test_pull_door_names_a_store_it_cannot_read(monkeypatch):
+    monkeypatch.setenv("OTTO_HTTP_SECRET", "test-credential")
+    with _FakeDoor(store_down=True) as door:
+        run = _pull_agent(door).turn("gym-offer", "book me")
+    assert run.status == "error"
+    assert any("503" in e.text for e in run.of("error"))
+
+
+def test_pull_door_times_out_with_what_it_tried(monkeypatch):
+    monkeypatch.setenv("OTTO_HTTP_SECRET", "test-credential")
+    with _FakeDoor(readback=(404,) * 500) as door:
+        run = _pull_agent(door, deadline_s=0.2).turn("gym-offer", "book me")
+    assert run.status == "timeout"
+    cause = run.of("error")[0].text
+    assert "no answer read back" in cause and "404" in cause
+
+
+# ------------------------------------------------------------------ performance (G6/G10, s5)
+def test_perf_aggregate_quantiles_come_from_the_rows():
+    rows = [
+        {"answered_ms": 100.0, "cost_usd": 0.01, "model": "mini"},
+        {"answered_ms": 200.0, "cost_usd": 0.02, "model": "mini"},
+    ]
+    agg = perf.aggregate(rows)
+    assert agg["answered_ms"]["p50"] == 100.0
+    assert agg["answered_ms"]["max"] == 200.0
+    assert agg["cost_usd"] == 0.03
+    assert agg["models"] == ["mini"]
+
+
+def test_perf_compare_refuses_to_pass_without_a_previous_round():
+    rows = perf.compare({"answered_ms": {"p95": 100.0}, "cost_usd": 1.0}, None)
+    assert perf.verdict(rows) == "insufficient-data"
+
+
+def test_perf_compare_fails_a_slower_or_dearer_round():
+    prev = {"answered_ms": {"p95": 1000.0}, "cost_usd": 1.0}
+    slow = {"answered_ms": {"p95": 1600.0}, "cost_usd": 1.0}
+    dear = {"answered_ms": {"p95": 1000.0}, "cost_usd": 1.3}
+    same = {"answered_ms": {"p95": 1400.0}, "cost_usd": 1.2}
+    assert perf.verdict(perf.compare(slow, prev)) == "fail"
+    assert perf.verdict(perf.compare(dear, prev)) == "fail"
+    assert perf.verdict(perf.compare(same, prev)) == "pass"
+
+
+def test_perf_compare_refuses_across_two_different_suites():
+    prev = {"answered_ms": {"p95": 1000.0}, "cost_usd": 1.0}
+    cur = {"answered_ms": {"p95": 5000.0}, "cost_usd": 9.0}
+    rows = perf.compare(cur, prev, current_suite_sha="new", previous_suite_sha="old")
+    assert {r["status"] for r in rows} == {"insufficient-data"}
+
+
+def test_improvement_items_close_only_when_the_measurement_drops_them():
+    report = {
+        "failures": [
+            {"task": "gym-offer", "category": "web-read", "reasons": ["no offer"]}
+        ],
+        "performance": {"slowest": [{"task": "email-receipt", "answered_ms": 9000.0}]},
+        "gates": {
+            "P": {"rows": [{"metric": "cost_usd", "status": "fail", "why": "over"}]}
+        },
+    }
+    items = perf.items_for(report)
+    assert {i["id"] for i in items} == {
+        "task:gym-offer",
+        "latency:email-receipt",
+        "regression:cost_usd",
+    }
+    # One item still present, one gone: closure is per item, and a cleared one is the only evidence
+    # that the round before it changed anything.
+    now = [i for i in items if i["id"] == "latency:email-receipt"]
+    closed = perf.closure([{**i, "round": 1} for i in items], now)
+    assert closed["closed"] == 2 and closed["open"] == 1
+    assert {r["id"]: r["state"] for r in closed["rows"]}["task:gym-offer"] == "closed"
+
+
+def test_a_performance_regression_makes_a_passing_round_not_green(
+    tmp_path, monkeypatch
+):
+    runmod = load_run_module()
+    monkeypatch.setattr(runmod, "ROUNDS", tmp_path / "rounds.json")
+    base = {
+        "started": "t",
+        "suite_sha": "s",
+        "pass_rate": 1.0,
+        "gates": {"G1": {"status": "pass"}},
+        "improvement": {"items": []},
+    }
+    runmod.record_round({**base, "round": 0, "gates": {"G1": {"status": "pass"}}})
+    state = runmod.record_round(
+        {
+            **base,
+            "round": 1,
+            "gates": {
+                "G1": {"status": "pass"},
+                "P": {"status": "fail", "rows": [], "performance": {}},
+            },
+        }
+    )
+    rows = {r["round"]: r for r in state["rounds"]}
+    assert rows[1]["green"] is False
+    assert rows[0]["green"] is True
+    assert rows[1]["perf"] == "fail"
+
+
+def test_a_suite_where_nothing_was_asked_reports_zero_not_one(tmp_path, monkeypatch):
+    """The harness graded `all(verdicts)` on a list that was never appended to.
+
+    `all([])` is True, so before 2026-10-23 every task counted as passed and `pass_rate` read 1.0
+    on a suite where the agent had done nothing -- a gate that could not fail, inside the harness
+    whose whole job is failing honestly. A stub that cannot answer must read 0.0.
+    """
+    runmod = load_run_module()
+    monkeypatch.setattr(runmod, "REPORTS", tmp_path)
+    agent = agents.StubAgent(fixture=str(HERE / "fixtures" / "empty-run.json"))
+    tasks = runmod.suite_mod.load_tasks(["table-booking"])
+    out = runmod.run_suite(agent, tasks, runs=1)
+    assert out["passed"] == 0
+    assert out["pass_rate"] == 0.0
+    assert out["runs_never_asked"] == 1
+
+
+# ------------------------------------------------------------------- the live feed (G8, s6)
+def test_the_feed_records_an_envelope_the_surface_already_reads(tmp_path):
+    live = load_live_module()
+    feed = tmp_path / "live.jsonl"
+    live.emit("run.end", "r3", feed, task="table-booking", ok=True, answered_ms=812.0)
+    lines = [json.loads(l) for l in feed.read_text().splitlines()]
+    event = lines[0]
+    assert event["runtime"] == "founder-agent-eval"
+    assert event["session_id"] == "r3"
+    assert event["kind"] == "run.end"
+    assert event["task"] == "table-booking"
+    assert event["answered_ms"] == 812.0
+    assert event["at"].endswith("Z")
+    # No bus on a laptop: the feed says so once, in the feed, instead of going quiet.
+    assert lines[1]["kind"] == "feed.not_published"
+    live.emit("run.end", "r3", feed, task="dst-exact", ok=False)
+    kinds = [json.loads(l)["kind"] for l in feed.read_text().splitlines()]
+    assert kinds.count("feed.not_published") == 1, kinds
+
+
+def test_the_feed_subject_is_the_bus_family_the_surface_reads():
+    live = load_live_module()
+    assert (
+        live.subject_for("round.end", "r3")
+        == "estate.agent.founder-agent-eval.r3.round.end"
+    )
+
+
+def test_the_feed_tail_skips_a_malformed_line(tmp_path):
+    live = load_live_module()
+    feed = tmp_path / "live.jsonl"
+    feed.write_text('{"kind": "round.start"}\n{not json\n{"kind": "round.end"}\n')
+    assert [e["kind"] for e in live.tail(feed)] == ["round.start", "round.end"]
+
+
+def test_the_feed_is_bounded(tmp_path, monkeypatch):
+    live = load_live_module()
+    monkeypatch.setattr(live, "KEEP", 5)
+    feed = tmp_path / "live.jsonl"
+    for i in range(10):
+        live.record({"kind": "run.end", "i": i}, feed)
+    kept = [json.loads(l)["i"] for l in feed.read_text().splitlines()]
+    assert kept == [5, 6, 7, 8, 9]
 
 
 # ---------------------------------------------------------------------------------- rounds

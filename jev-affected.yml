@@ -18,6 +18,15 @@ tasks:
     command: pytest backstage/plugins/fleetview-backend/tests -q
     when: Could FleetView voice, the ASR/TTS engines, or the voice routes change?
 
+  # The founder's evals (2026-10-23: every agent under continuous evaluation, watched live on the
+  # founder surface). Two roots, because pytest's rootdir and its `pythonpath = ["src"]` come from
+  # the arguments: the harness proof lives at the repo root, the endpoints under the plugin.
+  founder-evals:
+    command: >-
+      pytest tests/test_founder_agent_gate.py -q &&
+      (cd backstage/plugins/fleetview-backend && pytest tests/test_founder_agent_evals_feed.py tests/test_founder_agent_evals_http.py -q)
+    when: Could the founder-agent eval harness, its round ledger or live feed, or the founder surface's evals panel change?
+
   bdd:
     command: pytest sovereign/tests/bdd -q
     when: Could an estate behaviour contract, a gate, or a policy change?

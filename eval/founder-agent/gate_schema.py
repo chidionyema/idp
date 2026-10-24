@@ -57,6 +57,11 @@ class Run:
     artifacts: dict[str, Any] = field(default_factory=dict)
     cost_usd: float = 0.0
     fleet: list[dict[str, Any]] = field(default_factory=list)
+    #: What the surface measured about the turn: answer latency, the door's accept latency, the
+    #: lane, the model, attempts, the verified flag, the turn's own cost. Filled by the adapter that
+    #: can see it (the door's read-back fills all of it). Performance is graded from here
+    #: (`gate_perf`), so an empty dict is "unmeasured", never "zero".
+    metrics: dict[str, Any] = field(default_factory=dict)
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
 
     # -- writing ---------------------------------------------------------
