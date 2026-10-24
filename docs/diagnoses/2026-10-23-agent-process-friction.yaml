@@ -112,6 +112,48 @@ doors_built_by_this:
   - {path: bin/pi-observe, rung: 1, does: "grades every live pi process twice (CPU delta, tty, ESTABLISHED sockets, age) and reads only the bytes appended since the last pass", proves: "job exec-1792783615-4399: 14 procs, 1839 MB, 7 leaked named with pid+age, exit 1"}
   - {path: bin/process-census, rung: 2, does: "counts the process-shaped work by class and by distinct command form, so reinvention is a number", proves: "job exec-1792784032-4447: 15 classes, 2,735 process-shaped calls in 24h"}
   - {path: bin/lane-where, rung: 2, does: "where is this branch: LANDED/PENDING/GREEN/RED/GONE in one call, exit-coded, no sleep", proves: "lane/estate-as-movie-spec -> PENDING exit 3 with PR #7002; lane/skill-layer -> RED exit 4 with the failing context"}
+  - {path: "mcp/plugins/estate_executor.py (_STEER)", rung: 1, does: "a poll is refused *with* the door that answers it, in the refusal's detail and before the blunt patterns, so the refusal teaches instead of denying", proves: "tests/test_executor_door_steers_instead_of_refusing.py 14 passed; a loop the first regex could not match (the `;` before `do`) is now graded by its exact literal string"}
+  - {path: bin/idp-ts-owner, rung: 1, does: "which staged .ts files backstage's project actually owns, so the commit gate typechecks what it can see and says what it is not checking", proves: "tests/test_idp_ts_owner.py 5 passed; a commit touching a pi extension now takes 5.7s where three consecutive attempts were SIGTERMed at the door's 100s ceiling"}
+
+gate_friction:
+  description: >
+    What the estate's own guards cost, measured while landing the doors above. Rows are commands,
+    outcomes and root causes, so each one can be re-measured instead of believed. This is the class
+    a reward/eval backbone needs: a guard that cannot be satisfied through the governed door forces
+    either `--no-verify` (every guard bypassed at once) or flailing, and neither shows up in a green
+    CI run.
+  rows:
+    - event: "three git commits SIGTERMed at the door's ceiling"
+      command: "git commit -F <msg> with extensions/estate-capabilities/index.ts staged"
+      outcome: "SIGTERMed at 100s, three times; staged work retained, commit not made"
+      root_cause: ".githooks/pre-commit ran a whole-workspace `tsc --noEmit` for any staged .ts; backstage/tsconfig.json includes only backstage/packages/* and backstage/plugins/*, so a pi extension started a typecheck that could not see it and does not finish inside the ceiling from a worktree borrowing node_modules"
+      fix: "bin/idp-ts-owner selects the project's own files; the hook typechecks only those and names the rest out loud"
+      after: "5.7s"
+    - event: "the gate's own budget is larger than the door it runs inside"
+      command: "read ~/.estate/libexec/mutation-run.py and mcp/plugins/estate_executor.py"
+      outcome: "TIMEOUTS commit=115 (its comment claims a 120s ceiling) against CEILING_SEC = 100"
+      root_cause: "no gate reads the ceiling from the thing that enforces it, so the constants and the comment drifted"
+      fix: "NOT FIXED -- idp#7013 asks for the budget to derive from CEILING_SEC and for a test that fails when any hook budget exceeds it. Workaround until then: warm mutation cache, one Python file per commit"
+    - event: "one lane-submit push refused before it left the laptop"
+      command: "IDP_CI_FAST=1 bin/idp-ci"
+      outcome: "FAIL py-strict: S108 hardcoded /tmp in the new steer test"
+      root_cause: "the test passed a literal /tmp as a cwd argument it did not need"
+      fix: "str(pathlib.Path.cwd()) -- the guard worked as intended: the failure never reached the lane"
+    - event: "a refusal that refuses correct intent"
+      command: "estate_execute with a heredoc containing Python source that mentions sleep"
+      outcome: "refused as a wait, although nothing waited"
+      root_cause: "the wait patterns are text-shaped, so a command that describes a wait is treated as one"
+      fix: "kept deliberately: a false refusal costs one retry and is legible, and the message now names the observation door"
+    - event: "lane-submit itself cannot fit through the door it is invoked by"
+      command: "estate-execute lane-submit"
+      outcome: "SIGTERMed at 100s with an empty log (job exec-1792791679-5055); the same intent had printed step timings of 31s fetch + 33s push + 5s hand-over a minute earlier"
+      root_cause: "lane-submit is network-bound (fetch, pre-push fast gate, push) and its cost is a property of the remote, not of the command; the door's 100s is a property of local CPU-bound work"
+      fix: "not fixed -- the same missing constraint as idp#7013: a budget must derive from what the work costs, and a network intent needs its own governed path rather than a 100s window. Recorded because the consequence is invisible: a SIGTERMed lane-submit leaves the branch pushed, so the next attempt reports success and nobody learns the first died"
+    - event: "the door refused a ticket body because of a word in its prose"
+      command: "gh issue create --body '<prose containing watch/wait>'"
+      outcome: "refused: this command waits on something outside the process"
+      root_cause: "the wait patterns read the whole command string, and a heredoc or body is prose, not shell"
+      fix: "--body-file, so the text never enters the command. Kept as a documented workaround rather than a widened pattern: widening is how the loop regex broke the first time"
 
 irreducible:
   - "Choosing what to build, and the spec's shape: the plan, the BDD, the trade-off."
@@ -123,9 +165,13 @@ second_order:
   - "A poll loop is not just slow, it hides the loop's own failures: 145 calls of `for i in ...; do sleep` were bounded guesses at when to look, and each one costs a turn, a model call and a transcript line."
   - "pi-observe reads only appended bytes (offsets in ~/.estate/pi-observe/state.json), because 361 MB of history cannot be re-read inside the executor's 100s ceiling -- measured: first pass 8.8s over 24 MB, incremental pass 3.0s."
   - "The executor refuses a command whose text resembles a wait (`this command waits on something outside the process`), including a heredoc containing the word `sleep` in Python source -- measured this session. That refusal is correct and is why the answer is an observation door (lane-where), never a wait door."
-  - "A monitor that must be invoked is a tool; pi-observe --install makes it a 300s LaunchAgent so the reading happens whether or not an agent asks."
+  - "A monitor that must be invoked is a tool; the job that makes the reading happen whether or not an agent asks belongs on the one scheduler. The first version of pi-observe patched a launchd plist, a second scheduling layer beside scheduler/schedule.yml (crew#989) inheriting none of its load gate, skip_on_battery, circuit breaker or one-log-per-run. Now ai.estate.pi-observe: mac, 5-minute cron, 300s timeout, and `--install` refuses naming that entry."
+  - "A refusal is where trust is spent: the census measured 1,277 polls of an answer one door already had, so the door has to be visible at composition (the tool description) and at refusal (the steer), not only in a document nobody reads mid-task."
 
 open:
   - "claim-open --heartbeat: 43 calls across 37 forms. The claim comment form is owned by claim-open, so the verb belongs there, not in a fourth script."
   - "worktree-add intent: 51 calls, 45 forms; the worktree convention (lane name -> path) is estate-wide and hand-typed."
   - "the 532 tool calls that write to /tmp are the same escape: a scratch file is a place a receipt goes to be forgotten."
+  - "idp#7017: the measurement has no founder surface. Every refusal is in the ledger and the scheduled receipt, but /fleet does not show it deciding, which by AGENTS.md section 3 makes it a tool rather than an operating safeguard. The precedent to copy is fleetview_backend/efficiency_feed.py (loads bin/estate-efficiency-report, streams SSE) -- not a second implementation."
+  - "idp#7013: the commit gate's budget (115s) is larger than the door's ceiling (100s), so a legitimate-but-slow mutation run is killed together with the commit. Until the budget derives from CEILING_SEC, any gate is a possible dead end."
+  - "pi-observe samples processes and appended transcript bytes, so it measures the number of calls, not how long an agent was blocked. Wall-clock cost per call needs the transcript's own timestamps paired per turn; without it a reward signal cannot weight a poll by the time it burned."

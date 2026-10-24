@@ -1,0 +1,9 @@
+name: friction-report
+description: What the agent doors refused, ranked by (kind, shape) -- read from the ledger the door wrote, never re-derived. The same numbers the /fleet friction tile shows, so the founder can ask for them by voice.
+args:
+  window_hours: {type: number, default: 24}
+  top: {type: number, default: 10}
+halt_on_failure: true
+steps:
+  - name: friction
+    cmd: ~/.estate/bin/pi-observe --friction --window-hours {{window_hours}} --json
