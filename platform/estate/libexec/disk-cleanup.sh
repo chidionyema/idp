@@ -17,7 +17,10 @@
 # without re-downloading healthy caches (scheduler/schedule.yml passes bin/idp-disk-guard's floor).
 # Opt-in: trash=true empties ~/.Trash -- the user's, so never by default.
 # Never touched, only reported: ~/.cache/estate-tools (live tooling: litellm venv, whisper, flux,
-# helm), ~/Documents, sibling repo worktrees (other agents'), ~/.nvm, ~/.ollama, app caches.
+# helm), ~/Documents, sibling repo worktrees (other agents'), app caches.
+# Under a CRITICAL floor (CRIT_MB, default 10240M free) the toolchain tier below also reclaims
+# ~/.ollama/models, old ~/.nvm/versions/node/*, old ~/.rustup/toolchains/* and old
+# ~/.local/share/claude/versions/*: toolchains, re-installed on demand. See "the critical tier".
 # Chrome's code-sign clones (beside $TMPDIR, in X/): only those no process holds open.
 # Under the floor, the log ends with WHERE the space is (largest dirs, big files, system spots),
 # measured, not a fixed list -- see "where the space is" below.
@@ -44,12 +47,13 @@ BIG_FILE_MB="${DISK_CLEANUP_BIG_FILE_MB:-200}"
 T_SCAN="${DISK_CLEANUP_SCAN_TIMEOUT:-300}"
 SYSTEM_SPOTS="${DISK_CLEANUP_SYSTEM_SPOTS-/System/Volumes/Update /private/var/vm}"
 SCAN_FILE="${DISK_CLEANUP_SCAN_FILE:-$HOME/.estate/disk-cleanup.last-scan}"
+CRIT_MB="${DISK_CLEANUP_CRIT_MB:-10240}"   # free-space floor under which the toolchain tier runs
 [ -n "${HOME:-}" ] && [ "$HOME" != / ] || { echo "REFUSED HOME is unset or /"; exit 1; }
 case "$APPLY" in True|true) APPLY=1;; *) APPLY=0;; esac
 case "$TRASH" in True|true) TRASH=1;; *) TRASH=0;; esac
 case "$WORKTREES" in True|true) WORKTREES=1;; *) WORKTREES=0;; esac
 for v in WT_IDLE_MIN WT_FRESH_MIN WT_STALE_MIN WT_ARCHIVE_MAX_MB WT_QUARANTINE_DAYS TMP_IDLE_MIN \
-         CLONE_FRESH_MIN SCAN_EVERY_MIN SCAN_TOP BIG_FILE_MB T_SCAN; do
+         CLONE_FRESH_MIN SCAN_EVERY_MIN SCAN_TOP BIG_FILE_MB T_SCAN CRIT_MB; do
   case "${!v}" in ''|*[!0-9]*) echo "REFUSED DISK_CLEANUP_$v=${!v} is not a number"; exit 1;; esac
 done
 case "$ONLY_BELOW_MB" in ''|*[!0-9]*) echo "REFUSED only_below_mb=$ONLY_BELOW_MB is not a number"; exit 1;; esac
@@ -390,12 +394,134 @@ if [ -n "$CLONES" ] && [ -d "$CLONES" ]; then
   fi
 fi
 
+# THE CRITICAL TIER. Measured 2026-10-24 on the founder's laptop: the volume sat at 7.7Gi free
+# (92% used) with every allow-list target empty, because the growers were never on it --
+# ~/.nvm/versions/node 2570M, ~/.rustup/toolchains 2659M, ~/.local/share/claude/versions 545M
+# (three superseded builds) and ~/.ollama/models 3.5G before the founder killed the laptop's
+# ollama on 2026-09-10 ("no i killed ollama because machine is slow"). The allow-list deletes
+# CACHES; these are the same kind of thing one level up: a toolchain, re-installed on demand.
+#
+# It runs only under a critical floor (CRIT_MB, default 10240M free -- 10G on a 113Gi volume,
+# which is macOS's own 10% headroom advice; a 4000M floor would not have fired on this machine,
+# whose free space was 7885M) and only with apply=true. Under the floor the alternative is a
+# machine that cannot write (bin/idp-disk-guard: "writes fail in ways that read as unrelated
+# faults"), and the founder's order is "we must never be in trouble". Above the floor every one
+# of these is listed and nothing is touched.
+#
+# KEPT, per target, and why:
+#   - the newest of a family: the one a command with no pin resolves to;
+#   - a version the estate's own runtime names (~/.estate/libexec/*, platform/estate/libexec/*):
+#     pi and cline run node out of a pinned path, and deleting it breaks them mid-task;
+#   - anything a running process holds open (one lsof listing, the same one the Chrome-clone
+#     pass uses): a file open under it is a file in use;
+#   - rustup's own default toolchain, and any ollama server that is running.
+# Everything else goes, and every line says how to get it back.
+crit_held=""
+crit_reclaim() {  # NAME PATH HOW-TO-GET-IT-BACK
+  local name=$1 path=$2 regen=$3 m left
+  m=$(size_m "$path")
+  if [ "$APPLY" = 0 ]; then echo "  would  $name  ${m}M  $path  ($regen)"; return 0; fi
+  rm -rf "$path"
+  left=$(size_m "$path")
+  if [ "$left" -le 1 ]; then echo "  freed  $name  ${m}M  $path  ($regen)"
+  else echo "  !! $name still holds ${left}M after delete: $path"; fails=$((fails + 1)); fi
+}
+crit_in_use() {  # 0 when a process holds a file open under $1
+  printf '%s\n' "$crit_held" | awk -v w="$1" 'index($0, w"/")==1 || $0==w {f=1} END{exit !f}'
+}
+crit_pinned_nodes() {  # the node versions the estate's own runtime names
+  local d
+  for d in "$HOME/.estate/libexec" "$RUST_ROOTS/platform/estate/libexec"; do
+    [ -d "$d" ] || continue
+    grep -hoa '\.nvm/versions/node/[A-Za-z0-9._-]*' "$d"/* 2>/dev/null
+  done | sed 's|.*/||' | sort -u
+}
+crit_tier() {
+  local free_mb=$1 v name m newest pinned default keep held rc
+  echo "critical tier: ${free_mb}M free on $VOL is under CRIT_MB=${CRIT_MB}M -- the toolchains below are re-installed on demand"
+  held=$(tmo 60 lsof -nPw -Fn 2>/dev/null); rc=$?
+  if [ "$rc" -gt 1 ]; then
+    echo "  BLIND  critical-tier  lsof could not answer (exit $rc): everything kept"; fails=$((fails + 1)); return 0
+  fi
+  crit_held=$(printf '%s\n' "$held" | sed -n 's/^n//p')
+
+  # 1. ollama's weights. The founder killed the laptop's ollama on 2026-09-10; if a server is
+  #    running now, someone is serving from these and they stay.
+  if [ -d "$HOME/.ollama/models" ]; then
+    if pgrep -x ollama >/dev/null 2>&1; then
+      echo "  keep   ollama-models  $(size_m "$HOME/.ollama/models")M  $HOME/.ollama/models  (an ollama server is running)"
+    else
+      crit_reclaim ollama-models "$HOME/.ollama/models" "ollama pull <model>"
+    fi
+  fi
+
+  # 2. node versions under nvm.
+  if [ -d "$HOME/.nvm/versions/node" ]; then
+    newest=$(ls -1 "$HOME/.nvm/versions/node" 2>/dev/null | sort -V | tail -1)
+    pinned=$(crit_pinned_nodes)
+    if [ -z "$newest" ]; then
+      echo "  keep   node-version  all  (no version could be ordered: nothing is removed)"
+    else
+      for v in "$HOME/.nvm/versions/node"/*; do
+        [ -d "$v" ] || continue
+        name=${v##*/}
+        m=$(size_m "$v")
+        if [ "$name" = "$newest" ]; then echo "  keep   node-version  ${m}M  $v  (the newest installed)"; continue; fi
+        if [ -n "$pinned" ] && printf '%s\n' "$pinned" | grep -qx "$name"; then
+          echo "  keep   node-version  ${m}M  $v  (the estate's runtime names it)"; continue; fi
+        if crit_in_use "$v"; then echo "  keep   node-version  ${m}M  $v  (a process holds it open)"; continue; fi
+        crit_reclaim node-version "$v" "nvm install $name"
+      done
+    fi
+  fi
+
+  # 3. rustup toolchains.
+  if [ -d "$HOME/.rustup/toolchains" ]; then
+    default=$(sed -n 's/^default_toolchain = "\(.*\)"/\1/p' "$HOME/.rustup/settings.toml" 2>/dev/null | head -1)
+    for v in "$HOME/.rustup/toolchains"/*; do
+      [ -d "$v" ] || continue
+      name=${v##*/}
+      m=$(size_m "$v")
+      keep=0
+      if [ -n "$default" ]; then
+        case "$name" in "$default"|"$default"-*) keep=1;; esac
+      fi
+      if [ "$keep" = 1 ]; then echo "  keep   rust-toolchain  ${m}M  $v  (rustup's default toolchain)"; continue; fi
+      if crit_in_use "$v"; then echo "  keep   rust-toolchain  ${m}M  $v  (a process holds it open)"; continue; fi
+      crit_reclaim rust-toolchain "$v" "rustup toolchain install $name"
+    done
+  fi
+
+  # 4. superseded claude-code builds.
+  if [ -d "$HOME/.local/share/claude/versions" ]; then
+    newest=$(ls -1 "$HOME/.local/share/claude/versions" 2>/dev/null | sort -V | tail -1)
+    for v in "$HOME/.local/share/claude/versions"/*; do
+      [ -d "$v" ] || continue
+      name=${v##*/}
+      m=$(size_m "$v")
+      if [ -n "$newest" ] && [ "$name" = "$newest" ]; then
+        echo "  keep   claude-version  ${m}M  $v  (the newest installed)"; continue; fi
+      if crit_in_use "$v"; then echo "  keep   claude-version  ${m}M  $v  (a process holds it open)"; continue; fi
+      crit_reclaim claude-version "$v" "claude's updater re-downloads it"
+    done
+  fi
+}
+
+# The tier fires on the space as it stands now, after the caches, the worktrees and the Chrome
+# clones above have had their turn: a floor that was crossed by them is no longer a floor.
+now_mb=$(( $(free_k) / 1024 ))
+if [ "$CRIT_MB" -gt 0 ] && [ "$now_mb" -lt "$CRIT_MB" ]; then
+  crit_tier "$now_mb"
+fi
+
 if [ "$APPLY" = 1 ]; then
   after=$(free_k)
   echo "free after: $((after / 1024))M (measured delta $(((after - before) / 1024))M; other writers move this too)"
 fi
 
 # Report-only: the big things a human decides about. Sizes measured now, nothing deleted.
+# (The toolchain paths are listed here too: under the critical floor above they are reclaimed,
+# and only then -- this list is what the founder reads when the floor is not reached.)
 echo "not touched (owner decides):"
 for p in "$HOME/.cache/estate-tools" "$HOME/.nvm/versions/node" "$HOME/.ollama" "$HOME/.rustup" \
          "$HOME/Library/Caches/Google" "$HOME/Library/Application Support/rancher-desktop"; do

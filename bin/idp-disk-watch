@@ -17,6 +17,8 @@
 #   free < MIN_FREE_GB (10)  a macOS notification, at most once an hour
 #   free < CRIT_GB (3)       the same cleanup on every run, then a notification
 # Every run appends one measured line to ~/.estate/disk-watch.log.
+# It also watches memory: swap over SWAP_MAX_PCT (70%) or free RAM under RAM_FLOOR_MB (200M)
+# stops ollama (BRAKE_PROCS) and says so in the same log. See "MEMORY BRAKE" below.
 set -uo pipefail
 MIN_FREE_GB="${MIN_FREE_GB:-10}"
 CRIT_GB="${CRIT_GB:-3}"
@@ -26,6 +28,51 @@ LOG="$HOME/.estate/disk-watch.log"
 STAMP="$HOME/.estate/disk-watch.last-alert"
 CLEANUP="$HOME/.estate/libexec/disk-cleanup.sh"
 
+# MEMORY BRAKE. The founder, 2026-09-10: "no i killed ollama because machine is slow" -- this
+# laptop has 8GB of RAM and no GPU, and a resident 7B model took it to load 95 with the swap
+# thrashing. ollama's own autostart was removed on 2026-10-24, but anything that reinstalls it (a
+# brew upgrade, a login item, another agent's setup) would grind the machine again, and nothing
+# else on the estate watches memory: this tick watches the disk.
+# Measured here 2026-10-24: 4.59G of 5.12G swap in use (89%), 113M of RAM unused, load average
+# 226 -- the grind is memory pressure, not the disk being full, and ollama was already dead.
+# So the tick measures memory and stops the one process that causes it, and only that: no
+# agent's work is signalled, nothing of the founder's is touched, and it says so in the log.
+BRAKE_PROCS="${DISK_WATCH_BRAKE_PROCS:-ollama}"
+RAM_FLOOR_MB="${DISK_WATCH_RAM_FLOOR_MB:-200}"
+SWAP_MAX_PCT="${DISK_WATCH_SWAP_MAX_PCT:-70}"
+brake() {
+	local free_mb swap_pct p vm sc
+	vm=$(command -v vm_stat 2>/dev/null || echo /usr/bin/vm_stat)
+	sc=$(command -v sysctl 2>/dev/null || echo /usr/sbin/sysctl)
+	# A measurement that cannot be read is UNKNOWN, not zero. Printing zero for an unreadable
+	# vm_stat would read as "no free RAM" and stop a process for the wrong reason, so both
+	# parsers print nothing when they cannot parse, and the brake then does nothing.
+	free_mb=$("$vm" 2>/dev/null | awk '
+		/page size of/ { for (i = 1; i <= NF; i++) if ($i == "of") psz = $(i + 1) }
+		/Pages free:/ { gsub(/\./, "", $3); f = $3 }
+		/Pages speculative:/ { gsub(/\./, "", $3); s = $3 }
+		END { if (psz > 0 && f != "") printf "%d", ((f + s) * psz) / 1048576 }')
+	swap_pct=$("$sc" -n vm.swapusage 2>/dev/null | awk '
+		{ for (i = 1; i <= NF; i++) { if ($i == "used" || $i == "total") { v = $(i + 2); gsub(/M/, "", v); if ($i == "used") u = v + 0; else t = v + 0 } } }
+		END { if (t > 0) printf "%d", (u / t) * 100 }')
+	local pressure=0
+	[ -n "$free_mb" ] && [ "$free_mb" -lt "$RAM_FLOOR_MB" ] && pressure=1
+	[ -n "$swap_pct" ] && [ "$swap_pct" -gt "$SWAP_MAX_PCT" ] && pressure=1
+	if [ "$pressure" = 0 ]; then
+		if [ -z "$free_mb" ] && [ -z "$swap_pct" ]; then
+			echo "$(date -u +%FT%TZ) memory unknown: no readable vm_stat and no readable swap (no brake)" >>"$LOG"
+		fi
+		return 0
+	fi
+	echo "$(date -u +%FT%TZ) memory pressure: free=${free_mb:-?}M RAM, swap=${swap_pct:-?}% (floors: ${RAM_FLOOR_MB}M, ${SWAP_MAX_PCT}%)" >>"$LOG"
+	for p in $BRAKE_PROCS; do
+		if /usr/bin/pgrep -x "$p" >/dev/null 2>&1; then
+			/usr/bin/pkill -TERM -x "$p" 2>/dev/null
+			echo "$(date -u +%FT%TZ) memory brake: stopped $p (free=${free_mb:-?}M RAM, swap=${swap_pct:-?}%)" >>"$LOG"
+		fi
+	done
+}
+
 free_kb=$(df -k /System/Volumes/Data 2>/dev/null | awk 'NR==2 {print $4}')
 if [ -z "$free_kb" ]; then
 	echo "$(date -u +%FT%TZ) BLIND cannot read /System/Volumes/Data" >>"$LOG"
@@ -33,6 +80,7 @@ if [ -z "$free_kb" ]; then
 fi
 free_gb=$((free_kb / 1048576))
 echo "$(date -u +%FT%TZ) free=${free_gb}G" >>"$LOG"
+brake
 tail -n 5000 "$LOG" >"$LOG.tmp" 2>/dev/null && mv "$LOG.tmp" "$LOG"
 
 notify() {
