@@ -1,0 +1,49 @@
+# Canonical artifact-class routing policy for delegated work.
+# Aliases name LiteLLM model groups; providers and credentials stay in config.yaml.
+# Legacy aliases such as default/fast are deliberately absent: their mixed deployments
+# cannot promise one capability tier.
+version: 1
+gated_attempts_before_replan: 2
+local_floor: ollama
+
+tiers:
+  none:
+    aliases: []
+  cheap:
+    # Hosted free/cheap lanes first; the local floor is deterministic and always last.
+    aliases: [groq, cerebras, sambanova, nvidia, openrouter, ollama]
+  mid:
+    aliases: [minimax, minimax_m31f, deepseek, gemini, glm]
+  frontier:
+    aliases: [claude-*]
+
+artifact_classes:
+  # Deterministic control-plane actions never spend a model call.
+  verify: {tier: none}
+  merge: {tier: none}
+  land: {tier: none}
+  bind: {tier: none}
+  status: {tier: none}
+
+  # Standard cognitive work starts at mid. Evidence of depth or risk escalates it.
+  plan:
+    tier: mid
+    escalated_tier: frontier
+  review:
+    tier: mid
+    escalated_tier: frontier
+  author:
+    tier: mid
+    escalated_tier: frontier
+
+  # Mechanical execution is cheap only while an executable done-check gates it.
+  build:
+    tier: cheap
+    requires_deterministic_gate: true
+    ungated_tier: mid
+    escalated_tier: frontier
+  edit:
+    tier: cheap
+    requires_deterministic_gate: true
+    ungated_tier: mid
+    escalated_tier: frontier
