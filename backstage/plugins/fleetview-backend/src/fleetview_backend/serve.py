@@ -687,6 +687,27 @@ def build_app() -> FastAPI:
             efficiency_feed.stream(since), media_type="text/event-stream"
         )
 
+    # The founder's evals, live (2026-10-23): every agent is under continuous evaluation and the
+    # surface reports it as the round runs, not as a report read afterwards. Two endpoints, no
+    # second store: `eval/founder-agent/` writes the ledger and the feed, this reads them.
+    @app.get("/evals/founder-agent")
+    async def founder_agent_evals(limit: int = 200):
+        from fleetview_backend import founder_agent_evals as fa
+
+        try:
+            body = await asyncio.to_thread(fa.snapshot, limit)
+        except fa.EvalsAbsent as exc:
+            # 503 with the path it looked for: an eval panel must never render "no rounds" over
+            # a ledger that is not there.
+            return JSONResponse(status_code=503, content={"absent": str(exc)})
+        return JSONResponse(content=body)
+
+    @app.get("/evals/founder-agent/stream")
+    async def founder_agent_evals_stream(limit: int = 200):
+        from fleetview_backend import founder_agent_evals as fa
+
+        return StreamingResponse(fa.stream(limit), media_type="text/event-stream")
+
     @app.get("/voice/log/summary")
     async def voice_log_summary(limit: int = 200):
         """Friction stats: empty rate, median latencies, per-voice speed."""
