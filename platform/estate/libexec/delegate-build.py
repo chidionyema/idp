@@ -136,10 +136,24 @@ def kv(argv):
 
 
 def artifact_policy(repo):
-    """Load the canonical checkout policy in both source and installed layouts."""
-    source = Path(repo) / "platform/llm/artifact_tier.py"
-    if not source.exists():
-        source = Path(__file__).resolve().parents[2] / "llm/artifact_tier.py"
+    """The estate's artifact policy: the installed copy first, then the checkout.
+
+    The installed copy is ~/.estate/llm/artifact_tier.py -- the bytes bin/estate-runtime-sync
+    stages from main, the same bytes the live router runs -- so a delegated call is routed by the
+    policy in force, not by whatever a stale checkout happens to hold. The checkout copy
+    (platform/llm/artifact_tier.py) is the fallback for a repo that has not been staged yet.
+    """
+    candidates = [
+        Path(__file__).resolve().parents[1] / "llm/artifact_tier.py",
+        Path(repo) / "platform/llm/artifact_tier.py",
+        Path(__file__).resolve().parents[2] / "llm/artifact_tier.py",
+    ]
+    source = next((c for c in candidates if c.is_file()), None)
+    if source is None:
+        raise RuntimeError(
+            "cannot load artifact routing policy from "
+            + ", ".join(str(c) for c in candidates)
+        )
     spec = importlib.util.spec_from_file_location("_estate_artifact_tier", source)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot load artifact routing policy from {source}")
