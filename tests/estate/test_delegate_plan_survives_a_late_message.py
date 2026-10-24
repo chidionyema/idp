@@ -66,6 +66,7 @@ def _plan(tmp_path: Path, texts: list[str]) -> subprocess.CompletedProcess:
     fake.write_text(
         f"#!{sys.executable}\nimport json, sys\n"
         "assert sys.argv[sys.argv.index('--output-format') + 1] == 'stream-json'\n"
+        f"open({str(tmp_path / 'argv.json')!r}, 'w').write(json.dumps(sys.argv))\n"
         f"for e in {events!r}:\n    print(json.dumps(e))\n"
     )
     fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
@@ -97,6 +98,10 @@ def test_the_plan_is_kept_when_a_late_message_is_the_last_reply(tmp_path):
     plan = json.loads((tmp_path / "root/t/plan.json").read_text())
     assert plan["steps"][0]["id"] == "s1"
     assert LATE in (tmp_path / "root/t/plan-raw.txt").read_text()
+    argv = json.loads((tmp_path / "argv.json").read_text())
+    assert argv[argv.index("--model") + 1] == "minimax"
+    usage = json.loads((tmp_path / "root/t/plan-usage.json").read_text())
+    assert usage["routing"]["tier"] == "mid"
 
 
 def test_no_plan_anywhere_fails_and_names_the_raw_file(tmp_path):

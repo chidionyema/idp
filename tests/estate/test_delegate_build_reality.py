@@ -56,15 +56,39 @@ elif mode == "never":
     Path("a.txt").write_text("WRONG\\n")
     Path("new.txt").write_text("junk\\n")
     result = "HYPOTHESIS-NEVER"
+elif mode in ("auto_replan", "invalid_replan"):
+    if "frontier re-planner" in prompt:
+        if mode == "invalid_replan":
+            result = "{{\\"id\\":\\"not-s1\\"}}"
+        else:
+            result = json.dumps({{
+                "id": "s1",
+                "title": "frontier re-plan",
+                "files": ["a.txt", "new.txt"],
+                "read": [],
+                "depends_on": [],
+                "instructions": "frontier instructions: write RIGHT into a.txt",
+                "done_check": "grep -q RIGHT a.txt",
+            }})
+    elif k < 3:
+        Path("a.txt").write_text("WRONG\\n")
+        Path("new.txt").write_text("junk\\n")
+        result = "HYPOTHESIS-AUTO"
+    else:
+        Path("a.txt").write_text("RIGHT\\n")
+        result = "done"
 else:
     result = "unknown mode"
 
-print(json.dumps({{
+event = {{
     "result": result,
     "usage": {{"input_tokens": 1, "output_tokens": 1}},
     "num_turns": 1,
     "total_cost_usd": 0,
-}}))
+}}
+if "stream-json" in sys.argv:
+    event["type"] = "result"
+print(json.dumps(event))
 """
 
 
@@ -143,7 +167,7 @@ def _setup(tmp_path: Path, mode: str):
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
     }
 
-    def run():
+    def run(builder="claude-sonnet-5"):
         return subprocess.run(
             [
                 sys.executable,
@@ -153,7 +177,7 @@ def _setup(tmp_path: Path, mode: str):
                 f"repo={repo}",
                 "attempts=3",
                 "parallel=1",
-                "builder=claude-sonnet-5",
+                f"builder={builder}",
             ],
             env=env,
             capture_output=True,
@@ -216,6 +240,43 @@ def test_unverified_code_never_stays(tmp_path):
     for p in (prompts[1], prompts[2]):
         assert "HYPOTHESIS-NEVER" not in p
         assert p.count("[EMPIRICAL_STATE]") == 1
+
+
+def test_auto_replans_at_frontier_before_third_gated_attempt(tmp_path):
+    root, run, env = _setup(tmp_path, "auto_replan")
+    r = run(builder="auto")
+    assert r.returncode == 0, r.stdout + r.stderr
+
+    results = json.loads((root / "t" / "results.json").read_text())["s1"]
+    assert results["done"] is True
+    assert results["attempts"] == 3
+    assert results["replanning"][0]["valid"] is True
+    assert results["replanning"][0]["routing"]["tier"] == "frontier"
+    assert results["usage"][0]["routing"]["tier"] == "cheap"
+
+    argv_lines = (tmp_path / "argv.jsonl").read_text().splitlines()
+    models = [
+        json.loads(line)[json.loads(line).index("--model") + 1] for line in argv_lines
+    ]
+    assert models == ["groq", "groq", "claude-*", "groq"]
+    prompts = [
+        json.loads(p) for p in (tmp_path / "prompts.jsonl").read_text().splitlines()
+    ]
+    assert "frontier re-planner" in prompts[2]
+    assert "frontier instructions" in prompts[3]
+    assert "HYPOTHESIS-AUTO" not in prompts[3]
+
+
+def test_invalid_frontier_replan_stops_before_blind_third_attempt(tmp_path):
+    root, run, env = _setup(tmp_path, "invalid_replan")
+    r = run(builder="auto")
+    assert r.returncode == 1
+
+    results = json.loads((root / "t" / "results.json").read_text())["s1"]
+    assert results["done"] is False
+    assert results["attempts"] == 2
+    assert results["replanning"][0]["valid"] is False
+    assert len((tmp_path / "prompts.jsonl").read_text().splitlines()) == 3
 
 
 def test_status_reports_empirical_rc(tmp_path):

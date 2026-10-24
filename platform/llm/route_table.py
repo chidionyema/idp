@@ -200,6 +200,18 @@ def _dep_id(dep: dict[str, Any]) -> str:
         return ""
 
 
+def _policy_rescue(alias: str) -> tuple[str, tuple[str, ...], str] | None:
+    """Same-capability rescue for policy aliases; None preserves legacy behaviour."""
+    from artifact_tier import default_policy
+
+    policy = default_policy()
+    rescue = policy.rescue_aliases(alias)
+    if rescue is None:
+        return None
+    tier, candidates = rescue
+    return tier, candidates, policy.version
+
+
 class EstateRouteTable(CustomLogger):
     async def async_filter_deployments(
         self,
@@ -249,10 +261,17 @@ class EstateRouteTable(CustomLogger):
                 return None  # unknown alias: native behaviour, untouched
             if servable:
                 return None  # the group has a lane: normal routing
-            cls = _seen_classes.setdefault(alias, class_of(alias))
-            order = _CLASS_ORDER.get(cls, [alias])
+            policy_rescue = _policy_rescue(alias)
+            if policy_rescue is None:
+                cls = _seen_classes.setdefault(alias, class_of(alias))
+                order = [a for a in _CLASS_ORDER.get(cls, [alias]) if a != alias]
+                tier = None
+                policy_version = None
+            else:
+                tier, order, policy_version = policy_rescue
+                order = list(order)
             want = _mode_of(alias)
-            for candidate in [a for a in order if a != alias]:
+            for candidate in order:
                 if _mode_of(candidate) != want:
                     continue  # rescue stays inside the requested mode: a chat lane
                     # must never serve an audio_speech request (garbled, not served)
@@ -263,8 +282,18 @@ class EstateRouteTable(CustomLogger):
                 md = data.setdefault("metadata", {})
                 md["estate_served_by"] = candidate
                 md["estate_requested"] = alias
-                _journal_substitution(alias, candidate, why="dead group")
+                if tier:
+                    md["estate_capability_tier"] = tier
+                _journal_substitution(
+                    alias,
+                    candidate,
+                    why="dead group",
+                    tier=tier,
+                    policy_version=policy_version,
+                )
                 return None  # rewritten; LiteLLM routes it normally
+            # A policy alias never falls through to legacy cross-tier rescue. Untouched
+            # means the outage remains loud and LiteLLM's configured handling owns it.
             return None
         except Exception as exc:  # noqa: BLE001 - LAW 38
             log.warning("[route-table] pre-call hook degraded: %s", exc)
@@ -293,7 +322,13 @@ class EstateRouteTable(CustomLogger):
             return response
 
 
-def _journal_substitution(requested: str, served_by: str, why: str) -> None:
+def _journal_substitution(
+    requested: str,
+    served_by: str,
+    why: str,
+    tier: str | None = None,
+    policy_version: str | None = None,
+) -> None:
     """One append-only row per dead-group rescue — /fleet evidence, and the audit trail
     the spec requires (the substitution is never silent)."""
     try:
@@ -309,6 +344,8 @@ def _journal_substitution(requested: str, served_by: str, why: str) -> None:
                         "requested": requested,
                         "served_by": served_by,
                         "why": why,
+                        "capability_tier": tier,
+                        "policy_version": policy_version,
                     },
                     sort_keys=True,
                 )
