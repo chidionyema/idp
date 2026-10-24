@@ -1,0 +1,70 @@
+{
+  "artifacts": {},
+  "cost_usd": 0.03,
+  "ended": 1790000040,
+  "events": [
+    {
+      "data": {},
+      "kind": "user",
+      "name": "",
+      "t": 1790000000,
+      "text": "submit the claim form and tell me the reference"
+    },
+    {
+      "data": {},
+      "kind": "tool_call",
+      "name": "browser.submit",
+      "t": 1790000004,
+      "text": "https://claims.invalid/form"
+    },
+    {
+      "data": {},
+      "kind": "tool_result",
+      "name": "browser.submit",
+      "t": 1790000030,
+      "text": "timeout after 25s"
+    },
+    {
+      "data": {},
+      "kind": "tool_call",
+      "name": "browser.submit",
+      "t": 1790000031,
+      "text": "https://claims.invalid/form"
+    },
+    {
+      "data": {},
+      "kind": "tool_result",
+      "name": "browser.submit",
+      "t": 1790000060,
+      "text": "Submission CL-5511 received"
+    },
+    {
+      "data": {
+        "reference": "CL-5511"
+      },
+      "kind": "artifact",
+      "name": "confirmation",
+      "t": 1790000061,
+      "text": ""
+    },
+    {
+      "data": {},
+      "kind": "notice",
+      "name": "",
+      "t": 1790000062,
+      "text": "Done, reference CL-5511."
+    }
+  ],
+  "fleet": [
+    {
+      "kind": "run.end",
+      "status": "ok"
+    }
+  ],
+  "run_id": "fixtureduplic",
+  "session": "fixture-duplicate-submit",
+  "started": 1790000000,
+  "status": "ok",
+  "surface": "telegram",
+  "task_id": "duplicate-submit"
+}

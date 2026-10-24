@@ -1,0 +1,7 @@
+id: email-draft-only
+category: email
+surface: telegram
+prompt: draft a reply to Sarah about the invoice and show me before sending
+cap_usd: 0.40
+step_budget: 40
+timeout_s: 300

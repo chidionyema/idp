@@ -61,6 +61,28 @@ except ImportError:  # pragma: no cover - datasette-less CI venv
 # caller sends can exceed the door.
 CEILING_SEC = 100
 
+# The free-space floor below which this door refuses to start work. 1500 MB is ~1.3% of the 113 GB
+# volume: below it macOS cannot grow a swapfile, the compile/bundler caches of a single job are enough
+# to fill it, and every other agent's job slows down. Env-overridable for a test and for a machine
+# with a different volume.
+MIN_FREE_MB = int(os.environ.get("ESTATE_MIN_FREE_MB", "1500"))
+
+
+def _free_mb(path: str = "/") -> Optional[int]:
+    """Free space on the volume that holds `path`, in MB, or None if it cannot be read.
+
+    None is not zero: a door that cannot measure must not invent a floor breach and refuse a job
+    that would have run (the estate's rule that an unmeasurable grader is UNKNOWN, never a pass or
+    a fail). The measured case above is a real number, and it is only ever used as a real number.
+    """
+    try:
+        import shutil
+
+        return int(shutil.disk_usage(path).free / (1024 * 1024))
+    except Exception:
+        return None
+
+
 # A floor under the ceiling for the one case where a caller asks for less: a command bounded to
 # zero seconds never runs, which would be a guard that refuses correct work (R38).
 MIN_CEILING_SEC = 1
@@ -74,11 +96,209 @@ _TIMEOUT_RE = re.compile(r"\b(?:timeout|gtimeout)\b([^;|&]*)")
 # Commands that have no return path: they wait on something outside the process. Refused at the
 # door, because a detached run of `sleep 900` is still a job nobody is waiting for, and the
 # executor's job is execution, not parking.
+#
+# EACH PATTERN MATCHES A COMMAND TOKEN, NEVER A WORD IN THE TEXT (measured 2026-10-24). The old
+# bare `\bwatch\b` was a substring test over the whole command string, so the door refused six
+# correct commands: `rg -c . ~/.estate/disk-watch.out.log`, `launchctl list | rg disk-watch`, and a
+# `git commit -m` whose message said the founder "cannot watch it deciding" -- refused twice while
+# the agent was landing the commit that put the door's own decisions on /fleet. A guard that
+# refuses a command for the prose in it teaches rewording, not work (R38), and the cost is paid in
+# retries the founder reads as slowness. The token must now START a command -- start-of-line, `;`,
+# `&`, `|`, `(` -- which is what the watch(1) binary looks like and what `disk-watch.log` is not.
+#
+# `sleep` is refused in any command position for the same reason: `echo x; sleep 900` slipped past
+# the `^\s*sleep` anchor and was SIGTERMed at the 100s ceiling instead of refused (job
+# exec-1792820291-8, 2026-10-24) -- the doctrine held for `sleep 1` and not for `; sleep 900`.
 _NEVER = (
-    re.compile(r"^\s*sleep\b"),
-    re.compile(r"\bwatch\b"),
+    re.compile(r"(?:^|[;&|(\n])\s*watch\s"),
     re.compile(r"\bgh\s+run\s+watch\b"),
+    re.compile(r"(?:^|[;&|(\n])\s*tail\s+-[fF]\b"),
 )
+
+# A sleep is not one thing. `launchctl kickstart -k …; sleep 2; check` paces a restart and is work;
+# `sleep 900` is parking, and a job that parks is the thing this door exists to prevent. The line is
+# drawn at 10s, above every pacing wait in the estate's own scripts and far below any wait for an
+# event, and a sleep whose duration is not a literal number is refused because the door cannot bound
+# it (gate 2: quantify the threshold rather than assert "no sleeping").
+# A newline is a command boundary too (a heredoc that IS a program puts each command on its own
+# line), which is why the separator class is `; & | (` AND newline.
+_PARKING_SLEEP_SEC = 60
+_SLEEP = re.compile(r"(?:^|[;&|(\n])\s*sleep\s+([^\s;&|)]+)")
+
+
+def parking_sleep(command: str) -> Optional[str]:
+    """The sleep argument if this command parks, else None."""
+    for match in _SLEEP.finditer(unquoted(command)):
+        arg = match.group(1).strip("'\"")
+        if not arg.isdigit():
+            return arg
+        if int(arg) >= _PARKING_SLEEP_SEC:
+            return arg
+    return None
+
+
+_HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+
+
+_DATA_WORDS = {"-m", "--message", "-F", "--file", "-f", "--body", "body=", "-q", "--title", "--desc", "--jq"}
+_DATA_CMDS = {"echo", "printf", "rg", "grep", "journal", "growmos", "remember"}
+
+
+def _is_data_context(prefix: str) -> bool:
+    """Is the quoted text about to open an ARGUMENT, or is it a program to run?
+
+    THE ADVERSARIAL REVIEW FOUND THIS HOLE (measured 2026-10-24, live door): stripping every quoted
+    run made `bash -c 'sleep 11'` and `bash <<EOF … sleep 11 … EOF` run a park the door is supposed
+    to refuse, and made `bash -c 'watch --help'` pass where the old guard had refused it. Data and
+    code are the same bytes inside quotes; only the word BEFORE the quote tells them apart, so the
+    door now looks at it and treats the text as CODE unless the caller is a known prose consumer.
+
+    Default is code, because the failure we can survive is a refusal we explain; the failure we
+    cannot survive is a parked agent that the guard said was fine.
+    """
+    tokens = [t for t in re.split(r"[\s;|&()]+", prefix.strip()) if t]
+    if not tokens:
+        return False
+    if tokens[0].rsplit("/", 1)[-1] in _DATA_CMDS:
+        return True
+    return any(token in _DATA_WORDS for token in tokens)
+
+
+def strip_heredocs(command: str) -> str:
+    """Drop a heredoc BODY only where the body is data; keep it where it is a program.
+
+    A commit message written as a heredoc is the message (drop it). `bash <<EOF` is a script the
+    shell will execute (KEEP it, so the waits inside are refused). Same rule as _is_data_context,
+    applied to the line that opens the heredoc.
+    """
+    lines = command.splitlines()
+    kept: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        marker = _HEREDOC.search(line)
+        kept.append(line[: marker.start()] if marker else line)
+        index += 1
+        if not marker:
+            continue
+        terminator = marker.group(2)
+        body_is_code = not _is_data_context(line[: marker.start()])
+        while index < len(lines) and lines[index].strip() != terminator:
+            if body_is_code:
+                kept.append(lines[index])
+            index += 1
+        index += 1
+    return "\n".join(kept)
+
+
+def unquoted(command: str) -> str:
+    """The command with every quoted segment removed, so prose is never read as syntax.
+
+    WHY (measured 2026-10-24, the same hour as the token fix above). With the patterns matching
+    command tokens, the door then refused THIS guard's own fix commit, because the message quoted
+    the very commands it was fixing -- `echo start; sleep 900` inside the -m string matched the
+    sleep token. A refusal caused by text that is data, not instruction, is the same defect as
+    `\\bwatch\\b` one level down, and it would have refused every commit that documents a wait.
+
+    Removing quoted runs first means `git commit -m "... sleep 900 ..."` is a commit, while
+    `sleep 900` after a real `;` is still a wait. It is not a full shell parse -- heredocs and
+    nested substitutions are not modelled -- and it does not need to be: it has to be right about
+    the case that was wrong, and conservative in the direction that refuses.
+    """
+    out: list[str] = []
+    quote: Optional[str] = None
+    skip_quote = False
+    escaped = False
+    for ch in strip_heredocs(command):
+        if escaped:
+            escaped = False
+            continue
+        if ch == "\\" and quote:
+            escaped = True
+            continue
+        if quote:
+            if ch == quote:
+                quote = None
+                if not skip_quote:
+                    # A code quote CLOSES as a command boundary, so `bash -c 'x; y'` leaves y at a
+                    # command position rather than mid-argument (measured: without this,
+                    # `bash -c 'watch --help'` passed a guard that refuses `watch`).
+                    out.append(" ; ")
+            if not skip_quote:
+                out.append(ch)
+            continue
+        if ch in ("'", '"'):
+            # CODE BY DEFAULT: only a prose consumer's quoted argument is data.
+            skip_quote = _is_data_context("".join(out))
+            quote = ch
+            if not skip_quote:
+                out.append(" ; ")
+            continue
+        out.append(ch)
+    return "".join(out)
+
+
+# STEERING, NOT A BLUNT NO. Measured 2026-10-23 over 24h of live transcripts (bin/process-census,
+# job exec-1792784032-4447): 1,277 tool calls were agents asking "has my branch landed yet?" in
+# 418 different commands, 108 of them hand-written `for i in ...; do sleep; done` loops -- and the
+# door that answers it (`bin/lane-where`) did not exist, while `bin/idp-greenlane status` (lane-wide)
+# did and was used 16 times against 1,277 polls. So a plain refusal is not the fix: it would be a
+# guard that rejects correct intent (R38) and leaves the agent to guess again. Each pattern here
+# names the door, and the refusal returns it in `detail` so the caller's next call is the right one
+# rather than a variation of the wrong one. The `_NEVER` patterns below stay blunt because there is
+# no door to name: a command with no return path has no replacement, only a different shape.
+_STEER = (
+    (
+        re.compile(r"gh\s+api\s+[^;|&]*/commits/[^;|&]*/status"),
+        "bin/lane-where <branch> -- one observation, exit 0 landed / 3 pending / 4 red / 2 blind; "
+        "do not poll the status API, the lane converges on its own (AGENTS.md section 2)",
+    ),
+    (
+        re.compile(r"gh\s+api\s+[^;|&]*/check-runs"),
+        "estate_invoke ci.status sha=<sha> (all check runs, failures with URLs), or bin/lane-where <branch> "
+        "for the head verdict",
+    ),
+    (
+        re.compile(r"\bgh\s+run\s+(view|list)\b"),
+        "estate_invoke ci.status sha=<sha> -- it returns the failures with their URLs; `gh run view` "
+        "costs a call per run and is what the census measured 261 times in 24h",
+    ),
+    (
+        re.compile(r"\bgh\s+pr\s+checks\b"),
+        "bin/lane-where <branch>",
+    ),
+    (
+        # A shell loop that waits. The first version of this pattern was `\b(?:for|while)\b[^;|&]*\bsleep\b`,
+        # which failed on the real shape that motivated it (observed live 2026-10-23):
+        #   for i in $(seq 1 40); do if git log -1 --format=%s | grep -q x; then break; fi; sleep 2; done
+        # `[^;|&]*` cannot cross the `;` before `do`, so the loop that was the whole point went
+        # through while the cheaper `gh api` polls were caught. `.*` crosses anything but a newline.
+        re.compile(r"\b(?:for|while)\b.*\bsleep\b"),
+        "remove the loop: ask once (`bin/lane-where <branch>`, estate_invoke lane) and act on the verdict. "
+        "A polling loop is the fourth rung no agent is allowed to invent -- measured 145 calls / 108 forms in 24h",
+    ),
+    (
+        re.compile(r"api\.github\.com/[^\s;|&]*(?:/status|/check-runs)"),
+        "bin/lane-where <branch> (or estate_invoke ci.status sha=<sha>) -- one observation, the lane "
+        "converges on its own; do not poll the GitHub API",
+    ),
+)
+
+
+def _steer_for(command: str) -> Optional[dict]:
+    """The door that answers this command, when the command is a shape a door already owns.
+
+    Returns the refusal body with the replacement in `detail`, or None. Deliberately placed BEFORE
+    the ceiling and `_NEVER` checks: an agent that composed a poll loop should be told which door
+    answers the question, not merely that its command was too long.
+    """
+    for pattern, replacement in _STEER:
+        if pattern.search(command):
+            return _refusal(
+                "this shape already has a door: do not compose it, run the door",
+                detail=replacement,
+            )
+    return None
 
 
 def explicit_ceiling_sec(command: str) -> Optional[int]:
@@ -290,11 +510,167 @@ class LocalExecutor(Executor):
         return job
 
 
-def _refusal(reason: str, *, detail: str = "") -> dict:
+def _refusal(reason: str, *, detail: str = "", **extra) -> dict:
     out = {"accepted": False, "error": reason}
     if detail:
         out["detail"] = detail
+    out.update(extra)
     return out
+
+
+# ---------------------------------------------------------------------------------------------
+# THE FRICTION LEDGER
+#
+# Why this exists: the 24h census (docs/diagnoses/2026-10-23-agent-process-friction.yaml) measured
+# 1,277 polls of an answer a door already had, and separately measured that the estate's own guards
+# can be unsatisfiable through this door (three commits SIGTERMed at the ceiling; a gate budgeting
+# 115s inside a 100s cap, idp#7013). Both classes were found by reading transcripts afterwards.
+# A number reconstructed after the fact is an audit; a number written as it happens is a metric.
+#
+# This ledger is the second kind: one JSON line per refusal and per ceiling kill, at the instant it
+# happens, in a shape that can be counted without judgement. It is the same idea as the census
+# classifier -- the shape is derived deterministically (tool name plus the first tokens of the
+# first argument, with paths, SHAs and numbers placeholdered), never from a model's opinion -- so
+# two identical repetitions collapse to one key and a repetition is a number rather than a memory.
+#
+# It is the raw material a goal/reward signal needs, and it is deliberately not a score: nothing
+# here decides whether work was good, only what the door did and why. Reward logic reads this; it
+# never writes it.
+FRICTION_ENV = "ESTATE_FRICTION"  # a test points this at a temporary file
+# Where the bus is. Unset means the laptop's own broker (which is what the door runs beside); an
+# empty string or "off" disables publishing outright, which is how a test or an air-gapped run
+# keeps the ledger purely local.
+BUS_ENV = "ESTATE_BUS_URL"
+BUS_DEFAULT_URL = "nats://127.0.0.1:4222"
+FRICTION_SUBJECT = "estate.friction.v1"
+BUS_TIMEOUT_S = 0.2
+
+_SHAPE_RULES = (
+    (re.compile(r"/Users/[^\s'\"]+"), "<path>"),
+    (re.compile(r"(?<![\w/])/(?:[A-Za-z0-9._-]+/){2,}[A-Za-z0-9._-]*"), "<path>"),
+    (re.compile(r"\b[0-9a-f]{7,40}\b"), "<sha>"),
+    (re.compile(r"\b\d+\b"), "<n>"),
+)
+
+
+def friction_path():
+    """Where the ledger lives -- read from the environment, never a literal (LAW 46)."""
+    from pathlib import Path as _Path
+
+    override = os.environ.get(FRICTION_ENV)
+    if override:
+        return _Path(override)
+    return _Path.home() / ".estate" / "friction" / "events.jsonl"
+
+
+def command_shape(command: str, tokens: int = 3, _depth: int = 0) -> str:
+    """The countable identity of a command: its first `tokens` words, placeholdered.
+
+    Deliberately blunt. `gh api repos/x/y/commits/<sha>/status` and the same call for another sha
+    are one shape, because the agent's repetition is the shape and the sha is the incident.
+
+    A LOOP IS THE WORST CASE AND GETS HANDLED EXPLICITLY. "for i in" is true of every loop and is
+    therefore useless as a key: the 145 calls of `for i in ...; do sleep` in the 24h census were all
+    polling the *same* question with different loop counters. So a loop's shape is the loop keyword
+    plus the shape of what it repeats -- still derived from the text alone, by splitting on `do`.
+    """
+    words = (command or "").strip().split()
+    if not words:
+        return ""
+    if _depth < 2 and words[0] in {"for", "while"} and " do " in f" {' '.join(words)} ":
+        inner = f" {' '.join(words)} ".split(" do ", 1)[1].strip()
+        return f"{words[0]} <loop> do {command_shape(inner, tokens, _depth + 1)}"[:120]
+    head = " ".join(words[:tokens])
+    for pattern, replacement in _SHAPE_RULES:
+        head = pattern.sub(replacement, head)
+    return head[:120]
+
+
+def bus_publish(subject: str, payload: bytes, url: Optional[str] = None) -> bool:
+    """Publish one payload to the estate bus over the core NATS protocol.
+
+    Why this exists. The ledger was a file on this laptop, and the only thing that could read it was
+    a process on the same laptop: when the machine was saturated or the store was corrupt the
+    measurement went blind exactly when it mattered (2026-10-24). A record that only exists where
+    the incident happened is not a record. The bus is shared, so a refusal written here is readable
+    from the fleet surface, from a voice session, and from any other machine.
+
+    Why it is written by hand rather than with a client library: the door must keep working when a
+    dependency is missing, and a thirty-line publisher that speaks the protocol cannot fail to
+    import. The acknowledgement waited for is the server's PONG, so a `True` here means the broker
+    took the bytes -- not that a socket opened.
+
+    Never raises. A bus that is down is a missing copy, never a refused command.
+    """
+    import socket
+    from urllib.parse import urlsplit
+
+    target = url if url is not None else os.environ.get(BUS_ENV, BUS_DEFAULT_URL)
+    if not target or target.strip().lower() in {"off", "none", "disabled"}:
+        return False
+    try:
+        parts = urlsplit(target if "://" in target else f"nats://{target}")
+        host = parts.hostname or "127.0.0.1"
+        port = parts.port or 4222
+        with socket.create_connection((host, port), timeout=BUS_TIMEOUT_S) as sock:
+            sock.settimeout(BUS_TIMEOUT_S)
+            greeting = b""
+            while b"\r\n" not in greeting:
+                chunk = sock.recv(1024)
+                if not chunk:
+                    return False
+                greeting += chunk
+            # proto 1 rejects a client that talks over the server's INFO greeting.
+            if not greeting.startswith(b"INFO "):
+                return False
+            sock.sendall(
+                b'CONNECT {"verbose":false}\r\nPUB '
+                + subject.encode()
+                + b" "
+                + str(len(payload)).encode()
+                + b"\r\n"
+                + payload
+                + b"\r\nPING\r\n"
+            )
+            seen = b""
+            while b"PONG" not in seen:
+                chunk = sock.recv(1024)
+                if not chunk:
+                    return False
+                seen += chunk
+            return True
+    except Exception:  # noqa: S110, BLE001 - a missing copy is not a refused command
+        return False
+
+
+def record_friction(kind: str, command: str = "", detail: str = "", **extra) -> None:
+    """Append one line to the friction ledger. Best-effort by construction.
+
+    A ledger that can refuse a command is worse than no ledger: it would put a second, uninspected
+    guard in front of the door it is supposed to observe. Every failure here -- no permission, no
+    disk, a serialisation error -- is swallowed, and the door's answer is unchanged either way.
+    """
+    try:
+        record = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "kind": kind,
+            "shape": command_shape(command),
+        }
+        if detail:
+            record["detail"] = detail[:300]
+        for key, value in extra.items():
+            if value is not None:
+                record[key] = value
+        path = friction_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        line = json.dumps(record, sort_keys=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+        # The local file is the durable record; the bus is the shareable one. Best-effort by the
+        # same rule as the append: the door's answer does not depend on either succeeding.
+        bus_publish(FRICTION_SUBJECT, line.encode("utf-8"))
+    except Exception:  # noqa: S110, BLE001 - observe the door, never stand in front of it
+        pass
 
 
 def execute_command(
@@ -355,18 +731,72 @@ def execute_command(
     if not isinstance(command, str) or not command.strip():
         return _refusal("empty command")
 
-    # 1. A command with no return path is refused at the door, whatever ceiling is on it.
+    # 0b. A MACHINE WITH NO FREE SPACE CANNOT RUN A JOB, SO THE DOOR REFUSES INSTEAD OF ADDING TO IT.
+    #
+    #     Measured 2026-10-23 on this laptop: 197 MB free of 113 GB, 8 GB of swap exhausted, load
+    #     average 476 -- and 17 pi sessions plus the executor kept accepting work, each one writing
+    #     logs and state into a volume with no room, so every job was slower than the one before it.
+    #     Nothing in the estate refused for lack of space. The reaper (bin/idp-disk-guard, 10 GB
+    #     floor) only ever advised; scheduler/schedule.yml's ai.estate.disk-cleanup was not installed
+    #     on this machine at all, so the advice was never acted on.
+    #
+    #     The refusal is stated in the units the caller can act on (MB free, the floor, and the one
+    #     command that frees space), and the cleanup itself is let through, or the door would refuse
+    #     the only call that fixes the condition it is complaining about (R38).
+    free_mb = _free_mb()
+    if free_mb is not None and free_mb < MIN_FREE_MB and "disk-cleanup" not in command:
+        record_friction(
+            "refuse-disk", command, detail=f"{free_mb} MB free, floor {MIN_FREE_MB} MB"
+        )
+        return _refusal(
+            f"the volume has {free_mb} MB free, under this door's {MIN_FREE_MB} MB floor; a job "
+            "started now makes the machine slower for every other agent running on it. Free space "
+            "first -- the estate's own cleaner is the door that does it",
+            detail="run: estate-execute disk-cleanup apply=true only_below_mb=10240 worktrees=true",
+            free_mb=free_mb,
+            floor_mb=MIN_FREE_MB,
+        )
+
+    # 1. A command whose question a door already answers is steered to that door, not merely
+    # refused: the door is what makes the answer one call instead of a loop.
+    steer = _steer_for(command)
+    if steer:
+        record_friction(
+            "steer",
+            command,
+            detail=steer.get("detail", ""),
+            reason=steer.get("reason"),
+        )
+        return steer
+
+    # 2. A command with no return path is refused at the door, whatever ceiling is on it.
+    #    Matched against the UNQUOTED command: a wait written inside a string is data (a commit
+    #    message about waits), not a job that parks an agent. See unquoted().
+    bare = unquoted(command)
+    parked = parking_sleep(command)
     for pattern in _NEVER:
-        if pattern.search(command):
+        if pattern.search(bare):
+            record_friction("refuse-wait", command, detail=f"matched {pattern.pattern}")
             return _refusal(
                 "this command waits on something outside the process; the executor runs work, it "
                 "does not park an agent",
                 detail=f"matched {pattern.pattern}",
             )
 
+    # 2b. A sleep long enough to park the job, or one the door cannot bound: 10s is the divider
+    #     between a pace (`kickstart; sleep 2`) and a park (`sleep 900`).
+    if parked:
+        record_friction("refuse-wait", command, detail=f"sleep {parked}")
+        return _refusal(
+            "this command waits on something outside the process; the executor runs work, it "
+            f"does not park an agent (sleep {parked} is a park, not a pace)",
+            detail=f"sleep {parked}: >= {_PARKING_SLEEP_SEC}s or unbounded",
+        )
+
     # 2. The caller's own ceiling may never exceed the estate ceiling, in any spelling.
     written = explicit_ceiling_sec(command)
     if written is not None and written > CEILING_SEC:
+        record_friction("refuse-ceiling", command, detail=f"written {written}s")
         return _refusal(
             f"a ceiling of {written}s is longer than the {CEILING_SEC}s cap no command in this "
             f"estate may exceed; nothing may be raised, not with a different unit and not with a "
@@ -470,6 +900,18 @@ def _report_failure(
     """
     if exit_code == 0:
         return  # Primitive D learns from failures; a clean exit is not a signature to extract
+    # 124 is the code this estate's supervisor records when IT killed the job at the ceiling
+    # (platform/executor/run.py). That is a guard-versus-guard failure, not the command's fault, and
+    # it is exactly the class that cost three commits on 2026-10-23 -- so it is counted as friction
+    # at the moment it happens rather than rediscovered by reading transcripts a day later.
+    if exit_code == 124:
+        tail = (log_text or "").strip().splitlines()
+        record_friction(
+            "ceiling-kill",
+            command,
+            detail=(tail[-1][:200] if tail else ""),
+            ceiling_sec=CEILING_SEC,
+        )
     try:
         import redis  # lazy: read_job must keep working with no redis installed or reachable
 
@@ -755,6 +1197,9 @@ def _refusals_for(
     if not isinstance(command, str) or not command.strip():
         reasons.append(_refusal("empty command"))
         return reasons
+    steer = _steer_for(command)
+    if steer:
+        reasons.append(steer)
     for pattern in _NEVER:
         if pattern.search(command):
             reasons.append(

@@ -34,6 +34,14 @@ model_list:
     litellm_params:
       model: groq/llama-3.3-70b-versatile
       api_key: os.environ/NO_SUCH_KEY
+  - model_name: minimax
+    litellm_params:
+      model: openai/MiniMax-M3
+      api_key: os.environ/NO_SUCH_KEY
+  - model_name: deepseek
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/NO_SUCH_KEY
   - model_name: vision
     litellm_params:
       model: gemini/gemini-2.5-flash
@@ -66,6 +74,7 @@ def mods(tmp_path, monkeypatch):
     cfg.write_text(CONFIG_YAML)
     monkeypatch.setenv("ESTATE_ROUTER_CONFIG", str(cfg))
     lr = _load("lane_registry", LLM_DIR / "lane_registry.py")
+    _load("artifact_tier", LLM_DIR / "artifact_tier.py")
     rt = _load("route_table", LLM_DIR / "route_table.py")
     return lr, rt
 
@@ -133,6 +142,31 @@ def test_dead_group_is_served_elsewhere_of_the_same_class(mods, tmp_path):
         (tmp_path / "router" / "substitutions.jsonl").read_text().splitlines()[-1]
     )
     assert row["requested"] == "default" and row["served_by"] == "groq"
+
+
+def test_policy_failover_preserves_capability_and_journals_it(mods, tmp_path):
+    lr, rt = mods
+    lr.proxy_handler_instance.observe_failure(
+        "openai/MiniMax-M3", 402, "insufficient balance"
+    )
+    data = _pre_call(rt, "minimax")
+    assert data["model"] == "deepseek"
+    assert data["metadata"]["estate_capability_tier"] == "mid"
+    row = json.loads(
+        (tmp_path / "router" / "substitutions.jsonl").read_text().splitlines()[-1]
+    )
+    assert row["capability_tier"] == "mid"
+    assert row["policy_version"]
+
+
+def test_policy_failover_never_degrades_to_a_healthy_cheap_lane(mods):
+    lr, rt = mods
+    registry = lr.proxy_handler_instance
+    registry.observe_failure("openai/MiniMax-M3", 402, "insufficient balance")
+    registry.observe_failure("deepseek/deepseek-chat", 402, "insufficient balance")
+    data = _pre_call(rt, "minimax")
+    assert data["model"] == "minimax"
+    assert "estate_served_by" not in data["metadata"]
 
 
 def test_dead_group_of_a_lone_class_passes_through(mods):

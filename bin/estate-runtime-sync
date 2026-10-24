@@ -174,9 +174,25 @@ def stage() -> list[str]:
     if (Path("/usr/local/estate/releases/current")).exists():
         return ["staging left to estate-converge"]
     notes = []
-    for sub in ("intents", "libexec"):
+    for sub in ("intents", "libexec", "skills"):
         src, dst = TREE / "platform/estate" / sub, STATE / sub
         dst.mkdir(parents=True, exist_ok=True)
+        if sub == "skills":
+            # A tree, not a file list: the skill packs. Copied only when a file differs, so
+            # an unchanged pack is not rewritten under a running agent.
+            changed = []
+            for f in sorted(src.rglob("*")):
+                if not f.is_file() or f.name == ".DS_Store":
+                    continue
+                rel = f.relative_to(src)
+                target = dst / rel
+                if not target.exists() or not filecmp.cmp(f, target, False):
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(f, target)
+                    changed.append(str(rel))
+            if changed:
+                notes.append(f"skills +{len(changed)} files")
+            continue
         changed = []
         for f in sorted(src.iterdir()):
             if not f.is_file():
@@ -242,12 +258,51 @@ def router_files() -> list[tuple[Path, str]]:
     # for a day with "no healthy deployments for model_group=voice".
     m = re.search(r'^MODULES="([^"]*)"', (TREE / "bin/litellm-local").read_text(), re.M)
     mods = m.group(1).split() if m else []
-    return [(TREE / "llm/config.yaml", "config.yaml")] + [
-        (TREE / "platform/llm" / n, f"modules/{n}") for n in mods
-    ]
+    # The artifact policy travels with the router: the module that reads it, and the
+    # canonical YAML it reads. Both are named here, not only through MODULES, so the
+    # policy reaches the live router even when bin/litellm-local's MODULES list has
+    # not been extended yet -- a policy the router cannot read is a router that
+    # silently keeps the legacy behaviour.
+    files = [
+        (TREE / "llm/config.yaml", "config.yaml"),
+        (TREE / "platform/llm/artifact_tier.py", "modules/artifact_tier.py"),
+        (TREE / "platform/llm/artifact-tier.yaml", "modules/artifact-tier.yaml"),
+    ] + [(TREE / "platform/llm" / n, f"modules/{n}") for n in mods]
+    seen: set[str] = set()
+    unique: list[tuple[Path, str]] = []
+    for src, name in files:
+        if name in seen:
+            continue
+        seen.add(name)
+        unique.append((src, name))
+    return unique
 
 
 VOICE_PROBE = "http://127.0.0.1:8091/readyz"
+
+# The installed delegate-build runs from ~/.estate/libexec and loads the artifact policy from
+# ~/.estate/llm, next to itself (its parents[1]/llm). The policy was only staged into the
+# router's modules dir, so the intent's planner had no policy to read and every delegated plan
+# died on a missing file: the router and the delegator must run the same bytes.
+POLICY_DIR = ROUTER.parent / "llm"
+
+
+def sync_artifact_policy() -> list[str]:
+    # Stage the canonical policy (platform/llm/artifact_tier.py + its YAML) into the installed
+    # layout the delegate-build reads. Copied only when the bytes differ, so an unchanged policy
+    # is not rewritten under a running delegate.
+    notes = []
+    for name in ("artifact_tier.py", "artifact-tier.yaml"):
+        src = TREE / "platform/llm" / name
+        dst = POLICY_DIR / name
+        if not src.is_file():
+            continue
+        if dst.exists() and filecmp.cmp(src, dst, False):
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        notes.append(f"policy {name}")
+    return notes
 
 
 def router_accepted(voice_was_ready: bool, within_s: int) -> bool:
@@ -532,6 +587,10 @@ def main() -> int:
     elif broke:
         alert(f"runtime sync: {', '.join(broke)} did not come back")
     notes += sync_memory()
+    try:
+        notes += sync_artifact_policy()
+    except OSError as exc:
+        notes.append(f"artifact policy sync failed: {exc}")
     try:
         notes += sync_router()
     except (OSError, subprocess.SubprocessError) as exc:

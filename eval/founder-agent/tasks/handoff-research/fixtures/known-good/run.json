@@ -1,0 +1,61 @@
+{
+  "artifacts": {},
+  "cost_usd": 0.03,
+  "ended": 1790000040,
+  "events": [
+    {
+      "data": {},
+      "kind": "user",
+      "name": "",
+      "t": 1790000000,
+      "text": "have the research agent find three suppliers and bring me the shortlist"
+    },
+    {
+      "data": {},
+      "kind": "tool_call",
+      "name": "agent.handoff",
+      "t": 1790000002,
+      "text": "research: three suppliers"
+    },
+    {
+      "data": {},
+      "kind": "tool_result",
+      "name": "agent.handoff",
+      "t": 1790000090,
+      "text": "returned 3 items"
+    },
+    {
+      "data": {
+        "items": [
+          "A",
+          "B",
+          "C"
+        ],
+        "state": "returned"
+      },
+      "kind": "artifact",
+      "name": "handoff",
+      "t": 1790000092,
+      "text": ""
+    },
+    {
+      "data": {},
+      "kind": "notice",
+      "name": "",
+      "t": 1790000095,
+      "text": "Shortlist of three suppliers is in: A, B, C."
+    }
+  ],
+  "fleet": [
+    {
+      "kind": "run.end",
+      "status": "ok"
+    }
+  ],
+  "run_id": "fixturehandof",
+  "session": "fixture-handoff-research",
+  "started": 1790000000,
+  "status": "ok",
+  "surface": "telegram",
+  "task_id": "handoff-research"
+}

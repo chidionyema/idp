@@ -4,8 +4,8 @@ The engine knows nothing about objectives (research-engine SPEC-v1 §2); a consu
 lives in the consumer's repository (§8). This is that adapter. It runs inside the engine's pod,
 before and after `python -m engine.cli run`, mounted from a ConfigMap like the subjects file was.
 
-  pick                 print the issue (owner/repo#N) and research subject of the objective to
-                       research now, or nothing when none is waiting. Highest rank first; an
+  pick                 print the issue (owner/repo#N), research subject and lane of the objective
+                       to research now, or nothing when none is waiting. Highest rank first; an
                        objective the founder wrote by hand outranks every mined one.
   report REF RUN_LOG   post the run's admitted claims on objective issue REF, ending with the
                        two choices the founder makes in the report itself.
@@ -51,8 +51,27 @@ LABEL = "objective"
 # objective can neither starve behind mined ones nor run unbounded.
 FOUNDER_RANK = 1000.0
 DEFAULT_CAP_USD = 5.0
+# Which lane (engine profile) an objective is researched in. A mined objective is a measured
+# defect and goes to `objective`. A hand-written one is a founder's product goal, and `objective`
+# asks it defect questions: measured 2026-10-23, crew#239 "Reimagine mumchimp as a media company"
+# was asked "Which changes have been reported to reduce Reimagine mumchimp ...", retrieved nothing
+# on topic and admitted 0 claims, while `market-demand` had admitted 814 on founder subjects. A
+# `**Research lane:** <id>` line in the issue overrides both. Only lanes listed here run, so a typo
+# skips that one objective instead of turning every hour red.
+MINED_LANE = "objective"
+FOUNDER_LANE = "market-demand"
+LANES = [
+    x.strip()
+    for x in os.environ.get(
+        "OBJECTIVE_LANES", "objective,market-demand,estate-guards,incident-postmortem"
+    ).split(",")
+    if x.strip()
+]
 REF = re.compile(r"^(?:([\w.-]+/[\w.-]+)#)?([0-9]+)$")
-REPORT = re.compile(r"<!-- research-report request=(\S+) cost=([0-9.]+) -->")
+# Reports written before lanes were chosen carry no lane=; every one of them ran in `objective`.
+REPORT = re.compile(
+    r"<!-- research-report request=(\S+) cost=([0-9.]+)(?: lane=([a-z0-9-]+))? -->"
+)
 CONTINUE = re.compile(r"^- \[[xX]\] Continue researching", re.M)
 PARK = re.compile(r"^- \[[xX]\] Park this research", re.M)
 
@@ -78,9 +97,26 @@ def installation_token() -> str:
         return f.read().strip()
 
 
+def _mined(body: str) -> re.Match | None:
+    return re.search(r"rank ([0-9.]+) min per USD", body or "")
+
+
 def rank(body: str) -> float:
-    m = re.search(r"rank ([0-9.]+) min per USD", body or "")
+    m = _mined(body)
     return float(m.group(1)) if m else FOUNDER_RANK
+
+
+def lane(issue: dict) -> str:
+    """The engine profile this objective is researched in; ValueError when it names no known lane."""
+    body = issue.get("body") or ""
+    m = re.search(r"\*\*Research lane:\*\*\s*`?([^`\s]*)`?", body)
+    if m:
+        chosen = m.group(1).strip().lower()
+    else:
+        chosen = MINED_LANE if _mined(body) else FOUNDER_LANE
+    if chosen not in LANES:
+        raise ValueError(f"lane {chosen!r} is not one of {LANES}")
+    return chosen
 
 
 def cap_usd(body: str) -> float:
@@ -111,23 +147,45 @@ def subject(issue: dict) -> str:
     return re.sub(r"^objective:\s*", "", issue.get("title") or "").strip()
 
 
-def decision(issue: dict, comments: list[dict]) -> tuple[str, float]:
-    """(state, USD spent so far). state is `new`, `continue`, `park`, `waiting` or `cap`."""
+def report_lane(body: str) -> str:
+    return REPORT.search(body).group(3) or MINED_LANE
+
+
+def decision(
+    issue: dict, comments: list[dict], in_lane: str | None = None
+) -> tuple[str, float]:
+    """(state, USD spent so far). state is `new`, `continue`, `park`, `waiting` or `cap`.
+
+    Every report counts against the cap, whatever lane it ran in, and a Park tick stops the
+    objective in every lane. Waiting and Continue are read from the reports of `in_lane` only
+    (default: the objective's own lane): a report from a lane that asked the wrong questions is
+    not the founder's answer to this one.
+    """
     reports = [c for c in comments if REPORT.search(c.get("body") or "")]
     spent = sum(float(REPORT.search(c["body"]).group(2)) for c in reports)
-    if not reports:
-        return "new", spent
-    last = reports[-1]["body"]
-    if PARK.search(last):
+    over = spent >= cap_usd(issue.get("body") or "")
+    if reports and PARK.search(reports[-1]["body"]):
         return "park", spent
-    if not CONTINUE.search(last):
+    current = in_lane or lane(issue)
+    mine = [c for c in reports if report_lane(c["body"]) == current]
+    if not mine:
+        return ("cap" if over else "new"), spent
+    if not CONTINUE.search(mine[-1]["body"]):
         return "waiting", spent
-    return ("cap" if spent >= cap_usd(issue.get("body") or "") else "continue"), spent
+    return ("cap" if over else "continue"), spent
 
 
 def choose(candidates: list[tuple[dict, list[dict]]]) -> dict | None:
     """The highest-ranked objective whose state lets it run now."""
-    ready = [i for i, cs in candidates if decision(i, cs)[0] in ("new", "continue")]
+    ready = []
+    for i, cs in candidates:
+        try:
+            current = lane(i)
+        except ValueError as e:
+            print(f"research-engine: skipping {ref(i)}: {e}", file=sys.stderr)
+            continue
+        if decision(i, cs, current)[0] in ("new", "continue"):
+            ready.append(i)
     return max(
         ready,
         key=lambda i: (rank(i.get("body") or ""), -int(i["number"]), ref(i)),
@@ -243,10 +301,11 @@ def report_body(
 ) -> str:
     delivery = run.get("delivery") or {}
     cost = float((run.get("worker") or {}).get("cost_usd") or 0.0)
+    ran_in = run.get("profile_id") or MINED_LANE
     lines = [
-        f"<!-- research-report request={run.get('request_id')} cost={cost:.4f} -->",
+        f"<!-- research-report request={run.get('request_id')} cost={cost:.4f} lane={ran_in} -->",
         f"### Research report: {len(admitted)} admitted claim(s)",
-        f"Lane `objective`, request `{run.get('request_id')}`, status `{delivery.get('status')}`, "
+        f"Lane `{ran_in}`, request `{run.get('request_id')}`, status `{delivery.get('status')}`, "
         f"cost ${cost:.2f} (spent ${spent_before + cost:.2f} of the ${cap:g} cap).",
         "",
     ]
@@ -323,6 +382,7 @@ def main(argv: list[str]) -> int:
         if chosen:
             print(ref(chosen))
             print(subject(chosen))
+            print(lane(chosen))
         return 0
     if len(argv) == 3 and argv[0] == "report":
         with open(argv[2], encoding="utf-8") as f:

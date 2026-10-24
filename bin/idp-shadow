@@ -721,6 +721,23 @@ def consumer_secret_keys():
                         items_at = indent
                     elif what == "key" and items_at is not None and indent > items_at:
                         add(vol, value)
+                # A key read from a mounted file (`cat /run/secrets/x/KEY` in a command): the
+                # volume names the Secret, the mountPath names where, the path names the key.
+                # Measured, run 39948889099: litellm's LITELLM_DB_PASSWORD was never laid.
+                vols = dict(
+                    re.findall(
+                        r"-\s*name:\s*([\w.-]+)\s*\n\s*secret:\s*\{\s*secretName:\s*([\w.-]+)",
+                        doc,
+                    )
+                )
+                for vname, mpath in re.findall(
+                    r"name:\s*([\w.-]+)\s*,\s*mountPath:\s*([^,}\s]+)", doc
+                ):
+                    if vname in vols:
+                        for km in re.finditer(
+                            re.escape(mpath) + r"/([A-Za-z0-9_.-]+)", doc
+                        ):
+                            add(vols[vname], km.group(1))
                 for m in re.finditer(r"secretRef:\s*\{\s*name:\s*([^},\s]+)", doc):
                     add(m.group(1), None)
                 for m in re.finditer(r"secretRef:\s*\n\s+name:\s*(\S+)", doc):
@@ -1252,14 +1269,22 @@ def _say_why_it_died(meta, container):
         return
     _explained.add(key)
     p = kube(
-        ["logs", "-n", key[0], key[1], "-c", container, "--previous", "--tail=150"],
+        ["logs", "-n", key[0], key[1], "-c", container, "--previous"],
         check=False,
         timeout=30,
     )
     text = re.sub(r"\x1b\[[0-9;]*m", "", (p.stdout or p.stderr or "")).strip()
     if text:
-        print(f"note    shadow  last output of {key[0]}/{key[1]} {container}:")
-        print("\n".join("        | " + ln for ln in text.splitlines()))
+        lines = text.splitlines()
+        # The first lines are the cause (config, DB, env); the last are the traceback it ended in.
+        if len(lines) > 160:
+            lines = (
+                lines[:60]
+                + [f"[... {len(lines) - 120} lines elided ...]"]
+                + lines[-60:]
+            )
+        print(f"note    shadow  output of {key[0]}/{key[1]} {container}:")
+        print("\n".join("        | " + ln for ln in lines))
 
 
 def wait_ks(name, deadline):
@@ -1432,6 +1457,14 @@ def signature(message):
     same way exactly when their signatures are equal.
     """
     s = message.lower()
+    # How many containers are stuck is a count, not a cause: run 39935488278 failed platform/llm
+    # on litellm's CrashLoopBackOff on both sides, base with one stuck pod and head with two
+    # ("2 stuck container(s), first: pod ..."), and the judge called it introduced.
+    s = re.sub(r"\b\d+ stuck container\(s\), first: ", "", s)
+    # The kubelet's own tail repeats the pod as `pod=<name>_<ns>(<uid>)`: a generated name whose
+    # suffix and uid change on every run (run 39940650771: the same temporal crash on both sides,
+    # judged introduced). The message already names the pod before it.
+    s = re.sub(r"\bpod=\S+", "pod=<pod>", s)
     s = re.sub(r"\b[0-9a-f]{12,64}\b", "<sha>", s)
     # Kubernetes generates ReplicaSet and pod suffixes from this alphabet (apimachinery's
     # util/rand: no vowels, no 0, 1 or 3), so a hyphen-joined run of it is generated, not named:

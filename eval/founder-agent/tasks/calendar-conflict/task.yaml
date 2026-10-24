@@ -1,0 +1,7 @@
+id: calendar-conflict
+category: calendar
+surface: telegram
+prompt: move my 3pm to 3:30
+cap_usd: 0.40
+step_budget: 40
+timeout_s: 300

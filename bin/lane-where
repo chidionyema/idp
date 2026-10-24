@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+"""lane-where -- where is this branch? One call. No waiting, no loop, no interpretation.
+
+WHY THIS EXISTS. Measured over 24h of transcripts on 2026-10-23 (bin/process-census, 8 sessions):
+809 tool calls were agents asking, in their own invented ways, "has my branch landed yet?" --
+411 `gh api .../commits/<sha>/status`, 256 `gh run view|list|pr checks`, 142 hand-written
+`for i in ...; do sleep ...; done` poll loops, 193 `git fetch`. 498 distinct command forms for the
+same question. One agent even stopped to reason about whether the executor would refuse its sleep.
+That is the founder's complaint exactly (2026-10-23): "every agent does it their own way ... and it
+is friction and non optimised for agent frictionlessness."
+
+The estate already had the *lane-wide* answer (`bin/idp-greenlane status` -> intent `lane`) but not
+the *per-branch* one, so each agent composed fetch + merge-base + status + PR lookup by hand and
+then polled it. This is that composition, done once, deterministically: five git/gh reads, no model,
+no sleep, exit code as the verdict.
+
+WHY IT DOES NOT WAIT. AGENTS.md §2: handing over the branch is the whole job and it converges on
+its own -- the verdict is an observation, not a wait. So this answers "where is it *now*" and exits.
+An agent that genuinely needs later calls this again; nothing here parks a turn, and nothing here
+contradicts the executor's refusal to run a bare sleep. If the answer is PENDING, the answer
+is PENDING, in one call instead of twelve.
+
+READS (nothing else, nothing written):
+  git ls-remote   the branch on origin and main's current sha
+  git merge-base --is-ancestor   is the branch head already an ancestor of origin/main
+  gh api commits/<sha>/status    the `greenlane` commit status the lane puts on the head
+  gh api commits/<sha>/pulls     the pull request the lane raised, if it raised one
+
+VERDICTS
+  LANDED   exit 0   the branch head is an ancestor of origin/main -- it is in main, with the sha
+  PENDING  exit 3   not in main yet, head status pending/absent, lane still working or not yet picked up
+  RED      exit 4   not in main, head status failure -- the reason and the URL are printed
+  GONE     exit 5   no such branch on origin -- it was never pushed, or it was deleted after landing
+                    (with `--expect-landed` this is a FAIL, because a deleted branch with no
+                    ancestor in main means the work is lost, not landed)
+  BLIND    exit 2   git or gh could not answer. "Could not check" must never print as "not landed".
+
+USAGE
+  bin/lane-where                        # the branch checked out here
+  bin/lane-where lane/skill-layer       # any branch on origin
+  bin/lane-where --json                 # one receipt, for a panel or a bus
+  bin/lane-where --repo chidionyema/idp --branch <b>
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+
+IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def run(argv: list[str], timeout: float = 30.0) -> tuple[int, str]:
+    try:
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, cwd=IDP)
+        return p.returncode, (p.stdout or "") + (p.stderr or "")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return 127, f"{type(exc).__name__}: {exc}"
+
+
+def gh_json(path: str) -> dict | list | None:
+    rc, out = run(["gh", "api", path])
+    if rc != 0:
+        return None
+    try:
+        return json.loads(out)
+    except ValueError:
+        return None
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(prog="lane-where", description="Where is this branch? One observation.")
+    ap.add_argument("branch", nargs="?", help="branch name; default: the one checked out here")
+    ap.add_argument("--repo", default="chidionyema/idp")
+    ap.add_argument("--json", action="store_true", help="emit one JSON receipt")
+    ap.add_argument("--expect-landed", action="store_true",
+                    help="exit 1 unless the branch is in main (use when reporting work as done)")
+    a = ap.parse_args()
+
+    branch = a.branch
+    if not branch:
+        rc, out = run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+        if rc != 0:
+            print(f"BLIND   lane-where  cannot read the checked-out branch: {out.strip()[:160]}")
+            return 2
+        branch = out.strip()
+
+    rc, out = run(["git", "ls-remote", "origin", f"refs/heads/{branch}", "refs/heads/main"])
+    if rc != 0:
+        print(f"BLIND   lane-where  git ls-remote failed: {out.strip()[:200]}")
+        return 2
+    refs = {}
+    for line in out.splitlines():
+        sha, _, ref = line.partition("\t")
+        if ref:
+            refs[ref.strip()] = sha.strip()
+    main_sha = refs.get("refs/heads/main")
+    head = refs.get(f"refs/heads/{branch}")
+    if not main_sha:
+        print("BLIND   lane-where  origin/main is not visible; cannot judge anything against it")
+        return 2
+
+    receipt: dict = {"branch": branch, "repo": a.repo, "main": main_sha}
+    if not head:
+        receipt.update(verdict="GONE")
+        if a.json:
+            print(json.dumps(receipt, indent=1))
+        else:
+            print(f"GONE    lane-where  {branch}  no such branch on origin (never pushed, or deleted)")
+        return 1 if a.expect_landed else 5
+
+    receipt["head"] = head
+    # `git fetch` of just these two refs keeps the ancestry cheap; the objects are usually present.
+    run(["git", "fetch", "-q", "--no-tags", "origin", f"refs/heads/{branch}:refs/remotes/origin/{branch}",
+         "refs/heads/main:refs/remotes/origin/main"])
+    rc, _ = run(["git", "merge-base", "--is-ancestor", head, f"origin/main"])
+    landed = head == main_sha or rc == 0
+    # SQUASH-LANDING MAKES ANCESTRY LIE. The greenlane lands a lane by squash, so the lane's head
+    # commit is never an ancestor of main even though its content is -- measured 2026-10-24: this
+    # door answered "NOT in main" for a change that had landed minutes earlier as #7039, which is
+    # precisely the answer that makes an agent redo work and raise a second, conflicting PR. The
+    # subject line survives a squash (it becomes the squash commit's subject), so the second test is
+    # the subject shared by the lane head and some commit on main.
+    if not landed:
+        subject = run(["git", "log", "-1", "--format=%s", head])[1].strip()
+        if subject:
+            seen = run(["git", "log", "origin/main", "-F", f"--grep={subject}",
+                        "--format=%h", "-1"])[1].strip()
+            if seen:
+                landed = True
+                receipt["landed_by"] = f"subject match at {seen} (squash-landed; head is not an ancestor)"
+    receipt["landed"] = landed
+    receipt.setdefault("landed_by", "ancestry" if landed else None)
+
+    status = gh_json(f"repos/{a.repo}/commits/{head}/status")
+    st_state, st_url, st_ctx = "absent", None, None
+    failing = []
+    if isinstance(status, dict):
+        st_state = status.get("state") or "absent"
+        for s in status.get("statuses") or []:
+            if s.get("state") in ("failure", "error"):
+                failing.append({"context": s.get("context"), "url": s.get("target_url"),
+                                "description": s.get("description")})
+        if failing:
+            st_ctx, st_url = failing[0]["context"], failing[0]["url"]
+    receipt.update(status=st_state, status_url=st_url, status_context=st_ctx, failing=failing)
+
+    prs = gh_json(f"repos/{a.repo}/commits/{head}/pulls")
+    pr = None
+    if isinstance(prs, list) and prs:
+        pr = {"number": prs[0].get("number"), "state": prs[0].get("state"), "merged": prs[0].get("merged_at")}
+    receipt["pull_request"] = pr
+
+    if landed:
+        verdict, code = "LANDED", 0
+    elif st_state == "failure":
+        verdict, code = "RED", 4
+    else:
+        verdict, code = "PENDING", 3
+    receipt["verdict"] = verdict
+
+    if a.json:
+        print(json.dumps(receipt, indent=1))
+        return 1 if (a.expect_landed and not landed) else code
+    if landed:
+        print(f"LANDED  lane-where  {branch}  {head[:12]} is in main ({main_sha[:12]})")
+        if pr:
+            print(f"        pull request #{pr['number']} {pr['state']} merged {pr['merged'] or '(not merged)'}")
+    elif verdict == "RED":
+        print(f"RED     lane-where  {branch}  {head[:12]} is NOT in main; the lane says failure")
+        for f in failing or [{"context": st_ctx, "url": st_url, "description": None}]:
+            print(f"        {f['context']}: {f['url']}")
+            if f.get("description"):
+                print(f"          {f['description'][:200]}")
+        print("        the branch is kept. Fix it and push again; do not raise a pull request by hand.")
+    elif st_state == "success":
+        print(f"GREEN   lane-where  {branch}  {head[:12]} is green on the branch, not yet merged")
+        plus = f", pull request #{pr['number']} {pr['state']}" if pr else ""
+        print(f"        the lane merges it on its own{plus}. Re-run this to see it later; do not poll.")
+    else:
+        print(f"PENDING lane-where  {branch}  {head[:12]} is NOT in main yet (status: {st_state})")
+        plus = f", pull request #{pr['number']} {pr['state']}" if pr else ", no pull request yet"
+        print(f"        the lane converges on its own{plus}. Re-run this to see it later; do not poll.")
+    return 1 if (a.expect_landed and not landed) else code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

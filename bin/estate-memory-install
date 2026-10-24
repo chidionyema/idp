@@ -10,6 +10,12 @@ same bin/estate-memory-mcp everywhere) and, where the runtime has one, a session
 same bin/estate-brief everywhere). A runtime whose config directory is absent is skipped, not
 created: installing a config for a tool nobody uses is how a second copy starts.
 
+A runtime that cannot read MCP at all -- pi has no MCP client, so the mcpServers block written
+for it was dead config that looked like a working integration -- says so with "reads": false. The
+estate then removes its own entry from that file and gives the runtime its tools through the
+"tools" links instead: an extension that speaks the same MCP protocol to the same bridge, so
+there is still one bridge and one store behind every runtime's memory.
+
 Only the estate-memory entry and the estate-brief hook are touched; every other key in a config is
 kept as it was. A link destination that exists and is not a symlink is refused, never replaced --
 it is somebody's file. No key is written anywhere: the bridge reads it by name at call time.
@@ -91,6 +97,18 @@ def home_files() -> list[str]:
         for rt in MANIFEST["runtimes"].values()
         if rt.get("hook", {}).get("kind") == "link"
     ]
+    tools: list[str] = []
+    for rt in MANIFEST["runtimes"].values():
+        for entry in rt.get("tools", []):
+            source = HERE / entry["source"]
+            if source.is_dir():
+                tools += [
+                    str(path.relative_to(HERE))
+                    for path in sorted(source.rglob("*"))
+                    if path.is_file()
+                ]
+            else:
+                tools.append(entry["source"])
     memory = "platform/estate/memory"
     return [
         MANIFEST["bridge"],
@@ -105,6 +123,7 @@ def home_files() -> list[str]:
         f"{memory}/plan.py",
         f"{memory}/runtimes.json",
         *links,
+        *tools,
     ]
 
 
@@ -182,23 +201,57 @@ def unlocked(rt: dict) -> "str | None":
     return shutil.which(rt["command"])
 
 
+def plan_link(source: Path, dest: Path, label: str) -> list[tuple[str, Path, object]]:
+    """A symlink from dest to source: what the installer writes when it is missing or stale.
+
+    A destination that exists and is not a symlink is somebody's file, and is refused.
+    """
+    if dest.is_symlink() and Path(os.readlink(dest)) == source:
+        return []
+    if dest.exists() and not dest.is_symlink():
+        return [("refused", dest, None)]
+
+    def link(dest=dest, source=source):
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if dest.is_symlink():
+            dest.unlink()
+        dest.symlink_to(source)
+
+    return [(label, dest, link)]
+
+
 def plan(name: str, rt: dict, root: Path) -> list[tuple[str, Path, object]]:
     """The changes this runtime needs: (what, where, how to apply), empty when in step."""
-    mcp_file = expand(rt["mcp"]["file"], rt)
-    if not mcp_file.parent.is_dir():
+    mcp = rt.get("mcp")
+    mcp_file = expand(mcp["file"], rt) if mcp else None
+    if mcp_file is not None and not mcp_file.parent.is_dir():
         return [("absent", mcp_file.parent, None)]
     changes = []
 
-    cfg = load(mcp_file)
-    want = mcp_entry(rt["mcp"]["shape"], root)
-    if cfg.get(rt["mcp"]["key"], {}).get(MANIFEST["server"]) != want:
+    if mcp_file is not None:
+        cfg = load(mcp_file)
+        if mcp.get("reads") is False:
+            # This runtime cannot read an MCP server at all (pi has no MCP client), so the
+            # estate's entry in that file is dead config: the estate removes what it wrote, and
+            # leaves every other entry alone.
+            if MANIFEST["server"] in cfg.get(mcp["key"], {}):
 
-        def put_mcp(path=mcp_file, key=rt["mcp"]["key"], want=want):
-            data = load(path)
-            data.setdefault(key, {})[MANIFEST["server"]] = want
-            save(path, data)
+                def drop_mcp(path=mcp_file, key=mcp["key"]):
+                    data = load(path)
+                    data.get(key, {}).pop(MANIFEST["server"], None)
+                    save(path, data)
 
-        changes.append(("mcp", mcp_file, put_mcp))
+                changes.append(("mcp", mcp_file, drop_mcp))
+        else:
+            want = mcp_entry(mcp["shape"], root)
+            if cfg.get(mcp["key"], {}).get(MANIFEST["server"]) != want:
+
+                def put_mcp(path=mcp_file, key=mcp["key"], want=want):
+                    data = load(path)
+                    data.setdefault(key, {})[MANIFEST["server"]] = want
+                    save(path, data)
+
+                changes.append(("mcp", mcp_file, put_mcp))
 
     hook = rt.get("hook")
     if hook and hook["kind"] == "settings":
@@ -231,20 +284,12 @@ def plan(name: str, rt: dict, root: Path) -> list[tuple[str, Path, object]]:
             changes.append(("hook", path, put_hook))
         changes += plan_enforce(path, root)
     elif hook and hook["kind"] == "link":
-        dest, source = expand(hook["dest"], rt), root / hook["source"]
-        if dest.is_symlink() and Path(os.readlink(dest)) == source:
-            pass
-        elif dest.exists() and not dest.is_symlink():
-            changes.append(("refused", dest, None))
-        else:
-
-            def link(dest=dest, source=source):
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                if dest.is_symlink():
-                    dest.unlink()
-                dest.symlink_to(source)
-
-            changes.append(("hook", dest, link))
+        changes += plan_link(root / hook["source"], expand(hook["dest"], rt), "hook")
+    for entry in rt.get("tools", []):
+        if entry.get("kind") == "link":
+            changes += plan_link(
+                root / entry["source"], expand(entry["dest"], rt), "tools"
+            )
     return changes
 
 

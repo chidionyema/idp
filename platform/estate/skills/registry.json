@@ -1,0 +1,1308 @@
+{
+  "version": 1,
+  "why": "The estate's one skill layer. Every pack here is installed into a runtime's skills directory only after its files hash to what this file says, and only into one of the four allowlisted runtime roots. The pack contents are the capability; this file is the contract.",
+  "generated_by": "platform/estate/libexec/skill-packs.py vendor / manifest",
+  "packs": [
+    {
+      "id": "agent-cookbooks",
+      "title": "Anthropic's agent cookbook -- prompts, review and research patterns",
+      "category": "agent-runtime",
+      "capability": "Worked patterns for building agents: a code-reviewer agent, a research lead and subagent pair, and a cookbook audit that grades a prompt against a style guide.",
+      "upstream": {
+        "repo": "anthropics/claude-cookbooks",
+        "branch": "main",
+        "commit": "a162e0184e71b60290808a43961a6cbc8060123c",
+        "license": "MIT",
+        "stars": 53718,
+        "stars_measured_at": "2026-10-24T08:02:55+00:00",
+        "vendored": [
+          "LICENSE",
+          "agents/code-reviewer.md",
+          "patterns/agents/prompts/research_lead_agent.md",
+          "patterns/agents/prompts/research_subagent.md",
+          "skills/cookbook-audit/SKILL.md",
+          "skills/cookbook-audit/style_guide.md"
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "agents/code-reviewer.md": ".claude/agents/code-reviewer.md",
+          "patterns/agents/prompts/research_lead_agent.md": "patterns/agents/prompts/research_lead_agent.md",
+          "patterns/agents/prompts/research_subagent.md": "patterns/agents/prompts/research_subagent.md",
+          "skills/cookbook-audit/SKILL.md": ".claude/skills/cookbook-audit/SKILL.md",
+          "skills/cookbook-audit/style_guide.md": ".claude/skills/cookbook-audit/style_guide.md"
+        }
+      },
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "722129c69fa8161ae24c6d92c0f49a57290a2cc58c9b5bafc0d449e7424affd1"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "0cccb8f774c8fa4ef432e6418de878f5d33b1b11ea246b8e22930e9dcafb2188"
+        },
+        {
+          "path": "upstream/LICENSE",
+          "sha256": "d7a04bf11ce24a7b79cd44b4a78dcc9971eaeb3b565821de437e0ecb7723e634"
+        },
+        {
+          "path": "upstream/agents/code-reviewer.md",
+          "sha256": "cca9d1d7f8831a8676c9a9fe7b017f904d66335cc5c5c93a2ea9cb62c11f0488"
+        },
+        {
+          "path": "upstream/patterns/agents/prompts/research_lead_agent.md",
+          "sha256": "cc3165be0721fa26b92800027ac035c2db792d3a22f4bdd3577424559067d29e"
+        },
+        {
+          "path": "upstream/patterns/agents/prompts/research_subagent.md",
+          "sha256": "34c18034905aa9c0128f340de7c189e1da98b5bfa1c1df0233612ee6af72cf35"
+        },
+        {
+          "path": "upstream/skills/cookbook-audit/SKILL.md",
+          "sha256": "63b4c68ffe7ea6c95b13ab008d58224651a5c63d3559ae4e58ec317f72a16258"
+        },
+        {
+          "path": "upstream/skills/cookbook-audit/style_guide.md",
+          "sha256": "9a06870852c7d46ffbf8ed050f28e99c16eb2377b12f915dee071ffb8c5c61d3"
+        }
+      ],
+      "tree_sha256": "fd358651a9249499361c66bd44acbc12203ced120d939a56f37d6f42e8019955"
+    },
+    {
+      "id": "awesome-design-md",
+      "title": "Awesome DESIGN.md -- brand design specs as code",
+      "category": "architecture",
+      "capability": "Read and write DESIGN.md: the file that states a brand's colours, type, spacing, motion and components so an agent builds the brand instead of a generic page.",
+      "upstream": {
+        "repo": "VoltAgent/awesome-design-md",
+        "branch": "main",
+        "commit": "3b605329240ce735b510037cca322f1831fdd7f8",
+        "license": "MIT",
+        "stars": 123108,
+        "stars_measured_at": "2026-10-23T15:32:12+00:00",
+        "vendored": [
+          "LICENSE",
+          "README.md",
+          "design-md/meta/DESIGN.md",
+          "design-md/raycast/DESIGN.md",
+          "design-md/vercel/DESIGN.md"
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "README.md": "README.md",
+          "design-md/meta/DESIGN.md": "design-md/meta/DESIGN.md",
+          "design-md/raycast/DESIGN.md": "design-md/raycast/DESIGN.md",
+          "design-md/vercel/DESIGN.md": "design-md/vercel/DESIGN.md"
+        }
+      },
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "194d3de5e43d6a9e07663a05b63c4002567c610d5847182a43ab5fe184ad4488"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "419de8394d9239459f05318a8fb9d80b88fe3f577612cc58829bf5cb63249a70"
+        },
+        {
+          "path": "upstream/LICENSE",
+          "sha256": "6d4bdc9a9cf30e7beb593475fdcdbf29f981ea6bd7923f202866145409f87b44"
+        },
+        {
+          "path": "upstream/README.md",
+          "sha256": "3847536c93a8262b779ee04692fe0efb4bfa644ffcfb8c43565576f00a4a32e0"
+        },
+        {
+          "path": "upstream/design-md/meta/DESIGN.md",
+          "sha256": "306dfad97c006d47b134fb0dbd55ff68d3baa526844d6eb37346373c9ef35339"
+        },
+        {
+          "path": "upstream/design-md/raycast/DESIGN.md",
+          "sha256": "6e2c5137e4d914b70996d589688374a801b6f29a35c9c019c22abb5e0170bda3"
+        },
+        {
+          "path": "upstream/design-md/vercel/DESIGN.md",
+          "sha256": "d0951b93c2b4ce9840c715c9f9b3e58a386c6c58ae5cc0f804dec3b116b95bd8"
+        }
+      ],
+      "tree_sha256": "360de87e9775b6fec96591a44aabf8143fe45d53bf2517430cdeee28a5b631b8"
+    },
+    {
+      "id": "canvas-ui",
+      "title": "Canvas UI -- canvas and WebGL interface primitives",
+      "category": "ui",
+      "capability": "Canvas/WebGL UI primitives for interfaces that cannot be DOM: 3D scenes, shaders, and interactive canvases inside a product.",
+      "upstream": {
+        "repo": "DavidHDev/canvas-ui",
+        "branch": "main",
+        "commit": "a04a99b235299ee79a123a16ccb2e6cf9da74b6b",
+        "license": "NOASSERTION",
+        "stars": 5070,
+        "stars_measured_at": "2026-10-23T15:34:07+00:00",
+        "vendored": [
+          "LICENSE.md",
+          "README.md",
+          "public/assets/models/LICENSE.md"
+        ],
+        "path_map": {
+          "LICENSE.md": "LICENSE.md",
+          "README.md": "README.md",
+          "public/assets/models/LICENSE.md": "public/assets/models/LICENSE.md"
+        }
+      },
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "bf252daf94f1879cee655ab2e24d52379c8fe90e771b2624f5e63bb74da4ad25"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "5a805fb5748e819573f107256ddfd2bb0a97d5241d847e0abb53f75e2b2a199e"
+        },
+        {
+          "path": "upstream/LICENSE.md",
+          "sha256": "2a9a221a47f581d7984ca3a568e38fb17d5b6e43164db3f3482b4767c8e8e5b3"
+        },
+        {
+          "path": "upstream/README.md",
+          "sha256": "b3e78e48b5c570a15e47604e0463b561816a8eaef15ff162e376681c85bd3e3f"
+        },
+        {
+          "path": "upstream/public/assets/models/LICENSE.md",
+          "sha256": "6c5e5051532c41ce2d1dca907bfe337d578bde63e1696021c1cdbf78a7b65da5"
+        }
+      ],
+      "tree_sha256": "709d4e94387b2f26ecffa8dcbbc3a8a795bd35b403b263071d79be2145cde6c1"
+    },
+    {
+      "id": "design-md",
+      "title": "Google DESIGN.md -- the specification and its linter",
+      "category": "architecture",
+      "capability": "The DESIGN.md specification itself, with worked examples and the linter that checks one, so a brand spec is a checkable artifact rather than prose.",
+      "upstream": {
+        "repo": "google-labs-code/design.md",
+        "branch": "main",
+        "commit": "6e5da5382f41edbba9d73b2c62f33f32e9971f15",
+        "license": "Apache-2.0",
+        "stars": 28498,
+        "stars_measured_at": "2026-10-23T15:33:36+00:00",
+        "vendored": [
+          ".agents/skills/agent-dx-cli-scale/SKILL.md",
+          ".agents/skills/ink/SKILL.md",
+          "LICENSE",
+          "README.md",
+          "docs/spec.md",
+          "examples/totality-festival/DESIGN.md"
+        ],
+        "path_map": {
+          ".agents/skills/agent-dx-cli-scale/SKILL.md": ".agents/skills/agent-dx-cli-scale/SKILL.md",
+          ".agents/skills/ink/SKILL.md": ".agents/skills/ink/SKILL.md",
+          "LICENSE": "LICENSE",
+          "README.md": "README.md",
+          "docs/spec.md": "docs/spec.md",
+          "examples/totality-festival/DESIGN.md": "examples/totality-festival/DESIGN.md"
+        }
+      },
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "d26f68bec907a145ffb24dc1fb73a14467c753894b47a4bdb4d25372c7772ec2"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "b093de2ff2afcc7bfcc192830abf6485a9107e9a1b598e8510de43e3b0f67b6e"
+        },
+        {
+          "path": "upstream/.agents/skills/agent-dx-cli-scale/SKILL.md",
+          "sha256": "2020ed49b5987c281a2e1ccd8f3ae2b6d189091c2928aed81e5b96f4254af14f"
+        },
+        {
+          "path": "upstream/.agents/skills/ink/SKILL.md",
+          "sha256": "4e27370b39769827cfda349efc3039921c60973b31f8885cc3bceab5196672e7"
+        },
+        {
+          "path": "upstream/LICENSE",
+          "sha256": "1bdd03995456d191707e379eb06ceac20cf30d520bec90c97c2b6d220906c66e"
+        },
+        {
+          "path": "upstream/README.md",
+          "sha256": "c73779bfe3bdbec5c6ad0e01259e6835b6f64762a304fae8227bf01434733504"
+        },
+        {
+          "path": "upstream/docs/spec.md",
+          "sha256": "9894f2021da2fa3b0a17bc87625813957981bf684587eafbe255e6a360875d03"
+        },
+        {
+          "path": "upstream/examples/totality-festival/DESIGN.md",
+          "sha256": "aa255842f7059ba1d463e5dab408fff427d95312c6cb503e1dfde16dc9cf5619"
+        }
+      ],
+      "tree_sha256": "d8be91a0df254df7ed4c28fa2012a4d42f737562ab8c5847f6ef39a065e22887"
+    },
+    {
+      "id": "emil-design-skills",
+      "title": "Design engineering skills -- craft, motion and native feel",
+      "category": "ui",
+      "capability": "Design-engineering craft: animation vocabulary and performance, native-feeling mobile UI, Apple design language, and the breaking-the-template-look rules.",
+      "upstream": {
+        "repo": "emilkowalski/skills",
+        "branch": "main",
+        "commit": "2d228630ba1446365f614a108cb8252f1feda202",
+        "license": "MIT",
+        "stars": 48955,
+        "stars_measured_at": "2026-10-23T15:33:05+00:00",
+        "vendored": [
+          "LICENSE",
+          "skills/animate/SKILL.md",
+          "skills/animation-performance/SKILL.md",
+          "skills/animation-vocabulary/SKILL.md",
+          "skills/apple-design/SKILL.md",
+          "skills/break-ui/SKILL.md",
+          "skills/emil-design-eng/SKILL.md",
+          "skills/mobile-native/SKILL.md",
+          "skills/prototype/SKILL.md",
+          "skills/review-animations/SKILL.md"
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "skills/animate/SKILL.md": "skills/animate/SKILL.md",
+          "skills/animation-performance/SKILL.md": "skills/animation-performance/SKILL.md",
+          "skills/animation-vocabulary/SKILL.md": "skills/animation-vocabulary/SKILL.md",
+          "skills/apple-design/SKILL.md": "skills/apple-design/SKILL.md",
+          "skills/break-ui/SKILL.md": "skills/break-ui/SKILL.md",
+          "skills/emil-design-eng/SKILL.md": "skills/emil-design-eng/SKILL.md",
+          "skills/mobile-native/SKILL.md": "skills/mobile-native/SKILL.md",
+          "skills/prototype/SKILL.md": "skills/prototype/SKILL.md",
+          "skills/review-animations/SKILL.md": "skills/review-animations/SKILL.md"
+        }
+      },
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "e5789131819faae67fe46eb388e254e91b7cb3f891e9f8ab2037f282fd660ad4"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "63db6eeafd18dc5f724474fd7bcb470bf253cbeb85b1c0b860c0f37ed814a72b"
+        },
+        {
+          "path": "upstream/LICENSE",
+          "sha256": "4ff5bdb7887ec1435c9cab0e8d1a7caee704d894d65c2a008ccc68b1cc2f260b"
+        },
+        {
+          "path": "upstream/skills/animate/SKILL.md",
+          "sha256": "b8ede161270458e6ae2e45e8a1985373515d4c63de5568ddb0f9012d7634356c"
+        },
+        {
+          "path": "upstream/skills/animation-performance/SKILL.md",
+          "sha256": "ceb9dd3fe912615830f725a0120ccf8d012d15a6218001a5cd6c15d38e39a957"
+        },
+        {
+          "path": "upstream/skills/animation-vocabulary/SKILL.md",
+          "sha256": "40d2b27adfdfeb0570a9f20e7d0255109d9233c50603878bcd0dcd04c923fd94"
+        },
+        {
+          "path": "upstream/skills/apple-design/SKILL.md",
+          "sha256": "77bb63b7043bb93aca2ff4ab040c249484eef35682bb6ff7163433c31d30adc7"
+        },
+        {
+          "path": "upstream/skills/break-ui/SKILL.md",
+          "sha256": "e7eec1d70ac56a04255e9c0dbe98084ea3d544cc04aaad34f32c95d6fa9dff5e"
+        },
+        {
+          "path": "upstream/skills/emil-design-eng/SKILL.md",
+          "sha256": "ffbe68e6007fb42cb8149f089b400a1ca007d59ba23e8948e2be4476f3175939"
+        },
+        {
+          "path": "upstream/skills/mobile-native/SKILL.md",
+          "sha256": "888b7651d66d66dbac4e72b7c554638eb19bd971d686d6cbdf030a5ef3788f55"
+        },
+        {
+          "path": "upstream/skills/prototype/SKILL.md",
+          "sha256": "bba39c955eb1871c5a02733976ceec5d0324198e0812e667604756489c89f7b9"
+        },
+        {
+          "path": "upstream/skills/review-animations/SKILL.md",
+          "sha256": "6ff590d29e436766135aa3d137be1fac2a867165c7257fc315b189361f1873af"
+        }
+      ],
+      "tree_sha256": "aca34583b904335998fdd0956145cd08b1eb54106514490275577d8477e14ece"
+    },
+    {
+      "id": "estate-architecture",
+      "title": "Estate architecture -- how a decision gets written down",
+      "category": "architecture",
+      "capability": "Architecture inside the estate: one of each layer, a spec before the build, a decision record for every fork, and the gates that prove the shape is right.",
+      "upstream": {},
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "d5a320079e3aa34d1872064841ae1028bb980c05d8694dfc516be33566c7690b"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "c12d35e8a07c3974a5b25d6e4e0ce309943a3ca7f7deea61e7fcaf33c7b36d5c"
+        }
+      ],
+      "tree_sha256": "fa33be5523381085568136818554079a3d01bf3f1cac9e4515a8e1e8dd0380db"
+    },
+    {
+      "id": "estate-research",
+      "title": "Estate research -- how an agent finds out",
+      "category": "research",
+      "capability": "Research inside the estate: the harvest intent for capability, search-text and explore for the corpus, the knowledge graph for what is already known, and the rule that a claim needs a source.",
+      "upstream": {},
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "179d0cd62c16bcf0d66d6c38683a67d90dca7311eb8c67c9a201f0c3e7268d93"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "b42a4271203a5cca6cc7b0ab92aa88690ef8dbc1e60f319428aeb35201f70c0c"
+        }
+      ],
+      "tree_sha256": "dc4bb1ca34551c24098c5f46cf2e2d3a82d1b8290ab76622b13d1b0c20aa38f5"
+    },
+    {
+      "id": "evaluation-rubrics",
+      "title": "Evaluation methodology -- rubrics, scoring and improving a score",
+      "category": "verification",
+      "capability": "How to grade an agent or a model against a rubric, how to write that rubric, and what to do when the score is wrong: the methodology, the rubric reference and the score-improvement loop.",
+      "upstream": {
+        "repo": "wshobson/agents",
+        "branch": "main",
+        "commit": "0874a27b17a22e2b7c2e2bcd725768e0803cad06",
+        "license": "MIT",
+        "stars": 41619,
+        "stars_measured_at": "2026-10-24T08:04:32+00:00",
+        "vendored": [
+          "LICENSE",
+          "plugins/plugin-eval/skills/evaluation-methodology/SKILL.md",
+          "plugins/plugin-eval/skills/evaluation-methodology/references/improving-scores.md",
+          "plugins/plugin-eval/skills/evaluation-methodology/references/rubrics.md"
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "plugins/plugin-eval/skills/evaluation-methodology/SKILL.md": "plugins/plugin-eval/skills/evaluation-methodology/SKILL.md",
+          "plugins/plugin-eval/skills/evaluation-methodology/references/improving-scores.md": "plugins/plugin-eval/skills/evaluation-methodology/references/improving-scores.md",
+          "plugins/plugin-eval/skills/evaluation-methodology/references/rubrics.md": "plugins/plugin-eval/skills/evaluation-methodology/references/rubrics.md"
+        }
+      },
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "8fc417c6d00dfafa677c6ab24c8bc34c979fac6afd59ad30f17de0eabd2f31ad"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "a64a6a97142d467681bf223c56ed1ea14f2a9356aea7e7bb6fb8a5644c869bef"
+        },
+        {
+          "path": "upstream/LICENSE",
+          "sha256": "f89abb55d9f073f38f1703e4518f0613c788c6174be7f13b8dfe48a1c076c746"
+        },
+        {
+          "path": "upstream/plugins/plugin-eval/skills/evaluation-methodology/SKILL.md",
+          "sha256": "d937b6d8c2a853bdffd53ea5c900e8e650e372506d48b8f64808d82fb87014ee"
+        },
+        {
+          "path": "upstream/plugins/plugin-eval/skills/evaluation-methodology/references/improving-scores.md",
+          "sha256": "2bdccb1fb3e37f04a49d3b127f562e9a0b26bfab00ae56e7640bdaa7e793a342"
+        },
+        {
+          "path": "upstream/plugins/plugin-eval/skills/evaluation-methodology/references/rubrics.md",
+          "sha256": "d2343aab178fa49ce174447f3845d2ac45ed00de773d0c9b3ff838dbb559c9f7"
+        }
+      ],
+      "tree_sha256": "ec521af45482594c500470e6143b15b557fb388cc051ac8524803c44f6ad6a04"
+    },
+    {
+      "id": "gsap-skills",
+      "title": "GSAP skills -- motion that runs at 60fps",
+      "category": "ui",
+      "capability": "GSAP used correctly: core tweens and timelines, ScrollTrigger, plugins, React integration, and the performance rules that keep it smooth.",
+      "upstream": {
+        "repo": "greensock/gsap-skills",
+        "branch": "main",
+        "commit": "aed9cfd3277740755f6bfc1155c7aa645403b760",
+        "license": "MIT",
+        "stars": 16981,
+        "stars_measured_at": "2026-10-23T15:33:47+00:00",
+        "vendored": [
+          "LICENSE",
+          "skills/gsap-core/SKILL.md",
+          "skills/gsap-frameworks/SKILL.md",
+          "skills/gsap-performance/SKILL.md",
+          "skills/gsap-plugins/SKILL.md",
+          "skills/gsap-react/SKILL.md",
+          "skills/gsap-scrolltrigger/SKILL.md",
+          "skills/gsap-timeline/SKILL.md",
+          "skills/gsap-utils/SKILL.md"
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "skills/gsap-core/SKILL.md": "skills/gsap-core/SKILL.md",
+          "skills/gsap-frameworks/SKILL.md": "skills/gsap-frameworks/SKILL.md",
+          "skills/gsap-performance/SKILL.md": "skills/gsap-performance/SKILL.md",
+          "skills/gsap-plugins/SKILL.md": "skills/gsap-plugins/SKILL.md",
+          "skills/gsap-react/SKILL.md": "skills/gsap-react/SKILL.md",
+          "skills/gsap-scrolltrigger/SKILL.md": "skills/gsap-scrolltrigger/SKILL.md",
+          "skills/gsap-timeline/SKILL.md": "skills/gsap-timeline/SKILL.md",
+          "skills/gsap-utils/SKILL.md": "skills/gsap-utils/SKILL.md"
+        }
+      },
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "20b866820d671a00dce88bd272a3eb2e8bea2051c0d1ed0942d3a94d4cb798ef"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "4d03e71f91d9386cc4f8ba2ddb16d342c59990717d765d0991cc55dead71da42"
+        },
+        {
+          "path": "upstream/LICENSE",
+          "sha256": "51b04b06556662dd817e8f4aa6d06bc7139dc73739e1319a7233cfde3e147b90"
+        },
+        {
+          "path": "upstream/skills/gsap-core/SKILL.md",
+          "sha256": "3887b47e050ab5afbe2a9a820f23d39fa02ab785e06a343be44c6f91d84d12b3"
+        },
+        {
+          "path": "upstream/skills/gsap-frameworks/SKILL.md",
+          "sha256": "842d9d3659ec3ddc8abbdc524708f8facf81f468ac25d0577f48c759c4fa31e6"
+        },
+        {
+          "path": "upstream/skills/gsap-performance/SKILL.md",
+          "sha256": "cb5408d6fba707aabcbfe3320317a14c1f8fca6070074e5261047930f50d441e"
+        },
+        {
+          "path": "upstream/skills/gsap-plugins/SKILL.md",
+          "sha256": "5838b856c74c07fbc9fa99b6dfd1eee34ea554c3e530c30e0d58014b707d70a4"
+        },
+        {
+          "path": "upstream/skills/gsap-react/SKILL.md",
+          "sha256": "88e2a5312b45e8cc7b3c496637ff5bc9af2ae9c925b555c8b235b34cbc989d74"
+        },
+        {
+          "path": "upstream/skills/gsap-scrolltrigger/SKILL.md",
+          "sha256": "9351b6666a4749c0740406ea363aaccb99a087ff45cc5e8b99a0f367facf3ef4"
+        },
+        {
+          "path": "upstream/skills/gsap-timeline/SKILL.md",
+          "sha256": "1a8b0f39cc4be3ed3d834b89672e4ae2f151b901dc3450bebf10bbc45379fe02"
+        },
+        {
+          "path": "upstream/skills/gsap-utils/SKILL.md",
+          "sha256": "1927bcc4ea95b38203404ad5ea1d060b15c4a886c65ae53e885ff1793aabe0ba"
+        }
+      ],
+      "tree_sha256": "df920d06d2b0bad7345f3f58638e0f3a0a7a055a20ed8ba5a5a9a9b358f20fb1"
+    },
+    {
+      "id": "hallmark",
+      "title": "Hallmark -- web design craft, macrostructures and gates",
+      "category": "design",
+      "capability": "The anatomy of a good page: macrostructures, layout, type, flow, interaction states, and the gates a design must pass before it ships.",
+      "upstream": {
+        "repo": "Nutlope/hallmark",
+        "branch": "main",
+        "commit": "7ec868225c6caa040558c321ee0fefa0e73f83a8",
+        "license": "MIT",
+        "stars": 31159,
+        "stars_measured_at": "2026-10-23T15:33:28+00:00",
+        "vendored": [
+          "LICENSE",
+          "skills/hallmark/SKILL.md",
+          "skills/hallmark/references/anatomy.md",
+          "skills/hallmark/references/craft.md",
+          "skills/hallmark/references/design-md.md",
+          "skills/hallmark/references/flow.md",
+          "skills/hallmark/references/gates.md",
+          "skills/hallmark/references/layout.md",
+          "skills/hallmark/references/macrostructures.md"
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "skills/hallmark/SKILL.md": "skills/hallmark/SKILL.md",
+          "skills/hallmark/references/anatomy.md": "skills/hallmark/references/anatomy.md",
+          "skills/hallmark/references/craft.md": "skills/hallmark/references/craft.md",
+          "skills/hallmark/references/design-md.md": "skills/hallmark/references/design-md.md",
+          "skills/hallmark/references/flow.md": "skills/hallmark/references/flow.md",
+          "skills/hallmark/references/gates.md": "skills/hallmark/references/gates.md",
+          "skills/hallmark/references/layout.md": "skills/hallmark/references/layout.md",
+          "skills/hallmark/references/macrostructures.md": "skills/hallmark/references/macrostructures.md"
+        }
+      },
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "06931b0915f683f3cde5934f15058d76b40cf37b6a42d90261c072ae12b84319"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "794431715794e5977d46c8e44bb15dfdb39d4fc7fb7097af5a5465f4aa652bdd"
+        },
+        {
+          "path": "upstream/LICENSE",
+          "sha256": "06088a8b94598626f27612dea42300154bf7be967c85d9d3eee4490cb056af7d"
+        },
+        {
+          "path": "upstream/skills/hallmark/SKILL.md",
+          "sha256": "25a1ff92d925b2389e8409f42fb8ad7e033fceca8b5d1f07ed4ca4c28da53dc3"
+        },
+        {
+          "path": "upstream/skills/hallmark/references/anatomy.md",
+          "sha256": "70f570279d42ac0bef4af809c80b522e550c6dacaaa0a93349a0fff0d5b93500"
+        },
+        {
+          "path": "upstream/skills/hallmark/references/craft.md",
+          "sha256": "1b7b40f81f0fe1c04dce133696182ca1229d16162f8f3203603f24a0f585c41c"
+        },
+        {
+          "path": "upstream/skills/hallmark/references/design-md.md",
+          "sha256": "839d4cd8d5b07007854e9c6de95491691725f2968a0922f9b8fcfdbe42e2784c"
+        },
+        {
+          "path": "upstream/skills/hallmark/references/flow.md",
+          "sha256": "45565a78e3c7fdc33791c5074c8640199e2f711e62131cd4ef1cb337010b6e85"
+        },
+        {
+          "path": "upstream/skills/hallmark/references/gates.md",
+          "sha256": "63ad234a1acab5e081dfe8ecf2331518a43cbf42760dc5c6ababfb24d7b3e50c"
+        },
+        {
+          "path": "upstream/skills/hallmark/references/layout.md",
+          "sha256": "2724768fe7249ab3e941923f2c42bc2ff2ff529eeb672cfa30e00c72f627a0e4"
+        },
+        {
+          "path": "upstream/skills/hallmark/references/macrostructures.md",
+          "sha256": "3389dbc0434bd9a6161896a19b4ec6664859d49f1b0329cd0e8fae6f045e1c43"
+        }
+      ],
+      "tree_sha256": "88a43e6b4ce43aa061a4b339a26e90c8035c8ac2d32b799b1f3bbd447750fa27"
+    },
+    {
+      "id": "impeccable",
+      "title": "Impeccable -- the design language a harness should speak",
+      "category": "design",
+      "capability": "A craft floor for an agent: audit, critique, refine and document a design, with the bar written down before the work starts.",
+      "upstream": {
+        "repo": "pbakaus/impeccable",
+        "branch": "main",
+        "commit": "5cb95eea9c96479f57afe0732a45470d30183326",
+        "license": "Apache-2.0",
+        "stars": 85322,
+        "stars_measured_at": "2026-10-23T15:32:49+00:00",
+        "vendored": [
+          ".agent/skills/impeccable/SKILL.md",
+          ".agent/skills/impeccable/reference/audit.md",
+          ".agent/skills/impeccable/reference/component-review.md",
+          ".agent/skills/impeccable/reference/craft-floor.md",
+          ".agent/skills/impeccable/reference/critique.md",
+          ".agent/skills/impeccable/reference/new-work.md",
+          "LICENSE"
+        ],
+        "path_map": {
+          ".agent/skills/impeccable/SKILL.md": ".agent/skills/impeccable/SKILL.md",
+          ".agent/skills/impeccable/reference/audit.md": ".agent/skills/impeccable/reference/audit.md",
+          ".agent/skills/impeccable/reference/component-review.md": ".agent/skills/impeccable/reference/component-review.md",
+          ".agent/skills/impeccable/reference/craft-floor.md": ".agent/skills/impeccable/reference/craft-floor.md",
+          ".agent/skills/impeccable/reference/critique.md": ".agent/skills/impeccable/reference/critique.md",
+          ".agent/skills/impeccable/reference/new-work.md": ".agent/skills/impeccable/reference/new-work.md",
+          "LICENSE": "LICENSE"
+        }
+      },
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "e8bcd50392f580ebb0440ed8a02c98ef037bad13f7519406e649c9cebaf20725"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "fe7f737da9b55505e33707ff02c005e685e5451908adc6147c6c4b49fee0a30c"
+        },
+        {
+          "path": "upstream/LICENSE",
+          "sha256": "02bb8c3b4e70190e3986c0404ad2fd8d639b4f534252d82379cc1b502b6d1812"
+        }
+      ],
+      "tree_sha256": "85b841c748a4e219a61ac228016e08f6230e5a6f404719ba8b7c5b35a71e8fb5"
+    },
+    {
+      "id": "k8s-hardening",
+      "title": "Kubernetes hardening checklist -- the cluster's own security baseline",
+      "category": "infrastructure",
+      "capability": "The upstream Kubernetes security checklist and pod security standards: the baseline the estate's cluster is held to, so an agent reviews a manifest against the standard rather than against memory.",
+      "upstream": {
+        "repo": "kubernetes/website",
+        "branch": "main",
+        "commit": "bf999f0184431d6fd0908b8f8340ddf42fc4e6a6",
+        "license": "CC-BY-4.0",
+        "stars": 5410,
+        "stars_measured_at": "2026-10-24T08:04:40+00:00",
+        "vendored": [
+          "LICENSE",
+          "content/en/docs/concepts/security/security-checklist.md"
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "content/en/docs/concepts/security/security-checklist.md": "content/en/docs/concepts/security/security-checklist.md"
+        }
+      },
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "f2baa3a54e9a8995f8d3dc168b825b5e64a4a629443a33d0c7f04b5f811d2fd4"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "c5f57f889f2e0717272cd92f9f3aa99cf327458ffd291afdc61b50a2ffe3402d"
+        },
+        {
+          "path": "upstream/LICENSE",
+          "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"
+        },
+        {
+          "path": "upstream/content/en/docs/concepts/security/security-checklist.md",
+          "sha256": "45b19b870fae7739107ae83966b3babee3b23db3e623abbef87660a426493a34"
+        }
+      ],
+      "tree_sha256": "0cc41aa791a2fc9c5c4ebadce4a414b040c72cfd6784a1658d7f14568a8cffc1"
+    },
+    {
+      "id": "open-design",
+      "title": "Open Design -- the design workspace skill set",
+      "category": "design",
+      "capability": "The working skills of a design workspace: brand kit, design brief, creative direction, review, colour, copy.",
+      "upstream": {
+        "repo": "nexu-io/open-design",
+        "branch": "main",
+        "commit": "e03d5c23f308c39f4de7c057568df66c29a84385",
+        "license": "Apache-2.0",
+        "stars": 103540,
+        "stars_measured_at": "2026-10-23T15:32:22+00:00",
+        "vendored": [
+          "LICENSE",
+          "README.md",
+          "skills/brandkit/SKILL.md",
+          "skills/color-expert/SKILL.md",
+          "skills/copywriting/SKILL.md",
+          "skills/creative-director/SKILL.md",
+          "skills/design-brief/SKILL.md",
+          "skills/design-md/SKILL.md",
+          "skills/design-review/SKILL.md"
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "README.md": "README.md",
+          "skills/brandkit/SKILL.md": "skills/brandkit/SKILL.md",
+          "skills/color-expert/SKILL.md": "skills/color-expert/SKILL.md",
+          "skills/copywriting/SKILL.md": "skills/copywriting/SKILL.md",
+          "skills/creative-director/SKILL.md": "skills/creative-director/SKILL.md",
+          "skills/design-brief/SKILL.md": "skills/design-brief/SKILL.md",
+          "skills/design-md/SKILL.md": "skills/design-md/SKILL.md",
+          "skills/design-review/SKILL.md": "skills/design-review/SKILL.md"
+        }
+      },
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "55ba4f323acc41323990153a5d32ed7e10419df5a731eb54d4cc69089cc829f7"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "1751cd4c565c0fc50a3b732a27126ca713c19fee073f6a6ba2fdd50805ba7f87"
+        },
+        {
+          "path": "upstream/LICENSE",
+          "sha256": "9d95806a26532623360eb84bb17d298f394b55ef73fb4c0796d99b4319b2b0da"
+        },
+        {
+          "path": "upstream/README.md",
+          "sha256": "dbd9cd62043f52a7c38af33b10dc6dd66f7c01a88211d2a3ce8dbfd5a00ed74a"
+        },
+        {
+          "path": "upstream/skills/brandkit/SKILL.md",
+          "sha256": "22dd701e88695e8559527461f6b0f56f272fc583fb2133845d3307d7c5785b2a"
+        },
+        {
+          "path": "upstream/skills/color-expert/SKILL.md",
+          "sha256": "b49392ab158a027835a952266f9e72625e9792184df74f3049e901c8f57fe37f"
+        },
+        {
+          "path": "upstream/skills/copywriting/SKILL.md",
+          "sha256": "2fbf0fbffb1b8dbcb016d341775193e9cee7656b47be9870c11bf1942e91a8d1"
+        },
+        {
+          "path": "upstream/skills/creative-director/SKILL.md",
+          "sha256": "7109e64b8f9e7154d4c688ec38058567d78df53025ada0adbf3b2e1f40e87384"
+        },
+        {
+          "path": "upstream/skills/design-brief/SKILL.md",
+          "sha256": "de27756b79d8f91349a6c0e9d7f8808993c2bcd7fa9c133c91dd18e0a04d6294"
+        },
+        {
+          "path": "upstream/skills/design-md/SKILL.md",
+          "sha256": "972cf7ae6091014224afcf61a8ce7989a3b71c18af7a25cbce1de77752376d2b"
+        },
+        {
+          "path": "upstream/skills/design-review/SKILL.md",
+          "sha256": "53abfb13efdc895b2aac9d38d5f23ec6392c3b342b8df23feb56df08b0a53ad1"
+        }
+      ],
+      "tree_sha256": "9cf1dd74c29c09ed5a20e363676c67099be5b2e34f570d36844fc6de29fa37e1"
+    },
+    {
+      "id": "react-bits",
+      "title": "React Bits -- animated React components you can drop in",
+      "category": "ui",
+      "capability": "Pick and adapt animated React components (text, backgrounds, buttons, containers) instead of writing a bespoke animation from scratch.",
+      "upstream": {
+        "repo": "DavidHDev/react-bits",
+        "branch": "main",
+        "commit": "e12c22192ac7b4b452c5e2feb9b586d74765d696",
+        "license": "NOASSERTION",
+        "stars": 50059,
+        "stars_measured_at": "2026-10-23T15:32:55+00:00",
+        "vendored": [
+          "LICENSE.md",
+          "README.md",
+          "src/tools/shape-magic/README.md"
+        ],
+        "path_map": {
+          "LICENSE.md": "LICENSE.md",
+          "README.md": "README.md",
+          "src/tools/shape-magic/README.md": "src/tools/shape-magic/README.md"
+        }
+      },
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "de54aa12ea0a29356bea98e01198249e210f76374f5baa96edeae0ba3b2d0ee9"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "b197c2c953ed8898c6598ba936910fac207fbd13bddc10baab95bcea0abf645c"
+        },
+        {
+          "path": "upstream/LICENSE.md",
+          "sha256": "4bdd1fa59a6b7d5954bc3b213dbc34e455c635a94bbcecf9293553797d0fad02"
+        },
+        {
+          "path": "upstream/README.md",
+          "sha256": "bae3d1fb884e9058d9945ced238520a7d0e41a2b04c11f294e165842596d5ce4"
+        },
+        {
+          "path": "upstream/src/tools/shape-magic/README.md",
+          "sha256": "fc703c06d83bb855193503a1858f3758f35b561beaed8ee502c1ebf9ee1be5fe"
+        }
+      ],
+      "tree_sha256": "8d13a95d2d6cb3ca6e7e66e6c4aa871c5a4fff89bdeba2a1fcc509913b7c87ed"
+    },
+    {
+      "id": "scroll-world",
+      "title": "Scroll World -- a brand as a scrollable 3D world",
+      "category": "ui",
+      "capability": "Turn a brand into a scroll-scrubbed 3D world landing page, with the scrub engine and the prompts that produce it.",
+      "upstream": {
+        "repo": "oso95/scroll-world",
+        "branch": "main",
+        "commit": "71cc36d3bb150248ae36a2c552f9cbf88802a79c",
+        "license": "MIT",
+        "stars": 10386,
+        "stars_measured_at": "2026-10-23T15:34:03+00:00",
+        "vendored": [
+          "LICENSE",
+          "skills/scroll-world/SKILL.md",
+          "skills/scroll-world/references/pipeline.md",
+          "skills/scroll-world/references/prompts.md"
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "skills/scroll-world/SKILL.md": "skills/scroll-world/SKILL.md",
+          "skills/scroll-world/references/pipeline.md": "skills/scroll-world/references/pipeline.md",
+          "skills/scroll-world/references/prompts.md": "skills/scroll-world/references/prompts.md"
+        }
+      },
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "adb73e405f9bc0e7a7cee7eed701baafa25579e4effbb8a248d08252b860f6d9"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "d7cb1adf0ada3a8cc91d2c98af484559b730e4463ad84284881602dc24b9010d"
+        },
+        {
+          "path": "upstream/LICENSE",
+          "sha256": "c4b96a7a050b85026eb68ac5b5fee2778384b14371aaeac50891dbadd848d309"
+        },
+        {
+          "path": "upstream/skills/scroll-world/SKILL.md",
+          "sha256": "e56fe396c1fa258278289cfa9cbf17253519f11f4856535f7709dd2368e3e65e"
+        },
+        {
+          "path": "upstream/skills/scroll-world/references/pipeline.md",
+          "sha256": "447d642733b527c149c52d303ff9ec3d697ed667e12ea137a2ce40d64d1db304"
+        },
+        {
+          "path": "upstream/skills/scroll-world/references/prompts.md",
+          "sha256": "fca079691f7f3b470edb81f620e4143877d267afe0fcd3ea51af81b0c108f377"
+        }
+      ],
+      "tree_sha256": "2e7203cd7a7d892d675562f416d927f84496f9bb55bce1450f22978022ce0b83"
+    },
+    {
+      "id": "security-engineering",
+      "title": "Security engineering -- threat modelling, requirements, SAST configuration",
+      "category": "security",
+      "capability": "Threat modelling as a repeatable craft: attack trees, STRIDE analysis, security requirements extracted from the design, SAST configuration, and a mitigation map that ties each threat to its control.",
+      "upstream": {
+        "repo": "wshobson/agents",
+        "branch": "main",
+        "commit": "0874a27b17a22e2b7c2e2bcd725768e0803cad06",
+        "license": "MIT",
+        "stars": 41619,
+        "stars_measured_at": "2026-10-24T08:03:08+00:00",
+        "vendored": [
+          "LICENSE",
+          "plugins/security-scanning/skills/attack-tree-construction/SKILL.md",
+          "plugins/security-scanning/skills/sast-configuration/SKILL.md",
+          "plugins/security-scanning/skills/security-requirement-extraction/SKILL.md",
+          "plugins/security-scanning/skills/stride-analysis-patterns/SKILL.md",
+          "plugins/security-scanning/skills/threat-mitigation-mapping/SKILL.md"
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "plugins/security-scanning/skills/attack-tree-construction/SKILL.md": "plugins/security-scanning/skills/attack-tree-construction/SKILL.md",
+          "plugins/security-scanning/skills/sast-configuration/SKILL.md": "plugins/security-scanning/skills/sast-configuration/SKILL.md",
+          "plugins/security-scanning/skills/security-requirement-extraction/SKILL.md": "plugins/security-scanning/skills/security-requirement-extraction/SKILL.md",
+          "plugins/security-scanning/skills/stride-analysis-patterns/SKILL.md": "plugins/security-scanning/skills/stride-analysis-patterns/SKILL.md",
+          "plugins/security-scanning/skills/threat-mitigation-mapping/SKILL.md": "plugins/security-scanning/skills/threat-mitigation-mapping/SKILL.md"
+        }
+      },
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "e74715eeda92f8505999c51d8e7b0c923444ef7989b0136c92f2d0bb5ae7b347"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "70f3734e51b2b9a68655b55df8cec2752ed316d1717a774bd693fa8823a44226"
+        },
+        {
+          "path": "upstream/LICENSE",
+          "sha256": "f89abb55d9f073f38f1703e4518f0613c788c6174be7f13b8dfe48a1c076c746"
+        },
+        {
+          "path": "upstream/plugins/security-scanning/skills/attack-tree-construction/SKILL.md",
+          "sha256": "69021049bd4c57a1b65ea29b79f4770e2b546ba1d9797fcd5e61909a47375d91"
+        },
+        {
+          "path": "upstream/plugins/security-scanning/skills/sast-configuration/SKILL.md",
+          "sha256": "f9c0aae423d2963356d4751bca507054689c15f7c3cdecfaf01e06c8cd98531e"
+        },
+        {
+          "path": "upstream/plugins/security-scanning/skills/security-requirement-extraction/SKILL.md",
+          "sha256": "bf391927dc404280e0f4d8c0ec20513c579fc6c277dfd04ad5a8e0a730ce8dde"
+        },
+        {
+          "path": "upstream/plugins/security-scanning/skills/stride-analysis-patterns/SKILL.md",
+          "sha256": "b7cfab85be4d04a81d22f79cc3b0e95aab8aa3ae4dfacbcf44de076dbeb16f1e"
+        },
+        {
+          "path": "upstream/plugins/security-scanning/skills/threat-mitigation-mapping/SKILL.md",
+          "sha256": "40cf933689b7783480fbf567c9b7573a9626977912acf7fcb808287934c7dfa8"
+        }
+      ],
+      "tree_sha256": "2c37978f338d004a6cd26c0d09e4f85c7482a56beeab65493f5ccb2fb82994b4"
+    },
+    {
+      "id": "spec-driven",
+      "title": "Spec-Driven Development -- specify, plan, task, implement, verify",
+      "category": "engineering",
+      "capability": "GitHub's spec-driven method: a specification template, a plan template, a task breakdown, a checklist generator and the commands that drive them, so an agent works from an agreed spec instead of an impression.",
+      "upstream": {
+        "repo": "github/spec-kit",
+        "branch": "main",
+        "commit": "67e0f7294e6e728ab60bf7b4590deb470448bc2d",
+        "license": "MIT",
+        "stars": 142637,
+        "stars_measured_at": "2026-10-24T08:03:29+00:00",
+        "vendored": [
+          ".github/skills/code-review/SKILL.md",
+          "LICENSE",
+          "templates/checklist-template.md",
+          "templates/commands/analyze.md",
+          "templates/commands/checklist.md",
+          "templates/commands/converge.md",
+          "templates/constitution-template.md",
+          "templates/plan-template.md",
+          "templates/spec-template.md",
+          "templates/tasks-template.md"
+        ],
+        "path_map": {
+          ".github/skills/code-review/SKILL.md": ".github/skills/code-review/SKILL.md",
+          "LICENSE": "LICENSE",
+          "templates/checklist-template.md": "templates/checklist-template.md",
+          "templates/commands/analyze.md": "templates/commands/analyze.md",
+          "templates/commands/checklist.md": "templates/commands/checklist.md",
+          "templates/commands/converge.md": "templates/commands/converge.md",
+          "templates/constitution-template.md": "templates/constitution-template.md",
+          "templates/plan-template.md": "templates/plan-template.md",
+          "templates/spec-template.md": "templates/spec-template.md",
+          "templates/tasks-template.md": "templates/tasks-template.md"
+        }
+      },
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "99f325f4aa1c7c082695d8e78c70cf27e5036fea7cd7714abe17d196d8d753ad"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "ed7de33d25e59b27bb57cd605b0a8b00a7ed54c8e42a2967b2c2007f679e1481"
+        },
+        {
+          "path": "upstream/.github/skills/code-review/SKILL.md",
+          "sha256": "fbf031012d9be4343322d65a6aca9ad9dfe78cdf66cb57cacff1a3ab381da7b9"
+        },
+        {
+          "path": "upstream/LICENSE",
+          "sha256": "2510b446bc1f0cf9702453075d20cd88631e20e5642658edb7325d9c1eb534f7"
+        },
+        {
+          "path": "upstream/templates/checklist-template.md",
+          "sha256": "c65b7f10aa9a965ea9c7f4e879d4ab0240665473731c5e9e638c4acb3ca9afc4"
+        },
+        {
+          "path": "upstream/templates/commands/analyze.md",
+          "sha256": "ffe0640ebe778795737937f2d4ec6f0149d7d55b72692e25369a668f985d1dfe"
+        },
+        {
+          "path": "upstream/templates/commands/checklist.md",
+          "sha256": "1192784f378fb977b408b72ca1bfb8fc55e129519f3f44bc5d0a7e152c480654"
+        },
+        {
+          "path": "upstream/templates/commands/converge.md",
+          "sha256": "4fb017b2869ad02d58aafe272a90077187ce4231f08effee6f340b0f3a07fc16"
+        },
+        {
+          "path": "upstream/templates/constitution-template.md",
+          "sha256": "ce7549540fa45543cca797a150201d868e64495fdff39dc38246fb17bd4024b3"
+        },
+        {
+          "path": "upstream/templates/plan-template.md",
+          "sha256": "dfba43da2b2a207ff8c177a0fba03af074fd45e261696b4b64172041fad2e992"
+        },
+        {
+          "path": "upstream/templates/spec-template.md",
+          "sha256": "3945437fc35cd30a5b2bf7beea680337c3516826d3efa5a6b92c4a7eca1ba28e"
+        },
+        {
+          "path": "upstream/templates/tasks-template.md",
+          "sha256": "1e448e9153462e8c5b5a55231a54c756d870a82950d4dd9425a2bf5b7008a0d9"
+        }
+      ],
+      "tree_sha256": "3daf886876fdfd611958a86d3536b8ed26eeac3eee644850d7206dc1c2cc9765"
+    },
+    {
+      "id": "superpowers",
+      "title": "Superpowers -- plan first, test first, subagent-driven development",
+      "category": "engineering",
+      "capability": "The staff engineer's daily loop, as skills: brainstorm the approach, write the plan, execute it in steps, drive it with tests, and review the result before it is called done.",
+      "upstream": {
+        "repo": "obra/superpowers",
+        "branch": "main",
+        "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+        "license": "MIT",
+        "stars": 304366,
+        "stars_measured_at": "2026-10-24T08:02:01+00:00",
+        "vendored": [
+          "LICENSE",
+          "skills/brainstorming/SKILL.md",
+          "skills/executing-plans/SKILL.md",
+          "skills/subagent-driven-development/SKILL.md",
+          "skills/test-driven-development/SKILL.md",
+          "skills/writing-plans/SKILL.md",
+          "skills/writing-skills/SKILL.md"
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "skills/brainstorming/SKILL.md": "skills/brainstorming/SKILL.md",
+          "skills/executing-plans/SKILL.md": "skills/executing-plans/SKILL.md",
+          "skills/subagent-driven-development/SKILL.md": "skills/subagent-driven-development/SKILL.md",
+          "skills/test-driven-development/SKILL.md": "skills/test-driven-development/SKILL.md",
+          "skills/writing-plans/SKILL.md": "skills/writing-plans/SKILL.md",
+          "skills/writing-skills/SKILL.md": "skills/writing-skills/SKILL.md"
+        }
+      },
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "e596e8ca29e644efb743e923ec0d8be71f84b796219b98996ff878dcd4ca0ee3"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "3dd781fa2147fb85d3e3aedab0bc8279fdc964fbbec34d95758723d6037e40af"
+        },
+        {
+          "path": "upstream/LICENSE",
+          "sha256": "a37e0e9697144819e1d965176ac4ae5bc3fa02d11e7812036bbcadf6dafe2400"
+        },
+        {
+          "path": "upstream/skills/brainstorming/SKILL.md",
+          "sha256": "61a7ef918652108c76a3fd01e02dd92d39996c6b46d4cb2819cbd03f6c45e46a"
+        },
+        {
+          "path": "upstream/skills/executing-plans/SKILL.md",
+          "sha256": "e4649e59880ef2643d1da128e3d607e87e3f969410d72095a5bf65811b6036dc"
+        },
+        {
+          "path": "upstream/skills/subagent-driven-development/SKILL.md",
+          "sha256": "ba41f697136cba88a7962d60c8e2f97488ba04a8688b1d0fbeb27f6953808e75"
+        },
+        {
+          "path": "upstream/skills/test-driven-development/SKILL.md",
+          "sha256": "64b03fce4aee5a97a93160cea8111f3ba13a17b7c001db4bd5836d67fd10705d"
+        },
+        {
+          "path": "upstream/skills/writing-plans/SKILL.md",
+          "sha256": "a6c67c1900064347c2a329990dd3c555657c51c3ec53b259a08aa01a2c26139a"
+        },
+        {
+          "path": "upstream/skills/writing-skills/SKILL.md",
+          "sha256": "8cb3ac68c6d8c4bb46886b998b09af7989643cab8bd0e46ee86dd62e64546bbe"
+        }
+      ],
+      "tree_sha256": "b4ef8eacf949b82a25d307cb3b13a5efb3281d66baa603f6ae41f3f4ff94af5a"
+    },
+    {
+      "id": "taste",
+      "title": "Taste -- critique a design against real references",
+      "category": "design",
+      "capability": "Critique a screen the way a designer does, against a reference library of real work, with the tells named.",
+      "upstream": {
+        "repo": "Leonxlnx/taste-skill",
+        "branch": "main",
+        "commit": "6010f91a9935f1c167dfc500fb1a475681892e6b",
+        "license": "MIT",
+        "stars": 101484,
+        "stars_measured_at": "2026-10-23T15:32:31+00:00",
+        "vendored": [
+          "LICENSE",
+          "skills/taste-skill/README.md",
+          "skills/taste-skill/SKILL.md",
+          "skills/taste-skill/references/critique.md",
+          "skills/taste-skill/references/layout.md",
+          "skills/taste-skill/references/tells.md",
+          "skills/taste-skill/references/type.md"
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "skills/taste-skill/README.md": "skills/taste-skill/README.md",
+          "skills/taste-skill/SKILL.md": "skills/taste-skill/SKILL.md",
+          "skills/taste-skill/references/critique.md": "skills/taste-skill/references/critique.md",
+          "skills/taste-skill/references/layout.md": "skills/taste-skill/references/layout.md",
+          "skills/taste-skill/references/tells.md": "skills/taste-skill/references/tells.md",
+          "skills/taste-skill/references/type.md": "skills/taste-skill/references/type.md"
+        }
+      },
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "7f0d73119ee10a9f7ad55b27970747fc948747e578c24b0e087450aebc416386"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "0ad349190866a071cf230ee9fd631e74868757232787e70cebbcbdcd3b2321e7"
+        },
+        {
+          "path": "upstream/LICENSE",
+          "sha256": "4575a543ab88dad12ccea7d97e563d0bce5b448b06072e65d3264497dad326df"
+        },
+        {
+          "path": "upstream/skills/taste-skill/README.md",
+          "sha256": "5e33fd716b3e1ffaca9340f645d44c193f9b446107fa67f0cce498d33025672c"
+        },
+        {
+          "path": "upstream/skills/taste-skill/SKILL.md",
+          "sha256": "d955dae4ba8ab2d994f4bb06b4bf412a1d9875433a8597939c391f4bae91dd7a"
+        },
+        {
+          "path": "upstream/skills/taste-skill/references/critique.md",
+          "sha256": "9c2f4392674530b3f02ac529fba53d82ab37b85f401c4c1989fbe98d6217f0b4"
+        },
+        {
+          "path": "upstream/skills/taste-skill/references/layout.md",
+          "sha256": "40080640719b07737afb94a8868afef87767a1ab4892814d9b6882e2d283453b"
+        },
+        {
+          "path": "upstream/skills/taste-skill/references/tells.md",
+          "sha256": "8e6de4411c43d3108f832b3f33bb1a2a838148a72b92a176df893b67d99a0da9"
+        },
+        {
+          "path": "upstream/skills/taste-skill/references/type.md",
+          "sha256": "6353ff1d0ce2f9913628c88fbcb7dad3cc3877e61196848bce99e33a17d20611"
+        }
+      ],
+      "tree_sha256": "41c894bbad9f4b9308753d65b40fbbb6c6fec30251de98e1175a4bbf2d79ef2f"
+    },
+    {
+      "id": "ui-proof",
+      "title": "Playwright skills -- drive the real page, read the trace, prove the fix",
+      "category": "verification",
+      "capability": "Proving a UI change on the real page: drive it with Playwright, read the trace, triage a failure, and read the test results - so a UI claim is a screenshot or a trace, never a description.",
+      "upstream": {
+        "repo": "microsoft/playwright",
+        "branch": "main",
+        "commit": "b4695e3eb2e6736d1a7b1fd255c4e94f78553660",
+        "license": "Apache-2.0",
+        "stars": 98399,
+        "stars_measured_at": "2026-10-24T08:04:55+00:00",
+        "vendored": [
+          "LICENSE",
+          "packages/playwright-core/src/tools/skills/playwright-cli/SKILL.md",
+          "skills/playwright-dev/SKILL.md",
+          "skills/playwright-dev/trace_system_guide.md",
+          "skills/playwright-test-results/SKILL.md",
+          "skills/playwright-triage/SKILL.md",
+          "skills/playwright-triage/triage.md"
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "packages/playwright-core/src/tools/skills/playwright-cli/SKILL.md": "packages/playwright-core/src/tools/skills/playwright-cli/SKILL.md",
+          "skills/playwright-dev/SKILL.md": ".claude/skills/playwright-dev/SKILL.md",
+          "skills/playwright-dev/trace_system_guide.md": ".claude/skills/playwright-dev/trace_system_guide.md",
+          "skills/playwright-test-results/SKILL.md": ".claude/skills/playwright-test-results/SKILL.md",
+          "skills/playwright-triage/SKILL.md": ".claude/skills/playwright-triage/SKILL.md",
+          "skills/playwright-triage/triage.md": ".claude/skills/playwright-triage/triage.md"
+        }
+      },
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "84612951569989230109e4b661c5e2eb19e0e259e0f5e9fb92323f3c05a83494"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "45c68f729ffb856fe5fc9ca6f4c6bf4b3a3c21805cee52602280a499c9afde79"
+        },
+        {
+          "path": "upstream/LICENSE",
+          "sha256": "45873d00a0dd243596deb4aa23b2493b3d1f0671921bf2538ea431d7380220eb"
+        },
+        {
+          "path": "upstream/packages/playwright-core/src/tools/skills/playwright-cli/SKILL.md",
+          "sha256": "b07a6cbe4e5b638046fe0b9df0e84783cb9899f0aed3db1eef915601c3260a64"
+        },
+        {
+          "path": "upstream/skills/playwright-dev/SKILL.md",
+          "sha256": "c6c92182f15ab0f7666e28ee3b7bfaaddf3042c505c950bbc57ed01f363d134f"
+        },
+        {
+          "path": "upstream/skills/playwright-dev/trace_system_guide.md",
+          "sha256": "c3bf4b0c2ecdbecb9b30475abc7c323a2c6c1191703c35d394bcec650f3b20e2"
+        },
+        {
+          "path": "upstream/skills/playwright-test-results/SKILL.md",
+          "sha256": "57d4691c6bdb4b18784d957529473f86a3796beb458fdb001abe3a7d1185434d"
+        },
+        {
+          "path": "upstream/skills/playwright-triage/SKILL.md",
+          "sha256": "57b7145cb8e531d90ba502fdf13f2cf2e1f73f8dd923ffeedb146e8036f170a1"
+        },
+        {
+          "path": "upstream/skills/playwright-triage/triage.md",
+          "sha256": "4ef1350c8467279a16932346bee4ad015e75ae28202557d23bf9e5fca496d469"
+        }
+      ],
+      "tree_sha256": "431b50643ddbd8f3c065843a044ee217bca8a42d273f0c9601a3538b31bb2f20"
+    },
+    {
+      "id": "ui-ux-pro-max",
+      "title": "UI/UX Pro Max -- design system, tokens, brand, banners",
+      "category": "design",
+      "capability": "Turn a request into a token-backed design system: primitive and semantic tokens, a component spec, a brand kit, and a banner that matches the brand.",
+      "upstream": {
+        "repo": "nextlevelbuilder/ui-ux-pro-max-skill",
+        "branch": "main",
+        "commit": "d14efff8ed1faa4187f004f79926f428c8074ec7",
+        "license": "MIT",
+        "stars": 139301,
+        "stars_measured_at": "2026-10-23T15:26:31+00:00",
+        "vendored": [
+          "LICENSE",
+          "skills/banner-design/SKILL.md",
+          "skills/brand/SKILL.md",
+          "skills/design-system/SKILL.md",
+          "skills/design-system/references/primitive-tokens.md",
+          "skills/design-system/references/semantic-tokens.md",
+          "skills/design-system/references/token-architecture.md",
+          "skills/design/SKILL.md",
+          "skills/ui-ux-pro-max/SKILL.md"
+        ],
+        "path_map": {
+          "LICENSE": "LICENSE",
+          "skills/banner-design/SKILL.md": ".claude/skills/banner-design/SKILL.md",
+          "skills/brand/SKILL.md": ".claude/skills/brand/SKILL.md",
+          "skills/design-system/SKILL.md": ".claude/skills/design-system/SKILL.md",
+          "skills/design-system/references/primitive-tokens.md": ".claude/skills/design-system/references/primitive-tokens.md",
+          "skills/design-system/references/semantic-tokens.md": ".claude/skills/design-system/references/semantic-tokens.md",
+          "skills/design-system/references/token-architecture.md": ".claude/skills/design-system/references/token-architecture.md",
+          "skills/design/SKILL.md": ".claude/skills/design/SKILL.md",
+          "skills/ui-ux-pro-max/SKILL.md": ".claude/skills/ui-ux-pro-max/SKILL.md"
+        }
+      },
+      "files": [
+        {
+          "path": "NOTICE.md",
+          "sha256": "a49d84ac858f24da462a4d29001dcac0a0c0a9fc62fdbcd74dec97cded4efac5"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "637d3f37fdbf974810b84663eef98dbf76a858acf1c811bb96f77964a4a41dbf"
+        },
+        {
+          "path": "upstream/LICENSE",
+          "sha256": "738f69dfa83db5c347c678fb9d90e560877059f0de93a327c39001bff92dc014"
+        },
+        {
+          "path": "upstream/skills/banner-design/SKILL.md",
+          "sha256": "ccb89ddc848f60bfe630cb19dfe3e062df94a029467a9b15259f2761019ac5c4"
+        },
+        {
+          "path": "upstream/skills/brand/SKILL.md",
+          "sha256": "1c24139633e2ebf11da4f97eaeb1c0564f8658a40b3ad779387a5b8c6cb76dbc"
+        },
+        {
+          "path": "upstream/skills/design-system/SKILL.md",
+          "sha256": "8aa5ff93320559a6e5289d37b6b06b3307737dbfb4a6f3fc44135c705613c511"
+        },
+        {
+          "path": "upstream/skills/design-system/references/primitive-tokens.md",
+          "sha256": "91e6caa12646c08c8aadf8e09399aed65760a25c8d80595936d81a9131118fc3"
+        },
+        {
+          "path": "upstream/skills/design-system/references/semantic-tokens.md",
+          "sha256": "97e16d8061bbc22e82b51966a7015e3fc990932902e4647843506669a1cdebcc"
+        },
+        {
+          "path": "upstream/skills/design-system/references/token-architecture.md",
+          "sha256": "925f4049c4c4313d9fd5df98cdfd52004112aca49fba1664ad85e76bc9dce4d3"
+        },
+        {
+          "path": "upstream/skills/design/SKILL.md",
+          "sha256": "e93fe3683b7fa18a9bfcd00c0dc6e12c6859be07b7bfe20145f96ea49b72da13"
+        },
+        {
+          "path": "upstream/skills/ui-ux-pro-max/SKILL.md",
+          "sha256": "ea087c341bfb5b23195c7302027268ede86da802554c18a5c4896a6017b439f9"
+        }
+      ],
+      "tree_sha256": "ec52e767ea5145f5418cf918fe59003c0fad7d33d7f742161e1f1ad93e734d3b"
+    }
+  ]
+}

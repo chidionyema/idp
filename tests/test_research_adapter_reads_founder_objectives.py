@@ -97,7 +97,8 @@ def test_prospector_objectives_are_read_too(monkeypatch):
 
 def test_same_issue_number_in_two_repositories_stays_distinct(monkeypatch):
     done = {
-        "body": "<!-- research-report request=r cost=0.1000 -->\n- [ ] Continue researching"
+        "body": "<!-- research-report request=r cost=0.1000 lane=market-demand -->\n"
+        "- [ ] Continue researching"
     }
     use(
         monkeypatch,

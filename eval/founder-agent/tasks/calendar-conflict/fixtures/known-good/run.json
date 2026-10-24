@@ -1,0 +1,68 @@
+{
+  "artifacts": {},
+  "cost_usd": 0.03,
+  "ended": 1790000040,
+  "events": [
+    {
+      "data": {},
+      "kind": "user",
+      "name": "",
+      "t": 1790000000,
+      "text": "move my 3pm to 3:30"
+    },
+    {
+      "data": {},
+      "kind": "tool_call",
+      "name": "calendar.check",
+      "t": 1790000002,
+      "text": "2026-10-23T15:30 Europe/London"
+    },
+    {
+      "data": {},
+      "kind": "tool_result",
+      "name": "calendar.check",
+      "t": 1790000003,
+      "text": "busy: board sync 15:30-16:00"
+    },
+    {
+      "data": {
+        "detected": true,
+        "with_": "board sync"
+      },
+      "kind": "artifact",
+      "name": "conflict",
+      "t": 1790000004,
+      "text": ""
+    },
+    {
+      "data": {},
+      "kind": "notice",
+      "name": "",
+      "t": 1790000005,
+      "text": "That clashes with your board sync. I can do 4:30 instead, or you can tell me to double-book."
+    },
+    {
+      "data": {
+        "action": "move",
+        "alternative": "2026-10-23T16:30:00Z",
+        "utc": "2026-10-23T15:30:00Z"
+      },
+      "kind": "artifact",
+      "name": "scheduled",
+      "t": 1790000006,
+      "text": ""
+    }
+  ],
+  "fleet": [
+    {
+      "kind": "run.end",
+      "status": "ok"
+    }
+  ],
+  "run_id": "fixturecalend",
+  "session": "fixture-calendar-conflict",
+  "started": 1790000000,
+  "status": "ok",
+  "surface": "telegram",
+  "task_id": "calendar-conflict"
+}

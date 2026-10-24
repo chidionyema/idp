@@ -283,6 +283,30 @@ fi
 
 
 
+# 1e. Every stored fact must still re-execute (bin/estate-claim-check). The numbers an agent
+#     quotes -- a saving percentage, a process count, a row count -- used to come from comments,
+#     docs and summaries, and nothing in the estate could contradict them: bin/epistemic_firewall
+#     grades whether a tool call happened, not whether the number is right, which is why it never
+#     bit. This rung re-runs the command that produced each fact and fails on STALE,
+#     CONTRADICTED, UNWITNESSED or TAMPERED. Two stores: one committed with the repo, which CI can
+#     check, and the operator's, whose instruments read this machine and so only this machine can
+#     check. No store at all is a skip that prints its reason -- never a silent pass, because a
+#     rung that always skips is not a rung. It sits here, before the heavy rungs, because this is
+#     the one place in the gate that every mode runs.
+facts_n=0
+for _fs in "$IDP"/facts/*.jsonl "$HOME/.estate/facts.jsonl"; do
+  [ -f "$_fs" ] || continue
+  facts_n=$((facts_n + 1))
+  if out=$("$IDP/bin/estate-claim-check" --store "$_fs" verify 2>&1); then
+    say "ok    facts    $(basename "$_fs"): $(printf '%s' "$out" | tail -1)"
+  else
+    say "FAIL  facts    $(basename "$_fs"): a stored fact no longer holds"
+    printf '%s\n' "$out" | grep -vE '^(PASS|[0-9]+/[0-9]+ facts)' | head -8 | sed 's/^/      /'
+    fail=1
+  fi
+done
+[ "$facts_n" -gt 0 ] || say "skip  facts    no witness store here or in the repo: nothing to re-execute"
+
 need python3
 [ "$FAST" = 1 ] || { need docker; need conftest; need check-jsonschema; need sqlite-utils; need jq; }
 # --full requires every tool the CI matrix uses; missing tool = FAIL (not BLIND).
@@ -1035,6 +1059,42 @@ elif command -v mkdocs >/dev/null; then
     say "FAIL  docs     mkdocs --strict (rc=$mkd_rc)"; printf '%s\n' "$mkd" | tail -20 | sed 's/^/      /'; fail=1
   fi
 else say "BLIND docs     mkdocs not installed; the docs site was not built"; fail=1; fi
+
+# 8e. The founder-agent eval harness, run by the estate's own gate (2026-10-24). The harness
+#     landed on main with its proof (`tests/test_founder_agent_gate.py`, 44 tests) and NOTHING ran
+#     it: bin/idp-tests-for collects only `tests/test_*.py` and `sovereign/tests/*/*.py`, both
+#     pytest rungs here named their files one by one, and so a suite whose whole purpose is to
+#     refuse a fake green was itself unenforced -- the "a gate that cannot fail" defect one level
+#     up. It runs the harness's own proof plus the two endpoint suites the founder's live eval
+#     panel reads (503-not-empty, the real ledger's `g1`/`perf` shape, the feed tail). Scoped on a
+#     pull request to the paths that can change the verdict.
+if ! touched eval/founder-agent/ \
+      tests/test_founder_agent_gate.py \
+      backstage/plugins/fleetview-backend/src/fleetview_backend/founder_agent_evals.py \
+      backstage/plugins/fleetview-backend/tests/test_founder_agent_evals_feed.py \
+      backstage/plugins/fleetview-backend/tests/test_founder_agent_evals_http.py \
+      backstage/packages/app/src/modules/home/FounderEvalsPanel.tsx \
+      bin/idp-ci; then
+  say "ok    founder-evals  no eval harness, panel or gate change against $IDP_CI_BASE"
+elif ! "$MPY" -c 'import fastapi, httpx' >/dev/null 2>&1; then
+  say "BLIND founder-evals  fastapi/httpx not installed: pip install -r backstage/plugins/fleetview-backend/requirements.txt"
+else
+  # Two invocations, not one: pytest takes rootdir and its config from the arguments, and
+  # `backstage/plugins/fleetview-backend/pyproject.toml` is where `pythonpath = ["src"]` lives.
+  # Handed the repo-root test file as well, pytest chose the repo root and the endpoint suites
+  # failed to import `fleetview_backend` -- measured, rc=2 on collection. Each root runs itself.
+  fe=$("$MPY" -m pytest -q -p no:cacheprovider $XD "$IDP/tests/test_founder_agent_gate.py" 2>&1); fe_rc=$?
+  fv=$( cd "$IDP/backstage/plugins/fleetview-backend" && "$MPY" -m pytest -q -p no:cacheprovider $XD \
+          tests/test_founder_agent_evals_feed.py tests/test_founder_agent_evals_http.py 2>&1 ); fv_rc=$?
+  if [ "$fe_rc" -eq 0 ] && [ "$fv_rc" -eq 0 ]; then
+    say "ok    founder-evals $(printf '%s' "$fe" | grep -oE '[0-9]+ passed' | head -1) harness proof, $(printf '%s' "$fv" | grep -oE '[0-9]+ passed' | head -1) on the founder's evals endpoints"
+  else
+    say "FAIL  founder-evals harness proof (rc=$fe_rc) / eval endpoints (rc=$fv_rc)"
+    [ "$fe_rc" -eq 0 ] || printf '%s\n' "$fe" | tail -15 | sed 's/^/      /'
+    [ "$fv_rc" -eq 0 ] || printf '%s\n' "$fv" | tail -15 | sed 's/^/      /'
+    fail=1
+  fi
+fi
 
 # 9. Every Flux HelmRelease under platform/ renders clean against the cluster's Kyverno
 #    ClusterPolicies (helm template + the release's own postRenderers), both ways: the

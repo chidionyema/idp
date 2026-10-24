@@ -643,6 +643,28 @@ def build_app() -> FastAPI:
 
         return JSONResponse(content=vm.log(limit=limit))
 
+    @app.get("/friction")
+    async def friction(window_hours: float = 24.0):
+        """What the doors refused, ranked -- read from the ledger the door wrote, never re-derived.
+
+        `available: false` means the ledger could not be read (BLIND). It does not mean zero: an
+        empty board and a broken board are different facts, and the page renders them differently.
+        """
+        from fleetview_backend import friction_feed
+
+        return JSONResponse(
+            content=await asyncio.to_thread(friction_feed.summary, window_hours)
+        )
+
+    @app.get("/friction/stream")
+    async def friction_stream(window_hours: float = 24.0):
+        """One `friction` frame per tick, so the tile moves with nobody reloading it."""
+        from fleetview_backend import friction_feed
+
+        return StreamingResponse(
+            friction_feed.stream(window_hours), media_type="text/event-stream"
+        )
+
     @app.get("/efficiency")
     async def efficiency(since: str = "1h"):
         from fleetview_backend import efficiency_feed
@@ -664,6 +686,27 @@ def build_app() -> FastAPI:
         return StreamingResponse(
             efficiency_feed.stream(since), media_type="text/event-stream"
         )
+
+    # The founder's evals, live (2026-10-23): every agent is under continuous evaluation and the
+    # surface reports it as the round runs, not as a report read afterwards. Two endpoints, no
+    # second store: `eval/founder-agent/` writes the ledger and the feed, this reads them.
+    @app.get("/evals/founder-agent")
+    async def founder_agent_evals(limit: int = 200):
+        from fleetview_backend import founder_agent_evals as fa
+
+        try:
+            body = await asyncio.to_thread(fa.snapshot, limit)
+        except fa.EvalsAbsent as exc:
+            # 503 with the path it looked for: an eval panel must never render "no rounds" over
+            # a ledger that is not there.
+            return JSONResponse(status_code=503, content={"absent": str(exc)})
+        return JSONResponse(content=body)
+
+    @app.get("/evals/founder-agent/stream")
+    async def founder_agent_evals_stream(limit: int = 200):
+        from fleetview_backend import founder_agent_evals as fa
+
+        return StreamingResponse(fa.stream(limit), media_type="text/event-stream")
 
     @app.get("/voice/log/summary")
     async def voice_log_summary(limit: int = 200):

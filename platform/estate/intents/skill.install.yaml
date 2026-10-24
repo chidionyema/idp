@@ -1,0 +1,23 @@
+# Install a governed skill pack into a runtime's skills directory. The pack is verified
+# against the registry's checksums before a byte is written, and the only destinations
+# are the four allowlisted runtime roots (pi, claude, codex, agents). Dry run by
+# default: an install mutates what an agent can see, so it takes an explicit apply.
+name: skill.install
+description: >
+  Install one or more estate skill packs into a runtime's skills directory (pi, claude,
+  codex or agents). Every file is checked against the registry's sha256 before it is
+  written, and a pack that has drifted is refused. Dry run unless apply=true. Use when
+  an agent needs a capability the estate already owns instead of installing its own copy.
+args:
+  pack:    {type: string, default: "all", help: "Comma-separated pack ids, or 'all'."}
+  runtime: {type: string, default: "all", help: "pi | claude | codex | agents | all."}
+  apply:   {type: string, default: "", help: "'true' to write. Default: dry run."}
+  force:   {type: string, default: "", help: "'true' to replace an installed pack."}
+steps:
+  - name: install
+    cmd: >
+      set -- ;
+      [ -n {{apply}} ] && set -- "$@" --apply ;
+      [ -n {{force}} ] && set -- "$@" --force ;
+      python3 ~/.estate/libexec/skill-packs.py install
+      --pack {{pack}} --runtime {{runtime}} "$@"

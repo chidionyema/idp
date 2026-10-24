@@ -29,6 +29,20 @@ jobs:
     cron: 33 5,11,17,23 * * *
     skip_on_battery: false
     timeout_s: 1800
+  # The pi session monitor (--json one pass). Mac-only state: it reads ~/.pi session transcripts and
+  # the process table, neither of which exists on the cluster, so runs_on is mac until transcripts
+  # leave the laptop. It was first shipped with its own launchd plist, which is the second scheduling
+  # layer crew#989 exists to retire; this entry is that monitor's home.
+  ai.estate.pi-observe:
+    runs_on: mac
+    runs_on_ref: crew#989
+    command:
+    - /usr/bin/python3
+    - $CODE/idp/bin/pi-observe
+    - --json
+    cron: '*/5 * * * *'
+    skip_on_battery: true
+    timeout_s: 300
   ai.estate.checkout-drift:
     runs_on: retire
     runs_on_ref: crew#479
@@ -84,19 +98,14 @@ jobs:
     cwd: ~/.claude/scripts
     skip_on_battery: false
     timeout_s: 1800
-  ai.estate.friction-relay:
-    runs_on: mac
-    runs_on_ref: crew#396
-    command:
-    - ~/.claude/scripts/hc-wrap.sh
-    - friction-relay
-    - /usr/local/bin/python3
-    - ~/.claude/scripts/friction-relay.py
-    - --refresh
-    cron: '*/10 * * * *'
-    cwd: '~'
-    skip_on_battery: false
-    timeout_s: 1800
+  # ai.estate.friction-relay was deleted here, not repaired: it ran
+  # ~/.claude/scripts/hc-wrap.sh, a home-directory script git does not track, and that
+  # directory no longer exists -- so the job exited 78 on every tick and never fired.
+  # The friction ranking it refreshed is derived from ~/.estate/friction/events.jsonl,
+  # which the executor door writes as it acts; a scheduled laptop copy is a second
+  # layer over data that already has an owner (AGENTS.md section 6), and the ranking is
+  # read on demand by the /fleet friction panel. Measured 2026-10-24: no scheduled job
+  # may have its command outside this repo -- 44 of 51 did, and this was the dead one.
   ai.estate.idp:
     runs_on: retire
     runs_on_ref: crew#458

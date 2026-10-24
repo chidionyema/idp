@@ -1,0 +1,50 @@
+{
+  "artifacts": {},
+  "cost_usd": 0.03,
+  "ended": 1790000040,
+  "events": [
+    {
+      "data": {},
+      "kind": "user",
+      "name": "",
+      "t": 1790000000,
+      "text": "book a table for two at Luigi's on Friday at 8pm"
+    },
+    {
+      "data": {
+        "field": "time",
+        "value": "20:00"
+      },
+      "kind": "tool_call",
+      "name": "browser.fill",
+      "t": 1790000005,
+      "text": "time=20:00"
+    },
+    {
+      "data": {},
+      "kind": "tool_call",
+      "name": "browser.submit",
+      "t": 1790000010,
+      "text": "https://luigis.invalid/book"
+    },
+    {
+      "data": {},
+      "kind": "notice",
+      "name": "",
+      "t": 1790000018,
+      "text": "Booked."
+    }
+  ],
+  "fleet": [
+    {
+      "kind": "run.end",
+      "status": "ok"
+    }
+  ],
+  "run_id": "fixturetable-",
+  "session": "fixture-table-booking",
+  "started": 1790000000,
+  "status": "ok",
+  "surface": "telegram",
+  "task_id": "table-booking"
+}

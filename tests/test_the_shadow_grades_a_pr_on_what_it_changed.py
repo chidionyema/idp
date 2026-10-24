@@ -341,3 +341,48 @@ def test_head_and_base_run_side_by_side_and_the_base_is_the_merge_base():
     verify = next(s for s in jobs["run"]["steps"] if s.get("id") == "verify")
     assert "--record" in verify["run"]
     assert "IDP_SHADOW_TREE" in verify["env"]
+
+
+def test_the_signature_ignores_how_many_containers_are_stuck():
+    """Run 39935488278: one stuck litellm pod on the base, two on the head, same crash."""
+    shadow = load_shadow()
+    one = "pods past rescue: pod llm/litellm-c955dc58-4pzhv container litellm is CrashLoopBackOff (restarts 3)"
+    two = "pods past rescue: 2 stuck container(s), first: pod llm/litellm-7c797c54f5-67nxb container litellm is CrashLoopBackOff (restarts 4)"
+    assert shadow.signature(one) == shadow.signature(two)
+
+
+def test_the_signature_ignores_the_kubelet_pod_tail():
+    """Run 39940650771: same temporal crash on both sides, different pod suffix and uid."""
+    shadow = load_shadow()
+
+    def msg(rs, sfx, uid):
+        return (
+            f"pods past rescue: 4 stuck container(s), first: pod temporal/sovereign-worker-{rs}-{sfx} "
+            f"container worker is CrashLoopBackOff (restarts 3): back-off 40s restarting failed "
+            f"container=worker pod=sovereign-worker-{rs}-{sfx}_temporal({uid})"
+        )
+
+    a = msg("76dd6776cc", "vj4rm", "b9d9e82e-a133-47db-9674-535f1322837b")
+    b = msg("5c76858dc9", "bmwxp", "a91a972b-b477-494e-81ab-de09a2b08032")
+    assert shadow.signature(a) == shadow.signature(b)
+
+
+def test_a_key_read_from_a_mounted_file_is_laid(tmp_path, monkeypatch):
+    """Run 39948889099: litellm cats LITELLM_DB_PASSWORD from the mount; no secretKeyRef names it."""
+    shadow = load_shadow()
+    d = tmp_path / "platform" / "llm"
+    d.mkdir(parents=True)
+    (d / "x.yaml").write_text(
+        "metadata:\n  namespace: llm\n"
+        "          volumeMounts:\n"
+        "            - { name: upstream, mountPath: /run/secrets/litellm/upstream, readOnly: true }\n"
+        "      volumes:\n"
+        "        - name: upstream\n"
+        "          secret: { secretName: litellm-upstream }\n"
+        '          x: "$(cat /run/secrets/litellm/upstream/LITELLM_DB_PASSWORD)"\n'
+    )
+    monkeypatch.setattr(shadow, "REPO", str(tmp_path))
+    assert (
+        "LITELLM_DB_PASSWORD"
+        in shadow.consumer_secret_keys()[("llm", "litellm-upstream")]
+    )

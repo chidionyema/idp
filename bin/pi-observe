@@ -1,0 +1,702 @@
+#!/usr/bin/env python3
+"""pi-observe -- what every pi process is doing right now, and the work it repeats.
+
+The founder asked for this on 2026-10-23: "micro monitor all active pi sessions, like we did with
+greenlane", then sharper: "what they do repetitive tasks, things that can be automated
+frictionless". So this answers two questions and refuses to guess at either -- every live `pi`
+process graded from per-process evidence, and every shape of work the transcripts repeat, ranked by
+how often it is done, because a shape done 8,000 times is a mechanism, not a habit.
+
+WHY IT EXISTS (measured 2026-10-23 19:05Z, this file's first honest run). Fourteen `pi` processes
+were alive. Seven were headless probes (`pi -p --no-session ...`) whose output files had ended in
+`DONE` hours earlier -- finished, never exited, 4h10m idle at the oldest. Two interactive sessions
+had been open for 2d02h and 1d07h, holding 707 MB and 505 CPU-minutes between them. Nothing in the
+estate could see any of it: `bin/estate-session-recorder` reads transcripts and a `--no-session`
+probe writes none, and the board derives liveness from transcript freshness, so a
+finished-but-not-exited process reads as neither. LAW 28: an instrument nobody reads is not an
+instrument. This is the reader.
+
+WHAT IT READS. Only what the OS and the transcripts already say. It starts nothing, edits nothing,
+and (without `--reap`) kills nothing.
+
+  * the process table, sampled twice, so "busy" is a CPU delta and not a snapshot;
+  * each process's controlling terminal -- `ttysNNN` is interactive, `??` is headless, which is how
+    headless processes are told apart once pi has rewritten its own argv to the bare `pi`;
+  * each process's ESTABLISHED TCP sockets (`lsof -a`), so "waiting on a model" is a socket and
+    "finished" is the absence of one;
+  * each process's resident set, so the cost of a leak is a number;
+  * transcripts, **only the bytes appended since the last pass**, tracked by byte offset in a state
+    file. 361 MB of history cannot be re-read inside the executor's 100s ceiling, and re-reading it
+    every pass would be the same defect as re-reading a file already in hand. First pass on a file
+    reads it whole; every pass after reads what changed.
+
+VERDICTS (never inferred from a missing field):
+  interactive-busy         terminal, CPU moved                      -- working
+  interactive-long-lived   terminal, CPU moved, open past --long-lived-after (default 12h)
+                                                                    -- real cost, worth closing
+  interactive-idle         terminal, CPU flat
+  headless-busy            no terminal, CPU moved
+  headless-waiting         no terminal, CPU flat, an ESTABLISHED socket -- waiting on a model
+  headless-leaked          no terminal, CPU flat, no socket, older than --grace -- DEFECT
+  headless-unknown         no terminal, CPU flat, no socket, younger than --grace
+
+There is deliberately no transcript term in a verdict: measured 2026-10-23, pi opens and closes its
+transcript per append (`lsof -p <pid>` shows no open `.jsonl`), so a process cannot be tied to the
+session file it writes -- six of fourteen shared one cwd and so one transcript directory. A verdict
+that guessed the mapping would grade the busiest session on the freshest file and call every
+sibling busy. The transcript is reported beside the verdict as a cwd-level fact and never decides it.
+
+SHAPES. Each tool call is reduced to a deterministic shape, never a model's opinion: the tool name
+plus the first tokens of its first argument, with paths, ids and numbers placeholdered, so
+`cd /a && rg -l foo` and `cd /b && rg -l bar` land in one bucket, `rg -l <path>`.
+
+THE WINDOW IS EXPLICIT AND THE DEFAULT IS 24 HOURS (founder, 2026-10-23: "going back into deep
+history will give misleading data"). A transcript from last week is a different harness -- different
+tools, different gates, a different agent -- so counting its friction prices a problem the estate
+may already have fixed, and averaging it with today's hides the one that is live. Every count here
+is therefore over the transcripts touched inside `--window-hours`, the receipt names the window it
+measured, and a session that falls out of the window is dropped from the totals rather than carried.
+`--reindex` re-reads that window from the start; nothing here reads beyond it.
+
+Exit codes: 0 all live processes accounted for; 1 a defect (a leak, named with pid and age); 2 BLIND
+-- the process table or the transcript directory could not be read, because "could not check" must
+never look like "checked and fine".
+
+USAGE
+  bin/pi-observe                   # live table + sessions that moved + top repeated shapes
+  bin/pi-observe --watch 30        # the same every 30s (the monitor)
+  bin/pi-observe --json            # one receipt, for a panel or a bus
+  bin/pi-observe --live | --sessions | --repetition
+  bin/pi-observe --window-hours 24 --reindex   # re-read the last day from the start
+  bin/pi-observe --install         # refuses, and names the scheduler job that runs it instead
+  bin/pi-observe --reap            # SIGTERM headless-leaked processes (default: name them only)
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import glob
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+HOME = Path.home()
+SESSIONS = HOME / ".pi" / "agent" / "sessions"
+STATE_DIR = HOME / ".estate" / "pi-observe"
+RECEIPT_DEFAULT = str(STATE_DIR / "latest.json")
+STATE_DEFAULT = str(STATE_DIR / "state.json")
+# The other half of the monitor: the door's own ledger (mcp/plugins/estate_executor.py writes it as
+# refusals and ceiling kills happen). Transcripts say what an agent asked for; the ledger says what
+# the estate's guards did about it, which is the half a reward signal has to be able to trust.
+FRICTION_DEFAULT = str(HOME / ".estate" / "friction" / "events.jsonl")
+
+_PATH_RE = re.compile(r"(/Users/[^/\s\"']+|/home/[^/\s\"']+)")
+_NUM_RE = re.compile(r"\b\d{2,}\b")
+_ID_RE = re.compile(r"\b[0-9a-f]{7,40}\b")
+_WS_RE = re.compile(r"\s+")
+
+
+# ----------------------------------------------------------------- process table
+
+
+def _run(argv: list[str], timeout: float = 20.0) -> tuple[int, str]:
+    try:
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        return p.returncode, p.stdout
+    except (OSError, subprocess.TimeoutExpired) as exc:  # pragma: no cover - environment
+        return 127, f"{type(exc).__name__}: {exc}"
+
+
+def _parse_etime(text: str) -> int:
+    """ps etime (`[[dd-]hh:]mm:ss`) into seconds."""
+    days = 0
+    if "-" in text:
+        d, _, text = text.partition("-")
+        days = int(d)
+    parts = [int(p) for p in text.split(":")]
+    while len(parts) < 3:
+        parts.insert(0, 0)
+    h, m, s = parts[:3]
+    return days * 86400 + h * 3600 + m * 60 + s
+
+
+def _parse_cputime(text: str) -> float:
+    """ps time (`[[dd-]hh:]mm:ss[.cc]`) into CPU seconds."""
+    days = 0
+    if "-" in text:
+        d, _, text = text.partition("-")
+        days = int(d)
+    parts = text.split(":")
+    secs = float(parts[-1])
+    mins = int(parts[-2]) if len(parts) > 1 else 0
+    hours = int(parts[-3]) if len(parts) > 2 else 0
+    return days * 86400 + hours * 3600 + mins * 60 + secs
+
+
+def sample_processes() -> list[dict[str, Any]] | None:
+    """Every process whose command name is `pi`. None when the table cannot be read (BLIND)."""
+    rc, out = _run(["ps", "-ax", "-o", "pid=,ppid=,etime=,stat=,%cpu=,time=,tty=,rss=,comm="])
+    if rc != 0 or not out.strip():
+        return None
+    procs: list[dict[str, Any]] = []
+    for line in out.splitlines():
+        f = line.split()
+        if len(f) < 9 or f[8] != "pi":
+            continue
+        procs.append(
+            {
+                "pid": int(f[0]),
+                "ppid": int(f[1]),
+                "age_s": _parse_etime(f[2]),
+                "state": f[3],
+                "cpu_pct": float(f[4]),
+                "cpu_s": _parse_cputime(f[5]),
+                "tty": f[6],
+                "rss_mb": round(int(f[7]) / 1024.0, 1),
+            }
+        )
+    return procs
+
+
+def established_sockets(pid: int) -> int | None:
+    """ESTABLISHED TCP sockets held by pid, or None when lsof could not answer.
+
+    The `-a` is not decoration. lsof ORs selection terms by default, so `-p PID -iTCP` reports every
+    ESTABLISHED socket on the MACHINE and merely adds PID's own rows. Measured on this file's first
+    run: without `-a` it returned 233--242 for all fourteen processes, so every finished headless
+    probe graded `headless-waiting` and the leak this file exists to find was hidden by its own
+    instrument. `-a` ANDs the terms: only this pid's sockets.
+    """
+    rc, out = _run(["lsof", "-nP", "-a", "-p", str(pid), "-iTCP", "-sTCP:ESTABLISHED", "-Fn"])
+    if rc not in (0, 1):  # lsof exits 1 when nothing matched -- an answer, not a failure
+        return None
+    return sum(1 for line in out.splitlines() if line.startswith("n"))
+
+
+def cwd_of(pid: int) -> str | None:
+    rc, out = _run(["lsof", "-p", str(pid), "-a", "-d", "cwd", "-Fn"])
+    if rc != 0:
+        return None
+    for line in out.splitlines():
+        if line.startswith("n"):
+            return line[1:]
+    return None
+
+
+def classify(proc: dict[str, Any], cpu_delta: float, sockets: int | None, grace: int, long_lived: int) -> str:
+    interactive = proc["tty"] not in ("??", "-", "")
+    if interactive:
+        if cpu_delta >= 0.05:
+            return "interactive-long-lived" if proc["age_s"] >= long_lived else "interactive-busy"
+        return "interactive-idle"
+    if cpu_delta >= 0.05:
+        return "headless-busy"
+    if sockets is None:
+        return "headless-unknown"
+    if sockets > 0:
+        return "headless-waiting"
+    return "headless-unknown" if proc["age_s"] < grace else "headless-leaked"
+
+
+def live_report(sample_s: float, grace: int, long_lived: int, do_reap: bool) -> tuple[list[dict[str, Any]] | None, dict[str, Any]]:
+    first = sample_processes()
+    if first is None:
+        return None, {}
+    time.sleep(max(0.0, sample_s))
+    second = sample_processes()
+    if second is None:
+        return None, {}
+    before = {p["pid"]: p["cpu_s"] for p in first}
+    rows = []
+    for proc in second:
+        delta = max(0.0, proc["cpu_s"] - before.get(proc["pid"], proc["cpu_s"]))
+        sockets = established_sockets(proc["pid"])
+        rows.append(
+            {
+                **proc,
+                "cpu_delta_s": round(delta, 2),
+                "sockets_established": sockets,
+                "cwd": cwd_of(proc["pid"]),
+                "verdict": classify(proc, delta, sockets, grace, long_lived),
+            }
+        )
+    reaped: list[int] = []
+    if do_reap:
+        for row in rows:
+            if row["verdict"] == "headless-leaked":
+                try:
+                    os.kill(row["pid"], signal.SIGTERM)
+                    reaped.append(row["pid"])
+                    row["verdict"] = "headless-reaped"
+                except OSError:
+                    pass
+    rows.sort(key=lambda r: (r["verdict"] != "headless-leaked", -r["age_s"]))
+    summary = {
+        "live": len(rows),
+        "verdicts": {v: sum(1 for r in rows if r["verdict"] == v) for v in sorted({r["verdict"] for r in rows})},
+        "rss_mb": round(sum(r["rss_mb"] for r in rows), 1),
+        "leaked_rss_mb": round(sum(r["rss_mb"] for r in rows if r["verdict"] == "headless-leaked"), 1),
+        "long_lived_cpu_s": round(sum(r["cpu_s"] for r in rows if r["verdict"] == "interactive-long-lived"), 1),
+        "long_lived_rss_mb": round(sum(r["rss_mb"] for r in rows if r["verdict"] == "interactive-long-lived"), 1),
+        "reaped": reaped,
+    }
+    return rows, summary
+
+
+# ----------------------------------------------------------------- transcripts
+
+
+def shape_of(tool: str, args: dict[str, Any]) -> str:
+    """One tool call reduced to a stable shape. Deterministic; no model involved."""
+    if tool == "estate_execute":
+        cmd = _WS_RE.sub(" ", str(args.get("command") or "")).strip()
+        cmd = re.sub(r"^cd [^&|;]+&&\s*", "", cmd)
+        cmd = re.sub(r"^(\w+=\S+ )+", "", cmd)
+        cmd = _ID_RE.sub("<id>", _NUM_RE.sub("<n>", _PATH_RE.sub("<path>", cmd)))
+        return "estate_execute: " + " ".join(cmd.split()[:3])
+    if tool in ("read", "write", "edit"):
+        p = str(args.get("path") or args.get("file_path") or "")
+        return f"{tool}: *{os.path.splitext(p)[1] or '<noext>'}"
+    if tool in ("estate_run_tests", "estate_run_gate", "estate_invoke"):
+        tgt = _PATH_RE.sub("<path>", str(args.get("target") or args.get("repo") or args.get("intent") or ""))
+        return f"{tool}: {tgt.split('/')[-1][:40] or '<none>'}"
+    return tool
+
+
+def blank_totals() -> dict[str, Any]:
+    return {"files": {}, "sessions": {}, "bytes_read_total": 0}
+
+
+def load_state(path: str) -> dict[str, Any]:
+    try:
+        st = json.loads(Path(path).read_text())
+        st.setdefault("totals", blank_totals())
+        return st
+    except (OSError, ValueError):
+        return {"totals": blank_totals()}
+
+
+def save_state(path: str, state: dict[str, Any]) -> None:
+    try:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state))
+        tmp.replace(p)
+    except OSError:
+        pass
+
+
+def observe(state: dict[str, Any], budget: int, window_hours: float) -> tuple[dict[str, Any], int]:
+    """Read only bytes appended since the last pass, over files touched inside the window."""
+    if not SESSIONS.is_dir():
+        return {"blind": "transcript directory not readable"}, 0
+    totals = state["totals"]
+    files: dict[str, int] = totals.setdefault("files", {})
+    sessions: dict[str, dict[str, Any]] = totals.setdefault("sessions", {})
+    paths = glob.glob(str(SESSIONS / "*" / "*.jsonl"))
+    cutoff = time.time() - window_hours * 3600
+    in_window: list[str] = []
+    for p in paths:
+        try:
+            if os.stat(p).st_mtime >= cutoff:
+                in_window.append(p)
+        except OSError:
+            continue
+    # Freshest first, so a byte budget spent on a backlog still covers what is live now.
+    in_window.sort(key=lambda p: -os.stat(p).st_mtime)
+    moved: list[dict[str, Any]] = []
+    read = 0
+    for path in in_window:
+        st = os.stat(path)
+        offset = files.get(path, 0)
+        if st.st_size <= offset or budget <= 0:
+            continue
+        try:
+            with open(path, "rb") as fh:
+                fh.seek(offset)
+                chunk = fh.read(min(st.st_size - offset, budget))
+        except OSError:
+            continue
+        budget -= len(chunk)
+        read += len(chunk)
+        complete, sep, _tail = chunk.rpartition(b"\n")
+        files[path] = offset + (len(complete) + 1 if sep else 0)  # a chunk may end mid-line
+        s = sessions.setdefault(
+            path, {"calls": 0, "errors": 0, "events": 0, "tokens": 0, "cost_usd": 0.0,
+                   "planned": False, "cwd": None, "model_changes": 0, "last_ts": None,
+                   "shapes": {}, "err_shapes": {}, "tmp_escapes": 0},
+        )
+        calls_this = errors_this = 0
+        for line in complete.split(b"\n"):
+            if not line.strip():
+                continue
+            try:
+                o = json.loads(line)
+            except ValueError:
+                continue
+            s["events"] += 1
+            ts = o.get("timestamp")
+            if isinstance(ts, (int, float)):
+                s["last_ts"] = ts / 1000.0 if ts > 1e11 else ts
+            elif isinstance(ts, str):
+                # pi writes ISO-8601 strings (`2026-10-23T18:45:08.762Z`); older files wrote epochs.
+                # Measured 2026-10-23: reading only numbers left every session's age blank, so the
+                # table said "-" where it should have said how stale a session was -- a monitor that
+                # cannot date an event cannot tell a finished session from a live one.
+                try:
+                    s["last_ts"] = dt.datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+                except ValueError:
+                    pass
+            if o.get("type") == "session" and o.get("cwd"):
+                s["cwd"] = o["cwd"]
+            if o.get("type") == "model_change":
+                s["model_changes"] += 1
+            if o.get("type") != "message":
+                continue
+            m = o.get("message") or {}
+            if m.get("role") == "assistant":
+                usage = m.get("usage") or {}
+                s["tokens"] += int(usage.get("totalTokens") or 0)
+                s["cost_usd"] += float((usage.get("cost") or {}).get("total") or 0.0)
+                for block in m.get("content") or []:
+                    if not isinstance(block, dict) or block.get("type") != "toolCall":
+                        continue
+                    name = block.get("name") or "?"
+                    args = block.get("arguments") or {}
+                    shp = shape_of(name, args if isinstance(args, dict) else {})
+                    s["shapes"][shp] = s["shapes"].get(shp, 0) + 1
+                    calls_this += 1
+                    s["calls"] += 1
+                    if name == "declare_plan":
+                        s["planned"] = True
+                    if name == "estate_execute" and "/tmp" in str(args.get("command") or ""):
+                        s["tmp_escapes"] += 1
+            elif m.get("role") == "toolResult" and m.get("isError"):
+                s["errors"] += 1
+                errors_this += 1
+                shp = shape_of(m.get("toolName") or "?", {})
+                s["err_shapes"][shp] = s["err_shapes"].get(shp, 0) + 1
+        if calls_this or errors_this:
+            moved.append(
+                {
+                    "path": path,
+                    "cwd": s.get("cwd"),
+                    "calls": calls_this,
+                    "errors": errors_this,
+                    "last_event_age_s": int(time.time() - s["last_ts"]) if s.get("last_ts") else None,
+                    "planned": bool(s.get("planned")),
+                }
+            )
+    totals["bytes_read_total"] = totals.get("bytes_read_total", 0) + read
+    # A session that fell out of the window is dropped, so the totals measure today, not history.
+    kept = {p: s for p, s in sessions.items() if p in set(in_window)}
+    totals["sessions"] = kept
+    return {"moved": moved, "bytes_read": read, "in_window": len(in_window)}, read
+
+
+def aggregate(totals: dict[str, Any], window_hours: float) -> dict[str, Any]:
+    sessions = totals.get("sessions", {})
+    shapes: dict[str, dict[str, int]] = {}
+    for s in sessions.values():
+        for shp, n in (s.get("shapes") or {}).items():
+            rec = shapes.setdefault(shp, {"calls": 0, "sessions": 0, "errors": 0})
+            rec["calls"] += n
+            rec["sessions"] += 1
+        for shp, n in (s.get("err_shapes") or {}).items():
+            rec = shapes.setdefault(shp, {"calls": 0, "sessions": 0, "errors": 0})
+            rec["errors"] += n
+    rows = [{"shape": k, **v} for k, v in shapes.items()]
+    rows.sort(key=lambda r: -r["calls"])
+    return {
+        "window_hours": window_hours,
+        "sessions": len(sessions),
+        "tool_calls": sum(r["calls"] for r in rows),
+        "errors": sum(s.get("errors", 0) for s in sessions.values()),
+        "tokens": sum(s.get("tokens", 0) for s in sessions.values()),
+        "cost_usd": round(sum(s.get("cost_usd", 0.0) for s in sessions.values()), 2),
+        "model_changes": sum(s.get("model_changes", 0) for s in sessions.values()),
+        "sessions_without_plan": sum(1 for s in sessions.values() if not s.get("planned")),
+        "tmp_escapes": sum(s.get("tmp_escapes", 0) for s in sessions.values()),
+        "bytes_read_total": totals.get("bytes_read_total", 0),
+        "shapes": rows,
+    }
+
+
+# ----------------------------------------------------------------- printing
+
+
+def _age(seconds: float) -> str:
+    seconds = int(seconds)
+    d, rem = divmod(seconds, 86400)
+    hh, rem = divmod(rem, 3600)
+    mm, ss = divmod(rem, 60)
+    if d:
+        return f"{d}d{hh:02d}h"
+    if hh:
+        return f"{hh}h{mm:02d}m"
+    return f"{mm}m{ss:02d}s"
+
+
+def print_live(rows: list[dict[str, Any]], summary: dict[str, Any]) -> None:
+    print(f"live pi processes: {summary['live']}   resident {summary['rss_mb']:.0f} MB")
+    print(f"{'pid':>7}  {'verdict':<24}{'age':>8}  {'cpu':>6}  {'rss':>7}  {'sock':>4}  cwd")
+    for r in rows:
+        sock = "-" if r["sockets_established"] is None else str(r["sockets_established"])
+        print(f"{r['pid']:>7}  {r['verdict']:<24}{_age(r['age_s']):>8}  "
+              f"{r['cpu_delta_s']:>5.2f}s  {r['rss_mb']:>6.0f}M  {sock:>4}  {r['cwd'] or '?'}")
+    leaked = [r for r in rows if r["verdict"] == "headless-leaked"]
+    if leaked:
+        print(f"\nDEFECT  {len(leaked)} headless session(s) finished and never exited, "
+              f"holding {summary['leaked_rss_mb']:.0f} MB: "
+              + ", ".join(f"{r['pid']} ({_age(r['age_s'])})" for r in leaked))
+        print("        no terminal, no CPU movement, no ESTABLISHED socket past the grace window.")
+        print("        `bin/pi-observe --reap` kills exactly these.")
+    spun = [r for r in rows if r["verdict"] == "interactive-long-lived"]
+    if spun:
+        print(f"\nWASTE   {len(spun)} terminal session(s) open past the long-lived window, holding "
+              f"{summary['long_lived_rss_mb']:.0f} MB and {summary['long_lived_cpu_s'] / 60:.0f} CPU-minutes: "
+              + ", ".join(f"{r['pid']} ({_age(r['age_s'])}, {r['rss_mb']:.0f}M)" for r in spun))
+        print("        closing the terminal frees both; nothing in the estate needs them held open.")
+
+
+def print_moved(moved: list[dict[str, Any]], read: int) -> None:
+    if not moved:
+        print(f"\nsessions: nothing new ({read} bytes read)")
+        return
+    print(f"\nsessions that moved ({read} bytes read this pass):")
+    print(f"{'last':>7}  {'calls':>6}  {'err':>4}  {'plan':>5}  cwd")
+    for r in moved[:12]:
+        age = "-" if r["last_event_age_s"] is None else _age(r["last_event_age_s"])
+        print(f"{age:>7}  {r['calls']:>6}  {r['errors']:>4}  {'yes' if r['planned'] else 'NO':>5}  {r['cwd'] or '?'}")
+
+
+def print_repetition(agg: dict[str, Any], top: int = 15) -> None:
+    print(f"\nrepeated shapes over the last {agg['window_hours']:g}h, across {agg['sessions']} transcripts "
+          f"({agg['tool_calls']} tool calls, {agg['errors']} errors)")
+    print(f"{'calls':>7}  {'sess':>5}  {'err':>5}  shape")
+    for r in agg["shapes"][:top]:
+        print(f"{r['calls']:>7}  {r['sessions']:>5}  {r['errors']:>5}  {r['shape']}")
+    print(f"friction: {agg['sessions_without_plan']} session(s) never declared a plan; "
+          f"{agg['tmp_escapes']} tool call(s) write to /tmp; "
+          f"{agg['model_changes']} model switch(es); {agg['tokens']} tokens, ${agg['cost_usd']}")
+
+
+# ----------------------------------------------------------------- main
+
+
+def read_friction(path: str, window_hours: float) -> list[dict[str, Any]] | None:
+    """Every ledger line inside the window, newest last. None when the file cannot be read at all.
+
+    A missing file is not blindness: it means the door has refused nothing since the ledger was
+    introduced. An unreadable file IS blindness, because the difference between "no friction" and
+    "no measurement" decides whether an eval may trust a zero.
+    """
+    cutoff = time.time() - window_hours * 3600
+    try:
+        text = Path(path).read_text(errors="replace")
+    except FileNotFoundError:
+        return []
+    except OSError:
+        return None
+    rows: list[dict[str, Any]] = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        try:
+            stamped = dt.datetime.strptime(str(rec.get("ts", "")), "%Y-%m-%dT%H:%M:%SZ")
+            when = stamped.replace(tzinfo=dt.timezone.utc).timestamp()
+        except (TypeError, ValueError):
+            when = None
+        if when is not None and when < cutoff:
+            continue
+        rows.append(rec)
+    return rows
+
+
+def aggregate_friction(rows: list[dict[str, Any]], window_hours: float) -> dict[str, Any]:
+    """Collapse the ledger into counted shapes. Deterministic: the key is (kind, shape)."""
+    by_shape: dict[tuple[str, str], dict[str, Any]] = {}
+    by_kind: dict[str, int] = {}
+    for rec in rows:
+        kind = str(rec.get("kind", "unknown"))
+        shape = str(rec.get("shape", ""))
+        entry = by_shape.setdefault(
+            (kind, shape),
+            {"kind": kind, "shape": shape, "count": 0, "first": rec.get("ts"), "last": None, "detail": ""},
+        )
+        entry["count"] += 1
+        entry["last"] = rec.get("ts") or entry["last"]
+        if rec.get("detail"):
+            entry["detail"] = str(rec["detail"])[:160]
+        by_kind[kind] = by_kind.get(kind, 0) + 1
+    ranked = sorted(by_shape.values(), key=lambda e: (-e["count"], e["kind"], e["shape"]))
+    return {"window_hours": window_hours, "events": len(rows), "by_kind": by_kind, "shapes": ranked}
+
+
+def print_friction(agg: dict[str, Any], path: str, top: int = 15) -> None:
+    print(f"\nfriction at the door over the last {agg['window_hours']:g}h: {agg['events']} event(s) from {path}")
+    if not agg["events"]:
+        print("  none recorded. A zero here is a measurement only if the door was actually used.")
+        return
+    by_kind = ", ".join(f"{k}={v}" for k, v in sorted(agg["by_kind"].items(), key=lambda kv: -kv[1]))
+    print(f"  by kind: {by_kind}")
+    print(f"{'count':>6}  {'kind': <13}  shape")
+    for r in agg["shapes"][:top]:
+        print(f"{r['count']:>6}  {r['kind']: <13}  {r['shape'] or '(unshaped)'}")
+        if r["detail"]:
+            print(f"        {r['detail']}")
+
+
+def one_pass(
+    args: argparse.Namespace,
+    state: dict[str, Any],
+    do_live: bool,
+    do_sess: bool,
+    do_rep: bool,
+    do_fric: bool = False,
+) -> tuple[int, dict[str, Any]]:
+    receipt: dict[str, Any] = {"observed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "host": os.uname().nodename}
+    rc = 0
+    if do_live:
+        rows, summary = live_report(args.sample, args.grace, args.long_lived_after, args.reap)
+        if rows is None:
+            receipt["live"], receipt["blind"] = None, "process table could not be read"
+            rc = 2
+        else:
+            receipt["live"] = {"summary": summary, "processes": rows}
+            if summary["verdicts"].get("headless-leaked"):
+                rc = 1
+    if do_sess or do_rep:
+        moved, read = observe(state, args.budget_bytes, args.window_hours)
+        if moved.get("blind"):
+            receipt["sessions"], receipt["blind"] = None, moved["blind"]
+            rc = 2
+        else:
+            agg = aggregate(state["totals"], args.window_hours)
+            receipt["sessions"] = {
+                "moved": moved["moved"],
+                "bytes_read": read,
+                "in_window": moved.get("in_window", 0),
+                "totals": agg,
+            }
+    if do_fric:
+        rows = read_friction(args.friction_path, args.window_hours)
+        if rows is None:
+            receipt["friction"], receipt["blind"] = None, f"cannot read {args.friction_path}"
+            rc = 2
+        else:
+            receipt["friction"] = aggregate_friction(rows, args.window_hours)
+    receipt["verdict"] = {0: "ok", 1: "defect", 2: "BLIND"}[rc]
+    save_state(args.state, state)
+    try:
+        p = Path(args.receipt)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(receipt, indent=1) + "\n")
+    except OSError:
+        pass
+    if args.json:
+        print(json.dumps(receipt, indent=1))
+    else:
+        if do_live:
+            if receipt.get("live"):
+                print_live(receipt["live"]["processes"], receipt["live"]["summary"])
+            else:
+                print(f"BLIND  {receipt.get('blind')}")
+        if (do_sess or do_rep) and receipt.get("sessions"):
+            if do_sess:
+                print_moved(receipt["sessions"]["moved"], receipt["sessions"]["bytes_read"])
+            if do_rep:
+                print_repetition(receipt["sessions"]["totals"])
+        elif do_sess or do_rep:
+            print(f"BLIND  {receipt.get('blind')}")
+        if do_fric:
+            if receipt.get("friction") is not None:
+                print_friction(receipt["friction"], args.friction_path)
+            else:
+                print(f"BLIND  {receipt.get('blind')}")
+    return rc, receipt
+
+
+def explain_install() -> int:
+    """There is no --install: this runs on the estate's one scheduler, not on launchd.
+
+    The first version of this monitor shipped a `--install` that wrote
+    ~/Library/LaunchAgents/com.estate.pi-observe.plist and bootstrapped it. That was a second
+    scheduling layer beside the estate's one scheduler (scheduler/schedule.yml -> Dagster, crew#989),
+    and it inherited none of what that layer already does: the load gate, skip_on_battery, the
+    circuit breaker after three failures, the concurrency queue and one log per run. A monitor that
+    patches launchd is the exact repetition the monitor exists to measure.
+
+    The door stays here so that whoever reaches for it is told where the job actually lives, rather
+    than left to re-invent the plist from the docstring. The entry to add is printed below and is
+    also already in scheduler/schedule.yml, so in practice this should be a no-op path.
+    """
+    print(
+        "pi-observe is scheduled by the estate's one scheduler, not by launchd.\n"
+        "Its job is ai.estate.pi-observe in scheduler/schedule.yml: a Dagster job + cron, with the\n"
+        "load gate, the circuit breaker and one log per run. Nothing to install. To see the job:\n"
+        "  dagster job list  # or the Dagster UI\n"
+        "To run one pass by hand exactly as the schedule does:\n"
+        "  /usr/bin/python3 $CODE/idp/bin/pi-observe --json"
+    )
+    return 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description="Observe live pi sessions and the work they repeat.")
+    ap.add_argument("--live", action="store_true", help="processes only")
+    ap.add_argument("--sessions", action="store_true", help="transcripts only")
+    ap.add_argument("--repetition", action="store_true", help="repeated shapes only")
+    ap.add_argument("--friction", action="store_true", help="the door's own ledger: refusals and ceiling kills only")
+    ap.add_argument("--friction-path", default=FRICTION_DEFAULT, help="ledger written by estate_executor (default ~/.estate/friction/events.jsonl)")
+    ap.add_argument("--json", action="store_true", help="emit one JSON receipt instead of tables")
+    ap.add_argument("--watch", type=float, default=0.0, metavar="SECONDS", help="repeat every N seconds")
+    ap.add_argument("--sample", type=float, default=2.0, help="CPU delta window in seconds (default 2)")
+    ap.add_argument("--grace", type=int, default=120, help="seconds a headless process may look idle (default 120)")
+    ap.add_argument("--long-lived-after", type=int, default=43200, help="seconds before a busy terminal is graded a cost (default 12h)")
+    ap.add_argument("--window-hours", type=float, default=24.0, help="count only transcripts touched inside this window (default 24h)")
+    ap.add_argument("--budget-bytes", type=int, default=24_000_000, help="max transcript bytes per pass (default 24MB)")
+    ap.add_argument("--reindex", action="store_true", help="discard saved offsets and re-read from the start")
+    ap.add_argument("--receipt", default=RECEIPT_DEFAULT, help="JSON receipt path")
+    ap.add_argument("--state", default=STATE_DEFAULT, help="offsets and totals path")
+    ap.add_argument("--reap", action="store_true", help="SIGTERM headless-leaked processes")
+    ap.add_argument("--install", action="store_true", help="refused: the job lives in scheduler/schedule.yml, not launchd")
+    args = ap.parse_args(argv)
+    if args.install:
+        return explain_install()
+    if args.live or args.sessions or args.repetition or args.friction:
+        do_live, do_sess, do_rep, do_fric = args.live, args.sessions, args.repetition, args.friction
+    else:
+        do_live = do_sess = do_rep = True
+        do_fric = False
+    if args.reindex:
+        try:
+            os.unlink(args.state)
+        except OSError:
+            pass
+    state = load_state(args.state)
+    if not args.watch:
+        return one_pass(args, state, do_live, do_sess, do_rep, do_fric)[0]
+    rc = 0
+    try:
+        while True:
+            rc, receipt = one_pass(args, state, do_live, do_sess, do_rep, do_fric)
+            sys.stdout.flush()
+            time.sleep(max(1.0, args.watch))
+    except KeyboardInterrupt:
+        return rc
+
+
+if __name__ == "__main__":
+    sys.exit(main())
