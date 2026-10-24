@@ -75,8 +75,27 @@ def test_a_steered_poll_is_recorded_with_the_door_that_answers_it(ledger):
 
 def test_a_bare_wait_is_recorded_as_its_own_kind(ledger):
     door = _door()
-    door.execute_command("sleep 30")
+    door.execute_command("sleep 900")
     assert [r["kind"] for r in _rows(ledger)] == ["refuse-wait"]
+
+
+def test_a_paced_wait_is_accepted_and_still_recorded(ledger):
+    """The estate's own idiom: launch, then check. Allowed, and counted.
+
+    MEASURED 2026-10-24: the door refused 26 jobs in 17 minutes, every one of them a `nohup …`
+    followed by `sleep 30`. Raising the parking line fixed the refusals and silently dropped the
+    measurement -- an accepted pace wrote no row, so the seconds agents spend waiting inside the
+    door were invisible. A reward signal cannot rank a delay nobody recorded.
+    """
+    door = _door()
+    answer = door.execute_command("nohup true > /tmp/x.log 2>&1 & sleep 30; tail -n 3 /tmp/x.log")
+    assert answer.get("refused") is not True, answer
+    rows = _rows(ledger)
+    assert [r["kind"] for r in rows] == ["pace-wait"]
+    assert rows[0]["detail"] == "sleep 30"
+    # The shape is the reducer's own output, not a wish: it keeps the verb and stops at the first
+    # redirection. Asserting the real shape keeps this test honest about what gets ranked.
+    assert rows[0]["shape"].startswith("nohup")
 
 
 def test_a_ceiling_above_the_cap_is_recorded(ledger):
@@ -117,7 +136,7 @@ def test_an_unwritable_ledger_does_not_change_the_door_s_answer(tmp_path, monkey
     blocked.mkdir()
     monkeypatch.setenv("ESTATE_FRICTION", str(blocked))
     door = _door()
-    answer = door.execute_command("sleep 30")
+    answer = door.execute_command("sleep 900")
     assert answer["accepted"] is False
     assert "waits on something outside the process" in answer["error"]
 
@@ -182,7 +201,7 @@ def test_the_reader_ranks_repeated_friction(ledger):
     door = _door()
     for sha in ("aaa1111", "bbb2222", "ccc3333"):
         door.execute_command(f"gh api repos/x/y/commits/{sha}/status")
-    door.execute_command("sleep 30")
+    door.execute_command("sleep 900")
     out = _observe(ledger)
     assert out.returncode == 0, out.stderr
     assert "4 event(s)" in out.stdout

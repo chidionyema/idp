@@ -122,6 +122,14 @@ _NEVER = (
 # it (gate 2: quantify the threshold rather than assert "no sleeping").
 # A newline is a command boundary too (a heredoc that IS a program puts each command on its own
 # line), which is why the separator class is `; & | (` AND newline.
+# MEASURED 2026-10-24, and the number is decided by the measurement rather than by taste. This
+# constant was raised from 10 to 60 after the door refused 26 jobs in 17 minutes, every one of them
+# the estate's own idiom -- launch, then check (`nohup … > log 2>&1 & sleep 30; tail -n 3 log`).
+# That is work and the door must not refuse it. But the first version of that fix made the pace
+# INVISIBLE: a 30s in-band wait was accepted and written nowhere, so the one number a reward signal
+# needs (how long agents spend parked in the door instead of working) did not exist. Both halves are
+# kept: >= 60s or unbounded is refused as a park, and anything shorter is accepted and recorded as
+# `pace-wait` (see execute_command step 2c), so the pacing is allowed AND counted.
 _PARKING_SLEEP_SEC = 60
 _SLEEP = re.compile(r"(?:^|[;&|(\n])\s*sleep\s+([^\s;&|)]+)")
 
@@ -133,6 +141,20 @@ def parking_sleep(command: str) -> Optional[str]:
         if not arg.isdigit():
             return arg
         if int(arg) >= _PARKING_SLEEP_SEC:
+            return arg
+    return None
+
+
+def paced_sleep(command: str) -> Optional[str]:
+    """The sleep argument if this command paces itself under the parking line, else None.
+
+    A pace is work (launch, then check), so the door lets it run -- and writes it down, because the
+    number of seconds agents spend waiting inside the door is the measurement that would justify a
+    door which waits for them (a launch verb that returns when the thing has started).
+    """
+    for match in _SLEEP.finditer(unquoted(command)):
+        arg = match.group(1).strip("'\"")
+        if arg.isdigit() and int(arg) < _PARKING_SLEEP_SEC:
             return arg
     return None
 
@@ -793,6 +815,12 @@ def execute_command(
             detail=f"sleep {parked}: >= {_PARKING_SLEEP_SEC}s or unbounded",
         )
 
+    # 2c. A pace is allowed, and counted. Refusing it breaks the estate's own launch-then-check
+    #     idiom (26 refused jobs in 17 minutes); not counting it hides the delay the agent paid.
+    pace = paced_sleep(command)
+    if pace:
+        record_friction("pace-wait", command, detail=f"sleep {pace}")
+
     # 2. The caller's own ceiling may never exceed the estate ceiling, in any spelling.
     written = explicit_ceiling_sec(command)
     if written is not None and written > CEILING_SEC:
@@ -1200,14 +1228,29 @@ def _refusals_for(
     steer = _steer_for(command)
     if steer:
         reasons.append(steer)
+    # Matched against the UNQUOTED command, exactly as execute_command does: a wait written inside
+    # a commit message is data, and a twin that read it as syntax would refuse what the door allows.
+    bare = unquoted(command)
     for pattern in _NEVER:
-        if pattern.search(command):
+        if pattern.search(bare):
             reasons.append(
                 _refusal(
                     "this command waits on something outside the process",
                     detail=f"matched {pattern.pattern}",
                 )
             )
+    # The park rule, which the twin was missing entirely: it said `sleep 900` would be accepted
+    # while the door refused it, so a caller budgeting on the proposal hit a refusal it was told
+    # would not happen. A pace is accepted here for the same reason it is accepted at the door.
+    parked = parking_sleep(command)
+    if parked:
+        reasons.append(
+            _refusal(
+                "this command waits on something outside the process; the executor runs work, it "
+                f"does not park an agent (sleep {parked} is a park, not a pace)",
+                detail=f"sleep {parked}: >= {_PARKING_SLEEP_SEC}s or unbounded",
+            )
+        )
     written = explicit_ceiling_sec(command)
     if written is not None and written > CEILING_SEC:
         reasons.append(
