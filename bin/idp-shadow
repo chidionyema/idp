@@ -1531,6 +1531,24 @@ def _verify(head, paths):
         # runs prisma migrate immediately, and its 3-restart rescue window expires before
         # a stand-in laid later goes Ready (measured: litellm start 02:55:54, stand-in
         # Ready 02:56:16, rescue fired 02:58:55 on P1001).
+        # cert-manager before anything that names an Issuer (2026-10-25, #7116 class):
+        # production has cert-manager under every platform row; the shadow gets the static
+        # release manifest so platform/secrets' TLS resources can reconcile.
+        if any(pth.startswith(("platform/secrets", "platform/human-vault")) for pth in paths):
+            cm = subprocess.run(
+                ["kubectl", "apply", "-f",
+                 "https://github.com/cert-manager/cert-manager/releases/download/v1.15.3/cert-manager.yaml"],
+                capture_output=True, text=True, timeout=300,
+            )
+            if cm.returncode != 0:
+                return 1, [("floor", f"cert-manager install failed: {(cm.stderr or '').strip()[-300:]}")]
+            ready = subprocess.run(
+                ["kubectl", "wait", "--for=condition=available", "-n", "cert-manager",
+                 "deploy/--all", "--timeout=180s"],
+                capture_output=True, text=True,
+            )
+            if ready.returncode != 0:
+                return 1, [("floor", "cert-manager never became available in the shadow")]
         flux_source(head)
         floor_failed = flux_floor(time.time() + 300)
         if floor_failed:
