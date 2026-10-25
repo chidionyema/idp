@@ -412,46 +412,25 @@ else say "FAIL  yamllint is not installed -- run bin/idp-install-deps"; fail=1; 
 #      a scope its caller did not grant fails the caller at `startup_failure` -- so `fast-gate /
 #      fast-gate`, `bdd`, `ci-success` and `portal-app` never ran and a green PR sat blocked.
 #
-# So the rung no longer fetches anything. On a pull request the payload GitHub already handed the
-# run (GITHUB_EVENT_PATH) IS the pull request: it carries the body, the head sha and the number,
-# and the gate's file path -- which binds the proof block's `head:` to the head being graded --
-# needs no network and no token. Exit 1 means THIS pull request was refused, and that is a failure.
-# Exit 2 means BLIND (no PR to read): named, not silently green, and never a refusal of correct
-# work (R38). A push to main has no pull request in its payload, so it is skipped by name.
+# So the rung fetches nothing itself; it asks the gate to grade the pull request this run is
+# for, and the gate knows the one thing that matters here (measured 2026-10-25, run 40245349600
+# attempt 2, on this very PR): GITHUB_EVENT_PATH IS A SNAPSHOT. On a re-run GitHub replays the
+# payload it froze when the run was created, body and all, so the rung below -- which dumped that
+# body to a temp file and graded it -- refused this pull request with `the proof names ced59a268,
+# but the pull request's head is b9a59de20889` after the body had already been corrected to name
+# b9a59de2. The proof was right and the gate convicted a photograph of it. So the payload now
+# supplies only what is frozen and correct (which PR this is, and the head commit this run
+# graded); the body is read live from `gh pr view` when gh can read it, and the gate names which
+# source it read. A job with no token still grades the payload's body rather than going BLIND.
+#
+# Exit 1 means THIS pull request was refused, and that is a failure. Exit 2 means BLIND (no PR
+# readable at all): named, not silently green, never a refusal of correct work (R38). Exit 3
+# means the event carries no pull request (a push to main grades itself), so it is skipped by
+# name. The gate owns all four answers; this file only reports them.
 _bdd_rc=0
-_bdd_pr=""
-if [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "${GITHUB_EVENT_PATH:-}" ]; then
-  _bdd_pr="${TMPDIR:-/tmp}/idp-bdd-pr.$$.json"
-  if "$MPY" - "$GITHUB_EVENT_PATH" "$_bdd_pr" <<'PY' 2>/dev/null
-import json, sys
-
-ev = json.load(open(sys.argv[1]))
-if ev.get("merge_group") or not ev.get("pull_request"):
-    sys.exit(3)          # a queue run or a push: no pull request in this payload
-pr = ev["pull_request"]
-row = {
-    "number": pr.get("number"),
-    "title": pr.get("title") or "",
-    "body": pr.get("body") or "",
-    "headRefOid": ((pr.get("head") or {}).get("sha") or ""),
-}
-json.dump(row, open(sys.argv[2], "w"))
-PY
-  then
-    python3 "$IDP/bin/idp-bdd-proof-gate" "$_bdd_pr" || _bdd_rc=$?
-    rm -f "$_bdd_pr"
-  else
-    rm -f "$_bdd_pr"
-    _bdd_pr=""
-    if [ -n "${GITHUB_EVENT_PATH:-}" ]; then
-      python3 "$IDP/bin/idp-bdd-proof-gate" --live || _bdd_rc=$?
-    fi
-  fi
-else
-  python3 "$IDP/bin/idp-bdd-proof-gate" --live || _bdd_rc=$?
-fi
+python3 "$IDP/bin/idp-bdd-proof-gate" --live || _bdd_rc=$?
 case "$_bdd_rc" in
-  0) say "ok    bdd-proof the pull request under test carries a BDD-PROOF block" ;;
+  0) say "ok    bdd-proof the pull request under test carries a BDD-PROOF block on its head" ;;
   2) say "skip  bdd-proof BLIND -- no pull request readable on this host (named, not silently green)" ;;
   3) say "skip  bdd-proof this event carries no pull request (a push to main is graded by CI)" ;;
   *) say "FAIL  bdd-proof the pull request under test carries no BDD-PROOF block, or names another head"; fail=1 ;;
