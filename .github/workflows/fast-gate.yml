@@ -46,7 +46,11 @@ jobs:
         # rung, same dependency: install it here too.
         run: pip install -q ruff==0.15.18 pyyaml yamllint==1.37.1 -r sovereign/requirements.txt   # pyyaml: the hardcode and pipeverdict rungs; ruff: the pin ci.yml's bdd job uses; shellcheck ships on ubuntu-24.04; yamllint: bin/idp-ci --check gates its YAML rung on `command -v yamllint`, which was never installed here or on any laptop -- the rung has been silently a no-op since it was written; numpy (via requirements.txt): the face-avatar rung
       - if: steps.actor.outputs.bot != '1'
-        run: IDP_CI_FAST=1 bin/idp-ci
+        # Diff-scoped like every laptop push: without IDP_CI_BASE the ruff-fmt/yamllint
+        # rungs grade the WHOLE repo, so one pre-existing drift anywhere fails every lane
+        # regardless of its own diff (2026-10-25: two files landed green on main, then a
+        # formatting-verdict change made them stale and the whole migration queue went red).
+        run: IDP_CI_FAST=1 IDP_CI_BASE=$(git merge-base origin/main HEAD) bin/idp-ci
       - name: python-strict (estate standard, one copy)
         if: steps.actor.outputs.bot != '1'
         run: |
