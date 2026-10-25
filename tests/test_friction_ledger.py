@@ -316,4 +316,3 @@ def test_publishing_can_be_turned_off(monkeypatch):
     monkeypatch.setenv("ESTATE_BUS_URL", "off")
     door = _door()
     assert door.bus_publish("estate.friction.v1", b"{}") is False
-

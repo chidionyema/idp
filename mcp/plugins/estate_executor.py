@@ -140,7 +140,19 @@ def parking_sleep(command: str) -> Optional[str]:
 _HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 
 
-_DATA_WORDS = {"-m", "--message", "-F", "--file", "-f", "--body", "body=", "-q", "--title", "--desc", "--jq"}
+_DATA_WORDS = {
+    "-m",
+    "--message",
+    "-F",
+    "--file",
+    "-f",
+    "--body",
+    "body=",
+    "-q",
+    "--title",
+    "--desc",
+    "--jq",
+}
 _DATA_CMDS = {"echo", "printf", "rg", "grep", "journal", "growmos", "remember"}
 
 
