@@ -1,0 +1,34 @@
+# Structured formats, constrained decoding and hallucination in code agents.
+# Format: `theme | arxiv query`. Comments and blanks ignored. See bin/arxiv-harvest.
+constrained-decoding | all:"constrained decoding" AND all:"large language model"
+constrained-decoding | all:"grammar-constrained" AND all:generation
+constrained-decoding | all:"guided generation" AND all:"language model"
+constrained-decoding | all:"syntactic constraints" AND all:"code generation"
+schema-guided | all:"JSON schema" AND all:"language model" AND all:generation
+schema-guided | all:"structured output" AND all:"large language model"
+schema-guided | all:"function calling" AND all:"large language model" AND all:reliability
+schema-guided | all:"tool use" AND all:"language model" AND all:reliability
+structured-reasoning | all:"structured chain-of-thought" AND all:code
+structured-reasoning | all:"chain of thought" AND all:"code generation" AND all:structure
+structured-reasoning | all:"program of thoughts" AND all:reasoning
+structured-reasoning | all:"intermediate representation" AND all:code AND all:LLM
+spec-driven | all:"specification" AND all:"code generation" AND all:"language model"
+spec-driven | all:"test-driven" AND all:"large language model"
+spec-driven | all:"formal specification" AND all:"code generation" AND all:LLM
+spec-driven | all:"requirements" AND all:"code generation" AND all:"large language model"
+hallucination | all:"hallucination" AND all:"code generation"
+hallucination | all:"hallucination" AND all:"software engineering" AND all:"language model"
+hallucination | all:"API hallucination" OR all:"hallucinated API"
+hallucination | all:"factuality" AND all:"code" AND all:"large language model"
+agent-workflow | all:"LLM agent" AND all:"workflow" AND all:reliability
+agent-workflow | all:"agent" AND all:"software engineering" AND all:"benchmark"
+agent-workflow | all:"multi-agent" AND all:"code generation" AND all:"software engineering"
+agent-workflow | all:"agent" AND all:"verification" AND all:"code"
+verification-loop | all:"self-repair" AND all:"code generation"
+verification-loop | all:"execution feedback" AND all:"code generation"
+verification-loop | all:"compiler feedback" AND all:"language model"
+verification-loop | all:"test generation" AND all:"code generation" AND all:"language model"
+typed-prompting | all:"prompt engineering" AND all:"schema" AND all:"language model"
+typed-prompting | all:"template" AND all:"prompt" AND all:"large language model" AND all:structure
+evaluation | all:"benchmark" AND all:"structural" AND all:"code generation" AND all:LLM
+evaluation | all:"evaluation" AND all:"LLM" AND all:"code" AND all:correctness

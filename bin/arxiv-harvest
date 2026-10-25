@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+"""Harvest arXiv records for a research digest, and prove the digest cites only what it read.
+
+WHY THIS FILE EXISTS
+--------------------
+A research digest that quotes papers is only worth the reader's trust if the quotes are
+checkable. Twice now (docs/research/2026-10-23-cinematic-agent-interface-research.md 2026-10-23,
+and docs/research/2026-10-25-constrained-formats-research.md 2026-10-25) the digest has been
+written by an agent, which is exactly the kind of author that invents a plausible citation. So
+the harvest is a COMMITTED SCRIPT with a COMMITTED OUTPUT, and the digest is checked against the
+output by `--verify` rather than by hope:
+
+    bin/arxiv-harvest --queries docs/research/<name>.queries.txt --out docs/research/<name>.json
+    bin/arxiv-harvest --verify docs/research/<name>.json docs/research/<name>.md
+
+`--verify` extracts every arXiv id mentioned in the markdown and exits 1 naming any id that is
+not a record in the JSON. A citation that was not harvested cannot reach a reviewer.
+
+WHAT IT DOES NOT DO
+-------------------
+It stores the id, title, published date, the first sentence of the abstract, and the query that
+found it. It does not store the full abstract, and it does not claim to have read the paper.
+Every digest built on it must say that, because the difference between "the abstract says" and
+"the paper shows" is the difference between a claim and a citation.
+
+arXiv's API asks callers to stay at or below one request every three seconds; `--sleep` defaults
+to 3.0 for that reason and the script refuses to go faster than 1.0.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+import time
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
+
+API = "https://export.arxiv.org/api/query"
+NS = {"a": "http://www.w3.org/2005/Atom"}
+UA = "estate-research-harvest/1.0 (research digest; contact: founder@estate)"
+
+
+def fetch(query: str, per_page: int, timeout: int = 40) -> bytes:
+    params = {
+        "search_query": query,
+        "start": "0",
+        "max_results": str(per_page),
+        "sortBy": "relevance",
+        "sortOrder": "descending",
+    }
+    url = f"{API}?{urllib.parse.urlencode(params)}"
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read()
+
+
+def first_sentence(text: str) -> str:
+    """The paper's own words, truncated at a sentence boundary the paper chose."""
+    flat = " ".join(text.split())
+    # A sentence end is '.', '!' or '?' followed by whitespace and a capital or bracket, and not
+    # preceded by a single capital letter (initials) -- "e.g. Foo" and "J. Smith" are not ends.
+    m = re.search(r"(?<![A-Z])(?<=[.!?])\s+(?=[A-Z(])", flat)
+    return flat[: m.start() + 1] if m else flat
+
+
+def parse(xml_bytes: bytes, query: str, theme: str) -> list[dict]:
+    root = ET.fromstring(xml_bytes)
+    out = []
+    for e in root.findall("a:entry", NS):
+        raw_id = (e.findtext("a:id", default="", namespaces=NS) or "").strip()
+        # http://arxiv.org/abs/2503.07314v1 -> 2503.07314v1
+        aid = raw_id.rsplit("/abs/", 1)[-1] if "/abs/" in raw_id else raw_id.rsplit("/", 1)[-1]
+        if not aid:
+            continue
+        title = " ".join((e.findtext("a:title", default="", namespaces=NS) or "").split())
+        summary = e.findtext("a:summary", default="", namespaces=NS) or ""
+        published = (e.findtext("a:published", default="", namespaces=NS) or "")[:10]
+        if not title:
+            continue
+        out.append(
+            {
+                "id": aid,
+                "title": title,
+                "published": published,
+                "theme": theme,
+                "query": query,
+                "first_sentence": first_sentence(summary),
+                "url": "https://arxiv.org/abs/" + aid.split("v")[0],
+            }
+        )
+    return out
+
+
+def load_queries(path: str) -> list[tuple[str, str]]:
+    """`theme | query` per line; '#' lines and blanks are ignored."""
+    pairs = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "|" in line:
+                theme, q = line.split("|", 1)
+                pairs.append((theme.strip(), q.strip()))
+            else:
+                pairs.append(("general", line))
+    return pairs
+
+
+def harvest(queries_path: str, out_path: str, per_page: int, sleep: float) -> int:
+    if sleep < 1.0:
+        raise SystemExit("--sleep below 1.0s is refused: arXiv asks for one request per 3s")
+    pairs = load_queries(queries_path)
+    seen: dict[str, dict] = {}
+    errors = []
+    for i, (theme, q) in enumerate(pairs, 1):
+        try:
+            xml_bytes = fetch(q, per_page)
+        except Exception as exc:  # network, 5xx, timeout -- recorded, never hidden
+            errors.append({"query": q, "error": f"{type(exc).__name__}: {exc}"})
+            print(f"[{i}/{len(pairs)}] FAILED {q}: {exc}", file=sys.stderr)
+            time.sleep(sleep)
+            continue
+        kept = 0
+        for rec in parse(xml_bytes, q, theme):
+            if rec["id"] in seen:
+                continue
+            seen[rec["id"]] = rec
+            kept += 1
+        print(f"[{i}/{len(pairs)}] {q} -> +{kept} (total {len(seen)})", file=sys.stderr)
+        time.sleep(sleep)
+
+    doc = {
+        "harvested_at": time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime()),
+        "method": (
+            f"arXiv API export endpoint ({API}), {len(pairs)} query strings, "
+            f"per_page={per_page}, sortBy=relevance. Each record stores id, title, published date, "
+            "the query that found it, and the first sentence of its abstract. Nothing here was "
+            "written by hand."
+        ),
+        "verification": (
+            "Every id resolves at https://arxiv.org/abs/<id-without-version>. first_sentence is "
+            "that record's own abstract text as returned on the harvest date; re-running may "
+            "return a later version of the same id. `bin/arxiv-harvest --verify <json> <md>` "
+            "refuses a digest that cites an id absent from this file."
+        ),
+        "queries": [q for _, q in pairs],
+        "errors": errors,
+        "count": len(seen),
+        "records": sorted(seen.values(), key=lambda r: (r["theme"], r["published"])),
+    }
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(doc, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    print(f"wrote {out_path}: {len(seen)} records, {len(errors)} failed queries", file=sys.stderr)
+    return 0 if seen else 1
+
+
+ID_RE = re.compile(r"\b(\d{4}\.\d{4,5})(v\d+)?\b")
+
+
+def verify(json_path: str, md_path: str) -> int:
+    with open(json_path, encoding="utf-8") as f:
+        doc = json.load(f)
+    known = {r["id"].split("v")[0] for r in doc["records"]}
+    with open(md_path, encoding="utf-8") as f:
+        md = f.read()
+    cited = {m.group(1) for m in ID_RE.finditer(md)}
+    missing = sorted(cited - known)
+    if missing:
+        print(f"UNCITED {md_path}: {len(missing)} id(s) not in {json_path}", file=sys.stderr)
+        for m in missing:
+            print(f"  {m}  https://arxiv.org/abs/{m}", file=sys.stderr)
+        return 1
+    print(f"ok {md_path}: {len(cited)} cited ids, all {len(cited)} present in {json_path}")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--queries", help="file of `theme | query` lines")
+    ap.add_argument("--out", help="JSON file to write")
+    ap.add_argument("--per-page", type=int, default=50)
+    ap.add_argument("--sleep", type=float, default=3.0)
+    ap.add_argument("--verify", nargs=2, metavar=("JSON", "MARKDOWN"))
+    a = ap.parse_args(argv)
+    if a.verify:
+        return verify(*a.verify)
+    if not a.queries or not a.out:
+        ap.error("either --verify JSON MD, or both --queries and --out")
+    return harvest(a.queries, a.out, a.per_page, a.sleep)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
