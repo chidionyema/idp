@@ -30,7 +30,7 @@ def authority_now() -> dt.datetime | None:
             ["gh", "api", "-i", "/rate_limit"],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=30,  # estate:bound one gh API round trip -- a hang here is a no-answer, not 30s of work
         )
     except (OSError, subprocess.TimeoutExpired):
         return None

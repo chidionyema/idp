@@ -344,6 +344,28 @@ if ! "$MPY" -c 'import sys; sys.exit(sys.version_info[:2] < (3, 12))' 2>/dev/nul
   say "FAIL  python   $("$MPY" --version 2>&1) is not CI's 3.12 -- run bin/idp-install-deps"; fail=1
 fi
 
+# 1f. One bound, at the door (bin/timeout-budget). Wall-clock time used to be bounded in three places
+#     at once -- the executor ceiling, estate-execute's per-step default (120 against a 100s door, so
+#     it could never fire), and a `timeout N` an author wrote into the command itself. Measured
+#     2026-10-25: lane-submit's push took 98s behind `timeout 80` and the step reported the lane
+#     absent while the push was landing -- a false failure invented by a guess, after two earlier
+#     versions of the same guess (50s, then 80s). The rung refuses a new inner bound and a broken
+#     budget in an intent; the bounds already in bin/ are ratcheted in bin/timeout-budget.baseline,
+#     which may only shrink, so the estate converges instead of freezing the habit in place.
+#     Runs on $MPY: the gate parses the intent library with PyYAML, and the system python3 has none.
+if [ -x "$IDP/bin/timeout-budget" ]; then
+  if out=$("$MPY" "$IDP/bin/timeout-budget" 2>&1); then
+    say "ok    budget   $(printf '%s' "$out" | tail -1 | sed 's/^timeout-budget: //')"
+  else
+    say "FAIL  budget   a second wall-clock bound, or a budget no door can honour"
+    printf '%s\n' "$out" | grep -E '^FAIL|Error|Traceback' | head -8 | sed 's/^/      /'
+    fail=1
+  fi
+else
+  say "FAIL  budget   bin/timeout-budget is missing -- nothing refuses a second bound"
+  fail=1
+fi
+
 # 1c.2 yamllint, against the one config every caller shares (.yamllint). Before 2026-10-14 only
 #      --check ran it, and nothing called --check: fast-gate.yml installed yamllint and never ran
 #      it, so a duplicated key reached tests/fixtures/kyverno/upstream/kustomization.yaml and sat

@@ -83,7 +83,10 @@ def verify(v: dict, subs: dict, idp: str) -> str:
     # a wrong probe URL and a rate limit were one word, and the founder was told to revoke keys he
     # had made that day. The status is the evidence; it rides the FAIL line.
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 -- the URL is the registry's verify url, never user input
+        with urllib.request.urlopen(  # noqa: S310 -- the registry's verify url, never user input
+            req,
+            timeout=30,  # estate:bound one registry verify URL, one HTTP exchange
+        ) as resp:
             body = resp.read(65536)
             if refuse:
                 return (

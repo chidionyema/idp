@@ -54,7 +54,7 @@ def _run_gate(script: str, args: list[str]) -> dict:
         [sys.executable, str(BIN / script), *args],
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=30,  # estate:bound a hook cannot block the harness: one child script, one verdict
     )
     return {
         "exit": proc.returncode,

@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<title>One Bound, at the Door</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Estate proposal: wall-clock time was bounded in three places at once. It is bounded in one now, and a gate refuses the second.">
+
+<style>
+  :root {
+    --ground: #F1F3F7;
+    --surface: #FFFFFF;
+    --ink: #15181E;
+    --ink-soft: #576073;
+    --ink-faint: #838D9F;
+    --rule: #DBE0E9;
+    --rule-soft: #E9ECF2;
+    --accent: #2C4A7C;
+    --dead: #A0392E;
+    --late: #8A5D12;
+    --live: #2A6551;
+    --dead-bg: #F6E7E4;
+    --late-bg: #F7EEDC;
+    --live-bg: #E2EFE9;
+    --mono: ui-monospace, "SF Mono", "IBM Plex Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #101319; --surface: #171B22; --ink: #E5E9F0; --ink-soft: #9AA4B6;
+      --ink-faint: #6E788B; --rule: #262C37; --rule-soft: #1E232C; --accent: #86A9DF;
+      --dead: #E58F81; --late: #D9AA51; --live: #74C2A4;
+      --dead-bg: #2A1B18; --late-bg: #2A2216; --live-bg: #16261F;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font: 16px/1.6 var(--sans); -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 62rem; margin: 0 auto; padding: 3.5rem 1.5rem 6rem; }
+  header { border-bottom: 1px solid var(--rule); padding-bottom: 2rem; margin-bottom: 2.5rem; }
+  .kicker {
+    font: 500 0.75rem/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--ink-faint); margin: 0 0 1rem;
+  }
+  h1 { font-size: clamp(1.9rem, 4.2vw, 2.9rem); line-height: 1.12; letter-spacing: -0.02em; margin: 0 0 0.9rem; }
+  .lede { font-size: 1.15rem; color: var(--ink-soft); max-width: 44rem; margin: 0; }
+  h2 {
+    font-size: 1.25rem; letter-spacing: -0.01em; margin: 3rem 0 0.9rem;
+    display: flex; align-items: baseline; gap: 0.7rem;
+  }
+  h2 .num { font: 500 0.8rem/1 var(--mono); color: var(--ink-faint); }
+  h3 { font-size: 1rem; margin: 1.7rem 0 0.5rem; }
+  p { margin: 0 0 1rem; max-width: 46rem; }
+  a { color: var(--accent); }
+  code, .mono { font-family: var(--mono); font-size: 0.875em; }
+  code { background: var(--rule-soft); padding: 0.12em 0.36em; border-radius: 3px; }
+  .card { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 1.4rem 1.5rem; margin: 1.2rem 0; }
+  .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+  .stat { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 1.1rem 1.2rem; }
+  .stat .n { font: 500 1.9rem/1 var(--mono); letter-spacing: -0.03em; display: block; }
+  .stat .l { font-size: 0.82rem; color: var(--ink-soft); margin-top: 0.45rem; display: block; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0 1.4rem; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 0.6rem 0.7rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font: 500 0.75rem/1.3 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); }
+  td.num, th.num { text-align: right; font-family: var(--mono); white-space: nowrap; }
+  .tag { font: 500 0.7rem/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; padding: 0.25em 0.5em; border-radius: 4px; white-space: nowrap; }
+  .tag.dead { color: var(--dead); background: var(--dead-bg); }
+  .tag.late { color: var(--late); background: var(--late-bg); }
+  .tag.live { color: var(--live); background: var(--live-bg); }
+  .quote { border-left: 3px solid var(--rule); padding: 0.1rem 0 0.1rem 1.1rem; color: var(--ink-soft); font-style: italic; margin: 1.2rem 0; }
+  .rule { font-size: 1.3rem; line-height: 1.4; letter-spacing: -0.01em; margin: 1.6rem 0; max-width: 44rem; }
+  .rule strong { color: var(--accent); }
+  ol, ul { max-width: 46rem; padding-left: 1.3rem; }
+  li { margin-bottom: 0.5rem; }
+  footer { border-top: 1px solid var(--rule); margin-top: 4rem; padding-top: 1.6rem; color: var(--ink-faint); font-size: 0.85rem; }
+  .scroll { overflow-x: auto; }
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="kicker">Estate proposal · idp#7118 · 2026-10-25</p>
+  <h1>One bound, at the door</h1>
+  <p class="lede">
+    Three numbers were bounding the same work. Two of them could never fire, and the third
+    reported a failure that had not happened. This is what changed, why each bound was judged
+    separately, and the gate that now refuses a second one.
+  </p>
+</header>
+
+<div class="grid">
+  <div class="stat"><span class="n">3</span><span class="l">places wall-clock time was bounded at once</span></div>
+  <div class="stat"><span class="n">25</span><span class="l">step <code>timeout:</code> lines deleted across 17 intents</span></div>
+  <div class="stat"><span class="n">131</span><span class="l">more deleted from the 116 installed intents the door actually runs</span></div>
+  <div class="stat"><span class="n">0</span><span class="l">bounds left in <code>bin/</code> outside the door — the ratchet is empty</span></div>
+</div>
+
+<h2><span class="num">01</span> The defect</h2>
+
+<p>
+  A step in an intent is a shell command. Its wall-clock time was decided in three places, and
+  none of the three knew what the others said:
+</p>
+
+<div class="scroll">
+<table>
+  <thead>
+    <tr><th>Where</th><th>The number</th><th>What it actually did</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>mcp/plugins/estate_executor.py</code></td>
+      <td class="num">100s</td>
+      <td><span class="tag live">binds</span> the only number that kills a job</td>
+    </tr>
+    <tr>
+      <td><code>platform/estate/bin/estate-execute</code></td>
+      <td class="num">120s</td>
+      <td><span class="tag dead">inert</span> a per-step default <em>above</em> the ceiling, so it could never fire</td>
+    </tr>
+    <tr>
+      <td><code>mcp/plugins/estate_mcp.py</code></td>
+      <td class="num">55s</td>
+      <td><span class="tag dead">inert</span> a second opinion 45s <em>below</em> the door</td>
+    </tr>
+    <tr>
+      <td><code>platform/estate/intents/*.yaml</code></td>
+      <td class="num">24 lines</td>
+      <td><span class="tag late">guesses</span> step caps and <code>timeout N</code> inside commands</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  A 120s default against a 100s door is not a safety margin, it is a comment. It made the number
+  that actually kills the job invisible in the script's own story: read <code>estate-execute</code>
+  and you would conclude nothing kills a step before two minutes.
+</p>
+
+<h3>Two failures, both measured</h3>
+
+<div class="card">
+  <p><strong>2026-10-22 — the push that was told it had failed.</strong>
+  <code>lane-submit</code> ran its push behind <code>timeout 50</code> inside a 60s step. The push
+  took longer, the step was killed at <code>60036ms</code>, and <code>git ls-remote</code> then
+  reported the lane ref <em>absent</em> — so the estate was told the submission had failed while the
+  push was still landing.</p>
+  <p><strong>2026-10-25 — the same fix, applied twice.</strong> The bound was raised to
+  <code>timeout 80</code> inside a 100s step. The same push, with the estate's pre-push guard
+  attached, took <strong>98s</strong>. Same false failure, one number larger.</p>
+  <p class="mono" style="color:var(--ink-soft);margin-bottom:0">real 1m38.120s · fast-gate green · jev advisory · then the push itself</p>
+</div>
+
+<p>
+  A guessed bound cannot be right more often than the distribution it guesses about, and where it
+  is wrong it is wrong in one direction only: it invents a failure. Raising the number is not a fix
+  — it is the same fix applied twice.
+</p>
+
+<h2><span class="num">02</span> The rule</h2>
+
+<p class="rule">Wall-clock time is bounded <strong>once</strong>, at the door. An intent declares a
+budget; a step may narrow it, never widen it; nothing else may carry a bound of its own.</p>
+
+<ol>
+  <li><strong><code>door_s:</code></strong> is the intent's budget, in seconds. Absent, it is the
+  ceiling — imported from the module that defines it, never restated.</li>
+  <li><strong>A step</strong> may set <code>timeout:</code> below the budget and never above.
+  Wider is printed as <code>INERT BOUND</code> and clamped; a non-integer is refused with
+  <code>rc=2</code>. The error names the budget <em>and its source</em>.</li>
+  <li><strong>A bound inside a step command</strong> is refused outright. A step cap is legal only
+  where it <em>splits</em> one budget between sequential jobs.</li>
+  <li><strong>A probe</strong> may be bounded shorter than the work it guards — a hung probe has to
+  fail, not hang the step — and must say why:
+  <code>timeout 2 curl -sf …/health  # estate:bound the service must fail fast</code>. A marker
+  with no reason is a rubber stamp, and the gate refuses it.</li>
+  <li><strong>If the work needs longer than the door allows</strong>, the answer is the session
+  plane, not a larger literal.</li>
+</ol>
+
+<h2><span class="num">03</span> The eradication, bound by bound</h2>
+
+<p>
+  This was not a blanket strip. Each of the 25 step bounds was read and judged: delete it, split the
+  budget with it, or keep it as a marked probe.
+</p>
+
+<div class="scroll">
+<table>
+  <thead>
+    <tr><th>Bound</th><th class="num">Was</th><th>Judgement</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>lane-submit</code>, the claim gate</td><td class="num">50s</td>
+      <td><span class="tag live">keep</span> splits the budget: 40 + 50 = 90 inside a 100s door</td>
+    </tr>
+    <tr>
+      <td><code>lane-submit</code>, the push</td><td class="num">80s</td>
+      <td><span class="tag live">replaced</span> the push runs in the background; the step bounds only its own
+      observation of the remote ref. A bound on the measurement cannot truncate the work</td>    </tr>
+    <tr>
+      <td><code>lane-submit</code>, <code>door_s</code></td><td class="num">170s</td>
+      <td><span class="tag dead">refused</span> 60 + 100 + 10 is a sum, not a door; the door is 100</td>
+    </tr>
+    <tr>
+      <td><code>git.commit-staged</code>, <code>door_s</code></td><td class="num">300s</td>
+      <td><span class="tag dead">removed</span> the pre-commit guard runs as long as it needs, inside the door</td>
+    </tr>
+    <tr>
+      <td><code>site-onboard</code>, <code>door_s</code></td><td class="num">120s</td>
+      <td><span class="tag dead">removed</span> also above the ceiling, so also a fiction</td>
+    </tr>
+    <tr>
+      <td>14 further intents, one to four step caps each</td><td class="num">24 lines</td>
+      <td><span class="tag late">deleted</span> none was a probe; each guessed a duration</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h3>What replaced the guess in <code>lane-submit</code></h3>
+<p>
+  The old bound existed to guarantee one thing: that after the push, the estate re-read the remote
+  ref before deciding. That guarantee does not need a wall clock — it needs a re-read. The step now
+  re-reads origin's ref endpoint up to five times after the push exits, and when the push outlives
+  the window it says <code>IN-FLIGHT</code> with the pid and the verdict command. It never says
+  <em>absent</em> when it means <em>unknown</em>.
+</p>
+
+<h2><span class="num">04</span> The library that actually runs</h2>
+
+<p>
+  Reviewing the checkout is not enough. <code>~/.estate/intents</code> — the directory every agent
+  invokes — is main's 96 intents <em>plus</em> ~266 crystallized on this laptop that exist nowhere
+  else, and <code>estate-runtime-sync</code> only ever adds or updates it. It never deletes.
+  Measured 2026-10-25, before the eradication:
+</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>In the invoked library</th><th class="num">Count</th><th>What it was</th></tr></thead>
+  <tbody>
+    <tr><td>step wall-clock caps</td><td class="num">133</td><td>across 116 of 362 intents — the majority copy main's files, the rest were written here</td></tr>
+    <tr><td>caps at or above the ceiling</td><td class="num">57</td><td><span class="tag dead">inert</span> 300, 600, 900, 240, 180 — the door kills at 100s first</td></tr>
+    <tr><td>top-level <code>timeout:</code> above the ceiling</td><td class="num">3</td><td><span class="tag dead">fiction</span> 600s, 600s, 180s of time no door grants</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  The eradication ran here too — 131 caps removed from 116 files, the three declarations removed,
+  three deprecated <code>timeout:</code> fields renamed to <code>door_s</code> — after backing the
+  directory up. A gate that graded only the checkout would have called this estate clean while
+  every agent on the machine ran inside a guess.
+</p>
+
+<h2><span class="num">05</span> The gate</h2>
+
+<p>
+  <code>bin/timeout-budget</code> is rung <code>1f</code> of <code>bin/idp-ci</code>. It fails on:
+</p>
+
+<ul>
+  <li>a <code>door_s</code> above the ceiling — <em>time no door grants</em>;</li>
+  <li>steps whose declared caps sum past the budget;</li>
+  <li>a step cap wider than the budget;</li>
+  <li>a literal wall-clock bound inside an intent command (strict);</li>
+  <li>a <em>new</em> literal bound in <code>bin/</code> or <code>hooks/</code>;</li>
+  <li>any of the above in <code>~/.estate/intents</code>, the library an agent actually invokes.</li>
+</ul>
+
+<p>
+  It shipped as a ratchet, not a wall: twelve bounds were already in <code>bin/</code> when the gate
+  was switched on and went into <code>bin/timeout-budget.baseline</code>, because a strict gate would be
+  red before any lane touched anything, and a gate every lane must bypass is not a gate. That baseline
+  may only shrink — and in the same lane it went to <strong>empty</strong>, bound by bound rather than
+  stripped:
+</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Bound</th><th>Judgement</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">bin/estate-security-scan<br><code>timeout 240</code> ×2, <code>timeout 300</code> ×3</td><td><span class="tag late">deleted</span> larger than the door that runs the script, so it could never fire inside the estate and only ever turned a hang in CI into an empty advisory list — a false "clean"</td></tr>
+    <tr><td class="mono">bin/treewalk.py<br><code>timeout=120</code></td><td><span class="tag late">deleted</span> above the ceiling, on a local <code>git ls-files</code>; a bound on work can only truncate it</td></tr>
+    <tr><td class="mono">bin/lib/receipt_age.py<br>bin/lib/ledger_fresh.py<br><code>timeout=30</code></td><td><span class="tag">marked</span> <code># estate:bound</code> — one <code>gh api</code> round trip; a hang there is a no-answer, not 30s of work</td></tr>
+    <tr><td class="mono">bin/lib/vendor_verify.py<br>bin/lib/conscience_emit.py<br><code>timeout=30 / 20</code></td><td><span class="tag">marked</span> one HTTP exchange: the registry's verify URL, one log emit</td></tr>
+    <tr><td class="mono">bin/reasoning_gateway_hook.py<br>bin/redteam_promoter/promoter.py<br><code>timeout=30 / 10</code></td><td><span class="tag">marked</span> one child script in a hook that must not block the harness; one TCP connect, not the subscription</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  So <code>--strict-ratchet</code> is green, and every surviving number in the tree is either the
+  door's own or a probe with a written reason. The gate is rung 1f of <code>bin/idp-ci</code>.
+</p>
+
+<p>
+  The gate is graded the way it grades a bound — by being run against a tree it must refuse. Its own
+  suite covers a step cap wider than its budget, a door above the ceiling, steps summing past one
+  door, a literal bound inside a command, a marker with no reason, and a <em>second</em> identical
+  bound slipping past the first one's baseline entry. Twelve tests, all of which run the real script
+  against a real checkout.
+</p>
+
+<h2><span class="num">06</span> How to check any of this</h2>
+
+<div class="card mono" style="font-size:0.85rem;line-height:1.9">
+  bin/timeout-budget                       # the verdict, and the ratchet it reports<br>
+  bin/timeout-budget --strict-ratchet      # fails while any bound remains outside the door (green here)<br>
+  bin/timeout-budget --no-installed        # the checkout alone, for a machine with no runtime library<br>
+  bin/idp-ci                               # rung 1f of the offline gate<br>
+  python -m pytest tests/test_timeout_budget.py tests/test_lane_submit_fits_the_door.py
+</div>
+
+<p>
+  The doctrine — the decisions, the numbers, and the two measured failures — is
+  <code>docs/decisions/0043-the-bound-lives-at-the-door.md</code>. The reason it is a decision record
+  and not a paragraph in a commit message: the estate has now shipped the same guess twice, and a
+  number that is only in a commit message is a number nobody can contradict.
+</p>
+
+<footer>
+  Estate proposal, 2026-10-25 · claim <code>idp#7118</code> · agent <code>pi</code> ·
+  branch <code>lane/timeout-budget</code> · rendered as a single self-contained file: no server, no
+  fetch, no build step.
+</footer>
+
+</div>
+</html>

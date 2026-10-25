@@ -5,6 +5,9 @@ args:
   url: {type: string, default: "http://localhost:3100"}
 halt_on_failure: true
 steps:
+    # Step bound removed 2026-10-25: time is declared once, as this intent's budget
+    # (docs/decisions/0043-the-bound-lives-at-the-door.md). A number here could only be a
+    # guess about someone else's work, and where it fired it invented a failure.
   - name: stack-up
     # voice-router's /readyz asks its brain lane for one token. /healthz only says the process is
     # up: 2026-09-27 the router lost the `voice` lane at 14:02 and /healthz stayed 200 while
@@ -14,13 +17,10 @@ steps:
         c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$u"); echo "$u $c"; [ "$c" = 200 ] || exit 1
       done
   - name: e2e
-    timeout: 240
     cmd: cd <<repo>>/backstage && CI=1 PLAYWRIGHT_URL={{url}} yarn playwright test packages/app/e2e-tests/fleet.test.ts --retries 0 --reporter line --output /tmp/fleet-e2e
   - name: voice-controls
     # The voice list and the mic on one agent: both were cut out on 2026-09-27 and nothing noticed.
-    timeout: 300
     cmd: cd <<repo>>/backstage && CI=1 PLAYWRIGHT_URL={{url}} yarn playwright test packages/app/e2e-tests/fleet-voice-controls.test.ts --retries 0 --reporter line --output /tmp/fleet-e2e
   - name: voice
     # A real recording as Chrome's microphone, the real mic button, the router's own turn record.
-    timeout: 420
     cmd: cd <<repo>>/backstage && CI=1 PLAYWRIGHT_URL={{url}} yarn playwright test packages/app/e2e-tests/fleet-voice.test.ts --retries 0 --reporter line --output /tmp/fleet-e2e

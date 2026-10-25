@@ -111,7 +111,12 @@ def emit(report: pathlib.Path) -> int:
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with (
+            urllib.request.urlopen(
+                req,
+                timeout=20,  # estate:bound one HTTP emit; a hang must not outlive the payload
+            ) as resp
+        ):
             code = resp.status
     except urllib.error.HTTPError as e:
         code = e.code

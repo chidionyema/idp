@@ -13,7 +13,9 @@ args:
   github: {type: string, default: "chidionyema/idp,chidionyema/crew"}
   all: {type: bool, default: false}
 steps:
+    # Step bound removed 2026-10-25: time is declared once, as this intent's budget
+    # (docs/decisions/0043-the-bound-lives-at-the-door.md). A number here could only be a
+    # guess about someone else's work, and where it fired it invented a failure.
   - name: work-audit
-    timeout: 900
     cmd: >
       python3 ~/.estate/libexec/work-audit.py {{days}} {{github}} {{all}}
