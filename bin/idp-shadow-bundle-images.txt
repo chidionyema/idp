@@ -16,3 +16,6 @@ ghcr.io/chidionyema/postgres-partman:18.1-postgres-partman
 # sync with whatever version `fluxcd.io/install.sh` installs today, and the
 # kustomize-controller / source-controller / helm-controller / notification-
 # controller tags move on Flux's own release cadence.
+quay.io/jetstack/cert-manager-controller:v1.15.3
+quay.io/jetstack/cert-manager-cainjector:v1.15.3
+quay.io/jetstack/cert-manager-webhook:v1.15.3
