@@ -27,11 +27,18 @@ A judgment is not a fact with a softer check: it is a claim whose rung is visibl
 so "the founder prefers prose" can be stored *as an attributed statement* and never
 be mistaken for something a command proved. Anything that fits no rung is refused.
 
-What this store cannot do on its own: force every claim through it (closure).
-That is the memory path (issue #6857); until then this grades what is stored, it
-does not grade everything that is said.
+`probe` grades ONE claim without storing it, so a claim can earn its rung wherever it is
+written -- the memory door (mcp/plugins/estate_memory.py) shells out to this verb instead of
+re-implementing `_run`, its timeout or its quoting. There is one checker: a claim that is not
+verified here is not verified anywhere, and `probe` exits 0 only when the claim is verified
+now (a judgment is attributed, never verified).
 
-Exit codes: 0 all PASS, 1 any failure, 2 usage/store error.
+What this store cannot do on its own: force every claim through it (closure). That is the
+memory write path, and it was not a fact of this tool until the door called it: see
+`platform/estate/memory/` for what stores a memory and `bin/memory-gate` for the rung that
+proves a false claim cannot come back verified.
+
+Exit codes: 0 all PASS, 1 any failure, 2 usage/store error. For `probe`: 0 verified, 1 not.
 """
 
 from __future__ import annotations
@@ -309,6 +316,116 @@ def verify_row(row: dict, tol: float) -> tuple[str, str]:
     return PASS, out
 
 
+def _probe_result(verdict: str, rung: str, verified: bool, detail: str) -> dict:
+    return {
+        "verdict": verdict,
+        "rung": rung,
+        "verified": bool(verified),
+        "detail": detail,
+    }
+
+
+def probe_claim(
+    kind: str = "",
+    instrument: str = "",
+    evidence: str = "",
+    authority: str = "",
+    expect: str | None = None,
+    tol: float = 0.0,
+) -> dict:
+    """Grade one claim without storing it: {verdict, rung, verified, detail}.
+
+    The rung is earned here, not asserted by the caller: `verified` is true only when a
+    measurement actually ran and reproduced (R1) or the named bytes are there now (R2). A
+    judgment comes back PASS at R3-attributed and NEVER verified -- that is the whole reason
+    the ladder exists, and a caller that reads only `verified` cannot mistake it for a
+    measurement.
+    """
+    kind = kind or (
+        "fact"
+        if instrument
+        else "artefact"
+        if evidence
+        else "judgment"
+        if authority
+        else ""
+    )
+    if kind == "fact":
+        if not instrument:
+            return _probe_result(
+                UNWITNESSED, RUNG["fact"], False, "a fact needs an instrument: nothing ran"
+            )
+        ok, out = _run(instrument)
+        if not ok:
+            verdict = UNWITNESSED if out.startswith("UNWITNESSED:") else CONTRADICTED
+            return _probe_result(verdict, RUNG["fact"], False, out)
+        if expect is not None and not _same(out, expect, tol):
+            return _probe_result(
+                CONTRADICTED,
+                RUNG["fact"],
+                False,
+                f"instrument prints {out!r}, the claim says {expect!r}",
+            )
+        return _probe_result(PASS, RUNG["fact"], True, out)
+
+    if kind == "artefact":
+        if not evidence:
+            return _probe_result(
+                UNWITNESSED,
+                RUNG["artefact"],
+                False,
+                "an artefact claim needs an evidence path: nothing is bound",
+            )
+        now = _digest(evidence)
+        if now is None:
+            return _probe_result(
+                UNWITNESSED,
+                RUNG["artefact"],
+                False,
+                f"no artefact at {evidence}: nothing was witnessed",
+            )
+        return _probe_result(PASS, RUNG["artefact"], True, f"{evidence} is {now}")
+
+    if kind == "judgment":
+        if not authority:
+            return _probe_result(
+                UNWITNESSED,
+                RUNG["judgment"],
+                False,
+                "judgment with no authority: nobody is named for it",
+            )
+        return _probe_result(
+            PASS, RUNG["judgment"], False, f"attributed, not verified: {authority}"
+        )
+
+    return _probe_result(
+        UNWITNESSED,
+        "",
+        False,
+        "no rung: name an instrument (R1), an evidence path (R2) or an authority (R3)",
+    )
+
+
+def cmd_probe(a) -> int:
+    """Exit 0 only when the claim is verified now. A judgment is PASS and not verified."""
+    result = probe_claim(
+        a.kind or "",
+        a.instrument or "",
+        a.evidence or "",
+        a.authority or "",
+        a.expect,
+        a.tolerance,
+    )
+    if a.json:
+        print(json.dumps(result, sort_keys=True))
+    else:
+        print(
+            f"{result['verdict']:13} {result['rung'] or 'no-rung':13} "
+            f"verified={'true' if result['verified'] else 'false'} {result['detail']}"
+        )
+    return 0 if result["verified"] else 1
+
+
 def cmd_add(a) -> int:
     kind = a.kind
     anchor = ""
@@ -566,6 +683,25 @@ def main(argv=None) -> int:
         "verify", help="re-execute every stored instrument and fail closed"
     )
     ve.set_defaults(func=cmd_verify)
+
+    pr = sub.add_parser(
+        "probe",
+        help="grade ONE claim without storing it; exit 0 only when it is verified now",
+    )
+    pr.add_argument(
+        "--kind",
+        default="",
+        choices=("", "fact", "artefact", "judgment"),
+        help="omit to infer from the evidence supplied",
+    )
+    pr.add_argument("--instrument", help="the command that must reproduce the claim (R1)")
+    pr.add_argument("--evidence", help="the file the claim is bound to (R2)")
+    pr.add_argument("--authority", help="who asserted it and where (R3)")
+    pr.add_argument("--expect", help="the value the claim asserts; a mismatch is CONTRADICTED")
+    # SUPPRESS so `probe --json` and `--json probe` both mean the same thing; the parent's
+    # default would otherwise be overwritten by this parser's.
+    pr.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
+    pr.set_defaults(func=cmd_probe)
 
     re_ = sub.add_parser(
         "retire", help="stop grading a fact, keeping it and its reason on record"

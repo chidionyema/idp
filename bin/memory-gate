@@ -92,7 +92,67 @@ if [ "$CHECK" = 1 ]; then
   [ -f "$IDP/docs/decisions/0036-one-memory-plane-and-it-is-cortex.md" ] \
     || bad "decision 0036 is missing"
 
-  [ "$fail" = 0 ] && ok "offline checks pass (door, store, schema, spec, decision)"
+  # 6. A memory write earns its rung (2026-10-23, docs/research/2026-10-23-claims-carry-their-
+  #    checker.md). Every write used to be stamped raw_source whatever it said, so a measured
+  #    number and a guess arrived identical and recall had nothing to grade. These rungs drive
+  #    the ONE checker (bin/estate-claim-check probe) and then the door itself, and they fail
+  #    when a claim nothing measured comes back verified -- which is the only failure that
+  #    matters here.
+  CC="$IDP/bin/estate-claim-check"
+  if [ -x "$CC" ]; then
+    if "$CC" probe --instrument 'echo 3' >/dev/null 2>&1; then
+      ok "a claim with a real instrument is verified (exit 0)"
+    else
+      bad "$CC probe exited non-zero for a reproducible claim -- nothing can earn R1"
+    fi
+    for false_claim in "--instrument false" "--instrument true"; do
+      out="$("$CC" probe --json $false_claim 2>&1)"; rc=$?
+      case "$out" in
+        *'"verified": false'*) [ "$rc" -ne 0 ] || bad "a false claim (probe $false_claim) came back verified" ;;
+        *) bad "probe $false_claim never graded: $out" ;;
+      esac
+    done
+    case "$("$CC" probe --json --authority 'memory-gate rung' 2>&1)" in
+      *'"rung": "R3-attributed"'*'"verified": false'*) ok "a judgment is attributed, never verified" ;;
+      *) bad "a judgment came back as anything but attributed-and-unverified" ;;
+    esac
+  else
+    bad "bin/estate-claim-check is missing or not executable -- a memory cannot earn a rung"
+  fi
+
+  # 7. The door uses that checker, so the tier an agent's write actually gets is the one the
+  #    evidence earned. Driven through mcp/plugins/estate_memory.py itself, offline: the grade
+  #    is computed before the store is touched, so no cluster is needed to prove it.
+  if [ -f "$EM" ]; then
+    rungs="$(cd "$IDP" && python3 - "$EM" <<'PY' 2>&1
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("em", sys.argv[1])
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+cases = [
+    ("instrument", dict(instrument="echo 3"), "verified_internal", "R1-exec"),
+    ("false", dict(instrument="false"), "raw_source", "R1-exec"),
+    ("silent", dict(instrument="true"), "raw_source", "R1-exec"),
+    ("judgment", dict(authority="memory-gate rung"), "raw_source", "R3-attributed"),
+    ("nothing", dict(), "raw_source", ""),
+]
+bad = 0
+for label, kw, want_tier, want_rung in cases:
+    r = m.do_remember("memory-gate rung " + label, "memory-gate", "fact", [], "gate", **kw)
+    got_tier, got_rung = r.get("trust_tier"), r.get("rung", "")
+    if got_tier != want_tier or got_rung != want_rung:
+        print(f"{label}: want {want_tier}/{want_rung}, got {got_tier}/{got_rung}")
+        bad = 1
+print("GRADED" if not bad else "UNGRADED")
+PY
+)"
+    case "$rungs" in
+      *GRADED*) ok "the door earns its rung: verified only with evidence, raw_source otherwise" ;;
+      *) bad "the memory door mislabels a claim -- $rungs" ;;
+    esac
+  fi
+
+  [ "$fail" = 0 ] && ok "offline checks pass (door, store, schema, spec, decision, claim rungs)"
   exit "$fail"
 fi
 
@@ -137,4 +197,28 @@ case "$OUT" in
 esac
 
 ok "memory is operating: written and recalled through the one door"
+
+# Rung 3 -- a memory earns its rung through the real door. Rung 2 proves the store works;
+# this proves what it will vouch for. A reproducible claim must arrive verified_internal and
+# a false one must not, or the tier recall grades by means nothing.
+RUNG_OUT="$(kubectl -n "$NS" exec "$POD" -c estate-mcp -- python -c "
+import importlib.util
+spec=importlib.util.spec_from_file_location('em','/app/plugins/estate_memory.py')
+m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+print('CHECKER', m.claim_checker())
+ok=m.do_remember('memory-gate rung reproducible $PROBE','memory-gate','fact',['gate'],'gate',instrument='echo 3')
+print('VERIFIED', ok.get('trust_tier'), ok.get('rung'))
+no=m.do_remember('memory-gate rung false $PROBE','memory-gate','fact',['gate'],'gate',instrument='false')
+print('FALSE_CLAIM', no.get('trust_tier'), no.get('rung'))
+" 2>/dev/null)"
+case "$RUNG_OUT" in
+  *"VERIFIED verified_internal R1-exec"*) ok "a reproducible claim earns verified_internal through the door" ;;
+  *) bad "a reproducible claim did not earn its rung -- $RUNG_OUT"; exit 1 ;;
+esac
+case "$RUNG_OUT" in
+  *"FALSE_CLAIM raw_source"*) ok "a false claim stays raw_source (never verified)" ;;
+  *) bad "a false claim came back verified -- the tier means nothing -- $RUNG_OUT"; exit 1 ;;
+esac
+
+ok "memory is operating AND graded: written, recalled, and each write labelled by its evidence"
 exit 0

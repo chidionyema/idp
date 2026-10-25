@@ -44,6 +44,22 @@ CONFIG (LAW 46 -- no host or port is a literal in code that decides behaviour):
   ESTATE_MEMORY_TIMEOUT_S    per-call ceiling (default 30)
   ESTATE_MEMORY_BYTE_CEILING recall payload ceiling in bytes (default 8000), the same
                               posture as get_workload_state: summarise, never flood a context
+  ESTATE_CLAIM_CHECK         the one claim checker (default: the repo's bin/estate-claim-check)
+
+A MEMORY EARNS ITS RUNG (2026-10-23, docs/research/2026-10-23-claims-carry-their-checker.md).
+Every write used to be stamped `trust_tier: raw_source` no matter what it said -- a measured
+number and a guess arrived identical, so recall had nothing to grade. Now the caller may
+attach the evidence for the claim (an instrument, an evidence path, an authority) and the door
+asks the ONE checker, `bin/estate-claim-check probe`, which runs the instrument with the same
+`_run`, timeout and quoting that `verify` uses. There is no second implementation here.
+  verified, R1/R2  -> trust_tier `verified_internal` (a command re-produced it, or the bytes
+                      are there now) -- and only then
+  anything else    -> trust_tier `raw_source`, with the verdict and rung kept in provenance so
+                      a reader can see WHY nothing vouched for it
+A judgment is attributed, never verified: it is stored as `raw_source` with rung
+`R3-attributed`, exactly as the claim ladder says. With no checker reachable (an image without
+it) the rung is `unwitnessed` and the tier stays `raw_source` -- the door never borrows a
+verification it did not get.
 
 SECRETS (LAW 21). The surface token is read from its mounted file on every call and sent only
 as the Authorization header; it is never logged or returned. What comes back is what the
@@ -60,6 +76,8 @@ import hashlib
 import json
 import os
 import re
+import subprocess
+import sys
 import uuid
 import urllib.error
 import urllib.parse
@@ -193,7 +211,13 @@ def _harness_call(
 
 
 def build_metadata(
-    subject: str, kind: str, tags, source: str, runtime: str = ""
+    subject: str,
+    kind: str,
+    tags,
+    source: str,
+    runtime: str = "",
+    rung: str = "",
+    verdict: str = "",
 ) -> dict:
     """The structured part of a memory, stored as its provenance. Every value is a string,
     and every key is one `recall` can filter on."""
@@ -209,7 +233,90 @@ def build_metadata(
         meta["tags"] = ",".join(clean_tags)
     if runtime.strip():
         meta["runtime"] = runtime.strip().lower()
+    # The rung travels with the memory, so `recall` can show what it was written at instead of
+    # the reader having to trust the tier alone.
+    if rung:
+        meta["rung"] = rung
+    if verdict:
+        meta["evidence"] = verdict
     return meta
+
+
+CHECKER_NAMES = ("estate-claim-check",)
+PROBE_TIMEOUT_S = 30
+
+
+def claim_checker() -> str:
+    """The one checker: $ESTATE_CLAIM_CHECK, else the nearest `bin/estate-claim-check` above
+    this file (the repo and its worktrees), else empty."""
+    env = os.environ.get("ESTATE_CLAIM_CHECK", "").strip()
+    if env:
+        return env if os.path.isfile(env) else ""
+    here = os.path.dirname(os.path.abspath(__file__))
+    d = here
+    while True:
+        cand = os.path.join(d, "bin", CHECKER_NAMES[0])
+        if os.path.isfile(cand):
+            return cand
+        parent = os.path.dirname(d)
+        if parent == d:
+            return ""
+        d = parent
+
+
+def grade_claim(instrument: str = "", evidence: str = "", authority: str = "") -> dict:
+    """Ask the one checker to grade this claim: {rung, verdict, verified, detail}.
+
+    Never raises: a store (or a checker) that is down must not take the agent's write with it,
+    and an unreachable checker means unwitnessed, not verified.
+    """
+    if not (instrument or evidence or authority):
+        return {
+            "rung": "",
+            "verdict": "UNWITNESSED",
+            "verified": False,
+            "detail": "no evidence attached to the claim",
+        }
+    checker = claim_checker()
+    if not checker:
+        return {
+            "rung": "unwitnessed",
+            "verdict": "UNWITNESSED",
+            "verified": False,
+            "detail": "no claim checker in this tree (ESTATE_CLAIM_CHECK unset)",
+        }
+    argv = [sys.executable, checker, "probe", "--json"]
+    if instrument:
+        argv += ["--instrument", instrument]
+    if evidence:
+        argv += ["--evidence", evidence]
+    if authority:
+        argv += ["--authority", authority]
+    try:
+        p = subprocess.run(  # noqa: S603 - fixed argv, the claim is data
+            argv, capture_output=True, text=True, timeout=PROBE_TIMEOUT_S, check=False
+        )
+        body = json.loads(p.stdout or "{}")
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        return {
+            "rung": "unwitnessed",
+            "verdict": "UNWITNESSED",
+            "verified": False,
+            "detail": f"checker could not grade the claim: {exc}",
+        }
+    if not isinstance(body, dict) or "verified" not in body:
+        return {
+            "rung": "unwitnessed",
+            "verdict": "UNWITNESSED",
+            "verified": False,
+            "detail": "checker printed no verdict",
+        }
+    return {
+        "rung": str(body.get("rung") or ""),
+        "verdict": str(body.get("verdict") or "UNWITNESSED"),
+        "verified": bool(body.get("verified")),
+        "detail": str(body.get("detail") or "")[:300],
+    }
 
 
 def fit_under_ceiling(memories: list, ceiling: int) -> list:
@@ -295,30 +402,47 @@ def do_remember(
     source: str,
     cfg=None,
     runtime: str = "",
+    instrument: str = "",
+    evidence: str = "",
+    authority: str = "",
 ) -> dict:
     cfg = cfg or config()
+    # The rung is earned before the store is touched: a write that cannot reach the store still
+    # reports what its claim was worth, and the gate grades exactly that.
+    grade = grade_claim(instrument, evidence, authority)
+    trust_tier = "verified_internal" if grade["verified"] else "raw_source"
+    rung = {
+        "rung": grade["rung"],
+        "trust_tier": trust_tier,
+        "verdict": grade["verdict"],
+        "evidence": grade["detail"],
+    }
     if not cfg["url"]:
         return {
             "written": False,
             "error": "ESTATE_MEMORY_URL is unset; no memory store configured",
+            **rung,
         }
     if not content.strip():
         return {
             "written": False,
             "error": "content is empty; a memory with no content is noise",
+            **rung,
         }
-    metadata = build_metadata(subject, kind, tags, source, runtime)
+    metadata = build_metadata(
+        subject, kind, tags, source, runtime, grade["rung"], grade["verdict"]
+    )
     key = memory_key(content.strip(), metadata)
     payload = {
         "namespace": cfg["namespace"],
         "key": key,
         "content": content.strip(),
-        "trust_tier": "raw_source",
+        "trust_tier": trust_tier,
         "provenance": metadata,
     }
     body, error = call(cfg, "PUT", key, payload)
     if error:
-        return {"written": False, "error": error, "metadata": metadata}
+        return {"written": False, "error": error, "metadata": metadata, **rung}
 
     # Active Memory consolidation: feed the written fact to the harness so ephemeral
     # facts are promoted to scratchpad, global preferences are gated, and bi-temporal
@@ -353,6 +477,7 @@ def do_remember(
         "key": key,
         "version": (body or {}).get("version"),
         "metadata": metadata,
+        **rung,
     }
 
 
@@ -502,6 +627,9 @@ def register_mcp_tools(datasette, mcp):
         tags: "list[str] | None" = None,
         source: str = "mcp",
         runtime: str = "",
+        instrument: str = "",
+        evidence: str = "",
+        authority: str = "",
     ) -> dict:
         """Write one memory to the estate's permanent store, in the estate's structured form.
 
@@ -511,11 +639,30 @@ def register_mcp_tools(datasette, mcp):
         `recall` can name later, which is the whole reason they are separate arguments.
         `runtime` is the agent runtime writing it (claude-code, cursor, gemini, opencode, otto).
 
+        A write earns its rung, so attach the evidence when you have it: `instrument` is the
+        command that re-produces what you are claiming (it is RUN, and the memory is
+        `verified_internal` only if it returns nonzero-free output now), `evidence` is a file
+        path the claim is bound to (its digest is taken), `authority` is who asserted it and
+        where for a judgment that cannot be measured (attributed, never verified). With none
+        of the three the memory is stored as `raw_source` and says so -- that is not a
+        failure, it is an honest label, and the tier is what a reader grades it by.
+
         The same namespace serves every surface, so a memory written here is one an Otto chat
-        recalls, and the other way round. Returns {"written": bool, ...}; a store that is
-        down returns written false with an error and never raises.
+        recalls, and the other way round. Returns {"written": bool, "rung", "verdict",
+        "trust_tier", ...}; a store that is down returns written false with an error and
+        never raises.
         """
-        return do_remember(content, subject, kind, tags, source, runtime=runtime)
+        return do_remember(
+            content,
+            subject,
+            kind,
+            tags,
+            source,
+            runtime=runtime,
+            instrument=instrument,
+            evidence=evidence,
+            authority=authority,
+        )
 
     @mcp.tool()
     async def recall(

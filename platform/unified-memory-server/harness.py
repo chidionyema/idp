@@ -80,6 +80,11 @@ class BiTemporalFact:
     version: int
     status: FactLifecycleStatus
     superseded_by_id: Optional[str]
+    # What vouched for this fact when it was written: "verified_internal" (a checker re-produced
+    # it), "user_direct" (the founder said it), "raw_source" (an agent wrote it and nothing has
+    # checked). The brief's SELECT has always read this column; until 2026-10-23 the adapter
+    # dropped it, so every row rendered as if it had been verified.
+    trust_tier: str = "raw_source"
 
 
 @dataclass
@@ -761,6 +766,7 @@ class PostgresCortexAdapter:
                     version=int(row.get("version", 1)),
                     status="active",
                     superseded_by_id=None,
+                    trust_tier=str(row.get("trust_tier") or "raw_source"),
                 )
             )
         return facts
@@ -1171,7 +1177,14 @@ class ActiveMemoryEngine:
             date_tag = datetime.fromtimestamp(
                 fact.source_event_at / 1000, tz=timezone.utc
             ).strftime("%Y-%m-%d")
-            line = f"- [{fact.scope.upper()} | as of {date_tag}] {fact.subject} {fact.predicate}: {fact.object}{artifact_tag}"
+            # Each row states its own evidence state. The header used to claim the whole brief
+            # was "VERIFIED", which nothing here measured: a fact an agent wrote from memory
+            # and a fact a command re-produced rendered identically.
+            tier = (getattr(fact, "trust_tier", "") or "raw_source").strip()
+            line = (
+                f"- [{fact.scope.upper()} | {tier} | as of {date_tag}] "
+                f"{fact.subject} {fact.predicate}: {fact.object}{artifact_tag}"
+            )
             line_tokens = (len(line) + 3) // 4
 
             if estimated_tokens + line_tokens > _MAX_BRIEF_TOKENS:
@@ -1189,9 +1202,11 @@ class ActiveMemoryEngine:
             brief = ""
         else:
             brief = (
-                "=== ACTIVE MEMORY BRIEF (VERIFIED & EVENT-TIME ORDERED) ===\n"
-                "Use these verified facts and artifact pointers directly. Do not use older artifact versions "
-                "if a newer hash is listed:\n"
+                "=== ACTIVE MEMORY BRIEF (each row labelled by its own evidence state) ===\n"
+                "Read the label on each row, not this header: `verified_internal` was re-produced "
+                "by a checker, `user_direct` is what the founder said, `raw_source` is what an "
+                "agent wrote and nothing has checked. Do not use older artifact versions if a "
+                "newer hash is listed:\n"
                 + "\n".join(lines)
                 + scratchpad_section
                 + "\n==========================================================="
