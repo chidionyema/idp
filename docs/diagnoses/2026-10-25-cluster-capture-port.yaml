@@ -1,0 +1,111 @@
+description: 'Should the cluster router carry the estate capture modules (graph spool
+  + signed action ledger) now, or wait for the P5 Postgres consolidation? Cloud-primary
+  went live 2026-10-25 (P2.T4); until this port lands, every cloud-routed call bypasses
+  the estate graph and the accountability ledger -- the estate''s memory and its audit
+  trail only see laptop-routed calls. Context: migration P2.T2 documented gap + dated
+  fix; design settled in ~/.estate/migration/log.md and decision/capture-port-design.'
+hypotheses:
+- name: H1
+  description: port now -- mount the modules via the callbacks ConfigMap, sign with
+    a new cluster-sphere key, accept per-pod capture until P5 consolidates the store
+  prior: 0.55
+- name: H2
+  description: wait for P5 -- land Postgres consolidation first, then wire capture
+    once, into its final home
+  prior: 0.3
+- name: H3
+  description: skip -- accept that cloud-routed calls are uncaptured; laptop capture
+    suffices for the estate's memory and audit needs
+  prior: 0.15
+evidence:
+- name: cloud-primary is live (P2.T4, 2026-10-25)
+  observed:
+    default_spend_on_cluster: 1
+    captured_while_on_cluster: 0
+  likelihoods:
+    H1:
+      default_spend_on_cluster: 0.9
+      captured_while_on_cluster: 0.9
+    H2:
+      default_spend_on_cluster: 0.7
+      captured_while_on_cluster: 0.3
+    H3:
+      default_spend_on_cluster: 0.3
+      captured_while_on_cluster: 0.1
+- name: estate laws (one of each layer; proof-not-assertion; the laptop is one road,
+    never where data lives)
+  observed:
+    memory_layer_requires_capture: 1
+    audit_layer_requires_signed_chain: 1
+  likelihoods:
+    H1:
+      memory_layer_requires_capture: 0.9
+      audit_layer_requires_signed_chain: 0.9
+    H2:
+      memory_layer_requires_capture: 0.5
+      audit_layer_requires_signed_chain: 0.5
+    H3:
+      memory_layer_requires_capture: 0.1
+      audit_layer_requires_signed_chain: 0.1
+- name: port cost and risk
+  observed:
+    modules_env_abstracted: 1
+    key_provisioned_in_vault: 1
+    per_pod_store_until_p5: 1
+  likelihoods:
+    H1:
+      modules_env_abstracted: 0.8
+      key_provisioned_in_vault: 0.9
+      per_pod_store_until_p5: 0.6
+    H2:
+      modules_env_abstracted: 0.8
+      key_provisioned_in_vault: 0.5
+      per_pod_store_until_p5: 0.9
+    H3:
+      modules_env_abstracted: 0.5
+      key_provisioned_in_vault: 0.3
+      per_pod_store_until_p5: 0.3
+- name: uncaptured-window length each plan predicts (still open after 7 days?)
+  observed:
+    window_still_open_after_7d: 0
+  likelihoods:
+    H1:
+      window_still_open_after_7d: 0.15
+    H2:
+      window_still_open_after_7d: 0.85
+    H3:
+      window_still_open_after_7d: 0.9
+- name: reversibility and coupling asymmetry
+  observed:
+    revert_is_configmap_entry: 1
+    coupling_grows_as_p5_lands: 1
+  likelihoods:
+    H1:
+      revert_is_configmap_entry: 0.85
+      coupling_grows_as_p5_lands: 0.8
+    H2:
+      revert_is_configmap_entry: 0.5
+      coupling_grows_as_p5_lands: 0.4
+    H3:
+      revert_is_configmap_entry: 0.5
+      coupling_grows_as_p5_lands: 0.5
+- name: reversibility and coupling asymmetry
+  observed:
+    revert_is_configmap_entry: 1
+    coupling_grows_as_p5_lands: 1
+  likelihoods:
+    H1:
+      revert_is_configmap_entry: 0.85
+      coupling_grows_as_p5_lands: 0.8
+    H2:
+      revert_is_configmap_entry: 0.5
+      coupling_grows_as_p5_lands: 0.4
+    H3:
+      revert_is_configmap_entry: 0.5
+      coupling_grows_as_p5_lands: 0.5
+posteriors:
+  H1: 0.9906336682
+  H2: 0.0093506777
+  H3: 1.5654e-05
+winner: H1
+computed_at: '2026-10-25T00:13:15Z'
