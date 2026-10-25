@@ -1,0 +1,91 @@
+description: 'Migration P2.T4: which renderer should carry the estate''s primary model
+  spend -- the OKE cluster litellm, the laptop litellm, or a per-lane split? The front
+  currently prefers the laptop slot and falls back to the cloud; the flip reverses
+  that order. Context: docs/specs/2026-10-24-estate-cloud-migration-plan.md Phase
+  2; founder directive 2026-10-24 "drive this migration to cloud through" and 2026-10-25
+  "drive the migration to fully operational".'
+hypotheses:
+- name: H1
+  description: cluster primary -- the front routes new spend to llm.mumchimp.com first,
+    laptop slots stay up as the fallback (founder ruling 2026-09-26 keeps them alive)
+  prior: 0.5
+- name: H2
+  description: laptop primary -- keep today's order; the cloud stays the fallback
+  prior: 0.35
+- name: H3
+  description: per-lane split -- some lanes pinned local (e.g. ollama, cheap lanes),
+    others pinned cloud; no single primary
+  prior: 0.15
+evidence:
+- name: laptop router availability on 2026-10-24 (the outage this migration ends)
+  observed:
+    laptop_wedged_outages: 2
+    cluster_outages: 0
+  likelihoods:
+    H1:
+      laptop_wedged_outages: 0.9
+      cluster_outages: 0.1
+    H2:
+      laptop_wedged_outages: 0.3
+      cluster_outages: 0.7
+    H3:
+      laptop_wedged_outages: 0.5
+      cluster_outages: 0.5
+- name: failover drill 2026-10-25 (zero local slots, calm machine)
+  observed:
+    cloud_completion_ok: 1
+    cloud_latency_secs: 1.57
+  likelihoods:
+    H1:
+      cloud_completion_ok: 0.9
+      cloud_latency_secs: 0.5
+    H2:
+      cloud_completion_ok: 0.5
+      cloud_latency_secs: 0.5
+    H3:
+      cloud_completion_ok: 0.5
+      cloud_latency_secs: 0.5
+- name: capture/ledger parity (P2.T2 measured)
+  observed:
+    cloud_bypasses_graph_and_ledger: 1
+    laptop_captures_both: 1
+  likelihoods:
+    H1:
+      cloud_bypasses_graph_and_ledger: 0.3
+      laptop_captures_both: 0.7
+    H2:
+      cloud_bypasses_graph_and_ledger: 0.6
+      laptop_captures_both: 0.4
+    H3:
+      cloud_bypasses_graph_and_ledger: 0.5
+      laptop_captures_both: 0.5
+- name: auth and key parity (P2.T1 measured)
+  observed:
+    laptop_key_works_on_cluster: 1
+  likelihoods:
+    H1:
+      laptop_key_works_on_cluster: 0.8
+    H2:
+      laptop_key_works_on_cluster: 0.5
+    H3:
+      laptop_key_works_on_cluster: 0.5
+- name: rollback and blast radius
+  observed:
+    revert_is_one_lane: 1
+    clients_unreconfigured: 1
+  likelihoods:
+    H1:
+      revert_is_one_lane: 0.8
+      clients_unreconfigured: 0.8
+    H2:
+      revert_is_one_lane: 0.6
+      clients_unreconfigured: 0.6
+    H3:
+      revert_is_one_lane: 0.3
+      clients_unreconfigured: 0.3
+posteriors:
+  H1: 0.9777623595
+  H2: 0.016975041
+  H3: 0.0052625995
+winner: H1
+computed_at: '2026-10-24T23:39:36Z'
