@@ -1,0 +1,89 @@
+description: "The laptop router slot sat wedged for 4+ hours on 2026-10-24 (load peaked\
+  \ ~370): every agent session starved while the watchdog log read \"probe slow:curl=28\
+  \ http=000 -- listening, not restarted\" the whole time. The slot had to be SIGKILLed\
+  \ by hand to recover. Question: was the router truly wedged (and the watchdog blind\
+  \ to that failure class), was the router healthy and merely the machine overloaded,\
+  \ or was the watchdog probing the wrong thing?\nContext: migration spec docs/specs/2026-10-24-estate-cloud-migration-plan.md\
+  \ \xA71.1; watchdog platform/llm/watchdog.py as of the 2026-10-02 refused-only rule."
+hypotheses:
+- name: H1
+  description: router truly wedged -- the litellm process accepted TCP but never answered
+    HTTP, and the watchdog's refused-only rule cannot see that failure class
+  prior: 0.55
+- name: H2
+  description: router healthy, machine overloaded -- probes timed out only because
+    load ~370 starved every process, so the watchdog behaved correctly
+  prior: 0.3
+- name: H3
+  description: watchdog probed the wrong target -- port/label mismatch meant a healthy
+    router was never actually probed
+  prior: 0.15
+evidence:
+- name: manual SIGKILL of the old slot (PID 1610) followed by launcher boot of a new
+    slot
+  observed:
+    recovered_with_restart: 1
+    recovered_without_restart: 0
+  likelihoods:
+    H1:
+      recovered_with_restart: 0.9
+      recovered_without_restart: 0.1
+    H2:
+      recovered_with_restart: 0.4
+      recovered_without_restart: 0.6
+    H3:
+      recovered_with_restart: 0.5
+      recovered_without_restart: 0.5
+- name: all agent clients (pi x7, opencode, Kimi Code) saw empty replies/timeouts
+    for hours
+  observed:
+    connect_ok_http_fail: 1
+    healthy_responses: 0
+  likelihoods:
+    H1:
+      connect_ok_http_fail: 0.9
+      healthy_responses: 0.1
+    H2:
+      connect_ok_http_fail: 0.6
+      healthy_responses: 0.4
+    H3:
+      connect_ok_http_fail: 0.3
+      healthy_responses: 0.7
+- name: watchdog log across the outage window
+  observed:
+    timeout_verdicts_only: 1
+    refused_verdicts: 0
+    restarts: 0
+  likelihoods:
+    H1:
+      timeout_verdicts_only: 0.8
+      refused_verdicts: 0.1
+      restarts: 0.1
+    H2:
+      timeout_verdicts_only: 0.8
+      refused_verdicts: 0.1
+      restarts: 0.1
+    H3:
+      timeout_verdicts_only: 0.2
+      refused_verdicts: 0.6
+      restarts: 0.2
+- name: probes of the REPLACED slot on :4002 during the same high-load window
+  observed:
+    answered_200: 1
+    timed_out: 0
+  likelihoods:
+    H1:
+      answered_200: 0.85
+      timed_out: 0.15
+    H2:
+      answered_200: 0.15
+      timed_out: 0.85
+    H3:
+      answered_200: 0.6
+      timed_out: 0.4
+posteriors:
+  H1: 0.9639175258
+  H2: 0.0274914089
+  H3: 0.0085910653
+winner: H1
+computed_at: '2026-10-24T20:32:36Z'
