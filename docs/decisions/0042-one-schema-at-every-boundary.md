@@ -81,6 +81,13 @@ the eleventh copy (AGENTS.md §6) and are refused: `docs/research/2026-10-25-con
   --verify` refuses one, because a number without a harvested row is an assertion.
 - R4 is documented as measuring the **documentation gap** the door is about to enforce, not a
   runtime difference: `resolve_args` does not read `required` today.
+- The digest's headline numbers are rows in the witness store (`bin/estate-claim-check add`),
+  so `bin/idp-ci`'s facts rung re-executed them while they were live -- `facts.jsonl: 4/4 active
+  facts re-executed, verdict: PASS`, measured 2026-10-25. They were written with
+  `valid_for_s=86400` and have since aged into `retired`, which is the store working as designed:
+  a measurement is a fact with a validity window, not a permanent assertion. That is why the
+  permanent check on the documents is `--verify` (citations) and the gate's baseline (violations),
+  and not a remembered number.
 - The estate-wide ledger turns "structured formats" from a proposal into a map with one open cell
   (shape 1, validate — this change) and one live duplicate (shape 2's two PoBR copies), so the next
   lane does not have to re-derive either. Its citations are held to the same rule as the digest:
