@@ -2,19 +2,23 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- The laptop's estate bus: JetStream on loopback. Voice steers (estate.agent.sovereign.<session>.steer)
      land here and any MCP agent reads them via mcp/plugins/voice.py. The ESTATE_AGENT stream is created
-     by nats_adapter._ensure_stream on first publish, not by hand. -->
+     by nats_adapter._ensure_stream on first publish, not by hand.
+
+     WHY THE BINARY IS EXEC'D THROUGH /bin/sh (measured 2026-10-24). Launched directly, launchd hands
+     this 19 MB unsigned binary to xpcproxy and the job sits at `state = running` forever without ever
+     binding: no listener, no log line, `pgrep` shows an R-state process with 104 KB RSS. The same
+     binary, same arguments, same store, started by hand on a fresh store greets a client in under a
+     second, and started by launchd behind `sh -c exec` it also greets in under a second. So the defect
+     is the direct exec, not the broker: the sh wrapper is what makes a supervised broker possible on
+     this machine, and without it every publish the door makes lands nowhere while launchd reports the
+     job as healthy. -->
 <plist version="1.0"><dict>
   <key>Label</key><string>ai.estate.nats</string>
   <key>ProcessType</key><string>Background</string>
   <key>ProgramArguments</key><array>
-    <string>${HOME}/.cache/estate-tools/nats-server</string>
-    <string>--jetstream</string>
-    <string>--store_dir</string>
-    <string>${HOME}/.estate/nats</string>
-    <string>--addr</string>
-    <string>127.0.0.1</string>
-    <string>--port</string>
-    <string>4222</string>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>exec "${HOME}/.cache/estate-tools/nats-server" --jetstream --store_dir "${HOME}/.estate/nats" --addr 127.0.0.1 --port 4222 --http_port 8222</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>

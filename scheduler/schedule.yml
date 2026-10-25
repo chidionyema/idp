@@ -87,6 +87,21 @@ jobs:
     cron: '*/10 * * * *'
     skip_on_battery: false
     timeout_s: 900
+  # ai.estate.bus-ensure keeps the broker beside the door answering. It probes the NATS protocol on
+  # loopback and starts the broker detached only when nothing answers. Measured 2026-10-24: the
+  # launchd job for the same broker reported `state = running` with a live pid and no listener
+  # (twice), so the supervisor is not evidence -- the protocol answer is. Every five minutes,
+  # because the door publishes a friction event per refusal and a silent broker means the reward
+  # signal is blind exactly when an agent is stuck enough to be refusing work.
+  ai.estate.bus-ensure:
+    runs_on: mac
+    runs_on_ref: crew#516
+    command:
+    - ~/.estate/bin/estate-execute
+    - bus-ensure
+    cron: '*/5 * * * *'
+    skip_on_battery: false
+    timeout_s: 120
   ai.estate.drills:
     runs_on: mac
     runs_on_ref: crew#516 CP2
