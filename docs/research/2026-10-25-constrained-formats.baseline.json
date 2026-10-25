@@ -1,17 +1,17 @@
 {
-  "generated_at": "2026-10-25T01:00Z",
+  "generated_at": "2026-10-25T21:17Z",
   "why": "The violation set this ratchet is judged against. Regenerating it is a deliberate act (--write-baseline) that must be argued in the pull request: it retires every violation listed here from the gate's sight.",
   "summary": {
     "root": "platform/estate/intents",
-    "intents": 96,
-    "intents_with_args": 85,
-    "args_declared": 263,
-    "args_typed": 233,
+    "intents": 98,
+    "intents_with_args": 87,
+    "args_declared": 267,
+    "args_typed": 235,
     "args_required": 2,
     "intents_with_undeclared_interpolation": 0,
     "intents_with_raw_interpolation": 5,
     "parse_errors": 0,
-    "violations": 74
+    "violations": 76
   },
   "violations": [
     {
@@ -61,6 +61,14 @@
     {
       "key": "R1:disk-cleanup:worktrees",
       "text": "disk-cleanup: R1 arg 'worktrees' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R1:disk-free:worktrees",
+      "text": "disk-free: R1 arg 'worktrees' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R1:disk-free:trash",
+      "text": "disk-free: R1 arg 'trash' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
     },
     {
       "key": "R1:estate-inventory:json",

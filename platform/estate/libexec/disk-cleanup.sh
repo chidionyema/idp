@@ -28,10 +28,56 @@
 # Under the floor, the log ends with WHERE the space is (largest dirs, big files, system spots),
 # measured, not a fixed list -- see "where the space is" below.
 #
-# Exit: 0 ok, 3 a target that should be gone is not (verify failed), 1 refused.
+# Exit: 0 ok, 3 a target that should be gone is not (verify failed), 4 the time budget ran out
+# before every phase ran (run it again), 5 another run holds the lock and did the work instead
+# (nothing done here -- 0 would say the disk is clear), 1 refused.
 set -uo pipefail
 export PATH="/opt/local/bin:/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
 APPLY="${1:-false}"; TRASH="${2:-false}"; ONLY_BELOW_MB="${3:-0}"; WORKTREES="${4:-false}"
+# A BOUND THE WORK CAN ACTUALLY FIT (2026-10-25). The door that runs this (the estate executor)
+# kills any command at CEILING_SEC=100, and the disk intents are run through it. Measured
+# 2026-10-25: `disk-free` was SIGTERMed at the ceiling with no output at all -- the run had
+# reached the critical tier and the report never printed, so the agent that asked for space
+# learned nothing and the free-space number it needed was in a log it never saw. The work here is
+# not one unit: docker prune+fstrim, a worktree walk with archives, a git gc, an lsof, a du of
+# HOME. A caller that must finish inside a door says how long it has, and each phase either runs
+# inside what is left or is skipped BY NAME with the seconds it was denied. Nothing is deleted
+# whose phase could not also report it, and a resumed call picks up what was skipped (every phase
+# is idempotent: it finds nothing to do the second time).
+#
+#   $5 seconds  0 (default) = unbounded, so the launchd tick and a human run are unchanged
+#   DISK_CLEANUP_PHASES  comma list, or `all` (default): caches,docker,worktrees,temp,clones,critical,scan
+#
+# Exit 4 = the budget ran out before every phase ran; run it again to continue.
+BUDGET="${5:-0}"; PHASES="${DISK_CLEANUP_PHASES:-all}"
+T_START=$(date +%s)
+budget_hit=0
+# remaining: whole seconds left of BUDGET, or a large number when unbounded (so every `-lt` test
+# below reads the same way whether a bound was given or not).
+remaining() {
+  if [ "$BUDGET" = 0 ]; then echo 1000000; return; fi
+  local r=$((BUDGET - ($(date +%s) - T_START)))
+  [ "$r" -gt 0 ] && echo "$r" || echo 0
+}
+# phase_is_wanted NAME -> 0 when this run should do it at all
+phase_is_wanted() {
+  # The subject is ",$PHASES,": an empty PHASES is ",," (two commas), so the empty case is ",,".
+  # It was `","` -- one comma -- which can never match a two-comma subject, so an empty
+  # DISK_CLEANUP_PHASES skipped every phase instead of running all of them.
+  case ",$PHASES," in *,all,*|,,) return 0;; *",$1,"*) return 0;; esac
+  echo "  SKIP   $1  (not in DISK_CLEANUP_PHASES=$PHASES)"
+  return 1
+}
+# phase_gate NAME MIN_SECONDS -> 0 when there is room for it; else says so and marks the run short.
+phase_gate() {
+  phase_is_wanted "$1" || return 1
+  local left; left=$(remaining)
+  if [ "$left" -lt "$2" ]; then
+    echo "  SKIP   $1  ${left}s left of a ${BUDGET}s budget, under the ${2}s this phase needs: run again"
+    budget_hit=1; return 1
+  fi
+  return 0
+}
 VOL="${DISK_GUARD_PATH:-/System/Volumes/Data}"   # the writable volume, as bin/idp-disk-guard
 RUST_ROOTS="${DISK_CLEANUP_RUST_ROOTS:-$HOME/Documents/code/idp}"
 WT_REPOS="${DISK_CLEANUP_WT_REPOS:-$HOME/Documents/code/idp}"
@@ -48,6 +94,10 @@ SCAN_EVERY_MIN="${DISK_CLEANUP_SCAN_EVERY_MIN:-60}"
 SCAN_TOP="${DISK_CLEANUP_SCAN_TOP:-15}"
 BIG_FILE_MB="${DISK_CLEANUP_BIG_FILE_MB:-200}"
 T_SCAN="${DISK_CLEANUP_SCAN_TIMEOUT:-300}"
+# One system spot may not outlive the run's door: du of /System/Volumes/Update took 118s here
+# (measured 2026-10-26, no-budget dry run: 118 of 125 total seconds), so a legacy no-budget call
+# could be killed by the 100s door mid-scan. BLIND beats a door kill.
+T_SPOTS="${DISK_CLEANUP_SPOTS_TIMEOUT:-45}"
 SYSTEM_SPOTS="${DISK_CLEANUP_SYSTEM_SPOTS-/System/Volumes/Update /private/var/vm}"
 SCAN_FILE="${DISK_CLEANUP_SCAN_FILE:-$HOME/.estate/disk-cleanup.last-scan}"
 CRIT_MB="${DISK_CLEANUP_CRIT_MB:-10240}"   # free-space floor under which the toolchain tier runs
@@ -66,7 +116,8 @@ case "$APPLY" in True|true) APPLY=1;; *) APPLY=0;; esac
 case "$TRASH" in True|true) TRASH=1;; *) TRASH=0;; esac
 case "$WORKTREES" in True|true) WORKTREES=1;; *) WORKTREES=0;; esac
 for v in WT_IDLE_MIN WT_FRESH_MIN WT_STALE_MIN WT_ARCHIVE_MAX_MB WT_QUARANTINE_DAYS TMP_IDLE_MIN \
-         CLONE_FRESH_MIN SCAN_EVERY_MIN SCAN_TOP BIG_FILE_MB T_SCAN CRIT_MB REPACK_MIN_KB T_REPACK; do
+         CLONE_FRESH_MIN SCAN_EVERY_MIN SCAN_TOP BIG_FILE_MB T_SCAN CRIT_MB REPACK_MIN_KB T_REPACK \
+         T_SPOTS BUDGET; do
   case "${!v}" in ''|*[!0-9]*) echo "REFUSED DISK_CLEANUP_$v=${!v} is not a number"; exit 1;; esac
 done
 case "$ONLY_BELOW_MB" in ''|*[!0-9]*) echo "REFUSED only_below_mb=$ONLY_BELOW_MB is not a number"; exit 1;; esac
@@ -85,6 +136,23 @@ free_k() { df -k "$VOL" 2>/dev/null | awk 'NR==2 {print $4}'; }
 # a hung `image prune` proved it). /usr/bin/perl ships with macOS; `timeout` and `flock` do not,
 # and a launchd job's PATH cannot be assumed to find coreutils.
 tmo() {
+  # NOT `shift`: the perl below takes the timeout off @ARGV as its own first argument, so the
+  # shell must hand it over intact. Measured 2026-10-25: shifting here made perl treat the command
+  # name as the timeout and exec the first real argument (exit 127, no output) -- one line of
+  # cleanup that silently disarmed every bounded call in this script.
+  local t="$1"
+  # UNDER A BUDGET NO SINGLE COMMAND OUTLIVES IT (2026-10-25). The phase gates decide whether a
+  # phase STARTS; they do not stop one that started with 40s left from taking 90. Measured: a
+  # disk-free run with budget 78 was killed by the door at 95s inside a phase, so it neither
+  # finished nor printed the budget line that tells the operator to run it again -- the exact
+  # failure the budget exists to prevent. So every bounded call is capped at what is left, minus
+  # a small reserve for the phase to report what it did.
+  if [ "${BUDGET:-0}" != 0 ]; then
+    local left; left=$(( $(remaining) - 2 ))
+    [ "$left" -lt 2 ] && left=2
+    [ "$left" -lt "$t" ] && t="$left"
+  fi
+  [ "$t" -lt 1 ] && t=1
   /usr/bin/perl -e '
     my $t = shift; my $pid = fork; exit 127 unless defined $pid;
     if ($pid == 0) { setpgrp(0, 0); exec @ARGV or exit 127 }
@@ -97,12 +165,22 @@ mkdir -p "$(dirname "$LOCK")"
 if ! mkdir "$LOCK" 2>/dev/null; then
   holder=$(cat "$LOCK/pid" 2>/dev/null || echo)
   if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
-    echo "ok      another disk-cleanup (pid $holder) is running: nothing done"; exit 0; fi
-  rm -rf "$LOCK"; mkdir "$LOCK" 2>/dev/null || { echo "ok      lost the lock race: nothing done"; exit 0; }
+    # NOT 0 (2026-10-25): measured through the disk-free door, a second call answered "nothing done"
+    # and the door's verdict printed "every phase ran" -- a caller read a clear disk it never
+    # touched. 5 is a distinct status so the verdict can say whose work it is.
+    echo "ok      another disk-cleanup (pid $holder) is running: nothing done here"; exit 5; fi
+  rm -rf "$LOCK"; mkdir "$LOCK" 2>/dev/null || { echo "ok      lost the lock race: nothing done here"; exit 5; }
 fi
 echo $$ >"$LOCK/pid"
 trap 'rm -rf "$LOCK"' EXIT
-size_m() { [ -e "$1" ] && du -sk "$1" 2>/dev/null | awk '{printf "%d", $1/1024}' || echo 0; }
+size_m() {
+  [ -e "$1" ] || { echo 0; return; }
+  # Through tmo, so a du of a multi-GB cache or worktree is bounded by the budget as well: this
+  # function is called once per target and once per candidate worktree, and an unbounded du here
+  # is what ate a 78s budget before the phase gates could help (2026-10-25).
+  local k; k=$(tmo 20 du -sk "$1" 2>/dev/null | awk '{print $1}')
+  [ -n "$k" ] && echo $((k / 1024)) || echo 0
+}
 
 # name | path | process that must not be mid-write into it
 # (patterns match the tool's entry point, not any path containing its name: /opt/homebrew/bin/*
@@ -117,14 +195,22 @@ uv-cache|$HOME/.cache/uv|(^|/)uv( |$)"
 # Cargo target/ dirs: found, not listed, because every checkout and worktree grows its own.
 # -prune keeps find out of target/, node_modules, .git and agent worktrees; the Cargo.toml + cargo's own stamp
 # is what separates a build dir from any other directory that happens to be called target.
+# The find is BOUNDED (T_FIND, default 25s): measured 2026-10-25 on the founder's laptop, a walk of
+# ~/Documents (an iCloud-synced folder) had not finished when the door SIGTERMed the whole run at
+# 100s, so every phase after it -- the caches, docker, the tier -- never ran and the run said
+# nothing. A discovery step that cannot finish is BLIND for that one target family, not a reason to
+# lose the rest of the run.
+T_FIND="${DISK_CLEANUP_FIND_TIMEOUT:-25}"
+found=$(tmo "$T_FIND" find $RUST_ROOTS -maxdepth 6 \( -name node_modules -o -name .git -o -path '*/.claude/worktrees' \) -prune \
+       -o -type d -name target -prune -print 2>/dev/null); find_rc=$?
+[ "$find_rc" = 142 ] && echo "  BLIND  rust-target  the find of $RUST_ROOTS did not finish in ${T_FIND}s: no Cargo target/ dirs this run"
 while IFS= read -r t; do
   [ -f "${t%/target}/Cargo.toml" ] || continue
   [ -f "$t/CACHEDIR.TAG" ] || [ -f "$t/.rustc_info.json" ] || continue
   TARGETS="$TARGETS
 rust-target|$t|(^|/)(cargo|rustc)( |$)"
 done <<EOF
-$(find $RUST_ROOTS -maxdepth 6 \( -name node_modules -o -name .git -o -path '*/.claude/worktrees' \) -prune \
-       -o -type d -name target -prune -print 2>/dev/null)
+$found
 EOF
 [ "$TRASH" = 1 ] && TARGETS="$TARGETS
 trash|$HOME/.Trash|Finder-empty"
@@ -138,7 +224,9 @@ fi
 echo "free before: $((before / 1024))M on $VOL ($([ "$APPLY" = 1 ] && echo apply || echo dry-run))"
 
 fails=0; total=0
+caches_on=0; phase_gate caches 5 && caches_on=1
 while IFS='|' read -r name path proc; do
+  [ "$caches_on" = 1 ] || break
   case "$path" in "$HOME"/?*|/private/tmp/?*|/tmp/?*) ;; *) echo "REFUSED $name: $path is not under HOME or /tmp"; exit 1;; esac
   m=$(size_m "$path"); total=$((total + m))
   if [ ! -e "$path" ] || [ "$m" = 0 ]; then echo "  -      $name  absent/empty  $path"; continue; fi
@@ -146,9 +234,9 @@ while IFS='|' read -r name path proc; do
   if pgrep -f "$proc" >/dev/null 2>&1 && [ "$proc" != Finder-empty ]; then
     echo "  SKIP   $name  ${m}M  a '$proc' process is running and may be writing into it"; continue; fi
   if [ "$name" = trash ]; then
-    find "$path" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null
+    tmo "$(remaining)" find "$path" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null
   else
-    rm -rf "$path"
+    tmo "$(remaining)" rm -rf "$path"
   fi
   left=$(size_m "$path")
   if [ "$left" -le 1 ]; then echo "  freed  $name  ${m}M"
@@ -170,7 +258,15 @@ echo "allow-list total: ${total}M"
 DOCKER="$HOME/.rd/bin/docker"; RDCTL="$HOME/.rd/bin/rdctl"
 T_INFO="${DISK_CLEANUP_DOCKER_INFO_TIMEOUT:-20}"; T_STEP="${DISK_CLEANUP_DOCKER_TIMEOUT:-300}"
 BUILDING="${DISK_CLEANUP_BUILDING:-docker(-buildx)? (buildx )?(build|bake)|docker[ -]compose( .*)? (build|up .*--build)}"
-if [ -x "$DOCKER" ] && [ -x "$RDCTL" ] && tmo "$T_INFO" "$DOCKER" --context rancher-desktop info >/dev/null 2>&1; then
+# under a budget, no single docker call may outlive it: prune-then-fstrim is only useful as a pair,
+# so the pair gets what is left rather than each step asking for its own 300s.
+if [ "$BUDGET" != 0 ]; then
+  _left=$(remaining); _cap=$(( _left > 12 ? (_left - 4) / 3 : 4 ))
+  [ "$_cap" -lt "$T_STEP" ] && T_STEP="$_cap"
+  [ "$T_INFO" -gt "$_cap" ] && T_INFO="$_cap"
+fi
+docker_on=0; phase_gate docker 12 && docker_on=1
+if [ "$docker_on" = 1 ] && [ -x "$DOCKER" ] && [ -x "$RDCTL" ] && tmo "$T_INFO" "$DOCKER" --context rancher-desktop info >/dev/null 2>&1; then
   if [ "$APPLY" = 0 ]; then
     echo "  would  docker  $(tmo 30 "$DOCKER" --context rancher-desktop system df --format '{{.Type}} {{.Reclaimable}}' 2>/dev/null | tr '\n' ';')  then fstrim"
   elif pgrep -f "$BUILDING" >/dev/null 2>&1; then
@@ -187,7 +283,7 @@ if [ -x "$DOCKER" ] && [ -x "$RDCTL" ] && tmo "$T_INFO" "$DOCKER" --context ranc
       echo "  !! docker fstrim failed or timed out: ${out:0:200}"; fails=$((fails + 1)); fi
     echo "  freed  docker  $((($(free_k) - d0) / 1024))M on the host (prune + fstrim, measured)"
   fi
-elif [ -x "$DOCKER" ]; then
+elif [ "$docker_on" = 1 ] && [ -x "$DOCKER" ]; then
   echo "  -      docker  engine not answering within ${T_INFO}s: skipped"
 fi
 
@@ -299,11 +395,22 @@ archive() {
   esac
   echo "$q"
 }
-if [ "$WORKTREES" = 1 ]; then
+if [ "$WORKTREES" = 1 ] && phase_gate worktrees 15; then
   # `git status` refreshes and rewrites the index when it can, which would reset the very idle
   # clock read above: every run would keep the worktree it looked at.
   export GIT_OPTIONAL_LOCKS=0
-  CWDS=$(lsof -a -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
+  CWDS=$(tmo 20 lsof -a -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
+  # A CLAIMED WORKTREE IS NEVER REMOVED (2026-10-25). Measured 2026-10-24: the governed
+  # disk-cleanup intent (worktrees=true) removed a live agent's worktree at
+  # ~/.estate/worktrees/deps-zod-mlflow while that agent was working in it -- the checkout is
+  # disposable, so the cleaner judged it settled, and the agent's working directory vanished under
+  # it and every job it then ran failed. The cleaner asks git; a claim is a GitHub comment. So the
+  # estate's own focus register decides: platform/estate/libexec/claimed-worktrees.py prints the
+  # worktrees a live claim covers (a `Claim: owner/repo#N` trailer in the branch's commits and N
+  # live in the register). A worktree on that list is kept, with the reason printed, whatever else
+  # the checks below say -- a claim is a stronger signal than an idle clock.
+  CLAIMED=$(tmo 20 python3 "$(dirname "$0")/claimed-worktrees.py" $WT_REPOS 2>/dev/null)
+  [ -n "$CLAIMED" ] && echo "  keep   worktrees  $(printf '%s\n' "$CLAIMED" | wc -l | tr -d ' ') claimed by a live claim"
   if [ "$APPLY" = 1 ] && [ -d "$QUAR" ]; then
     find "$QUAR" -mindepth 1 -maxdepth 1 -type d -mtime +"$WT_QUARANTINE_DAYS" 2>/dev/null | while IFS= read -r q; do
       for repo in $WT_REPOS; do git -C "$repo" update-ref -d "refs/estate/kept/${q##*/}" 2>/dev/null; done
@@ -316,19 +423,43 @@ if [ "$WORKTREES" = 1 ]; then
     [ -d "$repo" ] || { echo "  BLIND  worktrees  cannot see $repo"; fails=$((fails + 1)); continue; }
     main=$(git -C "$repo" rev-parse --show-toplevel 2>&1) || {
       echo "  BLIND  worktrees  cannot read $repo: ${main:0:120}"; fails=$((fails + 1)); continue; }
-    git -C "$repo" worktree list --porcelain | sed -n 's/^worktree //p' | while IFS= read -r wt; do
+    # The list is taken once, into a variable, and the walk runs in THIS shell -- not
+    # `git ... | sed | while`. Measured 2026-10-25: as a pipeline, the walk sometimes never
+    # returned after printing its last worktree (`disk-free` sat at 100s with the whole worktree
+    # phase's output already on screen), because the loop waits for EOF from a git process that
+    # has finished talking but has not exited in a worktree it just stat'ed. Two other things were
+    # wrong with the pipeline too: `break` and `budget_hit=1` set inside it died in the subshell,
+    # so a budget stop there was invisible to the exit status. A variable fixes all three.
+    wts=$(tmo 15 git -C "$repo" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
+    while IFS= read -r wt; do
       [ "$wt" = "$main" ] && continue
       [ -d "$wt" ] || continue
+      # the walk costs a size_m and a status per worktree, so under a budget it stops cleanly
+      # between worktrees instead of being killed inside one.
+      if [ "$(remaining)" -lt 6 ]; then
+        echo "  SKIP   worktree  $(remaining)s left of a ${BUDGET}s budget: stopped before $wt, run again"
+        break
+      fi
       under=
       case "$wt" in "$HOME"/?*|/private/tmp/?*|/tmp/?*) under=1;; esac
       if [ -n "$TMP_ROOT" ]; then case "$wt" in "$TMP_ROOT"/?*) under=1;; esac; fi
       if [ -z "$under" ]; then echo "  keep   worktree  $wt  (not under HOME, /tmp or \$TMPDIR)"; continue; fi
+      claimed=$(printf '%s\n' "$CLAIMED" | awk -v w="$wt" -F'\t' '$1==w {print $2; exit}')
+      if [ -n "$claimed" ]; then echo "  keep   worktree  $wt  ($claimed)"; continue; fi
       why=$(unsettled "$repo" "$wt")
       m=$(size_m "$wt")
       salvage=; case "$why" in "~"*) salvage=${why#\~}; why=;; esac
       if [ -n "$why" ]; then echo "  keep   worktree  ${m}M  $wt  ($why)"; continue; fi
       b=$(git -C "$wt" branch --show-current); b=${b:-detached $(git -C "$wt" rev-parse --short HEAD)}
       if [ "$APPLY" = 0 ]; then echo "  would  worktree  ${m}M  $wt  ($b${salvage:+; archive: $salvage}; restore: git worktree add $wt ${b#detached })"; continue; fi
+      # A WORKTREE REMOVAL IS NOT INTERRUPTIBLE (2026-10-25): killing `git worktree remove` half way
+      # leaves a directory git still lists and a checkout that is neither here nor there. So it
+      # starts only with enough time to finish, and says so when it cannot -- the same rule this
+      # script already applies to a toolchain rm -rf.
+      if [ "$(remaining)" -lt 20 ]; then
+        echo "  SKIP   worktree  ${m}M  $wt  ($(remaining)s left of a ${BUDGET}s budget, under the 20s a removal needs: run again)"
+        budget_hit=1; continue
+      fi
       kept=
       if [ -n "$salvage" ]; then
         kept=$(archive "$repo" "$wt" "$salvage") || { echo "  keep   worktree  ${m}M  $wt  (archive refused: $kept)"; continue; }
@@ -336,11 +467,13 @@ if [ "$WORKTREES" = 1 ]; then
       # --force only when unsettled() found nothing but rebuildable output, or the leftovers are
       # archived; git still refuses a locked worktree (that needs --force twice).
       force=; { [ -n "$kept" ] || git -C "$wt" status --porcelain 2>/dev/null | grep -q .; } && force=--force
-      if git -C "$repo" worktree remove $force "$wt" >/dev/null 2>&1 && [ ! -e "$wt" ]; then
+      if tmo "$(remaining)" git -C "$repo" worktree remove $force "$wt" >/dev/null 2>&1 && [ ! -e "$wt" ]; then
         echo "  freed  worktree  ${m}M  $wt  (restore: git worktree add $wt ${b#detached }${kept:+; leftovers ($salvage): $kept})"
       else
         echo "  !! worktree $wt: git refused to remove it"; fi
-    done
+    done <<EOF
+$wts
+EOF
   done
 fi
 
@@ -350,11 +483,13 @@ fi
 # written in TMP_IDLE_MIN (6h), it holds no git checkout (the pass above judges those) and no
 # process has a file open or its cwd under it. Only top-level entries of $TMPDIR, never $TMPDIR.
 TMP_NAMES='^(go-build[0-9]+|tmp\.[A-Za-z0-9]{6,}|tmp[a-z0-9_]{8}|jest_[a-z0-9]+)$'
-if [ "$WORKTREES" = 1 ] && [ -n "$TMP_ROOT" ]; then
-  cands=$(find "$TMP_ROOT" -mindepth 1 -maxdepth 1 -user "$(id -u)" -mmin +"$TMP_IDLE_MIN" 2>/dev/null |
+if [ "$WORKTREES" = 1 ] && [ -n "$TMP_ROOT" ] && phase_gate temp 8; then
+  cands=$(tmo 15 find "$TMP_ROOT" -mindepth 1 -maxdepth 1 -user "$(id -u)" -mmin +"$TMP_IDLE_MIN" 2>/dev/null |
           while IFS= read -r p; do printf '%s\n' "${p##*/}" | grep -Eq "$TMP_NAMES" && printf '%s\n' "$p"; done)
   if [ -n "$cands" ]; then
-    OPEN=$(lsof -Fn 2>/dev/null | sed -n 's/^n//p')
+    # both bounded: a whole-machine lsof listing and a find of $TMPDIR are two of the slowest
+    # things here, and under a budget they get what is left rather than all of it.
+    OPEN=$(tmo 20 lsof -Fn 2>/dev/null | sed -n 's/^n//p')
     while IFS= read -r p; do
       m=$(size_m "$p")
       if [ -n "$(find "$p" -mmin -"$TMP_IDLE_MIN" -print 2>/dev/null | head -1)" ]; then
@@ -386,7 +521,7 @@ fi
 # nearly every run, so the step went BLIND, kept them all, and the volume refilled to 0G. The full
 # listing took 0.2s on the same laptop. lsof prints physical paths, so the tree is resolved first
 # ($TMPDIR says /var/folders, lsof says /private/var/folders).
-if [ -n "$CLONES" ] && [ -d "$CLONES" ]; then
+if [ -n "$CLONES" ] && [ -d "$CLONES" ] && phase_gate clones 12; then
   CLONES=$(cd "$CLONES" && pwd -P)
   held=$(tmo 60 lsof -nPw -Fn 2>/dev/null); rc=$?
   if [ "$rc" -gt 1 ]; then
@@ -443,7 +578,13 @@ fi
 crit_held=""
 crit_reclaim() {  # NAME PATH HOW-TO-GET-IT-BACK
   local name=$1 path=$2 regen=$3 m left
+  # An rm -rf of several GB cannot be undone mid-way, so under a budget it is only started when
+  # there is room to finish and report: a half-deleted node version is a broken node version.
   m=$(size_m "$path")
+  if [ "$(remaining)" -lt 10 ]; then
+    echo "  SKIP   $name  ${m}M  $path  ($(remaining)s left of a ${BUDGET}s budget: run again)"
+    budget_hit=1; return 0
+  fi
   if [ "$APPLY" = 0 ]; then echo "  would  $name  ${m}M  $path  ($regen)"; return 0; fi
   rm -rf "$path"
   left=$(size_m "$path")
@@ -611,7 +752,7 @@ crit_tier() {
 # The tier fires on the space as it stands now, after the caches, the worktrees and the Chrome
 # clones above have had their turn: a floor that was crossed by them is no longer a floor.
 now_mb=$(( $(free_k) / 1024 ))
-if [ "$CRIT_MB" -gt 0 ] && [ "$now_mb" -lt "$CRIT_MB" ]; then
+if [ "$CRIT_MB" -gt 0 ] && [ "$now_mb" -lt "$CRIT_MB" ] && phase_gate critical 25; then
   crit_tier "$now_mb"
 fi
 
@@ -660,17 +801,35 @@ scan() {
   done | sort -rn | head -"$SCAN_TOP"
   for p in $SYSTEM_SPOTS; do
     [ -e "$p" ] || continue
-    k=$(tmo 120 du -sk "$p" 2>/dev/null | awk '{print $1}')
-    if [ -n "$k" ]; then echo "  system  $((k / 1024))M  $p"; else echo "  system  unreadable  $p"; fi
+    k=$(tmo "$T_SPOTS" du -sk "$p" 2>/dev/null)
+    rc=$?
+    k=$(printf '%s\n' "$k" | awk '{print $1}')
+    if [ "$rc" = 142 ]; then echo "  BLIND  spots  du of $p did not finish in ${T_SPOTS}s"
+    elif [ -n "$k" ]; then echo "  system  $((k / 1024))M  $p"
+    else echo "  system  unreadable  $p"; fi
   done
 }
 if [ "$APPLY" = 0 ] || [ "$(($(free_k) / 1024))" -lt "$ONLY_BELOW_MB" ]; then
   echo "where the space is (nothing here is deleted; owner decides):"
-  if [ -f "$SCAN_FILE" ] && [ -n "$(find "$SCAN_FILE" -mmin -"$SCAN_EVERY_MIN" -print 2>/dev/null)" ]; then
+  # A du of HOME takes minutes, so under a budget the scan either fits in what is left or is not
+  # started: T_SCAN is narrowed to the remaining seconds (du then says BLIND if that was not
+  # enough) and a run with less than 20s left says so instead of being killed inside du.
+  scan_left=$(remaining)
+  if [ "$BUDGET" != 0 ] && [ "$scan_left" -lt 20 ]; then
+    echo "  SKIP   scan  ${scan_left}s left of a ${BUDGET}s budget: run again (the last measurement is in $SCAN_FILE)"
+    budget_hit=1
+  elif [ -f "$SCAN_FILE" ] && [ -n "$(find "$SCAN_FILE" -mmin -"$SCAN_EVERY_MIN" -print 2>/dev/null)" ]; then
     cat "$SCAN_FILE"
   else
+    [ "$BUDGET" != 0 ] && T_SCAN=$(( scan_left > 20 ? scan_left - 5 : scan_left ))
     mkdir -p "$(dirname "$SCAN_FILE")"
     scan | tee "$SCAN_FILE.tmp" && mv "$SCAN_FILE.tmp" "$SCAN_FILE"
   fi
 fi
 [ "$fails" = 0 ] || exit 3
+# 4, not 0: the phases that did not run are work still owed, and a caller that reads 0 would
+# report a disk it never finished clearing. The output above names every phase that was skipped.
+if [ "$budget_hit" = 1 ]; then
+  echo "budget: $(( $(date +%s) - T_START ))s of ${BUDGET}s used; some phases were skipped -- run it again to continue"
+  exit 4
+fi
