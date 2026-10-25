@@ -63,11 +63,14 @@ def backends() -> list[int]:
 
 
 def route() -> list:
-    """Answering slots first, then the cloud, then the slots that stopped answering."""
+    """Cloud first (migration P2.T4, 2026-10-25: spend lives on the cluster), then the
+    answering laptop slots as fallback -- the founder's 2026-09-26 ruling keeps the local
+    slot alive, so a cloud outage degrades to the laptop instead of to nothing -- then the
+    slots that stopped answering."""
     slots = backends()
     return (
-        [p for p in slots if p not in DOWN]
-        + ([CLOUD] if CLOUD else [])
+        ([CLOUD] if CLOUD else [])
+        + [p for p in slots if p not in DOWN]
         + [p for p in slots if p in DOWN]
     )
 
