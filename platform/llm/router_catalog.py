@@ -143,6 +143,76 @@ def opencode(catalog: dict, home: Path) -> str:
     return f"{len(prov['models'])} models"
 
 
+def working_window() -> int:
+    """The router's per-call input ceiling: the one number a harness must compact against.
+
+    Read from request_ceiling so the two cannot drift. A harness told nothing assumes its own
+    default (pi: 128000), compacts against that, and meets the router's refusal at a different
+    size than it planned for."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import request_ceiling  # noqa: PLC0415 -- sibling module; importable without litellm
+
+    return request_ceiling.MAX_INPUT_TOKENS
+
+
+def _tokens(size: str) -> int:
+    """`pi --list-models` sizes: "200K", "204.8K", "1M"."""
+    scale = {"K": 1_000, "M": 1_000_000}.get(size[-1:].upper(), 1)
+    return int(float(size.rstrip("KMkm")) * scale)
+
+
+def parse_list_models(text: str) -> dict[str, dict[str, int]]:
+    """provider -> model id -> context window, from `pi --list-models`' table."""
+    out: dict[str, dict[str, int]] = {}
+    for line in text.splitlines()[1:]:
+        cols = line.split()
+        if len(cols) >= 3:
+            try:
+                out.setdefault(cols[0], {})[cols[1]] = _tokens(cols[2])
+            except ValueError:
+                continue
+    return out
+
+
+def pi_bin() -> str | None:
+    """pi's executable. launchd starts the router with PATH=/usr/bin:/bin:/usr/sbin:/sbin, and
+    pi lives under nvm, so PATH alone never finds it there."""
+    import glob
+    import shutil
+
+    found = os.environ.get("ESTATE_PI_BIN") or shutil.which("pi")
+    if found:
+        return found
+    nvm = sorted(glob.glob(str(Path.home() / ".nvm/versions/node/*/bin/pi")))
+    return nvm[-1] if nvm else None
+
+
+def pi_listed() -> dict[str, dict[str, int]] | None:
+    """Every model pi can call right now, with the window pi compacts against. None when pi is
+    not found or does not answer: the overrides it feeds are then left as they were."""
+    import subprocess
+
+    exe = pi_bin()
+    if exe is None:
+        return None
+    # pi is `#!/usr/bin/env node`: its own directory holds the node it was installed with.
+    env = {
+        **os.environ,
+        "PATH": str(Path(exe).parent) + os.pathsep + os.environ.get("PATH", ""),
+    }
+    try:
+        r = subprocess.run(
+            [exe, "--list-models"],
+            capture_output=True,
+            text=True,
+            timeout=DISCOVER_TIMEOUT_S,
+            env=env,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return parse_list_models(r.stdout) if r.returncode == 0 else None
+
+
 def pi(catalog: dict, home: Path) -> str:
     path = home / ".pi" / "agent" / "models.json"
     if not path.parent.exists():
@@ -150,15 +220,45 @@ def pi(catalog: dict, home: Path) -> str:
     data = _load_json(path)
     if data is None:
         return f"skipped: {path} is not plain JSON"
-    models = [{"id": m} for m in all_models(catalog)]
-    data.setdefault("providers", {})["estate"] = {
+    # Without contextWindow pi resolves every model to 128000 (provider-composer.js), measured
+    # 2026-10-20 with `pi --list-models`. It then compacts against 128000 while the router allows
+    # 200000, or, worse, against nothing it can see when a single turn is larger than either.
+    window = working_window()
+    models = [{"id": m, "contextWindow": window} for m in all_models(catalog)]
+    providers = data.setdefault("providers", {})
+    providers["estate"] = {
         "baseUrl": ROUTER,
         "api": "openai-completions",
         "apiKey": "$" + KEY_ENV,
         "models": models,
     }
+    # pi also calls providers directly with its own keys (auth.json), never touching the router.
+    # Those built-in models declare their native windows (deepseek-flash, deepseek-v4-pro and
+    # MiniMax-M3: 1M), so pi compacted against 1M: 7,912 of 7,936 over-ceiling pi calls went
+    # this way (docs/diagnoses, idp#6675). Each model above the ceiling is capped to it; one at
+    # or below keeps its own window, which is the real limit there.
+    listed = pi_listed()
+    if listed is None:
+        _write_json(path, data)
+        return f"{len(models)} models, direct not checked (pi not found)"
+    capped = 0
+    for provider, windows in listed.items():
+        if provider == "estate":
+            continue
+        for model_id, native in windows.items():
+            # pi lists a window after applying the overrides, so a model capped by an earlier
+            # run shows the ceiling, not its native size: it stays capped and is counted.
+            existing = (
+                providers.get(provider, {}).get("modelOverrides", {}).get(model_id, {})
+            )
+            if native > window or existing.get("contextWindow") == window:
+                overrides = providers.setdefault(provider, {}).setdefault(
+                    "modelOverrides", {}
+                )
+                overrides.setdefault(model_id, {})["contextWindow"] = window
+                capped += 1
     _write_json(path, data)
-    return f"{len(models)} models"
+    return f"{len(models)} models, {capped} direct capped"
 
 
 ADAPTERS = {"opencode": opencode, "pi": pi}
