@@ -21,5 +21,6 @@ steps:
     cmd: |
       set -e
       case "{{branch}}" in ''|main|master) echo "refused: head branch '{{branch}}'" >&2; exit 1;; esac
-      cd {{repo}}
-      gh pr create --repo chidionyema/$(basename {{repo}}) --base {{base}} --head {{branch}} --title {{title}} --body-file {{body_file}}
+      remote_url=$(git -C {{repo}} remote get-url origin)
+      slug=$(printf '%s' "$remote_url" | sed -E 's#.*[:/]([^/]+/[^/.]+)(\.git)?$#\1#')
+      gh pr create --repo "$slug" --base {{base}} --head {{branch}} --title {{title}} --body-file {{body_file}}
