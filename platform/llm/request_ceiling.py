@@ -58,9 +58,12 @@ except (
             raise NotImplementedError
 
 
-# 128,000, matching the working window every lane in ~/.pi/agent/models.json now declares. Above
-# any real working turn; low enough that the trigger fires while the saving is still real.
-MAX_INPUT_TOKENS = int(os.environ.get("ESTATE_MAX_INPUT_TOKENS", "128000"))
+# 200,000: the ceiling bin/litellm-local has exported since Claude Code began compacting at
+# CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000. The default was 128,000 and only the env var kept the
+# live router at 200,000, so anything reading this module without that env (router_catalog's pi
+# window, the tests) saw a ceiling the router does not enforce (idp#6675). router_catalog writes
+# this number into every pi model as contextWindow, so pi compacts against it.
+MAX_INPUT_TOKENS = int(os.environ.get("ESTATE_MAX_INPUT_TOKENS", "200000"))
 
 # Characters per token, the same 4:1 pi's own estimator uses, so the router and the client agree
 # on what a token is. A refusal that fires on a different count than the client's would be
@@ -140,10 +143,16 @@ class EstateRequestCeiling(CustomLogger):
             key_hint,
         )
 
+        # The first clause is worded to match pi's own overflow detector (OVERFLOW_PATTERNS in
+        # pi-coding-agent: "exceeds the maximum context length of N tokens"). Measured 2026-10-20:
+        # the previous wording ("carries approximately N input tokens and the estate's ceiling is
+        # M") matched none of pi's patterns, so pi treated the 400 as an ordinary error, never
+        # compacted, and re-sent the same oversized history on every turn after. A refusal the
+        # client cannot classify as "too big" is a refusal it cannot recover from.
         return (
-            f"This request carries approximately {estimated:,} input tokens and the estate's "
-            f"ceiling is {MAX_INPUT_TOKENS:,} per call (key ...{key_hint}). Refused before it "
-            f"was sent, so nothing was billed.\n\n"
+            f"This request exceeds the maximum context length of {MAX_INPUT_TOKENS:,} tokens "
+            f"the estate allows per call: it carries approximately {estimated:,} input tokens "
+            f"(key ...{key_hint}). Refused before it was sent, so nothing was billed.\n\n"
             f"That is not a model limit -- this lane holds far more. It is the estate's working "
             f"window: a single call carrying hundreds of thousands of tokens is a conversation "
             f"re-sending its whole history, and on 2026-09-13 that pattern pushed 86,525,924 "
