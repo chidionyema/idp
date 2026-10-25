@@ -1,0 +1,128 @@
+description: >-
+  The cluster's action ledger, 2026-10-25. Question: why did the litellm pod in namespace llm
+  write no ledger row at all, while the graph spool beside it had rows? Four explanations were
+  fixed before the evidence was read: the ledger's canonicaliser raises on a request body json
+  cannot serialise (the proxy hands callbacks a Python object, not JSON text, and one body
+  carries a tuple key), so the row is never built; the callback was never registered in the
+  router's running config, so record() never ran; the row was built and written, but to the
+  wrong place (ESTATE_ACTION_LEDGER was unset, so the ledger fell back to HOME, which is /tmp in
+  that pod, and the capture volume -- the one place the ledger is consolidated from -- held no
+  ledger); or the row was written but could not be signed, because the mounted ESTATE_AGENT_KEY
+  was a 27-byte stub of a PEM. Every count below was measured on the live cluster on 2026-10-25:
+  the pod's own log, the Deployment's env, the mounted Secret, the live ConfigMap, and a listing
+  of the capture volume inside the running pod.
+hypotheses:
+- name: H1
+  description: >-
+    the ledger's canonicaliser raises while serialising the request body, so no row is ever
+    built and no file is ever opened
+  prior: 0.4
+- name: H2
+  description: the action_ledger callback is not registered in the running router config
+  prior: 0.2
+- name: H3
+  description: >-
+    the row was written, but to the wrong path: ESTATE_ACTION_LEDGER is unset in the Deployment,
+    so the ledger falls back to HOME (/tmp in that pod) and the capture volume holds no ledger
+  prior: 0.25
+- name: H4
+  description: >-
+    the row was written but could not be signed, because the mounted ESTATE_AGENT_KEY was a
+    truncated 27-byte stub of a PEM
+  prior: 0.15
+evidence:
+- name: action_ledger lines in the live pod's log (litellm-589cdfcf77-qfl2m, last 4000 lines)
+  observed:
+    type_error_not_recorded: 38
+    sign_error: 0
+    silent: 0
+  likelihoods:
+    H1:
+      type_error_not_recorded: 0.9
+      sign_error: 0.05
+      silent: 0.05
+    H2:
+      type_error_not_recorded: 0.05
+      sign_error: 0.05
+      silent: 0.9
+    H3:
+      type_error_not_recorded: 0.05
+      sign_error: 0.05
+      silent: 0.9
+    H4:
+      type_error_not_recorded: 0.05
+      sign_error: 0.9
+      silent: 0.05
+- name: the action_ledger callback in the live router config (ConfigMap litellm-config-28gmg72thg)
+  observed:
+    registered: 1
+    absent: 0
+  likelihoods:
+    H1:
+      registered: 0.9
+      absent: 0.1
+    H2:
+      registered: 0.1
+      absent: 0.9
+    H3:
+      registered: 0.9
+      absent: 0.1
+    H4:
+      registered: 0.9
+      absent: 0.1
+- name: ledger files on the running pod (listing of /var/lib/litellm/capture and /tmp)
+  observed:
+    in_capture_volume: 0
+    in_home_tmp: 0
+    no_ledger_file_anywhere: 1
+  likelihoods:
+    H1:
+      in_capture_volume: 0.05
+      in_home_tmp: 0.05
+      no_ledger_file_anywhere: 0.9
+    H2:
+      in_capture_volume: 0.05
+      in_home_tmp: 0.05
+      no_ledger_file_anywhere: 0.9
+    H3:
+      in_capture_volume: 0.05
+      in_home_tmp: 0.9
+      no_ledger_file_anywhere: 0.05
+    H4:
+      in_capture_volume: 0.9
+      in_home_tmp: 0.05
+      no_ledger_file_anywhere: 0.05
+- name: the mounted signing key (Secret litellm-agent-key, namespace llm)
+  observed:
+    key_full_119_bytes: 1
+    key_truncated: 0
+  likelihoods:
+    H1:
+      key_full_119_bytes: 0.9
+      key_truncated: 0.1
+    H2:
+      key_full_119_bytes: 0.9
+      key_truncated: 0.1
+    H3:
+      key_full_119_bytes: 0.9
+      key_truncated: 0.1
+    H4:
+      key_full_119_bytes: 0.1
+      key_truncated: 0.9
+- name: the ledger's destination env in the live Deployment
+  observed:
+    ledger_env_unset: 1
+    ledger_env_set: 0
+  likelihoods:
+    H1:
+      ledger_env_unset: 0.5
+      ledger_env_set: 0.5
+    H2:
+      ledger_env_unset: 0.5
+      ledger_env_set: 0.5
+    H3:
+      ledger_env_unset: 0.9
+      ledger_env_set: 0.1
+    H4:
+      ledger_env_unset: 0.5
+      ledger_env_set: 0.5
