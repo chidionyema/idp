@@ -1,0 +1,73 @@
+description: 'Lane-naming convergence between the laptop and cluster renderers (founder
+  ruled 2026-10-25: cluster names win). Question: do sphere-bound wiring differences
+  on shared lane names count as drift, and do laptop-local ollama lanes count as inventory
+  drift? Context: first live run found 5 divergences; founder answered the naming
+  question in plain text.'
+hypotheses:
+- name: H1
+  description: names are the contract; wiring is sphere-local fulfillment -- converge
+    name inventory, allow sphere-bound wiring, laptop keeps ollama- prefix for local-only
+    lanes
+  prior: 0.6
+- name: H2
+  description: wiring must match byte-for-byte too (one fulfillment per lane estate-wide)
+  prior: 0.25
+- name: H3
+  description: names must ALSO diverge per sphere (callers know where they are)
+  prior: 0.15
+evidence:
+- name: founder ruling 2026-10-25
+  observed:
+    cluster_names_win: 1
+  likelihoods:
+    H1:
+      cluster_names_win: 0.9
+    H2:
+      cluster_names_win: 0.5
+    H3:
+      cluster_names_win: 0.1
+- name: laptop fallback lanes exist precisely because the sphere differs (D9, founder
+    ruling 2026-09-26 keeps local slots alive)
+  observed:
+    sphere_local_fulfillment_required: 1
+  likelihoods:
+    H1:
+      sphere_local_fulfillment_required: 0.9
+    H2:
+      sphere_local_fulfillment_required: 0.3
+    H3:
+      sphere_local_fulfillment_required: 0.4
+- name: zero client reconfiguration invariant (clients survive every cutover)
+  observed:
+    additive_aliases_required: 1
+  likelihoods:
+    H1:
+      additive_aliases_required: 0.9
+    H2:
+      additive_aliases_required: 0.6
+    H3:
+      additive_aliases_required: 0.5
+- name: structure of the 5 measured divergences (first live run, 2026-10-24)
+  observed:
+    name_level_divergences: 4
+    sphere_bound_wiring_diffs: 1
+    cloud_lane_wiring_diffs: 0
+  likelihoods:
+    H1:
+      name_level_divergences: 0.9
+      sphere_bound_wiring_diffs: 0.8
+      cloud_lane_wiring_diffs: 0.8
+    H2:
+      name_level_divergences: 0.6
+      sphere_bound_wiring_diffs: 0.5
+      cloud_lane_wiring_diffs: 0.3
+    H3:
+      name_level_divergences: 0.4
+      sphere_bound_wiring_diffs: 0.5
+      cloud_lane_wiring_diffs: 0.5
+posteriors:
+  H1: 0.9935242901
+  H2: 0.0063095329
+  H3: 0.000166177
+winner: H1
+computed_at: '2026-10-25T00:34:34Z'
