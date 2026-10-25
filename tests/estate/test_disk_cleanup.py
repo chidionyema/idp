@@ -10,6 +10,8 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import sys
+import time
 
 import pytest
 from pathlib import Path
@@ -904,7 +906,12 @@ def _crit_home(tmp_path: Path) -> Path:
     return home
 
 
-def _crit_run(home: Path, apply: str = "true", crit_mb: str = "999999999"):
+def _crit_run(
+    home: Path,
+    apply: str = "true",
+    crit_mb: str = "999999999",
+    extra: dict | None = None,
+):
     env = {
         **os.environ,
         "HOME": str(home),
@@ -913,6 +920,7 @@ def _crit_run(home: Path, apply: str = "true", crit_mb: str = "999999999"):
         "DISK_CLEANUP_TMP_ROOT": "",
         "DISK_CLEANUP_SYSTEM_SPOTS": "",
         "DISK_CLEANUP_CRIT_MB": crit_mb,
+        **(extra or {}),
     }
     return subprocess.run(
         ["bash", str(SCRIPT), apply, "false"],
@@ -985,3 +993,158 @@ def test_a_non_numeric_critical_floor_is_refused(tmp_path):
     home = _crit_home(tmp_path)
     r = _crit_run(home, "true", "soon")
     assert r.returncode == 1 and "REFUSED" in r.stdout, r.stdout
+
+
+# --- the second round of the critical tier: the estate's own loose git objects, and the build
+# tools' package caches. Measured 2026-10-24 on the founder's laptop: the graph clone held 5415
+# loose objects = 3.05 GiB (its pack held 11 MiB) and ~/.cargo/registry + ~/go/pkg/mod held
+# 1855M, while the volume sat at 8725M free -- under the floor with nothing the tier could give.
+
+CARGO_REGISTRY = ".cargo/registry"
+GO_MODCACHE = "go/pkg/mod"
+GRAPH_REPO = ".estate/graph/estate-graph"
+
+
+def _graph_repo(home: Path) -> Path:
+    """A clone with loose objects: several similar transcripts, committed and never repacked."""
+    repo = home / GRAPH_REPO
+    repo.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True)
+    sessions = repo / "sessions"
+    sessions.mkdir()
+    for i in range(6):
+        body = "".join(f"session {i} line {n} of the transcript\n" for n in range(6000))
+        (sessions / f"2026102{i}T000000Z-no-session.md").write_text(body)
+    subprocess.run(
+        ["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.email=agent@estate",
+            "-c",
+            "user.name=agent",
+            "commit",
+            "-q",
+            "-m",
+            "graph-drain: 6 sessions",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return repo
+
+
+def _loose_count(repo: Path) -> int:
+    out = subprocess.run(
+        ["git", "-C", str(repo), "count-objects", "-v"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    for line in out.splitlines():
+        if line.startswith("count:"):
+            return int(line.split()[1])
+    return 0
+
+
+def test_the_critical_tier_repacks_the_estate_clone_and_loses_nothing(tmp_path):
+    home = _crit_home(tmp_path)
+    repo = _graph_repo(home)
+    assert _loose_count(repo) > 0, "the fixture must start with loose objects"
+    r = _crit_run(home, "true", extra={"DISK_CLEANUP_REPACK_MIN_KB": "1"})
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "git-repack" in r.stdout, r.stdout
+    assert _loose_count(repo) == 0, "every object must be in the pack now"
+    # and nothing was lost: the history and every byte of every transcript are still there
+    log = subprocess.run(
+        ["git", "-C", str(repo), "log", "--oneline"], capture_output=True, text=True
+    ).stdout
+    assert "graph-drain: 6 sessions" in log, log
+    blob = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "cat-file",
+            "-p",
+            "HEAD:sessions/20261020T000000Z-no-session.md",
+        ],
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "session 0 line 5999 of the transcript" in blob, blob[:200]
+
+
+def test_the_critical_tier_reclaims_the_build_tools_package_caches(tmp_path):
+    home = _crit_home(tmp_path)
+    for d in (CARGO_REGISTRY, GO_MODCACHE):
+        (home / d).mkdir(parents=True)
+        (home / d / "blob").write_bytes(os.urandom(2 * 1024 * 1024))
+    r = _crit_run(home, "true")
+    assert r.returncode == 0, r.stdout + r.stderr
+    for d in (CARGO_REGISTRY, GO_MODCACHE):
+        assert not (home / d).exists() or not any((home / d).iterdir()), d
+    assert "  freed  cargo-registry" in r.stdout, r.stdout
+    assert "  freed  go-modcache" in r.stdout, r.stdout
+    assert "(cargo fetch)" in r.stdout, r.stdout
+    assert "(go mod download)" in r.stdout, r.stdout
+
+
+def test_a_running_cargo_or_go_keeps_its_package_cache(tmp_path):
+    home = _crit_home(tmp_path)
+    for d in (CARGO_REGISTRY, GO_MODCACHE):
+        (home / d).mkdir(parents=True)
+        (home / d / "blob").write_bytes(os.urandom(1024))
+    # a build is running: the argv is what the tools look like to pgrep
+    procs = [
+        subprocess.Popen(
+            [sys.executable, "-c", "import os; os.execv('/bin/sleep', ['cargo', '30'])"]
+        ),
+        # `go build 30`: argv[0] is the program name pgrep sees ("go build 30") and
+        # argv[1] is the one argument sleep parses, so the probe stays alive for 30s.
+        # A bare "go build" makes sleep exit at once ("usage: sleep seconds") and the
+        # probe proved nothing -- the cache was deleted under a process that was gone.
+        subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                "import os; os.execv('/bin/sleep', ['go build', '30'])",
+            ]
+        ),
+    ]
+    try:
+        time.sleep(1.0)
+        r = _crit_run(home, "true")
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert (home / CARGO_REGISTRY / "blob").exists(), (
+            "a running cargo keeps its registry"
+        )
+        assert (home / GO_MODCACHE / "blob").exists(), (
+            "a running go build keeps its module cache"
+        )
+        assert "a cargo/rustc process is running" in r.stdout, r.stdout
+        assert "a go build is running" in r.stdout, r.stdout
+    finally:
+        for p in procs:
+            p.kill()
+            p.wait(timeout=10)
+
+
+def test_the_critical_tier_dry_run_touches_none_of_the_new_families(tmp_path):
+    home = _crit_home(tmp_path)
+    repo = _graph_repo(home)
+    for d in (CARGO_REGISTRY, GO_MODCACHE):
+        (home / d).mkdir(parents=True)
+        (home / d / "blob").write_bytes(os.urandom(1024))
+    r = _crit_run(home, "false", extra={"DISK_CLEANUP_REPACK_MIN_KB": "1"})
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "  would  git-repack" in r.stdout, r.stdout
+    assert "  would  cargo-registry" in r.stdout, r.stdout
+    assert "  would  go-modcache" in r.stdout, r.stdout
+    assert _loose_count(repo) > 0, "a dry run must not repack anything"
+    assert (home / CARGO_REGISTRY / "blob").exists()
+    assert (home / GO_MODCACHE / "blob").exists()

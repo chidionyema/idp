@@ -20,7 +20,10 @@
 # helm), ~/Documents, sibling repo worktrees (other agents'), app caches.
 # Under a CRITICAL floor (CRIT_MB, default 10240M free) the toolchain tier below also reclaims
 # ~/.ollama/models, old ~/.nvm/versions/node/*, old ~/.rustup/toolchains/* and old
-# ~/.local/share/claude/versions/*: toolchains, re-installed on demand. See "the critical tier".
+# ~/.local/share/claude/versions/*: toolchains, re-installed on demand. It also REPACKS the
+# estate's own git clone (git gc -- the same objects, one packed file) and reclaims the build
+# tools' package caches (~/.cargo/registry, ~/go/pkg/mod): re-fetched on demand. See
+# "the critical tier".
 # Chrome's code-sign clones (beside $TMPDIR, in X/): only those no process holds open.
 # Under the floor, the log ends with WHERE the space is (largest dirs, big files, system spots),
 # measured, not a fixed list -- see "where the space is" below.
@@ -48,12 +51,22 @@ T_SCAN="${DISK_CLEANUP_SCAN_TIMEOUT:-300}"
 SYSTEM_SPOTS="${DISK_CLEANUP_SYSTEM_SPOTS-/System/Volumes/Update /private/var/vm}"
 SCAN_FILE="${DISK_CLEANUP_SCAN_FILE:-$HOME/.estate/disk-cleanup.last-scan}"
 CRIT_MB="${DISK_CLEANUP_CRIT_MB:-10240}"   # free-space floor under which the toolchain tier runs
+# The estate's own git clone: repacked under the floor, never deleted (git gc keeps every
+# reachable object). Space-separated; each path is resolved, so a symlinked clone is done once.
+GIT_REPOS="${DISK_CLEANUP_GIT_REPOS:-$HOME/.estate/graph/estate-graph}"
+REPACK_MIN_KB="${DISK_CLEANUP_REPACK_MIN_KB:-65536}"  # below this much loose object, git gc is not worth the IO
+T_REPACK="${DISK_CLEANUP_GIT_TIMEOUT:-300}"          # git gc is bounded: a wedged repo must not hang the tick
+CARGO_REGISTRY="${DISK_CLEANUP_CARGO_REGISTRY:-$HOME/.cargo/registry}"
+GO_MODCACHE="${DISK_CLEANUP_GO_MODCACHE:-${GOPATH:-$HOME/go}/pkg/mod}"
+CARGO_PROC='(^|/)(cargo|rustc)( |$)'
+GO_PROC='(^|/)go (build|test|run|vet|mod|install|get|work|list|env)'
+GIT_BUSY='git (gc|repack|pack-objects)'
 [ -n "${HOME:-}" ] && [ "$HOME" != / ] || { echo "REFUSED HOME is unset or /"; exit 1; }
 case "$APPLY" in True|true) APPLY=1;; *) APPLY=0;; esac
 case "$TRASH" in True|true) TRASH=1;; *) TRASH=0;; esac
 case "$WORKTREES" in True|true) WORKTREES=1;; *) WORKTREES=0;; esac
 for v in WT_IDLE_MIN WT_FRESH_MIN WT_STALE_MIN WT_ARCHIVE_MAX_MB WT_QUARANTINE_DAYS TMP_IDLE_MIN \
-         CLONE_FRESH_MIN SCAN_EVERY_MIN SCAN_TOP BIG_FILE_MB T_SCAN CRIT_MB; do
+         CLONE_FRESH_MIN SCAN_EVERY_MIN SCAN_TOP BIG_FILE_MB T_SCAN CRIT_MB REPACK_MIN_KB T_REPACK; do
   case "${!v}" in ''|*[!0-9]*) echo "REFUSED DISK_CLEANUP_$v=${!v} is not a number"; exit 1;; esac
 done
 case "$ONLY_BELOW_MB" in ''|*[!0-9]*) echo "REFUSED only_below_mb=$ONLY_BELOW_MB is not a number"; exit 1;; esac
@@ -401,6 +414,15 @@ fi
 # ollama on 2026-09-10 ("no i killed ollama because machine is slow"). The allow-list deletes
 # CACHES; these are the same kind of thing one level up: a toolchain, re-installed on demand.
 #
+# The same day, later: the volume was back under the floor at 8725M free and the tier above had
+# nothing left to give -- the ollama weights were gone, one node version and one rustup
+# toolchain remained, and the claude builds were one. The growers that were left were the
+# estate's own: the graph clone's loose git objects (3.05 GiB, repacked, not deleted) and the
+# build tools' package caches (~/.cargo/registry 1081M, ~/go/pkg/mod 774M, both re-fetched on
+# demand). A safeguard that cannot reach a healthy disk is a safeguard that stays armed and
+# does nothing, so the tier grew those families too -- each with the same evidence and the same
+# way back.
+#
 # It runs only under a critical floor (CRIT_MB, default 10240M free -- 10G on a 113Gi volume,
 # which is macOS's own 10% headroom advice; a 4000M floor would not have fired on this machine,
 # whose free space was 7885M) and only with apply=true. Under the floor the alternative is a
@@ -414,7 +436,9 @@ fi
 #     pi and cline run node out of a pinned path, and deleting it breaks them mid-task;
 #   - anything a running process holds open (one lsof listing, the same one the Chrome-clone
 #     pass uses): a file open under it is a file in use;
-#   - rustup's own default toolchain, and any ollama server that is running.
+#   - rustup's own default toolchain, and any ollama server that is running;
+#   - a cargo/rustc or a go build that is running, and a git gc/repack already in flight:
+#     those are writing into what they would reclaim.
 # Everything else goes, and every line says how to get it back.
 crit_held=""
 crit_reclaim() {  # NAME PATH HOW-TO-GET-IT-BACK
@@ -428,6 +452,27 @@ crit_reclaim() {  # NAME PATH HOW-TO-GET-IT-BACK
 }
 crit_in_use() {  # 0 when a process holds a file open under $1
   printf '%s\n' "$crit_held" | awk -v w="$1" 'index($0, w"/")==1 || $0==w {f=1} END{exit !f}'
+}
+# A REPACK is not a delete: git gc rewrites the same objects into one pack file and keeps every
+# reachable one (git's own guarantee). Only unreachable objects older than gc.pruneExpire (two
+# weeks by default) are pruned. Measured before and after, so the line states what it freed.
+crit_repack() {  # NAME REPO
+  local name=$1 repo=$2 before_m after_m loose_before loose_after out rc
+  loose_before=$(git -C "$repo" count-objects -v 2>/dev/null | awk '$1=="size:"{print $2}')
+  case "$loose_before" in ''|*[!0-9]*) loose_before=0;; esac
+  before_m=$(size_m "$repo/.git")
+  out=$(tmo "$T_REPACK" git -C "$repo" gc --quiet 2>&1); rc=$?
+  loose_after=$(git -C "$repo" count-objects -v 2>/dev/null | awk '$1=="size:"{print $2}')
+  case "$loose_after" in ''|*[!0-9]*) loose_after=0;; esac
+  after_m=$(size_m "$repo/.git")
+  if [ "$rc" -ne 0 ]; then
+    echo "  !! $name  git gc did not finish (exit $rc): $(printf '%s' "$out" | tail -1)"
+    fails=$((fails + 1)); return 0
+  fi
+  if [ "$loose_after" -ge "$loose_before" ]; then
+    echo "  keep   $name  ${after_m}M  $repo/.git  (git gc left ${loose_after}K of loose objects)"; return 0
+  fi
+  echo "  freed  $name  $(((loose_before - loose_after) / 1024))M of loose objects  $repo/.git  (${before_m}M -> ${after_m}M on disk; git gc: the same objects, one packed file)"
 }
 crit_pinned_nodes() {  # the node versions the estate's own runtime names
   local d
@@ -504,6 +549,62 @@ crit_tier() {
       if crit_in_use "$v"; then echo "  keep   claude-version  ${m}M  $v  (a process holds it open)"; continue; fi
       crit_reclaim claude-version "$v" "claude's updater re-downloads it"
     done
+  fi
+
+  # 5. the estate's own git clone: loose objects, repacked. Measured 2026-10-24 on the founder's
+  #    laptop: ~/.estate/graph/estate-graph held 5415 loose objects = 3.05 GiB while its pack held
+  #    11 MiB -- every session transcript the router drained into it was written as a loose
+  #    object and never repacked. `git fsck --unreachable` found none: all 8340 objects are
+  #    reachable, so this is not garbage, it is the same content stored as 5415 files instead of
+  #    one pack. `git gc` repacks it: no reachable object is lost, and only unreachable objects
+  #    older than gc.pruneExpire (two weeks by default) are pruned. This is the one place the
+  #    tier rewrites rather than deletes, and it is why it is measured before and after.
+  for repo in $GIT_REPOS; do
+    [ -d "$repo/.git" ] || continue
+    repo=$(cd "$repo" 2>/dev/null && pwd -P) || continue
+    [ -n "$repo" ] || continue
+    loose=$(git -C "$repo" count-objects -v 2>/dev/null | awk '$1=="size:"{print $2}')
+    case "$loose" in ''|*[!0-9]*) loose=0;; esac
+    if [ "$loose" -lt "$REPACK_MIN_KB" ]; then
+      echo "  keep   git-repack  $((loose / 1024))M  $repo  (only ${loose}K of loose objects)"; continue
+    fi
+    if pgrep -f "$GIT_BUSY" >/dev/null 2>&1; then
+      echo "  keep   git-repack  $((loose / 1024))M  $repo  (a git gc/repack is already running)"; continue
+    fi
+    if crit_in_use "$repo/.git"; then
+      echo "  keep   git-repack  $((loose / 1024))M  $repo  (a process holds it open)"; continue
+    fi
+    if [ "$APPLY" = 0 ]; then
+      echo "  would  git-repack  $((loose / 1024))M  $repo/.git  (git gc: the same objects, one packed file)"; continue
+    fi
+    crit_repack git-repack "$repo"
+  done
+
+  # 6. cargo's registry: the crates it downloaded. Measured 2026-10-24: ~/.cargo/registry held
+  #    1081M (src 1018M, index 59M, cache 4M). `cargo fetch` re-downloads and re-extracts all of
+  #    it, so it is a download cache one level up from the build caches the allow-list deletes.
+  #    A cargo or rustc process running means a build may be writing into it: it stays.
+  if [ -d "$CARGO_REGISTRY" ]; then
+    if pgrep -f "$CARGO_PROC" >/dev/null 2>&1; then
+      echo "  keep   cargo-registry  $(size_m "$CARGO_REGISTRY")M  $CARGO_REGISTRY  (a cargo/rustc process is running)"
+    elif crit_in_use "$CARGO_REGISTRY"; then
+      echo "  keep   cargo-registry  $(size_m "$CARGO_REGISTRY")M  $CARGO_REGISTRY  (a process holds it open)"
+    else
+      crit_reclaim cargo-registry "$CARGO_REGISTRY" "cargo fetch"
+    fi
+  fi
+
+  # 7. the Go module cache: the modules it downloaded. Measured 2026-10-24: ~/go/pkg/mod held
+  #    774M (golang.org 341M, github.com 222M, the download cache 212M). `go mod download`
+  #    re-fetches every one of them.
+  if [ -d "$GO_MODCACHE" ]; then
+    if pgrep -f "$GO_PROC" >/dev/null 2>&1; then
+      echo "  keep   go-modcache  $(size_m "$GO_MODCACHE")M  $GO_MODCACHE  (a go build is running)"
+    elif crit_in_use "$GO_MODCACHE"; then
+      echo "  keep   go-modcache  $(size_m "$GO_MODCACHE")M  $GO_MODCACHE  (a process holds it open)"
+    else
+      crit_reclaim go-modcache "$GO_MODCACHE" "go mod download"
+    fi
   fi
 }
 
