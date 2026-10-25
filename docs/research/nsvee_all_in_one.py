@@ -271,6 +271,7 @@ class FakeRouter:
 import os
 import re
 import signal
+import sys
 
 try:
     import resource as _resource
@@ -448,19 +449,33 @@ class RlimitsRunner:
         assert resource is not None, "rlimits runner requires POSIX"
         cpu = 20  # seconds of CPU
         mem = self.memory_mb * 1024 * 1024
-        return [
+        limits = [
             (resource.RLIMIT_CPU, (cpu, cpu + 1)),
-            (resource.RLIMIT_AS, (mem, mem)),
             (resource.RLIMIT_FSIZE, (8 * 1024 * 1024, 8 * 1024 * 1024)),
             (resource.RLIMIT_NPROC, (64, 64)),
             (resource.RLIMIT_NOFILE, (64, 64)),
         ]
+        if sys.platform != "darwin":
+            # Darwin: a hard RLIMIT_AS SIGKILLs CPython at startup (child_rc=9,
+            # measured 2026-10-26) — the interpreter's malloc zone reserves
+            # address space past the cap. Address-space bounds stay on Linux;
+            # on darwin the wall-clock kill + NOFILE/NPROC carry the isolation.
+            limits.insert(1, (resource.RLIMIT_AS, (mem, mem)))
+        return limits
 
     def _apply_limits(self):
         if _resource is None:
             return
         for k, v in self._limits():
-            _resource.setrlimit(k, v)
+            try:
+                _resource.setrlimit(k, v)
+            except (OSError, ValueError, RuntimeError):
+                # An inapplicable limit must degrade, not kill the run: a raise
+                # inside preexec_fn surfaces to the caller as SubprocessError,
+                # which this runner reported as SANDBOX_ERROR and the pipeline
+                # as SANDBOX_DEGRADED (hypotheses.race 2026-10-26: H_popen and
+                # H_as supported, all else falsified).
+                pass
 
     def run(self, script: str, timeout_s: int) -> SandboxResult:
         env = {"PATH": "/usr/bin:/bin", "PYTHONDONTWRITEBYTECODE": "1", "HOME": "/tmp"}

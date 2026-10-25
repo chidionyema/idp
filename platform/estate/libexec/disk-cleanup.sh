@@ -94,6 +94,10 @@ SCAN_EVERY_MIN="${DISK_CLEANUP_SCAN_EVERY_MIN:-60}"
 SCAN_TOP="${DISK_CLEANUP_SCAN_TOP:-15}"
 BIG_FILE_MB="${DISK_CLEANUP_BIG_FILE_MB:-200}"
 T_SCAN="${DISK_CLEANUP_SCAN_TIMEOUT:-300}"
+# One system spot may not outlive the run's door: du of /System/Volumes/Update took 118s here
+# (measured 2026-10-26, no-budget dry run: 118 of 125 total seconds), so a legacy no-budget call
+# could be killed by the 100s door mid-scan. BLIND beats a door kill.
+T_SPOTS="${DISK_CLEANUP_SPOTS_TIMEOUT:-45}"
 SYSTEM_SPOTS="${DISK_CLEANUP_SYSTEM_SPOTS-/System/Volumes/Update /private/var/vm}"
 SCAN_FILE="${DISK_CLEANUP_SCAN_FILE:-$HOME/.estate/disk-cleanup.last-scan}"
 CRIT_MB="${DISK_CLEANUP_CRIT_MB:-10240}"   # free-space floor under which the toolchain tier runs
@@ -113,7 +117,7 @@ case "$TRASH" in True|true) TRASH=1;; *) TRASH=0;; esac
 case "$WORKTREES" in True|true) WORKTREES=1;; *) WORKTREES=0;; esac
 for v in WT_IDLE_MIN WT_FRESH_MIN WT_STALE_MIN WT_ARCHIVE_MAX_MB WT_QUARANTINE_DAYS TMP_IDLE_MIN \
          CLONE_FRESH_MIN SCAN_EVERY_MIN SCAN_TOP BIG_FILE_MB T_SCAN CRIT_MB REPACK_MIN_KB T_REPACK \
-         BUDGET; do
+         T_SPOTS BUDGET; do
   case "${!v}" in ''|*[!0-9]*) echo "REFUSED DISK_CLEANUP_$v=${!v} is not a number"; exit 1;; esac
 done
 case "$ONLY_BELOW_MB" in ''|*[!0-9]*) echo "REFUSED only_below_mb=$ONLY_BELOW_MB is not a number"; exit 1;; esac
@@ -797,8 +801,12 @@ scan() {
   done | sort -rn | head -"$SCAN_TOP"
   for p in $SYSTEM_SPOTS; do
     [ -e "$p" ] || continue
-    k=$(tmo 120 du -sk "$p" 2>/dev/null | awk '{print $1}')
-    if [ -n "$k" ]; then echo "  system  $((k / 1024))M  $p"; else echo "  system  unreadable  $p"; fi
+    k=$(tmo "$T_SPOTS" du -sk "$p" 2>/dev/null)
+    rc=$?
+    k=$(printf '%s\n' "$k" | awk '{print $1}')
+    if [ "$rc" = 142 ]; then echo "  BLIND  spots  du of $p did not finish in ${T_SPOTS}s"
+    elif [ -n "$k" ]; then echo "  system  $((k / 1024))M  $p"
+    else echo "  system  unreadable  $p"; fi
   done
 }
 if [ "$APPLY" = 0 ] || [ "$(($(free_k) / 1024))" -lt "$ONLY_BELOW_MB" ]; then
