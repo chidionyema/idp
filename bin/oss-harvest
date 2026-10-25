@@ -256,10 +256,24 @@ def harvest(out_path: str) -> int:
     return 0 if repos else 1
 
 
+# Two kinds of first segment are never a GitHub org in these documents.
+#
+# 1. A path in this repository (docs/, bin/, litellm-local/, platform/, ...) -- `wc -l
+#    litellm-local/callbacks/pobr_gate.py` in a fenced block is a command, and the fence rule in
+#    verify() already covers that, but the same path in prose is a path too.
+# 2. This estate's own VOCABULARY. A document about structured formats says "receipt/envelope",
+#    "doc/claim", "catalog/graph" and "read/write", and every one of those is lexically identical
+#    to `owner/name` -- there is no rule that separates them, because nothing distinguishes a
+#    product name from a pair of nouns. So the vocabulary is listed. It is a list because it has
+#    to be one; the check stays strict everywhere else, and the cost of an entry here is that a
+#    repo genuinely named `receipt/*` would not be checked (the registry holds none).
 NON_CODE_NAMESPACES = (
     "docs", "bin", "tests", "platform", "schema", "mcp", "features", "web",
     "backstage", "clusters", "callbacks", "estate", "sovereign", "forge", "eval", "llm", "crew",
-    "chidionyema", "facts", "scheduler", "extensions", "web", "infra",
+    "chidionyema", "facts", "scheduler", "extensions", "infra", "litellm-local", "lane", "origin",
+    # vocabulary (kind 2)
+    "receipt", "doc", "catalog", "graph", "read", "write", "file", "code", "energy", "grammar",
+    "ci", "agent", "tool", "rung",
 )
 
 
@@ -276,6 +290,14 @@ def verify(json_path: str, md_path: str) -> int:
     known = {r["repo"].lower() for r in doc["repos"] if r.get("repo")}
     with open(md_path, encoding="utf-8") as f:
         md = f.read()
+    # A fenced code block is a COMMAND, not a citation. The paths in section 7 of a digest
+    # (`wc -l litellm-local/callbacks/pobr_schema.py`) are real paths that a `owner/name`
+    # regex reads as a repo, and 8 of them were reported as unharvested repos the first time
+    # this verifier met a document that also contains shell. Stripping fences keeps the check
+    # exactly as strict where it matters -- a repo named in prose -- and stops it accusing a
+    # command of being a claim. A repo named INSIDE a fence is thereby not checked; that is
+    # stated here rather than discovered later, and no digest in this repo cites from a fence.
+    md = re.sub(r"^```.*?^```", "", md, flags=re.S | re.M)
 
     missing = []
     for m in re.finditer(r"\b([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)\b", md):

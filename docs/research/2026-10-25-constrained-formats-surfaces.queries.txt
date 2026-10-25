@@ -1,0 +1,23 @@
+# Structured formats across an agent estate's surfaces: code read/write/diff, discovery,
+# capabilities, services, cluster, source control, CI/CD, lane/merge automation, research,
+# claims/provenance, memory, gateways (JEV/Otto/face/fleet/voice).
+# Format: `theme | arxiv query`. Comments and blanks ignored. See bin/arxiv-harvest.
+code-edit | all:"code editing" AND all:"large language model" AND all:agent
+code-edit | all:"repository-level" AND all:"code generation" AND all:agent
+diff-patch | all:"patch generation" AND all:"large language model"
+diff-patch | all:"diff" AND all:"code review" AND all:"language model"
+code-edit | all:"file" AND all:"read" AND all:"write" AND all:agent AND all:benchmark
+tool-calling | all:"tool calling" AND all:"large language model" AND all:benchmark
+tool-calling | all:"function calling" AND all:"schema" AND all:"error"
+capability-discovery | all:"tool retrieval" AND all:agent AND all:"large language model"
+capability-discovery | all:"agent" AND all:"skill discovery" AND all:"composition"
+ci-cd | all:"continuous integration" AND all:"large language model" AND all:agent
+ci-cd | all:"build failure" AND all:"automated repair" AND all:"language model"
+source-control | all:"pull request" AND all:"large language model" AND all:agent
+multi-agent | all:"multi-agent" AND all:"communication protocol" AND all:LLM
+multi-agent | all:"agent handoff" AND all:"context" AND all:"loss"
+memory | all:"agent memory" AND all:"structured" AND all:"long-term"
+observability | all:"telemetry" AND all:"agent" AND all:"semantic" AND all:"logs"
+voice | all:"speech" AND all:"agent" AND all:"tool" AND all:"structured"
+research-agent | all:"literature review" AND all:agent AND all:"citation"
+provenance | all:"provenance" AND all:"agent" AND all:"claim" AND all:"verification"

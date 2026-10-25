@@ -42,13 +42,32 @@ deleted**, on the day the door learns to refuse.
 
 **D4. A repair must declare itself.**
 `2608.04355v1` measures that format repair masquerades as self-correction. The estate's PoBR receipt
-(`platform/llm/callbacks/pobr_enforce.py`) already fails closed on a missing receipt, so the repair
-boundary is one added field — `repaired: true`, with the failing schema and field — not a new
-receipt format.
+(`litellm-local/callbacks/pobr_enforce.py`; the live copy is `mcp/plugins/pobr_*.py`, see D6)
+already fails closed on a missing receipt, so the repair boundary is one added field —
+`repaired: true`, with the failing schema and field — not a new receipt format.
 
 **D5. The lane's `response_format` schema and the caller's validation schema are one object.**
 `2605.04107v1`: the wire schema is the only contract the model sees. Two copies of the shape (one
 for decoding, one for validation) is the estate's §6 defect applied to a schema.
+
+**D6. Boundary 2 lives at the door, and the router's copy is the orphan to delete.**
+Asked whether shape enforcement should ride the routing layer so every surface inherits it at once,
+the measured answer is: for boundary 1 yes, for boundary 2 no. `platform/llm/front.py` is a
+221-line bytes-only forwarder (`rg 'json|schema'` over it returns nothing) and is deliberately the
+process that never restarts — the opposite of a validator, on every agent's hot path. And the
+estate already answered this by building: `litellm-local/callbacks/pobr_enforce.py` fails closed by
+design, `pobr_schema.py` is 522 lines, `pobr_gate.py` 364 — and **no config loads any of them**
+(`rg pobr platform/llm/config*.yaml` is empty). The live copy is `mcp/plugins/pobr_*` (wired at
+`estate_mcp.py:16,340,359,375`) and the two have drifted (522 vs 520 lines; hashes differ). So: the
+door owns the shape, the router copy is deleted (spec §4 ladder step 5), and the shape is inherited
+everywhere because every surface reaches the estate through the door or the executor.
+
+**D7. Scope is four shapes, not twenty surfaces.**
+Every surface — agent action, discovery and capabilities, services, cluster, source control, CI and
+CD, the greenlane, research, claims, JEV, Otto, the concierge face, the fleet view, voice, memory,
+file and code read/write/diff — is a caller of one of four shapes (intent call; receipt/envelope;
+doc/claim; catalog/graph node) at one of the same three boundaries. Per-product schemas would be
+the eleventh copy (AGENTS.md §6) and are refused: `docs/research/2026-10-25-constrained-formats-surfaces.md`.
 
 ## Consequences
 
@@ -62,6 +81,14 @@ for decoding, one for validation) is the estate's §6 defect applied to a schema
   --verify` refuses one, because a number without a harvested row is an assertion.
 - R4 is documented as measuring the **documentation gap** the door is about to enforce, not a
   runtime difference: `resolve_args` does not read `required` today.
+- The estate-wide ledger turns "structured formats" from a proposal into a map with one open cell
+  (shape 1, validate — this change) and one live duplicate (shape 2's two PoBR copies), so the next
+  lane does not have to re-derive either. Its citations are held to the same rule as the digest:
+  `bin/oss-harvest --verify` and `bin/arxiv-harvest --verify` run over it by test.
+- The verifier learned to tell a command from a citation (a fenced block is stripped): the first
+  document to contain shell made it report 8 unharvested repos that were a branch, a directory and
+  five prose slash-pairs. The fix narrows *where* it looks, not *how hard* — the same token in
+  prose still fails, and a test asserts both halves.
 
 ## Alternatives rejected
 

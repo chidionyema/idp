@@ -2,6 +2,8 @@
 
 **Status:** proposal, with the measurement landed · claim idp#7089 · 2026-10-25
 **Companion research:** `docs/research/2026-10-25-constrained-formats-research.md`
+**Estate-wide ledger:** `docs/research/2026-10-25-constrained-formats-surfaces.md` (which surface
+crosses which shape at which boundary — measured, per surface)
 **Decision record:** `docs/decisions/0042-one-schema-at-every-boundary.md`
 
 ---
@@ -21,6 +23,16 @@ The evidence for why this matters is not architectural taste. `2609.23742v1` mea
 constrained decoding removes structural failure and leaves the semantic gap; `2608.24569v2` and
 `2605.06445v2` measure that constraints decay across handoffs and loose specifications;
 `2608.04355v1` measures that format repair masquerades as self-correction.
+
+**The decode row is worse than "0 constraints", and the estate can prove it.** The enforcement
+layer for boundary 1 was built and never loaded: `litellm-local/callbacks/pobr_enforce.py`
+(fail-closed by design — it refuses every completion when its wrapper is missing) plus
+`pobr_schema.py` (522 lines) and `pobr_gate.py` (364), and `rg pobr platform/llm/config*.yaml`
+returns **zero matches**. A second copy lives at the MCP door (`mcp/plugins/pobr_schema.py` 520,
+`pobr_gate.py` 362, wired at `estate_mcp.py:16,340,359,375`) and the two have already drifted
+(`pobr_schema.py` 522 vs 520; the hashes differ). AGENTS.md §6 reproduced inside the one layer
+that is supposed to stop it. That is measured in
+`docs/research/2026-10-25-constrained-formats-surfaces.md` §5.
 
 ## 2. Goal
 
@@ -70,6 +82,7 @@ the agent's own arguments** and to the lane's `response_format`.
 | 2 | per-intent args schema generated from `args:`, validated by `intent-compile`'s validator | nothing yet (reporting only, in the same ratchet) | next |
 | 3 | `resolve_args` refuses undeclared + wrong type | the two defects in §1 | next |
 | 4 | `resolve_args` enforces `required`; unparseable intent refused by the parser | the remaining two | after the corpus is clean |
+| 5 | delete the orphaned `pobr_*` copy under litellm-local, so boundary 1's owner is the door's copy | the duplicate (AGENTS.md §6) | next lane — the directory holds no loaded config, so the deletion is provable by one grep |
 
 **Why the tightening is not in this change:** 74 violations sit in `main`. Turning enforcement on
 today refuses correct work in every lane — the guard-that-refuses-correct-work defect (R38) — and
@@ -96,6 +109,12 @@ Two modes: **strict** (exit 1 on any violation — fails on `main` today, assert
 - No new receipt format: PoBR's envelope is extended by one field, not replaced.
 - No change to `resolve_args` in this change (§4).
 - No model, provider or routing change.
+- **No validator in `platform/llm/front.py`.** It is a 221-line bytes-only forwarder whose own
+docstring says it never changes so it never restarts (`rg 'json|schema'` over it returns nothing),
+and it sits on every agent's hot path. Boundary 1 reaches the inference server as a request field;
+boundary 2 belongs at the door. `docs/research/2026-10-25-constrained-formats-surfaces.md` §5.
+- **No schema per product.** Otto, the concierge face, the fleet view, JEV and voice are callers
+of the two doors, not owners of a shape: 6+2 intents between them, all counted in the same 96.
 
 ## 7. Proof plan
 
@@ -119,3 +138,23 @@ Two modes: **strict** (exit 1 on any violation — fails on `main` today, assert
   never be described as a jailbreak defence.
 - A ratchet can ossify a baseline. Mitigation: the gate prints `fixed` counts, and step 2 of the
   ladder regenerates the baseline as part of its own change.
+
+## 9. Estate-wide scope: four shapes, three boundaries
+
+When the question is "does this cover the estate?", the answer is a table rather than a list of
+products. Every surface named — agent action, discovery and capabilities, services, cluster,
+source control, CI and CD, the greenlane, research, claims, JEV, Otto, the concierge face, the
+fleet view, voice, memory, file and code read/write/diff — resolves to one of **four shapes**
+(intent call; receipt/envelope; doc/claim; catalog/graph node) crossing one of the same **three
+boundaries**. Twenty surfaces, four shapes; most surfaces are callers and inherit a fix at the
+door.
+
+| Shape | Owner | Enforced today? |
+|---|---|---|
+| intent call | `schema/intent/*.schema.json` + `bin/intent-compile` | **no** — this change measures it |
+| receipt / envelope | `schema/mutation-envelope.schema.json` + `bin/idp-reversibility-gate` | partly, and in two divergent copies (§1) |
+| doc / claim | `bin/claim-gate` | yes, by regex |
+| catalog / graph node | `schema/catalog-ontology.json` + `bin/idp-catalog-spec-type-gate` | yes for catalog |
+
+This change closes exactly one cell: **shape 1, validate**. The ledger says why the other cells are
+not this change's, and what each would need.

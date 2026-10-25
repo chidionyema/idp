@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -389,6 +390,77 @@ def test_oss_verify_refuses_an_unharvested_repo(tmp_path):
     r = run([sys.executable, str(OSS), "--verify", str(harvest), str(bad)])
     assert r.returncode == 1
     assert "some-org/invented-tool" in r.stderr
+
+
+SURFACES_HARVEST_JSON = (
+    REPO / "docs" / "research" / "2026-10-25-constrained-formats-surfaces-harvest.json"
+)
+SURFACES = REPO / "docs" / "research" / "2026-10-25-constrained-formats-surfaces.md"
+
+
+def test_oss_verify_reads_a_command_as_a_command_not_a_citation(tmp_path):
+    """A path in a shell block is not a repo claim; the same token in prose is.
+
+    The first time the verifier met a document that also contains shell (the surfaces ledger,
+    2026-10-25) it reported 8 unharvested repos that were really a branch, a directory and five
+    prose slash-pairs. The fix was to strip fenced blocks -- NOT to soften the check, so this
+    test proves both halves: the fenced token is ignored, and the identical token in prose still
+    fails. A verifier that stopped failing on prose would pass half of this and must not.
+    """
+    harvest = tmp_path / "oss.json"
+    harvest.write_text(
+        json.dumps({"repos": [{"repo": "dottxt-ai/outlines", "stars": 1}]}),
+        encoding="utf-8",
+    )
+    fenced = tmp_path / "fenced.md"
+    fenced.write_text(
+        "`dottxt-ai/outlines` is measured.\n\n```bash\nwc -l some-org/not-a-repo.py\n```\n",
+        encoding="utf-8",
+    )
+    r = run([sys.executable, str(OSS), "--verify", str(harvest), str(fenced)])
+    assert r.returncode == 0, r.stderr
+
+    prose = tmp_path / "prose.md"
+    prose.write_text(
+        "`dottxt-ai/outlines` and `some-org/not-a-repo`.", encoding="utf-8"
+    )
+    r = run([sys.executable, str(OSS), "--verify", str(harvest), str(prose)])
+    assert r.returncode == 1
+    assert "some-org/not-a-repo" in r.stderr
+
+
+def test_the_verifier_vocabulary_shadows_no_harvested_repo():
+    """The exclusion list must not silently switch the check off for a repo we DID harvest.
+
+    NON_CODE_NAMESPACES exists to stop a path or a prose slash-pair being read as a repo. Its cost
+    is that a repo whose owner is on the list is never checked -- so no owner we actually harvest
+    may appear on it. Without this test, adding a vocabulary word could quietly stop verifying one
+    of the projects the digest cites.
+    """
+    ns = _load_oss_namespaces()
+    harvest = json.loads(OSS_JSON.read_text(encoding="utf-8"))
+    owners = {
+        r["repo"].split("/")[0].lower() for r in harvest["repos"] if r.get("repo")
+    }
+    assert not (owners & set(ns)), sorted(owners & set(ns))
+
+
+def _load_oss_namespaces():
+    """Read NON_CODE_NAMESPACES out of the script, which has no .py suffix to import."""
+    src = OSS.read_text(encoding="utf-8")
+    start = src.index("NON_CODE_NAMESPACES = (")
+    end = src.index(")", start)
+    return re.findall(r'"([^"]+)"', src[start:end])
+
+
+def test_the_surface_ledger_cites_only_harvested_papers_and_repos():
+    """The estate-wide ledger is held to the same rule as the digest: no unmeasured citation."""
+    for args in (
+        [str(HARVEST), "--verify", str(SURFACES_HARVEST_JSON), str(SURFACES)],
+        [str(OSS), "--verify", str(OSS_JSON), str(SURFACES)],
+    ):
+        r = run([sys.executable, *args])
+        assert r.returncode == 0, r.stderr
 
 
 def test_the_committed_digest_cites_only_harvested_papers():
