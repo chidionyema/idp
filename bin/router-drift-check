@@ -39,7 +39,7 @@ CLUSTER_CM = "litellm-config-ddgh6tmckk"
 # detail, not drift -- only the NAME inventory must converge.
 ALLOWED_LAPTOP_ONLY = {"ollama-"}             # laptop fallback lanes (prefix), never on cluster
 SPHERE_LOCAL_MARKERS = ("host.docker.internal", "localhost", "127.0.0.1", ".svc.cluster.local", "ollama")
-ALLOWED_CLUSTER_ONLY = {"embed", "embed-cohere", "embed-query", "rerank"}
+ALLOWED_CLUSTER_ONLY = {"embed", "embed-cohere", "embed-query", "rerank", "image"}
 
 # Fields that define a lane's caller-visible behavior.
 LANE_FIELDS = ("model", "api_base")
@@ -119,7 +119,10 @@ def main():
     for n in sorted(n for n in only_clu if n not in unexpected_clu):
         print(f"note cluster-only (allowed): {n}")
 
-    hard_changed = [n for n in changed if not (sphere_bound(lap[n]) and sphere_bound(clu[n]))]
+    # Hard drift needs BOTH sides cloud-wired: a difference on any sphere-local leg is
+    # fulfillment detail (laptop ollama vs cluster svc vs vendor API -- founder ruling
+    # 2026-10-25: names are the contract). Both-cloud rewiring is real drift.
+    hard_changed = [n for n in changed if not sphere_bound(lap[n]) and not sphere_bound(clu[n])]
     if unexpected_lap or unexpected_clu or hard_changed:
         print(f"FAIL router drift: {len(unexpected_lap)} laptop-only, {len(unexpected_clu)} cluster-only, {len(hard_changed)} rewired")
         return 1
