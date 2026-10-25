@@ -18,6 +18,8 @@ args:
   max_turns: {type: int, default: 30}
   attempts:  {type: int, default: 3}
 steps:
+    # Step bound removed 2026-10-25: time is declared once, as this intent's budget
+    # (docs/decisions/0043-the-bound-lives-at-the-door.md). A number here could only be a
+    # guess about someone else's work, and where it fired it invented a failure.
   - name: run
-    timeout: 7200
     cmd: python3 ~/.estate/libexec/delegate-build.py {{verb}} spec={{spec}} slug={{slug}} repo={{repo}} planner={{planner}} builder={{builder}} reasoning={{reasoning}} risk={{risk}} parallel={{parallel}} max_turns={{max_turns}} attempts={{attempts}}

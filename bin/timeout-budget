@@ -1,0 +1,529 @@
+#!/usr/bin/env python3
+"""timeout-budget -- one bound, at the door, and this gate refuses a second one.
+
+THE RULE (docs/decisions/0043-the-bound-lives-at-the-door.md):
+
+    Wall-clock time is bounded in exactly one place -- the executor's ceiling, CEILING_SEC in
+    mcp/plugins/estate_executor.py -- and every intent spends from that one number. A bound
+    written INSIDE a step ("timeout 80 git push", a subprocess timeout=30, a `timeout 20` in a
+    hook) is a guess about how long someone else's work takes. It cannot be right more often than
+    the real distribution, so where it fires it invents a failure, and where it does not fire it
+    is dead weight that teaches the reader a number that means nothing.
+
+MEASURED, and the reason this file exists rather than a paragraph (2026-10-25):
+
+    lane-submit's push step carried `timeout 80` inside a 100s step. The same push, with the
+    estate's pre-push guard attached, took 98s -- so the step reported `lane/<branch> on origin is
+    'absent'` while the push was still landing. Before that it was `timeout 50` inside a 60s step,
+    which failed the same way at 60s. Two versions of the same guess, two false failures. The
+    intent also declared `door_s: 170`, a door nothing in this estate grants, because the executor
+    kills any command at 100s: the declaration was a lie to every reader including its own tests.
+
+TWO EXCEPTIONS, both of which have to be written down to exist:
+
+    1. A bound on a PROBE may be shorter than the work it guards, because the probe's own latency
+       is the thing being measured and a hung probe must fail instead of hanging the step
+       (`curl --connect-timeout 2`). Mark it on the line:
+           git ls-remote ...   # estate:bound the probe must fail faster than the step budget
+
+    2. A bound DERIVED from the ceiling is the ceiling, not a second opinion:
+           timeout "$CEILING" ...        (a variable, never a literal)
+
+WHAT THIS GATE CHECKS
+
+    A  door      every intent's door_s (or its deprecated `timeout:`) is <= CEILING_SEC
+    B  fit       the intent's steps sum to no more than its door_s -- one invocation, one door
+    C  inert     no step declares a timeout wider than the budget it is run inside
+    D  inner     no command carries a literal wall-clock bound of its own (intents: strict,
+                 bin/ and hooks: ratcheted against bin/timeout-budget.baseline so the estate can
+                 shrink its way green instead of freezing the habit in place)
+    E  scope     the same checks run over ~/.estate/intents, the library an agent actually invokes.
+                 That directory is main's intents PLUS every intent crystallized on this laptop,
+                 and runtime-sync only ever adds or updates it -- it never deletes. Measured
+                 2026-10-25: 133 step caps there, 57 of them at or above the ceiling. A gate that
+                 graded only the checkout would have called that clean.
+
+Exit codes: 0 clean, 1 a new bound or a broken budget, 2 usage/precondition error.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+from collections import Counter
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+EXECUTOR = ROOT / "mcp/plugins/estate_executor.py"
+INTENTS = ROOT / "platform/estate/intents"
+BASELINE = ROOT / "bin/timeout-budget.baseline"
+# runtime-sync stages main's intents into ~/.estate/intents and only ever adds or updates -- it never
+# deletes -- so the library an agent actually invokes is main's 96 plus ~266 crystallized on this
+# laptop that exist nowhere else. Measured 2026-10-25: that library carried 133 step caps, 57 of them
+# at or above the ceiling. A rule that holds in review and not at runtime is not the rule.
+INSTALLED = Path(os.environ.get("ESTATE_INTENTS") or Path.home() / ".estate/intents")
+
+
+def _retarget(root: Path) -> None:
+    """Point the gate at another checkout -- used by its own tests, which must be able to add a
+    bound and watch the gate refuse it without editing the tree under test."""
+    global ROOT, EXECUTOR, INTENTS, BASELINE
+    ROOT = root
+    EXECUTOR = root / "mcp/plugins/estate_executor.py"
+    INTENTS = root / "platform/estate/intents"
+    BASELINE = root / "bin/timeout-budget.baseline"
+
+
+# Where a literal bound may still be found. Intents are strict: the executor door is the only door
+# an agent has, and every intent runs inside it. Everything else is ratcheted.
+def ratcheted_dirs() -> list[Path]:
+    return [ROOT / "bin", ROOT / "hooks"]
+
+
+STRICT_SUFFIXES = {".yaml", ".yml"}
+RATCHETED_SUFFIXES = {"", ".sh", ".bash", ".zsh", ".py", ".pl", ".rb", ".js", ".ts"}
+
+MARKER = re.compile(r"#\s*estate:bound\s+(\S.*)$")
+
+# A bound in shell: the word `timeout`/`gtimeout` in command position followed by a number.
+SHELL_BOUND = re.compile(
+    r"(?:^|[;&|(]|\$\()[ \t]*(?:timeout|gtimeout)(?:[ \t]+-[a-zA-Z]+[ \t]+\d+)*[ \t]+(\d+)([smhd]?)"
+)
+# A bound in python: subprocess.run(..., timeout=30) and friends.
+PY_BOUND = re.compile(r"\btimeout\s*=\s*(\d+)\b")
+# Bash's own `read -t`/`sleep`-style waits are not bounds on a command; neither is `curl -m N`
+# parsed here, because it belongs to the tool rather than to the step. Only the two forms above
+# are the class this estate has actually been bitten by.
+
+
+def ceiling_sec() -> int:
+    """The one number. Read from the module that defines it, never restated here."""
+    text = EXECUTOR.read_text()
+    m = re.search(r"^CEILING_SEC\s*=\s*(\d+)", text, re.MULTILINE)
+    if not m:
+        raise SystemExit(
+            "timeout-budget: cannot find CEILING_SEC in mcp/plugins/estate_executor.py; the "
+            "budget has one source of truth and this gate will not invent a second"
+        )
+    return int(m.group(1))
+
+
+def _yaml_load(path: Path, base: Path | None = None) -> dict:
+    import yaml
+
+    try:
+        return yaml.safe_load(path.read_text()) or {}
+    except Exception as e:  # noqa: BLE001 - a malformed intent is the gate's business, not a crash
+        try:
+            shown = path.relative_to(base or ROOT)
+        except ValueError:
+            shown = path
+        raise SystemExit(f"timeout-budget: cannot read {shown}: {e}") from None
+
+
+def _declared_budget(doc: dict):
+    """(seconds, where it came from) for one intent, mirroring estate-execute's own reader."""
+    if doc.get("door_s") is not None:
+        try:
+            return int(doc["door_s"]), "door_s"
+        except (TypeError, ValueError):
+            return None, f"door_s is not whole seconds: {doc['door_s']!r}"
+    if doc.get("timeout") is not None:
+        try:
+            return int(doc["timeout"]), "timeout (deprecated name)"
+        except (TypeError, ValueError):
+            return None, f"timeout is not whole seconds: {doc['timeout']!r}"
+    return None, "no door_s (the door's ceiling applies)"
+
+
+def check_budgets(
+    ceiling: int, intents: Path | None = None, label: str = ""
+) -> list[dict]:
+    """Checks A, B and C: the declaration fits the door, the steps fit the declaration, no step
+    asks for time it can never be given. `intents` runs the same checks over the installed library,
+    whose findings carry the prefix they were found under."""
+    findings = []
+    intents = intents or INTENTS
+    for path in sorted(intents.glob("*.yaml")):
+        try:
+            doc = _yaml_load(path, intents)
+        except SystemExit as e:
+            # An unparseable intent cannot run at all, and that defect has an owner (bin/intent-compile
+            # and the schema rung), so it is reported here rather than failed twice.
+            findings.append(_finding("note", label + path.name, "-", "A", str(e)))
+            continue
+        rel = label + path.name
+        budget, source = _declared_budget(doc)
+        if budget is None and source.startswith(("door_s is", "timeout is")):
+            findings.append(_finding("FAIL", rel, "-", "A", source))
+            continue
+        effective = ceiling if budget is None else budget
+        if budget is not None and budget > ceiling:
+            findings.append(
+                _finding(
+                    "FAIL",
+                    rel,
+                    "-",
+                    "A",
+                    f"{source} declares {budget}s; nothing in this estate may run longer than "
+                    f"{ceiling}s, so the declaration is time no door grants",
+                )
+            )
+        steps = doc.get("steps") or []
+        # Only a DECLARED step cap reserves time. A step with no `timeout:` is bounded by what is
+        # left of the budget, not by a fresh copy of it, so it contributes nothing to the sum.
+        total = 0
+        for i, step in enumerate(steps):
+            if not isinstance(step, dict):
+                continue
+            declared = step.get("timeout")
+            name = step.get("name") or f"step {i + 1}"
+            if declared is None:
+                continue
+            try:
+                step_s = int(declared)
+            except (TypeError, ValueError):
+                findings.append(
+                    _finding(
+                        "FAIL",
+                        rel,
+                        name,
+                        "C",
+                        f"timeout is not whole seconds: {declared!r}",
+                    )
+                )
+                continue
+            total += step_s
+            if step_s > effective:
+                findings.append(
+                    _finding(
+                        "FAIL",
+                        rel,
+                        name,
+                        "C",
+                        f"declares {step_s}s inside a {effective}s budget: the step bound can "
+                        f"never fire, so the door always wins and the reader is told the wrong "
+                        f"number (this is the `timeout 80` in a 100s step defect)",
+                    )
+                )
+        if total > effective:
+            findings.append(
+                _finding(
+                    "FAIL",
+                    rel,
+                    "-",
+                    "B",
+                    f"steps total {total}s inside a {effective}s budget ({source}): one invocation "
+                    f"runs every step inside one door, so the door kills the job however the steps "
+                    f"are budgeted between themselves",
+                )
+            )
+    return findings
+
+
+def _finding(verdict: str, path: str, where: str, check: str, detail: str) -> dict:
+    return {
+        "verdict": verdict,
+        "path": path,
+        "where": where,
+        "check": check,
+        "detail": detail,
+    }
+
+
+def _lines_of(path: Path):
+    try:
+        return path.read_text(errors="replace").splitlines()
+    except OSError:
+        return []
+
+
+def _intent_commands(path: Path) -> list[tuple[int, str]]:
+    """Every command line of an intent, with the file line it came from, so a finding points at
+    the line a human has to edit."""
+    out = []
+    for n, line in enumerate(_lines_of(path), start=1):
+        if line.lstrip().startswith("#"):
+            continue
+        out.append((n, line))
+    return out
+
+
+def scan_inner_bounds(
+    ceiling: int, intents: Path | None = None, label: str = ""
+) -> list[dict]:
+    """Check D: literal wall-clock bounds written inside a command."""
+    findings = []
+    intents = intents or INTENTS
+    scanned = list(sorted(intents.glob("*.yaml")))
+    # bin/ and hooks/ belong to the checkout, not to the installed library: adding them again here
+    # would rescan them under a second label and report every ratcheted bound as new.
+    for d in ratcheted_dirs() if not label else []:
+        if not d.is_dir():
+            continue
+        for p in sorted(d.rglob("*")):
+            if not p.is_file() or p.name == "timeout-budget":
+                continue
+            if p.suffix in RATCHETED_SUFFIXES and (
+                p.suffix in {".sh", ".bash", ".zsh"}
+                or p.suffix == ""
+                or p.suffix == ".py"
+            ):
+                scanned.append(p)
+    for path in scanned:
+        strict = path.suffix in STRICT_SUFFIXES
+        if label:
+            rel = label + path.name if path.parent == intents else str(path)
+        else:
+            rel = str(path.relative_to(ROOT)) if ROOT in path.parents else str(path)
+        lines = _lines_of(path)
+        for idx, line in enumerate(lines):
+            if line.lstrip().startswith("#"):
+                continue
+            for m in _iter_bounds(line, path.suffix):
+                number, unit, text = m
+                seconds = number * {"": 1, "s": 1, "m": 60, "h": 3600, "d": 86400}[unit]
+                marked = _marked(lines, idx)
+                key = f"{rel}:{text}"
+                if marked:
+                    findings.append(
+                        _finding(
+                            "ok", rel, f"line {idx + 1}", "D", f"{text} -- {marked}"
+                        )
+                    )
+                elif strict:
+                    findings.append(
+                        _finding(
+                            "FAIL",
+                            rel,
+                            f"line {idx + 1}",
+                            "D",
+                            f"{text}: a literal wall-clock bound inside a step. Time is declared "
+                            f"once, as the intent's door_s; narrow with the step's own `timeout:` "
+                            f"or mark a probe with `# estate:bound <why>`"
+                            + (
+                                f". At {seconds}s it is also at or above the door's {ceiling}s "
+                                f"ceiling, so it can only be the ceiling restated as a literal"
+                                if seconds >= ceiling
+                                else ""
+                            ),
+                        )
+                    )
+                else:
+                    findings.append(
+                        _finding(
+                            "ratchet",
+                            rel,
+                            f"line {idx + 1}",
+                            "D",
+                            text
+                            + (
+                                f" (above the {ceiling}s ceiling)"
+                                if seconds >= ceiling
+                                else ""
+                            ),
+                        )
+                    )
+    return findings
+
+
+def _iter_bounds(line: str, suffix: str):
+    """(number, unit, the text that was matched) for each literal bound on this line."""
+    if suffix == ".py":
+        for m in PY_BOUND.finditer(line):
+            yield int(m.group(1)), "", f"timeout={m.group(1)}"
+        return
+    for m in SHELL_BOUND.finditer(line):
+        start = m.start()
+        yield int(m.group(1)), m.group(2), line[start:].strip()[:60]
+
+
+def _marked(lines: list[str], idx: int) -> str:
+    """The reason on this line or the one directly above it. A marker without a reason is not a
+    marker: 'estate:bound' alone is a rubber stamp."""
+    for candidate in (lines[idx], lines[idx - 1] if idx else ""):
+        m = MARKER.search(candidate)
+        if m:
+            reason = m.group(1).strip()
+            return reason if len(reason) >= 20 else ""
+    return ""
+
+
+def _bound_key(f: dict) -> str:
+    """What identifies a bound across edits: the file and the bound's own text. Line numbers move
+    whenever anything above them changes, so they cannot be the identity; the text can, and the
+    count of identical texts per file is kept, so two `timeout 300 npm audit` lines do not
+    collapse into one and let a third through."""
+    return f"{f['path']}|{f['detail']}"
+
+
+def load_baseline() -> Counter:
+    if not BASELINE.exists():
+        return Counter()
+    keys = [
+        line.strip()
+        for line in BASELINE.read_text().splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+    return Counter(keys)
+
+
+def write_baseline(keys: list[str]) -> None:
+    body = [
+        "# Ratchet baseline for bin/timeout-budget. Every line is a wall-clock bound that was",
+        "# already in the tree when the gate was switched on (2026-10-25), as `<path>|<bound text>`.",
+        "# The gate refuses a NEW one; this file may only ever get shorter. Regenerate with:",
+        "#",
+        "#     bin/timeout-budget --write-baseline",
+        "#",
+        "# Regenerating to silence a new finding defeats the gate: read the line first, and if the",
+        "# bound is a probe, mark it with `# estate:bound <why>` instead of adding it here.",
+        "",
+        *sorted(keys),
+        "",
+    ]
+    BASELINE.write_text("\n".join(body))
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(
+        description="Refuse a second wall-clock bound (see the docstring)."
+    )
+    ap.add_argument("--json", action="store_true", help="machine-readable findings")
+    ap.add_argument(
+        "--root",
+        default=None,
+        help="check this checkout instead of the one the script lives in (for the gate's own tests)",
+    )
+    ap.add_argument(
+        "--write-baseline",
+        action="store_true",
+        help="record today's ratcheted bounds as the floor (never widens what the gate allows)",
+    )
+    ap.add_argument(
+        "--strict-ratchet",
+        action="store_true",
+        help="fail on ratcheted bounds too -- the end state, once the baseline is empty",
+    )
+    ap.add_argument(
+        "--installed",
+        dest="installed",
+        action="store_true",
+        default=None,
+        help="also check the library an agent actually invokes (~/.estate/intents), strictly",
+    )
+    ap.add_argument(
+        "--no-installed",
+        dest="installed",
+        action="store_false",
+        help="check only this checkout (the default under --root, so a test tree stays hermetic)",
+    )
+    args = ap.parse_args(argv)
+
+    if args.root:
+        _retarget(Path(args.root).resolve())
+
+    # The installed library is graded by default on a machine that has one: it is the surface an
+    # agent invokes, and it is not the checkout. A test tree (--root) is hermetic unless asked.
+    check_installed = args.installed
+    if check_installed is None:
+        check_installed = args.root is None and INSTALLED.is_dir()
+
+    ceiling = ceiling_sec()
+    if not INTENTS.is_dir():
+        print(f"timeout-budget: no intents at {INTENTS}", file=sys.stderr)
+        return 2
+
+    findings = check_budgets(ceiling) + scan_inner_bounds(ceiling)
+    if check_installed and INSTALLED.is_dir():
+        prefix = (
+            f"~/.estate/intents/"
+            if INSTALLED == Path.home() / ".estate/intents"
+            else f"{INSTALLED}/"
+        )
+        findings += check_budgets(ceiling, INSTALLED, prefix)
+        findings += scan_inner_bounds(ceiling, INSTALLED, prefix)
+    ratcheted = [f for f in findings if f["verdict"] == "ratchet"]
+    baseline = load_baseline()
+
+    if args.write_baseline:
+        write_baseline([_bound_key(f) for f in ratcheted])
+        print(
+            f"timeout-budget: baseline written with {len(ratcheted)} ratcheted bound(s)"
+        )
+        return 0
+
+    now = Counter(_bound_key(f) for f in ratcheted)
+    new, known = [], []
+    for key, count in now.items():
+        allowed = baseline.get(key, 0)
+        allowed_findings = [f for f in ratcheted if _bound_key(f) == key]
+        known.extend(allowed_findings[:allowed])
+        new.extend(allowed_findings[allowed:])
+    stale = [k for k, n in baseline.items() if now.get(k, 0) < n]
+    failures = [f for f in findings if f["verdict"] == "FAIL"]
+    ok = [f for f in findings if f["verdict"] == "ok"]
+    notes = [f for f in findings if f["verdict"] == "note"]
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "ceiling_sec": ceiling,
+                    "ok": ok,
+                    "ratcheted": known,
+                    "new": new,
+                    "failures": failures,
+                    "notes": notes,
+                    "installed_checked": bool(check_installed and INSTALLED.is_dir()),
+                    "baseline_size": len(baseline),
+                },
+                indent=2,
+            )
+        )
+    else:
+        for f in failures + new:
+            where = f"{f['path']}:{f['where']}" if f["where"] != "-" else f["path"]
+            print(f"FAIL   {f['check']}  {where}  {f['detail']}")
+        for f in ok[:5]:
+            print(f"ok     {f['check']}  {f['path']}:{f['where']}  {f['detail'][:80]}")
+        for f in notes[:4]:
+            print(f"note   {f['check']}  {f['path']}  unparseable: {f['detail'][:120]}")
+        scope = (
+            "checkout + ~/.estate/intents"
+            if (check_installed and INSTALLED.is_dir())
+            else "checkout only"
+        )
+        print(
+            f"\ntimeout-budget: ceiling {ceiling}s · {len(failures)} broken budget(s) · "
+            f"{len(new)} new inner bound(s) · {len(known)} ratcheted · {sum(baseline.values())} in baseline · {scope}"
+        )
+        if stale:
+            print(
+                f"             {len(stale)} baseline entr{'y' if len(stale) == 1 else 'ies'} no longer "
+                f"found (the ratchet shrank -- re-run with --write-baseline to record it)"
+            )
+        if known and not failures and not new:
+            print(
+                "             the ratchet may only shrink: delete a bound (or mark a probe with "
+                "`# estate:bound <why>`) and re-run with --write-baseline"
+            )
+            # The summary stays last: it is the line every caller reads, and a hint printed after it
+            # was what the CI rung quoted as the verdict (measured 2026-10-25).
+            print(
+                f"timeout-budget: ceiling {ceiling}s · {len(failures)} broken budget(s) · "
+                f"{len(new)} new inner bound(s) · {len(known)} ratcheted · {sum(baseline.values())} in baseline"
+            )
+
+    if failures or new:
+        return 1
+    if args.strict_ratchet and ratcheted:
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

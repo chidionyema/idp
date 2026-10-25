@@ -21,26 +21,36 @@ description: >
   12s ruff` -- plus the push itself, 37.4s once and past 40s the next time). That is 45-55s of
   unavoidable work whose variance crosses 60, which is why the shadow policy records 164 of 192
   runs not ok in 30d, p_fail 0.85: it is not a slow verb, it is a verb offered a door too small
-  for it. So run it through a door that fits -- `estate_invoke lane-submit timeout=170`, or the
-  session plane. The default MCP door (55s) and the harness door (60s) kill it mid-push and tell
-  you nothing.
+  for it. So run it through a door that fits -- `estate_invoke lane-submit timeout=100` (the
+  executor's ceiling; nothing larger exists), or the session plane. A door smaller than the intent's
+  `door_s` kills it mid-push and tells you nothing.
 
   2026-10-22: the door was only half of it. This intent declared a door larger than the default
   while its own push step was capped at 60, so a caller passing a bigger timeout changed nothing --
   the step died at 60036ms (exit 124) and `git ls-remote` showed the lane ref ABSENT, which is
   worse than #5814 (where the push outlived the kill): a killed push that did not land, reported as
   a timeout, and the bound-inside-the-step that exists to prevent it never reached. The identical
-  push through the executor door took 16.4s. The step now gets the largest cap a command may have
-  (100s, the estate's own ceiling) and the bound inside it is 80, so the measurement after the push
-  always runs.
+  push through the executor door took 16.4s.
+
+  2026-10-25: `door_s: 170` was itself a fiction. Nothing in this estate may run a command for
+  longer than the executor's ceiling (100s, mcp/plugins/estate_executor.py), so 170 was never
+  granted and the two steps totalling 170 were spent against 100. Both the declaration and the
+  budget now fit the door (40 + 50 = 90 inside 100), and the push is no longer bounded by a guess
+  about a duration: it runs in the background and the step bounds only its own observation of the
+  remote ref (measured this turn: the same push with its pre-push guard took 98s, so the 80s inner
+  bound that used to be here reported the lane ABSENT while it was still landing).
 args:
   lane:    {type: string, default: "", description: "lane name; default lane/<current branch>"}
   cwd:     {type: string, default: "."}
 # the door this intent needs, so a caller can be told instead of guessing (and so the test below
-# can refuse a step that outlives the door it is run through).
-door_s: 170
+# can refuse a step that outlives the door it is run through). It is the executor's ceiling, not a
+# larger number: see 2026-10-25 in the description.
+door_s: 100
 halt_on_failure: true
 steps:
+    # Step bound removed 2026-10-25: time is declared once, as this intent's budget
+    # (docs/decisions/0043-the-bound-lives-at-the-door.md). A number here could only be a
+    # guess about someone else's work, and where it fired it invented a failure.
   - name: the claim covers the change
     # 2026-10-08, PR #5511: the claim missed three files the lane touched, and claim-gate said so
     # one CI round (~15 min) after the push, twice. The same gate, run here, says it in seconds.
@@ -51,10 +61,14 @@ steps:
     # 3.5s, `gh repo view` 1.0s, `bin/claim-gate` 26.1s -- 30.6s of work inside a 20s cap, so
     # the step was killed three times in a row (exit 124, `TIMEOUT (20s)`) before it ever
     # reached the push. The estate's own shadow policy agrees: 325 of 511 lane-submit runs in
-    # 30d were not ok (p_fail 0.64). The cap is now 60s -- the measured work plus room for a
-    # slow API -- and the door moves with it (170 = 60 + 100 + 10), because one invocation runs
-    # every step inside one door (tests/test_lane_submit_fits_the_door.py).
-    timeout: 60
+    # 30d were not ok (p_fail 0.64). The cap is now 40s -- the measured work plus room for a slow
+    # API, and inside the door's 100 with the push step's 50 (tests/test_lane_submit_fits_the_door.py).
+    #
+    # A step cap is legal here and nowhere else: this one SPLITS the budget between two sequential
+    # jobs (40 + 50 = 90 inside 100), so it cannot contradict the door. It is not a guess about how
+    # long the work takes; where such a guess used to live -- inside the push command, as
+    # `timeout 80` -- it has been deleted (2026-10-25, bin/timeout-budget).
+    timeout: 40
     cmd: |
       cd {{cwd}} || exit 2
       git fetch -q origin main || { echo "BLIND   lane-submit  cannot fetch origin/main to judge the claim" >&2; exit 2; }
@@ -65,13 +79,17 @@ steps:
     # 2026-10-12 (#5814): guard + push costs ~35s on a quiet laptop and crossed the 60s cap with
     # ~10 agents live -- `estate_invoke lane-submit` answered TIMEOUT exit 124 while the lane ref
     # landed on origin anyway, so a caller could not tell a handed-over branch from nothing
-    # happening at all. The cap cannot simply be raised: 60s is the estate's own ceiling for a
-    # command (the executor refuses anything above it, whatever the unit), and the guard that
-    # spends 32s of it is not bypassed (AGENTS.md, Laws and Guards). So the step stops inferring
-    # the handover from its own exit code -- it bounds the push well inside the cap and then READS
-    # THE REMOTE REF, which answers the only question that matters whether or not the local push
-    # survived.
-    timeout: 100
+    # happening at all. 60s was the estate's own ceiling then; it is 100s now, and read from
+    # mcp/plugins/estate_executor.py rather than from this comment.
+    #
+    # THE INNER BOUND IS GONE (2026-10-25). It was tried twice as a guess about a duration: 50s
+    # inside a 60s step, then 80s inside this 100s step. Both times the network was slower than the
+    # guess and the step reported the lane ABSENT while the push was still in flight -- measured
+    # this turn, the same push with its pre-push guard took 98s. A guessed bound can only be wrong
+    # in the direction that produces a false failure, which is why the guess is replaced by a
+    # mechanism: the push runs in the BACKGROUND, and what this step bounds is its own OBSERVATION
+    # of the remote ref. A bound on the measurement cannot truncate the work.
+    timeout: 50
     cmd: |
       cd {{cwd}} || exit 2
       b=$(git rev-parse --abbrev-ref HEAD); lane={{lane}}; [ -n "$lane" ] || lane="$b"
@@ -83,51 +101,73 @@ steps:
       # patching ~/.estate/intents/lane-submit.yaml alone is reverted by the next sync.
       case "$lane" in lane/*) ;; *) lane="lane/$lane" ;; esac
       sha=$(git rev-parse HEAD)
-      # The push is bounded INSIDE the step, not by the step's own cap, so the step always reaches
-      # the measurement below: a push killed locally can still have landed on the remote (#5814),
-      # and a step killed by its own cap reports nothing at all. 80 of the step's 100 seconds go to
-      # the push; the remaining 20 always belong to the ls-remote that reports the outcome. The
-      # bound is `timeout` when it exists (a shim on macOS, GNU on the runners) and no bound when
-      # it does not -- never a hard dependency, or the push never happens at all.
-      #
-      # 2026-10-22: this bound was 50 inside a 60s step, and the step was killed at 60036ms with the
-      # lane ref absent from origin -- so the one thing the bound existed to prevent is what
-      # happened. Measured after: the same push, same guard, through the executor door, 16.4s.
-      # 100s is the largest cap a command in this estate may have, so this step cannot ask for more.
-      BOUND=""; command -v timeout >/dev/null 2>&1 && BOUND="timeout 80"
-      out=$($BOUND git push -q origin "HEAD:refs/heads/$lane" 2>&1); rc=$?
-      # The handover, measured. Not this process's exit code: a timeout can outlive the push.
-      on=$(git ls-remote --heads origin "$lane" 2>/dev/null | awk '{print $1}')
-      if [ "$on" = "$sha" ]; then
+      pushlog=$(mktemp -t lane-submit-push.XXXXXX)
+      git push -q origin "HEAD:refs/heads/$lane" >"$pushlog" 2>&1 &
+      push_pid=$!
+      # The observation window. It bounds the READING, never the push -- and it must FIT inside this
+      # step, or the window itself becomes the fourth guessed bound. Measured 2026-10-25: 15 polls at
+      # 2s plus the ls-remote round trips each one makes spent the whole 50s cap and the step was
+      # killed (exit 124) while the push had in fact landed. 8 polls is ~16s of sleep plus ~1s per
+      # ls-remote: a glance, not a wait. A push still running when the glance ends is reported as
+      # IN-FLIGHT, which is the truth, and the greenlane status named below is the verdict.
+      on=""; landed=""; polls=0
+      while [ "$polls" -lt 8 ]; do
+        polls=$((polls + 1))
+        on=$(git ls-remote --heads origin "$lane" 2>/dev/null | awk '{print $1}')
+        if [ "$on" = "$sha" ]; then landed=yes; break; fi
+        if ! kill -0 "$push_pid" 2>/dev/null; then break; fi
+        sleep 2
+      done
+      repo=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)
+      verdict() {
+        echo "        verdict: gh api repos/$repo/commits/$sha/status --jq '.statuses[]|select(.context==\"greenlane\")|.state+\" \"+.description'"
+        echo "        that is the whole observation - the lane proves this branch on top of the current main, then lands it"
+      }
+      if [ "$landed" = yes ]; then
+        wait "$push_pid" 2>/dev/null || true
         echo "ok      lane-submit  $lane = $(git rev-parse --short HEAD) on origin"
-      elif printf '%s' "$out" | grep -qiE 'non-fast-forward|fetch first|stale info'; then
+        verdict
+        exit 0
+      fi
+      if kill -0 "$push_pid" 2>/dev/null; then
+        # STILL RUNNING IS NOT FAILED. The handover has not happened yet and this step cannot say
+        # it has; it also cannot say it has not, and that difference is the whole defect this file
+        # has been fixing since #5814. Name the state, name the pid, name how to read the outcome.
+        echo "IN-FLIGHT lane-submit  $lane: the push (pid $push_pid) is still running after ${polls} observations; it reaches origin on its own once it completes" >&2
+        verdict
+        exit 0
+      fi
+      wait "$push_pid" 2>/dev/null; rc=$?
+      out=$(cat "$pushlog")
+      # A push that exited 0 can still be ahead of what origin's ref endpoint shows; re-read before
+      # concluding anything. This is a re-read of the MEASUREMENT, not a wait on the work.
+      i=0
+      while [ "$i" -lt 5 ]; do
+        on=$(git ls-remote --heads origin "$lane" 2>/dev/null | awk '{print $1}')
+        [ "$on" = "$sha" ] && break
+        i=$((i + 1)); sleep 1
+      done
+      if [ "$on" = "$sha" ]; then
+        # The push exited non-zero and the ref is there anyway: report the measurement, not the code.
+        echo "ok      lane-submit  $lane = $(git rev-parse --short HEAD) on origin"
+        verdict
+        exit 0
+      fi
+      if [ "$rc" -eq 0 ]; then
+        # git says it sent it; origin's ref does not say so yet. Neither "landed" nor "failed" is a
+        # fact here, so say the fact.
+        echo "SENT    lane-submit  $lane: push exited 0, origin has not shown the ref after $((polls + i)) observations" >&2
+        verdict
+        exit 0
+      fi
+      if printf '%s' "$out" | grep -qiE 'non-fast-forward|fetch first|stale info'; then
         # the engine (greenlane/github.py land()) force-pushes a rebased commit onto the
         # lane's own ref before merging, then deletes it only after a successful merge; if a
         # merge failed in between, or another session pushed this lane name, the remote ref
         # has moved underneath this branch and a plain push is correctly rejected here.
         echo "REJECTED lane-submit  $lane moved on origin since this branch was built (non-fast-forward) - fetch/rebase onto origin/$lane, or resubmit under a new lane name: $out" >&2
         exit 1
-      else
-        rc=${rc:-1}; [ "$rc" -ne 0 ] || rc=1
-        echo "FAIL    lane-submit  $lane on origin is '${on:-absent}', not $sha (push rc=$rc): $out" >&2
-        exit "$rc"
       fi
-  - name: hand it over
-    # The lane ticks on its own and nothing here waits for it. This proves the branch is actually
-    # on origin -- the one thing the removed wait was ever asked to confirm -- and names where the
-    # verdict will appear, then returns. An agent reads the verdict from the commit status when it
-    # wants the answer; it does not hold the 60s door open for it.
-    timeout: 10
-    cmd: |
-      cd {{cwd}} || exit 2
-      b=$(git rev-parse --abbrev-ref HEAD); lane={{lane}}; [ -n "$lane" ] || lane="$b"
-      case "$lane" in lane/*) ;; *) lane="lane/$lane" ;; esac
-      sha=$(git rev-parse HEAD); repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-      on=$(git ls-remote --heads origin "$lane" 2>/dev/null | awk '{print $1}')
-      if [ "$on" != "$sha" ]; then
-        echo "BLIND   lane-submit  $lane on origin is '${on:-absent}', not $sha - the handover did not land" >&2
-        exit 2
-      fi
-      echo "ok      lane-submit  $lane = $(git rev-parse --short HEAD)"
-      echo "        verdict: gh api repos/$repo/commits/$sha/status --jq '.statuses[]|select(.context==\"greenlane\")|.state+\" \"+.description'"
-      echo "        that is the whole observation - the lane proves this branch on top of the current main, then lands it"
+      rc=${rc:-1}; [ "$rc" -ne 0 ] || rc=1
+      echo "FAIL    lane-submit  $lane on origin is '${on:-absent}', not $sha (push rc=$rc): $out" >&2
+      exit "$rc"

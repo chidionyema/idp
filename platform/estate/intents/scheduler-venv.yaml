@@ -9,7 +9,9 @@ args:
   apply: {type: bool, default: false}
 halt_on_failure: true
 steps:
+    # Step bound removed 2026-10-25: time is declared once, as this intent's budget
+    # (docs/decisions/0043-the-bound-lives-at-the-door.md). A number here could only be a
+    # guess about someone else's work, and where it fired it invented a failure.
   - name: build
-    timeout: 900
     cmd: >
       bash ~/.estate/libexec/scheduler-venv.sh {{apply}}

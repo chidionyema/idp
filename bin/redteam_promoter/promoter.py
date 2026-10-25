@@ -277,7 +277,10 @@ def consume(subject: str = "estate.eval.redteam.defeated") -> int:
 
     while True:
         try:
-            with socket.create_connection((host, int(port)), timeout=10) as s:
+            with socket.create_connection(
+                (host, int(port)),
+                timeout=10,  # estate:bound a TCP connect, not the subscription
+            ) as s:
                 s.sendall(b'CONNECT {"verbose":false,"pedantic":false}\r\n')
                 s.sendall(f"SUB {subject} 1\r\n".encode())
                 log(f"subscribed to {subject}")

@@ -26,6 +26,13 @@ HOME    = Path.home()
 DB      = HOME / ".estate" / "estate.db"
 INTENTS = HOME / ".estate" / "intents"
 
+# The door's module lives beside the repo (mcp/plugins), and this script lives in
+# platform/estate/bin. Put it on the path HERE, once, so `CEILING_SEC` is imported from the one
+# place that defines it rather than restated here as a second number.
+_PLUGINS = Path(__file__).resolve().parents[3] / "mcp" / "plugins"
+if _PLUGINS.is_dir() and str(_PLUGINS) not in sys.path:
+    sys.path.insert(0, str(_PLUGINS))
+
 # Merged is operating (docs/tickets/2026-09-27-merged-is-operating.md): the executor runs only
 # intents from the root-owned release estate-converge cut from main. ~/.estate/intents is a link
 # into it. A hand copy is refused; an unmerged intent runs only through --from, labelled.
@@ -324,10 +331,71 @@ def _read_intent(name):
         return yaml.safe_load(f), path.stem
 
 
+# ---- The one budget ------------------------------------------------------
+# THE BOUND LIVES AT THE DOOR (docs/decisions/0043-the-bound-lives-at-the-door.md).
+#
+# Three numbers used to bound this same work, and none of them knew about the others: the executor
+# daemon's CEILING_SEC (100), this script's per-step default (120, so it could never fire -- the
+# daemon kills the job first), and whatever `timeout N` a step's author wrote into a shell string.
+# Measured 2026-10-25: a lane-submit push took 98s, the step carried `timeout 80`, and the intent
+# reported `lane/schema-contract on origin is 'absent'` -- a false failure, produced by a bound that
+# was a guess about a duration, in the one direction a guess cannot be right.
+#
+# So there is one budget per intent, declared once, honoured here, and clamped by the door:
+#
+#   door_s: 100      the intent's own budget in seconds (the field jev.decide already documents)
+#   timeout: 100     DEPRECATED alias, read so a live intent does not break mid-migration
+#   (neither)        CEILING_SEC, imported rather than restated
+#
+# A step may still NARROW the budget for itself (`timeout:` on a step, or a marked probe), because a
+# 10s `git status` genuinely should fail fast. What it may not do is widen it, or restate the
+# ceiling as if it were local knowledge: both are clamped here and said out loud, so the number that
+# killed a job is always the number the reader can find in one place.
+try:
+    from estate_executor import CEILING_SEC as _DOOR_CEILING_SEC
+except Exception:  # noqa: BLE001 - the door must exist; if it cannot be imported, say so
+    _DOOR_CEILING_SEC = None
+
+
+def _intent_budget(intent):
+    """The seconds this intent may spend in total, and the words for where that number came from."""
+    if _DOOR_CEILING_SEC is None:
+        raise SystemExit(
+            "estate-execute: cannot import CEILING_SEC from the executor door. The budget must have "
+            "one source of truth, and a restated copy is the defect this script exists to remove."
+        )
+    declared = intent.get("door_s")
+    if declared is not None:
+        try:
+            budget, provenance = int(declared), "door_s"
+        except (TypeError, ValueError):
+            raise SystemExit(f"estate-execute: door_s must be whole seconds, got {declared!r}") from None
+    elif intent.get("timeout") is not None:
+        try:
+            budget, provenance = int(intent["timeout"]), "timeout (deprecated)"
+        except (TypeError, ValueError):
+            raise SystemExit(f"estate-execute: timeout must be whole seconds, got {intent['timeout']!r}") from None
+        log(
+            "[estate] DEPRECATED: this intent declares `timeout:` at the top level. The field the "
+            "door reads is `door_s:`; the old name is honoured so a live intent does not break, "
+            "and bin/timeout-budget refuses a new one."
+        )
+    else:
+        budget, provenance = _DOOR_CEILING_SEC, "the door's ceiling"
+    clamped = max(1, min(budget, _DOOR_CEILING_SEC))
+    if clamped != budget:
+        log(
+            f"[estate] BUDGET CLAMPED: {provenance} asks {budget}s; nothing in this estate may "
+            f"exceed {_DOOR_CEILING_SEC}s, so this intent gets {clamped}s"
+        )
+    return clamped, provenance
+
+
 # ---- Step runner --------------------------------------------------------
 def run_steps(conn, ticket_id, intent, args, depth=0):
     steps = intent.get("steps", [])
     halt_on_fail = intent.get("halt_on_failure", True)
+    budget, budget_from = _intent_budget(intent)
     failed = 0
 
     # Merge step_outputs into args for the duration of this intent
@@ -386,23 +454,48 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
             log(f"[step {idx+1} / {step_name}] {cmd[:80]}{'...' if len(cmd) > 80 else ''}")
 
             t0 = datetime.now(timezone.utc)
-            step_timeout = int(step.get("timeout", 120))
+            # A step may narrow the intent's budget, never widen it. The default is the budget
+            # itself -- NOT a literal, because a literal here is a second opinion about the same
+            # work, and the second opinion is always the one that is wrong (measured: 120 against
+            # a 100s door, which made the step bound unreachable and hid the real ceiling).
+            declared_step = step.get("timeout")
+            bad_bound = None
+            if declared_step is None:
+                step_timeout = budget
+            else:
+                try:
+                    step_timeout = int(declared_step)
+                except (TypeError, ValueError):
+                    bad_bound = f"step timeout must be whole seconds, got {declared_step!r}"
+                    step_timeout = budget
+                else:
+                    if step_timeout > budget:
+                        log(
+                            f"  INERT BOUND: this step declares {step_timeout}s but the intent's "
+                            f"budget is {budget}s ({budget_from}); the step is bounded to {budget}s. "
+                            f"Delete the number or declare it as door_s."
+                        )
+                    step_timeout = max(1, min(step_timeout, budget))
             stderr = ""
-            try:
-                result = subprocess.run(  # noqa: S602
-                    cmd, shell=True, capture_output=True, text=True, timeout=step_timeout
-                )
-                rc = result.returncode
-                stdout = result.stdout
-                stderr = result.stderr
-            except subprocess.TimeoutExpired:
-                log(f"  TIMEOUT ({step_timeout}s)")
-                rc = 124
-                stdout = ""
-            except Exception as e:
-                log(f"  ERROR: {e}")
-                rc = 1
-                stdout = ""
+            if bad_bound is not None:
+                log(f"  REFUSED: {bad_bound}")
+                rc, stdout = 2, ""
+            else:
+                try:
+                    result = subprocess.run(  # noqa: S602
+                        cmd, shell=True, capture_output=True, text=True, timeout=step_timeout
+                    )
+                    rc = result.returncode
+                    stdout = result.stdout
+                    stderr = result.stderr
+                except subprocess.TimeoutExpired:
+                    log(f"  TIMEOUT ({step_timeout}s of a {budget}s budget from {budget_from})")
+                    rc = 124
+                    stdout = ""
+                except Exception as e:
+                    log(f"  ERROR: {e}")
+                    rc = 1
+                    stdout = ""
 
             dur = int((datetime.now(timezone.utc) - t0).total_seconds() * 1000)
             # Cache the output
