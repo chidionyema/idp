@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+"""Router config drift check (migration P1.T2, spec §1.4/§3).
+
+The estate runs two litellm renderers of one routing policy -- the laptop slot and the
+cluster deployment. When they drift, callers get different lanes on different days and
+the spend is double-tracked ("two routers, two bills", Delegated Estate K4). This check
+compares the SEMANTIC routing surface of the two configs -- the lane inventory and each
+lane's wiring -- and fails on divergence that callers can see.
+
+Not a byte diff: the cluster config legitimately carries callbacks, embeddings pools and
+deployment-uid blocks the laptop does not, and the laptop carries local-only lanes
+(ollama). Divergence is reported per lane; ALLOWED_* sets record the documented
+exceptions so a green check means something.
+
+Usage:
+  router-drift-check                     # laptop config vs live cluster (default context)
+  router-drift-check --laptop PATH --cluster PATH   # explicit files (tests, CI)
+Exit 0 = within policy, 1 = drift, 2 = could not measure.
+"""
+
+import argparse
+import json
+import pathlib
+import subprocess
+import sys
+
+try:
+    import yaml
+except ImportError:
+    sys.exit("PyYAML required (pip install pyyaml)")
+
+DEFAULT_LAPTOP = pathlib.Path.home() / ".estate/litellm-local/config.yaml"
+DEFAULT_CONTEXT = "context-estate-crq7jwxsjxq"
+CLUSTER_CM = "litellm-config-ddgh6tmckk"
+
+# Documented exceptions (plan §1.4, P1.T2): never count these as drift.
+# Founder, 2026-10-25: cluster names win. Laptop-local lanes keep the ollama- prefix;
+# sphere-bound wiring (ollama via host.docker.internal vs in-cluster svc) is fulfillment
+# detail, not drift -- only the NAME inventory must converge.
+ALLOWED_LAPTOP_ONLY = {"ollama-"}             # laptop fallback lanes (prefix), never on cluster
+SPHERE_LOCAL_MARKERS = ("host.docker.internal", "localhost", "127.0.0.1", ".svc.cluster.local", "ollama")
+ALLOWED_CLUSTER_ONLY = {"embed", "embed-cohere", "embed-query", "rerank"}
+
+# Fields that define a lane's caller-visible behavior.
+LANE_FIELDS = ("model", "api_base")
+
+
+def lane_map(cfg):
+    """{model_name: {field: value}} for every entry in model_list."""
+    out = {}
+    for entry in cfg.get("model_list") or []:
+        name = entry.get("model_name")
+        params = entry.get("litellm_params") or {}
+        if not name:
+            continue
+        rec = {f: params.get(f) for f in LANE_FIELDS if params.get(f) is not None}
+        out.setdefault(str(name), []).append(rec)
+    return out
+
+
+def show_diff(a, b):
+    only_a = sorted(set(a) - set(b))
+    only_b = sorted(set(b) - set(a))
+    changed = sorted(
+        n for n in set(a) & set(b)
+        if json.dumps(a[n], sort_keys=True) != json.dumps(b[n], sort_keys=True)
+    )
+    return only_a, only_b, changed
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--laptop", default=str(DEFAULT_LAPTOP))
+    ap.add_argument("--cluster", default=None, help="path to cluster config.yaml (else kubectl)")
+    ap.add_argument("--context", default=DEFAULT_CONTEXT)
+    ap.add_argument("--namespace", default="llm")
+    args = ap.parse_args()
+
+    try:
+        laptop_cfg = yaml.safe_load(pathlib.Path(args.laptop).read_text())
+    except OSError as e:
+        print(f"FAIL cannot read laptop config {args.laptop}: {e}")
+        return 2
+    if args.cluster:
+        cluster_cfg = yaml.safe_load(pathlib.Path(args.cluster).read_text())
+    else:
+        r = subprocess.run(
+            ["kubectl", "--context", args.context, "-n", args.namespace,
+             "get", "cm", CLUSTER_CM, "-o", "jsonpath={.data.config\\.yaml}"],
+            capture_output=True, text=True, timeout=120,
+        )
+        if r.returncode != 0 or not r.stdout.strip():
+            print(f"FAIL cannot read cluster config: {r.stderr.strip()[:200]}")
+            return 2
+        cluster_cfg = yaml.safe_load(r.stdout)
+
+    lap, clu = lane_map(laptop_cfg), lane_map(cluster_cfg)
+    only_lap, only_clu, changed = show_diff(lap, clu)
+
+    unexpected_lap = [n for n in only_lap if not any(n.startswith(p) for p in ALLOWED_LAPTOP_ONLY)]
+
+    def sphere_bound(recs):
+        return any(any(m in str(r.get("api_base", "")) for m in SPHERE_LOCAL_MARKERS) for r in recs)
+    unexpected_clu = [n for n in only_clu if n not in ALLOWED_CLUSTER_ONLY
+                      and not any(n.startswith(p) for p in ALLOWED_CLUSTER_ONLY)]
+    # Wildcard lanes (claude-*) compare by exact name; prefix rules cover families.
+
+    for n in unexpected_lap:
+        print(f"DRIFT laptop-only lane: {n}")
+    for n in unexpected_clu:
+        print(f"DRIFT cluster-only lane: {n}")
+    for n in changed:
+        if sphere_bound(lap[n]) and sphere_bound(clu[n]):
+            print(f"note wiring sphere-bound on {n} (allowed): laptop={json.dumps(lap[n])} cluster={json.dumps(clu[n])}")
+        else:
+            print(f"DRIFT wiring differs on {n}:\n  laptop : {json.dumps(lap[n])}\n  cluster: {json.dumps(clu[n])}")
+    for n in sorted(n for n in only_lap if n not in unexpected_lap):
+        print(f"note laptop-only (allowed): {n}")
+    for n in sorted(n for n in only_clu if n not in unexpected_clu):
+        print(f"note cluster-only (allowed): {n}")
+
+    hard_changed = [n for n in changed if not (sphere_bound(lap[n]) and sphere_bound(clu[n]))]
+    if unexpected_lap or unexpected_clu or hard_changed:
+        print(f"FAIL router drift: {len(unexpected_lap)} laptop-only, {len(unexpected_clu)} cluster-only, {len(hard_changed)} rewired")
+        return 1
+    print(f"OK lanes within policy: {len(lap)} laptop / {len(clu)} cluster, no caller-visible drift")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
