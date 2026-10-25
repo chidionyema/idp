@@ -4,11 +4,11 @@
 // hook runs, with the first prompt as the task, and hands pi the text as a hidden message.
 // bin/estate-memory-install links this file into ~/.pi/agent/extensions/.
 //
-// It also holds pi to the no-hand-back rule (lane/no-handback). The directive rides in that same
-// hidden message, and when a turn ends with no tool call and its closing text hands work back
-// ("still open", "want me to...?", platform/estate/memory/handback.py) the extension sends the
-// refusal as a follow-up prompt. One retry per closing: a refusal is not judged again. Fails open;
-// ESTATE_MEMORY_ENFORCE=0 opts out.
+// It also states the no-hand-back rule (lane/no-handback): the directive rides in that same hidden
+// message. The refusal itself is NOT here -- the hard gate is the estate's own binary, and pi
+// reaches it through extensions/pi-estate-enforce (#7006), so one rule decides for every runtime
+// and every decision lands in one ledger. Two gates for one rule would let the runtimes disagree.
+// Fails open; ESTATE_MEMORY_ENFORCE=0 opts out.
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -21,7 +21,6 @@ const BRIEF = path.join(REPO, "bin", "estate-brief");
 // would leave the extension silently doing nothing (it fails open).
 const HOME_COPY = path.join(process.env.ESTATE_MEMORY_HOME ?? path.join(homedir(), ".estate", "memory"), "platform", "estate", "memory", "handback.py");
 const HANDBACK = existsSync(HOME_COPY) ? HOME_COPY : path.join(REPO, "platform", "estate", "memory", "handback.py");
-const REFUSAL_MARK = "Do not stop here"; // in handback.REMEDY: how a refusal is told from a person
 const TIMEOUT_MS = 8000;
 
 function brief(task: string): Promise<string> {
@@ -32,14 +31,12 @@ function brief(task: string): Promise<string> {
   });
 }
 
-// handback.py reads stdin and prints one JSON line; `directive` prints the instruction text.
-function handback(arg: string, stdin = ""): Promise<string> {
+// handback.py prints the instruction text; the refusal is the binary's job now.
+function handback(arg: string): Promise<string> {
   return new Promise((resolve) => {
-    const child = execFile("python3", [HANDBACK, arg], { timeout: TIMEOUT_MS }, (_err, stdout) =>
+    execFile("python3", [HANDBACK, arg], { timeout: TIMEOUT_MS }, (_err, stdout) =>
       resolve((stdout ?? "").trim()),
     );
-    child.stdin?.on("error", () => {});
-    child.stdin?.end(stdin);
   });
 }
 
@@ -47,40 +44,18 @@ const enforcing = () => process.env.ESTATE_MEMORY_ENFORCE !== "0";
 
 export default function (pi: ExtensionAPI) {
   let briefed = false;
-  let refused = false; // the next prompt answers our refusal: do not judge its closing again
 
   pi.on("session_start", async () => {
     briefed = false;
-    refused = false;
   });
 
   pi.on("before_agent_start", async (event) => {
     const prompt = event.prompt ?? "";
-    refused = prompt.includes(REFUSAL_MARK);
     if (briefed) return;
     briefed = true;
     const [text, rule] = await Promise.all([brief(prompt), enforcing() ? handback("directive") : Promise.resolve("")]);
     const content = [text, rule].filter(Boolean).join("\n\n");
     if (!content) return;
     return { message: { customType: "estate-memory", content, display: false } };
-  });
-
-  pi.on("turn_end", async (event) => {
-    try {
-      const msg = (event as any)?.message;
-      if (!enforcing() || refused || !msg || msg.role !== "assistant") return;
-      const parts: any[] = Array.isArray(msg.content) ? msg.content : [];
-      if (parts.some((p) => p?.type === "toolCall" || p?.type === "tool_use")) return; // mid-loop, not a closing
-      const text = parts
-        .filter((p) => p?.type === "text" && typeof p.text === "string")
-        .map((p) => p.text)
-        .join("\n")
-        .trim();
-      if (!text) return;
-      const verdict = JSON.parse((await handback("check", text)) || "{}");
-      if (verdict.block && verdict.reason) pi.sendUserMessage(verdict.reason, { deliverAs: "followUp" });
-    } catch {
-      /* fail open: an extension fault never takes a session down */
-    }
   });
 }

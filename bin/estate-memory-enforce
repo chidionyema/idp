@@ -102,6 +102,22 @@ def transcript_text(data: dict):
         return None
 
 
+def real(path: str) -> str:
+    """The path as the filesystem sees it.
+
+    On macOS /tmp is a symlink to /private/tmp, so an agent that wrote /tmp/x/y is working in a
+    checkout git calls /private/tmp/x/y. Comparing the agent's form with git's made every claim
+    miss its own file: the gate refused a change the claim covered, with a path that read
+    "../../../tmp/x/y" (measured 2026-10-23, idp#7006). One form, one comparison.
+    """
+    if not path:
+        return path
+    try:
+        return os.path.realpath(path)
+    except OSError:  # a path that cannot be resolved is compared as written
+        return path
+
+
 def durable(path: str) -> bool:
     """Estate work is whatever lands in an idp checkout, wherever it sits.
 
@@ -109,7 +125,7 @@ def durable(path: str) -> bool:
     pass ungated. And never outside idp: these hooks live in the machine-wide Claude Code
     settings, and a brief about the estate is no precondition for editing another project.
     """
-    return bool(path) and git_root_if_idp(path) is not None
+    return bool(path) and git_root_if_idp(real(path)) is not None
 
 
 def edited_paths(text: str) -> list:
@@ -163,6 +179,7 @@ def covers(row: dict, rel: str) -> bool:
 
 def focus_verdict(path: str, rows, agent: str):
     """(ok, reason): is there a live claim covering `path`? ok=None means unknown."""
+    path = real(path)
     root = git_root_if_idp(path)
     if root is None:
         return True, "not in the idp checkout"
