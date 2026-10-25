@@ -19,11 +19,20 @@ new-work playbook.
 
 ## How to use it
 
-1. `upstream/.agent/skills/impeccable/SKILL.md` is the entry point.
-2. `reference/audit.md` to measure what is there; `reference/critique.md` to judge it;
-   `reference/new-work.md` for greenfield; `reference/craft-floor.md` for the minimum
-   bar; `reference/component-review.md` for a component in isolation.
+1. `upstream/skills/impeccable/SKILL.md` is the entry point.
+2. `upstream/skills/impeccable/reference/audit.md` to measure what is there;
+   `upstream/skills/impeccable/reference/critique.md` to judge it;
+   `upstream/skills/impeccable/reference/new-work.md` for greenfield;
+   `upstream/skills/impeccable/reference/craft-floor.md` for the minimum bar;
+   `upstream/skills/impeccable/reference/component-review.md` for a component in isolation.
 3. Grade the result with `ui.review` -- the estate's gate, which can fail.
+
+What is vendored here is the method, and only the method. The upstream ships a helper
+CLI (`scripts/impeccable`) and a wider reference set; the estate vendors text, not
+executables, so the steps in these files that shell out to that command are read as
+method rather than run as commands, and the links they carry point at files that are
+not in this pack. The upstream repository at the pinned commit (in `NOTICE.md`) has the
+rest. The estate's own grade is `ui.review`, and it can fail.
 
 ## Estate rules that bind this pack
 
@@ -45,12 +54,16 @@ new-work playbook.
 Vendored verbatim from `pbakaus/impeccable` at commit `5cb95eea9c96479f57afe0732a45470d30183326`
 (Apache-2.0, 85322 stars at 2026-10-23T15:32:49+00:00). See `NOTICE.md`.
 
-- `upstream/.agent/skills/impeccable/SKILL.md`
-- `upstream/.agent/skills/impeccable/reference/audit.md`
-- `upstream/.agent/skills/impeccable/reference/component-review.md`
-- `upstream/.agent/skills/impeccable/reference/craft-floor.md`
-- `upstream/.agent/skills/impeccable/reference/critique.md`
-- `upstream/.agent/skills/impeccable/reference/new-work.md`
+The upstream ships these under `.agent/`; the estate refuses a harness
+folder in the tree, so the bytes live under a plain path. `NOTICE.md`
+names the upstream path for every file.
+
 - `upstream/LICENSE`
+- `upstream/skills/impeccable/SKILL.md`
+- `upstream/skills/impeccable/reference/audit.md`
+- `upstream/skills/impeccable/reference/component-review.md`
+- `upstream/skills/impeccable/reference/craft-floor.md`
+- `upstream/skills/impeccable/reference/critique.md`
+- `upstream/skills/impeccable/reference/new-work.md`
 
 <!-- provenance:end -->

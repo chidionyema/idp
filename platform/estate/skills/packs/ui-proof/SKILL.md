@@ -18,11 +18,11 @@ description of the page.
 
 ## How to use it
 
-1. `upstream/.claude/skills/playwright-dev/SKILL.md` - drive the page.
-2. `.../playwright-dev/trace_system_guide.md` - read the trace when it goes wrong.
-3. `.../playwright-triage/SKILL.md` and `triage.md` - triage a failing run.
-4. `.../playwright-test-results/SKILL.md` - read the results an artefact.
-5. `.../playwright-cli/SKILL.md` - the CLI an agent drives.
+1. `upstream/skills/playwright-dev/SKILL.md` - drive the page.
+2. `upstream/skills/playwright-dev/trace_system_guide.md` - read the trace when it goes wrong.
+3. `upstream/skills/playwright-triage/SKILL.md` and `upstream/skills/playwright-triage/triage.md` - triage a failing run.
+4. `upstream/skills/playwright-test-results/SKILL.md` - read the results an artefact.
+5. `upstream/packages/playwright-core/src/tools/skills/playwright-cli/SKILL.md` - the CLI an agent drives.
 
 The estate's `ui.review` grades token purity; this pack produces the artefact the
 grade is about.

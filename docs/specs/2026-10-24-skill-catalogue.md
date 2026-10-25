@@ -14,10 +14,15 @@ does not match.
 
 ```
 skill.list                      # every pack, its category and its one line
-skill.brief --pack <id>         # the front door plus the estate rules, in one answer
+skill.list --pack <id>         # one pack: its upstream, licence, where it is installed
 skill.install --pack <id> --apply  # install into every runtime's skills dir
 skill.verify                    # recompute the checksums
 ```
+
+The brief is the front door itself: `platform/estate/skills/packs/<id>/SKILL.md` is the
+page that says when to use the pack, how to use it, and the estate rules that bind it.
+`skill.list --pack <id>` names that pack, its upstream and the runtimes it is already
+installed into.
 
 Install target is the Agent Skills standard (`agentskills.io`):
 `<runtime>/skills/<pack>/SKILL.md`, in `~/.claude/skills`, `~/.pi/agent/skills`,
@@ -25,13 +30,14 @@ Install target is the Agent Skills standard (`agentskills.io`):
 
 ## The two sets, and how they are charged daily
 
-1. **The UI set** -- the design packs. Used whenever a surface changes: the tokens
+1. **The UI set** -- the design packs and the surface primitives: the categories
+   `design` and `ui`. Used whenever a surface changes: the tokens
    come from `packages/estate-ui-kit`, and `ui.review` grades purity against them.
    A design pack is named in the plan's `skills` field, and the plan's `done_check`
    runs `ui.review` on the changed files.
 2. **The principal set** -- the engineering set: plan, spec, test, review, delegate.
    These are charged by the delegate plan itself: a plan that names no senior pack
-   is refused by `delegate.plan` before a builder is spawned, because the founder
+   is refused by `delegate-build` before a builder is spawned, because the founder
    asked for staff-level judgement to be applied, not simulated.
 
 The daily ritual is one line in every plan:
@@ -94,6 +100,14 @@ licences are absent from the table and their capability is covered by
 - **`open-design`** -- The working skills of a design workspace: brand kit, design brief, creative direction, review, colour, copy.
 - **`taste`** -- Critique a screen the way a designer does, against a reference library of real work, with the tells named.
 - **`ui-ux-pro-max`** -- Turn a request into a token-backed design system: primitive and semantic tokens, a component spec, a brand kit, and a banner that matches the brand.
+
+### ui -- The surface primitives: canvas, motion, components, worlds
+
+- **`canvas-ui`** -- Canvas/WebGL UI primitives for interfaces that cannot be DOM: 3D scenes, shaders, and interactive canvases inside a product.
+- **`emil-design-skills`** -- Design-engineering craft: animation vocabulary and performance, native-feeling mobile UI, Apple design language, and the breaking-the-template-look rules.
+- **`gsap-skills`** -- GSAP used correctly: core tweens and timelines, ScrollTrigger, plugins, React integration, and the performance rules that keep it smooth.
+- **`react-bits`** -- Pick and adapt animated React components (text, backgrounds, buttons, containers) instead of writing a bespoke animation from scratch.
+- **`scroll-world`** -- Turn a brand into a scroll-scrubbed 3D world landing page, with the scrub engine and the prompts that produce it.
 
 ### engineering -- How the estate builds: plan first, test first, spec first, subagent-driven
 

@@ -11,10 +11,21 @@ that says when to use it and which estate rules bind it.
 
 Vendored files:
 
-- `upstream/.agent/skills/impeccable/SKILL.md`
-- `upstream/.agent/skills/impeccable/reference/audit.md`
-- `upstream/.agent/skills/impeccable/reference/component-review.md`
-- `upstream/.agent/skills/impeccable/reference/craft-floor.md`
-- `upstream/.agent/skills/impeccable/reference/critique.md`
-- `upstream/.agent/skills/impeccable/reference/new-work.md`
 - `upstream/LICENSE`
+- `upstream/skills/impeccable/SKILL.md`
+- `upstream/skills/impeccable/reference/audit.md`
+- `upstream/skills/impeccable/reference/component-review.md`
+- `upstream/skills/impeccable/reference/craft-floor.md`
+- `upstream/skills/impeccable/reference/critique.md`
+- `upstream/skills/impeccable/reference/new-work.md`
+
+Moved on the way in: the upstream path is kept here because the estate
+refuses a harness folder in the tree, so `.agent/` was dropped from the
+vendored path. The bytes are the upstream bytes.
+
+- `.agent/skills/impeccable/SKILL.md` -> `upstream/skills/impeccable/SKILL.md`
+- `.agent/skills/impeccable/reference/audit.md` -> `upstream/skills/impeccable/reference/audit.md`
+- `.agent/skills/impeccable/reference/component-review.md` -> `upstream/skills/impeccable/reference/component-review.md`
+- `.agent/skills/impeccable/reference/craft-floor.md` -> `upstream/skills/impeccable/reference/craft-floor.md`
+- `.agent/skills/impeccable/reference/critique.md` -> `upstream/skills/impeccable/reference/critique.md`
+- `.agent/skills/impeccable/reference/new-work.md` -> `upstream/skills/impeccable/reference/new-work.md`

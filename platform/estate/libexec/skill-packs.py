@@ -66,6 +66,11 @@ RUNTIMES: Dict[str, str] = {
 
 STATE_DIR = ".estate/skills-state"
 
+# The harness folders the estate refuses in the tree (founder 2026-09-30). Knowledge
+# hidden in a harness folder is invisible to every other model, so vendored upstream
+# bytes never land in one; the upstream path is kept in the registry's path_map.
+HARNESS_FOLDERS = {".claude", ".agent"}
+
 # A vendored file larger than this is refused: a skill is instructions an agent reads,
 # not a data dump. Fonts, image atlases and JSON datasets stay upstream.
 MAX_FILE_BYTES = 64 * 1024
@@ -570,9 +575,35 @@ def safe_rel(rel: str) -> str:
     refuses the merge. Several upstreams ship their skills under `.claude/skills/`;
     the estate vendors the bytes under a plain path and keeps the upstream path in
     the registry's path_map, so provenance survives the move.
+
+    The law covers every harness folder, not only Claude's. pi ships
+    `.agent/skills/`, and this repo ignores `.agent/` as machine-local scratch, so
+    bytes vendored there are dropped by git and the pack silently loses its files
+    (this is how the impeccable pack lost its six method files). The bytes live at
+    a plain path; path_map keeps the upstream path.
     """
-    parts = [p for p in rel.split("/") if p and p != ".claude"]
+    parts = [p for p in rel.split("/") if p and p not in HARNESS_FOLDERS]
     return "/".join(parts)
+
+
+def dropped_folders(path_map: Dict[str, str]) -> str:
+    """Name the harness folders a pack's upstream paths were stripped of.
+
+    Read from the registry rather than hardcoded, so a pack that moved out of
+    `.claude/` says so and a pack that moved out of `.agent/` says that too.
+    """
+    found = set()
+    for vendored_rel, upstream_rel in (path_map or {}).items():
+        if vendored_rel == upstream_rel:
+            continue
+        extra = upstream_rel.split("/")[: -len(vendored_rel.split("/")) or None]
+        found.update(p for p in extra if p in HARNESS_FOLDERS)
+    if not found:
+        return "a harness folder"
+    names = sorted(found)
+    if len(names) == 1:
+        return f"`{names[0]}/`"
+    return ", ".join(f"`{n}/`" for n in names[:-1]) + " and " + f"`{names[-1]}/`"
 
 
 def cmd_vendor(args: argparse.Namespace) -> int:
@@ -678,10 +709,13 @@ def write_notice(pack: dict, src: dict) -> None:
     path_map = up.get("path_map") or {}
     moved = {k: v for k, v in path_map.items() if k != v}
     if moved:
+        folders = dropped_folders(path_map)
         lines += [
             "",
             "Moved on the way in: the upstream path is kept here because the estate",
-            "refuses a harness folder in the tree, so `.claude/` was dropped from the",
+            "refuses a harness folder in the tree, so "
+            + folders
+            + " was dropped from the",
             "vendored path. The bytes are the upstream bytes.",
             "",
         ]
@@ -719,7 +753,9 @@ def render_provenance_block(pack: dict) -> List[str]:
         moved = {k: v for k, v in path_map.items() if k != v}
         if moved:
             lines += [
-                "The upstream ships these under `.claude/`; the estate refuses a harness",
+                "The upstream ships these under "
+                + dropped_folders(path_map)
+                + "; the estate refuses a harness",
                 "folder in the tree, so the bytes live under a plain path. `NOTICE.md`",
                 "names the upstream path for every file.",
                 "",

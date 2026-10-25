@@ -90,9 +90,25 @@ def test_the_registry_holds_the_twelve_upstream_packs_and_the_two_estate_ones():
         )
 
 
-def test_every_pack_covers_one_of_the_four_capability_domains():
+def test_every_pack_covers_one_of_the_catalogue_s_categories():
+    """A pack is placed in a category the catalogue declares, and the catalogue
+    declares every category a pack uses.
+
+    The catalogue grew from four domains to nine as the layer grew; a test frozen
+    on the old four would either fail forever or be widened until it proves
+    nothing. What must hold is that the catalogue and the registry agree, in both
+    directions, so an agent reading the catalogue finds every pack and no pack
+    is filed under a category nobody wrote down.
+    """
     categories = {p["category"] for p in registry()["packs"]}
-    assert categories == {"ui", "design", "research", "architecture"}, categories
+    declared = set(
+        re.findall(r"^### ([a-z][a-z0-9-]*) --", CATALOGUE.read_text(), re.M)
+    )
+    assert categories == declared, (
+        "the catalogue's sections and the registry's categories disagree: "
+        f"only in the registry {sorted(categories - declared)}, "
+        f"only in the catalogue {sorted(declared - categories)}"
+    )
 
 
 # --- the gate that can fail -----------------------------------------------------
@@ -385,13 +401,28 @@ def test_every_vendored_pack_carries_its_licence_and_provenance():
 
 
 def test_the_front_doors_bind_the_estate_rules():
-    """A pack that only knows upstream is a pack that can drift away from the estate."""
+    """A pack that only knows upstream is a pack that can drift away from the estate.
+
+    Every front door carries the estate rules that bind it -- proof not assertion,
+    one of each layer, voice first, the claim is the contract. The packs that touch
+    a surface carry two more: the tokens they must use, and `ui.review`, the gate
+    that can fail the work. A gate is named by the work it grades, so a pack that
+    does not touch a surface (the cluster checklist, the threat modeller) is not
+    required to name a gate that does not apply to it.
+    """
+    surface = {"design", "ui", "architecture"}
     for pack in registry()["packs"]:
         text = (SKILLS / "packs" / pack["id"] / "SKILL.md").read_text()
-        assert "tokens.json" in text, (
-            f"{pack['id']} does not point at the estate's tokens"
+        assert "## Estate rules" in text, (
+            f"{pack['id']} does not carry the estate rules that bind it"
         )
-        assert "ui.review" in text, f"{pack['id']} does not name the gate that can fail"
+        if pack["category"] in surface:
+            assert "tokens.json" in text, (
+                f"{pack['id']} touches a surface and does not point at the estate's tokens"
+            )
+            assert "ui.review" in text, (
+                f"{pack['id']} touches a surface and does not name the gate that can fail"
+            )
 
 
 # --- the intents ----------------------------------------------------------------
@@ -421,3 +452,119 @@ def test_the_intents_only_reach_the_allowlisted_runtimes():
     assert "--dest" not in cmd, (
         "the intent must not offer a destination the tool does not have"
     )
+
+
+# --- the catalogue ----------------------------------------------------------------
+# A dotted name printed in the catalogue is a claim: an intent of that name exists and
+# answers. The catalogue is where an agent looks to find the estate's own doors, so a
+# name it prints that no intent answers is a dead end the agent walks into -- the exact
+# failure this catalogue was written to prevent (idp#7044).
+#
+# The gate is deliberately narrow. Only a name shaped like an intent is read: two
+# lowercase words around a dot. A file name (registry.json), a domain (agentskills.io),
+# a path segment and a version (Apache-2.0) are not intent names, and a gate that
+# flagged those would be a gate that cries wolf and gets ignored.
+CATALOGUE = REPO / "docs" / "specs" / "2026-10-24-skill-catalogue.md"
+INTENT_DIR = REPO / "platform" / "estate" / "intents"
+
+INTENT_NAME = re.compile(r"(?<![\w./-])([a-z][a-z0-9-]*)\.([a-z][a-z0-9-]*)(?![\w-])")
+
+# The suffixes a dotted name may carry and still be a file, not an intent.
+NOT_AN_INTENT = {
+    "json",
+    "md",
+    "py",
+    "yaml",
+    "yml",
+    "ts",
+    "tsx",
+    "js",
+    "jsx",
+    "io",
+    "sh",
+    "txt",
+    "html",
+    "css",
+    "toml",
+    "svg",
+    "png",
+    "lock",
+    "cfg",
+    "ini",
+    "sql",
+    "env",
+}
+
+
+def intent_names(text: str) -> set[str]:
+    """Every intent-shaped name the text prints, and nothing that is not one."""
+    found = set()
+    for match in INTENT_NAME.finditer(text):
+        if match.group(2) in NOT_AN_INTENT:
+            continue
+        found.add(f"{match.group(1)}.{match.group(2)}")
+    return found
+
+
+def missing_intents(text: str) -> list[str]:
+    return sorted(
+        name
+        for name in intent_names(text)
+        if not (INTENT_DIR / f"{name}.yaml").exists()
+    )
+
+
+def test_the_catalogue_names_only_intents_that_exist():
+    assert CATALOGUE.exists(), "the catalogue is gone"
+    text = CATALOGUE.read_text()
+    names = intent_names(text)
+    assert names, "the gate read no intent-shaped name at all -- it is not reading"
+    missing = missing_intents(text)
+    assert not missing, (
+        "the catalogue names intents that do not exist: "
+        + ", ".join(missing)
+        + " -- name the intent that exists, or add the one it promises"
+    )
+
+
+def test_the_catalogue_table_lists_every_pack_with_its_registry_category():
+    """The catalogue's table is the estate's inventory; it cannot drift from the
+    registry without an agent reading a pack list that is not the estate's."""
+    text = CATALOGUE.read_text()
+    table = dict(re.findall(r"^\| `([a-z0-9-]+)` \| ([a-z][a-z0-9-]*) \|", text, re.M))
+    expected = {p["id"]: p["category"] for p in registry()["packs"]}
+    assert table == expected, (
+        "the catalogue's table and the registry disagree: "
+        f"only in the table {sorted(set(table) - set(expected))}, "
+        f"only in the registry {sorted(set(expected) - set(table))}, "
+        f"filed differently {sorted(k for k in set(table) & set(expected) if table[k] != expected[k])}"
+    )
+
+
+def test_every_pack_is_placed_in_a_section_of_the_catalogue():
+    """A pack in the table but in no section is a pack an agent cannot find."""
+    text = CATALOGUE.read_text()
+    placed = set(re.findall(r"^- \*\*`([a-z0-9-]+)`\*\*", text, re.M))
+    expected = {p["id"] for p in registry()["packs"]}
+    assert expected <= placed, (
+        "the catalogue does not place these packs in any section: "
+        + ", ".join(sorted(expected - placed))
+    )
+
+
+def test_the_pack_front_doors_name_only_intents_that_exist():
+    doors = sorted((SKILLS / "packs").glob("*/SKILL.md"))
+    assert doors, "no pack front doors to check"
+    for door in doors:
+        missing = missing_intents(door.read_text())
+        assert not missing, (
+            f"{door.parent.name}/SKILL.md names intents that do not exist: "
+            + ", ".join(missing)
+        )
+
+
+def test_the_catalogue_names_the_doors_the_estate_actually_has():
+    """The catalogue must keep naming the skill doors, or it stops being a map."""
+    names = intent_names(CATALOGUE.read_text())
+    for door in ("skill.list", "skill.install", "skill.verify"):
+        assert door in names, f"the catalogue stopped naming {door}"
