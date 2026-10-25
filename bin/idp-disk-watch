@@ -93,10 +93,19 @@ notify() {
 FAILSTAMP="$HOME/.estate/disk-watch.last-fail-alert"
 clean() {
 	[ -f "$CLEANUP" ] || { date +%s >"$ACTED"; return; }
-	bash "$CLEANUP" true false 0 true >>"$LOG" 2>&1
+	# A BUDGET, because a tick must not outlive the next one (2026-10-25). Unbudgeted this ran for
+	# minutes on the founder's laptop; every door call that wanted the disk then found the lock held
+	# and answered "nothing done", so the agent that needed space could not get it and the log said
+	# the tick was still "running". 240s is well inside the 5-minute tick. A run that spends its
+	# budget exits 4 and the next tick continues it: every phase is idempotent, so nothing is lost.
+	WATCH_BUDGET="${DISK_CLEANUP_WATCH_BUDGET:-240}"
+	bash "$CLEANUP" true false 0 true "$WATCH_BUDGET" >>"$LOG" 2>&1
 	rc=$?
 	date +%s >"$ACTED"
-	[ "$rc" = 0 ] && return
+	# 4 (budget spent, phases owed, the next tick continues) and 5 (another run held the lock and did
+	# the work) are not failures and must not raise the alert: a loud tick every 5 minutes for work
+	# that is progressing is how a real alert stops being read.
+	case "$rc" in 0|4|5) return 0;; esac
 	last=$(cat "$FAILSTAMP" 2>/dev/null || echo 0)
 	if [ $(($(date +%s) - last)) -ge 3600 ]; then
 		notify "Cleanup failed (exit $rc): part of the disk could not be read or freed. See ~/.estate/disk-watch.log (BLIND / !! lines)."

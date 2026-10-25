@@ -1,10 +1,30 @@
 name: gh-api
-description: Thin wrapper — raw gh api call. Returns JSON.
+description: >-
+  Thin wrapper — one raw `gh api` call on this repo (chidionyema/idp). Returns JSON.
+  `path` is the API path after repos/chidionyema/idp/ (e.g. commits/<sha>/status, or
+  issues/7145/comments). `params` is optional extra argv, word-split on spaces: `--jq .state`,
+  `-X POST -f body=...`, `--paginate`. Empty params add no argument at all.
+class: read
 args:
-  path:   {type: string, description: "API path after repos/{owner}/{repo}/"}
-  params: {type: string, default: ""}
+  path:   {type: string, description: "API path after repos/chidionyema/idp/"}
+  params: {type: string, default: "", description: "optional extra gh argv words, e.g. --jq .state"}
+# One gh call; gh's own retry/backoff covers a slow API. Bounded well inside the door's 100s so a
+# wedged network path reports a timeout instead of being SIGTERMed with nothing to show.
+door_s: 60
+halt_on_failure: true
 steps:
   - name: get
-    # no `2>/dev/null`: the reason gh refused is the answer, not noise (2026-10-22)
-    cmd: >
-      gh api repos/chidionyema/idp/{{path}} {{params}}
+    # MEASURED 2026-10-25: this intent sent `{{params}}` straight to the shell, and the executor
+    # SHELL-QUOTES every {{arg}} (interpolate() in platform/estate/bin/estate-execute). An omitted
+    # params therefore arrived as a literal '' -- `gh api <path> ''` -- and gh answered "accepts
+    # 1 arg(s), received 2"; a params of `--jq .state` arrived as ONE quoted word, so gh printed
+    # its help text instead. Both failures were the quoting, not the API.
+    # So: assign to a shell variable first (the jev.decide.yaml pattern), test emptiness, and let
+    # `read -a` do the word splitting the caller meant. An empty params contributes nothing.
+    # No `2>/dev/null` (2026-10-22): the reason gh refused is the answer, not noise.
+    cmd: |
+      set -uo pipefail
+      p={{params}}
+      args=(repos/chidionyema/idp/{{path}})
+      if [ -n "$p" ]; then read -r -a extra <<< "$p"; args+=("${extra[@]}"); fi
+      gh api "${args[@]}"
