@@ -398,26 +398,64 @@ else say "FAIL  yamllint is not installed -- run bin/idp-install-deps"; fail=1; 
 # and its live gate manufactured work -- it refused rules whose only grader was a job the founder
 # had just deleted, which is a table defending itself rather than the estate.
 
-# The bdd-proof gate, named here on purpose. It is a rule in rules.yaml like the rest, but its
-# live case -- reading the most recent pull request on this repository and refusing one that
-# carries no BDD-PROOF block -- needs a line in this file that says the gate's name, so
-# bin/idp-rules can check that the claim in rules.yaml is still true (pointer_is_stale). The
-# registry above runs it; this line is what makes that fact checkable rather than asserted.
+# THE PROOF IS FED, NOT FETCHED (2026-10-25). Two defects lived in the two lines below, and both
+# were measured on this lane rather than guessed:
 #
-# THE `|| true` IS LOAD-BEARING AND MUST NOT BE REMOVED UNTIL live_pr() CHANGES (measured
-# 2026-09-13, the reason this comment is here rather than a second silent exception). The gate's
-# live_pr() runs `gh pr list --state all --limit 1` with no reference to the branch under test,
-# so on this repository it grades THE NEWEST PULL REQUEST ANY SESSION OPENED, not this run's.
-# Called during CI for branch feat/async-dispatch it answered about PR #3398 flux/image-updates
-# -- another session's work. Making this line fail the run would therefore fail a correct branch
-# for a foreign pull request's missing proof block, which is precisely the guard-that-refuses-
-# correct-work defect (R38). The suppression stays until live_pr() takes the PR under test
-# (GitHub exposes it as the pull_request payload; see bin/idp-bdd-proof-gate, input named in
-# its own docstring as "a pull request as JSON on stdin"). The BLIND that made this line look
-# broken was itself only a symptom of the missing token: with GH_TOKEN set the gate reads a pull
-# request and returns a real verdict, so the line is no longer blind -- it is simply aimed at the
-# wrong pull request, which no change to this file can fix.
-python3 "$IDP/bin/idp-bdd-proof-gate" --live || true
+#   1. `--live` called `gh pr list` with no reference to the branch under test, so during CI it
+#      graded THE NEWEST PULL REQUEST ANY SESSION OPENED. This lane was refused with "PR #7170
+#      carries no BDD-PROOF block" -- #7170 is another agent's memory lane, untouched by this
+#      push. The `|| true` that used to guard this line is what made that defect invisible.
+#   2. The rung needed a token to read the PR at all. With GH_TOKEN missing it printed
+#      "BLIND, cannot read a pull request" (run 40238894550) -- a gate that cannot fire. Adding
+#      the token, and with it `permissions: pull-requests: read`, to fast-gate.yml was the wrong
+#      shape: ci.yml and portal-app.yml CALL this workflow, and a called workflow that asks for
+#      a scope its caller did not grant fails the caller at `startup_failure` -- so `fast-gate /
+#      fast-gate`, `bdd`, `ci-success` and `portal-app` never ran and a green PR sat blocked.
+#
+# So the rung no longer fetches anything. On a pull request the payload GitHub already handed the
+# run (GITHUB_EVENT_PATH) IS the pull request: it carries the body, the head sha and the number,
+# and the gate's file path -- which binds the proof block's `head:` to the head being graded --
+# needs no network and no token. Exit 1 means THIS pull request was refused, and that is a failure.
+# Exit 2 means BLIND (no PR to read): named, not silently green, and never a refusal of correct
+# work (R38). A push to main has no pull request in its payload, so it is skipped by name.
+_bdd_rc=0
+_bdd_pr=""
+if [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "${GITHUB_EVENT_PATH:-}" ]; then
+  _bdd_pr="${TMPDIR:-/tmp}/idp-bdd-pr.$$.json"
+  if "$MPY" - "$GITHUB_EVENT_PATH" "$_bdd_pr" <<'PY' 2>/dev/null
+import json, sys
+
+ev = json.load(open(sys.argv[1]))
+if ev.get("merge_group") or not ev.get("pull_request"):
+    sys.exit(3)          # a queue run or a push: no pull request in this payload
+pr = ev["pull_request"]
+row = {
+    "number": pr.get("number"),
+    "title": pr.get("title") or "",
+    "body": pr.get("body") or "",
+    "headRefOid": ((pr.get("head") or {}).get("sha") or ""),
+}
+json.dump(row, open(sys.argv[2], "w"))
+PY
+  then
+    python3 "$IDP/bin/idp-bdd-proof-gate" "$_bdd_pr" || _bdd_rc=$?
+    rm -f "$_bdd_pr"
+  else
+    rm -f "$_bdd_pr"
+    _bdd_pr=""
+    if [ -n "${GITHUB_EVENT_PATH:-}" ]; then
+      python3 "$IDP/bin/idp-bdd-proof-gate" --live || _bdd_rc=$?
+    fi
+  fi
+else
+  python3 "$IDP/bin/idp-bdd-proof-gate" --live || _bdd_rc=$?
+fi
+case "$_bdd_rc" in
+  0) say "ok    bdd-proof the pull request under test carries a BDD-PROOF block" ;;
+  2) say "skip  bdd-proof BLIND -- no pull request readable on this host (named, not silently green)" ;;
+  3) say "skip  bdd-proof this event carries no pull request (a push to main is graded by CI)" ;;
+  *) say "FAIL  bdd-proof the pull request under test carries no BDD-PROOF block, or names another head"; fail=1 ;;
+esac
 
 # 1c.3 schema, every intent's args block against the door that runs it (bin/schema-conformance).
 #      The estate's agent door (platform/estate/bin/estate-execute, resolve_args) accepts any

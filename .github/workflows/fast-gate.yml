@@ -11,13 +11,6 @@ jobs:
   fast-gate:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    # pull-requests: read -- the bdd-proof rung reads the PR body (`gh pr view`) to bind the
-    # lane's proof to the pushed head. Without that scope -- and without GH_TOKEN below -- the
-    # rung printed "BLIND, cannot read a pull request" (run 40238894550): a gate that cannot
-    # fire is not a gate, so the job gets exactly the one scope it needs and nothing more.
-    permissions:
-      contents: read
-      pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }   # python-strict grades the range base...HEAD
@@ -58,7 +51,15 @@ jobs:
         # regardless of its own diff (2026-10-25: two files landed green on main, then a
         # formatting-verdict change made them stale and the whole migration queue went red).
         env:
-          GH_TOKEN: ${{ github.token }}   # the bdd-proof rung: BLIND without it (run 40238894550)
+          # The bdd rung needs to READ a pull request. It does that from the event payload
+          # (GITHUB_EVENT_PATH), which needs no token and no scope -- so no `permissions:` block
+          # is declared here on purpose. This workflow is CALLED by ci.yml and portal-app.yml,
+          # and a called workflow that asks for a scope its caller did not grant fails the
+          # caller at startup (measured 2026-10-25: one `pull-requests: read` line turned both
+          # `ci` and `portal-app` into `startup_failure`, so `fast-gate / fast-gate`, `bdd` and
+          # `ci-success` never ran and a green PR sat blocked forever). The token stays for the
+          # local/gh path, where the caller has one anyway.
+          GH_TOKEN: ${{ github.token }}
         run: IDP_CI_FAST=1 IDP_CI_BASE=$(git merge-base origin/main HEAD) bin/idp-ci
       - name: python-strict (estate standard, one copy)
         if: steps.actor.outputs.bot != '1'
