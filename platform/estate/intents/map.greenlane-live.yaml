@@ -66,7 +66,8 @@ steps:
         ("VOICE", [
           ("intent matcher: fires when every token of an intent's file name is in the utterance",
            F + "voice_intents.py", "def match"),
-          ("read-only intents run without a yes", F + "voice_intents.py", "READ_ONLY"),
+          ("read-only intents run without a yes (the ladder is the intent's own class:)",
+           F + "voice_intents.py", "def intent_class"),
           ("entry point (legacy /voice/stream path production runs)", F + "voice_intents.py", "def handle"),
           ("intent to copy: last stdout line is spoken", "platform/estate/intents/lane.yaml", "name: lane"),
         ]),

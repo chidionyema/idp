@@ -5,10 +5,10 @@ from fleetview_backend import voice_intents as vi
 
 
 CI_STATUS_YAML = (
-    'name: ci-status\nargs:\n  pr: {type: string, default: ""}\nsteps:\n  - cmd: echo\n'
+    'name: ci-status\nclass: read\nargs:\n  pr: {type: string, default: ""}\nsteps:\n  - cmd: echo\n'
 )
 CI_ERRORS_YAML = (
-    'name: ci.errors\nargs:\n  pr: {type: string, default: ""}\nsteps:\n  - cmd: echo\n'
+    'name: ci.errors\nclass: read\nargs:\n  pr: {type: string, default: ""}\nsteps:\n  - cmd: echo\n'
 )
 STATUS_YAML = "name: status\nsteps:\n  - cmd: echo\n"
 GIT_BRANCH_YAML = (
@@ -85,6 +85,92 @@ def test_risky_asks_then_yes_runs(env):
     assert r2["status"] == "ok"
     assert r2["text"] == "all green for flux-reconcile"
     assert r2["visual"]["cue"] == "pulse"
+
+
+# --- Face audit §8.5: the confirmation ladder is intent data, not a set ---
+
+
+def test_undeclared_class_asks_first(env):
+    # flux-reconcile declares no class: the safe default is to ask.
+    assert vi.intent_class("flux-reconcile", env / "intents") == "mutate"
+    # an intent that does not exist at all asks too.
+    assert vi.intent_class("no-such-intent", env / "intents") == "mutate"
+    r = vi.handle("run flux reconcile", "s-data-1")
+    assert r["status"] == "pending_confirmation"
+
+
+def test_class_read_runs_without_confirmation(env):
+    (env / "intents" / "cost-today.yaml").write_text(
+        "name: cost-today\nclass: read\nargs: {}\nsteps:\n  - cmd: echo\n"
+    )
+    assert vi.intent_class("cost-today", env / "intents") == "read"
+    r = vi.handle("cost today", "s-data-2")
+    assert r == vi.result("cost-today", "ok", "all green for cost-today")
+
+
+def test_the_legacy_read_intents_are_stamped_in_their_own_yaml(monkeypatch):
+    # The eight intents the deleted READ_ONLY set named must now carry the
+    # stamp in their own YAML on the repo tree, or the voice would start
+    # asking permission for reads that never needed it.
+    monkeypatch.delenv("FLEETVIEW_INTENTS_DIR")
+    for name in [
+        "ci.errors",
+        "ci.status",
+        "cost-today",
+        "friction-report",
+        "git-log",
+        "lane",
+        "router-status",
+        "voice-turns",
+        "ledger-verify",
+    ]:
+        assert vi.intent_class(name) == "read", name
+
+
+# --- Face audit §8.6: the voice agent target is config, not a literal ---
+
+
+def test_agent_job_target_comes_from_config(env, monkeypatch):
+    from fleetview_backend import agent_jobs
+
+    seen = []
+
+    def spy_validate(task, agent):
+        seen.append(("validate", agent))
+        return task, agent
+
+    def spy_submit(task, agent, by=""):
+        seen.append(("submit", agent))
+        return {"run_id": "run-123", "duplicate": False}, 200
+
+    monkeypatch.setattr(agent_jobs, "validate", spy_validate)
+    monkeypatch.setattr(agent_jobs, "submit", spy_submit)
+    monkeypatch.setenv("FLEETVIEW_VOICE_AGENT", "claude-code")
+
+    r = vi.handle("give an agent a job list the lanes", "s-data-3")
+    assert r["status"] == "pending_confirmation"
+    r2 = vi.handle("yes", "s-data-3")
+    assert r2["status"] == "ok"
+    assert seen == [("validate", "claude-code"), ("submit", "claude-code")]
+
+
+def test_agent_job_target_outside_the_registry_is_refused(env, monkeypatch):
+    # The configured name must still be one the registry knows.
+    monkeypatch.setenv("FLEETVIEW_VOICE_AGENT", "otto")
+    r = vi.handle("give an agent a job list the lanes", "s-data-4")
+    assert r["status"] == "error"
+    assert "Harness must be one of" in r["text"]
+
+
+def test_agent_job_target_defaults_to_pi(env, monkeypatch):
+    from fleetview_backend import agent_jobs
+
+    seen = []
+    monkeypatch.setattr(agent_jobs, "validate", lambda t, a: seen.append(a) or (t, a))
+    monkeypatch.delenv("FLEETVIEW_VOICE_AGENT", raising=False)
+    r = vi.handle("give an agent a job list the lanes", "s-data-5")
+    assert r["status"] == "pending_confirmation"
+    assert seen == ["pi"]
 
 
 def test_no_cancels(env):
@@ -188,7 +274,7 @@ def test_how_is_the_lane_runs_the_lane_intent_but_never_steals_longer_names(
 ):
     monkeypatch.delenv("FLEETVIEW_INTENTS_DIR", raising=False)
     cat = vi.load_catalog()
-    assert "lane" in cat and "lane" in vi.READ_ONLY
+    assert "lane" in cat and vi.intent_class("lane") == "read"
     assert vi.match("How's the lane?", cat) == "lane"
     assert vi.match("router lane health", cat) == "router-lane-health"
 
