@@ -11,6 +11,13 @@ jobs:
   fast-gate:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    # pull-requests: read -- the bdd-proof rung reads the PR body (`gh pr view`) to bind the
+    # lane's proof to the pushed head. Without that scope -- and without GH_TOKEN below -- the
+    # rung printed "BLIND, cannot read a pull request" (run 40238894550): a gate that cannot
+    # fire is not a gate, so the job gets exactly the one scope it needs and nothing more.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }   # python-strict grades the range base...HEAD
@@ -50,6 +57,8 @@ jobs:
         # rungs grade the WHOLE repo, so one pre-existing drift anywhere fails every lane
         # regardless of its own diff (2026-10-25: two files landed green on main, then a
         # formatting-verdict change made them stale and the whole migration queue went red).
+        env:
+          GH_TOKEN: ${{ github.token }}   # the bdd-proof rung: BLIND without it (run 40238894550)
         run: IDP_CI_FAST=1 IDP_CI_BASE=$(git merge-base origin/main HEAD) bin/idp-ci
       - name: python-strict (estate standard, one copy)
         if: steps.actor.outputs.bot != '1'

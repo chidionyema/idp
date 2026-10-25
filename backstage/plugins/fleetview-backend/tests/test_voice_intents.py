@@ -4,12 +4,8 @@ import pathlib
 from fleetview_backend import voice_intents as vi
 
 
-CI_STATUS_YAML = (
-    'name: ci-status\nclass: read\nargs:\n  pr: {type: string, default: ""}\nsteps:\n  - cmd: echo\n'
-)
-CI_ERRORS_YAML = (
-    'name: ci.errors\nclass: read\nargs:\n  pr: {type: string, default: ""}\nsteps:\n  - cmd: echo\n'
-)
+CI_STATUS_YAML = 'name: ci-status\nclass: read\nargs:\n  pr: {type: string, default: ""}\nsteps:\n  - cmd: echo\n'
+CI_ERRORS_YAML = 'name: ci.errors\nclass: read\nargs:\n  pr: {type: string, default: ""}\nsteps:\n  - cmd: echo\n'
 STATUS_YAML = "name: status\nsteps:\n  - cmd: echo\n"
 GIT_BRANCH_YAML = (
     "name: git.branch\nargs:\n  name: {type: string}\nsteps:\n  - cmd: echo\n"

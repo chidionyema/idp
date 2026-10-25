@@ -442,7 +442,13 @@ else
          --baseline "$IDP/docs/research/2026-10-25-constrained-formats.baseline.json" 2>&1); sc_rc=$?
   # No $XD here: this rung sits before xdist's arguments are defined, and `XD` under `set -u`
   # refused the run on 2026-10-25 (line 406: XD: unbound variable) instead of running the proof.
-  sp=$("$MPY" -m pytest -q -p no:cacheprovider "$IDP/tests/test_schema_conformance.py" 2>&1); sp_rc=$?
+  # `-o addopts=`: pyproject's addopts carries `-n auto`, and the fast-gate job installs pytest
+  # WITHOUT xdist, so this proof died in CI with `unrecognized arguments: -n ...` and took the
+  # rung red (run 40238894550, PR #7167) on a laptop that was green in 26 s. Grading the
+  # environment's addopts is not what this rung measures; missing xdist is serial, never a skip --
+  # the same rule the suites below follow (line ~1058). Proved green both ways: 28 passed with
+  # xdist installed, and 28 passed under `-o addopts=`.
+  sp=$("$MPY" -m pytest -q -o addopts= -p no:cacheprovider "$IDP/tests/test_schema_conformance.py" 2>&1); sp_rc=$?
   if [ "$sc_rc" -eq 0 ] && [ "$sp_rc" -eq 0 ]; then
     say "ok    schema   $(printf '%s' "$sc" | grep -E '^ratchet' | sed 's/^ratchet *//') -- $(printf '%s' "$sp" | grep -oE '[0-9]+ passed' | head -1) on the gate's own proof"
   else
