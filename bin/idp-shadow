@@ -1544,7 +1544,7 @@ def _verify(head, paths):
                 return 1, [("floor", f"cert-manager install failed: {(cm.stderr or '').strip()[-300:]}")]
             ready = subprocess.run(
                 ["kubectl", "wait", "--for=condition=available", "-n", "cert-manager",
-                 "deploy/--all", "--timeout=180s"],
+                 "deploy/--all", "--timeout=600s"],
                 capture_output=True, text=True,
             )
             if ready.returncode != 0:
