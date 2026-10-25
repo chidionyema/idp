@@ -1,0 +1,147 @@
+diff --git a/platform/bridge/deployment.yaml b/platform/bridge/deployment.yaml
+new file mode 100644
+index 000000000..60b86005b
+--- /dev/null
++++ b/platform/bridge/deployment.yaml
+@@ -0,0 +1,104 @@
++# The phone's road to the cluster API (crew#841).
++#
++# Founder, 2026-09-04: "while this works fir now t crete dependency on laptop so while we can
++# use this w need t consider debugging fro aother nachine". The Mac bridge (bin/idp-kubeapi-mac)
++# answers his phone today, and dies the moment the lid closes: it is the laptop he asked to stop
++# depending on.
++#
++# The first answer was a separate Always Free VM (platform/oci/bridge.tf). Its instance never
++# joined the tailnet -- the box booted without the NSG that lets it out, cloud-init keeps a
++# per-instance semaphore so a reboot repeats the same dead boot, and measured 2026-10-20 a
++# replacement instance is accepted by the launch API and then TERMINATED within ~30 seconds with
++# a free CPU and storage quota and no reason recorded. So the VM road has no machine tonight.
++#
++# This is the road that has one. The estate already runs the Tailscale operator
++# (platform/tailscale/operator.yaml), and policy.hujson already owns `tag:estate-bridge`
++# (tagOwners, `["tag:k8s"]`) and already admits `group:founder` to `tag:estate-bridge:8001`.
++# The tag was written to be minted by the operator -- the policy says so in its own comment --
++# so the missing piece was never a machine, it was this Service. A tagged proxy that is a
++# workload in the cluster cannot be the laptop that is asleep, and it is reconciled by Flux
++# like every other door in the estate.
++#
++# It is `kubectl proxy`, deliberately, and not a bespoke API forwarder: the proxy speaks the
++# Kubernetes API the app already expects, it authenticates with a projected ServiceAccount
++# token instead of a credential on disk, and the RBAC in rbac.yaml is the whole of what it can
++# reach.
++apiVersion: apps/v1
++kind: Deployment
++metadata:
++  name: estate-bridge
++  namespace: estate-bridge
++  labels:
++    app.kubernetes.io/name: estate-bridge
++    app.kubernetes.io/part-of: idp
++spec:
++  # One replica: the tailnet proxy in front of it is the operator's, and a second kubectl proxy
++  # would be a second address for the same read-only view -- a second copy of a layer, which is
++  # the thing this estate deletes. The proxy holds no state, so rolling it is free.
++  replicas: 1
++  selector:
++    matchLabels:
++      app.kubernetes.io/name: estate-bridge
++  strategy:
++    type: RollingUpdate
++    rollingUpdate:
++      maxUnavailable: 0
++      maxSurge: 1
++  template:
++    metadata:
++      labels:
++        app.kubernetes.io/name: estate-bridge
++        app.kubernetes.io/part-of: idp
++    spec:
++      automountServiceAccountToken: true
++      serviceAccountName: estate-bridge
++      securityContext:
++        runAsNonRoot: true
++        runAsUser: 65532
++        runAsGroup: 65532
++        seccompProfile:
++          type: RuntimeDefault
++      containers:
++        - name: kubectl-proxy
++          image: registry.k8s.io/kubectl:v1.34.1
++          command: ["kubectl"]
++          args:
++            # 0.0.0.0 because the operator's proxy reaches this container over the Service, not
++            # over loopback. `--accept-hosts` is the proxy's own Host-header check; the
++            # authentication in front of it is the tailnet ACL, which is deny-by-default and in
++            # git under review, so the phone is not admitted by a header.
++            - proxy
++            - --address=0.0.0.0
++            - --port=8001
++            - --accept-hosts=.*
++            - --keepalive=60s
++          ports:
++            - name: kubeapi
++              containerPort: 8001
++              protocol: TCP
++          readinessProbe:
++            httpGet:
++              path: /version
++              port: kubeapi
++            initialDelaySeconds: 3
++            periodSeconds: 10
++          livenessProbe:
++            httpGet:
++              path: /version
++              port: kubeapi
++            initialDelaySeconds: 20
++            periodSeconds: 30
++          # The node's requests stay under 1.8 CPU (AGENTS.md section 8): this is a read-only
++          # forwarder, so what it needs is a thread and a socket, not a share of the machine.
++          resources:
++            requests:
++              cpu: 10m
++              memory: 64Mi
++            limits:
++              cpu: 200m
++              memory: 192Mi
++          securityContext:
++            allowPrivilegeEscalation: false
++            readOnlyRootFilesystem: true
++            capabilities:
++              drop: ["ALL"]
+diff --git a/platform/bridge/service.yaml b/platform/bridge/service.yaml
+new file mode 100644
+index 000000000..68a31e128
+--- /dev/null
++++ b/platform/bridge/service.yaml
+@@ -0,0 +1,31 @@
++# The Service the operator turns into the tailnet node the phone talks to (crew#841).
++#
++# The three annotations are the whole mechanism, and they are the same three platform/jit uses
++# for its broker door:
++#   - `tailscale.com/expose` creates a tagged proxy for this Service.
++#   - `tailscale.com/hostname` is the MagicDNS name, so the phone's kubeconfig can name
++#     `estate-bridge` instead of an IP. A hardcoded tailnet IP is itself a restart defect: the
++#     address changes when the node is rebuilt, and the app then answers "authentication failed"
++#     while the road behind it is healthy.
++#   - `tailscale.com/tags: tag:estate-bridge` is the tag platform/tailscale/policy.hujson already
++#     owns and already admits `group:founder` to, on port 8001 and nothing else.
++apiVersion: v1
++kind: Service
++metadata:
++  name: estate-bridge
++  namespace: estate-bridge
++  annotations:
++    tailscale.com/expose: "true"
++    tailscale.com/hostname: estate-bridge
++    tailscale.com/tags: tag:estate-bridge
++  labels:
++    app.kubernetes.io/name: estate-bridge
++    app.kubernetes.io/part-of: idp
++spec:
++  selector:
++    app.kubernetes.io/name: estate-bridge
++  ports:
++    - name: kubeapi
++      port: 8001
++      targetPort: kubeapi
++      protocol: TCP

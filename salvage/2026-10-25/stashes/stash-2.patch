@@ -1,0 +1,12 @@
+diff --git a/tests/test_a_lane_older_than_a_day_is_retired.py b/tests/test_a_lane_older_than_a_day_is_retired.py
+index 354f2f82d..621af81cb 100644
+--- a/tests/test_a_lane_older_than_a_day_is_retired.py
++++ b/tests/test_a_lane_older_than_a_day_is_retired.py
+@@ -35,7 +35,6 @@ from __future__ import annotations
+ import sys
+ from pathlib import Path
+ 
+-import pytest
+ 
+ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ 

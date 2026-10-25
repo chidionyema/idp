@@ -1,0 +1,12 @@
+diff --git a/tests/test_the_face_avatar_is_commercially_clean_and_reproducible.py b/tests/test_the_face_avatar_is_commercially_clean_and_reproducible.py
+index e0880707e..54bf3d9f7 100644
+--- a/tests/test_the_face_avatar_is_commercially_clean_and_reproducible.py
++++ b/tests/test_the_face_avatar_is_commercially_clean_and_reproducible.py
+@@ -30,7 +30,6 @@ import subprocess
+ import sys
+ from pathlib import Path
+ 
+-import pytest
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+ AVATAR = ROOT / "bin/estate-face-avatar"

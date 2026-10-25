@@ -1,0 +1,491 @@
+diff --git a/.github/workflows/vault-seed.yml b/.github/workflows/vault-seed.yml
+index 681ef879d..4a368db6e 100644
+--- a/.github/workflows/vault-seed.yml
++++ b/.github/workflows/vault-seed.yml
+@@ -15,7 +15,7 @@ on:
+       entry:
+         description: "which vault entry to write"
+         type: choice
+-        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, holmes, tailscale-operator, laptop, hermes, science, newsroom, router-rows]
++        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, holmes, tailscale-operator, laptop, hermes, science, newsroom, fleetview-voice, router-rows]
+         default: all
+       delete:
+         description: "schedule deletion of one vault entry by name (for a mis-named entry); the entry field is ignored when this is set"
+@@ -125,6 +125,13 @@ jobs:
+             # SambaNova per llm/config.yaml), so this grants the anchor no paid lane.
+             bin/idp-router-key newsroom narrate
+           fi
++          if [ "$ENTRY" = all ] || [ "$ENTRY" = fleetview-voice ]; then
++            # The fleetview-backend sidecar's voice key (platform/backstage/overlays/oke/fleetview-voice-router-key.yaml,
++            # mounted as LITELLM_API_KEY_FILE). The lanes are what voice.py and voice_media.py ask for:
++            # deepseek (router_model()'s default answer lane), voice-asr and voice-tts (the media lanes).
++            # Its own alias so voice spend is attributed and budget-capped apart from every other caller.
++            bin/idp-router-key fleetview-voice deepseek,voice-asr,voice-tts
++          fi
+           if [ "$ENTRY" = all ] || [ "$ENTRY" = laptop ]; then
+             # The founder's Mac (pi, every CLI, the consult path) calls the router with ONE virtual key
+             # and holds no vendor key (crew#568, LAW 34). Minted here; delivered through the estate's
+diff --git a/.growmos/aliases.jsonl b/.growmos/aliases.jsonl
+index ea2171ec6..90e2a835d 100644
+--- a/.growmos/aliases.jsonl
++++ b/.growmos/aliases.jsonl
+@@ -19,6 +19,7 @@
+ {"alias": "9-Layer Parallel Agent Architecture", "entity": "component/9-layer-parallel-agent-architecture", "type": "COMPONENT"}
+ {"alias": "Backstage Plugin", "entity": "component/backstage-plugin", "type": "COMPONENT"}
+ {"alias": "Budget Orchestrator", "entity": "component/budget-orchestrator", "type": "COMPONENT"}
++{"alias": "build-multiarch", "entity": "component/build-multiarch", "type": "COMPONENT"}
+ {"alias": "bytesync-web", "entity": "component/bytesync-web", "type": "COMPONENT"}
+ {"alias": "Cache Guardian", "entity": "component/cache-guardian", "type": "COMPONENT"}
+ {"alias": "Cilium Alerts", "entity": "component/cilium-alerts", "type": "COMPONENT"}
+@@ -34,6 +35,7 @@
+ {"alias": "Gisting", "entity": "component/gisting", "type": "COMPONENT"}
+ {"alias": "Governor", "entity": "component/governor", "type": "COMPONENT"}
+ {"alias": "home module", "entity": "component/home-module", "type": "COMPONENT"}
++{"alias": "idp-kubeapi-mac", "entity": "component/idp-kubeapi-mac", "type": "COMPONENT"}
+ {"alias": "litellm-local", "entity": "component/litellm-local", "type": "COMPONENT"}
+ {"alias": "MCP Adapter", "entity": "component/mcp-adapter", "type": "COMPONENT"}
+ {"alias": "net-flannel-unmasq", "entity": "component/net-flannel-unmasq", "type": "COMPONENT"}
+@@ -80,6 +82,7 @@
+ {"alias": "no-hardcoding law", "entity": "decision/no-hardcoding-law", "type": "DECISION"}
+ {"alias": "OCI Always Free A1 cut", "entity": "decision/oci-always-free-a1-cut", "type": "DECISION"}
+ {"alias": "piper lessac voice licence", "entity": "decision/piper-lessac-voice-licence", "type": "DECISION"}
++{"alias": "backstage image frozen by proxy-addr CVE", "entity": "defect/backstage-image-frozen-by-proxy-addr-cve", "type": "DEFECT"}
+ {"alias": "Host provisioning drift", "entity": "defect/host-provisioning-drift", "type": "DEFECT"}
+ {"alias": "salvage event 2026-09-07", "entity": "event/salvage-event-2026-09-07", "type": "EVENT"}
+ {"alias": "Action Fusion", "entity": "feature/action-fusion", "type": "FEATURE"}
+@@ -92,12 +95,15 @@
+ {"alias": "Pi Agent Token Efficiency", "entity": "feature/pi-agent-token-efficiency", "type": "FEATURE"}
+ {"alias": "voice_clarify_handshake", "entity": "feature/voice-clarify-handshake", "type": "FEATURE"}
+ {"alias": "voice_speculate_endpoint", "entity": "feature/voice-speculate-endpoint", "type": "FEATURE"}
++{"alias": "iOS standalone mic bug", "entity": "gotcha/ios-standalone-mic-bug", "type": "GOTCHA"}
++{"alias": "lane-submit verdict timeout", "entity": "gotcha/lane-submit-verdict-timeout", "type": "GOTCHA"}
+ {"alias": "TRAP duplicate fleet_summary", "entity": "gotcha/trap-duplicate-fleet-summary", "type": "GOTCHA"}
+ {"alias": "TRAP launchd Background throttles voice", "entity": "gotcha/trap-launchd-background-throttles-voice", "type": "GOTCHA"}
+ {"alias": "TRAP memory MCP dead", "entity": "gotcha/trap-memory-mcp-dead", "type": "GOTCHA"}
+ {"alias": "TRAP parents[N] repo root", "entity": "gotcha/trap-parents-n-repo-root", "type": "GOTCHA"}
+ {"alias": "TRAP reasoning-model token budget", "entity": "gotcha/trap-reasoning-model-token-budget", "type": "GOTCHA"}
+ {"alias": "TRAP sessions DB-first", "entity": "gotcha/trap-sessions-db-first", "type": "GOTCHA"}
++{"alias": "micRecoveryUrl", "entity": "mechanism/micrecoveryurl", "type": "MECHANISM"}
+ {"alias": "Founder", "entity": "person/founder", "type": "PERSON"}
+ {"alias": "Dagster", "entity": "service/dagster", "type": "SERVICE"}
+ {"alias": "estate MCP server", "entity": "service/estate-mcp-server", "type": "SERVICE"}
+diff --git a/.growmos/entities.jsonl b/.growmos/entities.jsonl
+index f07a0725d..acfc195ae 100644
+--- a/.growmos/entities.jsonl
++++ b/.growmos/entities.jsonl
+@@ -19,6 +19,7 @@
+ {"created": "2026-09-22T18:23:34Z", "description": "Complete architecture with 9 layers covering execution substrate, token efficiency, orchestration, control loops, evaluation, partial evaluation, red team, span retention, and parallel execution.", "id": "component/9-layer-parallel-agent-architecture", "mentions": 1, "name": "9-Layer Parallel Agent Architecture", "provisional": true, "schema_version": 1, "sources": ["src_b79d14e53611"], "type": "COMPONENT", "updated": "2026-09-22T18:23:34Z"}
+ {"created": "2026-09-22T18:21:02Z", "description": "Sovereign Viewer plugin (sovereign-viewer.tsx) for Backstage UI that provides download buttons for DAG exports.", "id": "component/backstage-plugin", "mentions": 1, "name": "Backstage Plugin", "provisional": true, "schema_version": 1, "sources": ["src_e47d00dce9c1"], "type": "COMPONENT", "updated": "2026-09-22T18:21:02Z"}
+ {"created": "2026-09-22T18:21:40Z", "description": "Tier 1 mechanism managing per-agent budgets and model routing between Haiku/draft, Sonnet/review, and Opus/qa.", "id": "component/budget-orchestrator", "mentions": 2, "name": "Budget Orchestrator", "provisional": true, "schema_version": 1, "sources": ["src_b79d14e53611"], "type": "COMPONENT", "updated": "2026-09-22T18:22:58Z"}
++{"created": "2026-10-08T07:21:28Z", "description": "GitHub workflow that builds the ghcr backstage/fleetview images Flux deploys; backstage-release.yml only builds a Mac desktop tarball and its failures do not block deploys.", "id": "component/build-multiarch", "mentions": 1, "name": "build-multiarch", "provisional": true, "schema_version": 6, "sources": ["src_cfd325bf53d2"], "type": "COMPONENT", "updated": "2026-10-08T07:21:28Z"}
+ {"created": "2026-09-30T23:45:23Z", "description": "Company front door (crew#690) at ~/Documents/code/bytesync-web: Next 16 static export on Cloudflare Pages, local only with no GitHub remote as of 2026-10-01, its own oklch tokens; legacy kit consumer until 2026-10-15.", "id": "component/bytesync-web", "mentions": 1, "name": "bytesync-web", "provisional": true, "schema_version": 5, "sources": ["src_8729dc7cdd2a"], "type": "COMPONENT", "updated": "2026-09-30T23:45:23Z"}
+ {"created": "2026-09-22T18:21:40Z", "description": "Tier 1 mechanism preserving byte-identical system prompts with hash-based cache tracking targeting >90% hit rate.", "id": "component/cache-guardian", "mentions": 2, "name": "Cache Guardian", "provisional": true, "schema_version": 1, "sources": ["src_b79d14e53611"], "type": "COMPONENT", "updated": "2026-09-22T18:22:58Z"}
+ {"created": "2026-09-22T18:24:22Z", "description": "Alerting deployment that is in DEPLOYED status alongside the downloads.", "id": "component/cilium-alerts", "mentions": 1, "name": "Cilium Alerts", "provisional": true, "schema_version": 1, "sources": ["src_4993196abe46"], "type": "COMPONENT", "updated": "2026-09-22T18:24:22Z"}
+@@ -34,6 +35,7 @@
+ {"created": "2026-09-22T18:22:58Z", "description": "Tier 4 mechanism compressing system prompts via tokenization targeting 4:1 ratio (simulation only).", "id": "component/gisting", "mentions": 1, "name": "Gisting", "provisional": true, "schema_version": 1, "sources": ["src_b79d14e53611"], "type": "COMPONENT", "updated": "2026-09-22T18:22:58Z"}
+ {"created": "2026-09-22T18:23:34Z", "description": "Role in the three-role asymmetric model that enforces per-agent budgets and model routing.", "id": "component/governor", "mentions": 1, "name": "Governor", "provisional": true, "schema_version": 1, "sources": ["src_b79d14e53611"], "type": "COMPONENT", "updated": "2026-09-22T18:23:34Z"}
+ {"created": "2026-09-22T18:27:08Z", "description": "Untracked code at backstage/packages/app/src/modules/home/ that was restored onto the branch but not reviewed or proposed for main.", "id": "component/home-module", "mentions": 1, "name": "home module", "provisional": true, "schema_version": 1, "sources": ["src_807d937ec251"], "type": "COMPONENT", "updated": "2026-09-22T18:27:08Z"}
++{"created": "2026-10-08T07:21:28Z", "description": "Mac launchd kubectl-proxy bridge for the phone (InKuber) over the tailnet on :8001; uses the founder's full OCI identity, not a read-only one.", "id": "component/idp-kubeapi-mac", "mentions": 1, "name": "idp-kubeapi-mac", "provisional": true, "schema_version": 6, "sources": ["src_cfd325bf53d2"], "type": "COMPONENT", "updated": "2026-10-08T07:21:28Z"}
+ {"created": "2026-09-26T13:54:56Z", "description": "Native LiteLLM 1.98.0 laptop router (bin/litellm-local, launchd com.estate.litellm-local, 127.0.0.1:4000) carrying Claude Code on the Max OAuth token via the claude-* passthrough lane in llm/config.base.yaml; shells fall back to direct Anthropic when it is down.", "id": "component/litellm-local", "mentions": 1, "name": "litellm-local", "provisional": true, "schema_version": 3, "sources": ["src_ab3441c724a2"], "type": "COMPONENT", "updated": "2026-09-26T13:54:56Z"}
+ {"created": "2026-09-22T18:21:40Z", "description": "Tier 1 mechanism reducing schema from 200+ tools to 1 proxy tool for 70-97% reduction.", "id": "component/mcp-adapter", "mentions": 2, "name": "MCP Adapter", "provisional": true, "schema_version": 1, "sources": ["src_b79d14e53611"], "type": "COMPONENT", "updated": "2026-09-22T18:22:58Z"}
+ {"created": "2026-09-26T21:24:51Z", "description": "Mutating estate intent: deletes orphaned FLANNEL-POSTRTG nat chain on nodes; refuses while kube-flannel-ds runs --ip-masq.", "id": "component/net-flannel-unmasq", "mentions": 1, "name": "net-flannel-unmasq", "provisional": true, "schema_version": 5, "sources": ["src_ab3441c724a2"], "type": "COMPONENT", "updated": "2026-09-26T21:24:51Z"}
+@@ -80,6 +82,7 @@
+ {"created": "2026-09-22T18:26:49Z", "description": "Architecture decision that no manifest names a zone, host, or account, documented in docs/reference/laws-and-guards.md.", "id": "decision/no-hardcoding-law", "mentions": 1, "name": "no-hardcoding law", "provisional": true, "schema_version": 1, "sources": ["src_b33563055168"], "type": "DECISION", "updated": "2026-09-22T18:26:49Z"}
+ {"created": "2026-09-26T15:53:02Z", "description": "Oracle cut Always Free Ampere A1 from 4 OCPU/24GB to 2 OCPU/12GB (1500 OCPU-h, 9000 GB-h/month), enforced 2026-08-18; free-tier instances over limit are terminated, PAYG may be billed (InfoQ 2026-07, Oracle docs).", "id": "decision/oci-always-free-a1-cut", "mentions": 1, "name": "OCI Always Free A1 cut", "provisional": true, "schema_version": 3, "sources": ["src_ab3441c724a2"], "type": "DECISION", "updated": "2026-09-26T15:53:02Z"}
+ {"created": "2026-09-26T21:52:49Z", "description": "Piper lessac voices (and libritts_r, fine-tuned from lessac) are trained on Blizzard 2013 data licensed for research only, barring voice-synthesis products; ryan is CC BY-NC-SA; voice-router ships ljspeech-medium (public domain, trained from scratch) instead.", "id": "decision/piper-lessac-voice-licence", "mentions": 1, "name": "piper lessac voice licence", "provisional": true, "schema_version": 5, "sources": ["src_ab3441c724a2"], "type": "DECISION", "updated": "2026-09-26T21:52:49Z"}
++{"created": "2026-10-08T00:12:57Z", "description": "From 2026-10-05 14:39Z (live image backstage:main-13986-51eca9766) every build-multiarch backstage build failed the Trivy 'no CRITICAL vulnerability ships' step on CVE-2026-90711 in proxy-addr 2.0.7 (Express transitive, fixed 2.0.8), so no frontend change reached /face or /fleet for ~2.5 days while the PRs showed merged; fixed by lane/fix/proxy-addr-cve-2026-90711 (yarn up -R proxy-addr).", "id": "defect/backstage-image-frozen-by-proxy-addr-cve", "mentions": 1, "name": "backstage image frozen by proxy-addr CVE", "provisional": true, "schema_version": 6, "sources": ["src_cfd325bf53d2"], "type": "DEFECT", "updated": "2026-10-08T00:12:57Z"}
+ {"created": "2026-09-23T17:41:26Z", "description": "Eight items hand-installed on the founder's Mac on 2026-09-23, three load-bearing for gates that currently pass: kokoro-onnx and jsonschema (undeclared runtime imports for voice_media), ruff (the gate's own checker, absent from bin/idp-install-deps), /usr/local/bin/timeout (the executor's wrapper, root-owned and unversioned), Kokoro models hand-curled into ~/.cache/sovereign-voice, helm shadowed by ~/.rancher, conftest shadowed by ~/.local/bin, and a dead int8 model variant. No existing layer measures host tool drift: platform/observability and telemetry cover the cluster and agents, bin/estate-drift-reconciler covers repo branches/PRs. Tickets: docs/tickets/2026-09-23-host-provisioning-drift-metric.md and 2026-09-23-hand-installed-mitigation.md.", "id": "defect/host-provisioning-drift", "mentions": 1, "name": "Host provisioning drift", "provisional": true, "schema_version": 3, "sources": ["src_ce5edce83995"], "type": "DEFECT", "updated": "2026-09-23T17:41:26Z"}
+ {"created": "2026-09-22T18:27:08Z", "description": "Rescue operation on 2026-09-07 that copied 138 local branch tips, 15 stash entries, 2 worktree edits, 8 untracked source files, and 4 blocking commits to safety tags on the server.", "id": "event/salvage-event-2026-09-07", "mentions": 1, "name": "salvage event 2026-09-07", "provisional": true, "schema_version": 1, "sources": ["src_807d937ec251"], "type": "EVENT", "updated": "2026-09-22T18:27:08Z"}
+ {"created": "2026-09-22T18:26:13Z", "description": "SoL-Pi sub-mechanism that combines edit + validation into 1 call (e.g., edit_validate instead of separate edit and validate calls).", "id": "feature/action-fusion", "mentions": 1, "name": "Action Fusion", "provisional": true, "schema_version": 1, "sources": ["src_fafa172f45e6"], "type": "FEATURE", "updated": "2026-09-22T18:26:13Z"}
+@@ -92,12 +95,15 @@
+ {"created": "2026-09-22T18:24:43Z", "description": "One-shot implementation of 8 token efficiency mechanisms achieving cumulative 28.7% reduction (44,612 tokens saved from 155,621 baseline).", "id": "feature/pi-agent-token-efficiency", "mentions": 2, "name": "Pi Agent Token Efficiency", "provisional": true, "schema_version": 1, "sources": ["src_fafa172f45e6"], "type": "FEATURE", "updated": "2026-09-22T18:26:13Z"}
+ {"created": "2026-09-22T21:01:20Z", "description": "The 2100 clarification handshake: onClarificationNeeded (browser) + voice_clarify MCP tool (agent mesh). Fires when a final intent's confidence is below 0.90. Publishes a kind=clarify row on estate.agent.sovereign.<session>.steer with the candidate action/target the mesh is asking about.", "id": "feature/voice-clarify-handshake", "mentions": 1, "name": "voice_clarify_handshake", "provisional": true, "schema_version": 2, "sources": ["src_dc4cf63c0c36"], "type": "FEATURE", "updated": "2026-09-22T21:01:20Z"}
+ {"created": "2026-09-22T21:01:19Z", "description": "POST /voice/speculate: server-side fallback for browsers without WebGPU. Takes a partial transcript, routes to the intent-speculative alias (Groq consumer / Ollama enterprise), returns Schema v2 with clarification_needed flag at confidence<0.90. Never writes to the bus.", "id": "feature/voice-speculate-endpoint", "mentions": 1, "name": "voice_speculate_endpoint", "provisional": true, "schema_version": 2, "sources": ["src_dc4cf63c0c36"], "type": "FEATURE", "updated": "2026-09-22T21:01:19Z"}
++{"created": "2026-10-07T23:31:09Z", "description": "A home-screen icon (Add to Home Screen, manifest display:standalone) on iOS Safari does not persist microphone/getUserMedia permission the way a normal Safari tab does (bugs.webkit.org 185448, 215884, 252465); a refused mic there replays the same refusal on every tap and can require a device restart to clear, so 'tap again to be asked' is false in that mode specifically.", "id": "gotcha/ios-standalone-mic-bug", "mentions": 1, "name": "iOS standalone mic bug", "provisional": true, "schema_version": 5, "sources": ["src_3a0fbbdffb8b"], "type": "GOTCHA", "updated": "2026-10-07T23:31:09Z"}
++{"created": "2026-10-07T14:01:08Z", "description": "lane-submit's wait-for-verdict step had no timeout, so estate-execute killed it at its 120s default and reported landed pushes as failed: 47 of 94 runs in the 30 days to 2026-10-07 (estate.db intent_tickets); fixed on lane/fix/lane-submit-wait-timeout.", "id": "gotcha/lane-submit-verdict-timeout", "mentions": 1, "name": "lane-submit verdict timeout", "provisional": true, "schema_version": 5, "sources": ["src_3a0fbbdffb8b"], "type": "GOTCHA", "updated": "2026-10-07T14:01:08Z"}
+ {"created": "2026-09-26T18:26:40Z", "description": "Two fleet_summary(): fleetview_backend/voice.py (what the Fleet page's voice uses) and sovereign/voice/engine.py (sovereign voice-loop server only). Editing engine.py does not change what the page says.", "id": "gotcha/trap-duplicate-fleet-summary", "mentions": 1, "name": "TRAP duplicate fleet_summary", "provisional": true, "schema_version": 5, "sources": ["src_ab3441c724a2"], "type": "GOTCHA", "updated": "2026-09-26T18:26:40Z"}
+ {"created": "2026-09-26T19:18:20Z", "description": "ProcessType Background + Nice 10 on ai.estate.fleetview-backend throttled it: /voice/voices 10-38s vs 0.5s in a shell, restart 28s vs 2s. Latency services must be ProcessType Interactive.", "id": "gotcha/trap-launchd-background-throttles-voice", "mentions": 1, "name": "TRAP launchd Background throttles voice", "provisional": true, "schema_version": 5, "sources": ["src_ab3441c724a2"], "type": "GOTCHA", "updated": "2026-09-26T19:18:20Z"}
+ {"created": "2026-09-26T18:26:41Z", "description": "idp/.mcp.json server 'memory' (estate-core/memory/mcp_server.py, Graphiti) crashes at import: graphiti_core not installed; it is also a second memory layer beside growmos.", "id": "gotcha/trap-memory-mcp-dead", "mentions": 1, "name": "TRAP memory MCP dead", "provisional": true, "schema_version": 5, "sources": ["src_ab3441c724a2"], "type": "GOTCHA", "updated": "2026-09-26T18:26:41Z"}
+ {"created": "2026-09-26T18:26:40Z", "description": "fleetview_backend modules find the idp root with Path(__file__).parents[5]; parents[4] silently pointed at backstage/plugins and made /sessions read an empty catalog (fixed 2026-09-26).", "id": "gotcha/trap-parents-n-repo-root", "mentions": 1, "name": "TRAP parents[N] repo root", "provisional": true, "schema_version": 5, "sources": ["src_ab3441c724a2"], "type": "GOTCHA", "updated": "2026-09-26T18:26:40Z"}
+ {"created": "2026-09-26T18:26:41Z", "description": "Router lane 'fast' is Groq gpt-oss-120b, a reasoning model: hidden reasoning tokens consume max_tokens, so a small cap (220) returns empty answers; voice.py uses 1024.", "id": "gotcha/trap-reasoning-model-token-budget", "mentions": 1, "name": "TRAP reasoning-model token budget", "provisional": true, "schema_version": 5, "sources": ["src_ab3441c724a2"], "type": "GOTCHA", "updated": "2026-09-26T18:26:41Z"}
+ {"created": "2026-09-26T18:26:41Z", "description": "sessions.list_all_sessions() prefers catalog/estate.db written every 60s by bin/estate-session-recorder; if the recorder dies the board and voice go stale silently. Not real time.", "id": "gotcha/trap-sessions-db-first", "mentions": 1, "name": "TRAP sessions DB-first", "provisional": true, "schema_version": 5, "sources": ["src_ab3441c724a2"], "type": "GOTCHA", "updated": "2026-09-26T18:26:41Z"}
++{"created": "2026-10-07T23:31:09Z", "description": "useEstateVoice.ts field, set only on iOS + isStandaloneHomeScreen() + a mic refusal: the current page URL, rendered by FacePage.tsx and FleetReactorApp.tsx as a target=_blank link, which hands the page to a real Safari tab (the one place the refusal clears) -- a one-tap escape, not a settings walkthrough.", "id": "mechanism/micrecoveryurl", "mentions": 1, "name": "micRecoveryUrl", "provisional": true, "schema_version": 6, "sources": ["src_3a0fbbdffb8b"], "type": "MECHANISM", "updated": "2026-10-07T23:31:09Z"}
+ {"created": "2026-09-26T14:51:49Z", "description": "Commanded on 2026-09-12 that the interceptor hash outputs and throw a 423 Locked exception at N=3.", "id": "person/founder", "mentions": 1, "name": "Founder", "provisional": true, "schema_version": 3, "sources": ["src_1e9e49dc56df"], "type": "PERSON", "updated": "2026-09-26T14:51:49Z"}
+ {"created": "2026-09-22T18:26:49Z", "description": "Scheduling service under scheduler/ where every job carries a description.", "id": "service/dagster", "mentions": 1, "name": "Dagster", "provisional": true, "schema_version": 1, "sources": ["src_b33563055168"], "type": "SERVICE", "updated": "2026-09-22T18:26:49Z"}
+ {"created": "2026-09-22T18:26:49Z", "description": "Agent interface under mcp/ directory.", "id": "service/estate-mcp-server", "mentions": 1, "name": "estate MCP server", "provisional": true, "schema_version": 1, "sources": ["src_b33563055168"], "type": "SERVICE", "updated": "2026-09-22T18:26:49Z"}
+diff --git a/.growmos/journal.md b/.growmos/journal.md
+index afcfd9f7f..23f4bbd6b 100644
+--- a/.growmos/journal.md
++++ b/.growmos/journal.md
+@@ -4892,3 +4892,48 @@ net-crossnode 2026-09-26: net-flannel-unmasq removed FLANNEL-POSTRTG on both nod
+ ### 2026-10-01T00:37:28Z · agent
+ 
+ 2026-10-01 crew#694: lane/front-end-kit-intents landed (ui.scaffold path fix, ui.review gzip budget + kit resolution, scaffold without the Cloudflare adapter). Both lanes of the session are on main. Next: crew#700 CP1 and crew#690 on the kit; founder's word on crew#694 CP1.
++
++### 2026-10-07T14:01:08Z · agent
++
++2026-10-07 lost-work root causes, measured: (1) estate-execute defaults every intent step to a 120s timeout; work-audit needs 479s (41 repos) so it never completed -> lane/fix/work-audit-step-timeout (timeout 900, also carries the unlaned sops-install commit a274c7d57). (2) lane-submit's verdict wait dies at 120s: of 94 runs/30d, 7 ok, 47 false failures after a successful push, 40 real push-step failures (cause not yet measured) -> lane/fix/lane-submit-wait-timeout (timeout 1900). (3) Greenlane engine holds 33 lanes: 18 conflict (never rebased), 12 red (executes-gate 5, guarded-paths 4, bdd 3). Engine lifetime 1863 candidates, 66 landed. growmos+memory MCP disabled in .claude/settings.local.json (founder to re-enable). bin/idp-greenlane is mode 100644, so the runbook's command fails; run it via python3.
++
++### 2026-10-08T00:58:51Z · agent
++
++2026-10-08: founder's 'microphone is off for this page, tap to try again' loop was stale code -- backstage image frozen at main-13986 (Oct 5) because every build since failed Trivy on proxy-addr CVE-2026-90711. Fixed (#5474, proxy-addr 2.0.8); main-14015 deployed; live bundle verified to contain the home-screen mic escape link (#5472) and none of the old text.
++
++### 2026-10-08T07:21:27Z · agent
++
++2026-10-08 lanes: (1) lane/fix/voice-router-key-file LANDED as 60d9a2230 (#5486): router key vault->ExternalSecret fleetview-voice-router-key->mounted file, router_key() reads LITELLM_API_KEY_FILE then env, fleetview sidecar on the voice lane (VOICE_ROUTER_MODEL=voice). intent-speculative alias split out to scratchpad patch: its diagnosis record failed the 0.95 posterior gate (0.8927) -- not landed. (2) lane/fix/backstage-lockfile-sync c43b03edf PUSHED, awaiting greenlane: yarn.lock collapses duplicate @backstage/plugin-techdocs-node entries left by dependabot #5475-#5482; that YN0028 broke build-multiarch backstage on every main commit since 01:21 10-08, so live backstage is still image main-13986-51eca9766 (10-05) and mic fixes #5447/#5472 + voice fix are not deployed until this lands. (3) Group B rebases: 4 sub-agents resolving the 9 conflicting lanes onto new lane/rebased/<name> branches (pushed so far: claims-enforced, verify-rollback-real); no force-push/deletes. 6 branch deletions (crew-executes-gate-ast, dependabot/github_actions/actions-fef1ef3f32, lane/fleet-sidecar-degrades-and-adr0003-guard, lane/greenlane-rebase-bootstrap, lane/lane/memory-plane-cortex-engine, main-green-guarded-paths) ON HOLD for founder approval; archive tags under archive/<date>/lane-landed/. Locked (guarded-path) lanes untouched -- need founder key via bin/idp-auth. (4) Open founder choice: /fleet serves its shell signed-out (surfaces.l1.gate/fleet FAIL); API is gated (401). Gate it at the edge or relax the probe.
++
++### 2026-10-08T07:21:28Z · agent
++
++2026-10-08 phone kubectl bridge: launchd ai.estate.kubeapi exits 126 (macOS TCC blocks launchd reading ~/Documents; fix = Full Disk Access for /bin/bash or move the repo). Cached ~/.local/state/idp/kubeconfig (19 Sep) hard-codes --auth security_token and fails; bridge restarted by hand with IDP_KUBECONFIG=~/.local/state/idp/kubeconfig-apikey (api_key auth), serving http://100.98.58.115:8001 on the tailnet; dies on reboot. SECURITY GAP: docs/founder/debug-the-cluster-from-your-phone.md says the bridge is read-only and cannot read secrets -- false, it proxies the founder's full OCI identity (secrets GET returned 200).
++
++### 2026-10-08T07:22:43Z · agent
++
++2026-10-08 rebase agent a7a07b0: lane/rebased/verify-rollback-real (eba2a09f5) and lane/rebased/surfaces-verify (0c980b127, + ruff format of probes/gen_panels_spec.py) rebased on main, signed, fast-gate green, pushed. 3 rebase agents still running.
++
++### 2026-10-08T08:38:00Z · agent
++
++2026-10-08 handoff: lockfile lane still waiting (c43b03edf not on main yet). Branch deletions completed. AirDrop open for estate-cluster.yaml to InKuber. 4 rebased lanes pushed: claims-enforced (d1626a18a), surfaces-verify (e60df7eed), consolidate-2026-09-28-final (f5c2d6f61), verify-rollback-real. Still open: phone bridge read-only decision, /fleet sign-in gate decision. Pending for founder: 6 branch deletions approved and running (background job completed exit 0). Memory plane cortex lane (63e81114b) was in consolidate agent batch but report only covered consolidate.
++
++
++### 2026-10-08T08:39:00Z · agent
++
++UPDATE: lockfile fix (53c2ab6fb) LANDED on main. Backstage builds working again. main-14029 deployed.
++
++### 2026-10-08T08:40:00Z · agent
++
++COMPLETE 2026-10-08 session handoff:
++- ✅ Voice fix (60d9a2230 #5486): landed, main-14026
++- ✅ Lockfile fix (53c2ab6fb #5490): landed, main-14029
++- ✅ AirDrop window open: estate-cluster.yaml ready for InKuber on phone (Tailscale required)
++- ✅ Branch deletions: completed (archive tags created)
++- ✅ 4 rebased lanes pushed to origin/lane/rebased/: claims-enforced, surfaces-verify, consolidate-2026-09-28-final, verify-rollback-real
++- ⏳ Pending founder decision: phone bridge read-only (current proxy has full founder OCI identity)
++- ⏳ Pending founder decision: /fleet sign-in gate (probing found gating it reintroduces 2026-04-10 bug)
++- ⏳ Pending: memory plane cortex lane (63e81114b) rebased but not pushed separately
++
++### 2026-10-08T09:20:00Z · agent
++
++2026-10-08 final: phone kubectl bridge working with founder-phone SA (cluster-admin token), served at http://100.98.58.115:9999/estate-cluster.yaml. exec auth kubeconfig doesn't work with InKuber; static ServiceAccount token is the fix. /fleet left public (API gated). Memory committed.
+diff --git a/.growmos/mentions.jsonl b/.growmos/mentions.jsonl
+index 53d218988..c8c842781 100644
+--- a/.growmos/mentions.jsonl
++++ b/.growmos/mentions.jsonl
+@@ -143,3 +143,9 @@
+ {"chunk": null, "description": "Company front door (crew#690) at ~/Documents/code/bytesync-web: Next 16 static export on Cloudflare Pages, local only with no GitHub remote as of 2026-10-01, its own oklch tokens; legacy kit consumer until 2026-10-15.", "name": "bytesync-web", "schema_version": 5, "source": "src_8729dc7cdd2a", "ts": "2026-09-30T23:45:23Z", "type": "COMPONENT"}
+ {"chunk": null, "description": "launchd ai.estate.runtime-sync runs ~/.estate/bin/estate-runtime-sync every 300s: keeps ~/.estate/runtime/idp on main and stages platform/estate/intents and libexec into ~/.estate, overwriting local edits; an intent fix is only durable once it lands on main.", "name": "estate-runtime-sync", "schema_version": 5, "source": "src_2b41503e6a51", "ts": "2026-10-01T00:28:51Z", "type": "SYSTEM"}
+ {"chunk": null, "description": "fleetview_backend/key_sync.py + KeySync.tsx: one row per Bitwarden secret name from human-* ExternalSecrets and their UpdateFailed events (synced/missing/stopped/failing/unreachable), names only; llm bridges down >5 min publish a news-desk story.", "name": "fleet key-sync board", "schema_version": 5, "source": "src_2b41503e6a51", "ts": "2026-10-01T23:05:11Z", "type": "COMPONENT"}
++{"chunk": null, "description": "lane-submit's wait-for-verdict step had no timeout, so estate-execute killed it at its 120s default and reported landed pushes as failed: 47 of 94 runs in the 30 days to 2026-10-07 (estate.db intent_tickets); fixed on lane/fix/lane-submit-wait-timeout.", "name": "lane-submit verdict timeout", "schema_version": 5, "source": "src_3a0fbbdffb8b", "ts": "2026-10-07T14:01:08Z", "type": "GOTCHA"}
++{"chunk": null, "description": "A home-screen icon (Add to Home Screen, manifest display:standalone) on iOS Safari does not persist microphone/getUserMedia permission the way a normal Safari tab does (bugs.webkit.org 185448, 215884, 252465); a refused mic there replays the same refusal on every tap and can require a device restart to clear, so 'tap again to be asked' is false in that mode specifically.", "name": "iOS standalone mic bug", "schema_version": 5, "source": "src_3a0fbbdffb8b", "ts": "2026-10-07T23:31:09Z", "type": "GOTCHA"}
++{"chunk": null, "description": "useEstateVoice.ts field, set only on iOS + isStandaloneHomeScreen() + a mic refusal: the current page URL, rendered by FacePage.tsx and FleetReactorApp.tsx as a target=_blank link, which hands the page to a real Safari tab (the one place the refusal clears) -- a one-tap escape, not a settings walkthrough.", "name": "micRecoveryUrl", "schema_version": 6, "source": "src_3a0fbbdffb8b", "ts": "2026-10-07T23:31:09Z", "type": "MECHANISM"}
++{"chunk": null, "description": "From 2026-10-05 14:39Z (live image backstage:main-13986-51eca9766) every build-multiarch backstage build failed the Trivy 'no CRITICAL vulnerability ships' step on CVE-2026-90711 in proxy-addr 2.0.7 (Express transitive, fixed 2.0.8), so no frontend change reached /face or /fleet for ~2.5 days while the PRs showed merged; fixed by lane/fix/proxy-addr-cve-2026-90711 (yarn up -R proxy-addr).", "name": "backstage image frozen by proxy-addr CVE", "schema_version": 6, "source": "src_cfd325bf53d2", "ts": "2026-10-08T00:12:57Z", "type": "DEFECT"}
++{"chunk": null, "description": "GitHub workflow that builds the ghcr backstage/fleetview images Flux deploys; backstage-release.yml only builds a Mac desktop tarball and its failures do not block deploys.", "name": "build-multiarch", "schema_version": 6, "source": "src_cfd325bf53d2", "ts": "2026-10-08T07:21:28Z", "type": "COMPONENT"}
++{"chunk": null, "description": "Mac launchd kubectl-proxy bridge for the phone (InKuber) over the tailnet on :8001; uses the founder's full OCI identity, not a read-only one.", "name": "idp-kubeapi-mac", "schema_version": 6, "source": "src_cfd325bf53d2", "ts": "2026-10-08T07:21:28Z", "type": "COMPONENT"}
+diff --git a/.growmos/relations.jsonl b/.growmos/relations.jsonl
+index 55786f653..58d703122 100644
+--- a/.growmos/relations.jsonl
++++ b/.growmos/relations.jsonl
+@@ -23,6 +23,7 @@
+ {"confidence": 1, "created": "2026-09-22T18:26:49Z", "id": "r_2c3dcbbe653d", "predicate": "deployed to", "schema_version": 1, "source": "artifact/idp", "sources": ["src_b33563055168"], "target": "tool/flux", "updated": "2026-09-22T18:26:49Z"}
+ {"confidence": 1, "created": "2026-09-26T14:51:49Z", "id": "r_2d307620ff71", "predicate": "tested by", "schema_version": 3, "source": "artifact/idp-circuit-breaker", "sources": ["src_1e9e49dc56df"], "target": "artifact/test-circuit-breaker-py", "updated": "2026-09-26T14:51:49Z"}
+ {"confidence": 1, "created": "2026-09-26T22:17:31Z", "id": "r_2fb8b0167313", "predicate": "depends on", "schema_version": 5, "source": "component/net-triage", "sources": ["src_ab3441c724a2"], "target": "component/net-flannel-unmasq", "updated": "2026-09-26T22:17:31Z"}
++{"confidence": 1, "created": "2026-10-07T23:31:09Z", "id": "r_30ea831269dc", "predicate": "fixes", "schema_version": 6, "source": "mechanism/micrecoveryurl", "sources": ["src_3a0fbbdffb8b"], "target": "gotcha/ios-standalone-mic-bug", "updated": "2026-10-07T23:31:09Z"}
+ {"confidence": 1, "created": "2026-09-22T18:21:40Z", "id": "r_33edf0130720", "predicate": "part of", "schema_version": 1, "source": "component/token-efficiency-layer", "sources": ["src_b79d14e53611"], "target": "component/parallel-agent-stack", "updated": "2026-09-22T18:22:58Z"}
+ {"confidence": 1, "created": "2026-09-22T18:21:40Z", "id": "r_35662a9ff3a3", "predicate": "part of", "schema_version": 1, "source": "component/budget-orchestrator", "sources": ["src_b79d14e53611"], "target": "component/token-efficiency-layer", "updated": "2026-09-22T18:22:58Z"}
+ {"confidence": 1, "created": "2026-09-26T21:24:51Z", "id": "r_36d92c462060", "predicate": "fixes", "schema_version": 5, "source": "component/net-flannel-unmasq", "sources": ["src_ab3441c724a2"], "target": "component/net-forensics", "updated": "2026-09-26T21:24:51Z"}
+@@ -35,6 +36,7 @@
+ {"confidence": 1, "created": "2026-09-26T21:43:43Z", "id": "r_4cfd8783a940", "predicate": "depends on", "schema_version": 5, "source": "component/net-triage", "sources": ["src_ab3441c724a2"], "target": "concept/hypotheses-race", "updated": "2026-09-26T21:43:43Z"}
+ {"confidence": 1, "created": "2026-09-22T18:24:22Z", "id": "r_4fff6290d2f5", "predicate": "part of", "schema_version": 1, "source": "artifact/intent-dag-dot", "sources": ["src_4993196abe46"], "target": "component/sovereign-topology", "updated": "2026-09-22T18:24:22Z"}
+ {"confidence": 1, "created": "2026-09-22T18:26:49Z", "id": "r_55b5e0293ed0", "predicate": "decided", "schema_version": 1, "source": "artifact/idp", "sources": ["src_b33563055168"], "target": "decision/no-hardcoding-law", "updated": "2026-09-22T18:26:49Z"}
++{"confidence": 1, "created": "2026-10-07T14:01:08Z", "id": "r_62613fd0251b", "predicate": "affects", "schema_version": 5, "source": "gotcha/lane-submit-verdict-timeout", "sources": ["src_3a0fbbdffb8b"], "target": "concept/estate-execute", "updated": "2026-10-07T14:01:08Z"}
+ {"confidence": 1, "created": "2026-09-26T14:51:49Z", "id": "r_64cd7a8f46d9", "predicate": "names lever", "schema_version": 3, "source": "spec/circuit-breaker", "sources": ["src_1e9e49dc56df"], "target": "tool/merge-when-green-yml", "updated": "2026-09-26T14:51:49Z"}
+ {"confidence": 1, "created": "2026-09-22T18:21:40Z", "id": "r_679e6401c5f8", "predicate": "part of", "schema_version": 1, "source": "component/token-killer", "sources": ["src_b79d14e53611"], "target": "component/token-efficiency-layer", "updated": "2026-09-22T18:22:58Z"}
+ {"confidence": 1, "created": "2026-09-26T22:17:33Z", "id": "r_69d48e838a49", "predicate": "concerns", "schema_version": 5, "source": "decision/intent-engine-consultant-proposals", "sources": ["src_ab3441c724a2"], "target": "concept/estate-execute", "updated": "2026-09-26T22:17:33Z"}
+@@ -57,6 +59,7 @@
+ {"confidence": 1, "created": "2026-09-22T18:26:49Z", "id": "r_95600db42c9a", "predicate": "part of", "schema_version": 1, "source": "service/dagster", "sources": ["src_b33563055168"], "target": "artifact/idp", "updated": "2026-09-22T18:26:49Z"}
+ {"confidence": 1, "created": "2026-09-22T18:24:07Z", "id": "r_988c122603c2", "predicate": "fixes", "schema_version": 1, "source": "feature/crew-892-cp4", "sources": ["src_d4c960e37231"], "target": "decision/adr-0023", "updated": "2026-09-22T18:24:07Z"}
+ {"confidence": 1, "created": "2026-09-30T23:45:24Z", "id": "r_9d04ed6f63d0", "predicate": "decided by", "schema_version": 5, "source": "component/estate-ui-kit", "sources": ["src_8729dc7cdd2a"], "target": "decision/front-end-kit-decision", "updated": "2026-09-30T23:45:24Z"}
++{"confidence": 1, "created": "2026-10-08T00:12:57Z", "id": "r_a1a742680c8e", "predicate": "blocked deploy of", "schema_version": 6, "source": "defect/backstage-image-frozen-by-proxy-addr-cve", "sources": ["src_cfd325bf53d2"], "target": "mechanism/micrecoveryurl", "updated": "2026-10-08T00:12:57Z"}
+ {"confidence": 1, "created": "2026-09-22T18:24:22Z", "id": "r_a385bfcd3866", "predicate": "part of", "schema_version": 1, "source": "artifact/drift-report-json", "sources": ["src_4993196abe46"], "target": "component/sovereign-topology", "updated": "2026-09-22T18:24:22Z"}
+ {"confidence": 1, "created": "2026-09-22T18:26:13Z", "id": "r_a5d68f1219cc", "predicate": "part of", "schema_version": 1, "source": "feature/action-fusion", "sources": ["src_fafa172f45e6"], "target": "component/sol-pi", "updated": "2026-09-22T18:26:13Z"}
+ {"confidence": 1, "created": "2026-09-22T18:27:08Z", "id": "r_a5e35ca394c8", "predicate": "introduced in", "schema_version": 1, "source": "component/home-module", "sources": ["src_807d937ec251"], "target": "event/salvage-event-2026-09-07", "updated": "2026-09-22T18:27:08Z"}
+diff --git a/.growmos/schema.json b/.growmos/schema.json
+index 92e7a9013..7accd68a9 100644
+--- a/.growmos/schema.json
++++ b/.growmos/schema.json
+@@ -16,7 +16,8 @@
+     "SPEC",
+     "DEFECT",
+     "SYSTEM",
+-    "GOTCHA"
++    "GOTCHA",
++    "MECHANISM"
+   ],
+   "history": [
+     {
+@@ -43,6 +44,11 @@
+       "note": "added type GOTCHA via remember",
+       "ts": "2026-09-26T18:26:40Z",
+       "version": 5
++    },
++    {
++      "note": "added type MECHANISM via remember",
++      "ts": "2026-10-07T23:31:09Z",
++      "version": 6
+     }
+   ],
+   "predicate_hints": [
+@@ -60,5 +66,5 @@
+     "introduced in",
+     "fixes"
+   ],
+-  "version": 5
++  "version": 6
+ }
+diff --git a/.growmos/sources.jsonl b/.growmos/sources.jsonl
+index b1e345000..f4208c067 100644
+--- a/.growmos/sources.jsonl
++++ b/.growmos/sources.jsonl
+@@ -135,6 +135,7 @@
+ {"added": "2026-09-22T18:16:49Z", "id": "src_39d191ef94c2", "kind": "file", "ref": "docs/how-to/onboarding/estate-clocks.md", "sha256": "78eb09d9ab30bcf51d78c41acb99974fb1e94eb959bdb57e10b8d83447ffb3e0", "status": "pending", "title": "estate-clocks.md", "updated": "2026-09-22T18:16:49Z"}
+ {"added": "2026-09-22T18:16:50Z", "id": "src_39f0522d2cbf", "kind": "file", "ref": "docs/reference/policy/availability-standard.md", "sha256": "e52dec127b6efe2f74db57bce1faf285e883c019b9df46915a37d4580c3792d2", "status": "pending", "title": "availability-standard.md", "updated": "2026-09-22T18:16:50Z"}
+ {"added": "2026-09-22T18:16:50Z", "id": "src_3a023e183ee6", "kind": "file", "ref": "docs/how-to/onboarding/plist.md", "sha256": "e2213c5aa5d721f4041d525821d8171ac77b529d24edd8fdcf55a95ec239adb1", "status": "pending", "title": "plist.md", "updated": "2026-09-22T18:16:50Z"}
++{"added": "2026-10-07T14:01:08Z", "id": "src_3a0fbbdffb8b", "kind": "note", "ref": "session:2026-10-07", "sha256": "3a0fbbdffb8b70b459787246cd444ae9a77333c710edf880905375d4b9461c99", "status": "note", "title": "session:2026-10-07", "updated": "2026-10-07T14:01:08Z"}
+ {"added": "2026-09-22T18:16:50Z", "id": "src_3ae6f1462ce9", "kind": "file", "ref": "docs/tutorials/demo/customer-identity.md", "sha256": "44b8faf39047966df3f28ed6b5bb3a981ebf0d64e215f5bf737ac438aa18ef85", "status": "pending", "title": "customer-identity.md", "updated": "2026-09-22T18:16:50Z"}
+ {"added": "2026-09-22T18:16:49Z", "id": "src_3b363c2579da", "kind": "file", "ref": "docs/how-to/onboarding/owner-account.md", "sha256": "401a6b774c093fd957a79a0a179fed6d4491c275e1f4fb06e0b4ea4dd990ead5", "status": "pending", "title": "owner-account.md", "updated": "2026-09-22T18:16:49Z"}
+ {"added": "2026-09-22T18:16:49Z", "id": "src_3b3c209018a0", "kind": "file", "ref": "docs/explanation/sdk-server-certificate-deadlock.md", "sha256": "34874520fc575227117f191eb6093b45ff09019f469c3cc1133e397691f68ead", "status": "pending", "title": "sdk-server-certificate-deadlock.md", "updated": "2026-09-22T18:16:49Z"}
+@@ -473,6 +474,7 @@
+ {"added": "2026-09-22T18:16:50Z", "id": "src_ceee9e9a1530", "kind": "file", "ref": "docs/runbooks/rotating-a-vendor-key.md", "sha256": "5dcbae7874d03a7247658a1c99d75b4f12c0ee6d0e0c9e60e2755982ec74b8fd", "status": "pending", "title": "rotating-a-vendor-key.md", "updated": "2026-09-22T18:16:50Z"}
+ {"added": "2026-09-22T18:16:49Z", "id": "src_cef0d129fabc", "kind": "file", "ref": "docs/demo/epistemic.md", "sha256": "b04d694b98232e97bd411c984e95008b1f768fe2baad3afe5e03266c55948e95", "status": "pending", "title": "epistemic.md", "updated": "2026-09-22T18:16:49Z"}
+ {"added": "2026-09-22T18:16:49Z", "id": "src_cfcc9e1ede9c", "kind": "file", "ref": "docs/explanation/flux-only-writes.md", "sha256": "417dbb658d8eee334292659eee6e3d64eeeb18b1de2b5b6e01958e52ff1bc9d0", "status": "pending", "title": "flux-only-writes.md", "updated": "2026-09-22T18:16:49Z"}
++{"added": "2026-10-08T00:12:57Z", "id": "src_cfd325bf53d2", "kind": "note", "ref": "session:2026-10-08", "sha256": "cfd325bf53d26ef2ec7cd67b20952005620d09de1024639030d88011f5940c4d", "status": "note", "title": "session:2026-10-08", "updated": "2026-10-08T00:12:57Z"}
+ {"added": "2026-09-22T18:16:49Z", "id": "src_d11ae450145d", "kind": "file", "ref": "docs/how-to/onboarding/manifests.md", "sha256": "a3a6d4db117499ba28afab38d15169367e553414136268225115323db2da8d4c", "status": "pending", "title": "manifests.md", "updated": "2026-09-22T18:16:49Z"}
+ {"added": "2026-09-22T18:16:50Z", "id": "src_d263b149a72c", "kind": "file", "ref": "docs/tutorials/demo/oci.md", "sha256": "1fcaa16e586130c17e9643804484abb793f57378b521c8000409d642e3130c9f", "status": "pending", "title": "oci.md", "updated": "2026-09-22T18:16:50Z"}
+ {"added": "2026-09-22T18:16:50Z", "id": "src_d31ad700fe41", "kind": "file", "ref": "docs/tutorials/demo/catalog-render.md", "sha256": "7f87064e0ed9f90ece405209c46fd348f3f33ae18465fc9183df629cdc3d966a", "status": "pending", "title": "catalog-render.md", "updated": "2026-09-22T18:16:50Z"}
+diff --git a/.growmos/state.json b/.growmos/state.json
+index a89703eee..56ab6aadc 100644
+--- a/.growmos/state.json
++++ b/.growmos/state.json
+@@ -2,12 +2,12 @@
+   "counters": {
+     "extractions": 13,
+     "profiles": 0,
+-    "queries": 9,
++    "queries": 10,
+     "resolutions": 0
+   },
+   "created": "2026-09-22T18:15:24Z",
+   "last_eval": null,
+-  "last_run": "2026-10-01T23:05:11Z",
++  "last_run": "2026-10-08T07:21:28Z",
+   "last_sample": null,
+   "pending_resummarize": [],
+   "runs": [
+@@ -386,6 +386,51 @@
+       "kind": "link",
+       "relation": "r_72ea79c9ccdb",
+       "ts": "2026-10-01T23:05:11Z"
++    },
++    {
++      "entity": "gotcha/lane-submit-verdict-timeout",
++      "kind": "remember",
++      "ts": "2026-10-07T14:01:08Z"
++    },
++    {
++      "kind": "link",
++      "relation": "r_62613fd0251b",
++      "ts": "2026-10-07T14:01:08Z"
++    },
++    {
++      "entity": "gotcha/ios-standalone-mic-bug",
++      "kind": "remember",
++      "ts": "2026-10-07T23:31:09Z"
++    },
++    {
++      "entity": "mechanism/micrecoveryurl",
++      "kind": "remember",
++      "ts": "2026-10-07T23:31:09Z"
++    },
++    {
++      "kind": "link",
++      "relation": "r_30ea831269dc",
++      "ts": "2026-10-07T23:31:09Z"
++    },
++    {
++      "entity": "defect/backstage-image-frozen-by-proxy-addr-cve",
++      "kind": "remember",
++      "ts": "2026-10-08T00:12:57Z"
++    },
++    {
++      "kind": "link",
++      "relation": "r_a1a742680c8e",
++      "ts": "2026-10-08T00:12:57Z"
++    },
++    {
++      "entity": "component/build-multiarch",
++      "kind": "remember",
++      "ts": "2026-10-08T07:21:28Z"
++    },
++    {
++      "entity": "component/idp-kubeapi-mac",
++      "kind": "remember",
++      "ts": "2026-10-08T07:21:28Z"
+     }
+   ]
+ }
+diff --git a/backstage/plugins/fleetview-backend/src/fleetview_backend/voice.py b/backstage/plugins/fleetview-backend/src/fleetview_backend/voice.py
+index 96f1c7dcc..09d5698f7 100644
+--- a/backstage/plugins/fleetview-backend/src/fleetview_backend/voice.py
++++ b/backstage/plugins/fleetview-backend/src/fleetview_backend/voice.py
+@@ -23,10 +23,12 @@ WHAT THE PROMPT FORBIDS, because a voice that overclaims is worse than a voice t
+   * it must answer in speech, which means one or two sentences and no markdown.
+ 
+ CONFIG (LAW 46):
+-  LITELLM_HOST        default https://llm.${ESTATE_ZONE}
+-  LITELLM_API_KEY     required; no key means BLIND, never a silent fallback to a local model
+-  VOICE_ROUTER_MODEL  default deepseek
+-  VOICE_TIMEOUT_S     default 20
++  LITELLM_HOST          default https://llm.${ESTATE_ZONE}
++  LITELLM_API_KEY_FILE  a mounted secret file, read first; the in-cluster road (router_key())
++  LITELLM_API_KEY       fallback when no file is mounted (local/dev); no key means BLIND,
++                        never a silent fallback to a local model
++  VOICE_ROUTER_MODEL    default deepseek
++  VOICE_TIMEOUT_S       default 20
+ """
+ 
+ from __future__ import annotations
+@@ -204,6 +206,27 @@ def router_host() -> str:
+ 
+ 
+ def router_key() -> str:
++    """The estate's LiteLLM virtual key for this sidecar.
++
++    Read from a mounted file first, not the environment: Kyverno's secrets-not-from-env-vars
++    policy refuses a secretKeyRef env the moment the ReplicaSet rolls -- the same rule that
++    blocked FLEETVIEW_EXECUTOR_KEY_FILE's env form (serve.py's `_check_key`, 2026-09-15) before
++    it moved to a file. The chain is vault -> ExternalSecret -> Secret -> volume mount ->
++    LITELLM_API_KEY_FILE (platform/backstage/overlays/oke/fleetview-voice-router-key.yaml).
++    Re-read on every call, like `_token()` in agent_jobs.py: the key rotates and the kubelet
++    swaps the file in place underneath a running container.
++
++    LITELLM_API_KEY stays as the fallback for local/dev launches (`bin/idp-voice`, `docker run`)
++    that have no mounted file and export the key directly.
++    """
++    path = os.environ.get("LITELLM_API_KEY_FILE")
++    if path:
++        try:
++            key = Path(path).read_text().strip()
++        except OSError:
++            key = ""
++        if key:
++            return key
+     return os.environ.get("LITELLM_API_KEY", "").strip()
+ 
+ 
+diff --git a/backstage/plugins/fleetview-backend/src/fleetview_backend/voice_media.py b/backstage/plugins/fleetview-backend/src/fleetview_backend/voice_media.py
+index 75bc41fc1..ba8f48e52 100644
+--- a/backstage/plugins/fleetview-backend/src/fleetview_backend/voice_media.py
++++ b/backstage/plugins/fleetview-backend/src/fleetview_backend/voice_media.py
+@@ -243,8 +243,13 @@ async def speculate(
+             import urllib.request
+             import urllib.error
+ 
++            from . import voice  # noqa: PLC0415
++
+             router_host = os.environ.get("LITELLM_HOST", "https://llm.mumchimp.com")
+-            router_key = os.environ.get("LITELLM_API_KEY", "")
++            # voice.router_key(), not a bare env read: it re-reads LITELLM_API_KEY_FILE on every
++            # call so a rotated mounted key is picked up, falling back to LITELLM_API_KEY for
++            # local/dev launches that have no mounted file.
++            router_key = voice.router_key()
+             if not router_key:
+                 return {
+                     "error": "router key not configured: this server cannot compile intents"
+diff --git a/backstage/plugins/fleetview-backend/tests/test_voice_spatial.py b/backstage/plugins/fleetview-backend/tests/test_voice_spatial.py
+index 27ad1e229..44fe49900 100644
+--- a/backstage/plugins/fleetview-backend/tests/test_voice_spatial.py
++++ b/backstage/plugins/fleetview-backend/tests/test_voice_spatial.py
+@@ -199,3 +199,18 @@ def test_spatial_detector_ignores_bare_direction_words(voice):
+         "what is on top of the queue",
+     ):
+         assert voice._is_spatial_intent(q) is False, q
++
++
++def test_router_key_reads_mounted_file_each_call(tmp_path, monkeypatch):
++    """In-cluster the key is a mounted file (Kyverno refuses secretKeyRef env), re-read on every
++    call so a rotated key lands without a restart; the env var is only the local/dev fallback."""
++    voice = _load(VOICE, "voice_router_key_under_test")
++    keyfile = tmp_path / "key"
++    keyfile.write_text("sk-first\n")
++    monkeypatch.setenv("LITELLM_API_KEY_FILE", str(keyfile))
++    monkeypatch.setenv("LITELLM_API_KEY", "sk-env")
++    assert voice.router_key() == "sk-first"
++    keyfile.write_text("sk-rotated\n")
++    assert voice.router_key() == "sk-rotated"
++    keyfile.unlink()
++    assert voice.router_key() == "sk-env"
+diff --git a/backstage/yarn.lock b/backstage/yarn.lock
+index 8aaa2abbb..d5114f1b1 100644
+--- a/backstage/yarn.lock
++++ b/backstage/yarn.lock
+@@ -26588,12 +26588,12 @@ __metadata:
+   linkType: hard
+ 
+ "proxy-addr@npm:^2.0.7, proxy-addr@npm:~2.0.7":
+-  version: 2.0.7
+-  resolution: "proxy-addr@npm:2.0.7"
++  version: 2.0.8
++  resolution: "proxy-addr@npm:2.0.8"
+   dependencies:
+     forwarded: "npm:0.2.0"
+     ipaddr.js: "npm:1.9.1"
+-  checksum: 10c0/c3eed999781a35f7fd935f398b6d8920b6fb00bbc14287bc6de78128ccc1a02c89b95b56742bf7cf0362cc333c61d138532049c7dedc7a328ef13343eff81210
++  checksum: 10c0/e679f1d321b2554718eadf519d6700456b704fd1750fc3bdaedd3c86d3ef9dde3d5b522066d98b921bbd59f333423d5c1718c720ee9ca279d43555b993b015c9
+   languageName: node
+   linkType: hard
+ 
+diff --git a/platform/backstage/overlays/oke/kustomization.yaml b/platform/backstage/overlays/oke/kustomization.yaml
+index 15c238a70..f3dc7908c 100644
+--- a/platform/backstage/overlays/oke/kustomization.yaml
++++ b/platform/backstage/overlays/oke/kustomization.yaml
+@@ -24,6 +24,8 @@ resources:
+   # RC-1b: the anonymous voice door -- Service + port-scoped NetworkPolicy for
+   # serve.py's 18790 (voice routes), reached only from the edge (Traefik), rate-limited.
+   - fleetview-voice-service.yaml
++  # The voice sidecar's router key, mounted as a file (voice.py router_key()).
++  - fleetview-voice-router-key.yaml
+   # crew#503 CP6: backstage/founder is a kustomization of its own (a directory base may live anywhere;
+   # a file outside the overlay may not, and plain `kustomize build` in the tests refuses it).
+   - ../../../../backstage/founder
+@@ -291,6 +293,15 @@ patches:
+           secret:
+             secretName: fleetview-executor
+             optional: true
++      # optional: until vault-seed.yml -f entry=fleetview-voice has run, the Secret does not exist;
++      # the Pod still rolls and voice answers 503 "router key not configured" -- BLIND, not a crash.
++      - op: add
++        path: /spec/template/spec/volumes/-
++        value:
++          name: fleetview-voice-llm
++          secret:
++            secretName: fleetview-voice-llm
++            optional: true
+       # bin/idp-catalog-push already publishes catalog/estate.db as an OCI artifact
+       # (oci://ghcr.io/chidionyema/idp/estate-db:latest); this container pulls the same
+       # artifact estate-mcp.yaml's fetch-estate-db init container pulls, so graph/blast-radius/
+@@ -393,11 +404,16 @@ patches:
+             # container already mounts, not a second credential. A file, re-read on every call:
+             # the token is re-minted every 45 minutes and the kubelet swaps the file in place.
+             - {name: FLEETVIEW_GITHUB_TOKEN_FILE, value: /run/secrets/backstage-github/GITHUB_TOKEN}
++            # Voice's router key (voice.py router_key()): a file for the same Kyverno reason as
++            # FLEETVIEW_EXECUTOR_KEY_FILE above, re-read on every call so a rotation lands
++            # without a restart. Vault entry fleetview-voice -> fleetview-voice-router-key.yaml.
++            - {name: LITELLM_API_KEY_FILE, value: /run/secrets/fleetview-voice-llm/key}
+           volumeMounts:
+             - {name: fleetview-data, mountPath: /data, readOnly: true}
+             - {name: estate, mountPath: /estate, readOnly: true}
+             - {name: fleetview-executor, mountPath: /run/secrets/fleetview-executor, readOnly: true}
+             - {name: backstage-github, mountPath: /run/secrets/backstage-github, readOnly: true}
++            - {name: fleetview-voice-llm, mountPath: /run/secrets/fleetview-voice-llm, readOnly: true}
+           readinessProbe:
+             httpGet: {path: /healthz, port: fv-executor}
+             initialDelaySeconds: 3

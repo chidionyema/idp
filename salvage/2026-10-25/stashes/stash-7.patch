@@ -1,0 +1,245 @@
+diff --git a/.growmos/aliases.jsonl b/.growmos/aliases.jsonl
+index 90e2a835d..3fb2e1781 100644
+--- a/.growmos/aliases.jsonl
++++ b/.growmos/aliases.jsonl
+@@ -60,13 +60,17 @@
+ {"alias": "Token Killer", "entity": "component/token-killer", "type": "COMPONENT"}
+ {"alias": "TokenBudgetOrchestrator", "entity": "component/tokenbudgetorchestrator", "type": "COMPONENT"}
+ {"alias": "Verification Gates", "entity": "component/verification-gates", "type": "COMPONENT"}
++{"alias": "Claude Code model set to opus not opusplan", "entity": "concept/claude-code-model-set-to-opus-not-opusplan", "type": "CONCEPT"}
+ {"alias": "claude-max passthrough lane", "entity": "concept/claude-max-passthrough-lane", "type": "CONCEPT"}
++{"alias": "efficiency_gateway holdout A/B arm", "entity": "concept/efficiency-gateway-holdout-a-b-arm", "type": "CONCEPT"}
+ {"alias": "estate-execute", "entity": "concept/estate-execute", "type": "CONCEPT"}
+ {"alias": "Fingerprint", "entity": "concept/fingerprint", "type": "CONCEPT"}
+ {"alias": "fleetview outbox import fix 2026-09-22", "entity": "concept/fleetview-outbox-import-fix-2026-09-22", "type": "CONCEPT"}
+ {"alias": "hypotheses-race", "entity": "concept/hypotheses-race", "type": "CONCEPT"}
++{"alias": "Max OAuth token expired 2026-10-08", "entity": "concept/max-oauth-token-expired-2026-10-08", "type": "CONCEPT"}
+ {"alias": "ParEval", "entity": "concept/pareval", "type": "CONCEPT"}
+ {"alias": "R38", "entity": "concept/r38", "type": "CONCEPT"}
++{"alias": "router-doctor stale settings path", "entity": "concept/router-doctor-stale-settings-path", "type": "CONCEPT"}
+ {"alias": "Three-Role Model", "entity": "concept/three-role-model", "type": "CONCEPT"}
+ {"alias": "ui.review", "entity": "concept/ui-review", "type": "CONCEPT"}
+ {"alias": "voice-2100-architecture", "entity": "concept/voice-2100-architecture", "type": "CONCEPT"}
+@@ -75,6 +79,7 @@
+ {"alias": "ADR 0023", "entity": "decision/adr-0023", "type": "DECISION"}
+ {"alias": "ADR 0034 Free-Tier Placement", "entity": "decision/adr-0034-free-tier-placement", "type": "DECISION"}
+ {"alias": "built-to-be-sold law", "entity": "decision/built-to-be-sold-law", "type": "DECISION"}
++{"alias": "CLAUDE_CONFIG_DIR migration to harness/cc", "entity": "decision/claude-config-dir-migration-to-harness-cc", "type": "DECISION"}
+ {"alias": "Dual-trunk enforcement", "entity": "decision/dual-trunk-enforcement", "type": "DECISION"}
+ {"alias": "front-end-kit decision", "entity": "decision/front-end-kit-decision", "type": "DECISION"}
+ {"alias": "intent-engine consultant proposals", "entity": "decision/intent-engine-consultant-proposals", "type": "DECISION"}
+diff --git a/.growmos/entities.jsonl b/.growmos/entities.jsonl
+index acfc195ae..595daea29 100644
+--- a/.growmos/entities.jsonl
++++ b/.growmos/entities.jsonl
+@@ -60,13 +60,17 @@
+ {"created": "2026-09-22T18:21:40Z", "description": "Tier 1 mechanism for bash output compression using rtk mapping achieving 60-90% reduction.", "id": "component/token-killer", "mentions": 2, "name": "Token Killer", "provisional": true, "schema_version": 1, "sources": ["src_b79d14e53611"], "type": "COMPONENT", "updated": "2026-09-22T18:22:58Z"}
+ {"created": "2026-09-22T18:24:43Z", "description": "Week 3 mechanism providing per-agent budgets and model routing: drafts to Haiku (cheap), reviews to Sonnet (mid-tier), QA to Opus (frontier), achieving 30% spare budget.", "id": "component/tokenbudgetorchestrator", "mentions": 2, "name": "TokenBudgetOrchestrator", "provisional": true, "schema_version": 1, "sources": ["src_fafa172f45e6"], "type": "COMPONENT", "updated": "2026-09-22T18:26:13Z"}
+ {"created": "2026-09-22T18:23:34Z", "description": "Gates including TranscriptComplete, NoLoopDetected, and NoFaultFlags that validate agent turns.", "id": "component/verification-gates", "mentions": 1, "name": "Verification Gates", "provisional": true, "schema_version": 1, "sources": ["src_b79d14e53611"], "type": "COMPONENT", "updated": "2026-09-22T18:23:34Z"}
++{"created": "2026-10-08T16:13:08Z", "description": "The live settings.json at CLAUDE_CONFIG_DIR has model=opus, but router-doctor.py's REQUIRED_MODEL and the founder's 2026-09-28 ruling require opusplan (Opus plans, Sonnet executes) and state it 'must never be changed again'; verified live on 2026-10-08.", "id": "concept/claude-code-model-set-to-opus-not-opusplan", "mentions": 1, "name": "Claude Code model set to opus not opusplan", "provisional": true, "schema_version": 6, "sources": ["src_cfd325bf53d2"], "type": "CONCEPT", "updated": "2026-10-08T16:13:08Z"}
+ {"created": "2026-09-26T13:54:56Z", "description": "", "id": "concept/claude-max-passthrough-lane", "mentions": 0, "name": "claude-max passthrough lane", "provisional": true, "schema_version": 3, "sources": ["src_ab3441c724a2"], "type": "CONCEPT", "updated": "2026-09-26T13:54:56Z"}
++{"created": "2026-10-08T16:22:59Z", "description": "efficiency_gateway.py runs a randomised 25% holdout (ESTATE_HOLDOUT_PCT, default 25, salt ESTATE_HOLDOUT_SALT) since 2026-09-29: sha256(salt:conversation_id) decides control vs treat per conversation for its whole life. Control gets steps={} -- none of the 8 token-cutting mechanisms run, vendor gets exactly what the caller sent. Verified live 2026-10-08: session 0554af29-d9f0-4c7e-96e1-a04c73439971 (this session) hashed into control on all 52 of its ledger rows -- zero est_tokens_cut throughout, by design, not a fault.", "id": "concept/efficiency-gateway-holdout-a-b-arm", "mentions": 1, "name": "efficiency_gateway holdout A/B arm", "provisional": true, "schema_version": 6, "sources": ["src_cfd325bf53d2"], "type": "CONCEPT", "updated": "2026-10-08T16:22:59Z"}
+ {"created": "2026-09-26T22:17:33Z", "description": "", "id": "concept/estate-execute", "mentions": 0, "name": "estate-execute", "provisional": true, "schema_version": 5, "sources": ["src_ab3441c724a2"], "type": "CONCEPT", "updated": "2026-09-26T22:17:33Z"}
+ {"created": "2026-09-26T14:51:49Z", "description": "The stable, order-independent identity of a finding (e.g. the sorted set of CVE ids) used instead of a raw output hash so the same cause matches across differently-shaped output.", "id": "concept/fingerprint", "mentions": 1, "name": "Fingerprint", "provisional": true, "schema_version": 3, "sources": ["src_1e9e49dc56df"], "type": "CONCEPT", "updated": "2026-09-26T14:51:49Z"}
+ {"created": "2026-09-22T19:53:43Z", "description": "", "id": "concept/fleetview-outbox-import-fix-2026-09-22", "mentions": 0, "name": "fleetview outbox import fix 2026-09-22", "provisional": true, "schema_version": 1, "sources": ["src_dc4cf63c0c36"], "type": "CONCEPT", "updated": "2026-09-22T19:53:43Z"}
+ {"created": "2026-09-26T21:43:43Z", "description": "", "id": "concept/hypotheses-race", "mentions": 0, "name": "hypotheses-race", "provisional": true, "schema_version": 5, "sources": ["src_ab3441c724a2"], "type": "CONCEPT", "updated": "2026-09-26T21:43:43Z"}
++{"created": "2026-10-08T16:13:08Z", "description": "router-doctor.py's check_token/check_e2e against the macOS keychain item 'Claude Code-credentials' found the Max subscription OAuth token expired on 2026-10-08, and a live passthrough probe to api.anthropic.com via the router returned 401 authentication_error; the live interactive Claude Code session was unaffected, suggesting its in-process token differs from the keychain-stored one.", "id": "concept/max-oauth-token-expired-2026-10-08", "mentions": 1, "name": "Max OAuth token expired 2026-10-08", "provisional": true, "schema_version": 6, "sources": ["src_cfd325bf53d2"], "type": "CONCEPT", "updated": "2026-10-08T16:13:08Z"}
+ {"created": "2026-09-22T18:21:40Z", "description": "Three-role asymmetric model with Executor, Optimizer (SoL-Pi), and Governor (Budget) roles for partial evaluation.", "id": "concept/pareval", "mentions": 2, "name": "ParEval", "provisional": true, "schema_version": 1, "sources": ["src_b79d14e53611"], "type": "CONCEPT", "updated": "2026-09-22T18:22:58Z"}
+ {"created": "2026-09-26T14:51:49Z", "description": "The two rules -- fingerprint not raw hash, and scoped to the targets that showed it -- that keep the circuit breaker from becoming an outage.", "id": "concept/r38", "mentions": 1, "name": "R38", "provisional": true, "schema_version": 3, "sources": ["src_1e9e49dc56df"], "type": "CONCEPT", "updated": "2026-09-26T14:51:49Z"}
++{"created": "2026-10-08T16:13:07Z", "description": "platform/estate/libexec/router-doctor.py checks the hardcoded path ~/.claude/settings.json for the router env block, but the estate migrated Claude Code's config dir to ~/.estate/harness/cc; the check always reports FAIL/BROKEN on the real settings file even when routing is correctly configured there, a false negative verified live on 2026-10-08.", "id": "concept/router-doctor-stale-settings-path", "mentions": 1, "name": "router-doctor stale settings path", "provisional": true, "schema_version": 6, "sources": ["src_cfd325bf53d2"], "type": "CONCEPT", "updated": "2026-10-08T16:13:07Z"}
+ {"created": "2026-09-22T18:24:43Z", "description": "Week 4 architecture with Executor (run task), Optimizer (SoL-Pi applying 8 mechanisms), and Governor (TBO enforcing budgets) achieving 55% reduction.", "id": "concept/three-role-model", "mentions": 2, "name": "Three-Role Model", "provisional": true, "schema_version": 1, "sources": ["src_fafa172f45e6"], "type": "CONCEPT", "updated": "2026-09-22T18:26:13Z"}
+ {"created": "2026-10-01T00:28:51Z", "description": "", "id": "concept/ui-review", "mentions": 0, "name": "ui.review", "provisional": true, "schema_version": 5, "sources": ["src_2b41503e6a51"], "type": "CONCEPT", "updated": "2026-10-01T00:28:51Z"}
+ {"created": "2026-09-22T21:01:31Z", "description": "", "id": "concept/voice-2100-architecture", "mentions": 0, "name": "voice-2100-architecture", "provisional": true, "schema_version": 2, "sources": ["src_dc4cf63c0c36"], "type": "CONCEPT", "updated": "2026-09-22T21:01:31Z"}
+@@ -75,6 +79,7 @@
+ {"created": "2026-09-22T18:24:07Z", "description": "Architectural decision record noting the estate gap 'No runtimeClassName anywhere in platform/' that CP4 closes.", "id": "decision/adr-0023", "mentions": 1, "name": "ADR 0023", "provisional": true, "schema_version": 1, "sources": ["src_d4c960e37231"], "type": "DECISION", "updated": "2026-09-22T18:24:07Z"}
+ {"created": "2026-09-26T18:11:28Z", "description": "Workloads are placed by a ladder (delete, GH Actions, Grafana Cloud, Cloudflare Workers, laptop JIT, KEDA scale-to-zero, node) and the OKE node is one A1 2/12 with requests under 1.8 CPU; ceiling is the Oracle quota estate-free-tier-ceiling.", "id": "decision/adr-0034-free-tier-placement", "mentions": 1, "name": "ADR 0034 Free-Tier Placement", "provisional": true, "schema_version": 4, "sources": ["src_ab3441c724a2"], "type": "DECISION", "updated": "2026-09-26T18:11:28Z"}
+ {"created": "2026-09-22T18:26:49Z", "description": "Architecture decision refusing dependencies whose licence would block a sale, documented in docs/reference/laws-and-guards.md.", "id": "decision/built-to-be-sold-law", "mentions": 1, "name": "built-to-be-sold law", "provisional": true, "schema_version": 1, "sources": ["src_b33563055168"], "type": "DECISION", "updated": "2026-09-22T18:26:49Z"}
++{"created": "2026-10-08T16:13:07Z", "description": "Claude Code's config dir moved from ~/.claude (no longer exists) to ~/.estate/harness/cc, exported in .zshrc/.bashrc/.bash_profile/.zprofile so every Claude Code process (CLI, desktop, IDE, subprocesses) inherits the same settings.json, which carries ANTHROPIC_BASE_URL=http://127.0.0.1:4000 pointing at the LiteLLM router.", "id": "decision/claude-config-dir-migration-to-harness-cc", "mentions": 1, "name": "CLAUDE_CONFIG_DIR migration to harness/cc", "provisional": true, "schema_version": 6, "sources": ["src_cfd325bf53d2"], "type": "DECISION", "updated": "2026-10-08T16:13:07Z"}
+ {"created": "2026-09-23T17:39:03Z", "description": "Agents push to agent-trunk (no PR required); the system raises ONE batched PR to the protected main when work passes thresholds. Enforcement is three pieces, all on existing rails: (1) platform/github/ruleset.idp.agent-trunk.json -- no force, no deletion, linear history, applied by the EXISTING bin/repo-rulesets; (2) .github/workflows/agent-trunk-batch.yml -- four times a day opens/updates one agent-trunk->main PR, refuses to batch a red trunk, and lets merge-when-green/deploy-when-green land it (it opens, never merges); (3) .githooks/pre-push advises on a direct-to-main push but does not block (LAW 38). Plus jev_pr_risk/bin/idp-pr-risk/bin/idp-pr-risk-gate for pre-submission scoring that refuses ONLY on a real probability.", "id": "decision/dual-trunk-enforcement", "mentions": 1, "name": "Dual-trunk enforcement", "provisional": true, "schema_version": 2, "sources": ["src_ce5edce83995"], "type": "DECISION", "updated": "2026-09-23T17:39:03Z"}
+ {"created": "2026-09-30T23:45:23Z", "description": "decision-matrix row front-end-kit (2026-10-01): shadcn/ui pattern on pinned Radix primitives 480 vs Radix Themes 385 vs Park UI 360; proposed until the founder's comment on crew#694 becomes the receipt.", "id": "decision/front-end-kit-decision", "mentions": 1, "name": "front-end-kit decision", "provisional": true, "schema_version": 5, "sources": ["src_8729dc7cdd2a"], "type": "DECISION", "updated": "2026-09-30T23:45:23Z"}
+ {"created": "2026-09-26T22:17:32Z", "description": "Seven proposals (2026-09-26) to make estate intents the only door for any agent: read-only kubeconfig, read/mutate class with approval+verify, loud list failures, single executor source from main, fix broken intents, one diagnose intent, hooks blocking direct kubectl/ssh; not yet reviewed.", "id": "decision/intent-engine-consultant-proposals", "mentions": 1, "name": "intent-engine consultant proposals", "provisional": true, "schema_version": 5, "sources": ["src_ab3441c724a2"], "type": "DECISION", "updated": "2026-09-26T22:17:32Z"}
+diff --git a/.growmos/journal.md b/.growmos/journal.md
+index 23f4bbd6b..254a07b06 100644
+--- a/.growmos/journal.md
++++ b/.growmos/journal.md
+@@ -4937,3 +4937,7 @@ COMPLETE 2026-10-08 session handoff:
+ ### 2026-10-08T09:20:00Z · agent
+ 
+ 2026-10-08 final: phone kubectl bridge working with founder-phone SA (cluster-admin token), served at http://100.98.58.115:9999/estate-cluster.yaml. exec auth kubeconfig doesn't work with InKuber; static ServiceAccount token is the fix. /fleet left public (API gated). Memory committed.
++
++### 2026-10-08T16:13:33Z · agent
++
++Audited the LiteLLM efficiency layer and verified Claude Code's actual routing live (2026-10-08). Router (com.estate.litellm-front + litellm-local-4001) is up, /health/liveliness 200, efficiency_gateway/request_ceiling/anthropic_beta_passthrough callbacks registered proxy-wide in llm/config.yaml so every call incl. claude-* inherits them. The keyless claude-* wildcard lane (no api_key, zero declared cost) confirms Max-subscription passthrough per docs/onboarding/claude-max-passthrough.md. Confirmed THIS session's live process env has ANTHROPIC_BASE_URL=http://127.0.0.1:4000 + ANTHROPIC_CUSTOM_HEADERS (litellm virtual key), sourced from CLAUDE_CONFIG_DIR=~/.estate/harness/cc/settings.json -- NOT ~/.claude/settings.json, which no longer exists. All 4 shell profiles (.zshrc/.bashrc/.bash_profile/.zprofile) export CLAUDE_CONFIG_DIR to the harness path, so this covers every Claude Code process estate-wide, not just this session. Two real defects found: (1) router-doctor.py's 'settings' check hardcodes ~/.claude/settings.json and will always FAIL/BROKEN since the estate moved off that path -- a stale check giving a false negative. (2) live settings.json has model=opus, not the founder-mandated opusplan (2026-09-28 ruling, 'must never be changed again'). Also found via router-doctor's own e2e probe: the keychain 'Claude Code-credentials' Max OAuth token is expired, and a real passthrough call to api.anthropic.com through the router returned 401 -- yet this live interactive session kept working normally, implying its in-process token is not the same one router-doctor reads from keychain. Wrote all four facts to the graph. Not yet fixed: router-doctor path, model=opus, expired keychain token -- left for the founder/next session to decide since each needs a call outside this audit's scope.
+diff --git a/.growmos/mentions.jsonl b/.growmos/mentions.jsonl
+index c8c842781..64644bb45 100644
+--- a/.growmos/mentions.jsonl
++++ b/.growmos/mentions.jsonl
+@@ -149,3 +149,8 @@
+ {"chunk": null, "description": "From 2026-10-05 14:39Z (live image backstage:main-13986-51eca9766) every build-multiarch backstage build failed the Trivy 'no CRITICAL vulnerability ships' step on CVE-2026-90711 in proxy-addr 2.0.7 (Express transitive, fixed 2.0.8), so no frontend change reached /face or /fleet for ~2.5 days while the PRs showed merged; fixed by lane/fix/proxy-addr-cve-2026-90711 (yarn up -R proxy-addr).", "name": "backstage image frozen by proxy-addr CVE", "schema_version": 6, "source": "src_cfd325bf53d2", "ts": "2026-10-08T00:12:57Z", "type": "DEFECT"}
+ {"chunk": null, "description": "GitHub workflow that builds the ghcr backstage/fleetview images Flux deploys; backstage-release.yml only builds a Mac desktop tarball and its failures do not block deploys.", "name": "build-multiarch", "schema_version": 6, "source": "src_cfd325bf53d2", "ts": "2026-10-08T07:21:28Z", "type": "COMPONENT"}
+ {"chunk": null, "description": "Mac launchd kubectl-proxy bridge for the phone (InKuber) over the tailnet on :8001; uses the founder's full OCI identity, not a read-only one.", "name": "idp-kubeapi-mac", "schema_version": 6, "source": "src_cfd325bf53d2", "ts": "2026-10-08T07:21:28Z", "type": "COMPONENT"}
++{"chunk": null, "description": "Claude Code's config dir moved from ~/.claude (no longer exists) to ~/.estate/harness/cc, exported in .zshrc/.bashrc/.bash_profile/.zprofile so every Claude Code process (CLI, desktop, IDE, subprocesses) inherits the same settings.json, which carries ANTHROPIC_BASE_URL=http://127.0.0.1:4000 pointing at the LiteLLM router.", "name": "CLAUDE_CONFIG_DIR migration to harness/cc", "schema_version": 6, "source": "src_cfd325bf53d2", "ts": "2026-10-08T16:13:07Z", "type": "DECISION"}
++{"chunk": null, "description": "platform/estate/libexec/router-doctor.py checks the hardcoded path ~/.claude/settings.json for the router env block, but the estate migrated Claude Code's config dir to ~/.estate/harness/cc; the check always reports FAIL/BROKEN on the real settings file even when routing is correctly configured there, a false negative verified live on 2026-10-08.", "name": "router-doctor stale settings path", "schema_version": 6, "source": "src_cfd325bf53d2", "ts": "2026-10-08T16:13:07Z", "type": "CONCEPT"}
++{"chunk": null, "description": "The live settings.json at CLAUDE_CONFIG_DIR has model=opus, but router-doctor.py's REQUIRED_MODEL and the founder's 2026-09-28 ruling require opusplan (Opus plans, Sonnet executes) and state it 'must never be changed again'; verified live on 2026-10-08.", "name": "Claude Code model set to opus not opusplan", "schema_version": 6, "source": "src_cfd325bf53d2", "ts": "2026-10-08T16:13:08Z", "type": "CONCEPT"}
++{"chunk": null, "description": "router-doctor.py's check_token/check_e2e against the macOS keychain item 'Claude Code-credentials' found the Max subscription OAuth token expired on 2026-10-08, and a live passthrough probe to api.anthropic.com via the router returned 401 authentication_error; the live interactive Claude Code session was unaffected, suggesting its in-process token differs from the keychain-stored one.", "name": "Max OAuth token expired 2026-10-08", "schema_version": 6, "source": "src_cfd325bf53d2", "ts": "2026-10-08T16:13:08Z", "type": "CONCEPT"}
++{"chunk": null, "description": "efficiency_gateway.py runs a randomised 25% holdout (ESTATE_HOLDOUT_PCT, default 25, salt ESTATE_HOLDOUT_SALT) since 2026-09-29: sha256(salt:conversation_id) decides control vs treat per conversation for its whole life. Control gets steps={} -- none of the 8 token-cutting mechanisms run, vendor gets exactly what the caller sent. Verified live 2026-10-08: session 0554af29-d9f0-4c7e-96e1-a04c73439971 (this session) hashed into control on all 52 of its ledger rows -- zero est_tokens_cut throughout, by design, not a fault.", "name": "efficiency_gateway holdout A/B arm", "schema_version": 6, "source": "src_cfd325bf53d2", "ts": "2026-10-08T16:22:59Z", "type": "CONCEPT"}
+diff --git a/.growmos/relations.jsonl b/.growmos/relations.jsonl
+index 58d703122..9d5d638f6 100644
+--- a/.growmos/relations.jsonl
++++ b/.growmos/relations.jsonl
+@@ -4,6 +4,7 @@
+ {"confidence": 1, "created": "2026-10-01T23:05:11Z", "id": "r_06674fc5ef04", "predicate": "reads from", "schema_version": 5, "source": "component/fleet-key-sync-board", "sources": ["src_2b41503e6a51"], "target": "service/external-secrets-operator", "updated": "2026-10-01T23:05:11Z"}
+ {"confidence": 1, "created": "2026-09-22T18:26:13Z", "id": "r_06c633c9c57a", "predicate": "part of", "schema_version": 1, "source": "component/sol-pi", "sources": ["src_fafa172f45e6"], "target": "feature/pi-agent-token-efficiency", "updated": "2026-09-22T18:26:13Z"}
+ {"confidence": 1, "created": "2026-09-22T18:23:34Z", "id": "r_08a844e45257", "predicate": "part of", "schema_version": 1, "source": "component/red-team-layer", "sources": ["src_b79d14e53611"], "target": "component/9-layer-parallel-agent-architecture", "updated": "2026-09-22T18:23:34Z"}
++{"confidence": 1, "created": "2026-10-08T16:13:09Z", "id": "r_0af3f957239e", "predicate": "enables", "schema_version": 6, "source": "decision/claude-config-dir-migration-to-harness-cc", "sources": ["src_cfd325bf53d2"], "target": "service/litellm", "updated": "2026-10-08T16:13:09Z"}
+ {"confidence": 1, "created": "2026-09-22T18:21:02Z", "id": "r_0c0a8b769907", "predicate": "blocks", "schema_version": 1, "source": "tool/kyverno", "sources": ["src_e47d00dce9c1"], "target": "component/snapshotter", "updated": "2026-09-22T18:21:02Z"}
+ {"confidence": 1, "created": "2026-09-22T21:01:40Z", "id": "r_103840ce90d0", "predicate": "implements", "schema_version": 2, "source": "concept/voice-2100-architecture", "sources": ["src_dc4cf63c0c36"], "target": "concept/voice-clarify-handshake", "updated": "2026-09-22T21:01:40Z"}
+ {"confidence": 1, "created": "2026-09-22T18:26:49Z", "id": "r_10553c46f6ca", "predicate": "part of", "schema_version": 1, "source": "service/litellm", "sources": ["src_b33563055168"], "target": "artifact/idp", "updated": "2026-09-22T18:26:49Z"}
+@@ -39,7 +40,9 @@
+ {"confidence": 1, "created": "2026-10-07T14:01:08Z", "id": "r_62613fd0251b", "predicate": "affects", "schema_version": 5, "source": "gotcha/lane-submit-verdict-timeout", "sources": ["src_3a0fbbdffb8b"], "target": "concept/estate-execute", "updated": "2026-10-07T14:01:08Z"}
+ {"confidence": 1, "created": "2026-09-26T14:51:49Z", "id": "r_64cd7a8f46d9", "predicate": "names lever", "schema_version": 3, "source": "spec/circuit-breaker", "sources": ["src_1e9e49dc56df"], "target": "tool/merge-when-green-yml", "updated": "2026-09-26T14:51:49Z"}
+ {"confidence": 1, "created": "2026-09-22T18:21:40Z", "id": "r_679e6401c5f8", "predicate": "part of", "schema_version": 1, "source": "component/token-killer", "sources": ["src_b79d14e53611"], "target": "component/token-efficiency-layer", "updated": "2026-09-22T18:22:58Z"}
++{"confidence": 1, "created": "2026-10-08T16:22:59Z", "id": "r_6963e22d2ced", "predicate": "explains", "schema_version": 6, "source": "concept/efficiency-gateway-holdout-a-b-arm", "sources": ["src_cfd325bf53d2"], "target": "component/token-efficiency-layer", "updated": "2026-10-08T16:22:59Z"}
+ {"confidence": 1, "created": "2026-09-26T22:17:33Z", "id": "r_69d48e838a49", "predicate": "concerns", "schema_version": 5, "source": "decision/intent-engine-consultant-proposals", "sources": ["src_ab3441c724a2"], "target": "concept/estate-execute", "updated": "2026-09-26T22:17:33Z"}
++{"confidence": 1, "created": "2026-10-08T16:13:10Z", "id": "r_6bac2825dd97", "predicate": "affects", "schema_version": 6, "source": "concept/router-doctor-stale-settings-path", "sources": ["src_cfd325bf53d2"], "target": "decision/claude-config-dir-migration-to-harness-cc", "updated": "2026-10-08T16:13:10Z"}
+ {"confidence": 1, "created": "2026-10-01T23:05:11Z", "id": "r_72ea79c9ccdb", "predicate": "reads from", "schema_version": 5, "source": "system/fleet-page", "sources": ["src_2b41503e6a51"], "target": "component/fleet-key-sync-board", "updated": "2026-10-01T23:05:11Z"}
+ {"confidence": 1, "created": "2026-09-26T13:54:56Z", "id": "r_74764d00984d", "predicate": "replaces", "schema_version": 3, "source": "component/litellm-local", "sources": ["src_ab3441c724a2"], "target": "concept/claude-max-passthrough-lane", "updated": "2026-09-26T13:54:56Z"}
+ {"confidence": 1, "created": "2026-09-22T18:26:49Z", "id": "r_76292b007ac7", "predicate": "part of", "schema_version": 1, "source": "tool/langfuse", "sources": ["src_b33563055168"], "target": "artifact/idp", "updated": "2026-09-22T18:26:49Z"}
+@@ -81,13 +84,16 @@
+ {"confidence": 1, "created": "2026-09-22T18:26:13Z", "id": "r_c04b646e17b6", "predicate": "part of", "schema_version": 1, "source": "feature/evidence-preservation", "sources": ["src_fafa172f45e6"], "target": "component/sol-pi", "updated": "2026-09-22T18:26:13Z"}
+ {"confidence": 1, "created": "2026-09-22T18:27:08Z", "id": "r_c37ed0989d6e", "predicate": "fixes", "schema_version": 1, "source": "decision/no-agent-works-in-the-main-checkout", "sources": ["src_807d937ec251"], "target": "event/salvage-event-2026-09-07", "updated": "2026-09-22T18:27:08Z"}
+ {"confidence": 1, "created": "2026-09-22T18:24:07Z", "id": "r_c48ff9670397", "predicate": "configured by", "schema_version": 1, "source": "component/ns-fences", "sources": ["src_d4c960e37231"], "target": "tool/kyverno", "updated": "2026-09-22T18:24:07Z"}
++{"confidence": 1, "created": "2026-10-08T16:22:59Z", "id": "r_c5f5e3da3fca", "predicate": "affects", "schema_version": 6, "source": "concept/efficiency-gateway-holdout-a-b-arm", "sources": ["src_cfd325bf53d2"], "target": "service/litellm", "updated": "2026-10-08T16:22:59Z"}
+ {"confidence": 1, "created": "2026-09-22T18:24:43Z", "id": "r_c8bf17a59106", "predicate": "part of", "schema_version": 1, "source": "component/tokenbudgetorchestrator", "sources": ["src_fafa172f45e6"], "target": "feature/pi-agent-token-efficiency", "updated": "2026-09-22T18:26:13Z"}
+ {"confidence": 1, "created": "2026-09-22T19:53:43Z", "id": "r_c8c17c7d9913", "predicate": "depends on", "schema_version": 1, "source": "component/estate-agent-jetstream-stream", "sources": ["src_dc4cf63c0c36"], "target": "artifact/idp", "updated": "2026-09-22T19:53:43Z"}
+ {"confidence": 1, "created": "2026-09-26T18:26:42Z", "id": "r_ca473c6130f8", "predicate": "depends on", "schema_version": 5, "source": "system/fleetview", "sources": ["src_ab3441c724a2"], "target": "gotcha/trap-sessions-db-first", "updated": "2026-09-26T18:26:42Z"}
+ {"confidence": 1, "created": "2026-09-22T18:24:43Z", "id": "r_cb7492e7879b", "predicate": "part of", "schema_version": 1, "source": "component/pi-dynamic-context-pruning", "sources": ["src_fafa172f45e6"], "target": "feature/pi-agent-token-efficiency", "updated": "2026-09-22T18:26:13Z"}
+ {"confidence": 1, "created": "2026-09-22T18:24:07Z", "id": "r_cb798284367f", "predicate": "depends on", "schema_version": 1, "source": "artifact/cell-gvisor-admission", "sources": ["src_d4c960e37231"], "target": "artifact/gvisor-runtimeclass", "updated": "2026-09-22T18:24:07Z"}
++{"confidence": 1, "created": "2026-10-08T16:13:10Z", "id": "r_d0b5818f795b", "predicate": "contradicts", "schema_version": 6, "source": "concept/claude-code-model-set-to-opus-not-opusplan", "sources": ["src_cfd325bf53d2"], "target": "decision/claude-config-dir-migration-to-harness-cc", "updated": "2026-10-08T16:13:10Z"}
+ {"confidence": 1, "created": "2026-09-26T18:26:40Z", "id": "r_d42fd9eaa904", "predicate": "reads from", "schema_version": 4, "source": "system/fleet-page", "sources": ["src_ab3441c724a2"], "target": "system/fleetview", "updated": "2026-09-26T18:26:40Z"}
+ {"confidence": 1, "created": "2026-09-22T18:21:40Z", "id": "r_d4cc654b70c3", "predicate": "part of", "schema_version": 1, "source": "component/cache-guardian", "sources": ["src_b79d14e53611"], "target": "component/token-efficiency-layer", "updated": "2026-09-22T18:22:58Z"}
++{"confidence": 1, "created": "2026-10-08T16:13:11Z", "id": "r_d58bf96bb198", "predicate": "affects", "schema_version": 6, "source": "concept/max-oauth-token-expired-2026-10-08", "sources": ["src_cfd325bf53d2"], "target": "service/litellm", "updated": "2026-10-08T16:13:11Z"}
+ {"confidence": 1, "created": "2026-09-30T23:45:25Z", "id": "r_d7c4851904cf", "predicate": "replaces", "schema_version": 5, "source": "component/estate-ui-kit", "sources": ["src_8729dc7cdd2a"], "target": "component/store-web", "updated": "2026-09-30T23:45:25Z"}
+ {"confidence": 1, "created": "2026-09-30T23:45:24Z", "id": "r_dcb8b30f6d82", "predicate": "must import", "schema_version": 5, "source": "component/store-web", "sources": ["src_8729dc7cdd2a"], "target": "component/estate-ui-kit", "updated": "2026-09-30T23:45:24Z"}
+ {"confidence": 1, "created": "2026-09-22T20:03:52Z", "id": "r_dcedd9a217fc", "predicate": "found", "schema_version": 1, "source": "artifact/adversarial-qa-audit-2026-09-22", "sources": ["src_dc4cf63c0c36"], "target": "feature/code-mutation-gate-gap", "updated": "2026-09-22T20:03:52Z"}
+diff --git a/.growmos/state.json b/.growmos/state.json
+index 56ab6aadc..87ea3dcee 100644
+--- a/.growmos/state.json
++++ b/.growmos/state.json
+@@ -2,12 +2,12 @@
+   "counters": {
+     "extractions": 13,
+     "profiles": 0,
+-    "queries": 10,
++    "queries": 11,
+     "resolutions": 0
+   },
+   "created": "2026-09-22T18:15:24Z",
+   "last_eval": null,
+-  "last_run": "2026-10-08T07:21:28Z",
++  "last_run": "2026-10-08T16:22:59Z",
+   "last_sample": null,
+   "pending_resummarize": [],
+   "runs": [
+@@ -431,6 +431,61 @@
+       "entity": "component/idp-kubeapi-mac",
+       "kind": "remember",
+       "ts": "2026-10-08T07:21:28Z"
++    },
++    {
++      "entity": "decision/claude-config-dir-migration-to-harness-cc",
++      "kind": "remember",
++      "ts": "2026-10-08T16:13:07Z"
++    },
++    {
++      "entity": "concept/router-doctor-stale-settings-path",
++      "kind": "remember",
++      "ts": "2026-10-08T16:13:07Z"
++    },
++    {
++      "entity": "concept/claude-code-model-set-to-opus-not-opusplan",
++      "kind": "remember",
++      "ts": "2026-10-08T16:13:08Z"
++    },
++    {
++      "entity": "concept/max-oauth-token-expired-2026-10-08",
++      "kind": "remember",
++      "ts": "2026-10-08T16:13:08Z"
++    },
++    {
++      "kind": "link",
++      "relation": "r_0af3f957239e",
++      "ts": "2026-10-08T16:13:09Z"
++    },
++    {
++      "kind": "link",
++      "relation": "r_6bac2825dd97",
++      "ts": "2026-10-08T16:13:10Z"
++    },
++    {
++      "kind": "link",
++      "relation": "r_d0b5818f795b",
++      "ts": "2026-10-08T16:13:10Z"
++    },
++    {
++      "kind": "link",
++      "relation": "r_d58bf96bb198",
++      "ts": "2026-10-08T16:13:11Z"
++    },
++    {
++      "entity": "concept/efficiency-gateway-holdout-a-b-arm",
++      "kind": "remember",
++      "ts": "2026-10-08T16:22:59Z"
++    },
++    {
++      "kind": "link",
++      "relation": "r_6963e22d2ced",
++      "ts": "2026-10-08T16:22:59Z"
++    },
++    {
++      "kind": "link",
++      "relation": "r_c5f5e3da3fca",
++      "ts": "2026-10-08T16:22:59Z"
+     }
+   ]
+ }
+diff --git a/platform/llm/efficiency_gateway.py b/platform/llm/efficiency_gateway.py
+index dc8f86db0..f1e4ccec0 100644
+--- a/platform/llm/efficiency_gateway.py
++++ b/platform/llm/efficiency_gateway.py
+@@ -203,6 +203,14 @@ def _session_id(data: dict) -> str:
+ # conversation, never the call, so a conversation stays in one arm for its whole life.
+ HOLDOUT_PCT = float(os.environ.get("ESTATE_HOLDOUT_PCT", "25"))
+ HOLDOUT_SALT = os.environ.get("ESTATE_HOLDOUT_SALT", "trial-2026-09-29")
++# A named exception to the hash, for a conversation someone deliberately pulled out of the
++# holdout (2026-10-08: the founder asked to be moved to treat mid-conversation after the ledger
++# showed treat billing ~15% less for Claude; re-salting would have re-rolled every live
++# conversation, so this is a narrow override instead). Read fresh per call -- a plain file, not
++# an env var, so it takes effect without a router restart. {"<conversation_key>": "control"|"treat"}
++HOLDOUT_FORCE_FILE = os.environ.get(
++    "ESTATE_HOLDOUT_FORCE_FILE", os.path.expanduser("~/.estate/efficiency-force-arm.json")
++)
+ 
+ 
+ def _conversation_key(data: dict, session: str) -> str:
+@@ -212,7 +220,20 @@ def _conversation_key(data: dict, session: str) -> str:
+     return _h((data.get("messages") or [])[:2])
+ 
+ 
++def _forced_arm(key: str) -> Optional[str]:
++    try:
++        with open(HOLDOUT_FORCE_FILE, encoding="utf-8") as f:
++            forced = json.load(f)
++    except (OSError, ValueError):
++        return None
++    arm = forced.get(key)
++    return arm if arm in ("control", "treat") else None
++
++
+ def _arm(key: str) -> str:
++    forced = _forced_arm(key)
++    if forced:
++        return forced
+     h = int(hashlib.sha256(f"{HOLDOUT_SALT}:{key}".encode()).hexdigest()[:8], 16)
+     return "control" if (h % 10000) < HOLDOUT_PCT * 100 else "treat"
+ 

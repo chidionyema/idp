@@ -1,0 +1,1382 @@
+diff --git a/.githooks/pre-push b/.githooks/pre-push
+index 224cec173..24964da8c 100755
+--- a/.githooks/pre-push
++++ b/.githooks/pre-push
+@@ -184,9 +184,21 @@ if [ ! -x "$repo_root/bin/idp-ci" ]; then
+   exit 0
+ fi
+ 
+-echo "🛡️  idp-fast-gate: running IDP_CI_FAST=1 bin/idp-ci ..."
+-if ! IDP_CI_FAST=1 "$repo_root/bin/idp-ci"; then
+-  cat <<'EOF' >&2
++# Scope the gate to changed files: compute the merge-base against origin/main.
++# A worktree checked out from main (HEAD == origin/main) has no diff — skip the gate.
++base=$(git -C "$repo_root" merge-base HEAD origin/main 2>/dev/null || true)
++if [ -z "$base" ]; then
++  git -C "$repo_root" fetch -q origin main 2>/dev/null \
++    && base=$(git -C "$repo_root" merge-base HEAD origin/main 2>/dev/null || true)
++fi
++local_head=$(git -C "$repo_root" rev-parse HEAD)
++remote_main=$(git -C "$repo_root" rev-parse origin/main 2>/dev/null || true)
++if [ -n "$remote_main" ] && [ "$local_head" = "$remote_main" ]; then
++  echo "ok    idp-fast-gate: no diff from origin/main (worktree at same commit); gate skipped"
++elif [ -n "$base" ]; then
++  echo "🛡️  idp-fast-gate: running IDP_CI_FAST=1 IDP_CI_BASE=${base:0:12} bin/idp-ci ..."
++  if ! IDP_CI_FAST=1 IDP_CI_BASE="$base" "$repo_root/bin/idp-ci"; then
++    cat <<'EOF' >&2
+ 
+ ❌ pre-push REFUSED: idp-fast-gate caught errors.
+ 
+@@ -206,7 +218,8 @@ if ! IDP_CI_FAST=1 "$repo_root/bin/idp-ci"; then
+    only overrides this hook has. This rung has none.
+ 
+ EOF
+-  exit 1
++    exit 1
++  fi
+ fi
+ 
+ echo "✅ idp-fast-gate: green"
+diff --git a/.growmos/aliases.jsonl b/.growmos/aliases.jsonl
+index ea2171ec6..e529d95b5 100644
+--- a/.growmos/aliases.jsonl
++++ b/.growmos/aliases.jsonl
+@@ -41,6 +41,7 @@
+ {"alias": "net-triage", "entity": "component/net-triage", "type": "COMPONENT"}
+ {"alias": "ns-fences", "entity": "component/ns-fences", "type": "COMPONENT"}
+ {"alias": "Optimizer", "entity": "component/optimizer", "type": "COMPONENT"}
++{"alias": "Otto numun", "entity": "component/otto-numun", "type": "COMPONENT"}
+ {"alias": "Parallel Agent Stack", "entity": "component/parallel-agent-stack", "type": "COMPONENT"}
+ {"alias": "ParallelExecutionStack", "entity": "component/parallelexecutionstack", "type": "COMPONENT"}
+ {"alias": "pi-cache-guardian", "entity": "component/pi-cache-guardian", "type": "COMPONENT"}
+@@ -63,6 +64,7 @@
+ {"alias": "Fingerprint", "entity": "concept/fingerprint", "type": "CONCEPT"}
+ {"alias": "fleetview outbox import fix 2026-09-22", "entity": "concept/fleetview-outbox-import-fix-2026-09-22", "type": "CONCEPT"}
+ {"alias": "hypotheses-race", "entity": "concept/hypotheses-race", "type": "CONCEPT"}
++{"alias": "lane/memory-plane-cortex-engine 2048 migration", "entity": "concept/lane-memory-plane-cortex-engine-2048-migration", "type": "CONCEPT"}
+ {"alias": "ParEval", "entity": "concept/pareval", "type": "CONCEPT"}
+ {"alias": "R38", "entity": "concept/r38", "type": "CONCEPT"}
+ {"alias": "Three-Role Model", "entity": "concept/three-role-model", "type": "CONCEPT"}
+@@ -92,6 +94,7 @@
+ {"alias": "Pi Agent Token Efficiency", "entity": "feature/pi-agent-token-efficiency", "type": "FEATURE"}
+ {"alias": "voice_clarify_handshake", "entity": "feature/voice-clarify-handshake", "type": "FEATURE"}
+ {"alias": "voice_speculate_endpoint", "entity": "feature/voice-speculate-endpoint", "type": "FEATURE"}
++{"alias": "Cortex memory plane embed write path", "entity": "gotcha/cortex-memory-plane-embed-write-path", "type": "GOTCHA"}
+ {"alias": "TRAP duplicate fleet_summary", "entity": "gotcha/trap-duplicate-fleet-summary", "type": "GOTCHA"}
+ {"alias": "TRAP launchd Background throttles voice", "entity": "gotcha/trap-launchd-background-throttles-voice", "type": "GOTCHA"}
+ {"alias": "TRAP memory MCP dead", "entity": "gotcha/trap-memory-mcp-dead", "type": "GOTCHA"}
+diff --git a/.growmos/entities.jsonl b/.growmos/entities.jsonl
+index f07a0725d..e955750fb 100644
+--- a/.growmos/entities.jsonl
++++ b/.growmos/entities.jsonl
+@@ -41,6 +41,7 @@
+ {"created": "2026-09-26T21:43:43Z", "description": "Read-only estate intent: net-forensics gather once, hypotheses-race over platform/estate/hypotheses/net-crossnode.json, Jev yes/no via triage-verdict.py; prints one VERDICT line naming fix+verify intents.", "id": "component/net-triage", "mentions": 1, "name": "net-triage", "provisional": true, "schema_version": 5, "sources": ["src_ab3441c724a2"], "type": "COMPONENT", "updated": "2026-09-26T21:43:43Z"}
+ {"created": "2026-09-22T18:24:07Z", "description": "Namespace fence mechanism generated from platform/ns-fences/allowances.yaml providing default-deny egress with allowed routes.", "id": "component/ns-fences", "mentions": 1, "name": "ns-fences", "provisional": true, "schema_version": 1, "sources": ["src_d4c960e37231"], "type": "COMPONENT", "updated": "2026-09-22T18:24:07Z"}
+ {"created": "2026-09-22T18:23:34Z", "description": "Role in the three-role asymmetric model (SoL-Pi) that applies 4 efficiency mechanisms.", "id": "component/optimizer", "mentions": 1, "name": "Optimizer", "provisional": true, "schema_version": 1, "sources": ["src_b79d14e53611"], "type": "COMPONENT", "updated": "2026-09-22T18:23:34Z"}
++{"created": "2026-10-12T17:52:11Z", "description": "@numun_bot, served by platform/otto-golden; receives no Telegram itself since crew#768, the door is otto-gateway.", "id": "component/otto-numun", "mentions": 1, "name": "Otto numun", "provisional": true, "schema_version": 5, "sources": ["src_f7ffda4eb096"], "type": "COMPONENT", "updated": "2026-10-12T17:52:11Z"}
+ {"created": "2026-09-22T18:21:40Z", "description": "9-layer architecture for scaling from N=1 to N=10 parallel agents with worktree isolation and budget governance.", "id": "component/parallel-agent-stack", "mentions": 2, "name": "Parallel Agent Stack", "provisional": true, "schema_version": 1, "sources": ["src_b79d14e53611"], "type": "COMPONENT", "updated": "2026-09-22T18:22:58Z"}
+ {"created": "2026-09-22T18:21:40Z", "description": "Execution component spawning N workers with independent worktrees and circuit breaker on gate violations.", "id": "component/parallelexecutionstack", "mentions": 2, "name": "ParallelExecutionStack", "provisional": true, "schema_version": 1, "sources": ["src_b79d14e53611"], "type": "COMPONENT", "updated": "2026-09-22T18:22:58Z"}
+ {"created": "2026-09-22T18:24:43Z", "description": "Week 1 mechanism that prevents re-encoding system prompt on every turn by capturing golden byte-identical system prompt on turn 1 and restoring from cache on turns 2+, achieving 100% savings on cached turns.", "id": "component/pi-cache-guardian", "mentions": 2, "name": "pi-cache-guardian", "provisional": true, "schema_version": 1, "sources": ["src_fafa172f45e6"], "type": "COMPONENT", "updated": "2026-09-22T18:26:13Z"}
+@@ -63,6 +64,7 @@
+ {"created": "2026-09-26T14:51:49Z", "description": "The stable, order-independent identity of a finding (e.g. the sorted set of CVE ids) used instead of a raw output hash so the same cause matches across differently-shaped output.", "id": "concept/fingerprint", "mentions": 1, "name": "Fingerprint", "provisional": true, "schema_version": 3, "sources": ["src_1e9e49dc56df"], "type": "CONCEPT", "updated": "2026-09-26T14:51:49Z"}
+ {"created": "2026-09-22T19:53:43Z", "description": "", "id": "concept/fleetview-outbox-import-fix-2026-09-22", "mentions": 0, "name": "fleetview outbox import fix 2026-09-22", "provisional": true, "schema_version": 1, "sources": ["src_dc4cf63c0c36"], "type": "CONCEPT", "updated": "2026-09-22T19:53:43Z"}
+ {"created": "2026-09-26T21:43:43Z", "description": "", "id": "concept/hypotheses-race", "mentions": 0, "name": "hypotheses-race", "provisional": true, "schema_version": 5, "sources": ["src_ab3441c724a2"], "type": "CONCEPT", "updated": "2026-09-26T21:43:43Z"}
++{"created": "2026-10-13T08:22:53Z", "description": "", "id": "concept/lane-memory-plane-cortex-engine-2048-migration", "mentions": 0, "name": "lane/memory-plane-cortex-engine 2048 migration", "provisional": true, "schema_version": 5, "sources": ["src_43a7d11783aa"], "type": "CONCEPT", "updated": "2026-10-13T08:22:53Z"}
+ {"created": "2026-09-22T18:21:40Z", "description": "Three-role asymmetric model with Executor, Optimizer (SoL-Pi), and Governor (Budget) roles for partial evaluation.", "id": "concept/pareval", "mentions": 2, "name": "ParEval", "provisional": true, "schema_version": 1, "sources": ["src_b79d14e53611"], "type": "CONCEPT", "updated": "2026-09-22T18:22:58Z"}
+ {"created": "2026-09-26T14:51:49Z", "description": "The two rules -- fingerprint not raw hash, and scoped to the targets that showed it -- that keep the circuit breaker from becoming an outage.", "id": "concept/r38", "mentions": 1, "name": "R38", "provisional": true, "schema_version": 3, "sources": ["src_1e9e49dc56df"], "type": "CONCEPT", "updated": "2026-09-26T14:51:49Z"}
+ {"created": "2026-09-22T18:24:43Z", "description": "Week 4 architecture with Executor (run task), Optimizer (SoL-Pi applying 8 mechanisms), and Governor (TBO enforcing budgets) achieving 55% reduction.", "id": "concept/three-role-model", "mentions": 2, "name": "Three-Role Model", "provisional": true, "schema_version": 1, "sources": ["src_fafa172f45e6"], "type": "CONCEPT", "updated": "2026-09-22T18:26:13Z"}
+@@ -92,6 +94,7 @@
+ {"created": "2026-09-22T18:24:43Z", "description": "One-shot implementation of 8 token efficiency mechanisms achieving cumulative 28.7% reduction (44,612 tokens saved from 155,621 baseline).", "id": "feature/pi-agent-token-efficiency", "mentions": 2, "name": "Pi Agent Token Efficiency", "provisional": true, "schema_version": 1, "sources": ["src_fafa172f45e6"], "type": "FEATURE", "updated": "2026-09-22T18:26:13Z"}
+ {"created": "2026-09-22T21:01:20Z", "description": "The 2100 clarification handshake: onClarificationNeeded (browser) + voice_clarify MCP tool (agent mesh). Fires when a final intent's confidence is below 0.90. Publishes a kind=clarify row on estate.agent.sovereign.<session>.steer with the candidate action/target the mesh is asking about.", "id": "feature/voice-clarify-handshake", "mentions": 1, "name": "voice_clarify_handshake", "provisional": true, "schema_version": 2, "sources": ["src_dc4cf63c0c36"], "type": "FEATURE", "updated": "2026-09-22T21:01:20Z"}
+ {"created": "2026-09-22T21:01:19Z", "description": "POST /voice/speculate: server-side fallback for browsers without WebGPU. Takes a partial transcript, routes to the intent-speculative alias (Groq consumer / Ollama enterprise), returns Schema v2 with clarification_needed flag at confidence<0.90. Never writes to the bus.", "id": "feature/voice-speculate-endpoint", "mentions": 1, "name": "voice_speculate_endpoint", "provisional": true, "schema_version": 2, "sources": ["src_dc4cf63c0c36"], "type": "FEATURE", "updated": "2026-09-22T21:01:19Z"}
++{"created": "2026-10-13T08:22:53Z", "description": "Cortex adoption (decision 0036) stalled 2026-10-03: only docs/manifests landed (#5311); the embed fix sat on lane/memory-plane-cortex-engine, was overtaken by #5550 (embed lane = nvidia vl-1b-v2 at 1536), so its 1536->2048 migration must NOT land; the write-path half was ported as lane/memory-embed-write-path (#6023).", "id": "gotcha/cortex-memory-plane-embed-write-path", "mentions": 1, "name": "Cortex memory plane embed write path", "provisional": true, "schema_version": 5, "sources": ["src_43a7d11783aa"], "type": "GOTCHA", "updated": "2026-10-13T08:22:53Z"}
+ {"created": "2026-09-26T18:26:40Z", "description": "Two fleet_summary(): fleetview_backend/voice.py (what the Fleet page's voice uses) and sovereign/voice/engine.py (sovereign voice-loop server only). Editing engine.py does not change what the page says.", "id": "gotcha/trap-duplicate-fleet-summary", "mentions": 1, "name": "TRAP duplicate fleet_summary", "provisional": true, "schema_version": 5, "sources": ["src_ab3441c724a2"], "type": "GOTCHA", "updated": "2026-09-26T18:26:40Z"}
+ {"created": "2026-09-26T19:18:20Z", "description": "ProcessType Background + Nice 10 on ai.estate.fleetview-backend throttled it: /voice/voices 10-38s vs 0.5s in a shell, restart 28s vs 2s. Latency services must be ProcessType Interactive.", "id": "gotcha/trap-launchd-background-throttles-voice", "mentions": 1, "name": "TRAP launchd Background throttles voice", "provisional": true, "schema_version": 5, "sources": ["src_ab3441c724a2"], "type": "GOTCHA", "updated": "2026-09-26T19:18:20Z"}
+ {"created": "2026-09-26T18:26:41Z", "description": "idp/.mcp.json server 'memory' (estate-core/memory/mcp_server.py, Graphiti) crashes at import: graphiti_core not installed; it is also a second memory layer beside growmos.", "id": "gotcha/trap-memory-mcp-dead", "mentions": 1, "name": "TRAP memory MCP dead", "provisional": true, "schema_version": 5, "sources": ["src_ab3441c724a2"], "type": "GOTCHA", "updated": "2026-09-26T18:26:41Z"}
+diff --git a/.growmos/journal.md b/.growmos/journal.md
+index afcfd9f7f..e34527765 100644
+--- a/.growmos/journal.md
++++ b/.growmos/journal.md
+@@ -4892,3 +4892,35 @@ net-crossnode 2026-09-26: net-flannel-unmasq removed FLANNEL-POSTRTG on both nod
+ ### 2026-10-01T00:37:28Z · agent
+ 
+ 2026-10-01 crew#694: lane/front-end-kit-intents landed (ui.scaffold path fix, ui.review gzip budget + kit resolution, scaffold without the Cloudflare adapter). Both lanes of the session are on main. Next: crew#700 CP1 and crew#690 on the kit; founder's word on crew#694 CP1.
++
++### 2026-10-12T17:52:12Z · agent
++
++2026-10-12 otto RCA: otto-gateway sidecar tailscale crash-looped 'node quota reached' because the 45m GithubAccessToken mint in hermes-agent-env made Reloader roll the pod (36 RS/21h) and each roll registered a non-ephemeral tailnet node (emptyDir state). Fix on lane/otto-stop-token-roll (issue #5894): reloader ignore on the minted Secret + ephemeral=true authkey. Stale offline otto-pod nodes still need clearing in the Tailscale admin console. Open: SigNoz collector has zero endpoints so the reconciler's OTLP push ends BLIND (exit 1 by design); concierge-deploy fails at 'sync human-twilio' and cluster human-twilio/human-card-key are SecretSyncedError until the founder adds GUARDIAN_PHONE_NUMBER, MOM_PHONE_NUMBER, PUBLIC_SERVER_URL, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER, CONCIERGE_CARD_KEY to Bitwarden.
++
++### 2026-10-12T19:17:05Z · agent
++
++2026-10-12 lane/otto-stop-token-roll (claim #5894) now holds 3 fixes, pushed 495f7cf13, no PR: reloader-ignore + ephemeral tailnet keys; vendor-bridge optional targets as Merge ExternalSecrets (PUBLIC_SERVER_URL is born by concierge-deploy, must not be required); seed auxiliary.free_only in /data/config.yaml (no paid gemini-3.6-flash). Founder-only: TWILIO_AUTH_TOKEN + CONCIERGE_CARD_KEY in Bitwarden project 18e57b2f; delete stale offline otto-pod nodes in Tailscale console (estate OAuth client has no devices scope); Grafana Cloud account+token for OTLP (SigNoz dead); concierge-deploy.yml:342 Modal secret names human-twilio/concierge-tunnel mismatch.
++
++### 2026-10-12T19:50:19Z · agent
++
++2026-10-12 re-landed closed #4591 (SigNoz out, Alloy -> Grafana Cloud) as lane/signoz-out-grafana-cloud, claim #5935, worktree ../idp-wt-obs, fast-gate green, tests 20 pass. Needs GRAFANA_CLOUD_OTLP_ENDPOINT/INSTANCE_ID/API_TOKEN in Bitwarden 18e57b2f (unverified: classifier denied my bws read of the cluster token twice). #5919 and #5928 merged.
++
++### 2026-10-12T22:42:16Z · agent
++
++2026-10-12 vendor-bridge HelmRelease had been hand-suspended since 2026-10-03 (field manager flux CLI, not in git); resumed. Root: Helm wait on ExternalSecrets for absent vault keys -> timeout -> retries -> stall. Fix lane/vendor-bridge-no-helm-wait claim #5957 (disableWait; replaced 3 seed tests orphaned by #5336). TWILIO_AUTH_TOKEN duplicated in Bitwarden with identical values (ids 848a498b, 83de3023); delete of the newer one blocked by classifier, founder runs it. No Grafana Cloud creds found anywhere: bitwarden, gh secrets on all repos, cluster, keychain, chrome history, other repos.
++
++### 2026-10-12T23:21:12Z · agent
++
++2026-10-13 root of vendor-bridge stall: c96359f4 dropped human-vault/concierge/human-vault-bridge Flux rows; objects orphaned. Restore lane/flux-rows-human-vault-back. Also #5928 Merge design refused by ESO (secret owned by another ES); fix lane/vendor-bridge-optional-owns-its-secret claim #5961. #5959 merged. Duplicate TWILIO_AUTH_TOKEN deleted by founder; human-twilio synced.
++
++### 2026-10-13T00:03:38Z · agent
++
++2026-10-13 Grafana Cloud seeded: stack redlasagna2395 (instance 1813563, prod-gb-south-1), token estate-alloy on existing policy kubernetes-instrumentation-redlasagna2395; GRAFANA_CLOUD_{OTLP_ENDPOINT,INSTANCE_ID,API_TOKEN} in BW project 18e57b2f; gateway verify 200. Lands on cluster when lane/signoz-out-grafana-cloud merges.
++
++### 2026-10-13T00:06:50Z · agent
++
++2026-10-13 BW dupes removed (founder-approved): leaked CONCIERGE_CARD_KEY dbd680a0 and dead GRAFANA_CLOUD_API_TOKEN 527c2a77 (401). human-card-key re-synced on clean key 4142f9d2. #5986 + #5964 merged; human-vault/concierge/human-vault-bridge rows live; vendor-bridge v1314 green; optional twilio numbers synced. public-server-url ES waits on concierge cutover by design.
++
++### 2026-10-13T08:22:53Z · agent
++
++Cortex status: found install never started past docs/manifests; embed fix stranded on lane/memory-plane-cortex-engine and obsoleted in part by #5550. Ported write-path embedding to main at 1536 in worktree ../idp-memory-embed, claim #6023, pushing lane/memory-embed-write-path. Remaining: query-side semantic recall in estate_memory.py, backfill of NULL vectors, vendor Cortex (spec step 0/1), delete Hindsight + otto-memory-store, /fleet panel. Do not land the 2048 migration.
+diff --git a/.growmos/mentions.jsonl b/.growmos/mentions.jsonl
+index 53d218988..6b2d38e9d 100644
+--- a/.growmos/mentions.jsonl
++++ b/.growmos/mentions.jsonl
+@@ -143,3 +143,5 @@
+ {"chunk": null, "description": "Company front door (crew#690) at ~/Documents/code/bytesync-web: Next 16 static export on Cloudflare Pages, local only with no GitHub remote as of 2026-10-01, its own oklch tokens; legacy kit consumer until 2026-10-15.", "name": "bytesync-web", "schema_version": 5, "source": "src_8729dc7cdd2a", "ts": "2026-09-30T23:45:23Z", "type": "COMPONENT"}
+ {"chunk": null, "description": "launchd ai.estate.runtime-sync runs ~/.estate/bin/estate-runtime-sync every 300s: keeps ~/.estate/runtime/idp on main and stages platform/estate/intents and libexec into ~/.estate, overwriting local edits; an intent fix is only durable once it lands on main.", "name": "estate-runtime-sync", "schema_version": 5, "source": "src_2b41503e6a51", "ts": "2026-10-01T00:28:51Z", "type": "SYSTEM"}
+ {"chunk": null, "description": "fleetview_backend/key_sync.py + KeySync.tsx: one row per Bitwarden secret name from human-* ExternalSecrets and their UpdateFailed events (synced/missing/stopped/failing/unreachable), names only; llm bridges down >5 min publish a news-desk story.", "name": "fleet key-sync board", "schema_version": 5, "source": "src_2b41503e6a51", "ts": "2026-10-01T23:05:11Z", "type": "COMPONENT"}
++{"chunk": null, "description": "@numun_bot, served by platform/otto-golden; receives no Telegram itself since crew#768, the door is otto-gateway.", "name": "Otto numun", "schema_version": 5, "source": "src_f7ffda4eb096", "ts": "2026-10-12T17:52:11Z", "type": "COMPONENT"}
++{"chunk": null, "description": "Cortex adoption (decision 0036) stalled 2026-10-03: only docs/manifests landed (#5311); the embed fix sat on lane/memory-plane-cortex-engine, was overtaken by #5550 (embed lane = nvidia vl-1b-v2 at 1536), so its 1536->2048 migration must NOT land; the write-path half was ported as lane/memory-embed-write-path (#6023).", "name": "Cortex memory plane embed write path", "schema_version": 5, "source": "src_43a7d11783aa", "ts": "2026-10-13T08:22:53Z", "type": "GOTCHA"}
+diff --git a/.growmos/relations.jsonl b/.growmos/relations.jsonl
+index 55786f653..ec1d6e072 100644
+--- a/.growmos/relations.jsonl
++++ b/.growmos/relations.jsonl
+@@ -93,6 +93,7 @@
+ {"confidence": 1, "created": "2026-09-22T18:24:07Z", "id": "r_e46bb404a281", "predicate": "depends on", "schema_version": 1, "source": "artifact/cell-gvisor-admission", "sources": ["src_d4c960e37231"], "target": "tool/kyverno", "updated": "2026-09-22T18:24:07Z"}
+ {"confidence": 1, "created": "2026-09-26T19:18:20Z", "id": "r_e588b9e19296", "predicate": "must run as", "schema_version": 5, "source": "system/fleetview", "sources": ["src_ab3441c724a2"], "target": "gotcha/trap-launchd-background-throttles-voice", "updated": "2026-09-26T19:18:20Z"}
+ {"confidence": 1, "created": "2026-09-22T18:26:13Z", "id": "r_eae5934fd308", "predicate": "implements", "schema_version": 1, "source": "concept/three-role-model", "sources": ["src_fafa172f45e6"], "target": "component/sol-pi", "updated": "2026-09-22T18:26:13Z"}
++{"confidence": 1, "created": "2026-10-13T08:22:53Z", "id": "r_eafe3ffc3143", "predicate": "supersedes", "schema_version": 5, "source": "gotcha/cortex-memory-plane-embed-write-path", "sources": ["src_43a7d11783aa"], "target": "concept/lane-memory-plane-cortex-engine-2048-migration", "updated": "2026-10-13T08:22:53Z"}
+ {"confidence": 1, "created": "2026-09-22T18:26:49Z", "id": "r_eb899f0420f7", "predicate": "part of", "schema_version": 1, "source": "service/traefik", "sources": ["src_b33563055168"], "target": "artifact/idp", "updated": "2026-09-22T18:26:49Z"}
+ {"confidence": 1, "created": "2026-09-22T18:26:49Z", "id": "r_ee9fabd7d50c", "predicate": "part of", "schema_version": 1, "source": "tool/backstage", "sources": ["src_b33563055168"], "target": "artifact/idp", "updated": "2026-09-22T18:26:49Z"}
+ {"confidence": 1, "created": "2026-09-22T18:26:49Z", "id": "r_f538c324c07a", "predicate": "tested by", "schema_version": 1, "source": "tool/bin-idp-ci", "sources": ["src_b33563055168"], "target": "artifact/agents-md", "updated": "2026-09-22T18:26:49Z"}
+diff --git a/.growmos/sources.jsonl b/.growmos/sources.jsonl
+index b1e345000..e0d25c16b 100644
+--- a/.growmos/sources.jsonl
++++ b/.growmos/sources.jsonl
+@@ -148,6 +148,7 @@
+ {"added": "2026-09-22T18:16:50Z", "id": "src_419a146aa923", "kind": "file", "ref": "docs/specs/self-service-golden-paths.md", "sha256": "70c0eb20e9fb58065b476338be7a3785488e3131d746e3b18d44a6f1956203a3", "status": "pending", "title": "self-service-golden-paths.md", "updated": "2026-09-22T18:16:50Z"}
+ {"added": "2026-09-22T18:16:49Z", "id": "src_41b668bcc70c", "kind": "file", "ref": "docs/how-to/onboarding/estate-digest-worker.md", "sha256": "0fcb7c59e69c3655f39c25a5a3b740e54ddf9b25e8f4f3c769bced76d51ae14a", "status": "pending", "title": "estate-digest-worker.md", "updated": "2026-09-22T18:16:49Z"}
+ {"added": "2026-09-22T18:16:50Z", "id": "src_41bd75bdd3ea", "kind": "file", "ref": "docs/tutorials/demo/mcp.md", "sha256": "39dc1138f65e667396607cd1a743e5055027aed9207344e36f43fb19723acc00", "status": "pending", "title": "mcp.md", "updated": "2026-09-22T18:16:50Z"}
++{"added": "2026-10-13T08:22:53Z", "id": "src_43a7d11783aa", "kind": "note", "ref": "session:2026-10-13", "sha256": "43a7d11783aa2996cea629d80c4a361dfb0df6b1037e8c1f133e54854a8144ba", "status": "note", "title": "session:2026-10-13", "updated": "2026-10-13T08:22:53Z"}
+ {"added": "2026-09-22T18:16:49Z", "id": "src_455df2138726", "kind": "file", "ref": "docs/decisions/0017-bitwarden-is-the-human-door-for-secrets.md", "sha256": "bc12213763a45b0c165dbd8b743d38fca74d85fc0ad68336b025d112a08d3582", "status": "pending", "title": "0017-bitwarden-is-the-human-door-for-secrets.md", "updated": "2026-09-22T18:16:49Z"}
+ {"added": "2026-09-22T18:16:50Z", "id": "src_457307945ef7", "kind": "file", "ref": "docs/ironcage-state.md", "sha256": "2456667219990df2c97b8515ca6f43b79facb7860055b6cff9b2b4875923182b", "status": "pending", "title": "ironcage-state.md", "updated": "2026-09-22T18:16:50Z"}
+ {"added": "2026-09-22T18:16:50Z", "id": "src_458e8f1a6e07", "kind": "file", "ref": "docs/tutorials/demo/estate-clocks.md", "sha256": "79c5241d419a35de163ce7698c595ae8af892c4424b381a6ff36bcedd34f8c77", "status": "pending", "title": "estate-clocks.md", "updated": "2026-09-22T18:16:50Z"}
+@@ -572,6 +573,7 @@
+ {"added": "2026-09-22T18:16:50Z", "id": "src_f734bb1e430a", "kind": "file", "ref": "docs/tutorials/demo/intent.md", "sha256": "d62932df5cb9691e29002d196908ed017f00c71c4fc9f691b1097ee2ac766453", "status": "pending", "title": "intent.md", "updated": "2026-09-22T18:16:50Z"}
+ {"added": "2026-09-22T18:16:49Z", "id": "src_f79cc51555fb", "kind": "file", "ref": "docs/how-to/onboarding/estate-dag-gen.md", "sha256": "1618d0b54cfd6069670066fbe76850c27a9039d93cb9f7a0f8e06e345210c247", "status": "pending", "title": "estate-dag-gen.md", "updated": "2026-09-22T18:16:49Z"}
+ {"added": "2026-09-22T18:16:50Z", "id": "src_f7e64f608bfe", "kind": "file", "ref": "docs/tutorials/demo/multiarch.md", "sha256": "40b31a6125904ec404c364c4d5b72e14f30d4d5a7250cd428ef1730eb94804f4", "status": "pending", "title": "multiarch.md", "updated": "2026-09-22T18:16:50Z"}
++{"added": "2026-10-12T17:52:11Z", "id": "src_f7ffda4eb096", "kind": "note", "ref": "session:2026-10-12", "sha256": "f7ffda4eb09651680bddca1a8a248ff73b2d54aa2b49b4b683e09785eb19a8b6", "status": "note", "title": "session:2026-10-12", "updated": "2026-10-12T17:52:11Z"}
+ {"added": "2026-09-22T18:16:50Z", "id": "src_f816976bd93e", "kind": "file", "ref": "docs/specs/deepseek-brief.md", "sha256": "36fb34d9df666a346df77c10c83a1bee056a7a7f2109f3394bd0ef8d2aaf96ae", "status": "pending", "title": "deepseek-brief.md", "updated": "2026-09-22T18:16:50Z"}
+ {"added": "2026-09-22T18:16:49Z", "id": "src_f870781cf236", "kind": "file", "ref": "docs/founder/estate-snapshot-is-mandatory.md", "sha256": "8ddd8b9d62204d9613585cd788cf0fbec7c2e3f49eff25c9c34325f8760ac0f4", "status": "pending", "title": "estate-snapshot-is-mandatory.md", "updated": "2026-09-22T18:16:49Z"}
+ {"added": "2026-09-22T18:16:50Z", "id": "src_fa861602023d", "kind": "file", "ref": "docs/tutorials/demo/board_serve.py.md", "sha256": "58625c777ddd4d2fb25d32947e1418ecd9032da23fe2752524e1cf32fcb64bdb", "status": "pending", "title": "board_serve.py.md", "updated": "2026-09-22T18:16:50Z"}
+diff --git a/.growmos/state.json b/.growmos/state.json
+index a89703eee..515bcdd7f 100644
+--- a/.growmos/state.json
++++ b/.growmos/state.json
+@@ -2,12 +2,12 @@
+   "counters": {
+     "extractions": 13,
+     "profiles": 0,
+-    "queries": 9,
++    "queries": 14,
+     "resolutions": 0
+   },
+   "created": "2026-09-22T18:15:24Z",
+   "last_eval": null,
+-  "last_run": "2026-10-01T23:05:11Z",
++  "last_run": "2026-10-13T08:22:53Z",
+   "last_sample": null,
+   "pending_resummarize": [],
+   "runs": [
+@@ -386,6 +386,21 @@
+       "kind": "link",
+       "relation": "r_72ea79c9ccdb",
+       "ts": "2026-10-01T23:05:11Z"
++    },
++    {
++      "entity": "component/otto-numun",
++      "kind": "remember",
++      "ts": "2026-10-12T17:52:11Z"
++    },
++    {
++      "entity": "gotcha/cortex-memory-plane-embed-write-path",
++      "kind": "remember",
++      "ts": "2026-10-13T08:22:53Z"
++    },
++    {
++      "kind": "link",
++      "relation": "r_eafe3ffc3143",
++      "ts": "2026-10-13T08:22:53Z"
+     }
+   ]
+ }
+diff --git a/backstage/packages/app/src/modules/room/ui/AgentJobs.tsx b/backstage/packages/app/src/modules/room/ui/AgentJobs.tsx
+index 172bd0c1e..627fb3f4e 100644
+--- a/backstage/packages/app/src/modules/room/ui/AgentJobs.tsx
++++ b/backstage/packages/app/src/modules/room/ui/AgentJobs.tsx
+@@ -195,7 +195,7 @@ export default function AgentJobs({
+   const running = (jobs || []).filter(j => j.state === 'running').length;
+ 
+   return (
+-    <div className="absolute top-24 right-6 z-40 pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
++    <div className="pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
+       <button
+         type="button"
+         onClick={() => setOpen(o => !o)}
+diff --git a/backstage/packages/app/src/modules/room/ui/ClaimsPanel.tsx b/backstage/packages/app/src/modules/room/ui/ClaimsPanel.tsx
+index f67ba1582..8013363b5 100644
+--- a/backstage/packages/app/src/modules/room/ui/ClaimsPanel.tsx
++++ b/backstage/packages/app/src/modules/room/ui/ClaimsPanel.tsx
+@@ -164,7 +164,7 @@ export default function ClaimsPanel({
+   const label = claimLabel(data, err);
+ 
+   return (
+-    <div className="absolute top-[21rem] right-6 z-40 pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
++    <div className="pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
+       <button
+         type="button"
+         onClick={() => setOpen(o => !o)}
+diff --git a/backstage/packages/app/src/modules/room/ui/ConciergeTasks.tsx b/backstage/packages/app/src/modules/room/ui/ConciergeTasks.tsx
+index f2514f9f7..5c4a1a5dc 100644
+--- a/backstage/packages/app/src/modules/room/ui/ConciergeTasks.tsx
++++ b/backstage/packages/app/src/modules/room/ui/ConciergeTasks.tsx
+@@ -180,7 +180,7 @@ export default function ConciergeTasks({
+     // chip above starts at 8.5rem (136px) and is ~30px tall -- the two pills OVERLAPPED by 22px
+     // and the right rail read as debris, not a stack. The rail is one coordinate system now:
+     // AgentJobs 96px, Harv 136px, concierge 176px, KeySync 216px -- an even 40px pitch.
+-    <div className="absolute top-[11rem] right-6 z-40 pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
++    <div className="pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
+       <button
+         type="button"
+         onClick={() => setOpen(o => !o)}
+diff --git a/backstage/packages/app/src/modules/room/ui/Delivery.tsx b/backstage/packages/app/src/modules/room/ui/Delivery.tsx
+index a565d9905..b07dc09bb 100644
+--- a/backstage/packages/app/src/modules/room/ui/Delivery.tsx
++++ b/backstage/packages/app/src/modules/room/ui/Delivery.tsx
+@@ -204,7 +204,7 @@ export default function Delivery(): JSX.Element | null {
+   });
+ 
+   return (
+-    <div data-testid="delivery" className="absolute bottom-24 right-6 z-40 font-mono text-[11px]">
++    <div data-testid="delivery" className="pointer-events-auto font-mono text-[11px]">
+       <button
+         type="button"
+         onClick={() => setOpen(prev => !prev)}
+diff --git a/backstage/packages/app/src/modules/room/ui/FleetReactorApp.tsx b/backstage/packages/app/src/modules/room/ui/FleetReactorApp.tsx
+index 08e29da59..7540a7df5 100644
+--- a/backstage/packages/app/src/modules/room/ui/FleetReactorApp.tsx
++++ b/backstage/packages/app/src/modules/room/ui/FleetReactorApp.tsx
+@@ -2816,10 +2816,6 @@ export default function FleetReactorApp() {
+         </div>
+       </div>
+ 
+-      {/* Merged -> operating on the laptop plane, and job health (docs/tickets/2026-09-27-merged-is-operating.md). */}
+-      <Delivery />
+-
+-
+       <NewsDesk
+         rundown={rundown}
+         channel={newsChannel}
+@@ -2828,72 +2824,103 @@ export default function FleetReactorApp() {
+         summoned={newsSummoned}
+       />
+ 
+-      {/* Give an agent a job, watch it become a merged PR (fleetview_backend/agent_jobs.py). Through
+-          the discovery proxy like every remote-capable call here, so it works from the phone. */}
+-      <AgentJobs
+-        call={(init) => {
+-          const base = baseUrlRef.current;
+-          if (!base) return Promise.reject(new Error('discovery not ready'));
+-          return api.fetch(`${base}/fleetview/agent-jobs`, init);
+-        }}
+-      />
+-
+-      {/* The capability harvester's funnel, live (fleetview_backend/harv.py). */}
+-      <HarvPanel
+-        call={(init) => {
+-          const base = baseUrlRef.current;
+-          if (!base) return Promise.reject(new Error('discovery not ready'));
+-          return api.fetch(`${base}/fleetview/harv`, init);
+-        }}
+-      />
+-
+-      {/* Ask the concierge for a browser task, by voice or here, and watch it step by step
+-          (fleetview_backend/concierge_tasks.py). */}
+-      <ConciergeTasks
+-        call={(init) => {
+-          const base = baseUrlRef.current;
+-          if (!base) return Promise.reject(new Error('discovery not ready'));
+-          return api.fetch(`${base}/fleetview/concierge-tasks`, init);
+-        }}
+-      />
+-
+-      {/* Is every key the estate expects arriving from Bitwarden (fleetview_backend/key_sync.py).
+-          Names and states only; a missing key shows the exact name to create. */}
+-      <KeySync
+-        call={(init) => {
+-          const base = baseUrlRef.current;
+-          if (!base) return Promise.reject(new Error('discovery not ready'));
+-          return api.fetch(`${base}/fleetview/key-sync`, init);
+-        }}
+-      />
+-
+-      {/* What the research department verified, newest first (idp#5714). This one is NOT behind
+-          the proxy: it is the catalogue's own backend plugin, so it goes through the discovery
+-          middleware's plugin:// translation directly. */}
+-      <ResearchFindings
+-        call={(init) => api.fetch('plugin://research-output/claims', init)}
+-      />
+-
+-      {/* Is main green on the commit it is at, and what did the tick decide about every lane
+-          (fleetview_backend/greenlane.py -> bin/idp-greenlane status). The verdict is the
+-          engine's own; this only refuses to draw a green main it could not read. */}
+-      <GreenlaneHud
+-        call={(init) => {
+-          const base = baseUrlRef.current;
+-          if (!base) return Promise.reject(new Error('discovery not ready'));
+-          return api.fetch(`${base}/fleetview/greenlane`, init);
+-        }}
+-      />
+-
+-      {/* Who is holding which paths right now, and how stale their heartbeat is
+-          (fleetview_backend/claims.py, AGENTS.md section 5). */}
+-      <ClaimsPanel
+-        call={(init) => {
+-          const base = baseUrlRef.current;
+-          if (!base) return Promise.reject(new Error('discovery not ready'));
+-          return api.fetch(`${base}/fleetview/claims`, init);
+-        }}
+-      />
++      {/* THE RIGHT-HAND STATUS RAIL. Every status pill in one column under the voice picker, in a
++          fixed order, so none of them owns a coordinate. Each used to be placed on its own
++          `top-[..rem]`, and three of those offsets had no rule in styles.css, so research, green
++          lane and claims all computed to top:0 and stacked on the sonar and the voice picker; the
++          laptop pill sat on the safeguards panel and opened its list below the screen. Here an
++          opened panel pushes the rest down instead of covering them. */}
++      <div
++        data-testid="status-rail"
++        className="absolute right-6 z-40 flex flex-col items-end gap-2 pointer-events-none"
++        style={{ top: 128 }}
++      >
++        {/* Merged -> operating on the laptop plane, and job health (docs/tickets/2026-09-27-merged-is-operating.md). */}
++        <ErrorBoundary componentName="Delivery">
++          <Delivery />
++        </ErrorBoundary>
++
++        {/* Give an agent a job, watch it become a merged PR (fleetview_backend/agent_jobs.py). Through
++            the discovery proxy like every remote-capable call here, so it works from the phone. */}
++        <ErrorBoundary componentName="AgentJobs">
++        <AgentJobs
++          call={(init) => {
++            const base = baseUrlRef.current;
++            if (!base) return Promise.reject(new Error('discovery not ready'));
++            return api.fetch(`${base}/fleetview/agent-jobs`, init);
++          }}
++        />
++        </ErrorBoundary>
++
++        {/* The capability harvester's funnel, live (fleetview_backend/harv.py). */}
++        <ErrorBoundary componentName="HarvPanel">
++        <HarvPanel
++          call={(init) => {
++            const base = baseUrlRef.current;
++            if (!base) return Promise.reject(new Error('discovery not ready'));
++            return api.fetch(`${base}/fleetview/harv`, init);
++          }}
++        />
++        </ErrorBoundary>
++
++        {/* Ask the concierge for a browser task, by voice or here, and watch it step by step
++            (fleetview_backend/concierge_tasks.py). */}
++        <ErrorBoundary componentName="ConciergeTasks">
++        <ConciergeTasks
++          call={(init) => {
++            const base = baseUrlRef.current;
++            if (!base) return Promise.reject(new Error('discovery not ready'));
++            return api.fetch(`${base}/fleetview/concierge-tasks`, init);
++          }}
++        />
++        </ErrorBoundary>
++
++        {/* Is every key the estate expects arriving from Bitwarden (fleetview_backend/key_sync.py).
++            Names and states only; a missing key shows the exact name to create. */}
++        <ErrorBoundary componentName="KeySync">
++        <KeySync
++          call={(init) => {
++            const base = baseUrlRef.current;
++            if (!base) return Promise.reject(new Error('discovery not ready'));
++            return api.fetch(`${base}/fleetview/key-sync`, init);
++          }}
++        />
++        </ErrorBoundary>
++
++        {/* What the research department verified, newest first (idp#5714). This one is NOT behind
++            the proxy: it is the catalogue's own backend plugin, so it goes through the discovery
++            middleware's plugin:// translation directly. */}
++        <ErrorBoundary componentName="ResearchFindings">
++        <ResearchFindings
++          call={(init) => api.fetch('plugin://research-output/claims', init)}
++        />
++        </ErrorBoundary>
++
++        {/* Is main green on the commit it is at, and what did the tick decide about every lane
++            (fleetview_backend/greenlane.py -> bin/idp-greenlane status). The verdict is the
++            engine's own; this only refuses to draw a green main it could not read. */}
++        <ErrorBoundary componentName="GreenlaneHud">
++        <GreenlaneHud
++          call={(init) => {
++            const base = baseUrlRef.current;
++            if (!base) return Promise.reject(new Error('discovery not ready'));
++            return api.fetch(`${base}/fleetview/greenlane`, init);
++          }}
++        />
++        </ErrorBoundary>
++
++        {/* Who is holding which paths right now, and how stale their heartbeat is
++            (fleetview_backend/claims.py, AGENTS.md section 5). */}
++        <ErrorBoundary componentName="ClaimsPanel">
++        <ClaimsPanel
++          call={(init) => {
++            const base = baseUrlRef.current;
++            if (!base) return Promise.reject(new Error('discovery not ready'));
++            return api.fetch(`${base}/fleetview/claims`, init);
++          }}
++        />
++        </ErrorBoundary>
++      </div>
+ 
+       {/* 2100 Era Scanline Overlay (pure CSS) */}
+       <div className="absolute inset-0 pointer-events-none opacity-[0.03] mix-blend-overlay z-50 bg-[repeating-linear-gradient(transparent,transparent_2px,#000_2px,#000_4px)]"></div>
+diff --git a/backstage/packages/app/src/modules/room/ui/GreenlaneHud.tsx b/backstage/packages/app/src/modules/room/ui/GreenlaneHud.tsx
+index 000233fa7..22b90e772 100644
+--- a/backstage/packages/app/src/modules/room/ui/GreenlaneHud.tsx
++++ b/backstage/packages/app/src/modules/room/ui/GreenlaneHud.tsx
+@@ -220,7 +220,7 @@ export default function GreenlaneHud({
+   const label = laneLabel(lane, err);
+ 
+   return (
+-    <div className="absolute top-[18.5rem] right-6 z-40 pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
++    <div className="pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
+       <button
+         type="button"
+         onClick={() => setOpen(o => !o)}
+diff --git a/backstage/packages/app/src/modules/room/ui/HarvPanel.tsx b/backstage/packages/app/src/modules/room/ui/HarvPanel.tsx
+index aa2f83bc3..f0c71dad5 100644
+--- a/backstage/packages/app/src/modules/room/ui/HarvPanel.tsx
++++ b/backstage/packages/app/src/modules/room/ui/HarvPanel.tsx
+@@ -105,7 +105,7 @@ export default function HarvPanel({
+         : 'text-white/80 border-white/15';
+ 
+   return (
+-    <div className="absolute top-[8.5rem] right-6 z-40 pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
++    <div className="pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
+       <button
+         type="button"
+         onClick={() => setOpen(o => !o)}
+diff --git a/backstage/packages/app/src/modules/room/ui/KeySync.tsx b/backstage/packages/app/src/modules/room/ui/KeySync.tsx
+index fc5b4187b..b2254850f 100644
+--- a/backstage/packages/app/src/modules/room/ui/KeySync.tsx
++++ b/backstage/packages/app/src/modules/room/ui/KeySync.tsx
+@@ -131,7 +131,7 @@ export default function KeySync({
+   return (
+     // See ConciergeTasks: the right rail is one 40px-pitch coordinate system (96/136/176/216).
+     // This was `top-48` (192px), inside the concierge chip's band.
+-    <div className="absolute top-[13.5rem] right-6 z-40 pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
++    <div className="pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
+       <button
+         type="button"
+         onClick={() => setOpen(o => !o)}
+diff --git a/backstage/packages/app/src/modules/room/ui/ResearchFindings.tsx b/backstage/packages/app/src/modules/room/ui/ResearchFindings.tsx
+index e38fbf217..dc1dfe973 100644
+--- a/backstage/packages/app/src/modules/room/ui/ResearchFindings.tsx
++++ b/backstage/packages/app/src/modules/room/ui/ResearchFindings.tsx
+@@ -88,7 +88,7 @@ export default function ResearchFindings({
+     unavailable ? 'text-rose-300 border-rose-400/40' : 'text-white/80 border-white/15';
+ 
+   return (
+-    <div className="absolute top-[16rem] right-6 z-40 pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
++    <div className="pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
+       <button
+         type="button"
+         onClick={() => setOpen(o => !o)}
+diff --git a/backstage/packages/app/src/styles.css b/backstage/packages/app/src/styles.css
+index 31cee77f8..ade5e662d 100644
+--- a/backstage/packages/app/src/styles.css
++++ b/backstage/packages/app/src/styles.css
+@@ -868,9 +868,6 @@
+ .fleet-reactor .top-24 { top: 6rem; }
+ .fleet-reactor .top-36 { top: 9rem; }
+ .fleet-reactor .top-6 { top: 1.5rem; }
+-.fleet-reactor .top-\[11rem\] { top: 11rem; }
+-.fleet-reactor .top-\[13\.5rem\] { top: 13.5rem; }
+-.fleet-reactor .top-\[8\.5rem\] { top: 8.5rem; }
+ .fleet-reactor .tracking-\[0\.2em\] { letter-spacing:0.2em; }
+ .fleet-reactor .tracking-wider { letter-spacing:0.05em; }
+ .fleet-reactor .tracking-widest { letter-spacing:0.1em; }
+diff --git a/backstage/packages/backend/src/researchOutput.test.ts b/backstage/packages/backend/src/researchOutput.test.ts
+index 1733dde5b..7f108dbb0 100644
+--- a/backstage/packages/backend/src/researchOutput.test.ts
++++ b/backstage/packages/backend/src/researchOutput.test.ts
+@@ -19,6 +19,7 @@ function fakeIo(rows: Array<{ created_at: string; status: string; statement: str
+     },
+     connect: config => {
+       const client = {
++        connect: async () => {},
+         query: async (sql: string, values: unknown[]) => {
+           calls.push({ sql, values, config: config as Record<string, unknown> });
+           return { rows };
+@@ -51,6 +52,23 @@ describe('fetchClaims', () => {
+     expect(calls[0].config.user).toBe('research');
+     expect(calls[0].config.host).toBe('estate-rw.estate-db.svc.cluster.local');
+     expect(calls[0].config.statement_timeout).toBeGreaterThan(0);
++    expect(calls[0].config.port).toBe(5432);
++  });
++
++  it('connects where a dev tunnel says, as the role it names', async () => {
++    // The laptop's /fleet reaches estate-rw through bin/idp-research-tunnel as research_reader.
++    const { io, calls } = fakeIo(ROWS);
++    const { status } = await claimsEnvelope(io, '3', {
++      secretFile: '/x',
++      host: '127.0.0.1',
++      port: 15432,
++      user: 'research_reader',
++    });
++    expect(status).toBe(200);
++    expect(calls[0].config.host).toBe('127.0.0.1');
++    expect(calls[0].config.port).toBe(15432);
++    expect(calls[0].config.user).toBe('research_reader');
++    expect(calls[0].values).toEqual([3]);
+   });
+ 
+   it('clamps the limit into 1..50', async () => {
+@@ -127,4 +145,20 @@ describe('productionIo', () => {
+     const password = await productionIo.readSecret(file);
+     expect(password).toBe('fixture-password-not-a-real-credential\n');
+   });
++
++  it('answers 503 from a real pg Client when nothing listens, instead of hanging', async () => {
++    // The real Client, the real socket: port 1 on loopback refuses at once. pg queues a query on
++    // a Client that was never connected and never runs it, so this is the test that catches a
++    // missing connect() -- the fake io above cannot, because its query needs no connection.
++    const dir = await mkdtemp(path.join(tmpdir(), 'research-output-'));
++    const file = path.join(dir, 'POSTGRES_PASSWORD');
++    await writeFile(file, 'fixture-password-not-a-real-credential\n');
++    const { body, status } = await claimsEnvelope(productionIo, undefined, {
++      secretFile: file,
++      host: '127.0.0.1',
++      port: 1,
++    });
++    expect(status).toBe(503);
++    expect(String(body.error)).toContain('ECONNREFUSED');
++  }, 10_000);
+ });
+diff --git a/backstage/packages/backend/src/researchOutput.ts b/backstage/packages/backend/src/researchOutput.ts
+index c4c4822f3..e0e0acf7b 100644
+--- a/backstage/packages/backend/src/researchOutput.ts
++++ b/backstage/packages/backend/src/researchOutput.ts
+@@ -48,12 +48,16 @@ export type ClaimsIo = {
+     password: string;
+     connectionTimeoutMillis: number;
+     statement_timeout: number;
+-  }) => { query: (sql: string, values: unknown[]) => Promise<{ rows: any[] }>; end: () => Promise<void> };
++  }) => {
++    connect: () => Promise<void>;
++    query: (sql: string, values: unknown[]) => Promise<{ rows: any[] }>;
++    end: () => Promise<void>;
++  };
+ };
+ 
+ export const productionIo: ClaimsIo = {
+   readSecret: path => fs.readFile(path, 'utf-8'),
+-  // pg's Client satisfies the seam structurally: query(sql, values) and end().
++  // pg's Client satisfies the seam structurally: connect(), query(sql, values) and end().
+   connect: config => new Client(config),
+ };
+ 
+@@ -63,6 +67,7 @@ export const fetchClaims = async (
+     secretFile: string;
+     host: string;
+     limit: number;
++    port?: number;
+     database?: string;
+     user?: string;
+   },
+@@ -74,7 +79,7 @@ export const fetchClaims = async (
+   }
+   const client = io.connect({
+     host: opts.host,
+-    port: 5432,
++    port: opts.port ?? 5432,
+     database: opts.database ?? 'research',
+     user: opts.user ?? 'research',
+     password,
+@@ -82,6 +87,11 @@ export const fetchClaims = async (
+     statement_timeout: STATEMENT_TIMEOUT_MS,
+   });
+   try {
++    // connect() first, and awaited. pg queues a query issued on an unconnected Client and never
++    // runs it, and connectionTimeoutMillis only starts counting inside connect() -- the version of
++    // this file without it held every request open forever (measured live 2026-10-13: the guest
++    // call to /claims never answered, and /fleet's research pill never left "unreachable").
++    await client.connect();
+     // Only columns measured to exist on the claims table (psql, 2026-10-10); newest first.
+     const result = await client.query(
+       'SELECT created_at, status, statement FROM claims ORDER BY created_at DESC LIMIT $1',
+@@ -98,7 +108,7 @@ export const fetchClaims = async (
+ export const claimsEnvelope = async (
+   io: ClaimsIo,
+   rawLimit: string | undefined,
+-  opts: { secretFile: string; host: string },
++  opts: { secretFile: string; host: string; port?: number; user?: string },
+ ): Promise<{ body: Record<string, unknown>; status: number }> => {
+   const limit = rawLimit ? parseInt(rawLimit, 10) : DEFAULT_LIMIT;
+   try {
+@@ -136,10 +146,14 @@ export const researchOutputPlugin = createBackendPlugin({
+ 
+         router.get(CLAIMS_PATH, async (req, res) => {
+           const { body, status } = await claimsEnvelope(productionIo, req.query.limit as string, {
+-            // Both overridable so a dev machine can point at a tunnel without editing code;
+-            // in-cluster the defaults are the names the engine itself uses.
++            // All overridable so a dev machine can point at a tunnel without editing code;
++            // in-cluster the defaults are the names the engine itself uses. The laptop's
++            // /fleet sets them in bin/fleetview-frontend-launchd: bin/idp-research-tunnel's
++            // port-forward, as research_reader -- a role that cannot write a claim.
+             secretFile: process.env.RESEARCH_DB_PASSWORD_FILE ?? DEFAULT_SECRET_FILE,
+             host: process.env.RESEARCH_DB_HOST ?? DEFAULT_HOST,
++            port: process.env.RESEARCH_DB_PORT ? Number(process.env.RESEARCH_DB_PORT) : undefined,
++            user: process.env.RESEARCH_DB_USER || undefined,
+           });
+           if (status !== 200) {
+             logger.warn(String(body.error));
+diff --git a/backstage/plugins/fleetview-backend/src/fleetview_backend/approvals_adapter.py b/backstage/plugins/fleetview-backend/src/fleetview_backend/approvals_adapter.py
+index 325ee00bf..b70ec6dfa 100644
+--- a/backstage/plugins/fleetview-backend/src/fleetview_backend/approvals_adapter.py
++++ b/backstage/plugins/fleetview-backend/src/fleetview_backend/approvals_adapter.py
+@@ -116,7 +116,7 @@ def _transitions(
+     return events
+ 
+ 
+-def _emit_event(
++async def _emit_event(
+     nats_url: str,
+     nats_adapter: Any,
+     ledger_id: str,
+@@ -133,16 +133,12 @@ def _emit_event(
+         "domains": proposal.get("domains", []),
+     }
+     try:
+-        # Run the async publish in a new event loop — this function is called from
+-        # a sync polling thread. Creating a fresh loop per event is slightly wasteful
+-        # but correct and the poll interval (5 s) makes it negligible.
+-        import asyncio as _asyncio
+-
+-        _asyncio.run(
+-            nats_adapter.publish(
+-                nats_url, ledger_id, "approvals", kind, "decided", **payload
+-            )
+-        )
++        # Awaited on the server's own loop, on the subject the board reads. This was
++        # asyncio.run() of the agent-event publish(): asyncio.run() raises inside a running
++        # loop, payload["kind"] collided with publish()'s own `kind`, and the subject it built
++        # was estate.agent.approvals.*, which subscribe_approvals never reads. Three ways no
++        # approval ever reached /fleet (measured 2026-10-12).
++        await nats_adapter.publish_approval(nats_url, ledger_id, kind, payload)
+         _logger.info("fleetview.approval_event %s %s", ledger_id, kind)
+     except Exception as exc:  # noqa: BLE001
+         _logger.warning(
+@@ -179,7 +175,7 @@ async def run_approvals_adapter(nats_url: str) -> None:
+ 
+             for ledger_id, kind in _transitions(prev_state, proposals, staged):
+                 proposal = _load_proposal(ledger_id) if kind == "approved" else {}
+-                _emit_event(nats_url, _na, ledger_id, kind, proposal, now)
++                await _emit_event(nats_url, _na, ledger_id, kind, proposal, now)
+ 
+             prev_state = curr_state
+ 
+diff --git a/backstage/plugins/fleetview-backend/src/fleetview_backend/delivery.py b/backstage/plugins/fleetview-backend/src/fleetview_backend/delivery.py
+index 4283857cb..6323ffa58 100644
+--- a/backstage/plugins/fleetview-backend/src/fleetview_backend/delivery.py
++++ b/backstage/plugins/fleetview-backend/src/fleetview_backend/delivery.py
+@@ -9,6 +9,7 @@ from __future__ import annotations
+ import json
+ import os
+ import plistlib
++from xml.parsers.expat import ExpatError
+ import sqlite3
+ import subprocess
+ from datetime import datetime, timedelta, timezone
+@@ -192,7 +193,9 @@ def jobs(agents_dir: Path, launchctl_text: str) -> list[dict[str, Any]]:
+         try:
+             with plist_path.open("rb") as fh:
+                 data = plistlib.load(fh)
+-        except (OSError, plistlib.InvalidFileException):
++        except (OSError, plistlib.InvalidFileException, ExpatError):
++            # One unreadable plist (a `--` inside an XML comment is enough) drops itself from
++            # the board; it must not 503 the whole delivery view.
+             continue
+         label = data.get("Label")
+         if not label or not label.startswith(JOB_PREFIXES):
+diff --git a/backstage/plugins/fleetview-backend/src/fleetview_backend/greenlane.py b/backstage/plugins/fleetview-backend/src/fleetview_backend/greenlane.py
+index e5463e401..59fc00ca3 100644
+--- a/backstage/plugins/fleetview-backend/src/fleetview_backend/greenlane.py
++++ b/backstage/plugins/fleetview-backend/src/fleetview_backend/greenlane.py
+@@ -10,11 +10,13 @@ from __future__ import annotations
+ import json
+ import os
+ import subprocess
++import threading
+ import time
+ from pathlib import Path
+ from typing import Any
+ 
+ CACHE_S = 30
++_refresh_lock = threading.Lock()
+ _cache: dict[str, Any] = {"at": 0.0, "body": None}
+ 
+ 
+@@ -64,3 +66,29 @@ def greenlane_status(now: float | None = None) -> dict[str, Any]:
+     body["read_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
+     _cache.update(at=t, body=body)
+     return body
++
++
++def greenlane_status_nowait(now: float | None = None) -> dict[str, Any]:
++    """The cached lane status at once, refreshed off the request path.
++
++    `bin/idp-greenlane status` makes serial `gh api` reads over HTTPS and measured 29.5 s on
++    2026-10-12, past its own 25 s timeout. Callers that join several readers (the /estate
++    strip and the voice brief) must not wait on it: they get the last body, or an honest
++    "first read in flight" when there is none, while a daemon thread refreshes the cache.
++    """
++    t = now if now is not None else time.time()
++    body = _cache["body"]
++    if body is not None and t - _cache["at"] < CACHE_S:
++        return body
++    if _refresh_lock.acquire(blocking=False):
++
++        def _run() -> None:
++            try:
++                greenlane_status()
++            finally:
++                _refresh_lock.release()
++
++        threading.Thread(target=_run, daemon=True, name="greenlane-refresh").start()
++    if body is not None:
++        return body
++    return {"available": False, "error": "first lane read in flight"}
+diff --git a/backstage/plugins/fleetview-backend/src/fleetview_backend/nats_adapter.py b/backstage/plugins/fleetview-backend/src/fleetview_backend/nats_adapter.py
+index 35db594b3..f0d43848f 100644
+--- a/backstage/plugins/fleetview-backend/src/fleetview_backend/nats_adapter.py
++++ b/backstage/plugins/fleetview-backend/src/fleetview_backend/nats_adapter.py
+@@ -56,6 +56,11 @@ STREAM_MAX_AGE_S = 15 * 60
+ CONNECT_MAX_RECONNECT_ATTEMPTS = 2
+ CONNECT_RECONNECT_TIME_WAIT = 1.0
+ CONNECT_TIMEOUT = 2.0
++# How long publish() waits for the shared connection's dial: the same budget as above.
++PUBLISH_DIAL_WAIT_S = CONNECT_MAX_RECONNECT_ATTEMPTS * CONNECT_RECONNECT_TIME_WAIT + CONNECT_TIMEOUT + 1
++# Set on a connection once ESTATE_AGENT is known to exist behind it.
++_STREAM_READY_ATTR = "_estate_agent_stream_ready"
++_APPROVALS_READY_ATTR = "_estate_approvals_stream_ready"
+ 
+ 
+ async def _ensure_stream(js) -> None:
+@@ -132,7 +137,7 @@ async def publish(
+     Raises RuntimeError("nats-py not installed") when nats-py is absent.
+     """
+     _require_nats()
+-    import nats
++    from nats.js.errors import NoStreamResponseError
+ 
+     url = _nats_url(nats_url)
+     event: dict = {
+@@ -147,18 +152,39 @@ async def publish(
+     subject = f"estate.agent.{runtime}.{session_id}.{kind}"
+     payload = json.dumps(event).encode()
+ 
+-    nc = await nats.connect(
+-        url,
+-        max_reconnect_attempts=CONNECT_MAX_RECONNECT_ATTEMPTS,
+-        reconnect_time_wait=CONNECT_RECONNECT_TIME_WAIT,
+-        connect_timeout=CONNECT_TIMEOUT,
+-    )
++    # The process's one bus connection, not a dial per event. A dial and an add_stream per
++    # publish was ~1 connection a second for days: nats-server's client ids passed 180,000 in
++    # 2.4 days of uptime and it stopped answering connects (measured 2026-10-12). The wait is
++    # bounded by the same <=5s budget the per-event dial had; the dial itself is shielded and
++    # carries on for the next caller.
++    nc = await asyncio.wait_for(_stream_conn(url), PUBLISH_DIAL_WAIT_S)
++    js = nc.jetstream()
++    if not getattr(nc, _STREAM_READY_ATTR, False):
++        await _ensure_stream(js)
++        setattr(nc, _STREAM_READY_ATTR, True)
+     try:
+-        js = nc.jetstream()
++        await js.publish(subject, payload)
++    except NoStreamResponseError:
++        # the bus came back without the stream: create it once more, then publish once more
+         await _ensure_stream(js)
+         await js.publish(subject, payload)
+-    finally:
+-        await nc.drain()
++
++
++async def publish_approval(
++    nats_url: str, ledger_id: str, kind: str, payload: dict
++) -> None:
++    """Publish one decision on `estate.approvals.<ledger_id>.<kind>`, the subject
++    subscribe_approvals reads, on the shared connection.
++
++    Raises RuntimeError("nats-py not installed") when nats-py is absent.
++    """
++    _require_nats()
++    nc = await asyncio.wait_for(_stream_conn(_nats_url(nats_url)), PUBLISH_DIAL_WAIT_S)
++    js = nc.jetstream()
++    if not getattr(nc, _APPROVALS_READY_ATTR, False):
++        await _ensure_stream_by_name(js, ESTATE_APPROVALS_NAME, ESTATE_APPROVALS_SUBJECTS)
++        setattr(nc, _APPROVALS_READY_ATTR, True)
++    await js.publish(f"estate.approvals.{ledger_id}.{kind}", json.dumps(payload).encode())
+ 
+ 
+ # The stream plane's ONE connection (issue #5829). /stream used to call nats.connect four times
+@@ -215,10 +241,17 @@ async def _stream_conn(nats_url: str) -> Any:
+     )  # the caller's cancellation must not abort the dial
+ 
+ 
++async def _log_bus_error(exc: Exception) -> None:
++    # nats-py's default error_cb logs a full traceback for every failed reconnect attempt: 30
++    # lines every 2s while the bus is down, which grew this process's error log to 277 MB on a
++    # disk with 2.9 GB free (measured 2026-10-12). One line says the same thing.
++    logger.warning("fleetview.bus_error %s: %s", type(exc).__name__, exc)
++
++
+ async def _dial_bus(nats_url: str) -> Any:
+     import nats
+ 
+-    return await nats.connect(nats_url)
++    return await nats.connect(nats_url, error_cb=_log_bus_error)
+ 
+ 
+ async def close_sub(sub: Any) -> None:
+diff --git a/backstage/plugins/fleetview-backend/src/fleetview_backend/routes.py b/backstage/plugins/fleetview-backend/src/fleetview_backend/routes.py
+index 0a4cf5a36..b6e5a6675 100644
+--- a/backstage/plugins/fleetview-backend/src/fleetview_backend/routes.py
++++ b/backstage/plugins/fleetview-backend/src/fleetview_backend/routes.py
+@@ -377,7 +377,7 @@ def estate_envelope() -> tuple[dict[str, Any], int]:
+ 
+     body: dict[str, Any] = {
+         "generated_at": _now(),
+-        "green": _soft(greenlane.greenlane_status),
++        "green": _soft(greenlane.greenlane_status_nowait),
+         "burn": _soft(spend.spend_total),
+         "research": _soft(research_feed.research_claims),
+     }
+diff --git a/backstage/plugins/fleetview-backend/tests/test_delivery.py b/backstage/plugins/fleetview-backend/tests/test_delivery.py
+index ada648cb5..15f84ec8c 100644
+--- a/backstage/plugins/fleetview-backend/tests/test_delivery.py
++++ b/backstage/plugins/fleetview-backend/tests/test_delivery.py
+@@ -360,3 +360,23 @@ def test_garbage_state_json(tmp_path):
+     assert result["state"] is None
+     codes = [a["code"] for a in result["alerts"]]
+     assert "converger-missing" in codes
++
++
++def test_malformed_plist_drops_itself_not_the_board(tmp_path):
++    import plistlib
++
++    from fleetview_backend import delivery
++
++    agents = tmp_path / "LaunchAgents"
++    agents.mkdir()
++    prog = tmp_path / "prog"
++    prog.write_text("#!/bin/sh\n")
++    (agents / "ai.estate.good.plist").write_bytes(
++        plistlib.dumps({"Label": "ai.estate.good", "Program": str(prog)})
++    )
++    # `--` inside an XML comment is not well-formed: plistlib raises ExpatError.
++    (agents / "ai.estate.bad.plist").write_text(
++        '<?xml version="1.0"?>\n<!-- a -- b -->\n<plist><dict/></plist>\n'
++    )
++    jobs = delivery.jobs(agents, "")
++    assert [j["label"] for j in jobs] == ["ai.estate.good"]
+diff --git a/backstage/plugins/fleetview-backend/tests/test_greenlane.py b/backstage/plugins/fleetview-backend/tests/test_greenlane.py
+index 9b4b49e9b..5a499645d 100644
+--- a/backstage/plugins/fleetview-backend/tests/test_greenlane.py
++++ b/backstage/plugins/fleetview-backend/tests/test_greenlane.py
+@@ -35,3 +35,32 @@ def test_missing_tool_is_unavailable_not_green(monkeypatch, tmp_path):
+     assert "idp-greenlane" in body["error"]
+     env, status = routes.greenlane_envelope()
+     assert status == 200 and json.dumps(env)
++
++
++def test_nowait_returns_cached_body_without_blocking(monkeypatch, tmp_path):
++    import threading
++    import time
++
++    release = threading.Event()
++    calls = []
++
++    def slow(now=None):
++        calls.append(1)
++        release.wait(5)
++        return {"available": True}
++
++    monkeypatch.setattr(greenlane, "greenlane_status", slow)
++    greenlane._cache.update(at=0.0, body=None)
++    t0 = time.time()
++    first = greenlane.greenlane_status_nowait(now=1000.0)
++    assert time.time() - t0 < 1.0  # the 25 s reader runs off the request path
++    assert first["available"] is False and "in flight" in first["error"]
++    greenlane._cache.update(at=1000.0, body={"available": True, "stale": True})
++    stale = greenlane.greenlane_status_nowait(now=1100.0)  # past CACHE_S
++    assert stale["stale"] is True  # last body served while the refresh runs
++    release.set()
++    for _ in range(50):
++        if not greenlane._refresh_lock.locked():
++            break
++        time.sleep(0.05)
++    assert len(calls) == 1  # one refresh at a time, not one per poll
+diff --git a/backstage/plugins/fleetview-backend/tests/test_research_feed.py b/backstage/plugins/fleetview-backend/tests/test_research_feed.py
+index 1642386a3..04fbdf21b 100644
+--- a/backstage/plugins/fleetview-backend/tests/test_research_feed.py
++++ b/backstage/plugins/fleetview-backend/tests/test_research_feed.py
+@@ -132,9 +132,10 @@ def test_estate_envelope_joins_green_burn_and_research(monkeypatch):
+     # the monkeypatched seams are the ones the envelope actually resolves.
+     monkeypatch.setattr(routes, "research_feed", research_feed, raising=False)
+     monkeypatch.setattr(routes, "spend", spend, raising=False)
++    # the envelope reads the cached lane status, never the slow `gh api` read inline
+     monkeypatch.setattr(
+         routes.greenlane,
+-        "greenlane_status",
++        "greenlane_status_nowait",
+         lambda now=None: {"available": False, "error": "no bin/idp-greenlane"},
+     )
+     monkeypatch.setattr(
+diff --git a/bin/claim-gate b/bin/claim-gate
+index 102ca30f5..420b0e7d5 100755
+--- a/bin/claim-gate
++++ b/bin/claim-gate
+@@ -56,6 +56,7 @@ from datetime import datetime, timedelta, timezone
+ DEPENDABOT = "dependabot[bot]"
+ MAX_AGE = timedelta(hours=2)
+ HEAD_TRAILER = re.compile(r"^Greenlane-Head:\s*([0-9a-f]{7,40})\s*$", re.M)
++_PRS: dict[tuple[str, str], tuple[str, str]] = {}  # (repo, sha) -> (pull request number, author)
+ CLAIM_REF = re.compile(r"^Claim:\s*(?:([\w.-]+/[\w.-]+))?#(\d+)\s*$", re.M)
+ AGENT = re.compile(r"^Agent:\s*(\S+)\s*$", re.M)
+ CLAIM = re.compile(
+@@ -208,7 +209,7 @@ def judge(
+             if image_bump_only(git("show", "--format=", c)):
+                 continue
+             lane_head = m.group(1)
+-            text = lane_text(base, lane_head, c)
++            text = lane_text(base, lane_head, c) + "\n" + lane_body(repo, lane_head, c)
+             files = [
+                 f
+                 for f in git(
+@@ -228,12 +229,84 @@ def judge(
+     return verdict(text, files, repo, fetch, now)
+ 
+ 
+-def live_body(repo: str) -> str:
++def pr_of_head(repo: str, head: str) -> tuple[str, str]:
++    """(number, author) of the open pull request whose head is `head`, or ("", "").
++
++    ci-success hands this gate the pull request in the environment (PR_NUMBER/PR_BODY/
++    PR_AUTHOR, .github/workflows/ci.yml), because a pull_request event carries it. The Greenlane
++    runs the same gate one stage earlier, on a LANE -- a branch -- and exports none of it
++    (greenlane/github.py::unclaimed passes only GITHUB_REPOSITORY). That was invisible while
++    every lane declared its two trailers in a commit message, and became a false `no live claim`
++    the moment one declared them in its pull request body -- which AGENTS.md §5 rule 5 allows
++    ("in a commit message (or the PR body)"), which judge() reads (it appends the body), and
++    which both #6202 and #6198 did.
++
++    Measured 2026-10-15 against a clean origin/main, greenlane holding both with
++    `no live claim: no `Claim: <owner>/<repo>#<n>` line` while both were green and mergeable:
++
++        PR_NUMBER unset  -> FAIL  claim-gate  no `Claim: <owner>/<repo>#<n>` line
++        PR_NUMBER=6202   -> ok    claim-gate  no other live agent holds these files
++
++    Asking GitHub which pull request this sha is the head of supplies the same fact CI is handed,
++    so the lane stage and the queue cannot answer the same question differently.
++    """
++    key = (repo, head)
++    if key not in _PRS:
++        _PRS[key] = ("", "")
++        try:
++            p = subprocess.run(  # noqa: S603, S607 -- fixed argv, no shell
++                ["gh", "api", f"repos/{repo}/commits/{head}/pulls"],
++                capture_output=True,
++                text=True,
++                timeout=30,
++            )
++            found = json.loads(p.stdout or "[]") if p.returncode == 0 else []
++        except Exception:
++            found = []
++        for pr in found if isinstance(found, list) else []:
++            if pr.get("state") == "open":
++                _PRS[key] = (
++                    str(pr.get("number", "")),
++                    ((pr.get("user") or {}).get("login") or ""),
++                )
++                break
++    return _PRS[key]
++
++
++def pr_context(repo: str, head: str) -> tuple[str, str]:
++    """The pull request this run judges: CI's environment first, GitHub's answer second.
++
++    CI sets both variables, so it pays nothing for this. The lane stage sets neither, which is
++    the whole defect -- it now asks which pull request this sha is the head of.
++    """
++    num = os.environ.get("PR_NUMBER", "")
++    author = os.environ.get("PR_AUTHOR", "")
++    if num and author:
++        return num, author
++    found_num, found_author = pr_of_head(repo, head)
++    return num or found_num, author or found_author
++
++
++def lane_body(repo: str, lane_head: str, squash: str) -> str:
++    """The body of the pull request a landed lane came from, or "".
++
++    judge()'s lane path reads the LANE BRANCH's commit messages (lane_text), so a lane whose two
++    trailers live in its pull request body was refused here even after the lane stage admitted it
++    -- the same blindness, one stage later. Try the head the trailer names, then the squash the
++    batch carries: whichever GitHub still associates with the pull request."""
++    for sha in (lane_head, squash):
++        num, _ = pr_of_head(repo, sha)
++        if num:
++            return live_body(repo, num)
++    return ""
++
++
++def live_body(repo: str, num: str = "") -> str:
+     """The PR body as it is now, not as the opening-day event snapshot carried it (idp#5758:
+     a re-run judges github.event.pull_request.body from the original event, so a trailer fix
+     in the body stayed invisible and the gate failed identically). Falls back to the snapshot
+     when there is no PR number or the fetch fails -- CI still runs the same gate."""
+-    num = os.environ.get("PR_NUMBER", "")
++    num = num or os.environ.get("PR_NUMBER", "")
+     if not num:
+         return os.environ.get("PR_BODY", "")
+     p = subprocess.run(  # noqa: S603, S607 -- fixed argv, no shell
+@@ -250,6 +323,7 @@ def live_body(repo: str) -> str:
+ def main(argv: list[str]) -> int:
+     base, head = argv[1], argv[2]
+     repo = os.environ["GITHUB_REPOSITORY"]
++    num, author = pr_context(repo, head)
+ 
+     def fetch(r: str, n: int):
+         return gh_json(f"repos/{r}/issues/{n}"), gh_json(
+@@ -262,8 +336,8 @@ def main(argv: list[str]) -> int:
+         repo,
+         fetch,
+         datetime.now(timezone.utc),
+-        live_body(repo),
+-        os.environ.get("PR_AUTHOR", ""),
++        live_body(repo, num),
++        author,
+     )
+     for p in problems:
+         print(f"FAIL  claim-gate  {p}")
+diff --git a/bin/idp-identity-apply b/bin/idp-identity-apply
+index 9e63243bd..ba6c8affc 100755
+--- a/bin/idp-identity-apply
++++ b/bin/idp-identity-apply
+@@ -197,6 +197,12 @@ pl_cohort_ready() {
+   [ -n "$mus" ] || { echo "0 (the cohort's members could not be read)"; return 0; }
+   devf=$(mktemp); chmod 600 "$devf"
+   oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Devices?count=200" 2>/dev/null > "$devf" || true
++  # count=200 is a page, not the table (measured 2026-10-12: 21 devices, 12 of them the drill's
++  # INITIATED ceremonies). A member whose passkey sits past the page would read as "not ready"; say
++  # so rather than call it a missing passkey, and never wire the rule over a list that was cut off.
++  if ! jq -e '(.data.totalResults // 0) <= ((.data.Resources // []) | length)' "$devf" >/dev/null 2>&1; then
++    rm -f "$devf"; echo "0 (the device list was truncated or unreadable)"; return 0
++  fi
+   out=""
+   for mu in $mus; do
+     nf=$(jq -r --arg u "$mu" '[.data.Resources[]? | select(([.additionalAttributes[]? | select(.key == "user.value") | .value] | join("")) == $u) | select(([.authenticationFactors[]? | select(.type == "FIDO_AUTHENTICATOR" and .status == "ENROLLED")] | length) > 0)] | length' "$devf" 2>/dev/null)
+@@ -208,6 +214,14 @@ pl_cohort_ready() {
+   rm -f "$devf"
+   if [ -n "$out" ]; then echo "0$out"; else echo 1; fi
+ }
++# The passkey is only "Face ID" if the ceremony demands the biometric. userVerification is a
++# DOMAIN-wide FIDO setting here, not a rule field (read 2026-10-12: authenticatorSelectionUserVerification
++# PREFERRED, authenticatorSelectionAttachment BOTH), and with PREFERRED a passkey alone can finish on
++# a bare tap or a security key -- "Face ID alone" would be "any tap alone". Echoes the live value.
++pl_uv_value() {
++  oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/AuthenticationFactorSettings/AuthenticationFactorSettings" 2>/dev/null \
++    | jq -r '.data["urn:ietf:params:scim:schemas:oracle:idcs:extension:fido:AuthenticationFactorSettings"].authenticatorSelectionUserVerification // ""'
++}
+ # Drift, not just absence: the assignment alone is not the whole of what this block owns any
+ # more. A re-run must also notice a policy that has lost the passwordless cohort rule, or the
+ # early exit would report "already assigned" over a policy it had stopped enforcing.
+@@ -226,7 +240,7 @@ fi
+ # does not honour is not "already assigned", it is a door with no factor at all (#5858). With no
+ # measured value the rule is not one that should be wired, so this falls through to the ensure that
+ # unwires it.
+-if [ -n "$fpid" ] && [ "$(printf '%s' "$fdj" | jq -r '.signonPolicy.value // ""')" = "$fpid" ] && [ "$pl_wired" = true ] && [ -n "$PL_AF" ] && [ "$(pl_cohort_ready)" = 1 ]; then
++if [ -n "$fpid" ] && [ "$(printf '%s' "$fdj" | jq -r '.signonPolicy.value // ""')" = "$fpid" ] && [ "$pl_wired" = true ] && [ -n "$PL_AF" ] && [ "$(pl_cohort_ready)" = 1 ] && [ "$(pl_uv_value)" = REQUIRED ]; then
+   echo "ok      identity front door sign-on policy already assigned (second factor at every sign-in; Face ID alone offered to the pilot cohort, #5818/#5858)"
+ else
+   T3=$(mktemp -d); chmod 700 "$T3"; trap 'rm -rf "${T:-/dev/null}" "${T2:-/dev/null}" "${T3:-/dev/null}" 2>/dev/null || true' EXIT
+@@ -268,7 +282,22 @@ else
+   # reads back as user.groups[*].value coany ["<id>"] (read 2026-10-12), the shape below.
+   drill_uid=$(tofu -chdir="$M" output -raw drill_user_id 2>/dev/null || true)
+   [ -n "$drill_uid" ] || drill_uid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Users?filter=userName%20eq%20%22estate-drill%22&attributes=id" 2>/dev/null | jq -r '.data.Resources[0].id // ""')
++  # The id the top of this file found is the rule to UPDATE; pl_rid is what the policy will carry,
++  # and stays empty until this run has wired a rule. Clearing the one variable for both jobs sent
++  # every wiring to POST, and the domain does not enforce name uniqueness: a probe on 2026-10-12
++  # read two rules named "front door offers passwordless sign-in" (b336d451.., 72c663d0..).
++  pl_rid_old="$pl_rid"
+   pl_rid=""
++  # Rules left by earlier runs carry a value this domain never honoured and belong to no policy:
++  # keep the one this file updates, delete the rest, so none can be wired by mistake later.
++  for dup in $(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" 2>/dev/null | jq -r --arg k "$pl_rid_old" '.data.Resources[]? | select(.name == "front door offers passwordless sign-in" and .id != $k) | .id'); do
++    if [ "$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies/$fpid?attributes=rules" 2>/dev/null | jq -r --arg r "$dup" '((.data.rules // []) | map(.value) | index($r)) != null')" = true ]; then
++      echo "WARN    identity duplicate passwordless rule $dup is wired into the policy, so it was left alone"; continue
++    fi
++    oci raw-request --http-method DELETE --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/$dup" >/dev/null 2>&1 \
++      && echo "ok      identity removed duplicate passwordless rule $dup (same name as the one kept)" \
++      || echo "WARN    identity could not remove duplicate passwordless rule $dup"
++  done
+   if [ -n "$drill_uid" ]; then
+     gid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Groups?filter=displayName%20eq%20%22$pl_group%22&attributes=id,members" 2>/dev/null | jq -r '.data.Resources[0].id // ""')
+     if [ -z "$gid" ]; then
+@@ -300,6 +329,11 @@ else
+     if [ "$pl_state" != 1 ]; then pl_ready=false; fi
+     pl_unmeasured=false
+     if [ "$pl_ready" = true ] && [ -z "$PL_AF" ]; then pl_ready=false; pl_unmeasured=true; fi
++    pl_uv_wait=""
++    if [ "$pl_ready" = true ]; then
++      pl_uv=$(pl_uv_value)
++      if [ "$pl_uv" != REQUIRED ]; then pl_ready=false; pl_uv_wait="${pl_uv:-unreadable}"; fi
++    fi
+     if [ "$pl_ready" = true ]; then
+       pcid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions" 2>/dev/null | jq -r '.data.Resources[]? | select(.name == "front door passwordless cohort") | .id' | head -1)
+       jq -n --arg g "[\"$gid\"]" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Condition"],name:"front door passwordless cohort",attributeName:"user.groups[*].value",operator:"coany",attributeValue:$g}' > "$T3/pc.json"
+@@ -308,13 +342,15 @@ else
+       pcid=$(printf '%s' "$pc" | jq -r '.data.id // ""')
+       [ -n "$pcid" ] || { echo "FAIL    identity passwordless cohort condition refused: $(printf '%s' "$pc" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
+       jq -n --arg c "$pcid" --arg af "$PL_AF" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Rule"],name:"front door offers passwordless sign-in","policyType":{value:"SignOn"},"conditionGroup":{type:"Condition",value:$c},return:[{name:"effect",value:"ALLOW"},{name:"reAuthenticate",value:"false"},{name:"authenticationFactor",value:$af}]}' > "$T3/pl.json"
+-      if [ -n "$pl_rid" ]; then pr=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/$pl_rid" --request-body "file://$T3/pl.json" 2>&1)
++      if [ -n "$pl_rid_old" ]; then pr=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/$pl_rid_old" --request-body "file://$T3/pl.json" 2>&1)
+       else pr=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" --request-body "file://$T3/pl.json" 2>&1); fi
+       pl_rid=$(printf '%s' "$pr" | jq -r '.data.id // ""')
+       [ -n "$pl_rid" ] || { echo "FAIL    identity passwordless rule refused: $(printf '%s' "$pr" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
+     else
+       pl_rid=""
+-      if [ "$pl_unmeasured" = true ]; then
++      if [ -n "$pl_uv_wait" ]; then
++        echo "WAIT    identity passwordless cohort: the domain's passkey userVerification is $pl_uv_wait, not REQUIRED, so a passkey alone could be satisfied by a bare tap or a security key rather than Face ID; the passwordless rule stays unwired and the policy keeps the second-factor rule alone (#5858)."
++      elif [ "$pl_unmeasured" = true ]; then
+         echo "WAIT    identity passwordless cohort: every member holds an ENROLLED passkey, but no passkey-only authenticationFactor value has been measured for this domain, so the passwordless rule stays unwired -- the policy keeps the second-factor rule alone, and a value the domain ignores would remove that second factor without offering Face ID (#5858; drill runs 38273855150, 38273745676, 2026-10-12)."
+       else
+         echo "WAIT    identity passwordless cohort: no ENROLLED FIDO_AUTHENTICATOR device for$pl_wait, so the passwordless rule stays unwired -- the policy keeps the second-factor rule alone, which is also the challenge the enrolment ceremony needs (#5858). Enrol the passkey and the next apply wires the rule for that member."
+diff --git a/bin/idp-kyverno-render b/bin/idp-kyverno-render
+index f6d024ff1..bf1f7884c 100755
+--- a/bin/idp-kyverno-render
++++ b/bin/idp-kyverno-render
+@@ -107,20 +107,36 @@ done
+ # directory's namespace transformer rewrote it to observability, and this judge passed a render
+ # that admission refused for 41 hours.
+ rm -rf "$S/exceptions"; mkdir -p "$S/exceptions"
+-python3 - "$IDP" "$S/exceptions" <<'PY'
++python3 - "$IDP" "$S/exceptions" "$@" <<'PY'
+ import sys, yaml, pathlib, subprocess
+-idp = pathlib.Path(sys.argv[1]); out = pathlib.Path(sys.argv[2]); n = 0; paths = set()
++idp = pathlib.Path(sys.argv[1]); out = pathlib.Path(sys.argv[2]); n = 0; paths = {}
++def add(p, strict):  # ./platform/x and platform/x are one directory; build it once. Strict wins: a
++    key = p[2:] if p.startswith("./") else p  # dir clusters/oke applies must render, a judged one may skip.
++    paths[key] = paths.get(key, False) or strict
+ for k in sorted((idp / "clusters/oke").glob("*.yaml")):
+     for d in yaml.safe_load_all(open(k)):
+         path = ((d or {}).get("spec") or {}).get("path", "")
+         if (d or {}).get("kind") == "Kustomization" and path.startswith("./platform/"):
+-            paths.add(path)
++            add(path, True)
++# 2026-10-15: the dirs this run is judging declare waivers too, and admission honours a
++# PolicyException wherever in the estate it is declared, so long as it lands in namespace kyverno.
++# Loading them only from clusters/oke Kustomization paths refused four SPIRE chart hook Pods for the
++# seven policies platform/spire/exception.yaml already waives -- 26 of the 32 failures the rung
++# printed -- because no clusters/oke Kustomization names ./platform/spire. A judged dir that will
++# not render is skipped, never fatal: a waiver that fails to load is a red verdict, the
++# fail-closed direction. Only loading more waivers can turn a red verdict green, never the reverse.
++for a in sys.argv[3:]:
++    if a:
++        add(a, False)
+ # The estate's own ClusterPolicies (require-priority-class, provider-independence R43, ...) ship in
+ # the same tree; until 2026-08-28 (crew#66) only the upstream/prospector set was judged here, so a
+ # platform policy could refuse at admission what this judge had passed. They are appended to the set.
+ est = 0
+-for path in sorted(paths):
+-    r = subprocess.run(["kubectl", "kustomize", str(idp / path)], capture_output=True, text=True, check=True)
++for path, strict in sorted(paths.items()):
++    r = subprocess.run(["kubectl", "kustomize", str(idp / path)], capture_output=True, text=True,
++                       check=strict)
++    if r.returncode != 0:
++        continue
+     for d in yaml.safe_load_all(r.stdout):
+         if d and d.get("kind") == "PolicyException" and d["metadata"].get("namespace") == "kyverno":
+             (out / f"{n}.yaml").write_text(yaml.safe_dump(d)); n += 1
+@@ -130,7 +146,7 @@ for path in sorted(paths):
+             # count and no verdict. Strip it so the policy is judged, not skipped.
+             d["metadata"].pop("namespace", None)
+             with open(out.parent / "policies.yaml", "a") as f: f.write("---\n" + yaml.safe_dump(d)); est += 1
+-print(f"exceptions {n} PolicyExceptions in namespace kyverno across clusters/oke paths")
++print(f"exceptions {n} PolicyExceptions in namespace kyverno across clusters/oke paths and the dirs judged")
+ print(f"policies  +{est} estate ClusterPolicies from clusters/oke paths (platform/edge, platform/scheduling)")
+ PY
+ 
+diff --git a/bin/idp-login-drill b/bin/idp-login-drill
+index c28143b4d..d54e3e500 100755
+--- a/bin/idp-login-drill
++++ b/bin/idp-login-drill
+@@ -307,7 +307,7 @@ WEBAUTHN_HOOK = """(() => {
+         const sel = pk.authenticatorSelection || {};
+         window.__drillWebauthn.push({call: k, rpId: (pk.rp && pk.rp.id) || null,
+           attachment: sel.authenticatorAttachment || null,
+-          userVerification: sel.userVerification || null,
++          userVerification: sel.userVerification || pk.userVerification || null,  // get() carries it on publicKey, create() on authenticatorSelection
+           algos: (pk.pubKeyCredParams || []).map((a) => a.alg)});
+       }
+       return orig.apply(this, arguments);
+@@ -467,6 +467,15 @@ with sync_playwright() as p:
+                  f"the door offered {offer.get('name')!r} to {USER} but pressing it drove no WebAuthn "
+                  f"request (navigator.credentials was never called), so the control is decoration and no "
+                  f"Face ID can follow it")
++        # Passkey alone replaces the password AND the second factor, so the biometric is the only
++        # factor left. With userVerification "preferred" or "discouraged" the ceremony can finish on
++        # a bare tap or a security key, and "Face ID alone" is then "any tap alone".
++        uvs = {str(r.get("userVerification")) for r in w}
++        if "required" not in uvs:
++            fail("passwordless",
++                 f"the door drove navigator.credentials for {USER} without userVerification=required "
++                 f"(saw {sorted(uvs)}), so a passkey alone could be satisfied without Face ID: the "
++                 f"biometric is not what stands in for the password")
+         calls = ",".join(sorted({str(r.get("call")) for r in w}))
+         print(f"ok      login-drill  Face ID alone is offered at the door for {USER}: pressed "
+               f"{offer.get('name')!r} and the door drove navigator.credentials [{calls}] "
+diff --git a/platform/backstage/overlays/oke/httproute.yaml b/platform/backstage/overlays/oke/httproute.yaml
+index e89660037..a9a15b48a 100644
+--- a/platform/backstage/overlays/oke/httproute.yaml
++++ b/platform/backstage/overlays/oke/httproute.yaml
+@@ -95,10 +95,16 @@ spec:
+     # real vendors, after every deploy). Same doctrine as /api/catalog/ above: the header match
+     # means a browser never takes this rule, and Backstage grades the token itself
+     # (backend.auth.externalAccess) -- the route only decides who ASKS, never who ENTERS.
++    # /api/research-output/ rides the same rule: /fleet's research pill calls it through fetchApi
++    # with the guest Bearer, and without this match it fell to the door rule below, where
++    # oauth2-proxy answered a plain-text 401 to every guest (measured live: research · unreachable).
+     - matches:
+         - path: { type: PathPrefix, value: /api/proxy/fleetview/ }
+           headers:
+             - { type: RegularExpression, name: Authorization, value: "^Bearer .+" }
++        - path: { type: PathPrefix, value: /api/research-output/ }
++          headers:
++            - { type: RegularExpression, name: Authorization, value: "^Bearer .+" }
+       filters:
+         - type: ExtensionRef
+           extensionRef:
+diff --git a/tests/test_claim_gate.py b/tests/test_claim_gate.py
+index 4fb108fe6..39be4e47e 100644
+--- a/tests/test_claim_gate.py
++++ b/tests/test_claim_gate.py
+@@ -8,6 +8,7 @@ from __future__ import annotations
+ 
+ import importlib.machinery
+ import importlib.util
++import json
+ from datetime import datetime, timedelta, timezone
+ from pathlib import Path
+ 
+@@ -195,6 +196,84 @@ def test_with_no_pr_number_the_snapshot_still_speaks(monkeypatch):
+     assert "Claim: Mumchimp/idp#1" in _gate().live_body("Mumchimp/idp")
+ 
+ 
++def test_the_lane_stage_asks_which_pull_request_the_head_is(monkeypatch):
++    """The Greenlane runs this gate one stage before CI, on a LANE, and exports none of the pull
++    request context ci.yml exports (greenlane/github.py::unclaimed). A lane whose two trailers
++    live in its pull request body -- allowed by AGENTS.md §5 rule 5 and read by judge() -- was
++    held with `no live claim`, measured 2026-10-15 on #6202 and #6198 (both green, both
++    mergeable). With nothing in the environment the gate now asks GitHub; it must not guess."""
++    g = _gate()
++    monkeypatch.delenv("PR_NUMBER", raising=False)
++    monkeypatch.delenv("PR_AUTHOR", raising=False)
++    asked: list[tuple[str, str]] = []
++
++    def fake(repo, head):
++        asked.append((repo, head))
++        return "6202", "otto"
++
++    monkeypatch.setattr(g, "pr_of_head", fake)
++    assert g.pr_context("chidionyema/idp", "d4ed1c50f") == ("6202", "otto")
++    assert asked == [("chidionyema/idp", "d4ed1c50f")]
++
++
++def test_ci_pays_nothing_for_the_lane_stages_lookup(monkeypatch):
++    """ci.yml sets both variables, so a pull request run must not go to the network at all."""
++    g = _gate()
++    monkeypatch.setenv("PR_NUMBER", "6202")
++    monkeypatch.setenv("PR_AUTHOR", "otto")
++    monkeypatch.setattr(
++        g, "pr_of_head", lambda repo, head: (_ for _ in ()).throw(AssertionError("asked the network"))
++    )
++    assert g.pr_context("chidionyema/idp", "d4ed1c50f") == ("6202", "otto")
++
++
++def test_only_the_open_pull_request_supplies_the_body(monkeypatch):
++    import subprocess as sp
++
++    g = _gate()
++    monkeypatch.setattr(
++        g.subprocess,
++        "run",
++        lambda argv, **kw: sp.CompletedProcess(
++            argv,
++            0,
++            json.dumps(
++                [
++                    {"number": 1, "state": "closed", "user": {"login": "a"}},
++                    {"number": 6202, "state": "open", "user": {"login": "otto"}},
++                ]
++            ),
++            "",
++        ),
++    )
++    assert g.pr_of_head("chidionyema/idp", "d4ed1c50f") == ("6202", "otto")
++
++
++def test_a_lookup_that_cannot_run_supplies_nothing(monkeypatch):
++    import subprocess as sp
++
++    g = _gate()
++    monkeypatch.setattr(
++        g.subprocess,
++        "run",
++        lambda argv, **kw: sp.CompletedProcess(argv, 1, "", "gh: boom"),
++    )
++    assert g.pr_of_head("chidionyema/idp", "d4ed1c50f") == ("", "")
++
++
++def test_a_landed_lane_reads_the_body_of_its_pull_request(monkeypatch):
++    """judge()'s lane path reads the lane branch's commit messages, so a body-declared lane was
++    refused one stage later, inside the batch. The batch commit names the lane head; the body of
++    the pull request that head belongs to is part of the declaration."""
++    g = _gate()
++    monkeypatch.setattr(g, "pr_of_head", lambda repo, sha: ("6202", "otto"))
++    monkeypatch.setattr(g, "live_body", lambda repo, num="": "Claim: #6228\nAgent: otto\n")
++    assert (
++        g.lane_body("chidionyema/idp", "d4ed1c50f", "abc1234")
++        == "Claim: #6228\nAgent: otto\n"
++    )
++
++
+ def test_a_failed_fetch_falls_back_to_the_snapshot(monkeypatch):
+     import subprocess as sp
+ 

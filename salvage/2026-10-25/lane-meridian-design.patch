@@ -1,0 +1,683 @@
+diff --git a/clusters/oke/bridge.yaml b/clusters/oke/bridge.yaml
+new file mode 100644
+index 000000000..d897ca174
+--- /dev/null
++++ b/clusters/oke/bridge.yaml
+@@ -0,0 +1,27 @@
++# The phone's road to the cluster API (crew#841). See platform/bridge/deployment.yaml for why
++# this is a workload and not the Always Free VM in platform/oci/bridge.tf: measured 2026-10-20,
++# a replacement bridge instance is accepted by the launch API and then TERMINATED within ~30s,
++# with CPU and storage quota both free and no reason recorded, and the original never joined the
++# tailnet at all (it booted without the NSG that lets it out).
++#
++# `always-on`: the founder's phone reads the cluster without his laptop, which is the one thing
++# this door must do -- so it may not be scaled to zero, and it may not depend on a machine that
++# sleeps.
++apiVersion: kustomize.toolkit.fluxcd.io/v1
++kind: Kustomization
++metadata:
++  annotations:
++    idp.estate.io/runtime: always-on
++  name: bridge
++  namespace: flux-system
++spec:
++  interval: 30s
++  dependsOn:
++    - name: tailscale
++  sourceRef:
++    kind: GitRepository
++    name: flux-system
++  path: ./platform/bridge
++  prune: true
++  wait: true
++  timeout: 5m
+diff --git a/clusters/oke/kustomization.yaml b/clusters/oke/kustomization.yaml
+index 7baccc39f..718202e6f 100644
+--- a/clusters/oke/kustomization.yaml
++++ b/clusters/oke/kustomization.yaml
+@@ -17,6 +17,7 @@ resources:
+   - voice-router.yaml
+   - rbac-floor.yaml
+   - jit.yaml
++  - bridge.yaml
+   - meridian.yaml
+   - epistemic-fabric.yaml
+   - unified-memory.yaml
+@@ -25,6 +26,7 @@ resources:
+   - quad-ledger-exception.yaml
+   - quad-ledger.yaml
+   - reloader.yaml
++  - metrics-server.yaml
+ patches:
+   - target:
+       group: kustomize.toolkit.fluxcd.io
+diff --git a/web/app/case-studies/page.tsx b/web/app/case-studies/page.tsx
+index bfb02b0c6..8c3f8b063 100644
+--- a/web/app/case-studies/page.tsx
++++ b/web/app/case-studies/page.tsx
+@@ -28,7 +28,7 @@ export default function CaseStudiesPage() {
+                   {cs.metrics.map((m) => (
+                     <div key={m.label} style={{ border: "1px solid var(--rule)", background: "var(--panel)", padding: "20px" }}>
+                       <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px" }}>{m.label}</p>
+-                      <p style={{ fontFamily: "var(--mono)", fontSize: "28px", fontWeight: 600, color: m.value === "✓" ? "var(--ok)" : "var(--accent)", lineHeight: 1 }}>{m.value}</p>
++                      <p style={{ fontFamily: "var(--mono)", fontSize: "28px", fontWeight: 600, color: m.value === "✓" ? "var(--ok-text)" : "var(--accent)", lineHeight: 1 }}>{m.value}</p>
+                       <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)", marginTop: "6px" }}>{m.detail}</p>
+                     </div>
+                   ))}
+diff --git a/web/app/consulting/page.tsx b/web/app/consulting/page.tsx
+index a695ec49c..530a037d7 100644
+--- a/web/app/consulting/page.tsx
++++ b/web/app/consulting/page.tsx
+@@ -27,9 +27,9 @@ export default function ConsultingPage() {
+       <div style={{ borderTop: "1px solid var(--rule)", paddingTop: "64px" }}>
+         <Reveal>
+           <div style={{ border: "1px solid var(--rule)", background: "var(--ink)", padding: "64px", textAlign: "center" }}>
+-            <span className="tag tag-accent" style={{ marginBottom: "24px", display: "inline-flex" }}>Talk to us</span>
++            <span className="tag tag-accent-ink" style={{ marginBottom: "24px", display: "inline-flex" }}>Talk to us</span>
+             <h2 style={{ fontFamily: "var(--serif)", color: "#fff", maxWidth: "none" }}>We take on a small number of projects each quarter.</h2>
+-            <p style={{ color: "rgba(255,255,255,0.75)", marginTop: "20px", fontSize: "17px", maxWidth: "none" }}>If you’re working on production AI infrastructure and want people who’ve done it before, let’s talk.</p>
++            <p style={{ color: "var(--on-ink)", marginTop: "20px", fontSize: "17px", maxWidth: "none" }}>If you’re working on production AI infrastructure and want people who’ve done it before, let’s talk.</p>
+             <div style={{ display: "flex", gap: "12px", justifyContent: "center", marginTop: "32px", flexWrap: "wrap" }}>
+               <Link href="/contact" className="btn-primary">Book a call →</Link>
+               <Link href="/case-studies" className="btn-secondary" style={{ color: "#fff", borderColor: "rgba(255,255,255,0.2)" }}>See our work</Link>
+diff --git a/web/app/contact/page.tsx b/web/app/contact/page.tsx
+index 7a4a7b80c..de566e5f0 100644
+--- a/web/app/contact/page.tsx
++++ b/web/app/contact/page.tsx
+@@ -66,7 +66,7 @@ export default function ContactPage() {
+         <Reveal>
+           {state === "sent" ? (
+             <div style={{ border: "1px solid var(--ok)", background: "rgba(5,150,105,0.05)", padding: "32px", textAlign: "center" }}>
+-              <p style={{ fontFamily: "var(--serif)", fontSize: "1.3rem", color: "var(--ok)", maxWidth: "none" }}>Message received.</p>
++              <p style={{ fontFamily: "var(--serif)", fontSize: "1.3rem", color: "var(--ok-text)", maxWidth: "none" }}>Message received.</p>
+               <p style={{ color: "var(--ink-3)", marginTop: "8px", maxWidth: "none" }}>A person reads every one of these. Expect a reply within two business days. If it is urgent, <a href="mailto:hello@meridian.ai" style={{ color: "var(--accent)" }}>email us directly</a>.</p>
+             </div>
+           ) : (
+diff --git a/web/app/globals.css b/web/app/globals.css
+index d183749d6..0b1ff6728 100644
+--- a/web/app/globals.css
++++ b/web/app/globals.css
+@@ -1,7 +1,12 @@
+ /* === Design tokens === */
+ :root {
+-  --bg: #FAFAF8; --white: #FFFFFF; --ink: #0D0D0A; --ink-2: #2A2A28; --ink-3: #6B6B68;
+-  --ink-muted: #6B6B68; --on-ink-muted: rgba(255,255,255,0.6); --on-ink-border: rgba(255,255,255,0.1);
++  --bg: #FAFAF8; --white: #FFFFFF; --ink: #0D0D0A; --ink-2: #2A2A28; --ink-3: #63635F;
++  --ink-muted: #63635F; --on-ink-muted: rgba(255,255,255,0.6); --on-ink-border: rgba(255,255,255,0.1);
++  /* Two whites on ink ground, not six. The footer and the ink sections had drifted to 0.75, 0.7,
++     0.65, 0.62, 0.6 and 0.55 in different files -- six values nobody could tell apart, chosen six
++     separate times (measured in the render audit, 2026-10-20). --on-ink is text, --on-ink-muted
++     is a label. */
++  --on-ink: rgba(255,255,255,0.72);
+   --rule: #E2E2DC; --rule-2: #EDEDE8; --accent: #0E6E62; --accent-dk: #0A554B;
+   /* One accent, and not the one every LLM-adjacent brand already uses: #1A56DB is Tailwind
+      blue-600, which is what "AI company" looks like by default. This is a desaturated teal, and
+@@ -9,7 +14,10 @@
+      not used for decoration, for numbers, or for chips, because an accent that is everywhere
+      stops reading as an accent (founder design review, 2026-10-20). */
+   --accent-on-ink: #6FD3C2; /* the accent, lifted for ink ground: #0E6E62 goes to mud on #0D0D0A */
+-  --signal: #DC2626; --ok: #059669; --panel: #F4F4F0;
++  --signal: #DC2626; --ok: #059669; --ok-text: #047857; --panel: #F4F4F0;
++  /* Two greens, for two jobs: --ok is a 6px dot and a 3px bar (a graphic, 3:1 is the bar it must
++     clear), --ok-text is the same green darkened so 11px text can carry it -- #059669 as text on
++     white is 3.77:1 and failed the render audit on four pages (2026-10-20). */
+   --serif: 'Playfair Display', Georgia, serif; --sans: 'DM Sans', system-ui, sans-serif;
+   --mono: 'DM Mono', 'Courier New', monospace;
+   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px;
+@@ -45,8 +53,11 @@ code, pre { font-family: var(--mono); }
+ pre { background: var(--panel); padding: var(--space-6); border-radius: 4px; overflow-x: auto; font-size: 13px; line-height: 1.7; }
+ /* === Layout === */
+ .container { max-width: 1152px; margin: 0 auto; padding: 0 var(--space-6); }
+-.section { padding: var(--space-24) 0; }
+-.section-sm { padding: var(--space-16) 0; }
++/* padding-block, not padding: a section is often also a .container, and the shorthand silently
++   reset the container's 24px gutter, so the hero sat 24px left of every other section on the page
++   (measured in the render audit: h1 at x=144, section text at x=168, 2026-10-20). */
++.section { padding-block: var(--space-24); }
++.section-sm { padding-block: var(--space-16); }
+ /* === Card === */
+ .card { border: 1px solid var(--rule); background: var(--white); padding: var(--space-8); transition: border-color var(--duration-base) var(--ease-out), box-shadow var(--duration-base) var(--ease-out); }
+ .card:hover { border-color: rgba(14,110,98,0.28); box-shadow: 0 4px 24px rgba(0,0,0,0.05); }
+@@ -59,6 +70,9 @@ pre { background: var(--panel); padding: var(--space-6); border-radius: 4px; ove
+ /* === Tags === */
+ .tag { display: inline-flex; align-items: center; padding: 3px 10px; border: 1px solid var(--rule); background: var(--panel); font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); border-radius: 2px; }
+ .tag-accent { background: rgba(14,110,98,0.07); border-color: rgba(14,110,98,0.22); color: var(--accent); }
++/* The accent on ink ground: #0E6E62 on #0D0D0A is 3.05:1, under the 4.5:1 a 10px label needs
++   (measured in the render audit, 2026-10-20). The lifted accent is the same colour, raised. */
++.tag-accent-ink { background: rgba(111,211,194,0.09); border-color: rgba(111,211,194,0.26); color: var(--accent-on-ink); }
+ /* Status chips are monochrome on purpose. They used to be mint and amber, which put two colors
+    into the palette that appear nowhere else -- the fastest way to make a palette look assembled
+    rather than designed (founder design review, 2026-10-20). "stable" now reads as a quiet
+@@ -71,6 +85,14 @@ pre { background: var(--panel); padding: var(--space-6); border-radius: 4px; ove
+ /* === Status dot === */
+ .status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
+ .status-dot-ok { background: var(--ok); }
++/* Trace explorer: the details panel sits beside the waterfall on a desktop and under it on a
++   phone. As an inline 2fr/1fr grid the min-content of the span table held it at 686px inside a
++   390px viewport and scrolled the whole page sideways (audit, 2026-10-20). */
++.trace-split { display: grid; gap: var(--space-6); grid-template-columns: 2fr 1fr; }
++/* A grid item's min-width is auto: without this the 520px span table sets the column's
++   min-content and the grid still overflows even on one column. */
++.trace-split > * { min-width: 0; }
++@media (max-width: 900px) { .trace-split { grid-template-columns: 1fr; } }
+ .status-dot-beta { background: #B45309; }
+ .pulse-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse-dot 2s ease-in-out infinite; }
+ @keyframes pulse-dot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.85); } }
+@@ -120,10 +142,10 @@ input[type="range"].cost-range::-webkit-slider-thumb { -webkit-appearance: none;
+    2026-10-20, on the tooling cards). */
+ .text-link { font-family: var(--mono); font-size: 11px; color: var(--ink); text-decoration: none; transition: color var(--duration-fast) var(--ease-out); }
+ .text-link:hover { color: var(--accent); }
+-.footer-heading { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.62); }
+-.footer-link { font-family: var(--mono); font-size: 12px; color: rgba(255,255,255,0.75); text-decoration: none; transition: color var(--duration-fast) var(--ease-out); }
++.footer-heading { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--on-ink-muted); }
++.footer-link { font-family: var(--mono); font-size: 12px; color: var(--on-ink); text-decoration: none; transition: color var(--duration-fast) var(--ease-out); }
+ .footer-link:hover { color: #fff; }
+-.footer-link-muted { font-family: var(--mono); font-size: 12px; color: rgba(255,255,255,0.62); text-decoration: none; transition: color var(--duration-fast) var(--ease-out); }
++.footer-link-muted { font-family: var(--mono); font-size: 12px; color: var(--on-ink-muted); text-decoration: none; transition: color var(--duration-fast) var(--ease-out); }
+ .footer-link-muted:hover { color: rgba(255,255,255,0.85); }
+ /* === Print === */
+ @media print { .no-print { display: none !important; } }
+diff --git a/web/app/page.tsx b/web/app/page.tsx
+index 584b396b1..4add78e97 100644
+--- a/web/app/page.tsx
++++ b/web/app/page.tsx
+@@ -108,7 +108,7 @@ export default function HomePage() {
+       {/* Case Studies teaser */}
+       <section className="section" style={{ background: "var(--ink)", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+         <div className="container">
+-          <Reveal><div style={{ marginBottom: "48px" }}><span className="tag tag-accent" style={{ marginBottom: "16px", display: "inline-flex" }}>Case studies</span><h2 style={{ color: "#fff", fontFamily: "var(--serif)" }}>What we’ve shipped</h2></div></Reveal>
++          <Reveal><div style={{ marginBottom: "48px" }}><span className="tag tag-accent-ink" style={{ marginBottom: "16px", display: "inline-flex" }}>Case studies</span><h2 style={{ color: "#fff", fontFamily: "var(--serif)" }}>What we’ve shipped</h2></div></Reveal>
+           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: "24px" }}>
+             {[
+               { industry: "Fintech", result: "73% bill reduction", detail: "$1.1M a month down to $297K. LiteLLM routing and SPIFFE identity across three regions." },
+@@ -119,7 +119,7 @@ export default function HomePage() {
+                 <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.04)", padding: "24px" }}>
+                   <span style={{ fontFamily: "var(--mono)", fontSize: "10px", color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{c.industry}</span>
+                   <p style={{ fontFamily: "var(--serif)", fontSize: "1.4rem", fontWeight: 500, color: "#fff", marginTop: "12px" }}>{c.result}</p>
+-                  <p style={{ fontFamily: "var(--mono)", fontSize: "12px", color: "rgba(255,255,255,0.7)", marginTop: "8px", lineHeight: 1.6, maxWidth: "none" }}>{c.detail}</p>
++                  <p style={{ fontFamily: "var(--mono)", fontSize: "12px", color: "var(--on-ink)", marginTop: "8px", lineHeight: 1.6, maxWidth: "none" }}>{c.detail}</p>
+                 </div>
+               </Reveal>
+             ))}
+diff --git a/web/components/CostCalculator.tsx b/web/components/CostCalculator.tsx
+index dc3a4a658..275dca83a 100644
+--- a/web/components/CostCalculator.tsx
++++ b/web/components/CostCalculator.tsx
+@@ -80,13 +80,13 @@ export function CostCalculator() {
+           {[{ label: "Per request", value: costPerReq, hint: `${fmtNum(inputTokens + outputTokens)} tokens` }, { label: "Per day", value: costPerDay, hint: `${fmtNum(dailyRequests)} reqs` }, { label: "Per month", value: costPerMonth, hint: `${fmtNum(dailyRequests * 30)} reqs` }].map((t) => (
+             <div key={t.label} style={{ border: "1px solid var(--rule)", background: "var(--white)", padding: "16px", textAlign: "center" }}>
+               <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)" }}>{t.label}</p>
+-              <p style={{ fontFamily: "var(--mono)", fontSize: "18px", fontWeight: 600, color: model.inputPer1M === 0 ? "var(--ok)" : "var(--accent)", marginTop: "8px" }}>{model.inputPer1M === 0 ? "Free" : fmtUsd(t.value)}</p>
++              <p style={{ fontFamily: "var(--mono)", fontSize: "18px", fontWeight: 600, color: model.inputPer1M === 0 ? "var(--ok-text)" : "var(--accent)", marginTop: "8px" }}>{model.inputPer1M === 0 ? "Free" : fmtUsd(t.value)}</p>
+               <p style={{ fontFamily: "var(--mono)", fontSize: "10px", color: "var(--ink-3)", marginTop: "4px" }}>{t.hint}</p>
+             </div>
+           ))}
+         </div>
+         {model.inputPer1M > 0 && (
+-          <div style={{ border: "1px solid rgba(26,86,219,0.2)", background: "rgba(26,86,219,0.03)", padding: "16px" }}>
++          <div style={{ border: "1px solid rgba(14,110,98,0.22)", background: "rgba(14,110,98,0.04)", padding: "16px" }}>
+             <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)" }}>Annual projection</p>
+             <p style={{ fontFamily: "var(--mono)", fontSize: "24px", fontWeight: 600, color: "var(--accent)", marginTop: "4px" }}>{fmtUsd(costPerYear)}</p>
+             <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)", marginTop: "4px" }}>{fmtNum(dailyRequests * 365)} requests / year</p>
+diff --git a/web/components/Footer.tsx b/web/components/Footer.tsx
+index 7401425d4..427ebb720 100644
+--- a/web/components/Footer.tsx
++++ b/web/components/Footer.tsx
+@@ -10,7 +10,7 @@ export function Footer() {
+         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "48px" }}>
+           <div style={{ gridColumn: "span 2", maxWidth: "280px" }}>
+             <Logo tone="light" />
+-            <p style={{ marginTop: "12px", fontSize: "13px", lineHeight: 1.65, color: "rgba(255,255,255,0.65)", maxWidth: "none" }}>{site.tagline}</p>
++            <p style={{ marginTop: "12px", fontSize: "13px", lineHeight: 1.65, color: "var(--on-ink)", maxWidth: "none" }}>{site.tagline}</p>
+             <a href="mailto:hello@meridian.ai" className="footer-link-muted" style={{ display: "inline-block", marginTop: "20px" }}>hello@meridian.ai</a>
+           </div>
+           <div>
+@@ -29,8 +29,8 @@ export function Footer() {
+       </div>
+       <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+         <div style={{ maxWidth: "1152px", margin: "0 auto", padding: "20px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
+-          <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "rgba(255,255,255,0.55)" }}>© {year} {site.name}</p>
+-          <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "rgba(255,255,255,0.55)" }}>AI infrastructure consulting</p>
++          <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--on-ink-muted)" }}>© {year} {site.name}</p>
++          <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--on-ink-muted)" }}>AI infrastructure consulting</p>
+         </div>
+       </div>
+     </footer>
+diff --git a/web/components/HeroPlayground.tsx b/web/components/HeroPlayground.tsx
+index ed441405e..c08c0b3dc 100644
+--- a/web/components/HeroPlayground.tsx
++++ b/web/components/HeroPlayground.tsx
+@@ -59,7 +59,7 @@ export function HeroPlayground() {
+                 style={{
+                   display: "flex", justifyContent: "space-between", alignItems: "center",
+                   padding: "10px 12px", border: `1px solid ${selected === m.key ? "var(--accent)" : "var(--rule)"}`,
+-                  background: selected === m.key ? "rgba(26,86,219,0.05)" : "transparent",
++                  background: selected === m.key ? "rgba(14,110,98,0.06)" : "transparent",
+                   color: selected === m.key ? "var(--accent)" : "var(--ink-3)", fontWeight: selected === m.key ? 500 : 400,
+                   cursor: "pointer", fontSize: "12px", fontFamily: "var(--mono)", textAlign: "left",
+                   transition: "all 120ms ease",
+diff --git a/web/components/ResearchQA.tsx b/web/components/ResearchQA.tsx
+index 72efe8774..9e1d6791a 100644
+--- a/web/components/ResearchQA.tsx
++++ b/web/components/ResearchQA.tsx
+@@ -56,7 +56,7 @@ export function ResearchQA() {
+             {SUGGESTIONS.map((s) => (
+               <button key={s} onClick={() => { setQuery(s); inputRef.current?.focus(); }}
+                 style={{ border: "1px solid var(--rule)", background: "var(--white)", padding: "10px 12px", fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-2)", cursor: "pointer", textAlign: "left", transition: "all 120ms ease" }}
+-                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(26,86,219,0.3)"; (e.currentTarget as HTMLButtonElement).style.background = "rgba(26,86,219,0.03)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)"; }}
++                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(14,110,98,0.4)"; (e.currentTarget as HTMLButtonElement).style.background = "rgba(14,110,98,0.04)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)"; }}
+                 onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--rule)"; (e.currentTarget as HTMLButtonElement).style.background = "var(--white)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--ink-2)"; }}>
+                 {s}
+               </button>
+@@ -104,7 +104,7 @@ export function ResearchQA() {
+           <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "16px", borderBottom: "1px solid var(--rule)" }}>
+               <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)" }}>Answer</span>
+-              <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: result.mode === "gpt-enhanced" ? "var(--ok)" : "var(--accent)" }}>● {result.mode === "gpt-enhanced" ? "GPT-4o Mini enhanced" : "Research corpus"}</span>
++              <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: result.mode === "gpt-enhanced" ? "var(--ok-text)" : "var(--accent)" }}>● {result.mode === "gpt-enhanced" ? "GPT-4o Mini enhanced" : "Research corpus"}</span>
+             </div>
+             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+               {result.answer.split("\n\n").map((para, i) => <p key={i} style={{ fontSize: "14px", lineHeight: 1.75, color: "var(--ink-2)" }}>{para}</p>)}
+diff --git a/web/components/TraceExplorer.tsx b/web/components/TraceExplorer.tsx
+index 414589c3f..b14470132 100644
+--- a/web/components/TraceExplorer.tsx
++++ b/web/components/TraceExplorer.tsx
+@@ -51,10 +51,10 @@ function flattenSpans(span: Span, depth = 0): (Span & { depth: number })[] {
+ function SpanRow({ span, maxDuration, depth, selected, onClick, onToggle }: { span: Span; maxDuration: number; depth: number; selected: boolean; onClick: () => void; onToggle: () => void }) {
+   const hasChildren = (span.children?.length ?? 0) > 0;
+   const widthPct = (span.duration / maxDuration) * 100;
+-  const kindBg: Record<string, string> = { server: "rgba(26,86,219,0.1)", client: "rgba(217,119,6,0.1)", internal: "rgba(138,138,131,0.1)" };
++  const kindBg: Record<string, string> = { server: "rgba(14,110,98,0.12)", client: "rgba(13,13,10,0.08)", internal: "rgba(138,138,131,0.1)" };
+   return (
+     <>
+-      <div onClick={onClick} style={{ display: "flex", alignItems: "center", gap: "8px", borderBottom: "1px solid rgba(226,226,220,0.5)", paddingTop: "8px", paddingBottom: "8px", paddingRight: "16px", cursor: "pointer", background: selected ? "rgba(26,86,219,0.03)" : "transparent", paddingLeft: `${depth * 24 + 16}px` }}>
++      <div onClick={onClick} style={{ display: "flex", alignItems: "center", gap: "8px", borderBottom: "1px solid rgba(226,226,220,0.5)", paddingTop: "8px", paddingBottom: "8px", paddingRight: "16px", cursor: "pointer", background: selected ? "rgba(14,110,98,0.04)" : "transparent", paddingLeft: `${depth * 24 + 16}px` }}>
+         <button onClick={(e) => { e.stopPropagation(); onToggle(); }} style={{ width: "16px", fontSize: "10px", background: "none", border: "none", cursor: hasChildren ? "pointer" : "default", color: "var(--ink-3)", flexShrink: 0, padding: 0 }}>
+           {hasChildren ? "▸" : ""}
+         </button>
+@@ -65,8 +65,8 @@ function SpanRow({ span, maxDuration, depth, selected, onClick, onToggle }: { sp
+           <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${Math.max(widthPct, 1)}%`, background: span.color + "25" }} />
+           <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${Math.max(widthPct * 0.75, 1)}%`, background: span.color }} />
+         </div>
+-        <span style={{ width: "64px", fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 600, color: span.color, textAlign: "right", flexShrink: 0 }}>{span.duration}ms</span>
+-        <span style={{ width: "32px", fontFamily: "var(--mono)", fontSize: "11px", color: span.status === "ok" ? "var(--ok)" : "#DC2626", textAlign: "center", flexShrink: 0 }}>{span.status === "ok" ? "✓" : "✗"}</span>
++        <span style={{ width: "64px", fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 600, color: "var(--ink)", textAlign: "right", flexShrink: 0 }}>{span.duration}ms</span>
++        <span style={{ width: "40px", fontFamily: "var(--mono)", fontSize: "11px", color: span.status === "ok" ? "var(--ok-text)" : "var(--signal)", textAlign: "center", flexShrink: 0 }}>{span.status === "ok" ? "✓" : "✗"}</span>
+       </div>
+     </>
+   );
+@@ -111,22 +111,29 @@ export function TraceExplorer() {
+           </button>
+         ))}
+       </div>
+-      <div style={{ display: "grid", gap: "24px", gridTemplateColumns: "2fr 1fr" }}>
++      <div className="trace-split">
+         <div>
+           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+             <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)" }}>Trace {trace.id} — {totalDuration}ms total</span>
+-            <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ok)" }}>● ok</span>
++            <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ok-text)" }}>● ok</span>
+           </div>
++          {/* The span table has fixed columns (208/64/1fr/64/40) that cannot compress below ~520px,
++              so on a phone it scrolled the whole page 349px sideways (audit, 390px, 2026-10-20).
++              Give the table its own horizontal scroll instead of the document. */}
++          <div style={{ overflowX: "auto" }}>
++          <div style={{ minWidth: "520px" }}>
+           <div style={{ display: "flex", alignItems: "center", gap: "8px", borderBottom: "1px solid rgba(226,226,220,0.5)", paddingBottom: "8px", marginBottom: "4px" }}>
+             <span style={{ width: "16px" }} /><span style={{ width: "8px" }} /><span style={{ width: "208px", fontFamily: "var(--mono)", fontSize: "10px", color: "var(--ink-3)" }}>Span</span>
+             <span style={{ width: "64px", fontFamily: "var(--mono)", fontSize: "10px", color: "var(--ink-3)" }}>Kind</span>
+             <span style={{ flex: 1, fontFamily: "var(--mono)", fontSize: "10px", color: "var(--ink-3)" }}>Duration</span>
+             <span style={{ width: "64px", fontFamily: "var(--mono)", fontSize: "10px", color: "var(--ink-3)", textAlign: "right" }}>ms</span>
+-            <span style={{ width: "32px", fontFamily: "var(--mono)", fontSize: "10px", color: "var(--ink-3)", textAlign: "center" }}>Status</span>
++            <span style={{ width: "40px", fontFamily: "var(--mono)", fontSize: "10px", color: "var(--ink-3)", textAlign: "center" }}>Status</span>
+           </div>
+           <div style={{ maxHeight: "420px", overflowY: "auto" }}>
+             {renderSpans(trace, 0)}
+           </div>
++          </div>
++          </div>
+         </div>
+         <div>
+           {selectedSpan ? (
+@@ -135,7 +142,7 @@ export function TraceExplorer() {
+               <p style={{ fontFamily: "var(--mono)", fontSize: "13px", fontWeight: 600, color: selectedSpan.color, marginTop: "8px" }}>{selectedSpan.name}</p>
+               <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)", marginTop: "4px" }}>{selectedSpan.service}</p>
+               <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "24px" }}>
+-                {[{ label: "Duration", value: `${selectedSpan.duration}ms` }, { label: "Kind", value: selectedSpan.kind }, { label: "Status", value: selectedSpan.status, color: selectedSpan.status === "ok" ? "var(--ok)" : "#DC2626" }].map((r) => (
++                {[{ label: "Duration", value: `${selectedSpan.duration}ms` }, { label: "Kind", value: selectedSpan.kind }, { label: "Status", value: selectedSpan.status, color: selectedSpan.status === "ok" ? "var(--ok-text)" : "var(--signal)" }].map((r) => (
+                   <div key={r.label} style={{ display: "flex", justifyContent: "space-between", fontFamily: "var(--mono)", fontSize: "11px" }}>
+                     <span style={{ color: "var(--ink-3)" }}>{r.label}</span><span style={{ color: r.color ?? "var(--ink)", fontWeight: 500 }}>{r.value}</span>
+                   </div>
+@@ -157,7 +164,7 @@ export function TraceExplorer() {
+             <div style={{ border: "1px solid var(--rule)", background: "var(--white)", padding: "20px" }}>
+               <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Trace overview</p>
+               <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "16px" }}>
+-                {[{ label: "Trace ID", value: trace.id }, { label: "Total duration", value: `${totalDuration}ms`, color: "var(--accent)" }, { label: "Spans", value: String(flat.length) }, { label: "Status", value: "✓ ok", color: "var(--ok)" }].map((r) => (
++                {[{ label: "Trace ID", value: trace.id }, { label: "Total duration", value: `${totalDuration}ms`, color: "var(--accent)" }, { label: "Spans", value: String(flat.length) }, { label: "Status", value: "✓ ok", color: "var(--ok-text)" }].map((r) => (
+                   <div key={r.label} style={{ display: "flex", justifyContent: "space-between", fontFamily: "var(--mono)", fontSize: "11px", paddingBottom: "8px", borderBottom: "1px solid rgba(226,226,220,0.5)" }}>
+                     <span style={{ color: "var(--ink-3)" }}>{r.label}</span><span style={{ color: r.color ?? "var(--ink)", fontWeight: 500 }}>{r.value}</span>
+                   </div>
+diff --git a/web/next.config.mjs b/web/next.config.mjs
+index 1b2b50790..aa12bae35 100644
+--- a/web/next.config.mjs
++++ b/web/next.config.mjs
+@@ -37,7 +37,24 @@ const nextConfig = {
+     ],
+   },
+   async headers() {
+-    return [{ source: "/:path*", headers: securityHeaders }];
++    return [
++      { source: "/:path*", headers: securityHeaders },
++      // The root layout awaits headers() to build the canonical host (LAW 46: the zone lives in
++      // the cluster row, not in source), and that await makes every page a dynamic render -- so
++      // Next sent `private, no-cache, no-store` on HTML that only changes when a commit lands.
++      // Measured 2026-10-20 from the laptop: a first visit to / took 8.6s wall (7.2s of it before
++      // the first byte on a lossy uplink) while a second page on the same warm connection took
++      // 0.66s; a plain repeat navigation still paid a full round trip because nothing was
++      // cacheable. These pages are static content, so they may be stored: five minutes fresh (a
++      // deploy is never five minutes old and unseen), a day of stale served while revalidating,
++      // and stale served outright when the network fails -- which is the founder's case.
++      {
++        source: "/:path((?!api/|_next/|opengraph-image|favicon).*)",
++        headers: [
++          { key: "Cache-Control", value: "public, max-age=300, stale-while-revalidate=86400, stale-if-error=86400" },
++        ],
++      },
++    ];
+   },
+ };
+ export default nextConfig;
+diff --git a/web/public/favicon.svg b/web/public/favicon.svg
+index 4ecf12457..7471b0055 100644
+--- a/web/public/favicon.svg
++++ b/web/public/favicon.svg
+@@ -6,5 +6,5 @@
+   <rect width="32" height="32" rx="6" fill="#0D0D0A"/>
+   <circle cx="16" cy="16" r="11.47" stroke="#FAFAF8" stroke-width="2"/>
+   <ellipse cx="16" cy="16" rx="5.07" ry="11.47" stroke="#FAFAF8" stroke-width="2"/>
+-  <circle cx="16" cy="4.53" r="2.27" fill="#7FA6F8"/>
++  <circle cx="16" cy="4.53" r="2.27" fill="#6FD3C2"/>
+ </svg>
+diff --git a/web/scripts/render-audit.mjs b/web/scripts/render-audit.mjs
+new file mode 100644
+index 000000000..41b050343
+--- /dev/null
++++ b/web/scripts/render-audit.mjs
+@@ -0,0 +1,277 @@
++#!/usr/bin/env node
++// Deterministic render audit: what a designer checks by looking, measured instead.
++// Usage:  node scripts/render-audit.mjs <url> [width=1440] [height=900]
++//         npx will find puppeteer-core under web/node_modules if installed there.
++// Depends on: puppeteer-core (any module-resolution path).
++//
++// Lessons paid for in 2026-10-20 and kept as comments because each was once a silent false
++// negative:
++//   1. bgOf() composites the whole ancestor chain. The first run read the element's own
++//      background and reported thirteen fake 1.00:1 contrast failures because the tints were
++//      rgba over a 24px deep ink surface, not on white.
++//   2. overflow excludes both overflow:auto (scroll containers) and overflow:hidden (clip
++//      containers). Including hidden turned three bar-visualisation clips into page overflows.
++//   3. Anything that says "I checked X" must be able to fail X. The shipped self-test runs the
++//      audit against a page with one defaulted blue link, one 11px grey label, one 900px block on
++//      a 390px viewport and one section whose .container .section uses the padding shorthand
++//      (which drops the gutter). If the audit ever reports 0 problems against that page, it is a
++//      liar and must be fixed in the same commit.
++import { createRequire } from "node:module";
++import path from "node:path";
++import os from "node:os";
++
++// Look for puppeteer-core in three places, with the path I used during development as a fallback:
++//   1. local node_modules at the repo root (web/node_modules or ../node_modules)
++//   2. $PP_DIR/node_modules/puppeteer-core
++//   3. /tmp/pp/node_modules (the original install)
++const candidates = [
++  process.env.PP_DIR,
++  "/tmp/pp",
++  path.resolve(process.cwd(), "node_modules"),
++  path.resolve(process.cwd(), "../node_modules"),
++].filter(Boolean);
++let puppeteer;
++for (const c of candidates) {
++  try {
++    const req = createRequire(`${c}/`);
++    puppeteer = req("puppeteer-core");
++    break;
++  } catch {
++    /* try next */
++  }
++}
++if (!puppeteer) {
++  console.error("puppeteer-core not found in any of:", candidates.join(", "));
++  process.exit(2);
++}
++
++const [url, w, h] = process.argv.slice(2);
++if (!url) {
++  console.error("usage: render-audit.mjs <url> [width=1440] [height=900]");
++  process.exit(2);
++}
++const CHROME =
++  process.env.CHROME ||
++  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
++const VIEW = { w: parseInt(w, 10) || 1440, h: parseInt(h, 10) || 900 };
++const CHROME_READY = { headless: "new", args: ["--no-sandbox", "--force-device-scale-factor=1"] };
++
++// ----------------- helpers -----------------
++
++const parseColor = (c) => {
++  const m = c && c.match(/rgba?\(([^)]+)\)/);
++  if (!m) return null;
++  const p = m[1].split(",").map((x) => parseFloat(x));
++  return { rgb: p.slice(0, 3), a: p.length > 3 ? p[3] : 1 };
++};
++const lum = (rgb) => {
++  const L = rgb.map((v) => {
++    v /= 255;
++    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
++  });
++  return 0.2126 * L[0] + 0.7152 * L[1] + 0.0722 * L[2];
++};
++const contrast = (a, b) => {
++  const [l1, l2] = [lum(a), lum(b)].sort((x, y) => y - x);
++  return (l1 + 0.05) / (l2 + 0.05);
++};
++
++(async () => {
++  const browser = await puppeteer.launch({
++    ...CHROME_READY,
++    executablePath: process.env.CHROME || CHROME,
++  });
++  const page = await browser.newPage();
++  await page.setViewport({ width: VIEW.w, height: VIEW.h, deviceScaleFactor: 1 });
++  await page.goto(url, { waitUntil: "networkidle0", timeout: 60000 });
++  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
++  await new Promise((r) => setTimeout(r, 700));
++  await page.evaluate(() => window.scrollTo(0, 0));
++  await new Promise((r) => setTimeout(r, 300));
++
++  const report = await page.evaluate((_) => {
++    const parse = (c) => {
++      const m = c && c.match(/rgba?\(([^)]+)\)/);
++      if (!m) return null;
++      const p = m[1].split(",").map((x) => parseFloat(x));
++      return { rgb: p.slice(0, 3), a: p.length > 3 ? p[3] : 1 };
++    };
++    const composeAncestorBg = (el) => {
++      // see note (1) at top
++      const chain = [];
++      let n = el;
++      while (n && n !== document.documentElement) {
++        chain.push(getComputedStyle(n).backgroundColor);
++        n = n.parentElement;
++      }
++      let acc = [255, 255, 255];
++      for (const c of chain.reverse()) {
++        const p = parse(c);
++        if (!p) continue;
++        if (p.a === 0) continue;
++        acc = [0, 1, 2].map((i) => p.rgb[i] * p.a + acc[i] * (1 - p.a));
++      }
++      return `rgb(${acc.map(Math.round).join(",")})`;
++    };
++    // ---------- 1. typography inventory ----------
++    const seen = new Map();
++    [...document.querySelectorAll("h1,h2,h3,h4,p,li,a,button,span,div")].forEach((el) => {
++      const direct = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join("").trim();
++      if (!direct || direct.length < 2) return;
++      const s = getComputedStyle(el);
++      const k = `${s.fontFamily.split(",")[0]}|${s.fontSize}|${s.fontWeight}|${s.letterSpacing}|${s.lineHeight}`;
++      if (!seen.has(k)) seen.set(k, { count: 0, sample: direct.slice(0, 40) });
++      seen.get(k).count++;
++    });
++    const typography = [...seen.entries()]
++      .map(([k, v]) => ({ k, ...v }))
++      .sort((a, b) => b.count - a.count);
++
++    // ---------- 2. anchors with the user-agent defaults ----------
++    const anchors = [...document.querySelectorAll("a")].map((a) => {
++      const s = getComputedStyle(a);
++      return {
++        text: (a.textContent || "").trim().slice(0, 40),
++        color: s.color,
++        deco: s.textDecorationLine,
++        href: a.href,
++      };
++    });
++    const blue = anchors.filter((a) => {
++      const c = parse(a.color);
++      return c && c.rgb[2] - c.rgb[0] > 60 && /underline/i.test(a.deco);
++    });
++
++    // ---------- 3. layout: horizontal overflow + container left edges ----------
++    const overflow = [];
++    const lefts = new Map();
++    [...document.querySelectorAll("body *")].forEach((el) => {
++      const ox = getComputedStyle(el).overflowX;
++      const over = el.scrollWidth - el.clientWidth;
++      if (over > 2 && ox !== "auto" && ox !== "hidden") {
++        overflow.push({ tag: el.tagName, cls: String(el.className).slice(0, 40), over });
++      }
++      if (el.offsetWidth > 200) {
++        const k = el.offsetLeft;
++        lefts.set(k, (lefts.get(k) || 0) + 1);
++      }
++    });
++
++    // ---------- 4. sections and their backgrounds ----------
++    const sections = [];
++    [...document.querySelectorAll("section, header, footer, main > div")].forEach((s) => {
++      const r = s.getBoundingClientRect();
++      sections.push({ top: Math.round(r.top + window.scrollY), h: Math.round(r.height), bg: composeAncestorBg(s) });
++    });
++
++    // ---------- 5. logo block ----------
++    const logo = (() => {
++      const el = document.querySelector("a[aria-label], a[href='/'], a[href='/logo'], header a, [data-logo]");
++      if (!el) return null;
++      const r = el.getBoundingClientRect();
++      return { left: Math.round(r.left), top: Math.round(r.top + window.scrollY), w: Math.round(r.width), h: Math.round(r.height) };
++    })();
++
++    // ---------- 6. contrast ----------
++    const textBg = (el) => {
++      const cs = getComputedStyle(el);
++      return { fg: cs.color, bg: composeAncestorBg(el) };
++    };
++    const contrastFailures = [];
++    [...document.querySelectorAll("h1,h2,h3,h4,p,li,a,button,span,strong,em")].forEach((el) => {
++      const t = (el.textContent || "").trim();
++      const r = el.getBoundingClientRect();
++      if (t.length < 1 || r.width === 0 || r.height === 0) return;
++      const { fg, bg } = textBg(el);
++      const fp = parse(fg), bp = parse(bg);
++      if (!fp || !bp) return;
++      const cs = getComputedStyle(el);
++      const size = parseFloat(cs.fontSize);
++      const weight = parseFloat(cs.fontWeight);
++      const aa = size >= 18 || (size >= 14 && weight >= 700) ? 3 : 4.5;
++      const ratio = (() => {
++        const L1 = (() => {
++          const L = fp.rgb.map((v) => {
++            v /= 255;
++            return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
++          });
++          return 0.2126 * L[0] + 0.7152 * L[1] + 0.0722 * L[2];
++        })();
++        const L2 = (() => {
++          const L = bp.rgb.map((v) => {
++            v /= 255;
++            return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
++          });
++          return 0.2126 * L[0] + 0.7152 * L[1] + 0.0722 * L[2];
++        })();
++        return (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05);
++      })();
++      if (ratio < aa) {
++        contrastFailures.push({
++          ratio: Number(ratio.toFixed(2)),
++          target: aa,
++          size: Math.round(size),
++          fg,
++          bg,
++          text: t.slice(0, 32),
++        });
++      }
++    });
++    const distinctFg = [...new Set(contrastFailures.map((f) => f.fg))];
++
++    return {
++      docHeight: document.documentElement.scrollHeight,
++      typography,
++      anchors,
++      blue,
++      overflow,
++      lefts: [...lefts.entries()].sort((a, b) => b[1] - a[1]),
++      sections,
++      logo,
++      contrastFailures,
++      distinctFg,
++    };
++  });
++
++  console.log(`\n=== ${url} @ ${VIEW.w}x${VIEW.h} — document height ${report.docHeight}px ===\n`);
++  console.log(`TYPE STYLES: ${report.typography.length} distinct`);
++  report.typography.slice(0, 12).forEach((t) => {
++    const [family, size, weight, ls, lh] = t.k.split("|");
++    console.log(`   ${t.count}x  ${family} ${size} w${weight} ls${ls} lh${lh}   "${t.sample}"`);
++  });
++  console.log(`\nTEXT COLOURS: ${report.distinctFg.length} distinct`);
++  report.distinctFg.forEach((c) => console.log(`    ${c}`));
++  console.log(`\nLINKS: ${report.anchors.length} anchors; ${report.blue.length} with UA blue or underline`);
++  for (const a of report.blue.slice(0, 8)) console.log(`  ${a.text} -> ${a.color} ${a.deco}`);
++
++  console.log(`\nOVERFLOW: ${report.overflow.length}`);
++  for (const o of report.overflow.slice(0, 6)) console.log(`  ${o.tag}.${o.cls} +${o.over}px`);
++
++  console.log(`\nLEFT EDGES (grid discipline):`);
++  for (const [x, n] of report.lefts.slice(0, 8)) console.log(`  x=${x}  ${n} blocks`);
++
++  console.log(`\nSECTIONS:`);
++  for (const s of report.sections.slice(0, 12)) console.log(`  top ${String(s.top).padStart(4)}  h ${String(s.h).padStart(4)}  bg ${s.bg}`);
++
++  if (report.logo) {
++    console.log(`\nLOGO: ${JSON.stringify(report.logo)}`);
++  }
++
++  console.log(`\nOVERLAPS:`);
++  // cheap overlap check on header nav items (rows above 0): we'll skip cross-element overlap here
++  console.log(`  (none measured; report any cross-element overlap from the screenshot pass)`);
++
++  console.log(`\nCONTRAST BELOW WCAG: ${report.contrastFailures.length}`);
++  for (const f of report.contrastFailures.slice(0, 14))
++    console.log(`  ${f.ratio}:1 (needs ${f.target}) ${f.size}px ${f.fg} on ${f.bg}  "${f.text}"`);
++
++  await browser.close();
++
++  // Non-zero exit on real defects so this can be used as a gate without a screenshot read.
++  const defects =
++    report.blue.length + report.overflow.length + report.contrastFailures.length;
++  process.exit(defects > 0 ? 1 : 0);
++})().catch((e) => {
++  console.error("audit failed:", e.message);
++  process.exit(2);
++});

@@ -1,0 +1,13 @@
+diff --git a/.growmos/state.json b/.growmos/state.json
+index a89703eee..ba900ea37 100644
+--- a/.growmos/state.json
++++ b/.growmos/state.json
+@@ -2,7 +2,7 @@
+   "counters": {
+     "extractions": 13,
+     "profiles": 0,
+-    "queries": 9,
++    "queries": 14,
+     "resolutions": 0
+   },
+   "created": "2026-09-22T18:15:24Z",
