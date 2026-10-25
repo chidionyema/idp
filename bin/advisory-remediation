@@ -1,0 +1,322 @@
+#!/usr/bin/env python3
+"""advisory-remediation -- a published dependency advisory becomes a lane with the bumped pin.
+
+The estate pins dependencies in requirements*.txt and in package-lock.json. A pin can carry a
+published advisory, and nobody owns it: no agent claimed a pin, so no agent moved it, and the
+security scan holds the whole estate on it. This script finds the advisories that have a fix
+version and opens one lane per advisory, carrying only the bumped pin. The Greenlane proves the
+lane green on top of main and lands it, exactly like any other lane, so a bump that breaks the
+resolution never lands: the proof fails and the lane is parked with the reason on its head.
+
+WHAT IT DOES NOT DO. It does not merge, and it does not decide a major version. A major bump is
+an API change and belongs to a human; those advisories are printed and skipped. It does not
+touch a pin it could not measure.
+
+    bin/advisory-remediation            # print the plan, change nothing
+    bin/advisory-remediation --push     # open the lanes
+
+Exit status: 0 when the plan ran, even with nothing to do. 1 when the tool could not measure at
+all, so a caller can tell "nothing to fix" from "nothing was looked at".
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+# The paths the claim-gate already exempts as "the bots' own work" (bin/claim-gate,
+# DEPENDENCY_ONLY). A lane that touched anything else would need a claim of its own, so this
+# script refuses to open one rather than queue a lane that cannot land.
+DEPENDENCY_ONLY = re.compile(
+    r"^(?:.*/)?(?:requirements[^/]*\.txt|constraints[^/]*\.txt|"
+    r"[^/]*\.lock|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|"
+    r"go\.mod|go\.sum|uv\.lock|poetry\.lock|Pipfile\.lock|Cargo\.lock|composer\.lock)$"
+)
+
+# An exact pin: `name==1.2.3`, with optional extras and a trailing comment.
+PIN = re.compile(
+    r"^(?P<indent>\s*)(?P<pkg>[A-Za-z0-9][A-Za-z0-9._-]*)(?P<extras>\[[^\]]*\])?"
+    r"==(?P<ver>[^\s;#]+)(?P<rest>.*)$"
+)
+
+# A version that can be written as a pin: 3.17.2, 1.0.0rc1, 2.0.post1.
+EXACT_VERSION = re.compile(r"^\d+(\.\d+)*([.-]?(a|b|c|rc|alpha|beta|post|dev)\d+)?$")
+
+
+def run(argv, cwd=None):
+    """Run a command, no shell, and keep its output."""
+    return subprocess.run(argv, cwd=cwd, capture_output=True, text=True)  # noqa: S603
+
+
+def git(*args, cwd=None):
+    p = run(["git", *args], cwd=cwd)  # noqa: S603
+    return p.stdout if p.returncode == 0 else ""
+
+
+def say(kind, text):
+    print(f"{kind:<7} {text}", flush=True)
+
+
+def norm(name):
+    """PEP 503 normalisation, so `Flask` and `flask` are one package."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def tracked():
+    return [f for f in git("ls-files").splitlines() if f]
+
+
+def req_files():
+    return sorted(f for f in tracked() if re.search(r"(^|/)requirements[^/]*\.txt$", f))
+
+
+def lock_dirs():
+    return sorted({os.path.dirname(f) or "." for f in tracked() if f.endswith("package-lock.json")})
+
+
+def audit_json(argv, cwd=None):
+    """The JSON document an audit printed, or (None, why it could not).
+
+    An audit that finds vulnerabilities exits non-zero and still prints its report, so the exit
+    status is not the signal: the report is. A report that is not JSON is not a measurement.
+    """
+    p = run(argv, cwd=cwd)  # noqa: S603
+    out = (p.stdout or "").strip()
+    if out.startswith("{"):
+        try:
+            return json.loads(out), ""
+        except ValueError as exc:
+            return None, f"unparseable JSON: {exc}"
+    err = [ln for ln in (p.stderr or "").strip().splitlines() if ln.strip()]
+    return None, (err[-1] if err else f"exit {p.returncode}")
+
+
+def pick_fix(fixes):
+    """The first fix version that can be written as a pin, or None."""
+    for fix in fixes or []:
+        fix = str(fix).strip()
+        if EXACT_VERSION.match(fix):
+            return fix
+    return None
+
+
+class Plan:
+    """One advisory and the pin move that fixes it."""
+
+    def __init__(self, kind, path, pkg, old, new, advisory, subject):
+        self.kind = kind
+        self.path = path
+        self.pkg = pkg
+        self.old = old
+        self.new = new
+        self.advisory = advisory
+        self.subject = subject
+
+    @property
+    def branch(self):
+        slug = re.sub(r"[^a-z0-9]+", "-", f"{self.pkg} {self.advisory}".lower()).strip("-")
+        return f"lane/advisory-{slug}"
+
+
+def python_plans():
+    """Every python advisory whose package is pinned exactly in a requirements file."""
+    plans = []
+    for path in req_files():
+        pins = {}
+        try:
+            text = Path(path).read_text()
+        except OSError as exc:
+            say("note", f"python  {path}: cannot read it ({exc})")
+            continue
+        for line in text.splitlines():
+            m = PIN.match(line)
+            if m:
+                pins[norm(m.group("pkg"))] = (m.group("pkg"), m.group("ver"))
+        if not pins:
+            say("note", f"python  {path}: no exact == pin in it; nothing here to move")
+            continue
+        doc, why = audit_json(
+            ["pip-audit", "-r", path, "--disable-pip", "--format=json", "--progress-spinner", "off"]
+        )
+        if doc is None:
+            # A file whose pins do not resolve together is still auditable pin by pin.
+            doc, why = audit_json(
+                [
+                    "pip-audit", "-r", path, "--no-deps", "--disable-pip",
+                    "--format=json", "--progress-spinner", "off",
+                ]
+            )
+        if doc is None:
+            say("note", f"python  {path}: pip-audit could not measure it ({why}); nothing planned")
+            continue
+        for dep in doc.get("dependencies") or []:
+            name = norm(dep.get("name") or "")
+            if name not in pins:
+                continue
+            pkg, ver = pins[name]
+            for vuln in dep.get("vulns") or []:
+                fix = pick_fix(vuln.get("fix_versions"))
+                if fix is None:
+                    say("human", f"python  {path}: {pkg}=={ver} {vuln.get('id')}: no exact fix version; a human decides")
+                    continue
+                if fix == ver:
+                    continue
+                plans.append(
+                    Plan(
+                        "python", path, pkg, ver, fix,
+                        vuln.get("id") or "advisory",
+                        f"{pkg} {ver} -> {fix}",
+                    )
+                )
+    return plans
+
+
+def npm_plans():
+    """Every npm tree that carries a high or critical advisory with a fixable version."""
+    plans = []
+    for directory in lock_dirs():
+        doc, why = audit_json(
+            ["npm", "audit", "--package-lock-only", "--audit-level=high", "--omit=dev", "--json"],
+            cwd=directory,
+        )
+        if doc is None:
+            say("note", f"npm     {directory}: npm audit could not measure it ({why}); nothing planned")
+            continue
+        vulns = doc.get("vulnerabilities") or {}
+        if not vulns:
+            continue
+        movable = []
+        for name, meta in vulns.items():
+            advisory = ""
+            for via in meta.get("via") or []:
+                if isinstance(via, dict) and via.get("url"):
+                    advisory = via["url"].rsplit("/", 1)[-1]
+                    break
+            fix = meta.get("fixAvailable")
+            if not isinstance(fix, dict) or not fix.get("version"):
+                say("human", f"npm     {directory}: {name} {advisory}: no fixable version in range; a human decides")
+                continue
+            if fix.get("isSemVerMajor"):
+                say("human", f"npm     {directory}: {name} -> {fix['version']} is a major bump; a human decides")
+                continue
+            movable.append((name, fix["version"], advisory))
+        if movable:
+            subject = ", ".join(f"{n} -> {v}" for n, v, _ in movable)
+            plans.append(
+                Plan("npm", directory, movable[0][0], "", "; ".join(v for _, v, _ in movable),
+                     movable[0][2] or "advisory", subject)
+            )
+    return plans
+
+
+def bump_pin(text, pkg, old, new):
+    """The file with `pkg==old` moved to `pkg==new`. Returns (text, how many pins moved)."""
+    moved = 0
+    out = []
+    for line in text.splitlines(keepends=True):
+        m = PIN.match(line.rstrip("\n"))
+        if m and norm(m.group("pkg")) == norm(pkg) and m.group("ver") == old:
+            end = m.group("rest")
+            newline = "\n" if line.endswith("\n") else ""
+            out.append(f"{m.group('indent')}{m.group('pkg')}{m.group('extras') or ''}=={new}{end}{newline}")
+            moved += 1
+        else:
+            out.append(line)
+    return "".join(out), moved
+
+
+def apply_plan(plan, base, push):
+    """Open the lane. Returns True when a lane was opened."""
+    branch = plan.branch
+    if git("rev-parse", "--verify", "--quiet", f"origin/{branch}"):
+        say("skip", f"lane    {branch}: it already exists")
+        return False
+    if run(["git", "checkout", "--quiet", "-B", branch, base]).returncode != 0:
+        say("skip", f"lane    {branch}: cannot start it from {base}")
+        return False
+    if plan.kind == "python":
+        path = Path(plan.path)
+        text, moved = bump_pin(path.read_text(), plan.pkg, plan.old, plan.new)
+        if not moved:
+            say("skip", f"lane    {branch}: {plan.pkg}=={plan.old} is not a pin in {plan.path}")
+            return False
+        path.write_text(text)
+    else:
+        p = run(
+            ["npm", "audit", "fix", "--package-lock-only", "--omit=dev"],
+            cwd=plan.path,
+        )
+        if p.returncode != 0:
+            say("note", f"npm     {plan.path}: npm audit fix reported ({p.returncode}); the lock carries what it could fix")
+    run(["git", "add", "-A"])
+    files = [f for f in git("diff", "--cached", "--name-only").splitlines() if f]
+    if not files:
+        say("skip", f"lane    {branch}: the fix changed nothing")
+        run(["git", "reset", "--quiet"])
+        return False
+    outside = [f for f in files if not DEPENDENCY_ONLY.match(f)]
+    if outside:
+        say("skip", f"lane    {branch}: it would touch {', '.join(outside)}, which is not a dependency pin")
+        run(["git", "reset", "--quiet"])
+        return False
+    message = (
+        f"fix(deps): {plan.subject} ({plan.advisory})\n"
+        f"\n"
+        f"An advisory on a pinned dependency, with the pin moved to the fixed version.\n"
+        f"Opened by bin/advisory-remediation; the Greenlane proves it green on top of main.\n"
+        f"\n"
+        f"Advisory: {plan.advisory}\n"
+        f"Agent: github-actions[bot]\n"
+    )
+    if run(["git", "commit", "--quiet", "-m", message]).returncode != 0:
+        say("skip", f"lane    {branch}: the commit failed")
+        return False
+    if run(["git", "push", "--quiet", "origin", branch]).returncode != 0:
+        say("fail", f"lane    {branch}: the push failed")
+        return False
+    say("opened", f"lane    {branch}: {plan.subject}")
+    return True
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--push", action="store_true", help="open the lanes (default: print the plan)")
+    ap.add_argument("--max", type=int, default=5, help="how many lanes one run may open")
+    ap.add_argument("--base", default="origin/main", help="the ref a lane starts from")
+    args = ap.parse_args()
+
+    if git("status", "--porcelain").strip():
+        say("fail", "the working tree is not clean; run this on a clean checkout")
+        return 1
+    if args.push and not git("rev-parse", "--verify", "--quiet", args.base):
+        say("fail", f"{args.base} does not resolve here")
+        return 1
+
+    plans = python_plans() + npm_plans()
+    if not plans:
+        say("ok", "no advisory with a fix version was found in the pins this repository tracks")
+        return 0
+    for plan in plans:
+        say("found", f"{plan.kind:<7} {plan.subject} ({plan.advisory}) in {plan.path}")
+    if not args.push:
+        # The dry run changes nothing: not the tree, not a branch, not a commit.
+        for plan in plans:
+            say("plan", f"lane    {plan.branch}: {plan.subject} (not opened: --push was not given)")
+        say("ok", f"{len(plans)} advisory(ies) with a fix, 0 lane(s) opened")
+        return 0
+    opened = 0
+    for plan in plans:
+        if opened >= args.max:
+            say("note", f"the cap of {args.max} lanes was reached; the rest wait for the next run")
+            break
+        if apply_plan(plan, args.base, args.push):
+            opened += 1
+    say("ok", f"{len(plans)} advisory(ies) with a fix, {opened} lane(s) opened")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
