@@ -396,6 +396,17 @@ if [ "$WORKTREES" = 1 ] && phase_gate worktrees 15; then
   # clock read above: every run would keep the worktree it looked at.
   export GIT_OPTIONAL_LOCKS=0
   CWDS=$(tmo 20 lsof -a -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
+  # A CLAIMED WORKTREE IS NEVER REMOVED (2026-10-25). Measured 2026-10-24: the governed
+  # disk-cleanup intent (worktrees=true) removed a live agent's worktree at
+  # ~/.estate/worktrees/deps-zod-mlflow while that agent was working in it -- the checkout is
+  # disposable, so the cleaner judged it settled, and the agent's working directory vanished under
+  # it and every job it then ran failed. The cleaner asks git; a claim is a GitHub comment. So the
+  # estate's own focus register decides: platform/estate/libexec/claimed-worktrees.py prints the
+  # worktrees a live claim covers (a `Claim: owner/repo#N` trailer in the branch's commits and N
+  # live in the register). A worktree on that list is kept, with the reason printed, whatever else
+  # the checks below say -- a claim is a stronger signal than an idle clock.
+  CLAIMED=$(tmo 20 python3 "$(dirname "$0")/claimed-worktrees.py" $WT_REPOS 2>/dev/null)
+  [ -n "$CLAIMED" ] && echo "  keep   worktrees  $(printf '%s\n' "$CLAIMED" | wc -l | tr -d ' ') claimed by a live claim"
   if [ "$APPLY" = 1 ] && [ -d "$QUAR" ]; then
     find "$QUAR" -mindepth 1 -maxdepth 1 -type d -mtime +"$WT_QUARANTINE_DAYS" 2>/dev/null | while IFS= read -r q; do
       for repo in $WT_REPOS; do git -C "$repo" update-ref -d "refs/estate/kept/${q##*/}" 2>/dev/null; done
@@ -429,6 +440,8 @@ if [ "$WORKTREES" = 1 ] && phase_gate worktrees 15; then
       case "$wt" in "$HOME"/?*|/private/tmp/?*|/tmp/?*) under=1;; esac
       if [ -n "$TMP_ROOT" ]; then case "$wt" in "$TMP_ROOT"/?*) under=1;; esac; fi
       if [ -z "$under" ]; then echo "  keep   worktree  $wt  (not under HOME, /tmp or \$TMPDIR)"; continue; fi
+      claimed=$(printf '%s\n' "$CLAIMED" | awk -v w="$wt" -F'\t' '$1==w {print $2; exit}')
+      if [ -n "$claimed" ]; then echo "  keep   worktree  $wt  ($claimed)"; continue; fi
       why=$(unsettled "$repo" "$wt")
       m=$(size_m "$wt")
       salvage=; case "$why" in "~"*) salvage=${why#\~}; why=;; esac
