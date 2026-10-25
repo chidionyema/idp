@@ -80,7 +80,15 @@ jobs:
       - name: idp, so the policy and the budget have one copy
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ github.repository }}
+          # idp, never the caller (idp#6453). Inside a reusable workflow
+          # github.repository is the CALLER's repository, so checking it out here put the
+          # caller into .idp and $IDP_ROOT/bin/pr-report did not exist: the gate died with
+          # "No such file or directory" (exit 127) on every pull request outside idp, and
+          # every such gate has been red since 2026-10-01. The owner-free spelling of
+          # "idp" is the one .github/actions/github-app-token/action.yml already uses:
+          # the caller's owner plus /idp. docs/prose/operating-model-gate-callers.feature
+          # says it in words: "the caller repo out to . and chidionyema/idp to ./.idp".
+          repository: ${{ github.repository_owner }}/idp
           ref: ${{ inputs.idp_ref }}
           path: .idp
 
