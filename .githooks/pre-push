@@ -209,8 +209,19 @@ remote_main=$(git -C "$repo_root" rev-parse origin/main 2>/dev/null || true)
 if [ -n "$remote_main" ] && [ "$local_head" = "$remote_main" ]; then
   echo "ok    idp-fast-gate: no diff from origin/main (worktree at same commit); gate skipped"
 elif [ -n "$base" ]; then
+  # The bdd-proof rung grades the proof in the pull request's body against the head it is asked
+  # about, and this door runs BEFORE the push -- so the pull request it can read is still the
+  # previous commit, while the proof the author wrote names the commit about to land. Measured
+  # 2026-10-25: the gate refused a correct proof, "the proof names 9d97bf39, but the pull
+  # request's head is b9a59de2", for a commit that did not exist on the remote yet -- leaving
+  # patch-the-body-after-the-refusal as the only way through, which is the re-run loop. This hook
+  # knows the sha it is pushing (that is what stdin is for); it says so, rather than letting the
+  # gate answer about a head it already knows will be replaced.
+  bdd_head=""
+  [ -n "${lane_branch:-}" ] && bdd_head="$local_head"
   echo "🛡️  idp-fast-gate: running IDP_CI_FAST=1 IDP_CI_BASE=${base:0:12} bin/idp-ci ..."
-  if ! IDP_CI_FAST=1 IDP_CI_BASE="$base" GITHUB_HEAD_REF="${lane_branch:-}" "$repo_root/bin/idp-ci"; then
+  if ! env IDP_CI_FAST=1 IDP_CI_BASE="$base" GITHUB_HEAD_REF="${lane_branch:-}" \
+      ${bdd_head:+BDD_PR_HEAD="$bdd_head"} "$repo_root/bin/idp-ci"; then
   cat <<'EOF' >&2
 
 ❌ pre-push REFUSED: idp-fast-gate caught errors.
