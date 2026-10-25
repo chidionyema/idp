@@ -10,10 +10,10 @@ description: >
   green and lands it.
 class: mutate
 args:
-  repo:   {type: string, help: "Absolute path of the checkout gh runs in"}
-  branch: {type: string, help: "Head branch name; must already be pushed to origin; never main"}
-  title:  {type: string, help: "PR title"}
-  body_file: {type: string, help: "Path to the PR body markdown file"}
+  repo:   {type: string, required: true, help: "Absolute path of the checkout gh runs in"}
+  branch: {type: string, required: true, help: "Head branch name; must already be pushed to origin; never main"}
+  title:  {type: string, required: true, help: "PR title"}
+  body_file: {type: string, required: true, help: "Path to the PR body markdown file"}
   base:   {type: string, default: main, help: "Base branch (default main)"}
 halt_on_failure: true
 steps:
