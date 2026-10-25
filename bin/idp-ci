@@ -141,7 +141,15 @@ with open('$f','rb') as fh:
   # yamllint on YAML files, against the shared .yamllint. Missing is a FAIL, not a skip.
   command -v yamllint >/dev/null 2>&1 || { echo "  FAIL yamllint is not installed -- run bin/idp-install-deps"; fail=1; }
   if command -v yamllint >/dev/null 2>&1; then
-    for f in $(git ls-files | grep -v '^\.git/'); do
+    # Diff-scoped when a base exists (2026-10-25 audit: whole-repo here failed every lane
+    # on pre-existing drift, same class as the ruff-fmt defect #7086 fixed). Whole-repo
+    # belongs on the weekly sweep workflow, not in every lane's way.
+    if [ -n "${IDP_CI_BASE:-}" ]; then
+      YML_FILES=$(git diff --name-only "$IDP_CI_BASE" HEAD -- '*.yaml' '*.yml' | grep -v '^\.git/' || true)
+    else
+      YML_FILES=$(git ls-files | grep -v '^\.git/')
+    fi
+    for f in $YML_FILES; do
       case "$f" in
       *.yaml|*.yml)
         [ -f "$f" ] || continue
@@ -299,10 +307,17 @@ for _fs in "$IDP"/facts/*.jsonl "$HOME/.estate/facts.jsonl"; do
   facts_n=$((facts_n + 1))
   if out=$("$IDP/bin/estate-claim-check" --store "$_fs" verify 2>&1); then
     say "ok    facts    $(basename "$_fs"): $(printf '%s' "$out" | tail -1)"
-  else
+  elif printf '%s\n' "$out" | grep -qE '^(CONTRADICTED|STALE|TAMPERED)'; then
     say "FAIL  facts    $(basename "$_fs"): a stored fact no longer holds"
     printf '%s\n' "$out" | grep -vE '^(PASS|[0-9]+/[0-9]+ facts)' | head -8 | sed 's/^/      /'
     fail=1
+  else
+    # UNWITNESSED only: this tree cannot re-measure the instrument (its input lives in
+    # another checkout). No lane broke it, so it reports without reding the lane --
+    # 2026-10-25 audit: operator-store instruments with checkout-relative paths redded
+    # every lane from every foreign tree. The owning tree still sees the defect.
+    say "warn  facts    $(basename "$_fs"): unwitnessed here, nothing contradicted"
+    printf '%s\n' "$out" | grep '^UNWITNESSED' | head -4 | sed 's/^/      /'
   fi
 done
 [ "$facts_n" -gt 0 ] || say "skip  facts    no witness store here or in the repo: nothing to re-execute"

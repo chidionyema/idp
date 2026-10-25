@@ -81,6 +81,14 @@ def _run(cmd: str) -> tuple[bool, str]:
     except subprocess.TimeoutExpired:
         return False, f"instrument exceeded {TIMEOUT_S}s"
     if p.returncode != 0:
+        blob = (p.stderr or "") + (p.stdout or "")
+        if "No such file or directory" in blob:
+            # A missing input file is NO EVIDENCE from this tree, not counter-evidence
+            # (2026-10-25: operator-store instruments carry checkout-relative paths, so a
+            # verify from any other checkout FileNotFound'd facts and redded every lane).
+            # The sentinel prefix is a verdict channel, never a value: verify_row maps it
+            # to UNWITNESSED before it can reach a value comparison.
+            return False, "UNWITNESSED: the instrument's input is not in this tree"
         return False, f"instrument exited {p.returncode}: {p.stderr.strip()[:200]}"
     out = p.stdout.strip()
     if not out:
@@ -279,6 +287,8 @@ def verify_row(row: dict, tol: float) -> tuple[str, str]:
 
     ok, out = _run(instrument)
     if not ok:
+        if out.startswith("UNWITNESSED:"):
+            return UNWITNESSED, out
         return CONTRADICTED, out
     if not _same(out, str(row.get("value")), tol):
         return (
@@ -288,6 +298,8 @@ def verify_row(row: dict, tol: float) -> tuple[str, str]:
     for alt in row.get("also") or []:
         ok2, out2 = _run(alt)
         if not ok2:
+            if out2.startswith("UNWITNESSED:"):
+                return UNWITNESSED, out2
             return CONTRADICTED, f"independent instrument failed: {out2}"
         if not _same(out2, str(row.get("value")), tol):
             return CONTRADICTED, (

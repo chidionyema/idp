@@ -1,0 +1,20 @@
+# Weekly whole-repo format/lint sweep (2026-10-25 audit): the checks that were moved out
+# of every lane's way (#7086) still need to run somewhere -- here, on a schedule, where
+# drift is REPORTED and fixed in a small repair lane instead of failing every PR.
+name: repo-hygiene
+on:
+  schedule:
+    - { cron: "23 5 * * 1" }   # Mondays 05:23 UTC, off every agent's morning
+  workflow_dispatch: {}
+permissions: { contents: read }
+jobs:
+  sweep:
+    runs-on: ubuntu-24.04
+    steps:
+      - { uses: actions/checkout@v4, with: { fetch-depth: 0 } }
+      - run: pip install -q ruff==0.15.18 pyyaml yamllint==1.37.1
+      - name: whole-repo format + lint, no base (this is the point)
+        run: |
+          echo "# whole-repo sweep $(date -u +%F)" >> "$GITHUB_STEP_SUMMARY"
+          ruff format --check . >> "$GITHUB_STEP_SUMMARY" 2>&1 && echo "ruff-fmt: clean" >> "$GITHUB_STEP_SUMMARY" || echo "ruff-fmt: DRIFT -- open a format-only repair lane" >> "$GITHUB_STEP_SUMMARY"
+          yamllint -c .yamllint . >> "$GITHUB_STEP_SUMMARY" 2>&1 && echo "yamllint: clean" >> "$GITHUB_STEP_SUMMARY" || echo "yamllint: DRIFT -- open a repair lane" >> "$GITHUB_STEP_SUMMARY"
