@@ -1,0 +1,334 @@
+#!/usr/bin/env python3
+"""Harvest the live open-source structured-generation ecosystem, with numbers rather than memory.
+
+WHY THIS FILE EXISTS
+--------------------
+A proposal that says "tools like Outlines or XGrammar make invalid output impossible" is the same
+kind of unverified claim the proposal is trying to eliminate. So the ecosystem is harvested the
+same way the papers are: a fixed list of projects, a live API, a committed JSON, a date on it.
+
+Two endpoints, both authoritative and both free to read:
+
+  * GitHub REST API through the authenticated `gh` CLI (5000 req/h) -- stars, forks, last push,
+    created, license, archived flag, latest release tag and publish date.
+  * PyPI JSON API -- latest version and the upload date of that exact version.
+
+WHAT IT PROVES AND WHAT IT DOES NOT
+-----------------------------------
+It proves a project EXISTS, is MAINTAINED (last push, release date) and is ADOPTED (stars, forks).
+It does NOT prove the project works, and it does NOT prove a benchmark number. Anything in the
+digest about behaviour cites the project's own documentation and is marked as the project's claim.
+A star count is not evidence that constrained decoding helps; it is evidence about who is shipping.
+
+    bin/oss-harvest --out docs/research/<name>-oss.json
+    bin/oss-harvest --verify docs/research/<name>-oss.json docs/research/<name>.md
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+# The registry. Every entry is a project the proposal may name, grouped by what the estate would
+# use it FOR. Adding a project here is what makes it citable; a name that is not here cannot be
+# cited with a number.
+ENGINES = [
+    # constrained / structured generation engines: the thing that makes an invalid token impossible
+    "dottxt-ai/outlines",
+    "guidance-ai/guidance",
+    "mlc-ai/xgrammar",
+    "microsoft/llguidance",
+    "noamgat/lm-format-enforcer",
+    "sgl-project/sglang",
+    "vllm-project/vllm",
+    "ggml-org/llama.cpp",
+    "eth-sri/lmql",
+    "huggingface/transformers",
+    # schema / typed-output layers: what an agent writes instead of prose
+    "567-labs/instructor",
+    "pydantic/pydantic-ai",
+    "boundaryml/baml",
+    "microsoft/TypeChat",
+    "stanfordnlp/dspy",
+    "prefecthq/marvin",
+    "mirascope/mirascope",
+    "guardrails-ai/guardrails",
+    "NVIDIA/NeMo-Guardrails",
+    "openai/openai-python",
+    "anthropics/anthropic-sdk-python",
+    "modelcontextprotocol/modelcontextprotocol",
+    # verification / spec-driven / code-agent evidence
+    "github/spec-kit",
+    "All-Hands-AI/OpenHands",
+    "Aider-AI/aider",
+    "block/goose",
+    "qodo-ai/pr-agent",
+    "continuedev/continue",
+    "SWE-bench/SWE-bench",
+    "princeton-nlp/SWE-agent",
+    "sourcegraph/cody",
+    "getcursor/cursor",
+]
+
+# PyPI names whose version + upload date is the "is this current" fact.
+PYPI = [
+    "outlines",
+    "guidance",
+    "xgrammar",
+    "llguidance",
+    "lm-format-enforcer",
+    "instructor",
+    "pydantic",
+    "pydantic-ai",
+    "baml-py",
+    "dspy",
+    "marvin",
+    "mirascope",
+    "guardrails-ai",
+    "openai",
+    "anthropic",
+    "jsonschema",
+    "mcp",
+    "sglang",
+    "vllm",
+    "lmql",
+]
+
+# GitHub search, sorted by recency: the bleeding edge is what was pushed this month, not what has
+# the most stars. Both are recorded because a star count and a push date answer different questions.
+SEARCHES = [
+    "structured output llm in:name,description,readme",
+    "constrained decoding in:name,description,readme",
+    "json schema llm in:name,description,readme",
+    "grammar constrained generation in:name,description,readme",
+    "agent hallucination detection in:name,description,readme",
+    "spec-driven development llm in:name,description,readme",
+    "tool calling schema validation in:name,description,readme",
+]
+
+
+def gh_api(path: str, timeout: int = 25) -> dict | None:
+    """Read GitHub through the authenticated CLI, which is the door the estate already owns."""
+    return gh_api_reason(path)[0]
+
+
+def gh_api_reason(path: str, timeout: int = 25) -> tuple[dict | None, str]:
+    """(document, reason-if-none). A 404 and a timeout are different facts and must stay so:
+    a deleted project is a finding, a network blip is a retry."""
+    try:
+        r = subprocess.run(
+            ["gh", "api", path], capture_output=True, text=True, timeout=timeout, check=False
+        )
+    except subprocess.TimeoutExpired:
+        return None, "timeout"
+    except FileNotFoundError:
+        return None, "gh CLI absent"
+    if r.returncode != 0:
+        err = (r.stderr or "").strip().splitlines()
+        return None, (err[0] if err else f"gh exit {r.returncode}")
+    try:
+        return json.loads(r.stdout), ""
+    except json.JSONDecodeError:
+        return None, "unparseable JSON"
+
+
+def repo_facts(full: str) -> dict:
+    d, why = gh_api_reason(f"repos/{full}")
+    if not d:
+        return {"repo": full, "error": why or "unreachable"}
+    rel = gh_api(f"repos/{full}/releases/latest")
+    out = {
+        "repo": full,
+        "url": d.get("html_url"),
+        "description": (d.get("description") or "")[:220],
+        "stars": d.get("stargazers_count"),
+        "forks": d.get("forks_count"),
+        "open_issues": d.get("open_issues_count"),
+        "created": (d.get("created_at") or "")[:10],
+        "pushed": (d.get("pushed_at") or "")[:10],
+        "license": ((d.get("license") or {}) or {}).get("spdx_id"),
+        "archived": bool(d.get("archived")),
+        "language": d.get("language"),
+        "latest_release": None,
+        "latest_release_at": None,
+    }
+    if rel and not rel.get("error"):
+        out["latest_release"] = rel.get("tag_name")
+        out["latest_release_at"] = (rel.get("published_at") or "")[:10]
+    return out
+
+
+def pypi_facts(name: str) -> dict:
+    url = f"https://pypi.org/pypi/{name}/json"
+    req = urllib.request.Request(url, headers={"User-Agent": "estate-oss-harvest/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=25) as r:
+            d = json.loads(r.read())
+    except urllib.error.HTTPError as exc:
+        return {"package": name, "error": f"HTTP {exc.code}"}
+    except Exception as exc:
+        return {"package": name, "error": f"{type(exc).__name__}: {exc}"}
+    version = d.get("info", {}).get("version")
+    uploaded = None
+    for f in d.get("urls") or []:
+        if f.get("upload_time_iso_8601"):
+            uploaded = f["upload_time_iso_8601"][:10]
+            break
+    return {
+        "package": name,
+        "version": version,
+        "uploaded": uploaded,
+        "summary": (d.get("info", {}).get("summary") or "")[:180],
+        "url": d.get("info", {}).get("project_url"),
+    }
+
+
+def search(q: str, per_page: int = 15) -> dict:
+    enc = urllib.parse.quote(q)
+    d = gh_api(f"search/repositories?q={enc}&sort=updated&order=desc&per_page={per_page}")
+    if not d:
+        return {"query": q, "error": "unreachable", "results": []}
+    return {
+        "query": q,
+        "total_count": d.get("total_count"),
+        "results": [
+            {
+                "repo": i.get("full_name"),
+                "stars": i.get("stargazers_count"),
+                "pushed": (i.get("pushed_at") or "")[:10],
+                "description": (i.get("description") or "")[:180],
+            }
+            for i in (d.get("items") or [])
+        ],
+    }
+
+
+def harvest(out_path: str) -> int:
+    errors = []
+    repos = []
+    for full in ENGINES:
+        f = repo_facts(full)
+        if f.get("error"):
+            errors.append({"repo": full, "error": f["error"]})
+        repos.append(f)
+        print(
+            f"{full:<44} {f.get('stars')} stars  {f.get('pushed')}  {f.get('latest_release')}",
+            file=sys.stderr,
+        )
+    packages = [pypi_facts(n) for n in PYPI]
+    for p in packages:
+        if p.get("error"):
+            errors.append({"package": p["package"], "error": p["error"]})
+    searches = [search(q) for q in SEARCHES]
+
+    doc = {
+        "harvested_at": time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime()),
+        "method": (
+            "GitHub REST API via the authenticated `gh` CLI (repos/<owner>/<name> and "
+            "releases/latest per project) and the PyPI JSON API (pypi.org/pypi/<name>/json). "
+            f"{len(ENGINES)} projects, {len(PYPI)} packages, {len(SEARCHES)} GitHub searches "
+            "sorted by last push. Every number below was read from the API on the harvest date."
+        ),
+        "limits": (
+            "Stars and release dates prove a project exists, is maintained and is adopted. They "
+            "prove nothing about whether it reduces hallucination. A behavioural claim in the "
+            "digest cites the project's own documentation and is marked as the project's claim."
+        ),
+        "errors": errors,
+        "repos": sorted(repos, key=lambda r: -(r.get("stars") or 0)),
+        "pypi": packages,
+        "searches": searches,
+    }
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(doc, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    print(
+        f"wrote {out_path}: {len(repos)} repos, {len(packages)} packages, {len(errors)} errors",
+        file=sys.stderr,
+    )
+    return 0 if repos else 1
+
+
+# Two kinds of first segment are never a GitHub org in these documents.
+#
+# 1. A path in this repository (docs/, bin/, litellm-local/, platform/, ...) -- `wc -l
+#    litellm-local/callbacks/pobr_gate.py` in a fenced block is a command, and the fence rule in
+#    verify() already covers that, but the same path in prose is a path too.
+# 2. This estate's own VOCABULARY. A document about structured formats says "receipt/envelope",
+#    "doc/claim", "catalog/graph" and "read/write", and every one of those is lexically identical
+#    to `owner/name` -- there is no rule that separates them, because nothing distinguishes a
+#    product name from a pair of nouns. So the vocabulary is listed. It is a list because it has
+#    to be one; the check stays strict everywhere else, and the cost of an entry here is that a
+#    repo genuinely named `receipt/*` would not be checked (the registry holds none).
+NON_CODE_NAMESPACES = (
+    "docs", "bin", "tests", "platform", "schema", "mcp", "features", "web",
+    "backstage", "clusters", "callbacks", "estate", "sovereign", "forge", "eval", "llm", "crew",
+    "chidionyema", "facts", "scheduler", "extensions", "infra", "litellm-local", "lane", "origin",
+    # vocabulary (kind 2)
+    "receipt", "doc", "catalog", "graph", "read", "write", "file", "code", "energy", "grammar",
+    "ci", "agent", "tool", "rung",
+)
+
+
+def verify(json_path: str, md_path: str) -> int:
+    """Every owner/name the digest names must be a harvested repo.
+
+    A file path in this repository (`platform/llm/config.yaml`) and a host in a URL
+    (`arxiv.org/abs/...`) both look like `owner/name` to a regex, so both are excluded by rule
+    rather than by hoping they do not appear: a first segment containing a dot is a hostname, and
+    a first segment in the estate's own namespace list is a path in this repository.
+    """
+    with open(json_path, encoding="utf-8") as f:
+        doc = json.load(f)
+    known = {r["repo"].lower() for r in doc["repos"] if r.get("repo")}
+    with open(md_path, encoding="utf-8") as f:
+        md = f.read()
+    # A fenced code block is a COMMAND, not a citation. The paths in section 7 of a digest
+    # (`wc -l litellm-local/callbacks/pobr_schema.py`) are real paths that a `owner/name`
+    # regex reads as a repo, and 8 of them were reported as unharvested repos the first time
+    # this verifier met a document that also contains shell. Stripping fences keeps the check
+    # exactly as strict where it matters -- a repo named in prose -- and stops it accusing a
+    # command of being a claim. A repo named INSIDE a fence is thereby not checked; that is
+    # stated here rather than discovered later, and no digest in this repo cites from a fence.
+    md = re.sub(r"^```.*?^```", "", md, flags=re.S | re.M)
+
+    missing = []
+    for m in re.finditer(r"\b([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)\b", md):
+        cand = m.group(1).lower()
+        owner = cand.split("/")[0]
+        if cand in known:
+            continue
+        if "." in owner or owner in NON_CODE_NAMESPACES:
+            continue
+        missing.append(m.group(1))
+    missing = sorted(set(missing))
+    if missing:
+        print(f"UNHARVESTED {md_path}: {len(missing)} repo(s) not in {json_path}", file=sys.stderr)
+        for r in missing:
+            print(f"  {r}  https://github.com/{r}", file=sys.stderr)
+        return 1
+    print(f"ok {md_path}: every named repo is in {json_path} ({len(known)} known)")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--out")
+    ap.add_argument("--verify", nargs=2, metavar=("JSON", "MARKDOWN"))
+    a = ap.parse_args(argv)
+    if a.verify:
+        return verify(*a.verify)
+    if not a.out:
+        ap.error("either --out PATH, or --verify JSON MD")
+    return harvest(a.out)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

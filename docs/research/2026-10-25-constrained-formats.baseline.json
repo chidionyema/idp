@@ -1,0 +1,314 @@
+{
+  "generated_at": "2026-10-25T01:00Z",
+  "why": "The violation set this ratchet is judged against. Regenerating it is a deliberate act (--write-baseline) that must be argued in the pull request: it retires every violation listed here from the gate's sight.",
+  "summary": {
+    "root": "platform/estate/intents",
+    "intents": 96,
+    "intents_with_args": 85,
+    "args_declared": 263,
+    "args_typed": 233,
+    "args_required": 2,
+    "intents_with_undeclared_interpolation": 0,
+    "intents_with_raw_interpolation": 5,
+    "parse_errors": 0,
+    "violations": 74
+  },
+  "violations": [
+    {
+      "key": "R4:build-image:image",
+      "text": "build-image: R4 arg 'image' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:ci.run:branch",
+      "text": "ci.run: R4 arg 'branch' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:concierge-task:goal",
+      "text": "concierge-task: R4 arg 'goal' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R1:crystallize:dry_run",
+      "text": "crystallize: R1 arg 'dry_run' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R1:crystallize:force",
+      "text": "crystallize: R1 arg 'force' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R4:crystallize:topic",
+      "text": "crystallize: R4 arg 'topic' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:crystallize:command",
+      "text": "crystallize: R4 arg 'command' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:crystallize:description",
+      "text": "crystallize: R4 arg 'description' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:delegate-build:slug",
+      "text": "delegate-build: R4 arg 'slug' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R1:disk-cleanup:apply",
+      "text": "disk-cleanup: R1 arg 'apply' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R1:disk-cleanup:trash",
+      "text": "disk-cleanup: R1 arg 'trash' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R1:disk-cleanup:worktrees",
+      "text": "disk-cleanup: R1 arg 'worktrees' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R1:estate-inventory:json",
+      "text": "estate-inventory: R1 arg 'json' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R3:estate-snapshot:repo",
+      "text": "estate-snapshot: R3 interpolates <<repo>> raw; estate-execute quotes {{...}} and only <<...>> bypasses it"
+    },
+    {
+      "key": "R3:fleet-regression:repo",
+      "text": "fleet-regression: R3 interpolates <<repo>> raw; estate-execute quotes {{...}} and only <<...>> bypasses it"
+    },
+    {
+      "key": "R3:fleet-regression:url",
+      "text": "fleet-regression: R3 interpolates <<url>> raw; estate-execute quotes {{...}} and only <<...>> bypasses it"
+    },
+    {
+      "key": "R1:flux-reconcile:with_source",
+      "text": "flux-reconcile: R1 arg 'with_source' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R1:flux-reconcile:force",
+      "text": "flux-reconcile: R1 arg 'force' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R4:flux-reconcile:kind",
+      "text": "flux-reconcile: R4 arg 'kind' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:flux-reconcile:name",
+      "text": "flux-reconcile: R4 arg 'name' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:flux-suspend:kind",
+      "text": "flux-suspend: R4 arg 'kind' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:flux-suspend:name",
+      "text": "flux-suspend: R4 arg 'name' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R1:friction-report:window_hours",
+      "text": "friction-report: R1 arg 'window_hours' has type 'number'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R1:friction-report:top",
+      "text": "friction-report: R1 arg 'top' has type 'number'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R4:gh-api:path",
+      "text": "gh-api: R4 arg 'path' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:gh-check-runs:sha",
+      "text": "gh-check-runs: R4 arg 'sha' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R1:git-sync:dry_run",
+      "text": "git-sync: R1 arg 'dry_run' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R4:git.branch:name",
+      "text": "git.branch: R4 arg 'name' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:git.commit-staged:message_file",
+      "text": "git.commit-staged: R4 arg 'message_file' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:git.commit:file",
+      "text": "git.commit: R4 arg 'file' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:git.commit:patch",
+      "text": "git.commit: R4 arg 'patch' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:git.commit:message",
+      "text": "git.commit: R4 arg 'message' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R1:hypotheses.race:eps",
+      "text": "hypotheses.race: R1 arg 'eps' has type 'float'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R3:jev-setup:repo",
+      "text": "jev-setup: R3 interpolates <<repo>> raw; estate-execute quotes {{...}} and only <<...>> bypasses it"
+    },
+    {
+      "key": "R1:k8s-apply:dry_run",
+      "text": "k8s-apply: R1 arg 'dry_run' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R1:k8s-apply:server",
+      "text": "k8s-apply: R1 arg 'server' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R1:k8s-apply:validate",
+      "text": "k8s-apply: R1 arg 'validate' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R4:k8s-apply:manifest",
+      "text": "k8s-apply: R4 arg 'manifest' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R1:k8s-delete:dry_run",
+      "text": "k8s-delete: R1 arg 'dry_run' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R4:k8s-delete:resource",
+      "text": "k8s-delete: R4 arg 'resource' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:k8s-delete:name",
+      "text": "k8s-delete: R4 arg 'name' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:k8s-describe:resource",
+      "text": "k8s-describe: R4 arg 'resource' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:k8s-describe:name",
+      "text": "k8s-describe: R4 arg 'name' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R1:k8s-diag:verbose",
+      "text": "k8s-diag: R1 arg 'verbose' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R1:k8s-logs:previous",
+      "text": "k8s-logs: R1 arg 'previous' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R4:k8s-logs:pod",
+      "text": "k8s-logs: R4 arg 'pod' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R1:k8s-pods:all_ns",
+      "text": "k8s-pods: R1 arg 'all_ns' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R1:kubectl-apply:server",
+      "text": "kubectl-apply: R1 arg 'server' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R1:kubectl-apply:validate",
+      "text": "kubectl-apply: R1 arg 'validate' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R4:kubectl-apply:manifest",
+      "text": "kubectl-apply: R4 arg 'manifest' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R1:kubectl-list:all_ns",
+      "text": "kubectl-list: R1 arg 'all_ns' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R4:kubectl-list:resource",
+      "text": "kubectl-list: R4 arg 'resource' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R1:kubectl-logs:previous",
+      "text": "kubectl-logs: R1 arg 'previous' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R4:kubectl-logs:pod",
+      "text": "kubectl-logs: R4 arg 'pod' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:kubectl:resource",
+      "text": "kubectl: R4 arg 'resource' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:net-gnp-restore:snapshot",
+      "text": "net-gnp-restore: R4 arg 'snapshot' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R1:pr-merge:dry_run",
+      "text": "pr-merge: R1 arg 'dry_run' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R1:router-doctor:heal",
+      "text": "router-doctor: R1 arg 'heal' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R1:scheduler-venv:apply",
+      "text": "scheduler-venv: R1 arg 'apply' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R4:shell.parse:file",
+      "text": "shell.parse: R4 arg 'file' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:shell.suggest:file",
+      "text": "shell.suggest: R4 arg 'file' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:shell.suggest:line",
+      "text": "shell.suggest: R4 arg 'line' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:shell.suggest:fixed_file",
+      "text": "shell.suggest: R4 arg 'fixed_file' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:shell.verify:file",
+      "text": "shell.verify: R4 arg 'file' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R4:shell.verify:patch",
+      "text": "shell.verify: R4 arg 'patch' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R1:silence-audit:json",
+      "text": "silence-audit: R1 arg 'json' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R1:site-onboard:force",
+      "text": "site-onboard: R1 arg 'force' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R4:ui.scaffold:name",
+      "text": "ui.scaffold: R4 arg 'name' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R1:vault-rotate:dry_run",
+      "text": "vault-rotate: R1 arg 'dry_run' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R4:vault-rotate:name",
+      "text": "vault-rotate: R4 arg 'name' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R3:voice-bench-compose:models",
+      "text": "voice-bench-compose: R3 interpolates <<models>> raw; estate-execute quotes {{...}} and only <<...>> bypasses it"
+    },
+    {
+      "key": "R3:voice-bench-compose:repo",
+      "text": "voice-bench-compose: R3 interpolates <<repo>> raw; estate-execute quotes {{...}} and only <<...>> bypasses it"
+    },
+    {
+      "key": "R3:voice-router-test:repo",
+      "text": "voice-router-test: R3 interpolates <<repo>> raw; estate-execute quotes {{...}} and only <<...>> bypasses it"
+    },
+    {
+      "key": "R1:work-audit:all",
+      "text": "work-audit: R1 arg 'all' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    }
+  ]
+}

@@ -397,6 +397,42 @@ else say "FAIL  yamllint is not installed -- run bin/idp-install-deps"; fail=1; 
 # wrong pull request, which no change to this file can fix.
 python3 "$IDP/bin/idp-bdd-proof-gate" --live || true
 
+# 1c.3 schema, every intent's args block against the door that runs it (bin/schema-conformance).
+#      The estate's agent door (platform/estate/bin/estate-execute, resolve_args) accepts any
+#      `k=v` a caller passes, coerces `int` and nothing else, never reads `required`, and hands
+#      `""` for an omission; measured 2026-10-25 over the 96 committed intents that is 42 args of
+#      a type the door cannot coerce and 3 intents that are not even parseable YAML. A lane cannot
+#      fix 74 violations in its own change, and a rung that is red on main is a rung every lane
+#      must bypass -- which is how a gate stops being a gate. So CI runs the ratchet: fail on a
+#      violation the committed baseline does not carry, and print `fixed` lines when a lane pays
+#      one down. rc 2 is BLIND (baseline missing or unreadable) and is a FAIL, never a pass. The
+#      suite that proves both directions -- strict fails on main, the ratchet refuses a new
+#      violation -- runs with it, because a gate whose own proof nothing runs is the "a gate that
+#      cannot fail" defect one level up (the same reason rung 8e exists).
+if ! touched platform/estate/intents/ \
+      bin/schema-conformance \
+      docs/research/2026-10-25-constrained-formats.baseline.json \
+      tests/test_schema_conformance.py \
+      bin/idp-ci; then
+  say "ok    schema   no intent, gate or baseline change against ${IDP_CI_BASE:-main}"
+else
+  sc=$("$IDP/bin/schema-conformance" intents --root "$IDP/platform/estate/intents" \
+         --baseline "$IDP/docs/research/2026-10-25-constrained-formats.baseline.json" 2>&1); sc_rc=$?
+  # No $XD here: this rung sits before xdist's arguments are defined, and `XD` under `set -u`
+  # refused the run on 2026-10-25 (line 406: XD: unbound variable) instead of running the proof.
+  sp=$("$MPY" -m pytest -q -p no:cacheprovider "$IDP/tests/test_schema_conformance.py" 2>&1); sp_rc=$?
+  if [ "$sc_rc" -eq 0 ] && [ "$sp_rc" -eq 0 ]; then
+    say "ok    schema   $(printf '%s' "$sc" | grep -E '^ratchet' | sed 's/^ratchet *//') -- $(printf '%s' "$sp" | grep -oE '[0-9]+ passed' | head -1) on the gate's own proof"
+  else
+    [ "$sc_rc" -eq 2 ] && say "FAIL  schema   BLIND: the ratchet baseline could not be read" \
+      || say "FAIL  schema   a lane added a violation (rc=$sc_rc) or the gate's proof broke (rc=$sp_rc)"
+    printf '%s\n' "$sc" | grep -vE '^(ok|intents|[a-z ])' | head -12 | sed 's/^/      /'
+    printf '%s\n' "$sc" | tail -3 | sed 's/^/      /'
+    [ "$sp_rc" -eq 0 ] || printf '%s\n' "$sp" | tail -15 | sed 's/^/      /'
+    fail=1
+  fi
+fi
+
 # 1d. ruff, the same rule set (pyproject [tool.ruff.lint]) the bdd job runs after the suites.
 #     In the fast gate it runs first, so an undefined name is red in under a minute.
 if [ "$FAST" = 1 ]; then

@@ -1,0 +1,299 @@
+#!/usr/bin/env python3
+"""Measure the estate's structured-format surface: where a schema exists and where it is decoration.
+
+    bin/schema-conformance intents [--root ~/.estate/intents] [--json]
+    bin/schema-conformance intents --baseline <file>          # ratchet: fail only on NEW violations
+    bin/schema-conformance intents --write-baseline <file>    # record today's violations
+
+WHY THIS FILE EXISTS
+--------------------
+AGENTS.md section 7 says every action an agent performs goes through an intent YAML, and
+`bin/intent-compile` proves the technique for cluster configuration: typed payloads that REFUSE an
+unknown field by name, exit 0/1/2. That is the estate's own worked example of the thing the founder
+asked for on 2026-10-25 -- treat the model as a compiler function, so a plausible-sounding invention
+is refused by the shape rather than believed -- and it covers four payload types.
+
+The 340 intents an agent actually CALLS are a different story. Their shape is structured (a YAML
+with an `args:` block, and `{{var}}` is shlex-quoted by estate-execute:interpolate), but nothing
+checks the PAYLOAD:
+
+  * `resolve_args` accepts `foo=bar` for a key the intent never declared, silently;
+  * a declared arg that the caller omits resolves to `""`, so a step runs half-formed;
+  * `type: int` coerces a non-numeric value to `0` instead of refusing it;
+  * and an intent may interpolate `{{repo}}` in a shell step while declaring no `repo` arg at all,
+    which is the exact shape a hallucinated argument takes: it resolves to nothing, the step runs,
+    and the failure surfaces far from the claim.
+
+This command measures those four on disk. It invents no baseline and grades no proxy. Exit 1 when an
+intent violates a rule, 0 when clean, 2 when the gate could not see (an absent root, an unreadable
+baseline) -- because a gate that graded nothing must never report clean.
+
+Rules, each one a rule the estate already believes elsewhere:
+
+  R0 an intent that does not parse is never clean: `merge-gate-to-main`, `pobr-gate` and
+     `test-commit` are unparseable YAML today (an unquoted `": "` inside `description:`), and
+     calling one raises a ScannerError traceback rather than refusing with a reason -- a door that
+     crashes is not a door that refuses
+  R1 every arg declaration names a type the executor actually coerces. estate-execute's
+     `resolve_args` coerces `int` only, so `type: bool` and `type: number` are honest labels on a
+     value that arrives as a string; R1 exists so the declaration and the door say the same thing
+  R2 every `{{var}}` / `<<var>>` a step interpolates is declared in `args:` (or is supplied by a
+     previous step's `from:`), because an undeclared interpolation silently becomes nothing
+  R3 `<<var>>` (raw, unquoted) is refused: estate-execute quotes `{{var}}`, and the only reason to
+     reach for `<<var>>` is a value the author already quoted by hand, which is the one path where
+     a caller-supplied string reaches a shell unquoted
+  R4 an arg with no default must say `required: true`. `resolve_args` never reads the flag today
+     (`grep required platform/estate/bin/estate-execute` finds nothing), so this rule measures the
+     documentation gap the door is about to start enforcing rather than a runtime difference: an
+     arg with no default and no flag is an argument nobody decided about, and the caller who omits
+     it is handed ""
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+import time
+from pathlib import Path
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover - yaml is present everywhere the estate runs
+    raise SystemExit("BLIND schema-conformance: python3 yaml is unavailable, so no intent was read")
+
+# What estate-execute's resolve_args actually coerces. Not a wish list: read from the door.
+TYPES = {"string", "int"}
+INTERP = re.compile(r"\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}|<<([A-Za-z_][A-Za-z0-9_]*)>>")
+
+
+def walk_strings(node):
+    """Every string value anywhere in the document, so a step in any shape is seen."""
+    if isinstance(node, str):
+        yield node
+    elif isinstance(node, dict):
+        for v in node.values():
+            yield from walk_strings(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from walk_strings(v)
+
+
+def _v(rule: str, name: str, arg: str, text: str) -> dict:
+    """One violation, with a stable key so a ratchet baseline survives a reworded message."""
+    return {"key": f"{rule}:{name}:{arg}", "rule": rule, "intent": name, "text": text}
+
+
+def check_intent(path: Path) -> tuple[dict, list[dict]]:
+    """Return (facts, violations) for one intent file."""
+    name = path.stem
+    try:
+        doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception as exc:
+        why = f"{path.name}: R0 unreadable ({type(exc).__name__}); an unreadable intent is never clean"
+        return ({"name": name, "parse_error": f"{type(exc).__name__}: {exc}"},
+                [_v("R0", name, "-", why)])
+    if not isinstance(doc, dict):
+        return ({"name": name, "parse_error": "not a mapping"},
+                [_v("R0", name, "-", f"{path.name}: R0 top level is not a mapping")])
+
+    args = doc.get("args") or {}
+    if not isinstance(args, dict):
+        args = {}
+    violations: list[dict] = []
+
+    # R1: declared args carry a type the executor coerces.
+    declared: dict[str, dict] = {}
+    for key, spec in args.items():
+        spec = spec if isinstance(spec, dict) else {}
+        declared[key] = spec
+        if spec.get("type") not in TYPES:
+            violations.append(_v("R1", name, key,
+                f"{name}: R1 arg {key!r} has type {spec.get('type')!r}; resolve_args coerces "
+                f"{sorted(TYPES)} only, so this value arrives as a string"))
+
+    # What a previous step can supply: `from:` names a step whose JSON output is merged into args.
+    supplied: set[str] = set()
+    for step in doc.get("steps") or []:
+        if isinstance(step, dict):
+            for key in ("from", "name"):
+                v = step.get(key)
+                if isinstance(v, str):
+                    supplied.add(v)
+                elif isinstance(v, list):
+                    supplied.update(x for x in v if isinstance(x, str))
+
+    used_quoted: set[str] = set()
+    used_raw: set[str] = set()
+    for s in walk_strings(doc.get("steps") or []):
+        for q, r in INTERP.findall(s):
+            if q:
+                used_quoted.add(q)
+            if r:
+                used_raw.add(r)
+
+    # R2: every interpolation is declared (or comes from a step's output).
+    for var in sorted(used_quoted | used_raw):
+        if var in declared or var in supplied:
+            continue
+        violations.append(_v("R2", name, var,
+            f"{name}: R2 interpolates {{{{{var}}}}} but declares no {var!r} arg and no step supplies it"))
+
+    # R3: raw interpolation of a declared arg.
+    for var in sorted(used_raw & set(declared)):
+        violations.append(_v("R3", name, var,
+            f"{name}: R3 interpolates <<{var}>> raw; estate-execute quotes {{{{...}}}} and only "
+            f"<<...>> bypasses it"))
+
+    # R4: an arg with no default must be required.
+    for key, spec in declared.items():
+        if spec.get("type") in TYPES and "default" not in spec and not spec.get("required"):
+            violations.append(_v("R4", name, key,
+                f"{name}: R4 arg {key!r} has no default and is not required: true; nobody decided "
+                f"about this argument, and a caller who omits it is handed ''"))
+
+    facts = {
+        "name": name,
+        "args": len(declared),
+        "typed": sum(1 for s in declared.values() if s.get("type") in TYPES),
+        "required": sum(1 for s in declared.values() if s.get("required")),
+        "interpolated_quoted": len(used_quoted),
+        "interpolated_raw": len(used_raw),
+        "undeclared_interpolations": sorted(
+            v for v in (used_quoted | used_raw) if v not in declared and v not in supplied
+        ),
+        "violations": len(violations),
+    }
+    return facts, violations
+
+
+def summarise(root: Path | None, facts: list[dict], violations: list[dict]) -> dict:
+    return {
+        "root": str(root) if root else "",
+        "intents": len(facts),
+        "intents_with_args": sum(1 for f in facts if f.get("args")),
+        "args_declared": sum(f.get("args", 0) for f in facts),
+        "args_typed": sum(f.get("typed", 0) for f in facts),
+        "args_required": sum(f.get("required", 0) for f in facts),
+        "intents_with_undeclared_interpolation": sum(1 for f in facts if f.get("undeclared_interpolations")),
+        "intents_with_raw_interpolation": sum(1 for f in facts if f.get("interpolated_raw")),
+        "parse_errors": sum(1 for f in facts if f.get("parse_error")),
+        "violations": len(violations),
+    }
+
+
+def intents(root: Path, as_json: bool, baseline: Path | None, write_baseline: Path | None) -> int:
+    if not root.is_dir():
+        print(f"BLIND schema-conformance: {root} is not a directory", file=sys.stderr)
+        return 2
+    paths = sorted(root.glob("*.yaml"))
+    if not paths:
+        print(f"BLIND schema-conformance: no *.yaml under {root}", file=sys.stderr)
+        return 2
+
+    facts, violations = [], []
+    for p in paths:
+        f, v = check_intent(p)
+        facts.append(f)
+        violations.extend(v)
+    summary = summarise(root, facts, violations)
+
+    if write_baseline:
+        doc = {
+            "generated_at": time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime()),
+            "why": (
+                "The violation set this ratchet is judged against. Regenerating it is a deliberate "
+                "act (--write-baseline) that must be argued in the pull request: it retires every "
+                "violation listed here from the gate's sight."
+            ),
+            "summary": summary,
+            "violations": [{"key": v["key"], "text": v["text"]} for v in violations],
+        }
+        write_baseline.parent.mkdir(parents=True, exist_ok=True)
+        write_baseline.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+        print(f"wrote {write_baseline} with {len(violations)} violation(s) from {summary['intents']} intent(s)")
+        return 0
+
+    if as_json:
+        print(json.dumps({"summary": summary,
+                          "violations": [v["text"] for v in violations],
+                          "keys": [v["key"] for v in violations],
+                          "facts": facts}, indent=2))
+        return 1 if violations else 0
+
+    print(f"intents                {summary['intents']}")
+    print(f"  with args            {summary['intents_with_args']}")
+    print(f"  args declared        {summary['args_declared']}")
+    print(f"  args typed           {summary['args_typed']}")
+    print(f"  args required        {summary['args_required']}")
+    print(f"  undeclared {{var}}     {summary['intents_with_undeclared_interpolation']} intent(s)")
+    print(f"  raw <<var>>          {summary['intents_with_raw_interpolation']} intent(s)")
+    print(f"  unreadable           {summary['parse_errors']}")
+    print(f"violations             {len(violations)}")
+    for v in violations[:40]:
+        print(f"  {v['text']}")
+    if len(violations) > 40:
+        print(f"  ... and {len(violations) - 40} more")
+
+    if baseline:
+        return ratchet(baseline, violations)
+    return 1 if violations else 0
+
+
+def ratchet(baseline: Path, violations: list[dict]) -> int:
+    """Judge this tree against a recorded set: new violations red, known ones named, fixes welcome.
+
+    A gate that fails on 74 violations the day it lands blocks every lane in the fleet, and a gate
+    that is born exempt grades nothing. So the ratchet: the estate's shape may not get WORSE in this
+    change. Removal is never a violation -- a lane that fixes intents prunes the baseline when it is
+    ready, and until then the count only goes down.
+    """
+    try:
+        doc = json.loads(baseline.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        print(f"BLIND schema-conformance: no baseline at {baseline}; a ratchet with no recorded set "
+              f"cannot tell a new violation from an old one", file=sys.stderr)
+        return 2
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"BLIND schema-conformance: baseline {baseline} unreadable ({type(exc).__name__})",
+              file=sys.stderr)
+        return 2
+    known = {v.get("key") for v in (doc.get("violations") or []) if isinstance(v, dict)}
+    if not known and not (doc.get("summary") or {}).get("intents"):
+        print(f"BLIND schema-conformance: {baseline} records no intents, so it grades nothing",
+              file=sys.stderr)
+        return 2
+
+    now = {v["key"]: v["text"] for v in violations}
+    new = sorted(k for k in now if k not in known)
+    gone = sorted(k for k in known if k not in now)
+    print(f"ratchet                {len(new)} new, {len(known) - len(gone)} known, {len(gone)} fixed")
+    for k in new:
+        print(f"  NEW   {now[k]}")
+    for k in gone:
+        print(f"  fixed {k} (prune it with --write-baseline when this lands)")
+    if new:
+        print(f"FAIL schema   {len(new)} intent(s) worse than {baseline}; fix them or argue the "
+              f"baseline change in the pull request")
+        return 1
+    print(f"ok    schema   no intent is worse than {baseline}")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description="measure and grade the estate's structured-format surface")
+    ap.add_argument("what", choices=["intents"], help="which boundary to grade")
+    ap.add_argument("--root", default=str(Path.home() / ".estate" / "intents"))
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--baseline", help="ratchet against a recorded violation set instead of failing on all")
+    ap.add_argument("--write-baseline", help="record today's violation set at this path")
+    a = ap.parse_args(argv)
+    if a.what == "intents":
+        return intents(Path(a.root), a.json, Path(a.baseline) if a.baseline else None,
+                       Path(a.write_baseline) if a.write_baseline else None)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
