@@ -264,7 +264,7 @@ def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> lis
     agents = AGENT.findall(text)
     if not refs:
         return [
-            "no `Claim: <owner>/<repo>#<n>` line: declare the work on an issue first (AGENTS.md §5)"
+            "no `Claim: <owner>/<repo>#<n>` line: declare the work on an issue first. EXACT SHAPE: the line is `Claim: owner/repo#123` ALONE on its line (nothing else on it, one space after the colon), followed by `Agent: <name>` alone on its own line. Run bin/claim-open to stamp both."
         ]
     if not agents:
         return [

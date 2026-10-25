@@ -155,12 +155,18 @@ def _print_table(record: dict[str, Any], posteriors: dict[str, float]) -> None:
 def _write_back(
     path: Path, record: dict[str, Any], posteriors: dict[str, float]
 ) -> None:
+    # Verdicts go to a SIDECAR (2026-10-25 audit): appending them into the record rewrote
+    # the evidence section's tail, so the next evidence append landed after the verdict
+    # block and broke the YAML. The record stays append-safe; the gate re-computes fresh
+    # anyway and never trusts a stored posteriors block.
     winner = max(posteriors, key=posteriors.get)
-    record = dict(record)
-    record["posteriors"] = {name: round(p, 10) for name, p in posteriors.items()}
-    record["winner"] = winner
-    record["computed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    path.write_text(yaml.safe_dump(record, sort_keys=False, default_flow_style=False))
+    verdict = dict(record)
+    verdict["posteriors"] = {name: round(p, 10) for name, p in posteriors.items()}
+    verdict["winner"] = winner
+    verdict["computed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    path.with_suffix(path.suffix + ".verdicts.yaml").write_text(
+        yaml.safe_dump(verdict, sort_keys=False, default_flow_style=False)
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
