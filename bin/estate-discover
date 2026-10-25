@@ -1,0 +1,1242 @@
+#!/usr/bin/env python3
+"""estate-discover -- the door that answers "what exists in this estate, and what is true
+about it".
+
+WHY (2026-10-26). The founder asked, in plain words: how do we discover what services exist,
+their features, their capabilities, their dependencies, their operational status and their
+metrics -- everything knowable about services, scripts and gates -- and asked for a mega
+oracle you can ask anything of. Measured the same day: the estate could name 195 catalogue
+entities but not one dependency, not one metric, and not the status of a single script. The
+plan for the answer existed (idp#7158 -> docs/specs/2026-10-25-estate-capability-registry.md,
+epic 25 Phase A, "the Estate Capability Registry") and no code answered the question.
+
+WHAT THIS IS. A VIEW, never a store. Every record is derived on demand from sources the
+estate already keeps:
+
+  scripts    idp bin/                      what exists, its CLI surface, what it calls
+  intents    ~/.estate/intents + idp       the estate's verbs and their arguments
+  services   idp platform/, clusters/      the kubernetes objects that run in the cluster
+  harnesses  ~/.estate/harness + ledger     the agent runtimes
+  gates      idp bin/ gate scripts         the checks that refuse
+  health     ~/.estate/estate.db           the executor's own run ledger (real receipts)
+             ~/.estate/state/inventory.json  the launchd inventory (real verdicts)
+  owner      idp CODEOWNERS                who owns a path
+
+Nothing is written anywhere except an optional coverage baseline. When the registry lands it
+becomes the store and this view reads it: the SOURCES table below is the seam.
+
+THE HONEST PART. Where no instrument exists the record says BLIND rather than guessing. A
+view that invents its answers cannot answer the founder's question, so every field without an
+instrument is named as a gap. That is the whole point of the tool: it measures how much of
+the estate is actually knowable, and it fails when that number gets worse.
+
+    bin/estate-discover list --kind service
+    bin/estate-discover show script:bin/epistemic_firewall.py
+    bin/estate-discover deps intent:lane-submit
+    bin/estate-discover status
+    bin/estate-discover metrics --kind intent
+    bin/estate-discover cover
+    bin/estate-discover baseline --write
+
+The record shape is the one the registry spec asks for (id, kind, summary, contract, owner,
+plane, health.state, proof, consumers, cost class, latency class, rung), plus the two the
+spec was measured to be missing: depends_on and metrics.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sqlite3
+import sys
+from collections import Counter
+from datetime import datetime, timedelta, timezone
+from fnmatch import fnmatch
+from pathlib import Path
+
+try:
+    import yaml
+except Exception:  # pragma: no cover - yaml is present in the estate python3
+    yaml = None
+
+# The C loader is ~5x faster than the pure-python one and the estate parses 762 manifests
+# on every census; measured 2026-10-26 (25s -> 5s for the manifest sweep).
+_YAML_LOADER = getattr(yaml, "CSafeLoader", None) or getattr(yaml, "SafeLoader", None)
+
+IDP = Path(__file__).resolve().parent.parent
+HOME = Path(os.environ.get("ESTATE_DISCOVER_HOME", str(Path.home())))
+WINDOW_DAYS = 30
+SERVICE_KINDS = {
+    "Deployment",
+    "StatefulSet",
+    "DaemonSet",
+    "CronJob",
+    "Service",
+    "Job",
+}
+# The sources the census reads. The registry (epic 25 Phase A) replaces this table with one
+# store; until then these are the estate's own maps, read in place, never copied.
+SOURCES = (
+    "idp:bin",
+    "idp:platform,clusters",
+    "idp:CODEOWNERS",
+    "~/.estate/intents",
+    "~/.estate/harness",
+    "~/.estate/estate.db",
+    "~/.estate/state/inventory.json",
+)
+
+
+# --------------------------------------------------------------------------------------
+# small helpers
+
+
+def now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def iso(dt: datetime | None) -> str | None:
+    if dt is None:
+        return None
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def read_text(path: Path, limit: int = 400_000) -> str:
+    try:
+        with open(path, "r", errors="replace") as fh:
+            return fh.read(limit)
+    except OSError:
+        return ""
+
+
+def read_json(path: Path) -> dict:
+    try:
+        with open(path, "r", errors="replace") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def parse_iso(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    text = value.replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def first_line(text: str, limit: int = 160) -> str:
+    for line in text.splitlines():
+        line = line.strip().lstrip("#").strip()
+        if not line or set(line) <= {"-", "=", "*"}:
+            continue
+        return line[:limit]
+    return ""
+
+
+def doc_summary(text: str, limit: int = 160) -> str:
+    match = re.search(r'"""(.*?)"""', text, re.S)
+    if match:
+        body = match.group(1)
+        for line in body.splitlines():
+            line = line.strip()
+            if line and not line.startswith("-"):
+                return line[:limit]
+    return first_line(text, limit)
+
+
+def cli_flags(text: str) -> list[str]:
+    found = set()
+    for opt in re.findall(r'add_argument\(\s*"([^"]+)"', text):
+        if opt.startswith("-"):
+            found.add(opt)
+    for opt in re.findall(r'"(--[a-zA-Z0-9][\w-]{1,30})"', text):
+        found.add(opt)
+    return sorted(found)[:24]
+
+
+# --------------------------------------------------------------------------------------
+# sources
+
+
+def codeowners_rules(idp: Path) -> list[tuple[str, list[str]]]:
+    rules: list[tuple[str, list[str]]] = []
+    for line in read_text(idp / "CODEOWNERS").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        rules.append((parts[0], parts[1:]))
+    return rules
+
+
+def owner_for(path: str, rules: list[tuple[str, list[str]]]) -> list[str]:
+    owners: list[str] = []
+    for pattern, names in rules:
+        if fnmatch(path, pattern) or fnmatch(path, pattern.lstrip("/")):
+            owners = names
+    return owners
+
+
+class Census:
+    """Builds the estate's capability records from the estate's own maps."""
+
+    def __init__(self, idp: Path | None = None, home: Path | None = None) -> None:
+        self.idp = Path(idp or os.environ.get("ESTATE_DISCOVER_IDP", str(IDP)))
+        self.home = Path(home or os.environ.get("ESTATE_DISCOVER_HOME", str(HOME)))
+        self.records: dict[str, dict] = {}
+        self.errors: list[str] = []
+        self.warnings: list[str] = []
+        self.counts: Counter = Counter()
+        self._owner_rules = codeowners_rules(self.idp)
+
+    # -- paths ------------------------------------------------------------------------
+    @property
+    def intents_dir(self) -> Path:
+        return self.home / ".estate" / "intents"
+
+    @property
+    def idp_intents_dir(self) -> Path:
+        return self.idp / "platform" / "estate" / "intents"
+
+    @property
+    def db_path(self) -> Path:
+        return self.home / ".estate" / "estate.db"
+
+    @property
+    def inventory_path(self) -> Path:
+        return self.home / ".estate" / "state" / "inventory.json"
+
+    @property
+    def harness_dir(self) -> Path:
+        return self.home / ".estate" / "harness"
+
+    # -- helpers ----------------------------------------------------------------------
+    def owner(self, path: str) -> list[str]:
+        return owner_for(path, self._owner_rules)
+
+    def _script_name_pattern(self) -> re.Pattern | None:
+        """The set of script basenames, for reference matching.
+
+        A giant alternation regex over 460+ names was measured at 38s for the script scan
+        (2026-10-26); tokenising the text and testing set membership is the same answer in
+        well under a second.
+        """
+        names = {
+            p.name
+            for p in sorted((self.idp / "bin").iterdir())
+            if p.is_file() and len(p.name) >= 5
+        }
+        if not names:
+            return None
+        self._script_names = names
+        self._script_token_re = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{1,80}")
+        return self._script_token_re
+
+    def _script_refs(self, text: str) -> list[str]:
+        """Basenames of the estate's own scripts that this text names."""
+        if not getattr(self, "_script_names", None):
+            self._script_name_pattern()
+        names = getattr(self, "_script_names", set())
+        if not names:
+            return []
+        found: set[str] = set()
+        for token in self._script_token_re.findall(text):
+            token = token.rstrip(".,;:)")
+            base = token.rsplit("/", 1)[-1]
+            if base in names:
+                found.add(base)
+        return sorted(found)
+
+    # -- builders ---------------------------------------------------------------------
+    def build(self) -> dict[str, dict]:
+        self.records = {}
+        self.errors = []
+        self.counts = Counter()
+        self._build_scripts()
+        self._build_intents()
+        self._build_services()
+        self._build_harnesses()
+        self._build_gates()
+        self._build_launchd()
+        self._wire_consumers()
+        return self.records
+
+    def _add(self, record: dict) -> None:
+        if record["id"] in self.records:
+            # Two manifests declaring the same object: one record, one count. The estate
+            # has kustomization overlays that do exactly this.
+            self.records[record["id"]] = record
+            return
+        self.records[record["id"]] = record
+        self.counts[record["kind"]] += 1
+
+    def _build_scripts(self) -> None:
+        bin_dir = self.idp / "bin"
+        if not bin_dir.is_dir():
+            self.errors.append(f"scripts: {bin_dir} is not a directory")
+            return
+        files = [
+            p
+            for p in sorted(bin_dir.iterdir())
+            if p.is_file() and (os.access(p, os.X_OK) or p.suffix in {".py", ".sh"})
+        ]
+        for path in files:
+            text = read_text(path)
+            deps: list[dict] = []
+            for match in self._script_refs(text):
+                if match == path.name:
+                    continue
+                deps.append(
+                    {
+                        "id": f"script:bin/{match}",
+                        "kind": "script",
+                        "edge": "invokes",
+                    }
+                )
+            for lib in sorted(set(re.findall(r"libexec/[\w./-]+", text))):
+                deps.append({"id": lib, "kind": "libexec", "edge": "references"})
+            for man in sorted(
+                set(re.findall(r"(?:platform|clusters)/[\w./-]+\.ya?ml", text))
+            ):
+                deps.append({"id": man, "kind": "manifest", "edge": "references"})
+            rel = f"bin/{path.name}"
+            self._add(
+                {
+                    "id": f"script:{rel}",
+                    "kind": "script",
+                    "summary": doc_summary(text) or f"{path.name} (no docstring)",
+                    "features": cli_flags(text),
+                    "contract": {
+                        "inputs": cli_flags(text),
+                        "outputs": [],
+                        "errors": [],
+                    },
+                    "owner": self.owner(rel),
+                    "plane": "idp",
+                    "path": rel,
+                    "depends_on": deps,
+                    "consumers": [],
+                    "health": {
+                        "state": "unknown",
+                        "source": "none",
+                        "observed_at": None,
+                        "blind": True,
+                    },
+                    "metrics": [],
+                    "blind": [
+                        "health",
+                        "metrics",
+                        "contract.outputs",
+                        "contract.errors",
+                    ],
+                    "proof": {"receipt": None, "window_s": None, "rung": None},
+                    "cost_class": "local-cpu",
+                    "latency_class": "interactive",
+                }
+            )
+
+    def _intent_runs(self) -> dict[str, dict]:
+        """Last run and 30-day counters per intent, from the executor's own ledger."""
+        out: dict[str, dict] = {}
+        if not self.db_path.exists():
+            self.errors.append(f"health: {self.db_path} is missing")
+            return out
+        cutoff = now_utc() - timedelta(days=WINDOW_DAYS)
+        try:
+            conn = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True)
+        except sqlite3.Error as exc:
+            self.errors.append(f"health: cannot open {self.db_path}: {exc}")
+            return out
+        try:
+            rows = conn.execute(
+                "select intent, harness, status, started_at, completed_at, "
+                "steps_run, steps_failed, cost_usd, error from intent_tickets"
+            ).fetchall()
+        except sqlite3.Error as exc:
+            self.errors.append(f"health: cannot read intent_tickets: {exc}")
+            conn.close()
+            return out
+        conn.close()
+        for intent, harness, status, started, done, steps, failed, cost, error in rows:
+            started_dt = parse_iso(started)
+            done_dt = parse_iso(done)
+            entry = out.setdefault(
+                intent,
+                {
+                    "runs": 0,
+                    "failures": 0,
+                    "cost_usd": 0.0,
+                    "last_status": None,
+                    "last_at": None,
+                    "last_duration_s": None,
+                    "last_steps": None,
+                    "last_error": None,
+                    "harness": harness,
+                    "runs_30d": 0,
+                },
+            )
+            entry["runs"] += 1
+            entry["steps_failed"] = entry.get("steps_failed", 0) + int(failed or 0)
+            if status not in {"ok", "running"}:
+                entry["failures"] += 1
+            entry["cost_usd"] += float(cost or 0.0)
+            if done_dt and (entry["last_at"] is None or done_dt > entry["last_at"]):
+                entry["last_at"] = done_dt
+                entry["last_status"] = status
+                entry["last_steps"] = steps
+                entry["last_error"] = error
+                if started_dt and done_dt:
+                    entry["last_duration_s"] = round(
+                        (done_dt - started_dt).total_seconds(), 3
+                    )
+            if started_dt and started_dt >= cutoff:
+                entry["runs_30d"] += 1
+        return out
+
+    def _build_intents(self) -> None:
+        runs = self._intent_runs()
+        if not self.intents_dir.is_dir():
+            self.errors.append(f"intents: {self.intents_dir} is not a directory")
+            return
+        installed: set[str] = set()
+        for path in sorted(self.intents_dir.glob("*.yaml")):
+            text = read_text(path)
+            meta: dict = {}
+            if yaml is not None:
+                try:
+                    loaded = yaml.load(text, Loader=_YAML_LOADER)
+                    if isinstance(loaded, dict):
+                        meta = loaded
+                except Exception:
+                    meta = {}
+            name = meta.get("name") or path.stem
+            installed.add(name)
+            description = meta.get("description") or first_line(text)
+            args = meta.get("args") or {}
+            arg_names = sorted(args.keys()) if isinstance(args, dict) else []
+            deps: list[dict] = []
+            for match in self._script_refs(text):
+                deps.append(
+                    {
+                        "id": f"script:bin/{match}",
+                        "kind": "script",
+                        "edge": "invokes",
+                    }
+                )
+            run = runs.get(name, {})
+            last_at = run.get("last_at")
+            state = "unknown"
+            if run.get("last_status") == "ok":
+                state = "healthy"
+            elif run.get("last_status") in {"broken", "halted"}:
+                state = "failed"
+            elif run.get("last_status") == "running":
+                state = "running"
+            metrics = []
+            if run:
+                metrics = [
+                    {
+                        "name": "runs_30d",
+                        "value": run.get("runs_30d", 0),
+                        "instrument": "sqlite:~/.estate/estate.db intent_tickets",
+                    },
+                    {
+                        "name": "failures_total",
+                        "value": run.get("failures", 0),
+                        "instrument": "sqlite:~/.estate/estate.db intent_tickets",
+                    },
+                    {
+                        "name": "cost_usd_total",
+                        "value": round(run.get("cost_usd", 0.0), 6),
+                        "instrument": "sqlite:~/.estate/estate.db intent_tickets",
+                    },
+                    {
+                        "name": "last_duration_s",
+                        "value": run.get("last_duration_s"),
+                        "instrument": "sqlite:~/.estate/estate.db intent_tickets",
+                    },
+                    {
+                        "name": "steps_failed_total",
+                        "value": run.get("steps_failed", 0),
+                        "instrument": "sqlite:~/.estate/estate.db intent_tickets",
+                    },
+                ]
+            self._add(
+                {
+                    "id": f"intent:{name}",
+                    "kind": "intent",
+                    "summary": first_line(description),
+                    "features": arg_names,
+                    "contract": {
+                        "inputs": arg_names,
+                        "outputs": ["executor job record"],
+                        "errors": ["non-zero step exit"],
+                    },
+                    "owner": ["estate-runtime"],
+                    "plane": "estate",
+                    "path": str(path),
+                    "depends_on": deps,
+                    "consumers": [],
+                    "health": {
+                        "state": state,
+                        "source": "sqlite:~/.estate/estate.db intent_tickets",
+                        "observed_at": iso(last_at),
+                        "blind": not run,
+                    },
+                    "metrics": metrics,
+                    "blind": [] if run else ["health", "metrics"],
+                    "proof": {
+                        "receipt": f"estate.db:{name}:{iso(last_at)}"
+                        if last_at
+                        else None,
+                        "window_s": WINDOW_DAYS * 86400,
+                        "rung": "R1" if run else None,
+                    },
+                    "cost_class": "llm" if name.startswith("llm") else "local-cpu",
+                    "latency_class": "background" if run else "unknown",
+                }
+            )
+        # intents declared in the repo but not installed on this machine are drift, and drift
+        # is a fact about the estate that nobody can otherwise see.
+        if self.idp_intents_dir.is_dir():
+            for path in sorted(self.idp_intents_dir.glob("*.yaml")):
+                name = path.stem
+                if name in installed:
+                    continue
+                self._add(
+                    {
+                        "id": f"intent:{name}",
+                        "kind": "intent",
+                        "summary": (
+                            f"{name} (declared in repo, not installed on this machine)"
+                        ),
+                        "features": [],
+                        "contract": {"inputs": [], "outputs": [], "errors": []},
+                        "owner": self.owner(f"platform/estate/intents/{path.name}"),
+                        "plane": "idp",
+                        "path": f"platform/estate/intents/{path.name}",
+                        "depends_on": [],
+                        "consumers": [],
+                        "health": {
+                            "state": "drifted",
+                            "source": "idp:platform/estate/intents",
+                            "observed_at": None,
+                            "blind": False,
+                        },
+                        "metrics": [],
+                        "blind": ["health", "metrics"],
+                        "proof": {"receipt": None, "window_s": None, "rung": None},
+                        "cost_class": "local-cpu",
+                        "latency_class": "unknown",
+                    }
+                )
+
+    def _manifest_files(self) -> list[Path]:
+        out: list[Path] = []
+        for base in ("platform", "clusters"):
+            root = self.idp / base
+            if not root.is_dir():
+                continue
+            for path in sorted(root.rglob("*.yaml")):
+                out.append(path)
+            for path in sorted(root.rglob("*.yml")):
+                out.append(path)
+        return out
+
+    _SERVICE_KIND_RE = re.compile(
+        r"kind:\s*(Deployment|StatefulSet|DaemonSet|CronJob|Service|Job)\b"
+    )
+
+    def _build_services(self) -> None:
+        if yaml is None:
+            self.errors.append("services: no yaml module, manifests not parsed")
+            return
+        for path in self._manifest_files():
+            text = read_text(path)
+            if not self._SERVICE_KIND_RE.search(text):
+                continue
+            try:
+                docs = list(yaml.load_all(text, Loader=_YAML_LOADER))
+            except Exception as exc:
+                self.errors.append(f"services: {path} unparsable: {exc}")
+                continue
+            for doc in docs:
+                if not isinstance(doc, dict):
+                    continue
+                kind = doc.get("kind")
+                if kind not in SERVICE_KINDS:
+                    continue
+                meta = doc.get("metadata") or {}
+                name = meta.get("name") or "unnamed"
+                ns = meta.get("namespace") or "default"
+                spec = doc.get("spec") or {}
+                deps: list[dict] = []
+                features: list[str] = []
+                images: list[str] = []
+                for image in _walk(doc, "image"):
+                    if isinstance(image, str) and image not in images:
+                        images.append(image)
+                        deps.append(
+                            {"id": f"image:{image}", "kind": "image", "edge": "runs"}
+                        )
+                for ref in _walk(doc, "configMap"):
+                    name_ref = _name_of(ref)
+                    if name_ref:
+                        deps.append(
+                            {
+                                "id": f"config:{ns}/{name_ref}",
+                                "kind": "config",
+                                "edge": "reads",
+                            }
+                        )
+                for ref in _walk(doc, "secret"):
+                    name_ref = _name_of(ref) or _name_of(ref, "secretName")
+                    if name_ref:
+                        deps.append(
+                            {
+                                "id": f"secret:{ns}/{name_ref}",
+                                "kind": "secret",
+                                "edge": "reads",
+                            }
+                        )
+                sa_values = [
+                    value
+                    for value in _walk(doc, "serviceAccountName")
+                    if isinstance(value, str)
+                ]
+                for sa in sa_values:
+                    deps.append(
+                        {
+                            "id": f"serviceaccount:{ns}/{sa}",
+                            "kind": "serviceaccount",
+                            "edge": "uses",
+                        }
+                    )
+                for value in _walk_strings(doc):
+                    for host in re.findall(
+                        r"\b([a-z0-9-]+(?:\.[a-z0-9-]+)*\.svc\.cluster\.local)\b", value
+                    ):
+                        deps.append(
+                            {
+                                "id": f"service:{host}",
+                                "kind": "service",
+                                "edge": "calls",
+                            }
+                        )
+                for port in _walk(doc, "containerPort"):
+                    if isinstance(port, int):
+                        features.append(f"containerPort {port}")
+                replicas = spec.get("replicas")
+                if replicas is not None:
+                    features.append(f"replicas {replicas}")
+                rel = str(path.relative_to(self.idp))
+                self._add(
+                    {
+                        "id": f"cluster:{ns}/{kind}/{name}",
+                        "kind": "service",
+                        "summary": f"{kind} {name} in namespace {ns}",
+                        "features": sorted(set(features)),
+                        "contract": {
+                            "inputs": ["kubernetes API"],
+                            "outputs": sorted(set(images)),
+                            "errors": ["image pull, admission, probe failures"],
+                        },
+                        "owner": self.owner(rel),
+                        "plane": "cluster",
+                        "path": rel,
+                        "depends_on": deps,
+                        "consumers": [],
+                        "health": {
+                            "state": "unknown",
+                            "source": "kubectl (not queried)",
+                            "observed_at": None,
+                            "blind": True,
+                        },
+                        "metrics": [],
+                        "blind": ["health", "metrics"],
+                        "proof": {"receipt": None, "window_s": None, "rung": None},
+                        "cost_class": "cluster",
+                        "latency_class": "continuous",
+                    }
+                )
+
+    def _build_harnesses(self) -> None:
+        names: set[str] = set()
+        if self.harness_dir.is_dir():
+            for path in sorted(self.harness_dir.iterdir()):
+                if path.is_dir():
+                    names.add(path.name)
+        runs = self._intent_runs()
+        by_harness: dict[str, dict] = {}
+        for _intent, run in runs.items():
+            harness = run.get("harness") or "unknown"
+            entry = by_harness.setdefault(
+                harness,
+                {"runs": 0, "failures": 0, "last_at": None, "last_status": None},
+            )
+            entry["runs"] += run.get("runs", 0)
+            entry["failures"] += run.get("failures", 0)
+            last_at = run.get("last_at")
+            if last_at and (entry["last_at"] is None or last_at > entry["last_at"]):
+                entry["last_at"] = last_at
+                entry["last_status"] = run.get("last_status")
+        for harness in sorted(names | set(by_harness)):
+            entry = by_harness.get(harness, {})
+            last_at = entry.get("last_at")
+            state = "unknown"
+            if entry.get("last_status") == "ok":
+                state = "healthy"
+            elif entry.get("last_status") in {"broken", "halted"}:
+                state = "failed"
+            self._add(
+                {
+                    "id": f"harness:{harness}",
+                    "kind": "harness",
+                    "summary": f"agent harness {harness}",
+                    "features": [],
+                    "contract": {
+                        "inputs": ["intent tickets"],
+                        "outputs": ["estate.db rows"],
+                        "errors": ["halted, broken"],
+                    },
+                    "owner": ["estate-runtime"],
+                    "plane": "estate",
+                    "path": str(self.harness_dir / harness),
+                    "depends_on": [
+                        {"id": "estate-db", "kind": "store", "edge": "reads"}
+                    ],
+                    "consumers": [],
+                    "health": {
+                        "state": state,
+                        "source": "sqlite:~/.estate/estate.db intent_tickets",
+                        "observed_at": iso(last_at),
+                        "blind": not entry,
+                    },
+                    "metrics": (
+                        [
+                            {
+                                "name": "runs_total",
+                                "value": entry.get("runs", 0),
+                                "instrument": (
+                                    "sqlite:~/.estate/estate.db intent_tickets"
+                                ),
+                            },
+                            {
+                                "name": "failures_total",
+                                "value": entry.get("failures", 0),
+                                "instrument": (
+                                    "sqlite:~/.estate/estate.db intent_tickets"
+                                ),
+                            },
+                        ]
+                        if entry
+                        else []
+                    ),
+                    "blind": [] if entry else ["health", "metrics"],
+                    "proof": {
+                        "receipt": (
+                            f"estate.db:harness:{harness}:{iso(last_at)}"
+                            if last_at
+                            else None
+                        ),
+                        "window_s": WINDOW_DAYS * 86400,
+                        "rung": "R1" if entry else None,
+                    },
+                    "cost_class": "llm",
+                    "latency_class": "background",
+                }
+            )
+
+    def _build_gates(self) -> None:
+        bin_dir = self.idp / "bin"
+        if not bin_dir.is_dir():
+            return
+        for path in sorted(bin_dir.iterdir()):
+            if not path.is_file():
+                continue
+            if not (path.name.endswith("-gate") or "gate" in path.name):
+                continue
+            text = read_text(path)
+            deps: list[dict] = []
+            for match in self._script_refs(text):
+                if match == path.name:
+                    continue
+                deps.append(
+                    {
+                        "id": f"script:bin/{match}",
+                        "kind": "script",
+                        "edge": "invokes",
+                    }
+                )
+            rel = f"bin/{path.name}"
+            self._add(
+                {
+                    "id": f"gate:{rel}",
+                    "kind": "gate",
+                    "summary": doc_summary(text) or f"{path.name} (gate)",
+                    "features": cli_flags(text),
+                    "contract": {
+                        "inputs": ["repository state"],
+                        "outputs": ["verdict on stdout, exit code"],
+                        "errors": ["non-zero exit means the check refused"],
+                    },
+                    "owner": self.owner(rel),
+                    "plane": "idp",
+                    "path": rel,
+                    "depends_on": deps,
+                    "consumers": [],
+                    "health": {
+                        "state": "unknown",
+                        "source": "none",
+                        "observed_at": None,
+                        "blind": True,
+                    },
+                    "metrics": [],
+                    "blind": ["health", "metrics"],
+                    "proof": {"receipt": None, "window_s": None, "rung": None},
+                    "cost_class": "local-cpu",
+                    "latency_class": "batch",
+                }
+            )
+
+    def _build_launchd(self) -> None:
+        """The launchd inventory: what the mac plane actually runs, and its verdict.
+
+        This is one of the estate's two real status maps (the other is the executor's
+        ledger). Rows carry a verdict -- MANAGED, ORPHAN, GHOST, DRIFTED -- which is
+        operational status measured by somebody else, not a guess.
+        """
+        if not self.inventory_path.exists():
+            self.warnings.append(
+                f"launchd: {self.inventory_path} is missing; mac-plane status is BLIND"
+            )
+            return
+        inventory = read_json(self.inventory_path)
+        rows = inventory.get("rows")
+        generated_at = inventory.get("generated_at")
+        if not isinstance(rows, list):
+            self.warnings.append(
+                "launchd: inventory has no rows; mac-plane status is BLIND"
+            )
+            return
+        verdicts: Counter = Counter()
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            ident = row.get("id") or row.get("name") or "unnamed"
+            verdict = str(row.get("verdict") or "UNKNOWN")
+            verdicts[verdict] += 1
+            self._add(
+                {
+                    "id": f"launchd:{ident}",
+                    "kind": "launchd",
+                    "summary": row.get("why") or f"launchd job {ident} ({verdict})",
+                    "features": [
+                        str(row.get("type") or "launchd"),
+                        str(row.get("plane") or "?"),
+                    ],
+                    "contract": {
+                        "inputs": ["launchd"],
+                        "outputs": ["process"],
+                        "errors": ["not loaded, crashing"],
+                    },
+                    "owner": ["mac-plane"],
+                    "plane": str(row.get("plane") or "mac"),
+                    "path": str(row.get("declared_in") or ""),
+                    "depends_on": [],
+                    "consumers": [],
+                    "health": {
+                        "state": verdict.lower(),
+                        "source": "~/.estate/state/inventory.json",
+                        "observed_at": generated_at,
+                        "blind": False,
+                    },
+                    "metrics": [],
+                    "blind": [] if row.get("why") else ["summary"],
+                    "proof": {
+                        "receipt": f"inventory.json:{ident}:{verdict}",
+                        "window_s": None,
+                        "rung": "R2",
+                    },
+                    "cost_class": "mac",
+                    "latency_class": "continuous",
+                }
+            )
+
+    def _wire_consumers(self) -> None:
+        for record in self.records.values():
+            for dep in record.get("depends_on", []):
+                target = self.records.get(dep["id"])
+                if target is not None:
+                    target.setdefault("consumers", []).append(record["id"])
+
+
+def _walk(doc: object, key: str) -> list:
+    """Every value stored under `key` anywhere in a parsed manifest."""
+    found: list = []
+    if isinstance(doc, dict):
+        for k, v in doc.items():
+            if k == key:
+                found.append(v)
+            found.extend(_walk(v, key))
+    elif isinstance(doc, list):
+        for item in doc:
+            found.extend(_walk(item, key))
+    return found
+
+
+def _name_of(ref: object, key: str = "name") -> str | None:
+    """The name a manifest reference points at: a plain string, or a mapping under it."""
+    if isinstance(ref, str):
+        return ref
+    if isinstance(ref, dict):
+        value = ref.get(key)
+        if isinstance(value, str):
+            return value
+    return None
+
+
+def _walk_strings(doc: object) -> list[str]:
+    out: list[str] = []
+    if isinstance(doc, str):
+        out.append(doc)
+    elif isinstance(doc, dict):
+        for value in doc.values():
+            out.extend(_walk_strings(value))
+    elif isinstance(doc, list):
+        for item in doc:
+            out.extend(_walk_strings(item))
+    return out
+
+
+# --------------------------------------------------------------------------------------
+# the gate, in one place so it can be tested and cannot drift from the view
+
+
+def gate_verdict(
+    census: Census, baseline: dict, strict: bool = False
+) -> tuple[bool, list[str], dict]:
+    """Fail when the estate becomes less knowable than the committed baseline.
+
+    The baseline is a floor, not a target: counts may grow, but a kind that shrinks means a
+    source stopped being enumerated, and that is a regression nobody would otherwise see.
+    `--strict` additionally fails on any record whose status has no instrument -- the honest
+    measurement of how much of the estate is BLIND.
+    """
+    failures: list[str] = []
+    facts: dict = {
+        "counts": dict(census.counts),
+        "blind_records": 0,
+        "blind_fields": Counter(),
+        "errors": list(census.errors),
+        "warnings": list(getattr(census, "warnings", [])),
+    }
+    if census.errors:
+        failures.extend(f"source unreadable: {err}" for err in census.errors)
+    if not baseline:
+        failures.append(
+            "no baseline: run bin/estate-discover baseline --write and commit it"
+        )
+    else:
+        base_counts = baseline.get("counts", {})
+        for kind, count in sorted(base_counts.items()):
+            now_count = census.counts.get(kind, 0)
+            if now_count < count:
+                failures.append(
+                    f"{kind}: {now_count} records, baseline says {count} -- "
+                    "a source stopped being enumerated"
+                )
+    for record in census.records.values():
+        health = record.get("health", {})
+        if health.get("blind"):
+            facts["blind_records"] += 1
+            for field in record.get("blind", []):
+                facts["blind_fields"][field] += 1
+    facts["blind_fields"] = dict(facts["blind_fields"])
+    if strict and facts["blind_records"]:
+        failures.append(
+            f"{facts['blind_records']} records have no status instrument (BLIND): "
+            + ", ".join(f"{k}={v}" for k, v in sorted(facts["blind_fields"].items()))
+        )
+    return (not failures), failures, facts
+
+
+# --------------------------------------------------------------------------------------
+# rendering
+
+
+def render_record(record: dict) -> str:
+    health = record.get("health", {})
+    state = health.get("state", "unknown")
+    blind = " BLIND" if health.get("blind") else ""
+    lines = [
+        f"{record['id']}  [{record['kind']}]  {state}{blind}",
+        f"  summary: {record.get('summary', '')}",
+    ]
+    owner = record.get("owner") or []
+    lines.append(f"  owner: {', '.join(owner) if owner else 'BLIND'}")
+    lines.append(f"  plane: {record.get('plane', '?')}")
+    features = record.get("features") or []
+    if features:
+        lines.append("  features: " + ", ".join(features[:12]))
+    deps = record.get("depends_on") or []
+    lines.append(
+        "  depends_on: "
+        + (", ".join(f"{d['id']} ({d['edge']})" for d in deps[:12]) or "none observed")
+    )
+    consumers = record.get("consumers") or []
+    lines.append("  consumers: " + (", ".join(consumers[:12]) or "none observed"))
+    metrics = record.get("metrics") or []
+    if metrics:
+        lines.append(
+            "  metrics: "
+            + ", ".join(
+                f"{m['name']}={m['value']}"
+                for m in metrics
+                if m.get("value") is not None
+            )
+        )
+    else:
+        lines.append("  metrics: BLIND (no instrument)")
+    lines.append(
+        f"  status source: {health.get('source', 'none')} "
+        f"observed_at={health.get('observed_at')}"
+    )
+    proof = record.get("proof") or {}
+    lines.append(f"  proof: {proof.get('receipt') or 'BLIND'}")
+    return "\n".join(lines)
+
+
+def census_from_args(args: argparse.Namespace) -> Census:
+    census = Census(
+        idp=Path(args.idp) if args.idp else None,
+        home=Path(args.home) if args.home else None,
+    )
+    census.build()
+    return census
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="estate-discover",
+        description="Discover what the estate has, and what is true about it.",
+    )
+    parser.add_argument("--idp", default=os.environ.get("ESTATE_DISCOVER_IDP", ""))
+    parser.add_argument("--home", default=os.environ.get("ESTATE_DISCOVER_HOME", ""))
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p_list = sub.add_parser("list", help="every record")
+    p_list.add_argument("--kind", default="")
+    p_list.add_argument("--state", default="")
+    p_list.add_argument("--json", action="store_true")
+
+    p_show = sub.add_parser("show", help="one record in full")
+    p_show.add_argument("id")
+    p_show.add_argument("--json", action="store_true")
+
+    p_deps = sub.add_parser(
+        "deps", help="what a record depends on, and who depends on it"
+    )
+    p_deps.add_argument("id")
+    p_deps.add_argument("--json", action="store_true")
+
+    p_status = sub.add_parser("status", help="operational status across the estate")
+    p_status.add_argument("--json", action="store_true")
+
+    p_metrics = sub.add_parser("metrics", help="the metrics that exist")
+    p_metrics.add_argument("--kind", default="")
+    p_metrics.add_argument("--json", action="store_true")
+
+    p_cover = sub.add_parser("cover", help="coverage and the BLIND holes")
+    p_cover.add_argument("--json", action="store_true")
+
+    p_base = sub.add_parser("baseline", help="write the coverage baseline")
+    p_base.add_argument("--write", action="store_true")
+    p_base.add_argument("--out", default="")
+
+    args = parser.parse_args(argv)
+    census = census_from_args(args)
+    records = census.records
+
+    if args.cmd == "list":
+        rows = sorted(records.values(), key=lambda r: (r["kind"], r["id"]))
+        if args.kind:
+            rows = [r for r in rows if r["kind"] == args.kind]
+        if args.state:
+            rows = [r for r in rows if r.get("health", {}).get("state") == args.state]
+        if args.json:
+            print(json.dumps(rows, indent=2, default=str))
+        else:
+            for record in rows:
+                health = record.get("health", {})
+                blind = " BLIND" if health.get("blind") else ""
+                print(
+                    f"{record['id']:<58} {record['kind']:<9} "
+                    f"{health.get('state', '?'):<9}{blind} {record.get('summary', '')}"
+                )
+        return 0
+
+    if args.cmd == "show":
+        record = records.get(args.id)
+        if record is None:
+            print(f"BLIND   no record for {args.id}", file=sys.stderr)
+            return 1
+        print(
+            json.dumps(record, indent=2, default=str)
+            if args.json
+            else render_record(record)
+        )
+        return 0
+
+    if args.cmd == "deps":
+        record = records.get(args.id)
+        if record is None:
+            print(f"BLIND   no record for {args.id}", file=sys.stderr)
+            return 1
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "id": record["id"],
+                        "depends_on": record.get("depends_on", []),
+                        "consumers": record.get("consumers", []),
+                    },
+                    indent=2,
+                )
+            )
+            return 0
+        print(f"{record['id']} depends on:")
+        for dep in record.get("depends_on", []):
+            print(f"  -> {dep['id']}  ({dep['kind']}, {dep['edge']})")
+        if not record.get("depends_on"):
+            print("  (none observed)")
+        print(f"{record['id']} is used by:")
+        for consumer in record.get("consumers", []):
+            print(f"  <- {consumer}")
+        if not record.get("consumers"):
+            print("  (none observed)")
+        return 0
+
+    if args.cmd == "status":
+        states = Counter(
+            r.get("health", {}).get("state", "unknown") for r in records.values()
+        )
+        by_kind: dict[str, Counter] = {}
+        for record in records.values():
+            by_kind.setdefault(record["kind"], Counter())[
+                record.get("health", {}).get("state", "unknown")
+            ] += 1
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "states": dict(states),
+                        "by_kind": {k: dict(v) for k, v in by_kind.items()},
+                        "counts": dict(census.counts),
+                    },
+                    indent=2,
+                )
+            )
+            return 0
+        print(f"records: {len(records)}")
+        for kind in sorted(census.counts):
+            print(f"  {kind}: {census.counts[kind]}")
+        print("states:")
+        for state, count in sorted(states.items(), key=lambda kv: -kv[1]):
+            print(f"  {state}: {count}")
+        return 0
+
+    if args.cmd == "metrics":
+        rows = []
+        for record in sorted(records.values(), key=lambda r: (r["kind"], r["id"])):
+            if args.kind and record["kind"] != args.kind:
+                continue
+            if record.get("metrics"):
+                rows.append(record)
+        if args.json:
+            print(json.dumps(rows, indent=2, default=str))
+            return 0
+        if not rows:
+            print("BLIND   no record carries a metric instrument")
+            return 0
+        for record in rows:
+            values = ", ".join(
+                f"{m['name']}={m['value']}"
+                for m in record["metrics"]
+                if m.get("value") is not None
+            )
+            print(f"{record['id']:<45} {values}")
+        return 0
+
+    if args.cmd == "cover":
+        blind_fields: Counter = Counter()
+        blind_records = 0
+        for record in records.values():
+            if record.get("health", {}).get("blind"):
+                blind_records += 1
+            for field in record.get("blind", []):
+                blind_fields[field] += 1
+        facts = {
+            "records": len(records),
+            "counts": dict(census.counts),
+            "blind_records": blind_records,
+            "blind_fields": dict(blind_fields),
+            "errors": census.errors,
+            "warnings": getattr(census, "warnings", []),
+            "sources": list(SOURCES),
+        }
+        if args.json:
+            print(json.dumps(facts, indent=2))
+            return 0
+        print(f"records: {len(records)}")
+        for kind in sorted(census.counts):
+            print(f"  {kind}: {census.counts[kind]}")
+        print(f"records with no status instrument (BLIND): {blind_records}")
+        for field, count in sorted(blind_fields.items(), key=lambda kv: -kv[1]):
+            print(f"  blind {field}: {count}")
+        for err in census.errors:
+            print(f"  ERROR {err}")
+        for warn in getattr(census, "warnings", []):
+            print(f"  WARN  {warn}")
+        return 0
+
+    if args.cmd == "baseline":
+        if not args.write:
+            print("nothing written: pass --write", file=sys.stderr)
+            return 1
+        out = (
+            Path(args.out)
+            if args.out
+            else Path.cwd() / "catalog" / "estate-discover-baseline.json"
+        )
+        blind_fields: Counter = Counter()
+        for record in census.records.values():
+            for field in record.get("blind", []):
+                blind_fields[field] += 1
+        baseline = {
+            "generated_at": iso(now_utc()),
+            "counts": dict(census.counts),
+            "blind_fields": dict(blind_fields),
+            "sources": list(SOURCES),
+        }
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(baseline, indent=2) + "\n")
+        print(f"baseline written: {out}")
+        return 0
+
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
