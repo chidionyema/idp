@@ -1549,6 +1549,21 @@ def _verify(head, paths):
             )
             if ready.returncode != 0:
                 return 1, [("floor", "cert-manager never became available in the shadow")]
+            # Deployments report Available before their webhooks serve; the first Issuer
+            # dry-run then fails with connection refused and the lane reds. Probe a dry-run
+            # Issuer until the webhook answers (measured #7084 run 40192621885, 2026-10-25).
+            probe = '{"apiVersion":"cert-manager.io/v1","kind":"Issuer","metadata":{"name":"shadow-probe","namespace":"default"},"spec":{"selfSigned":{}}}'
+            for _ in range(12):
+                dry = subprocess.run(
+                    ["kubectl", "apply", "--dry-run=server", "-f", "-"],
+                    input=probe, capture_output=True, text=True, timeout=60,
+                )
+                if dry.returncode == 0:
+                    subprocess.run(["kubectl", "delete", "issuer", "shadow-probe", "-n", "default", "--ignore-not-found"], capture_output=True, timeout=60)
+                    break
+                time.sleep(10)
+            else:
+                return 1, [("floor", "cert-manager webhook never served a dry-run Issuer")]
         flux_source(head)
         floor_failed = flux_floor(time.time() + 300)
         if floor_failed:
