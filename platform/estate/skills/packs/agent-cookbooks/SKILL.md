@@ -18,8 +18,8 @@ voice surface. These are worked examples, not advice.
 
 ## How to use it
 
-1. `upstream/.claude/agents/code-reviewer.md` - a reviewer agent, written out.
-2. `upstream/.claude/skills/cookbook-audit/SKILL.md` and `style_guide.md` - grade a prompt against a guide.
+1. `upstream/agents/code-reviewer.md` - a reviewer agent, written out.
+2. `upstream/skills/cookbook-audit/SKILL.md` and `upstream/skills/cookbook-audit/style_guide.md` - grade a prompt against a guide.
 3. `upstream/patterns/agents/prompts/research_lead_agent.md` - the lead that plans a research run.
 4. `upstream/patterns/agents/prompts/research_subagent.md` - the subagent that does the reading.
 

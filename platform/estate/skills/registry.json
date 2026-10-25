@@ -39,7 +39,7 @@
         },
         {
           "path": "SKILL.md",
-          "sha256": "0cccb8f774c8fa4ef432e6418de878f5d33b1b11ea246b8e22930e9dcafb2188"
+          "sha256": "9fa5de3f858e5e8a5093a798c223bfae9b51fb5bad6866d8ff395f6cb6845004"
         },
         {
           "path": "upstream/LICENSE",
@@ -66,7 +66,7 @@
           "sha256": "9a06870852c7d46ffbf8ed050f28e99c16eb2377b12f915dee071ffb8c5c61d3"
         }
       ],
-      "tree_sha256": "fd358651a9249499361c66bd44acbc12203ced120d939a56f37d6f42e8019955"
+      "tree_sha256": "9726fed990afad36407ea6dbcb13ec9dc7c601f54428ef47e744ba706895e293"
     },
     {
       "id": "awesome-design-md",
@@ -596,39 +596,63 @@
         "stars": 85322,
         "stars_measured_at": "2026-10-23T15:32:49+00:00",
         "vendored": [
-          ".agent/skills/impeccable/SKILL.md",
-          ".agent/skills/impeccable/reference/audit.md",
-          ".agent/skills/impeccable/reference/component-review.md",
-          ".agent/skills/impeccable/reference/craft-floor.md",
-          ".agent/skills/impeccable/reference/critique.md",
-          ".agent/skills/impeccable/reference/new-work.md",
-          "LICENSE"
+          "LICENSE",
+          "skills/impeccable/SKILL.md",
+          "skills/impeccable/reference/audit.md",
+          "skills/impeccable/reference/component-review.md",
+          "skills/impeccable/reference/craft-floor.md",
+          "skills/impeccable/reference/critique.md",
+          "skills/impeccable/reference/new-work.md"
         ],
         "path_map": {
-          ".agent/skills/impeccable/SKILL.md": ".agent/skills/impeccable/SKILL.md",
-          ".agent/skills/impeccable/reference/audit.md": ".agent/skills/impeccable/reference/audit.md",
-          ".agent/skills/impeccable/reference/component-review.md": ".agent/skills/impeccable/reference/component-review.md",
-          ".agent/skills/impeccable/reference/craft-floor.md": ".agent/skills/impeccable/reference/craft-floor.md",
-          ".agent/skills/impeccable/reference/critique.md": ".agent/skills/impeccable/reference/critique.md",
-          ".agent/skills/impeccable/reference/new-work.md": ".agent/skills/impeccable/reference/new-work.md",
-          "LICENSE": "LICENSE"
+          "LICENSE": "LICENSE",
+          "skills/impeccable/SKILL.md": ".agent/skills/impeccable/SKILL.md",
+          "skills/impeccable/reference/audit.md": ".agent/skills/impeccable/reference/audit.md",
+          "skills/impeccable/reference/component-review.md": ".agent/skills/impeccable/reference/component-review.md",
+          "skills/impeccable/reference/craft-floor.md": ".agent/skills/impeccable/reference/craft-floor.md",
+          "skills/impeccable/reference/critique.md": ".agent/skills/impeccable/reference/critique.md",
+          "skills/impeccable/reference/new-work.md": ".agent/skills/impeccable/reference/new-work.md"
         }
       },
       "files": [
         {
           "path": "NOTICE.md",
-          "sha256": "e8bcd50392f580ebb0440ed8a02c98ef037bad13f7519406e649c9cebaf20725"
+          "sha256": "a2fe971845cef93ddde04c31eeab395dc984b50914e404ec02289075878faa23"
         },
         {
           "path": "SKILL.md",
-          "sha256": "fe7f737da9b55505e33707ff02c005e685e5451908adc6147c6c4b49fee0a30c"
+          "sha256": "f10aa20f00d1b5d5792f7775afa90cb2e0c82a1261298029dbd89c9892c354c9"
         },
         {
           "path": "upstream/LICENSE",
           "sha256": "02bb8c3b4e70190e3986c0404ad2fd8d639b4f534252d82379cc1b502b6d1812"
+        },
+        {
+          "path": "upstream/skills/impeccable/SKILL.md",
+          "sha256": "24e83f13e3f3c7ca11acd76ae55fd917f7f491799bc90e5d9d37dcdf4e2e59c6"
+        },
+        {
+          "path": "upstream/skills/impeccable/reference/audit.md",
+          "sha256": "a4ac48f323e63b5ef00e38c68e280281d73791d00ba1a956621aae72c8044db7"
+        },
+        {
+          "path": "upstream/skills/impeccable/reference/component-review.md",
+          "sha256": "acb4250c33edccb84bd47ab06c3d9ecceb35d063cd3cf839b63f2124b75dd99e"
+        },
+        {
+          "path": "upstream/skills/impeccable/reference/craft-floor.md",
+          "sha256": "f204158e35616d8d5f0dad8087ee3f1f91c0fe1337fde6e3cf616a51b496822a"
+        },
+        {
+          "path": "upstream/skills/impeccable/reference/critique.md",
+          "sha256": "8236969ec55e98575d4a9dd3fa25c4433d03452b5989b420113ffcc0bd36a474"
+        },
+        {
+          "path": "upstream/skills/impeccable/reference/new-work.md",
+          "sha256": "56423f0f9384f46246c88f6d1e2ddd7c1c69a039d04d6dc0fad57d8205137d59"
         }
       ],
-      "tree_sha256": "85b841c748a4e219a61ac228016e08f6230e5a6f404719ba8b7c5b35a71e8fb5"
+      "tree_sha256": "9a87aa3f03e638868daf514c50e3817ac29f66d244b8c97acd2d2db28b912928"
     },
     {
       "id": "k8s-hardening",
@@ -1188,7 +1212,7 @@
         },
         {
           "path": "SKILL.md",
-          "sha256": "45c68f729ffb856fe5fc9ca6f4c6bf4b3a3c21805cee52602280a499c9afde79"
+          "sha256": "106f625737d275119747d22749111594b425f7810820a5e45563637b289494ad"
         },
         {
           "path": "upstream/LICENSE",
@@ -1219,7 +1243,7 @@
           "sha256": "4ef1350c8467279a16932346bee4ad015e75ae28202557d23bf9e5fca496d469"
         }
       ],
-      "tree_sha256": "431b50643ddbd8f3c065843a044ee217bca8a42d273f0c9601a3538b31bb2f20"
+      "tree_sha256": "e1554bfc62488585b3d2185be0037203aed8d50f24556d3d888e04e7b3407193"
     },
     {
       "id": "ui-ux-pro-max",
