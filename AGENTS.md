@@ -5,6 +5,24 @@ the gates and the hooks, which refuse.
 
 ---
 
+## Programme of record and the tenets
+
+The estate's programme of record is `docs/epics/2026-10-25-estate-master-epic.md`. Every agent reads
+its headlines and tenets (Part V, §23–§24) at session start and works inside them:
+
+- **Headlines:** autonomy and closed feedback loops · coherence and congruence · proactive ·
+  event- and schedule-driven · metric/data-driven closed-loop self-improvement · future-proof,
+  better than anything out there.
+- **Tenets:** structured/schema-driven at every boundary (T-1) · unified memory, active memory and
+  active focus are first-class (T-2) · best-of-breed selection by evidence (T-3) · bleeding-edge
+  asymmetric engineering (T-4) · evals and judges as first-class principles (T-5) · proof, not
+  assertion (T-6, restating §3).
+
+A build that violates a tenet fails review. The programme's spine is the founder's order: capability
+registry → consolidation with the founder → vision lock → autonomy waves.
+
+---
+
 ## 0. Agent cognitive architecture: the seven gates
 
 **Operating principle:** you are an autonomous orchestration agent operating in a deterministic

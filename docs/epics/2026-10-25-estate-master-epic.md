@@ -1111,3 +1111,111 @@ the programme of record.
 
 
 
+
+
+---
+
+# Part V — programme v2: headlines, tenets, and the revised spine
+
+*Appended 2026-10-25 by kimi (chief-architecture pass), commissioned by the founder after review of
+§1–§22, the founder-prompt corpus (160 pi sessions, 4,823 messages), both ticket boards and the live
+branch state. This part supersedes the §7 phase ordering with the founder's own sequence and adds the
+tenets every surface, agent and gate must hold. §1–§22 remain the evidence base.*
+
+## 23. The headlines — what the programme is for
+
+Six headlines, in the founder's order. Each has a measure; a headline without a measure is a slogan.
+
+| # | Headline | The measure that proves it |
+|---|----------|---------------------------|
+| H-1 | **Autonomy and closed feedback loops** across estate and platform: every loop runs sense → decide → act → prove → remember with no human kick | autonomy ratio ≥ 80%; self-healed MTTR < 1h for known classes; 100% of registered loops declare trigger + bound |
+| H-2 | **Coherence and congruence**: one of each layer, one record per fact, one writer per plane | the registry proves one-of-each; a second writer to any plane fails the gate (R-52) |
+| H-3 | **Proactive**: the estate surfaces, proposes and acts before being asked — within consent and quiet hours | pushes arrive with evidence and citation; a nudge with no new information is suppressed in test |
+| H-4 | **Event and schedule driven**: nothing waits on a human to start it | the loop inventory shows zero loops requiring a human trigger (R-45) |
+| H-5 | **Metric- and data-driven closed-loop self-improvement**: thresholds are data, changed by evidence, and the improver is itself improved inside a bound | every policy change records the measurement that justified it and its measured effect (R-35, R-64) |
+| H-6 | **Future-proof, better than anything out there**: the bar is the best external practice, measured — not the estate's own history | §26 bar-raiser annex re-run quarterly; every adopted mechanism names the external benchmark it beats |
+
+## 24. The tenets — binding on every build
+
+These are architectural law. AGENTS.md references this section; a build that violates a tenet fails review.
+
+- **T-1 Structured and schema-driven at every boundary** (ADR 0042 extended): every interaction, agent
+  action, work item, capability and claim is a versioned schema record. Where a model produces the
+  record, constrained decoding enforces it at generation time — XGrammar-class engines make schema
+  conformance effectively free (<40µs/token, JSONSchemaBench) — so "the model drifted off-schema" is
+  a gate failure, never a runtime event.
+- **T-2 Unified memory, active memory and active focus are first-class.** One memory plane: Cortex and
+  the unified-memory server consolidate into a single store with temporal validity windows (the
+  Graphiti pattern: facts carry `valid_from`/`valid_to`, never silent overwrite). An agent that cannot
+  read the fold does not act. Memory writes carry provenance and decay dates.
+- **T-3 Best-of-breed selection, by evidence.** Capabilities are chosen from the registry's own data
+  with the founder; anything that does not meet the highest bar, does not solve a key issue, or is not
+  bar-raising is merged or deleted with an ADR. Adoption is of named mechanisms, never of products.
+- **T-4 Bleeding-edge asymmetric engineering.** The estate's advantage is composition speed and proof
+  discipline, not headcount: small surface, maximum leverage, free-tier placement (ADR 0034), and
+  adoption of mechanisms at the research frontier before they commoditise (§26).
+- **T-5 Evals and judges as first-class principles.** Every agent, pipeline and judge has a score it
+  cannot fake, stored as data; judges are themselves judged (R-63); a failing eval blocks like any
+  other gate. No score, no ship.
+- **T-6 Proof, not assertion** (AGENTS.md §3 restated as a tenet): every claim carries an instrument
+  and a window; built and operating are different facts.
+
+## 25. The revised spine — the founder's sequence
+
+§7's phases are re-cut. The founder's order is the law of this programme:
+
+**Phase A — DISCOVERY: the Estate Capability Registry.** One realtime registry as the single source of
+truth about the estate — every capability with contract, owner, cost class, health and a last-proof
+receipt — queryable by the founder and every agent. This is the mega-oracle's spine (R-50/W-46) and the
+founder's most-repeated unmet wish (~225 corpus mentions). All existing maps (growmos graph,
+estate-360, estate-inventory, backstage catalog, harness inventory, intents) become writers, never
+parallel maps. The founder-prompt corpus seeds the intent register (R-19/R-39/R-47). Carries EPIC-005,
+EPIC-059–062, and the four rows the first pass missed: Face-as-CTO trust repair, the bash-vs-executor
+ADR, the inner-timeout purge, and the registry-status question itself.
+
+**Phase B — CONSOLIDATION & CONGRUENCE, with the founder.** Domain-by-domain best-of-breed from the
+registry's data: two doors, four budget readers, four ticket ledgers, five run stores, two routing
+layers, two identity planes, three surfaces with no shared contract (F-09), three empty role-planes.
+Keep / merge / delete, one ADR per decision. Closes F-01…F-13.
+
+**Phase C — VISION LOCK, with the founder.** The eight founder-only inputs of §21 answered once; the
+target architecture confirmed or corrected; final specs and the full delivery plan produced here.
+
+**Phase D — AUTONOMY WAVES** (§7's waves re-cut): D0 truth (incl. Face staleness repair — a false
+count is a truth violation), D1 records, D2 sync, D3 earning autonomy (research→planner→executor,
+evals-as-gates, judge-of-judges, capacity-aware routing incl. closing the CLI spend blind spot),
+D4 the HQ (Face-as-CTO: see/summon/assign/observe/schedule), D5 film, D6 the world on trial,
+D7 continuous. Sequencing law unchanged: nothing in D2+ claims "operating" while D0 exit criteria
+are false.
+
+## 26. Bar-raiser annex — bleeding-edge research, 2026-10-25
+
+Adopt mechanisms, not products. Each row names the mechanism, the evidence, and where it lands.
+
+| Area | Bar-raiser mechanism | Evidence (2025–26) | Verdict / lands |
+|------|---------------------|--------------------|-----------------|
+| Agent observability | OTel `gen_ai.*` conventions as the estate's agent span shape: `invoke_agent` / `execute_tool` spans, `gen_ai.usage.*` metrics. Conventions still "Development" status but the wire format has won — every vendor maps to it | dash0.com knowledge base (2026-09); reactify-solutions agent-eval-observability-2026; klu.ai glossary | **Adopt** as the run-record attribute standard · Phase A, D1 |
+| Delivery metrics | DORA 2025: AI raises throughput AND instability — "faster but more fragile"; platform quality + user focus are the multipliers. The estate's fragility is the textbook case; the registry + gates are the cure | Splunk DORA 2025 review; platformengineering.com (2025-09) | **Cite** as the programme's external benchmark · H-5/H-6 |
+| Agent identity | No ratified standard exists (Oct 2026). Direction: SPIFFE-style trust domains + WIMSE (IETF, in progress), NIST AI Agent Standards Initiative (Feb 2026), A2A v1.0.1 agent cards (May 2026), MCP donated to LF AAIF (Dec 2025). The estate's SPIRE + claims + HMAC receipts already point this way | CSA labs research note (2026-09); nhigovernance.com (2026-10) | **Adopt** A2A agent-card shape for the roster (R-46); keep SPIRE as the workload-identity plane (resolve F-10) · Phase B, D2 |
+| Memory | Temporal knowledge-graph memory with validity windows (Graphiti/Zep pattern). Benchmark honesty: vendors disagree wildly on LoCoMo/LongMemEval; one public eval beat every memory product with BM25 — so the estate scores its own memory on its own gold set | ajayk.sh agent-memory-2026 (2026-10); narrativegoldmine agent-memory (2026-10); arXiv 2603.17244 | **Adapt**: consolidate Cortex + unified-memory into one temporal store (T-2); eval against estate gold sets, never vendor numbers · Phase B |
+| Voice | Production voice agent frameworks have converged: LiveKit Agents 1.0 and Pipecat, with 450–600 ms turn-taking budgets as the production bar; speech-to-speech APIs (OpenAI Realtime GA, Gemini Live, Claude voice preview) as the low-latency lanes | reactify-solutions voice-2026 (2026-06); livekit.com blog (2026-09); aiengineeringfromscratch L22 | **Adopt** the 450–600 ms budget as the voice proof metric (R-05); Pipecat-style pipeline composition for the estate voice engine · D4 |
+| Structured formats | Constrained decoding is now effectively free: XGrammar-2 (May 2026) — default in vLLM/SGLang/TensorRT-LLM — <40µs/token, ~100% schema conformance on JSONSchemaBench (~10k real schemas). The quality-trade-off concern is settled at agentic boundaries | zylos.ai structured-output-2026; llms.blog grammar-constrained-2026; JSONSchemaBench arXiv 2501.10868 | **Adopt** as T-1's enforcement mechanism at every agent boundary · Phase A |
+| Closed loops / AI SRE | AI-SRE agents claim 38–90% MTTR reduction (vendor numbers — treat as ceiling, not plan); the proven production patterns are automated triage/routing (60–80% fewer pages) and bounded auto-remediation with rollback. The estate's incident loop (R-14) matches the pure-play architecture | corelayer.com AI-SRE-2026; squareops.com (2026-05); resolve.ai | **Adapt**: the estate's own loop, bounded by the door and budgets — external tools would be a duplicate layer · D0/D3 |
+| Routing + capacity | Learned routing (RouteLLM-class) reports 85% cost cuts at 95% quality on MT-Bench; learned adds 15–25% over static rules. The estate's tier router + zeroedge mechanisms (cache, compress, per-key budget, route-score) fold into ONE capacity-aware router | klymentiev.com llm-router-2026; nx1.io ai-query-routing-2026; arXiv RouteLLM | **Adopt** the four zeroedge mechanisms into the one router (EPIC-076); learned routing only after the registry supplies training data · D3 |
+| World / film | WebGPU is production-ready in Three.js (r171+): ~4× particle throughput, Gaussian splatting and ray-traced reflections in-browser. The world is engineering-feasible; the film-first sequence stays — the URL test remains the kill criterion | multiwaresolutions 3d-web-2026; digiformation webgl-webgpu-2026 | **Keep** R-59 sequencing; WebGPU renderer when the world ships · D5/D6 |
+| Registry / discovery | IDPs are converging on "agent control plane": catalogs exposed via MCP so agents query and act (Backstage MCP actions registry; CNCF 2026: 73% of platform teams run AI assistants in workflows). The estate's registry must be agent-readable first, human-rendered second | retran.me (2026-05); blog.saaro.net backstage-2026 | **Adopt**: registry ships an MCP surface from day one · Phase A |
+| Durable execution | Temporal's bet is validated externally (Series D $300M / $5B, Feb 2026; OpenAI Agents SDK + Temporal patterns). R-51's plane split (cron when / Temporal through / JetStream that / Postgres what) matches the 2026 consensus | reactify-solutions durable-ai-agents-2026; kanopylabs comparison 2026 | **Keep** Temporal; no second orchestrator · D2 |
+
+| Evals, judges, red team | Trajectory-level evals (whole-run grading, not single answers) are the 2026 standard; adversarial CI suites: promptfoo (acquired by OpenAI, Mar 2026), garak, PyRIT; agent-attack benchmarks: AgentDojo (ETH Zürich). Judge calibration is a research field of its own (R-63's judge-of-judges is the right instinct) | langfuse.com agent-evaluation guide (2026-08); confident-ai.com eval guide (2026-10); beyondscale.tech agent-security-2026; zone.ci red-team tooling review (2026-09) | **Adopt** trajectory evals + AgentDojo-class adversarial fixtures as gate steps; judges carry held-out agreement rates · D3 |
+| Ephemeral / generative UI | AG-UI (CopilotKit, launched May 2025) is the open event protocol connecting agents to frontends — 17 event types, SDKs in Python/TS; generative UI went mainstream in 2026 (v0, Vercel AI SDK, assistant-ui). Ephemeral panels (R-06) = registry record + AG-UI events + the design-kit tokens, never a bespoke app | reactify-solutions ag-ui-protocol-2026; brainy.ink generative-ui-handbook (2026-05); github.com/narrowin/awesome-generative-ui | **Adopt** AG-UI event model for agent→surface streaming; panels render §12 records only · D4 |
+| Self-improving agents | The field's own consensus matches R-64: unbounded self-modification is research-only (Darwin-Gödel Machine, Sakana — ICLR 2026; Gödel Agent); production practice is bounded improvement of prompts/skills/heuristics behind eval gates, with an evolving archive of variants | sakana.ai/dgm; arXiv 2505.22954; o-mega.ai self-improving-guide-2026 | **Adapt**: bounded self-improvement over the estate's skills/prompts/orderings with eval gate + rollback; authority never self-modifies (R-64) · D3/D7 |
+| Sandboxing / isolation | Production convergence on a two-layer pattern: microVM for the agent's execution (Firecracker: E2B ~125 ms, Daytona ~90 ms) + an ephemeral environment per PR for the result; Cloudflare Sandbox SDK (V8 isolates) fits the free-tier ladder. macOS has no /dev/kvm — the estate's honest `temp_tree` declaration stands until the cluster carries the upper rungs | narrativegoldmine agent-execution-sandboxes (2026-10); qovery.com sandboxing-at-scale (2026-09); devencelab sandbox reference architecture | **Adopt** the two-layer pattern; kronos ring ladder documents the rungs; Cloudflare Sandbox as the free-tier rung · Phase B, D0 |
+| Broadcast / fleet sync | Per-consumer cursors on retained streams (the §16 design) match JetStream/Kafka best practice; the bar-raiser is the staleness SLO published per agent — few fleets measure sync at all | §16 (estate's own); NATS JetStream docs | **Keep** §16 design; the staleness metric is the differentiator · D2 |
+
+**Annex rule (H-6):** this annex is re-run quarterly by the research role (EPIC-071/072); every row
+names the external benchmark the estate must beat, and the registry measures whether it does.
+
+## 27. AGENTS.md reference
+
+`idp/AGENTS.md` carries a pointer to this document and to §23–§24 (headlines and tenets) as binding
+law, so every agent — whatever runtime — reads the programme at session start.
