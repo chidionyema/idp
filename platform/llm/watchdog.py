@@ -26,6 +26,16 @@ an empty reply, not a refused port, so the router is probed on its slot's own po
 launchd agent is the one restarted. A refused front is restarted at once: it is a byte forwarder
 that binds in under a second, so there is no slow start to mistake for death. With no active
 file the laptop still runs the single router on :4000, and that is what is guarded.
+
+WEDGED (2026-10-24). That same rule kept a truly dead router alive on paper all day: load peaked
+~370 and for hours the log read "probe slow:curl=28 http=000 -- listening, not restarted" while
+nothing answered (the 2026-10-24 cloud-migration spec, §1.1). So a *timeout* (curl 28, http 000)
+is now its own verdict: 3 consecutive ones count as WEDGED and kickstart the slot -- but only
+when 1-min load < WEDGE_LOAD_MAX (20): under a storm the restart adds load and cuts live
+sessions, so a wedged-under-storm router is logged and left for load to fall (the storm fix is
+the load, not the guardian). A wedge restart waits WEDGE_COOLDOWN_SECS (900) and is capped at
+WEDGE_MAX_PER_DAY (3); beyond the cap it logs INVESTIGATE instead of restart-looping.
+Refused-port handling is unchanged.
 """
 
 import datetime
@@ -47,6 +57,12 @@ FAIL_THRESHOLD = 3
 COOLDOWN_SECS = 240
 PROBE_TIMEOUT_SECS = 10
 CURL_COULD_NOT_CONNECT = 7
+CURL_OPERATION_TIMEOUT = 28
+
+WEDGE_THRESHOLD = 3
+WEDGE_COOLDOWN_SECS = 900
+WEDGE_LOAD_MAX = 20
+WEDGE_MAX_PER_DAY = 3
 
 
 def log(msg):
@@ -79,7 +95,8 @@ def target():
 
 
 def probe(url):
-    """'ok', 'refused' (nothing listening: the only verdict that counts), or 'slow:<why>'."""
+    """'ok', 'refused' (nothing listening), 'timeout' (nothing answered in time -- the WEDGED
+    candidate), or 'slow:<why>'."""
     r = subprocess.run(
         [
             "curl",
@@ -99,7 +116,17 @@ def probe(url):
         return "ok"
     if r.returncode == CURL_COULD_NOT_CONNECT:
         return "refused"
+    if r.returncode == CURL_OPERATION_TIMEOUT and r.stdout.strip() in ("000", "-"):
+        return "timeout"
     return f"slow:curl={r.returncode} http={r.stdout.strip() or '-'}"
+
+
+def load1():
+    """1-minute load average as a float; huge on failure (fail toward NOT restarting)."""
+    try:
+        return float(os.getloadavg()[0])
+    except Exception:
+        return 1e9
 
 
 def restart(label):
@@ -120,14 +147,60 @@ def main():
         restart(FRONT_LABEL)
 
     verdict = probe(f"http://127.0.0.1:{port}/health/liveliness")
+    if verdict == "timeout":
+        # Nothing answered within the probe: the wedged signature (2026-10-24: logged as
+        # "listening, not restarted" for hours while dead). Counted; restarted only on a calm
+        # machine -- under load the restart itself is the storm amplifier.
+        s["wedged"] = s.get("wedged", 0) + 1
+        load = load1()
+        if s["wedged"] < WEDGE_THRESHOLD:
+            log(
+                f"probe timeout :{port} -- wedged {s['wedged']}/{WEDGE_THRESHOLD} (load {load:.0f})"
+            )
+            save_state(s)
+            return
+        day = datetime.datetime.now(datetime.timezone.utc).strftime("%F")
+        if s.get("wedge_day") != day:
+            s["wedge_day"], s["wedge_restarts"] = day, 0
+        if load >= WEDGE_LOAD_MAX:
+            log(
+                f"wedged :{port} but load {load:.0f} >= {WEDGE_LOAD_MAX} -- storm, not restarting"
+            )
+            save_state(s)
+            return
+        if s.get("wedge_restarts", 0) >= WEDGE_MAX_PER_DAY:
+            log(
+                f"wedged :{port} but daily cap {WEDGE_MAX_PER_DAY} hit -- INVESTIGATE, not restarting"
+            )
+            save_state(s)
+            return
+        since = now - s.get("last_wedge_restart_at", 0)
+        if since < WEDGE_COOLDOWN_SECS:
+            log(
+                f"wedged :{port} but cooldown active ({int(since)}s < {WEDGE_COOLDOWN_SECS}s)"
+            )
+            save_state(s)
+            return
+        log(
+            f"wedge-restart: kickstart {label} (load {load:.0f}, {s.get('wedge_restarts', 0) + 1}/{WEDGE_MAX_PER_DAY} today)"
+        )
+        restart(label)
+        s["last_wedge_restart_at"] = now
+        s["wedge_restarts"] = s.get("wedge_restarts", 0) + 1
+        s["wedged"] = 0
+        save_state(s)
+        return
     if verdict.startswith("slow"):
-        # Listening but not answering in time: not dead, so neither counted nor restarted.
+        # An answer that was merely wrong/slow-shaped: not dead, neither counted nor restarted.
         log(f"probe {verdict} -- listening, not restarted")
+        s["wedged"] = 0
+        save_state(s)
         return
     if verdict == "ok":
         if s["failures"]:
             log(f"recovered after {s['failures']} failure(s)")
         s["failures"] = 0
+        s["wedged"] = 0
         save_state(s)
         return
 
