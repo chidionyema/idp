@@ -46,6 +46,11 @@ configMapGenerator:
   - name: litellm-callbacks
     files:
       - __init__.py=callbacks/__init__.py
+      # Estate capture (migration P2.T2 port, 2026-10-25): graph spool + signed action
+      # ledger ride the router wherever it runs. Env-paths point at the capture volume;
+      # consolidation into estate-rw Postgres is P5.T2.
+      - graph_capture.py
+      - action_ledger.py
       - pobr_enforce.py=callbacks/pobr_enforce.py
       - pobr_gate_wrapper.py=callbacks/pobr_gate_wrapper.py
       - pobr_schema.py=callbacks/pobr_schema.py

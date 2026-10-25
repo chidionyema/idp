@@ -105,6 +105,12 @@ spec:
             # one, which is why the path and the callback ship in the same pull request.
             # PoBR enforcement: callbacks/ directory added so pobr_enforce.PoBREnforcer can be imported.
             - { name: PYTHONPATH, value: "/etc/litellm/callbacks:/etc/litellm/ceilings" }
+            # Estate capture (migration P2.T2 port, 2026-10-25): signed ledger + graph spool
+            # on the capture volume; consolidation into estate-rw Postgres is P5.T2. The key
+            # is the cluster-sphere identity (D9) -- the laptop key never crosses spheres.
+            - { name: ESTATE_AGENT_KEY, value: /run/secrets/litellm/agent/ESTATE_AGENT_KEY }
+            - { name: OUTBOX_DB_PATH, value: /var/lib/litellm/capture/outbox.db }
+            - { name: ESTATE_GRAPH_SPOOL, value: /var/lib/litellm/capture/graph-spool }
             # ZeroEdge (platform/llm/zeroedge.yaml). The shim module is OFF unless this is
             # set, and it fails open: a call whose optimization pass errors or exceeds the
             # 2s timeout proceeds unoptimized rather than failing. In-namespace, so the
@@ -137,6 +143,8 @@ spec:
             # PoBR callbacks: mounts the litellm-callbacks ConfigMap (pobr_enforce.py + gate modules).
             - { name: pobr-callbacks, mountPath: /etc/litellm/callbacks, readOnly: true }
             - { name: request-ceiling, mountPath: /etc/litellm/ceilings, readOnly: true }
+            - { name: agent-key, mountPath: /run/secrets/litellm/agent, readOnly: true }
+            - { name: capture, mountPath: /var/lib/litellm/capture }
             - { name: upstream, mountPath: /run/secrets/litellm/upstream, readOnly: true }
             - { name: langfuse, mountPath: /run/secrets/litellm/langfuse, readOnly: true }
             # Outside /run/secrets/litellm/*/*: read as a file per call, never exported to env.
@@ -213,6 +221,10 @@ spec:
           configMap: { name: litellm-callbacks }
         - name: request-ceiling
           configMap: { name: litellm-request-ceiling }
+        - name: agent-key
+          secret: { secretName: litellm-agent-key }
+        - name: capture
+          emptyDir: {}
         - name: upstream
           secret: { secretName: litellm-upstream }
         - name: langfuse
