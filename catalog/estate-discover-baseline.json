@@ -1,0 +1,27 @@
+{
+  "generated_at": "2026-10-25T22:30:45Z",
+  "counts": {
+    "script": 433,
+    "intent": 344,
+    "service": 150,
+    "harness": 5,
+    "gate": 51,
+    "launchd": 47
+  },
+  "blind_fields": {
+    "health": 671,
+    "metrics": 671,
+    "contract.outputs": 433,
+    "contract.errors": 433,
+    "summary": 4
+  },
+  "sources": [
+    "idp:bin",
+    "idp:platform,clusters",
+    "idp:CODEOWNERS",
+    "~/.estate/intents",
+    "~/.estate/harness",
+    "~/.estate/estate.db",
+    "~/.estate/state/inventory.json"
+  ]
+}
