@@ -22,6 +22,7 @@
     ]
   },
   "plan_lock": "How each runtime refuses work until a plan allows it (#6675): hook (the enforce plan hook above), plugin (the opencode hook file), extension (bin/pi-plan-lock-install). null means nothing enforces it there yet; such a runtime names its command, and the installer fails while that command is on PATH.",
+  "runtime_enforce": "How a runtime reaches the write-side gates (the enforce bin above) when it has no hooks of its own. pi has no hook mechanism, so it gets an extension that renders pi's session into the transcript the binary reads and turns the binary's answer into pi's two refusals: the rules stay in the binary, so one rule decides for every runtime (#7006). A list, like 'tools'.",
   "runtimes": {
     "claude-code": {
       "mcp": {"file": "$CLAUDE_CONFIG_DIR/.claude.json", "default_dir": "~/.claude", "key": "mcpServers", "shape": "stdio"},
@@ -47,6 +48,9 @@
       "mcp": {"file": "~/.pi/mcp.json", "key": "mcpServers", "shape": "stdio", "reads": false},
       "tools": [
         {"kind": "link", "source": "extensions/estate-memory-tools", "dest": "~/.pi/agent/extensions/estate-memory-tools"}
+      ],
+      "enforce": [
+        {"kind": "link", "source": "extensions/pi-estate-enforce", "dest": "~/.pi/agent/extensions/pi-estate-enforce"}
       ],
       "hook": {"kind": "link", "source": "platform/estate/memory/pi-estate-memory.ts", "dest": "~/.pi/agent/extensions/estate-memory.ts"},
       "plan_lock": "extension"
