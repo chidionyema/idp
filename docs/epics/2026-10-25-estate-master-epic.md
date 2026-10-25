@@ -1,6 +1,6 @@
 # The Estate Master Epic — a closed-loop, self-governing agentic workforce
 
-- **Status:** proposed — founder go/no-go requested on §1, §2 and §8 only
+- **Status:** proposed — founder go/no-go requested on §1, §2, §8 and §11 (second pass)
 - **Date:** 2026-10-25 · **Author:** pi (chief-architecture review), commissioned by the founder
 - **Scope:** every surface, the last seven days of work, and the target architecture
 - **Evidence:** every number below was measured on 2026-10-25 with the instrument named (§10)
@@ -468,4 +468,176 @@ lives at the door).
 **Adjacent documents that are implementation detail, not repetition:** the six specs listed in
 §3, `AGENTS.md` (laws and ceilings), `docs/specs/2026-09-24-estate-agent-enforcement-platform.md`
 (intent-only execution).
+
+---
+
+## 11. Second pass — the founder's additional wishes (2026-10-25, appended after §1–§10 landed)
+
+§1–§10 landed on `main` as `7383bb20d` (#7131). This section is **append-only**: the founder's
+words arrive after the register was agreed, and rewriting §1 would hide that. It is the same
+register, extended — not a second document (720-3, and AGENTS.md §6).
+
+### 11.1 Requirements, second pass
+
+| ID | Founder's words | Operational meaning | How it is proven | Owner |
+|----|-----------------|---------------------|------------------|-------|
+| R-40 | "agents to act as partners on the estate autonomously brainstorming, researching, proposing, suggesting ways to improve the estate and platform" | agents generate *proposals*, not only execute tickets: each one carries evidence, a falsifier and a cost | a weekly partner round produces ≥3 evidence-backed proposals; a proposal without an instrument or a falsifier is refused by the gate | governance |
+| R-41 | "awareness of calendar and time, book meetings with founder" | every loop reads one clock and one calendar record; a meeting is **proposed** and booked only on the founder's yes | a proposal generated at 03:00 is deferred to working hours, not dropped; a booking attempt without consent is refused and recorded | interaction |
+| R-42 | "all centrally coordinated" | exactly one component creates work: the coordinator (priority + capacity + ledger) | a second creator of work items fails the gate; every work item names the coordinator decision that made it | governance |
+| R-43 | "we have otto, we have face, we have fleet; fleet and face should act as mother ships — overview and total control of estate and platform" | Face and Fleet are the two HQ surfaces: whole-estate overview plus the authority to summon and assign | both render the same records (§0) and both summon through the same verb; neither holds a record of its own | interaction |
+| R-44 | "headquarters where founder can summon any agent — concierge, ops, research, science, finance — assign work, get updates" | five verbs: **see, summon, assign, observe, schedule**; every named function is an addressable agent with identity | summoning each named function returns a subscribed work item and its live state; an unaddressable function is a named failure, not a silence | interaction + identity |
+| R-45 | "architecturally things should be event and schedule driven for complete autonomy, and loop closing" | every loop has a trigger; nothing waits on a human to start it | an inventory of loops with trigger + budget + bound; a loop with no trigger fails the gate | governance |
+| R-46 | "concierge, ops, research, science … finance" | the named functions are a roster, with finance holding budget and capacity authority | `bin/estate-roster` lists each function with its intents and its authority; a function with no intent coverage fails | identity + governance |
+| R-47 | "just additional founder intents/wishes in case not captured" | the register is append-only and versioned; any founder message becomes a record, never a memory of a chat | every founder message that changes work has an intent id and a row here | intent |
+
+**State of the second pass, measured 2026-10-25** (`ls ~/.estate/intents`, `ls bin`, `rg`):
+
+| Req | State | Evidence | Phase |
+|-----|-------|----------|-------|
+| R-40 partners | **missing** | no proposal record type anywhere; agents execute intents only | 2 |
+| R-41 calendar + time | **missing** | zero intents match `calendar|meet|agenda|book`; the four `calendar|meeting` hits in `bin`/`platform` are incidental words in unrelated tools | 3 |
+| R-42 central coordination | **missing** | work is created by whoever is asked; no coordinator, no single creator | 1 |
+| R-43 Face + Fleet as mother ships | partial | Face = `backstage/packages/app/src/modules/room` (ClaimsPanel, EfficiencyHud, HarvPanel, EstateNav); Fleet = `serve-fleetview` + `bin/fleet-regression`; no shared command contract (F-09) | 3 |
+| R-44 summon / assign / observe | **missing** | `rg -l -i summon packages/app/src bin estate` returns nothing | 3 |
+| R-45 event + schedule driven | partial | the bus exists (`bin/idp-agent-event-bus`, NATS `nats.event-bus.svc:4222`) and there is exactly one scheduler (`bin/idp-one-scheduler`, `scheduler-status`); no loop inventory, no trigger gate | 0 |
+| R-46 roster (concierge, ops, research, science, finance) | **missing** | `~/.estate/agents` does not exist; functions are implied by intents, never addressable | 1 |
+| R-47 append-only register | present | this section | — |
+
+### 11.2 Concerns, second pass
+
+| ID | Concern | What it costs | Answer |
+|----|---------|---------------|--------|
+| C-11 | partners become noise | a flood of proposals with no evidence, re-proposing what was refused last month | proposal record with instrument + falsifier + dedupe against HISTORY; a refusal is recorded with its reason so the next round does not re-propose it (C-02) |
+| C-12 | calendar access is a trust boundary | an agent that can write the founder's real calendar can waste his week | consent perimeter: propose → yes → book; a per-week meeting budget; the token by name only from the vault (§4); revocation tested |
+| C-13 | "total control" quietly becomes a second control plane | the HQ grows a button that bypasses the door and the estate forks again (F-01) | HQ-2/HQ-3 below: every verb is an existing intent, and the gate refuses a surface action with no intent behind it |
+| C-14 | central coordination versus "all ways is a feature" (no single point of failure) | one coordinator becomes the outage | coordination is a **role**, not a machine: the ledger is the state, so if the coordinator dies the loops keep running and it catches up; a second coordinator is refused, a second ledger is impossible |
+
+### 11.3 Finding F-09 — three surfaces, no shared command contract
+
+Otto holds the founder's channel (the `otto-gateway` process, Telegram, NATS `nats.event-bus.svc:4222`),
+Face is the backstage room surface (`backstage/packages/app/src/modules/room`: `ClaimsPanel`,
+`EfficiencyHud`, `HarvPanel`, `EstateNav`), Fleet is `serve-fleetview` / `fleetview-launchd` with
+`bin/fleet-regression`. Each renders a different slice; none can **summon an agent and assign
+work**: `rg -l -i summon packages/app/src bin estate` returns nothing, and `~/.estate/agents` does
+not exist as a roster. So R-43/R-44 are not a redesign — they are a **contract** the three
+surfaces must share, plus a roster to address.
+
+### 11.4 Headquarters — five verbs, composed from blocks that exist
+
+The HQ is not a building and not a fourth application. It is one contract with five verbs, each
+one an existing block, so nothing new is invented except the contract itself:
+
+| Verb | What it does | Existing block it composes | New work |
+|------|--------------|----------------------------|----------|
+| **see** | the 720 view (§0) | facts store, greenlane status, cluster twin, live claims, `bin/estate-brief` | one JSON entry point |
+| **summon** | address an agent by identity and hand it a task | intent executor (340 intents), session plane (`sb start` → Temporal), NATS bus, `otto-gateway` | `estate-roster` (R-46) |
+| **assign** | turn a summon into a work item with an intent id and a cost estimate | capacity contract §6.3, tier router (#7053), door (`CEILING_SEC`) | the coordinator (R-42) |
+| **observe** | live state of every work item, per agent | incident ledger (F-05 collapse), `bin/idp-greenlane status`, `bin/estate-brief` | one state record, three renderers |
+| **schedule** | time and calendar awareness; propose and book a meeting | `bin/idp-one-scheduler`, `scheduler-status`, `scheduler-up` (one scheduler — never a second) | clock record, calendar record, `meeting-book` intent |
+
+**HQ-1 One record, three renderers.** Face, Fleet and Otto render the same records. A surface
+that keeps its own copy is stitching and is deleted (AGENTS.md §6).
+**HQ-2 No verb without an intent.** Every HQ action resolves to a named intent; a button, voice
+command or Telegram message that resolves to nothing is refused by the gate, not by a reviewer.
+**HQ-3 The HQ never bypasses the door.** Authority is *which intent may run*, never *run this
+instead* (F-01 is the precedent: two doors, one fix, twice the diff).
+**HQ-4 The HQ is an interface, not a scheduler.** If Face, Fleet and Otto are all down, the loops
+keep running and the surfaces catch up from the ledger. Availability of the HQ is never the
+availability of the estate.
+
+### 11.5 Time and calendar — the record, and the consent
+
+```yaml
+clock:    {now: <RFC3339>, tz: Europe/London, working_hours: [09:00, 18:00], quiet_hours: [21:00, 08:00]}
+calendar: {source: <caldav|ics>, events: [...], observed_at: <RFC3339>, stale: <bool>}
+booking:  {intent: meeting-book, state: proposed|agreed|booked|declined, agenda: <one line>,
+           duration_min: 30, attendees: [founder], consent: <record id>, created_at: <RFC3339>}
+```
+
+1. **One clock.** Every loop reads the same record; an agent that reasons about a schedule it
+did not read is guessing (720-1).
+2. **Quiet hours are a bound on delivery, not on work.** A 03:00 finding is worked and *held*;
+it is delivered at 09:00 unless severity crosses the policy threshold.
+3. **A meeting is proposed first.** `meeting-book` moves `proposed → booked` only with a consent
+record naming the founder's yes. A decline is recorded with its reason, so the proposing agent
+learns rather than repeats (C-11).
+4. **A per-week meeting budget** exists in the policy store; exceeding it needs an explicit
+founder override — that is R-21 (wellbeing) expressed as a number.
+5. **The calendar token is a name,** loaded from `estate-secrets`; never a value in a file or a
+prompt (§4).
+6. **Staleness is visible.** An unreadable calendar reads `stale: true` and the agent says so;
+it does not silently assume an empty week.
+
+### 11.6 Partners — the proposal record
+
+```yaml
+proposal:
+  id: PROP-2026-11-02-04
+  intent_id: INT-2026-10-25-01          # the founder wish it serves (R-47)
+  claim: "greenlane latency p90 falls from X to Y"
+  evidence: {instrument: <command>, measurement: <value>, window: <dates>}
+  dedupe: [<graph node ids of prior attempts, or 'none found' with the query used>]
+  cost: {estimate: <unit>, capacity_verdict: <admit|refuse>}
+  falsifier: "<the measurement that would prove this wrong>"
+  status: proposed | accepted | refused:<reason> | built | proven
+```
+
+Partners are agents with the **same** identity, memory and eval score as any worker (R-12, R-22).
+A proposal is not a comment: it enters the coordinator's queue with a cost, is prioritised by the
+same function as an incident (R-14), and its refusal is stored so the next round starts from it.
+That refusal record is the loop closing — the difference between a partner and a chat participant.
+
+### 11.7 Central coordination, without a single point of failure (R-42, C-14)
+
+`PROPOSALS + INCIDENTS + SCHEDULE → coordinator (priority × capacity) → work items → door → gate → memory`
+
+The coordinator is the **only** creator of work items. It is a role: the state it reads and writes
+is the ledger, so it can be restarted, moved to another agent, or run twice in an election with no
+work lost. A second *ledger* is impossible; a second *coordinator* is refused — which is how R-42
+and the founder's "all ways is a feature" preference are both true.
+
+### 11.8 Every loop, its trigger, its bound (R-45)
+
+| Loop | Trigger | Bound | Closes with |
+|------|---------|-------|-------------|
+| incident | CI/greenlane/live/k8s event (NATS) | door ceiling per action; per-incident budget | fix merged + lesson in memory |
+| partner proposal | weekly schedule + event (new failure signal) | proposals/week per agent; cost estimate | accepted → work item; refused → reason stored |
+| review | weekly schedule | one review per repo per week | findings as tickets with owners |
+| research → science | research record on the bus | experiment budget per run | prototype PR with evidence, or a recorded dead end |
+| capacity | 60 s schedule + provider event | read-only | verdict per agent; refusal ticket when short |
+| HQ delivery | quiet-hours boundary | meeting budget per week | founder sees it once, at the right time |
+
+A loop with no trigger is not a loop; a loop with no bound is not governable; a loop with no
+closing record is not closed (R-34).
+
+### 11.9 Tickets for the second pass
+
+| Ticket | Work | Acceptance test that can fail |
+|--------|------|-------------------------------|
+| EPIC-050 | `bin/estate-roster`: concierge, ops, research, science, finance — identity, intents, authority | a function with no covering intent makes the roster exit non-zero; summoning a listed function returns a work item id |
+| EPIC-051 | HQ contract v1: see/summon/assign/observe/schedule as intents | each verb resolves to a named intent; a verb with no intent is refused (HQ-2) |
+| EPIC-052 | One record, three renderers | a surface that renders a record absent from the §0 stores fails the gate; Face, Fleet and Otto show the same work-item state to within one poll |
+| EPIC-053 | clock + calendar records; quiet-hours deferral | a finding produced in quiet hours is delivered at the boundary, not at 03:00; an unreadable calendar reads `stale: true` |
+| EPIC-054 | `meeting-book` with consent | a booking without a consent record is refused and logged; the token is read by name only; revocation tested |
+| EPIC-055 | partner proposal round | a proposal without `evidence` or `falsifier` is refused; ≥3 accepted-or-refused-with-reason per week; the refusal is retrievable next round |
+| EPIC-056 | coordinator as sole work creator | two creators in one minute fails the gate; killing the coordinator mid-cycle loses no work item |
+| EPIC-057 | loop inventory + trigger gate | a registered loop with no trigger or no bound fails the gate |
+| EPIC-058 | finance function: owns capacity and spend | it refuses work above budget and the refusal appears as a ticket; spend above threshold reaches the founder before it is incurred |
+
+### 11.10 What this adds to the definition of success (§8)
+
+After Phase 4 the founder is **summoned**, not summoning: the estate proposes (R-40), books the
+thirty minutes it needs (R-41), and brings evidence, a cost and a falsifier to that meeting. The
+founder's job at the HQ is go/no-go — and the HQ's job is to make that the only thing he is asked
+(R-23, R-44, C-05).
+
+### 11.11 Risks added by this pass
+
+| Risk | Why it is real | Mitigation |
+|------|----------------|------------|
+| proposal spam (C-11) | five partner agents × weekly rounds is a lot of text | evidence + falsifier + dedupe are required to *enter* the queue; the queue has a budget |
+| calendar as the only new external trust | a write path to the founder's real week | propose-first, per-week budget, revocation test, token by name |
+| HQ becomes the second control plane (C-13) | it is the natural place to put a shortcut | HQ-2/HQ-3 gates; F-01 precedent quoted in the law |
+| time awareness without a trustworthy clock | drift, timezone, DST | one clock record with `observed_at`; an agent that cannot read it says so |
+
 
