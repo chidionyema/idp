@@ -37,6 +37,23 @@ model_list:
       api_base: http://host.docker.internal:11434/v1
       api_key: ollama
       timeout: 300
+  # The CONVERGED name (founder 2026-10-25: cluster names win). The cluster serves `vision`
+  # from gemini/gemini-2.5-flash; the laptop serves the same NAME from its own local
+  # deployment (openai/gemma3:4b over Ollama), because a laptop that cannot see a picture
+  # because the cluster is down is a laptop that cannot work. The lane inventory is what
+  # callers see and what must converge; the wiring is sphere-local fulfillment.
+  #
+  # The difference is DOCUMENTED, not assumed: bin/router-drift-check carries this exact
+  # pair (laptop openai/gemma3:4b, cluster gemini/gemini-2.5-flash) in its
+  # documented-fulfillment map and prints a note naming both sides. Change either model
+  # here and the check fails again -- an allowance that matched anything would be a gate
+  # that cannot fail, and a gate that cannot fail is not a gate.
+  - model_name: vision
+    litellm_params:
+      model: openai/gemma3:4b
+      api_base: http://host.docker.internal:11434/v1
+      api_key: ollama
+      timeout: 300
   # Second local voter for the kernel's 3-model consensus (kini spec 4.2:
   # "Ollama handles 2/3 quorum load"); a different family from `ollama`, so two
   # local votes are not one model voting twice.

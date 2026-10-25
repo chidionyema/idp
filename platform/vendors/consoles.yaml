@@ -499,9 +499,6 @@ vendors:
         \ 65536\n- model_name: fast\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
         \    api_base: https://api.sambanova.ai/v1\n    api_key: os.environ/SAMBANOVA_API_KEY\n\
         \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
-        \ 131072\n"
-      cluster_lanes: "\n- model_name: vision\n  litellm_params:\n    model: gemini/gemini-2.5-flash\n\
-        \    api_key: os.environ/GEMINI_API_KEY\n    timeout: 300\n    tpm: 150000\n\
         \n# Founder 2026-08-30, verbatim: \"we test with MiniMax see what the image\
         \ quality is like, then\n# we use Gemini for the ones that will ship to production\"\
         . So there are two image lanes, and\n# the reason they are shaped differently\
@@ -521,7 +518,10 @@ vendors:
         \ with a zero cost until the image ships and the map catches up; spend is\n\
         # still capped by general_settings.max_budget like every other lane.\n- model_name:\
         \ image\n  litellm_params:\n    model: gemini/gemini-3.1-flash-image\n   \
-        \ api_key: os.environ/GEMINI_API_KEY\n    timeout: 300\n"
+        \ api_key: os.environ/GEMINI_API_KEY\n    timeout: 300\n\
+        \ 131072\n"
+      cluster_lanes: "\n- model_name: vision\n  litellm_params:\n    model: gemini/gemini-2.5-flash\n\
+        \    api_key: os.environ/GEMINI_API_KEY\n    timeout: 300\n    tpm: 150000\n"
       fallbacks: '# Gemini stopped heading any chain on 2026-09-08. Measured over
         the two hours to
 
