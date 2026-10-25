@@ -1,0 +1,25 @@
+name: pr.create
+description: >
+  Open a pull request on any estate repo. The general door: pr-open is bound to the idp
+  repo (pytest, -R chidionyema/idp, idp hook secrets) and open-pr is a stale hard-coded
+  one-off (feat/pobr, 2026-10), so repos outside idp had no PR door at all — measured
+  2026-10-25 when lane-submit refused hermes-agent with "BLIND no bin/claim-gate in this
+  checkout". Refuses main/master as head. Never merges: open the PR, then stop — CI and
+  the repo's own automation converge from there (AGENTS.md section 2). For repos served
+  by the Greenlane (claim-gate present), use lane-submit instead: it proves the branch
+  green and lands it.
+class: mutate
+args:
+  repo:   {type: string, required: true, help: "Absolute path of the checkout gh runs in"}
+  branch: {type: string, required: true, help: "Head branch name; must already be pushed to origin; never main"}
+  title:  {type: string, required: true, help: "PR title"}
+  body_file: {type: string, required: true, help: "Path to the PR body markdown file"}
+  base:   {type: string, default: main, help: "Base branch (default main)"}
+halt_on_failure: true
+steps:
+  - name: pr-create
+    cmd: |
+      set -e
+      case "{{branch}}" in ''|main|master) echo "refused: head branch '{{branch}}'" >&2; exit 1;; esac
+      cd {{repo}}
+      gh pr create --repo chidionyema/$(basename {{repo}}) --base {{base}} --head {{branch}} --title {{title}} --body-file {{body_file}}
