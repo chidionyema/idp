@@ -10,7 +10,9 @@ args:
   heal: {type: bool, default: true, help: "false = diagnose only, change nothing"}
 halt_on_failure: true
 steps:
+    # Step bound removed 2026-10-25: time is declared once, as this intent's budget
+    # (docs/decisions/0043-the-bound-lives-at-the-door.md). A number here could only be a
+    # guess about someone else's work, and where it fired it invented a failure.
   - name: doctor
-    timeout: 240
     cmd: >
       python3 ~/.estate/libexec/router-doctor.py $( [ "{{heal}}" = "false" ] && echo diagnose || echo heal )

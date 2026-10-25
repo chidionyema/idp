@@ -95,7 +95,6 @@ def _ignored(root: str) -> frozenset[str] | None:
             cwd=root,
             capture_output=True,
             text=True,
-            timeout=120,
             check=False,
         )
     except (OSError, subprocess.SubprocessError):

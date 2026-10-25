@@ -7,11 +7,12 @@ args:
   models: {type: string, default: "~/.cache/estate-tools/sherpa-models"}
 halt_on_failure: true
 steps:
+    # Step bound removed 2026-10-25: time is declared once, as this intent's budget
+    # (docs/decisions/0043-the-bound-lives-at-the-door.md). A number here could only be a
+    # guess about someone else's work, and where it fired it invented a failure.
   - name: build
-    timeout: 600
     cmd: |
       export PATH=$HOME/.cache/estate-tools/go/bin:$PATH GOPATH=$HOME/.cache/estate-tools/gopath
       cd <<repo>>/platform/voice-router && go build -o /tmp/voice-bench ./cmd/bench
   - name: compose
-    timeout: 1800
     cmd: uptime && /tmp/voice-bench -models <<models>> -compose {{silences}} -runs {{runs}}

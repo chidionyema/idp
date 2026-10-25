@@ -1,0 +1,9 @@
+# Ratchet baseline for bin/timeout-budget. Every line is a wall-clock bound that was
+# already in the tree when the gate was switched on (2026-10-25), as `<path>|<bound text>`.
+# The gate refuses a NEW one; this file may only ever get shorter. Regenerate with:
+#
+#     bin/timeout-budget --write-baseline
+#
+# Regenerating to silence a new finding defeats the gate: read the line first, and if the
+# bound is a probe, mark it with `# estate:bound <why>` instead of adding it here.
+

@@ -82,7 +82,7 @@ def served_now(run=None) -> "datetime | None":
             ["gh", "api", "-i", "rate_limit"],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=30,  # estate:bound one gh API round trip -- a hang here is a no-answer, not 30s of work
         )
     except Exception:  # noqa: BLE001 - gh missing, no network, or a hang is all the same answer
         return None

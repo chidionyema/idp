@@ -8,8 +8,10 @@ description: >
 args:
   scope: {type: string, default: "all"}
 steps:
+    # Step bound removed 2026-10-25: time is declared once, as this intent's budget
+    # (docs/decisions/0043-the-bound-lives-at-the-door.md). A number here could only be a
+    # guess about someone else's work, and where it fired it invented a failure.
   - name: diagnose
-    timeout: 900
     cmd: |
       case "{{scope}}" in
         laptop) python3 ~/.estate/libexec/voice-doctor.py --laptop-only ;;

@@ -15,8 +15,21 @@ from pathlib import Path
 try:
     from mcp.plugins import pobr_grant
 
+    # The door's ceiling, imported from the one module that defines it. This file used to carry
+    # `args.get("timeout", 55)`, a second opinion about the same work that sat BELOW the door's
+    # 100s and killed long intents before the executor ever reached its own bound (measured
+    # 2026-10-25: bin/idp-ci's schema rung runs 57s, so invoking it through this door would have
+    # been cut at 55s and reported as a timeout rather than as the work).
+    from mcp.plugins.estate_executor import CEILING_SEC as DOOR_CEILING_SEC
 except ImportError:
     pobr_grant = None  # type: ignore
+    DOOR_CEILING_SEC = 100  # restated only if the door itself cannot be imported
+
+# The backstop this door holds around the child. It is DERIVED from the ceiling (+ process start
+# and teardown), never a number of its own: a bound that undercuts the door turns a slow intent into
+# a false timeout, and a bound that restates the ceiling as a literal is a second answer that
+# drifts. The child bounds itself; this only catches a child that never returns.
+CHILD_BACKSTOP_SEC = DOOR_CEILING_SEC + 15
 
 HOME = Path.home()
 # The laptop installs the library at ~/.estate/intents. The estate-mcp image has no ~/.estate
@@ -247,7 +260,14 @@ def _estate_show(args):
 
 def _estate_invoke(args):
     name = args.get("intent", "")
-    timeout = int(args.get("timeout", 55))
+    # A caller may still ask for a shorter bound explicitly (a probe wants to fail fast); the
+    # default is the backstop above, which cannot undercut the door's own budget.
+    try:
+        timeout = int(args.get("timeout", CHILD_BACKSTOP_SEC))
+    except (TypeError, ValueError):
+        return "ERROR: timeout must be whole seconds, got {}".format(
+            args.get("timeout")
+        )
     if not name:
         return "ERROR: intent name required"
     if not _is_valid(name):

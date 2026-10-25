@@ -91,7 +91,25 @@ MIN_CEILING_SEC = 1
 # ceiling above ours is refused rather than trimmed, because silently lowering it would run a
 # command the author believed was bounded to a different number.
 _TIMEOUT_UNIT_S = {"s": 1, "m": 60, "h": 3600, "d": 86400}
-_TIMEOUT_RE = re.compile(r"\b(?:timeout|gtimeout)\b([^;|&]*)")
+
+# A BOUND IS READ IN COMMAND POSITION OR NOT AT ALL (2026-10-25). The first form of this pattern was
+# `\b(?:timeout|gtimeout)\b([^;|&]*)`, and it read the WORD, not the bound. Measured this turn, on
+# three payloads the estate actually sends:
+#
+#   curl --connect-timeout 2 http://x        -> read as a 2s CEILING on the whole job
+#   git commit -m "no timeout any more, measured 2026-10-25"
+#                                            -> read as a 2026s ceiling and REFUSED
+#   bin/harvest --out docs/2026-10-25-timeout-budget.json
+#                                            -> refused for the same reason (a filename)
+#
+# The first is a connect probe being mistaken for a budget; the second and third are the door
+# refusing correct work (R38), which is worse than the hole it was closing: a guard that fires on
+# prose teaches the agent to rename a file instead of to remove a bound. So the token must now be
+# where a command starts -- line start, after `;` `&&` `||` `|` `(` or `$(` -- which is the only
+# place a shell bound can be written, and the argument run stops at the end of that line.
+_TIMEOUT_RE = re.compile(
+    r"(?:^|[;&|(]|\$\()[ \t]*(?:timeout|gtimeout)\b([^;|&\n]*)", re.M
+)
 
 # Commands that have no return path: they wait on something outside the process. Refused at the
 # door, because a detached run of `sleep 900` is still a job nobody is waiting for, and the
@@ -332,7 +350,10 @@ def explicit_ceiling_sec(command: str) -> Optional[int]:
         # silently turned into an hour, in the direction that removes the cap. `make`'s `m` was
         # being read as minutes. A spelling that looks bounded and is not is the whole class of
         # defect this gate exists for, so it is fixed here rather than in the caller.
-        num = re.search(r"(\d+)([smhd])?", without_kill)
+        # `(?![-\w])` after the number: a date fragment is not a bound. `timeout 2026-10-25` and
+        # `timeout 2m-foo` are not spellings of a ceiling, and reading them as 2026s / 120s is how
+        # this parser once refused a commit message.
+        num = re.search(r"(\d+)([smhd])?(?![-\w])", without_kill)
         if not num:
             continue
         value = int(num.group(1))
@@ -1212,14 +1233,24 @@ def _refusals_for(
     steer = _steer_for(command)
     if steer:
         reasons.append(steer)
+    bare = unquoted(command)
     for pattern in _NEVER:
-        if pattern.search(command):
+        if pattern.search(bare):
             reasons.append(
                 _refusal(
                     "this command waits on something outside the process",
                     detail=f"matched {pattern.pattern}",
                 )
             )
+    parked = parking_sleep(command)
+    if parked:
+        reasons.append(
+            _refusal(
+                "this command waits on something outside the process; the executor runs work, it "
+                f"does not park an agent (sleep {parked} is a park, not a pace)",
+                detail=f"sleep {parked}: >= {_PARKING_SLEEP_SEC}s or unbounded",
+            )
+        )
     written = explicit_ceiling_sec(command)
     if written is not None and written > CEILING_SEC:
         reasons.append(

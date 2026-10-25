@@ -128,11 +128,14 @@ pa_run() {
   local errf; errf=$(mktemp)
   if deps_base_active; then
     # shellcheck disable=SC2086
-    PA_JSON=$(timeout 240 $PA "$@" --progress-spinner off --format=json 2>"$errf"); PA_RC=$?
+    # No bound here (2026-10-25, ADR 0043): `timeout 240` was larger than the 100s door that runs
+    # this script, so it could never fire inside the estate and only ever hid a hang in CI as an
+    # empty advisory list -- a false "clean". The door bounds the run; a CI job has its own timeout.
+    PA_JSON=$($PA "$@" --progress-spinner off --format=json 2>"$errf"); PA_RC=$?
     PA_TEXT="$(cat "$errf")"
   else
     # shellcheck disable=SC2086
-    PA_TEXT=$(timeout 240 $PA "$@" --progress-spinner off 2>&1); PA_RC=$?
+    PA_TEXT=$($PA "$@" --progress-spinner off 2>&1); PA_RC=$?
   fi
   rm -f "$errf"
   return 0
@@ -406,7 +409,7 @@ else
     # 124 branch below never fired and every registry timeout arrived as "high or critical
     # advisories" with an empty evidence block (hermes-v2#71, twice, 2026-09-04). Capture the
     # real status before any other command runs.
-    out=$(cd "$d" && timeout 300 npm audit --package-lock-only --audit-level=high --omit=dev 2>&1) && rc=0 || rc=$?
+    out=$(cd "$d" && npm audit --package-lock-only --audit-level=high --omit=dev 2>&1) && rc=0 || rc=$?
     if [ $rc != 0 ]; then
       # A registry that does not answer in 300s is a network condition, not a finding. Under the
       # flake protocol an unrelated infrastructure timeout must not hold a correct change, so this
@@ -425,7 +428,7 @@ else
         open="unread"
         npmjson=""
         if [ -n "$nig" ] || deps_base_active; then
-          npmjson=$(cd "$d" && timeout 300 npm audit --package-lock-only --audit-level=high --omit=dev --json 2>/dev/null)
+          npmjson=$(cd "$d" && npm audit --package-lock-only --audit-level=high --omit=dev --json 2>/dev/null)
           open=$(printf '%s' "$npmjson" | NIG="$nig" python3 -c 'import json, os, sys
 dismissed = set(os.environ["NIG"].split())
 try:
@@ -489,7 +492,7 @@ for name, meta in vulns.items():
         blind=1
       fi
     else
-      (cd "$d" && timeout 300 npm audit --package-lock-only --audit-level=high >/dev/null 2>&1); rc=$?
+      (cd "$d" && npm audit --package-lock-only --audit-level=high >/dev/null 2>&1); rc=$?
       if [ $rc = 124 ]; then say "WARN  npm       $d: all-deps npm audit exceeded 300s (registry unreachable); dev advisories unmeasured"
       elif [ $rc != 0 ]; then say "WARN  npm       $d: high or critical advisories in devDependencies only (not shipped; not gating)"; fi
     fi
