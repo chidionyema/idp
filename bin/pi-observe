@@ -71,6 +71,7 @@ USAGE
   bin/pi-observe --install         # refuses, and names the runner that actually fires on this host
   bin/pi-observe --reap            # SIGTERM headless-leaked processes (default: name them only)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -110,7 +111,10 @@ def _run(argv: list[str], timeout: float = 20.0) -> tuple[int, str]:
     try:
         p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
         return p.returncode, p.stdout
-    except (OSError, subprocess.TimeoutExpired) as exc:  # pragma: no cover - environment
+    except (
+        OSError,
+        subprocess.TimeoutExpired,
+    ) as exc:  # pragma: no cover - environment
         return 127, f"{type(exc).__name__}: {exc}"
 
 
@@ -142,7 +146,9 @@ def _parse_cputime(text: str) -> float:
 
 def sample_processes() -> list[dict[str, Any]] | None:
     """Every process whose command name is `pi`. None when the table cannot be read (BLIND)."""
-    rc, out = _run(["ps", "-ax", "-o", "pid=,ppid=,etime=,stat=,%cpu=,time=,tty=,rss=,comm="])
+    rc, out = _run(
+        ["ps", "-ax", "-o", "pid=,ppid=,etime=,stat=,%cpu=,time=,tty=,rss=,comm="]
+    )
     if rc != 0 or not out.strip():
         return None
     procs: list[dict[str, Any]] = []
@@ -174,8 +180,13 @@ def established_sockets(pid: int) -> int | None:
     probe graded `headless-waiting` and the leak this file exists to find was hidden by its own
     instrument. `-a` ANDs the terms: only this pid's sockets.
     """
-    rc, out = _run(["lsof", "-nP", "-a", "-p", str(pid), "-iTCP", "-sTCP:ESTABLISHED", "-Fn"])
-    if rc not in (0, 1):  # lsof exits 1 when nothing matched -- an answer, not a failure
+    rc, out = _run(
+        ["lsof", "-nP", "-a", "-p", str(pid), "-iTCP", "-sTCP:ESTABLISHED", "-Fn"]
+    )
+    if rc not in (
+        0,
+        1,
+    ):  # lsof exits 1 when nothing matched -- an answer, not a failure
         return None
     return sum(1 for line in out.splitlines() if line.startswith("n"))
 
@@ -190,11 +201,21 @@ def cwd_of(pid: int) -> str | None:
     return None
 
 
-def classify(proc: dict[str, Any], cpu_delta: float, sockets: int | None, grace: int, long_lived: int) -> str:
+def classify(
+    proc: dict[str, Any],
+    cpu_delta: float,
+    sockets: int | None,
+    grace: int,
+    long_lived: int,
+) -> str:
     interactive = proc["tty"] not in ("??", "-", "")
     if interactive:
         if cpu_delta >= 0.05:
-            return "interactive-long-lived" if proc["age_s"] >= long_lived else "interactive-busy"
+            return (
+                "interactive-long-lived"
+                if proc["age_s"] >= long_lived
+                else "interactive-busy"
+            )
         return "interactive-idle"
     if cpu_delta >= 0.05:
         return "headless-busy"
@@ -205,7 +226,9 @@ def classify(proc: dict[str, Any], cpu_delta: float, sockets: int | None, grace:
     return "headless-unknown" if proc["age_s"] < grace else "headless-leaked"
 
 
-def live_report(sample_s: float, grace: int, long_lived: int, do_reap: bool) -> tuple[list[dict[str, Any]] | None, dict[str, Any]]:
+def live_report(
+    sample_s: float, grace: int, long_lived: int, do_reap: bool
+) -> tuple[list[dict[str, Any]] | None, dict[str, Any]]:
     first = sample_processes()
     if first is None:
         return None, {}
@@ -240,11 +263,21 @@ def live_report(sample_s: float, grace: int, long_lived: int, do_reap: bool) -> 
     rows.sort(key=lambda r: (r["verdict"] != "headless-leaked", -r["age_s"]))
     summary = {
         "live": len(rows),
-        "verdicts": {v: sum(1 for r in rows if r["verdict"] == v) for v in sorted({r["verdict"] for r in rows})},
+        "verdicts": {
+            v: sum(1 for r in rows if r["verdict"] == v)
+            for v in sorted({r["verdict"] for r in rows})
+        },
         "rss_mb": round(sum(r["rss_mb"] for r in rows), 1),
-        "leaked_rss_mb": round(sum(r["rss_mb"] for r in rows if r["verdict"] == "headless-leaked"), 1),
-        "long_lived_cpu_s": round(sum(r["cpu_s"] for r in rows if r["verdict"] == "interactive-long-lived"), 1),
-        "long_lived_rss_mb": round(sum(r["rss_mb"] for r in rows if r["verdict"] == "interactive-long-lived"), 1),
+        "leaked_rss_mb": round(
+            sum(r["rss_mb"] for r in rows if r["verdict"] == "headless-leaked"), 1
+        ),
+        "long_lived_cpu_s": round(
+            sum(r["cpu_s"] for r in rows if r["verdict"] == "interactive-long-lived"), 1
+        ),
+        "long_lived_rss_mb": round(
+            sum(r["rss_mb"] for r in rows if r["verdict"] == "interactive-long-lived"),
+            1,
+        ),
         "reaped": reaped,
     }
     return rows, summary
@@ -265,7 +298,10 @@ def shape_of(tool: str, args: dict[str, Any]) -> str:
         p = str(args.get("path") or args.get("file_path") or "")
         return f"{tool}: *{os.path.splitext(p)[1] or '<noext>'}"
     if tool in ("estate_run_tests", "estate_run_gate", "estate_invoke"):
-        tgt = _PATH_RE.sub("<path>", str(args.get("target") or args.get("repo") or args.get("intent") or ""))
+        tgt = _PATH_RE.sub(
+            "<path>",
+            str(args.get("target") or args.get("repo") or args.get("intent") or ""),
+        )
         return f"{tool}: {tgt.split('/')[-1][:40] or '<none>'}"
     return tool
 
@@ -391,7 +427,9 @@ def _repo_root() -> Path | None:
         if (parent / "scheduler" / "schedule.yml").is_file():
             return parent
     code = os.environ.get("CODE")
-    candidates = ([Path(code) / "idp"] if code else []) + [HOME / "Documents" / "code" / "idp"]
+    candidates = ([Path(code) / "idp"] if code else []) + [
+        HOME / "Documents" / "code" / "idp"
+    ]
     for base in candidates:
         if (base / "scheduler" / "schedule.yml").is_file():
             return base
@@ -442,7 +480,11 @@ def provenance(argv: list[str]) -> dict[str, Any]:
     owner = None
     if started_by == "launchd":
         owner = next(
-            (j for j in jobs if j["program"] and j["program"].split()[-1][:60] in owner_cmd),
+            (
+                j
+                for j in jobs
+                if j["program"] and j["program"].split()[-1][:60] in owner_cmd
+            ),
             jobs[0] if len(jobs) == 1 else None,
         )
     return {
@@ -466,7 +508,9 @@ def provenance(argv: list[str]) -> dict[str, Any]:
     }
 
 
-def observe(state: dict[str, Any], budget: int, window_hours: float) -> tuple[dict[str, Any], int]:
+def observe(
+    state: dict[str, Any], budget: int, window_hours: float
+) -> tuple[dict[str, Any], int]:
     """Read only bytes appended since the last pass, over files touched inside the window."""
     if not SESSIONS.is_dir():
         return {"blind": "transcript directory not readable"}, 0
@@ -500,11 +544,25 @@ def observe(state: dict[str, Any], budget: int, window_hours: float) -> tuple[di
         budget -= len(chunk)
         read += len(chunk)
         complete, sep, _tail = chunk.rpartition(b"\n")
-        files[path] = offset + (len(complete) + 1 if sep else 0)  # a chunk may end mid-line
+        files[path] = offset + (
+            len(complete) + 1 if sep else 0
+        )  # a chunk may end mid-line
         s = sessions.setdefault(
-            path, {"calls": 0, "errors": 0, "events": 0, "tokens": 0, "cost_usd": 0.0,
-                   "planned": False, "cwd": None, "model_changes": 0, "last_ts": None,
-                   "shapes": {}, "err_shapes": {}, "tmp_escapes": 0},
+            path,
+            {
+                "calls": 0,
+                "errors": 0,
+                "events": 0,
+                "tokens": 0,
+                "cost_usd": 0.0,
+                "planned": False,
+                "cwd": None,
+                "model_changes": 0,
+                "last_ts": None,
+                "shapes": {},
+                "err_shapes": {},
+                "tmp_escapes": 0,
+            },
         )
         calls_this = errors_this = 0
         for line in complete.split(b"\n"):
@@ -524,7 +582,9 @@ def observe(state: dict[str, Any], budget: int, window_hours: float) -> tuple[di
                 # table said "-" where it should have said how stale a session was -- a monitor that
                 # cannot date an event cannot tell a finished session from a live one.
                 try:
-                    s["last_ts"] = dt.datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+                    s["last_ts"] = dt.datetime.fromisoformat(
+                        ts.replace("Z", "+00:00")
+                    ).timestamp()
                 except ValueError:
                     pass
             if o.get("type") == "session" and o.get("cwd"):
@@ -549,7 +609,9 @@ def observe(state: dict[str, Any], budget: int, window_hours: float) -> tuple[di
                     s["calls"] += 1
                     if name == "declare_plan":
                         s["planned"] = True
-                    if name == "estate_execute" and "/tmp" in str(args.get("command") or ""):
+                    if name == "estate_execute" and "/tmp" in str(
+                        args.get("command") or ""
+                    ):
                         s["tmp_escapes"] += 1
             elif m.get("role") == "toolResult" and m.get("isError"):
                 s["errors"] += 1
@@ -563,7 +625,9 @@ def observe(state: dict[str, Any], budget: int, window_hours: float) -> tuple[di
                     "cwd": s.get("cwd"),
                     "calls": calls_this,
                     "errors": errors_this,
-                    "last_event_age_s": int(time.time() - s["last_ts"]) if s.get("last_ts") else None,
+                    "last_event_age_s": int(time.time() - s["last_ts"])
+                    if s.get("last_ts")
+                    else None,
                     "planned": bool(s.get("planned")),
                 }
             )
@@ -595,7 +659,9 @@ def aggregate(totals: dict[str, Any], window_hours: float) -> dict[str, Any]:
         "tokens": sum(s.get("tokens", 0) for s in sessions.values()),
         "cost_usd": round(sum(s.get("cost_usd", 0.0) for s in sessions.values()), 2),
         "model_changes": sum(s.get("model_changes", 0) for s in sessions.values()),
-        "sessions_without_plan": sum(1 for s in sessions.values() if not s.get("planned")),
+        "sessions_without_plan": sum(
+            1 for s in sessions.values() if not s.get("planned")
+        ),
         "tmp_escapes": sum(s.get("tmp_escapes", 0) for s in sessions.values()),
         "bytes_read_total": totals.get("bytes_read_total", 0),
         "shapes": rows,
@@ -619,24 +685,40 @@ def _age(seconds: float) -> str:
 
 def print_live(rows: list[dict[str, Any]], summary: dict[str, Any]) -> None:
     print(f"live pi processes: {summary['live']}   resident {summary['rss_mb']:.0f} MB")
-    print(f"{'pid':>7}  {'verdict':<24}{'age':>8}  {'cpu':>6}  {'rss':>7}  {'sock':>4}  cwd")
+    print(
+        f"{'pid':>7}  {'verdict':<24}{'age':>8}  {'cpu':>6}  {'rss':>7}  {'sock':>4}  cwd"
+    )
     for r in rows:
-        sock = "-" if r["sockets_established"] is None else str(r["sockets_established"])
-        print(f"{r['pid']:>7}  {r['verdict']:<24}{_age(r['age_s']):>8}  "
-              f"{r['cpu_delta_s']:>5.2f}s  {r['rss_mb']:>6.0f}M  {sock:>4}  {r['cwd'] or '?'}")
+        sock = (
+            "-" if r["sockets_established"] is None else str(r["sockets_established"])
+        )
+        print(
+            f"{r['pid']:>7}  {r['verdict']:<24}{_age(r['age_s']):>8}  "
+            f"{r['cpu_delta_s']:>5.2f}s  {r['rss_mb']:>6.0f}M  {sock:>4}  {r['cwd'] or '?'}"
+        )
     leaked = [r for r in rows if r["verdict"] == "headless-leaked"]
     if leaked:
-        print(f"\nDEFECT  {len(leaked)} headless session(s) finished and never exited, "
-              f"holding {summary['leaked_rss_mb']:.0f} MB: "
-              + ", ".join(f"{r['pid']} ({_age(r['age_s'])})" for r in leaked))
-        print("        no terminal, no CPU movement, no ESTABLISHED socket past the grace window.")
+        print(
+            f"\nDEFECT  {len(leaked)} headless session(s) finished and never exited, "
+            f"holding {summary['leaked_rss_mb']:.0f} MB: "
+            + ", ".join(f"{r['pid']} ({_age(r['age_s'])})" for r in leaked)
+        )
+        print(
+            "        no terminal, no CPU movement, no ESTABLISHED socket past the grace window."
+        )
         print("        `bin/pi-observe --reap` kills exactly these.")
     spun = [r for r in rows if r["verdict"] == "interactive-long-lived"]
     if spun:
-        print(f"\nWASTE   {len(spun)} terminal session(s) open past the long-lived window, holding "
-              f"{summary['long_lived_rss_mb']:.0f} MB and {summary['long_lived_cpu_s'] / 60:.0f} CPU-minutes: "
-              + ", ".join(f"{r['pid']} ({_age(r['age_s'])}, {r['rss_mb']:.0f}M)" for r in spun))
-        print("        closing the terminal frees both; nothing in the estate needs them held open.")
+        print(
+            f"\nWASTE   {len(spun)} terminal session(s) open past the long-lived window, holding "
+            f"{summary['long_lived_rss_mb']:.0f} MB and {summary['long_lived_cpu_s'] / 60:.0f} CPU-minutes: "
+            + ", ".join(
+                f"{r['pid']} ({_age(r['age_s'])}, {r['rss_mb']:.0f}M)" for r in spun
+            )
+        )
+        print(
+            "        closing the terminal frees both; nothing in the estate needs them held open."
+        )
 
 
 def print_moved(moved: list[dict[str, Any]], read: int) -> None:
@@ -647,18 +729,24 @@ def print_moved(moved: list[dict[str, Any]], read: int) -> None:
     print(f"{'last':>7}  {'calls':>6}  {'err':>4}  {'plan':>5}  cwd")
     for r in moved[:12]:
         age = "-" if r["last_event_age_s"] is None else _age(r["last_event_age_s"])
-        print(f"{age:>7}  {r['calls']:>6}  {r['errors']:>4}  {'yes' if r['planned'] else 'NO':>5}  {r['cwd'] or '?'}")
+        print(
+            f"{age:>7}  {r['calls']:>6}  {r['errors']:>4}  {'yes' if r['planned'] else 'NO':>5}  {r['cwd'] or '?'}"
+        )
 
 
 def print_repetition(agg: dict[str, Any], top: int = 15) -> None:
-    print(f"\nrepeated shapes over the last {agg['window_hours']:g}h, across {agg['sessions']} transcripts "
-          f"({agg['tool_calls']} tool calls, {agg['errors']} errors)")
+    print(
+        f"\nrepeated shapes over the last {agg['window_hours']:g}h, across {agg['sessions']} transcripts "
+        f"({agg['tool_calls']} tool calls, {agg['errors']} errors)"
+    )
     print(f"{'calls':>7}  {'sess':>5}  {'err':>5}  shape")
     for r in agg["shapes"][:top]:
         print(f"{r['calls']:>7}  {r['sessions']:>5}  {r['errors']:>5}  {r['shape']}")
-    print(f"friction: {agg['sessions_without_plan']} session(s) never declared a plan; "
-          f"{agg['tmp_escapes']} tool call(s) write to /tmp; "
-          f"{agg['model_changes']} model switch(es); {agg['tokens']} tokens, ${agg['cost_usd']}")
+    print(
+        f"friction: {agg['sessions_without_plan']} session(s) never declared a plan; "
+        f"{agg['tmp_escapes']} tool call(s) write to /tmp; "
+        f"{agg['model_changes']} model switch(es); {agg['tokens']} tokens, ${agg['cost_usd']}"
+    )
 
 
 # ----------------------------------------------------------------- main
@@ -697,7 +785,9 @@ def read_friction(path: str, window_hours: float) -> list[dict[str, Any]] | None
     return rows
 
 
-def aggregate_friction(rows: list[dict[str, Any]], window_hours: float) -> dict[str, Any]:
+def aggregate_friction(
+    rows: list[dict[str, Any]], window_hours: float
+) -> dict[str, Any]:
     """Collapse the ledger into counted shapes. Deterministic: the key is (kind, shape)."""
     by_shape: dict[tuple[str, str], dict[str, Any]] = {}
     by_kind: dict[str, int] = {}
@@ -706,23 +796,43 @@ def aggregate_friction(rows: list[dict[str, Any]], window_hours: float) -> dict[
         shape = str(rec.get("shape", ""))
         entry = by_shape.setdefault(
             (kind, shape),
-            {"kind": kind, "shape": shape, "count": 0, "first": rec.get("ts"), "last": None, "detail": ""},
+            {
+                "kind": kind,
+                "shape": shape,
+                "count": 0,
+                "first": rec.get("ts"),
+                "last": None,
+                "detail": "",
+            },
         )
         entry["count"] += 1
         entry["last"] = rec.get("ts") or entry["last"]
         if rec.get("detail"):
             entry["detail"] = str(rec["detail"])[:160]
         by_kind[kind] = by_kind.get(kind, 0) + 1
-    ranked = sorted(by_shape.values(), key=lambda e: (-e["count"], e["kind"], e["shape"]))
-    return {"window_hours": window_hours, "events": len(rows), "by_kind": by_kind, "shapes": ranked}
+    ranked = sorted(
+        by_shape.values(), key=lambda e: (-e["count"], e["kind"], e["shape"])
+    )
+    return {
+        "window_hours": window_hours,
+        "events": len(rows),
+        "by_kind": by_kind,
+        "shapes": ranked,
+    }
 
 
 def print_friction(agg: dict[str, Any], path: str, top: int = 15) -> None:
-    print(f"\nfriction at the door over the last {agg['window_hours']:g}h: {agg['events']} event(s) from {path}")
+    print(
+        f"\nfriction at the door over the last {agg['window_hours']:g}h: {agg['events']} event(s) from {path}"
+    )
     if not agg["events"]:
-        print("  none recorded. A zero here is a measurement only if the door was actually used.")
+        print(
+            "  none recorded. A zero here is a measurement only if the door was actually used."
+        )
         return
-    by_kind = ", ".join(f"{k}={v}" for k, v in sorted(agg["by_kind"].items(), key=lambda kv: -kv[1]))
+    by_kind = ", ".join(
+        f"{k}={v}" for k, v in sorted(agg["by_kind"].items(), key=lambda kv: -kv[1])
+    )
     print(f"  by kind: {by_kind}")
     print(f"{'count':>6}  {'kind': <13}  shape")
     for r in agg["shapes"][:top]:
@@ -746,7 +856,9 @@ def one_pass(
     }
     rc = 0
     if do_live:
-        rows, summary = live_report(args.sample, args.grace, args.long_lived_after, args.reap)
+        rows, summary = live_report(
+            args.sample, args.grace, args.long_lived_after, args.reap
+        )
         if rows is None:
             receipt["live"], receipt["blind"] = None, "process table could not be read"
             rc = 2
@@ -770,18 +882,28 @@ def one_pass(
     if do_fric:
         rows = read_friction(args.friction_path, args.window_hours)
         if rows is None:
-            receipt["friction"], receipt["blind"] = None, f"cannot read {args.friction_path}"
+            receipt["friction"], receipt["blind"] = (
+                None,
+                f"cannot read {args.friction_path}",
+            )
             rc = 2
         else:
             receipt["friction"] = aggregate_friction(rows, args.window_hours)
     receipt["verdict"] = {0: "ok", 1: "defect", 2: "BLIND"}[rc]
     save_state(args.state, state)
-    try:
-        p = Path(args.receipt)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(receipt, indent=1) + "\n")
-    except OSError:
-        pass
+    # Only a pass that OBSERVED something writes the monitor receipt. A `--friction` run ranks the
+    # door's ledger and touches no process; letting it write `latest.json` meant the test suite
+    # overwrote the live /fleet receipt with its own argv (measured 2026-10-24: latest.json held
+    # `--friction-path .../pytest-of-.../events.jsonl` and no live row at all). An explicit
+    # --receipt is still honoured, because then the caller named the file it wants written.
+    observed = do_live or do_sess or do_rep
+    if observed or getattr(args, "receipt_explicit", False):
+        try:
+            p = Path(args.receipt)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps(receipt, indent=1) + "\n")
+        except OSError:
+            pass
     if args.json:
         print(json.dumps(receipt, indent=1))
     else:
@@ -792,7 +914,9 @@ def one_pass(
                 print(f"BLIND  {receipt.get('blind')}")
         if (do_sess or do_rep) and receipt.get("sessions"):
             if do_sess:
-                print_moved(receipt["sessions"]["moved"], receipt["sessions"]["bytes_read"])
+                print_moved(
+                    receipt["sessions"]["moved"], receipt["sessions"]["bytes_read"]
+                )
             if do_rep:
                 print_repetition(receipt["sessions"]["totals"])
         elif do_sess or do_rep:
@@ -823,8 +947,12 @@ def explain_install() -> int:
     """
     jobs = launchd_jobs_mentioning()
     sched = local_scheduler()
-    print("Nothing to install: a second launchd job for this monitor would be the duplication")
-    print("this monitor exists to measure. What runs it on this host, measured just now:\n")
+    print(
+        "Nothing to install: a second launchd job for this monitor would be the duplication"
+    )
+    print(
+        "this monitor exists to measure. What runs it on this host, measured just now:\n"
+    )
     if jobs:
         for job in jobs:
             every = f"every {job['interval_s']}s" if job["interval_s"] else "on demand"
@@ -833,46 +961,118 @@ def explain_install() -> int:
             print(f"             {job['plist']}")
             print(f"             {job['program']}")
     else:
-        print("  launchd    none -- no plist on this host mentions pi-observe, so nothing refreshes")
-        print("             this monitor except an agent running it by hand or --watch in a terminal")
+        print(
+            "  launchd    none -- no plist on this host mentions pi-observe, so nothing refreshes"
+        )
+        print(
+            "             this monitor except an agent running it by hand or --watch in a terminal"
+        )
     declared = "declared" if sched["entry_declared"] else "NOT declared"
     print(f"\n  scheduler  {sched['schedule_yml']}: ai.estate.pi-observe {declared}")
     if sched["entry_declared"]:
         if sched["runner_executable"]:
             print(f"             runner {sched['runner']} is executable here")
         else:
-            print(f"             runner {sched['runner']} is NOT executable here, so the declared job")
-            print("             cannot start -- the launchd row above is the one that fires")
+            print(
+                f"             runner {sched['runner']} is NOT executable here, so the declared job"
+            )
+            print(
+                "             cannot start -- the launchd row above is the one that fires"
+            )
     print("\nTo run one pass by hand exactly as the firing job does:")
-    print("  bin/pi-observe --reap --json   # the receipt, with provenance.job naming who wrote it")
+    print(
+        "  bin/pi-observe --reap --json   # the receipt, with provenance.job naming who wrote it"
+    )
     print("  bin/pi-observe --json          # the same, without reaping")
     return 1
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Observe live pi sessions and the work they repeat.")
+    ap = argparse.ArgumentParser(
+        description="Observe live pi sessions and the work they repeat."
+    )
     ap.add_argument("--live", action="store_true", help="processes only")
     ap.add_argument("--sessions", action="store_true", help="transcripts only")
     ap.add_argument("--repetition", action="store_true", help="repeated shapes only")
-    ap.add_argument("--friction", action="store_true", help="the door's own ledger: refusals and ceiling kills only")
-    ap.add_argument("--friction-path", default=FRICTION_DEFAULT, help="ledger written by estate_executor (default ~/.estate/friction/events.jsonl)")
-    ap.add_argument("--json", action="store_true", help="emit one JSON receipt instead of tables")
-    ap.add_argument("--watch", type=float, default=0.0, metavar="SECONDS", help="repeat every N seconds")
-    ap.add_argument("--sample", type=float, default=2.0, help="CPU delta window in seconds (default 2)")
-    ap.add_argument("--grace", type=int, default=120, help="seconds a headless process may look idle (default 120)")
-    ap.add_argument("--long-lived-after", type=int, default=43200, help="seconds before a busy terminal is graded a cost (default 12h)")
-    ap.add_argument("--window-hours", type=float, default=24.0, help="count only transcripts touched inside this window (default 24h)")
-    ap.add_argument("--budget-bytes", type=int, default=24_000_000, help="max transcript bytes per pass (default 24MB)")
-    ap.add_argument("--reindex", action="store_true", help="discard saved offsets and re-read from the start")
-    ap.add_argument("--receipt", default=RECEIPT_DEFAULT, help="JSON receipt path")
+    ap.add_argument(
+        "--friction",
+        action="store_true",
+        help="the door's own ledger: refusals and ceiling kills only",
+    )
+    ap.add_argument(
+        "--friction-path",
+        default=FRICTION_DEFAULT,
+        help="ledger written by estate_executor (default ~/.estate/friction/events.jsonl)",
+    )
+    ap.add_argument(
+        "--json", action="store_true", help="emit one JSON receipt instead of tables"
+    )
+    ap.add_argument(
+        "--watch",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help="repeat every N seconds",
+    )
+    ap.add_argument(
+        "--sample",
+        type=float,
+        default=2.0,
+        help="CPU delta window in seconds (default 2)",
+    )
+    ap.add_argument(
+        "--grace",
+        type=int,
+        default=120,
+        help="seconds a headless process may look idle (default 120)",
+    )
+    ap.add_argument(
+        "--long-lived-after",
+        type=int,
+        default=43200,
+        help="seconds before a busy terminal is graded a cost (default 12h)",
+    )
+    ap.add_argument(
+        "--window-hours",
+        type=float,
+        default=24.0,
+        help="count only transcripts touched inside this window (default 24h)",
+    )
+    ap.add_argument(
+        "--budget-bytes",
+        type=int,
+        default=24_000_000,
+        help="max transcript bytes per pass (default 24MB)",
+    )
+    ap.add_argument(
+        "--reindex",
+        action="store_true",
+        help="discard saved offsets and re-read from the start",
+    )
+    ap.add_argument(
+        "--receipt", default=None, help=f"JSON receipt path (default {RECEIPT_DEFAULT})"
+    )
     ap.add_argument("--state", default=STATE_DEFAULT, help="offsets and totals path")
-    ap.add_argument("--reap", action="store_true", help="SIGTERM headless-leaked processes")
-    ap.add_argument("--install", action="store_true", help="refused: prints the runner that actually fires on this host; installs nothing")
+    ap.add_argument(
+        "--reap", action="store_true", help="SIGTERM headless-leaked processes"
+    )
+    ap.add_argument(
+        "--install",
+        action="store_true",
+        help="refused: prints the runner that actually fires on this host; installs nothing",
+    )
     args = ap.parse_args(argv)
+    args.receipt_explicit = args.receipt is not None
+    args.receipt = args.receipt or RECEIPT_DEFAULT
     if args.install:
         return explain_install()
     if args.live or args.sessions or args.repetition or args.friction:
-        do_live, do_sess, do_rep, do_fric = args.live, args.sessions, args.repetition, args.friction
+        do_live, do_sess, do_rep, do_fric = (
+            args.live,
+            args.sessions,
+            args.repetition,
+            args.friction,
+        )
     else:
         do_live = do_sess = do_rep = True
         do_fric = False
