@@ -154,6 +154,13 @@ jobs:
     # older commit was scanned in the candidate that landed it. The push to main walks it all.
     env:
       ESTATE_SCAN_BASE: ${{ startsWith(github.ref, 'refs/heads/queue/') && 'origin/main' || '' }}
+      # idp#7080: a dependency advisory is judged against the ref the change is measured from.
+      # A candidate and a merge-queue build are measured from main; a push to main is measured
+      # from the commit main was before. An advisory whose pin that change did not move is
+      # reported and deferred, so a pre-existing advisory cannot hold a correct change.
+      # A base that does not resolve (a first push, an all-zero before) widens the judgement:
+      # every advisory gates, exactly as it did before this line existed.
+      ESTATE_DEPS_BASE: ${{ (startsWith(github.ref, 'refs/heads/queue/') || github.event_name == 'merge_group') && 'origin/main' || github.event.before }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/security-scan   # the steps every active estate repo runs

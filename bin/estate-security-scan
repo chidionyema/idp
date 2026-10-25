@@ -51,7 +51,194 @@ cd "$SRC" || exit 3
 fail=0; blind=0
 say() { printf '%s\n' "$*"; }
 
+# idp#7080: a dependency advisory is judged against the ref the change is measured from.
+#
+# ESTATE_DEPS_BASE names that ref. An advisory whose pin the change did NOT move is
+# pre-existing: it is reported and deferred, and it does not hold the change. An advisory
+# whose pin the change DID move is the change's own, and fails the gate exactly as before.
+# Without the var (or with a base that does not resolve here) every advisory gates, as before.
+#
+# The judgement compares pins, not advice: the same package at the same version on both refs
+# is the same code, so the same advisory, and the diff did not bring it. A package the base
+# did not pin at all, or pinned at another version, is not deferrable -- it is this change's.
+#
+# The state of a ref is read from its own tree, so the comparison is exactly "what the two
+# refs pin", never "what a tool says today".
+DEPS_BASE="${ESTATE_DEPS_BASE:-}"
+DEPS_FINDINGS=""
+DEPS_REMAINING=""
+DEPS_DEFERRED=0
+
+deps_base_active() {
+  [ -n "$DEPS_BASE" ] || return 1
+  git rev-parse -q --verify "${DEPS_BASE}^{commit}" >/dev/null 2>&1
+}
+
+# The dependency state of a ref, as JSON:
+#   {"python": {"<name>": "<version>"},
+#    "npm": {"<lock path>": {"<name>": ["<version>", ...]}}}
+deps_state() {
+  python3 - "$1" <<'PY'
+import json, re, subprocess, sys
+
+ref = sys.argv[1]
+
+
+def git(*a):
+    p = subprocess.run(["git", *a], capture_output=True, text=True)
+    return p.stdout if p.returncode == 0 else ""
+
+
+def norm(n):
+    return re.sub(r"[-_.]+", "-", n.strip().lower())
+
+
+state = {"python": {}, "npm": {}}
+for f in [x for x in git("ls-tree", "-r", "--name-only", ref).splitlines() if x.strip()]:
+    if re.search(r"(^|/)requirements[^/]*\.txt$", f):
+        for line in git("show", f"{ref}:{f}").splitlines():
+            line = line.split("#", 1)[0].strip()
+            m = re.match(r"^([A-Za-z0-9._-]+)\s*==\s*([^\s;]+)$", line)
+            if m:
+                state["python"][norm(m.group(1))] = m.group(2)
+    elif f.endswith("package-lock.json"):
+        try:
+            doc = json.loads(git("show", f"{ref}:{f}"))
+        except Exception:
+            continue
+        vers = {}
+        for key, meta in (doc.get("packages") or {}).items():
+            m = re.search(r"node_modules/(.+)$", key)
+            if not m or not isinstance(meta, dict):
+                continue
+            v = meta.get("version")
+            if v:
+                vers.setdefault(m.group(1), []).append(v)
+        state["npm"][f] = {k: sorted(set(v)) for k, v in vers.items()}
+print(json.dumps(state))
+PY
+}
+
+# One pip-audit run. With a base to judge against it is asked for its JSON report as
+# well, so the judgement costs no second resolution and no second five-minute install;
+# the text it printed is kept beside it, because the resolution failures this check has
+# always read are on stderr.
+pa_run() {
+  PA_TEXT=""; PA_JSON=""
+  local errf; errf=$(mktemp)
+  if deps_base_active; then
+    # shellcheck disable=SC2086
+    PA_JSON=$(timeout 240 $PA "$@" --progress-spinner off --format=json 2>"$errf"); PA_RC=$?
+    PA_TEXT="$(cat "$errf")"
+  else
+    # shellcheck disable=SC2086
+    PA_TEXT=$(timeout 240 $PA "$@" --progress-spinner off 2>&1); PA_RC=$?
+  fi
+  rm -f "$errf"
+  return 0
+}
+
+# One finding per line: py<TAB>name<TAB>version<TAB>id
+deps_collect_python_json() {
+  python3 -c 'import json, sys
+try:
+    doc = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for dep in doc.get("dependencies") or []:
+    name = dep.get("name")
+    ver = dep.get("version")
+    for v in dep.get("vulns") or []:
+        vid = v.get("id")
+        if name and vid:
+            print(f"py\t{name}\t{ver}\t{vid}")'
+}
+
+# Judge the collected findings against the base ref. Prints one note per deferred
+# finding and leaves the findings that are this change's own in DEPS_REMAINING.
+deps_judge() {
+  DEPS_REMAINING=""; DEPS_DEFERRED=0
+  [ -n "$DEPS_FINDINGS" ] || return 1
+  deps_base_active || return 1
+  local tf; tf=$(mktemp -d) || return 1
+  deps_state "$DEPS_BASE" > "$tf/base.json"
+  deps_state "HEAD" > "$tf/head.json"
+  printf '%s\n' "$DEPS_FINDINGS" > "$tf/findings"
+  local verdict
+  verdict=$(python3 - "$tf/findings" "$tf/base.json" "$tf/head.json" <<'PY'
+import json, re, sys
+
+findings_path, base_path, head_path = sys.argv[1:4]
+base = json.load(open(base_path))
+head = json.load(open(head_path))
+
+
+def norm(n):
+    return re.sub(r"[-_.]+", "-", n.strip().lower())
+
+
+for line in open(findings_path):
+    parts = line.rstrip("\n").split("\t")
+    if not parts or not parts[0]:
+        continue
+    if parts[0] == "py":
+        _, name, version, vid = parts
+        ok = base["python"].get(norm(name)) == version
+        shown = f"{name} {version}"
+    else:
+        _, lock, name, vid = parts
+        b = base["npm"].get(lock, {}).get(name) or []
+        h = head["npm"].get(lock, {}).get(name) or []
+        ok = bool(b) and b == h
+        shown = f"{name} {'/'.join(h) if h else 'unpinned'}"
+    print(("DEFER\t" if ok else "KEEP\t") + "\t".join([vid, shown]))
+PY
+)
+  local kind vid shown
+  while IFS=$'\t' read -r kind vid shown; do
+    case "$kind" in
+      DEFER)
+        DEPS_DEFERRED=$((DEPS_DEFERRED + 1))
+        say "note  deps      deferred $vid: $shown is pinned the same way on $DEPS_BASE, so this change did not bring it"
+        ;;
+      KEEP)
+        DEPS_REMAINING="${DEPS_REMAINING}${vid} (${shown})  "
+        ;;
+    esac
+  done <<< "$verdict"
+  [ "$DEPS_DEFERRED" -gt 0 ] && [ -z "$DEPS_REMAINING" ]
+}
+
+# The dependency check found something. Judge it against the base ref: an advisory the
+# change did not bring is reported and does not hold the change.
+deps_fail() {
+  local label="$1" evidence="$2"; shift 2
+  if deps_judge; then
+    say "ok    deps      pip-audit: every finding is pre-existing on $DEPS_BASE and this change moved no vulnerable pin; deferred"
+    return 0
+  fi
+  say "FAIL  deps      pip-audit${label:+ ($label)}"
+  if [ -n "$DEPS_FINDINGS" ]; then
+    local kind name version vid
+    while IFS=$'\t' read -r kind name version vid; do
+      say "      finding: $name $version $vid"
+    done <<< "$DEPS_FINDINGS"
+    [ -z "$DEPS_REMAINING" ] || say "      not pre-existing on $DEPS_BASE: $DEPS_REMAINING"
+  else
+    [ $quiet = 1 ] || printf '%s\n' "$evidence" | tail -15 | sed 's/^/      /'
+  fi
+  fail=1
+  return 1
+}
+
 say "SECURITY-SCAN $(date -u +%Y-%m-%dT%H:%M:%SZ) commit=$(git rev-parse HEAD) tree=$(git status --porcelain | grep -vc '^?? .estate-idp/')-dirty-paths"
+if [ -n "$DEPS_BASE" ]; then
+  if deps_base_active; then
+    say "note  deps      judging dependency advisories against $DEPS_BASE ($(git rev-parse --short "${DEPS_BASE}^{commit}")): an advisory this change did not bring is reported and deferred"
+  else
+    say "note  deps      ESTATE_DEPS_BASE=$DEPS_BASE does not resolve here; every dependency advisory gates, as it did before"
+  fi
+fi
 
 # 1. secrets, over git history: every tracked byte in every commit REACHABLE FROM
 # HEAD. Without --log-opts gitleaks walks every fetched ref, and CI checks out with
@@ -116,13 +303,19 @@ else
   # one resolver run over every file: per-file runs each re-resolve the tree
   # and the three together exceeded five minutes on the founder machine.
   args=(); for r in $reqs; do args+=(-r "$r"); done
-  # shellcheck disable=SC2086  # $PA is "pip-audit" or "uvx pip-audit": two words on purpose
-  out=$(timeout 240 $PA "${args[@]}" ${ig[@]+"${ig[@]}"} --progress-spinner off 2>&1); rc=$?
+  # one resolver run over every file: per-file runs each re-resolve the tree
+  # and the three together exceeded five minutes on the founder machine.
+  # idp#7080: with a base to judge against, this same run is also asked for its JSON
+  # report, so the findings are named by package and version and the judgement costs
+  # no second resolution.
+  pa_run "${args[@]}" ${ig[@]+"${ig[@]}"}
+  rc=$PA_RC; out="$PA_TEXT"
+  DEPS_FINDINGS=""
   if [ $rc = 0 ]; then
     say "ok    deps      pip-audit over $(( ${#args[@]} / 2 )) requirements files: no known vulnerabilities"
   elif [ $rc = 124 ]; then
     say "BLIND deps      pip-audit exceeded 240s (network); rerun"; blind=1
-  elif printf '%s' "$out" | grep 'Failed to install packages' >/dev/null ; then
+  elif printf '%s' "$PA_TEXT$PA_JSON" | grep 'Failed to install packages' >/dev/null ; then
     # The joint environment could not be built. Before giving up on resolution, try each
     # file on its own: two files may pin the same package apart ON PURPOSE because they
     # feed two interpreters (crew#712, 2026-08-30: requirements-research.txt openai<3 for
@@ -130,13 +323,14 @@ else
     # and is fully audited; only their union is impossible.
     perfile_rc=0; perfile_out=""; perfile_install=0
     for r in $reqs; do
-      # shellcheck disable=SC2086
-      o=$(timeout 240 $PA -r "$r" ${ig[@]+"${ig[@]}"} --progress-spinner off 2>&1); c=$?
+      pa_run -r "$r" ${ig[@]+"${ig[@]}"}
+      c=$PA_RC
       if [ $c = 124 ]; then perfile_rc=124; break; fi
       if [ $c != 0 ]; then
-        if printf '%s' "$o" | grep 'Failed to install packages' >/dev/null; then perfile_install=1; else perfile_rc=1; perfile_out="$perfile_out
+        if printf '%s' "$PA_TEXT$PA_JSON" | grep 'Failed to install packages' >/dev/null; then perfile_install=1; else perfile_rc=1; perfile_out="$perfile_out
 $r:
-$o"; fi
+$PA_TEXT"; DEPS_FINDINGS="${DEPS_FINDINGS}$(printf '%s' "$PA_JSON" | deps_collect_python_json)
+"; fi
       fi
     done
     if [ $perfile_rc = 124 ]; then
@@ -144,28 +338,29 @@ $o"; fi
     elif [ $perfile_install = 0 ] && [ $perfile_rc = 0 ]; then
       say "ok    deps      pip-audit over $(( ${#args[@]} / 2 )) requirements files, resolved one file at a time (their union does not install): no known vulnerabilities"
     elif [ $perfile_install = 0 ]; then
-      say "FAIL  deps      pip-audit (resolved one file at a time)"; [ $quiet = 1 ] || printf '%s\n' "$perfile_out" | tail -15 | sed 's/^/      /'; fail=1
+      deps_fail "resolved one file at a time" "$perfile_out"
     else
     # pip-audit could not build the environment (a package with no wheel and no build
     # deps, or a pin that is not on the index). That is not an advisory, so it is not a
     # FAIL: audit the pins as written, without resolving or installing anything.
-    why=$(printf '%s' "$out" | grep -m1 -oE 'No matching distribution found for [^ ]+|No module named [^ ]+' || echo "see pip-audit output")
-    # shellcheck disable=SC2086
-    out2=$(timeout 240 $PA "${args[@]}" ${ig[@]+"${ig[@]}"} --no-deps --disable-pip --progress-spinner off 2>&1); rc2=$?
+    why=$(printf '%s' "$PA_TEXT$PA_JSON" | grep -m1 -oE 'No matching distribution found for [^ ]+|No module named [^ ]+' || echo "see pip-audit output")
+    pa_run "${args[@]}" ${ig[@]+"${ig[@]}"} --no-deps --disable-pip
+    rc2=$PA_RC; out2="$PA_TEXT"
     if [ $rc2 = 0 ]; then
       say "ok    deps      pip-audit over $(( ${#args[@]} / 2 )) requirements files: no known vulnerabilities (pins audited without resolution; install failed: $why)"
     elif [ $rc2 = 124 ]; then
       say "BLIND deps      pip-audit exceeded 240s (network); rerun"; blind=1
-    elif printf '%s' "$out2" | grep -iE 'not pinned|must be pinned|pinned to an exact' >/dev/null ; then
+    elif printf '%s' "$PA_TEXT$PA_JSON" | grep -iE 'not pinned|must be pinned|pinned to an exact' >/dev/null ; then
       say "BLIND deps      pip-audit could not install ($why) and a requirements file is not fully pinned, so nothing was measured"
-      [ $quiet = 1 ] || printf '%s\n' "$out2" | tail -5 | sed 's/^/      /'; blind=1
+      [ $quiet = 1 ] || printf '%s\n' "$PA_TEXT" | tail -5 | sed 's/^/      /'; blind=1
     else
-      say "FAIL  deps      pip-audit (pins audited without resolution; install failed: $why)"
-      [ $quiet = 1 ] || printf '%s\n' "$out2" | tail -15 | sed 's/^/      /'; fail=1
+      DEPS_FINDINGS="$(printf '%s' "$PA_JSON" | deps_collect_python_json)"
+      deps_fail "pins audited without resolution; install failed: $why" "$out2"
     fi
     fi
   else
-    say "FAIL  deps      pip-audit"; [ $quiet = 1 ] || printf '%s\n' "$out" | tail -15 | sed 's/^/      /'; fail=1
+    DEPS_FINDINGS="$(printf '%s' "$PA_JSON" | deps_collect_python_json)"
+    deps_fail "" "$out"
   fi
 fi
 }
@@ -228,9 +423,10 @@ else
         # A dismissal clears a finding only when every High+ advisory in the report is one it
         # names; the report is re-read as JSON for that, and JSON that cannot be read clears nothing.
         open="unread"
-        if [ -n "$nig" ]; then
-          open=$(cd "$d" && timeout 300 npm audit --package-lock-only --audit-level=high --omit=dev --json 2>/dev/null |
-            NIG="$nig" python3 -c 'import json, os, sys
+        npmjson=""
+        if [ -n "$nig" ] || deps_base_active; then
+          npmjson=$(cd "$d" && timeout 300 npm audit --package-lock-only --audit-level=high --omit=dev --json 2>/dev/null)
+          open=$(printf '%s' "$npmjson" | NIG="$nig" python3 -c 'import json, os, sys
 dismissed = set(os.environ["NIG"].split())
 try:
     vulns = json.load(sys.stdin)["vulnerabilities"]
@@ -243,10 +439,34 @@ print(" ".join(sorted(found - dismissed)) if found else "unread")')
         if [ -z "$open" ]; then
           say "ok    npm       $d: every high or critical advisory is a recorded dismissal"
         else
-          say "FAIL  npm       $d: high or critical advisories in shipped dependencies"
-          [ "$open" = "unread" ] || say "      not dismissed: $open"
-          [ $quiet = 1 ] || printf '%s\n' "$out" | tail -15 | sed 's/^/      /'
-          nfail=1
+          # idp#7080: the same judgement the python side gets. A dismissal clears nothing
+          # here: a dismissed advisory is not a finding, so it is not judged at all.
+          DEPS_FINDINGS=""
+          if deps_base_active && [ "$open" != "unread" ]; then
+            DEPS_FINDINGS=$(printf '%s' "$npmjson" | NIG="$nig" python3 -c 'import json, os, sys
+lock = sys.argv[1]
+dismissed = set(os.environ["NIG"].split())
+try:
+    vulns = json.load(sys.stdin).get("vulnerabilities") or {}
+except Exception:
+    sys.exit()
+for name, meta in vulns.items():
+    for via in meta.get("via") or []:
+        if not isinstance(via, dict) or via.get("severity") not in ("high", "critical"):
+            continue
+        vid = (via.get("url") or "").rstrip("/").split("/")[-1]
+        if vid and vid not in dismissed:
+            print(f"npm\t{lock}\t{name}\t{vid}")' "$l")
+          fi
+          if deps_judge; then
+            say "ok    npm       $d: every high or critical advisory is pre-existing on $DEPS_BASE and this change moved no vulnerable pin; deferred"
+          else
+            say "FAIL  npm       $d: high or critical advisories in shipped dependencies"
+            [ "$open" = "unread" ] || say "      not dismissed: $open"
+            [ -z "$DEPS_REMAINING" ] || say "      not pre-existing on $DEPS_BASE: $DEPS_REMAINING"
+            [ $quiet = 1 ] || printf '%s\n' "$out" | tail -15 | sed 's/^/      /'
+            nfail=1
+          fi
         fi
       elif printf '%s' "$out" | grep -qiE '5[0-9][0-9] |429 |service unavailable|econnreset|etimedout|eai_again|enotfound|socket hang up|audit endpoint'; then
         # A registry that answered with an HTTP error or dropped the socket measured nothing.

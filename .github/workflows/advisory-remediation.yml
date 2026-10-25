@@ -1,0 +1,71 @@
+# idp#7080: a published dependency advisory becomes a lane with the bumped pin.
+#
+# WHY THIS EXISTS. The estate pins dependencies, and a pin can carry a published advisory.
+# Nobody owns that: no agent claimed a pin, so no agent moved it, and the security scan
+# holds the whole estate on it (measured 2026-10-24: every Greenlane candidate went red on
+# ci-success because two pre-existing advisories were unaffected by any lane's diff). This
+# job finds the advisories that have a fix version and opens one lane per advisory. The
+# Greenlane proves the lane green on top of main and lands it, exactly like any other lane,
+# so a bump that breaks the resolution never lands.
+#
+# WHAT IT DOES NOT DO. It does not merge, and it does not decide a major version: a major
+# bump is an API change, so those advisories are printed for a human and skipped. It opens no
+# lane that touches anything but a dependency pin, because such a lane needs a claim of its
+# own and a bot has none (bin/claim-gate, dependency_pin_only).
+#
+# The push carries the App's token, not the runner's: a push made as GITHUB_TOKEN starts no
+# workflow, and the Greenlane only forms a batch on a push to lane/** (its scheduled tick is
+# judge-only). A lane nobody sees is a lane nobody lands.
+name: advisory-remediation
+on:
+  schedule:
+    # 05:23 UTC daily: off the hour, so it does not pile onto the top-of-the-hour runs.
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+  id-token: write   # traded for the OCI session that reads the App key (.github/actions/github-app-token)
+concurrency:
+  group: advisory-remediation
+  cancel-in-progress: false
+jobs:
+  remediate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          # Never keep the runner token in git config: git sends it as the Authorization
+          # header in preference to the App token in the remote URL, and a push made as
+          # GITHUB_TOKEN starts no workflow -- a lane nobody sees is a lane nobody lands.
+          persist-credentials: false
+      - id: app
+        uses: ./.github/actions/github-app-token
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+          oci_compartment: ${{ secrets.OCI_COMPARTMENT_OCID }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: install pip-audit
+        run: python3 -m pip install --quiet "pip-audit==2.10.1"
+      - name: open a lane per advisory that has a fix
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          # The commit is written here, not on GitHub's servers, so it carries no hook stamp.
+          # It carries the estate bot's committer identity, which is the exemption guarded-paths
+          # grants the estate App (bin/idp-ci-guarded-paths, item 3).
+          GIT_AUTHOR_NAME: estate-agents[bot]
+          GIT_AUTHOR_EMAIL: estate-agents[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: estate-agents[bot]
+          GIT_COMMITTER_EMAIL: estate-agents[bot]@users.noreply.github.com
+        run: |
+          set -euo pipefail
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git"
+          python3 bin/advisory-remediation --push --base origin/main
