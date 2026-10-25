@@ -651,6 +651,16 @@ model_list:
       api_base: http://host.docker.internal:11434/v1
       api_key: ollama
       timeout: 300
+  # Converged name (founder 2026-10-25: cluster names win). Same local deployment as
+  # ollama-vision above -- additive alias, so existing callers keep working and callers
+  # using the cluster's name get sphere-local fulfillment on the laptop. The drift-check
+  # treats this wiring difference as sphere-bound (allowed); only the name had to converge.
+  - model_name: vision
+    litellm_params:
+      model: openai/gemma3:4b
+      api_base: http://host.docker.internal:11434/v1
+      api_key: ollama
+      timeout: 300
   # Second local voter for the kernel's 3-model consensus (kini spec 4.2:
   # "Ollama handles 2/3 quorum load"); a different family from `ollama`, so two
   # local votes are not one model voting twice.
