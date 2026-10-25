@@ -1,0 +1,1298 @@
+{
+  "harvested_at": "2026-10-25T00:56Z",
+  "method": "GitHub REST API via the authenticated `gh` CLI (repos/<owner>/<name> and releases/latest per project) and the PyPI JSON API (pypi.org/pypi/<name>/json). 32 projects, 20 packages, 7 GitHub searches sorted by last push. Every number below was read from the API on the harvest date.",
+  "limits": "Stars and release dates prove a project exists, is maintained and is adopted. They prove nothing about whether it reduces hallucination. A behavioural claim in the digest cites the project's own documentation and is marked as the project's claim.",
+  "errors": [
+    {
+      "repo": "sourcegraph/cody",
+      "error": "gh: Not Found (HTTP 404)"
+    }
+  ],
+  "repos": [
+    {
+      "repo": "huggingface/transformers",
+      "url": "https://github.com/huggingface/transformers",
+      "description": "🤗 Transformers: the model-definition framework for state-of-the-art machine learning models in text, vision, audio, and multimodal models, for both inference and training. ",
+      "stars": 168101,
+      "forks": 34968,
+      "open_issues": 999,
+      "created": "2018-10-29",
+      "pushed": "2026-10-25",
+      "license": "Apache-2.0",
+      "archived": false,
+      "language": "Python",
+      "latest_release": "v5.20.2",
+      "latest_release_at": "2026-10-19"
+    },
+    {
+      "repo": "github/spec-kit",
+      "url": "https://github.com/github/spec-kit",
+      "description": "💫 Toolkit to help you get started with SDD or any other process!",
+      "stars": 142738,
+      "forks": 12781,
+      "open_issues": 218,
+      "created": "2025-08-21",
+      "pushed": "2026-10-23",
+      "license": "MIT",
+      "archived": false,
+      "language": "Python",
+      "latest_release": "v1.2.3",
+      "latest_release_at": "2026-10-22"
+    },
+    {
+      "repo": "ggml-org/llama.cpp",
+      "url": "https://github.com/ggml-org/llama.cpp",
+      "description": "LLM inference in C/C++",
+      "stars": 132254,
+      "forks": 24772,
+      "open_issues": 2601,
+      "created": "2023-03-10",
+      "pushed": "2026-10-25",
+      "license": "MIT",
+      "archived": false,
+      "language": "C++",
+      "latest_release": "v0.7.0",
+      "latest_release_at": "2026-10-15"
+    },
+    {
+      "repo": "vllm-project/vllm",
+      "url": "https://github.com/vllm-project/vllm",
+      "description": "A high-throughput and memory-efficient inference and serving engine for LLMs",
+      "stars": 95344,
+      "forks": 23900,
+      "open_issues": 9417,
+      "created": "2023-02-09",
+      "pushed": "2026-10-24",
+      "license": "Apache-2.0",
+      "archived": false,
+      "language": "Python",
+      "latest_release": "v0.32.0",
+      "latest_release_at": "2026-10-18"
+    },
+    {
+      "repo": "All-Hands-AI/OpenHands",
+      "url": "https://github.com/OpenHands/OpenHands",
+      "description": "🙌 OpenHands: AI-Driven Development",
+      "stars": 91750,
+      "forks": 12174,
+      "open_issues": 1099,
+      "created": "2024-03-13",
+      "pushed": "2026-10-24",
+      "license": "MIT",
+      "archived": false,
+      "language": "TypeScript",
+      "latest_release": "v1.33.0",
+      "latest_release_at": "2026-10-23"
+    },
+    {
+      "repo": "block/goose",
+      "url": "https://github.com/aaif-goose/goose",
+      "description": "an open source, extensible AI agent that goes beyond code suggestions - install, execute, edit, and test with any LLM",
+      "stars": 55657,
+      "forks": 6442,
+      "open_issues": 521,
+      "created": "2024-08-23",
+      "pushed": "2026-10-24",
+      "license": "Apache-2.0",
+      "archived": false,
+      "language": "Rust",
+      "latest_release": "v1.56.0",
+      "latest_release_at": "2026-10-23"
+    },
+    {
+      "repo": "Aider-AI/aider",
+      "url": "https://github.com/Aider-AI/aider",
+      "description": "aider is AI pair programming in your terminal",
+      "stars": 49740,
+      "forks": 5102,
+      "open_issues": 1939,
+      "created": "2023-05-09",
+      "pushed": "2026-05-22",
+      "license": "Apache-2.0",
+      "archived": false,
+      "language": "Python",
+      "latest_release": "v0.86.0",
+      "latest_release_at": "2025-08-09"
+    },
+    {
+      "repo": "stanfordnlp/dspy",
+      "url": "https://github.com/stanfordnlp/dspy",
+      "description": "DSPy: The framework for programming—not prompting—language models",
+      "stars": 38773,
+      "forks": 3453,
+      "open_issues": 829,
+      "created": "2023-01-09",
+      "pushed": "2026-10-23",
+      "license": "MIT",
+      "archived": false,
+      "language": "Python",
+      "latest_release": "3.4.1",
+      "latest_release_at": "2026-10-12"
+    },
+    {
+      "repo": "sgl-project/sglang",
+      "url": "https://github.com/sgl-project/sglang",
+      "description": "SGLang is a high-performance serving framework for large language models and multimodal models.",
+      "stars": 37800,
+      "forks": 9864,
+      "open_issues": 6155,
+      "created": "2024-01-08",
+      "pushed": "2026-10-25",
+      "license": "Apache-2.0",
+      "archived": false,
+      "language": "Python",
+      "latest_release": "v0.5.22",
+      "latest_release_at": "2026-10-19"
+    },
+    {
+      "repo": "continuedev/continue",
+      "url": "https://github.com/continuedev/continue",
+      "description": "open-source coding agent",
+      "stars": 36314,
+      "forks": 5513,
+      "open_issues": 868,
+      "created": "2023-05-24",
+      "pushed": "2026-10-24",
+      "license": "Apache-2.0",
+      "archived": false,
+      "language": "TypeScript",
+      "latest_release": "v2.0.0-vscode",
+      "latest_release_at": "2026-06-19"
+    },
+    {
+      "repo": "getcursor/cursor",
+      "url": "https://github.com/cursor/cursor",
+      "description": "",
+      "stars": 33292,
+      "forks": 2292,
+      "open_issues": 3,
+      "created": "2023-03-12",
+      "pushed": "2026-05-12",
+      "license": null,
+      "archived": false,
+      "language": null,
+      "latest_release": null,
+      "latest_release_at": null
+    },
+    {
+      "repo": "openai/openai-python",
+      "url": "https://github.com/openai/openai-python",
+      "description": "The official Python library for the OpenAI API",
+      "stars": 31940,
+      "forks": 7888,
+      "open_issues": 120,
+      "created": "2020-10-25",
+      "pushed": "2026-10-23",
+      "license": "Apache-2.0",
+      "archived": false,
+      "language": "Python",
+      "latest_release": "v3.37.0",
+      "latest_release_at": "2026-10-22"
+    },
+    {
+      "repo": "guidance-ai/guidance",
+      "url": "https://github.com/guidance-ai/guidance",
+      "description": "A guidance language for controlling large language models.",
+      "stars": 21808,
+      "forks": 1219,
+      "open_issues": 355,
+      "created": "2022-11-10",
+      "pushed": "2026-05-21",
+      "license": "MIT",
+      "archived": false,
+      "language": "Jupyter Notebook",
+      "latest_release": "0.3.2",
+      "latest_release_at": "2026-03-18"
+    },
+    {
+      "repo": "pydantic/pydantic-ai",
+      "url": "https://github.com/pydantic/pydantic-ai",
+      "description": "How Python does AI. Agents, realtime voice, image generation, embeddings. Every model, every interface, typed end to end.",
+      "stars": 20841,
+      "forks": 3018,
+      "open_issues": 1479,
+      "created": "2024-06-21",
+      "pushed": "2026-10-24",
+      "license": "MIT",
+      "archived": false,
+      "language": "Python",
+      "latest_release": "v2.61.0",
+      "latest_release_at": "2026-10-24"
+    },
+    {
+      "repo": "princeton-nlp/SWE-agent",
+      "url": "https://github.com/SWE-agent/SWE-agent",
+      "description": "SWE-agent takes a GitHub issue and tries to automatically fix it, using your LM of choice. It can also be employed for offensive cybersecurity or competitive coding challenges. [NeurIPS 2024] ",
+      "stars": 20632,
+      "forks": 2263,
+      "open_issues": 168,
+      "created": "2024-04-02",
+      "pushed": "2026-10-19",
+      "license": "MIT",
+      "archived": false,
+      "language": "Python",
+      "latest_release": "v1.1.0",
+      "latest_release_at": "2025-05-22"
+    },
+    {
+      "repo": "dottxt-ai/outlines",
+      "url": "https://github.com/dottxt-ai/outlines",
+      "description": "Structured Outputs",
+      "stars": 15974,
+      "forks": 907,
+      "open_issues": 201,
+      "created": "2023-03-17",
+      "pushed": "2026-09-21",
+      "license": "Apache-2.0",
+      "archived": false,
+      "language": "Python",
+      "latest_release": "1.3.3",
+      "latest_release_at": "2026-08-06"
+    },
+    {
+      "repo": "567-labs/instructor",
+      "url": "https://github.com/567-labs/instructor",
+      "description": "structured outputs for llms ",
+      "stars": 14060,
+      "forks": 1341,
+      "open_issues": 222,
+      "created": "2023-06-14",
+      "pushed": "2026-10-20",
+      "license": "MIT",
+      "archived": false,
+      "language": "Python",
+      "latest_release": "v1.17.0",
+      "latest_release_at": "2026-09-09"
+    },
+    {
+      "repo": "qodo-ai/pr-agent",
+      "url": "https://github.com/The-PR-Agent/pr-agent",
+      "description": "🚀 PR Agent: The Original Open-Source PR Reviewer. This project is not the Qodo free tier.",
+      "stars": 13592,
+      "forks": 1994,
+      "open_issues": 25,
+      "created": "2023-07-05",
+      "pushed": "2026-10-24",
+      "license": "MIT",
+      "archived": false,
+      "language": "Python",
+      "latest_release": "v0.48.0",
+      "latest_release_at": "2026-10-16"
+    },
+    {
+      "repo": "modelcontextprotocol/modelcontextprotocol",
+      "url": "https://github.com/modelcontextprotocol/modelcontextprotocol",
+      "description": "Specification and documentation for the Model Context Protocol",
+      "stars": 9525,
+      "forks": 1881,
+      "open_issues": 120,
+      "created": "2024-09-24",
+      "pushed": "2026-10-23",
+      "license": "NOASSERTION",
+      "archived": false,
+      "language": "TypeScript",
+      "latest_release": "2026-07-28",
+      "latest_release_at": "2026-07-28"
+    },
+    {
+      "repo": "boundaryml/baml",
+      "url": "https://github.com/BoundaryML/baml",
+      "description": "The programming language for agents",
+      "stars": 9432,
+      "forks": 499,
+      "open_issues": 362,
+      "created": "2023-10-06",
+      "pushed": "2026-10-24",
+      "license": "Apache-2.0",
+      "archived": false,
+      "language": "Rust",
+      "latest_release": "baml-language-0.22.3-nightly.20261023.a",
+      "latest_release_at": "2026-10-24"
+    },
+    {
+      "repo": "microsoft/TypeChat",
+      "url": "https://github.com/microsoft/TypeChat",
+      "description": "TypeChat is a library that makes it easy to build natural language interfaces using types.",
+      "stars": 8691,
+      "forks": 420,
+      "open_issues": 49,
+      "created": "2023-06-20",
+      "pushed": "2026-10-24",
+      "license": "MIT",
+      "archived": false,
+      "language": "TypeScript",
+      "latest_release": null,
+      "latest_release_at": null
+    },
+    {
+      "repo": "guardrails-ai/guardrails",
+      "url": "https://github.com/guardrails-ai/guardrails",
+      "description": "Adding guardrails to large language models.",
+      "stars": 7558,
+      "forks": 729,
+      "open_issues": 63,
+      "created": "2023-01-29",
+      "pushed": "2026-10-24",
+      "license": "Apache-2.0",
+      "archived": false,
+      "language": "Python",
+      "latest_release": "v0.11.0",
+      "latest_release_at": "2026-08-14"
+    },
+    {
+      "repo": "NVIDIA/NeMo-Guardrails",
+      "url": "https://github.com/NVIDIA-NeMo/Guardrails",
+      "description": "NeMo Guardrails is an open-source toolkit for easily adding programmable guardrails to LLM-based conversational systems.",
+      "stars": 7361,
+      "forks": 881,
+      "open_issues": 267,
+      "created": "2023-04-18",
+      "pushed": "2026-10-24",
+      "license": "NOASSERTION",
+      "archived": false,
+      "language": "Python",
+      "latest_release": "v0.24.1",
+      "latest_release_at": "2026-09-16"
+    },
+    {
+      "repo": "prefecthq/marvin",
+      "url": "https://github.com/PrefectHQ/marvin",
+      "description": "an ambient intelligence library",
+      "stars": 6207,
+      "forks": 414,
+      "open_issues": 119,
+      "created": "2023-03-10",
+      "pushed": "2026-09-23",
+      "license": "Apache-2.0",
+      "archived": false,
+      "language": "Python",
+      "latest_release": "v3.2.7",
+      "latest_release_at": "2026-03-04"
+    },
+    {
+      "repo": "SWE-bench/SWE-bench",
+      "url": "https://github.com/SWE-bench/SWE-bench",
+      "description": "SWE-bench: Can Language Models Resolve Real-world Github Issues?",
+      "stars": 6076,
+      "forks": 1031,
+      "open_issues": 52,
+      "created": "2023-10-04",
+      "pushed": "2026-09-18",
+      "license": "MIT",
+      "archived": false,
+      "language": "Python",
+      "latest_release": null,
+      "latest_release_at": null
+    },
+    {
+      "repo": "eth-sri/lmql",
+      "url": "https://github.com/eth-sri/lmql",
+      "description": "A language for constraint-guided and efficient LLM programming.",
+      "stars": 4224,
+      "forks": 222,
+      "open_issues": 121,
+      "created": "2022-11-24",
+      "pushed": "2025-05-22",
+      "license": "Apache-2.0",
+      "archived": false,
+      "language": "Python",
+      "latest_release": "v0.7.3",
+      "latest_release_at": "2023-10-14"
+    },
+    {
+      "repo": "anthropics/anthropic-sdk-python",
+      "url": "https://github.com/anthropics/anthropic-sdk-python",
+      "description": "",
+      "stars": 4003,
+      "forks": 894,
+      "open_issues": 217,
+      "created": "2023-01-17",
+      "pushed": "2026-10-23",
+      "license": "Apache-2.0",
+      "archived": false,
+      "language": "Python",
+      "latest_release": "v2.3.0",
+      "latest_release_at": "2026-10-23"
+    },
+    {
+      "repo": "noamgat/lm-format-enforcer",
+      "url": "https://github.com/noamgat/lm-format-enforcer",
+      "description": "Enforce the output format (JSON Schema, Regex etc) of a language model",
+      "stars": 2040,
+      "forks": 96,
+      "open_issues": 55,
+      "created": "2023-09-21",
+      "pushed": "2026-04-04",
+      "license": "MIT",
+      "archived": false,
+      "language": "Python",
+      "latest_release": "v0.11.2",
+      "latest_release_at": "2025-08-09"
+    },
+    {
+      "repo": "mlc-ai/xgrammar",
+      "url": "https://github.com/mlc-ai/xgrammar",
+      "description": "Fast, Flexible and Portable Structured Generation",
+      "stars": 1973,
+      "forks": 246,
+      "open_issues": 136,
+      "created": "2024-06-28",
+      "pushed": "2026-10-23",
+      "license": "Apache-2.0",
+      "archived": false,
+      "language": "Python",
+      "latest_release": "v0.2.8",
+      "latest_release_at": "2026-09-24"
+    },
+    {
+      "repo": "mirascope/mirascope",
+      "url": "https://github.com/Mirascope/mirascope",
+      "description": "The LLM Anti-Framework",
+      "stars": 1535,
+      "forks": 139,
+      "open_issues": 11,
+      "created": "2023-12-05",
+      "pushed": "2026-10-24",
+      "license": "MIT",
+      "archived": false,
+      "language": "Python",
+      "latest_release": "v2.8.2",
+      "latest_release_at": "2026-10-22"
+    },
+    {
+      "repo": "microsoft/llguidance",
+      "url": "https://github.com/guidance-ai/llguidance",
+      "description": "Super-fast Structured Outputs",
+      "stars": 899,
+      "forks": 101,
+      "open_issues": 67,
+      "created": "2024-07-25",
+      "pushed": "2026-10-14",
+      "license": "MIT",
+      "archived": false,
+      "language": "Rust",
+      "latest_release": null,
+      "latest_release_at": null
+    },
+    {
+      "repo": "sourcegraph/cody",
+      "error": "gh: Not Found (HTTP 404)"
+    }
+  ],
+  "pypi": [
+    {
+      "package": "outlines",
+      "version": "1.3.3",
+      "uploaded": "2026-08-06",
+      "summary": "Probabilistic Generative Model Programming",
+      "url": "https://pypi.org/project/outlines/"
+    },
+    {
+      "package": "guidance",
+      "version": "0.3.1",
+      "uploaded": "2026-02-03",
+      "summary": "A guidance language for controlling large language models.",
+      "url": "https://pypi.org/project/guidance/"
+    },
+    {
+      "package": "xgrammar",
+      "version": "0.2.8",
+      "uploaded": "2026-09-24",
+      "summary": "Efficient, Flexible and Portable Structured Generation",
+      "url": "https://pypi.org/project/xgrammar/"
+    },
+    {
+      "package": "llguidance",
+      "version": "1.9.1",
+      "uploaded": "2026-09-30",
+      "summary": "Bindings for the Low-level Guidance (llguidance) Rust library for use within Guidance",
+      "url": "https://pypi.org/project/llguidance/"
+    },
+    {
+      "package": "lm-format-enforcer",
+      "version": "0.11.3",
+      "uploaded": "2025-08-24",
+      "summary": "Enforce the output format (JSON Schema, Regex etc) of a language model",
+      "url": "https://pypi.org/project/lm-format-enforcer/"
+    },
+    {
+      "package": "instructor",
+      "version": "1.17.0",
+      "uploaded": "2026-09-09",
+      "summary": "structured outputs for llm",
+      "url": "https://pypi.org/project/instructor/"
+    },
+    {
+      "package": "pydantic",
+      "version": "2.14.1",
+      "uploaded": "2026-10-11",
+      "summary": "Data validation using Python type hints",
+      "url": "https://pypi.org/project/pydantic/"
+    },
+    {
+      "package": "pydantic-ai",
+      "version": "2.61.0",
+      "uploaded": "2026-10-24",
+      "summary": "AI Agent Framework, the Pydantic way",
+      "url": "https://pypi.org/project/pydantic-ai/"
+    },
+    {
+      "package": "baml-py",
+      "version": "0.226.2",
+      "uploaded": "2026-09-01",
+      "summary": "BAML v0 — Python runtime for baml_client",
+      "url": "https://pypi.org/project/baml-py/"
+    },
+    {
+      "package": "dspy",
+      "version": "3.4.1",
+      "uploaded": "2026-10-12",
+      "summary": "DSPy",
+      "url": "https://pypi.org/project/dspy/"
+    },
+    {
+      "package": "marvin",
+      "version": "3.2.7",
+      "uploaded": "2026-03-04",
+      "summary": "a simple and powerful tool to get things done with AI",
+      "url": "https://pypi.org/project/marvin/"
+    },
+    {
+      "package": "mirascope",
+      "version": "2.8.2",
+      "uploaded": "2026-10-22",
+      "summary": "Every frontier LLM. One unified interface.",
+      "url": "https://pypi.org/project/mirascope/"
+    },
+    {
+      "package": "guardrails-ai",
+      "version": "0.11.0",
+      "uploaded": "2026-08-14",
+      "summary": "Adding guardrails to large language models.",
+      "url": "https://pypi.org/project/guardrails-ai/"
+    },
+    {
+      "package": "openai",
+      "version": "3.37.0",
+      "uploaded": "2026-10-22",
+      "summary": "The official Python library for the openai API",
+      "url": "https://pypi.org/project/openai/"
+    },
+    {
+      "package": "anthropic",
+      "version": "2.3.0",
+      "uploaded": "2026-10-23",
+      "summary": "The official Python library for the anthropic API",
+      "url": "https://pypi.org/project/anthropic/"
+    },
+    {
+      "package": "jsonschema",
+      "version": "4.26.0",
+      "uploaded": "2026-01-07",
+      "summary": "An implementation of JSON Schema validation for Python",
+      "url": "https://pypi.org/project/jsonschema/"
+    },
+    {
+      "package": "mcp",
+      "version": "2.3.0",
+      "uploaded": "2026-10-02",
+      "summary": "Model Context Protocol SDK",
+      "url": "https://pypi.org/project/mcp/"
+    },
+    {
+      "package": "sglang",
+      "version": "0.5.22",
+      "uploaded": "2026-10-16",
+      "summary": "SGLang is a fast serving framework for large language models and vision language models.",
+      "url": "https://pypi.org/project/sglang/"
+    },
+    {
+      "package": "vllm",
+      "version": "0.32.0",
+      "uploaded": "2026-10-18",
+      "summary": "A high-throughput and memory-efficient inference and serving engine for LLMs",
+      "url": "https://pypi.org/project/vllm/"
+    },
+    {
+      "package": "lmql",
+      "version": "0.7.3",
+      "uploaded": "2023-10-14",
+      "summary": "A query language for language models.",
+      "url": "https://pypi.org/project/lmql/"
+    }
+  ],
+  "searches": [
+    {
+      "query": "structured output llm in:name,description,readme",
+      "total_count": 829127,
+      "results": [
+        {
+          "repo": "paulociano/skill-arsenal",
+          "stars": 2,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "DevineEnukorah/professional-portfolio",
+          "stars": 1,
+          "pushed": "2026-10-25",
+          "description": "Production-grade portfolio for an AI Automation Engineer and Workflow Consultant, focused on reliable n8n, API, and LLM systems."
+        },
+        {
+          "repo": "danofairanks/PIQOS---AI---Research-public-",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "Research results output "
+        },
+        {
+          "repo": "nasher721/chartcleaner2",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "lqdung3/narrative-science-saga-tools",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "2026 Guide: Narrative Science Premium Access"
+        },
+        {
+          "repo": "bytedance/deer-flow",
+          "stars": 84384,
+          "pushed": "2026-10-25",
+          "description": "An open-source long-horizon SuperAgent harness that researches, codes, and creates. With the help of sandboxes, memories, tools, skill, subagents and message gateway, it handles di"
+        },
+        {
+          "repo": "octrow/buy-smarter",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "Explainable shopping assistant for Kazakhstan: ranks Kaspi, Ozon and OLX offers for your budget, city and must-haves"
+        },
+        {
+          "repo": "mrubens/jevcraft",
+          "stars": 6,
+          "pushed": "2026-10-25",
+          "description": "Jev-powered Minecraft bot"
+        },
+        {
+          "repo": "Cedroz/Patchline",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "AI autodebugger"
+        },
+        {
+          "repo": "JKHeadley/instar",
+          "stars": 84,
+          "pushed": "2026-10-25",
+          "description": "Persistent Claude Code agents with scheduling, sessions, memory, and Telegram."
+        },
+        {
+          "repo": "CrimsonGlory/wairz",
+          "stars": 7,
+          "pushed": "2026-10-25",
+          "description": "A free (as in freedom) AI assisted firmware analysis tool"
+        },
+        {
+          "repo": "thephenyl02-creator/termylo",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "1kailas/Aegis",
+          "stars": 1,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "DiasMazhenov/juzimder-ai",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "sudtanj/infrastructure-tools",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "a generic repo that handle public collection of infrastructure scripts for various cloud and self hosted solution "
+        }
+      ]
+    },
+    {
+      "query": "constrained decoding in:name,description,readme",
+      "total_count": 37544,
+      "results": [
+        {
+          "repo": "supernaiter/silent-speech-review",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "orientational/libavp",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "High-performance multimedia playback engine written in pure C from scratch"
+        },
+        {
+          "repo": "khadirkumar/vision-roblox-sentinel",
+          "stars": 70,
+          "pushed": "2026-10-25",
+          "description": "Best Roblox YOLO Vision Models 2026: High-Accuracy Bot Detection for Multi-Game Coverage"
+        },
+        {
+          "repo": "at-least/SwiftRestic",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "Native macOS backup app powered by restic"
+        },
+        {
+          "repo": "djabiridrissou/vovoscan-mob",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "rholmes69/Rust_Blender",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "Olib-AI/cleanton",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "A native macOS disk cleaner for developers. Reclaim space from build caches and developer junk, safely."
+        },
+        {
+          "repo": "ohdearquant/lattice",
+          "stars": 46,
+          "pushed": "2026-10-25",
+          "description": "Run AI models on Apple Silicon and Raspberry Pi"
+        },
+        {
+          "repo": "jenniferevangelista-de/night-guard",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "Helps kids understand what happened in an online chat and choose how to ask for help. Runs locally with Gemma."
+        },
+        {
+          "repo": "ry-ops/afm-studio",
+          "stars": 1,
+          "pushed": "2026-10-25",
+          "description": "Apple's on-device foundation model as a Mac app, a CLI, an MCP server for Claude, and a local OpenAI-compatible API. Pure Swift."
+        },
+        {
+          "repo": "arttttt/android-camera-hal",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "V4L2-based Android Camera HAL driver"
+        },
+        {
+          "repo": "TjnhPro/rpg-platform",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "Five-project RPG Platform foundation with architecture harness and pinned L1/L2 dependencies"
+        },
+        {
+          "repo": "8bit-boom/nd-world",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "dahai80/fusion-mlx",
+          "stars": 4,
+          "pushed": "2026-10-25",
+          "description": "This is a model management platform for macOS. It aims to combine the strengths of OMLX and Rapid-MLX, and is primarily for personal use. Fellow developers working on macOS are wel"
+        },
+        {
+          "repo": "MZHeader/binja-d810",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "Binary Ninja plugin that cleans up MBA obfuscation and opaque predicates. Inspired by D-810."
+        }
+      ]
+    },
+    {
+      "query": "json schema llm in:name,description,readme",
+      "total_count": 566809,
+      "results": [
+        {
+          "repo": "HLeNam/docmind",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "ctharvey/goldbox-engine",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "codifydeep/fabriquinha",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "Fabriquinha de Software"
+        },
+        {
+          "repo": "CrimsonGlory/wairz",
+          "stars": 7,
+          "pushed": "2026-10-25",
+          "description": "A free (as in freedom) AI assisted firmware analysis tool"
+        },
+        {
+          "repo": "migingyn/enro",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "shing26/ResuAlign-Lite",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "本地优先的 AI 求职工作台：简历诊断、JD 对齐精修、岗位库与投递闭环。每条改写都溯源到主简历原文，无来源的建议被 provenance 硬门禁拦截——模型只能改写已有事实，不能编。Local-first resume/JD alignment workbench, FastAPI + SQLite, no cloud."
+        },
+        {
+          "repo": "zqk-os/zqk",
+          "stars": 5,
+          "pushed": "2026-10-25",
+          "description": "The Operating System for Autonomous Agent Swarms The Substrate for Living Software: Sovereign Cells. Verified Truth. Autonomous Organisms."
+        },
+        {
+          "repo": "lqdung3/narrative-science-saga-tools",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "2026 Guide: Narrative Science Premium Access"
+        },
+        {
+          "repo": "bytedance/deer-flow",
+          "stars": 84384,
+          "pushed": "2026-10-25",
+          "description": "An open-source long-horizon SuperAgent harness that researches, codes, and creates. With the help of sandboxes, memories, tools, skill, subagents and message gateway, it handles di"
+        },
+        {
+          "repo": "vincenzo0219/label-republic",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "afuzhao/colluding-experiment",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "kanthipm/recruiting-copilot",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "xtgm/TGUnbanBot-Plus",
+          "stars": 7,
+          "pushed": "2026-10-25",
+          "description": "Telegram 群组自助解封机器人 | 基于 Cloudflare Workers + D1 | 多群管理 / 广告检测 / 黑名单导出 / GKY联查 / 314条离线测试 | Fork of CF-Workers-TGUnbanBot【项目取用cmliu/TGUnbanBot】"
+        },
+        {
+          "repo": "Cedroz/Patchline",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "AI autodebugger"
+        },
+        {
+          "repo": "Abhishek222983101/tessera-guard",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "TESSERA — catch AI agents that drift from their role while credentials stay valid. Live demo: https://tessera-guard.vercel.app (D3COY 1.0, Team Paradigm)"
+        }
+      ]
+    },
+    {
+      "query": "grammar constrained generation in:name,description,readme",
+      "total_count": 6553,
+      "results": [
+        {
+          "repo": "supernaiter/silent-speech-review",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "shjkfakshjdlas/dbvisualizer-24.2.4-reloaded-tool",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "DbVisualizer 24.2.4 Full Toolkit for Database Management 2026"
+        },
+        {
+          "repo": "nranjan2code/Projection",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "ohdearquant/lattice",
+          "stars": 46,
+          "pushed": "2026-10-25",
+          "description": "Run AI models on Apple Silicon and Raspberry Pi"
+        },
+        {
+          "repo": "dahai80/fusion-mlx",
+          "stars": 4,
+          "pushed": "2026-10-25",
+          "description": "This is a model management platform for macOS. It aims to combine the strengths of OMLX and Rapid-MLX, and is primarily for personal use. Fellow developers working on macOS are wel"
+        },
+        {
+          "repo": "kenny-eric/Resume-Insight-Engine",
+          "stars": 2,
+          "pushed": "2026-10-25",
+          "description": "AI Cover Letter Generator 2026 ✨ - ATS-Optimized & Gemini-Powered"
+        },
+        {
+          "repo": "jmagly/aiwg",
+          "stars": 225,
+          "pushed": "2026-10-25",
+          "description": "Reusable project context and specialist workflows for the AI tools you already use. Agents, skills, rules and MCP tools for Claude Code, Codex, Copilot, Cursor and more, plus SDLC "
+        },
+        {
+          "repo": "Shengboj0324/Sign-Translator",
+          "stars": 1,
+          "pushed": "2026-10-25",
+          "description": "A neuro-symbolic framework for bidirectional translation between spoken/written language and grammatically-structured three-dimensional sign-language motion."
+        },
+        {
+          "repo": "henry-luo/lambda",
+          "stars": 15,
+          "pushed": "2026-10-25",
+          "description": "A modern, general-purpose, pure functional programming language (Alpha)"
+        },
+        {
+          "repo": "XibalbaTechSol/xibalba-shield",
+          "stars": 1,
+          "pushed": "2026-10-25",
+          "description": "Endpoint agent for AI-agent discovery, constraint, and Integrity-backed evidence — device/network security, separate from the HIPAA vertical. [PLANNED], see spec."
+        },
+        {
+          "repo": "menezescelleletronic-stack/traindown-dart-flutter-core",
+          "stars": 53,
+          "pushed": "2026-10-25",
+          "description": "Traindown Dart Reference Library 2026: Official Flutter Markup Language Implementation"
+        },
+        {
+          "repo": "kimjooyoon/gooo-go-ports",
+          "stars": 1,
+          "pushed": "2026-10-25",
+          "description": "Independently checked Go API ports and original Gooo policy programs for coding agents, with stdio MCP, native CLI previews, source bindings and replayable results."
+        },
+        {
+          "repo": "jeanlucdupont/locard",
+          "stars": 3,
+          "pushed": "2026-10-25",
+          "description": "Local AI-Assisted Digital Forensics:  Evidence-first Windows element analysis with SQLite and local llama.cpp"
+        },
+        {
+          "repo": "halbritt/agent-ee",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "Evidence-preserving adversarial PCB and electrical engineering reviews with native KiCad checks and subscription agents"
+        },
+        {
+          "repo": "sini/gen-merge",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "gen-merge — pure-Nix byte-mode module merge engine (evalModuleTree) for the pure-gen module system (the merge half; byte-identical to lib.evalModules)"
+        }
+      ]
+    },
+    {
+      "query": "agent hallucination detection in:name,description,readme",
+      "total_count": 39436,
+      "results": [
+        {
+          "repo": "MedGm/Locali",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "Efficient small language models for software engineering, testing and DevOps"
+        },
+        {
+          "repo": "Aljademaratas/readiris-product-code-generator",
+          "stars": 1,
+          "pushed": "2026-10-25",
+          "description": "Readiris OCR Pro 2026: Secure Productivity Tool for Document Conversion"
+        },
+        {
+          "repo": "NHR-09/repoanayliser",
+          "stars": 2,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "buffedlizard55-lab/GEMSDOE86",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "jjuliantt/KiteAI-Autopilot-Suite",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "KiteAI 2026 Multi-Agent Trading Bot 🤖 | Auto DeFi & Yield Tools"
+        },
+        {
+          "repo": "shubhodeep1/coding-workflows",
+          "stars": 2,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "vishnoiprem/data-etl-ml",
+          "stars": 7,
+          "pushed": "2026-10-25",
+          "description": "pvspark"
+        },
+        {
+          "repo": "niathackathon3-debug/btc-pathfinder-pro-toolkit",
+          "stars": 1,
+          "pushed": "2026-10-25",
+          "description": "Bitcoin Finder Tool 2026 – Fastest Private Key Recovery Suite"
+        },
+        {
+          "repo": "jmagly/aiwg",
+          "stars": 225,
+          "pushed": "2026-10-25",
+          "description": "Reusable project context and specialist workflows for the AI tools you already use. Agents, skills, rules and MCP tools for Claude Code, Codex, Copilot, Cursor and more, plus SDLC "
+        },
+        {
+          "repo": "Smith-0-07/gradint-bot-utility-tool",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "Unofficial Gradint Bot Enhancement Tool 2026"
+        },
+        {
+          "repo": "superiorlu/AITreasureBox",
+          "stars": 875,
+          "pushed": "2026-10-25",
+          "description": "🤖 Automatically collected AI repos, tools, websites, papers & tutorials. 实用AI百宝箱 💎"
+        },
+        {
+          "repo": "andrew/ultimate-awesome",
+          "stars": 221,
+          "pushed": "2026-10-25",
+          "description": "Every awesome list on every topic, including awesome lists of awesome lists, updated daily."
+        },
+        {
+          "repo": "dannygrowthmarketing/ticmint-internet-listener",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "dathere/qsv",
+          "stars": 3813,
+          "pushed": "2026-10-25",
+          "description": "Blazing-fast, Neuro-symbolic Data-Wrangling toolkit"
+        },
+        {
+          "repo": "mblakemore/agent",
+          "stars": 1,
+          "pushed": "2026-10-25",
+          "description": ""
+        }
+      ]
+    },
+    {
+      "query": "spec-driven development llm in:name,description,readme",
+      "total_count": 7815,
+      "results": [
+        {
+          "repo": "zqk-os/zqk",
+          "stars": 5,
+          "pushed": "2026-10-25",
+          "description": "The Operating System for Autonomous Agent Swarms The Substrate for Living Software: Sovereign Cells. Verified Truth. Autonomous Organisms."
+        },
+        {
+          "repo": "Fighter90/career-ops-ui",
+          "stars": 88,
+          "pushed": "2026-10-25",
+          "description": "Clean, docs-style web UI for the career-ops AI job-search pipeline. Search ATS adapters (Greenhouse/Ashby/Lever) + regional portals (hh.ru/Habr Career), evaluate JDs, track applica"
+        },
+        {
+          "repo": "mobasak/fabrik",
+          "stars": 1,
+          "pushed": "2026-10-25",
+          "description": "Deployment automation CLI for AI-powered infrastructure"
+        },
+        {
+          "repo": "cs68614-hash/awesome-grokbot-templates",
+          "stars": 5,
+          "pushed": "2026-10-25",
+          "description": "A curated list of community Grok Bot templates with official x.ai share links. Directory: grokbot-templates.com"
+        },
+        {
+          "repo": "Gulliby-development/baked",
+          "stars": 2,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "wojons/ai_plays_poke",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "PedroSmaxY/abnt-mcp",
+          "stars": 1,
+          "pushed": "2026-10-25",
+          "description": "O copiloto definitivo para TCC e trabalhos academicos no padrao ABNT via Model Context Protocol (MCP)"
+        },
+        {
+          "repo": "nuncaeslupus/claude-arsenal",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "Claude Code plugin marketplace: spec-driven skills, gated task queue, and a skill authoring rubric from research."
+        },
+        {
+          "repo": "dennysjmarquez/MemoryBioRAG",
+          "stars": 8,
+          "pushed": "2026-10-25",
+          "description": "Biomimetic cognitive memory system for AI agents, brain-inspired persistence with synaptic plasticity, hybrid PPMI+SVD vector search, LTP/LTD, and inter-agent shared cortex. Pure P"
+        },
+        {
+          "repo": "leandroAmariles/ai-starter-kit",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "Centralized, versioned AI agent configuration kit (context-skills, rules, callable skills) for multi-repo installs via install-ai-package.sh"
+        },
+        {
+          "repo": "cooneycw/claude-power-pack",
+          "stars": 21,
+          "pushed": "2026-10-25",
+          "description": "Claude Code best practices and MCP second opinion server"
+        },
+        {
+          "repo": "superiorlu/AITreasureBox",
+          "stars": 875,
+          "pushed": "2026-10-25",
+          "description": "🤖 Automatically collected AI repos, tools, websites, papers & tutorials. 实用AI百宝箱 💎"
+        },
+        {
+          "repo": "phanijapps/engram",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "hatrickmario/OncoLens-Lab",
+          "stars": 1,
+          "pushed": "2026-10-25",
+          "description": "RAG+AI Lab to create the MVP of an AI-powered oncology platform that combines clinical patient data to support evidence-based treatment analysis."
+        },
+        {
+          "repo": "andrewRCr/arc-framework",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "Structured documentation framework and CLI for spec-driven development with AI, emphasizing focused human-agent coupling over autonomous delegation."
+        }
+      ]
+    },
+    {
+      "query": "tool calling schema validation in:name,description,readme",
+      "total_count": 106136,
+      "results": [
+        {
+          "repo": "legal-gpt-official/japan-legal-reform-watch",
+          "stars": 1,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "codifydeep/fabriquinha",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "Fabriquinha de Software"
+        },
+        {
+          "repo": "tonythetiger168/aios-core",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "Secure-by-default, local-first runtime for AI agents: scheduler, permissions, persistent memory, sandboxed tools and MCP. Python."
+        },
+        {
+          "repo": "zernio-dev/zernio-php",
+          "stars": 4,
+          "pushed": "2026-10-25",
+          "description": "Zernio API - Official PHP SDK"
+        },
+        {
+          "repo": "bytedance/deer-flow",
+          "stars": 84384,
+          "pushed": "2026-10-25",
+          "description": "An open-source long-horizon SuperAgent harness that researches, codes, and creates. With the help of sandboxes, memories, tools, skill, subagents and message gateway, it handles di"
+        },
+        {
+          "repo": "zernio-dev/zernio-java",
+          "stars": 2,
+          "pushed": "2026-10-25",
+          "description": "Zernio API - Official Java SDK"
+        },
+        {
+          "repo": "devantler-tech/.github",
+          "stars": 1,
+          "pushed": "2026-10-25",
+          "description": "A public organization profile"
+        },
+        {
+          "repo": "purboo/pi-durable-subagents",
+          "stars": 14,
+          "pushed": "2026-10-25",
+          "description": ""
+        },
+        {
+          "repo": "isaksmith/DigitalTwinBiomedical",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "Digital Twin Biomedical project for Cal Hacks 13.0"
+        },
+        {
+          "repo": "aalee-me/sahko",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "svsd test"
+        },
+        {
+          "repo": "Windows200000/AFClaude",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "Busy with life? On holiday? Your subscription costs are not. And neither should Claude. AFClaude keeps Claude working on your projects, or starts building your future ideas, all wh"
+        },
+        {
+          "repo": "namor5772/Claude_Python_Testbed",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "A repo containing various python scrips written using Claude code"
+        },
+        {
+          "repo": "zernio-dev/zernio-ruby",
+          "stars": 0,
+          "pushed": "2026-10-25",
+          "description": "Zernio API - Official Ruby SDK"
+        },
+        {
+          "repo": "cs68614-hash/awesome-grokbot-templates",
+          "stars": 5,
+          "pushed": "2026-10-25",
+          "description": "A curated list of community Grok Bot templates with official x.ai share links. Directory: grokbot-templates.com"
+        },
+        {
+          "repo": "aindong/narwhal",
+          "stars": 2,
+          "pushed": "2026-10-25",
+          "description": "Narwhal — local-first SEO & GEO/LLMO (AI-search) scanning toolkit as an agent skill for Claude Code, Codex, Cursor & OpenCode"
+        }
+      ]
+    }
+  ]
+}
