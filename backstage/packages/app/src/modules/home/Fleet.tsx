@@ -36,6 +36,7 @@ import '@xyflow/react/dist/style.css';
 import { Chip, EstatePage, Fold, Section, Sheet, Summary } from '../shell';
 import { EfficiencyPanel } from './EfficiencyPanel';
 import { FrictionPanel } from './FrictionPanel';
+import { PiSessionsPanel } from './PiSessionsPanel';
 import { EstateStrip } from './EstateStrip';
 import { GatesPanel } from './GatesPanel';
 import { openSse, type SseHandle } from './sse';
@@ -483,6 +484,12 @@ export function Fleet() {
           question is what the estate is stopping and why, and that answer should not need a scroll. */}
       <Section title="Doors (live)">
         <FrictionPanel />
+      </Section>
+      {/* The machine the sessions run on, as the scheduled monitor last measured it. Above the
+          session sheet on purpose: whether the host is leaking headless processes, and whether the
+          monitor itself is still running, is the context a reader needs before the rows. */}
+      <Section title="Sessions (live)">
+        <PiSessionsPanel />
       </Section>
       <Section title="Sessions">
         <Summary>{board.summary}</Summary>

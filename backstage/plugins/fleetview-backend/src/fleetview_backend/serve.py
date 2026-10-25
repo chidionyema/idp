@@ -665,6 +665,29 @@ def build_app() -> FastAPI:
             friction_feed.stream(window_hours), media_type="text/event-stream"
         )
 
+    @app.get("/pi-sessions")
+    async def pi_sessions(limit: int = 8):
+        """The pi-session monitor's last receipt, in the shape `/fleet` renders.
+
+        Read from `~/.estate/pi-observe/latest.json`, which the scheduled job writes; nothing is
+        re-measured here. `available: false` means nothing has looked or the receipt is unreadable
+        -- which is not the same fact as "no pi processes are running", and the tile says so.
+        """
+        from fleetview_backend import observe_feed
+
+        return JSONResponse(
+            content=await asyncio.to_thread(observe_feed.summary, limit)
+        )
+
+    @app.get("/pi-sessions/stream")
+    async def pi_sessions_stream(limit: int = 8):
+        """One `pi-sessions` frame per tick, so the tile moves with nobody reloading it."""
+        from fleetview_backend import observe_feed
+
+        return StreamingResponse(
+            observe_feed.stream(limit), media_type="text/event-stream"
+        )
+
     @app.get("/efficiency")
     async def efficiency(since: str = "1h"):
         from fleetview_backend import efficiency_feed
