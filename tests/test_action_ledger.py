@@ -7,6 +7,7 @@ from __future__ import annotations
 import base64
 import importlib.util
 import json
+import logging
 import sqlite3
 import sys
 from pathlib import Path
@@ -152,3 +153,49 @@ def test_a_stdlib_caller_that_names_itself_is_recorded(estate):
         "user_api_key_alias": "fleetview-voice-20261008T193433Z"
     }
     assert al.record(call, {}) is not None
+
+
+def test_a_body_with_a_tuple_key_is_recorded_not_lost(estate, caplog, monkeypatch):
+    """The production failure (2026-10-25): the cluster router logged "keys must be str, int,
+    float, bool or None, not tuple" on every call and wrote no row at all, so the cluster sphere
+    had an empty ledger and every call looked like it had never happened. The row must be
+    written, and the shape that had to be coerced must be named in the log."""
+    monkeypatch.setattr(al, "_COERCED", set())
+    call = _call()
+    body = call["litellm_params"]["proxy_server_request"]["body"]
+    body["metadata"]["extra"] = {("a", "b"): 1}
+    with caplog.at_level(logging.WARNING):
+        row = al.record(call, {"content": [{"type": "text", "text": "a"}]})
+    assert row is not None
+    assert al.verify() == (1, "")
+
+    def canon(o):
+        if isinstance(o, dict):
+            return {str(k): canon(v) for k, v in o.items()}
+        if isinstance(o, (list, tuple)):
+            return [canon(v) for v in o]
+        return o
+
+    expected = json.dumps(canon(body), sort_keys=True, separators=(",", ":")).encode()
+    assert row["args_hash"] == al._sha(expected)
+    assert any("body coerced at" in r.message for r in caplog.records)
+
+
+def test_an_ordinary_body_keeps_the_hash_it_always_had(estate):
+    """Coercion must not change the args_hash of every row already on disk: a body json can
+    serialise is dumped exactly as before."""
+    body = {"model": "claude-sonnet", "messages": [{"role": "user", "content": "hi"}]}
+    assert (
+        al._canonical(body)
+        == json.dumps(body, sort_keys=True, separators=(",", ":"), default=str).encode()
+    )
+
+
+def test_a_self_referencing_body_is_coerced_not_infinite(estate, monkeypatch):
+    """A cycle must not recurse forever: the depth marker stops it and the row is still signed."""
+    monkeypatch.setattr(al, "_COERCED", set())
+    body: dict = {"model": "m"}
+    body["self"] = body
+    canonical = al._canonical(body)
+    assert b"<depth>" in canonical
+    assert json.loads(canonical)["model"] == "m"

@@ -16,6 +16,19 @@ Usage:
   router-drift-check                     # laptop config vs live cluster (default context)
   router-drift-check --laptop PATH --cluster PATH   # explicit files (tests, CI)
 Exit 0 = within policy, 1 = drift, 2 = could not measure.
+
+The cluster's ConfigMap name is read from the LIVE Deployment, never hardcoded: Flux
+suffixes it on every render, so a hardcoded name is stale within hours and the check then
+exits 2 on a healthy cluster (measured 2026-10-25: the pinned name no longer existed while
+the router served traffic fine).
+
+Every line this prints that starts with DRIFT is counted in the verdict, and every counted
+drift prints a DRIFT line: a printed DRIFT that the verdict does not count is a lie the
+reader cannot detect (2026-10-25: "DRIFT wiring differs on vision" was printed while the
+check exited 0, because a sphere-bound difference is allowed by policy).
+
+No ConfigMap name is written down anywhere in this file: a name that reaches this script as
+text is stale within hours.
 """
 
 import argparse
@@ -31,7 +44,8 @@ except ImportError:
 
 DEFAULT_LAPTOP = pathlib.Path.home() / ".estate/litellm-local/config.yaml"
 DEFAULT_CONTEXT = "context-estate-crq7jwxsjxq"
-CLUSTER_CM = "litellm-config-ddgh6tmckk"
+DEFAULT_DEPLOYMENT = "litellm"
+DEFAULT_CONFIG_VOLUME = "config"
 
 # Documented exceptions (plan §1.4, P1.T2): never count these as drift.
 # Founder, 2026-10-25: cluster names win. Laptop-local lanes keep the ollama- prefix;
@@ -43,6 +57,51 @@ ALLOWED_CLUSTER_ONLY = {"embed", "embed-cohere", "embed-query", "rerank", "image
 
 # Fields that define a lane's caller-visible behavior.
 LANE_FIELDS = ("model", "api_base")
+
+
+def kubectl(args, timeout=120):
+    return subprocess.run(
+        ["kubectl", *args], capture_output=True, text=True, timeout=timeout
+    )
+
+
+def resolve_cluster_cm(context, namespace, deployment, volume):
+    """The ConfigMap the live Deployment mounts, or (None, why).
+
+    Flux renames it on every render (kustomize name suffix), so the name is a property of
+    the running Deployment, not a constant. A stale constant makes this check exit 2 on a
+    healthy cluster, which is the same signal as "the cluster is broken" -- so it is never
+    written down.
+    """
+    r = kubectl(
+        ["--context", context, "-n", namespace, "get", "deploy", deployment, "-o", "json"]
+    )
+    if r.returncode != 0:
+        return None, (
+            f"cannot read deployment {namespace}/{deployment}: {r.stderr.strip()[:200]}"
+        )
+    try:
+        dep = json.loads(r.stdout)
+    except ValueError:
+        return None, f"deployment {namespace}/{deployment} did not return JSON"
+    volumes = (
+        (dep.get("spec") or {}).get("template", {}).get("spec", {}).get("volumes") or []
+    )
+    picked = None
+    for v in volumes:
+        if v.get("name") == volume and (v.get("configMap") or {}).get("name"):
+            picked = v["configMap"]["name"]
+            break
+    if picked is None:
+        others = [
+            v["configMap"]["name"]
+            for v in volumes
+            if (v.get("configMap") or {}).get("name")
+        ]
+        picked = others[0] if others else None
+    if not picked:
+        return None, f"deployment {namespace}/{deployment} mounts no ConfigMap"
+    return picked, None
 
 
 def lane_map(cfg):
@@ -74,6 +133,8 @@ def main():
     ap.add_argument("--cluster", default=None, help="path to cluster config.yaml (else kubectl)")
     ap.add_argument("--context", default=DEFAULT_CONTEXT)
     ap.add_argument("--namespace", default="llm")
+    ap.add_argument("--deployment", default=DEFAULT_DEPLOYMENT)
+    ap.add_argument("--config-volume", default=DEFAULT_CONFIG_VOLUME)
     args = ap.parse_args()
 
     try:
@@ -81,16 +142,25 @@ def main():
     except OSError as e:
         print(f"FAIL cannot read laptop config {args.laptop}: {e}")
         return 2
+    cluster_cm = None
     if args.cluster:
         cluster_cfg = yaml.safe_load(pathlib.Path(args.cluster).read_text())
     else:
-        r = subprocess.run(
-            ["kubectl", "--context", args.context, "-n", args.namespace,
-             "get", "cm", CLUSTER_CM, "-o", "jsonpath={.data.config\\.yaml}"],
-            capture_output=True, text=True, timeout=120,
+        cluster_cm, why = resolve_cluster_cm(
+            args.context, args.namespace, args.deployment, args.config_volume
+        )
+        if cluster_cm is None:
+            print(f"FAIL {why}")
+            return 2
+        r = kubectl(
+            ["--context", args.context, "-n", args.namespace, "get", "cm", cluster_cm,
+             "-o", "jsonpath={.data.config\\.yaml}"]
         )
         if r.returncode != 0 or not r.stdout.strip():
-            print(f"FAIL cannot read cluster config: {r.stderr.strip()[:200]}")
+            print(
+                f"FAIL cannot read cluster config from ConfigMap {cluster_cm}: "
+                f"{r.stderr.strip()[:200]}"
+            )
             return 2
         cluster_cfg = yaml.safe_load(r.stdout)
 
@@ -105,28 +175,37 @@ def main():
                       and not any(n.startswith(p) for p in ALLOWED_CLUSTER_ONLY)]
     # Wildcard lanes (claude-*) compare by exact name; prefix rules cover families.
 
+    # Hard drift needs BOTH sides cloud-wired: a difference on any sphere-local leg is
+    # fulfillment detail (laptop ollama vs cluster svc vs vendor API -- founder ruling
+    # 2026-10-25: names are the contract). Both-cloud rewiring is real drift.
+    hard_changed = [n for n in changed if not sphere_bound(lap[n]) and not sphere_bound(clu[n])]
+
+    # The verdict is computed BEFORE anything is printed, so the printed lines and the exit
+    # code cannot disagree: a DRIFT line means a counted drift, and every counted drift
+    # prints a DRIFT line.
     for n in unexpected_lap:
         print(f"DRIFT laptop-only lane: {n}")
     for n in unexpected_clu:
         print(f"DRIFT cluster-only lane: {n}")
+    for n in hard_changed:
+        print(f"DRIFT wiring differs on {n}:\n  laptop : {json.dumps(lap[n])}\n  cluster: {json.dumps(clu[n])}")
     for n in changed:
-        if sphere_bound(lap[n]) and sphere_bound(clu[n]):
-            print(f"note wiring sphere-bound on {n} (allowed): laptop={json.dumps(lap[n])} cluster={json.dumps(clu[n])}")
-        else:
-            print(f"DRIFT wiring differs on {n}:\n  laptop : {json.dumps(lap[n])}\n  cluster: {json.dumps(clu[n])}")
+        if n not in hard_changed:
+            print(
+                f"note wiring differs on {n} (allowed: sphere-local fulfillment, "
+                f"the names are the contract): laptop={json.dumps(lap[n])} "
+                f"cluster={json.dumps(clu[n])}"
+            )
     for n in sorted(n for n in only_lap if n not in unexpected_lap):
         print(f"note laptop-only (allowed): {n}")
     for n in sorted(n for n in only_clu if n not in unexpected_clu):
         print(f"note cluster-only (allowed): {n}")
 
-    # Hard drift needs BOTH sides cloud-wired: a difference on any sphere-local leg is
-    # fulfillment detail (laptop ollama vs cluster svc vs vendor API -- founder ruling
-    # 2026-10-25: names are the contract). Both-cloud rewiring is real drift.
-    hard_changed = [n for n in changed if not sphere_bound(lap[n]) and not sphere_bound(clu[n])]
     if unexpected_lap or unexpected_clu or hard_changed:
         print(f"FAIL router drift: {len(unexpected_lap)} laptop-only, {len(unexpected_clu)} cluster-only, {len(hard_changed)} rewired")
         return 1
-    print(f"OK lanes within policy: {len(lap)} laptop / {len(clu)} cluster, no caller-visible drift")
+    where = f" (cluster ConfigMap {cluster_cm})" if cluster_cm else ""
+    print(f"OK lanes within policy: {len(lap)} laptop / {len(clu)} cluster{where}, no caller-visible drift")
     return 0
 
 
