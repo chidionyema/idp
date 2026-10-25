@@ -14,14 +14,21 @@ description: >-
   ~/.local/share/claude/versions/* -- keeping the newest of each family, any version the estate's
   own runtime names, anything a running process holds open, and rustup's default toolchain.
   bin/idp-disk-guard reports the pressure; this acts on it.
+  The dry run's "where the space is" measurement (a du of HOME) and the apply run's phases are
+  each bounded by budget_s: a phase that cannot fit in what is left is skipped by name and the
+  exit status is 4 (run it again to continue). Exit 3 still means a target survived deletion.
 class: mutate
 args:
   apply: {type: bool, default: false}
   trash: {type: bool, default: false}
   only_below_mb: {type: int, default: 0}
   worktrees: {type: bool, default: false}
+  budget_s: {type: int, default: 78, description: "seconds of work the cleaner may start; keep under door_s"}
+# 95, and it used to declare nothing at all, so it inherited the ceiling: the dry run's du of HOME
+# (T_SCAN 300s) then hit the door at 100s and reported a timeout with no measurement in it.
+door_s: 95
 halt_on_failure: true
 steps:
   - name: disk-cleanup
     cmd: >
-      bash ~/.estate/libexec/disk-cleanup.sh {{apply}} {{trash}} {{only_below_mb}} {{worktrees}}
+      bash ~/.estate/libexec/disk-cleanup.sh {{apply}} {{trash}} {{only_below_mb}} {{worktrees}} {{budget_s}}

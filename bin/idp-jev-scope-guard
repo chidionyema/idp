@@ -49,6 +49,11 @@ SEARCH_DIRS = [
     "mcp",
 ]
 
+# Installed environments, not estate source: an sdk's own site-packages matches the
+# pattern by construction (measured 2026-10-26: all 7 violating files were
+# sovereign/.venv/lib/python3.10/site-packages/typesafe_sdk/*).
+VENV_SEGMENTS = frozenset((".venv", "venv", ".tox"))
+
 PATTERN = re.compile(
     r"""
     TypeSafeClient              # class name
@@ -86,15 +91,25 @@ def main(args: list[str]) -> int:
     dirs = args if args else SEARCH_DIRS
     all_violations: dict[str, list[tuple[int, str]]] = {}
 
+    def _scan_one(pyfile: Path) -> None:
+        if VENV_SEGMENTS.intersection(pyfile.parts):
+            return
+        violations = scan_file(pyfile, root)
+        if violations:
+            all_violations[str(pyfile.relative_to(root))] = violations
+
     for d in dirs:
         dpath = root / d
+        if dpath.is_file():
+            # An explicit file: rglob on a file yields nothing, so a single-file
+            # audit was silently clean (measured 2026-10-26: a violating
+            # sovereign/real_violation_probe.py passed as a path answered exit 0).
+            _scan_one(dpath)
+            continue
         if not dpath.is_dir():
             continue
         for pyfile in dpath.rglob("*.py"):
-            violations = scan_file(pyfile, root)
-            if violations:
-                rel = str(pyfile.relative_to(root))
-                all_violations[rel] = violations
+            _scan_one(pyfile)
 
     if not all_violations:
         print("✓ No direct TypeSafeClient usage outside allowed locations")
