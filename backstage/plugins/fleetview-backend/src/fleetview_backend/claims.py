@@ -38,6 +38,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fleetview_backend import agent_jobs
+from fleetview_backend import plan_pace
 
 # The heartbeat's limit, from bin/claim-gate (MAX_AGE = 2 h): a claim with no heartbeat for two
 # hours is released and the next agent may take the issue. Kept as its own name because the
@@ -159,6 +160,9 @@ def _issue_index(repo: str) -> dict[int, dict[str, Any]]:
         int(i["number"]): {
             "title": str(i.get("title") or ""),
             "open": i.get("state") == "open",
+            # The plan lives in the body's checkbox list, and the search API returns it with the
+            # title, so the time-left estimate costs no extra call per claim.
+            "body": i.get("body") or "",
         }
         for i in body.get("items", [])
         if isinstance(i, dict) and "number" in i
@@ -187,6 +191,61 @@ def _window_comments(repo: str, since: str) -> tuple[list[dict], bool]:
         if len(body) < PAGE:
             return out, False
     return out, True
+
+
+def _hours_since(stamp: str | None, now: float) -> float:
+    """Hours from an RFC 3339 stamp to now; 0.0 when the stamp cannot be read.
+
+    An unreadable stamp must not become a large number: a claim with no readable start has no
+    measurable pace, and estimate() answers that with hours=0 rather than a fabricated speed.
+    """
+    if not stamp:
+        return 0.0
+    try:
+        when = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except ValueError:
+        return 0.0
+    return max((now - when.timestamp()) / 3600.0, 0.0)
+
+
+def claims_glance(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """The claims block for the /estate strip and Face's brief: counts plus the one claim to look
+    at next, with its time left. Compact because it rides the same envelope the voice reads."""
+    if not snapshot.get("available"):
+        return {
+            "available": False,
+            "error": snapshot.get("error") or "claims did not answer",
+        }
+    rows = snapshot.get("claims") or []
+    live = [r for r in rows if r.get("live")]
+    # Live and closest to done first: the row that will land next is the useful one at a glance.
+    live.sort(
+        key=lambda r: (r.get("subgoals_total") or 0) - (r.get("subgoals_done") or 0)
+    )
+    nxt = live[0] if live else None
+    return {
+        "available": True,
+        "error": None,
+        "live": len(live),
+        "stale": sum(
+            1
+            for r in rows
+            if r.get("reason") in ("stale heartbeat", "unreadable heartbeat")
+        ),
+        "next": (
+            {
+                "agent": nxt.get("agent"),
+                "issue": nxt.get("issue"),
+                "title": nxt.get("title"),
+                "url": nxt.get("url"),
+                "subgoals": f"{nxt.get('subgoals_done')}/{nxt.get('subgoals_total')}",
+                "time_left": nxt.get("time_left_s"),
+            }
+            if nxt
+            else None
+        ),
+        "read_at": snapshot.get("read_at"),
+    }
 
 
 def claims_snapshot(now: float | None = None) -> dict[str, Any]:
@@ -221,6 +280,11 @@ def claims_snapshot(now: float | None = None) -> dict[str, Any]:
             meta = index.get(issue) or {}
             issue_open = meta.get("open") if meta else None
             reason = _reason(row["age_s"], issue_open)
+            plan = plan_pace.checklist(meta.get("body"))
+            # Hours since this claim was posted: the plan's own start, not the repo's oldest
+            # claim -- an estimate borrowed from another agent's speed is a guess.
+            hours = _hours_since(row.get("comment_at"), t)
+            est = plan_pace.estimate(plan["done"], plan["total"], hours)
             rows.append(
                 {
                     **row,
@@ -228,6 +292,12 @@ def claims_snapshot(now: float | None = None) -> dict[str, Any]:
                     "issue_open": issue_open,
                     "reason": reason,
                     "live": reason == "live",
+                    "subgoals_done": plan["done"],
+                    "subgoals_total": plan["total"],
+                    "subgoals_open": plan["open"][:6],
+                    "hours_since_claim": round(hours, 2),
+                    "time_left_s": plan_pace.phrase(est),
+                    "estimate": est,
                     "url": f"https://github.com/{repo}/issues/{issue}",
                     "age_s": (
                         round(row["age_s"], 1)

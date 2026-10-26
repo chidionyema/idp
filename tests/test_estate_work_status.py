@@ -225,3 +225,25 @@ def test_the_estimate_line_is_the_same_words_the_json_carries():
         "unknown -- no pace yet"
     )
     assert ews.estimate_line(ews.estimate(5, 5, 2.0)).startswith("none --")
+
+
+def test_this_command_and_the_fleet_strip_compute_the_same_estimate():
+    # One implementation, two readers: /fleet's strip calls fleetview_backend.plan_pace directly
+    # and this command imports the same module through _pace(). The test fails if anyone forks
+    # the arithmetic into a second copy.
+    pace = ews._pace()
+    assert pace.__name__.endswith("plan_pace"), (
+        f"not the one implementation: {pace.__name__}"
+    )
+    assert pace.__file__.endswith("fleetview_backend/plan_pace.py")
+    for done, total, hours in [
+        (0, 5, 3.0),
+        (1, 1, 0.2),
+        (2, 5, 4.0),
+        (3, 4, 0.5),
+        (7, 7, 9.0),
+    ]:
+        assert ews.estimate(done, total, hours) == pace.estimate(done, total, hours)
+        assert ews.estimate_line(ews.estimate(done, total, hours)) == pace.phrase(
+            pace.estimate(done, total, hours)
+        )

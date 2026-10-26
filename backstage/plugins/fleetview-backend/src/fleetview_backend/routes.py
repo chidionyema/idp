@@ -391,6 +391,10 @@ def estate_envelope() -> tuple[dict[str, Any], int]:
         "green": _soft(greenlane.greenlane_status_nowait),
         "burn": _soft(spend.spend_total),
         "research": _soft(research_feed.research_claims),
+        # Who holds what, and how much is left -- the founder's question of 2026-10-23 answered
+        # on the strip rather than by asking an agent. One reader (claims.claims_snapshot), the
+        # same one /claims serves, so the strip and the claims panel cannot disagree.
+        "claims": _soft(lambda: claims.claims_glance(claims.claims_snapshot())),
     }
     return body, 200
 

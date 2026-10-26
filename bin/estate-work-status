@@ -231,58 +231,45 @@ def on_main_for(c: dict) -> bool:
     return bool(c.get("_on_main"))
 
 
+_PACE = None
+
+
+def _pace():
+    """The time-left arithmetic has ONE implementation: fleetview_backend.plan_pace, because that
+    is where /fleet and Face compute it for the strip. This command imports it instead of keeping
+    a second copy, and refuses loudly if it cannot -- a fallback would be the silent divergence
+    this estate keeps deleting."""
+    global _PACE
+    if _PACE is None:
+        here = os.path.dirname(os.path.abspath(__file__))
+        src = os.path.abspath(
+            os.path.join(here, "..", "backstage", "plugins", "fleetview-backend", "src")
+        )
+        if src not in sys.path:
+            sys.path.insert(0, src)
+        try:
+            from fleetview_backend import plan_pace  # noqa: PLC0415
+        except Exception as exc:  # noqa: BLE001 -- refuse rather than diverge
+            raise SystemExit(
+                f"estate-work-status: cannot load the pace implementation from {src}: {exc}"
+            )
+        _PACE = plan_pace
+    return _PACE
+
+
 def estimate(done: int, total: int, hours: float) -> dict:
-    """Time left, from this claim's own pace -- and it says so, including when it cannot.
-
-    Founder, 2026-10-23: "can we estimate based on goals and subgoals how much time or work left?"
-    Yes, and the estimate must be honest about its sample. The pace is closed sub-goals per hour
-    since the claim was posted; the interval is wide on purpose, because with three sub-goals closed
-    a point estimate would be a guess wearing a number's clothes. Nothing here is extrapolated from
-    another claim's speed: a claim that has closed nothing has no pace, and says that instead.
-
-    Returns {"pace_per_h": float, "hours_left": float | None, "lo": .., "hi": .., "basis": str}.
-    """
-    remaining = max(total - done, 0)
-    if total == 0:
-        return {"pace_per_h": 0.0, "hours_left": None, "lo": None, "hi": None,
-                "basis": "no sub-goals written, so there is nothing to pace"}
-    if done == 0:
-        return {"pace_per_h": 0.0, "hours_left": None, "lo": None, "hi": None,
-                "basis": f"no pace yet: 0 of {total} closed in {hours:.1f}h"}
-    if remaining == 0:
-        return {"pace_per_h": done / max(hours, 1e-9), "hours_left": 0.0, "lo": 0.0, "hi": 0.0,
-                "basis": f"all {total} sub-goals closed in {hours:.1f}h"}
-    pace = done / max(hours, 1e-9)  # sub-goals per hour
-    hours_left = remaining / pace
-    return {
-        "pace_per_h": pace,
-        "hours_left": hours_left,
-        # +/-50%: with a handful of sub-goals the honest output is a band, not a number.
-        "lo": hours_left * 0.5,
-        "hi": hours_left * 1.5,
-        "basis": f"{done} of {total} closed in {hours:.1f}h (this claim's own pace)",
-    }
+    """Time left, from the claim's own pace -- see fleetview_backend.plan_pace.estimate."""
+    return _pace().estimate(done, total, hours)
 
 
 def hours_phrase(h: float) -> str:
-    if h < 1:
-        return f"{int(h * 60)}m"
-    if h < 48:
-        return f"{h:.1f}h"
-    return f"{h / 24:.1f}d"
+    return _pace().hours_phrase(h)
 
 
 def estimate_line(est: dict) -> str:
-    """The one line the block prints about time left -- shared by the terminal and the JSON reader
-    so /fleet cannot disagree with what the founder was told."""
-    if est["hours_left"] is None:
-        return f"unknown -- {est['basis']}"
-    if est["hours_left"] <= 0:
-        return f"none -- {est['basis']}"
-    return (
-        f"{hours_phrase(est['lo'])}-{hours_phrase(est['hi'])} ({est['basis']}, "
-        "+/-50% because a handful of sub-goals is a small sample)"
-    )
+    """The one line the block prints about time left -- the same words the strip shows, because
+    both come from plan_pace.phrase."""
+    return _pace().phrase(est)
 
 
 def main(argv: list[str] | None = None) -> int:
