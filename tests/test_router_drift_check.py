@@ -188,3 +188,40 @@ def test_a_laptop_only_lane_outside_the_allowed_prefix_is_drift(tmp_path):
     assert code == 1, out
     assert "DRIFT laptop-only lane: stray" in out
     assert "note laptop-only (allowed): ollama-local" in out
+
+
+def test_the_clusters_ollama_free_floor_is_a_note_and_not_a_drift(tmp_path):
+    """The OKE ollama free floor (#7207) put an "ollama" lane on the cluster only, and the
+    laptop's own fallback lanes keep the "ollama-" prefix. That is a cluster-only
+    capability, exactly like the image lane, and the check must say so instead of turning
+    red on a lane the estate meant to add."""
+    laptop = _write(
+        tmp_path,
+        "laptop.yaml",
+        _config(
+            {
+                "ollama-routing": (
+                    "ollama/llama3",
+                    "http://host.docker.internal:11434/v1",
+                ),
+                "fast": ("groq/llama-3.1-8b", "https://api.groq.com"),
+            }
+        ),
+    )
+    cluster = _write(
+        tmp_path,
+        "cluster.yaml",
+        _config(
+            {
+                "ollama": (
+                    "ollama/llama3",
+                    "http://ollama.llm.svc.cluster.local:11434/v1",
+                ),
+                "fast": ("groq/llama-3.1-8b", "https://api.groq.com"),
+            }
+        ),
+    )
+    code, out = _run_with_args(["--laptop", laptop, "--cluster", cluster])
+    assert code == 0, out
+    assert "note cluster-only (allowed): ollama" in out
+    assert "FAIL router drift" not in out
