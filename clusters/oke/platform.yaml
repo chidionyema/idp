@@ -516,3 +516,32 @@ spec:
       # optional, a missing ConfigMap must fail the row rather than publish '${ESTATE_ZONE}'.
       - kind: ConfigMap
         name: estate-config
+---
+# The universal coverage layer (EFDA). The registry, the diagnostic artifacts,
+# the pack factory and the allowlisted executor.
+#
+# This row declares NO dependsOn on purpose. The coverage layer is the thing
+# that tells the estate what is uncovered, so it must not inherit another
+# row's redness: the `llm` row was red for weeks (the ollama PVC is
+# immutable once bound, idp#7205) and a coverage gate that stops reconciling
+# when the model router wobbles is a gate nobody can trust. Everything this
+# row owns is static manifest plus one image it rolls itself.
+#
+# wait: false, because the controller is a reconciler that is never "ready" in
+# the sense Flux means -- it is ready when it has published a CoverageReport.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: efda
+  namespace: flux-system
+  annotations:
+    idp.estate.io/runtime: always-on
+spec:
+  interval: 30s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/efda
+  prune: true
+  wait: false
+  timeout: 2m
