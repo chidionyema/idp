@@ -1,0 +1,56 @@
+# The spine reads Flux objects. It reads them and nothing else.
+#
+# The Role is in flux-system because that is where the objects are; a Role cannot name
+# another namespace's resources. The verbs are get, list and watch: the observer asks
+# "what does this Kustomization's status say?", and a status reader that can also write
+# is a status reader nobody trusts.
+#
+# The spine does NOT get the Aevum signing key, and it is not allowed to: that key can
+# mint receipts, and the estate's own recorder says why it lives inside one container
+# (platform/observability/recorder/recorder.py). The spine asserts through the Aevum
+# server's API, which is a different membrane and a different privilege.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spine
+  namespace: spine
+  labels:
+    app.kubernetes.io/name: spine
+    estate.io/layer: event-spine
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: spine-flux-reader
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/name: spine
+    estate.io/layer: event-spine
+rules:
+  - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+    resources: ["kustomizations"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["helm.toolkit.fluxcd.io"]
+    resources: ["helmreleases"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["source.toolkit.fluxcd.io"]
+    resources: ["gitrepositories"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spine-flux-reader
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/name: spine
+    estate.io/layer: event-spine
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: spine-flux-reader
+subjects:
+  - kind: ServiceAccount
+    name: spine
+    namespace: spine
