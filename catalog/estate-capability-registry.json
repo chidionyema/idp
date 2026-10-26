@@ -4,7 +4,7 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 99,
-    "layer": 212,
+    "layer": 200,
     "service": 114,
     "tool": 437,
     "workflow": 78
@@ -4727,51 +4727,6 @@
       ]
     },
     {
-      "id": "cap:layer/platform-config-__init__",
-      "schema_version": 1,
-      "kind": "layer",
-      "summary": "platform/config/__init__.py (no docstring)",
-      "contract": {
-        "inputs": [],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:platform"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "platform/config/__init__.py",
-      "depends_on": [],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ]
-    },
-    {
       "id": "cap:layer/platform-config-control_loop_registry",
       "schema_version": 1,
       "kind": "layer",
@@ -4786,7 +4741,13 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-eval-protocol",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -4831,7 +4792,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -4878,7 +4840,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -4923,7 +4886,21 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-edge-runtime-src-engine",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-idp_agent-engine",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-voice-router-internal-engine-engine",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -4954,51 +4931,6 @@
       ]
     },
     {
-      "id": "cap:layer/platform-efficiency-__init__",
-      "schema_version": 1,
-      "kind": "layer",
-      "summary": "Token efficiency mechanisms for pi agents.",
-      "contract": {
-        "inputs": [],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:platform"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "platform/efficiency/__init__.py",
-      "depends_on": [],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ]
-    },
-    {
       "id": "cap:layer/platform-efficiency-budget_orchestrator",
       "schema_version": 1,
       "kind": "layer",
@@ -5013,7 +4945,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -5058,7 +4991,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -5103,7 +5037,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -5148,7 +5083,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -5193,7 +5129,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -5238,7 +5175,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -5283,7 +5221,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -5328,7 +5267,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -5379,7 +5319,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -5430,7 +5371,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -5475,7 +5417,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -5522,7 +5465,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -5570,7 +5514,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -5617,7 +5562,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -5665,7 +5611,13 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-libexec-symbol_slicer",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -5710,7 +5662,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -5755,7 +5708,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -5807,7 +5761,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -5854,7 +5809,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -5899,7 +5855,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -5955,7 +5912,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6000,7 +5958,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6045,7 +6004,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6092,7 +6052,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6142,7 +6103,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6187,7 +6149,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6234,7 +6197,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6283,7 +6247,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6347,7 +6312,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6402,7 +6368,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6447,7 +6414,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6494,7 +6462,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6539,7 +6508,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6587,7 +6557,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6644,7 +6615,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6689,7 +6661,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6741,7 +6714,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6786,7 +6760,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6831,7 +6806,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6876,7 +6852,13 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-memory-handback",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -6907,51 +6889,6 @@
       ]
     },
     {
-      "id": "cap:layer/platform-eval-__init__",
-      "schema_version": 1,
-      "kind": "layer",
-      "summary": "platform/eval/__init__.py (no docstring)",
-      "contract": {
-        "inputs": [],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:platform"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "platform/eval/__init__.py",
-      "depends_on": [],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ]
-    },
-    {
       "id": "cap:layer/platform-eval-comparison_policy",
       "schema_version": 1,
       "kind": "layer",
@@ -6966,7 +6903,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7011,7 +6949,13 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-eval-protocol",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7056,7 +7000,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7101,7 +7046,17 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-eval-judge_drift",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-eval-protocol",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7146,7 +7101,13 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-eval-judge_drift",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7191,7 +7152,33 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-config-control_loop_registry",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-eval-hook_wrapper",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-eval-judge_drift_loop",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-eval-pareval_loop",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-eval-red_team_loop",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-eval-span_retention_loop",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7236,7 +7223,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7281,7 +7269,17 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-eval-pareval_policy",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-eval-protocol",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7326,7 +7324,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7371,7 +7370,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7416,7 +7416,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7461,7 +7462,17 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-eval-protocol",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-eval-red_team_payloads",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7506,7 +7517,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7551,7 +7563,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7596,7 +7609,17 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-eval-protocol",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-eval-span_retention",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7641,7 +7664,33 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-config-control_loop_registry",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-eval-hook_wrapper",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-eval-judge_drift_loop",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-eval-pareval_loop",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-eval-red_team_loop",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-eval-span_retention_loop",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7672,51 +7721,6 @@
       ]
     },
     {
-      "id": "cap:layer/platform-execution-__init__",
-      "schema_version": 1,
-      "kind": "layer",
-      "summary": "platform/execution/__init__.py (no docstring)",
-      "contract": {
-        "inputs": [],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:platform"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "platform/execution/__init__.py",
-      "depends_on": [],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ]
-    },
-    {
       "id": "cap:layer/platform-execution-final_integration_test",
       "schema_version": 1,
       "kind": "layer",
@@ -7731,7 +7735,17 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-execution-n10_validator",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-unified-memory-server-harness",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7776,7 +7790,45 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-eval-comparison_policy",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-eval-judge_worker",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-eval-pareval_layer",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-execution-worker_pool",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-execution-worktree_manager",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-orchestrator",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-queue-dispatcher",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-telemetry-span_outbox",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-telemetry-span_retention_vacuum",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7821,7 +7873,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7866,7 +7919,21 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-execution-worker_pool",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-execution-worktree_manager",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-unified-memory-server-harness",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7911,7 +7978,13 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-queue-dispatcher",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -7960,7 +8033,13 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-queue-dispatcher",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8017,7 +8096,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8067,7 +8147,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8116,7 +8197,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8169,7 +8251,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8220,7 +8303,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8265,7 +8349,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8322,7 +8407,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8367,7 +8453,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8398,51 +8485,6 @@
       ]
     },
     {
-      "id": "cap:layer/platform-integration-__init__",
-      "schema_version": 1,
-      "kind": "layer",
-      "summary": "Claude Code integration layer for idp verification stack.",
-      "contract": {
-        "inputs": [],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:platform"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "platform/integration/__init__.py",
-      "depends_on": [],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ]
-    },
-    {
       "id": "cap:layer/platform-integration-claude_code_hook",
       "schema_version": 1,
       "kind": "layer",
@@ -8457,7 +8499,17 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-eval-judge_worker",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-unified-memory-server-harness",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8510,7 +8562,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8564,7 +8617,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8586,51 +8640,6 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/intent/observer.py",
-      "depends_on": [],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ]
-    },
-    {
-      "id": "cap:layer/platform-jit-broker-__init__",
-      "schema_version": 1,
-      "kind": "layer",
-      "summary": "platform/jit/broker/__init__.py (no docstring)",
-      "contract": {
-        "inputs": [],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:platform"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "platform/jit/broker/__init__.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -8670,7 +8679,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8715,7 +8725,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8760,7 +8771,33 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-edge-runtime-src-server",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-jit-broker-broker",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-jit-broker-collector",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-jit-broker-telegram",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-spire-key-broker-server",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-voice-gate-src-server",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8805,7 +8842,13 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-jit-broker-broker",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8850,7 +8893,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8895,7 +8939,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8940,7 +8985,17 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-memory-door",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-memory-focus",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8985,7 +9040,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9030,7 +9086,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9061,51 +9118,6 @@
       ]
     },
     {
-      "id": "cap:layer/platform-llm-callbacks-__init__",
-      "schema_version": 1,
-      "kind": "layer",
-      "summary": "PoBR callbacks for LiteLLM",
-      "contract": {
-        "inputs": [],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:platform"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "platform/llm/callbacks/__init__.py",
-      "depends_on": [],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ]
-    },
-    {
       "id": "cap:layer/platform-llm-callbacks-pobr_enforce",
       "schema_version": 1,
       "kind": "layer",
@@ -9120,7 +9132,13 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-callbacks-pobr_gate_wrapper",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9168,7 +9186,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9213,7 +9232,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9258,7 +9278,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9303,7 +9324,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9348,7 +9370,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9393,7 +9416,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9438,7 +9462,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9483,7 +9508,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9528,7 +9554,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9573,7 +9600,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9618,7 +9646,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9663,7 +9692,17 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-artifact_tier",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-lane_registry",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9710,7 +9749,13 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-llm-request_ceiling",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9760,7 +9805,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9805,7 +9851,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9850,7 +9897,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9881,51 +9929,6 @@
       ]
     },
     {
-      "id": "cap:layer/platform-mcp-__init__",
-      "schema_version": 1,
-      "kind": "layer",
-      "summary": "platform/mcp/__init__.py (no docstring)",
-      "contract": {
-        "inputs": [],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:platform"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "platform/mcp/__init__.py",
-      "depends_on": [],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ]
-    },
-    {
       "id": "cap:layer/platform-mcp-idp_server",
       "schema_version": 1,
       "kind": "layer",
@@ -9940,7 +9943,25 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-edge-runtime-src-server",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-spire-key-broker-server",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-nodesoftware-operator-controller-internal-controller-types",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-voice-gate-src-server",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -9985,7 +10006,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10030,7 +10052,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10075,7 +10098,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10120,7 +10144,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10165,7 +10190,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10210,7 +10236,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10255,7 +10282,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10300,7 +10328,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10345,7 +10374,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10390,7 +10420,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10435,7 +10466,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10480,7 +10512,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10525,7 +10558,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10570,7 +10604,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10615,7 +10650,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10660,7 +10696,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10705,7 +10742,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10750,7 +10788,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10795,7 +10834,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10840,7 +10880,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10885,7 +10926,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10930,7 +10972,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10975,7 +11018,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11020,7 +11064,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11065,7 +11110,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11110,7 +11156,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11155,7 +11202,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11200,7 +11248,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11245,7 +11294,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11290,7 +11340,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11335,7 +11386,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11380,7 +11432,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11411,51 +11464,6 @@
       ]
     },
     {
-      "id": "cap:layer/platform-orchestration-__init__",
-      "schema_version": 1,
-      "kind": "layer",
-      "summary": "platform/orchestration/__init__.py (no docstring)",
-      "contract": {
-        "inputs": [],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:platform"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "platform/orchestration/__init__.py",
-      "depends_on": [],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ]
-    },
-    {
       "id": "cap:layer/platform-orchestration-tron_state_machine",
       "schema_version": 1,
       "kind": "layer",
@@ -11470,7 +11478,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11517,7 +11526,25 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-config-control_loop_registry",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-eval-hook_wrapper",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-queue-dispatcher",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-telemetry-agent_circuit_breaker",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11548,51 +11575,6 @@
       ]
     },
     {
-      "id": "cap:layer/platform-queue-__init__",
-      "schema_version": 1,
-      "kind": "layer",
-      "summary": "platform/queue/__init__.py (no docstring)",
-      "contract": {
-        "inputs": [],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:platform"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "platform/queue/__init__.py",
-      "depends_on": [],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ]
-    },
-    {
       "id": "cap:layer/platform-queue-dispatcher",
       "schema_version": 1,
       "kind": "layer",
@@ -11610,7 +11592,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11655,7 +11638,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11700,7 +11684,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11745,7 +11730,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11776,51 +11762,6 @@
       ]
     },
     {
-      "id": "cap:layer/platform-telemetry-__init__",
-      "schema_version": 1,
-      "kind": "layer",
-      "summary": "Telemetry subsystem: real-time observability, circuit breaking, fault detection.",
-      "contract": {
-        "inputs": [],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:platform"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "platform/telemetry/__init__.py",
-      "depends_on": [],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ]
-    },
-    {
       "id": "cap:layer/platform-telemetry-agent_circuit_breaker",
       "schema_version": 1,
       "kind": "layer",
@@ -11835,7 +11776,13 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-eval-protocol",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11880,7 +11827,13 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-telemetry-transcript_schema",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11925,7 +11878,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -11970,7 +11924,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12015,7 +11970,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12060,7 +12016,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12105,7 +12062,13 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-unified-memory-server-security_core",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12150,7 +12113,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12195,7 +12159,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12240,7 +12205,25 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-unified-memory-server-harness",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-unified-memory-server-hedge",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-unified-memory-server-ranking",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-unified-memory-server-security_core",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12285,7 +12268,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12330,7 +12314,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12377,7 +12362,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12422,7 +12408,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12467,7 +12454,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12512,7 +12500,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12557,7 +12546,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12602,7 +12592,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12647,7 +12638,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12692,7 +12684,17 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-voice-gate-src-policy",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-voice-gate-src-tier1",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12737,7 +12739,21 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-voice-gate-src-phrase",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-voice-gate-src-policy",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-voice-gate-src-prose",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12782,7 +12798,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12827,7 +12844,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12872,7 +12890,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12917,7 +12936,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12962,7 +12982,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13007,7 +13028,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13052,7 +13074,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13097,7 +13120,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13142,7 +13166,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13187,7 +13212,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13232,7 +13258,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13277,7 +13304,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13322,7 +13350,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13367,7 +13396,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13412,7 +13442,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13457,7 +13488,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13502,7 +13534,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13547,7 +13580,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13592,7 +13626,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13637,7 +13672,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13682,7 +13718,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13727,7 +13764,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13772,7 +13810,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13817,7 +13856,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13862,7 +13902,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13907,7 +13948,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13952,7 +13994,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -13997,7 +14040,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -14042,7 +14086,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -14087,7 +14132,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -14132,7 +14178,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -14177,7 +14224,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -14222,7 +14270,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -14267,7 +14316,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -14312,7 +14362,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -14343,51 +14394,6 @@
       ]
     },
     {
-      "id": "cap:layer/platform-warden-__init__",
-      "schema_version": 1,
-      "kind": "layer",
-      "summary": "The API key warden: proving, storing and watching vendor credentials (decision 0020).",
-      "contract": {
-        "inputs": [],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:platform"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "platform/warden/__init__.py",
-      "depends_on": [],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ]
-    },
-    {
       "id": "cap:layer/platform-warden-prove",
       "schema_version": 1,
       "kind": "layer",
@@ -14402,7 +14408,8 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -14447,7 +14454,13 @@
           "non-zero exit"
         ],
         "cost_class": "cheap",
-        "latency_class": "interactive"
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-warden-prove",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",

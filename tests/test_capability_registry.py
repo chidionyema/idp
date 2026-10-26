@@ -344,6 +344,30 @@ def test_the_census_names_the_estates_own_implementation():
     assert len({r["id"] for r in layers}) == len(layers), "one module, one record"
 
 
+def test_the_map_knows_who_depends_on_whom():
+    """Dependencies are in the map, and every edge points at a record that exists.
+
+    The founder's question -- "everything knowable about services, scripts etc." -- names
+    dependencies explicitly. The edges are derived from the tree (Python parsed with ast,
+    Rust and Go read line-wise) and resolved against the estate's own modules, so a
+    stdlib or third-party import never becomes a node that names nothing.
+    """
+    payload = json.loads(SNAPSHOT.read_text())
+    ids = {r["id"] for r in payload["records"]}
+    layers = [r for r in payload["records"] if r.get("kind") == "layer"]
+    edges = [e for r in layers for e in r["contract"].get("depends_on", [])]
+    assert edges, "the map must know the estate's dependency edges, not only its nodes"
+    for edge in edges:
+        assert edge["id"] in ids, "dangling edge: {}".format(edge)
+        assert edge.get("edge") == "imports", edge
+    # no package marker is a capability
+    assert not [r for r in layers if r["path"].endswith("__init__.py")], layers[:3]
+    # the edges are sorted, so the witness stays a pure function of the tree
+    for record in layers:
+        targets = [e["id"] for e in record["contract"].get("depends_on", [])]
+        assert targets == sorted(targets), record["id"]
+
+
 def test_the_witness_needs_no_claim_but_another_file_does():
     """The witness is generated, so it belongs to nobody's claim; a product file still does.
 

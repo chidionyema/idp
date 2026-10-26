@@ -177,12 +177,12 @@ section is the receipt: what exists, what it measures, and what is still missing
 
 ### 13.2 What it measures (this machine, 2026-10-26)
 
-The live census names **1233 capabilities**: 434 tools (`bin/`), 344 intents (the installed
-library), 212 layers (the estate's own implementation under `platform/`), 125 workflows (47
-mac-plane launchd jobs and 78 GitHub Actions pipelines), 113 cluster workloads, 5 agent
-runtimes. Of those, **185 are `operating`** (a receipt inside its freshness window), **88
-`degraded`** (the last run failed) and **960 `declared`** (no receipt: the record exists, the
-proof does not). The committed witness carries the repo-derived half alone: **936 records**,
+The live census names **1225 capabilities**: 437 tools (`bin/`), 344 intents (the installed
+library), 200 layers (the estate's own implementation under `platform/`), 125 workflows (47
+mac-plane launchd jobs and 78 GitHub Actions pipelines), 114 cluster workloads, 5 agent
+runtimes. Of those, **184 are `operating`** (a receipt inside its freshness window), **89
+`degraded`** (the last run failed) and **952 `declared`** (no receipt: the record exists, the
+proof does not). The committed witness carries the repo-derived half alone: **928 records**,
 byte-identical on 3.9, on the estate's uv 3.12 and on the CI runner.
 
 That split is the founder's question answered as a fact: crew#962's "76 built, 6 operational" is
@@ -218,10 +218,17 @@ now a queryable count with a freshness bound, not an audit somebody runs once.
   the efficiency chain, the cache guardian, the request ceiling, the symbol slicer. A query
   for `symbol-slicer` answered 0 records on a main that has shipped
   `platform/estate/libexec/symbol_slicer.py` since #7212. A map that cannot answer "does the
-  estate already have this?" is not a map, so the implementation is in it now: 212 modules
+  estate already have this?" is not a map, so the implementation is in it now: 200 modules
   under `platform/`, one record each, keyed by path, summarised by their own first docstring
   line. The consequence is the point: the Micro-Token components are found by a query, not
   by an agent's memory.
+- **Dependencies are derived, not asserted.** The founder's question names dependencies
+  explicitly, so the map carries them: **80 edges** between the estate's own modules, read
+  out of the tree (Python parsed with `ast`, Rust and Go read line-wise) and resolved
+  against the estate's own records. A stdlib or third-party import is not an edge: it is
+  not a capability of this estate, and a node that names nothing is a lie in a map. Every
+  edge is checked to point at a record that exists, and the edges are sorted so the witness
+  stays a pure function of the tree.
 
 ### 13.4 What is NOT built (the honest list)
 
