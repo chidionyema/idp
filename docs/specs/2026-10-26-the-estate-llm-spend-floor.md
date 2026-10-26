@@ -417,9 +417,11 @@ saving.
 6. The ledger names the top callers by spend; CI's graded suites make zero live model calls.
 7. The rolling 24-hour spend is **≤ $10.00** — the floor in §4.2 — with the traffic and the
    quality unchanged.
-8. The half-price lane is in a **file in this repository** (so a re-render keeps it), and the
-   cloud key's allowlist carries **every** lane the fallback chains name — a chain that names
-   an uncallable lane is a guaranteed refusal, and the routing matrix proves it cannot happen.
+8. Every lane the fallback chains name is **versioned in a file in this repository** (so a
+   re-render keeps it), **carried by the cloud key's allowlist** (a chain that names an
+   uncallable lane is a guaranteed refusal, and the routing matrix proves it cannot happen),
+   and **observable in the spend ledger** (item 1), so no saving is claimed on a route the
+   estate cannot read.
 
-Until all seven hold, the bill is what it is, and the honest statement is "built", not
+Until all eight hold, the bill is what it is, and the honest statement is "built", not
 "operating".
