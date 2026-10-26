@@ -86,7 +86,23 @@ H1 wins by two orders of magnitude, and the mechanism is concrete:
 - `minimax_m31f` ($0.15/M in, $0.60/M out) is configured, priced and served **zero calls**.
 
 One line of routing policy, already half-written by a previous change, would halve the biggest
-line on the bill.
+line on the bill — **but not on the default route yet.** Measured 2026-10-26:
+
+- the half-price lane lives only in the **laptop** router's own config
+  (`~/.estate/litellm-local/config.yaml`: the lane at line 157, the chain `minimax:
+  [minimax_m31f, gemini, groq]` at line 730). It is in **no file in this repository** —
+  not `llm/config.yaml`, not `platform/llm/config.base.yaml`, not
+  `platform/vendors/consoles.yaml` — so it does not exist on the cloud route, and a re-render
+  drops it from the laptop;
+- the cloud router's allowlist (`GET /v1/models` on `https://llm.${ESTATE_ZONE}`, measured:
+  **29 model ids**) does **not** carry `minimax_m31f`; a request for it answers `403 key not
+  allowed to access model`;
+- the cloud route's own fallbacks map has the same hole as the laptop's: `minimax: [gemini,
+  groq]`, and **no `minimax_m27` entry**.
+
+So the saving has two preconditions before it can live on the route that will carry the
+traffic: **version the lane** (one render fixes the laptop and the cluster together) and
+**extend the cloud key's allowlist** to carry it.
 
 ---
 
@@ -174,12 +190,21 @@ order: **a saving nobody can measure is a saving nobody can keep.**
 - **Lever:** the client stops pinning a leaf lane (or the router gives `minimax_m27` the fallback
   chain its sibling already has: `minimax_m31f` → `gemini` → `groq`).
 - **Owns it:** #6785 (add the `minimax_m31f` lane and fall back to it from `minimax`) — the lane
-  exists; the missing piece is the pin and the fallback entry, which is this rung.
+  exists; the missing piece is the pin and the fallback entry, which is this rung. That claim's
+  heartbeat lapsed on 2026-10-21, so the files are free to re-claim.
+- **Preconditions (measured 2026-10-26, both on the default route):** (a) **version the lane** —
+  `minimax_m31f` is in no file in this repository, so it exists only in the laptop router's own
+  config and a re-render drops it; one entry in the vendor registry
+  (`platform/vendors/consoles.yaml`) gives both the laptop and the cluster the lane; (b)
+  **extend the cloud key's model allowlist** — the allowlist is a key policy in the cluster's
+  LiteLLM database (no file here holds it) and it does not carry `minimax_m31f` today.
 - **Expected saving:** **≈ $10.50/day** (half of the pinned lane's measured $21.06) — **35.9% of
-  the bill**, the single largest move available.
+  the bill**, the single largest move available, **once the two preconditions hold**; on the
+  laptop route alone the saving is available today, on the cloud route only after them.
 - **Acceptance:** 7-day rolling spend on the pinned lane ≤ **$12** (today: $48.12) **while** the
   7-day call count moves by less than ±10% (so the traffic did not simply stop) **and** the
-  quality probe below holds.
+  quality probe below holds **and** `GET /v1/models` on the cloud route lists every lane the
+  chain names.
 - **Quality gate (non-negotiable):** a fixed probe set (≥100 prompts spanning code edit, refactor,
   explanation, tool use) run through both the old and the new lane; agreement measured the way
   the forge measures agreement; **agreement must not fall below the current lane's baseline**, and
@@ -203,7 +228,9 @@ order: **a saving nobody can measure is a saving nobody can keep.**
   2,080 calls).
 - **Acceptance:** the routing matrix proves every paid group resolves to a free lane; a
   fault-injection test (kill the primary lane) shows the call served at $0.00 and the ledger
-  recording the substituted lane.
+  recording the substituted lane; and `GET /v1/models` on the cloud route lists **every** lane
+  the chains name — a chain that names a lane the key cannot call is a guaranteed refusal, which
+  is the defect this rung exists to remove.
 - **Expected saving:** the share of traffic that can be served free — target **≥ 1,600 calls/day
   at $0.00** (today 156), which is the `deepseek-v4-flash` share of the bill: **$5.66/day** if
   the allowance holds.
@@ -303,6 +330,7 @@ One of each layer, estate-wide:
 | risk | why it is real here | what the design does about it |
 |---|---|---|
 | **Quality regression** from moving the pinned lane | the bill measures tokens, not correctness | a probe set with an agreement floor (R1); a bad lane falls back, it is never pinned |
+| **The half-price lane is not on the default route** | measured: `minimax_m31f` is in no file in this repository, and the cloud key's allowlist (29 ids) does not carry it — a chain that names it answers `403` | R1 versions the lane and extends the allowlist **before** the saving is claimed; the acceptance measure includes the allowlist listing |
 | **Free-tier exhaustion** | measured: `groq` carried 1,310 calls for **$0.00 in 24 hours** and **$2.45 over 7 days** — a lane that is free only inside its allowance | free lanes are counted as free only *inside* the allowance; metered fallbacks are last; the metric is the rate, not the label |
 | **The measurement moves with the traffic** | after the flip, the cloud route carries the calls; the laptop ledger stops | R0 makes the cloud route's own key/info and postgres the ledger of record before the flip |
 | **A stale cache answers wrongly** | the 85.68M uncached prompt tokens a day are exactly what a cache would swallow | version 1 caches read-only, state-independent questions only; every answer carries its source |
@@ -367,7 +395,7 @@ saving.
 | #7081 | the cluster router captures the graph and signs the ledger | R0's ledger |
 | #7097 | lane inventory converges; Catalog Phase 0 | R2's lane inventory |
 | #7205 | the OKE free floor revived on local-path | R2's free bottom |
-| #6785 | the `minimax_m31f` lane + fallback from `minimax` | R1 — the lane exists; the pin and the fallback entry are R1's work |
+| #6785 | the `minimax_m31f` lane + fallback from `minimax` (its claim lapsed 2026-10-21) | R1 — the lane exists in the laptop's own config only; versioning it, and the pin and the fallback entry, are R1's work |
 | #6872 | a `claude-*` lane on the cluster | R2's subscription lane ($0.00 over 7 days, 2,080 calls) |
 | #7116 | the cluster's crash-loop rescue before the DB stand-in is Ready | R0's spend database |
 | #7089 | one structured-format layer at three boundaries | R3's cached answers must be structured, not prose |
@@ -389,6 +417,9 @@ saving.
 6. The ledger names the top callers by spend; CI's graded suites make zero live model calls.
 7. The rolling 24-hour spend is **≤ $10.00** — the floor in §4.2 — with the traffic and the
    quality unchanged.
+8. The half-price lane is in a **file in this repository** (so a re-render keeps it), and the
+   cloud key's allowlist carries **every** lane the fallback chains name — a chain that names
+   an uncallable lane is a guaranteed refusal, and the routing matrix proves it cannot happen.
 
 Until all seven hold, the bill is what it is, and the honest statement is "built", not
 "operating".
