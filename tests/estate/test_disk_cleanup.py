@@ -906,11 +906,23 @@ def _crit_home(tmp_path: Path) -> Path:
     return home
 
 
+# The critical tier's guards ask the machine's process table ("is a cargo/rustc/go/git-gc
+# running?"). That is right in production and wrong in a test: the guard is machine-wide, so a
+# test that asserts the RECLAIM branch fails whenever anything else on the machine is building
+# -- including this file's own guard test, whose fake `cargo` is alive for 30s while the
+# estate's runner runs the file in parallel. Measured 2026-10-26 on origin/main: 1 failed,
+# 53 passed. So the pattern is a seam in the script (DISK_CLEANUP_CARGO_PROC and its three
+# siblings) and a test points it at a name no process can have. The one test that PROVES the
+# guard keeps the script's shipped defaults.
+NO_BUILD_PROC = "^disk-cleanup-no-build-process-9f3c$"
+
+
 def _crit_run(
     home: Path,
     apply: str = "true",
     crit_mb: str = "999999999",
     extra: dict | None = None,
+    isolate_build_guard: bool = True,
 ):
     env = {
         **os.environ,
@@ -920,8 +932,17 @@ def _crit_run(
         "DISK_CLEANUP_TMP_ROOT": "",
         "DISK_CLEANUP_SYSTEM_SPOTS": "",
         "DISK_CLEANUP_CRIT_MB": crit_mb,
-        **(extra or {}),
     }
+    if isolate_build_guard:
+        env.update(
+            {
+                "DISK_CLEANUP_CARGO_PROC": NO_BUILD_PROC,
+                "DISK_CLEANUP_GO_PROC": NO_BUILD_PROC,
+                "DISK_CLEANUP_GIT_BUSY": NO_BUILD_PROC,
+                "DISK_CLEANUP_OLLAMA_PROC": NO_BUILD_PROC,
+            }
+        )
+    env.update(extra or {})
     return subprocess.run(
         ["bash", str(SCRIPT), apply, "false"],
         env=env,
@@ -1116,9 +1137,11 @@ def test_a_running_cargo_or_go_keeps_its_package_cache(tmp_path):
             ]
         ),
     ]
+    # this is the one test that keeps the script's SHIPPED patterns (no seam): the guard must
+    # refuse to reclaim while a build is running, with the defaults the estate runs.
     try:
         time.sleep(1.0)
-        r = _crit_run(home, "true")
+        r = _crit_run(home, "true", isolate_build_guard=False)
         assert r.returncode == 0, r.stdout + r.stderr
         assert (home / CARGO_REGISTRY / "blob").exists(), (
             "a running cargo keeps its registry"
