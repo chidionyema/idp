@@ -1,0 +1,36 @@
+name: work.discover
+description: >-
+  Find any work in the estate by topic, in one call. Searches GitHub issues and pull requests,
+  the claim register (who holds it, on which paths, how fresh their heartbeat), branches and
+  lanes, salvage and backup refs, local worktrees and stashes, the documents and intents in
+  the repos, the estate's unified memory and the knowledge graph. Every hit names the terms
+  that matched it and, where the source proves it, the status (open or closed, live or stale
+  claim, on a ref or only on this laptop), so a hit is a pointer you can open rather than a
+  suggestion. Read-only; writes only its own result file.
+class: read
+args:
+  # R4: an arg with no default must say required: true. `query` has both -- a default so a
+  # caller that omits it is not handed '' as a question, and required so nobody pretends
+  # the door decided what an empty query means. R1: the door coerces int and string only,
+  # so `json` is an int flag (0/1), not a bool that would arrive as the word "true".
+  query: {type: string, default: "", required: true, description: "free text: what you are looking for"}
+  days: {type: int, default: 21}
+  repos: {type: string, default: "idp,crew"}
+  limit: {type: int, default: 8}
+  json: {type: int, default: 0, description: "1 prints the machine-readable JSON instead of the human report"}
+door_s: 90
+halt_on_failure: true
+steps:
+  - name: discover
+    # The door already shell-quotes every interpolated value (estate-execute's interpolate()
+    # runs shlex.quote), so the values go in bare: quoting them again here would put a
+    # literal pair of quotes INSIDE the query and the report would echo them.
+    cmd: |
+      set -uo pipefail
+      if [ -z {{query}} ]; then
+        echo "BLIND   work.discover  no query: this intent answers 'where is the work about X', so it needs X" >&2
+        exit 2
+      fi
+      args=({{query}} --days {{days}} --repos {{repos}} --limit {{limit}})
+      if [ {{json}} != 0 ]; then args+=(--json); fi
+      python3 ~/.estate/libexec/work-discover.py "${args[@]}"
