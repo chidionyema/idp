@@ -8,6 +8,9 @@ WHAT IT CHECKS (spec section 10, and every one of these can fail):
   I-3  one writer per plane (R-52)              -- a writer for another plane is refused
   I-4  stale reads are marked, never silent     -- a read past window_s carries stale: true
   I-5  deletion converges                       -- a removed capability is tombstoned in a cycle
+  I-6  every decision names its decider honestly -- a judgement with no irreducibility,
+                                                      a decider the estate does not have, or a
+                                                      mode that does not exist is refused
   S    the schema of every record (section 3)   -- a malformed record is refused
   C    the coverage diff                        -- every intent and workload has a record
   F    the freshness report                     -- stale records are counted, never hidden
@@ -271,9 +274,140 @@ def run_falsifiers(door, tmp: Path):
     if door.receipt_ok(forged["proof"]["receipt"]):
         failures.append("R: a forged receipt was accepted as a proof")
 
+    # I-6: the decision register is honest. Each clause ships with the case that trips it.
+    facts["I-6"] = i6_falsifiers(door, tmp, failures)
+
     store.close()
     door.KEY_PATH = saved_key
     return failures, facts
+
+
+def i6_falsifiers(door, tmp: Path, failures: list) -> dict:
+    """I-6, with the register that must be refused and the one that must be accepted.
+
+    A gate that cannot fail is not a gate, so every clause of the decision register is
+    proved by a register that lies about it, and the honest register must still pass.
+    """
+    saved = os.environ.get("ESTATE_DECISIONS")
+    ctx = door.Context(idp=IDP, home=tmp)
+    known = {"cap:intent/lane-submit", "cap:intent/ci.status"}
+    facts = {}
+
+    def judge(register: dict) -> list:
+        path = tmp / "agent-decisions.json"
+        path.write_text(json.dumps(register, indent=2), encoding="utf-8")
+        os.environ["ESTATE_DECISIONS"] = str(path)
+        return door.decision_violations(ctx, known_caps=known)["violations"]
+
+    honest = {
+        "schema_version": 1,
+        "roles": ["founder"],
+        "decisions": [
+            {
+                "id": "dec:honest",
+                "decision": "a decision the estate can make itself",
+                "mode": "machine",
+                "decided_by": "cap:intent/lane-submit",
+                "surfaces": [],
+            }
+        ],
+    }
+    violations = judge(honest)
+    facts["honest_register_accepted"] = not violations
+    if violations:
+        failures.append(
+            "I-6: an honest register was refused: {}".format(
+                violations[0].get("detail")
+            )
+        )
+
+    cases = {
+        "I-6.mode": {
+            "id": "dec:bad-mode",
+            "decision": "a decision with a mode that does not exist",
+            "mode": "vibes",
+            "decided_by": "cap:intent/lane-submit",
+        },
+        "I-6.irreducibility": {
+            "id": "dec:no-irreducibility",
+            "decision": "a judgement with no irreducibility",
+            "mode": "judgment",
+            "irreducibility": "i-was-not-sure",
+            "justification": "x" * 60,
+            "decided_by": "founder",
+        },
+        "I-6.justification": {
+            "id": "dec:shrug",
+            "decision": "a judgement whose reason is a shrug",
+            "mode": "judgment",
+            "irreducibility": "novel",
+            "justification": "not sure",
+            "decided_by": "founder",
+        },
+        "I-6.judgment-role": {
+            "id": "dec:no-role",
+            "decision": "a judgement decided by nobody in particular",
+            "mode": "judgment",
+            "irreducibility": "novel",
+            "justification": "y" * 60,
+            "decided_by": "the intern",
+        },
+        "I-6.model-decider": {
+            "id": "dec:imaginary-model",
+            "decision": "a decision handed to a model the estate does not run",
+            "mode": "model",
+            "decided_by": "model:the-committee",
+        },
+        "I-6.machine-decider": {
+            "id": "dec:imaginary-capability",
+            "decision": "a decision handed to a capability the estate does not have",
+            "mode": "machine",
+            "decided_by": "cap:intent/does-not-exist",
+        },
+    }
+    tripped = {}
+    for clause, entry in cases.items():
+        register = {
+            "schema_version": 1,
+            "roles": ["founder"],
+            "decisions": [entry],
+        }
+        violations = judge(register)
+        tripped[clause] = [v["clause"] for v in violations]
+        if clause not in tripped[clause]:
+            failures.append(
+                "I-6: {} did not trip on the register that must trip it".format(clause)
+            )
+
+    duplicate = {
+        "schema_version": 1,
+        "roles": ["founder"],
+        "decisions": [
+            {
+                "id": "dec:twice",
+                "decision": "the same decision id twice",
+                "mode": "machine",
+                "decided_by": "cap:intent/lane-submit",
+            },
+            {
+                "id": "dec:twice",
+                "decision": "the same decision id twice, again",
+                "mode": "machine",
+                "decided_by": "cap:intent/lane-submit",
+            },
+        ],
+    }
+    violations = judge(duplicate)
+    tripped["I-6.unique-id"] = [v["clause"] for v in violations]
+    if "I-6.unique-id" not in tripped["I-6.unique-id"]:
+        failures.append("I-6: I-6.unique-id did not trip on the duplicated id")
+
+    facts["tripped"] = tripped
+    if saved is None:
+        os.environ.pop("ESTATE_DECISIONS", None)
+    else:
+        os.environ["ESTATE_DECISIONS"] = saved
+    return facts
 
 
 def main(argv=None) -> int:
@@ -457,6 +591,21 @@ def main(argv=None) -> int:
             "the live store has never been reconciled by a census"
         )
 
+    # 7. I-6: the decision register is honest. A declaration that lies is refused; the
+    # judgement residue nobody wrote down is a finding, because refusing correct work is
+    # an outage.
+    decisions = door.decision_violations(ctx)
+    facts["decisions"] = {
+        "entries": decisions["entries"],
+        "violations": decisions["violations"],
+        "findings": decisions["findings"],
+        "blind": decisions["blind"],
+    }
+    failures.extend(
+        "I-6: {}".format(violation.get("detail"))
+        for violation in decisions["violations"]
+    )
+
     ok = not failures
     payload = {"ok": ok, "failures": failures, **facts}
     if args.json:
@@ -530,6 +679,18 @@ def main(argv=None) -> int:
     print("drift: {} -- {}".format(drift["verdict"], drift["detail"]))
     for finding in facts.get("findings", []):
         print("finding: {}".format(finding))
+    print(
+        "decisions: {} entr(y/ies), {} violation(s), {} finding(s){}".format(
+            facts["decisions"]["entries"],
+            len(facts["decisions"]["violations"]),
+            len(facts["decisions"]["findings"]),
+            "  [BLIND: {}]".format(", ".join(facts["decisions"]["blind"]))
+            if facts["decisions"]["blind"]
+            else "",
+        )
+    )
+    for finding in facts["decisions"]["findings"]:
+        print("note    registry-gate  I-6 finding: {}".format(finding.get("detail")))
     if ok:
         print("ok      registry-gate  the registry is true")
         return 0

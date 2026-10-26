@@ -1159,6 +1159,18 @@ These are architectural law. AGENTS.md references this section; a build that vio
   other gate. No score, no ship.
 - **T-6 Proof, not assertion** (AGENTS.md §3 restated as a tenet): every claim carries an instrument
   and a window; built and operating are different facts.
+- **T-7 Machine-first: every action names its decider** (ADR 0044, AGENTS.md §12): each action is
+  classified `machine` (a deterministic program decides), `model` (a decision model decides, with a
+  calibrated confidence) or `judgment` (a person decides, and the entry names which of the four
+  irreducibilities applies: value-tradeoff, irreversible, novel, low-confidence-escalation). The
+  order is machine → model → judgment, and every step down costs a turn, a confidence band or a
+  person. The classification lives in one store (`policy/agent-decisions.json`), is derived from
+  the capability's own source wherever it can be, and is enforced by `bin/registry-gate`
+  invariant I-6, which refuses a declaration that lies and reports the residue nobody wrote
+  down. The measure: the estate's own executor ledger — machine-triggered runs against
+  agent-chosen runs, model calls per window, and the share of door calls that were the agent
+  asking the door how to use the door. The greenlane's loops are the machine trigger; the EFDA
+  spine (Flux → NATS → Temporal) is how the rest of the estate's waking becomes one too.
 
 ## 25. The revised spine — the founder's sequence
 
