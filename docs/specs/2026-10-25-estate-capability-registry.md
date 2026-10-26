@@ -1,6 +1,6 @@
 # The Estate Capability Registry — architecture spec
 
-- **Status:** proposed — founder go/no-go requested
+- **Status:** implemented (2026-10-26) - see section 13 for what was built, what was not, and what it costs
 - **Date:** 2026-10-25 · **Author:** kimi (chief architect), Phase A first build of the estate master epic (§25)
 - **Scope:** the single source of truth about what the estate can do — for the founder and for every agent
 - **Evidence rule:** every property below names its falsifier. A property that cannot be tested is deleted, not kept.
@@ -153,3 +153,80 @@ adding a single feature.
 - Not a dashboard — dashboards render it; it owns no pixels.
 - Not a growmos replacement — growmos is a writer of relations; the registry is the capability ledger.
 - Not a work-item store — `work_item` (EPIC-060) lives in Postgres on the state plane.
+
+---
+
+## 13. What was built (2026-10-26), and what was not
+
+Claim: idp#7203. Lane: `lane/capability-registry`. The spec above is the contract; this
+section is the receipt: what exists, what it measures, and what is still missing.
+
+### 13.1 What exists
+
+| Piece | Where | What it does |
+|-------|-------|--------------|
+| The door | `bin/capability-index` | one record per capability, the §3 shape, the writers, the store, the event log, reconciliation, the query contract |
+| The store | `~/.estate/state/registry.db` (SQLite) | `capabilities`, `events` (capability.changed), `findings`; one writer per plane (R-52) |
+| The gate | `bin/registry-gate` | I-1..I-5 with the case that trips each, the §3 schema check, the coverage diff, the freshness report, the drift check, receipt integrity |
+| The proof | `tests/test_capability_registry.py` | the same five falsifiers as tests, plus the query contract and the drift check |
+| The CI rung | `bin/idp-ci` (rung 8f) | the gate, path-gated on the registry's own inputs |
+| The committed snapshot | `catalog/estate-capability-registry.json` | the repo-derived half of the census, machine-generated, drift-checked |
+| The agent surface | `mcp/plugins/estate_mcp.py` | `capability_get`, `capability_query`, `capability_prove` |
+
+### 13.2 What it measures (this machine, 2026-10-26)
+
+The census names **945 capabilities**: 436 tools (`bin/`), 344 intents (the installed
+library), 113 cluster workloads, 47 mac-plane workflows, 5 agent runtimes. Of those, **244
+are `operating`** (a receipt inside its freshness window), **112 `degraded`** (the last run
+failed) and **589 `declared`** (no receipt: the record exists, the proof does not). That
+split is the founder's question answered as a fact: crew#962's "76 built, 6 operational" is
+now a queryable count with a freshness bound, not an audit somebody runs once.
+
+### 13.3 The decisions that are not in the spec above
+
+- **The store is SQLite, not Postgres.** Section 7 measured 1,000 records at ~10 MB. SQLite
+  is one file, no daemon, and it is what the estate's own executor already uses
+  (`~/.estate/estate.db`). Postgres arrives when the store must be written by several
+  planes at once, and the schema does not have to change when it does.
+- **The event path is the store's own log, not JetStream.** `capability.changed` is written
+  into `events` with the writer that caused it, so the convergence bound (S = 60s) is
+  measurable without a bus. The JetStream consumer is NOT wired: the seam is the `events`
+  table, and a bus consumer is a writer that reads it. Section 5's S is therefore *not yet*
+  proven in production; the gate proves the same convergence inside one process.
+- **One reader, not PyYAML.** The census reads manifests and intents with a small
+  block-YAML reader (and the standard library's `json` for the manifests that are JSON
+  wearing a `.yaml` name). Measured 2026-10-26: with PyYAML the census answered 154
+  service records on one interpreter and 155 on another, which would have made the
+  committed snapshot drift the moment CI and a laptop disagreed. One reader, one answer:
+  the snapshot is byte-identical on 3.9, on the estate's uv 3.12 and on the CI runner.
+- **Coverage is a finding before it is a failure.** A missing *intent* record fails the
+  gate (the estate's verbs are the registry's own contract). A running workload the
+  repository does not declare is a finding with its names, and a failure under `--strict`,
+  because until the A2 writers for layers and services land the cluster runs things the
+  repo does not describe - that is drift to reconcile, not a gate to trip on every lane.
+- **BLIND is a verdict, not a shrug.** On a CI runner there is no `~/.estate`, so the live
+  coverage is BLIND and the gate prints `BLIND: store, intents` rather than passing a
+  vacuous check or failing on a missing laptop.
+
+### 13.4 What is NOT built (the honest list)
+
+1. The JetStream consumer for `capability.changed` (section 5's S = 60s is unproven).
+2. The 15-minute reconciliation job. `bin/capability-index reconcile` is the cycle and it
+   is not scheduled; nothing runs it on a timer yet.
+3. The router pre-dispatch read (section 8): the router does not consult the registry yet,
+   so `unknown capacity is refuse` is not enforced anywhere.
+4. The Face/Fleet tiles (A3). The MCP surface is the agent-readable half and it ships.
+5. A live-cluster writer for workloads. The cluster writer reads the repository's
+   manifests; the live cluster is read by the gate's coverage diff, not by a writer, so a
+   workload that runs but is not declared has no record of its own yet.
+6. The kill criterion's measurement (two weeks after A3, is the registry read at
+   bootstrap?) needs the query logs the A3 surface would produce.
+
+### 13.5 The gate's own limits
+
+`bin/registry-gate` fails on: a broken invariant, a malformed record, a snapshot that names
+a capability the repository no longer has, a missing intent record, a forged receipt, and
+(under `--strict`) any BLIND. It does not fail on: a workload the repository does not
+declare, a capability with no proof (that is `declared`, which is the point), or a snapshot
+that lags behind a newly added file (a finding with the exact command that fixes it:
+`bin/capability-index emit --write`).
