@@ -35,8 +35,13 @@ model_list:
       timeout: 300
       tpm: 150000
 
-  # Claude Code on the founder's Max subscription, through THIS laptop router, not the cluster
-  # (founder, 2026-09-26: "if cluster breaks we are all disabled"). NO api_key ON PURPOSE: the
+  # Claude Code on the founder's Max subscription, through the LAPTOP ROUTER -- the cloud
+  # router has no Claude lane (docs/diagnoses/2026-10-22-claude-code-403-cloud-has-no-claude-lane.yaml)
+  # and the Max subscription is an account, not an API key, so this lane is the one place that
+  # traffic can go. Founder, 2026-10-26: the cloud router is the DEFAULT route and the laptop
+  # router is the FALLBACK; the 2026-09-26 ruling ("if cluster breaks we are all disabled") is
+  # superseded as a statement of the default and kept only as the reason the fallback exists.
+  # NO api_key ON PURPOSE: the
   # lane relays the client's own `Authorization: Bearer sk-ant-oat01-...` OAuth token upstream
   # (LiteLLM forwards the oat01 prefix and drops sk-ant-api03 keys), so the subscription pays
   # and the estate holds no Anthropic key (2026-09-04 ruling). The client authenticates to this
