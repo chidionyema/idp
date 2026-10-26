@@ -79,6 +79,14 @@ unified-memory            surface-token              urlsafe32
 # verifies, so custody is the same problem as every other secret (R52).
 aevum-evidence            postgres-password          hex32
 aevum-evidence            signing-key                ed25519_hex
+# The evidence layer's API key: the credential a CLIENT presents to assert a fact
+# (aevum-server's /v1/ingest). It is NOT the signing key -- that one can mint receipts and
+# stays inside the aevum pod (platform/observability/recorder/recorder.py says why). This
+# one only opens the ingest membrane, so a client may hold it: the spine's observer
+# writes its reconciliation receipts with it (platform/spine/events/aevum-secret.yaml).
+# Minted as a missing property, so the Postgres password and the signing key that are
+# already in the vault are not touched.
+aevum-evidence            api-key                    hex32
 hindsight                 HINDSIGHT_API_LLM_BASE_URL  const:https://llm.$ZONE
 mcp-gateway               MCP_GATEWAY_KEY             hex32
 backstage-env             BACKEND_SECRET              urlsafe32

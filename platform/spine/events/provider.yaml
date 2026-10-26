@@ -1,0 +1,69 @@
+# THE FLUX SIDE OF THE SPINE: the notification-controller publishes reconcile events into
+# the estate's NATS bus.
+#
+# The Provider type is `nats`, and that is not a claim: the deployed
+# notification-controller's own CRD lists it (measured on the OKE cluster, the v1beta3
+# Provider type enum contains "nats" among 33 provider types), and upstream publishes the
+# event body as JSON to the channel, with NO headers -- so the bridge derives the
+# message id from the event itself rather than trusting a Nats-Msg-Id that never arrives.
+#
+# The channel is a D1 subject: five tokens, {domain}.{kind}.{aggregate}.{action}.{version}
+# (platform/messaging/subject/subject.go). The build kit's subject,
+# `evt.flux.kustomization.reconciled`, is not one -- four tokens, the wrong kind, no
+# version -- so the channel here is `flux.event.kustomization.reconciled.v1` and the
+# review in docs/specs/2026-10-26-efda-spine.md says why.
+#
+# ONE PROVIDER PER KIND, because a Provider has exactly one channel and the aggregate is
+# part of the subject. Two kinds are wired: the Kustomizations that apply the estate, and
+# the HelmReleases that release into it. A third (GitRepository) is the same three lines.
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Provider
+metadata:
+  name: spine-kustomization
+  namespace: flux-system
+  labels: { app.kubernetes.io/name: spine, estate.io/layer: event-spine }
+spec:
+  type: nats
+  address: nats://nats.event-bus.svc:4222
+  channel: flux.event.kustomization.reconciled.v1
+---
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: spine-kustomization
+  namespace: flux-system
+  labels: { app.kubernetes.io/name: spine, estate.io/layer: event-spine }
+spec:
+  providerRef:
+    name: spine-kustomization
+  eventSeverity: info
+  # The events that are facts: a Kustomization that reconciled. The failure events carry
+  # severity error, and the alert's eventSeverity is the floor it publishes at.
+  eventSources:
+    - kind: Kustomization
+      name: "*"
+---
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Provider
+metadata:
+  name: spine-helmrelease
+  namespace: flux-system
+  labels: { app.kubernetes.io/name: spine, estate.io/layer: event-spine }
+spec:
+  type: nats
+  address: nats://nats.event-bus.svc:4222
+  channel: flux.event.helmrelease.reconciled.v1
+---
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: spine-helmrelease
+  namespace: flux-system
+  labels: { app.kubernetes.io/name: spine, estate.io/layer: event-spine }
+spec:
+  providerRef:
+    name: spine-helmrelease
+  eventSeverity: info
+  eventSources:
+    - kind: HelmRelease
+      name: "*"
