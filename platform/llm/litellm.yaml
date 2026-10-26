@@ -111,6 +111,11 @@ spec:
             - { name: ESTATE_AGENT_KEY, value: /run/secrets/litellm/agent/ESTATE_AGENT_KEY }
             - { name: OUTBOX_DB_PATH, value: /var/lib/litellm/capture/outbox.db }
             - { name: ESTATE_GRAPH_SPOOL, value: /var/lib/litellm/capture/graph-spool }
+            # The ledger's own file, on the same capture volume as the graph spool. Without this
+            # the ledger fell back to HOME, which is /tmp here, so the signed rows landed in the
+            # pod's scratch emptyDir and vanished on every restart -- and the capture volume, the
+            # one place P5.T2 consolidates from, held no ledger at all.
+            - { name: ESTATE_ACTION_LEDGER, value: /var/lib/litellm/capture/action-ledger.jsonl }
             # ZeroEdge (platform/llm/zeroedge.yaml). The shim module is OFF unless this is
             # set, and it fails open: a call whose optimization pass errors or exceeds the
             # 2s timeout proceeds unoptimized rather than failing. In-namespace, so the

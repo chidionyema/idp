@@ -286,7 +286,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             fi
             export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
             export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-            C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+            C=$(oci_compartment) || exit 2
             ids=$(oci vault secret list --compartment-id "$C" --name "$NAME" --all --query "data[?\"lifecycle-state\"=='ACTIVE'].id" --output json 2>/dev/null | python3 -c 'import json,sys; [print(i) for i in json.load(sys.stdin)]' 2>/dev/null) || ids=""
             n=$(printf '%s\n' "$ids" | grep -c .)
             [ "$n" -le 1 ] || { echo "Split: secret $NAME is ACTIVE in $n vaults of the compartment; bin/idp-vault-split-guard names them" >&2; exit 3; }
@@ -321,7 +321,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             fi
             export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
             export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-            C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+            C=$(oci_compartment) || exit 2
             ids=$(oci vault secret list --compartment-id "$C" --name "$NAME" --all --query "data[?\"lifecycle-state\"=='ACTIVE'].id" --output json 2>/dev/null | python3 -c 'import json,sys; [print(i) for i in json.load(sys.stdin)]' 2>/dev/null) || ids=""
             n=$(printf '%s\n' "$ids" | grep -c .)
             [ "$n" -le 1 ] || { echo "Split: secret $NAME is ACTIVE in $n vaults of the compartment; bin/idp-vault-split-guard names them" >&2; exit 3; }
@@ -362,7 +362,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             fi
             export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
             export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-            C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+            C=$(oci_compartment) || exit 2
             ids=$(oci vault secret list --compartment-id "$C" --name "$NAME" --all --query "data[?\"lifecycle-state\"=='ACTIVE'].id" --output json 2>/dev/null | python3 -c 'import json,sys; [print(i) for i in json.load(sys.stdin)]' 2>/dev/null) || ids=""
             n=$(printf '%s\n' "$ids" | grep -c .)
             [ "$n" -le 1 ] || { echo "Split: secret $NAME is ACTIVE in $n vaults of the compartment; bin/idp-vault-split-guard names them" >&2; exit 3; }
@@ -389,7 +389,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             fi
             export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
             export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-            C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+            C=$(oci_compartment) || exit 2
             # Find secret in PENDING_DELETION (not ACTIVE) -- list does not include it by default
             ids=$(oci vault secret list --compartment-id "$C" --name "$NAME" --all \
               --query "data[?\"lifecycle-state\"=='PENDING_DELETION'].id" --output json 2>/dev/null \
@@ -423,7 +423,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             fi
             export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
             export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-            C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+            C=$(oci_compartment) || exit 2
             list=$(oci vault secret list --compartment-id "$C" --name "$NAME" --all --query "data[?\"lifecycle-state\"=='ACTIVE']" --output json 2>/dev/null) || list=""
             n=$(printf '%s\n' "$list" | jq 'length // 0' 2>/dev/null) || n=0
             [ "$n" -le 1 ] || { echo "Split: secret $NAME is ACTIVE in $n vaults of the compartment; bin/idp-vault-split-guard names them" >&2; exit 3; }
@@ -456,7 +456,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             fi
             export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
             export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
-            C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+            C=$(oci_compartment) || exit 2
             if [ -n "$VAULT" ]; then
               V=$VAULT
             else
