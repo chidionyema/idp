@@ -53,6 +53,7 @@ eight more charged with dagster's pod because the pod watch read every pod in th
 
 import argparse
 import json
+import pathlib
 import os
 import re
 import subprocess
@@ -1571,7 +1572,7 @@ def _verify(head, paths):
                     "kubectl",
                     "apply",
                     "-f",
-                    "https://github.com/cert-manager/cert-manager/releases/download/v1.15.3/cert-manager.yaml",
+                    os.path.join(REPO, "clusters", "shadow", "cert-manager.yaml"),
                 ],
                 capture_output=True,
                 text=True,
@@ -1598,6 +1599,32 @@ def _verify(head, paths):
                 text=True,
             )
             if ready.returncode != 0:
+                # Self-diagnosing: dump pod states + events so the next reader never
+                # re-derives why (three iterations guessed: DB race, timeout, images).
+                dump = subprocess.run(
+                    ["kubectl", "get", "pods", "-n", "cert-manager", "-o", "wide"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                desc = subprocess.run(
+                    [
+                        "sh",
+                        "-c",
+                        "kubectl describe pods -n cert-manager"
+                        " | grep -A6 -E 'Events|Waiting|Image' | head -40",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                print(
+                    "note    shadow  cert-manager pods at failure:\n"
+                    + (dump.stdout or dump.stderr or "")
+                    + "\n"
+                    + (desc.stdout or desc.stderr or "")[-2000:],
+                    flush=True,
+                )
                 return 1, [
                     ("floor", "cert-manager never became available in the shadow")
                 ]

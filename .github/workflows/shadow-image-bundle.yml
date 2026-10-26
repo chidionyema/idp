@@ -31,6 +31,28 @@ jobs:
           curl -sSL https://fluxcd.io/install.sh | sudo bash
           flux --version
 
+      - name: Mirror cert-manager into the estate's ghcr
+        # #7116 tail: quay.io anonymous pulls hang mid-shadow-run (rate
+        # limit), so the floor's static install uses the estate's OWN ghcr
+        # copies: pull from quay, retag, push to
+        # ghcr.io/chidionyema/cert-manager-*. The shadow's rendered manifest
+        # (clusters/shadow/cert-manager.yaml) reads these.
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          QUAY=quay.io/jetstack
+          GHCR=ghcr.io/chidionyema
+          TAG=v1.15.3
+          echo "$GHCR_TOKEN" | docker login ghcr.io \
+            -u ${{ github.actor }} --password-stdin
+          for IMG in controller cainjector webhook; do
+            docker pull "$QUAY/cert-manager-$IMG:$TAG"
+            docker tag "$QUAY/cert-manager-$IMG:$TAG" \
+              "$GHCR/cert-manager-$IMG:$TAG"
+            docker push "$GHCR/cert-manager-$IMG:$TAG"
+          done
+
       - name: Build the bundle
         env:
           RUNNER_TEMP: ${{ runner.temp }}
@@ -50,7 +72,8 @@ jobs:
             >> "$RUNNER_TEMP/idp-shadow-bundle/all-images.txt"
           echo "bundle images:"
           cat "$RUNNER_TEMP/idp-shadow-bundle/all-images.txt"
-          bin/idp-shadow-bundle export "$RUNNER_TEMP/idp-shadow-bundle/images.tar"
+          bin/idp-shadow-bundle export \
+            "$RUNNER_TEMP/idp-shadow-bundle/images.tar"
 
       - name: Compute the cache key
         id: keygen
@@ -58,7 +81,8 @@ jobs:
           RUNNER_TEMP: ${{ runner.temp }}
         run: |
           set -euo pipefail
-          key=$(bin/idp-shadow-bundle key --flux-list "$RUNNER_TEMP/idp-shadow-bundle/flux-images.txt")
+          key=$(bin/idp-shadow-bundle key --flux-list \
+            "$RUNNER_TEMP/idp-shadow-bundle/flux-images.txt")
           echo "key=$key" >> "$GITHUB_OUTPUT"
           echo "cache key: $key"
 
