@@ -90,9 +90,9 @@ class KubeReader:
         request.add_header("Accept", "application/json")
         try:
             # The scheme is fixed to https by construction; the API server is the only host.
-            with urllib.request.urlopen(
+            with urllib.request.urlopen(  # noqa: S310 - https to the api server
                 request, context=self._context(), timeout=self.timeout
-            ) as response:  # noqa: S310
+            ) as response:
                 body = response.read().decode("utf-8")
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
