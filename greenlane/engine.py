@@ -761,7 +761,11 @@ class Engine:
             #                                 already ahead of it. That is a batch-order collision,
             #                                 not a conflict with main: leave it PENDING so it gets
             #                                 its own batch, and it lands on the next tick.
-            if self.b.rebase(lane.head, base) is None:
+            #
+            # The lane's NAME goes with the head, because the name carries the class: a
+            # generated flux/* lane is projected onto main from its image tags (idp#7140), and
+            # a lane whose history carries anything else would otherwise never apply at all.
+            if self.b.rebase(lane.head, base, n) is None:
                 # Genuine conflict with main. Charge the retry HERE, where the grade actually
                 # failed, so the count is consecutive failures against successive mains and not
                 # merely the number of times main happened to move past the lane.
@@ -776,7 +780,7 @@ class Engine:
                 # move would fill the ring (167 of 200 records in a 500-lane simulation)
                 self.s.conflicts += 1
                 continue
-            new = self.b.rebase(lane.head, tip)
+            new = self.b.rebase(lane.head, tip, n)
             if new is None:
                 # batch-order collision: main would take it, a batch-mate would not. Not a
                 # conflict -- it stays PENDING and is tried again, on its own if need be.
