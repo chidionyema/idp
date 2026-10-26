@@ -722,7 +722,15 @@ SHADOW_CHUNK_CHARS = int(os.environ.get("ESTATE_SHADOW_CHUNK_CHARS", "24000"))
 SHADOW_MSG_CHARS = 1500
 # Fold chunks run ~9-14k tokens: groq's free tier caps at 8k TPM, cerebras wants payment and
 # sambanova's key is rejected, so the fold goes to lanes proven to take a full chunk.
-SHADOW_MODEL = os.environ.get("ESTATE_SHADOW_MODEL", "deepseek")
+# minimax_m27, NOT deepseek (2026-10-26). deepseek is a reasoning lane: it spends
+# the whole max_tokens budget on reasoning_content and returns an EMPTY content.
+# The fold then raised "fold returned an empty state" on every probe - 1,369 rows
+# in the laptop ledger, all model=deepseek, all ok=false. LiteLLM's fallback
+# chain cannot rescue it, because an empty content is a 200 and the router counts
+# it as a success, so the fold never reached the fallback lanes. minimax_m27
+# (openai/MiniMax-M2.7) answers, and the fold's answer is now also read from
+# reasoning_content when a reasoning lane is used deliberately.
+SHADOW_MODEL = os.environ.get("ESTATE_SHADOW_MODEL", "minimax_m27")
 SHADOW_FALLBACKS = [
     x for x in os.environ.get("ESTATE_SHADOW_FALLBACKS", "minimax,fast").split(",") if x
 ]
@@ -893,12 +901,17 @@ def _fold_remote(state: str, events: str) -> str:
         SHADOW_URL, data=json.dumps(body).encode(), headers=headers
     )
     with urllib.request.urlopen(req, timeout=120) as r:  # noqa: S310 - fixed local router URL
-        out = json.load(r)["choices"][0]["message"]["content"] or ""
-    out = out.strip()
+        message = json.load(r)["choices"][0]["message"]
+    out = (message.get("content") or "").strip()
+    if not out:
+        # A reasoning lane can answer with an empty content and carry the answer
+        # in reasoning_content (gpt-oss, glm and deepseek all do). Read it before
+        # declaring the fold empty.
+        out = (message.get("reasoning_content") or "").strip()
     if out.startswith("```"):
         out = out.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
     if not out:
-        raise ValueError("fold returned an empty state")
+        raise ValueError(f"fold returned an empty state (model {SHADOW_MODEL})")
     return out[:STATE_MAX_CHARS]
 
 
