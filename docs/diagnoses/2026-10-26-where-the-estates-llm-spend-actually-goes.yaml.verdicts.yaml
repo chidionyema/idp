@@ -1,0 +1,132 @@
+description: 'Where the estate''s LLM money actually goes, and which lever moves it
+  most. Measured on 2026-10-26 from the estate gateway ledger (~/.estate/efficiency-ledger.jsonl,
+  the 24 hours ending 19:30Z: 8,009 calls, $29.36, 137.97M billed input tokens, 4.95M
+  output tokens), from the rendered router config (llm/config.yaml, the source of
+  platform/llm/config.yaml), from the running laptop router''s own rendered config
+  (~/.estate/router-state/config.runtime.yaml) and from the client''s own settings.
+  Three explanations compete for the bill: one pinned paid lane that no policy can
+  move (H1), the same context re-billed again and again (H2), and calls that never
+  needed a frontier model (H3). The priors and the likelihoods below were fixed before
+  the per-call numbers were read out of the ledger; bin/estate-diagnose recomputes
+  the posterior from this file, so nothing here is a hand-computed number.'
+hypotheses:
+- name: H1
+  description: one pinned paid lane carries the bill -- the client pins a single model
+    group, that group has no fallback chain, and a half-price lane plus the free lanes
+    sit configured but unused, so the largest saving is a routing change (unpin, then
+    fall back onto cheaper and free lanes)
+  prior: 0.45
+- name: H2
+  description: the bill is the same context re-sent and re-billed -- the prefix cache
+    is only partly effective, there is no answer cache on the route that spends, and
+    the largest saving is an exact-match plus semantic cache on that path
+  prior: 0.35
+- name: H3
+  description: the bill is calls that never needed a frontier model -- live-model
+    test suites, graders and repeatable repository work -- so the largest saving is
+    refusing or replaying them
+  prior: 0.2
+evidence:
+- name: where the money sits, per model, over the last 24 hours (cost_usd per call
+    in the estate gateway ledger; minimax_m27 $21.06 of $29.36 over 5,819 calls; groq
+    $0.00 over 156 calls)
+  observed:
+    one_lane_carries_over_70_percent_of_the_spend: 1
+    free_and_subscription_lanes_carry_under_3_percent_of_the_calls: 1
+  likelihoods:
+    H1:
+      one_lane_carries_over_70_percent_of_the_spend: 0.9
+      free_and_subscription_lanes_carry_under_3_percent_of_the_calls: 0.9
+    H2:
+      one_lane_carries_over_70_percent_of_the_spend: 0.5
+      free_and_subscription_lanes_carry_under_3_percent_of_the_calls: 0.4
+    H3:
+      one_lane_carries_over_70_percent_of_the_spend: 0.6
+      free_and_subscription_lanes_carry_under_3_percent_of_the_calls: 0.5
+- name: the client pins that lane and no fallback can move it (settings.json and ~/.pi/agent/settings.json
+    both carry defaultModel minimax_m27; the router's fallbacks map has no minimax_m27
+    key; minimax_m31f at $0.15/$0.60 against $0.30/$1.20 served 0 calls)
+  observed:
+    the_client_pins_the_spending_lane: 1
+    the_pinned_group_has_no_fallback_entry: 1
+    a_half_price_lane_is_configured_and_unused: 1
+  likelihoods:
+    H1:
+      the_client_pins_the_spending_lane: 0.95
+      the_pinned_group_has_no_fallback_entry: 0.9
+      a_half_price_lane_is_configured_and_unused: 0.9
+    H2:
+      the_client_pins_the_spending_lane: 0.4
+      the_pinned_group_has_no_fallback_entry: 0.35
+      a_half_price_lane_is_configured_and_unused: 0.45
+    H3:
+      the_client_pins_the_spending_lane: 0.35
+      the_pinned_group_has_no_fallback_entry: 0.3
+      a_half_price_lane_is_configured_and_unused: 0.4
+- name: the cache lever is already mostly pulled and its remainder is unmeasured (minimax_m27
+    token-weighted input cache hit 88.9% over 24h, per-call median 99.2%; 54.02M input
+    tokens still went uncached on that lane, 85.68M estate-wide; the route that spends
+    has no cache block at all while the cloud config carries redis with ttl 300; no
+    semantic cache exists anywhere in the tree -- the memory server holds embeddings
+    for recall, not for answering)
+  observed:
+    the_prefix_cache_already_returns_88_percent_of_input: 1
+    the_answer_cache_is_absent_on_the_route_that_spends: 1
+    no_semantic_cache_exists_in_the_estate: 1
+  likelihoods:
+    H1:
+      the_prefix_cache_already_returns_88_percent_of_input: 0.85
+      the_answer_cache_is_absent_on_the_route_that_spends: 0.7
+      no_semantic_cache_exists_in_the_estate: 0.6
+    H2:
+      the_prefix_cache_already_returns_88_percent_of_input: 0.15
+      the_answer_cache_is_absent_on_the_route_that_spends: 0.9
+      no_semantic_cache_exists_in_the_estate: 0.95
+    H3:
+      the_prefix_cache_already_returns_88_percent_of_input: 0.5
+      the_answer_cache_is_absent_on_the_route_that_spends: 0.5
+      no_semantic_cache_exists_in_the_estate: 0.5
+- name: the whole bill is the agent loop (every one of the 8,009 billed calls in the
+    24-hour window carries call_type acompletion; there is no embedding, image or
+    batch traffic to move off-peak, so off-peak pricing has no traffic to price)
+  observed:
+    every_billed_call_is_an_agent_completion: 1
+    there_is_no_non_interactive_traffic_to_schedule: 1
+  likelihoods:
+    H1:
+      every_billed_call_is_an_agent_completion: 0.85
+      there_is_no_non_interactive_traffic_to_schedule: 0.8
+    H2:
+      every_billed_call_is_an_agent_completion: 0.7
+      there_is_no_non_interactive_traffic_to_schedule: 0.7
+    H3:
+      every_billed_call_is_an_agent_completion: 0.8
+      there_is_no_non_interactive_traffic_to_schedule: 0.6
+- name: the estate cannot yet read its own bill on the route it is about to make primary
+    (the cost-today door answers 401 because $ESTATE_AGENT_KEY is empty and the vault
+    copy decrypts to a redacted placeholder; the laptop router has no spend database,
+    so its max_budget of 5.0 a day is inert against a measured $29.36; the cluster
+    ledger records nothing because its mounted key is a stub)
+  observed:
+    the_spend_door_answers_401: 1
+    the_route_that_spends_has_no_spend_database: 1
+    the_cluster_ledger_records_nothing: 1
+  likelihoods:
+    H1:
+      the_spend_door_answers_401: 0.9
+      the_route_that_spends_has_no_spend_database: 0.95
+      the_cluster_ledger_records_nothing: 0.8
+    H2:
+      the_spend_door_answers_401: 0.8
+      the_route_that_spends_has_no_spend_database: 0.8
+      the_cluster_ledger_records_nothing: 0.7
+    H3:
+      the_spend_door_answers_401: 0.7
+      the_route_that_spends_has_no_spend_database: 0.7
+      the_cluster_ledger_records_nothing: 0.6
+posteriors:
+  H1: 0.9963927757
+  H2: 0.0026562029
+  H3: 0.0009510214
+winner: H1
+computed_at: '2026-10-26T19:45:00Z'
