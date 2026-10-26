@@ -26,6 +26,32 @@ API_KEY = os.environ.get("OPENAI_API_KEY", "") or os.environ.get(
     "ANTHROPIC_API_KEY", ""
 )
 
+# Micro-Token FR-1 (2026-10-26): the prompt carries touched symbols, not a raw byte cap.
+# The slicer is a sibling in libexec so the runtime sync delivers both together.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import symbol_slicer  # noqa: E402
+
+
+def build_context(
+    diff: str,
+    read_file,
+    base: str,
+    max_bytes: int = 4000,
+    raw_diff: str = "",
+) -> tuple[str, str]:
+    """Sliced symbol context for the prompt, or the raw diff when slicing yields nothing.
+
+    Returns (context, mode) — mode is recorded in the output so a run proves which path
+    fed the model instead of asserting it.
+    """
+    try:
+        sliced = symbol_slicer.slice_for_diff(diff, read_file, max_bytes=max_bytes)
+    except Exception:
+        sliced = ""
+    if sliced:
+        return sliced, "sliced"
+    return (raw_diff or diff)[:max_bytes], "raw-diff"
+
 
 def get_diff(target: str, since: str) -> str:
     base = Path(target) if target else IDP
@@ -126,10 +152,21 @@ def main():
     all_findings = t0_findings + t1_findings
     findings_text = json.dumps(all_findings[:30], indent=2)
 
+    base = str(Path(target)) if target else str(IDP)
+    context, context_mode = build_context(
+        diff,
+        lambda p: (
+            (Path(base) / p).read_text(errors="replace")
+            if (Path(base) / p).exists()
+            else None
+        ),
+        base,
+    )
+
     user_prompt = f"""Review these deterministic findings from the code review pipeline:
 
-DIFF (first 8000 chars):
-{diff[:4000]}
+CONTEXT (touched symbols, sliced — mode: {context_mode}):
+{context}
 
 FINDINGS ({len(all_findings)} total):
 {findings_text}
@@ -160,6 +197,8 @@ Respond with a JSON array of verdicts, one per finding, in the same order."""
     output = {
         "tier": 2,
         "findings_judged": len(all_findings),
+        "context_mode": context_mode,
+        "context_bytes": len(context),
         "verdicts": verdicts[:30],
         "llm_response": response[:500],
     }
