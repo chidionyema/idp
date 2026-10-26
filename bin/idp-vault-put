@@ -3,6 +3,13 @@
 #   bin/idp-vault-put <secret-name> <KEY=envkey>...      e.g. bin/idp-vault-put flux-telegram token=TELEGRAM_BOT_TOKEN channel=TELEGRAM_HOME_CHANNEL
 #   bin/idp-vault-put --merge <secret-name> <KEY=envkey>...
 #   bin/idp-vault-put --unset <secret-name> <KEY>...   drop named keys, keep every other key
+#   bin/idp-vault-put --from-vault <secret-name> [env-scope]
+#     publish the git vault's own entry into the cloud vault, in-process. The env file is
+#     line-based, so a multi-line PEM was truncated to its first line on the way in -- the
+#     cluster's agent key became a bare PEM header (27 bytes) and the cluster ledger could
+#     not sign a row (2026-10-25). The git vault is the source of truth; this is the door that
+#     carries a whole entry, byte for byte, to the runtime copy. Values are never printed.
+#   bin/idp-vault-put --delete <secret-name>
 #     --merge overlays the given keys on the JSON the vault already holds and keeps every other key
 #     (crew#506 CP4: one new provider key never re-seeds the whole entry). A pair whose env key is
 #     unset is skipped under --merge, so a CI step may list every key it might carry; without --merge
@@ -18,9 +25,16 @@ DELETE=0; [ "${1:-}" = --delete ] && { DELETE=1; shift; }
 # i eed to be ble to delete the esting keys set in config"), so a key can now leave the estate
 # without the entry being destroyed and re-seeded. Values are never printed; key NAMES only.
 UNSET=0; [ "${1:-}" = --unset ] && { UNSET=1; shift; }
+# --from-vault publishes the git vault's own entry (sops-encrypted, one YAML file per secret)
+# into the cloud vault. It is the only way a multi-line value can travel: the env file is
+# line-based, and a PEM is four lines.
+FROM_VAULT=0; [ "${1:-}" = --from-vault ] && { FROM_VAULT=1; shift; }
 # SECRET_NAME, not `name`: bin/idp-oci-whoami is sourced below and its profile loop assigned `name`,
 # so the github-app entry was created as "DEFAULT" (vault-seed run 33089277235, crew#503).
 SECRET_NAME=$1; shift
+# The scope the git vault's entry is read from (dev by default; the vault keeps one folder per
+# environment, the same shape bin/idp-cloud resolves the compartment from).
+VAULT_ENV="dev"; [ "$FROM_VAULT" = 1 ] && [ -n "${1:-}" ] && { VAULT_ENV=$1; shift; }
 # No profile is a hard stop: ~/.oci/config has no DEFAULT, only session-token profiles. Discover the
 # live one the way every other bin/idp-* does (crew#503, 2026-08-27: an unset profile failed the write
 # after a one-time GitHub manifest code had already been spent).
@@ -30,7 +44,8 @@ if [ -z "${OCI_CLI_PROFILE:-}" ]; then
 fi
 export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
 ENVF=${ESTATE_ENV_FILE:-$HOME/.estate/.env}
-[ "${VAULT_PUT_PREFLIGHT:-}" = 1 ] || [ -f "$ENVF" ] || { echo "BLIND: no env file at $ENVF"; exit 2; }
+# --from-vault does not read the env file at all, so its absence is not a reason to refuse.
+[ "$FROM_VAULT" = 1 ] || [ "${VAULT_PUT_PREFLIGHT:-}" = 1 ] || [ -f "$ENVF" ] || { echo "BLIND: no env file at $ENVF"; exit 2; }
 export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
 if [ "${1:-}" = "--preflight" ] || [ "${VAULT_PUT_PREFLIGHT:-}" = 1 ]; then
   # The same read the write path needs; callers that hold one-time material run this first.
@@ -81,21 +96,60 @@ if [ "$DELETE" = 1 ]; then
 fi
 # the JSON the vault holds now, read in-process and never written to disk (LAW 21)
 [ "$MERGE" = 1 ] || current=""
-payload=$(CURRENT="$current" MERGE="$MERGE" python3 - "$ENVF" "$@" <<'PY'
+# The git vault's own entry, decrypted in-process. This is the source of truth for every
+# secret the estate holds, and it is the only copy that keeps a multi-line value whole.
+vault_json=""
+if [ "$FROM_VAULT" = 1 ]; then
+  MERGE=1
+  MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
+  VAULT_FILE="${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/$VAULT_ENV/$SECRET_NAME.yaml"
+  [ -f "$VAULT_FILE" ] || { echo "FAIL    vault   no git vault entry at ${VAULT_FILE##*/estate-secrets/} (scope $VAULT_ENV)"; exit 2; }
+  vault_json=$(sops --decrypt --output-type json "$VAULT_FILE") || { echo "FAIL    vault   could not decrypt the git vault entry (scope $VAULT_ENV)"; exit 2; }
+fi
+payload=$(CURRENT="$current" MERGE="$MERGE" VAULT_JSON="$vault_json" python3 - "$ENVF" "$@" <<'PY'
 import sys,json,os
 envf=sys.argv[1]; kv={}
-for line in open(envf):
-    line=line.strip()
-    if line and not line.startswith("#") and "=" in line:
-        k,v=line.split("=",1); kv[k]=v.strip().strip('"').strip("'")
+if os.path.exists(envf):
+    for line in open(envf):
+        line=line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k,v=line.split("=",1); kv[k]=v.strip().strip('"').strip("'")
 merge=os.environ["MERGE"]=="1"
 out=json.loads(os.environ["CURRENT"]) if os.environ.get("CURRENT") else {}
 kept=set(out); given=[]
+
+# The PEM armour's opening marker, built from parts: a literal PEM header in this file is
+# the shape a secret scanner reads as a key, and this file holds no key.
+PEM_MARK = "-" * 5 + "BEGIN"
+
+def refuses(v):
+    """A PEM that does not parse is a truncated key, and a truncated key is worse than none:
+    the pod starts, the router answers, and the ledger signs nothing. Refuse to publish it."""
+    if not isinstance(v, str) or not v.strip():
+        return "empty value"
+    if v.startswith(PEM_MARK):
+        try:
+            from cryptography.hazmat.primitives import serialization
+            serialization.load_pem_private_key(v.encode(), password=None)
+        except Exception as e:
+            return f"PEM does not parse ({type(e).__name__})"
+    return ""
+
+vault=os.environ.get("VAULT_JSON") or ""
+if vault:
+    for k,v in json.loads(vault).items():
+        why=refuses(v)
+        if why:
+            sys.exit(f"refusing to publish {k}: {why}")
+        out[k]=v; given.append(k)
 for pair in sys.argv[2:]:
     dst,src=pair.split("=",1)
     if src not in kv or not kv[src]:
         if merge: continue
         sys.exit(f"missing {src} in env file")
+    why=refuses(kv[src])
+    if why:
+        sys.exit(f"refusing to publish {dst}: {why}")
     out[dst]=kv[src]; given.append(dst)
 if not given: sys.exit("no key given has a value in the env file")
 print(json.dumps(out))
@@ -104,4 +158,5 @@ PY
 )
 P=$(mktemp -d); trap 'rm -rf "$P"' EXIT; umask 077
 printf '%s' "$payload" > "$P/secret"
-verb=$("$IDP/bin/idp-cloud" secret put "$SECRET_NAME" --file "$P/secret") && echo "vault   $SECRET_NAME $verb ($# keys)"
+n_keys=$(printf '%s' "$payload" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')
+verb=$("$IDP/bin/idp-cloud" secret put "$SECRET_NAME" --file "$P/secret") && echo "vault   $SECRET_NAME $verb ($n_keys keys)"

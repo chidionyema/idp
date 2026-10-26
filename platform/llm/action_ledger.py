@@ -71,10 +71,85 @@ def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+_MAX_DEPTH = 32
+_COERCED: set = set()
+
+
+def _note_coercion(notes: list) -> None:
+    """Name the structure that made the canonical string impossible, once per shape.
+
+    2026-10-25: the cluster router logged "[action_ledger] not recorded: keys must be str, int,
+    float, bool or None, not tuple" on every call and wrote no row at all -- the request body the
+    proxy hands a callback is a Python object, not JSON text, and one body with a tuple key raised
+    inside json.dumps. The ledger's job is to record every call, so the shape is coerced (below)
+    and the path that had to be coerced is named here, once, so the shape is visible instead of
+    merely survivable.
+    """
+    for path, kind in notes:
+        key = f"{kind}@{path}"
+        if key in _COERCED or len(_COERCED) >= 20:
+            continue
+        _COERCED.add(key)
+        log.warning(
+            "[action_ledger] body coerced at %s (%s); the row is still recorded",
+            path,
+            kind,
+        )
+
+
+def _jsonable(
+    obj: Any, path: str = "$", notes: list | None = None, depth: int = 0
+) -> Any:
+    """Anything -> something json can serialise, plus a note of what had to change.
+
+    Keys become strings, unknown objects become their str(), bytes become text, sets and tuples
+    become lists, and a cycle stops at a depth marker instead of recursing forever.
+    """
+    if notes is None:
+        notes = []
+    if depth > _MAX_DEPTH:
+        notes.append((path, "depth"))
+        return "<depth>"
+    if obj is None or isinstance(obj, (str, bool, int, float)):
+        return obj
+    if isinstance(obj, dict):
+        out: dict = {}
+        for k, v in obj.items():
+            if not isinstance(k, str):
+                notes.append((f"{path}.<{type(k).__name__}-key>", "key"))
+                k = str(k)
+            out[k] = _jsonable(v, f"{path}.{k}", notes, depth + 1)
+        return out
+    if isinstance(obj, (list, tuple, set, frozenset)):
+        return [
+            _jsonable(v, f"{path}[{i}]", notes, depth + 1) for i, v in enumerate(obj)
+        ]
+    if isinstance(obj, (bytes, bytearray)):
+        notes.append((path, "bytes"))
+        return bytes(obj).decode("utf-8", "replace")
+    notes.append((path, type(obj).__name__))
+    return str(obj)
+
+
 def _canonical(body: dict) -> bytes:
     # The proxy puts datetimes in the request it hands callbacks; without default=str every such
     # call raised "Object of type datetime is not JSON serializable" and the ledger stayed empty.
-    return json.dumps(body, sort_keys=True, separators=(",", ":"), default=str).encode()
+    #
+    # A body json can already serialise is dumped exactly as before, so the args_hash of every row
+    # already on disk stays the hash it was written with. A body json refuses (a tuple key, a
+    # cycle) used to lose its row entirely; it is coerced instead, so the call is recorded and the
+    # shape that needed coercing is named in the log.
+    try:
+        return json.dumps(
+            body, sort_keys=True, separators=(",", ":"), default=str
+        ).encode()
+    except (TypeError, ValueError):
+        notes: list = []
+        safe = _jsonable(body, "$", notes)
+        _note_coercion(notes)
+        return json.dumps(
+            safe, sort_keys=True, separators=(",", ":"), default=str
+        ).encode()
 
 
 _KEY: Any = None
