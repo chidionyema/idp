@@ -22,3 +22,5 @@ resources:
   - zeroedge.yaml
   - voice-router.yaml
   - hindsight-api.yaml
+  - efda.yaml
+  - spine.yaml
