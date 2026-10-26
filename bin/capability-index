@@ -87,6 +87,33 @@ WRITER_PLANES = {
     "mac": ("mac",),
 }
 DEFAULT_WINDOW_S = 30 * 86400
+# T-7 (ADR 0044): the decision mode of an action. `machine` -- a deterministic program decides.
+# `model` -- a decision model decides and returns a typed value with a confidence. `judgment` --
+# a person decides, and the entry carries the reason no machine and no model can.
+DECISION_MODES = ("machine", "model", "judgment")
+IRREDUCIBILITY_KINDS = (
+    "value-tradeoff",
+    "irreversible",
+    "novel",
+    "low-confidence-escalation",
+)
+# The decision models the estate actually runs. A `model` entry names one of these; a name the
+# estate does not run is refused, because "a model could do it" is a capability, not a hope.
+DECISION_MODELS = {
+    "jev": {
+        "capability": "cap:intent/jev.decide",
+        "what": "TypeSafe System One: typed values with a confidence, escalating below the floor.",
+    },
+    "code-review.tier2": {
+        "capability": "cap:intent/code-review",
+        "what": "the model tier of the 4-tier review pipeline; tier 3 verifies every finding.",
+    },
+    "llm": {
+        "capability": None,
+        "what": "the estate's routed language models: a proposal, never a verdict without a floor.",
+    },
+}
+DECISIONS_PATH = IDP / "policy" / "agent-decisions.json"
 SERVICE_KINDS = {
     "Deployment",
     "StatefulSet",
@@ -382,6 +409,7 @@ def make_record(
     cost=None,
     path=None,
     blind=(),
+    decision=None,
 ):
     if kind not in KINDS:
         raise ValueError("unknown kind: {}".format(kind))
@@ -425,6 +453,14 @@ def make_record(
         "depends_on": list(depends_on),
         "metrics": list(metrics),
         "blind": list(blind),
+        "decision": decision
+        or {
+            "mode": None,
+            "decided_by": None,
+            "irreducibility": None,
+            "justification": None,
+            "source": None,
+        },
     }
 
 
@@ -581,7 +617,7 @@ def build_repo_tools(ctx: Context):
     return out
 
 
-def _intent_record(ctx: Context, name, description, args, source, run=None, path=None):
+def _intent_record(ctx: Context, name, description, args, source, run=None, path=None, decision=None):
     receipt = None
     proven_at = None
     rung = None
@@ -636,6 +672,7 @@ def _intent_record(ctx: Context, name, description, args, source, run=None, path
         cost=cost,
         path=path,
         blind=[] if receipt else ["health", "proof", "metrics"],
+        decision=decision,
     )
     record["health"]["state"] = state
     record["health"]["observed_at"] = iso(run.get("last_at")) if run else None
@@ -697,6 +734,7 @@ def build_intents(ctx: Context, live: bool = True):
     if key in ctx._cache:
         return ctx._cache[key]
     runs = _ledger_runs(ctx) if live else {}
+    modes = decision_modes(ctx, live)
     seen = set()
     out = []
     if live:
@@ -723,6 +761,7 @@ def build_intents(ctx: Context, live: bool = True):
                         "sqlite:~/.estate/estate.db",
                         runs.get(name),
                         path=str(path),
+                        decision=modes.get(name),
                     )
                 )
     # intents declared in the repo but not installed here are drift, and drift is a fact
@@ -743,6 +782,7 @@ def build_intents(ctx: Context, live: bool = True):
                     "idp:platform/estate/intents",
                     None,
                     path="platform/estate/intents/{}".format(path.name),
+                    decision=modes.get(path.stem),
                 )
             )
     ctx._cache[key] = out
@@ -973,6 +1013,812 @@ def census(ctx: Context, live: bool = True):
         set(repo_issues["duplicate_ids"]) | set(issues["duplicate_ids"])
     )
     return merged, issues
+
+
+# --------------------------------------------------------------------------------------
+# the decision mode (T-7, ADR 0044)
+
+
+MODEL_SIGNALS = re.compile(
+    r"(?i)(\bllm\b|litellm|/v1/chat/completions|/v1/messages|\bclaude\b|\bgpt-[34o]"
+    r"|\bgemini\b|\bopus\b|\bsonnet\b|code-review-t2"
+    r"|mcp/plugins/jev\.py|\bjev_(noul|choice|score|layer)\b|\bjev\b)"
+)
+PERSON_SIGNALS = re.compile(
+    r"(?i)(founder (approval|decision|word|sign-?off|go/no-go)"
+    r"|requires? (a )?(human|person|founder)"
+    r"|manual (approval|step|sign-?off)"
+    r"|human (approval|review|decision)"
+    r"|asks the founder|operator approval|person in the loop)"
+)
+
+
+def _steps_section(text: str) -> str:
+    """The part of an intent that runs. A description that mentions a model is not a model
+    call, so only the steps decide the mode."""
+    index = text.find("\nsteps:")
+    return text[index:] if index >= 0 else ""
+
+
+def _without_comments(text: str) -> str:
+    """The executable lines. A comment is documentation, not a call: `gh-api` names the
+    jev pattern in a comment and calls no model, so the derivation must not read one."""
+    return "\n".join(
+        line for line in text.splitlines() if not line.lstrip().startswith("#")
+    )
+
+
+SCRIPT_REFERENCE = re.compile(r"[\w./~-]*(?:libexec|bin|plugins)/[\w./-]+\.(?:py|sh)")
+
+
+def _referenced_scripts(text: str, ctx: "Context") -> list:
+    """The scripts an intent's steps hand the work to, read when they can be read.
+
+    An intent that calls a libexec script hides its decider one level down: `jev.decide`
+    calls `jev-decide.py`, which calls the decision layer. Reading the script is how the
+    derivation sees that, instead of guessing from the intent's name.
+    """
+    out = []
+    seen = set()
+    for raw in SCRIPT_REFERENCE.findall(_steps_section(text)):
+        token = raw.strip("'\"")
+        if token in seen:
+            continue
+        seen.add(token)
+        candidates = []
+        if token.startswith("~/"):
+            candidates.append(ctx.home / token[2:])
+        elif token.startswith("/"):
+            candidates.append(Path(token))
+        else:
+            candidates.append(ctx.idp / token)
+            candidates.append(ctx.home / ".estate" / token)
+        for candidate in candidates:
+            try:
+                if candidate.is_file():
+                    out.append(candidate.read_text(encoding="utf-8", errors="replace")[:200000])
+                    break
+            except OSError:
+                continue
+    return out
+
+
+def derive_intent_mode(text: str, extra_sources=()) -> str:
+    """The mode an intent's own source implies (ADR 0044, D2).
+
+    An intent that needs a person is `judgment`; an intent whose steps (or the scripts
+    they call) reach a model is `model`; everything else is `machine`.
+
+    The derivation is a FINDING, not a refusal. A description that merely names a model is
+    not a model call, and a gate that refuses correct work is an outage. The register
+    overrides the derivation, and invariant I-6 checks that the override is honest.
+    """
+    steps = _without_comments(_steps_section(text))
+    if PERSON_SIGNALS.search(steps):
+        return "judgment"
+    if MODEL_SIGNALS.search(steps):
+        return "model"
+    for source in extra_sources or ():
+        if PERSON_SIGNALS.search(source):
+            return "judgment"
+        if MODEL_SIGNALS.search(source):
+            return "model"
+    return "machine"
+
+
+def load_decisions(ctx: Context) -> dict:
+    """The decision register: `policy/agent-decisions.json`, read as data.
+
+    One file, one record per decision. It holds what cannot be derived: the judgement
+    residue and the estate-level decisions. Every judgement entry names one of the four
+    irreducibility kinds and says why no machine and no decision model can decide it.
+    """
+    path = Path(os.environ.get("ESTATE_DECISIONS", str(DECISIONS_PATH)))
+    if not path.exists():
+        return {
+            "path": str(path),
+            "entries": [],
+            "roles": [],
+            "errors": ["the register is missing: {}".format(path)],
+            "blind": True,
+        }
+    payload = read_json(path)
+    if not isinstance(payload, dict):
+        return {
+            "path": str(path),
+            "entries": [],
+            "roles": [],
+            "errors": ["the register is not an object: {}".format(path)],
+            "blind": True,
+        }
+    entries = payload.get("decisions")
+    if not isinstance(entries, list):
+        return {
+            "path": str(path),
+            "entries": [],
+            "roles": [],
+            "errors": ["the register has no decisions list: {}".format(path)],
+            "blind": True,
+        }
+    return {
+        "path": str(path),
+        "entries": entries,
+        "roles": payload.get("roles") or [],
+        "errors": [],
+        "blind": False,
+    }
+
+
+def _intent_sources(ctx: Context, live: bool = True):
+    """Every intent source the estate can see: the installed ones and the repo's."""
+    seen = set()
+    if live and ctx.intents_dir.is_dir():
+        for path in sorted(ctx.intents_dir.glob("*.yaml")):
+            if path.stem in seen:
+                continue
+            seen.add(path.stem)
+            yield path, "installed"
+    if ctx.repo_intents_dir.is_dir():
+        for path in sorted(ctx.repo_intents_dir.glob("*.yaml")):
+            if path.stem in seen:
+                continue
+            seen.add(path.stem)
+            yield path, "repo"
+
+
+def decision_modes(ctx: Context, live: bool = True) -> dict:
+    """{intent name: decision block} -- the register's declarations over the derived modes.
+
+    The block is what every surface reads: the mode, who decides, the irreducibility (for a
+    judgement) and where the mode came from, so a reader can tell a declaration from a
+    derivation.
+    """
+    register = load_decisions(ctx)
+    declared = {}
+    for entry in register["entries"]:
+        if not isinstance(entry, dict):
+            continue
+        for name in entry.get("classifies") or entry.get("surfaces") or []:
+            declared[str(name)] = entry
+    out = {}
+    for path, origin in _intent_sources(ctx, live):
+        entry = declared.get(path.stem)
+        if entry:
+            out[path.stem] = {
+                "mode": entry.get("mode"),
+                "decided_by": entry.get("decided_by"),
+                "irreducibility": entry.get("irreducibility"),
+                "justification": entry.get("justification"),
+                "source": "register",
+                "decision_id": entry.get("id"),
+                "origin": origin,
+            }
+        else:
+            mode = derive_intent_mode(
+                read_text(path), _referenced_scripts(read_text(path), ctx)
+            )
+            out[path.stem] = {
+                "mode": mode,
+                "decided_by": None,
+                "irreducibility": None,
+                "justification": None,
+                "source": "derived",
+                "decision_id": None,
+                "origin": origin,
+            }
+    return out
+
+
+def _ledger_window(ctx: Context, days: int) -> dict:
+    """How often each intent actually ran, in the window. The executor's own ledger."""
+    return _ledger_runs(ctx)
+
+
+# Who woke the work. The ledger's `harness` column names the trigger: `unconverged` and
+# `unmerged` are the greenlane's own loops (a machine decided to act), `pi` and its
+# siblings are an agent choosing to act, and `direct` is a call with no trigger named.
+AGENT_HARNESSES = {
+    "pi",
+    "claude",
+    "claude-code",
+    "claude-cli",
+    "codex",
+    "cursor",
+    "gemini",
+    "opencode",
+    "otto",
+    "kimi",
+    "zcode",
+    "estate-agent",
+}
+MACHINE_HARNESSES = {
+    "unconverged",
+    "unmerged",
+    "greenlane",
+    "flux",
+    # The spine (EFDA): a Flux event wakes a workflow, so a run the spine starts is a
+    # machine's decision. These names are listed here before the spine lands, so the
+    # measurement counts its runs the day they appear and not the day someone remembers
+    # to add them.
+    "spine",
+    "flux-event",
+    "signal-bridge",
+    "image-automation",
+    "merge-when-green",
+    "deploy-when-green",
+    "cron",
+    "scheduler",
+}
+
+
+def _ledger_triggers(ctx: Context) -> dict:
+    """Who woke the work in the window: a machine event, or an agent's choice.
+
+    This is the number the founder asked for. An action a machine woke is a decision the
+    machine made; an action an agent woke is a decision the agent made, and it is the one
+    that costs a turn. The estate's own loops (`unconverged`, `unmerged`) are the
+    greenlane's, and they are the majority -- which is the spine's job, done.
+    """
+    out = {
+        "machine": 0,
+        "agent": 0,
+        "unlabelled": 0,
+        "by_harness": {},
+        "window_days": 30,
+        "blind": True,
+    }
+    if not ctx.estate_db.exists():
+        return out
+    cutoff = ctx.now - timedelta(days=30)
+    try:
+        conn = sqlite3.connect("file:{}?mode=ro".format(ctx.estate_db), uri=True)
+    except sqlite3.Error as exc:
+        ctx.warnings.append("ledger: cannot open {}: {}".format(ctx.estate_db, exc))
+        return out
+    try:
+        rows = conn.execute("select harness, started_at from intent_tickets").fetchall()
+    except sqlite3.Error as exc:
+        ctx.warnings.append("ledger: cannot read intent_tickets: {}".format(exc))
+        return out
+    finally:
+        conn.close()
+    out["blind"] = False
+    for harness, started in rows:
+        when = parse_iso(started)
+        if when and when < cutoff:
+            continue
+        name = (harness or "?").lower()
+        out["by_harness"][name] = out["by_harness"].get(name, 0) + 1
+        if name in AGENT_HARNESSES:
+            out["agent"] += 1
+        elif name in MACHINE_HARNESSES:
+            out["machine"] += 1
+        else:
+            out["unlabelled"] += 1
+    total = out["machine"] + out["agent"] + out["unlabelled"]
+    out["total"] = total
+    out["machine_share"] = round(out["machine"] / total, 4) if total else None
+    out["agent_share"] = round(out["agent"] / total, 4) if total else None
+    return out
+
+
+# --------------------------------------------------------------------------------------
+# the measurement: what the agents actually did, and who decided
+
+
+def model_turns(ctx: Context) -> dict:
+    """How many model calls the estate made in the window, and which models.
+
+    A model call is a decision turn: the estate asked a model something that a rule, a
+    deterministic check or a decision model with a calibrated floor could have answered.
+    This is the friction the founder is asking about, counted from the estate's own
+    ledger rather than asserted.
+    """
+    path = ctx.home / ".estate" / "action-ledger.jsonl"
+    out = {"calls": 0, "models": {}, "window_days": 30, "blind": True}
+    if not path.exists():
+        return out
+    cutoff = ctx.now - timedelta(days=30)
+    try:
+        with path.open(errors="replace") as fh:
+            for line in fh:
+                if '"llm:' not in line:
+                    continue
+                # The ledger is 100MB of JSON; only two fields matter here, so they are
+                # sliced out rather than parsed. A parse of every line costs 20 seconds
+                # and buys nothing.
+                try:
+                    stamp = line.split('"created_at":"', 1)[1].split('"', 1)[0]
+                    name = line.split('"intent_name":"', 1)[1].split('"', 1)[0]
+                except (IndexError, ValueError):
+                    continue
+                when = parse_iso(stamp)
+                if when and when < cutoff:
+                    continue
+                out["calls"] += 1
+                out["models"][name] = out["models"].get(name, 0) + 1
+    except OSError as exc:
+        ctx.warnings.append("model turns: cannot read {}: {}".format(path, exc))
+        return out
+    out["blind"] = False
+    out["distinct_models"] = len(out["models"])
+    return out
+
+
+def door_traffic(ctx: Context) -> dict:
+    """What the agents did at the door, and how much of it was friction.
+
+    The MCP door logs every call with its session and its tool. `estate_show` is the agent
+    asking the door how to use the door -- friction with a receipt, not an opinion.
+    """
+    logs = [
+        ctx.home / ".estate" / "logs" / "mcp.jsonl",
+        ctx.home / ".estate" / "logs" / "plan-mcp.jsonl",
+    ]
+    calls = 0
+    by_tool = Counter()
+    sessions = set()
+    intents = Counter()
+    for path in logs:
+        if not path.exists():
+            continue
+        try:
+            with path.open(errors="replace") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except ValueError:
+                        continue
+                    calls += 1
+                    by_tool[row.get("tool") or "?"] += 1
+                    if row.get("sessionId"):
+                        sessions.add(row["sessionId"])
+                    if row.get("intent"):
+                        intents[row["intent"]] += 1
+        except OSError:
+            continue
+    show_calls = by_tool.get("estate_show", 0)
+    return {
+        "calls": calls,
+        "sessions": len(sessions),
+        "by_tool": dict(by_tool),
+        "by_intent": dict(intents),
+        "schema_lookups": show_calls,
+        "friction_share": round(show_calls / calls, 4) if calls else None,
+        "sources": [str(p) for p in logs],
+    }
+
+
+def _tool_modes(ctx: Context) -> dict:
+    """The mode of a capability the agents ran but the registry does not name as an intent.
+
+    The executor's ledger records what ran, not only what the door dispatched: a script
+    invoked directly is an action an agent took, and it is classified from its own source,
+    the same way an intent is.
+    """
+    out = {}
+    for base in (
+        ctx.idp / "bin",
+        ctx.home / ".estate" / "bin",
+        ctx.home / ".estate" / "scripts",
+        ctx.home / ".estate" / "libexec",
+    ):
+        if not base.is_dir():
+            continue
+        for path in sorted(base.iterdir()):
+            if not path.is_file():
+                continue
+            if path.name in out:
+                continue
+            out[path.name] = derive_intent_mode(read_text(path))
+    return out
+
+
+def decisions_report(ctx: Context) -> dict:
+    """The decision register, the derived modes, and the estate's automation ratio.
+
+    The ratio is `(machine + model runs) / all runs`, weighted by the executor's own
+    ledger. It is the number the founder asked for: how much of what agents do is a
+    decision at all.
+    """
+    register = load_decisions(ctx)
+    modes = decision_modes(ctx, live=True)
+    tools = _tool_modes(ctx)
+    runs = _ledger_runs(ctx)
+    traffic = door_traffic(ctx)
+    triggers = _ledger_triggers(ctx)
+    turns = model_turns(ctx)
+
+    runs_by_mode = Counter()
+    intents_by_mode = Counter()
+    for name, run in runs.items():
+        block = modes.get(name)
+        if block:
+            mode = block.get("mode") or "unknown"
+        elif name in tools:
+            mode = tools[name]
+        else:
+            mode = "unknown"
+        intents_by_mode[mode] += 1
+        runs_by_mode[mode] += int(run.get("runs_30d") or 0)
+    total_runs = sum(runs_by_mode.values())
+    known_runs = total_runs - runs_by_mode["unknown"]
+    decided_runs = runs_by_mode["machine"] + runs_by_mode["model"]
+
+    entries = []
+    for entry in register["entries"]:
+        if not isinstance(entry, dict):
+            continue
+        surfaces = entry.get("surfaces") or []
+        entry_runs = sum(
+            int((runs.get(s) or {}).get("runs_30d") or 0) for s in surfaces
+        )
+        entries.append(
+            {
+                "id": entry.get("id"),
+                "decision": entry.get("decision"),
+                "mode": entry.get("mode"),
+                "decided_by": entry.get("decided_by"),
+                "irreducibility": entry.get("irreducibility"),
+                "justification": entry.get("justification"),
+                "classifies": entry.get("classifies") or [],
+                "surfaces": surfaces,
+                "runs_30d": entry_runs,
+            }
+        )
+
+    undeclared = sorted(
+        name
+        for name, block in modes.items()
+        if block.get("mode") == "judgment" and block.get("source") == "derived"
+    )
+    return {
+        "register": register["path"],
+        "register_errors": register["errors"],
+        "entries": entries,
+        "modes": {
+            "intents_by_mode": dict(intents_by_mode),
+            "runs_by_mode": dict(runs_by_mode),
+            "intents": len(modes),
+        },
+        "automation_ratio": round(decided_runs / known_runs, 4) if known_runs else None,
+        "triggers": triggers,
+        "model_turns": turns,
+        "runs_30d": total_runs,
+        "runs_30d_known": known_runs,
+        "runs_30d_blind": runs_by_mode["unknown"],
+        "judgement_runs_30d": runs_by_mode["judgment"],
+        "undeclared_judgement_intents": undeclared,
+        "door": traffic,
+    }
+
+
+def decision_violations(ctx: Context, known_caps=None) -> dict:
+    """I-6: the decision register is honest. The clauses, and what each one refuses.
+
+    A violation is a DECLARATION that lies: a mode that does not exist, a judgement with no
+    irreducibility, a judgement whose reason is a shrug, a machine decider the estate does
+    not have, a model decider the estate does not run, a judgement decider who is not a
+    role, a duplicated decision id. Those are refused.
+
+    A finding is not a lie: a judgement residue nobody wrote down, a declaration that
+    contradicts the source it claims to describe. Those are reported, because a gate that
+    refuses correct work is an outage.
+
+    `known_caps` is the set of capability ids the estate has (the census). It is a
+    parameter so the falsifier can prove each clause without walking the whole estate.
+    """
+    register = load_decisions(ctx)
+    violations = []
+    findings = []
+    blind = []
+    if register["blind"]:
+        blind.append("decision-register")
+    entries = [e for e in register["entries"] if isinstance(e, dict)]
+
+    counts = Counter(str(e.get("id") or "?") for e in entries)
+    for did, n in sorted(counts.items()):
+        if n > 1:
+            violations.append(
+                {
+                    "clause": "I-6.unique-id",
+                    "detail": "the decision id {} is declared {} times".format(did, n),
+                }
+            )
+
+    if known_caps is None:
+        records, _issues = census(ctx)
+        known_caps = set(records)
+    roles = set(register["roles"] or [])
+
+    for entry in entries:
+        did = entry.get("id") or "?"
+        mode = entry.get("mode")
+        decided_by = entry.get("decided_by")
+        justification = str(entry.get("justification") or "").strip()
+        if mode not in DECISION_MODES:
+            violations.append(
+                {
+                    "clause": "I-6.mode",
+                    "detail": "{}: mode {!r} is not one of {}".format(
+                        did, mode, ", ".join(DECISION_MODES)
+                    ),
+                }
+            )
+            continue
+        if mode == "judgment":
+            if entry.get("irreducibility") not in IRREDUCIBILITY_KINDS:
+                violations.append(
+                    {
+                        "clause": "I-6.irreducibility",
+                        "detail": "{}: a judgement names irreducibility {!r}, not one of {}".format(
+                            did,
+                            entry.get("irreducibility"),
+                            ", ".join(IRREDUCIBILITY_KINDS),
+                        ),
+                    }
+                )
+            if len(justification) < 40:
+                violations.append(
+                    {
+                        "clause": "I-6.justification",
+                        "detail": "{}: a judgement says why in {} characters; a reason is not "
+                        "a shrug".format(did, len(justification)),
+                    }
+                )
+            if not decided_by or (roles and decided_by not in roles):
+                violations.append(
+                    {
+                        "clause": "I-6.judgment-role",
+                        "detail": "{}: a judgement is decided by {!r}, which is not a role "
+                        "the register names ({})".format(
+                            did, decided_by, ", ".join(sorted(roles)) or "none named"
+                        ),
+                    }
+                )
+        elif mode == "model":
+            name = str(decided_by or "")
+            model = name.split(":", 1)[1] if name.startswith("model:") else None
+            if model is None:
+                violations.append(
+                    {
+                        "clause": "I-6.model-decider",
+                        "detail": "{}: a model decision names {!r}, not model:<name>".format(
+                            did, decided_by
+                        ),
+                    }
+                )
+            elif model not in DECISION_MODELS:
+                violations.append(
+                    {
+                        "clause": "I-6.model-decider",
+                        "detail": "{}: {} is not a decision model the estate runs ({})".format(
+                            did,
+                            name,
+                            ", ".join(sorted(DECISION_MODELS)),
+                        ),
+                    }
+                )
+            else:
+                cap = DECISION_MODELS[model].get("capability")
+                if cap and known_caps and cap not in known_caps:
+                    findings.append(
+                        {
+                            "clause": "I-6.model-capability",
+                            "detail": "{}: {} claims {}, which the census does not carry "
+                            "(a live-only capability is BLIND, not wrong)".format(
+                                did, name, cap
+                            ),
+                        }
+                    )
+        else:  # machine
+            cap = str(decided_by or "")
+            if not cap.startswith("cap:"):
+                violations.append(
+                    {
+                        "clause": "I-6.machine-decider",
+                        "detail": "{}: a machine decision names {!r}, not a capability id".format(
+                            did, decided_by
+                        ),
+                    }
+                )
+            elif known_caps and cap not in known_caps:
+                violations.append(
+                    {
+                        "clause": "I-6.machine-decider",
+                        "detail": "{}: a machine decision names {}, which the estate does "
+                        "not have".format(did, cap),
+                    }
+                )
+
+    modes = decision_modes(ctx, live=True)
+    for name, block in sorted(modes.items()):
+        if block.get("mode") != "judgment":
+            continue
+        if block.get("source") == "derived":
+            findings.append(
+                {
+                    "clause": "I-6.undeclared-judgment",
+                    "detail": "{} needs a person and is not declared in the register".format(
+                        name
+                    ),
+                }
+            )
+    for entry in entries:
+        for surface in entry.get("surfaces") or []:
+            block = modes.get(surface)
+            if block and block.get("source") == "derived" and block.get("mode") != entry.get(
+                "mode"
+            ):
+                findings.append(
+                    {
+                        "clause": "I-6.derivation-drift",
+                        "detail": "{} declares {} for {}, and the source derives {}".format(
+                            entry.get("id"),
+                            entry.get("mode"),
+                            surface,
+                            block.get("mode"),
+                        ),
+                    }
+                )
+    return {
+        "violations": violations,
+        "findings": findings,
+        "blind": blind,
+        "entries": len(entries),
+        "known_capabilities": len(known_caps or ()),
+        "register": register["path"],
+    }
+
+
+def render_decisions(report: dict) -> str:
+    lines = []
+    lines.append("the decision register: {}".format(report["register"]))
+    for err in report.get("register_errors") or []:
+        lines.append("  BLIND  {}".format(err))
+    lines.append("")
+    lines.append("the decisions")
+    for entry in report["entries"]:
+        lines.append(
+            "  {:38s} {:9s} decided_by={}".format(
+                entry["id"] or "?",
+                entry["mode"] or "?",
+                entry["decided_by"] or "-",
+            )
+        )
+        if entry.get("irreducibility"):
+            lines.append("      irreducibility: {}".format(entry["irreducibility"]))
+        if entry.get("justification"):
+            lines.append(
+                "      why: {}".format(entry["justification"][:110])
+            )
+        if entry.get("runs_30d"):
+            lines.append("      observed runs (30d): {}".format(entry["runs_30d"]))
+    lines.append("")
+    lines.append("every action an agent took, by who decided it (30 days)")
+    for mode in ("machine", "model", "judgment", "unknown"):
+        runs = report["modes"]["runs_by_mode"].get(mode, 0)
+        intents = report["modes"]["intents_by_mode"].get(mode, 0)
+        if runs or intents:
+            lines.append(
+                "  {:9s} {:6d} runs over {:4d} capabilities".format(
+                    mode, runs, intents
+                )
+            )
+    ratio = report.get("automation_ratio")
+    lines.append(
+        "  automation ratio: {} of the {} run(s) whose source the estate can see".format(
+            "{:.1%}".format(ratio) if ratio is not None else "BLIND (no ledger)",
+            report.get("runs_30d_known", 0),
+        )
+    )
+    triggers = report.get("triggers") or {}
+    if not triggers.get("blind"):
+        lines.append("")
+        lines.append("who woke the work (30 days, the executor's own ledger)")
+        lines.append(
+            "  machine-triggered: {} run(s) ({})".format(
+                triggers.get("machine", 0),
+                "{:.1%}".format(triggers["machine_share"])
+                if triggers.get("machine_share") is not None
+                else "BLIND",
+            )
+        )
+        lines.append(
+            "  agent-chosen:      {} run(s) ({})".format(
+                triggers.get("agent", 0),
+                "{:.1%}".format(triggers["agent_share"])
+                if triggers.get("agent_share") is not None
+                else "BLIND",
+            )
+        )
+        lines.append(
+            "  no trigger named:  {} run(s)".format(triggers.get("unlabelled", 0))
+        )
+        harness = triggers.get("by_harness") or {}
+        if harness:
+            top = ", ".join(
+                "{}={}".format(name, count)
+                for name, count in sorted(
+                    harness.items(), key=lambda kv: (-kv[1], kv[0])
+                )[:6]
+            )
+            lines.append("  by trigger: {}".format(top))
+    lines.append(
+        "  BLIND: {} run(s) over {} capabilities whose source is not in the registry".format(
+            report.get("runs_30d_blind", 0),
+            report["modes"]["intents_by_mode"].get("unknown", 0),
+        )
+    )
+    lines.append(
+        "  judgement residue: {} run(s) in 30 days".format(
+            report.get("judgement_runs_30d", 0)
+        )
+    )
+    undeclared = report.get("undeclared_judgement_intents") or []
+    if undeclared:
+        lines.append(
+            "  intents that need a person and are NOT declared in the register:"
+        )
+        for name in undeclared:
+            lines.append("      {}".format(name))
+    door = report.get("door") or {}
+    turns = report.get("model_turns") or {}
+    if turns and not turns.get("blind"):
+        lines.append("")
+        lines.append("model turns (30 days, the estate's own action ledger)")
+        lines.append(
+            "  {} model call(s) over {} model(s): each one is a decision a rule, a "
+            "deterministic check or a calibrated decision model could have made".format(
+                turns.get("calls", 0), turns.get("distinct_models", 0)
+            )
+        )
+        models = turns.get("models") or {}
+        if models:
+            top = ", ".join(
+                "{}={}".format(name, count)
+                for name, count in sorted(
+                    models.items(), key=lambda kv: (-kv[1], kv[0])
+                )[:5]
+            )
+            lines.append("  by model: {}".format(top))
+    lines.append("")
+    lines.append("the door's own traffic")
+    lines.append(
+        "  {} call(s) over {} session(s); {} were the agent asking the door how to use"
+        " the door ({})".format(
+            door.get("calls", 0),
+            door.get("sessions", 0),
+            door.get("schema_lookups", 0),
+            "{:.1%}".format(door["friction_share"])
+            if door.get("friction_share") is not None
+            else "BLIND",
+        )
+    )
+    violations = report.get("violations") or []
+    if violations:
+        lines.append("")
+        lines.append("I-6 violations (bin/registry-gate refuses these)")
+        for violation in violations:
+            lines.append(
+                "      {:22s} {}".format(
+                    violation.get("clause"), violation.get("detail")
+                )
+            )
+    findings = report.get("findings") or []
+    if findings:
+        lines.append("")
+        lines.append("I-6 findings (reported, never refused)")
+        for finding in findings:
+            lines.append(
+                "      {:22s} {}".format(
+                    finding.get("clause"), finding.get("detail")
+                )
+            )
+    return "\n".join(lines)
 
 
 # --------------------------------------------------------------------------------------
@@ -1637,6 +2483,12 @@ def main(argv=None) -> int:
     p_cover = sub.add_parser("cover", help="the coverage diff")
     p_cover.add_argument("--json", action="store_true")
 
+    p_dec = sub.add_parser(
+        "decisions",
+        help="the decision register, the derived modes, and the automation ratio",
+    )
+    p_dec.add_argument("--json", action="store_true")
+
     args = parser.parse_args(argv)
     ctx = Context(
         idp=Path(args.idp) if args.idp else None,
@@ -1788,6 +2640,18 @@ def main(argv=None) -> int:
         )
         diff["workloads_source"] = "cluster" if workloads is not None else "BLIND"
         print(json.dumps(diff, indent=2))
+        return 0
+
+    if args.cmd == "decisions":
+        report = decisions_report(ctx)
+        verdict = decision_violations(ctx)
+        report["violations"] = verdict["violations"]
+        report["findings"] = verdict["findings"]
+        report["decision_blind"] = verdict["blind"]
+        if args.json:
+            print(json.dumps(report, indent=2, default=str))
+        else:
+            print(render_decisions(report))
         return 0
 
     return 1

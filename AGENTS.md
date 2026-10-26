@@ -16,7 +16,7 @@ its headlines and tenets (Part V, §23–§24) at session start and works inside
 - **Tenets:** structured/schema-driven at every boundary (T-1) · unified memory, active memory and
   active focus are first-class (T-2) · best-of-breed selection by evidence (T-3) · bleeding-edge
   asymmetric engineering (T-4) · evals and judges as first-class principles (T-5) · proof, not
-  assertion (T-6, restating §3).
+  assertion (T-6, restating §3) · machine-first: every action names its decider (T-7, §12).
 
 A build that violates a tenet fails review. The programme's spine is the founder's order: capability
 registry → consolidation with the founder → vision lock → autonomy waves.
@@ -398,3 +398,50 @@ escalate_on_timeout = true
 model = "jev-1.13.0"
 force_on_decisions = true   # when true, the Stop-hook blocks turns that skip Jev for bounded decisions
 ```
+
+## 12. Machine-first: every action names its decider (T-7, ADR 0044)
+
+Every action an agent takes is a decision somebody made. **Before you take one, say which
+decider it has** — and the answer is one of three:
+
+- **`machine`** — a deterministic program decides: a rule, a schema check, a hash, a gate. The
+  same input gives the same answer every time, and the answer can be re-derived by anyone.
+- **`model`** — a decision model decides: a typed value with a calibrated confidence (JEV and
+  its floor), never a vibe. Below the floor it escalates; it does not guess.
+- **`judgment`** — a person decides. **This is the residue, and it must say why**: one of
+  `value-tradeoff` (two goods the estate cannot rank without a human), `irreversible` (it cannot
+  be undone, or it reaches outside the estate), `novel` (no precedent and no rule), or
+  `low-confidence-escalation` (a decision model came back under its floor).
+
+The order is machine → model → judgment, and every step down costs an estate a turn, a
+confidence band, or a person. **"I was not sure" is not an irreducibility.** If you cannot name
+the kind, the honest mode is `machine` or `model` — go and build the check that decides it.
+
+The one store is `policy/agent-decisions.json` (the decision register). The mode is **derived**
+from a capability's own source wherever it can be (`bin/capability-index` reads the intent's
+steps, and the scripts they call); the register holds only what cannot be derived — the
+judgement residue and the estate-level decisions. `bin/registry-gate` invariant **I-6** refuses a
+declaration that lies: a mode that does not exist, a judgement with no irreducibility, a
+judgement whose reason is a shrug, a machine decider the estate does not have, a model the estate
+does not run, a decider who is not a role, a duplicated id. A declaration that merely drifts from
+its source is a **finding**, not a refusal — refusing correct work is an outage.
+
+The question, the answer, the measure:
+
+```bash
+bin/capability-index decisions      # the register, the derived modes, who woke the work
+```
+
+Measured on the running estate (2026-10-26, executor ledger, 30 days): **1,619 runs machine-
+triggered** (the greenlane's own `unconverged`/`unmerged` loops) against **1,831 runs with no
+trigger named**; **189,738 model calls** over 22 models in the window — each one a decision turn
+a rule or a calibrated decision model could have made; and **24.8% of all door calls were
+`estate_show`**, the agent asking the door how to use the door. **BLIND is an honest answer, not
+a pass**: on CI there is no `~/.estate`, so the live measures are BLIND and the gate says so.
+
+**The greenlane is this tenet's machine trigger.** A PR lands, CI runs green, Flux converges —
+those are decisions a machine made and they need no agent. The spine (EFDA: Flux events →
+NATS JetStream → a Temporal signal → a workflow that verifies the outcome) turns the rest of
+the estate's waking into the same kind of trigger: an event starts the work, and the agent is
+called to decide only what the event cannot settle. An action the spine wakes is `machine`
+until it needs a judgement.
