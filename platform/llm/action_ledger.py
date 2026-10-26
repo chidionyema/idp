@@ -57,6 +57,30 @@ def key_path() -> str:
     )
 
 
+def key_material() -> bytes:
+    """The private key, as bytes: a path to it, or the key itself.
+
+    ESTATE_AGENT_KEY may hold either, and the estate's own secret wrapper decides which
+    one arrives. The router's container exports every mounted secret's CONTENT under the
+    file's basename, so the variable that holds the path
+    /run/secrets/litellm/agent/ESTATE_AGENT_KEY arrives holding the key text instead.
+    Measured 2026-10-26 in the live cluster, on every call:
+    "[action_ledger] not recorded: [Errno 2] No such file or directory:
+    '-----BEGIN PRIVATE KEY-----\\n...'". The ledger is handed a path it cannot open, and
+    signs nothing. So the material is RECOGNISED, not guessed: a value that carries the
+    PEM header is the key, and only a value that names a file is read as one.
+    """
+    value = os.environ.get("ESTATE_AGENT_KEY") or "~/.estate/keys/agent.pem"
+    if "PRIVATE KEY" in value:
+        raw = value.encode()
+        # A value that arrived with its newlines escaped (\\n) is still the key.
+        if b"\\n" in raw and b"\n" not in raw:
+            raw = raw.replace(b"\\n", b"\n")
+        return raw
+    with open(os.path.expanduser(value), "rb") as f:
+        return f.read()
+
+
 def ledger_path() -> str:
     return os.path.expanduser(
         os.environ.get("ESTATE_ACTION_LEDGER") or "~/.estate/action-ledger.jsonl"
@@ -161,8 +185,7 @@ def _key():
     if _KEY is None:
         from cryptography.hazmat.primitives import serialization
 
-        with open(key_path(), "rb") as f:
-            _KEY = serialization.load_pem_private_key(f.read(), password=None)
+        _KEY = serialization.load_pem_private_key(key_material(), password=None)
     return _KEY
 
 
