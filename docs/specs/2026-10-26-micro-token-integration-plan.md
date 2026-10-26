@@ -116,10 +116,16 @@ hand-applied; the cluster converges from the commit.
    efficiency claims go through `bin/estate-token-proof` (never an estimate); context goes through
    the graph + memory + read shunt (never a raw file dump); Tier-0-shaped tasks (formatting, import
    sorting, regex refactors, classification) name the `ollama` alias explicitly.
-5. **FILE THE DEFECT: m7 shadow fold.** The compactor's shadow probes are failing on deepseek
-   (`fold returned an empty state`, 130 rows and counting) — the safety arm of epoch compaction is
-   testing nothing while it errors. Own issue, next lane; until then the treat-arm chain is
-   unaffected (shadow failures never touch the request path by design).
+5. **FILE THE DEFECT: m7 shadow fold — FIXED IN THIS LANE.** The compactor's shadow probes were
+   failing on deepseek (`fold returned an empty state`; **1,369 failing rows** measured on the
+   laptop ledger, every one of them `model: deepseek`) — the safety arm of epoch compaction was
+   testing nothing while it errored. Cause: deepseek is a reasoning lane, it spends its whole
+   budget on `reasoning_content` and returns an EMPTY `content`, and an empty completion is a
+   200, so LiteLLM's fallback chain never engaged. Fix in this lane: the fold's default lane is
+   `minimax_m27` (the lane that answers), a `reasoning_content` answer is used when `content` is
+   empty, and an empty fold now names the lane that failed. Graded by
+   `tests/test_efficiency_shadow_fold_answers.py` (6 tests). The treat-arm chain was never
+   affected — shadow failures never touch the request path by design.
 
 ## 4. What was rejected, and why it matters
 
@@ -133,6 +139,18 @@ hand-applied; the cluster converges from the commit.
 - **Local (Mac) ollama, permanently** — founder 2026-10-26: "we dont have resources to run ollama
   locally". The laptop is an 8 GiB Intel Mac with no GPU; a resident 7B was fiction from the day
   it was written, and the dead lanes made every fallback walk pay for the fiction.
+- **Bloop, or any self-hosted code-search/index service** — the estate already owns the same
+  information as a DETERMINISTIC ARTIFACT, not as a service: `bin/catalog-projection` emits one
+  `dependsOn` edge per import (TOT) as a pure function of the tree (DET); the capability registry
+  is defined the same way, with a drift check; the cross-repo view is the growmos graph. A
+  self-hosted indexer would be a second copy of a layer that exists (AGENTS.md §6), and the worst
+  kind of copy: an unsynchronised one whose answers to "who calls this" would drift from the
+  bytes CI grades, with no drift check and no proof of freshness. If the query ergonomics are
+  needed, the sanctioned extension is a thin QUERY INTENT over those committed artifacts.
+- **Vendoring Aider** — its repo-map idea is already here in estate-native form (§6): a symbol
+  map for LLM context (`symbol_slicer.py`), an import-edge graph (`catalog-projection`), and an
+  impact map (`idp-affected-graph`). Vendoring Aider would add a second, differently-behaving
+  map of the same tree.
 
 ## 5. Proof status of this document
 
@@ -144,3 +162,46 @@ hand-applied; the cluster converges from the commit.
 | Symbol slicer | `tests/test_symbol_slicer.py` green on this lane; **live Tier 2 run this turn: `context_mode: sliced`, 6,914 bytes, 11 findings judged, 11/11 false_positive, Tier 3 → 0 verified / 11 rejected** |
 | Four tiers actually run | `tests/test_code_review_pipeline_wiring.py` (10 tests) + the live run above: the hand-off files exist, Tier 2 reads them, Tier 3 reads Tier 2's verdicts, Tier 3 disposes of a false positive |
 | Tier-0 latency | PENDING — measured after the floor is Ready |
+| Symbol map + cross-file graph | `bin/catalog-projection` (every import → one `dependsOn` edge), `bin/idp-affected-graph` (three-layer impact map), `symbol_slicer.py` (LLM-context map). Invariants: `bin/test-catalog-projection` (run by `bin/idp-ci`) |
+| Impact map in the PR path | **NOT ENFORCED — measured gap.** No workflow references `idp-affected-graph` (`rg -l "idp-affected-graph" .github/` → no hits); fast-gate runs `IDP_CI_FAST=1 bin/idp-ci`, verifier runs `bin/idp-ci-verify`. The selector works — live on this lane's own diff: `changed=3 file(s)`, `selected 1 test file(s)` — but nothing in CI runs it. Recorded as the next piece of work, not smuggled into this lane |
+
+## 6. Two ideas the estate already owns: Aider's repo-map, and Bloop
+
+Recorded 2026-10-26 as a decision record (also on chidionyema/idp#7205).
+
+**Aider's repo-map** — a Tree-sitter symbol graph of the whole codebase (symbols, definitions,
+cross-file dependencies), run in CI to catch a PR that breaks cross-file boundaries. The estate
+has all three pieces already, in its own vocabulary:
+
+| Aider's piece | The estate's equivalent | Where it is proved |
+|---|---|---|
+| repo-map: symbols + cross-file deps | `bin/catalog-projection` — pure, total, deterministic over Python source; every `.py` → one Component, every import → one `dependsOn` edge or one logged drop; DET/IDP/REF/SCH invariants | `bin/test-catalog-projection`, run by `bin/idp-ci` |
+| "does this PR break cross-file boundaries?" | `bin/idp-affected-graph` — three-layer impact map (AST+import edges / prompt+schema / graph-topology closure); fail-open by construction: skipped only on a NO verdict strictly below threshold, equality runs, a missing graph produces RUN | live on this lane's diff: `changed=3 file(s)`, `selected 1 test file(s)` |
+| repo-map as LLM context | `platform/estate/libexec/symbol_slicer.py` (FR-1) — touched symbols + dependency signatures; Tree-sitter optional, deterministic fallback otherwise | `tests/test_symbol_slicer.py`; live Tier 2: `context_mode: sliced`, 6,914 bytes |
+
+**Enforcement — the one missing piece.** The capability works; nothing in the PR path calls it.
+The sanctioned fix is a RUNG, not a service: a rung in `bin/idp-ci` that runs
+`bin/idp-affected-graph --plan --base <base>` and FAILS when a changed symbol's dependents are
+not in the selected set — a selection-completeness assertion, which is Aider's CI check written
+in the estate's safety property (unknown → RUN → FAIL, never skip). It stays a pure function of
+the tree, so the same diff selects the same tests everywhere.
+
+**Bloop** — a self-hosted Rust code-search engine parsing the codebase into an AST code graph so
+local agents can query the wider architecture before judging a PR. **Rejected: do not run it, and
+do not run anything like it.** §4 gives the reason in full. The estate's version of "query the
+architecture" is a query surface over committed, gated artifacts — the projection's edges, the
+capability registry, the growmos graph — not an indexer with its own copy of the tree.
+
+**The future-proofing rules these two ideas leave behind.**
+
+1. **One owner per artifact.** Cross-file edges belong to `catalog-projection`, the symbol map to
+   `symbol_slicer`, the capability map to the registry. A new consumer reads them; it never
+   recomputes them.
+2. **Determinism is the gate.** Every artifact is a pure function of the tree, so drift is a
+   diffable fact a gate can refuse. A service breaks this by construction.
+3. **Parsers accelerate, they never decide.** Tree-sitter is optional inside `symbol_slicer`, and
+   any rung that uses it must fail closed without it — CI must not depend on a native parser.
+4. **Enforcement belongs in the PR path** (fast-gate/verifier), not on a laptop. A capability no
+   CI runs does not exist — the same defect this lane found in the four-tier review pipeline,
+   which advertised four tiers and ran two.
+5. **A fork gets a record.** This section is that record.
