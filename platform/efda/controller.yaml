@@ -24,6 +24,12 @@ spec:
         app.kubernetes.io/name: efda-controller
     spec:
       serviceAccountName: efda-controller
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: controller
           image: ghcr.io/chidionyema/efda:0.0.0 # {"$imagepolicy": "flux-system:efda:tag"}
@@ -81,6 +87,12 @@ spec:
         app.kubernetes.io/name: efda-executor
     spec:
       serviceAccountName: efda-executor
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: executor
           image: ghcr.io/chidionyema/efda:0.0.0 # {"$imagepolicy": "flux-system:efda:tag"}
