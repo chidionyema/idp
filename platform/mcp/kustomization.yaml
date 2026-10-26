@@ -17,7 +17,13 @@ images:
   # pull and Flux reports it. image-automation-controller rewrites the newTag line from
   # ImagePolicy flux-system/estate-mcp; the marker is how it finds the line.
   - name: ghcr.io/chidionyema/estate-mcp
-    newTag: main-14831-8aaba01d106bd64537a6e7597ce3cc144421055a # {"$imagepolicy": "flux-system:estate-mcp:tag"}
+    # 2026-10-26: main-14831 was an August build, so the pod ran a door that could not be handed
+    # evidence (its `remember` advertised content/kind/runtime/source/subject/tags only) while
+    # main's plugin had offered instrument/evidence/authority since #7166. Measured that hour:
+    # 193 of 193 memories raw_source, and `bin/memory-gate` failing at rung 3 on the pod
+    # (AttributeError: module 'em' has no attribute 'claim_checker'). Pinned to the build of the
+    # main that carries it, so Flux converges on the door every agent writes through.
+    newTag: main-14931-5b52f36c580e070d98ecc1d8aa403f7272d11b5a # {"$imagepolicy": "flux-system:estate-mcp:tag"}
 configMapGenerator:
   - name: mcp-config
     files:
