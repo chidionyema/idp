@@ -170,7 +170,11 @@ flows:
     # for agent harness telemetry (#6227). Without this the connection times out at the fence.
     # keda: the backstage sidecar runs a KEDA watcher that needs to reach the KEDA operator (crew#839).
     egress: [dagster, estate-db, event-bus, identity, kyverno, llm, robusta, tailscale, unified-memory, keda]
-    ingress_from: [edge]
+    # voice-router: the other half of voice-router's `egress: [... backstage]` -- the streaming
+    # router runs a spoken utterance as an estate intent through this namespace's fleetview voice
+    # sidecar (POST /voice/intent, port 18790). The generator refuses a one-sided flow by name,
+    # which is the defect that cut hindsight, cyrus and meridian before it.
+    ingress_from: [edge, voice-router]
     # api.github.com. The portal's buttons are scaffolder templates whose one step is
     # `github:actions:dispatch`, and the catalogue also ingests entities and TechDocs over the
     # same API. Measured 2026-09-07 in scaffolder.task_events on database `backstage`: the
@@ -519,7 +523,15 @@ flows:
     # The API server needs no line here: policy_docs gives every namespace allow-apiserver-egress, and that is how its watcher reaches events, Kustomizations and HelmReleases.
     # mcp: unified estate memory, so the brain answers from what the estate remembers. The key is
     # platform/voice-router/deploy/external-secret.yaml (voice-router-mcp).
-    egress: [event-bus, llm, mcp]
+    # backstage: the streaming router (deploy/router.yaml) runs a spoken utterance as an estate
+    # intent through the fleetview sidecar's POST /voice/intent at
+    # fleetview-voice.backstage.svc:18790 -- the same door the Deck's buttons take (audit S7).
+    # Declared on backstage's side too.
+    egress: [event-bus, llm, mcp, backstage]
+    # edge: /voice/ws is served from this namespace now (defect 12 of the face audit); Traefik is
+    # the only thing that may dial it, and only this side naming backstage above plus this line
+    # keeps the return path open.
+    ingress_from: [edge]
   estate-db:
     # Serves an admission webhook, so the control plane calls IN. It is outside the pod
     # network and outside every namespace selector, so default-deny drops it and only an
@@ -631,7 +643,13 @@ flows:
              # default-deny dropped that return packet -- the only symptom was the self-check
              # timing out, exactly the shape prospector already names for its solver return
              # traffic. cert-manager now declares `ingress_from: [edge]` to match this side.
-             cert-manager]
+             cert-manager,
+             # voice-router: /voice/ws is an HTTPRoute backend in another namespace
+             # (platform/backstage/overlays/oke/httproute.yaml -> Service voice-router:8080).
+             # voice-router declares `ingress_from: [edge]`; this is the other half, and the
+             # estate has been cut by a one-sided declaration three times (hindsight, cyrus,
+             # meridian above).
+             voice-router]
     # The public listeners (traefik containerPorts web 8000 and websecure 8443, behind the OCI
     # load balancer with externalTrafficPolicy Local, so the source address is the client's).
     # The traefik pods still held flannel addresses when Calico started enforcing on 2026-09-06,
