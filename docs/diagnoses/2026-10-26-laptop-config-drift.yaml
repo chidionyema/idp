@@ -1,0 +1,89 @@
+description: 'Question: why did the laptop''s rendered LiteLLM config stop matching a render of the
+  registry (bin/idp-vendor-render --check RED on origin/main@0f9ad6da0: "llm/config.yaml does not
+  match a render from the registry")? Three competing explanations: the generated file was
+  hand-edited while its source base kept the Mac ollama lanes (so the next render by anyone
+  restores them); the vendor registry moved under the tree (so the committed render is stale
+  against an unchanged source); or the base file is not the source the renderer actually reads
+  (so neither file explains the difference and editing the base changes nothing).
+
+  Measured on origin/main@0f9ad6da0, before any fix. The renderer (bin/idp-vendor-render) walks
+  the base line by line and replaces ONLY the four marker lines (# @vendor-lanes@,
+  # @vendor-cluster-lanes@, # @vendor-fallbacks@, # @vendor-cluster-fallbacks@) with the
+  registry''s blocks; every other line of the base passes through verbatim.
+
+  '
+hypotheses:
+- name: H1
+  description: the rendered file was hand-edited (the base''s Mac-ollama tail block replaced in the
+    output) while the source base kept the Mac lanes; the renderer passes base content through
+    verbatim, so a fresh render restores them
+  prior: 0.3333333333
+- name: H2
+  description: the vendor registry changed under the tree, so the committed render is stale relative
+    to an unchanged source; the difference would come from the registry, not the base
+  prior: 0.3333333333
+- name: H3
+  description: the base file is not the source the renderer reads (the true source lives elsewhere),
+    so the base cannot explain the difference and editing it changes nothing
+  prior: 0.3333333333
+n_eff_divisor: 2
+evidence:
+- name: 'Mac-bound api_base lines (host.docker.internal:11434) in the source base vs the committed
+    rendered file'
+  observed:
+    base: 4
+    rendered: 0
+  likelihoods:
+    H1:
+      base: 0.95
+      rendered: 0.05
+    H2:
+      base: 0.5
+      rendered: 0.5
+    H3:
+      base: 0.6
+      rendered: 0.4
+- name: 'where a fresh render''s four Mac lanes come from: the base''s own lines, or the registry'
+  observed:
+    from_base: 4
+    from_registry: 0
+  likelihoods:
+    H1:
+      from_base: 0.98
+      from_registry: 0.02
+    H2:
+      from_base: 0.2
+      from_registry: 0.8
+    H3:
+      from_base: 0.4
+      from_registry: 0.6
+- name: 'the commit that removed the Mac lanes from the rendered file (c64b905e9) touched the base in
+    the same commit'
+  observed:
+    rendered_only: 1
+    both: 0
+  likelihoods:
+    H1:
+      rendered_only: 0.9
+      both: 0.1
+    H2:
+      rendered_only: 0.5
+      both: 0.5
+    H3:
+      rendered_only: 0.4
+      both: 0.6
+- name: 'after editing the base and re-rendering with the estate''s own renderer, the check passes
+    and the output carries no Mac lane'
+  observed:
+    fix_worked: 1
+    fix_did_not_work: 0
+  likelihoods:
+    H1:
+      fix_worked: 0.9
+      fix_did_not_work: 0.1
+    H2:
+      fix_worked: 0.5
+      fix_did_not_work: 0.5
+    H3:
+      fix_worked: 0.2
+      fix_did_not_work: 0.8

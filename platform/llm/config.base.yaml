@@ -1,8 +1,12 @@
 # LiteLLM config for the cluster. Every hosted model here is the same entry as llm/config.yaml
 # (tests/test_llm_row.py diffs them); what is missing is on purpose:
-#   - the ollama* entries: they point at the founder's Mac (host.docker.internal), which the
-#     cluster cannot reach. The free local lane stays on the laptop compose.
-#   - the ollama fallbacks, for the same reason.
+#   - the ollama* entries that pointed at the founder's Mac (host.docker.internal), which the
+#     cluster cannot reach AND the founder will never run: "we dont have resources to run ollama
+#     locally" (2026-10-26). The Mac killed its Ollama on 2026-09-10, so those rows were dead
+#     hops that burned a connection-refused on every fallback walk.
+# The free local floor lives HERE, not on the laptop: the `ollama` lane below points at the
+# cluster-local deployment (platform/llm/ollama.yaml, qwen2.5-coder:1.5b on the always-free
+# Ampere pool), and it answers -- measured 2026-10-26, 1.01 s through llm.mumchimp.com.
 # `vision` is an alias so photo intake names a capability, not a vendor (crew#284 CP1).
 
 model_list:
