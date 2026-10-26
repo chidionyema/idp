@@ -28,6 +28,20 @@ export type EstateEnvelope = {
     count?: number;
     claims?: { created_at: string; status: string; statement: string }[];
   };
+  claims?: {
+    available?: boolean;
+    error?: string;
+    live?: number;
+    stale?: number;
+    next?: {
+      agent?: string;
+      issue?: number;
+      title?: string;
+      url?: string;
+      subgoals?: string;
+      time_left?: string;
+    } | null;
+  };
 };
 
 export type LoadedEstate =
@@ -108,7 +122,7 @@ export function EstateStrip() {
     );
   }
 
-  const { green, burn, research } = loaded.body;
+  const { green, burn, research, claims } = loaded.body;
 
   // GREEN: the lane's own verdict. Unreadable is unavailable with a reason, never green.
   // A main object the source did not supply is 'unknown', not RED -- RED is a measured fact.
@@ -159,11 +173,35 @@ export function EstateStrip() {
     );
   }
 
+  // CLAIMS: who holds what and how much is left. The time left is the claim's OWN pace from its
+  // sub-goals (claims.claims_glance -> plan_pace), and an estimate with no measurable pace reads
+  // "unknown" with the reason -- never a number borrowed from another agent's speed.
+  let claimsChip = (
+    <Chip title={claims?.error ?? 'the claims reader did not answer'}>
+      Claims: unavailable
+    </Chip>
+  );
+  if (claims?.available) {
+    const nxt = claims.next;
+    claimsChip = nxt ? (
+      <Chip
+        title={`${nxt.agent} on #${nxt.issue}: ${nxt.title ?? ''} · sub-goals ${nxt.subgoals ?? '-'} · ${nxt.time_left ?? 'unknown'}`}
+      >
+        {`${claims.live} live · next ${nxt.agent} #${nxt.issue} ${nxt.time_left ?? 'unknown'}`}
+      </Chip>
+    ) : (
+      <Chip title={`${claims.stale ?? 0} stale heartbeat(s) in the window`}>
+        {`${claims.live ?? 0} live claims`}
+      </Chip>
+    );
+  }
+
   return (
     <div data-testid="estate-strip" data-state="ready">
       {greenChip}
       {burnChip}
       {researchChip}
+      {claimsChip}
     </div>
   );
 }
