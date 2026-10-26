@@ -29,14 +29,16 @@ bin/estate-surface-map --json    # the same facts, for a diff or a CI assertion
 bin/estate-surface-map --check   # exit 1 while a named gap is open
 ```
 
-The timestamp is the only non-deterministic field. Everything else is read from a file on the
-machine, and a file that is not there is reported `MISSING` rather than assumed present.
+Two parts of the output move on their own: the timestamp, and **section 6 — the estate in
+flux** — because they measure work that is landing right now. Sections 1–5 are stable until a
+hook, a config or a rule changes. Everything else is read from a file on the machine, and a file
+that is not there is reported `MISSING` rather than assumed present.
 
 ## The map, as measured on 2026-10-26
 
 ```
 ESTATE AGENT SURFACE MAP
-measured_at: 2026-10-26T21:02:49+00:00
+measured_at: 2026-10-26T21:51:57+00:00
 ==============================================================================
 
 1. RUNTIMES AND WHAT EACH MAY TOUCH
@@ -99,7 +101,26 @@ measured_at: 2026-10-26T21:02:49+00:00
      promotion                    main is protected by a required-checks ruleset; a lane raises the PR and fast-forwards main only on green -- no agent self-promotes
                                   <- .github/rulesets (applied by bin/repo-rulesets)
 
-5. NAMED GAPS (each is a fact about this machine)
+6. THE ESTATE IN FLUX (measured; it moves because the estate moves)
+     window               3 day(s) on origin/main
+     landed               95 commit(s) across 95 pull request(s); 13 spec(s) and 8 decision(s) touched
+     per day              2026-10-24: 22, 2026-10-25: 38, 2026-10-26: 35
+     by type              fix: 17, docs: 16, feat: 9, chore: 5, shadow: 5, build: 3 (+32 more)
+     board                work-inflight board, measured at 2026-10-26T21:45:15.398767+00:00: LIVE 7, RECOVERABLE 49, LANDED 58 over 3 day(s); 70 claim(s) seen
+                      <- /Users/roseonyema/.estate/results/work-inflight/latest.json
+     LIVE claim #7256  codex-transform  1 path(s): docs/transformation/2026-10-26/*
+                      transformation: three-day estate reconstruction, architecture challenge and delivery reset (0.11h since claim)
+     LIVE claim #7220  pi  87 path(s): bin/idp-estate-seed, catalog/estate-capability-registry.json, clusters/oke/platform.yaml (+84 more)
+                      feat(efda): universal coverage layer -- registry, diagnostic artifacts, pack factory, allowlisted executor (0.37h since claim)
+     LIVE claim #7248  pi  1 path(s): docs/specs/2026-10-26-the-estate-llm-spend-floor.md
+                      docs(cost): the estate's LLM spend floor -- measured, sequenced and owned (0.43h since claim)
+     LIVE claim #7252  pi  4 path(s): bin/estate-surface-map, docs/decisions/2026-10-26-one-context-compiler-and-one-execution-gateway.md, docs/reference/estate-agent-surface-map.md (+1 more)
+                      docs(surface): the estate agent surface map + the context-compiler and execution-gateway spec (0.67h since claim)
+     LIVE claim #7248  estate-agent  2 path(s): docs/decisions/2026-10-26-the-llm-spend-is-cut-at-the-router-on-the-cloud-route.md, docs/specs/2026-10-26-the-estate-llm-spend-floor.md
+                      docs(cost): the estate's LLM spend floor -- measured, sequenced and owned (1.12h since claim)
+     held paths           94 path(s) held by a live claim: docs/transformation/2026-10-26/*, bin/idp-estate-seed, catalog/estate-capability-registry.json, clusters/oke/platform.yaml, docs/specs/2026-10-26-efda-spine.md, docs/specs/2026-10-26-verified-completion-v2.md, efda.Dockerfile, efda/__init__.py (+86 more)
+
+7. NAMED GAPS (each is a fact about this machine)
      G1  No single execution gateway: each runtime has its own door
          what:  Pi reaches the executor through an MCP server whose tools are intents-only, AND through estate_execute, which takes a free-form command string. Claude Code reaches the shell through its own Bash tool; the estate's plan hook sees that call but the command itself never becomes an intent. There is no component all agents go through.
          so:    A context compiler or a policy inserted at 'the gateway' has nowhere universal to sit. Enforcement is per-surface and therefore uneven.
@@ -129,6 +150,39 @@ measured_at: 2026-10-26T21:02:49+00:00
          so:    Every claim about 'what Pi does' sourced from the tree is a claim about a different program than the one running.
          proof: ~/.pi/agent/extensions/estate-commands.ts vs platform/estate/pi/estate-commands.ts
 ```
+
+## The estate in flux (measured, 2026-10-26, three-day window)
+
+The founder's instruction on 2026-10-26 was to look at **all** work being done across the lanes
+over the last three days, because a lot is in flux — and to place this work against that, not on
+top of it. This section is that measurement; it is section 6 of the map above, and it is
+regenerated with the map.
+
+**What landed.** 95 commits across 95 pull requests on `main` in three days (2026-10-24: 22,
+2026-10-25: 38, 2026-10-26: 35). By type: 17 `fix`, 16 `docs`, 9 `feat`, 5 `chore`, 5 `shadow`,
+3 `build`, and 32 further kinds. Thirteen specs and eight decision records were touched in the
+same window: the estate is rewriting its own architecture faster than any document can track.
+
+**What has not landed.** The estate's own work-inflight board (`estate-execute work-inflight
+--days 3`) measured **LIVE 7 · RECOVERABLE 49 · LANDED 58 · DEAD 0** over **70 claims** and
+**114 work items**. Nothing is dead; a great deal is recoverable and unlanded.
+
+**The live claims on the measured day, and whether they touch this work:**
+
+| Claim | Agent | Paths held | Touches this work? |
+|---|---|---|---|
+| #7220 — EFDA universal coverage layer | `pi` | 87 paths, including the generated `catalog/estate-capability-registry.json` | The registry snapshot is a **generated** file: both lanes regenerate it from the tree, and the later land wins. No other path overlaps. |
+| #7248 — the LLM spend floor | `pi`, `estate-agent` | `docs/specs/2026-10-26-the-estate-llm-spend-floor.md`, `docs/decisions/2026-10-26-the-llm-spend-is-cut-at-the-router-on-the-cloud-route.md` | No. |
+| #7252 — this work (the surface map, the spec, the ADR) | `pi` | `bin/estate-surface-map` and the three documents | Yes — this is it. |
+| #7256 — three-day estate reconstruction | `codex-transform` | `docs/transformation/2026-10-26/*` | No. |
+
+**Conclusion, measured rather than asserted:** no live claim holds a path this work writes,
+apart from the generated registry snapshot, and no other lane is building an execution gateway,
+a context compiler or an intelligence broker. The gaps below are not being closed elsewhere.
+
+**What this means for the map.** A map of surfaces is a map of a moving estate; section 6 is
+how the map stays honest about that. The gaps in section 7 are stated as facts about the
+machine **on the measured day**, and the flux section is how a reader knows how fresh they are.
 
 ## The answer to the founder's question
 

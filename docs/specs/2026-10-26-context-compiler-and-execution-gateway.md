@@ -183,12 +183,38 @@ the only way an agent's machine access is stopped, on every surface.
 model call passes through, which the estate does not have today. The compiler is a new
 *composition* of existing pieces. The gateway is the existing executor, made mandatory.
 
+### 4.1 Placement against the estate in flux (measured, 2026-10-26, three days)
+
+The estate is in flux and this design must not rebuild what is already moving. Measured over the
+last three days on `main`: **95 commits across 95 pull requests**, **13 specs** and **8 decision
+records** touched; the work-inflight board reads **LIVE 7 · RECOVERABLE 49 · LANDED 58 · DEAD 0**
+over **70 claims** and **114 work items**. Every entry below is a live claim on the measured
+day, not a guess.
+
+| In-flight work | What it owns | How this spec relates |
+|---|---|---|
+| **Estate Capability Registry** (#7209, #7230, #7234, #7237) | the one capability store, its five falsifiable invariants, the dependency-edge extension, the drift gate | The compiler's and the broker's capability records live in **that** registry. This spec adds no store, no second index of capabilities, and no second door (`bin/estate-discover` is superseded by `bin/capability-index`). |
+| **ADR 0044, machine-first T-7** (#7229) | every agent action names its decider | The broker **is** that decider. T-7's field is the `policy_ref` this spec's I1 measures; m3 fills in a field the estate has already declared. |
+| **Cloud route is the default** (#7247) and **the LLM spend floor** (#7248) | the route law and the measured cost floor, cut at the router | I6, I7 and m6 are sequenced **behind** that law and reuse its numbers. This spec does not re-decide the route, the budget or the vendor registry. |
+| **ZeroEdge + TTCS** (#7228) | the tree-sitter code graph — the Bloop analogue | This is the compiler's symbol/AST retrieval. I5 forbids a second one. |
+| **Estate master epic** §§11–22 (#7131, #7145, #7159) | the programme of record: the operating model, the partners' rules, the HQ verbs, the context layers | The epic assumes a substrate; it does not specify one. This spec specifies the substrate the epic's later waves stand on, and does not restate the epic's inventory. |
+| **EFDA universal coverage layer** (#7220) | the coverage layer, 87 paths, including the generated `catalog/estate-capability-registry.json` | The registry snapshot is **generated**: both lanes regenerate it from the tree and the later land wins. No other path overlaps this spec's. |
+| **Three-day estate reconstruction** (#7256, `docs/transformation/2026-10-26/*`) | a reconstruction challenge and delivery reset | Holds no path this spec writes. This map and this spec are inputs to it. |
+
+**The measured conclusion:** no lane in flight is building a context compiler, an intelligence
+broker or a mandatory execution gateway. The three items above that touch this design touch it
+as *substrate to reuse* (the registry, the impact graph, the affected-graph, the router) or as
+*law already decided* (cloud-first, machine-first). Nothing here duplicates in-flight work; the
+one shared file — the generated registry snapshot — is resolved by regenerating it, which is what
+the registry's own drift gate demands.
+
 ---
 
 ## 5. The sequence (staged; each step has a done-check that can fail)
 
-**m1 — Measure (done, 2026-10-26).** `bin/estate-surface-map` prints the agent surface and the
-named gaps. *Done-check:* the script runs and its output is stored in
+**m1 — Measure (done, 2026-10-26).** `bin/estate-surface-map` prints the agent surface, the named
+gaps **and the estate in flux** (what landed in the window, and which live claim holds which
+paths). *Done-check:* the script runs and its output is stored in
 `docs/reference/estate-agent-surface-map.md`.
 
 **m2 — Close the wide door.** The free-form command entrance (Pi's `estate_execute`) becomes
