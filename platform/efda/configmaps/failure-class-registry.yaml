@@ -1,0 +1,37 @@
+# The FailureClassRegistry: the versioned vocabulary an artifact's
+# failure_class may name. A novel failure mode is introduced here, not by a
+# schema bump. The controller publishes classes.json from this ConfigMap into
+# the sink, and the sink refuses an artifact whose class is not here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: failure-class-registry
+  namespace: efda-system
+data:
+  classes.json: |
+    {
+      "version": "v1",
+      "classes": [
+        {"id": "infrastructure", "description": "cluster, network or storage"},
+        {"id": "configuration", "description": "manifest or misconfiguration"},
+        {"id": "dependency", "description": "an external service failed"},
+        {"id": "code", "description": "application logic failed"},
+        {"id": "resource_exhaustion", "description": "cpu, memory or disk"},
+        {"id": "stall", "description": "no progress within the threshold"},
+        {"id": "hard_kill", "description": "the process was SIGKILLed"},
+        {"id": "exit_nonzero", "description": "the process exited non-zero"},
+        {"id": "schema_violation", "description": "the artifact did not satisfy the contract"},
+        {"id": "provider_quota_exhaustion", "description": "a provider refused for quota"},
+        {"id": "provider_instability", "description": "a provider was unstable"},
+        {"id": "image_pull_failure", "description": "the image could not be pulled"},
+        {"id": "oomkill", "description": "the container was OOMKilled"},
+        {"id": "crashloop", "description": "the container restarted repeatedly"},
+        {"id": "scheduling_failure", "description": "no node could run the pod"},
+        {"id": "probe_failure", "description": "a liveness or readiness probe failed"},
+        {"id": "connection_refused", "description": "a dependency refused the connection"},
+        {"id": "dependency_timeout", "description": "a dependency did not answer in time"},
+        {"id": "tls_error", "description": "the TLS handshake failed"},
+        {"id": "permission_denied", "description": "the process was not allowed to act"},
+        {"id": "none", "description": "the run completed; the artifact records the outcome"}
+      ]
+    }
