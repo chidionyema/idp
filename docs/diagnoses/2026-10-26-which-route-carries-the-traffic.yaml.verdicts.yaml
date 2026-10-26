@@ -1,0 +1,123 @@
+description: 'The founder ruled on 2026-10-26 that the cloud router (llm.mumchimp.com)
+  is the default route for model calls and the laptop router (127.0.0.1:4000) is the
+  fallback for an outage. That ruling changes the law, but the question this record
+  answers is the state the law is written about: which route actually carries the
+  estate calls today, and is the cloud ready to take them. The priors and likelihoods
+  below were fixed before the observed counts were read; every observation was measured
+  in this session on this machine, and the command is named in each evidence item. '
+hypotheses:
+- name: H1
+  description: 'the laptop router carries the calls: the clients on this machine are
+    pointed at 127.0.0.1:4000 and the front prefers a live laptop slot, so the cloud
+    is only reached when the laptop path fails'
+  prior: 0.65
+- name: H2
+  description: 'the cloud router carries the calls: the clients are pointed at llm.mumchimp.com
+    and the front''s cloud leg is the normal path'
+  prior: 0.25
+- name: H3
+  description: the traffic is split between the two, because the estate has been moving
+    clients over one at a time and neither route dominates yet
+  prior: 0.1
+evidence:
+- name: 'the client config on this machine points at the laptop front: ~/.pi/agent/models.json
+    carries baseUrl http://127.0.0.1:4000/v1 for the estate provider, and every model
+    id in it (cerebras, default, fast, gemini, groq, minimax_m27, ollama) is served
+    through that base url'
+  observed:
+    client_points_at_the_laptop_front: 1
+  likelihoods:
+    H1:
+      client_points_at_the_laptop_front: 0.95
+      other: 0.05
+    H2:
+      client_points_at_the_laptop_front: 0.05
+      other: 0.95
+    H3:
+      client_points_at_the_laptop_front: 0.5
+      other: 0.5
+- name: 'the front''s own order is laptop-first: platform/llm/front.py builds its
+    target list as the active slot, then its twin, then the answering slots, and only
+    then the cloud, and its docstring says the cloud leg is taken when no laptop slot
+    is answering'
+  observed:
+    front_prefers_a_laptop_slot: 1
+  likelihoods:
+    H1:
+      front_prefers_a_laptop_slot: 0.95
+      other: 0.05
+    H2:
+      front_prefers_a_laptop_slot: 0.1
+      other: 0.9
+    H3:
+      front_prefers_a_laptop_slot: 0.4
+      other: 0.6
+- name: 'both routers are up and serve the same ids right now: GET http://127.0.0.1:4000/v1/models
+    and GET https://llm.mumchimp.com/v1/models each answered HTTP 200 with the same
+    29 group names (cerebras, claude-opus, default, embed, fast, gemini, groq, minimax_m27,
+    ollama, ...)'
+  observed:
+    both_routers_serve_the_same_29_groups: 1
+  likelihoods:
+    H1:
+      both_routers_serve_the_same_29_groups: 0.9
+      other: 0.1
+    H2:
+      both_routers_serve_the_same_29_groups: 0.9
+      other: 0.1
+    H3:
+      both_routers_serve_the_same_29_groups: 0.9
+      other: 0.1
+- name: 'the cloud carries no claude lane of its own: its claude-opus and claude-opus-5-5
+    names are the two alias rows that point at deepseek (docs/diagnoses/2026-10-22-claude-code-403-cloud-has-no-claude-lane.yaml),
+    so the founder''s Max-subscription traffic has nowhere to go on the cloud yet'
+  observed:
+    cloud_claude_names_are_aliases: 1
+  likelihoods:
+    H1:
+      cloud_claude_names_are_aliases: 0.9
+      other: 0.1
+    H2:
+      cloud_claude_names_are_aliases: 0.2
+      other: 0.8
+    H3:
+      cloud_claude_names_are_aliases: 0.8
+      other: 0.2
+- name: 'the laptop holds no router state of its own: its runtime config (~/.estate/router-state/config.runtime.yaml)
+    carries no DATABASE_URL, no virtual keys and no redis, so it is a stateless byte-forwarder
+    and there is no state on the laptop that the cloud would be missing'
+  observed:
+    laptop_holds_no_router_state: 1
+  likelihoods:
+    H1:
+      laptop_holds_no_router_state: 0.85
+      other: 0.15
+    H2:
+      laptop_holds_no_router_state: 0.15
+      other: 0.85
+    H3:
+      laptop_holds_no_router_state: 0.4
+      other: 0.6
+- name: 'the law and the tree disagreed with the wired state: the founder''s 2026-10-26
+    ruling names the cloud the default and the laptop the fallback, while four files
+    in the tree (llm/config.base.yaml, llm/config.yaml, bin/litellm-local, bin/idp-install-all)
+    still quote the superseded 2026-09-26 laptop-first ruling as the current reason
+    for the route'
+  observed:
+    law_and_files_disagree_with_the_wired_state: 1
+  likelihoods:
+    H1:
+      law_and_files_disagree_with_the_wired_state: 0.95
+      other: 0.05
+    H2:
+      law_and_files_disagree_with_the_wired_state: 0.3
+      other: 0.7
+    H3:
+      law_and_files_disagree_with_the_wired_state: 0.6
+      other: 0.4
+posteriors:
+  H1: 0.9910473724
+  H2: 2.61518e-05
+  H3: 0.0089264758
+winner: H1
+computed_at: '2026-10-26T18:52:46Z'
