@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: efda-system
+  labels:
+    idp.estate.io/runtime: always-on
+    efda.estate.io/layer: coverage
+---
+# The checkpoint sink (L1). One redis, one namespace, append-only persistence:
+# a checkpoint that has landed must still be there after the pod that wrote it
+# is gone.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: efda-checkpoints
+  namespace: efda-system
+  labels:
+    app.kubernetes.io/name: efda-checkpoints
+spec:
+  serviceName: efda-checkpoints
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: efda-checkpoints
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: efda-checkpoints
+    spec:
+      # The sink needs no API token: it stores checkpoints and nothing else.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999   # redis uid in the alpine image
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: redis
+          image: docker.io/library/redis:7.4-alpine
+          args: ["--appendonly", "yes", "--save", "60", "1"]
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: efda-checkpoints
+  namespace: efda-system
+  labels:
+    app.kubernetes.io/name: efda-checkpoints
+spec:
+  selector:
+    app.kubernetes.io/name: efda-checkpoints
+  ports:
+    - port: 6379
+      targetPort: 6379

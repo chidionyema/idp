@@ -1,0 +1,21 @@
+# The spine: the bridge and the observer, one image, one namespace.
+#
+# The Flux-side objects (the notification-controller's Provider and Alert) are NOT here:
+# they live in flux-system, and Flux's namespace transformer would move them. They are in
+# events/, reconciled by their own row that depends on this one -- the stream has to exist
+# before anything publishes into it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: spine
+resources:
+  - namespace.yaml
+  - rbac.yaml
+  - bridge.yaml
+  - worker.yaml
+images:
+  # build-multiarch pushes ghcr.io/chidionyema/spine:main-<run>-<sha> from spine.Dockerfile
+  # (bin/dockerfiles discovers it by name: `spine`). The image-automation-controller
+  # rewrites the newTag line from ImagePolicy flux-system/spine; the marker is how it
+  # finds the line.
+  - name: ghcr.io/chidionyema/spine
+    newTag: main-14591-b1570ed835a6565912a7f8fd94c4fdeb54f4d6cc # {"$imagepolicy": "flux-system:spine:tag"}
