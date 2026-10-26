@@ -28,10 +28,22 @@
 # single writer as before. replicas is 1 again, and CPU requests are trimmed to 150m
 # because both nodes run 5808m of their 6000m allocated (kubectl describe nodes,
 # 2026-10-26) -- at the old 200m/250m requests this pod is unschedulable.
+#
+# WHY THE CLAIM IS RENAMED, NOT MUTATED (2026-10-26, second correction). The first
+# version of this change edited the existing claim in place -- storageClassName
+# oci-bv -> local-path, 5Gi -> 3Gi -- and Flux's apply was rejected by the API
+# server: "spec is immutable after creation except resources.requests and
+# volumeAttributesClassName for bound claims". A claim's storage class is fixed at
+# birth, so no git edit can move an existing claim onto a different class; only a
+# NEW claim can. The claim is therefore named ollama-models-local and the old
+# ollama-models object is left behind: it is Pending, unbound, and holds no volume,
+# so it consumes no quota and no disk. It is removed by Flux's prune (the
+# llm kustomization prunes resources it previously applied), or by an operator who
+# deletes it deliberately -- never by a hand edit and a kubectl apply.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: ollama-models
+  name: ollama-models-local
   namespace: llm
 spec:
   accessModes: [ReadWriteOnce]
@@ -135,7 +147,7 @@ spec:
             failureThreshold: 3
       volumes:
         - name: models
-          persistentVolumeClaim: { claimName: ollama-models }
+          persistentVolumeClaim: { claimName: ollama-models-local }
         - name: tmp
           emptyDir: { sizeLimit: 256Mi }
 ---

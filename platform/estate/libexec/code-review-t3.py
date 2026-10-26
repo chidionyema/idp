@@ -19,8 +19,36 @@ from pathlib import Path
 
 HOME = Path.home()
 IDP = HOME / "Documents/code/idp"
+# Where Tier 2's verdicts are handed off. The intent writes each tier's JSON here;
+# a step's env does not survive into the next step, so env alone never worked
+# (2026-10-26: Tier 3 was reached with an empty verdict list and verified nothing).
+REVIEW_DIR = Path(
+    os.environ.get("ESTATE_REVIEW_DIR") or (HOME / ".estate/review/latest")
+)
 VERIFIED: list[dict] = []
 REJECTED: list[dict] = []
+
+
+def load_verdicts() -> list[dict]:
+    """Tier 2's verdicts from the env if set, else from the hand-off file."""
+    raw = os.environ.get("T2_VERDICTS", "").strip()
+    if raw:
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            parsed = None
+        if isinstance(parsed, list):
+            return parsed
+        if isinstance(parsed, dict) and isinstance(parsed.get("verdicts"), list):
+            return parsed["verdicts"]
+    try:
+        data = json.loads((REVIEW_DIR / "t2.json").read_text())
+    except Exception:
+        return []
+    if isinstance(data, dict):
+        value = data.get("verdicts", [])
+        return value if isinstance(value, list) else []
+    return data if isinstance(data, list) else []
 
 
 def find_file(file_spec: str) -> Path | None:
@@ -135,8 +163,8 @@ def main():
         print(json.dumps({"tier": 3, "skipped": True, "reason": f"tier={tier_arg}"}))
         return
 
-    # Read findings that need verification (passed from T2 via env)
-    t2_verdicts = json.loads(os.environ.get("T2_VERDICTS", "[]"))
+    # Verdicts to verify: from Tier 2 via the hand-off file (or the env).
+    t2_verdicts = load_verdicts()
 
     if not t2_verdicts:
         print(
@@ -156,6 +184,15 @@ def main():
         line = verdict.get("line", 0)
         rule = verdict.get("rule", "")
         context = verdict.get("message", "")
+
+        # Tier 3 disposes. A finding Tier 2 judged a false positive is not an issue
+        # to surface, so it is rejected here - re-checking it would only re-confirm
+        # the pattern that made the model doubt it in the first place (2026-10-26:
+        # 11 false positives came out of the verifier as "5 verified").
+        label = str(verdict.get("verdict", "")).strip().lower()
+        if label and label != "real":
+            REJECTED.append({**verdict, "reason": f"Tier 2 judged it {label}"})
+            continue
 
         if not file_spec:
             REJECTED.append({**verdict, "reason": "no file specified"})
