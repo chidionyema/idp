@@ -1,0 +1,48 @@
+# The CoverageReport: what the estate covers, and what it does not. One
+# object, always named "latest", regenerated on every reconcile pass.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: coveragereports.efda.estate
+spec:
+  group: efda.estate
+  scope: Namespaced
+  names:
+    kind: CoverageReport
+    plural: coveragereports
+    singular: coveragereport
+    shortNames: ["covrep"]
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Observed
+          type: integer
+          jsonPath: .spec.counts.observed
+        - name: Orphans
+          type: integer
+          jsonPath: .spec.counts.orphans
+        - name: Generated
+          type: string
+          jsonPath: .spec.generatedAt
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: ["spec"]
+          properties:
+            spec:
+              type: object
+              required: ["generatedAt", "counts"]
+              properties:
+                generatedAt:
+                  type: string
+                  format: date-time
+                counts:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                nonCompliant:
+                  type: array
+                  items:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true

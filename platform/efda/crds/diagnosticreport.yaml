@@ -1,0 +1,88 @@
+# The DiagnosticReport (Interface 3): a named cause, a confidence, the pack it
+# came from and the evidence it stands on. A report that cannot name its
+# evidence is not a report.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: diagnosticreports.efda.estate
+spec:
+  group: efda.estate
+  scope: Namespaced
+  names:
+    kind: DiagnosticReport
+    plural: diagnosticreports
+    singular: diagnosticreport
+    shortNames: ["dgreport"]
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Status
+          type: string
+          jsonPath: .spec.status
+        - name: Cause
+          type: string
+          jsonPath: .spec.cause
+        - name: Confidence
+          type: number
+          jsonPath: .spec.confidence
+        - name: Pack
+          type: string
+          jsonPath: .spec.packRef
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: ["spec"]
+          properties:
+            spec:
+              type: object
+              required: ["status", "confidence"]
+              properties:
+                status:
+                  type: string
+                  enum:
+                    [
+                      "DIAGNOSED",
+                      "NEEDS_HUMAN",
+                      "TAMPER_DETECTED",
+                      "COVERAGE_VIOLATION",
+                      "SKILLPACK_INCOMPATIBLE",
+                    ]
+                cause:
+                  type: string
+                confidence:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                componentClass:
+                  type: string
+                packRef:
+                  type: string
+                signatureId:
+                  type: string
+                evidenceRefs:
+                  type: array
+                  items:
+                    type: string
+                questionsAsked:
+                  type: array
+                  items:
+                    type: string
+                warnings:
+                  type: array
+                  items:
+                    type: string
+                budgetBreaches:
+                  type: array
+                  items:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                hypotheses:
+                  type: array
+                  items:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                remediation:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
