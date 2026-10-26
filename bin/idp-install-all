@@ -30,8 +30,8 @@ avail=$(df -k "$HOME" | awk 'NR==2 {print $4}')
 # ── MacPorts bootstrap ─────────────────────────────────────────────────────────
 if ! command -v port >/dev/null 2>&1; then
   info "installing MacPorts..."
-  local pkg; pkg="$(mktemp /tmp/macports-XXXXX.pkg)"
-  local Major; Major=$(sw_vers -productVersion | cut -d. -f1)
+  pkg="$(mktemp /tmp/macports-XXXXX.pkg)"
+  Major=$(sw_vers -productVersion | cut -d. -f1)
   [ "$Major" = "14" ] && pkg_url="https://github.com/macports/macports-base/releases/download/v2.12.6/MacPorts-2.12.6-13-Sonoma.pkg" \
                       || pkg_url="https://github.com/macports/macports-base/releases/download/v2.12.6/MacPorts-2.12.6-13-Ventura.pkg"
   curl -fsSL "$pkg_url" -o "$pkg" || die "MacPorts download failed"
@@ -128,10 +128,13 @@ else
   warn "ruff not found"
 fi
 
-# ── litellm-local (the laptop router) ─────────────────────────────────────────
-# Founder, 2026-09-26: "if cluster breaks we are all disabled" -- Claude Code's and
-# voice's router calls must not depend on llm.mumchimp.com being up. bin/litellm-local
-# runs the same llm/config.yaml natively, no Docker/Postgres VM required.
+# ── litellm-local (the laptop router — the fallback) ───────────────────────────
+# Founder, 2026-10-26: the cloud router (https://llm.${ESTATE_ZONE}, llm.mumchimp.com) is the
+# DEFAULT route; this laptop router is the FALLBACK, kept so a cluster outage does not disable
+# every agent. The 2026-09-26 ruling ("if cluster breaks we are all disabled") made this the
+# default; it is superseded as a statement of the default, and kept as the reason the fallback
+# exists. bin/litellm-local runs the same llm/config.yaml natively, no Docker/Postgres VM
+# required — deliberately thin: no database, no virtual keys, no answer cache, no model lane.
 info "installing litellm-local..."
 LITELLM_VENV="${LITELLM_LOCAL_VENV:-$HOME/.cache/estate-tools/litellm-venv}"
 if [ ! -x "$LITELLM_VENV/bin/litellm" ]; then
@@ -187,7 +190,8 @@ install_launchd() {
   [ -f "$tmpl" ] || { warn "no template: $tmpl"; return; }
   local name; name="$(basename "$tmpl" .tmpl)"
   local dest="$HOME/Library/LaunchAgents/$name"
-  local TEMPORAL_BIN="$(command -v temporal || true)"
+  local TEMPORAL_BIN
+  TEMPORAL_BIN="$(command -v temporal || true)"
   local PYTHON_BIN="$PYTHON"
   local ESTATE_ZONE; ESTATE_ZONE="$(awk '/^[[:space:]]*ESTATE_ZONE:/ {print $2; exit}' "$IDP/clusters/oke/estate-config.yaml")"
   IDP="$IDP" HOME="$HOME" PATH="$PATH" TEMPORAL_BIN="$TEMPORAL_BIN" PYTHON_BIN="$PYTHON_BIN" ESTATE_ZONE="$ESTATE_ZONE" \

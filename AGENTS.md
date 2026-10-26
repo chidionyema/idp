@@ -262,6 +262,40 @@ worktree it measures how many added lines are on origin/main now, or were and go
 LOST / PARTIAL / REMOVED / LANDED, plus unticked checkpoints in open issues. Full result:
 `~/.estate/work-audit/latest.json`. Source: `platform/estate/libexec/work-audit.py`.
 
+## 7a. Model routing — the cloud is the default, the laptop is the fallback
+
+Every model call the estate makes goes to the **cloud router** — `https://llm.${ESTATE_ZONE}`
+(`llm.mumchimp.com`). That is the default route, and it is the route new work targets.
+
+The **laptop router** — `http://127.0.0.1:4000` (`bin/litellm-local`) — is a **fallback**. It
+exists so a cluster outage does not disable every agent, and it stays. It is not the default, and
+it is not where new capability is built.
+
+**The 2026-09-26 ruling is superseded** (founder, 2026-10-26). "If cluster breaks we are all
+disabled" was the reason the laptop router became the default route. The estate is moving away
+from laptop-based anything: **cloud is the default, the laptop route is the fallback.** No file
+may quote the 2026-09-26 ruling as current law.
+
+What every agent does with this:
+
+- **Build on the cloud router.** It holds the state the laptop router does not: PostgreSQL and
+  virtual keys (so `max_budget` is enforceable there and is not on the laptop), the shared Redis
+  answer cache (exact-match, five-minute life), the free local `ollama` floor lane, and the
+  vendor console. The cloud router is where `platform/llm/config.base.yaml` (the shared
+  `cache: true` + `routing_strategy: cost-based-routing` + the `ollama` floor) applies; the
+  laptop runs the same vendor lanes without that state.
+- **The laptop router stays deliberately thin** — no database, no virtual keys, no answer cache,
+  no local model lane. A capability that exists only there is a fallback, not a capability.
+- **The founder's own subscription lanes stay local** — Claude Code on the Max subscription and
+  the `gemini` CLI are his accounts, not API keys; the cloud router has no Claude lane
+  (`docs/diagnoses/2026-10-22-claude-code-403-cloud-has-no-claude-lane.yaml`). That traffic
+  cannot move to the cloud, and it is not a pattern to copy.
+- **Operational means it works on the default route.** A surface that only works through the
+  laptop fallback is not done.
+- **The flip is a change, not a sentence.** Clients move to the cloud route under their own claim
+  and lane, with the laptop kept answering. Until that lands the laptop still serves traffic —
+  read this as the direction and the target state, not as "the laptop is already off".
+
 ## 8. Placement — the free tier decides, not the cluster
 
 Nothing goes on the cluster by default. Place every workload by the ladder in

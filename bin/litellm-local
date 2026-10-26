@@ -19,8 +19,14 @@
 #
 # Same LiteLLM version as llm/litellm.yml (1.98.0) and the same rendered llm/config.yaml, run
 # without Docker or Postgres: on this 8 GiB Mac the compose stack needs a 4 GiB VM (litellm-up's
-# floor), while this process measured 275 MiB RSS. Founder, 2026-09-26: "if cluster breaks we
-# are all disabled" -- Claude Code's traffic must not depend on llm.mumchimp.com being up.
+# floor), while this process measured 275 MiB RSS.
+#
+# THE CLOUD IS THE DEFAULT; THIS IS THE FALLBACK. Founder, 2026-10-26: the estate is moving
+# away from laptop-based anything -- llm.mumchimp.com is the default route and 127.0.0.1:4000
+# is the fallback that stays so a cluster outage does not disable every agent. The 2026-09-26
+# ruling ("if cluster breaks we are all disabled") was the reason this router was the DEFAULT;
+# it is superseded as a statement of the default, and kept as the reason the fallback exists.
+# So: build new capability against the cloud router, and keep this one answering.
 #
 # WHY IT IS STAGED. launchd agents cannot read ~/Documents (macOS TCC: "Operation not
 # permitted", measured 2026-09-26), and this repo lives there. `install` copies the launcher,
@@ -31,7 +37,9 @@
 # No DATABASE_URL, no virtual keys, no master key; the port is bound to 127.0.0.1 only. Every
 # Claude Code process is pointed here by ANTHROPIC_BASE_URL in ~/.claude/settings.json, with no
 # direct fallback: a dead router is a loud error that launchd's KeepAlive restarts, never a
-# silent bypass of the efficiency gateway.
+# silent bypass of the efficiency gateway. These omissions are the point of the fallback, not
+# an accident: the cloud router carries the state (postgres, virtual keys, the shared redis
+# answer cache, the ollama floor) and this one carries the liveness.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
