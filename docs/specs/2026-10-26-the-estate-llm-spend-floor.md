@@ -176,11 +176,15 @@ order: **a saving nobody can measure is a saving nobody can keep.**
 - **Lever:** the cloud route's own postgres (the cluster already composes `DATABASE_URL` in
   `platform/llm/litellm.yaml`), a working agent key by name, and the cluster action ledger.
 - **Owns it:** #7081 (cluster router captures graph + signs the ledger), #7097 (lane inventory
-  and Catalog Phase 0), the `cost-today` / `ledger-verify` intents.
+  and Catalog Phase 0), the `cost-today` / `ledger-verify` intents, and `bin/idp-spend-floor` —
+  the estate's existing per-key floor, which already reads the cluster's LiteLLM postgres and
+  reports each key's window spend, its lifetime spend against `max_budget`, and the shape a
+  total cannot see. R0 repairs what that tool reads; it does not write a second reporter.
 - **Acceptance:** `estate-execute cost-today` answers 200 with a spend figure; the daily spend it
   reports equals the sum of per-call `cost_usd` in the ledger **within 5%**; a key with a
   `max_budget` of $5/day **refuses** traffic that exceeds it (a refusal that can be observed, not
-  a number in a file).
+  a number in a file); and `bin/idp-spend-floor` grades the cloud route's keys on that ledger
+  without refusing to run for want of a password.
 - **Saving:** $0 — this rung buys the ability to prove every later rung.
 
 ### R1 — Unpin the lane that carries 72% of the bill
@@ -204,7 +208,9 @@ order: **a saving nobody can measure is a saving nobody can keep.**
 - **Acceptance:** 7-day rolling spend on the pinned lane ≤ **$12** (today: $48.12) **while** the
   7-day call count moves by less than ±10% (so the traffic did not simply stop) **and** the
   quality probe below holds **and** `GET /v1/models` on the cloud route lists every lane the
-  chain names.
+  chain names — and the before/after pair (the pinned lane's 7-day spend and call count, then
+  the same two numbers on the new lane) lands through `bin/idp-cost-proof`, which refuses a
+  cost-touching change whose body carries no measurement command.
 - **Quality gate (non-negotiable):** a fixed probe set (≥100 prompts spanning code edit, refactor,
   explanation, tool use) run through both the old and the new lane; agreement measured the way
   the forge measures agreement; **agreement must not fall below the current lane's baseline**, and
@@ -312,6 +318,13 @@ One of each layer, estate-wide:
 - **No new spend ledger.** The cluster's postgres is the ledger; the laptop route stays the
   fallback route, and the two are never double-counted (laptop calls bill vendors directly, cloud
   calls are metered through cloud keys).
+- **No new spend reporter.** `bin/idp-spend-floor` already grades every key against its budget
+  and reports the shape a total cannot see — the biggest single call and the input:output ratio —
+  and it reads the cloud route's own postgres. R0 makes it answer; it does not replace it, and
+  `platform/llm/spend-breaker-digest.yaml` stays the hourly totals breaker it already is.
+- **No new cost-proof gate.** `bin/idp-cost-proof` already refuses a cost-touching change whose
+  body carries no before/after pair and no command to re-take it. R1's evidence lands through
+  that gate; this design adds no second one.
 - **No new distillation framework.** The forge owns distillation; this design only asks it to
   export.
 - **No new scheduler.** There is no non-interactive traffic to schedule; adding one would be a
