@@ -25,9 +25,17 @@ The proposal's bar: **≥80% of live workloads joined via rules 2 or 4.**
 
 ## 2. The record: one Postgres, the estate's own
 
-D1: the record is Postgres — the estate's existing CloudNativePG cluster — and
-`catalog/estate.db` is a generated cache of it, never a second source of truth.
+D1: the record is Postgres — the estate's existing CloudNativePG cluster — and a
+generated sqlite copy of it is a cache, never a second source of truth.
 **"Do not create a second database."**
+
+**The cache is not `catalog/estate.db`.** That path is the estate's own asset
+database — the twin's graph, written by `bin/db-gen` and `bin/estate-twin-runtime`
+— and measured 2026-10-26, a cache written over it left the twin's graph
+unreadable ("the twin's graph is missing node_events, freshness") and failed
+`sovereign/tests/bdd`. The catalog's cache therefore lives outside the repo, at
+`~/.estate/runtime/catalog/estate.db`, and `Record.write_cache` refuses to write
+over the asset database even when it is told to.
 
 Measured against the live cluster on 2026-10-26:
 
@@ -80,11 +88,13 @@ gives up.
 
 ### 2.2 The cache
 
-`catalog/estate.db` is a sqlite copy, **rebuilt** on every sweep rather than
-updated. A cache that accumulates rows from every sweep is a second record that
-nobody can reason about, which is the failure D1 exists to prevent. It is
-untracked and gitignored: it is generated, and it can be deleted at any time
-without losing anything.
+`~/.estate/runtime/catalog/estate.db` is a sqlite copy, **rebuilt** on every sweep
+rather than updated. A cache that accumulates rows from every sweep is a second
+record that nobody can reason about, which is the failure D1 exists to prevent.
+It lives outside the repo, in the estate's runtime directory, because the path
+`catalog/estate.db` inside the repo is the estate's own asset database (the
+twin's graph) and two things must never share one file. It is generated, and it
+can be deleted at any time without losing anything.
 
 ## 3. The planes, and what each one can and cannot see
 
@@ -285,7 +295,14 @@ without a laptop:
 
 The DDL is applied by the CronJob over the cluster's own `estate-rw` service,
 with the superuser secret the vault already publishes into the namespace — no
-new secret, no new vault entry, and therefore nothing waiting on the founder.
+new secret, no new vault entry, and therefore nothing waiting on the founder. The
+password is read from the mounted Secret as a **file**, not from an environment
+variable: the estate's admission policy refuses a secret in an env
+(`secrets-not-from-env-vars`), and a secret in an env is readable by anything
+that can read the pod spec. The pod runs as the cluster's own postgres uid (26),
+with a read-only root filesystem, no privilege escalation, all capabilities
+dropped, the default seccomp profile, no service-account token, and the estate's
+batch priority class — the same shape the estate's own migration Jobs use.
 
 ## 9. What is not done, and what is not knowable yet
 

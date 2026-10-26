@@ -1,9 +1,12 @@
-"""The record: Postgres in the estate cluster, and the sqlite cache beside it.
+"""The record: Postgres in the estate cluster, and a sqlite cache beside it.
 
 D1 (founder, accepted 2026-10-25): the record is Postgres -- the estate's own
-CloudNativePG cluster `estate` in namespace `estate-db` -- and `catalog/estate.db`
-becomes a generated read-only cache of it, not a second source of truth. This module
-is the only place that knows how to reach either.
+CloudNativePG cluster `estate` in namespace `estate-db` -- and a generated sqlite
+copy of it is a read-only cache, not a second source of truth. This module is the
+only place that knows how to reach either. The cache lives at
+`~/.estate/runtime/catalog/estate.db`, outside the repo: the estate's own asset
+database is `<repo>/catalog/estate.db` (the twin's graph), and a cache written over
+it is the second store the estate's law forbids.
 
 HOW THE LAPTOP REACHES THE RECORD, and why it is written this way
 -------------------------------------------------------------------
@@ -47,10 +50,25 @@ from catalog.census.model import Edge, Fact, Observation
 DEFAULT_CONTEXT = os.environ.get("ESTATE_KUBE_CONTEXT", "context-estate-crq7jwxsjxq")
 DEFAULT_NAMESPACE = os.environ.get("ESTATE_DB_NAMESPACE", "estate-db")
 DEFAULT_DATABASE = os.environ.get("ESTATE_CATALOG_DB", "estate")
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# The estate's ASSET DATABASE is <repo>/catalog/estate.db: bin/db-gen writes it and
+# bin/estate-twin-runtime fills it with the twin's own tables (nodes, node_events,
+# edges, freshness). It is the estate's graph, not this catalog's cache -- and
+# measured 2026-10-26, the catalog's cache was written over the top of it, which
+# left the twin's graph unreadable ("the twin's graph is missing node_events,
+# freshness; present tables are aliases, collectors, coverage, edges, facts,
+# nodes") and failed sovereign/tests/bdd. So the cache lives OUTSIDE the repo, in
+# the estate's runtime directory, and the store refuses to write over the asset
+# database even if it is told to.
+ASSET_DATABASE = os.path.join(REPO_ROOT, "catalog", "estate.db")
+
 DEFAULT_CACHE = os.environ.get(
     "ESTATE_CATALOG_CACHE",
     os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        os.path.expanduser("~"),
+        ".estate",
+        "runtime",
         "catalog",
         "estate.db",
     ),
@@ -516,6 +534,12 @@ class Record:
         """
 
         path = self.cache_path
+        if os.path.abspath(path) == os.path.abspath(ASSET_DATABASE):
+            raise RecordError(
+                "the catalog's cache may not be written over the estate's asset "
+                f"database ({ASSET_DATABASE}); the twin's graph lives there. Point "
+                "ESTATE_CATALOG_CACHE somewhere else."
+            )
         os.makedirs(os.path.dirname(path), exist_ok=True)
         if os.path.exists(path):
             os.remove(path)

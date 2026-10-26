@@ -46,7 +46,13 @@ from catalog.census.model import (  # noqa: E402
     ttl_expiry,
 )
 from catalog.census.planes import CollectorConfig, _dockerfile_images, _repo_for_path  # noqa: E402
-from catalog.census.store import Record, _sql_json, _sql_literal  # noqa: E402
+from catalog.census.store import (  # noqa: E402
+    ASSET_DATABASE,
+    DEFAULT_CACHE,
+    Record,
+    _sql_json,
+    _sql_literal,
+)
 
 
 def _observation(**kwargs) -> Observation:
@@ -410,3 +416,31 @@ def test_the_record_will_not_create_a_second_database():
     assert record.statements == [
         "select 1 from pg_database where datname = 'catalog-that-does-not-exist'"
     ]
+
+
+def test_the_cache_is_not_the_estate_s_asset_database():
+    """The estate's own graph lives at catalog/estate.db; the cache may not.
+
+    Measured 2026-10-26: the catalog's cache was written over the estate's asset
+    database, which left the twin's graph unreadable -- "the twin's graph is
+    missing node_events, freshness" -- and failed sovereign/tests/bdd. The cache
+    belongs outside the repo, in the estate's runtime directory.
+    """
+
+    assert os.path.abspath(DEFAULT_CACHE) != os.path.abspath(ASSET_DATABASE)
+    assert not os.path.abspath(DEFAULT_CACHE).startswith(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + os.sep
+    )
+    assert os.path.abspath(ASSET_DATABASE).endswith(
+        os.path.join("catalog", "estate.db")
+    )
+
+
+def test_the_record_refuses_to_write_its_cache_over_the_asset_database():
+    """Even when told to, the store refuses: the asset database is the twin's graph."""
+
+    record = Record(cache_path=ASSET_DATABASE)
+    with pytest.raises(Exception) as raised:
+        record.write_cache([], [], [], [])
+    message = str(raised.value)
+    assert "may not be written over the estate's asset database" in message

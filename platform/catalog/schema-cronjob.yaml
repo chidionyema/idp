@@ -28,7 +28,10 @@ spec:
   startingDeadlineSeconds: 900
   jobTemplate:
     spec:
-      backoffLimit: 3
+      # A failed run is a red Job to read, never a silent retry (the estate's
+      # convention, platform/agent-workforce/cronjob.yaml). The DDL is idempotent,
+      # so the next night's run is the retry -- and a red Job is the evidence.
+      backoffLimit: 0
       ttlSecondsAfterFinished: 3600
       template:
         metadata:
@@ -37,34 +40,47 @@ spec:
             app.kubernetes.io/part-of: estate
         spec:
           restartPolicy: Never
+          # The estate's batch class: a schema apply is a batch job and is seated
+          # by preempting a balloon pod, never by standing capacity.
+          priorityClassName: platform-batch
+          # The job needs the database and nothing else. A token would be a
+          # credential this pod does not use, mounted anyway.
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 26
+            runAsGroup: 26
+            fsGroup: 26
+            seccompProfile: { type: RuntimeDefault }
           containers:
             - name: schema
               # The cluster's own image, so the psql that applies the schema is
               # the same psql the cluster runs.
               image: ghcr.io/chidionyema/postgres-partman:18.1-postgres-partman
-              env:
-                - name: PGPASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      name: estate-db-superuser
-                      key: password
-                - name: PGCONNECT_TIMEOUT
-                  value: "10"
-              command: ["psql"]
+              command: ["/bin/sh", "-c"]
               args:
-                - "-v"
-                - "ON_ERROR_STOP=1"
-                - "-h"
-                - "estate-rw.estate-db.svc.cluster.local"
-                - "-U"
-                - "postgres"
-                - "-d"
-                - "estate"
-                - "-f"
-                - "/schema/001_catalog.sql"
+                - |
+                    set -eu
+                    # The password is read from the mounted Secret, never from an
+                    # environment variable: the estate's admission policy refuses
+                    # a secret in an env (secrets-not-from-env-vars), and a secret
+                    # in an env is readable by anything that can read the pod spec.
+                    PGPASSWORD="$(cat /etc/catalog-db/password)"; export PGPASSWORD
+                    exec psql -v ON_ERROR_STOP=1 -q \
+                      -h estate-rw.estate-db.svc.cluster.local \
+                      -U postgres \
+                      -d estate \
+                      -f /schema/001_catalog.sql
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
               volumeMounts:
                 - name: schema
                   mountPath: /schema
+                  readOnly: true
+                - name: db-credentials
+                  mountPath: /etc/catalog-db
                   readOnly: true
               resources:
                 requests:
@@ -77,3 +93,6 @@ spec:
             - name: schema
               configMap:
                 name: catalog-schema
+            - name: db-credentials
+              secret:
+                secretName: estate-db-superuser
