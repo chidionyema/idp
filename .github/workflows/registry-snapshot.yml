@@ -1,0 +1,90 @@
+# The registry witness is machine-generated, and the machine keeps it true.
+#
+# The Estate Capability Registry answers "what can this estate do" from a census of the
+# estate's own surfaces. The witness of that answer is catalog/estate-capability-registry.json,
+# committed, so a reviewer can see the map change in the diff and so CI can prove the map is
+# the map (bin/registry-gate: the committed snapshot must equal a fresh generation).
+#
+# A witness only proves something if it cannot go stale, and the way it used to go stale was
+# the founder's complaint: someone had to REMEMBER to refresh it. Relying on an agent (or a
+# human) to remember is what causes drift, and a map that drifts is worse than no map, because
+# it is trusted.
+#
+# So the refresh is not a task, it is a step in the pipeline. This workflow regenerates the
+# witness from the pull request's own tree -- the same door, the same bytes, on every
+# interpreter -- and commits it to the branch as the bot when it differs. The agent that built
+# the component never has to know this workflow exists.
+#
+# The guarantee, in three parts:
+#   1. the witness is a PURE FUNCTION of the tree (bin/capability-index emit --write);
+#   2. the merge point must be true: bin/registry-gate fails a lagging or diverged witness,
+#      and it is inside the required ci checks, so drift cannot land;
+#   3. reaching a true merge point costs nothing: this workflow does the regeneration.
+#
+# The commit carries the lane's own Claim/Agent trailers, copied from the head commit, so the
+# commit-gate sees one agent's work and the claim still names the work it lands on. The witness
+# path itself needs no claim of its own: it is generated, and bin/registry-gate is what proves
+# its content (the same shape as the demo renders, which no agent claims either).
+name: registry-snapshot
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "bin/**"
+      - "platform/**"
+      - "clusters/**"
+      - "mcp/**"
+      - "docs/**"
+      - "CODEOWNERS"
+      - "catalog/estate-capability-registry.json"
+      - ".github/workflows/registry-snapshot.yml"
+  workflow_dispatch:
+permissions:
+  contents: write # push the regenerated witness back to the branch
+  pull-requests: write # read the pull request's head
+concurrency:
+  group: registry-snapshot-${{ github.event.pull_request.head.ref || github.run_id }}
+  cancel-in-progress: false
+jobs:
+  regenerate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: regenerate the witness from this tree
+        # The door, not a script written here: one generator, so the bytes CI produces are the
+        # bytes the laptop produces. It needs no third-party package (the census reads YAML
+        # with its own reader), so this step cannot drift with a dependency.
+        run: python3 bin/capability-index emit --write
+      - name: commit the witness when it changed
+        id: witness
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- catalog/estate-capability-registry.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "the witness already equals a fresh generation"
+            exit 0
+          fi
+          git config user.name "estate-bot"
+          git config user.email "estate-bot@estate.local"
+          # The lane's own trailers, copied: one agent's work, one claim, no invention.
+          claim="$(git log -1 --format=%B | grep -E '^(Claim|Agent):' || true)"
+          {
+            echo "chore(registry): regenerate the capability witness"
+            echo
+            echo "The witness is a pure function of this tree; this commit is that function's"
+            echo "output, written by the pipeline so no agent has to remember to refresh it."
+            echo
+            echo "$claim"
+          } > "$RUNNER_TEMP/witness-message.txt"
+          git add catalog/estate-capability-registry.json
+          git commit -q -F "$RUNNER_TEMP/witness-message.txt"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref || github.ref_name }}"
+          echo "changed=true" >> "$GITHUB_OUTPUT"

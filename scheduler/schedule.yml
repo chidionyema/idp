@@ -367,6 +367,29 @@ jobs:
       HOME: '~'
     skip_on_battery: false
     timeout_s: 1800
+  com.estate.registry-reconcile:
+    # The registry's LIVE half -- the installed intents, the cluster workloads, the store at
+    # ~/.estate/state/registry.db -- is reconciled on a cycle (spec section 5: every 15 min).
+    # A capability that was removed is tombstoned, one that was added appears, and the answer
+    # to "what can this estate do" stops being a snapshot of a moment nobody chose.
+    #
+    # It is a scheduled job rather than something an agent remembers to run, because relying on
+    # an agent is what causes drift, and a registry that drifts is trusted anyway.
+    #
+    # It runs on the Mac because the inputs live there: ~/.estate/intents is this machine's
+    # installed library, and the store is this machine's file. runs_on_ref names the crew item
+    # that moves that state to the cluster, the same shape as the inventory row above.
+    runs_on: mac
+    runs_on_ref: crew#516 CP3
+    command:
+    - /usr/local/bin/python3
+    - $IDP/bin/capability-index
+    - census
+    - --write
+    cron: '*/15 * * * *'
+    cwd: $IDP
+    skip_on_battery: true
+    timeout_s: 600
   com.estate.restic-backup:
     runs_on: mac
     runs_on_ref: crew#300

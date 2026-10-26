@@ -14,9 +14,10 @@ from __future__ import annotations
 import importlib.machinery
 import importlib.util
 import json
+import os
 import subprocess
 import sys
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -282,3 +283,207 @@ def test_the_mcp_surface_answers_the_query_contract():
     assert "cap:intent/lane-submit" in got or "BLIND" in got
     proved = estate_mcp._capability_prove({"id": "cap:intent/lane-submit"})
     assert proved.split(":")[0] in {"OK", "FAILED", "BLIND"}
+
+
+# --------------------------------------------------------------------------------------
+# the evidence lifecycle (spec section 14): a component is built, and the map must follow
+
+
+def test_the_gate_fails_a_lagging_snapshot_without_strict(tmp_path):
+    """A component was built and the witness does not name it: the merge point is not true.
+
+    This is the case that used to be a finding. It is now a failure in the DEFAULT mode,
+    because a witness that lags the estate is drift, and drift that can land is not a
+    guarantee: the founder's rule is that the map is true at the merge point by
+    mathematics (the witness is a pure function of the tree) and not by an agent
+    remembering to refresh it.
+    """
+    payload = json.loads(SNAPSHOT.read_text())
+    assert len(payload["records"]) > 2
+    dropped = payload["records"].pop()["id"]
+    lagging = tmp_path / "lagging.json"
+    lagging.write_text(json.dumps(payload, indent=2) + "\n")
+    result = subprocess.run(
+        [sys.executable, str(GATE), "--snapshot", str(lagging)],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+        cwd=str(REPO),
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "drift" in result.stdout
+    assert dropped in result.stdout
+
+
+def test_the_witness_needs_no_claim_but_another_file_does():
+    """The witness is generated, so it belongs to nobody's claim; a product file still does.
+
+    The claim-gate exempts the witness path from claim coverage, because the pipeline
+    regenerates it (section 14) and an agent must not have to claim a file it never
+    touched. The exemption is narrow: any other path outside the claim is still refused.
+    """
+    sys.path.insert(0, str(REPO / "bin"))
+    try:
+        spec = importlib.util.spec_from_loader(
+            "claim_gate",
+            importlib.machinery.SourceFileLoader(
+                "claim_gate", str(REPO / "bin" / "claim-gate")
+            ),
+        )
+        claim_gate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(claim_gate)
+    finally:
+        sys.path.pop(0)
+    now = datetime.now(timezone.utc)
+    comment = {
+        "body": "CLAIM agent=pi paths=bin/some-file heartbeat={}".format(
+            now.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        )
+    }
+
+    def fetch(repo, number):
+        return {"state": "open"}, [comment]
+
+    text = "Claim: chidionyema/idp#7203\nAgent: pi"
+    witness = claim_gate.verdict(
+        text, ["catalog/estate-capability-registry.json"], "chidionyema/idp", fetch, now
+    )
+    assert witness == [], witness
+    product = claim_gate.verdict(
+        text, ["docs/some-note.md"], "chidionyema/idp", fetch, now
+    )
+    assert product, "a file outside every claim must still be refused"
+    assert "outside every claim" in product[0]
+
+
+def test_the_witness_is_regenerated_by_the_pipeline_not_by_an_agent():
+    """The refresh is a step in the pipeline: the workflow regenerates and commits it."""
+    workflow = REPO / ".github" / "workflows" / "registry-snapshot.yml"
+    assert workflow.exists(), "the pipeline that keeps the witness true must exist"
+    text = workflow.read_text()
+    assert "bin/capability-index emit --write" in text, "the door must be the generator"
+    assert "pull_request" in text, "it must run on the change it exists for"
+    assert "git push" in text, "the regenerated witness must reach the branch"
+    assert "catalog/estate-capability-registry.json" in text
+
+
+def test_the_reconcile_cycle_is_a_scheduled_job():
+    """The live half is reconciled on a timer, not by whoever remembers."""
+    schedule = (REPO / "scheduler" / "schedule.yml").read_text()
+    assert "com.estate.registry-reconcile:" in schedule
+    row = schedule.split("com.estate.registry-reconcile:", 1)[1].split("\n  com.", 1)[0]
+    assert "census" in row and "--write" in row
+    assert "cron:" in row, "a reconcile with no schedule is a ritual, not a cycle"
+
+
+def _gate(env_extra):
+    env = dict(os.environ)
+    env.update(env_extra)
+    return subprocess.run(
+        [sys.executable, str(GATE)],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(REPO),
+    )
+
+
+@pytest.fixture(scope="module")
+def live_store(tmp_path_factory):
+    """One real census, written once: the census is the slow part, not the assertions."""
+    root = tmp_path_factory.mktemp("live")
+    db = root / "registry.db"
+    env = {
+        "ESTATE_REGISTRY_DB": str(db),
+        "ESTATE_REGISTRY_KEY": str(root / "registry.key"),
+        "ESTATE_HOME": str(root / "home"),
+    }
+    write = subprocess.run(
+        [sys.executable, str(DOOR), "census", "--write"],
+        capture_output=True,
+        text=True,
+        env={**os.environ, **env},
+        cwd=str(REPO),
+    )
+    assert write.returncode == 0, write.stderr
+    return db, env
+
+
+def test_the_gate_names_when_the_live_half_was_written_and_who_refreshes_it(live_store):
+    """The live half's age is on the record, and so is the job that refreshes it.
+
+    A store nobody reconciles is a store nobody can trust, and a gate that does not
+    say when the live half was last written is a gate that assumes. The gate names
+    both: the last write, and the scheduled reconcile that owns it.
+    """
+    db, env = live_store
+    result = _gate(env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "live: the store was last reconciled" in result.stdout, result.stdout
+    assert "com.estate.registry-reconcile" in result.stdout, result.stdout
+
+
+def test_the_census_leaves_a_heartbeat_and_a_stopped_cycle_is_caught(live_store):
+    """A quiet estate writes no changed records, so the reconcile leaves a heartbeat.
+
+    Without one, "the live half is current" is a belief. With one, a cycle that has
+    stopped is visible: under --strict the gate refuses a live half whose heartbeat
+    has gone past the bound, because the records it reports are older than the
+    report suggests.
+    """
+    db, env = live_store
+    import shutil
+    import sqlite3
+
+    aged = db.parent / "aged.db"
+    shutil.copyfile(str(db), str(aged))
+    aged_env = dict(env)
+    aged_env["ESTATE_REGISTRY_DB"] = str(aged)
+
+    conn = sqlite3.connect(str(aged))
+    beats = conn.execute(
+        "select type from events where type = 'census.reconciled'"
+    ).fetchall()
+    conn.close()
+    assert beats, "the reconcile must leave a heartbeat, or its age is unknowable"
+
+    # age the heartbeat past the bound, as a scheduler that stopped ticking would
+    old = (datetime.now(timezone.utc) - timedelta(hours=6)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    conn = sqlite3.connect(str(aged))
+    conn.execute("update events set at = ? where type = 'census.reconciled'", (old,))
+    conn.commit()
+    conn.close()
+
+    strict = subprocess.run(
+        [sys.executable, str(GATE), "--strict"],
+        capture_output=True,
+        text=True,
+        env={**os.environ, **aged_env},
+        cwd=str(REPO),
+    )
+    assert strict.returncode == 1, strict.stdout + strict.stderr
+    assert "reconcile cycle is not ticking" in strict.stdout, strict.stdout
+
+    # and in the default mode it is a finding, not a failure: the estate's scheduler
+    # may simply be running somewhere else.
+    default = _gate(aged_env)
+    assert default.returncode == 0, default.stdout + default.stderr
+    assert "reconcile cycle is not ticking" in default.stdout, default.stdout
+
+
+def test_the_gate_says_blind_rather_than_pretending_when_there_is_no_live_store(
+    tmp_path,
+):
+    """With no store, the live half is BLIND: said, not assumed."""
+    env = {
+        "ESTATE_REGISTRY_DB": str(tmp_path / "absent.db"),
+        "ESTATE_REGISTRY_KEY": str(tmp_path / "absent.key"),
+        "ESTATE_HOME": str(tmp_path / "home"),
+    }
+    result = _gate(env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "live: BLIND" in result.stdout, result.stdout
+    assert "drift: OK" in result.stdout, "the committed half is still checked in full"
