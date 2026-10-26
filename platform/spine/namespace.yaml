@@ -1,0 +1,13 @@
+# The spine's namespace: the event fabric's bridge and its observer.
+#
+# Not founder-facing. The spine is machinery: it reacts to what the estate already does
+# (a Flux reconcile) and writes a receipt. Nobody waits on it for a page, so it does not
+# carry the availability standard's founder-facing label (the same reasoning
+# platform/epistemic-fabric/ingest.yaml gives).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spine
+  labels:
+    app.kubernetes.io/name: spine
+    estate.io/layer: event-spine
