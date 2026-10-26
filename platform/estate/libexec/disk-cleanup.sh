@@ -108,9 +108,28 @@ REPACK_MIN_KB="${DISK_CLEANUP_REPACK_MIN_KB:-65536}"  # below this much loose ob
 T_REPACK="${DISK_CLEANUP_GIT_TIMEOUT:-300}"          # git gc is bounded: a wedged repo must not hang the tick
 CARGO_REGISTRY="${DISK_CLEANUP_CARGO_REGISTRY:-$HOME/.cargo/registry}"
 GO_MODCACHE="${DISK_CLEANUP_GO_MODCACHE:-${GOPATH:-$HOME/go}/pkg/mod}"
-CARGO_PROC='(^|/)(cargo|rustc)( |$)'
-GO_PROC='(^|/)go (build|test|run|vet|mod|install|get|work|list|env)'
-GIT_BUSY='git (gc|repack|pack-objects)'
+# The process patterns the critical tier's guards ask about ("is a cargo/rustc/go/git-gc
+# running?"). They are read from the environment, with today's patterns as the DEFAULTS, so a
+# TEST can point them at a name no process can have. The guard is machine-wide (pgrep -f), so a
+# test that asserts the RECLAIM branch fails whenever anything else on the machine is building
+# -- including this file's own guard test, whose fake `cargo` is alive while the estate's
+# runner runs the file in parallel. Measured 2026-10-26: 1 failed, 53 passed on origin/main.
+# DISK_CLEANUP_BUILDING is the same kind of seam, and it was there first.
+CARGO_PROC_DEFAULT='(^|/)(cargo|rustc)( |$)'
+GO_PROC_DEFAULT='(^|/)go (build|test|run|vet|mod|install|get|work|list|env)'
+GIT_BUSY_DEFAULT='git (gc|repack|pack-objects)'
+OLLAMA_PROC_DEFAULT='ollama'
+CARGO_PROC="${DISK_CLEANUP_CARGO_PROC:-$CARGO_PROC_DEFAULT}"
+GO_PROC="${DISK_CLEANUP_GO_PROC:-$GO_PROC_DEFAULT}"
+GIT_BUSY="${DISK_CLEANUP_GIT_BUSY:-$GIT_BUSY_DEFAULT}"
+OLLAMA_PROC="${DISK_CLEANUP_OLLAMA_PROC:-$OLLAMA_PROC_DEFAULT}"
+# A pattern the machine cannot read is worse than no pattern at all: pgrep would answer
+# "nothing is running" and the tier would delete a cache a build may be writing into. So an
+# unreadable pattern REFUSES the run instead of disarming the guard.
+for v in CARGO_PROC GO_PROC GIT_BUSY OLLAMA_PROC; do
+  printf '%s\n' "${!v}" | grep -E "${!v}" >/dev/null 2>&1
+  [ $? -le 1 ] || { echo "REFUSED DISK_CLEANUP_$v is not a pattern the machine can read"; exit 1; }
+done
 [ -n "${HOME:-}" ] && [ "$HOME" != / ] || { echo "REFUSED HOME is unset or /"; exit 1; }
 case "$APPLY" in True|true) APPLY=1;; *) APPLY=0;; esac
 case "$TRASH" in True|true) TRASH=1;; *) TRASH=0;; esac
@@ -634,7 +653,7 @@ crit_tier() {
   # 1. ollama's weights. The founder killed the laptop's ollama on 2026-09-10; if a server is
   #    running now, someone is serving from these and they stay.
   if [ -d "$HOME/.ollama/models" ]; then
-    if pgrep -x ollama >/dev/null 2>&1; then
+    if pgrep -x "$OLLAMA_PROC" >/dev/null 2>&1; then
       echo "  keep   ollama-models  $(size_m "$HOME/.ollama/models")M  $HOME/.ollama/models  (an ollama server is running)"
     else
       crit_reclaim ollama-models "$HOME/.ollama/models" "ollama pull <model>"
