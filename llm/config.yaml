@@ -650,8 +650,6 @@ model_list:
       tpm: 150000
 
   # Claude Code on the founder's Max subscription, through THIS laptop router, not the cluster
-
-  # Claude Code on the founder's Max subscription, through THIS laptop router, not the cluster
   # (founder, 2026-09-26: "if cluster breaks we are all disabled"). NO api_key ON PURPOSE: the
   # lane relays the client's own `Authorization: Bearer sk-ant-oat01-...` OAuth token upstream
   # (LiteLLM forwards the oat01 prefix and drops sk-ant-api03 keys), so the subscription pays
