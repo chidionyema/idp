@@ -508,7 +508,8 @@ def main(argv=None) -> int:
         "blind": decisions["blind"],
     }
     failures.extend(
-        "I-6: {}".format(violation.get("detail")) for violation in decisions["violations"]
+        "I-6: {}".format(violation.get("detail"))
+        for violation in decisions["violations"]
     )
 
     ok = not failures

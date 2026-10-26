@@ -75,16 +75,23 @@ def fetch(query: str, max_results: int = 12) -> list[dict]:
         }
     )
     url = "{}?{}".format(API, params)
-    req = urllib.request.Request(url, headers={"User-Agent": "estate-harvest/1.0"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    # S310: the URL is built from API (a constant https://export.arxiv.org/api/query)
+    # and urlencode()'d parameters -- there is no scheme to choose and no user input
+    # in the path. S314: the body is the Atom feed from that fixed host, and the
+    # parser is the standard library on purpose -- the instrument must run on a
+    # bare python with no third-party package installed.
+    req = urllib.request.Request(  # noqa: S310
+        url, headers={"User-Agent": "estate-harvest/1.0"}
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
         body = resp.read()
-    root = ET.fromstring(body)
+    root = ET.fromstring(body)  # noqa: S314
     out = []
     for entry in root.findall("{}entry".format(ATOM)):
 
-        def text(tag, ns=ATOM):
-            node = entry.find(ns + tag)
-            return node.text.strip() if node is not None and node.text else None
+        def text(tag, node=entry, ns=ATOM):
+            found = node.find(ns + tag)
+            return found.text.strip() if found is not None and found.text else None
 
         cats = [c.get("term") for c in entry.findall("{}category".format(ARXIV))]
         authors = [

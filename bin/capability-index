@@ -617,7 +617,9 @@ def build_repo_tools(ctx: Context):
     return out
 
 
-def _intent_record(ctx: Context, name, description, args, source, run=None, path=None, decision=None):
+def _intent_record(
+    ctx: Context, name, description, args, source, run=None, path=None, decision=None
+):
     receipt = None
     proven_at = None
     rung = None
@@ -1076,7 +1078,9 @@ def _referenced_scripts(text: str, ctx: "Context") -> list:
         for candidate in candidates:
             try:
                 if candidate.is_file():
-                    out.append(candidate.read_text(encoding="utf-8", errors="replace")[:200000])
+                    out.append(
+                        candidate.read_text(encoding="utf-8", errors="replace")[:200000]
+                    )
                     break
             except OSError:
                 continue
@@ -1650,8 +1654,10 @@ def decision_violations(ctx: Context, known_caps=None) -> dict:
     for entry in entries:
         for surface in entry.get("surfaces") or []:
             block = modes.get(surface)
-            if block and block.get("source") == "derived" and block.get("mode") != entry.get(
-                "mode"
+            if (
+                block
+                and block.get("source") == "derived"
+                and block.get("mode") != entry.get("mode")
             ):
                 findings.append(
                     {
@@ -1692,9 +1698,7 @@ def render_decisions(report: dict) -> str:
         if entry.get("irreducibility"):
             lines.append("      irreducibility: {}".format(entry["irreducibility"]))
         if entry.get("justification"):
-            lines.append(
-                "      why: {}".format(entry["justification"][:110])
-            )
+            lines.append("      why: {}".format(entry["justification"][:110]))
         if entry.get("runs_30d"):
             lines.append("      observed runs (30d): {}".format(entry["runs_30d"]))
     lines.append("")
@@ -1704,9 +1708,7 @@ def render_decisions(report: dict) -> str:
         intents = report["modes"]["intents_by_mode"].get(mode, 0)
         if runs or intents:
             lines.append(
-                "  {:9s} {:6d} runs over {:4d} capabilities".format(
-                    mode, runs, intents
-                )
+                "  {:9s} {:6d} runs over {:4d} capabilities".format(mode, runs, intents)
             )
     ratio = report.get("automation_ratio")
     lines.append(
@@ -1814,9 +1816,7 @@ def render_decisions(report: dict) -> str:
         lines.append("I-6 findings (reported, never refused)")
         for finding in findings:
             lines.append(
-                "      {:22s} {}".format(
-                    finding.get("clause"), finding.get("detail")
-                )
+                "      {:22s} {}".format(finding.get("clause"), finding.get("detail"))
             )
     return "\n".join(lines)
 
