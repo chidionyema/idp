@@ -1,0 +1,83 @@
+# THE OBSERVER. The Temporal side of the loop.
+#
+# It serves one workflow on its own task queue. The sovereign worker owns the estate's
+# agent sessions; the spine's observer answers reconcile events. Two queues, two workers:
+# a workflow type nobody serves is a workflow that never runs, and one queue serving two
+# unrelated workflows is a queue where one of them can starve the other.
+#
+# IT HOLDS THE SERVICE ACCOUNT TOKEN, because its activity reads the reconciled object's
+# own status from the API server. That is the whole verification: the workflow that runs
+# the check is the trigger, not the decider (the estate's decision register,
+# dec:spine-woken-verification -- mode machine, decided_by cap:intent/flux-status).
+#
+# IT DOES NOT HOLD THE AEVUM SIGNING KEY, and it must not: that key can mint receipts, and
+# the estate's own recorder keeps it inside one container for exactly that reason
+# (platform/observability/recorder/recorder.py). The observer asserts through the Aevum
+# server's API instead -- a different membrane, with a different privilege.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spine-worker
+  namespace: spine
+  labels: { app.kubernetes.io/name: spine-worker, estate.io/layer: event-spine }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: spine-worker }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: spine-worker }
+    spec:
+      # The pod's service account token: the activity reads Flux objects with it.
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: worker
+          image: ghcr.io/chidionyema/spine
+          command: ["python", "-m", "spine", "worker"]
+          env:
+            - { name: TEMPORAL_ADDRESS, value: "temporal-frontend.temporal.svc:7233" }
+            - { name: TEMPORAL_NAMESPACE, value: "estate" }
+            - { name: SPINE_TASK_QUEUE, value: "spine" }
+            - { name: AEVUM_URL, value: "http://aevum.observability.svc:8000" }
+            # A CREDENTIAL IS A FILE MOUNT, NEVER AN ENV VALUE (Kyverno
+            # secrets-not-from-env-vars, and the same shape platform/epistemic-fabric uses).
+            - { name: AEVUM_API_KEY_FILE, value: /var/run/secrets/aevum/api_key }
+          readinessProbe:
+            exec:
+              command: ["test", "-f", "/tmp/worker.ready"]
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["python", "-m", "spine", "describe"]
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            failureThreshold: 6
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: aevum, mountPath: /var/run/secrets/aevum, readOnly: true }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        # optional: true -- until the vault entry carries the api-key property, this Secret
+        # does not exist, and a pod that cannot start because a receipt key is missing is a
+        # spine that answers nothing. The receipt then says it was not ingested, which is
+        # visible, and the receipt is still in the workflow's own history.
+        - name: aevum
+          secret:
+            secretName: aevum-api
+            optional: true
+            defaultMode: 256

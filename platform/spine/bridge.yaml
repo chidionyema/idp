@@ -1,0 +1,69 @@
+# THE BRIDGE. NATS in, Temporal signals out.
+#
+# It is the only component in the estate that knows both NATS and Temporal. Every Flux
+# controller speaks NATS; every agent speaks Temporal; neither leaks into the other's
+# domain. One component knows both, so that one component is the thing that gets tested.
+#
+# THE READINESS PROBE IS AN EXEC, NOT AN httpGet, and the file it looks for is written
+# AFTER the stream exists. That ordering is the whole reason the events are not lost:
+# the notification-controller publishes into core NATS, and a message published to a
+# subject with no stream behind it is dropped on the floor. So the bridge creates the
+# stream first, writes the file second, and the Provider is only declared by a Flux row
+# that depends on this one (clusters/oke/platform.yaml: spine-events dependsOn spine).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spine-bridge
+  namespace: spine
+  labels: { app.kubernetes.io/name: spine-bridge, estate.io/layer: event-spine }
+spec:
+  # ONE replica, on purpose. The consumer is durable, so a second replica would be a
+  # second reader of the same durable consumer -- legal, but it buys nothing at this
+  # volume and costs a second writer's worth of confusion.
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: spine-bridge }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: spine-bridge }
+    spec:
+      # The bridge talks to NATS and Temporal and reads nothing in the cluster, so it does
+      # not need the pod's service account token.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: bridge
+          image: ghcr.io/chidionyema/spine
+          command: ["python", "-m", "spine", "bridge"]
+          env:
+            - { name: NATS_URL, value: "nats://nats.event-bus.svc:4222" }
+            - { name: TEMPORAL_ADDRESS, value: "temporal-frontend.temporal.svc:7233" }
+            - { name: TEMPORAL_NAMESPACE, value: "estate" }
+          readinessProbe:
+            exec:
+              command: ["test", "-f", "/tmp/spine.ready"]
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["python", "-m", "spine", "describe"]
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            failureThreshold: 6
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: {} }

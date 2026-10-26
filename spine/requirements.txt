@@ -1,0 +1,10 @@
+# The spine's two dependencies, pinned to the versions the estate already runs.
+#
+# temporalio is the estate's own pin (sovereign/requirements.txt: temporalio==1.32.0) --
+# one Temporal client in the estate, not two. nats-py is the same client the estate's
+# Python services use to reach the event bus (platform/router-events/publisher.py).
+#
+# Nothing else: the reader, the contracts and the decisions are standard library, so a
+# spine that cannot be tested offline is a spine nobody trusts.
+temporalio==1.32.0
+nats-py==2.16.0
