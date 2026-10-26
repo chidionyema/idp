@@ -258,3 +258,29 @@ spec:
   name: quad_ledger
   owner: quad_ledger
   ensure: present
+---
+# The estate's own database, and the catalog's record.
+#
+# The proposal's D1: the record is Postgres -- this cluster, the estate's own
+# database -- and catalog/estate.db becomes a generated cache of it, never a
+# second store. Measured 2026-10-26 against the live cluster: the `estate`
+# database already exists, is owned by the `estate` role, and holds no tables. It
+# was waiting for exactly this. Declaring it here means the record's address is
+# declared in the one place every other database's address is declared, and not
+# left as a fact someone remembers.
+#
+# The role keeps its own password: the census writes through the cluster's
+# superuser over the pod-local socket (measured debt, documented in
+# docs/specs/2026-10-26-estate-catalog-phase0.md), so no new vault entry is
+# needed and nothing here waits on the founder.
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: estate
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: estate
+  owner: estate
+  ensure: present

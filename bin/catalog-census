@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""catalog-census -- walk the estate and write the catalog's record.
+
+WHAT IT DOES. Runs the four collectors (git, k8s, host, edge), joins what they saw
+to services, and writes the result into the estate's Postgres -- the record the
+founder accepted (D1) -- plus the sqlite cache beside it. Then it prints the
+coverage table and the Phase 0 join bar.
+
+    bin/catalog-census                    # the whole estate, into the record
+    bin/catalog-census --dry-run          # walk and print, write nothing
+    bin/catalog-census --planes k8s,git   # two planes
+    bin/catalog-census --json             # machine-readable
+
+WHY A CLI AND NOT A JOB. The census reads the cluster, the git tree, launchd and
+GitHub: three of those four live on the founder's machine. Running it from here is
+the only way the host plane is ever read at all, and the host plane is where the
+old inventory counted 43 ORPHAN jobs out of 47. A scheduled Job on the cluster
+would see the cluster and nothing else.
+
+WHY THE LOAD GATE IS HERE. The 2026-10-24 outage was caused by collectors reading
+the host while the laptop was at load 300. The collectors refuse to run above the
+load ceiling (ESTATE_LOAD_MAX, default 12) and say so, rather than making the
+estate worse in order to describe it.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from catalog.census.census import run_census  # noqa: E402
+from catalog.census.model import BAR_MIN_JOIN_RATE, PLANES  # noqa: E402
+from catalog.census.planes import CollectorConfig  # noqa: E402
+from catalog.census.store import Record, RecordError  # noqa: E402
+
+SCHEMA = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "platform",
+    "catalog",
+    "schema",
+    "001_catalog.sql",
+)
+
+
+def _coverage_lines(rows: list[dict]) -> list[str]:
+    lines = ["plane     universe  classified  uncatalogued  blind"]
+    for row in rows:
+        lines.append(
+            f"{row['plane']:<9} {row['universe']:>8}  {row['classified']:>10}  "
+            f"{row['uncatalogued']:>12}  {row['blind']:>5}"
+        )
+        detail = row.get("detail") or {}
+        if detail.get("blind_reason"):
+            lines.append(f"          blind: {detail['blind_reason']}")
+        for reason, count in sorted((detail.get("reasons") or {}).items()):
+            lines.append(f"          {reason}: {count}")
+    return lines
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Walk the estate and write the catalog record."
+    )
+    parser.add_argument(
+        "--planes", default=",".join(PLANES), help="comma-separated planes to walk"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="walk and print, write nothing"
+    )
+    parser.add_argument("--json", action="store_true", help="print the census as JSON")
+    parser.add_argument(
+        "--no-cache", action="store_true", help="do not write the sqlite cache"
+    )
+    parser.add_argument(
+        "--load-max", type=float, default=None, help="refuse to run above this load"
+    )
+    args = parser.parse_args(argv)
+
+    planes = [p.strip() for p in args.planes.split(",") if p.strip()]
+    unknown = [p for p in planes if p not in PLANES]
+    if unknown:
+        print(
+            f"unknown plane(s): {', '.join(unknown)}; known: {', '.join(PLANES)}",
+            file=sys.stderr,
+        )
+        return 2
+
+    cfg = CollectorConfig()
+    if args.load_max is not None:
+        cfg.load_max = args.load_max
+
+    census = run_census(planes=planes, cfg=cfg)
+
+    if args.json:
+        print(json.dumps(census.as_dict(), indent=2, sort_keys=True))
+    else:
+        for line in _coverage_lines(census.coverage):
+            print(line)
+        print()
+        print(
+            f"live workloads joined by rule 2 or 4: {census.bar_rules_hit}/{census.live_workloads} "
+            f"= {census.join_rate:.0%} (bar: {BAR_MIN_JOIN_RATE:.0%})"
+        )
+        for label, key in (
+            ("by rule 2 (app.kubernetes.io/name)", "rule-2-label"),
+            ("by rule 4 (image repository name)", "rule-4-image"),
+            ("ambiguous (two names disagree)", "ambiguous"),
+            ("unnamed (nothing could name it)", "unnamed"),
+        ):
+            print(f"  {label}: {census.bar_breakdown.get(key, 0)}")
+
+    if args.dry_run:
+        return 0
+
+    try:
+        record = Record()
+        record.ensure_database()
+        with open(SCHEMA, encoding="utf-8") as handle:
+            record.apply_schema(handle.read())
+        report = record.write(
+            observations=list(census.observations.values()),
+            edges=census.edges,
+            facts=census.facts,
+            aliases=census.aliases,
+            coverage=census.coverage,
+            collectors=census.collector_rows(),
+        )
+        if not args.no_cache:
+            record.write_cache(
+                observations=list(census.observations.values()),
+                edges=census.edges,
+                facts=census.facts,
+                aliases=census.aliases,
+            )
+    except RecordError as exc:
+        print(f"the record could not be written: {exc}", file=sys.stderr)
+        return 1
+
+    if not args.json:
+        print()
+        print(f"wrote {report.as_dict()}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

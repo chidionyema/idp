@@ -5,8 +5,8 @@
   "counts": {
     "intent": 99,
     "layer": 212,
-    "service": 113,
-    "tool": 434,
+    "service": 114,
+    "tool": 437,
     "workflow": 78
   },
   "records": [
@@ -16262,6 +16262,52 @@
       ]
     },
     {
+      "id": "cap:service/estate-db/catalog-schema",
+      "schema_version": 1,
+      "kind": "service",
+      "summary": "CronJob catalog-schema in namespace estate-db",
+      "contract": {
+        "inputs": [
+          "kubernetes API"
+        ],
+        "outputs": [
+          "pods"
+        ],
+        "errors": [
+          "image pull, admission, probe failures"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "batch"
+      },
+      "owner": "@chidionyema",
+      "plane": "cluster",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform,clusters"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "cluster",
+      "path": "platform/catalog/schema-cronjob.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
       "id": "cap:service/flux-system/helm-controller",
       "schema_version": 1,
       "kind": "service",
@@ -20385,6 +20431,152 @@
           "edge": "invokes"
         }
       ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/catalog-census",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "catalog-census -- walk the estate and write the catalog's record.",
+      "contract": {
+        "inputs": [
+          "--dry-run",
+          "--json",
+          "--load-max",
+          "--no-cache",
+          "--planes"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/catalog-census",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/catalog-coverage",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "catalog-coverage -- how much of the estate the catalog actually knows.",
+      "contract": {
+        "inputs": [
+          "--fresh",
+          "--json"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/catalog-coverage",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/catalog-entity",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "catalog-entity -- one thing in the estate, and everything known about it.",
+      "contract": {
+        "inputs": [
+          "--json"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/catalog-entity",
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",
