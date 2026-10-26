@@ -1,0 +1,98 @@
+# The catalog's schema, applied to the estate's Postgres by the estate's own path.
+#
+# The record is the `estate` database of the estate-db CloudNativePG cluster
+# (the proposal's "estate-rw.estate-db": the read-write instance of the cluster
+# the estate already runs). The password is the cluster's superuser secret, which
+# the vault already publishes into this namespace -- no new secret, no new vault
+# entry, and therefore nothing waiting on the founder.
+#
+# The DDL is idempotent, so this CronJob can run every day and change nothing
+# after the first time. It exists so that the schema converges on its own: after
+# a restore, after a new cluster, or after the DDL changes -- the record's shape
+# is never something a person has to remember to apply.
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: catalog-schema
+  namespace: estate-db
+  annotations:
+    idp.estate.io/runtime: always-on
+spec:
+  # 04:17, once a day. The minute is not 0 on purpose: every other timed thing in
+  # the estate that fires on the hour makes the cluster's busiest minute noisier.
+  schedule: "17 4 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  startingDeadlineSeconds: 900
+  jobTemplate:
+    spec:
+      # A failed run is a red Job to read, never a silent retry (the estate's
+      # convention, platform/agent-workforce/cronjob.yaml). The DDL is idempotent,
+      # so the next night's run is the retry -- and a red Job is the evidence.
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: catalog-schema
+            app.kubernetes.io/part-of: estate
+        spec:
+          restartPolicy: Never
+          # The estate's batch class: a schema apply is a batch job and is seated
+          # by preempting a balloon pod, never by standing capacity.
+          priorityClassName: platform-batch
+          # The job needs the database and nothing else. A token would be a
+          # credential this pod does not use, mounted anyway.
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 26
+            runAsGroup: 26
+            fsGroup: 26
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: schema
+              # The cluster's own image, so the psql that applies the schema is
+              # the same psql the cluster runs.
+              image: ghcr.io/chidionyema/postgres-partman:18.1-postgres-partman
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                    set -eu
+                    # The password is read from the mounted Secret, never from an
+                    # environment variable: the estate's admission policy refuses
+                    # a secret in an env (secrets-not-from-env-vars), and a secret
+                    # in an env is readable by anything that can read the pod spec.
+                    PGPASSWORD="$(cat /etc/catalog-db/password)"; export PGPASSWORD
+                    exec psql -v ON_ERROR_STOP=1 -q \
+                      -h estate-rw.estate-db.svc.cluster.local \
+                      -U postgres \
+                      -d estate \
+                      -f /schema/001_catalog.sql
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+              volumeMounts:
+                - name: schema
+                  mountPath: /schema
+                  readOnly: true
+                - name: db-credentials
+                  mountPath: /etc/catalog-db
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 64Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+          volumes:
+            - name: schema
+              configMap:
+                name: catalog-schema
+            - name: db-credentials
+              secret:
+                secretName: estate-db-superuser
