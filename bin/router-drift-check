@@ -53,7 +53,11 @@ DEFAULT_CONFIG_VOLUME = "config"
 # detail, not drift -- only the NAME inventory must converge.
 ALLOWED_LAPTOP_ONLY = {"ollama-"}             # laptop fallback lanes (prefix), never on cluster
 SPHERE_LOCAL_MARKERS = ("host.docker.internal", "localhost", "127.0.0.1", ".svc.cluster.local", "ollama")
-ALLOWED_CLUSTER_ONLY = {"embed", "embed-cohere", "embed-query", "rerank", "image"}
+# Cluster-only capabilities: the cluster serves these and the laptop does not, by design
+# (the embedding pools, the reranker, the image lane, and the OKE ollama free floor --
+# the last one landed with #7207, and until it is named here the check reads a legitimate
+# cluster capability as drift and turns the whole check red).
+ALLOWED_CLUSTER_ONLY = {"embed", "embed-cohere", "embed-query", "rerank", "image", "ollama"}
 
 # Fields that define a lane's caller-visible behavior.
 LANE_FIELDS = ("model", "api_base")
