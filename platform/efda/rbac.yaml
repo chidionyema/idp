@@ -1,0 +1,102 @@
+# The controller's authority. It reads the estate's workloads and namespaces,
+# and it writes its own custom resources (the registry, the packs, the
+# reports) plus the registry snapshot and the NCWP expression.
+#
+# It has no authority to mutate workloads, and the executor's service account
+# below is a different identity with a different, much smaller authority.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: efda-controller
+  namespace: efda-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: efda-controller
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["efda.estate"]
+    resources:
+      [
+        "componentregistrations",
+        "skillpacks",
+        "coveragereports",
+        "diagnosticreports",
+        "remediationartifacts",
+      ]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["efda.estate"]
+    resources: ["componentregistrations/status", "skillpacks/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingadmissionpolicies"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: efda-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: efda-controller
+subjects:
+  - kind: ServiceAccount
+    name: efda-controller
+    namespace: efda-system
+---
+# The executor is a separate identity with a disjoint authority. It can read
+# the estate's workloads (to read pre-state) and write its own remediation
+# artifacts -- and nothing else. The allowlist, not the RBAC, is what says
+# which action may run; the RBAC is what stops it running anything else.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: efda-executor
+  namespace: efda-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: efda-executor
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["efda.estate"]
+    resources: ["remediationartifacts", "diagnosticreports"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: efda-executor
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: efda-executor
+subjects:
+  - kind: ServiceAccount
+    name: efda-executor
+    namespace: efda-system

@@ -1,0 +1,62 @@
+# The RemediationArtifact (Interface 4): what was done, what it was done to,
+# where the rollback point is, and how it ended. Every execution writes one,
+# including the executions that were refused.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: remediationartifacts.efda.estate
+spec:
+  group: efda.estate
+  scope: Namespaced
+  names:
+    kind: RemediationArtifact
+    plural: remediationartifacts
+    singular: remediationartifact
+    shortNames: ["remart"]
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Signature
+          type: string
+          jsonPath: .spec.signatureId
+        - name: Outcome
+          type: string
+          jsonPath: .spec.outcome
+        - name: Executed
+          type: string
+          jsonPath: .spec.executedAt
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: ["spec"]
+          properties:
+            spec:
+              type: object
+              required: ["outcome", "executedAt"]
+              properties:
+                signatureId:
+                  type: string
+                componentClass:
+                  type: string
+                confidence:
+                  type: number
+                action:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                outcome:
+                  type: string
+                reason:
+                  type: string
+                executedAt:
+                  type: string
+                  format: date-time
+                preState:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                rollbackPoint:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                rolledBack:
+                  type: boolean

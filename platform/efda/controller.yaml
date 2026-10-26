@@ -1,0 +1,139 @@
+# The controller (G3): observe the estate, register what it finds, generate the
+# baseline pack that makes it compliant, publish the registry snapshot and the
+# NCWP expression, and report what is still uncovered.
+#
+# The checkpoint sink is an env var, not a discovery mechanism: one sink, one
+# address, and the address is in the manifest.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: efda-controller
+  namespace: efda-system
+  labels:
+    app.kubernetes.io/name: efda-controller
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: efda-controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: efda-controller
+    spec:
+      serviceAccountName: efda-controller
+      containers:
+        - name: controller
+          image: ghcr.io/chidionyema/efda:0.0.0 # {"$imagepolicy": "flux-system:efda:tag"}
+          args: ["reconcile", "--interval", "30"]
+          env:
+            - name: EFDA_REDIS_HOST
+              value: efda-checkpoints.efda-system.svc.cluster.local
+            - name: EFDA_REDIS_PORT
+              value: "6379"
+            - name: EFDA_NAMESPACE
+              value: efda-system
+            - name: EFDA_CLUSTER
+              value: oke
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+# The executor (L5). It watches for DiagnosticReports and runs them through
+# the gates. On day one the allowlist is empty, so every T1/T2 report is
+# refused -- that refusal is the behaviour, not a missing feature.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: efda-executor
+  namespace: efda-system
+  labels:
+    app.kubernetes.io/name: efda-executor
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: efda-executor
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: efda-executor
+    spec:
+      serviceAccountName: efda-executor
+      containers:
+        - name: executor
+          image: ghcr.io/chidionyema/efda:0.0.0 # {"$imagepolicy": "flux-system:efda:tag"}
+          args: ["execute", "--watch", "--interval", "15"]
+          env:
+            - name: EFDA_REDIS_HOST
+              value: efda-checkpoints.efda-system.svc.cluster.local
+            - name: EFDA_REDIS_PORT
+              value: "6379"
+            - name: EFDA_NAMESPACE
+              value: efda-system
+            - name: EFDA_CLUSTER
+              value: oke
+            - name: EFDA_ALLOWLIST_PATH
+              value: /etc/efda/allowlist/allowlist.json
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: allowlist
+              mountPath: /etc/efda/allowlist
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: allowlist
+          configMap:
+            name: efda-allowlist
+        - name: tmp
+          emptyDir: {}
+---
+# The allowlist. Empty on day one: authority is earned per signature, by a
+# ConfigMap change, after the signature has produced a correct report against
+# a real artifact and its safety_proof has been reviewed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: efda-allowlist
+  namespace: efda-system
+data:
+  allowlist.json: |
+    {
+      "version": "v1",
+      "actions": []
+    }
