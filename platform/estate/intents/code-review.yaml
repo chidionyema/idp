@@ -11,15 +11,26 @@ args:
   severity:  {type: string, default: "medium", help: "low|medium|high|critical. Minimum severity."}
 halt_on_failure: false
 steps:
+  # The tiers hand off through files, not env: each step is its own shell, so a
+  # variable set in one step is gone in the next. Without this the pipeline ran
+  # Tier 0 and Tier 1 and then had nothing to judge (2026-10-26).
   - name: t0
     cmd: >
+      mkdir -p $HOME/.estate/review/latest &&
       python3 ~/.estate/libexec/code-review-t0.py {{tier}} {{target}} {{since}}
+      | tee $HOME/.estate/review/latest/t0.json
   - name: t1
     cmd: >
+      mkdir -p $HOME/.estate/review/latest &&
       python3 ~/.estate/libexec/code-review-t1.py {{tier}} {{target}} {{since}}
+      | tee $HOME/.estate/review/latest/t1.json
   - name: t2
     cmd: >
+      mkdir -p $HOME/.estate/review/latest &&
       python3 ~/.estate/libexec/code-review-t2.py {{tier}} {{target}} {{since}}
+      | tee $HOME/.estate/review/latest/t2.json
   - name: t3
     cmd: >
+      mkdir -p $HOME/.estate/review/latest &&
       python3 ~/.estate/libexec/code-review-t3.py {{tier}} {{target}} {{since}}
+      | tee $HOME/.estate/review/latest/t3.json
