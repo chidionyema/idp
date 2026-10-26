@@ -106,6 +106,7 @@ if [ "$CHECK" = 1 ]; then
       bad "$CC probe exited non-zero for a reproducible claim -- nothing can earn R1"
     fi
     for false_claim in "--instrument false" "--instrument true"; do
+      # shellcheck disable=SC2086 # the pair IS two arguments; quoting it would pass one string
       out="$("$CC" probe --json $false_claim 2>&1)"; rc=$?
       case "$out" in
         *'"verified": false'*) [ "$rc" -ne 0 ] || bad "a false claim (probe $false_claim) came back verified" ;;
@@ -197,6 +198,12 @@ case "$OUT" in
 esac
 
 ok "memory is operating: written and recalled through the one door"
+# What this rung measured: a write reaches the store and a recall (POST /memories/brief) finds
+# it. It does NOT prove a written key can be read back BY KEY: measured 2026-10-26, GET
+# /memories/<ns>/<key> through the KEDA interceptor 404s without reaching the server, so a
+# lost write would still pass here. Named rather than fixed -- reading the key back is the
+# right rung, and it belongs with the interceptor fix, not with the tier work this gate grew.
+# Incident: memory plane GET /memories 404s at the KEDA interceptor while PUT routes.
 
 # Rung 3 -- a memory earns its rung through the real door. Rung 2 proves the store works;
 # this proves what it will vouch for. A reproducible claim must arrive verified_internal and
