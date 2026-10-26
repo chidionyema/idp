@@ -199,3 +199,28 @@ def test_a_self_referencing_body_is_coerced_not_infinite(estate, monkeypatch):
     canonical = al._canonical(body)
     assert b"<depth>" in canonical
     assert json.loads(canonical)["model"] == "m"
+
+
+def test_a_key_that_arrives_as_itself_is_still_the_key(estate, monkeypatch):
+    """The router's container exports every mounted secret's CONTENT under the file's
+    basename, so the variable that holds the key's path arrives holding the key. Measured
+    2026-10-26 in the live cluster, on every call: "[action_ledger] not recorded: [Errno 2]
+    No such file or directory: '-----BEGIN PRIVATE KEY-----\\n...'". The ledger is handed a
+    path it cannot open and signs nothing."""
+    pem = (estate / "agent.pem").read_bytes().decode()
+    monkeypatch.setenv("ESTATE_AGENT_KEY", pem)
+    al._KEY = None
+    row = al.record(_call(), {"content": [{"type": "text", "text": "a"}]})
+    assert row is not None
+    assert al.verify()[0] == 1
+
+
+def test_a_key_whose_newlines_arrived_escaped_is_still_the_key(estate, monkeypatch):
+    """A value that crossed a YAML or JSON boundary can arrive with its newlines written as
+    backslash-n. The armour is then built from the escaped text, and the key still signs."""
+    pem = (estate / "agent.pem").read_bytes().decode()
+    monkeypatch.setenv("ESTATE_AGENT_KEY", pem.replace("\n", "\\n"))
+    al._KEY = None
+    row = al.record(_call(), {"content": [{"type": "text", "text": "a"}]})
+    assert row is not None
+    assert al.verify()[0] == 1
