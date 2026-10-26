@@ -1,0 +1,170 @@
+description: >-
+  The cluster's action ledger, 2026-10-26, after the P1-P2 lane landed. The callback is
+  registered, the ledger's destination env is set, the mounted key is a complete 119-byte PEM --
+  and yet every call still logs "[action_ledger] not recorded: [Errno 2] No such file or
+  directory: '<the PEM armour's opening marker, then the key's own base64 body, then the
+  closing marker>'". The missing file is named after a PEM, so the
+  ledger tried to OPEN its key. The key's bytes are NOT written here: this file is committed,
+  and a live signing key does not belong in a repository -- the SHAPE of the name is the
+  evidence, because a path that begins with the armour's marker is the key and not a path to
+  it. The question is which of five explanations produced that:
+  the mounted key is a stub and cannot be parsed; the container's secret wrapper exports every
+  mounted secret's CONTENT under the file's basename, so the variable that held the key's PATH
+  now holds the key itself and the ledger opens the key as a file; the callback is not
+  registered in the running config; the ledger's destination is wrong; or the canonicaliser
+  raises on the request body. Every count below was measured on the live cluster on
+  2026-10-26: the running pod's log, the running process's own /proc/1/environ, the
+  container's command, the mounted Secret's file, the live ConfigMap, the Deployment's env, and
+  a listing of the capture volume inside the running pod.
+hypotheses:
+- name: H1
+  description: >-
+    the mounted key is a stub or truncated, so the key cannot be loaded and the row is never
+    signed
+  prior: 0.15
+- name: H2
+  description: >-
+    the container's secret wrapper exports every mounted secret's content under the file's
+    basename, so the variable that held the key's path now holds the key text, and the ledger
+    opens the key itself as a file
+  prior: 0.35
+- name: H3
+  description: the action_ledger callback is not registered in the running router config
+  prior: 0.1
+- name: H4
+  description: >-
+    the row is written to the wrong place: the ledger's destination env does not point at the
+    capture volume
+  prior: 0.2
+- name: H5
+  description: the ledger's canonicaliser raises on the request body, so no row is built
+  prior: 0.2
+evidence:
+- name: the ledger's own warning in the live pod's log (litellm-5754bfdc65-hg8fn, 2026-10-26)
+  observed:
+    missing_file_named_a_pem: 1
+    canonicaliser_error: 0
+  likelihoods:
+    H1:
+      missing_file_named_a_pem: 0.1
+      canonicaliser_error: 0.9
+    H2:
+      missing_file_named_a_pem: 0.95
+      canonicaliser_error: 0.05
+    H3:
+      missing_file_named_a_pem: 0.02
+      canonicaliser_error: 0.02
+    H4:
+      missing_file_named_a_pem: 0.05
+      canonicaliser_error: 0.05
+    H5:
+      missing_file_named_a_pem: 0.05
+      canonicaliser_error: 0.95
+- name: the running process's own environment (/proc/1/environ of the litellm container)
+  observed:
+    env_holds_the_key_text: 1
+    env_holds_a_path: 0
+  likelihoods:
+    H1:
+      env_holds_the_key_text: 0.1
+      env_holds_a_path: 0.9
+    H2:
+      env_holds_the_key_text: 0.95
+      env_holds_a_path: 0.05
+    H3:
+      env_holds_the_key_text: 0.1
+      env_holds_a_path: 0.9
+    H4:
+      env_holds_the_key_text: 0.1
+      env_holds_a_path: 0.9
+    H5:
+      env_holds_the_key_text: 0.1
+      env_holds_a_path: 0.9
+- name: the container's command (the secret wrapper the estate ships)
+  observed:
+    wrapper_exports_secret_content_by_basename: 1
+  likelihoods:
+    H1:
+      wrapper_exports_secret_content_by_basename: 0.9
+    H2:
+      wrapper_exports_secret_content_by_basename: 0.9
+    H3:
+      wrapper_exports_secret_content_by_basename: 0.9
+    H4:
+      wrapper_exports_secret_content_by_basename: 0.9
+    H5:
+      wrapper_exports_secret_content_by_basename: 0.9
+- name: the mounted signing key (Secret litellm-agent-key, namespace llm, in the running pod)
+  observed:
+    key_file_is_a_complete_pem: 1
+    key_file_is_a_stub: 0
+  likelihoods:
+    H1:
+      key_file_is_a_complete_pem: 0.05
+      key_file_is_a_stub: 0.95
+    H2:
+      key_file_is_a_complete_pem: 0.9
+      key_file_is_a_stub: 0.1
+    H3:
+      key_file_is_a_complete_pem: 0.9
+      key_file_is_a_stub: 0.1
+    H4:
+      key_file_is_a_complete_pem: 0.9
+      key_file_is_a_stub: 0.1
+    H5:
+      key_file_is_a_complete_pem: 0.9
+      key_file_is_a_stub: 0.1
+- name: the action_ledger callback in the live router config (ConfigMap litellm-config-28gmg72thg)
+  observed:
+    callback_registered: 1
+    callback_absent: 0
+  likelihoods:
+    H1:
+      callback_registered: 0.9
+      callback_absent: 0.1
+    H2:
+      callback_registered: 0.9
+      callback_absent: 0.1
+    H3:
+      callback_registered: 0.02
+      callback_absent: 0.98
+    H4:
+      callback_registered: 0.9
+      callback_absent: 0.1
+    H5:
+      callback_registered: 0.9
+      callback_absent: 0.1
+- name: the ledger's destination env in the live Deployment
+  observed:
+    ledger_env_points_at_the_capture_volume: 1
+    ledger_env_unset: 0
+  likelihoods:
+    H1:
+      ledger_env_points_at_the_capture_volume: 0.9
+      ledger_env_unset: 0.1
+    H2:
+      ledger_env_points_at_the_capture_volume: 0.9
+      ledger_env_unset: 0.1
+    H3:
+      ledger_env_points_at_the_capture_volume: 0.9
+      ledger_env_unset: 0.1
+    H4:
+      ledger_env_points_at_the_capture_volume: 0.02
+      ledger_env_unset: 0.98
+    H5:
+      ledger_env_points_at_the_capture_volume: 0.9
+      ledger_env_unset: 0.1
+- name: the capture volume inside the running pod, after the traffic
+  observed:
+    no_ledger_file_on_the_capture_volume: 1
+  likelihoods:
+    H1:
+      no_ledger_file_on_the_capture_volume: 0.9
+    H2:
+      no_ledger_file_on_the_capture_volume: 0.9
+    H3:
+      no_ledger_file_on_the_capture_volume: 0.9
+    H4:
+      no_ledger_file_on_the_capture_volume: 0.9
+    H5:
+      no_ledger_file_on_the_capture_volume: 0.9
