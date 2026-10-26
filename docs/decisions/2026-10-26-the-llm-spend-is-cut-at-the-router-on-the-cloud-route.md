@@ -39,7 +39,12 @@ measured before it is claimed.**
 2. **Unpin the lane that carries 72% of the bill.** The client stops pinning a leaf lane, or
    `minimax_m27` gets the fallback chain its sibling already has. Expected **≈ $10.50/day**
    (35.9% of the bill), against a quality gate — a fixed probe set, agreement measured the way
-   the forge measures agreement, no lane allowed below the current baseline.
+   the forge measures agreement, no lane allowed below the current baseline. Two preconditions,
+   both measured: the half-price lane `minimax_m31f` is in **no file in this repository** (it
+   exists only in the laptop router's own config, so a re-render drops it), and the cloud key's
+   allowlist — 29 ids, read from `GET /v1/models` — does **not** carry it, so the default route
+   answers `403` for it. The saving lands on the route that will carry the traffic only once
+   the lane is versioned and the allowlist extended.
 3. **Every paid group ends on a free lane.** The fallbacks map gains the entries it is missing
    and terminates in `groq` → `cerebras` → `sambanova` → `nvidia` → `openrouter`, with the OKE
    free floor (`platform/llm/ollama.yaml`, ladder rung 0) at the bottom for code-shaped work.
@@ -95,6 +100,9 @@ quality** — a 66% cut, ≈ $580/month, with no new paid infrastructure.
 
 - If the probe agreement of `minimax_m31f` (or any replacement lane) falls below the current
   lane's baseline, rung 2's saving is not available and the floor must be re-derived.
+- If the half-price lane cannot be versioned and allowlisted on the cloud route, rung 2's saving
+  does not exist on the default route at all, and the floor must be re-derived from the
+  allowlisted lanes alone.
 - If the free-tier allowance cannot carry the repeatable share, rung 3's saving collapses to
   the metered rate and the floor moves up.
 - If, after the flip, the cloud route's per-call `cost_usd` cannot be read back from the
