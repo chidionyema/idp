@@ -53,6 +53,7 @@ eight more charged with dagster's pod because the pod watch read every pod in th
 
 import argparse
 import json
+import pathlib
 import os
 import re
 import subprocess
@@ -1571,7 +1572,7 @@ def _verify(head, paths):
                     "kubectl",
                     "apply",
                     "-f",
-                    "https://github.com/cert-manager/cert-manager/releases/download/v1.15.3/cert-manager.yaml",
+                    os.path.join(REPO, "clusters", "shadow", "cert-manager.yaml"),
                 ],
                 capture_output=True,
                 text=True,
