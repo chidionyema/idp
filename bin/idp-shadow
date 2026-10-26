@@ -624,9 +624,32 @@ def is_json_key(key):
     return key == ".dockerconfigjson" or key.endswith(".json")
 
 
-def placeholder(key):
-    """The stand-in value for one key, in the shape that key's own consumer parses."""
-    return JSON_STAND_IN if is_json_key(key) else VAULT_PLACEHOLDER
+def placeholder(key, template=None):
+    """The stand-in value for one key, in the shape that key's own consumer parses.
+
+    Three shapes, in the order a consumer meets them:
+
+    1. JSON (`.dockerconfigjson`, `*.json`) -- JSON_STAND_IN, above.
+    2. A conninfo/URI the consumer PARSES (a templated `DATABASE_URL`) -- the row's own
+       template with every `{{ ... }}` replaced by the vault stand-in's placeholder.
+       Measured 2026-10-25 (runs 40241468896, base and head alike): unified-memory-server
+       CrashLoopBackOff, restarts 3, with
+           psycopg.ProgrammingError: missing "=" after "shadow-vault-stand-in"
+           in connection info string
+       -- the prose landed where a DSN belonged and the app died on its first byte, so
+       platform/unified-memory-server could never converge and the row blocked every merge
+       behind it. Nothing else about the row is rewritten: host, role, database and its own
+       TLS policy stay the PR's, because the stand-in serves them (estate-rw is a postgres
+       seeded from the head's databases.yaml, running with ssl=on), and a stand-in that
+       quietly relaxed `sslmode` would hide the very misconfiguration this environment
+       exists to catch.
+    3. Anything else -- the prose placeholder.
+    """
+    if is_json_key(key):
+        return JSON_STAND_IN
+    if template and "://" in template:
+        return re.sub(r"\{\{[^}]*\}\}", VAULT_PLACEHOLDER, template)
+    return VAULT_PLACEHOLDER
 
 
 def consumer_secret_keys():
@@ -780,7 +803,12 @@ def vault_stand_ins(external_secrets, consumer_keys=None):
                     "namespace": namespace,
                     "labels": {"idp.shadow/vault-stand-in": "true"},
                 },
-                "stringData": {k: placeholder(k) for k in dict.fromkeys(keys)},
+                "stringData": {
+                    k: placeholder(
+                        k, ((target.get("template") or {}).get("data") or {}).get(k)
+                    )
+                    for k in dict.fromkeys(keys)
+                },
             }
         )
     return out
@@ -1534,21 +1562,45 @@ def _verify(head, paths):
         # cert-manager before anything that names an Issuer (2026-10-25, #7116 class):
         # production has cert-manager under every platform row; the shadow gets the static
         # release manifest so platform/secrets' TLS resources can reconcile.
-        if any(pth.startswith(("platform/secrets", "platform/human-vault")) for pth in paths):
+        if any(
+            pth.startswith(("platform/secrets", "platform/human-vault"))
+            for pth in paths
+        ):
             cm = subprocess.run(
-                ["kubectl", "apply", "-f",
-                 "https://github.com/cert-manager/cert-manager/releases/download/v1.15.3/cert-manager.yaml"],
-                capture_output=True, text=True, timeout=300,
+                [
+                    "kubectl",
+                    "apply",
+                    "-f",
+                    "https://github.com/cert-manager/cert-manager/releases/download/v1.15.3/cert-manager.yaml",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=300,
             )
             if cm.returncode != 0:
-                return 1, [("floor", f"cert-manager install failed: {(cm.stderr or '').strip()[-300:]}")]
+                return 1, [
+                    (
+                        "floor",
+                        f"cert-manager install failed: {(cm.stderr or '').strip()[-300:]}",
+                    )
+                ]
             ready = subprocess.run(
-                ["kubectl", "wait", "--for=condition=available", "-n", "cert-manager",
-                 "deploy/--all", "--timeout=600s"],
-                capture_output=True, text=True,
+                [
+                    "kubectl",
+                    "wait",
+                    "--for=condition=available",
+                    "-n",
+                    "cert-manager",
+                    "deploy/--all",
+                    "--timeout=600s",
+                ],
+                capture_output=True,
+                text=True,
             )
             if ready.returncode != 0:
-                return 1, [("floor", "cert-manager never became available in the shadow")]
+                return 1, [
+                    ("floor", "cert-manager never became available in the shadow")
+                ]
             # Deployments report Available before their webhooks serve; the first Issuer
             # dry-run then fails with connection refused and the lane reds. Probe a dry-run
             # Issuer until the webhook answers (measured #7084 run 40192621885, 2026-10-25).
@@ -1556,14 +1608,31 @@ def _verify(head, paths):
             for _ in range(12):
                 dry = subprocess.run(
                     ["kubectl", "apply", "--dry-run=server", "-f", "-"],
-                    input=probe, capture_output=True, text=True, timeout=60,
+                    input=probe,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
                 )
                 if dry.returncode == 0:
-                    subprocess.run(["kubectl", "delete", "issuer", "shadow-probe", "-n", "default", "--ignore-not-found"], capture_output=True, timeout=60)
+                    subprocess.run(
+                        [
+                            "kubectl",
+                            "delete",
+                            "issuer",
+                            "shadow-probe",
+                            "-n",
+                            "default",
+                            "--ignore-not-found",
+                        ],
+                        capture_output=True,
+                        timeout=60,
+                    )
                     break
                 time.sleep(10)
             else:
-                return 1, [("floor", "cert-manager webhook never served a dry-run Issuer")]
+                return 1, [
+                    ("floor", "cert-manager webhook never served a dry-run Issuer")
+                ]
         flux_source(head)
         floor_failed = flux_floor(time.time() + 300)
         if floor_failed:
