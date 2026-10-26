@@ -325,7 +325,21 @@ def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> lis
     # They are auto-generated infrastructure, not product changes, and do not belong to any agent's
     # claim. Like runner-pins they require no claim: they are the platform's own housekeeping.
     DEMOS_EXEMPT = re.compile(r"^docs/demos/[^/]+$")
-    outside = [f for f in files if f not in covered and not DEMOS_EXEMPT.match(f)]
+    # The registry witness is generated too, and by the same argument it must not belong to a
+    # claim: .github/workflows/registry-snapshot.yml regenerates it from the pull request's own
+    # tree and commits it as the bot, so the agent that built a component never has to touch it.
+    # Its CONTENT is not unchecked here -- bin/registry-gate proves the committed witness equals
+    # a fresh generation, inside the required ci checks, so a hand-edited witness is refused
+    # there. Two layers, each doing its own job: this one says who owns the file (nobody), that
+    # one says whether it is true (the gate).
+    WITNESS_EXEMPT = re.compile(r"^catalog/estate-capability-registry\.json$")
+    outside = [
+        f
+        for f in files
+        if f not in covered
+        and not DEMOS_EXEMPT.match(f)
+        and not WITNESS_EXEMPT.match(f)
+    ]
     if not problems and outside:
         problems.append(
             f"{len(outside)} file(s) outside every claim's paths: {', '.join(outside[:10])}"

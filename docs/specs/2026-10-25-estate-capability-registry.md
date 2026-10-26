@@ -171,15 +171,20 @@ section is the receipt: what exists, what it measures, and what is still missing
 | The proof | `tests/test_capability_registry.py` | the same five falsifiers as tests, plus the query contract and the drift check |
 | The CI rung | `bin/idp-ci` (rung 8f) | the gate, path-gated on the registry's own inputs |
 | The committed snapshot | `catalog/estate-capability-registry.json` | the repo-derived half of the census, machine-generated, drift-checked |
+| The witness refresher | `.github/workflows/registry-snapshot.yml` | regenerates the witness from the pull request's own tree and commits it to the branch as the bot: refreshing the evidence is the pipeline's job, not an agent's |
+| The reconcile job | `scheduler/schedule.yml` (`com.estate.registry-reconcile`) | the live half is reconciled on a cycle (`bin/capability-index census --write`), where the estate's one scheduler runs |
 | The agent surface | `mcp/plugins/estate_mcp.py` | `capability_get`, `capability_query`, `capability_prove` |
 
 ### 13.2 What it measures (this machine, 2026-10-26)
 
-The census names **945 capabilities**: 436 tools (`bin/`), 344 intents (the installed
-library), 113 cluster workloads, 47 mac-plane workflows, 5 agent runtimes. Of those, **244
-are `operating`** (a receipt inside its freshness window), **112 `degraded`** (the last run
-failed) and **589 `declared`** (no receipt: the record exists, the proof does not). That
-split is the founder's question answered as a fact: crew#962's "76 built, 6 operational" is
+The live census names **1021 capabilities**: 434 tools (`bin/`), 344 intents (the installed
+library), 125 workflows (47 mac-plane launchd jobs and 78 GitHub Actions pipelines), 113 cluster
+workloads, 5 agent runtimes. Of those, **185 are `operating`** (a receipt inside its freshness
+window), **88 `degraded`** (the last run failed) and **748 `declared`** (no receipt: the record
+exists, the proof does not). The committed witness carries the repo-derived half alone: **724
+records**, byte-identical on 3.9, on the estate's uv 3.12 and on the CI runner.
+
+That split is the founder's question answered as a fact: crew#962's "76 built, 6 operational" is
 now a queryable count with a freshness bound, not an audit somebody runs once.
 
 ### 13.3 The decisions that are not in the spec above
@@ -211,8 +216,14 @@ now a queryable count with a freshness bound, not an audit somebody runs once.
 ### 13.4 What is NOT built (the honest list)
 
 1. The JetStream consumer for `capability.changed` (section 5's S = 60s is unproven).
-2. The 15-minute reconciliation job. `bin/capability-index reconcile` is the cycle and it
-   is not scheduled; nothing runs it on a timer yet.
+2. The 15-minute reconciliation job is now DECLARED but not yet running on this machine.
+   `scheduler/schedule.yml` carries `com.estate.registry-reconcile` (every 15 min, `runs_on: mac`),
+   which runs `bin/capability-index census --write` -- the same cycle, as a scheduled job rather
+   than something an agent remembers to run. Measured 2026-10-26: the estate's one scheduler
+   (`ai.estate.scheduler`, the launchd job that runs the Dagster daemon) is NOT loaded on this
+   Mac, so the row ticks wherever that scheduler runs and not before. The door is the door either
+   way: `bin/capability-index census --write` reconciles, tombstones and writes the store, and it
+   was run by hand to prove the cycle (two deleted tools tombstoned in one pass).
 3. The router pre-dispatch read (section 8): the router does not consult the registry yet,
    so `unknown capacity is refuse` is not enforced anywhere.
 4. The Face/Fleet tiles (A3). The MCP surface is the agent-readable half and it ships.
@@ -225,8 +236,70 @@ now a queryable count with a freshness bound, not an audit somebody runs once.
 ### 13.5 The gate's own limits
 
 `bin/registry-gate` fails on: a broken invariant, a malformed record, a snapshot that names
-a capability the repository no longer has, a missing intent record, a forged receipt, and
-(under `--strict`) any BLIND. It does not fail on: a workload the repository does not
-declare, a capability with no proof (that is `declared`, which is the point), or a snapshot
-that lags behind a newly added file (a finding with the exact command that fixes it:
-`bin/capability-index emit --write`).
+a capability the repository no longer has, a snapshot that LAGS behind the repository (a newly
+built capability the witness does not name -- section 14), a missing intent record, a forged
+receipt, and (under `--strict`) any BLIND, any record past its freshness window, and a live
+half whose reconcile heartbeat has gone past an hour. It does not fail on: a workload the
+repository does not declare, a capability with no proof (that is `declared`, which is the
+point), or a stale reconcile heartbeat outside `--strict` (the estate's one scheduler may
+simply be running somewhere else -- so it is a named finding, not a false red).
+
+---
+
+## 14. The evidence lifecycle: what happens when a component is built
+
+The question a registry has to answer before it is trusted: **we built something. What now?**
+
+Three answers, and the third is the one that decides whether the registry is worth having.
+
+**1. The witness is a pure function of the tree.** `catalog/estate-capability-registry.json` is
+generated by `bin/capability-index emit --write` from the repository's own surfaces (bin scripts,
+platform manifests, cluster manifests, CODEOWNERS, docs). Nothing in it is typed by a human, so it
+cannot be wrong about what the repository contains; it can only be out of date, and "out of date"
+has an exact meaning here: it differs from a fresh generation, byte for byte.
+
+**2. The merge point must be true.** `bin/registry-gate` fails, by default, when the committed
+witness differs from a fresh generation in either direction:
+
+- **LAG** -- the repository grew a capability the witness does not name;
+- **FAIL** -- the witness names a capability the repository no longer has.
+
+It is a rung in `bin/idp-ci`, and `ci-success` is a required check, so a lagging witness cannot
+land. That is the guarantee, and it is arithmetic rather than vigilance: the witness is a function
+of the tree, and the merge point is checked against that function.
+
+**3. Refreshing it is machine work, not a task.** `.github/workflows/registry-snapshot.yml`
+regenerates the witness on every pull request and commits it to the branch as the bot. The agent
+that built the component never has to know the witness exists. This is the part that was missing
+when this section was first asked (2026-10-26: "what happens when we build new components"), and
+it is the part that made the answer "an agent must remember to refresh it" -- which is the thing
+that causes drift, and a map that drifts is trusted anyway.
+
+### 14.1 The edge cases the first version of this spec did not account for
+
+| ID | Edge case | Behaviour now |
+|----|-----------|----------------|
+| E-1 | A component is added (a new bin script, a new service, a new intent in the repo) | the census grows, the witness lags, the gate fails, the workflow regenerates it, the merge point is true |
+| E-2 | A component is removed | the witness names a capability the estate no longer has: the gate fails (FAIL), and the live half tombstones it on the next reconciliation cycle (I-5) |
+| E-3 | main moves under the lane | the truth is a function of the tree, so a moved main can change it: the gate re-derives the witness against the lane's own tree, and the workflow regenerates it. Measured 2026-10-26, on the lane that built this registry: a rebase onto a moved main changed the tree, and the witness had to be re-derived against it |
+| E-4 | somebody hand-edits the witness | drift: the gate compares the committed bytes with a fresh generation and fails. The claim-gate exempts the witness path from claim coverage (it is generated, so it belongs to nobody's claim); the gate is what proves its content -- two layers, each doing its own job |
+| E-5 | the live estate changes (an intent installed, a workload deleted on the cluster) | the live half is reconciled on a cycle: `com.estate.registry-reconcile` in `scheduler/schedule.yml` runs `bin/capability-index census --write` every 15 minutes, which tombstones what was removed and records what appeared. It is a scheduled job, not a ritual. The reconcile leaves a heartbeat (`census.reconciled`), so the gate can name the live half's age instead of assuming it: a heartbeat older than an hour is a finding, and a failure under `--strict` |
+| E-6 | CI has no estate state (`~/.estate`, the installed intents) | BLIND is a verdict: the gate says BLIND for the live coverage and does not pretend. The repo half is still checked in full |
+| E-7 | the gate has to be shown able to fail | every invariant ships with the case that trips it, and the drift check ships with a seeded lag (`tests/test_capability_registry.py`) |
+
+### 14.2 What this does not do
+
+- It does not make the live store a shared service: it is one file on one machine, reconciled by
+  a job on that machine. Postgres arrives when a second plane writes it (section 7).
+- It does not make the registry the estate's only inventory: growmos, estate-inventory and the
+  backstage catalogue remain writers (section 2, principle 5).
+- It does not prove a capability WORKS: it proves the estate knows what it has. The receipt is
+  the proof of operation, and a capability with no receipt is `declared`, which is the point.
+- It does not own a timer of its own. The live half's reconcile runs on the estate's one
+  scheduler (`ai.estate.scheduler`, the Dagster daemon), and on this Mac that launchd job is
+  NOT loaded (measured 2026-10-26: `launchctl list` shows only `ai.estate.executor`; the
+  webserver on 127.0.0.1:3210 is down), so the row ticks wherever that scheduler runs and not
+  before. The committed half does not depend on it: the witness is regenerated by the pull
+  request pipeline and graded by the gate, which is why the guarantee holds while the laptop
+  timer is dark. The gate prints the live store's last write, so the age of the live half is
+  always on the record.

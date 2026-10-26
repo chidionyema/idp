@@ -581,6 +581,82 @@ def build_repo_tools(ctx: Context):
     return out
 
 
+def _yaml_top_keys(text, key):
+    """The keys under a top-level YAML key, read with a regex rather than a parser.
+
+    A workflow file carries three kinds of YAML at once (a mapping, a list, and an `on:`
+    key that a YAML 1.1 parser turns into the boolean True), so parsing it needs a real
+    parser -- and the census must answer identically on every interpreter. A regex over
+    the indented keys is enough to name the triggers, and it is the same answer everywhere.
+    """
+    keys = []
+    inside = False
+    for line in text.splitlines():
+        if re.match(r"^{}:?\s*$".format(re.escape(key)), line):
+            inside = True
+            continue
+        if inside:
+            match = re.match(r"^\s{2}([A-Za-z0-9_-]+):", line)
+            if match:
+                keys.append(match.group(1))
+                continue
+            if line.strip() and not line.startswith(" "):
+                break
+    return keys
+
+
+def build_repo_workflows(ctx: Context):
+    """Writer `repo`, plane `idp`: the GitHub Actions that ARE part of the estate.
+
+    A pipeline that runs the estate is a capability: it has a trigger, it produces a
+    verdict, and it fails loudly. Leaving it out of the census would mean the map of
+    what the estate can do is missing the surfaces that keep it true -- and the map would
+    not change when one was added, which is exactly the drift the registry exists to
+    prevent (spec section 14, E-1).
+
+    The id is namespaced `gha-` because the mac plane's workflows (the launchd jobs) are
+    also `cap:workflow/`, and one id must have one writer (I-1).
+    """
+    if "workflows" in ctx._cache:
+        return ctx._cache["workflows"]
+    wf_dir = ctx.idp / ".github" / "workflows"
+    if not wf_dir.is_dir():
+        return []
+    ctx.sources.append("idp:.github/workflows")
+    out = []
+    for path in sorted(wf_dir.glob("*.y*ml")):
+        rel = ".github/workflows/{}".format(path.name)
+        stem = path.name.rsplit(".", 1)[0]
+        text = read_text(path)
+        name = ""
+        for line in text.splitlines()[:60]:
+            match = re.match(r"^name:\s*(.+?)\s*$", line)
+            if match:
+                name = match.group(1).strip().strip("'\"")
+                break
+        triggers = _yaml_top_keys(text, "on")
+        out.append(
+            make_record(
+                "cap:workflow/gha-{}".format(stem),
+                "workflow",
+                "{} -- the GitHub Actions workflow {}.".format(name or stem, path.name),
+                "idp",
+                ctx.owner(rel),
+                "repo",
+                "idp:.github/workflows",
+                inputs=triggers or ["workflow_dispatch"],
+                outputs=["job verdicts", "artifacts"],
+                errors=["non-zero exit", "a required check that never reports"],
+                cost_class="free",
+                latency_class="batch",
+                path=rel,
+                blind=["health", "proof", "metrics"],
+            )
+        )
+    ctx._cache["workflows"] = out
+    return out
+
+
 def _intent_record(ctx: Context, name, description, args, source, run=None, path=None):
     receipt = None
     proven_at = None
@@ -953,6 +1029,7 @@ def repo_records(ctx: Context):
     """The repository's own capabilities: tools, declared intents, declared workloads."""
     records = []
     records.extend(build_repo_tools(ctx))
+    records.extend(build_repo_workflows(ctx))
     records.extend(build_intents(ctx, live=False))
     records.extend(build_cluster(ctx))
     return _merge(records)
@@ -1176,6 +1253,10 @@ class Store:
                 iso(now_utc()),
             ),
         )
+        # the event log is the store's own log (spec section 5): an event that is not
+        # committed is not an event, and a reconcile heartbeat nobody can read is not
+        # a heartbeat.
+        conn.commit()
 
     def finding(self, kind: str, subject: str, owner: str, state: str, detail: str):
         conn = self.open()
@@ -1654,6 +1735,20 @@ def main(argv=None) -> int:
                 ok, _msg = store.write(record, record.get("writer") or "repo")
                 written += 1 if ok else 0
             result = reconcile(store, records.keys())
+            # The reconcile leaves a heartbeat. Without one, "the live half is current"
+            # would be a belief: a quiet estate writes no changed records, so the last
+            # write tells you nothing about whether the cycle is still ticking. The
+            # heartbeat is what the gate reads to say how old the live half is.
+            store.event(
+                "census.reconciled",
+                None,
+                {
+                    "records": len(records),
+                    "written": written,
+                    "tombstoned": len(result.get("tombstoned", [])),
+                    "unregistered": len(result.get("unregistered", [])),
+                },
+            )
             payload = {
                 "records": len(records),
                 "written": written,

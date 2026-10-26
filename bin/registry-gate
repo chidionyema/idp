@@ -14,6 +14,19 @@ WHAT IT CHECKS (spec section 10, and every one of these can fail):
   D    the drift check                          -- the committed snapshot equals a fresh one
   R    receipt integrity (section 9)            -- a forged receipt is refused
 
+THE DRIFT CHECK IS A GUARANTEE, NOT A WARNING. The committed snapshot is the
+estate's witness of what it can do, and a witness that lags the estate is drift
+that can land. So a snapshot missing a capability the repository now has (LAG)
+fails the gate in the DEFAULT mode, exactly like a snapshot naming a capability
+the repository no longer has (FAIL). `--strict` adds the BLIND rule on top; it
+is not what makes drift a failure.
+
+What keeps the witness true without an agent remembering is a machine:
+.github/workflows/registry-snapshot.yml regenerates it on every pull request and
+commits it as the bot, so "a component was built" is answered by the pipeline
+rather than by whoever built it. The gate is the guarantee that the merge
+point is true; the workflow is what makes reaching it cheap.
+
 Each falsifier ships with the case that trips it, so a gate that cannot fail is not a gate.
 The gate is BLIND-tolerant by design: on a CI runner there is no ~/.estate, so the live
 coverage is BLIND and the gate says so instead of pretending. `--strict` turns every BLIND
@@ -35,12 +48,41 @@ import sqlite3
 import sys
 import tempfile
 from collections import Counter
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 IDP = HERE.parent
 DEFAULT_SNAPSHOT = IDP / "catalog" / "estate-capability-registry.json"
+
+# the live half is reconciled every 15 minutes by the estate's one scheduler; a
+# heartbeat older than an hour means that cycle has stopped, and the live half is
+# then older than anything reading the gate would assume.
+RECONCILE_MAX_AGE_S = 3600
+
+
+def now_utc():
+    return datetime.now(timezone.utc)
+
+
+def _parse_iso(stamp):
+    text = (stamp or "").replace("Z", "+00:00")
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _human_age(seconds):
+    if seconds is None:
+        return "age unknown"
+    if seconds < 90:
+        return "{:.0f}s".format(seconds)
+    if seconds < 5400:
+        return "{:.0f}m".format(seconds / 60)
+    if seconds < 172800:
+        return "{:.1f}h".format(seconds / 3600)
+    return "{:.1f}d".format(seconds / 86400)
 
 
 def load_door():
@@ -287,22 +329,50 @@ def main(argv=None) -> int:
                 drift.get("command", ""),
             )
         )
-    elif drift["verdict"] == "LAG" and args.strict:
+    elif drift["verdict"] == "LAG":
+        # 2026-10-26: this was a finding, and it is now a failure. A witness that lags the
+        # estate is drift, and drift that can land is not a guarantee: the founder's rule is
+        # that the map of what the estate can do must be true at the merge point, by
+        # mathematics (the snapshot is a pure function of the tree) and not by an agent
+        # remembering to refresh it. The workflow regenerates it; this refuses the lag.
         failures.append(
-            "drift: the committed snapshot lags the repository ({} record(s) added) -- {}".format(
-                len(drift.get("added", [])), drift.get("command", "")
+            "drift: the committed snapshot lags the repository ({} record(s) added: {}) -- {}".format(
+                len(drift.get("added", [])),
+                ", ".join(drift.get("added", [])[:5]),
+                drift.get("command", ""),
             )
         )
 
     # 4. the live store, when there is one: coverage, freshness, receipt integrity.
     blind = []
     store_records = []
-    if door.DB_PATH.exists():
+    live_write = None
+    live_store_present = door.DB_PATH.exists()
+    if live_store_present:
         store = door.Store(door.DB_PATH)
         try:
             store_records = store.all()
         except sqlite3.Error as exc:
             failures.append("store: {} is unreadable: {}".format(door.DB_PATH, exc))
+        # when the live half was last reconciled, named rather than assumed. The gate
+        # never hides who is supposed to refresh the store.
+        try:
+            conn = sqlite3.connect(str(door.DB_PATH))
+            row = conn.execute(
+                "select type, at from events where type = 'census.reconciled' "
+                "order by seq desc limit 1"
+            ).fetchone()
+            conn.close()
+            live_write = {"event": row[0], "at": row[1]} if row else None
+        except sqlite3.Error:
+            live_write = None
+        if live_write:
+            try:
+                age = (now_utc() - _parse_iso(live_write["at"])).total_seconds()
+            except (TypeError, ValueError):
+                age = None
+            live_write["age_s"] = age
+        facts["live_write"] = live_write
         # a forged receipt in the store is a failure, never a silent trust (spec section 9)
         if door.KEY_PATH.exists():
             forged = [
@@ -362,6 +432,30 @@ def main(argv=None) -> int:
                 fresh["stale"]
             )
         )
+    # the live half's cycle, when there is a live half: a reconcile heartbeat that has
+    # gone quiet means the scheduled cycle stopped, and the live records are then
+    # older than the gate's own output would suggest. A finding by default (the
+    # estate's own scheduler may simply be elsewhere); a failure when a verdict was
+    # demanded.
+    if live_write and live_write.get("age_s") is not None:
+        facts["live_age_s"] = live_write["age_s"]
+        if live_write["age_s"] > RECONCILE_MAX_AGE_S:
+            message = (
+                "strict: the live half was last reconciled {} ({} ago), past the {}s "
+                "bound -- the reconcile cycle is not ticking".format(
+                    live_write["at"],
+                    _human_age(live_write["age_s"]),
+                    RECONCILE_MAX_AGE_S,
+                )
+            )
+            if args.strict:
+                failures.append(message)
+            else:
+                facts.setdefault("findings", []).append(message)
+    elif live_store_present:
+        facts.setdefault("findings", []).append(
+            "the live store has never been reconciled by a census"
+        )
 
     ok = not failures
     payload = {"ok": ok, "failures": failures, **facts}
@@ -412,7 +506,30 @@ def main(argv=None) -> int:
             fresh["records"], fresh["stale"], fresh["per_domain"]
         )
     )
+    if live_write:
+        age = live_write.get("age_s")
+        print(
+            "live: the store was last reconciled {} ({} ago) -- the reconcile that "
+            "refreshes it is com.estate.registry-reconcile (scheduler/schedule.yml), "
+            "which runs bin/capability-index census --write wherever the estate's one "
+            "scheduler runs".format(
+                live_write["at"],
+                "age unknown" if age is None else _human_age(age),
+            )
+        )
+    elif live_store_present:
+        print(
+            "live: the store has never been reconciled by a census -- the live half's "
+            "age is unknown, not fresh"
+        )
+    else:
+        print(
+            "live: BLIND -- no store on this machine, so the live half of the registry "
+            "cannot be checked here (the committed half is checked in full)"
+        )
     print("drift: {} -- {}".format(drift["verdict"], drift["detail"]))
+    for finding in facts.get("findings", []):
+        print("finding: {}".format(finding))
     if ok:
         print("ok      registry-gate  the registry is true")
         return 0
