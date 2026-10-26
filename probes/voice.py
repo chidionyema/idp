@@ -23,6 +23,7 @@ import re
 import struct
 import sys
 import time
+import urllib.error
 import urllib.request
 import wave
 from pathlib import Path
@@ -79,6 +80,83 @@ def _get(url: str, timeout: int = 45):
         req.add_header("Authorization", f"Bearer {tok}")
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.status, r.read()
+
+
+CATALOGUE_PATH = "/voice/intents"
+
+
+def catalogue_leg(base: str) -> dict:
+    """GET /voice/intents -- the list the Face's command deck is built from.
+
+    This is a leg rather than a footnote because of how its failure looks. A backend whose
+    catalogue 500s, whose proxy route is mis-mounted, or whose intent directory did not ship
+    still answers /healthz, still runs a real conversation, and still passes every other leg of
+    this battery -- while the Face offers an empty deck and the founder is told nothing. Measured
+    2026-10-24: the production route answered 200 only after the proxy mount was fixed, and
+    nothing in this file would have noticed either way.
+
+    Two further assertions, so a green catalogue means something:
+      * every item carries `read_only` as a real bool -- the flag the confirmation ladder reads;
+      * both classes are present. All-read means the estate asks before nothing (the ladder
+        vanished); all-mutate means every read intent now demands a spoken yes (the ladder
+        inverted). Either way the deck is wrong and the run should be red, not green.
+    """
+    expected = f"GET {CATALOGUE_PATH} 200, every item flagged, both classes present"
+    try:
+        st, body = _get(f"{base}{CATALOGUE_PATH}", timeout=20)
+    except urllib.error.HTTPError as e:
+        return {
+            "name": "voice4.catalogue",
+            "expected": expected,
+            "actual": f"HTTP {e.code}",
+            "ok": False,
+        }
+    except Exception as e:  # noqa: BLE001
+        return {
+            "name": "voice4.catalogue",
+            "expected": expected,
+            "actual": f"unreachable: {type(e).__name__}",
+            "ok": False,
+        }
+    if st != 200:
+        return {
+            "name": "voice4.catalogue",
+            "expected": expected,
+            "actual": f"HTTP {st}",
+            "ok": False,
+        }
+    try:
+        items = json.loads(body).get("intents")
+    except Exception:  # noqa: BLE001
+        return {
+            "name": "voice4.catalogue",
+            "expected": expected,
+            "actual": f"not JSON: {body[:80]!r}",
+            "ok": False,
+        }
+    if not isinstance(items, list) or not items:
+        return {
+            "name": "voice4.catalogue",
+            "expected": expected,
+            "actual": f"{len(items or [])} intents",
+            "ok": False,
+        }
+    flags = [i.get("read_only") for i in items if isinstance(i, dict)]
+    unnamed = len(items) - len(flags) + sum(1 for i in items if not i.get("name"))
+    unknown = sum(1 for f in flags if not isinstance(f, bool))
+    reads = sum(1 for f in flags if f is True)
+    confirms = sum(1 for f in flags if f is False)
+    actual = f"{len(items)} intents, {reads} read / {confirms} confirm"
+    if unknown:
+        actual += f", {unknown} with no read_only flag"
+    if unnamed:
+        actual += f", {unnamed} unnamed"
+    return {
+        "name": "voice4.catalogue",
+        "expected": expected,
+        "actual": actual,
+        "ok": not unnamed and unknown == 0 and reads >= 1 and confirms >= 1,
+    }
 
 
 def conversation(
@@ -208,6 +286,15 @@ def main(argv: list[str]) -> int:
     )
     if not alive:
         return 1
+    legs = 0
+    fails = 0
+    cat = catalogue_leg(base)
+    legs += 1
+    fails += 0 if cat["ok"] else 1
+    print(
+        f"{'PASS' if cat['ok'] else 'FAIL'}  {cat['name']}  "
+        f"expected={cat['expected']} got={cat['actual']}"
+    )
 
     wav = Path(args[1]) if len(args) > 1 else FIXTURES / "fleet-status.wav"
     row = next((r for r in SCRIPTS if r[0] == wav.name), None)
@@ -218,19 +305,20 @@ def main(argv: list[str]) -> int:
     else:
         q = (args[2] if len(args) > 2 else "").lower()
         scripts = [(wav.name, q, (" ",))]
-    fails = 0
     t0 = time.time()
     for i, (fx, stt, words) in enumerate(scripts, 1):
         for line in conversation(
             base, FIXTURES / fx if (FIXTURES / fx).exists() else wav, stt, words
         ):
             verdict = "PASS" if line["ok"] else "FAIL"
+            legs += 1
             fails += 0 if line["ok"] else 1
             print(
                 f"{verdict}  {line['name']}[{i}]  expected={line['expected']} got={line['actual']}"
             )
     print(
-        f"conversations={len(scripts)} legs_graded={fails and '' or ''}{len(scripts) * 5 - fails if alive else 0}/{len(scripts) * 5} pass  wall={time.time() - t0:.0f}s"
+        f"conversations={len(scripts)} legs_graded={legs - fails}/{legs} pass  "
+        f"wall={time.time() - t0:.0f}s"
     )
     return 1 if fails else 0
 
