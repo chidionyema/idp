@@ -36,6 +36,16 @@ export type Session = {
   repo?: string | null;
   step?: number | null;
   updated_at?: string | null;
+  /**
+   * How long ago `updated_at` was when the backend read the row, in seconds. This is the evidence
+   * `state` is derived from, sent so the page can print the age instead of asking the reader to
+   * trust a label.
+   *
+   * `state: 'running'` is a recency claim, not a liveness probe -- nothing in the estate inspects a
+   * PID -- and the founder's false "12 agents running" was that claim with the age thrown away.
+   * `null` means the timestamp was absent or unreadable: age unknown, never "just now".
+   */
+  age_seconds?: number | null;
   trace_url?: string | null;
   spend_usd?: number | null;
   pull_requests?: string[];
@@ -49,6 +59,10 @@ export type SessionsEnvelope = {
   error?: string | null;
   sessions?: Session[];
   unreachable?: string[];
+  /** The window the backend calls "running", in minutes (`ESTATE_FRESH_RUNNING_MINUTES`,
+   *  default 15). Travels with the rows so the board's sentence can carry the number it counted
+   *  with rather than an unqualified "running". */
+  fresh_window_minutes?: number;
   generated_at?: string;
 };
 
@@ -58,6 +72,9 @@ export type Board = {
   state: BoardState;
   /** The sentence the page shows above the table. Always present, whatever the state. */
   summary: string;
+  /** The window `state: 'running'` was counted over, in minutes. On the board so every label that
+   *  says "running" can say over what window -- a count with no window is the defect. */
+  fresh_window_minutes: number;
   sessions: Session[];
   /** Adapters that did not answer. Empty is the healthy answer, never undefined. */
   unreachable: string[];
@@ -199,6 +216,48 @@ const CORRELATION_WINDOW_MINUTES = 15;
 // short gap between updates is normal mid-step), short enough that nudging it is still useful.
 const STALE_AFTER_MINUTES = 20;
 
+/** The backend's own default (`ESTATE_FRESH_RUNNING_MINUTES`, sessions.py). Used only when an
+ *  older backend's envelope carries no window at all, so the page still prints a number instead of
+ *  a bare "running" -- a guess named as the backend's default is honest; a bare label is not. */
+export const DEFAULT_FRESH_WINDOW_MINUTES = 15;
+
+/** The window this envelope was counted over. */
+export function freshWindowMinutes(envelope: SessionsEnvelope | null | undefined): number {
+  const n = envelope?.fresh_window_minutes;
+  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : DEFAULT_FRESH_WINDOW_MINUTES;
+}
+
+/** A window in minutes as the short text a chip carries: "15m", "90m", "4h". */
+export function windowLabel(minutes: number): string {
+  if (!Number.isFinite(minutes) || minutes <= 0) return '—';
+  if (minutes < 60) return `${Math.round(minutes)}m`;
+  const hours = minutes / 60;
+  return Number.isInteger(hours) ? `${hours}h` : `${Math.round(minutes)}m`;
+}
+
+/** How long ago a session last wrote, as the cell text. Null is unmeasured, and it says so: an
+ *  unknown age must never render as "just now" -- that is the same lie as a green dot. */
+export function ageLabel(ageSeconds: number | null | undefined): string {
+  if (ageSeconds === null || ageSeconds === undefined) return 'age unknown';
+  if (!Number.isFinite(ageSeconds) || ageSeconds < 0) return 'age unknown';
+  if (ageSeconds < 60) return 'just now';
+  const minutes = Math.floor(ageSeconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+/** The age of a row: the backend's measurement when present, otherwise measured from updated_at
+ *  here so an older backend's rows still carry an age rather than falling back to a claim. */
+export function sessionAgeSeconds(session: Session, now: Date = new Date()): number | null {
+  if (typeof session.age_seconds === 'number') return session.age_seconds;
+  if (!session.updated_at) return null;
+  const ts = Date.parse(session.updated_at);
+  if (Number.isNaN(ts)) return null;
+  return Math.max(0, Math.floor((now.getTime() - ts) / 1000));
+}
+
 // Mirrors backend/src/signals.py's _SUPPORTED_RUNTIMES (CP8). Voice: superwhisper dictates
 // into the steer text field — nothing to build in the estate (spec 2026-09-08, line 22).
 export const NUDGEABLE_RUNTIMES = new Set(['sovereign', 'claude-code', 'otto', 'cyrus']);
@@ -306,6 +365,7 @@ export function summarise(
     return {
       state: 'loading',
       summary: 'Reading the fleet…',
+      fresh_window_minutes: DEFAULT_FRESH_WINDOW_MINUTES,
       sessions: [],
       unreachable: [],
       byRuntime: [],
@@ -314,12 +374,16 @@ export function summarise(
     };
   }
 
+  const freshMinutes = freshWindowMinutes(envelope);
+  const window = windowLabel(freshMinutes);
+
   if (!envelope.available) {
     return {
       state: 'unavailable',
       // The reason is carried through verbatim. "The board is unavailable" without the cause is
       // the message that sends someone looking in the wrong place.
       summary: `The fleet could not be read: ${envelope.error ?? 'no reason given'}`,
+      fresh_window_minutes: freshMinutes,
       sessions: [],
       unreachable: envelope.unreachable ?? [],
       byRuntime: [],
@@ -336,7 +400,8 @@ export function summarise(
       state: 'empty',
       summary: unreachable.length
         ? `No sessions, and ${unreachable.length} runtime did not answer: ${unreachable.join('; ')}`
-        : 'No sessions are running.',
+        : 'No sessions are listed.',
+      fresh_window_minutes: freshMinutes,
       sessions: [],
       unreachable,
       byRuntime: [],
@@ -345,9 +410,14 @@ export function summarise(
     };
   }
 
+  // `state: running` is a recency claim, so the sentence states the recency. It used to read
+  // "12 running" about rows whose only evidence was a timestamp nobody had looked at, which is
+  // exactly the sentence the founder was right to disbelieve. Now it says what was measured.
   const live = sessions.filter(s => RUNNING.has(s.state)).length;
   const parts = [
-    live ? `${live} running` : 'none running',
+    live
+      ? `${live} wrote in the last ${window}`
+      : `none wrote in the last ${window}`,
     `${sessions.length} ${sessions.length === 1 ? 'session' : 'sessions'} listed`,
   ];
   if (unreachable.length) {
@@ -359,6 +429,7 @@ export function summarise(
   return {
     state: 'ready',
     summary: parts.join(' · '),
+    fresh_window_minutes: freshMinutes,
     sessions,
     unreachable,
     byRuntime: runtimeCounts(sessions),

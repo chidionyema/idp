@@ -1,17 +1,21 @@
 import {
+  ageLabel,
   attentionReason,
   capabilityLabel,
   capabilityTitle,
   correlatedFailure,
+  DEFAULT_FRESH_WINDOW_MINUTES,
   isStale,
   needsAttention,
   NUDGEABLE_RUNTIMES,
   order,
   prLabel,
   runtimeCounts,
+  sessionAgeSeconds,
   signalSentence,
   signalWord,
   spendLabel,
+  windowLabel,
   stateLabel,
   summarise,
   timelineFor,
@@ -50,7 +54,9 @@ describe('the board tells three different facts apart', () => {
   it('a source with no sessions is empty, and says so without an error', () => {
     const board = summarise({ available: true, sessions: [], unreachable: [] });
     expect(board.state).toBe('empty');
-    expect(board.summary).toBe('No sessions are running.');
+    // "No sessions are running" was a liveness claim made from an empty list. The list is all the
+    // evidence there is, so the sentence names the list.
+    expect(board.summary).toBe('No sessions are listed.');
   });
 
   it('a live board with one silent runtime names the gap', () => {
@@ -61,8 +67,8 @@ describe('the board tells three different facts apart', () => {
     });
     expect(board.state).toBe('ready');
     // The count is half the truth: the reader must know a runtime did not answer before they
-    // trust "1 running".
-    expect(board.summary).toContain('1 running');
+    // trust the count.
+    expect(board.summary).toContain('1 wrote in the last 15m');
     expect(board.summary).toContain('did not answer');
     expect(board.unreachable).toEqual(['sovereign: RuntimeError: refused']);
   });
@@ -83,7 +89,60 @@ describe('the door updates itself without inventing a state', () => {
     });
     expect(board.sessions[0].state).toBe('unknown');
     expect(stateLabel(board.sessions[0].state)).toBe('Unknown');
-    expect(board.summary).toContain('none running');
+    expect(board.summary).toContain('none wrote in the last 15m');
+  });
+});
+
+describe('a count is not a measurement', () => {
+  // The founder's false "12 agents running": a board counted rows whose `state` said running, and
+  // `state` is recency -- nothing in the estate inspects a process. These grade the fix: the
+  // sentence carries the window it counted over, the envelope's window is what it prints, and a
+  // row carries the age it was judged by.
+  it('the sentence carries the window the backend counted over', () => {
+    const board = summarise({
+      available: true,
+      fresh_window_minutes: 45,
+      sessions: [session({ age_seconds: 30 }), session({ session_id: 'b', age_seconds: 3000 })],
+      unreachable: [],
+    });
+    expect(board.summary).toContain('2 wrote in the last 45m');
+    expect(board.fresh_window_minutes).toBe(45);
+  });
+
+  it('an older envelope with no window still prints one, named as the backend default', () => {
+    const board = summarise({ available: true, sessions: [session()], unreachable: [] });
+    expect(board.fresh_window_minutes).toBe(DEFAULT_FRESH_WINDOW_MINUTES);
+    expect(board.summary).toContain(`last ${DEFAULT_FRESH_WINDOW_MINUTES}m`);
+  });
+
+  it('a window in whole hours reads as hours, not as 240m', () => {
+    expect(windowLabel(15)).toBe('15m');
+    expect(windowLabel(60)).toBe('1h');
+    expect(windowLabel(240)).toBe('4h');
+    expect(windowLabel(90)).toBe('90m');
+  });
+
+  it('an age is printed for the row, and an unmeasured age says so', () => {
+    expect(ageLabel(0)).toBe('just now');
+    expect(ageLabel(59)).toBe('just now');
+    expect(ageLabel(60)).toBe('1m ago');
+    expect(ageLabel(3 * 3600)).toBe('3h ago');
+    expect(ageLabel(50 * 3600)).toBe('2d ago');
+    // Null is a real answer: the timestamp was absent or unreadable. "just now" here would be the
+    // same lie as a green dot for a session nobody has evidence about.
+    expect(ageLabel(null)).toBe('age unknown');
+    expect(ageLabel(undefined)).toBe('age unknown');
+    expect(ageLabel(-5)).toBe('age unknown');
+  });
+
+  it('the row age comes from the backend when it says, and from updated_at when it does not', () => {
+    const now = new Date('2026-09-12T11:00:00Z');
+    expect(sessionAgeSeconds(session({ age_seconds: 42 }), now)).toBe(42);
+    expect(
+      sessionAgeSeconds(session({ updated_at: '2026-09-12T10:00:00Z' }), now),
+    ).toBe(3600);
+    expect(sessionAgeSeconds(session({ updated_at: null }), now)).toBeNull();
+    expect(sessionAgeSeconds(session({ updated_at: 'not-a-date' }), now)).toBeNull();
   });
 });
 

@@ -208,6 +208,29 @@ def _fresh_paused_hours() -> float:
     return float(os.environ.get("ESTATE_FRESH_PAUSED_HOURS", "24"))
 
 
+def fresh_running_minutes() -> float:
+    """The window `_state_from_freshness` calls "running", as a number the interface prints.
+
+    A label with no window is the counter that drifts (the founder's false "12 agents running"):
+    "running" is a guess from how long ago the session last wrote, so the sentence that says how
+    many are running has to say over what window, or the reader cannot check it. Public because
+    the envelope carries it to the page; the underscore function stays the single source.
+    """
+    return _fresh_running_minutes()
+
+
+def _age_seconds(updated_at: str | None, now: dt.datetime) -> int | None:
+    """How long ago the session last wrote, in seconds -- the measurement `state` is derived from.
+
+    None is a real answer (an unreadable or absent timestamp) and is never smoothed into 0: a row
+    with no evidence of a write must render as "age unknown", not as "just wrote".
+    """
+    ts = _parse_ts(updated_at)
+    if ts is None:
+        return None
+    return max(0, int((now - ts).total_seconds()))
+
+
 def _activity_from_evidence(
     last_event_ts: str | None,
     event_count: int,
@@ -726,17 +749,23 @@ def list_all_sessions(
         db_rows = []
         unreachable.append(f"estate-db: {exc.__class__.__name__}: {exc}")
 
-    if db_rows:
-        return db_rows, unreachable
-
     sessions: list[dict[str, Any]] = []
-    for name, fn in (
-        ("claude-code", lambda: _claude_code_sessions(now=now)),
-        ("other-harnesses", lambda: _other_harness_sessions(catalog, now=now)),
-        ("sovereign", list_sovereign_sessions),
-    ):
-        try:
-            sessions.extend(fn())
-        except Exception as exc:  # noqa: BLE001
-            unreachable.append(f"{name}: {exc.__class__.__name__}: {exc}")
-    return sessions, unreachable
+    if not db_rows:
+        for name, fn in (
+            ("claude-code", lambda: _claude_code_sessions(now=now)),
+            ("other-harnesses", lambda: _other_harness_sessions(catalog, now=now)),
+            ("sovereign", list_sovereign_sessions),
+        ):
+            try:
+                sessions.extend(fn())
+            except Exception as exc:  # noqa: BLE001
+                unreachable.append(f"{name}: {exc.__class__.__name__}: {exc}")
+
+    # Every row carries the measurement behind its `state`, in one place rather than in each
+    # adapter: `state` is a label derived from recency, and a label with no age next to it is what
+    # let a board say "12 agents running" about a laptop nobody was touching. Nothing here inspects
+    # a process -- that is the honest limit -- so the age is what the reader gets to judge with.
+    rows = db_rows or sessions
+    for row in rows:
+        row["age_seconds"] = _age_seconds(row.get("updated_at"), now)
+    return rows, unreachable

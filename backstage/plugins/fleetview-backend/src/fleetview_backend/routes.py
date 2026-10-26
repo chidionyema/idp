@@ -184,6 +184,9 @@ def sessions_envelope() -> tuple[dict[str, Any], int]:
             "error": f"{exc.__class__.__name__}: {exc}",
             "sessions": [],
             "unreachable": [],
+            # The window is configuration, not a reading, so it is known even when the fleet is
+            # not: the page can say what it will count over once the source answers.
+            "fresh_window_minutes": sessions.fresh_running_minutes(),
             "generated_at": _now(),
         }, 503
     return {
@@ -191,6 +194,10 @@ def sessions_envelope() -> tuple[dict[str, Any], int]:
         "error": None,
         "sessions": sessions_list,
         "unreachable": unreachable,
+        # The window `state` calls "running" travels with the rows, so the interface can print
+        # "3 wrote in the last 40m" instead of "3 running". A caller that receives rows has
+        # received the definition too, and a caller that ignores it is at least not lied to.
+        "fresh_window_minutes": sessions.fresh_running_minutes(),
         "generated_at": _now(),
     }, 200
 
