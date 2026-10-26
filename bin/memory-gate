@@ -217,7 +217,7 @@ ok=m.do_remember('memory-gate rung reproducible $PROBE','memory-gate','fact',['g
 print('VERIFIED', ok.get('trust_tier'), ok.get('rung'))
 no=m.do_remember('memory-gate rung false $PROBE','memory-gate','fact',['gate'],'gate',instrument='false')
 print('FALSE_CLAIM', no.get('trust_tier'), no.get('rung'))
-" 2>/dev/null)"
+" 2>&1)"
 case "$RUNG_OUT" in
   *"VERIFIED verified_internal R1-exec"*) ok "a reproducible claim earns verified_internal through the door" ;;
   *) bad "a reproducible claim did not earn its rung -- $RUNG_OUT"; exit 1 ;;
@@ -227,5 +227,43 @@ case "$RUNG_OUT" in
   *) bad "a false claim came back verified -- the tier means nothing -- $RUNG_OUT"; exit 1 ;;
 esac
 
-ok "memory is operating AND graded: written, recalled, and each write labelled by its evidence"
+# Rung 4 -- the door ON THE WIRE can carry the evidence. Rungs 2 and 3 call the plugin's own
+# functions inside the pod, so they pass even when the schema the door advertises has no
+# instrument/evidence/authority argument -- measured 2026-10-26, the live pod listed `remember`
+# with content/kind/runtime/source/subject/tags only, so every agent writing through the door
+# was refused the ability to attach what it measured and no write could earn a rung. Rung 3
+# said GRADED while the store held 193 memories, all raw_source. This rung asks the door the
+# question an agent's MCP client asks -- tools/list, over the real endpoint -- and fails when
+# the answer cannot carry evidence. Read-only on purpose: the `remember` tool takes no
+# namespace argument, so a wire write would land in the shared `estate` namespace and rank
+# itself against every real memory; rung 3 is where the write path is graded.
+DS="$IDP/bin/memory-door-schema"
+if [ ! -x "$DS" ]; then
+  bad "bin/memory-door-schema is missing or not executable -- nothing asks the wire"
+  exit 1
+fi
+WIRE="$(kubectl -n "$NS" exec -i "$POD" -c estate-mcp -- sh -s 2>/dev/null <<'SH'
+SID=$(curl -si -X POST http://127.0.0.1:8001/-/mcp \
+  -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"memory-gate","version":"1"}}}' \
+  | tr -d '\r' | grep -i '^mcp-session-id:' | cut -d: -f2- | tr -d ' ')
+[ -n "$SID" ] || { echo NO-MCP-SESSION; exit 0; }
+curl -s -X POST http://127.0.0.1:8001/-/mcp \
+  -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+  -H "mcp-session-id: $SID" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+SH
+)"
+case "$WIRE" in
+  NO-MCP-SESSION|'') bad "the door would not open an MCP session -- nothing can ask it anything"; exit 1 ;;
+esac
+if WIRE_VERDICT="$(printf '%s' "$WIRE" | "$DS" 2>&1)"; then
+  printf '%s\n' "$WIRE_VERDICT"
+else
+  printf '%s\n' "$WIRE_VERDICT"
+  bad "the door cannot carry evidence, so no agent's write can earn its rung"
+  exit 1
+fi
+
+ok "memory is operating AND graded: written, recalled, each write labelled by its evidence, and the door's own schema able to carry it"
 exit 0

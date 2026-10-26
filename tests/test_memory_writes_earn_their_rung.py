@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CHECKER = ROOT / "bin" / "estate-claim-check"
 PLUGIN = ROOT / "mcp" / "plugins" / "estate_memory.py"
 HARNESS = ROOT / "platform" / "unified-memory-server" / "harness.py"
+DOOR_SCHEMA = ROOT / "bin" / "memory-door-schema"
 
 
 def load(name: str, path: Path):
@@ -287,3 +288,142 @@ def test_the_adapter_carries_the_trust_column_it_already_selects():
     text = HARNESS.read_text()
     assert 'trust_tier=str(row.get("trust_tier") or "raw_source")' in text
     assert 'trust_tier: str = "raw_source"' in text
+
+
+# ------------------------------------------------------- the door on the wire, asked not assumed
+#
+# 2026-10-26: bin/memory-gate said GRADED while the live door's `remember` advertised six
+# arguments and no instrument/evidence/authority, and the store held 193 memories, all
+# raw_source. The gate could not see it because every rung called do_remember() in process.
+# These tests pin the rung that asks the wire, and pin its ability to FAIL -- a rung that only
+# ever prints ok is not a rung.
+
+
+def door_schema(payload: str) -> subprocess.CompletedProcess:
+    return subprocess.run(  # noqa: S603 - fixed argv, the payload is data on stdin
+        [sys.executable, str(DOOR_SCHEMA)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+
+def tools_list(props: list) -> str:
+    return json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "tools": [
+                    {
+                        "name": "remember",
+                        "inputSchema": {"properties": {p: {} for p in props}},
+                    }
+                ]
+            },
+        }
+    )
+
+
+def test_the_wire_rung_passes_when_the_door_can_carry_evidence():
+    props = [
+        "content",
+        "subject",
+        "kind",
+        "tags",
+        "source",
+        "runtime",
+        "instrument",
+        "evidence",
+        "authority",
+    ]
+    p = door_schema(tools_list(props))
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "can carry evidence" in p.stdout
+
+
+def test_the_wire_rung_fails_when_the_door_advertises_no_evidence():
+    """The exact schema the live pod served on 2026-10-26, and the exact failure it caused."""
+    p = door_schema(
+        tools_list(["content", "subject", "kind", "tags", "source", "runtime"])
+    )
+    assert p.returncode == 1
+    assert "cannot carry evidence" in p.stdout
+    for field in ("instrument", "evidence", "authority"):
+        assert field in p.stdout
+
+
+def test_the_wire_rung_fails_on_one_missing_field_not_just_all_three():
+    p = door_schema(tools_list(["content", "instrument", "evidence"]))
+    assert p.returncode == 1
+    assert "authority" in p.stdout
+
+
+def test_the_wire_rung_fails_when_the_door_answers_with_an_error():
+    p = door_schema(
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "error": {"code": -32600, "message": "Missing session ID"},
+            }
+        )
+    )
+    assert p.returncode == 1
+    assert "no tools/list payload" in p.stdout
+
+
+def test_the_wire_rung_fails_when_the_door_does_not_offer_remember():
+    p = door_schema(
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": {
+                    "tools": [{"name": "recall", "inputSchema": {"properties": {}}}]
+                },
+            }
+        )
+    )
+    assert p.returncode == 1
+    assert "does not offer" in p.stdout
+
+
+def test_the_wire_rung_reads_a_streamed_answer_too():
+    """A streaming MCP server frames the same answer as `data: {...}`; refusing that shape
+    would report a defect that is not there."""
+    framed = (
+        "event: message\ndata: "
+        + tools_list(["content", "instrument", "evidence", "authority"])
+        + "\n\n"
+    )
+    p = door_schema(framed)
+    assert p.returncode == 0, p.stdout + p.stderr
+
+
+def test_the_remember_tool_the_door_registers_carries_the_evidence(memory):
+    """The rung above asserts the WIRE; this asserts the code that produces it, so a door
+    that loses the arguments fails offline instead of only on the live cluster."""
+    import inspect
+
+    class _Registrar:
+        def __init__(self):
+            self.tools = {}
+
+        def tool(self):
+            def _keep(fn):
+                self.tools[fn.__name__] = fn
+                return fn
+
+            return _keep
+
+    reg = _Registrar()
+    memory.register_mcp_tools(object(), reg)
+    params = inspect.signature(reg.tools["remember"]).parameters
+    for field in ("instrument", "evidence", "authority"):
+        assert field in params, sorted(params)
+        # FastMCP derives inputSchema from the annotations, so an unannotated argument would
+        # reach the wire as an empty property and the checker would receive nothing.
+        assert params[field].annotation in (str, "str"), params[field].annotation
