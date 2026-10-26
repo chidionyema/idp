@@ -56,7 +56,9 @@ class World:
     def main_red(self, sha: str) -> bool:
         return False
 
-    def rebase(self, head: str, onto: str):
+    def rebase(self, head: str, onto: str, lane: str = ""):
+        # The lane's NAME travels with the head: a generated flux/* lane is projected onto main
+        # from its image tags (idp#7140), so the backend needs to know which class it is in.
         return f"{head}@{onto}"
 
     # -- writes only a collecting tick may make ------------------------------------------

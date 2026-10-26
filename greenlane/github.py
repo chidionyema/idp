@@ -14,6 +14,8 @@ second fast-forward of main to the same sha is a no-op.
 
 from __future__ import annotations
 
+import importlib.machinery
+import importlib.util
 import json
 import os
 import re
@@ -61,6 +63,55 @@ RED_CONCLUSIONS = {
     "startup_failure",
     "stale",
 }
+
+
+def _git_text(*args: str) -> Optional[str]:
+    """git's stdout, UNSTRIPPED -- file contents keep their exact bytes (a trailing newline is
+    part of the file, and a merge that invents one is a change the image gate never asked for)."""
+    p = subprocess.run(["git", *args], capture_output=True, text=True)  # noqa: S603, S607 -- git with fixed argv, no shell
+    return p.stdout if p.returncode == 0 else None
+
+
+def _apply_lane_tags(main_text: str, lane_text: str, tag_line) -> Optional[str]:
+    """main's content with the lane's image tag lines applied. None when the lane carries a
+    policy main does not have.
+
+    main's bytes are kept everywhere except the tag lines the lane moved. So the lane's other
+    changes -- a comment re-indented, a line added, a doc deleted -- do not ride along with the
+    bump: they stay on the lane, where a human pull request can carry them. And a policy main
+    does not have is a NEW image, which is content and waits for the founder, so the file is
+    left out rather than landed.
+
+    The rule is per policy, because the policy is what a tag line binds (bin/idp-image-only-diff
+    grades a bump by the policy on either side of the line, and for the `image:` form by the
+    repository it names too)."""
+    lane_tags: dict[str, str] = {}
+    for line in lane_text.split("\n"):
+        m = tag_line.match(line)
+        if m:
+            policy = m.group("policy")
+            if policy in lane_tags:
+                return None  # the same policy twice on the lane: ambiguous, so no
+            lane_tags[policy] = line
+    if not lane_tags:
+        return main_text  # the lane moved no tag line: nothing to land from this file
+    main_counts: dict[str, int] = {}
+    for line in main_text.split("\n"):
+        m = tag_line.match(line)
+        if m:
+            main_counts[m.group("policy")] = main_counts.get(m.group("policy"), 0) + 1
+    out: list[str] = []
+    for line in main_text.split("\n"):
+        m = tag_line.match(line)
+        if m and m.group("policy") in lane_tags:
+            if main_counts.get(m.group("policy"), 0) > 1:
+                return None  # main carries that policy twice: ambiguous, so no
+            out.append(lane_tags.pop(m.group("policy")))
+        else:
+            out.append(line)
+    if lane_tags:
+        return None  # the lane carries a policy main does not have: a new image, not a bump
+    return "\n".join(out)
 
 
 def _run(
@@ -112,6 +163,7 @@ class GitHubBackend:
         # `statuses: write` (greenlane.yml), and a status starts no workflow, so the reason the
         # App token exists does not apply here. Empty means "use gh's own token", as before.
         self.status_token = status_token
+        self._image_grammar_cache = None
         self.owner = repo.split("/")[0]
         self.refused: dict[str, str] = {}  # lane -> why it is not a lane this tick
         self._work_age_cache: Optional[dict[str, float]] = None
@@ -311,7 +363,12 @@ class GitHubBackend:
         # tests and lands, so `main..candidate` is exactly the change main would take. When it
         # builds nothing (a conflict, or nothing left to land) the three-dot diff is graded as
         # before, and the engine reports that case as it always has.
-        candidate = self.rebase(sha, main)
+        #
+        # For the image lane the candidate is the PROJECTION of the lane onto main from its
+        # tags (see _image_candidate): the lane's history carries commits that are not image
+        # bumps, and grading those froze every deploy in 2026-10 (idp#7140). The lane NAME
+        # goes with the head, because the name carries the class.
+        candidate = self.rebase(sha, main, BOT_LANE)
         rng = f"{main}..{candidate}" if candidate else f"{main}...{sha}"
         with tempfile.NamedTemporaryFile("w", suffix=".diff", delete=False) as f:
             f.write(self.git("diff", rng))
@@ -322,6 +379,174 @@ class GitHubBackend:
             )
         finally:
             os.unlink(f.name)
+
+    def _image_candidate(self, head: str, onto: str) -> Optional[str]:
+        """A commit on `onto` that carries the image lane's IMAGE TAGS and nothing else.
+
+        WHY (measured 2026-10-25, idp#7140). The image lane is a normal branch: anything that
+        ever landed on it rides along with the next tag bump. It carried a stray commit that
+        deleted docs/specs/2026-10-22-face-superpowers-audit.md (1dfc369da), so the lane's diff
+        from its merge-base read a doc deletion beside the tag lines, bin/idp-image-only-diff
+        refused it ("not a plain image bump"), and every image bump was frozen -- including
+        the tags the controller had already built and pushed. The refusal was correct about
+        that diff and useless about the estate: the tags were the work, and they could not
+        land because something else was on the branch.
+
+        SO THE CANDIDATE IS BUILT FROM THE TAGS. Every file the lane touched is rebuilt on
+        `onto`: main's bytes are kept everywhere except the tag lines the lane moved, which take
+        the lane's value, because the newest build is the newest truth. The file's own change
+        against main is then graded with the estate's own grader: a file whose change is nothing
+        but a policy-marked image tag is kept; a file whose change is anything else is left out
+        and named. The candidate's diff against main is then image-only by construction, which is
+        what the pull request's gate grades.
+        A human lane is never projected: the strict refusal still holds for every other lane.
+
+        A lane file can carry something else beside its tag -- measured 2026-10-25, a human
+        pull request (#7054) re-indented a comment in platform/hermes-agent/kustomization.yaml
+        on the image lane, and the lane has carried that one line ever since. The tag beside it
+        is the controller's and must land; the comment is content and must not. So the two are
+        separated by policy, not by file: the tag line moves, the comment stays on the lane.
+
+        The lane's own commits are NOT the candidate. A tag bump is a value in a file, not a
+        history: the controller rewrites the same `newTag:` lines on every build, so the lane's
+        commits are a stack of edits to one value, and squashing them onto main is what the
+        projection replaces.
+        """
+        mb = self.git("merge-base", onto, head)
+        kept: list[str] = []
+        dropped: list[str] = []
+        wt = tempfile.mkdtemp(prefix="greenlane-")
+        try:
+            self.git("worktree", "add", "-q", "--detach", wt, onto)
+            for path in self.git("diff", "--name-only", mb, head).splitlines():
+                path = path.strip()
+                if not path:
+                    continue
+                lane_text = _git_text("show", f"{head}:{path}")
+                base_text = _git_text("show", f"{mb}:{path}")
+                target = Path(wt) / path
+                if lane_text is None:
+                    dropped.append(
+                        path
+                    )  # the lane DELETED it: a deletion is never a tag bump
+                    continue
+                if base_text is None or not target.exists():
+                    dropped.append(
+                        path
+                    )  # a file the lane adds: it lands whole or not at all
+                    continue
+                grammar = self._image_grammar()
+                if not grammar:
+                    dropped.append(path)  # no grammar, no tag line, no candidate
+                    continue
+                main_text = target.read_text()
+                merged = _apply_lane_tags(main_text, lane_text, grammar.TAG_LINE)
+                if merged is None:
+                    dropped.append(path)  # a policy main does not have: a new image
+                    continue
+                if merged == main_text:
+                    continue  # this file's tag is already on main: nothing to land
+                target.write_text(merged)
+                if not self._image_only_text(_run("git", "-C", wt, "diff", "--", path)):
+                    target.write_text(
+                        main_text
+                    )  # put main's content back: this file is not ours
+                    dropped.append(path)
+                    continue
+                kept.append(path)
+            if dropped:
+                print(
+                    f"DEBUG image lane {head[:8]}: left out {len(dropped)} non-image file(s): "
+                    f"{dropped[:6]}",
+                    flush=True,
+                )
+            if not kept:
+                return None  # nothing on this lane is an image tag
+            # the whole candidate, graded as one diff, exactly as the pull request's gate grades it
+            _run("git", "-C", wt, "add", "-A")
+            whole = _run("git", "-C", wt, "diff", "--cached", onto)
+            if not self._image_only_text(whole):
+                print(
+                    f"DEBUG image lane {head[:8]}: the candidate as a whole is not image-only; "
+                    f"nothing lands from this lane",
+                    flush=True,
+                )
+                return None
+            subject = self.git("log", "-1", "--format=%s", head)
+            author = self.git("log", "-1", "--format=%an <%ae>", head)
+            seen = self.git(
+                "log", "--no-walk=unsorted", "--format=%(trailers:only,unfold)", head
+            ).splitlines()
+            trailers = "\n".join(dict.fromkeys(t for t in seen if t.strip()))
+            msg = f"{subject}\n\nGreenlane-Head: {head}\n"
+            if trailers:
+                msg = f"{msg}\n{trailers}\n"
+            _run(  # noqa: S603, S607 -- git/gh with fixed argv, no shell
+                "git",
+                "-C",
+                wt,
+                "-c",
+                "core.hooksPath=/dev/null",
+                "commit",
+                "-q",
+                "--no-verify",
+                "--author",
+                author,
+                "-F",
+                "-",
+                input=msg,
+            )
+            return _run("git", "-C", wt, "rev-parse", "HEAD")
+        finally:
+            subprocess.run(  # noqa: S603, S607 -- git with fixed argv, no shell
+                ["git", "worktree", "remove", "--force", wt],
+                capture_output=True,
+            )
+            shutil.rmtree(wt, ignore_errors=True)
+
+    def _image_grammar(self):
+        """bin/idp-image-only-diff, loaded as a module: ONE grammar for what a tag line is.
+
+        The projection has to know which lines are the controller's, and the estate's grader
+        already knows. Loading the grader's own module means the projection and the gate can
+        never disagree about the grammar -- a second regex here would be a second truth, and
+        the two would drift. False means the grammar would not load, and the projection then
+        lands nothing rather than lands something it cannot grade.
+        """
+        if self._image_grammar_cache is not None:
+            return self._image_grammar_cache
+        self._image_grammar_cache = False
+        path = self.image_only_diff
+        if path and Path(path).exists():
+            loader = importlib.machinery.SourceFileLoader(
+                "idp_image_only_diff", str(path)
+            )
+            spec = importlib.util.spec_from_loader(loader.name, loader)
+            if spec and spec.loader:
+                try:
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                except Exception:  # noqa: BLE001 -- a grammar that will not load is no grammar
+                    module = None
+                if module is not None and hasattr(module, "TAG_LINE"):
+                    self._image_grammar_cache = module
+        return self._image_grammar_cache
+
+    def _image_only_text(self, diff: str) -> bool:
+        """Does this diff change nothing but automation-owned image tag lines?"""
+        with tempfile.NamedTemporaryFile("w", suffix=".diff", delete=False) as fh:
+            fh.write(diff)
+            name = fh.name
+        try:
+            return (
+                subprocess.run(  # noqa: S603, S607 -- the estate's own grader, fixed argv
+                    [str(self.image_only_diff), "--diff", name],
+                    capture_output=True,
+                ).returncode
+                == 0
+            )
+        finally:
+            os.unlink(name)
 
     def push_head(self, lane: str, sha: str) -> None:
         """Force-push the given sha as the lane's HEAD on origin."""
@@ -335,6 +560,11 @@ class GitHubBackend:
 
     def rebase(self, head: str, onto: str, lane: str = "") -> Optional[str]:
         """One squashed commit of the lane's work on top of `onto`, or None when it does not apply."""
+        if lane.startswith("flux/") and self.image_only_diff is not None:
+            # The image lane is projected onto main from its TAGS (see _image_candidate). Its
+            # history carries commits that are not image bumps, and squashing them in is what
+            # froze every deploy in 2026-10 (idp#7140).
+            return self._image_candidate(head, onto)
         mb = self.git("merge-base", onto, head)
         new = [
             line.split()[1]

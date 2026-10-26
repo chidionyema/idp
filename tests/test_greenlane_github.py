@@ -1022,35 +1022,29 @@ def test_a_failed_refresh_after_the_merge_is_not_a_refused_land(tmp_path, repo):
     b.land([("lane/test/claim", head, head)], head)  # does not raise
 
 
-def test_the_deploy_lane_is_graded_on_the_commit_that_would_land(tmp_path, repo):
+def test_the_deploy_lane_is_graded_on_the_commit_that_would_land(repo):
     """#6114, 2026-10-13: the controller re-lays a file in its setter's format and main lands the
     same re-lay through another lane. The branch's merge-base still has the old layout, so the
     three-dot diff reads the re-lay as a non-tag hunk and the deploy was refused until something
     rewrote the branch onto main. Rebased onto main, the only change left is the tag. (A re-lay
     touching the tag's own lines conflicts on the rebase and on GitHub alike, and stays with
     image-update-pr's CONFLICTING refresh.)"""
+    tag = 'newTag: v1 # {"$imagepolicy": "flux-system:y:tag"}\n'
     k = repo / "k.yaml"
-    k.write_text("a: 1\n\n\nb: 2\nc: 3\nd: 4\nnewTag: v1\n")
+    k.write_text(f"a: 1\n\n\nb: 2\nc: 3\nd: 4\n{tag}")
     _git(repo, "add", "k.yaml")
     _git(repo, "commit", "-q", "-m", "base")
     _git(repo, "checkout", "-q", "-b", BOT_LANE)
     k.write_text(
-        "a: 1\nb: 2\nc: 3\nd: 4\nnewTag: v2\n"
+        'a: 1\nb: 2\nc: 3\nd: 4\nnewTag: v2 # {"$imagepolicy": "flux-system:y:tag"}\n'
     )  # the setter drops the blank lines
     _git(repo, "commit", "-q", "-am", "platform: image update")
     lane = _git(repo, "rev-parse", "HEAD")
     _git(repo, "checkout", "-q", "main")
-    k.write_text("a: 1\nb: 2\nc: 3\nd: 4\nnewTag: v1\n")  # main re-lays it the same way
+    k.write_text(f"a: 1\nb: 2\nc: 3\nd: 4\n{tag}")  # main re-lays it the same way
     _git(repo, "commit", "-q", "-am", "re-lay k.yaml")
     main = _git(repo, "rev-parse", "HEAD")
-    grader = tmp_path / "image-only"
-    grader.write_text(
-        "#!/bin/sh\n"
-        "grep -E '^[-+]' \"$2\" | grep -vE '^(---|[+][+][+]) ' | grep -vq newTag && exit 1\n"
-        "exit 0\n"
-    )
-    grader.chmod(0o755)
-    b = Recorded({}, image_only_diff=grader)
+    b = Recorded({}, image_only_diff=ROOT / "bin/idp-image-only-diff")
     assert (
         "\n-\n" in _git(repo, "diff", f"{main}...{lane}") + "\n"
     )  # the stale hunk is there
@@ -1059,7 +1053,143 @@ def test_the_deploy_lane_is_graded_on_the_commit_that_would_land(tmp_path, repo)
     (repo / "other.txt").write_text("content\n")
     _git(repo, "add", "other.txt")
     _git(repo, "commit", "-q", "-m", "not a tag")
-    assert not b._image_only(_git(repo, "rev-parse", "HEAD"), main)
+    # idp#7140, 2026-10-25: a lane that carries something else used to be refused outright, and
+    # that refusal froze every image bump in the estate for days. What is not an image bump is
+    # now left OUT of what lands instead of refusing the whole lane: the tag lands, main keeps
+    # its own file, and nothing else rides along.
+    contaminated = _git(repo, "rev-parse", "HEAD")
+    assert b._image_only(contaminated, main)
+    candidate = b.rebase(contaminated, main, BOT_LANE)
+    assert candidate
+    assert "other.txt" not in _git(repo, "ls-tree", "--name-only", candidate)
+    assert "newTag: v2" in _git(repo, "show", f"{candidate}:k.yaml")
+
+
+def test_the_image_lane_lands_its_tags_even_when_its_history_carries_something_else(
+    repo,
+):
+    """idp#7140, 2026-10-25: the image lane carried a stray commit that deleted a doc, so the
+    lane's diff from its merge-base read a doc deletion beside the tag lines, the image gate
+    refused the lane, and every image bump was frozen -- including the tags the controller had
+    already built and pushed. The candidate is built from the TAGS: the tag lands, the stray
+    deletion does not, and the lane is no longer refused."""
+    k = repo / "k.yaml"
+    k.write_text(
+        "images:\n  newName: ghcr.io/x/y\n"
+        '  newTag: v1 # {"$imagepolicy": "flux-system:y:tag"}\n'
+    )
+    (repo / "doc.md").write_text("a doc\n")
+    _git(repo, "add", "k.yaml", "doc.md")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "checkout", "-q", "-b", BOT_LANE)
+    k.write_text(
+        "images:\n  newName: ghcr.io/x/y\n"
+        '  newTag: v2 # {"$imagepolicy": "flux-system:y:tag"}\n'
+    )
+    _git(repo, "commit", "-q", "-am", "platform: image update -> main-14927")
+    # the stray commit: a doc deletion that has nothing to do with images
+    _git(repo, "rm", "-q", "doc.md")
+    _git(repo, "commit", "-q", "-m", "Face: an expired yes says so")
+    lane = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-q", "main")
+    _git(repo, "commit", "-q", "--allow-empty", "-m", "main moves on")
+    main = _git(repo, "rev-parse", "HEAD")
+    b = Recorded({}, image_only_diff=ROOT / "bin/idp-image-only-diff")
+    # the lane is graded on what would land, and what would land is the tag
+    assert b._image_only(lane, main), (
+        "the image lane must not be refused for a stray commit"
+    )
+    candidate = b.rebase(lane, main, BOT_LANE)
+    assert candidate, "the image lane must produce a candidate"
+    assert _git(repo, "rev-parse", f"{candidate}^") == main
+    assert 'newTag: v2 # {"$imagepolicy": "flux-system:y:tag"}' in _git(
+        repo, "show", f"{candidate}:k.yaml"
+    )
+    # the stray deletion is not in the candidate: main's doc is still there
+    assert "doc.md" in _git(repo, "ls-tree", "--name-only", candidate)
+    diff = _git(repo, "diff", f"{main}..{candidate}")
+    assert "newTag: v2" in diff and "doc.md" not in diff
+    # a human lane is never projected: the strict refusal still holds for every other lane
+    _git(repo, "checkout", "-q", "-b", "work", "main")
+    (repo / "doc.md").unlink()
+    _git(repo, "commit", "-q", "-am", "a human lane deletes the doc")
+    work = _git(repo, "rev-parse", "HEAD")
+    assert (
+        b.rebase(work, main, "work") is not None
+    )  # it applies: the doc is only deleted
+    assert (
+        b._image_only(work, main) is False
+    )  # but it is not an image bump, and never was
+
+
+def test_the_image_lane_lands_a_tag_beside_a_change_it_must_not_carry(repo):
+    """idp#7140, 2026-10-25: a human pull request (#7054) re-indented a comment in
+    platform/hermes-agent/kustomization.yaml on the image lane, and the lane has carried that
+    one line ever since. The tag beside it is the controller's and must land; the comment is
+    content and must not. So the two are separated by policy, not by file: the tag line moves,
+    the comment stays on the lane, where a human pull request can carry it."""
+    k = repo / "k.yaml"
+    k.write_text(
+        "images:\n  newName: ghcr.io/x/y\n"
+        '  newTag: v1 # {"$imagepolicy": "flux-system:y:tag"}\n'
+        "resources:\n  - pull-secret.yaml   # a comment\n"
+    )
+    _git(repo, "add", "k.yaml")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "checkout", "-q", "-b", BOT_LANE)
+    k.write_text(
+        "images:\n  newName: ghcr.io/x/y\n"
+        '  newTag: v2 # {"$imagepolicy": "flux-system:y:tag"}\n'
+        "resources:\n  - pull-secret.yaml # a comment\n"
+    )
+    _git(repo, "commit", "-q", "-am", "platform: image update -> main-14927")
+    lane = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-q", "main")
+    _git(repo, "commit", "-q", "--allow-empty", "-m", "main moves on")
+    main = _git(repo, "rev-parse", "HEAD")
+    b = Recorded({}, image_only_diff=ROOT / "bin/idp-image-only-diff")
+    candidate = b.rebase(lane, main, BOT_LANE)
+    assert candidate, "the image lane must produce a candidate"
+    landed = _git(repo, "show", f"{candidate}:k.yaml")
+    assert 'newTag: v2 # {"$imagepolicy": "flux-system:y:tag"}' in landed
+    # the comment is MAIN's: content waits for a human pull request, so it does not ride along
+    assert "  - pull-secret.yaml   # a comment" in landed
+    assert "  - pull-secret.yaml # a comment" not in landed
+    diff = _git(repo, "diff", f"{main}..{candidate}")
+    changed = [
+        line
+        for line in diff.splitlines()
+        if line[:1] in "+-" and not line.startswith(("+++", "---"))
+    ]
+    assert any("newTag" in line for line in changed)
+    assert not any("pull-secret" in line for line in changed)
+
+
+def test_the_image_lane_does_not_land_a_policy_main_does_not_have(repo):
+    """idp#7140, 2026-10-25: a NEW image on the image lane is content, not a bump. It waits for
+    the founder, so the file that carries it is left out -- and named, so the lane's agent can
+    see why its image did not move."""
+    k = repo / "k.yaml"
+    k.write_text(
+        "images:\n  newName: ghcr.io/x/y\n"
+        '  newTag: v1 # {"$imagepolicy": "flux-system:y:tag"}\n'
+    )
+    _git(repo, "add", "k.yaml")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "checkout", "-q", "-b", BOT_LANE)
+    k.write_text(
+        "images:\n  newName: ghcr.io/x/y\n"
+        '  newTag: v1 # {"$imagepolicy": "flux-system:y:tag"}\n'
+        '  newTag: v2 # {"$imagepolicy": "flux-system:z:tag"}\n'
+    )
+    _git(repo, "commit", "-q", "-am", "platform: image update -> main-14927")
+    lane = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-q", "main")
+    main = _git(repo, "rev-parse", "HEAD")
+    b = Recorded({}, image_only_diff=ROOT / "bin/idp-image-only-diff")
+    assert b.rebase(lane, main, BOT_LANE) is None, (
+        "a policy main does not have is a new image: it waits for the founder"
+    )
 
 
 def test_a_dependabot_pull_request_is_foreign_not_founder_work():
