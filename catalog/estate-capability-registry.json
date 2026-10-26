@@ -6,7 +6,7 @@
     "intent": 99,
     "layer": 200,
     "service": 114,
-    "tool": 437,
+    "tool": 438,
     "workflow": 78
   },
   "records": [
@@ -23767,6 +23767,82 @@
       "writer": "repo",
       "path": "bin/estate-spatial-cli",
       "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/estate-surface-map",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "bin/estate-surface-map -- measure the estate's AGENT SURFACE, live, and print it.",
+      "contract": {
+        "inputs": [
+          "--check",
+          "--json",
+          "--name-only",
+          "--quiet",
+          "--verify"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-surface-map",
+      "depends_on": [
+        {
+          "id": "cap:tool/catalog-projection",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-memory-enforce",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-affected-graph",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-read-shunt",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/repo-rulesets",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",

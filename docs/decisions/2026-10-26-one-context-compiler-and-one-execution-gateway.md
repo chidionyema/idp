@@ -49,6 +49,16 @@ it builds them out of what it already owns.**
    deleted in the same change (AGENTS.md §6).
 5. **The map is measured, not remembered.** `bin/estate-surface-map` prints the agent surface
    and the named gaps, and its output is the evidence every claim in this record rests on.
+6. **The design is placed against measured work in flight, not against a static estate.** The
+   map carries a **flux section**: what landed on `main` in the window, and which live claim
+   holds which paths. On 2026-10-26 (three-day window) that measurement read 95 commits across
+   95 pull requests, 13 specs and 8 decisions touched, and a board of LIVE 7 / RECOVERABLE 49 /
+   LANDED 58 over 70 claims. No lane in flight was building a context compiler, a broker or a
+   mandatory gateway; the three that touch this design touch it as substrate to reuse (the
+   capability registry, the impact graph, the affected-graph) or as law already decided
+   (cloud-first, machine-first T-7). Nothing was duplicated, and the one shared file — the
+   generated registry snapshot — is resolved by regenerating it, which the registry's own drift
+   gate demands.
 
 ## Alternatives rejected
 
@@ -86,6 +96,14 @@ it builds them out of what it already owns.**
 **Risks to watch.** The drift between the installed runtime and the tree (measured gap G7: the
 live Pi extension runs `growmos context` at session_start and the repository copy does not) is
 exactly the failure mode a measured map catches and a written document does not.
+
+**A second risk, measured on 2026-10-26:** the estate's own registry gate refused `main` after
+`bin/estate-surface-map` was added to the tree — the registry snapshot is a pure function of the
+tree, so a new executable must be registered and the snapshot regenerated, or the gate fails the
+merge. That refusal is correct and it is the mechanism working. The lesson this record carries
+forward is the one the estate already wrote down: **the registry is not an artefact you update,
+it is a measurement you regenerate.** A generated file that two lanes touch is not a conflict to
+argue about; it is a file to regenerate from the tree after the tree settles.
 
 ## Links
 

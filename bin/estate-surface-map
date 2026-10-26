@@ -21,8 +21,10 @@ this estate keeps paying for.
     bin/estate-surface-map --check      # exit 1 if a NAMED gap is still open (CI-usable)
 
 MEASURED, NOT ASSUMED. Every line is read from a real file on this machine. A file that is not
-there is reported MISSING, not assumed present. The timestamp is the only non-deterministic field
-and it is confined to one line, so two runs a day apart differ by one line.
+there is reported MISSING, not assumed present. Two fields move on their own: the timestamp, and
+section 6 (the estate in flux), which is a measurement of work landing and in flight -- it
+changes because the estate changes, and that is the point of measuring it. Sections 1-5 are
+stable until a hook, a config or a rule changes.
 
 NO SECRET VALUES ARE PRINTED. Where a configuration holds a credential, this map names the
 variable and says a value is present. It never prints the value.
@@ -37,6 +39,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from datetime import datetime, timezone
 
@@ -97,6 +100,19 @@ def fact(value, source: str, line: int | None = None) -> dict:
 
 def present(path: str) -> str:
     return "present" if os.path.exists(path) else "MISSING"
+
+
+def git(*args: str) -> str | None:
+    """git output, or None when git cannot answer (no repo, no ref, a timeout)."""
+    try:
+        p = subprocess.run(
+            ["git", "-C", IDP, *args], capture_output=True, text=True, timeout=25
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if p.returncode != 0:
+        return None
+    return p.stdout
 
 
 # ---------------------------------------------------------------- the surfaces
@@ -368,6 +384,124 @@ def state_and_promotion() -> dict:
     }
 
 
+# ---------------------------------------------------------------- the estate in flux
+
+
+def flux(days: int = 3) -> dict:
+    """What the estate is doing right now, measured from the estate's own instruments.
+
+    A map of the surfaces tells a consultant where to build. It does not tell them what is
+    already being built, and the estate is in flux: lanes land every hour and claims hold paths.
+    This section measures that, so the design is placed against live work instead of on top of
+    it. Two sources, both the estate's own:
+
+      * git -- what landed on main in the window, per day, by type, and which specs and
+        decisions those landings carried;
+      * the work-inflight board -- what has NOT landed, which live claim holds which paths.
+
+    The board is written by `estate-execute work-inflight --days N`; if it has not been run, this
+    section says BLIND rather than guessing.
+    """
+    ref = "origin/main" if (git("rev-parse", "--verify", "--quiet", "origin/main") or "").strip() else "HEAD"
+    log = git("log", ref, f"--since={days}.days", "--date=short", "--format=%ad\t%s") or ""
+    per_day: dict[str, int] = {}
+    by_type: dict[str, int] = {}
+    lanes: set[str] = set()
+    for line in log.splitlines():
+        date, _, subject = line.partition("\t")
+        if not date:
+            continue
+        per_day[date] = per_day.get(date, 0) + 1
+        kind = subject.split(":")[0].split("(")[0].strip() or "(untyped)"
+        by_type[kind] = by_type.get(kind, 0) + 1
+        m = re.search(r"\(#(\d+)\)", subject)
+        if m:
+            lanes.add(m.group(1))
+
+    touched = git(
+        "log", ref, f"--since={days}.days", "--name-only", "--format="
+    ) or ""
+    specs = sorted(
+        {f for f in touched.splitlines() if f.startswith("docs/specs/")}
+    )
+    decisions = sorted(
+        {f for f in touched.splitlines() if f.startswith("docs/decisions/")}
+    )
+
+    board_path = os.path.join(
+        HOME, ".estate", "results", "work-inflight", "latest.json"
+    )
+    board = read_json(board_path)
+    if not board:
+        return {
+            "window_days": days,
+            "ref": ref,
+            "landed_commits": sum(per_day.values()),
+            "commits_per_day": per_day,
+            "landed_by_type": by_type,
+            "landed_lanes": len(lanes),
+            "specs_touched": len(specs),
+            "decisions_touched": len(decisions),
+            "board": fact(
+                "BLIND -- no work-inflight board on this machine; run "
+                "`estate-execute work-inflight --days %d`" % days,
+                board_path,
+                None,
+            ),
+            "live_claims": [],
+            "held_paths": [],
+        }
+
+    claims = board.get("claims_list") or []
+    live = [
+        {
+            "issue": c.get("issue"),
+            "agent": c.get("agent"),
+            "paths": c.get("paths"),
+            "goal": (c.get("goal") or "")[:160],
+            "hours_since_claim": c.get("hours_since_claim"),
+        }
+        for c in claims
+        if str(c.get("claim_state") or "").upper() == "LIVE"
+    ]
+    held: list[str] = []
+    for c in live:
+        for p in str(c.get("paths") or "").split(","):
+            p = p.strip()
+            if p and p not in held:
+                held.append(p)
+
+    counts = board.get("counts") or {}
+    return {
+        "window_days": days,
+        "ref": ref,
+        "landed_commits": sum(per_day.values()),
+        "commits_per_day": per_day,
+        "landed_by_type": by_type,
+        "landed_lanes": len(lanes),
+        "specs_touched": len(specs),
+        "decisions_touched": len(decisions),
+        "spec_files": specs,
+        "decision_files": decisions,
+        "board": fact(
+            "work-inflight board, measured at %s: LIVE %s, RECOVERABLE %s, LANDED %s over %s "
+            "day(s); %s claim(s) seen"
+            % (
+                board.get("generated_at"),
+                counts.get("LIVE", "?"),
+                counts.get("RECOVERABLE", "?"),
+                counts.get("LANDED", "?"),
+                (board.get("window") or {}).get("days", "?"),
+                board.get("claims", "?"),
+            ),
+            board_path,
+            None,
+        ),
+        "live_claims": live,
+        "held_paths": held,
+    }
+
+
 # ---------------------------------------------------------------- gaps
 
 
@@ -491,6 +625,7 @@ def build() -> dict:
         "door": door(),
         "context_plane": context_plane(),
         "state_and_promotion": state_and_promotion(),
+        "flux": flux(),
         "gaps": gaps(surfaces),
     }
     return _relativise(m)
@@ -579,7 +714,44 @@ def render(m: dict) -> str:
             add(f"     {k:28} {v}")
 
     add("")
-    add("5. NAMED GAPS (each is a fact about this machine)")
+    add("6. THE ESTATE IN FLUX (measured; it moves because the estate moves)")
+    f = m["flux"]
+    add(f"     window               {f['window_days']} day(s) on {f['ref']}")
+    add(
+        "     landed               "
+        f"{f['landed_commits']} commit(s) across {f['landed_lanes']} pull request(s); "
+        f"{f['specs_touched']} spec(s) and {f['decisions_touched']} decision(s) touched"
+    )
+    add(
+        "     per day              "
+        + ", ".join(f"{d}: {n}" for d, n in sorted(f["commits_per_day"].items()))
+    )
+    top = sorted(f["landed_by_type"].items(), key=lambda kv: (-kv[1], kv[0]))[:6]
+    add(
+        "     by type              "
+        + ", ".join(f"{k}: {v}" for k, v in top)
+        + (f" (+{len(f['landed_by_type']) - len(top)} more)" if len(f["landed_by_type"]) > len(top) else "")
+    )
+    add(f"     board                {f['board']['value']}")
+    add(f"                      <- {f['board']['source']}")
+    for c in f.get("live_claims") or []:
+        paths = [p for p in str(c.get("paths") or "").split(",") if p.strip()]
+        shown = ", ".join(p.strip() for p in paths[:3])
+        more = f" (+{len(paths) - 3} more)" if len(paths) > 3 else ""
+        add(f"     LIVE claim #{c['issue']}  {c['agent']}  {len(paths)} path(s): {shown}{more}")
+        add(f"                      {c['goal']} ({c['hours_since_claim']}h since claim)")
+    held = f.get("held_paths") or []
+    if held:
+        add(
+            f"     held paths           {len(held)} path(s) held by a live claim: "
+            + ", ".join(held[:8])
+            + (f" (+{len(held) - 8} more)" if len(held) > 8 else "")
+        )
+    else:
+        add("     held paths           (none -- no live claim holds a path)")
+
+    add("")
+    add("7. NAMED GAPS (each is a fact about this machine)")
     for g in m["gaps"]:
         add(f"     {g['id']}  {g['title']}")
         add(f"         what:  {g['detail']}")
