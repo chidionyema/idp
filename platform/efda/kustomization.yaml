@@ -1,0 +1,25 @@
+# The universal coverage layer, as Flux applies it.
+#
+# The CRDs come first: the API server must know the kinds before the
+# controller creates the first registration. Kustomize orders by kind, so the
+# order here is the intent, not the mechanism.
+#
+# One image for the whole layer: the controller and the executor are the same
+# binary with different arguments, so there is one build and one tag to roll.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: efda-system
+resources:
+  - namespace.yaml
+  - crds/componentregistration.yaml
+  - crds/skillpack.yaml
+  - crds/coveragereport.yaml
+  - crds/diagnosticreport.yaml
+  - crds/remediationartifact.yaml
+  - configmaps/failure-class-registry.yaml
+  - admission/ncwp.yaml
+  - rbac.yaml
+  - controller.yaml
+images:
+  - name: ghcr.io/chidionyema/efda
+    newTag: 0.0.0 # {"$imagepolicy": "flux-system:efda:tag"}
