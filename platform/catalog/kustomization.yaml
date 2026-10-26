@@ -24,5 +24,11 @@ resources:
   - schema-cronjob.yaml
 configMapGenerator:
   - name: catalog-schema
+    # The ConfigMap lives where the CronJob that mounts it lives. Without this
+    # the generator emits an object with no namespace at all, and Flux refuses
+    # the whole Kustomization with "namespace not specified" -- the cluster
+    # then keeps the older revision of the estate, and every check that reads
+    # the live estate grades a revision that is no longer there (#7231).
+    namespace: estate-db
     files:
       - schema/001_catalog.sql
