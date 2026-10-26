@@ -60,7 +60,38 @@ def then(text):
 # ---------------------------------------------------------------- fixtures
 @pytest.fixture()
 def world():
-    return {}
+    """The scenario's world, and the only thing that cleans the wrapper up.
+
+    A scenario that fails must not leave a wrapper running. The wrapper's child waits
+    for the exit file forever, and that child holds the pytest worker's stdout, so one
+    orphan turns a single failure into a run that never ends. Measured 2026-10-26: the
+    suite hung at 94% for 45 minutes on this, and the orphans were still spinning two
+    hours later, loading the machine until the next run hung the same way. So the
+    teardown releases the child (the exit file), then stops the wrapper, which stops
+    the kill-observer with it.
+    """
+    state = {}
+    yield state
+    process = state.get("process")
+    exit_file = state.get("exit_file")
+    if process is None:
+        return
+    if exit_file is not None and process.poll() is None:
+        try:
+            with open(exit_file, "w", encoding="utf-8") as handle:
+                handle.write("0")
+        except OSError:
+            pass
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
 
 
 @pytest.fixture()
