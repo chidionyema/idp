@@ -316,6 +316,34 @@ def test_the_gate_fails_a_lagging_snapshot_without_strict(tmp_path):
     assert dropped in result.stdout
 
 
+def test_the_census_names_the_estates_own_implementation():
+    """The map names the code that does the work, not only the scripts that are run.
+
+    Measured 2026-10-26: the census named bin/ (434 executables) and the manifests,
+    and it did NOT name platform/**.py -- the efficiency chain, the cache guardian, the
+    request ceiling, the symbol slicer. A query for `symbol-slicer` answered 0 records
+    on a main that has shipped platform/estate/libexec/symbol_slicer.py since #7212.
+    A map that cannot answer "does the estate already have this?" is not a map.
+    """
+    payload = json.loads(SNAPSHOT.read_text())
+    layers = [r for r in payload["records"] if r.get("kind") == "layer"]
+    assert layers, "the estate's own modules must be in the map"
+    by_path = {r.get("path"): r for r in layers}
+    slicer = "platform/estate/libexec/symbol_slicer.py"
+    assert slicer in by_path, (
+        "a module that ships in the tree must be named: {}".format(
+            sorted(p for p in by_path if p and "symbol_slicer" in p)
+        )
+    )
+    # every layer record names a file that exists, and no file is named twice
+    for path, record in by_path.items():
+        assert path and (REPO / path).is_file(), path
+        assert record["id"] == "cap:layer/{}".format(path[:-3].replace("/", "-")), (
+            record
+        )
+    assert len({r["id"] for r in layers}) == len(layers), "one module, one record"
+
+
 def test_the_witness_needs_no_claim_but_another_file_does():
     """The witness is generated, so it belongs to nobody's claim; a product file still does.
 
@@ -366,6 +394,11 @@ def test_the_witness_is_regenerated_by_the_pipeline_not_by_an_agent():
     assert "pull_request" in text, "it must run on the change it exists for"
     assert "git push" in text, "the regenerated witness must reach the branch"
     assert "catalog/estate-capability-registry.json" in text
+    # the bot's commit goes through the estate's own commit-msg hook, so it carries the
+    # X-Idp-Signed stamp that guarded-paths refuses a commit without.
+    assert "core.hooksPath .githooks" in text, (
+        "the bot's commit must be stamped by the estate's hook, or guarded-paths refuses it"
+    )
 
 
 def test_the_reconcile_cycle_is_a_scheduled_job():

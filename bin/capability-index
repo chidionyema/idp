@@ -657,6 +657,66 @@ def build_repo_workflows(ctx: Context):
     return out
 
 
+def build_repo_code(ctx: Context):
+    """Writer `repo`, plane `idp`: the estate's own implementation modules.
+
+    The census named bin/ (434 executables) and the manifests, and it did NOT name the
+    code that does the work: platform/**.py, .rs and .go -- the efficiency chain, the
+    cache guardian, the request ceiling, the symbol slicer. That is a false negative in
+    a map whose whole job is to answer "does the estate already have this?", and it was
+    measured, not guessed: a query for `symbol-slicer` returned 0 records on a main that
+    has shipped platform/estate/libexec/symbol_slicer.py since #7212.
+
+    So the implementation is in the map too, one record per module, keyed by its path.
+    The summary is the module's own first docstring line, read the same way on every
+    interpreter, so the committed witness stays a pure function of the tree.
+    """
+    if "code" in ctx._cache:
+        return ctx._cache["code"]
+    roots = ["platform"]
+    suffixes = {".py", ".rs", ".go"}
+    skip_dirs = {"__pycache__", "node_modules", "tests", "test", "vendor", "target"}
+    out = []
+    seen = set()
+    for root in roots:
+        base = ctx.idp / root
+        if not base.is_dir():
+            continue
+        ctx.sources.append("idp:{}".format(root))
+        for path in sorted(base.rglob("*")):
+            if not path.is_file() or path.suffix not in suffixes:
+                continue
+            rel = path.relative_to(ctx.idp).as_posix()
+            if any(part in skip_dirs for part in path.parts):
+                continue
+            if rel in seen:
+                continue
+            seen.add(rel)
+            text = read_text(path)
+            stem = rel[:-len(path.suffix)]
+            cap_id = "cap:layer/{}".format(stem.replace("/", "-"))
+            out.append(
+                make_record(
+                    cap_id,
+                    "layer",
+                    doc_summary(text) or "{} (no docstring)".format(rel),
+                    "idp",
+                    ctx.owner(rel),
+                    "repo",
+                    "idp:platform",
+                    inputs=cli_flags(text),
+                    outputs=["stdout", "exit code"],
+                    errors=["non-zero exit"],
+                    cost_class="cheap",
+                    latency_class="interactive",
+                    path=rel,
+                    blind=["health", "proof", "metrics"],
+                )
+            )
+    ctx._cache["code"] = out
+    return out
+
+
 def _intent_record(ctx: Context, name, description, args, source, run=None, path=None):
     receipt = None
     proven_at = None
@@ -1029,6 +1089,7 @@ def repo_records(ctx: Context):
     """The repository's own capabilities: tools, declared intents, declared workloads."""
     records = []
     records.extend(build_repo_tools(ctx))
+    records.extend(build_repo_code(ctx))
     records.extend(build_repo_workflows(ctx))
     records.extend(build_intents(ctx, live=False))
     records.extend(build_cluster(ctx))
