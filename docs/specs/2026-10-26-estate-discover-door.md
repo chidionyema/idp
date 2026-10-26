@@ -1,6 +1,24 @@
-# The estate discovery door — what exists, what is true about it, and where the oracle sits
+# The estate discovery door - what exists, what is true about it, and where the oracle sits
 
-Status: built (this branch). Claim: #7168. Date: 2026-10-26.
+Status: SUPERSEDED (2026-10-26) by docs/specs/2026-10-25-estate-capability-registry.md and
+bin/capability-index. This document is kept as the record of what was measured on 2026-10-26.
+
+WHY IT IS SUPERSEDED. The door this document describes (`bin/estate-discover`) was a VIEW:
+it read the estate's maps and answered on demand, but it stored nothing, held no invariant,
+had no agent-facing surface, and its gate could only compare counts against a baseline. The
+programme's registry raises the bar - one store, one writer per plane, five falsifiable
+invariants, one query contract over CLI and MCP, and a committed machine-generated snapshot
+CI can prove drift-free - so the lesser door was merged into it (its census became the
+registry's writers, its coverage baseline became the drift check) and deleted in the same
+change (AGENTS.md section 6, raise-the-bar clause).
+
+WHAT SURVIVED, AND WHERE. Every capability this door could name is now a record in the
+registry: `bin/capability-index query`, `... get <id>`, `... status`, `... cover`. The
+measurements in this document (433 scripts, 344 intents, 150 services, 51 gates, 47 launchd
+jobs) are the numbers the registry's census now starts from; they have moved since, and the
+registry counts them live.
+
+Claim: #7168. Date: 2026-10-26.
 
 ## 1. The question, in the founder's words
 

@@ -1,0 +1,425 @@
+#!/usr/bin/env python3
+"""registry-gate -- the check that the Estate Capability Registry is true.
+
+WHAT IT CHECKS (spec section 10, and every one of these can fail):
+
+  I-1  one capability, one record, one writer   -- a second writer for one cap: id is refused
+  I-2  no operating without a receipt in window -- an out-of-window receipt reads `declared`
+  I-3  one writer per plane (R-52)              -- a writer for another plane is refused
+  I-4  stale reads are marked, never silent     -- a read past window_s carries stale: true
+  I-5  deletion converges                       -- a removed capability is tombstoned in a cycle
+  S    the schema of every record (section 3)   -- a malformed record is refused
+  C    the coverage diff                        -- every intent and workload has a record
+  F    the freshness report                     -- stale records are counted, never hidden
+  D    the drift check                          -- the committed snapshot equals a fresh one
+  R    receipt integrity (section 9)            -- a forged receipt is refused
+
+Each falsifier ships with the case that trips it, so a gate that cannot fail is not a gate.
+The gate is BLIND-tolerant by design: on a CI runner there is no ~/.estate, so the live
+coverage is BLIND and the gate says so instead of pretending. `--strict` turns every BLIND
+into a failure, which is the founder's question asked as a verdict.
+
+    bin/registry-gate
+    bin/registry-gate --strict
+    bin/registry-gate --json
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.machinery
+import importlib.util
+import json
+import os
+import sqlite3
+import sys
+import tempfile
+from collections import Counter
+from datetime import timedelta
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+IDP = HERE.parent
+DEFAULT_SNAPSHOT = IDP / "catalog" / "estate-capability-registry.json"
+
+
+def load_door():
+    spec = importlib.util.spec_from_loader(
+        "capability_index",
+        importlib.machinery.SourceFileLoader(
+            "capability_index", str(HERE / "capability-index")
+        ),
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load bin/capability-index")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def check_schema(records, door):
+    """The section 3 shape, enforced. A malformed record is a refusal, never a stored row."""
+    _KINDS = door.KINDS
+    _STATES = door.STATES
+    _COST_CLASSES = door.COST_CLASSES
+    _LATENCY_CLASSES = door.LATENCY_CLASSES
+    _PLANES = sorted({p for planes in door.WRITER_PLANES.values() for p in planes})
+    problems = []
+    required = ("id", "schema_version", "kind", "summary", "contract", "owner", "plane")
+    for record in records:
+        cap_id = record.get("id")
+        for field in required:
+            if not record.get(field) and record.get(field) != 0:
+                problems.append("{}: missing {}".format(cap_id, field))
+        if not str(record.get("id", "")).startswith("cap:"):
+            problems.append("{}: id is not a cap: id".format(cap_id))
+        if record.get("kind") not in _KINDS:
+            problems.append("{}: unknown kind {}".format(cap_id, record.get("kind")))
+        if record.get("plane") not in _PLANES:
+            problems.append("{}: unknown plane {}".format(cap_id, record.get("plane")))
+        contract = record.get("contract") or {}
+        if contract.get("cost_class") not in _COST_CLASSES:
+            problems.append(
+                "{}: unknown cost_class {}".format(cap_id, contract.get("cost_class"))
+            )
+        if contract.get("latency_class") not in _LATENCY_CLASSES:
+            problems.append(
+                "{}: unknown latency_class {}".format(
+                    cap_id, contract.get("latency_class")
+                )
+            )
+        if not isinstance(record.get("owner"), str) or not record.get("owner"):
+            problems.append("{}: owner is not exactly one name".format(cap_id))
+        health = record.get("health") or {}
+        if health.get("state") not in _STATES:
+            problems.append("{}: unknown state {}".format(cap_id, health.get("state")))
+    return problems
+
+
+def run_falsifiers(door, tmp: Path):
+    """Each invariant, with the case that must trip it. Returns (failures, facts)."""
+    failures = []
+    facts = {}
+    store = door.Store(tmp / "registry.db")
+    store.open()
+    # the receipts in this estate are minted with a throwaway key, so the gate never writes
+    # into the estate's own key file while it is proving itself.
+    saved_key = door.KEY_PATH
+    door.KEY_PATH = tmp / "registry.key"
+
+    # I-1: one capability, one record, one writer.
+    first = door.make_record(
+        "cap:service/ns/dual",
+        "service",
+        "the I-1 falsifier",
+        "cluster",
+        "estate-runtime",
+        "cluster",
+        "test",
+    )
+    ok, _msg = store.write(first, "cluster")
+    second = dict(first)
+    second["plane"] = "mac"
+    second["summary"] = "the same capability, claimed by another writer"
+    ok2, msg2 = store.write(second, "mac")
+    facts["I-1"] = {
+        "first_write": ok,
+        "second_writer_refused": not ok2,
+        "detail": msg2,
+    }
+    if ok2:
+        failures.append(
+            "I-1: a second writer claimed cap:service/ns/dual and was not refused"
+        )
+    dupes = [f for f in store.findings(50) if f["kind"] == "capability.duplicate"]
+    if not dupes:
+        failures.append("I-1: the refused duplicate left no finding against the writer")
+
+    # I-2 and I-4: no operating without a receipt inside the window, and a stale read is
+    # marked rather than silent.
+    old = door.now_utc() - timedelta(days=90)
+    aged = door.make_record(
+        "cap:intent/aged",
+        "intent",
+        "the I-2 falsifier",
+        "estate",
+        "estate-runtime",
+        "intents",
+        "test",
+        receipt=door.make_receipt("test", "intent:aged", old),
+        proven_at=old,
+        window_s=86400,
+    )
+    aged["health"]["state"] = "operating"
+    read = door.read_record(aged)
+    facts["I-2"] = {"state": read["health"]["state"], "stale": read["stale"]}
+    if read["health"]["state"] == "operating":
+        failures.append("I-2: a receipt outside its window still reads operating")
+    if read["health"]["state"] != "declared":
+        failures.append("I-2: an out-of-window receipt must read declared")
+    facts["I-4"] = {"stale": read["stale"]}
+    if not read["stale"]:
+        failures.append("I-4: a stale read was served without stale: true")
+
+    # I-3: a writer may write only its own plane.
+    try:
+        door.make_record(
+            "cap:service/ns/x",
+            "service",
+            "the I-3 falsifier",
+            "cluster",
+            "estate-runtime",
+            "repo",
+            "test",
+        )
+        refused_at_build = False
+    except ValueError:
+        refused_at_build = True
+    rogue = door.make_record(
+        "cap:tool/rogue",
+        "tool",
+        "the I-3 falsifier",
+        "idp",
+        "estate-runtime",
+        "repo",
+        "test",
+    )
+    rogue["plane"] = "cluster"
+    ok3, msg3 = store.write(rogue, "repo")
+    facts["I-3"] = {
+        "refused_at_build": refused_at_build,
+        "refused_at_write": not ok3,
+        "detail": msg3,
+    }
+    if ok3:
+        failures.append("I-3: a writer wrote a record for a plane it does not own")
+    if not refused_at_build:
+        failures.append("I-3: the record builder accepted a record for a foreign plane")
+    if not [f for f in store.findings(50) if f["kind"] == "plane.violation"]:
+        failures.append("I-3: the refused plane violation left no finding")
+
+    # I-5: deletion converges. A capability that left the estate is tombstoned in one cycle.
+    doomed = door.make_record(
+        "cap:tool/doomed",
+        "tool",
+        "the I-5 falsifier",
+        "idp",
+        "estate-runtime",
+        "repo",
+        "test",
+    )
+    store.write(doomed, "repo")
+    result = door.reconcile(store, ["cap:tool/falsifier"])
+    row = store.get("cap:tool/doomed")
+    facts["I-5"] = {
+        "tombstoned": bool(row and row.get("tombstoned")),
+        "reported": result["tombstoned"],
+    }
+    if not row or not row.get("tombstoned"):
+        failures.append("I-5: a capability that left the estate was not tombstoned")
+    if "cap:tool/doomed" not in result["tombstoned"]:
+        failures.append("I-5: the reconciliation did not report the tombstone")
+
+    # R: receipt integrity. A receipt a component minted for itself cannot be forged.
+    forged = dict(aged)
+    forged["id"] = "cap:intent/forged"
+    forged["proof"] = dict(aged["proof"])
+    forged["proof"]["receipt"] = "test|intent:forged|2020-01-01T00:00:00Z|deadbeef"
+    facts["R"] = {"forged_receipt_valid": door.receipt_ok(forged["proof"]["receipt"])}
+    if door.receipt_ok(forged["proof"]["receipt"]):
+        failures.append("R: a forged receipt was accepted as a proof")
+
+    store.close()
+    door.KEY_PATH = saved_key
+    return failures, facts
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="registry-gate",
+        description="Refuse when the Estate Capability Registry is not true.",
+    )
+    parser.add_argument("--idp", default="")
+    parser.add_argument("--home", default="")
+    parser.add_argument("--snapshot", default=str(DEFAULT_SNAPSHOT))
+    parser.add_argument("--strict", action="store_true")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args(argv)
+
+    door = load_door()
+
+    ctx = door.Context(
+        idp=Path(args.idp) if args.idp else None,
+        home=Path(args.home) if args.home else None,
+    )
+    failures = []
+    facts = {}
+
+    # 1. the five falsifiers, each with the case that trips it.
+    with tempfile.TemporaryDirectory(prefix="registry-gate-") as tmpdir:
+        falsifier_failures, facts["falsifiers"] = run_falsifiers(door, Path(tmpdir))
+    failures.extend(falsifier_failures)
+
+    # 2. the census and its schema.
+    records, issues = door.census(ctx)
+    facts["records"] = len(records)
+    facts["duplicate_ids"] = issues["duplicate_ids"]
+    facts["merged_declarations"] = len(issues["merged_declarations"])
+    if issues["duplicate_ids"]:
+        failures.append(
+            "I-1: one id is claimed by two writers: {}".format(
+                issues["duplicate_ids"][:5]
+            )
+        )
+    problems = check_schema(list(records.values()), door)
+    facts["schema_problems"] = problems
+    failures.extend("schema: {}".format(p) for p in problems)
+
+    # 3. the drift check: the committed snapshot against a fresh generation.
+    drift = door.snapshot_drift(ctx, Path(args.snapshot))
+    facts["drift"] = drift
+    if drift["verdict"] in {"FAIL", "MISSING"}:
+        failures.append(
+            "drift: {} ({} record(s) removed, {} added) -- {}".format(
+                drift["detail"],
+                len(drift.get("removed", [])),
+                len(drift.get("added", [])),
+                drift.get("command", ""),
+            )
+        )
+    elif drift["verdict"] == "LAG" and args.strict:
+        failures.append(
+            "drift: the committed snapshot lags the repository ({} record(s) added) -- {}".format(
+                len(drift.get("added", [])), drift.get("command", "")
+            )
+        )
+
+    # 4. the live store, when there is one: coverage, freshness, receipt integrity.
+    blind = []
+    store_records = []
+    if door.DB_PATH.exists():
+        store = door.Store(door.DB_PATH)
+        try:
+            store_records = store.all()
+        except sqlite3.Error as exc:
+            failures.append("store: {} is unreadable: {}".format(door.DB_PATH, exc))
+        # a forged receipt in the store is a failure, never a silent trust (spec section 9)
+        if door.KEY_PATH.exists():
+            forged = [
+                r["id"]
+                for r in store_records
+                if (r.get("proof") or {}).get("receipt")
+                and not door.receipt_ok((r.get("proof") or {}).get("receipt"))
+            ]
+            facts["forged_receipts"] = forged
+            if forged:
+                failures.append(
+                    "receipts: {} record(s) carry a receipt this store did not mint: {}".format(
+                        len(forged), forged[:5]
+                    )
+                )
+        else:
+            blind.append("receipt-key")
+            facts["forged_receipts"] = []
+    else:
+        blind.append("store")
+    live_records = store_records or list(records.values())
+
+    # 5. the coverage diff: every intent and every running workload has a record.
+    intents = []
+    if ctx.intents_dir.is_dir():
+        intents = [p.stem for p in sorted(ctx.intents_dir.glob("*.yaml"))]
+    else:
+        blind.append("intents")
+    workloads = door.observed_workloads(ctx)
+    if workloads is None:
+        blind.append("workloads")
+    coverage = door.coverage_diff(live_records, intents, workloads or [])
+    coverage["blind"] = blind
+    facts["coverage"] = coverage
+    if coverage["intents"]["missing"]:
+        failures.append(
+            "coverage: {} intent(s) have no record: {}".format(
+                len(coverage["intents"]["missing"]), coverage["intents"]["missing"][:5]
+            )
+        )
+    if coverage["workloads"]["missing"] and args.strict:
+        failures.append(
+            "coverage: {} running workload(s) have no record: {}".format(
+                len(coverage["workloads"]["missing"]),
+                coverage["workloads"]["missing"][:5],
+            )
+        )
+    if args.strict and blind:
+        failures.append("strict: BLIND where a verdict was demanded: {}".format(blind))
+
+    # 6. the freshness report: stale records are counted, never hidden.
+    fresh = door.freshness(live_records)
+    facts["freshness"] = fresh
+    if args.strict and fresh["stale"]:
+        failures.append(
+            "strict: {} record(s) are past their freshness window".format(
+                fresh["stale"]
+            )
+        )
+
+    ok = not failures
+    payload = {"ok": ok, "failures": failures, **facts}
+    if args.json:
+        print(json.dumps(payload, indent=2, default=str))
+        return 0 if ok else 1
+
+    print(
+        "records: {} ({})".format(
+            facts["records"],
+            ", ".join(
+                "{}={}".format(k, v)
+                for k, v in sorted(
+                    Counter(r.get("kind") for r in records.values()).items()
+                )
+            ),
+        )
+    )
+    print(
+        "invariants: {}".format(
+            ", ".join(
+                "{} {}".format(
+                    k, "ok" if not any(f.startswith(k) for f in failures) else "FAIL"
+                )
+                for k in sorted(facts.get("falsifiers", {}))
+            )
+        )
+    )
+    print(
+        "coverage: intents {}/{} with a record, workloads {}/{} with a record{}".format(
+            coverage["intents"]["total"] - len(coverage["intents"]["missing"]),
+            coverage["intents"]["total"],
+            coverage["workloads"]["total"] - len(coverage["workloads"]["missing"]),
+            coverage["workloads"]["total"],
+            "  [BLIND: {}]".format(", ".join(blind)) if blind else "",
+        )
+    )
+    if coverage["workloads"]["missing"]:
+        print(
+            "coverage: {} running workload(s) the repo does not declare (a finding, and a "
+            "failure in --strict): {}".format(
+                len(coverage["workloads"]["missing"]),
+                ", ".join(coverage["workloads"]["missing"][:5]),
+            )
+        )
+    print(
+        "freshness: {} record(s), {} stale, per domain {}".format(
+            fresh["records"], fresh["stale"], fresh["per_domain"]
+        )
+    )
+    print("drift: {} -- {}".format(drift["verdict"], drift["detail"]))
+    if ok:
+        print("ok      registry-gate  the registry is true")
+        return 0
+    for failure in failures:
+        print("FAIL    registry-gate  {}".format(failure))
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

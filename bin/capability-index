@@ -1,0 +1,1797 @@
+#!/usr/bin/env python3
+"""capability-index -- the Estate Capability Registry: one store, one contract, one gate.
+
+WHY (2026-10-26). The founder asked what the estate has, what is true about it, and what it
+is for. The plan for the answer existed (docs/specs/2026-10-25-estate-capability-registry.md,
+epic 25 Phase A) and two partial things answered it sideways: a view that read the estate's
+maps without storing anything (bin/estate-discover, now retired into this door) and nothing an
+agent could ask. The spec is the better answer and it raises the bar, so this door IS the
+spec: a store, one writer per plane, an event log, reconciliation, five falsifiable
+invariants, and one query contract served to agents over MCP.
+
+WHAT IT IS. One SQLite store (~/.estate/state/registry.db) holding one record per capability
+in the shape the spec's section 3 fixes, derived from the estate's own sources and never
+invented: a field with no instrument is BLIND, and a capability with no receipt inside its
+freshness window is `declared`, never `operating`. The committed snapshot
+(catalog/estate-capability-registry.json) is the repo-derived half of the same census, so CI
+can prove the registry has not drifted from the repository without a laptop.
+
+THE INVARIANTS, each with the case that trips it (bin/registry-gate runs all five):
+
+  I-1  one capability, one record, one writer   -- a duplicate cap: id is refused
+  I-2  no operating without a receipt in window -- an out-of-window receipt reads `declared`
+  I-3  one writer per plane (R-52)              -- a writer for another plane is refused
+  I-4  stale reads are marked, never silent     -- a read past window_s carries stale: true
+  I-5  deletion converges                       -- a removed capability is tombstoned in one cycle
+
+THE QUERY CONTRACT (section 8), over the CLI and over MCP:
+
+    bin/capability-index query --kind intent
+    bin/capability-index get cap:intent/lane-submit
+    bin/capability-index prove cap:intent/lane-submit
+    bin/capability-index reconcile
+    bin/capability-index emit --write          # the committed, machine-generated snapshot
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import hmac
+import json
+import os
+import re
+import sqlite3
+import subprocess
+import sys
+from collections import Counter
+from datetime import datetime, timedelta, timezone
+from fnmatch import fnmatch
+from pathlib import Path
+
+IDP = Path(__file__).resolve().parent.parent
+HOME = Path(os.environ.get("ESTATE_HOME", str(Path.home())))
+DB_PATH = Path(
+    os.environ.get(
+        "ESTATE_REGISTRY_DB", str(HOME / ".estate" / "state" / "registry.db")
+    )
+)
+KEY_PATH = Path(
+    os.environ.get(
+        "ESTATE_REGISTRY_KEY", str(HOME / ".estate" / "state" / "registry.key")
+    )
+)
+SNAPSHOT_PATH = IDP / "catalog" / "estate-capability-registry.json"
+
+SCHEMA_VERSION = 1
+KINDS = (
+    "intent",
+    "tool",
+    "service",
+    "layer",
+    "agent",
+    "surface",
+    "model",
+    "dataset",
+    "workflow",
+)
+STATES = ("operating", "degraded", "frozen", "declared")
+COST_CLASSES = ("free", "cheap", "metered", "expensive")
+LATENCY_CLASSES = ("interactive", "seconds", "minutes", "batch")
+# R-52: one writer per plane. A writer that emits a record for a plane it does not own is
+# refused (I-3), and the refusal is a finding against the writer, not a silent drop.
+WRITER_PLANES = {
+    "repo": ("idp",),
+    "intents": ("estate",),
+    "cluster": ("cluster",),
+    "mac": ("mac",),
+}
+DEFAULT_WINDOW_S = 30 * 86400
+SERVICE_KINDS = {
+    "Deployment",
+    "StatefulSet",
+    "DaemonSet",
+    "CronJob",
+    "Service",
+    "Job",
+}
+
+
+# --------------------------------------------------------------------------------------
+# small helpers
+
+
+def now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def iso(dt):
+    if dt is None:
+        return None
+    if isinstance(dt, str):
+        return dt
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def parse_iso(value):
+    if not value:
+        return None
+    text = str(value).replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def read_text(path: Path, limit: int = 400_000) -> str:
+    try:
+        with open(path, "r", errors="replace") as fh:
+            return fh.read(limit)
+    except OSError:
+        return ""
+
+
+def read_json(path: Path):
+    try:
+        with open(path, "r", errors="replace") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def first_line(text: str, limit: int = 200) -> str:
+    for line in text.splitlines():
+        line = line.strip().lstrip("#").strip()
+        if not line or set(line) <= {"-", "=", "*"}:
+            continue
+        return line[:limit]
+    return ""
+
+
+def doc_summary(text: str, limit: int = 200) -> str:
+    match = re.search(r'"""(.*?)"""', text, re.S)
+    if match:
+        for line in match.group(1).splitlines():
+            line = line.strip()
+            if line and not line.startswith("-"):
+                return line[:limit]
+    return first_line(text, limit)
+
+
+def cli_flags(text: str):
+    found = set()
+    for opt in re.findall(r'add_argument\(\s*"([^"]+)"', text):
+        if opt.startswith("-"):
+            found.add(opt)
+    for opt in re.findall(r'"(--[a-zA-Z0-9][\w-]{1,30})"', text):
+        found.add(opt)
+    return sorted(found)[:24]
+
+
+def codeowners_rules(idp: Path):
+    rules = []
+    for line in read_text(idp / "CODEOWNERS").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        rules.append((parts[0], parts[1:]))
+    return rules
+
+
+def owner_for(path: str, rules):
+    owners = []
+    for pattern, names in rules:
+        if fnmatch(path, pattern) or fnmatch(path, pattern.lstrip("/")):
+            owners = names
+    return owners
+
+
+# --------------------------------------------------------------------------------------
+# The census reads manifests and intents with a small block-YAML reader, and with the
+# standard library's json for the manifests that are JSON wearing a .yaml name.
+#
+# WHY NOT PyYAML. The committed snapshot must be byte-identical on every machine, and a
+# snapshot that depends on whether the interpreter happens to have PyYAML is a snapshot that
+# drifts the moment CI and a laptop disagree. Measured 2026-10-26: the estate's uv-managed
+# 3.12 has no PyYAML and its 3.9 has it, and the two answered the same question with 154
+# and 155 service records. One reader, one answer.
+
+
+def _block_metadata(chunk: str):
+    """The direct children of the metadata block, with their indentation respected."""
+    out = {}
+    lines = chunk.splitlines()
+    index = 0
+    while index < len(lines):
+        if not re.match(r"^metadata:\s*(?:#.*)?$", lines[index]):
+            index += 1
+            continue
+        index += 1
+        block = []
+        while index < len(lines):
+            line = lines[index]
+            if not line.strip() or line.startswith((" ", "\t")):
+                block.append(line)
+                index += 1
+                continue
+            break
+        indents = [len(l) - len(l.lstrip()) for l in block if l.strip()]
+        if not indents:
+            break
+        top = min(indents)
+        for line in block:
+            if not line.strip():
+                continue
+            if len(line) - len(line.lstrip()) != top:
+                continue
+            match = re.match(
+                r"^[ \t]+([A-Za-z0-9_.-]+):\s*['\"]?([^'\"\s#]+)['\"]?\s*(?:#.*)?$",
+                line,
+            )
+            if match:
+                out.setdefault(match.group(1), match.group(2))
+        break
+    return out
+
+
+def _block_document(chunk: str):
+    """One kubernetes document out of a block-YAML chunk."""
+    kind_match = re.search(
+        r"(?m)^kind:\s*['\"]?([A-Za-z0-9-]+)['\"]?\s*(?:#.*)?$", chunk
+    )
+    if not kind_match:
+        return None
+    fields = _block_metadata(chunk)
+    name = fields.get("name")
+    if not name:
+        inline = re.search(r"(?m)^metadata:\s*\{([^}]*)\}", chunk)
+        if inline:
+            name_match = re.search(
+                r"name:\s*['\"]?([A-Za-z0-9._-]+)['\"]?", inline.group(1)
+            )
+            if name_match:
+                name = name_match.group(1)
+    if not name:
+        return None
+    return {
+        "kind": kind_match.group(1),
+        "metadata": {"name": name, "namespace": fields.get("namespace", "default")},
+    }
+
+
+def _load_yaml_map(text: str):
+    """One mapping out of a block-YAML document: name, description, args."""
+    meta = {}
+    name_m = re.search(r"(?m)^name:\s*['\"]?([A-Za-z0-9._-]+)['\"]?\s*(?:#.*)?$", text)
+    if name_m:
+        meta["name"] = name_m.group(1)
+    desc_m = re.search(r"(?m)^description:\s*(.*)$", text)
+    if desc_m:
+        value = desc_m.group(1).strip()
+        if value.startswith(">") or value.startswith("|"):
+            block = re.search(
+                r"(?ms)^description:\s*(?:[>|][-+]?)\s*\n((?:[ \t]+.*\n?)*)", text
+            )
+            if block:
+                value = " ".join(
+                    line.strip() for line in block.group(1).splitlines() if line.strip()
+                )
+        meta["description"] = value.strip().strip("\"'")
+    args_m = re.search(r"(?ms)^args:\s*\n((?:[ \t]+.*\n?)*?)(?=^\S|\Z)", text)
+    if args_m:
+        args = {}
+        for key in re.findall(r"(?m)^\s+([a-z_][a-z0-9_]*):\s*\{", args_m.group(1)):
+            args[key] = {}
+        meta["args"] = args
+    return meta
+
+
+def _load_yaml_docs(text: str):
+    """Every kubernetes document out of a manifest file."""
+    if text.lstrip().startswith("{"):
+        try:
+            payload = json.loads(text)
+        except ValueError:
+            payload = None
+        if isinstance(payload, dict):
+            return [payload]
+    docs = []
+    for chunk in re.split(r"(?m)^---\s*$", text):
+        doc = _block_document(chunk)
+        if doc is not None:
+            docs.append(doc)
+    return docs
+
+
+# --------------------------------------------------------------------------------------
+# receipts: HMAC-anchored, so a component cannot forge the receipt that proves it
+
+
+def _receipt_key() -> bytes:
+    KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if not KEY_PATH.exists():
+        KEY_PATH.write_bytes(os.urandom(32))
+        try:
+            os.chmod(str(KEY_PATH), 0o600)
+        except OSError:
+            pass
+    return KEY_PATH.read_bytes()
+
+
+def anchor(payload: str) -> str:
+    return hmac.new(
+        _receipt_key(), payload.encode("utf-8"), hashlib.sha256
+    ).hexdigest()[:32]
+
+
+def make_receipt(source: str, subject: str, at) -> str:
+    payload = "{}|{}|{}".format(source, subject, iso(at))
+    return "{}|{}".format(payload, anchor(payload))
+
+
+def receipt_ok(receipt) -> bool:
+    """Is this receipt one this store minted? A receipt that fails is a finding (F-b)."""
+    if not receipt or "|" not in str(receipt):
+        return False
+    parts = str(receipt).rsplit("|", 1)
+    if len(parts) != 2:
+        return False
+    payload, mac = parts
+    return hmac.compare_digest(mac, anchor(payload))
+
+
+def receipt_parts(receipt):
+    if not receipt or "|" not in str(receipt):
+        return (None, None, None)
+    parts = str(receipt).split("|")
+    if len(parts) < 4:
+        return (None, None, None)
+    return (parts[0], parts[1], parts[2])
+
+
+# --------------------------------------------------------------------------------------
+# the record (spec section 3)
+
+
+def make_record(
+    cap_id,
+    kind,
+    summary,
+    plane,
+    owner,
+    writer,
+    source,
+    inputs=(),
+    outputs=(),
+    errors=(),
+    cost_class="cheap",
+    latency_class="seconds",
+    receipt=None,
+    proven_at=None,
+    window_s=DEFAULT_WINDOW_S,
+    rung=None,
+    consumers=(),
+    depends_on=(),
+    metrics=(),
+    cost=None,
+    path=None,
+    blind=(),
+):
+    if kind not in KINDS:
+        raise ValueError("unknown kind: {}".format(kind))
+    if cost_class not in COST_CLASSES:
+        raise ValueError("unknown cost_class: {}".format(cost_class))
+    if latency_class not in LATENCY_CLASSES:
+        raise ValueError("unknown latency_class: {}".format(latency_class))
+    if writer not in WRITER_PLANES:
+        raise ValueError("unknown writer: {}".format(writer))
+    if plane not in WRITER_PLANES[writer]:
+        raise ValueError("writer {} may not write plane {} (I-3)".format(writer, plane))
+    return {
+        "id": cap_id,
+        "schema_version": SCHEMA_VERSION,
+        "kind": kind,
+        "summary": summary,
+        "contract": {
+            "inputs": list(inputs),
+            "outputs": list(outputs),
+            "errors": list(errors),
+            "cost_class": cost_class,
+            "latency_class": latency_class,
+        },
+        "owner": owner,
+        "plane": plane,
+        "health": {
+            "state": "declared",
+            "observed_at": None,
+            "source": source,
+        },
+        "proof": {
+            "receipt": receipt,
+            "proven_at": iso(proven_at),
+            "window_s": window_s,
+        },
+        "consumers": list(consumers),
+        "cost": cost or {"estimate": None, "unit": "usd"},
+        "rung": rung,
+        "writer": writer,
+        "path": path,
+        "depends_on": list(depends_on),
+        "metrics": list(metrics),
+        "blind": list(blind),
+    }
+
+
+def state_from_proof(record, when=None):
+    """The declared-vs-operating law (spec I-2 and I-4).
+
+    A record is `operating` only with a receipt inside its window. Past the window it is
+    `declared` and the read is marked stale -- a stale read is a finding, never a silence.
+    """
+    when = when or now_utc()
+    proof = record.get("proof") or {}
+    receipt = proof.get("receipt")
+    proven_at = parse_iso(proof.get("proven_at"))
+    window = proof.get("window_s") or DEFAULT_WINDOW_S
+    health = dict(record.get("health") or {})
+    if not receipt or not proven_at:
+        health["state"] = "declared"
+        health["stale"] = False
+        health["blind"] = True
+        return health
+    age = (when - proven_at).total_seconds()
+    if age <= float(window):
+        if health.get("state") in (None, "", "declared"):
+            health["state"] = "operating"
+        health["stale"] = False
+        health["blind"] = False
+    else:
+        health["state"] = "declared"
+        health["stale"] = True
+        health["blind"] = False
+    health["age_s"] = int(age)
+    health["window_s"] = int(window)
+    return health
+
+
+def read_record(record, when=None):
+    """The read path every surface goes through (I-4: stale reads are marked)."""
+    when = when or now_utc()
+    out = dict(record)
+    health = state_from_proof(record, when)
+    out["health"] = health
+    out["stale"] = bool(health.get("stale"))
+    out["receipt_valid"] = receipt_ok((record.get("proof") or {}).get("receipt"))
+    return out
+
+
+# --------------------------------------------------------------------------------------
+# the writers: one per plane, each derived from the estate's own sources
+
+
+class Context:
+    def __init__(self, idp=None, home=None, when=None):
+        self.idp = Path(idp or os.environ.get("ESTATE_IDP", str(IDP)))
+        self.home = Path(home or os.environ.get("ESTATE_HOME", str(HOME)))
+        self.now = when or now_utc()
+        self.rules = codeowners_rules(self.idp)
+        self.errors = []
+        self.warnings = []
+        self.sources = []
+        self._cache = {}
+
+    def cached(self, key, builder):
+        """One build per context: the census and the snapshot read the same sources."""
+        if key not in self._cache:
+            self._cache[key] = builder()
+        return self._cache[key]
+
+    # -- paths ------------------------------------------------------------------------
+    @property
+    def intents_dir(self) -> Path:
+        return self.home / ".estate" / "intents"
+
+    @property
+    def repo_intents_dir(self) -> Path:
+        return self.idp / "platform" / "estate" / "intents"
+
+    @property
+    def estate_db(self) -> Path:
+        return self.home / ".estate" / "estate.db"
+
+    @property
+    def inventory(self) -> Path:
+        return self.home / ".estate" / "state" / "inventory.json"
+
+    @property
+    def harness_dir(self) -> Path:
+        return self.home / ".estate" / "harness"
+
+    def owner(self, path: str) -> str:
+        owners = owner_for(path, self.rules)
+        return owners[0] if owners else "unowned"
+
+
+def _script_names(ctx: Context):
+    bin_dir = ctx.idp / "bin"
+    if not bin_dir.is_dir():
+        return set()
+    return {p.name for p in bin_dir.iterdir() if p.is_file() and len(p.name) >= 5}
+
+
+def _script_refs(text: str, names):
+    found = set()
+    for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9._/-]{1,80}", text):
+        base = token.rstrip(".,;:)").rsplit("/", 1)[-1]
+        if base in names:
+            found.add(base)
+    return sorted(found)
+
+
+def build_repo_tools(ctx: Context):
+    """Writer `repo`, plane `idp`: the repository's own executables and libraries."""
+    if "tools" in ctx._cache:
+        return ctx._cache["tools"]
+    bin_dir = ctx.idp / "bin"
+    if not bin_dir.is_dir():
+        ctx.errors.append("repo: {} is not a directory".format(bin_dir))
+        return []
+    ctx.sources.append("idp:bin")
+    names = _script_names(ctx)
+    out = []
+    for path in sorted(bin_dir.iterdir()):
+        if not path.is_file():
+            continue
+        if not (os.access(str(path), os.X_OK) or path.suffix in {".py", ".sh"}):
+            continue
+        text = read_text(path)
+        rel = "bin/{}".format(path.name)
+        flags = cli_flags(text)
+        llm = "llm" in path.name or "claude" in path.name or "prompt" in path.name
+        out.append(
+            make_record(
+                "cap:tool/{}".format(path.name),
+                "tool",
+                doc_summary(text) or "{} (no docstring)".format(path.name),
+                "idp",
+                ctx.owner(rel),
+                "repo",
+                "idp:bin",
+                inputs=flags,
+                outputs=["stdout", "exit code"],
+                errors=["non-zero exit"],
+                cost_class="metered" if llm else "cheap",
+                latency_class="interactive",
+                depends_on=[
+                    {"id": "cap:tool/{}".format(n), "edge": "invokes"}
+                    for n in _script_refs(text, names)
+                    if n != path.name
+                ],
+                path=rel,
+                blind=["health", "proof", "metrics"],
+            )
+        )
+    ctx._cache["tools"] = out
+    return out
+
+
+def _intent_record(ctx: Context, name, description, args, source, run=None, path=None):
+    receipt = None
+    proven_at = None
+    rung = None
+    state = "declared"
+    metrics = []
+    cost = {"estimate": None, "unit": "usd"}
+    if run and run.get("last_at"):
+        proven_at = run["last_at"]
+        receipt = make_receipt("estate.db", "intent:{}".format(name), proven_at)
+        rung = "R1"
+        if run.get("last_status") == "ok":
+            state = "operating"
+        elif run.get("last_status") in {"broken", "halted"}:
+            state = "degraded"
+        else:
+            state = "declared"
+        metrics = [
+            {
+                "name": "runs_30d",
+                "value": run.get("runs_30d", 0),
+                "instrument": "sqlite:intent_tickets",
+            },
+            {
+                "name": "failures_total",
+                "value": run.get("failures", 0),
+                "instrument": "sqlite:intent_tickets",
+            },
+            {
+                "name": "cost_usd_total",
+                "value": round(run.get("cost_usd", 0.0), 6),
+                "instrument": "sqlite:intent_tickets",
+            },
+        ]
+        cost = {"estimate": round(run.get("cost_usd", 0.0), 6), "unit": "usd"}
+    record = make_record(
+        "cap:intent/{}".format(name),
+        "intent",
+        description or "{} (no description)".format(name),
+        "estate",
+        "estate-runtime",
+        "intents",
+        source,
+        inputs=sorted(args.keys()) if isinstance(args, dict) else [],
+        outputs=["executor job record"],
+        errors=["non-zero step exit"],
+        cost_class="metered" if name.startswith("llm") else "cheap",
+        latency_class="seconds",
+        receipt=receipt,
+        proven_at=proven_at,
+        rung=rung,
+        metrics=metrics,
+        cost=cost,
+        path=path,
+        blind=[] if receipt else ["health", "proof", "metrics"],
+    )
+    record["health"]["state"] = state
+    record["health"]["observed_at"] = iso(run.get("last_at")) if run else None
+    return record
+
+
+def _ledger_runs(ctx: Context):
+    """The executor's own ledger: how each intent actually ran (a real receipt)."""
+    out = {}
+    if not ctx.estate_db.exists():
+        ctx.warnings.append(
+            "ledger: {} is missing; intent health is BLIND".format(ctx.estate_db)
+        )
+        return out
+    cutoff = ctx.now - timedelta(days=30)
+    try:
+        conn = sqlite3.connect("file:{}?mode=ro".format(ctx.estate_db), uri=True)
+    except sqlite3.Error as exc:
+        ctx.errors.append("ledger: cannot open {}: {}".format(ctx.estate_db, exc))
+        return out
+    try:
+        rows = conn.execute(
+            "select intent, harness, status, completed_at, cost_usd from intent_tickets"
+        ).fetchall()
+    except sqlite3.Error as exc:
+        ctx.errors.append("ledger: cannot read intent_tickets: {}".format(exc))
+        conn.close()
+        return out
+    conn.close()
+    for intent, harness, status, done, cost in rows:
+        done_dt = parse_iso(done)
+        entry = out.setdefault(
+            intent,
+            {
+                "runs": 0,
+                "failures": 0,
+                "cost_usd": 0.0,
+                "last_status": None,
+                "last_at": None,
+                "harness": harness,
+                "runs_30d": 0,
+            },
+        )
+        entry["runs"] += 1
+        if status not in {"ok", "running"}:
+            entry["failures"] += 1
+        entry["cost_usd"] += float(cost or 0.0)
+        if done_dt and (entry["last_at"] is None or done_dt > entry["last_at"]):
+            entry["last_at"] = done_dt
+            entry["last_status"] = status
+        if done_dt and done_dt >= cutoff:
+            entry["runs_30d"] += 1
+    return out
+
+
+def build_intents(ctx: Context, live: bool = True):
+    """Writer `intents`, plane `estate`: the estate's verbs, installed and declared."""
+    key = "intents_live" if live else "intents_repo"
+    if key in ctx._cache:
+        return ctx._cache[key]
+    runs = _ledger_runs(ctx) if live else {}
+    seen = set()
+    out = []
+    if live:
+        ctx.sources.append("~/.estate/intents")
+        ctx.sources.append("sqlite:~/.estate/estate.db")
+        if not ctx.intents_dir.is_dir():
+            ctx.warnings.append(
+                "intents: {} is missing; the estate's verbs are BLIND".format(
+                    ctx.intents_dir
+                )
+            )
+        else:
+            for path in sorted(ctx.intents_dir.glob("*.yaml")):
+                text = read_text(path)
+                meta = _load_yaml_map(text) or {}
+                name = meta.get("name") or path.stem
+                seen.add(name)
+                out.append(
+                    _intent_record(
+                        ctx,
+                        name,
+                        (meta.get("description") or first_line(text)).strip(),
+                        meta.get("args") or {},
+                        "sqlite:~/.estate/estate.db",
+                        runs.get(name),
+                        path=str(path),
+                    )
+                )
+    # intents declared in the repo but not installed here are drift, and drift is a fact
+    # about the estate that nobody else can see.
+    ctx.sources.append("idp:platform/estate/intents")
+    if ctx.repo_intents_dir.is_dir():
+        for path in sorted(ctx.repo_intents_dir.glob("*.yaml")):
+            if path.stem in seen:
+                continue
+            text = read_text(path)
+            meta = _load_yaml_map(text) or {}
+            out.append(
+                _intent_record(
+                    ctx,
+                    path.stem,
+                    (meta.get("description") or first_line(text)).strip(),
+                    meta.get("args") or {},
+                    "idp:platform/estate/intents",
+                    None,
+                    path="platform/estate/intents/{}".format(path.name),
+                )
+            )
+    ctx._cache[key] = out
+    return out
+
+
+def build_agents(ctx: Context, live: bool = True):
+    """Writer `intents`, plane `estate`: the agent runtimes, with their real run ledger."""
+    if not live:
+        return []
+    ctx.sources.append("~/.estate/harness")
+    runs = _ledger_runs(ctx)
+    by_harness = {}
+    for _intent, run in runs.items():
+        harness = run.get("harness") or "unknown"
+        entry = by_harness.setdefault(
+            harness,
+            {"runs": 0, "failures": 0, "last_at": None, "last_status": None},
+        )
+        entry["runs"] += run.get("runs", 0)
+        entry["failures"] += run.get("failures", 0)
+        last_at = run.get("last_at")
+        if last_at and (entry["last_at"] is None or last_at > entry["last_at"]):
+            entry["last_at"] = last_at
+            entry["last_status"] = run.get("last_status")
+    names = set()
+    if ctx.harness_dir.is_dir():
+        for path in sorted(ctx.harness_dir.iterdir()):
+            if path.is_dir():
+                names.add(path.name)
+    out = []
+    for harness in sorted(names | set(by_harness)):
+        entry = by_harness.get(harness, {})
+        last_at = entry.get("last_at")
+        receipt = None
+        rung = None
+        state = "declared"
+        if last_at:
+            receipt = make_receipt("estate.db", "harness:{}".format(harness), last_at)
+            rung = "R1"
+            if entry.get("last_status") == "ok":
+                state = "operating"
+            elif entry.get("last_status") in {"broken", "halted"}:
+                state = "degraded"
+            else:
+                state = "declared"
+        record = make_record(
+            "cap:agent/{}".format(harness),
+            "agent",
+            "agent runtime {}".format(harness),
+            "estate",
+            "estate-runtime",
+            "intents",
+            "sqlite:~/.estate/estate.db",
+            inputs=["intent tickets"],
+            outputs=["estate.db rows"],
+            errors=["halted, broken"],
+            cost_class="metered",
+            latency_class="batch",
+            receipt=receipt,
+            proven_at=last_at,
+            rung=rung,
+            path=str(ctx.harness_dir / harness),
+            blind=[] if receipt else ["health", "proof", "metrics"],
+        )
+        record["health"]["state"] = state
+        record["health"]["observed_at"] = iso(last_at)
+        out.append(record)
+    return out
+
+
+def _manifest_files(ctx: Context):
+    out = []
+    for base in ("platform", "clusters"):
+        root = ctx.idp / base
+        if not root.is_dir():
+            continue
+        for suffix in ("*.yaml", "*.yml"):
+            out.extend(sorted(root.rglob(suffix)))
+    return out
+
+
+def build_cluster(ctx: Context):
+    """Writer `cluster`, plane `cluster`: the kubernetes workloads the repo declares."""
+    if "cluster" in ctx._cache:
+        return ctx._cache["cluster"]
+    ctx.sources.append("idp:platform,clusters")
+    out = []
+    for path in _manifest_files(ctx):
+        text = read_text(path)
+        for doc in _load_yaml_docs(text):
+            kind = doc.get("kind")
+            if kind not in SERVICE_KINDS:
+                continue
+            meta = doc.get("metadata") or {}
+            name = meta.get("name") or "unnamed"
+            ns = meta.get("namespace") or "default"
+            rel = str(path.relative_to(ctx.idp))
+            out.append(
+                make_record(
+                    "cap:service/{}/{}".format(ns, name),
+                    "service",
+                    "{} {} in namespace {}".format(kind, name, ns),
+                    "cluster",
+                    ctx.owner(rel),
+                    "cluster",
+                    "idp:platform,clusters",
+                    inputs=["kubernetes API"],
+                    outputs=["pods"],
+                    errors=["image pull, admission, probe failures"],
+                    cost_class="cheap",
+                    latency_class="batch",
+                    path=rel,
+                    blind=["health", "proof", "metrics"],
+                )
+            )
+    ctx._cache["cluster"] = out
+    return out
+
+
+def build_mac(ctx: Context):
+    """Writer `mac`, plane `mac`: the launchd inventory, with somebody else's verdict."""
+    if not ctx.inventory.exists():
+        ctx.warnings.append(
+            "mac: {} is missing; the mac plane is BLIND".format(ctx.inventory)
+        )
+        return []
+    ctx.sources.append("~/.estate/state/inventory.json")
+    inventory = read_json(ctx.inventory)
+    if not isinstance(inventory, dict):
+        ctx.errors.append("mac: inventory is not an object")
+        return []
+    rows = inventory.get("rows")
+    if not isinstance(rows, list):
+        ctx.warnings.append("mac: inventory has no rows; the mac plane is BLIND")
+        return []
+    generated_at = parse_iso(inventory.get("generated_at"))
+    out = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        ident = row.get("id") or row.get("name") or "unnamed"
+        verdict = str(row.get("verdict") or "UNKNOWN")
+        receipt = make_receipt("inventory.json", str(ident), generated_at)
+        record = make_record(
+            "cap:workflow/{}".format(ident),
+            "workflow",
+            row.get("why") or "launchd job {} ({})".format(ident, verdict),
+            "mac",
+            "mac-plane",
+            "mac",
+            "~/.estate/state/inventory.json",
+            inputs=["launchd"],
+            outputs=["process"],
+            errors=["not loaded, crashing"],
+            cost_class="cheap",
+            latency_class="batch",
+            receipt=receipt,
+            proven_at=generated_at,
+            rung="R2",
+            path=str(row.get("declared_in") or ""),
+            blind=[] if row.get("why") else ["summary"],
+        )
+        record["health"]["state"] = (
+            "operating" if verdict in {"MANAGED", "OK"} else "degraded"
+        )
+        record["health"]["observed_at"] = iso(generated_at)
+        record["verdict"] = verdict
+        out.append(record)
+    return out
+
+
+def _merge(records):
+    """One record per capability.
+
+    The same capability declared twice by the same writer (a base and an overlay) is one
+    record with two declarations, not two records: it is merged and the extra path is kept
+    as a fact. The same id claimed by two different writers is I-1, and it is reported.
+    """
+    merged = {}
+    writers = {}
+    declared_in = {}
+    duplicate_ids = []
+    for record in records:
+        cap_id = record["id"]
+        path = record.get("path")
+        if cap_id in merged:
+            if writers.get(cap_id) != record.get("writer"):
+                if cap_id not in duplicate_ids:
+                    duplicate_ids.append(cap_id)
+            else:
+                paths = declared_in.setdefault(cap_id, [record.get("path")])
+                if path and path not in paths:
+                    paths.append(path)
+                merged[cap_id]["also_declared_in"] = sorted(paths)
+            continue
+        merged[cap_id] = dict(record)
+        writers[cap_id] = record.get("writer")
+        declared_in[cap_id] = [path]
+    issues = {
+        "duplicate_ids": sorted(duplicate_ids),
+        "merged_declarations": {k: v for k, v in declared_in.items() if len(v) > 1},
+    }
+    return merged, issues
+
+
+def repo_records(ctx: Context):
+    """The repository's own capabilities: tools, declared intents, declared workloads."""
+    records = []
+    records.extend(build_repo_tools(ctx))
+    records.extend(build_intents(ctx, live=False))
+    records.extend(build_cluster(ctx))
+    return _merge(records)
+
+
+def census(ctx: Context, live: bool = True):
+    """Every record the estate can currently name, with honest nulls where it cannot."""
+    records = []
+    repo, repo_issues = repo_records(ctx)
+    records.extend(repo.values())
+    if live:
+        installed = build_intents(ctx, live=True)
+        records.extend(installed)
+        records.extend(build_agents(ctx, live=True))
+        records.extend(build_mac(ctx))
+    merged, issues = _merge(records)
+    issues["duplicate_ids"] = sorted(
+        set(repo_issues["duplicate_ids"]) | set(issues["duplicate_ids"])
+    )
+    return merged, issues
+
+
+# --------------------------------------------------------------------------------------
+# the store
+
+
+SCHEMA_SQL = """
+create table if not exists capabilities (
+  id text primary key,
+  schema_version integer not null,
+  kind text not null,
+  summary text,
+  owner text,
+  owners text,
+  plane text,
+  contract text,
+  health text,
+  proof text,
+  consumers text,
+  cost text,
+  rung text,
+  writer text,
+  depends_on text,
+  metrics text,
+  path text,
+  content_hash text,
+  observed_at text,
+  tombstoned integer not null default 0,
+  tombstoned_at text,
+  updated_at text
+);
+create table if not exists events (
+  seq integer primary key autoincrement,
+  type text not null,
+  capability_id text,
+  payload text,
+  at text
+);
+create table if not exists findings (
+  id integer primary key autoincrement,
+  kind text,
+  subject text,
+  owner text,
+  state text,
+  detail text,
+  at text
+);
+create index if not exists capabilities_plane on capabilities(plane);
+create index if not exists capabilities_kind on capabilities(kind);
+"""
+
+
+def content_hash(record) -> str:
+    payload = json.dumps(record, sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+class Store:
+    """One store, many renderers (spec principle 1)."""
+
+    def __init__(self, path=None):
+        self.path = Path(path or DB_PATH)
+        self.conn = None
+
+    def open(self, create: bool = True):
+        if self.conn is not None:
+            return self.conn
+        if create:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.conn = sqlite3.connect(str(self.path))
+        self.conn.row_factory = sqlite3.Row
+        if create:
+            self.conn.executescript(SCHEMA_SQL)
+            self.conn.commit()
+        return self.conn
+
+    def close(self):
+        if self.conn is not None:
+            self.conn.close()
+            self.conn = None
+
+    # -- writes ------------------------------------------------------------------------
+    def write(self, record, writer: str):
+        """Write one record. Refuses what the invariants refuse."""
+        if writer not in WRITER_PLANES:
+            self.finding(
+                "writer.unknown",
+                record.get("id"),
+                writer,
+                "open",
+                "writer {} is not a registered writer".format(writer),
+            )
+            return (False, "unknown writer {}".format(writer))
+        if record.get("plane") not in WRITER_PLANES[writer]:
+            detail = "writer {} may not write plane {} (I-3)".format(
+                writer, record.get("plane")
+            )
+            self.finding("plane.violation", record.get("id"), writer, "open", detail)
+            return (False, detail)
+        conn = self.open()
+        digest = content_hash(record)
+        row = conn.execute(
+            "select content_hash, writer from capabilities where id = ?",
+            (record["id"],),
+        ).fetchone()
+        at = iso(now_utc())
+        if row is not None and row["writer"] and row["writer"] != writer:
+            # I-1: one capability, one record, one writer. The first writer to claim a cap:
+            # id owns it; a second writer for the same id is refused, not merged.
+            detail = "cap {} is already written by writer {}".format(
+                record["id"], row["writer"]
+            )
+            self.finding("capability.duplicate", record["id"], writer, "open", detail)
+            return (False, detail)
+        if row is not None and row["content_hash"] == digest:
+            return (True, "unchanged")
+        if row is not None:
+            conn.execute(
+                "update capabilities set schema_version=?, kind=?, summary=?, owner=?, "
+                "owners=?, plane=?, contract=?, health=?, proof=?, consumers=?, cost=?, "
+                "rung=?, writer=?, depends_on=?, metrics=?, path=?, content_hash=?, "
+                "observed_at=?, tombstoned=0, tombstoned_at=null, updated_at=? where id=?",
+                (
+                    record.get("schema_version", SCHEMA_VERSION),
+                    record.get("kind"),
+                    record.get("summary"),
+                    record.get("owner"),
+                    json.dumps(record.get("owners") or []),
+                    record.get("plane"),
+                    json.dumps(record.get("contract") or {}, default=str),
+                    json.dumps(record.get("health") or {}, default=str),
+                    json.dumps(record.get("proof") or {}, default=str),
+                    json.dumps(record.get("consumers") or []),
+                    json.dumps(record.get("cost") or {}, default=str),
+                    record.get("rung"),
+                    writer,
+                    json.dumps(record.get("depends_on") or []),
+                    json.dumps(record.get("metrics") or []),
+                    record.get("path"),
+                    digest,
+                    iso((record.get("health") or {}).get("observed_at")),
+                    at,
+                    record["id"],
+                ),
+            )
+        else:
+            try:
+                conn.execute(
+                    "insert into capabilities (id, schema_version, kind, summary, owner, "
+                    "owners, plane, contract, health, proof, consumers, cost, rung, writer, "
+                    "depends_on, metrics, path, content_hash, observed_at, tombstoned, "
+                    "updated_at) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?)",
+                    (
+                        record["id"],
+                        record.get("schema_version", SCHEMA_VERSION),
+                        record.get("kind"),
+                        record.get("summary"),
+                        record.get("owner"),
+                        json.dumps(record.get("owners") or []),
+                        record.get("plane"),
+                        json.dumps(record.get("contract") or {}, default=str),
+                        json.dumps(record.get("health") or {}, default=str),
+                        json.dumps(record.get("proof") or {}, default=str),
+                        json.dumps(record.get("consumers") or []),
+                        json.dumps(record.get("cost") or {}, default=str),
+                        record.get("rung"),
+                        writer,
+                        json.dumps(record.get("depends_on") or []),
+                        json.dumps(record.get("metrics") or []),
+                        record.get("path"),
+                        digest,
+                        iso((record.get("health") or {}).get("observed_at")),
+                        at,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                # I-1: one capability, one record. A duplicate id is refused, not merged.
+                self.finding(
+                    "capability.duplicate",
+                    record["id"],
+                    writer,
+                    "open",
+                    "duplicate cap id refused: {}".format(exc),
+                )
+                conn.rollback()
+                return (False, "duplicate id {}".format(record["id"]))
+        self.event(
+            "capability.changed", record["id"], {"writer": writer, "hash": digest}
+        )
+        conn.commit()
+        return (True, "capability.changed")
+
+    def event(self, kind: str, capability_id, payload=None):
+        conn = self.open()
+        conn.execute(
+            "insert into events (type, capability_id, payload, at) values (?,?,?,?)",
+            (
+                kind,
+                capability_id,
+                json.dumps(payload or {}, default=str),
+                iso(now_utc()),
+            ),
+        )
+
+    def finding(self, kind: str, subject: str, owner: str, state: str, detail: str):
+        conn = self.open()
+        conn.execute(
+            "insert into findings (kind, subject, owner, state, detail, at) values (?,?,?,?,?,?)",
+            (kind, subject, owner, state, detail, iso(now_utc())),
+        )
+        conn.commit()
+
+    # -- reads -------------------------------------------------------------------------
+    def all(self, include_tombstoned: bool = False):
+        conn = self.open()
+        sql = "select * from capabilities"
+        if not include_tombstoned:
+            sql += " where tombstoned = 0"
+        sql += " order by id"
+        return [self._row_to_record(row) for row in conn.execute(sql).fetchall()]
+
+    def get(self, cap_id):
+        conn = self.open()
+        row = conn.execute(
+            "select * from capabilities where id = ?", (cap_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return self._row_to_record(row)
+
+    def findings(self, limit: int = 200):
+        conn = self.open()
+        rows = conn.execute(
+            "select kind, subject, owner, state, detail, at from findings "
+            "order by id desc limit ?",
+            (limit,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def events(self, limit: int = 50):
+        conn = self.open()
+        rows = conn.execute(
+            "select type, capability_id, payload, at from events order by seq desc limit ?",
+            (limit,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def tombstone(self, cap_id: str, at=None):
+        conn = self.open()
+        stamp = iso(at or now_utc())
+        conn.execute(
+            "update capabilities set tombstoned = 1, tombstoned_at = ? where id = ?",
+            (stamp, cap_id),
+        )
+        self.event("capability.tombstoned", cap_id, {"at": stamp})
+        conn.commit()
+
+    def _row_to_record(self, row) -> dict:
+        def _json(value, default):
+            try:
+                out = json.loads(value) if value else default
+            except (TypeError, ValueError):
+                return default
+            return out
+
+        return {
+            "id": row["id"],
+            "schema_version": row["schema_version"],
+            "kind": row["kind"],
+            "summary": row["summary"],
+            "owner": row["owner"],
+            "owners": _json(row["owners"], []),
+            "plane": row["plane"],
+            "contract": _json(row["contract"], {}),
+            "health": _json(row["health"], {}),
+            "proof": _json(row["proof"], {}),
+            "consumers": _json(row["consumers"], []),
+            "cost": _json(row["cost"], {}),
+            "rung": row["rung"],
+            "writer": row["writer"],
+            "depends_on": _json(row["depends_on"], []),
+            "metrics": _json(row["metrics"], []),
+            "path": row["path"],
+            "observed_at": row["observed_at"],
+            "tombstoned": bool(row["tombstoned"]),
+            "tombstoned_at": row["tombstoned_at"],
+        }
+
+
+# --------------------------------------------------------------------------------------
+# reconciliation (spec I-5) and coverage
+
+
+def reconcile(store: Store, observed, owners=None):
+    """Diff declared (the store) against observed (the estate), once per cycle.
+
+    A capability that left the estate is tombstoned, not deleted: the record of what it was
+    is what makes the deletion visible (I-5).
+    """
+    owners = owners or {}
+    observed = set(observed)
+    conn = store.open()
+    declared = {
+        row["id"] for row in conn.execute("select id from capabilities").fetchall()
+    }
+    tombstoned = []
+    for cap_id in sorted(declared - observed):
+        store.tombstone(cap_id)
+        tombstoned.append(cap_id)
+    unregistered = []
+    for cap_id in sorted(observed - declared):
+        unregistered.append(cap_id)
+        store.finding(
+            "capability.unregistered",
+            cap_id,
+            owners.get(cap_id, "unowned"),
+            "open",
+            "observed in the estate, absent from the registry",
+        )
+    return {
+        "tombstoned": tombstoned,
+        "unregistered": unregistered,
+        "declared": len(declared),
+        "observed": len(observed),
+    }
+
+
+def coverage_diff(records, intents, workloads):
+    """The coverage diff (spec section 10): every intent and every running workload has a
+    record. A source that cannot answer is BLIND, never a pass and never a fake failure."""
+    have = {r["id"] for r in records}
+    intents_missing = []
+    for name in intents:
+        if "cap:intent/{}".format(name) not in have:
+            intents_missing.append(name)
+    workloads_missing = []
+    for ident in workloads:
+        if ident not in have:
+            workloads_missing.append(ident)
+    return {
+        "intents": {"total": len(intents), "missing": intents_missing},
+        "workloads": {"total": len(workloads), "missing": workloads_missing},
+    }
+
+
+def observed_workloads(ctx: Context):
+    """Running workloads, from the cluster if it answers, else BLIND (None)."""
+    kubectl = os.environ.get("KUBECTL", "kubectl")
+    if not _which(kubectl):
+        return None
+    cmd = [
+        kubectl,
+        "get",
+        "deploy,statefulset,daemonset,job,cronjob",
+        "-A",
+        "-o",
+        "json",
+    ]
+    try:
+        result = subprocess.run(  # noqa: S603
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+        return None
+    try:
+        payload = json.loads(result.stdout)
+    except ValueError:
+        return None
+    out = []
+    for item in payload.get("items") or []:
+        meta = item.get("metadata") or {}
+        out.append(
+            "cap:service/{}/{}".format(
+                meta.get("namespace") or "default", meta.get("name")
+            )
+        )
+    return out
+
+
+def _which(name: str):
+    for base in os.environ.get("PATH", "").split(os.pathsep):
+        candidate = Path(base) / name
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
+def freshness(records, when=None):
+    """Per-domain stale counts (spec section 10). A stale record is a finding, counted."""
+    when = when or now_utc()
+    per_domain = {}
+    stale = 0
+    for record in records:
+        domain = record["id"].split("/")[0].replace("cap:", "")
+        entry = per_domain.setdefault(domain, {"records": 0, "stale": 0, "blind": 0})
+        entry["records"] += 1
+        health = state_from_proof(record, when)
+        if health.get("stale"):
+            entry["stale"] += 1
+            stale += 1
+        elif health.get("blind"):
+            entry["blind"] += 1
+    return {"per_domain": per_domain, "stale": stale, "records": len(records)}
+
+
+# --------------------------------------------------------------------------------------
+# the committed snapshot: the repo-derived half, deterministic, so CI can prove no drift
+
+
+def snapshot(ctx: Context) -> dict:
+    """The machine-generated census of the repository alone.
+
+    Deterministic on purpose: no timestamps, no absolute paths, no machine state. CI
+    regenerates it and compares, so a registry that drifts from the repository is a gate
+    failure, not a thing somebody notices a week later.
+    """
+    records = []
+    repo, _issues = repo_records(ctx)
+    records.extend(repo.values())
+    records.sort(key=lambda r: r["id"])
+    counts = Counter(r["kind"] for r in records)
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "generator": "bin/capability-index emit",
+        "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
+        "counts": dict(sorted(counts.items())),
+        "records": records,
+    }
+
+
+def snapshot_text(snap: dict) -> str:
+    return json.dumps(snap, indent=2, sort_keys=False, default=str) + "\n"
+
+
+def snapshot_drift(ctx: Context, committed_path: Path = SNAPSHOT_PATH):
+    """What changed between the committed snapshot and a fresh generation."""
+    fresh = snapshot_text(snapshot(ctx))
+    if not committed_path.exists():
+        return {
+            "verdict": "MISSING",
+            "detail": "{} does not exist".format(committed_path),
+            "added": [],
+            "removed": [],
+            "command": "bin/capability-index emit --write",
+        }
+    committed_text = committed_path.read_text()
+    try:
+        committed = json.loads(committed_text)
+    except ValueError:
+        return {
+            "verdict": "FAIL",
+            "detail": "{} is not valid JSON".format(committed_path),
+            "added": [],
+            "removed": [],
+            "command": "bin/capability-index emit --write",
+        }
+    old_ids = {r["id"] for r in committed.get("records", [])}
+    new_ids = {r["id"] for r in json.loads(fresh).get("records", [])}
+    removed = sorted(old_ids - new_ids)
+    added = sorted(new_ids - old_ids)
+    identical = committed_text == fresh
+    return {
+        "verdict": "OK" if identical else ("FAIL" if removed else "LAG"),
+        "identical": identical,
+        "added": added,
+        "removed": removed,
+        "detail": "the committed snapshot equals a fresh generation"
+        if identical
+        else "{} record(s) added, {} removed".format(len(added), len(removed)),
+        "command": "bin/capability-index emit --write",
+    }
+
+
+# --------------------------------------------------------------------------------------
+# proving a capability on demand
+
+
+def prove(ctx: Context, record, when=None):
+    """Re-run the probe that produced a receipt (spec section 8: capability_prove)."""
+    when = when or now_utc()
+    proof = record.get("proof") or {}
+    source, subject, _stamp = receipt_parts(proof.get("receipt"))
+    verdict = {"id": record["id"], "probed_at": iso(when), "instrument": source}
+    if not source:
+        verdict.update(
+            {
+                "verdict": "BLIND",
+                "detail": "no instrument: this record has no receipt to re-run",
+            }
+        )
+        return verdict
+    if source == "estate.db":
+        runs = _ledger_runs(ctx)
+        name = subject.split(":", 1)[1] if ":" in subject else subject
+        run = runs.get(name)
+        if not run or not run.get("last_at"):
+            verdict.update(
+                {
+                    "verdict": "FAILED",
+                    "detail": "intent {} has no run in the ledger".format(name),
+                }
+            )
+            return verdict
+        ok = run.get("last_status") == "ok"
+        verdict.update(
+            {
+                "verdict": "OK" if ok else "FAILED",
+                "detail": "last run {} at {}".format(
+                    run.get("last_status"), iso(run.get("last_at"))
+                ),
+                "observed_at": iso(run.get("last_at")),
+                "receipt": make_receipt("estate.db", subject, run.get("last_at")),
+            }
+        )
+        return verdict
+    if source == "inventory.json":
+        inventory = read_json(ctx.inventory) or {}
+        rows = {
+            str(r.get("id") or r.get("name")): r
+            for r in inventory.get("rows") or []
+            if isinstance(r, dict)
+        }
+        ident = subject.split(":", 1)[1] if ":" in subject else subject
+        row = rows.get(ident)
+        if row is None:
+            verdict.update(
+                {
+                    "verdict": "FAILED",
+                    "detail": "{} is not in the inventory".format(ident),
+                }
+            )
+            return verdict
+        verdict.update(
+            {
+                "verdict": "OK",
+                "detail": "verdict {}".format(row.get("verdict")),
+                "observed_at": inventory.get("generated_at"),
+                "receipt": make_receipt(
+                    "inventory.json", ident, parse_iso(inventory.get("generated_at"))
+                ),
+            }
+        )
+        return verdict
+    if source == "idp:bin":
+        path = ctx.idp / (record.get("path") or "")
+        exists = path.exists()
+        verdict.update(
+            {
+                "verdict": "OK" if exists else "FAILED",
+                "detail": "{} {}".format(path, "exists" if exists else "is gone"),
+                "observed_at": iso(when),
+            }
+        )
+        return verdict
+    verdict.update(
+        {"verdict": "BLIND", "detail": "no probe for instrument {}".format(source)}
+    )
+    return verdict
+
+
+# --------------------------------------------------------------------------------------
+# rendering
+
+
+def render_record(record) -> str:
+    health = record.get("health") or {}
+    lines = [
+        "{}  [{}]  {}  plane={}  owner={}".format(
+            record["id"],
+            record.get("kind"),
+            health.get("state", "declared"),
+            record.get("plane"),
+            record.get("owner"),
+        )
+    ]
+    if record.get("stale"):
+        lines.append("  stale: true (the proof is older than its window)")
+    summary = record.get("summary") or ""
+    if summary:
+        lines.append("  summary: {}".format(summary))
+    contract = record.get("contract") or {}
+    if contract.get("inputs"):
+        lines.append("  inputs: {}".format(", ".join(contract["inputs"][:12])))
+    proof = record.get("proof") or {}
+    lines.append(
+        "  proof: receipt={} proven_at={} window_s={} rung={}".format(
+            proof.get("receipt") or "BLIND",
+            proof.get("proven_at") or "BLIND",
+            proof.get("window_s"),
+            record.get("rung") or "BLIND",
+        )
+    )
+    if record.get("tombstoned"):
+        lines.append("  tombstoned at {}".format(record.get("tombstoned_at")))
+    return "\n".join(lines)
+
+
+def load_records(ctx: Context, use_store: bool = True):
+    """Where a read comes from: the live store when it has one, the committed snapshot
+    otherwise. The snapshot is repo-derived, so a read from it is honest but unproven."""
+    if use_store and DB_PATH.exists():
+        store = Store(DB_PATH)
+        records = store.all()
+        if records:
+            return records, "store"
+    snap = snapshot(ctx)
+    return snap["records"], "snapshot"
+
+
+# --------------------------------------------------------------------------------------
+# the CLI
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="capability-index",
+        description="The Estate Capability Registry: one record per capability.",
+    )
+    parser.add_argument("--idp", default="")
+    parser.add_argument("--home", default="")
+    parser.add_argument("--db", default="")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p_census = sub.add_parser("census", help="rebuild the census from the estate")
+    p_census.add_argument("--write", action="store_true", help="write it to the store")
+    p_census.add_argument("--json", action="store_true")
+
+    p_query = sub.add_parser("query", help="the query contract")
+    p_query.add_argument("q", nargs="?", default="")
+    p_query.add_argument("--kind", default="")
+    p_query.add_argument("--state", default="")
+    p_query.add_argument("--plane", default="")
+    p_query.add_argument("--json", action="store_true")
+    p_query.add_argument("--limit", type=int, default=40)
+
+    p_get = sub.add_parser("get", help="one capability, with its staleness marked")
+    p_get.add_argument("id")
+    p_get.add_argument("--json", action="store_true")
+
+    p_prove = sub.add_parser(
+        "prove", help="re-run the receipt probe for one capability"
+    )
+    p_prove.add_argument("id")
+    p_prove.add_argument("--json", action="store_true")
+
+    p_reconcile = sub.add_parser("reconcile", help="diff declared against observed")
+    p_reconcile.add_argument("--json", action="store_true")
+
+    p_emit = sub.add_parser(
+        "emit", help="write the committed, machine-generated snapshot"
+    )
+    p_emit.add_argument("--write", action="store_true")
+    p_emit.add_argument("--out", default=str(SNAPSHOT_PATH))
+
+    p_status = sub.add_parser("status", help="counts and freshness")
+    p_status.add_argument("--json", action="store_true")
+
+    p_cover = sub.add_parser("cover", help="the coverage diff")
+    p_cover.add_argument("--json", action="store_true")
+
+    args = parser.parse_args(argv)
+    ctx = Context(
+        idp=Path(args.idp) if args.idp else None,
+        home=Path(args.home) if args.home else None,
+    )
+    if args.db:
+        globals()["DB_PATH"] = Path(args.db)
+
+    if args.cmd == "census":
+        records, issues = census(ctx)
+        if args.write:
+            store = Store(DB_PATH)
+            written = 0
+            for record in records.values():
+                ok, _msg = store.write(record, record.get("writer") or "repo")
+                written += 1 if ok else 0
+            result = reconcile(store, records.keys())
+            payload = {
+                "records": len(records),
+                "written": written,
+                "issues": issues,
+                "reconcile": result,
+            }
+            print(
+                json.dumps(payload, indent=2)
+                if args.json
+                else json.dumps(payload, indent=2)
+            )
+            return 0
+        if args.json:
+            print(
+                json.dumps(
+                    sorted(records.values(), key=lambda r: r["id"]),
+                    indent=2,
+                    default=str,
+                )
+            )
+        else:
+            for record in sorted(records.values(), key=lambda r: r["id"]):
+                print(render_record(read_record(record)))
+        return 0
+
+    if args.cmd == "query":
+        records, source = load_records(ctx)
+        rows = []
+        words = [w for w in re.split(r"[^a-z0-9]+", args.q.lower()) if w]
+        for record in records:
+            if args.kind and record.get("kind") != args.kind:
+                continue
+            if args.plane and record.get("plane") != args.plane:
+                continue
+            read = read_record(record)
+            if args.state and read["health"].get("state") != args.state:
+                continue
+            if words:
+                haystack = " ".join(
+                    [
+                        record.get("id") or "",
+                        record.get("summary") or "",
+                        " ".join((record.get("contract") or {}).get("inputs") or []),
+                    ]
+                ).lower()
+                if not all(w in haystack for w in words):
+                    continue
+            rows.append(read)
+        rows.sort(key=lambda r: r["id"])
+        if args.json:
+            print(json.dumps(rows[: args.limit], indent=2, default=str))
+            return 0
+        print(
+            "{} record(s) from {} (source: {})".format(len(rows), len(records), source)
+        )
+        for record in rows[: args.limit]:
+            print(render_record(record))
+        return 0
+
+    if args.cmd == "get":
+        records, _source = load_records(ctx)
+        for record in records:
+            if record["id"] == args.id:
+                read = read_record(record)
+                print(
+                    json.dumps(read, indent=2, default=str)
+                    if args.json
+                    else render_record(read)
+                )
+                return 0
+        print("BLIND   no record for {}".format(args.id), file=sys.stderr)
+        return 1
+
+    if args.cmd == "prove":
+        records, _source = load_records(ctx)
+        for record in records:
+            if record["id"] == args.id:
+                verdict = prove(ctx, record)
+                print(
+                    json.dumps(verdict, indent=2, default=str)
+                    if args.json
+                    else "{}: {}".format(verdict["verdict"], verdict.get("detail", ""))
+                )
+                return 0 if verdict["verdict"] in {"OK", "BLIND"} else 1
+        print("BLIND   no record for {}".format(args.id), file=sys.stderr)
+        return 1
+
+    if args.cmd == "reconcile":
+        records, _issues = census(ctx)
+        store = Store(DB_PATH)
+        store.open()
+        result = reconcile(store, records.keys())
+        print(json.dumps(result, indent=2))
+        return 0
+
+    if args.cmd == "emit":
+        snap = snapshot(ctx)
+        text = snapshot_text(snap)
+        out = Path(args.out)
+        if args.write:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(text)
+            print("snapshot written: {} ({} records)".format(out, len(snap["records"])))
+            return 0
+        print(text, end="")
+        return 0
+
+    if args.cmd == "status":
+        records, source = load_records(ctx)
+        counts = Counter(r.get("kind") for r in records)
+        states = Counter(read_record(r)["health"].get("state") for r in records)
+        fresh = freshness(records)
+        payload = {
+            "source": source,
+            "records": len(records),
+            "counts": dict(sorted(counts.items())),
+            "states": dict(sorted(states.items())),
+            "stale": fresh["stale"],
+            "per_domain": fresh["per_domain"],
+        }
+        print(json.dumps(payload, indent=2))
+        return 0
+
+    if args.cmd == "cover":
+        records, _source = load_records(ctx)
+        intents = []
+        if ctx.intents_dir.is_dir():
+            intents = [p.stem for p in sorted(ctx.intents_dir.glob("*.yaml"))]
+        workloads = observed_workloads(ctx)
+        diff = coverage_diff(
+            records, intents, workloads if workloads is not None else []
+        )
+        diff["workloads_source"] = "cluster" if workloads is not None else "BLIND"
+        print(json.dumps(diff, indent=2))
+        return 0
+
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

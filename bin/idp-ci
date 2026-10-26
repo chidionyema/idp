@@ -1376,6 +1376,29 @@ if python3 "$IDP/bin/idp-api-version-gate" "$IDP/platform" "$IDP/clusters" >/dev
   say "ok    apiversion no manifest in platform/ or clusters/ names a group/version this estate has migrated off"
 else say "FAIL  apiversion a manifest names a retired group/version, or the gate does not discriminate"; fail=1; fi
 
+# 8f. The Estate Capability Registry (docs/specs/2026-10-25-estate-capability-registry.md).
+#      The gate runs the five falsifiable invariants (I-1..I-5), the section 3 schema check,
+#      the coverage diff and the drift check against the committed machine-generated
+#      snapshot. It is BLIND-tolerant where a source cannot answer -- a CI runner has no
+#      ~/.estate, so the live coverage is BLIND and the gate says so -- and it fails on a
+#      snapshot that names a capability the repository no longer has, which is a stale
+#      claim about the estate. The fix is one command, and the gate prints it.
+if ! touched bin/capability-index bin/registry-gate \
+      catalog/estate-capability-registry.json tests/test_capability_registry.py \
+      platform/ clusters/ platform/estate/intents/ ; then
+  say "ok    registry no registry input changed against ${IDP_CI_BASE:-main}"
+else
+  reg_out=$("$MPY" "$IDP/bin/registry-gate" 2>&1); reg_rc=$?
+  if [ "$reg_rc" -eq 0 ]; then
+    say "ok    registry $(printf '%s' "$reg_out" | grep -E '^drift:' | sed 's/^drift: //')"
+    printf '%s\n' "$reg_out" | grep -E '^(records|invariants|coverage|freshness):' | sed 's/^/      /'
+  else
+    say "FAIL  registry the Estate Capability Registry is not true (rc=$reg_rc)"
+    printf '%s\n' "$reg_out" | tail -20 | sed 's/^/      /'
+    fail=1
+  fi
+fi
+
 timing_summary
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 # --full: write sentinel on success so the pre-push hook proceeds without re-running.
