@@ -14,4 +14,18 @@ spec:
   path: ./platform/voice-router/deploy
   prune: true
   wait: true
+  # The overlay now carries an ExternalSecret (CRD from external-secrets, store from
+  # secret-store) and a Gateway API ReferenceGrant (CRD from edge). Without these the row fails
+  # on the first apply instead of waiting for the CRD, the way backstage.yaml waits.
+  dependsOn:
+    - name: external-secrets
+    - name: secret-store
+    - name: edge
+  # ${ESTATE_ZONE} in the router's VOICE_ALLOWED_ORIGINS (deploy/router.yaml). Not optional: a
+  # missing ConfigMap fails the row rather than publish a literal '${ESTATE_ZONE}' origin that
+  # no browser would match.
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
   timeout: 5m

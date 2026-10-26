@@ -1,0 +1,178 @@
+# The streaming router itself (defect 12 of docs/specs/2026-10-22-face-superpowers-audit.md).
+#
+# Measured 2026-10-25: the voice-router namespace held ONE Deployment, voice-router-director --
+# the /fleet cinema narrator, which answers /healthz and nothing else. The streaming router the
+# Face page actually opens (backstage/packages/app/src/modules/home/useVoiceRouter.ts: deployed,
+# it is `wss://<page host>/voice/ws`) had no workload, so on the public path /voice/ws fell to
+# the catalogue pod's static-asset rule and answered 404. The models (sherpa-onnx streaming ASR,
+# piper TTS) are baked into ghcr.io/chidionyema/voice-router by its Dockerfile, so a pod needs no
+# download at start and no PVC: the only thing missing was the workload and a door to it.
+#
+# Director vs router is the binary's own VOICE_MODE switch (cmd/voice-router/main.go): unset runs
+# the streaming router on VOICE_ADDR, "director" runs the narrator. This Deployment sets nothing,
+# so it is the router; director.yaml keeps the narrator.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voice-router
+  namespace: voice-router
+  labels:
+    app.kubernetes.io/name: voice-router
+    app.kubernetes.io/part-of: idp
+    backstage.io/kubernetes-id: voice-router
+spec:
+  # One: the socket is stateful per connection and the turn log (GET /voice/turns) lives in the
+  # process. Two replicas would answer one page from two different turn logs.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: voice-router
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: voice-router
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: router
+          image: ghcr.io/chidionyema/voice-router
+          env:
+            - name: VOICE_ADDR
+              value: ":8080"
+            # The socket's Origin allow-list (cmd/voice-router/main.go, allowedOrigin). A browser
+            # sends the page's host, so this is the catalogue's own hostname and nothing else.
+            - name: VOICE_ALLOWED_ORIGINS
+              value: "catalogue.${ESTATE_ZONE}"
+            # An utterance that names a committed, arg-free estate intent RUNS it
+            # (internal/intent): the same POST /voice/intent the Deck's buttons use, so a spoken
+            # word and a tap cannot take two different doors (audit S7).
+            - name: VOICE_INTENT_URL
+              value: "http://fleetview-voice.backstage.svc.cluster.local:18790/voice/intent"
+            - name: LLM_BASE_URL
+              value: "http://litellm.llm.svc:4000/v1"
+            # The key is a mounted file, never env: Kyverno's secrets-not-from-env-vars refuses a
+            # Pod that takes a Secret through env. Same vault entry the fleetview sidecar's voice
+            # uses (`fleetview-voice`, a LiteLLM router key), so the socket is attributed and
+            # budget-capped apart from every other caller. Optional: until vault-seed has written
+            # it, the pod still serves the socket and /readyz reports the brain as not ready.
+            - name: LLM_API_KEY_FILE
+              value: /var/run/secrets/voice-llm/key
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://signoz-otel-collector.observability.svc:4318"
+            # Unified estate memory: the brain's answers are grounded in what the estate
+            # remembers and each answered exchange is remembered (internal/estatemem). Same
+            # secret and same external-secret.yaml row as the director's.
+            - name: ESTATE_MCP_URL
+              value: "http://agentgateway.mcp.svc.cluster.local:3000/estate/mcp"
+            - name: ESTATE_MCP_KEY_FILE
+              value: /run/secrets/voice-router-mcp/ESTATE_MCP_KEY
+          ports:
+            - name: http
+              containerPort: 8080
+          # /healthz, not /readyz: the socket and its handler exist as soon as the models load,
+          # and a litellm outage must not restart a pod whose ears and voice are fine (/readyz is
+          # the honest report of the brain, for whoever asks).
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            failureThreshold: 6
+          resources:
+            # Two ONNX runtimes in process (ASR + piper). Measured on the laptop: a turn is
+            # ~1 core for under a second, so the limit is headroom, not throughput.
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1536Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: voice-llm
+              mountPath: /var/run/secrets/voice-llm
+            - name: mcp-key
+              mountPath: /run/secrets/voice-router-mcp
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: voice-llm
+          secret:
+            secretName: voice-llm
+            optional: true
+        - name: mcp-key
+          secret: { secretName: voice-router-mcp, optional: true }
+---
+# The door the HTTPRoute's /voice/ws rule points at (platform/backstage/overlays/oke/
+# httproute.yaml). ClusterIP only: the route is the one way in, and the fence admits nothing but
+# the edge namespace (platform/ns-fences/allowances.yaml).
+apiVersion: v1
+kind: Service
+metadata:
+  name: voice-router
+  namespace: voice-router
+  labels:
+    app.kubernetes.io/name: voice-router
+    app.kubernetes.io/part-of: idp
+    # Kyverno require-catalogue-entity (platform/edge/require-catalogue-entity.yaml), Enforce: a
+    # Service that serves a port names the catalogue entity it belongs to. This socket is reached
+    # on the catalogue's own hostname (the /voice/ws rule in platform/backstage/overlays/oke/
+    # httproute.yaml), so it is the same entity the anonymous voice door beside it names
+    # (platform/backstage/overlays/oke/fleetview-voice-service.yaml). Without the label Flux's own
+    # dry-run refuses the object -- "Mutation has been applied successfully.policy
+    # require-catalogue-entity -> resource voice-router/Service/voice-router failed" -- so the
+    # socket stays unwired and the Face keeps falling back to the legacy lane. Measured on
+    # greenlane b4276, ci run 40253855435.
+    backstage.io/kubernetes-id: founder-catalogue
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: voice-router
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+# Gateway API refuses a backendRef into another namespace without the target namespace's consent.
+# This is that consent: HTTPRoutes in backstage may reach this one Service, on its one port.
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: voice-router-from-backstage
+  namespace: voice-router
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: backstage
+  to:
+    - group: ""
+      kind: Service
+      name: voice-router

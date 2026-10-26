@@ -227,6 +227,33 @@ spec:
       backendRefs:
         - name: catalogue
           port: 3100
+    # Defect 12 of docs/specs/2026-10-22-face-superpowers-audit.md: the Face's streaming voice
+    # (useVoiceRouter.ts -- deployed, the socket is `wss://<page host>/voice/ws`) had no workload
+    # behind it, so /voice/ws fell to the static-asset rule below and the catalogue pod answered
+    # 404. This rule sends exactly that one path to the streaming router (Service voice-router in
+    # the voice-router namespace, admissible through that namespace's ReferenceGrant) and leaves
+    # /voice/ort.min.js and the rest of the /voice prefix alone.
+    # Public, like the /face shell and the anonymous voice lane above: the page that may speak is
+    # the page that loads without a sign-in (crew#1017), and the socket's spend is bounded by the
+    # router's own `fleetview-voice` LiteLLM key, not by who holds the URL. Exactly one path is
+    # routed, so GET /voice/turns -- which carries conversation text -- stays behind the door.
+    - matches:
+        - path: { type: Exact, value: /voice/ws }
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
+      backendRefs:
+        - name: voice-router
+          namespace: voice-router
+          port: 8080
     # crew#1017 lane A: the face's static shell is public. The avatar runs on phones and demo
     # screens that are never signed in, and a JS module that receives the login page's HTML
     # instead of its own code breaks loading entirely (measured 2026-10-02: /face/talkinghead.mjs,

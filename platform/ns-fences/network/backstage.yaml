@@ -179,3 +179,6 @@ spec:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: edge
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: voice-router

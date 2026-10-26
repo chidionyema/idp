@@ -5,6 +5,10 @@ resources:
   - namespace.yaml
   - rbac.yaml
   - director.yaml
+  # The streaming router (defect 12 of docs/specs/2026-10-22-face-superpowers-audit.md): the
+  # workload behind /voice/ws, its Service, and the ReferenceGrant that lets the catalogue's
+  # HTTPRoute reach it across namespaces.
+  - router.yaml
   - external-secret.yaml
 images:
   # Placeholder tag until image-automation rewrites it from ImagePolicy flux-system/voice-router.

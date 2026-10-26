@@ -149,6 +149,9 @@ spec:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: prospector
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: voice-router
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
