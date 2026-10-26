@@ -186,3 +186,54 @@ def test_the_failure_class_registry_names_the_classes_the_code_uses():
         "provider_quota_exhaustion",
     ):
         assert expected in ids
+
+
+def test_every_workload_pins_a_pod_and_container_security_context():
+    """The manifests must satisfy the estate's own trivy config scan.
+
+    MEASURED 2026-10-26: the Greenlane's security-scan on the EFDA candidate failed with five
+    HIGH trivy misconfigurations in platform/efda/controller.yaml and platform/efda/namespace.yaml
+    (KSV-0118 default security context, KSV-0014 root filesystem not read-only). The findings were
+    real: the controller and the executor set a container securityContext but no POD
+    securityContext, and the checkpoint Redis set neither. This test is the local proof, so the
+    same defect cannot reach the lane a second time. trivy 0.74.0 is what CI runs, and these are
+    the settings it requires: KSV-0118 wants a pod-level securityContext, KSV-0014 wants a
+    read-only root filesystem.
+    """
+    workloads = []
+    for name in ("controller.yaml", "namespace.yaml"):
+        for document in load_yaml(os.path.join(PLATFORM, name)):
+            if document.get("kind") in (
+                "Deployment",
+                "StatefulSet",
+                "DaemonSet",
+                "Job",
+            ):
+                workloads.append((name, document))
+    assert len(workloads) == 3, "the EFDA scaffold grew or lost a workload: %s" % [
+        doc["metadata"]["name"] for _, doc in workloads
+    ]
+    for name, document in workloads:
+        workload = document["metadata"]["name"]
+        pod = document["spec"]["template"]["spec"]
+        pod_context = pod.get("securityContext") or {}
+        assert pod_context.get("runAsNonRoot") is True, (
+            "%s %s: no pod-level runAsNonRoot (trivy KSV-0118)" % (name, workload)
+        )
+        assert pod_context.get("seccompProfile", {}).get("type") == "RuntimeDefault", (
+            "%s %s: no pod-level seccompProfile" % (name, workload)
+        )
+        for container in pod.get("containers", []):
+            context = container.get("securityContext") or {}
+            assert context.get("readOnlyRootFilesystem") is True, (
+                "%s %s: container %s has a writable root filesystem (trivy KSV-0014)"
+                % (name, workload, container["name"])
+            )
+            assert context.get("allowPrivilegeEscalation") is False, (
+                "%s %s: container %s can escalate privileges"
+                % (name, workload, container["name"])
+            )
+            assert "ALL" in (context.get("capabilities") or {}).get("drop", []), (
+                "%s %s: container %s does not drop every capability"
+                % (name, workload, container["name"])
+            )
