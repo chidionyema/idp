@@ -37,6 +37,10 @@
       "type": ["string", "null"],
       "description": "RFC 3339 timestamp of the session's last observed change."
     },
+    "age_seconds": {
+      "type": ["integer", "null"],
+      "description": "How long ago updated_at was, measured at read time. This is the evidence `state` is derived from: state is a label from recency, never a liveness probe. Null means the timestamp was absent or unreadable, never 'just now'."
+    },
     "trace_url": {
       "type": ["string", "null"],
       "description": "Enriched from Langfuse by session id."

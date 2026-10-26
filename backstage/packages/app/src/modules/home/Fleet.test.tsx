@@ -106,7 +106,31 @@ describe('CP2: a running session is on the board', () => {
     expect(screen.getByText('sovereign')).toBeInTheDocument();
     expect(screen.getByText('fix the board')).toBeInTheDocument();
     expect(screen.getByText('Running')).toBeInTheDocument();
-    expect(screen.getByText(/1 running/)).toBeInTheDocument();
+    expect(screen.getByText(/1 wrote < 15m/)).toBeInTheDocument();
+  });
+
+  it('puts the age the state was derived from beside the state', async () => {
+    // "Running" over a row nobody has written to in three hours is the label the founder was
+    // right to disbelieve. With the age in the same row, the label can be checked.
+    renderFleet(
+      envelope({
+        sessions: [{ ...runningSession, age_seconds: 3 * 3600 }],
+      }),
+    );
+    await screen.findByText('sb-1');
+    expect(screen.getByText('Last write')).toBeInTheDocument();
+    expect(screen.getByText('3h ago')).toBeInTheDocument();
+  });
+
+  it('a row with no measurable age says age unknown, never just now', async () => {
+    renderFleet(
+      envelope({
+        sessions: [{ ...runningSession, updated_at: null, age_seconds: null }],
+      }),
+    );
+    await screen.findByText('sb-1');
+    expect(screen.getByText('age unknown')).toBeInTheDocument();
+    expect(screen.queryByText('just now')).not.toBeInTheDocument();
   });
 
   it('shows an unmeasured spend as a dash, not as zero', async () => {
@@ -259,7 +283,7 @@ describe('item #7: blast radius', () => {
       },
     });
     renderFleet(null, { onFetch });
-    await screen.findByText('No sessions are running.');
+    await screen.findByText('No sessions are listed.');
 
     fireEvent.change(screen.getByLabelText('blast radius node id'), {
       target: { value: 'k8s:deployment:idp:catalogue' },
@@ -279,7 +303,7 @@ describe('item #7: blast radius', () => {
   it('a graph that has never been swept shows the reason, not an empty result', async () => {
     const onFetch = onFetchFor({ status: 503, body: { error: 'no asset database' } });
     renderFleet(null, { onFetch });
-    await screen.findByText('No sessions are running.');
+    await screen.findByText('No sessions are listed.');
 
     fireEvent.change(screen.getByLabelText('blast radius node id'), {
       target: { value: 'k8s:deployment:idp:catalogue' },
@@ -293,7 +317,7 @@ describe('item #7: blast radius', () => {
   it('a blank node id checks nothing', async () => {
     const onFetch = onFetchFor({ status: 200, body: { node_id: 'x', upstream: [], downstream: [] } });
     renderFleet(null, { onFetch });
-    await screen.findByText('No sessions are running.');
+    await screen.findByText('No sessions are listed.');
 
     fireEvent.click(screen.getByText('Check'));
 
@@ -328,7 +352,7 @@ describe('item #9: check receipts', () => {
       },
     });
     renderFleet(null, { onFetch });
-    await screen.findByText('No sessions are running.');
+    await screen.findByText('No sessions are listed.');
 
     fireEvent.change(screen.getByLabelText('check receipts session ids'), {
       target: { value: 'sb-1' },
@@ -347,7 +371,7 @@ describe('item #9: check receipts', () => {
   it('Langfuse not configured shows the reason, not a fabricated pass', async () => {
     const onFetch = onFetchFor({ status: 503, body: { error: 'LANGFUSE_* is not configured' } });
     renderFleet(null, { onFetch });
-    await screen.findByText('No sessions are running.');
+    await screen.findByText('No sessions are listed.');
 
     fireEvent.change(screen.getByLabelText('check receipts session ids'), {
       target: { value: 'sb-1' },
@@ -361,7 +385,7 @@ describe('item #9: check receipts', () => {
   it('a blank input checks nothing', async () => {
     const onFetch = onFetchFor({ status: 200, body: { results: [] } });
     renderFleet(null, { onFetch });
-    await screen.findByText('No sessions are running.');
+    await screen.findByText('No sessions are listed.');
 
     fireEvent.click(screen.getByRole('button', { name: 'Check receipts' }));
 
@@ -379,13 +403,13 @@ describe('CP2: the board says which fact it is showing', () => {
     // An outage that renders as "no sessions" is the failure this whole distinction exists for.
     expect(await screen.findByText(/catalogue not readable/)).toBeInTheDocument();
     expect(screen.getByText('Unavailable')).toBeInTheDocument();
-    expect(screen.queryByText('No sessions are running.')).not.toBeInTheDocument();
+    expect(screen.queryByText('No sessions are listed.')).not.toBeInTheDocument();
   });
 
   it('an estate with nothing running says so plainly', async () => {
     renderFleet(envelope());
     await waitFor(() =>
-      expect(screen.getByText('No sessions are running.')).toBeInTheDocument(),
+      expect(screen.getByText('No sessions are listed.')).toBeInTheDocument(),
     );
   });
 

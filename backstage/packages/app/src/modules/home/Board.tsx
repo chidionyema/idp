@@ -28,6 +28,7 @@ import {
   prLabel,
   spendLabel,
   summarise,
+  windowLabel,
 } from './fleetBoard';
 import type { Board as BoardData, Session, SessionsEnvelope } from './fleetBoard';
 
@@ -158,14 +159,16 @@ export function Board() {
       {/* 1. Fleet now */}
       <Section title="Fleet now" testId="board-fleet-now">
         <Summary>{board.summary}</Summary>
-        {board.state === 'empty' ? (
-          <Chip>No sessions running.</Chip>
-        ) : (
+        {/* An empty estate is stated by the summary above, once. The chip that used to repeat it
+            here said "No sessions running", which was a liveness claim drawn from an empty list. */}
+        {board.state !== 'empty' && (
           <Sheet testId="board-fleet-now-table">
             <thead>
               <tr>
                 <th>Runtime</th>
-                <th>Running</th>
+                {/* The column counted `state: running`, which is a recency claim. Naming the
+                    window in the header is what stops the number reading as "alive now". */}
+                <th>{`Wrote < ${windowLabel(board.fresh_window_minutes)}`}</th>
                 <th>Waiting</th>
                 <th>Failed</th>
               </tr>

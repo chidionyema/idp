@@ -43,6 +43,7 @@ import { openSse, type SseHandle } from './sse';
 import { EstateMap } from './EstateMap';
 import { EstateMemory } from './EstateMemory';
 import {
+  ageLabel,
   attentionReason,
   capabilityLabel,
   capabilityTitle,
@@ -50,8 +51,10 @@ import {
   NUDGEABLE_RUNTIMES,
   order,
   prLabel,
+  sessionAgeSeconds,
   spendLabel,
   stateLabel,
+  windowLabel,
   summarise,
   timelineFor,
 } from './fleetBoard';
@@ -531,7 +534,10 @@ export function Fleet() {
             {board.byRuntime.map(r => (
               <Chip key={r.runtime}>
                 {r.runtime}: {r.total} total
-                {r.running ? `, ${r.running} live` : ''}
+                {/* "live" was a claim the chip could not back. The window is the evidence. */}
+                {r.running
+                  ? `, ${r.running} wrote < ${windowLabel(board.fresh_window_minutes)}`
+                  : ''}
                 {r.failed ? `, ${r.failed} failed` : ''}
               </Chip>
             ))}
@@ -550,6 +556,7 @@ export function Fleet() {
                 <th>Runtime</th>
                 <th>Task</th>
                 <th>State</th>
+                <th>Last write</th>
                 <th>Repo</th>
                 <th>Spend</th>
                 <th>Capabilities</th>
@@ -576,6 +583,9 @@ export function Fleet() {
                     <td>{s.runtime}</td>
                     <td>{s.task}</td>
                     <td>{stateLabel(s.state)}</td>
+                    {/* The age the state was derived from, next to the state. A reader can now
+                        check "Running" against "3h ago" and see the label for what it is. */}
+                    <td>{ageLabel(sessionAgeSeconds(s))}</td>
                     <td>{s.repo ?? '—'}</td>
                     <td>{spendLabel(s.spend_usd)}</td>
                     <td>

@@ -110,10 +110,19 @@ describe('CP9: Fleet now section', () => {
     expect(rows[0].textContent).toMatch(/sovereign/);
   });
 
-  it('shows "No sessions running" when the estate is empty', async () => {
+  it('names the window the "running" column was counted over', async () => {
+    // A column headed "Running" with no window is the founder's false "12 agents running": the
+    // state is recency, so the header has to carry the recency it counted.
+    renderBoard(envelope({ sessions: [runningSession], fresh_window_minutes: 30 }));
+    await screen.findByText('Fleet now');
+    expect(await screen.findByText(/Wrote < 30m/)).toBeInTheDocument();
+    expect(screen.queryByText('Running')).not.toBeInTheDocument();
+  });
+
+  it('shows "No sessions are listed" when the estate is empty', async () => {
     renderBoard(envelope());
     await screen.findByText('Fleet now');
-    expect(await screen.findByText(/No sessions running/)).toBeInTheDocument();
+    expect(await screen.findByText(/No sessions are listed/)).toBeInTheDocument();
   });
 });
 
