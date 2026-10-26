@@ -177,12 +177,13 @@ section is the receipt: what exists, what it measures, and what is still missing
 
 ### 13.2 What it measures (this machine, 2026-10-26)
 
-The live census names **1021 capabilities**: 434 tools (`bin/`), 344 intents (the installed
-library), 125 workflows (47 mac-plane launchd jobs and 78 GitHub Actions pipelines), 113 cluster
-workloads, 5 agent runtimes. Of those, **185 are `operating`** (a receipt inside its freshness
-window), **88 `degraded`** (the last run failed) and **748 `declared`** (no receipt: the record
-exists, the proof does not). The committed witness carries the repo-derived half alone: **724
-records**, byte-identical on 3.9, on the estate's uv 3.12 and on the CI runner.
+The live census names **1233 capabilities**: 434 tools (`bin/`), 344 intents (the installed
+library), 212 layers (the estate's own implementation under `platform/`), 125 workflows (47
+mac-plane launchd jobs and 78 GitHub Actions pipelines), 113 cluster workloads, 5 agent
+runtimes. Of those, **185 are `operating`** (a receipt inside its freshness window), **88
+`degraded`** (the last run failed) and **960 `declared`** (no receipt: the record exists, the
+proof does not). The committed witness carries the repo-derived half alone: **936 records**,
+byte-identical on 3.9, on the estate's uv 3.12 and on the CI runner.
 
 That split is the founder's question answered as a fact: crew#962's "76 built, 6 operational" is
 now a queryable count with a freshness bound, not an audit somebody runs once.
@@ -212,6 +213,15 @@ now a queryable count with a freshness bound, not an audit somebody runs once.
 - **BLIND is a verdict, not a shrug.** On a CI runner there is no `~/.estate`, so the live
   coverage is BLIND and the gate prints `BLIND: store, intents` rather than passing a
   vacuous check or failing on a missing laptop.
+- **The implementation is in the map, not only the scripts.** Measured 2026-10-26: the census
+  named `bin/` (434 executables) and the manifests, and it did NOT name `platform/**.py` --
+  the efficiency chain, the cache guardian, the request ceiling, the symbol slicer. A query
+  for `symbol-slicer` answered 0 records on a main that has shipped
+  `platform/estate/libexec/symbol_slicer.py` since #7212. A map that cannot answer "does the
+  estate already have this?" is not a map, so the implementation is in it now: 212 modules
+  under `platform/`, one record each, keyed by path, summarised by their own first docstring
+  line. The consequence is the point: the Micro-Token components are found by a query, not
+  by an agent's memory.
 
 ### 13.4 What is NOT built (the honest list)
 
@@ -279,7 +289,7 @@ that causes drift, and a map that drifts is trusted anyway.
 
 | ID | Edge case | Behaviour now |
 |----|-----------|----------------|
-| E-1 | A component is added (a new bin script, a new service, a new intent in the repo) | the census grows, the witness lags, the gate fails, the workflow regenerates it, the merge point is true |
+| E-1 | A component is added (a new bin script, a new module under `platform/`, a new service, a new intent in the repo, a new pipeline) | the census grows, the witness lags, the gate fails, the workflow regenerates it, the merge point is true |
 | E-2 | A component is removed | the witness names a capability the estate no longer has: the gate fails (FAIL), and the live half tombstones it on the next reconciliation cycle (I-5) |
 | E-3 | main moves under the lane | the truth is a function of the tree, so a moved main can change it: the gate re-derives the witness against the lane's own tree, and the workflow regenerates it. Measured 2026-10-26, on the lane that built this registry: a rebase onto a moved main changed the tree, and the witness had to be re-derived against it |
 | E-4 | somebody hand-edits the witness | drift: the gate compares the committed bytes with a fresh generation and fails. The claim-gate exempts the witness path from claim coverage (it is generated, so it belongs to nobody's claim); the gate is what proves its content -- two layers, each doing its own job |

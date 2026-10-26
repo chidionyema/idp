@@ -74,6 +74,12 @@ jobs:
           fi
           git config user.name "estate-bot"
           git config user.email "estate-bot@estate.local"
+          # The estate's own commit-msg hook stamps every commit with X-Idp-Signed, and
+          # guarded-paths refuses a commit without that stamp (measured 2026-10-14: the
+          # flux lane's merge was refused for carrying no stamp). The hook provisions its
+          # own key when the checkout has none, so the bot's commit is stamped exactly
+          # like an agent's -- no bypass, no --no-verify.
+          git config core.hooksPath .githooks
           # The lane's own trailers, copied: one agent's work, one claim, no invention.
           claim="$(git log -1 --format=%B | grep -E '^(Claim|Agent):' || true)"
           {
