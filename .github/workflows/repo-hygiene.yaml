@@ -11,7 +11,7 @@ jobs:
   sweep:
     runs-on: ubuntu-24.04
     steps:
-      - { uses: actions/checkout@v4, with: { fetch-depth: 0 } }
+      - { uses: actions/checkout@v7, with: { fetch-depth: 0 } }
       - run: pip install -q ruff==0.15.18 pyyaml yamllint==1.37.1
       - name: whole-repo format + lint, no base (this is the point)
         run: |
