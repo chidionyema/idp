@@ -1,0 +1,28 @@
+# The catalog's cluster half: the schema, applied to the estate's own Postgres.
+#
+# The record is the `estate` database in the estate-db CloudNativePG cluster (D1:
+# one Postgres, the existing one -- the catalog's tables are new tables in it, not
+# a second store). The census applies this same DDL itself when it runs, so a
+# census against a fresh cluster works before Flux has converged; this CronJob is
+# the estate's native path, the one that converges the schema without a laptop.
+#
+# A CronJob and not a Job on purpose. A Job's pod template is immutable, so a
+# changed DDL would make the apply fail; a CronJob's template is not, so the new
+# schema lands on the next run and the run after it does nothing. The DDL is
+# idempotent (every statement is IF NOT EXISTS), which is what makes a daily
+# schedule safe rather than noisy.
+#
+# The DDL is not copied into this directory: schema/001_catalog.sql is the one
+# file, mounted as a ConfigMap whose name carries a hash of its contents. So the
+# schema the cluster has and the schema the census applies cannot drift, and a
+# change to the DDL rolls the ConfigMap and lands the new schema on the next run
+# with nothing to remember and nothing to delete.
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - schema-cronjob.yaml
+configMapGenerator:
+  - name: catalog-schema
+    files:
+      - schema/001_catalog.sql

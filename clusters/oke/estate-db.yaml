@@ -50,3 +50,34 @@ spec:
       kind: Cluster
       name: estate
       namespace: estate-db
+---
+# Part 3: the catalog's schema, applied to the estate's own Postgres (the record
+# itself -- D1: one Postgres, the existing one). Depends on estate-db, because the
+# schema lands in that cluster's `estate` database and a Job that starts before
+# the cluster is ready fails on connect and is retried into a failed Job.
+#
+# The health check is the CronJob: Flux waits for it to exist and for its last
+# successful run to be recent enough, which is the only honest signal that the
+# record's shape has converged on the cluster and not merely in git.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    idp.estate.io/runtime: always-on
+  name: catalog
+  namespace: flux-system
+spec:
+  interval: 30s
+  dependsOn:
+    - name: estate-db
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/catalog
+  prune: true
+  timeout: 2m
+  healthChecks:
+    - apiVersion: batch/v1
+      kind: CronJob
+      name: catalog-schema
+      namespace: estate-db

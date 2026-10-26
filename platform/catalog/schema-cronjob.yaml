@@ -1,0 +1,79 @@
+# The catalog's schema, applied to the estate's Postgres by the estate's own path.
+#
+# The record is the `estate` database of the estate-db CloudNativePG cluster
+# (the proposal's "estate-rw.estate-db": the read-write instance of the cluster
+# the estate already runs). The password is the cluster's superuser secret, which
+# the vault already publishes into this namespace -- no new secret, no new vault
+# entry, and therefore nothing waiting on the founder.
+#
+# The DDL is idempotent, so this CronJob can run every day and change nothing
+# after the first time. It exists so that the schema converges on its own: after
+# a restore, after a new cluster, or after the DDL changes -- the record's shape
+# is never something a person has to remember to apply.
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: catalog-schema
+  namespace: estate-db
+  annotations:
+    idp.estate.io/runtime: always-on
+spec:
+  # 04:17, once a day. The minute is not 0 on purpose: every other timed thing in
+  # the estate that fires on the hour makes the cluster's busiest minute noisier.
+  schedule: "17 4 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  startingDeadlineSeconds: 900
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: catalog-schema
+            app.kubernetes.io/part-of: estate
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: schema
+              # The cluster's own image, so the psql that applies the schema is
+              # the same psql the cluster runs.
+              image: ghcr.io/chidionyema/postgres-partman:18.1-postgres-partman
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: estate-db-superuser
+                      key: password
+                - name: PGCONNECT_TIMEOUT
+                  value: "10"
+              command: ["psql"]
+              args:
+                - "-v"
+                - "ON_ERROR_STOP=1"
+                - "-h"
+                - "estate-rw.estate-db.svc.cluster.local"
+                - "-U"
+                - "postgres"
+                - "-d"
+                - "estate"
+                - "-f"
+                - "/schema/001_catalog.sql"
+              volumeMounts:
+                - name: schema
+                  mountPath: /schema
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 64Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+          volumes:
+            - name: schema
+              configMap:
+                name: catalog-schema

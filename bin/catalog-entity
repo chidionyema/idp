@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""catalog-entity -- one thing in the estate, and everything known about it.
+
+    bin/catalog-entity voice-router
+    bin/catalog-entity svc:voice-router
+    bin/catalog-entity k8s:deployment:voice-router/voice-router --json
+
+WHAT IT PRINTS. The node, the aliases that reach it, its edges in both
+directions, and its facts -- with the state, the reason when it is uncatalogued,
+and when the observation goes stale.
+
+WHY IT IS A SEPARATE DOOR. A record nobody can query by name is a log file. The
+question the catalog exists to answer is "what do we know about X, and who owns
+it", and this is the door that answers it in one command.
+
+WHY IT IS ONE ROUND TRIP. The laptop reaches the cluster through an exec stream
+that costs ten to twenty seconds a time. Asking the record five questions in
+five statements is a five-minute door; the whole thing is one statement that
+returns one JSON document.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from catalog.census.store import Record, RecordError  # noqa: E402
+
+
+def _payload_of(row: dict) -> dict:
+    payload = row.get("payload")
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError:
+            payload = {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="One thing in the estate, and what is known about it."
+    )
+    parser.add_argument("term", help="a node id, a name, or an alias")
+    parser.add_argument("--json", action="store_true", help="print JSON")
+    args = parser.parse_args(argv)
+
+    try:
+        record = Record()
+        found = record.entity(args.term)
+    except RecordError as exc:
+        print(f"the record could not be read: {exc}", file=sys.stderr)
+        return 1
+
+    nodes = found.get("nodes") or []
+    if not nodes:
+        print(f"nothing in the record matches {args.term!r}", file=sys.stderr)
+        return 1
+
+    aliases = found.get("aliases") or []
+    edges_out = found.get("edges_out") or []
+    edges_in = found.get("edges_in") or []
+    facts = found.get("facts") or []
+
+    if args.json:
+        print(
+            json.dumps(
+                [
+                    {
+                        "node": node,
+                        "aliases": aliases,
+                        "edges_out": edges_out,
+                        "edges_in": edges_in,
+                        "facts": facts,
+                    }
+                    for node in nodes
+                ],
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
+
+    for node in nodes:
+        node_id = node["id"]
+        own_aliases = [a for a in aliases if a.get("node_id") == node_id]
+        own_out = [e for e in edges_out if e.get("src") == node_id]
+        own_in = [e for e in edges_in if e.get("dst") == node_id]
+        own_facts = [f for f in facts if f.get("subject") == node_id]
+        print(f"{node_id}  ({node['type']}, plane {node['plane']})")
+        print(f"  name:     {node['name']}")
+        print(
+            f"  state:    {node['state']}"
+            + (f"  reason: {node['reason']}" if node.get("reason") else "")
+        )
+        print(f"  observed: {node['observed_at']}   expires: {node['expires_at']}")
+        payload = _payload_of(node)
+        for key in sorted(payload):
+            if key in ("reason", "joins", "join_candidates"):
+                continue
+            print(f"  {key}: {payload[key]}")
+        if own_aliases:
+            print(
+                "  aliases:  "
+                + ", ".join(f"{a['alias']} ({a['source']})" for a in own_aliases)
+            )
+        if own_out:
+            print("  edges out:")
+            for edge in own_out:
+                print(f"    {edge['type']} -> {edge['dst']}")
+        if own_in:
+            print("  edges in:")
+            for edge in own_in:
+                print(f"    {edge['type']} <- {edge['src']}")
+        if own_facts:
+            print("  facts:")
+            for fact in own_facts:
+                print(f"    {fact['predicate']} = {fact['object']}  ({fact['source']})")
+        print()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
