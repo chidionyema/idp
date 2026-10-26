@@ -38,6 +38,8 @@ VERDICTS (never inferred from a missing field):
   headless-busy            no terminal, CPU moved
   headless-waiting         no terminal, CPU flat, an ESTABLISHED socket -- waiting on a model
   headless-leaked          no terminal, CPU flat, no socket, older than --grace -- DEFECT
+  headless-supervised      the leaked shape, but a child of the handoff fleet
+                           supervisor (~/.estate/handoffs/_supervise.sh) -- never reaped
   headless-unknown         no terminal, CPU flat, no socket, younger than --grace
 
 There is deliberately no transcript term in a verdict: measured 2026-10-23, pi opens and closes its
@@ -226,6 +228,28 @@ def classify(
     return "headless-unknown" if proc["age_s"] < grace else "headless-leaked"
 
 
+def _supervised_fleet_pids() -> set[int]:
+    """Pids run directly under a ~/.estate/handoffs/_supervise.sh loop.
+
+    The handoff fleet is headless by design: pi -p runs under a nohup'd
+    supervisor that load-gates, resumes the durable session id on exit, and
+    checkpoints every landed step. Between model calls such a pi can sit
+    CPU-flat with no ESTABLISHED socket (blocking local gates, backoff), which
+    is exactly the headless-leaked shape -- reaping it mid-assignment destroys
+    in-flight work the founder ordered kept alive. A leaked stray has no
+    supervisor parent; a fleet pi always does.
+    """
+    rc, sups = _run(["pgrep", "-f", "_supervise.sh"], timeout=5)
+    if rc != 0 or not sups.strip():
+        return set()
+    kids: set[int] = set()
+    for sup in sups.split():
+        rc, out = _run(["pgrep", "-P", sup], timeout=5)
+        if rc == 0 and out:
+            kids.update(int(k) for k in out.split())
+    return kids
+
+
 def live_report(
     sample_s: float, grace: int, long_lived: int, do_reap: bool
 ) -> tuple[list[dict[str, Any]] | None, dict[str, Any]]:
@@ -252,8 +276,12 @@ def live_report(
         )
     reaped: list[int] = []
     if do_reap:
+        supervised = _supervised_fleet_pids()
         for row in rows:
             if row["verdict"] == "headless-leaked":
+                if row["pid"] in supervised:
+                    row["verdict"] = "headless-supervised"
+                    continue
                 try:
                     os.kill(row["pid"], signal.SIGTERM)
                     reaped.append(row["pid"])
