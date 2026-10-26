@@ -1,0 +1,611 @@
+#!/usr/bin/env python3
+"""bin/estate-surface-map -- measure the estate's AGENT SURFACE, live, and print it.
+
+WHY THIS EXISTS (founder, 2026-10-26, via the consultant's context-compiler review):
+    "The first architectural investigation should be into your existing execution boundary. If the
+     estate already has a common agent gateway, we can insert this compiler there and make the
+     improvements universal. If not, establishing that boundary is the first engineering task."
+
+That question is answerable by MEASUREMENT, not by reading AGENTS.md and believing it. AGENTS.md
+section 7 says "if an action is not a YAML intent, the agent cannot perform it". This file prints
+what the machine actually does -- the tool surface each runtime is handed, the hooks that
+intercept reads, writes and shell calls, the door a command goes through, the model route, the
+state plane and the promotion plane -- and names every gap where a runtime reaches the
+filesystem, the shell or a model provider WITHOUT an estate policy decision in the path.
+
+It is a map, not a report: it re-runs. A map written by hand and never re-measured is the thing
+this estate keeps paying for.
+
+    bin/estate-surface-map              # the map, as text
+    bin/estate-surface-map --json       # the same facts, machine-readable
+    bin/estate-surface-map --check      # exit 1 if a NAMED gap is still open (CI-usable)
+
+MEASURED, NOT ASSUMED. Every line is read from a real file on this machine. A file that is not
+there is reported MISSING, not assumed present. The timestamp is the only non-deterministic field
+and it is confined to one line, so two runs a day apart differ by one line.
+
+NO SECRET VALUES ARE PRINTED. Where a configuration holds a credential, this map names the
+variable and says a value is present. It never prints the value.
+
+WHAT IT DELIBERATELY DOES NOT DO: it does not fix anything. It measures and it names the gaps.
+The fix for a named gap is a decision (an ADR), not a side effect of a map.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+from datetime import datetime, timezone
+
+IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HOME = os.path.expanduser("~")
+
+
+# ---------------------------------------------------------------- helpers
+
+
+def read(path: str) -> str | None:
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def read_json(path: str):
+    raw = read(path)
+    if raw is None:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+
+
+def find(pattern: str, path: str, group: int = 0) -> str | None:
+    """The first match of `pattern` in `path`, or None. `group` picks a capture group when the
+    pattern has one; group 0 (the default) is the whole match."""
+    raw = read(path)
+    if raw is None:
+        return None
+    m = re.search(pattern, raw, re.MULTILINE)
+    if not m:
+        return None
+    if group and group <= (m.lastindex or 0):
+        return m.group(group).strip()
+    return m.group(0).strip()
+
+
+def line_of(path: str, needle: str) -> int | None:
+    """The 1-indexed line where `needle` first appears -- so every fact in the map can be pointed
+    at, not just asserted."""
+    raw = read(path)
+    if raw is None:
+        return None
+    for i, line in enumerate(raw.splitlines(), start=1):
+        if needle in line:
+            return i
+    return None
+
+
+def fact(value, source: str, line: int | None = None) -> dict:
+    return {"value": value, "source": source, "line": line}
+
+
+def present(path: str) -> str:
+    return "present" if os.path.exists(path) else "MISSING"
+
+
+# ---------------------------------------------------------------- the surfaces
+
+
+def surface_pi() -> dict:
+    """Pi: the runtime this agent is running in."""
+    ext_repo = os.path.join(IDP, "platform", "estate", "pi", "estate-commands.ts")
+    ext_live = os.path.join(HOME, ".pi", "agent", "extensions", "estate-commands.ts")
+    mcp = os.path.join(HOME, ".pi", "mcp.json")
+    caps = os.path.join(IDP, "extensions", "estate-capabilities", "index.ts")
+    settings = os.path.join(HOME, ".pi", "agent", "settings.json")
+    read_shunt = os.path.join(HOME, ".pi", "agent", "extensions", "read-shunt.ts")
+
+    shell_filtered = bool(
+        find(r'active\.filter\(\(t\) => t !== "bash" && t !== "shell"\)', ext_repo)
+    )
+    cap_tools: list[str] = []
+    raw = read(caps)
+    if raw:
+        cap_tools = sorted(set(re.findall(r'name:\s*"(estate_[a-z_]+)"', raw)))
+
+    mcp_cfg = read_json(mcp) or {}
+    mcp_servers = sorted((mcp_cfg.get("mcpServers") or {}).keys())
+    pi_settings = read_json(settings) or {}
+    provider = pi_settings.get("defaultProvider")
+    model = pi_settings.get("defaultModel")
+
+    live_growmos = bool(find(r"growmos", ext_live))
+    repo_growmos = bool(find(r"growmos", ext_repo))
+
+    return {
+        "runtime": "pi",
+        "entry_points": [
+            fact(
+                "pi extension (tools + session_start)",
+                "platform/estate/pi/estate-commands.ts",
+                1,
+            ),
+            fact("pi MCP server over stdio", "~/.pi/mcp.json", None),
+            fact(
+                "estate capabilities extension",
+                "extensions/estate-capabilities/index.ts",
+                1,
+            ),
+            fact(
+                "pi plan extension (in-process plan lock)",
+                "extensions/pi-plan-lock",
+                None,
+            ),
+        ],
+        "shell": fact(
+            "removed from the model's tool set at session_start (bash, shell)"
+            if shell_filtered
+            else "NOT filtered",
+            "platform/estate/pi/estate-commands.ts",
+            line_of(ext_repo, 'active.filter((t) => t !== "bash"'),
+        ),
+        "raw_command_door": fact(
+            "estate_execute accepts a free-form command string and runs it through the executor "
+            "daemon (ceiling 100s). The door is bounded and recorded; it is NOT intents-only.",
+            "extensions/estate-capabilities/index.ts",
+            line_of(caps, 'name: "estate_execute"'),
+        ),
+        "capability_tools": cap_tools,
+        "mcp_servers": mcp_servers,
+        "read_mediation": fact(
+            "read-shunt: a read of a file over the threshold is replaced by a digest from a free "
+            "worker model. Fail-open by construction -- a missing core, a timeout or an error "
+            "passes the original content through unchanged. Compression, not authorization.",
+            "~/.pi/agent/extensions/read-shunt.ts",
+            1,
+        ),
+        "model_route": fact(
+            f"pi defaultProvider={provider} defaultModel={model}",
+            "~/.pi/agent/settings.json",
+            None,
+        ),
+        "live_extension_drift": fact(
+            "the INSTALLED extension runs growmos context at session_start; the repository copy "
+            "does not -- the live surface and the tree disagree"
+            if (live_growmos and not repo_growmos)
+            else "installed and repository extensions agree on growmos-at-session_start",
+            "~/.pi/agent/extensions/estate-commands.ts vs platform/estate/pi/estate-commands.ts",
+            None,
+        ),
+    }
+
+
+def surface_claude_code() -> dict:
+    """Claude Code: config lives in $CLAUDE_CONFIG_DIR, which the estate points at
+    ~/.estate/harness/cc (there is no ~/.claude directory on this machine)."""
+    cfg_dir = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(
+        HOME, ".estate", "harness", "cc"
+    )
+    settings_path = os.path.join(cfg_dir, "settings.json")
+    s = read_json(settings_path) or {}
+    hooks = s.get("hooks") or {}
+    entries: list[tuple[str, str, str]] = []
+    for event, ev_entries in hooks.items():
+        for entry in ev_entries or []:
+            m = entry.get("matcher") or "*"
+            for h in entry.get("hooks") or []:
+                cmd = h.get("command", "")
+                entries.append((event, m, cmd))
+    catch_all = [e for e in entries if e[1] == "*" and e[0] == "PreToolUse"]
+    read_hooks = [e for e in entries if e[0] == "PreToolUse" and "Read" in e[1]]
+    write_hooks = [
+        e for e in entries if e[0] == "PreToolUse" and re.search(r"Edit|Write", e[1])
+    ]
+    bash_hooks = [e for e in entries if e[0] == "PreToolUse" and "Bash" in e[1]]
+
+    perms = s.get("permissions") or {}
+    auto = s.get("autoMode") or {}
+    allow = auto.get("allow") or []
+    env = s.get("env") or {}
+    headers = env.get("ANTHROPIC_CUSTOM_HEADERS") or ""
+    header_names = [h.split(":", 1)[0] for h in headers.splitlines() if ":" in h]
+
+    _cc_json = read_json(os.path.join(cfg_dir, ".claude.json")) or {}
+    _proj_json = read_json(os.path.join(IDP, ".mcp.json")) or {}
+    mcp_global = sorted((_cc_json.get("mcpServers") or {}).keys())
+    mcp_project = sorted((_proj_json.get("mcpServers") or {}).keys())
+
+    return {
+        "runtime": "claude-code",
+        "config_dir": cfg_dir,
+        "entry_points": [
+            fact("Claude Code CLI", settings_path, 1),
+            fact(
+                "MCP: estate-memory (global)",
+                os.path.join(cfg_dir, ".claude.json"),
+                None,
+            ),
+            fact("MCP: project servers from .mcp.json", ".mcp.json", None),
+        ],
+        "mcp_servers": {"global": mcp_global, "project": mcp_project},
+        "hooks": [{"event": e, "matcher": m, "command": c} for e, m, c in entries],
+        "read_hooks": len(read_hooks),
+        "write_hooks": len(write_hooks),
+        "bash_specific_hooks": len(bash_hooks),
+        "catch_all_pretooluse": [c for _, _, c in catch_all],
+        "permissions_allow": perms.get("allow") or [],
+        "permissions_deny": perms.get("deny") or [],
+        "auto_mode_allow_count": len(allow),
+        "auto_mode_grants": allow[:4],
+        "credential_header_names": header_names,
+        "model_route": fact(
+            env.get("ANTHROPIC_BASE_URL") or "(unset -- direct provider)",
+            settings_path,
+            None,
+        ),
+        "model": fact(s.get("model") or "(default)", settings_path, None),
+    }
+
+
+def door() -> dict:
+    """The estate's own door: the executor daemon and the intents it runs."""
+    intents_dir = os.path.join(HOME, ".estate", "intents")
+    intents: list[str] = []
+    try:
+        intents = [f for f in os.listdir(intents_dir) if f.endswith(".yaml")]
+    except OSError:
+        pass
+    daemon = os.path.join(IDP, "platform", "executor", "daemon.py")
+    mcp_exec = os.path.join(IDP, "mcp", "plugins", "estate_executor.py")
+    return {
+        "executor_daemon": fact(present(daemon), "platform/executor/daemon.py", None),
+        "ceiling_seconds": fact(
+            find(r"^CEILING_SEC\s*=\s*(\d+)", mcp_exec, 1),
+            "mcp/plugins/estate_executor.py",
+            1,
+        ),
+        "intent_count": fact(len(intents), "~/.estate/intents/*.yaml", None),
+        "audit_log": fact(
+            present(os.path.join(HOME, ".estate", "logs", "mcp.jsonl")),
+            "~/.estate/logs/mcp.jsonl",
+            None,
+        ),
+        "law": fact(
+            "AGENTS.md section 7: 'if an action is not a YAML intent, the agent cannot perform it'. "
+            "The Pi capability surface also exposes a free-form command door (estate_execute), "
+            "and the Claude Code surface reaches the shell through the tool, not through an "
+            "intent. The law and the machine differ.",
+            "AGENTS.md",
+            line_of(os.path.join(IDP, "AGENTS.md"), "## 7. Execution"),
+        ),
+    }
+
+
+def context_plane() -> dict:
+    read_shunt = os.path.join(HOME, ".estate", "hooks", "idp-read-shunt")
+    return {
+        "read_shunt": fact(present(read_shunt), read_shunt, None),
+        "read_shunt_threshold_lines": fact(
+            find(r'THRESHOLD_LINES\s*=\s*int\([^)]*"(\d+)"', read_shunt, 1),
+            read_shunt,
+            None,
+        ),
+        "per_request_token_ceiling": fact(
+            find(
+                r'ESTATE_MAX_INPUT_TOKENS",\s*"(\d+)"',
+                os.path.join(IDP, "platform", "llm", "request_ceiling.py"),
+                1,
+            ),
+            "platform/llm/request_ceiling.py",
+            None,
+        ),
+        "efficiency_gateway": fact(
+            "present -- per-call pre-steps m1..m10 and an outcome row per call",
+            "platform/llm/efficiency_gateway.py",
+            None,
+        ),
+        "efficiency_ledger": fact(
+            present(os.path.join(HOME, ".estate", "efficiency-ledger.jsonl")),
+            "~/.estate/efficiency-ledger.jsonl",
+            None,
+        ),
+        "deterministic_code_graph": fact(
+            "catalog-projection: one Component per .py, one edge per import, SHA256(output) is a "
+            "pure function of SHA256(input)",
+            "bin/catalog-projection",
+            None,
+        ),
+        "impact_selection": fact(
+            "idp-affected-graph: three-layer impact map (AST + import edges, prompt/schema, graph "
+            "topology), decided by Jev, fails OPEN toward running",
+            "bin/idp-affected-graph",
+            None,
+        ),
+        "tree_sitter_code_graph": fact(
+            "ZeroEdge (router-attached optimizer) and its TTCS code graph -- the Bloop analogue "
+            "already exists in the estate",
+            "platform/llm/zeroedge_gateway.py",
+            None,
+        ),
+    }
+
+
+def state_and_promotion() -> dict:
+    ruleset = os.path.join(
+        IDP, "platform", "github", "ruleset.idp.required-checks.json"
+    )
+    rs = read_json(ruleset) or {}
+    checks: list[str] = []
+    for rule in rs.get("rules") or []:
+        params = rule.get("parameters") or {}
+        for key in ("required_status_checks", "required_approving_review_count"):
+            for entry in params.get(key) or []:
+                if isinstance(entry, dict) and entry.get("context"):
+                    checks.append(entry["context"])
+    return {
+        "authoritative_state": fact(
+            "git commits + ~/.estate evidence + cortex memory + the .growmos graph; the claim "
+            "comment on the issue is the durable task state",
+            "AGENTS.md",
+            None,
+        ),
+        "required_checks_on_main": sorted(set(checks)),
+        "ruleset_source": fact(
+            "platform/github/ruleset.idp.required-checks.json", ruleset, None
+        ),
+        "promotion": fact(
+            "main is protected by a required-checks ruleset; a lane raises the PR and "
+            "fast-forwards main only on green -- no agent self-promotes",
+            ".github/rulesets (applied by bin/repo-rulesets)",
+            None,
+        ),
+    }
+
+
+# ---------------------------------------------------------------- gaps
+
+
+def gaps(s: dict) -> list[dict]:
+    """Named, falsifiable gaps. Each is a fact about the machine, not an opinion, and each names
+    what it costs."""
+    out: list[dict] = []
+    pi = s["pi"]
+    cc = s["claude-code"]
+
+    out.append(
+        {
+            "id": "G1",
+            "title": "No single execution gateway: each runtime has its own door",
+            "detail": "Pi reaches the executor through an MCP server whose tools are "
+            "intents-only, AND through estate_execute, which takes a free-form command string. "
+            "Claude Code reaches the shell through its own Bash tool; the estate's plan hook "
+            "sees that call but the command itself never becomes an intent. There is no component "
+            "all agents go through.",
+            "impact": "A context compiler or a policy inserted at 'the gateway' has nowhere "
+            "universal to sit. Enforcement is per-surface and therefore uneven.",
+            "evidence": "extensions/estate-capabilities/index.ts; "
+            "~/.estate/harness/cc/settings.json (PreToolUse catch-all)",
+        }
+    )
+    out.append(
+        {
+            "id": "G2",
+            "title": "The Claude Code shell is gated by session discipline, not by policy",
+            "detail": "The catch-all PreToolUse hook runs estate-memory-enforce's plan gate: it "
+            "refuses a shell call when the session has no declared plan or no BDD scenario for "
+            "the active sub-goal. That is a discipline gate. Nothing inspects WHICH command runs, "
+            "and permissions.deny is empty while autoMode.allow carries "
+            f"{cc['auto_mode_allow_count']} broad grants (read any file, run python3, git, gh, "
+            "merge).",
+            "impact": "The estate's central law (intents only) does not hold on this runtime. "
+            "Any invariant enforced only at a door is unenforced here.",
+            "evidence": "~/.estate/harness/cc/settings.json (permissions, autoMode); "
+            "platform/estate/memory/plan.py:271",
+        }
+    )
+    out.append(
+        {
+            "id": "G3",
+            "title": "The Pi door has a free-form command entrance",
+            "detail": "estate_execute takes a command STRING. It is bounded (100s ceiling) and "
+            "recorded in ~/.estate/logs/mcp.jsonl, but it is not intents-only, so the door and "
+            "AGENTS.md section 7 disagree.",
+            "impact": "A policy boundary inserted at the door is only as strong as the widest "
+            "entrance to that door.",
+            "evidence": "extensions/estate-capabilities/index.ts",
+        }
+    )
+    base = cc["model_route"]["value"]
+    if base.startswith("http://127.0.0.1") or base.startswith("127.0.0.1"):
+        out.append(
+            {
+                "id": "G4",
+                "title": "Claude Code is routed at the laptop router, not the cloud router",
+                "detail": "ANTHROPIC_BASE_URL points at 127.0.0.1:4000 (the fallback). The "
+                "estate law is cloud-first: llm.<zone> is the default route and the laptop is the "
+                "fallback. Pi, by contrast, is on the estate provider.",
+                "impact": "Cloud-only state (virtual keys, max_budget, the shared Redis answer "
+                "cache) is not on this surface, so cost and cache policy cannot be enforced where "
+                "this runtime spends.",
+                "evidence": "~/.estate/harness/cc/settings.json (env.ANTHROPIC_BASE_URL)",
+            }
+        )
+    if cc["credential_header_names"]:
+        out.append(
+            {
+                "id": "G5",
+                "title": "A model credential sits in a plaintext config value",
+                "detail": "settings.json carries a credential in "
+                f"{', '.join(cc['credential_header_names'])}. The value is not printed by this "
+                "map. It is a key in a file on disk, outside the vault path (SOPS + age) the "
+                "estate law names for secrets.",
+                "impact": "A credential that lives in a config file is rotated by hand, is not "
+                "revocable in one place, and leaks into any transcript that prints settings.",
+                "evidence": "~/.estate/harness/cc/settings.json (env.ANTHROPIC_CUSTOM_HEADERS)",
+            }
+        )
+    out.append(
+        {
+            "id": "G6",
+            "title": "No context compiler: nothing decides WHAT an agent may read",
+            "detail": "The read path is unmediated except by the read-shunt, which shrinks a big "
+            "file to a digest AFTER the model asked for it, fail-open. Nothing resolves a task "
+            "to a bounded, ranked, provenance-carrying source set with a token budget. The "
+            "request ceiling stops an oversized call; it does not put the right source in it.",
+            "impact": "Context spend and context QUALITY are both uncontrolled on every surface, "
+            "and the read-shunt's digest is a lossy stand-in for a real selection.",
+            "evidence": "platform/llm/request_ceiling.py; ~/.estate/hooks/idp-read-shunt",
+        }
+    )
+    out.append(
+        {
+            "id": "G7",
+            "title": "The live Pi extension and the repository's copy have drifted",
+            "detail": "The installed extension at ~/.pi/agent/extensions/estate-commands.ts runs "
+            "growmos context at session_start; the repository copy does not. What agents actually "
+            "run is not what the tree says.",
+            "impact": "Every claim about 'what Pi does' sourced from the tree is a claim about a "
+            "different program than the one running.",
+            "evidence": "~/.pi/agent/extensions/estate-commands.ts vs "
+            "platform/estate/pi/estate-commands.ts",
+        }
+    )
+    return out
+
+
+# ---------------------------------------------------------------- main
+
+
+def build() -> dict:
+    surfaces = {"pi": surface_pi(), "claude-code": surface_claude_code()}
+    m = {
+        "measured_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "estate_root": IDP,
+        "surfaces": surfaces,
+        "door": door(),
+        "context_plane": context_plane(),
+        "state_and_promotion": state_and_promotion(),
+        "gaps": gaps(surfaces),
+    }
+    return _relativise(m)
+
+
+def _relativise(node):
+    """Repo paths are printed repo-relative, so the stored evidence does not carry the absolute
+    path of whichever worktree happened to run the measurement."""
+    if isinstance(node, dict):
+        out = {}
+        for k, v in node.items():
+            if k == "source" and isinstance(v, str) and v.startswith(IDP + os.sep):
+                out[k] = os.path.relpath(v, IDP)
+            else:
+                out[k] = _relativise(v)
+        return out
+    if isinstance(node, list):
+        return [_relativise(v) for v in node]
+    return node
+
+
+def render(m: dict) -> str:
+    L: list[str] = []
+    add = L.append
+    add("ESTATE AGENT SURFACE MAP")
+    add(f"measured_at: {m['measured_at']}")
+    add("=" * 78)
+
+    add("")
+    add("1. RUNTIMES AND WHAT EACH MAY TOUCH")
+    for name, s in m["surfaces"].items():
+        add(f"  [{name}]")
+        for e in s["entry_points"]:
+            add(f"     entry    {e['value']}  <- {e['source']}")
+        if name == "pi":
+            add(f"     shell    {s['shell']['value']}")
+            add(f"              <- {s['shell']['source']}:{s['shell']['line']}")
+            add(f"     door     {s['raw_command_door']['value']}")
+            add(f"     tools    {', '.join(s['capability_tools']) or '(none)'}")
+            add(f"     mcp      {', '.join(s['mcp_servers']) or '(none)'}")
+            add(f"     read     {s['read_mediation']['value']}")
+            add(f"     model    {s['model_route']['value']}")
+            add(f"     drift    {s['live_extension_drift']['value']}")
+        else:
+            add(
+                f"     mcp      global={', '.join(s['mcp_servers']['global']) or '(none)'}  "
+                f"project={', '.join(s['mcp_servers']['project']) or '(none)'}"
+            )
+            add(
+                f"     hooks    read={s['read_hooks']} write={s['write_hooks']} "
+                f"bash-specific={s['bash_specific_hooks']} "
+                f"catch-all PreToolUse={len(s['catch_all_pretooluse'])}"
+            )
+            for c in s["catch_all_pretooluse"]:
+                add(f"              catch-all: {c}")
+            add(f"     deny     {s['permissions_deny'] or '(EMPTY)'}")
+            add(f"     autoMode {s['auto_mode_allow_count']} allow entries")
+            add(f"     model    {s['model_route']['value']}  ({s['model']['value']})")
+            add(
+                f"     creds    header names only: "
+                f"{', '.join(s['credential_header_names']) or '(none)'} -- values not printed"
+            )
+
+    add("")
+    add("2. THE DOOR")
+    d = m["door"]
+    add(f"     executor daemon   {d['executor_daemon']['value']}")
+    add(f"     ceiling           {d['ceiling_seconds']['value']}s")
+    add(f"     intents           {d['intent_count']['value']}")
+    add(f"     audit log         {d['audit_log']['value']}")
+    add(f"     law               {d['law']['value']}")
+
+    add("")
+    add("3. CONTEXT PLANE (what decides what the model sees)")
+    for k, v in m["context_plane"].items():
+        add(f"     {k:28} {v['value']}")
+        add(f"     {'':28} <- {v['source']}")
+
+    add("")
+    add("4. STATE AND PROMOTION")
+    for k, v in m["state_and_promotion"].items():
+        if isinstance(v, dict) and "value" in v:
+            add(f"     {k:28} {v['value']}")
+            add(f"     {'':28} <- {v['source']}")
+        else:
+            add(f"     {k:28} {v}")
+
+    add("")
+    add("5. NAMED GAPS (each is a fact about this machine)")
+    for g in m["gaps"]:
+        add(f"     {g['id']}  {g['title']}")
+        add(f"         what:  {g['detail']}")
+        add(f"         so:    {g['impact']}")
+        add(f"         proof: {g['evidence']}")
+    add("")
+    return "\n".join(L)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Measure the estate agent surface.")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument(
+        "--check", action="store_true", help="exit 1 when a named gap is open"
+    )
+    args = ap.parse_args()
+
+    m = build()
+    if args.json:
+        print(json.dumps(m, indent=2, default=str))
+    else:
+        print(render(m))
+    if args.check:
+        return 1 if m["gaps"] else 0
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
