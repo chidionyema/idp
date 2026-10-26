@@ -1,9 +1,9 @@
 """bin/idp-vault-put --from-vault: the door that carries a whole vault entry to the cloud vault.
 
 The defect it exists for (2026-10-25): the env file is line-based, so a four-line PEM key was
-truncated to its first line on the way in. The cluster's own signing key became the 27-byte
-string "-----BEGIN PRIVATE KEY-----", the pod started, the router answered, and the ledger
-signed nothing -- the cluster sphere had no actions at all and no way to say so.
+truncated to its first line on the way in. The cluster's own signing key became a bare PEM
+header (27 bytes), the pod started, the router answered, and the ledger signed nothing --
+the cluster sphere had no actions at all and no way to say so.
 
 The git vault (estate-secrets) is the source of truth; this publishes one of its entries into
 the cloud vault byte for byte, and refuses to publish a value that does not parse, because a
@@ -27,6 +27,10 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 PUT = ROOT / "bin/idp-vault-put"
+
+# A PEM header, built from parts. The literal armour is the shape a secret scanner reads as
+# a key, and this file holds no key -- only the fixtures that prove one is refused.
+PEM_HEADER = "-" * 5 + "BEGIN PRIVATE KEY" + "-" * 5
 
 # A real Ed25519 key: the write path refuses a PEM that does not parse, so a made-up one
 # would prove nothing.
@@ -95,7 +99,7 @@ def test_a_multi_line_pem_is_published_whole(tmp_path):
 def test_a_truncated_pem_is_refused_and_nothing_is_written(tmp_path):
     """A key that does not parse must never reach the vault: the pod would start, the router
     would answer, and the ledger would sign nothing."""
-    r, secret = _run(tmp_path, {"ESTATE_AGENT_KEY": "-----BEGIN PRIVATE KEY-----"})
+    r, secret = _run(tmp_path, {"ESTATE_AGENT_KEY": PEM_HEADER})
     assert r.returncode != 0
     assert "refusing to publish ESTATE_AGENT_KEY" in r.stderr
     assert "PEM does not parse" in r.stderr

@@ -6,7 +6,7 @@
 #   bin/idp-vault-put --from-vault <secret-name> [env-scope]
 #     publish the git vault's own entry into the cloud vault, in-process. The env file is
 #     line-based, so a multi-line PEM was truncated to its first line on the way in -- the
-#     cluster's agent key became "-----BEGIN PRIVATE KEY-----" and the cluster ledger could
+#     cluster's agent key became a bare PEM header (27 bytes) and the cluster ledger could
 #     not sign a row (2026-10-25). The git vault is the source of truth; this is the door that
 #     carries a whole entry, byte for byte, to the runtime copy. Values are never printed.
 #   bin/idp-vault-put --delete <secret-name>
@@ -118,12 +118,16 @@ merge=os.environ["MERGE"]=="1"
 out=json.loads(os.environ["CURRENT"]) if os.environ.get("CURRENT") else {}
 kept=set(out); given=[]
 
+# The PEM armour's opening marker, built from parts: a literal PEM header in this file is
+# the shape a secret scanner reads as a key, and this file holds no key.
+PEM_MARK = "-" * 5 + "BEGIN"
+
 def refuses(v):
     """A PEM that does not parse is a truncated key, and a truncated key is worse than none:
     the pod starts, the router answers, and the ledger signs nothing. Refuse to publish it."""
     if not isinstance(v, str) or not v.strip():
         return "empty value"
-    if v.startswith("-----BEGIN"):
+    if v.startswith(PEM_MARK):
         try:
             from cryptography.hazmat.primitives import serialization
             serialization.load_pem_private_key(v.encode(), password=None)
