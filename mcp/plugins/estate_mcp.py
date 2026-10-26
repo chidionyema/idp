@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+import importlib.machinery
+import importlib.util
 import inspect
 import logging
 import math
@@ -43,6 +45,7 @@ ESTATE_DB = HOME / ".estate" / "estate.db"
 MAX_MATCHES = 12
 log = logging.getLogger(__name__)
 _ALLOWED = re.compile(r"^[a-z][a-z0-9.-]*$")
+_REGISTRY = None
 
 
 def _is_valid(n):
@@ -302,6 +305,132 @@ def _estate_invoke(args):
         return "ERROR: {}".format(exc)
 
 
+def _registry_door():
+    """The Estate Capability Registry door, loaded from the checkout this plugin lives in.
+
+    The registry is a door in the repository (bin/capability-index), not a copy of a store
+    inside this plugin: the plugin asks, the door answers (spec principle 1: one store,
+    many renderers).
+    """
+    global _REGISTRY
+    if _REGISTRY is not None:
+        return _REGISTRY
+    root = Path(os.environ.get("ESTATE_IDP") or Path(__file__).resolve().parents[2])
+    door_path = root / "bin" / "capability-index"
+    if not door_path.exists():
+        _REGISTRY = False
+        return _REGISTRY
+    spec = importlib.util.spec_from_loader(
+        "capability_index",
+        importlib.machinery.SourceFileLoader("capability_index", str(door_path)),
+    )
+    if spec is None or spec.loader is None:
+        _REGISTRY = False
+        return _REGISTRY
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:  # a door that will not load is BLIND, never a crash
+        log.warning("capability registry door failed to load: %s", exc)
+        _REGISTRY = False
+        return _REGISTRY
+    _REGISTRY = module
+    return _REGISTRY
+
+
+def _registry_records(door):
+    ctx = door.Context()
+    return door.load_records(ctx)
+
+
+def _capability_get(args):
+    door = _registry_door()
+    if not door:
+        return "BLIND  the capability registry door (bin/capability-index) is not in this checkout"
+    cap_id = (args.get("id") or "").strip()
+    if not cap_id:
+        return "ERROR: capability id required"
+    records, source = _registry_records(door)
+    for record in records:
+        if record.get("id") == cap_id:
+            read = door.read_record(record)
+            return "{}\n  source: {}".format(door.render_record(read), source)
+    return "BLIND  no record for {}".format(cap_id)
+
+
+def _capability_query(args):
+    door = _registry_door()
+    if not door:
+        return "BLIND  the capability registry door (bin/capability-index) is not in this checkout"
+    query = (args.get("query") or "").strip()
+    kind = (args.get("kind") or "").strip()
+    state = (args.get("state") or "").strip()
+    plane = (args.get("plane") or "").strip()
+    records, source = _registry_records(door)
+    words = [w for w in re.split(r"[^a-z0-9]+", query.lower()) if w]
+    rows = []
+    for record in records:
+        if kind and record.get("kind") != kind:
+            continue
+        if plane and record.get("plane") != plane:
+            continue
+        read = door.read_record(record)
+        if state and (read.get("health") or {}).get("state") != state:
+            continue
+        if words:
+            haystack = " ".join(
+                [
+                    record.get("id") or "",
+                    record.get("summary") or "",
+                    " ".join((record.get("contract") or {}).get("inputs") or []),
+                ]
+            ).lower()
+            if not all(w in haystack for w in words):
+                continue
+        rows.append(read)
+    rows.sort(key=lambda r: r.get("id") or "")
+    if not rows:
+        return "BLIND  no capability matches {}".format(
+            query or (kind or state or plane or "anything")
+        )
+    lines = [
+        "# {} capability record(s) (source: {})".format(len(rows), source),
+        "",
+    ]
+    for read in rows[:40]:
+        stale = "  stale" if read.get("stale") else ""
+        lines.append(
+            "{}  [{}]  {}  plane={}{}".format(
+                read.get("id"),
+                read.get("kind"),
+                (read.get("health") or {}).get("state"),
+                read.get("plane"),
+                stale,
+            )
+        )
+        if read.get("summary"):
+            lines.append("    {}".format(read["summary"][:160]))
+    if len(rows) > 40:
+        lines.append("")
+        lines.append("{} more; narrow the query.".format(len(rows) - 40))
+    return "\n".join(lines)
+
+
+def _capability_prove(args):
+    door = _registry_door()
+    if not door:
+        return "BLIND  the capability registry door (bin/capability-index) is not in this checkout"
+    cap_id = (args.get("id") or "").strip()
+    if not cap_id:
+        return "ERROR: capability id required"
+    records, _source = _registry_records(door)
+    for record in records:
+        if record.get("id") == cap_id:
+            verdict = door.prove(door.Context(), record)
+            return "{}: {}".format(verdict.get("verdict"), verdict.get("detail", ""))
+    return "BLIND  no record for {}".format(cap_id)
+
+
 try:
     from datasette import hookimpl
 except ImportError:
@@ -354,6 +483,70 @@ TOOL_DEFS = [
                 },
             },
             "required": ["intent"],
+        },
+    },
+    {
+        "name": "capability_get",
+        "description": (
+            "One capability from the Estate Capability Registry, with its proof, its "
+            "freshness and whether the record is stale. An answer that names no registry "
+            "read is a guess."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "Capability id, e.g. cap:intent/lane-submit",
+                },
+            },
+            "required": ["id"],
+        },
+    },
+    {
+        "name": "capability_query",
+        "description": (
+            "Find capabilities in the Estate Capability Registry by words, kind, plane or "
+            "state (operating, degraded, frozen, declared). Use it before building anything: "
+            "the estate has already built most of it."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Plain words: what you need the estate to do",
+                },
+                "kind": {
+                    "type": "string",
+                    "description": "intent | tool | service | layer | agent | surface | model | dataset | workflow",
+                },
+                "plane": {
+                    "type": "string",
+                    "description": "idp | estate | cluster | mac",
+                },
+                "state": {
+                    "type": "string",
+                    "description": "operating | degraded | frozen | declared",
+                },
+            },
+        },
+    },
+    {
+        "name": "capability_prove",
+        "description": (
+            "Re-run the receipt probe for one capability and report the verdict: OK, FAILED "
+            "or BLIND. This is the proof behind a claim of working."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "Capability id, e.g. cap:intent/lane-submit",
+                },
+            },
+            "required": ["id"],
         },
     },
     {
@@ -413,6 +606,9 @@ TOOL_FNS = {
     "estate_list": _estate_list,
     "estate_show": _estate_show,
     "estate_invoke": _estate_invoke,
+    "capability_get": _capability_get,
+    "capability_query": _capability_query,
+    "capability_prove": _capability_prove,
     "pobr_submit": _pobr_submit,
     "pobr_status": _pobr_status,
 }

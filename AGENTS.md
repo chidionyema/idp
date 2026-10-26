@@ -203,6 +203,20 @@ for living outside `idp`; a duplicate layer always is.
 build>"`, then read the candidate. The estate has built the same capability five to ten times. Do
 not make it eleven.
 
+**But raising the bar supersedes do-not-duplicate (founder's ruling, 2026-10-26).** A new layer is
+allowed when it RAISES the bar, and then the lesser implementation is merged into it or deleted in
+the same change. The bar is raised when the new thing adds something the old one cannot do, and
+says so: a store where the old one had none, an invariant where the old one had a convention, a
+query contract an agent can use where the old one could only be read by a human, a falsifier where
+the old one could not fail. Two implementations of the same layer, one of which is measurably
+better, is a stitch - and a stitch is deleted in the same change, not left to rot.
+
+Worked example, 2026-10-26: `bin/estate-discover` (a view that read the estate's maps and answered
+on demand) was replaced by `bin/capability-index` (one store, one writer per plane, five
+falsifiable invariants, a query contract over CLI and MCP, a committed machine-generated snapshot
+CI proves drift-free). The view's census became the registry's writers; the view was deleted in
+the same change. The rule is not "never build a second thing" - it is "never leave two".
+
 ---
 
 ## 7. Execution — intents only
