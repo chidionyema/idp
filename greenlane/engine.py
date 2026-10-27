@@ -49,6 +49,7 @@ RETIRE_AFTER_MIN = 1440  # 24 hours: a lane held this long without moving is par
 HISTORY_KEEP = (
     200  # batch verdicts and landings kept for the latency read; the state is one blob
 )
+BOT_LANE = "flux/image-updates"  # the platform's own image lane: written by the image controller
 
 
 @dataclass
@@ -644,13 +645,32 @@ class Engine:
         the CLAIM comment that fixes it is enough -- the next tick admits it, no re-push. The
         reason is reported once, not every tick.
         """
-        why = self.b.unclaimed(lane.head, base)
+        why = self._claim_reason(lane, base)
         if not why:
             return False
         if lane.reason != why:
             lane.reason = why
             self.b.report(lane.name, lane.head, RED, why)
         return True
+
+    def _claim_reason(self, lane: Lane, base: str) -> str:
+        """Why this lane may not land on a live claim ("" when it may, or cannot be judged).
+
+        The bot lane is graded on the CANDIDATE it would land, not on its history. The image
+        controller rewrites the same tag lines on every build, so flux/image-updates carries
+        every bump it ever made: its history names issues that have since been closed, and
+        one of its commits deleted a doc. Grading that history refuses a lane whose own
+        candidate is one image tag and nothing else -- measured 2026-10-27: PR #6927 sat
+        pending with "no live claim: chidionyema/idp#6922 is not open" for 36 hours while
+        the image it carried was already built and pushed, and every deploy in the estate
+        waited on it. The candidate is what lands, so the candidate is what the claim check
+        grades. Every other lane is graded on its own head, exactly as before.
+        """
+        if lane.name == BOT_LANE:
+            candidate = self.b.rebase(lane.head, base, lane.name)
+            if candidate:
+                return self.b.unclaimed(candidate, base)
+        return self.b.unclaimed(lane.head, base)
 
     def _refresh_stale_lanes(self, base: str) -> None:
         """Update lanes whose base is stale against the current main.

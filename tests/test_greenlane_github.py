@@ -14,7 +14,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from greenlane.engine import CONFLICT, LANDED, RED  # noqa: E402
+from greenlane.engine import CONFLICT, LANDED, RED, Engine, Lane, State  # noqa: E402
 from greenlane.github import ADOPTED, BOT_LANE, MARKER, GitHubBackend  # noqa: E402
 
 REQUIRED = ["fast-gate / fast-gate", "bdd", "test"]
@@ -1316,3 +1316,105 @@ def test_landing_an_adopted_pr_whose_branch_refuses_pushes_lands_via_the_lane_pr
     assert not any(
         w[2].get("state") == "closed" for w in b.writes if w[1] == "pulls/901"
     ), "the lane PR that carried the land is merged, not closed"
+
+
+def _image_policy(repo: Path, tag: str) -> None:
+    (repo / "k.yaml").write_text(
+        "images:\n"
+        "  newName: ghcr.io/chidionyema/app\n"
+        f'  newTag: {tag} # {{"$imagepolicy": "flux-system:y:tag"}}\n'
+    )
+
+
+def test_the_bot_lane_is_graded_on_the_candidate_it_would_land(repo, monkeypatch):
+    """idp#7140, 2026-10-27. The image lane is written by the image controller, which rewrites
+    the same tag lines on every build, so flux/image-updates carries every bump it ever made:
+    its history names an issue that has since been closed, and one of its commits added a file
+    that is not a tag. Grading that history refused a lane whose own candidate was one image
+    tag and nothing else -- measured 2026-10-27, PR #6927 sat pending with "no live claim:
+    chidionyema/idp#6922 is not open" for 36 hours while the image it carried was already
+    built and pushed, and every deploy in the estate waited on it. The candidate is what
+    lands, so the candidate is what the claim check grades."""
+    # CI hands the gate the pull request; here the gate is handed the same context, so the
+    # verdict is the estate's own and nothing reaches for the network.
+    monkeypatch.setenv("PR_NUMBER", "6927")
+    monkeypatch.setenv("PR_AUTHOR", "estate-agents[bot]")
+    monkeypatch.setenv(
+        "PR_BODY", "Claim: chidionyema/idp#6922\nAgent: estate-agents[bot]"
+    )
+    _image_policy(repo, "v1")
+    _git(repo, "add", "k.yaml")
+    _git(repo, "commit", "-q", "-m", "base")
+    main = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-q", "-b", BOT_LANE)
+    _image_policy(repo, "v2")
+    _git(repo, "commit", "-q", "-am", "platform: image update -> v2")
+    # what rode along with the tag: a file that is not a tag, and a claim line naming an
+    # issue that has since been closed.
+    (repo / "notes.md").write_text("not a tag\n")
+    _git(repo, "add", "notes.md")
+    _git(
+        repo,
+        "commit",
+        "-q",
+        "-m",
+        "platform: image update -> v2 (notes)",
+        "-m",
+        "Claim: chidionyema/idp#6922\nAgent: estate-agents[bot]",
+    )
+    lane_head = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-q", "main")
+    b = Recorded({}, image_only_diff=ROOT / "bin/idp-image-only-diff")
+    graded: list[tuple[str, str]] = []
+    real = b.unclaimed
+
+    def spy(head, base):
+        graded.append((head, base))
+        return real(head, base)
+
+    b.unclaimed = spy
+    s = State()
+    s.lanes[BOT_LANE] = Lane(name=BOT_LANE, head=lane_head)
+    e = Engine(b, s)
+    assert not e._held(s.lanes[BOT_LANE], main), (
+        "the bot lane was held on the claim in its history"
+    )
+    assert len(graded) == 1, "the lane's claim was graded more than once"
+    candidate, base = graded[0]
+    assert base == main
+    assert candidate != lane_head, (
+        "the bot lane was graded on its history, not on the candidate it would land"
+    )
+    assert _git(repo, "rev-parse", f"{candidate}^") == main, (
+        "the candidate is not built on main"
+    )
+    assert 'newTag: v2 # {"$imagepolicy": "flux-system:y:tag"}' in _git(
+        repo, "show", f"{candidate}:k.yaml"
+    )
+    assert "notes.md" not in _git(repo, "ls-tree", "--name-only", candidate), (
+        "a file that is not a tag rode into the candidate"
+    )
+
+
+def test_a_human_lane_is_still_graded_on_its_own_head(repo):
+    """The projection is the bot lane's. Every other lane is graded on the head it pushed, so
+    a human lane is never measured by a candidate the engine built for it."""
+    _image_policy(repo, "v1")
+    _git(repo, "add", "k.yaml")
+    _git(repo, "commit", "-q", "-m", "base")
+    main = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-q", "-b", "lane/a")
+    _image_policy(repo, "v2")
+    _git(repo, "commit", "-q", "-am", "a human change")
+    lane_head = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-q", "main")
+    b = Recorded({}, image_only_diff=ROOT / "bin/idp-image-only-diff")
+    graded: list[tuple[str, str]] = []
+    b.unclaimed = lambda head, base: (graded.append((head, base)), "")[1]
+    s = State()
+    s.lanes["lane/a"] = Lane(name="lane/a", head=lane_head)
+    e = Engine(b, s)
+    assert not e._held(s.lanes["lane/a"], main)
+    assert graded == [(lane_head, main)], (
+        "a human lane must be graded on its own head, never on a projection"
+    )
