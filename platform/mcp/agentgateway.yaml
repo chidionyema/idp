@@ -87,3 +87,28 @@ binds:
           - name: estate
             mcp:
               host: http://estate-mcp.mcp.svc:8001/-/mcp
+    # THE CONTEXT DOOR. /context/mcp is the only public way to ask the estate's context engine
+    # anything. The engine itself is a private sidecar in the same pod as the broker, bound to
+    # loopback, with no Service and no route: this route is the boundary, and the broker is the
+    # policy behind it.
+    #
+    # Per-client tokens: the apiKey policy takes a LIST of key hashes, so a client that must not
+    # share the estate's key gets its own hash here and its own vault entry, and the gateway
+    # refuses it everywhere else. One hash today (MCP_GATEWAY_KEY, vault entry mcp-gateway); one
+    # line per client when a client gets its own token.
+    - name: context
+      matches:
+      - path:
+          exact: /context/mcp
+      policies:
+        apiKey:
+          mode: strict
+          keys:
+          - keyHash: sha256:a4f5939a14493c1d44cdad51bb1c824d109f23dfb872fc9d40e2d93d470e313a
+      backends:
+      - mcp:
+          statefulMode: stateless
+          targets:
+          - name: context
+            mcp:
+              host: http://estate-context-broker.mcp.svc:8002/mcp

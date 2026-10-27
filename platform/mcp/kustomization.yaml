@@ -11,7 +11,20 @@ resources:
   - estate-mcp.yaml
   - httproute.yaml
   - edge-manners.yaml
+  # The context broker and its private engine. One pod, two containers, one Service: the
+  # Service reaches the broker only. The engine has no Service, so nothing in the cluster can
+  # address it except the broker inside the same pod.
+  - estate-context-broker.yaml
 images:
+  # The broker's image. The tag is written by image-automation-controller from ImagePolicy
+  # flux-system/estate-context-broker; the marker is how it finds the line. The placeholder is
+  # the estate's convention for "not yet built": the number is 0, so any real build wins it.
+  - name: ghcr.io/chidionyema/estate-context-broker
+    newTag: main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:estate-context-broker:tag"}
+  # The engine's image, pinned to the same pod. The two must move together, so they are written
+  # by ONE automation in ONE commit to this file.
+  - name: ghcr.io/chidionyema/gortex-engine
+    newTag: main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:gortex-engine:tag"}
   # build-multiarch pushes ghcr.io/chidionyema/estate-mcp:main-<run>-<sha> (crew#458 row 3, crew#516 CP3).
   # The first main build after this file merges writes the tag; until then the Deployment cannot
   # pull and Flux reports it. image-automation-controller rewrites the newTag line from

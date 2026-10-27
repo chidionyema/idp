@@ -4,10 +4,10 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 100,
-    "layer": 201,
-    "service": 114,
-    "tool": 438,
-    "workflow": 78
+    "layer": 207,
+    "service": 115,
+    "tool": 440,
+    "workflow": 79
   },
   "records": [
     {
@@ -5349,6 +5349,337 @@
       ]
     },
     {
+      "id": "cap:layer/platform-estate-context-broker",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "broker -- the estate context broker's POLICY. One door; every answer passes here.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/context/broker.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-context-broker_client",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "broker_client -- the cluster door, from a client outside the cluster.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/context/broker_client.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-context-claims",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "claims -- the broker reads the SAME claim record CI reads, at request time.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-context-broker",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-jit-broker-broker",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/context/claims.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-context-local_engine",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "local_engine -- the laptop's door to the ONE context engine.",
+      "contract": {
+        "inputs": [
+          "--format",
+          "--index",
+          "--json"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-context-broker",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-jit-broker-broker",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/context/local_engine.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-context-plan",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "plan -- the ContextPlan: the estate's ONE context compiler's output contract.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/context/plan.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-context-server",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "server -- the estate context broker: the one public door to the context engine.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-edge-runtime-src-server",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-context-broker",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-context-claims",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-context-plan",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-memory-plan",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-jit-broker-broker",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-spire-key-broker-server",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-voice-gate-src-server",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/context/server.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
       "id": "cap:layer/platform-estate-intents-lint-intents",
       "schema_version": 1,
       "kind": "layer",
@@ -8884,6 +9215,14 @@
             "edge": "imports"
           },
           {
+            "id": "cap:layer/platform-estate-context-broker",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-context-server",
+            "edge": "imports"
+          },
+          {
             "id": "cap:layer/platform-jit-broker-broker",
             "edge": "imports"
           },
@@ -8950,6 +9289,10 @@
         "cost_class": "cheap",
         "latency_class": "interactive",
         "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-context-broker",
+            "edge": "imports"
+          },
           {
             "id": "cap:layer/platform-jit-broker-broker",
             "edge": "imports"
@@ -10053,6 +10396,10 @@
         "depends_on": [
           {
             "id": "cap:layer/platform-edge-runtime-src-server",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-context-server",
             "edge": "imports"
           },
           {
@@ -18087,6 +18434,55 @@
       ]
     },
     {
+      "id": "cap:service/mcp/estate-context-broker",
+      "schema_version": 1,
+      "kind": "service",
+      "summary": "Deployment estate-context-broker in namespace mcp",
+      "contract": {
+        "inputs": [
+          "kubernetes API"
+        ],
+        "outputs": [
+          "pods"
+        ],
+        "errors": [
+          "image pull, admission, probe failures"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "batch"
+      },
+      "owner": "@chidionyema",
+      "plane": "cluster",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform,clusters"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "cluster",
+      "path": "platform/mcp/estate-context-broker.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "also_declared_in": [
+        "platform/mcp/estate-context-broker.yaml"
+      ]
+    },
+    {
       "id": "cap:service/mcp/estate-mcp",
       "schema_version": 1,
       "kind": "service",
@@ -22181,6 +22577,136 @@
       "writer": "repo",
       "path": "bin/estate-clocks",
       "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/estate-context-compile",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate-context-compile -- the estate's ONE context compiler, as a client of the ONE engine.",
+      "contract": {
+        "inputs": [
+          "--base",
+          "--broker-url",
+          "--budget-tokens",
+          "--claim-agent",
+          "--claim-issue",
+          "--claim-paths",
+          "--commit",
+          "--door",
+          "--json",
+          "--mode",
+          "--paths",
+          "--repo",
+          "--surface",
+          "--task",
+          "--tier"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-context-compile",
+      "depends_on": [
+        {
+          "id": "cap:tool/catalog-projection",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-affected-graph",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/estate-context-gate",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate-context-gate -- the admission gate for the estate's context plane.",
+      "contract": {
+        "inputs": [
+          "--format",
+          "--index",
+          "--json",
+          "--repo",
+          "--self-test"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-context-gate",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-context-compile",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
@@ -26994,6 +27520,10 @@
         },
         {
           "id": "cap:tool/estate-claim-check",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-context-gate",
           "edge": "invokes"
         },
         {
@@ -45041,6 +45571,55 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/concierge-deploy.yml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:workflow/gha-context-index",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "context-index -- the GitHub Actions workflow context-index.yml.",
+      "contract": {
+        "inputs": [
+          "push",
+          "workflow_dispatch"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/context-index.yml",
       "depends_on": [],
       "metrics": [],
       "blind": [
