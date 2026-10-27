@@ -1,0 +1,247 @@
+{
+  "$id": "https://efda.estate/schemas/diagnostic-artifact-agent.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "failure_boundary": {
+      "additionalProperties": false,
+      "properties": {
+        "attempted_operation": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "failure_class": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "failure_class_registry_version": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "invariant_broken": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "triggering_step": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "attempted_operation",
+        "invariant_broken",
+        "triggering_step",
+        "failure_class",
+        "failure_class_registry_version"
+      ],
+      "type": "object"
+    },
+    "identity": {
+      "additionalProperties": true,
+      "properties": {
+        "cluster": {
+          "type": "string"
+        },
+        "component_class": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "component_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "component_kind": {
+          "enum": [
+            "workload",
+            "controller",
+            "agent",
+            "script",
+            "external_dependency"
+          ],
+          "type": "string"
+        },
+        "component_version": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "parent_task_id": {
+          "type": "string"
+        },
+        "runner_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "tenant_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "component_class",
+        "component_id",
+        "component_kind",
+        "runner_id"
+      ],
+      "type": "object"
+    },
+    "integrity": {
+      "additionalProperties": false,
+      "properties": {
+        "content_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "writer_identity": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "written_at": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "content_digest",
+        "writer_identity",
+        "written_at"
+      ],
+      "type": "object"
+    },
+    "raw_evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "capture_method": {
+          "enum": [
+            "in_process",
+            "supervisor_wrapper",
+            "sidecar_ebpf",
+            "log_tail",
+            "admission_rejection",
+            "checkpoint_resume"
+          ],
+          "type": "string"
+        },
+        "payloads": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "digest": {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "inline": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "kubernetes_events",
+                  "pod_state",
+                  "log_tail",
+                  "trace",
+                  "network",
+                  "process_tree",
+                  "checkpoint"
+                ],
+                "type": "string"
+              },
+              "uri": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "capture_method",
+        "payloads"
+      ],
+      "type": "object"
+    },
+    "routing": {
+      "additionalProperties": true,
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "routed_to": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "v3"
+    },
+    "self_assessment": {
+      "additionalProperties": false,
+      "properties": {
+        "hypotheses": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "cause": {
+                "type": "string"
+              },
+              "confidence": {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              "evidence_refs": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "rank": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "rank",
+              "cause",
+              "confidence"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "next_read": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "hypotheses"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "identity",
+    "failure_boundary",
+    "raw_evidence",
+    "self_assessment",
+    "integrity"
+  ],
+  "title": "EFDA DiagnosticArtifact (agent)",
+  "type": "object",
+  "x-efda-kind": "agent",
+  "x-efda-kind-required": [
+    "runner_id"
+  ]
+}

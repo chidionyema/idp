@@ -1,0 +1,107 @@
+# The component registry (Interface 5). What makes "all" computable: every
+# component in the estate is enumerated here, owned, and pointed at the pack
+# that covers it.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: componentregistrations.efda.estate
+spec:
+  group: efda.estate
+  scope: Namespaced
+  names:
+    kind: ComponentRegistration
+    plural: componentregistrations
+    singular: componentregistration
+    shortNames: ["cr"]
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Class
+          type: string
+          jsonPath: .spec.componentClass
+        - name: Kind
+          type: string
+          jsonPath: .spec.componentKind
+        - name: State
+          type: string
+          jsonPath: .status.coverageState
+        - name: Tier
+          type: string
+          jsonPath: .status.coverageTier
+        - name: Compliant
+          type: boolean
+          jsonPath: .status.compliant
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: ["spec"]
+          properties:
+            spec:
+              type: object
+              required: ["componentClass", "componentKind", "owner", "tenantId"]
+              properties:
+                componentClass:
+                  type: string
+                  minLength: 1
+                componentKind:
+                  type: string
+                  enum: ["workload", "controller", "agent", "script", "external_dependency"]
+                versionsInService:
+                  type: array
+                  items:
+                    type: string
+                owner:
+                  type: object
+                  required: ["team"]
+                  properties:
+                    team:
+                      type: string
+                      minLength: 1
+                    escalation:
+                      type: string
+                tenantId:
+                  type: string
+                minCoverageTier:
+                  type: string
+                  enum: ["baseline", "specialist"]
+                  default: baseline
+                decommissioned:
+                  type: boolean
+                  default: false
+                discovery:
+                  type: object
+                  properties:
+                    method:
+                      type: string
+                      enum: ["annotation", "reconciler_scan", "wrapper_self_register", "sidecar_discovery"]
+                    lastSeen:
+                      type: string
+                      format: date-time
+            status:
+              type: object
+              x-kubernetes-validations:
+                - rule: "!has(self.phase) || self.phase != 'Failed' || has(self.diagnosticArtifactRef)"
+                  message: "a Failed status requires a diagnosticArtifactRef: the evidence comes before the verdict"
+              properties:
+                phase:
+                  type: string
+                  enum: ["Ready", "Failed", "Degraded"]
+                diagnosticArtifactRef:
+                  type: string
+                coverageState:
+                  type: string
+                  enum: ["ORPHAN", "BASELINE", "SPECIALIST", "DEPRECATED", "SUNSET_VIOLATION", "DECOMMISSIONED"]
+                packRef:
+                  type: string
+                coverageTier:
+                  type: string
+                  enum: ["baseline", "specialist"]
+                compliant:
+                  type: boolean
+                lastEvaluated:
+                  type: string
+                  format: date-time
