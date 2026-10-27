@@ -1,6 +1,8 @@
 # The estate's LLM spend floor
 
-**Status:** proposed — 2026-10-26
+**Status:** accepted (founder, 2026-10-26 — "the decision record is solid") · the design is
+accepted; the rungs in §5 are not yet implemented
+**Receipt:** [idp#7248 — the founder's ruling](https://github.com/chidionyema/idp/issues/7248#issuecomment-6430382067)
 **Issue:** #7248 (the claim of record)
 **Diagnosis:** [`docs/diagnoses/2026-10-26-where-the-estates-llm-spend-actually-goes.yaml`](../../diagnoses/2026-10-26-where-the-estates-llm-spend-actually-goes.yaml) — H1 wins at posterior **0.996**
 **Decision:** [`docs/decisions/2026-10-26-the-llm-spend-is-cut-at-the-router-on-the-cloud-route.md`](../../decisions/2026-10-26-the-llm-spend-is-cut-at-the-router-on-the-cloud-route.md)
