@@ -12,6 +12,12 @@
 The estate's LLM bill was measured on 2026-10-26 from the estate gateway ledger
 (`~/.estate/efficiency-ledger.jsonl`, the 24 hours ending 19:30Z): **8,009 calls, $29.36,
 137.97M billed input tokens, 4.95M output tokens.** Over 7 days: 27,962 calls, $77.68.
+**Scope, measured 2026-10-27:** that ledger records the **laptop route's** calls — the client's
+`estate` provider points at `http://127.0.0.1:4000/v1` and the laptop router is the process
+that writes the file — while the cloud route meters through the cluster's cloud keys and is
+invisible to it. The two are never added together. It is the estate's whole model bill today
+only because the client still runs through the laptop; after the flip the same traffic is metered
+on the cloud route, where the ledger of record is the cloud's own postgres.
 `AGENTS.md` declares a daily litellm budget of **$3.00**. The estate spent **9.8×** that, and
 nothing stopped it: the running laptop router carries `max_budget: 5.0` and **no
 `database_url`**, so LiteLLM cannot enforce a budget and the refusal that was configured never
@@ -58,7 +64,8 @@ measured before it is claimed.**
    answers only read-only, state-independent questions, and every answer carries its source.
    Target ≥15% of calls, ≈ $4.40/day.
 5. **Stop calling for the repeatable work.** The ledger must name the top callers by spend
-   (today `session` is `-` on every agent-loop row, so this share cannot even be named), and
+   (today `session` is `-` on every agent-loop row — re-measured 2026-10-27: one distinct session
+   value across 5,518 calls — so this share cannot even be named), and
    CI's graded suites must make zero live model calls through the cassette that already exists.
 6. **The distilled local floor is the long rung, not the first.** Ladder rung 2 is $69/month
    against a measured $881/month of metered spend, so it pays at **≥ 7.8% absorption** — but the
