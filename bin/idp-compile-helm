@@ -53,6 +53,104 @@ def _run(args: list[str], **kw) -> subprocess.CompletedProcess:
     return subprocess.run(args, capture_output=True, text=True, **kw)  # noqa: S603
 
 
+# 2026-10-27: the compile was network-bound on a laptop, and looked hung while it was not.
+# `helm repo add --force-update` downloads the whole index of a chart repository, and the
+# compiler asked for one per RELEASE: 31 releases over 28 repositories, every index fetched
+# again from the far end. Measured on this machine's link: 0.5s (coroot) to 21.3s (traefik)
+# per index, 6.6MB for prometheus-community alone, and a compile that had not finished after
+# thirteen minutes -- so the gate that needs this document could not be run locally at all.
+#
+# What changed here, and why it is not a shortcut:
+#   * a repository helm already knows under the same URL, whose index is already on disk, is
+#     NOT re-added. The add is the only step that touches the network, so a machine that has
+#     compiled once does no index work at all on the next run. A CI runner has no repositories
+#     configured, so it adds each one -- once -- exactly as before.
+#   * a repository is added at most once per process, not once per release.
+#   * a reused index can be stale, and a stale index hides a chart version published after it
+#     was downloaded. So a render that fails while the index was reused is retried once
+#     against a freshly downloaded index. A chart that is genuinely wrong still fails, and
+#     the failure says which of the two it was.
+_REPO_STATE: dict[str, tuple[bool, str | None]] = {}
+_CONFIGURED_REPOS: dict[str, str] | None = None
+_REPO_INDEX_DIR: Path | None = None
+
+
+def _repo_index_dir() -> Path:
+    """Where helm keeps the index it downloaded for each repository."""
+    global _REPO_INDEX_DIR
+    if _REPO_INDEX_DIR is None:
+        raw = (os.environ.get("HELM_REPOSITORY_CACHE") or "").strip()
+        if not raw:
+            probe = _run(["helm", "env", "HELM_REPOSITORY_CACHE"])
+            if probe.returncode == 0:
+                raw = (probe.stdout or "").strip().strip('"')
+        if not raw:
+            raw = str(Path.home() / ".cache" / "helm" / "repository")
+        _REPO_INDEX_DIR = Path(raw)
+    return _REPO_INDEX_DIR
+
+
+def _configured_repos() -> dict[str, str]:
+    """The repositories helm already knows: name -> url. One call, remembered for the process."""
+    global _CONFIGURED_REPOS
+    if _CONFIGURED_REPOS is None:
+        found: dict[str, str] = {}
+        listing = _run(["helm", "repo", "list", "-o", "json"])
+        if listing.returncode == 0:
+            try:
+                for entry in json.loads(listing.stdout or "[]"):
+                    name, url = entry.get("name"), entry.get("url")
+                    if name and url:
+                        found[name] = url
+            except (json.JSONDecodeError, AttributeError, TypeError):
+                found = {}
+        if not found:
+            # helm without `-o json`: the table is name, url, one per line.
+            table = _run(["helm", "repo", "list"])
+            for line in (table.stdout or "").splitlines()[1:]:
+                parts = line.split()
+                if len(parts) >= 2 and parts[0] != "NAME":
+                    found[parts[0]] = parts[1]
+        _CONFIGURED_REPOS = found
+    return _CONFIGURED_REPOS
+
+
+def _index_cached(name: str) -> bool:
+    """Is the index helm downloaded for this repository still on disk?"""
+    index = _repo_index_dir() / f"{name}-index.yaml"
+    try:
+        return index.is_file() and index.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def _ensure_repo(name: str, url: str) -> tuple[bool, str | None]:
+    """Make sure helm knows this chart repository.
+
+    Returns (index_reused, error). `index_reused` says the index already on disk was used, so
+    the caller knows a failed render may have been a stale index rather than a bad chart.
+    """
+    if name in _REPO_STATE:
+        return _REPO_STATE[name]
+    if _configured_repos().get(name) == url and _index_cached(name):
+        _REPO_STATE[name] = (True, None)
+        return _REPO_STATE[name]
+    add = _run(["helm", "repo", "add", name, url, "--force-update"])
+    if add.returncode != 0:
+        why = (add.stderr or add.stdout or "").strip().splitlines()
+        error = f"helm repo add {name} {url} failed: {why[-1][:200] if why else 'no output'}"
+        _REPO_STATE[name] = (False, error)
+        return _REPO_STATE[name]
+    _REPO_STATE[name] = (False, None)
+    return _REPO_STATE[name]
+
+
+def _refresh_repo(name: str, url: str) -> None:
+    """Download the index again. Used when a render failed against a reused index."""
+    _run(["helm", "repo", "add", name, url, "--force-update"])
+    _REPO_STATE[name] = (False, None)
+
+
 def _chart_repos() -> dict[str, str]:
     """Every HelmRepository in the tree: name -> url. The chart's source is named by the
     HelmRelease, and the repository objects are in this tree alongside it."""
@@ -151,12 +249,6 @@ def _helm_repo_url(repos: dict[str, str], name: str | None, chart: str) -> str |
     return None
 
 
-def _ensure_repo(name: str, url: str) -> None:
-    """Add or refresh a chart repository. Idempotent: `helm repo add` on an existing name with the
-    same URL is a no-op, and a differing URL is replaced so a moved chart still resolves."""
-    _run(["helm", "repo", "add", name, url, "--force-update"])
-
-
 def _namespace_for(rel_file: str | None, declared: str | None) -> str:
     """The namespace a HelmRelease lands in.
 
@@ -239,12 +331,16 @@ def compile_release(release: dict, repos: dict[str, str]) -> dict:
         # add` -- 11 of 33 releases failed to render without this, and an unrendered chart is
         # exactly the blind spot this gate exists to close. For GitRepository-sourced local charts
         # the path is used directly.
+        reused_index = False
         if is_local_chart:
             chart_ref = str(local_path)
         else:
             url = _helm_repo_url(repos, repo_name, chart)
             if url and repo_name:
-                _ensure_repo(repo_name, url)
+                reused_index, repo_error = _ensure_repo(repo_name, url)
+                if repo_error:
+                    record["error"] = repo_error
+                    return record
             chart_ref = (
                 f"{repo_name}/{chart}"
                 if (url and repo_name)
@@ -255,6 +351,12 @@ def compile_release(release: dict, repos: dict[str, str]) -> dict:
             args += ["--version", str(version)]
         args += ["-f", vf, "--namespace", ns]
         proc = _run(args)
+        if proc.returncode != 0 and reused_index:
+            # The index on disk was reused, and a stale index hides a chart version that was
+            # published after it was downloaded. Fetch it again and render once more, so a
+            # cached index can never be the reason a release fails to render.
+            _refresh_repo(repo_name, url)
+            proc = _run(args)
         if proc.returncode != 0:
             record["error"] = (
                 (proc.stderr or proc.stdout).strip().splitlines()[-1][:300]
