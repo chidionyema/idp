@@ -613,6 +613,27 @@ LAYERS = {
         "Every rehearsed failure and the run that last passed it.",
         "group:default/platform",
     ),
+    # idp#7220. These three Flux rows arrived with the EFDA layer, so the catalogue needs
+    # their plain-English rows before their entities exist -- a Service that names a
+    # catalogue entity can only name one the catalogue holds.
+    "efda": (
+        "agents",
+        "Universal coverage layer",
+        "The estate's registry of what it runs: every component in the cluster is observed, registered and given the skill packs that cover its class of failure, so the estate knows which of its own parts it has never seen and what would fix them. A controller does the watching and the registry, and an executor runs the reports it produces through the gates, which refuse everything until the allowlist says otherwise.",
+        "group:default/platform",
+    ),
+    "spine": (
+        "agents",
+        "Event spine",
+        "The bridge that turns what the cluster did into what the estate knows: Flux events are published onto the estate bus as they happen, so an agent hears that something changed instead of asking whether it has changed yet. The bridge and the observer are one image and one namespace, and the stream they publish into is created before anything writes to it.",
+        "group:default/platform",
+    ),
+    "spine-events": (
+        "agents",
+        "Event spine wiring",
+        "The Flux-side half of the event spine: the provider that tells Flux where to send its events and the secret that lets it. It is reconciled after the spine itself, because a stream has to exist before anything publishes into it.",
+        "group:default/platform",
+    ),
 }
 
 

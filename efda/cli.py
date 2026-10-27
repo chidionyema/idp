@@ -11,6 +11,7 @@ efda register             self-register an agent or a script
 efda wrapper -- CMD       run a child under the L1 wrapper
 efda drain                push the local WAL into the sink
 efda verify --phase N     the verification playbook
+efda describe             print what this build is wired to
 """
 
 from __future__ import annotations
@@ -31,6 +32,26 @@ from .store import ArtifactStore, CheckpointStore, RedisClient, RedisError
 from .synth import corpus_from_artifacts, synthesize
 from .validation import validate_pack
 from .wrapper import main as wrapper_main
+
+
+# The file the readiness probe looks for. It is written after the FIRST COMPLETE PASS, not at
+# start-up: a process that has started but has not yet talked to the cluster or to the sink has
+# not proved it can do the work, and a probe that answers "the process exists" is a probe that
+# cannot fail. spine/bridge.py holds the same contract for the event spine.
+READY_FILE = os.environ.get("EFDA_READY_FILE", "/tmp/efda.ready")  # noqa: S108 - pod-local marker
+
+
+def _write_ready_file(path: str | None = None) -> None:
+    """Mark this container ready. A failure to write is a warning, not a crash: the probe reads
+    the file, and a container that cannot write it is one the readiness probe keeps reporting as
+    not-ready until the pod is restarted. The path is resolved at call time, not at import time,
+    so a test can move it and a pod can move it with EFDA_READY_FILE."""
+    target = path or READY_FILE
+    try:
+        with open(target, "w", encoding="utf-8") as handle:
+            handle.write("ready\n")
+    except OSError as exc:  # pragma: no cover - a read-only /tmp is a broken pod
+        print(f"could not write the ready file {target}: {exc}", file=sys.stderr)
 
 
 def _kube(args):
@@ -66,6 +87,7 @@ def cmd_reconcile(args):
         while True:
             summary = run_reconcile(kube, namespace=args.namespace)
             print(json.dumps(summary, sort_keys=True))
+            _write_ready_file()
             time.sleep(args.interval)
     summary = run_reconcile(kube, namespace=args.namespace)
     print(json.dumps(summary, indent=2, sort_keys=True))
@@ -210,6 +232,7 @@ def _execute_watch(args, allowlist):
                 json.dumps({"runner": runner_id, "outcome": spec.get("outcome")}),
                 flush=True,
             )
+        _write_ready_file()
         time.sleep(args.interval)
 
 
@@ -287,6 +310,29 @@ def cmd_verify(args):
     return run_phase(args.phase, namespace=args.namespace)
 
 
+def cmd_describe(args):
+    """What this build is wired to, and nothing else.
+
+    The liveness probe runs this. It answers the only question a liveness probe can ask that
+    is worth asking: can this process still load itself and name the sink it talks to? It
+    touches neither the cluster nor the sink, so a probe that ran the whole reconcile pass
+    would fail for reasons that are not liveness (an API server blip is availability, not
+    death).
+    """
+    wiring = {
+        "namespace": args.namespace,
+        "sink": {
+            "host": os.environ.get("EFDA_REDIS_HOST", ""),
+            "port": os.environ.get("EFDA_REDIS_PORT", ""),
+        },
+        "allowlist": getattr(args, "allowlist", "")
+        or os.environ.get("EFDA_ALLOWLIST_PATH", ""),
+        "ready_file": READY_FILE,
+    }
+    print(json.dumps(wiring, indent=2, sort_keys=True))
+    return 0
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="efda", description="the estate's universal coverage layer"
@@ -355,6 +401,9 @@ def build_parser():
     drain = sub.add_parser("drain", help="push the local WAL into the sink")
     drain.add_argument("--wal-dir", default=os.environ.get("EFDA_WAL_DIR", ""))
     drain.set_defaults(func=cmd_drain)
+
+    describe = sub.add_parser("describe", help="print what this build is wired to")
+    describe.set_defaults(func=cmd_describe)
 
     return parser
 

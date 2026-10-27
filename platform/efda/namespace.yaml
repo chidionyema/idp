@@ -41,6 +41,23 @@ spec:
           args: ["--appendonly", "yes", "--save", "60", "1"]
           ports:
             - containerPort: 6379
+          # The sink is probed with the sink's own client. A redis that answers PONG is a
+          # redis that can take a checkpoint; a TCP connect that the sink refuses to serve
+          # would not be.
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             requests:
               cpu: 50m
@@ -76,6 +93,11 @@ metadata:
   namespace: efda-system
   labels:
     app.kubernetes.io/name: efda-checkpoints
+    # The catalogue entity this Service is. layer-efda is the entity
+    # bin/catalog-platform generates for the efda Flux Kustomization, and the estate's
+    # require-catalogue-entity policy refuses a Service that serves a port without naming
+    # the entity it belongs to.
+    backstage.io/kubernetes-id: layer-efda
 spec:
   selector:
     app.kubernetes.io/name: efda-checkpoints

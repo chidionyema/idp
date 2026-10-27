@@ -1024,3 +1024,69 @@ def _remediation_artifact(world):
     assert spec["action"]["type"] == "annotate"
     assert spec["preState"]["appliedAnnotations"] == {"efda.estate/remediated": "true"}
     assert spec["rollbackPoint"]["type"] == "annotate"
+
+
+# ------------------------------------------------------- the pod's own contract
+# The liveness and readiness probes in platform/efda are the estate's admission
+# requirement, and a probe is a promise: it says what "this container is working"
+# MEANS. These three tests pin that promise to the code that has to keep it, so a
+# probe cannot drift into a question nobody is asking.
+def test_describe_names_the_wiring_without_touching_the_cluster(capsys, monkeypatch):
+    """The liveness probe runs `efda describe`. It has to answer from the process
+    itself: a probe that needed the cluster would fail when the cluster is down, and
+    that is availability, not death."""
+    from efda import cli
+
+    monkeypatch.setenv(
+        "EFDA_REDIS_HOST", "efda-checkpoints.efda-system.svc.cluster.local"
+    )
+    monkeypatch.setenv("EFDA_REDIS_PORT", "6379")
+    args = cli.build_parser().parse_args(["--namespace", "efda-system", "describe"])
+    assert args.func(args) == 0
+    wiring = json.loads(capsys.readouterr().out)
+    assert wiring["namespace"] == "efda-system"
+    assert wiring["sink"]["host"] == "efda-checkpoints.efda-system.svc.cluster.local"
+    assert wiring["sink"]["port"] == "6379"
+    assert wiring["ready_file"] == cli.READY_FILE
+
+
+def test_describe_works_without_a_sink_configured(capsys, monkeypatch):
+    """An unset sink must not crash the liveness probe: a pod that cannot name its
+    sink is still a process that is alive, and the readiness probe is the door that
+    decides whether it is working."""
+    from efda import cli
+
+    monkeypatch.delenv("EFDA_REDIS_HOST", raising=False)
+    monkeypatch.delenv("EFDA_REDIS_PORT", raising=False)
+    args = cli.build_parser().parse_args(["describe"])
+    assert args.func(args) == 0
+    wiring = json.loads(capsys.readouterr().out)
+    assert wiring["sink"]["host"] == ""
+
+
+def test_the_ready_file_appears_only_after_a_complete_pass(tmp_path, monkeypatch):
+    """Readiness means "the controller has done its work once", not "the process
+    started". A probe that answers at start-up is a probe that cannot fail."""
+    from efda import cli
+
+    ready = tmp_path / "efda.ready"
+    monkeypatch.setattr(cli, "READY_FILE", str(ready))
+    passes = []
+
+    def fake_reconcile(kube, namespace):
+        passes.append(namespace)
+        return {"observed": 0}
+
+    def stop_after_the_first_pass(_seconds):
+        raise StopIteration("the loop was asked to sleep")
+
+    monkeypatch.setattr(cli, "run_reconcile", fake_reconcile)
+    monkeypatch.setattr(cli.time, "sleep", stop_after_the_first_pass)
+    args = cli.build_parser().parse_args(
+        ["--namespace", "efda-system", "reconcile", "--interval", "1"]
+    )
+    with pytest.raises(StopIteration):
+        args.func(args)
+    assert passes == ["efda-system"]
+    assert ready.exists(), "the ready file is written after the first complete pass"
+    assert ready.read_text().strip() == "ready"

@@ -43,6 +43,29 @@ spec:
               value: efda-system
             - name: EFDA_CLUSTER
               value: oke
+          # The probe reads the file the controller writes after its FIRST COMPLETE reconcile
+          # pass. "The process started" is not readiness: a controller that has started and
+          # has not yet seen the cluster has not proved it can cover anything.
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import os,sys; sys.exit(0 if os.path.exists('/tmp/efda.ready') else 1)
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Liveness asks a different question: can this process still load itself and name
+          # the sink it talks to? A reconcile that fails because the API server is down is
+          # availability, not death, so the liveness probe does not run one.
+          livenessProbe:
+            exec:
+              command: ["python", "-m", "efda", "describe"]
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 6
           resources:
             requests:
               cpu: 50m
@@ -108,6 +131,26 @@ spec:
               value: oke
             - name: EFDA_ALLOWLIST_PATH
               value: /etc/efda/allowlist/allowlist.json
+          # The executor's readiness is the same contract as the controller's: the ready file
+          # appears after the first COMPLETE watch pass, which means the sink answered and
+          # the executor could read what was in it.
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import os,sys; sys.exit(0 if os.path.exists('/tmp/efda.ready') else 1)
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["python", "-m", "efda", "describe"]
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 6
           resources:
             requests:
               cpu: 50m

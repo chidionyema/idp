@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 import yaml
 
@@ -237,3 +238,97 @@ def test_every_workload_pins_a_pod_and_container_security_context():
                 "%s %s: container %s does not drop every capability"
                 % (name, workload, container["name"])
             )
+
+
+def test_every_container_carries_a_probe_the_kubelet_can_run():
+    """The estate's own admission policy refuses a container with no probe.
+
+    MEASURED 2026-10-26: the Greenlane's security-scan on the EFDA candidate failed with
+    seven kyverno failures -- the three EFDA workloads (and their three Pods) carried no
+    probe at all, and the checkpoint Service carried no catalogue label. A probe that names
+    a command the image does not have is worse than no probe: it fails forever and takes the
+    pod with it. So this test checks the probe exists AND that the command it runs is one
+    the image actually carries.
+    """
+    images = {
+        "ghcr.io/chidionyema/efda": ("python",),  # python:3.12-slim
+        "docker.io/library/redis:7.4-alpine": (
+            "redis-cli",
+        ),  # the redis client is in the image
+    }
+
+    def carried_by(image):
+        for prefix, binaries in images.items():
+            if image.startswith(prefix):
+                return binaries
+        return ()
+
+    for name in ("controller.yaml", "namespace.yaml"):
+        for document in load_yaml(os.path.join(PLATFORM, name)):
+            if document.get("kind") not in ("Deployment", "StatefulSet"):
+                continue
+            workload = document["metadata"]["name"]
+            pod = document["spec"]["template"]["spec"]
+            for container in pod.get("containers", []):
+                probes = [
+                    key
+                    for key in ("livenessProbe", "readinessProbe", "startupProbe")
+                    if key in container
+                ]
+                assert probes, "%s %s: container %s has no probe" % (
+                    name,
+                    workload,
+                    container["name"],
+                )
+                for key in probes:
+                    command = (container[key].get("exec") or {}).get("command") or []
+                    assert command, "%s %s: %s has no command" % (
+                        name,
+                        workload,
+                        key,
+                    )
+                    carried = carried_by(container["image"])
+                    assert command[0] in carried, (
+                        "%s %s: %s runs %s, which %s does not carry"
+                        % (name, workload, key, command[0], container["image"])
+                    )
+
+
+def test_the_readiness_probe_reads_the_file_the_controller_writes():
+    """The probe and the program must agree on one path, or readiness is a fiction."""
+    ready = "/tmp/efda.ready"
+    for name in ("controller.yaml", "namespace.yaml"):
+        for document in load_yaml(os.path.join(PLATFORM, name)):
+            if document.get("kind") not in ("Deployment", "StatefulSet"):
+                continue
+            pod = document["spec"]["template"]["spec"]
+            for container in pod.get("containers", []):
+                probe = container.get("readinessProbe") or {}
+                command = " ".join((probe.get("exec") or {}).get("command") or [])
+                if container["image"].startswith("ghcr.io/chidionyema/efda"):
+                    assert ready in command, "%s %s: container %s does not read %s" % (
+                        name,
+                        document["metadata"]["name"],
+                        container["name"],
+                        ready,
+                    )
+
+
+def test_the_checkpoint_service_names_the_catalogue_entity_it_belongs_to():
+    """The estate's require-catalogue-entity policy refuses a Service that serves a port
+    without naming the catalogue entity it belongs to. The entity is the one
+    bin/catalog-platform generates for the efda Flux Kustomization -- layer-efda."""
+    documents = load_yaml(os.path.join(PLATFORM, "namespace.yaml"))
+    service = [doc for doc in documents if doc.get("kind") == "Service"][0]
+    labels = service["metadata"].get("labels") or {}
+    assert labels.get("backstage.io/kubernetes-id") == "layer-efda"
+
+
+def test_the_catalogue_generator_has_a_row_for_the_efda_layer():
+    """layer-efda only exists if the generator can produce it. A label that points at an
+    entity the catalogue never holds is a label that points at nothing."""
+    path = os.path.join(REPO, "bin", "catalog-platform")
+    with open(path, "r", encoding="utf-8") as handle:
+        source = handle.read()
+    for layer in ("efda", "spine", "spine-events"):
+        assert re.search(r'^    "%s": \(' % re.escape(layer), source, re.M), layer
