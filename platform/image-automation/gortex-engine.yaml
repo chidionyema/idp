@@ -1,0 +1,34 @@
+# The private context engine's image: gortex (github.com/zzet/gortex), built in this repository
+# like every other image here, so the estate's own scanner sees it and the estate's own tags
+# decide when it rolls. The third-party binary inside it is pinned by the SHA-256 of the release
+# tarball (gortex-engine.Dockerfile), not by a tag: a tag can be moved, a digest cannot.
+#
+# The broker and the engine are one pod (platform/mcp/estate-context-broker.yaml), so their tags
+# must move together. ImageUpdateAutomation writes both newTag lines in one commit to
+# platform/mcp/kustomization.yaml; two automations on one push branch would collide
+# ("cannot lock ref", crew#406, 2026-08-27), so there is exactly one.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: gortex-engine
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/gortex-engine
+  interval: 5m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: gortex-engine
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: gortex-engine
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc

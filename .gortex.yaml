@@ -1,0 +1,24 @@
+# The estate's context index configuration. Committed so the index is a function of
+# the tree, not of whoever happens to be holding the laptop: the same excludes
+# apply on a developer's machine, in CI, and in the cluster service.
+#
+# WHAT THIS EXCLUDES AND WHY. The index is for source, not for build products.
+# The working tree of this repo carries ~70k files, of which ~24k are virtualenvs,
+# node_modules and tool caches that no agent should ever be told about; indexing
+# them cost 12 minutes and 834 MB of store for zero context. The builtin baseline
+# already skips node_modules/ and .venv/; these are the estate's own names for
+# the same thing, plus the rescued-patch archive, which is history, not source.
+exclude:
+  - .venv-eval/
+  - .venv-314t/
+  - .venv/
+  - .ruff_cache/
+  - .pytest_cache/
+  - .mypy_cache/
+  - __pycache__/
+  - node_modules/
+  - rescued_patches2/
+  - "*.patch"
+  - web/dist/
+  - backstage/dist/
+  - .gortex/
