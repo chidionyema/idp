@@ -28,9 +28,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from .engine import CONFLICT, LANDED, RED, TESTING
+from .engine import BOT_LANE, CONFLICT, LANDED, RED, TESTING
 
-BOT_LANE = "flux/image-updates"
 STATE_REF = "refs/greenlane/state"
 MARKER = "Greenlane-Batch:"
 ADOPTED = "Greenlane-Lane:"  # in a hand-raised PR's body once the engine has adopted it
