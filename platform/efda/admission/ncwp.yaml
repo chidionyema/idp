@@ -1,0 +1,48 @@
+# NCWP -- No Component Without a Pack (Gate 4).
+#
+# A workload in an enforced namespace must carry a component class, and that
+# class must be one the registry knows -- otherwise it is admitted into a
+# coverage hole. The class list lives in the expression because CEL cannot
+# read the ConfigMap the registry snapshot is published to; the reconciler
+# rewrites this expression whenever the set of registered classes changes.
+#
+# The binding is namespace-scoped on purpose: only namespaces labelled
+# efda.estate/enforced=true are exposed to the gate. An unproven gate never
+# stands in front of an estate namespace.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: efda-ncwp
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "statefulsets", "daemonsets"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "cronjobs"]
+  validations:
+    - expression: >-
+        has(object.metadata.annotations) &&
+        'efda.estate/component-class' in object.metadata.annotations &&
+        (object.metadata.annotations['efda.estate/component-class'] in [''])
+      message: >-
+        component class 'efda.estate/component-class' is not in the EFDA registry;
+        no pack covers this workload yet
+      reason: Invalid
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: efda-ncwp
+spec:
+  policyName: efda-ncwp
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        efda.estate/enforced: "true"
