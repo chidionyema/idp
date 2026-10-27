@@ -6,9 +6,21 @@ metadata:
     idp.estate.io/runtime: always-on
     efda.estate.io/layer: coverage
 ---
-# The checkpoint sink (L1). One redis, one namespace, append-only persistence:
-# a checkpoint that has landed must still be there after the pod that wrote it
-# is gone.
+# The checkpoint sink (L1). One redis, one namespace, append-only persistence.
+#
+# The persistence is node-local, and that is a measured decision, not a shortcut:
+# the OKE tenancy is on the free tier and refuses new block volumes. The PVC this
+# sink asked for sat Pending for 43 minutes with
+#   LimitExceeded ... You cannot create a volume because you have reached your
+#   limit (CreateVolume, 2026-10-27),
+# so the sink could never start. The sink's data is therefore an emptyDir: it
+# survives a container restart and is lost when the pod is recreated.
+#
+# What makes that safe is that the emptyDir is a cache, not the record. The
+# durable record of what the estate did is the event spine (JetStream, in
+# event-bus, which has a volume that is already bound) and the registry in git.
+# A checkpoint that must outlive the pod belongs in one of those two, not in a
+# third store that only the free tier's refusal keeps honest.
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -77,14 +89,10 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
-  volumeClaimTemplates:
-    - metadata:
-        name: data
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        resources:
-          requests:
-            storage: 2Gi
+        # The append-only file lives here. See the note at the top of this file:
+        # a block volume cannot be created on this tenancy's free tier.
+        - name: data
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

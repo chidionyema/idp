@@ -24,6 +24,10 @@ spec:
         app.kubernetes.io/name: efda-controller
     spec:
       serviceAccountName: efda-controller
+      # GHCR answers 401 to an anonymous manifest request, so the package needs the
+      # credential the pull-secret.yaml ExternalSecret keeps fresh in this namespace.
+      imagePullSecrets:
+        - name: ghcr-pull
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -83,8 +87,15 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            # The WAL the store falls back to when the sink is unreachable. The root
+            # filesystem is read-only, so the directory has to be a mount, not a path
+            # the program creates for itself.
+            - name: wal
+              mountPath: /var/efda/wal
       volumes:
         - name: tmp
+          emptyDir: {}
+        - name: wal
           emptyDir: {}
 ---
 # The executor (L5). It watches for DiagnosticReports and runs them through
@@ -110,6 +121,10 @@ spec:
         app.kubernetes.io/name: efda-executor
     spec:
       serviceAccountName: efda-executor
+      # GHCR answers 401 to an anonymous manifest request, so the package needs the
+      # credential the pull-secret.yaml ExternalSecret keeps fresh in this namespace.
+      imagePullSecrets:
+        - name: ghcr-pull
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -171,11 +186,18 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
+            # The WAL the store falls back to when the sink is unreachable. The root
+            # filesystem is read-only, so the directory has to be a mount, not a path
+            # the program creates for itself.
+            - name: wal
+              mountPath: /var/efda/wal
       volumes:
         - name: allowlist
           configMap:
             name: efda-allowlist
         - name: tmp
+          emptyDir: {}
+        - name: wal
           emptyDir: {}
 ---
 # The allowlist. Empty on day one: authority is earned per signature, by a
