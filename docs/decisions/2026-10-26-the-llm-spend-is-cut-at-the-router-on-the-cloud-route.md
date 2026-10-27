@@ -1,7 +1,8 @@
 # The estate's LLM spend is cut at the router, on the cloud route, and every saving is measured
 
 **Date:** 2026-10-26
-**Status:** proposed — awaiting the founder's ruling
+**Status:** accepted (founder, 2026-10-26 — "the decision record is solid")
+**Receipt:** [idp#7248 — the founder's ruling](https://github.com/chidionyema/idp/issues/7248#issuecomment-6430382067)
 **Issue:** #7248
 **Spec:** [`docs/specs/2026-10-26-the-estate-llm-spend-floor.md`](../specs/2026-10-26-the-estate-llm-spend-floor.md)
 **Diagnosis:** [`docs/diagnoses/2026-10-26-where-the-estates-llm-spend-actually-goes.yaml`](../diagnoses/2026-10-26-where-the-estates-llm-spend-actually-goes.yaml) — H1 at posterior **0.996**
