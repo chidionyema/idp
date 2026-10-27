@@ -30,6 +30,10 @@ spec:
     spec:
       # The pod's service account token: the activity reads Flux objects with it.
       automountServiceAccountToken: true
+      # GHCR answers 401 to an anonymous manifest request, so the package needs the
+      # credential the pull-secret.yaml ExternalSecret keeps fresh in this namespace.
+      imagePullSecrets:
+        - name: ghcr-pull
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001

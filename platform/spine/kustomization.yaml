@@ -12,10 +12,15 @@ resources:
   - rbac.yaml
   - bridge.yaml
   - worker.yaml
+  # The pull credential for the GHCR package. Without it both pods sit in
+  # ImagePullBackOff with "unauthorized", which reads like a missing image.
+  - pull-secret.yaml
 images:
   # build-multiarch pushes ghcr.io/chidionyema/spine:main-<run>-<sha> from spine.Dockerfile
   # (bin/dockerfiles discovers it by name: `spine`). The image-automation-controller
   # rewrites the newTag line from ImagePolicy flux-system/spine; the marker is how it
-  # finds the line.
+  # finds the line. The tag below is the image built for this commit, written here for
+  # the same reason as the efda one: the controller can only set a tag in a file the
+  # flux/image-updates branch carries, and it does not carry this one yet.
   - name: ghcr.io/chidionyema/spine
-    newTag: main-14591-b1570ed835a6565912a7f8fd94c4fdeb54f4d6cc # {"$imagepolicy": "flux-system:spine:tag"}
+    newTag: main-14976-9063f99d33ba5f9ff7079a8c2633434b7e0c483a # {"$imagepolicy": "flux-system:spine:tag"}

@@ -30,6 +30,10 @@ spec:
       # The bridge talks to NATS and Temporal and reads nothing in the cluster, so it does
       # not need the pod's service account token.
       automountServiceAccountToken: false
+      # GHCR answers 401 to an anonymous manifest request, so the package needs the
+      # credential the pull-secret.yaml ExternalSecret keeps fresh in this namespace.
+      imagePullSecrets:
+        - name: ghcr-pull
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001

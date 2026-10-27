@@ -20,6 +20,16 @@ resources:
   - admission/ncwp.yaml
   - rbac.yaml
   - controller.yaml
+  # The pull credential for the GHCR packages. Without it the pods sit in
+  # ImagePullBackOff with "unauthorized", which reads like a missing image.
+  - pull-secret.yaml
 images:
+  # The tag below is the image build-multiarch pushed for this commit, so the pods
+  # pull an image that exists. It is written here because the
+  # image-automation-controller can only set a tag in a file the
+  # flux/image-updates branch carries, and that branch is an old fork of main:
+  # the controller's own log says "repository up-to-date" while this file's
+  # marker waits for a tag. The marker is kept, so the controller takes the file
+  # over as soon as the branch carries it.
   - name: ghcr.io/chidionyema/efda
-    newTag: 0.0.0 # {"$imagepolicy": "flux-system:efda:tag"}
+    newTag: main-14976-9063f99d33ba5f9ff7079a8c2633434b7e0c483a # {"$imagepolicy": "flux-system:efda:tag"}
