@@ -88,7 +88,9 @@ def test_a_paced_wait_is_accepted_and_still_recorded(ledger):
     door were invisible. A reward signal cannot rank a delay nobody recorded.
     """
     door = _door()
-    answer = door.execute_command("nohup true > /tmp/x.log 2>&1 & sleep 30; tail -n 3 /tmp/x.log")
+    answer = door.execute_command(
+        "nohup true > /tmp/x.log 2>&1 & sleep 30; tail -n 3 /tmp/x.log"
+    )
     assert answer.get("refused") is not True, answer
     rows = _rows(ledger)
     assert [r["kind"] for r in rows] == ["pace-wait"]
