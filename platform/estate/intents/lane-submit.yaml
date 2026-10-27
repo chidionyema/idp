@@ -73,7 +73,12 @@ steps:
       cd {{cwd}} || exit 2
       git fetch -q origin main || { echo "BLIND   lane-submit  cannot fetch origin/main to judge the claim" >&2; exit 2; }
       [ -x bin/claim-gate ] || { echo "BLIND   lane-submit  no bin/claim-gate in this checkout" >&2; exit 2; }
-      GITHUB_REPOSITORY=$(gh repo view --json nameWithOwner -q .nameWithOwner) \
+      # The repository's name is in this checkout's OWN remote. Asking GitHub for it cost 9.5s on
+      # a slow link (measured 2026-10-27), and this step's 40s is 28s of claim-gate plus that
+      # call: the API was the difference between fitting the door and being killed by it. The
+      # remote is local and answers the same question.
+      repo=$(git config --get remote.origin.url | python3 -c 'import re,sys; u=sys.stdin.read().strip(); m=re.search(r"[:/]([^/:]+/[^/:]+?)(?:\.git)?$", u); print(m.group(1) if m else "")')
+      GITHUB_REPOSITORY="${repo:-chidionyema/idp}" \
         bin/claim-gate "$(git merge-base origin/main HEAD)" HEAD
   - name: push the lane
     # 2026-10-12 (#5814): guard + push costs ~35s on a quiet laptop and crossed the 60s cap with
@@ -102,47 +107,75 @@ steps:
       case "$lane" in lane/*) ;; *) lane="lane/$lane" ;; esac
       sha=$(git rev-parse HEAD)
       pushlog=$(mktemp -t lane-submit-push.XXXXXX)
-      git push -q origin "HEAD:refs/heads/$lane" >"$pushlog" 2>&1 &
+      # THE PUSH MUST OUTLIVE THIS STEP (2026-10-27). Measured twice today: the step was
+      # SIGTERMed at its 50s ceiling while the push was still running, and the push DIED WITH IT
+      # -- the lane ref never landed. That is the opposite of what this step has claimed since
+      # #5814 ("the push is not killed with it"). The push is now started in its OWN SESSION, so
+      # nothing that kills the step -- the step's own ceiling, the door's ceiling, the agent's
+      # session -- can reach the handover. `execvp` keeps the SAME pid for git, so the step's
+      # `wait` still reads git's own exit code.
+      python3 -c 'import os,sys
+      try: os.setsid()
+      except OSError: os.setpgrp()
+      os.execvp("git",["git","push","-q","origin",sys.argv[1]])' "HEAD:refs/heads/$lane" >"$pushlog" 2>&1 &
       push_pid=$!
+      # Is the push still running? `kill -0` cannot tell: a finished child that has not been
+      # waited for is a ZOMBIE, and kill -0 succeeds on a zombie -- so a poll on it would spin
+      # for the whole window on a push that had already finished. `ps -o stat=` can: a dead
+      # process is gone (no stat) or a zombie (stat starts with Z).
+      push_alive() {
+        st=$(ps -p "$push_pid" -o stat= 2>/dev/null | tr -d '[:space:]')
+        [ -n "$st" ] || return 1
+        case "$st" in Z*) return 1 ;; esac
+        return 0
+      }
       # The observation window. It bounds the READING, never the push -- and it must FIT inside this
       # step, or the window itself becomes the fourth guessed bound. Measured 2026-10-25: 15 polls at
       # 2s plus the ls-remote round trips each one makes spent the whole 50s cap and the step was
-      # killed (exit 124) while the push had in fact landed. 8 polls is ~16s of sleep plus ~1s per
-      # ls-remote: a glance, not a wait. A push still running when the glance ends is reported as
-      # IN-FLIGHT, which is the truth, and the greenlane status named below is the verdict.
-      on=""; landed=""; polls=0
-      while [ "$polls" -lt 8 ]; do
+      # killed (exit 124). Measured 2026-10-27: eight ls-remote round trips cost ~5s EACH on a slow
+      # link -- 40s of NETWORK inside a 50s step, which is what killed it, twice. The window now
+      # watches the push's OWN process (a local question, free) and the remote ref is read ONCE, at
+      # the end. A push still running when the window ends is reported as IN-FLIGHT, which is the
+      # truth, and the greenlane status named below is the verdict.
+      polls=0
+      while [ "$polls" -lt 18 ]; do
         polls=$((polls + 1))
-        on=$(git ls-remote --heads origin "$lane" 2>/dev/null | awk '{print $1}')
-        if [ "$on" = "$sha" ]; then landed=yes; break; fi
-        if ! kill -0 "$push_pid" 2>/dev/null; then break; fi
+        push_alive || break
         sleep 2
       done
-      repo=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)
+      on=$(git ls-remote --heads origin "$lane" 2>/dev/null | awk '{print $1}')
+      repo=$(git config --get remote.origin.url | python3 -c 'import re,sys; u=sys.stdin.read().strip(); m=re.search(r"[:/]([^/:]+/[^/:]+?)(?:\.git)?$", u); print(m.group(1) if m else "")')
+      repo="${repo:-chidionyema/idp}"
       verdict() {
         echo "        verdict: gh api repos/$repo/commits/$sha/status --jq '.statuses[]|select(.context==\"greenlane\")|.state+\" \"+.description'"
         echo "        that is the whole observation - the lane proves this branch on top of the current main, then lands it"
       }
-      if [ "$landed" = yes ]; then
+      if [ "$on" = "$sha" ]; then
         wait "$push_pid" 2>/dev/null || true
         echo "ok      lane-submit  $lane = $(git rev-parse --short HEAD) on origin"
         verdict
         exit 0
       fi
-      if kill -0 "$push_pid" 2>/dev/null; then
+      if push_alive; then
         # STILL RUNNING IS NOT FAILED. The handover has not happened yet and this step cannot say
         # it has; it also cannot say it has not, and that difference is the whole defect this file
         # has been fixing since #5814. Name the state, name the pid, name how to read the outcome.
         echo "IN-FLIGHT lane-submit  $lane: the push (pid $push_pid) is still running after ${polls} observations; it reaches origin on its own once it completes" >&2
+        # The push's own output is where its verdict lands: the pre-push guard's refusal, or the
+        # network's error. Measured 2026-10-27: a push refused by the fast gate exits 0 from this
+        # step's point of view and fails a minute later, and the agent that has to read the log
+        # by hand should not have to guess which file it is.
+        echo "        push log: $pushlog" >&2
         verdict
         exit 0
       fi
       wait "$push_pid" 2>/dev/null; rc=$?
       out=$(cat "$pushlog")
       # A push that exited 0 can still be ahead of what origin's ref endpoint shows; re-read before
-      # concluding anything. This is a re-read of the MEASUREMENT, not a wait on the work.
+      # concluding anything. This is a re-read of the MEASUREMENT, not a wait on the work -- two
+      # reads, because each one costs ~5s of the step's 50 on a slow link (2026-10-27).
       i=0
-      while [ "$i" -lt 5 ]; do
+      while [ "$i" -lt 2 ]; do
         on=$(git ls-remote --heads origin "$lane" 2>/dev/null | awk '{print $1}')
         [ "$on" = "$sha" ] && break
         i=$((i + 1)); sleep 1
