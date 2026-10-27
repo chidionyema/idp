@@ -9,11 +9,21 @@ accepted; the rungs in §5 are not yet implemented
 
 ---
 
-## 1. The bill, measured
+## 1. The bill, measured — and whose bill it is
 
 Every number in this document comes from one file — the estate gateway ledger
 `~/.estate/efficiency-ledger.jsonl` — read over the 24 hours ending 2026-10-26T19:30Z. The
 measurement is reproducible; the command is in §8.
+
+**Scope, measured 2026-10-27.** This file records the **laptop route's** calls. The client's
+`estate` provider points at `http://127.0.0.1:4000/v1` (`~/.pi/agent/models.json`), and the
+laptop router (`~/.estate/router-state/config.runtime.yaml`) is the process that writes this
+ledger; the cloud route (`https://llm.${ESTATE_ZONE}`) meters through the cluster's cloud keys,
+which this file cannot see. So the two are never added together (§6), and an estate-wide spend
+figure needs a sanctioned cluster-side read — this ledger cannot produce one. Today this is the
+estate's whole model bill only because the client still runs through the laptop; after the flip
+(#7078) the same traffic is metered on the cloud route and the ledger of record becomes the
+cloud's own postgres (R0).
 
 ### 1.1 Last 24 hours
 
@@ -64,6 +74,29 @@ the running laptop router config (`~/.estate/router-state/config.runtime.yaml`) 
 `max_budget: 5.0` / `budget_duration: 1d` and **no `database_url`**. LiteLLM cannot enforce a
 budget without a spend database, so the refusal that was configured never fired: the router
 spent **$29.36 against a $5.00 ceiling** — nearly six times the budget the router was carrying.
+
+### 1.6 Re-measured 2026-10-27: the window moves, the shape does not
+
+The 24 hours ending 2026-10-27T01:08Z, read from the same file with the command in §8:
+
+| model | calls | spend | share |
+|---|---:|---:|---:|
+| `minimax_m27` | 4,654 | **$15.73** | **78.3%** |
+| `deepseek-v4-flash` | 477 | $3.13 | 15.6% |
+| `zai/glm-5.3-flash` | 105 | $1.23 | 6.1% |
+| `voice` | 125 | $0.01 | 0.0% |
+| `groq` (free tier) | 157 | $0.00 | 0.0% |
+| **total** | **5,518** | **$20.09** | |
+
+This is a different window from §1.1, so its totals are not comparable to it — fewer calls, less
+money — and the *shape* is the same: one pinned lane carries the money (78.3% today, 71.7% on
+2026-10-26), the free tier is metered at $0.00 inside its allowance, and every call is an agent
+completion.
+
+**The per-caller gap, re-measured:** every one of the 5,518 rows carries `session: "-"` — **one
+distinct session value in the whole window**. The per-caller share is not a number nobody has
+computed yet; it is a number this ledger cannot produce at all. That is R4's premise, and it is
+why R4's expected saving is deliberately not estimated.
 
 ---
 
@@ -271,7 +304,8 @@ order: **a saving nobody can measure is a saving nobody can keep.**
 - **Problem:** the estate's graded suites and graders call live models; `platform/llm/cassette.py`
   exists for exactly this and is **off by default** (`ESTATE_CASSETTE_MODE=off`). The ledger
   attributes calls to conversations but **not** to callers (`session` is `-` on every agent-loop
-  row), so the size of this share cannot even be named today.
+  row), so the size of this share cannot even be named today — re-measured 2026-10-27: one
+  distinct session value across 5,518 calls (§1.6).
 - **Lever:** (a) attribute callers in the ledger (session/agent id), (b) switch the repeatable
   suites to cassette replay, (c) route the repeatable share to the free fleet (R2).
 - **Owns it:** `platform/llm/cassette.py`, `bin/prm_grader.py`, `bin/idp-prm`,
