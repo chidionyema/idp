@@ -5,7 +5,7 @@
   "counts": {
     "intent": 100,
     "layer": 201,
-    "service": 114,
+    "service": 119,
     "tool": 438,
     "workflow": 78
   },
@@ -16144,6 +16144,147 @@
       ]
     },
     {
+      "id": "cap:service/efda-system/efda-checkpoints",
+      "schema_version": 1,
+      "kind": "service",
+      "summary": "StatefulSet efda-checkpoints in namespace efda-system",
+      "contract": {
+        "inputs": [
+          "kubernetes API"
+        ],
+        "outputs": [
+          "pods"
+        ],
+        "errors": [
+          "image pull, admission, probe failures"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "batch"
+      },
+      "owner": "@chidionyema",
+      "plane": "cluster",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform,clusters"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "cluster",
+      "path": "platform/efda/namespace.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "also_declared_in": [
+        "platform/efda/namespace.yaml"
+      ]
+    },
+    {
+      "id": "cap:service/efda-system/efda-controller",
+      "schema_version": 1,
+      "kind": "service",
+      "summary": "Deployment efda-controller in namespace efda-system",
+      "contract": {
+        "inputs": [
+          "kubernetes API"
+        ],
+        "outputs": [
+          "pods"
+        ],
+        "errors": [
+          "image pull, admission, probe failures"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "batch"
+      },
+      "owner": "@chidionyema",
+      "plane": "cluster",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform,clusters"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "cluster",
+      "path": "platform/efda/controller.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:service/efda-system/efda-executor",
+      "schema_version": 1,
+      "kind": "service",
+      "summary": "Deployment efda-executor in namespace efda-system",
+      "contract": {
+        "inputs": [
+          "kubernetes API"
+        ],
+        "outputs": [
+          "pods"
+        ],
+        "errors": [
+          "image pull, admission, probe failures"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "batch"
+      },
+      "owner": "@chidionyema",
+      "plane": "cluster",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform,clusters"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "cluster",
+      "path": "platform/efda/controller.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
       "id": "cap:service/epistemic-fabric/epistemic-ingest-cicd",
       "schema_version": 1,
       "kind": "service",
@@ -19310,6 +19451,98 @@
       ]
     },
     {
+      "id": "cap:service/spine/spine-bridge",
+      "schema_version": 1,
+      "kind": "service",
+      "summary": "Deployment spine-bridge in namespace spine",
+      "contract": {
+        "inputs": [
+          "kubernetes API"
+        ],
+        "outputs": [
+          "pods"
+        ],
+        "errors": [
+          "image pull, admission, probe failures"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "batch"
+      },
+      "owner": "@chidionyema",
+      "plane": "cluster",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform,clusters"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "cluster",
+      "path": "platform/spine/bridge.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:service/spine/spine-worker",
+      "schema_version": 1,
+      "kind": "service",
+      "summary": "Deployment spine-worker in namespace spine",
+      "contract": {
+        "inputs": [
+          "kubernetes API"
+        ],
+        "outputs": [
+          "pods"
+        ],
+        "errors": [
+          "image pull, admission, probe failures"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "batch"
+      },
+      "owner": "@chidionyema",
+      "plane": "cluster",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform,clusters"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "cluster",
+      "path": "platform/spine/worker.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
       "id": "cap:service/staging/canary",
       "schema_version": 1,
       "kind": "service",
@@ -20866,7 +21099,12 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/catalog-platform",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/observer",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
@@ -29399,6 +29637,10 @@
         },
         {
           "id": "cap:tool/langfuse-password",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/observer",
           "edge": "invokes"
         }
       ],
