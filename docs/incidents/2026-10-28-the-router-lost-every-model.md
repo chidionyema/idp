@@ -195,6 +195,86 @@ deleted it ([0034](../../docs/decisions/0034-workloads-are-placed-by-the-free-ti
 a precondition that blocks a merge is the wrong shape, and a scheduled drill that says "the
 estate is 250 GB over its allowance, here is the list" is the right one.
 
+## The storage waste: 1 GiB of data, 50 GB of volume
+
+The founder, on the same day: *"given we are on free tier and don't want to pay we can't afford
+to be lax about what's eating up resources"*. Measured, not assumed:
+
+- **Every CSI block volume in the compartment is 50 GB.** The estate's own manifests declare
+  `1Gi` (`platform/jit/deployment.yaml`, `platform/commerce/data/redis.yaml`), `2Gi`
+  (`platform/ns-fences/*.yaml`), `5Gi` (`platform/llm/ollama.yaml`,
+  `platform/agent-workforce/cronjob.yaml`, `platform/hermes-agent/gateway.yaml`,
+  `platform/monitoring/kube-prometheus-stack.yaml`) and `20Gi`
+  (`platform/cortex/statefulset.yaml`, `platform/ns-fences/commerce.yaml`). **OCI block
+  volumes have a 50 GB minimum**, so every one of those claims is provisioned as 50 GB. We are
+  not storing 250 GB of data; we are **buying** 250 GB of provisioned capacity to hold a few
+  gigabytes. The waste is the provisioning, not the data.
+- **The volume metadata is empty.** `oci bv volume get` on the five live volumes returns no
+  tags and no metadata, so OCI cannot name the workload that owns a volume. The cluster is the
+  only source of truth for that mapping, and the cluster is unreachable (below). The join key
+  is the `csi-…` name.
+- **The corpses are not the problem; deleting them is a no-op.** A replaced PersistentVolume
+  leaves its volume TERMINATED — not deleted — and OCI keeps TERMINATED volumes listed. The
+  reclaim door deleted seven of them on 2026-10-28 and printed
+  `ok oci-reclaim deleted csi-a6d65057-…` for each, and **the compartment did not change**:
+  the same fourteen names are listed with the same ages. Deleting a TERMINATED volume is a
+  no-op that prints a receipt. The door's rule was wrong, and it is corrected in
+  `platform/estate/libexec/oci-reclaim.py`: TERMINATED is *already dead*, not reclaimable.
+- **What is actually over the allowance, measured:**
+  `== live (AVAILABLE) total: 250 GB across 5 volume(s)` — five volumes, all `ATTACHED/iscsi`
+  to the running node, against a **200 GB** Always Free allowance. The nine TERMINATED volumes
+  (450 GB) are listed but dead. **We are 50 GB over on live storage, and a surge node needs a
+  50 GB boot volume, so the apply needs 50 GB of headroom: live must be at most 150 GB.**
+- **Live now:** five attached volumes (250 GB). OCI carries no tag or metadata on them
+  (`oci bv volume get` returns none), so the owning workload can only be named by the
+  cluster — and the join key is the `csi-…` name.
+
+### What data we do not need
+
+**No estate data needs 50 GB.** The largest real state is `cortex` at 20Gi. Everything else is
+either a cache (`redis` 1Gi, `jit` 1Gi — reproducible), an artefact stream (`cronjob` 5Gi,
+`hermes` 5Gi — R2 already holds the critical backups), a metrics window
+(`kube-prometheus-stack` 5Gi — shorter retention, then R2), or model weights
+(`ollama` 5Gi — the free floor lane, and the one that genuinely needs its bytes on disk).
+
+### The plan, so this never eats the tier again
+
+1. **One volume, not five.** Keep exactly one 50 GB block volume for the workload that
+   genuinely needs disk (`cortex`). Move `redis`, `jit`, `cronjob`, `hermes` and the
+   Prometheus window off block storage — in-memory or `emptyDir` where the data is
+   reproducible, R2 where it is not. One volume is 50 GB against a 200 GB allowance; five is
+   250 GB against it.
+2. **A replaced PV must not leave a corpse.** The CSI storage class must reclaim with
+   `Delete`; every lingering 50 GB shell is an outage waiting for a vendor refusal. And the
+   reclaim door's rule is corrected: a TERMINATED volume is already dead — deleting it prints
+   a receipt and changes nothing — so the door reports it as released, never as reclaimed.
+3. **Ask for nothing new.** The apply fails because a **surge node** needs a 50 GB boot volume
+   and there is no headroom. The surge is only needed because the pool's shape (4 OCPU /
+   24 GB) does not match the **running** node (2 OCPU / 12 GB). Declaring the pool to be what
+   the node already is removes the surge, removes the volume, and removes the refusal: the
+   free tier decides, and the running node is what the free tier already gives.
+4. **The capacity guard gates the apply.** Ask the free tier only for what it gives:
+   `--nodes=1:1`, one LiteLLM replica with a `ScheduleAnyway` spread, one node of 2 OCPU /
+   12 GB, and live block storage at or under **150 GB** so a 50 GB boot volume can be created
+   when it is genuinely needed. The allowance is declared once, in
+   `platform/ladder/capacity.json`, and the guard compares the ask with it **before** the
+   vendor refuses.
+5. **Two of the five attached volumes have to go, and they are the two smallest claims.**
+   `redis` (1Gi) and `jit` (1Gi) are caches and scratch — reproducible, and R2 already holds
+   the critical data. Releasing them takes live storage from 250 GB to 150 GB and buys the
+   headroom the apply needs. That release needs the cluster to name the two volumes, which
+   is the measurement below.
+6. **Never pay.** The refusal `You cannot create a volume because you have reached your
+   limit. Upgrade to a paid account.` is the estate's alarm, not a bill to accept.
+
+**The gap:** the five live volumes' owning workloads are still unnamed, because the cluster
+API is unreachable — the bridge instance is TERMINATED and the endpoint NSG (`cp-tiafzl`) has
+no ingress rule. The next measurement, the moment the cluster answers, is
+`kubectl get pv -o wide` and `kubectl get pvc -A -o wide`, joined on the `csi-…` name. Until
+then the door keeps the three oldest volumes and the capacity guard counts them as live: a
+guard that counts a corpse as live is a guard that under-reports, and that is why the
+allowance is checked against the vendor's own list, not against a manifest.
+
 ## Recognition
 
 The MiniMax lane — the lane that carried this recovery — is promoted by the founder to the

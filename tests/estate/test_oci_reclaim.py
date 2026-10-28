@@ -163,26 +163,28 @@ def test_a_volume_in_use_is_kept(tmp_path) -> None:
     assert "not AVAILABLE or TERMINATED" in out
 
 
-def test_a_terminated_volume_is_reclaimable_because_it_is_dead(tmp_path) -> None:
-    """A terminated volume is dead, and it still holds the storage allowance.
+def test_a_terminated_volume_is_kept_because_it_is_already_released(tmp_path) -> None:
+    """A terminated volume is dead, and OCI has already released it.
 
-    MEASURED 2026-10-28: deleting a volume leaves it in state TERMINATED, and nine of those
-    held 450GB of the tenancy's allowance -- which is why deleting three of them did not free
-    the allowance and the cluster could not create a volume. A door that kept them "because
-    they are not AVAILABLE" was keeping the capacity that was blocking the cluster.
+    MEASURED 2026-10-28: the door deleted seven TERMINATED volumes, printed a receipt for each
+    one, and the compartment went on listing the same fourteen names with the same ages. The
+    refusal was explained by the LIVE storage -- five attached volumes, 250GB, against a 200GB
+    Always Free allowance -- and only a volume that is still AVAILABLE and unattached can be
+    deleted to move that number. A door that claims to reclaim a dead volume prints a receipt
+    and frees nothing, which is the defect this test now refuses.
     """
     dead = _volume("ocid1.volume.11", "csi-hhhh", **{"lifecycle-state": "TERMINATED"})
     chosen, out = _select([dead], tmp_path, keep_oldest=0)
-    assert chosen == ["ocid1.volume.11"], out
-    assert "it is dead" in out
+    assert chosen == [], out
+    assert "already released" in out
 
 
 def test_a_terminated_volume_is_never_mistaken_for_an_attached_one(tmp_path) -> None:
     """A dead volume is not attached, and the rule does not need the attachment API to say so."""
     dead = _volume("ocid1.volume.12", "csi-iiii", **{"lifecycle-state": "TERMINATED"})
     chosen, out = _select([dead], tmp_path, keep_oldest=0, attached=["ocid1.volume.12"])
-    assert chosen == ["ocid1.volume.12"], out
-    assert "it is dead" in out
+    assert chosen == [], out
+    assert "already released" in out
 
 
 def test_a_volume_that_is_not_a_csi_volume_is_kept(tmp_path) -> None:
