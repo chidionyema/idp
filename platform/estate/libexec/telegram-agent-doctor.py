@@ -264,7 +264,7 @@ def probe_workflow(workflow: str) -> tuple:
     layers under them, so a red tick is not proof about a Telegram agent. It is reported,
     with its run, next to the chain this doctor walked.
     """
-    path = "actions/runs?workflow_id={}&per_page=1".format(workflow)
+    path = "actions/workflows/{}/runs?per_page=1".format(workflow)
     rc, out, err, _receipt = run_intent(
         "gh-api", {"path": path, "params": "--jq .workflow_runs[0].conclusion"}, 30
     )
@@ -283,6 +283,10 @@ def probe_workflow(workflow: str) -> tuple:
         return OK, "the last tick of {} was green".format(workflow)
     if verdict == "failure":
         return FAIL, "the last tick of {} was red".format(workflow)
+    if verdict == "cancelled":
+        return BLIND, "the last tick of {} was cancelled -- it measured nothing".format(
+            workflow
+        )
     return BLIND, "the last tick of {} was {}".format(workflow, verdict)
 
 

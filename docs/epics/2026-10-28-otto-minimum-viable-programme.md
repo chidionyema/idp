@@ -60,6 +60,18 @@ Telegram — but that tick answers the **founder**, on a schedule, about both Ot
 under them. It is not a door an agent can ask, it does not name the first broken link, and it
 cannot repair anything. The estate could watch Otto; it could not *ask*.
 
+**Measured 2026-10-28, and it is worse than "the tick is narrow":** the last six scheduled
+ticks of `otto-parity.yml` were **cancelled**, and the two before them were red. The job
+started at 15:26:04Z and was cancelled at 15:41:25Z — its own `timeout-minutes: 15` — with
+every step before the playbook green (checkout, python, oci cli, kubectl, the OIDC token
+exchange, the kubeconfig mint) and the playbook step itself `cancelled`. So the estate's Otto
+SLA has **measured nothing for two days**: the first broken link is
+`bin/idp-oke-break-glass otto-parity`, whose steps run `kubectl exec` without a bound, so a
+cluster that does not answer turns the whole tick into a timeout instead of a row. That is
+the same defect class as decision 0043 — a guessed bound, or no bound at all, in someone
+else's place — and it is why the doctor names a link at a time instead of running one long
+grader.
+
 **RC4 — Otto's own control plane was blind, so Otto could not read its own state.**
 Measured 2026-10-28, from this laptop: the cluster did not answer (`kubectl` reached the
 100 s door ceiling), the memory door refused the connection (`URLError: EOF occurred in
@@ -115,6 +127,11 @@ on `/fleet`.
 **DoD:** the parity tick's Telegram rows come from the doctor (one set of rows, not two), the
 doctor's verdict appears on `/fleet` with the link named, and an agent can call the same door
 and get the same answer the founder sees.
+
+The tick itself has to stop timing out first: measured 2026-10-28, its playbook step hangs
+and its own 15-minute timeout cancels the run, so there is currently no verdict to join to
+anything. The fix is a bound on every playbook step — the same lesson as decision 0043 — and
+it belongs to the workflow's owner, not to this door.
 
 ### Wave 2 — the answer floor becomes a gate
 
