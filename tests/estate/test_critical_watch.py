@@ -90,7 +90,7 @@ def _function(**over) -> dict:
         },
         "remediation": {
             "runner": "claude",
-            "repo": "/tmp",
+            "repo": "/tmp",  # noqa: S108 -- a test fixture path, never opened by the watcher
             "budget": 5,
             "task": "bring the thing back",
         },
