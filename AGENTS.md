@@ -524,3 +524,22 @@ NATS JetStream → a Temporal signal → a workflow that verifies the outcome) t
 the estate's waking into the same kind of trigger: an event starts the work, and the agent is
 called to decide only what the event cannot settle. An action the spine wakes is `machine`
 until it needs a judgement.
+
+## 13. The estate's state right now
+
+The founder asked for the work to be visible in one place instead of re-derived by whoever picks
+it up next. This block is that place. Every row was measured on the day it names; a row that
+could not be measured says so, never PASS.
+
+| what | state | measured by |
+|---|---|---|
+| the context broker | LANDED and proven | PR #7326, squash `0d9a8db4`, Greenlane-Head `09d8a476`; re-proved from the landed commit (verdict ALLOW, 8 excerpts, `/healthz` ok); issue #7262 closed with proof comment `6462965317` |
+| the OCI block storage | RECLAIMED | 7 dead TERMINATED CSI volumes (350GB) deleted through the `oci-reclaim` door; the compartment holds 5 volumes / 250GB against a 200GB allowance |
+| the estate memory door | DOWN | writes answer `written=false ... UNWITNESSED`, reads answer HTTP 500; the upstream (`unified-memory.estate.internal`) is in-cluster and the cluster is not up |
+| the cluster | BLOCKED on the node half | CI run `40684052518`, job `122801786864` fails at `bin/idp-oke-rebuild --apply` with `nodes-per-node-pool limit has been exceeded`; that half is owned by idp#7318 |
+| the laptop volume | RECLAIMED, continuously | the resident guardian (`ai.estate.disk-watch`) takes one bounded incremental step per cycle and prints a RESULT line with free space before and after; the old watcher freed 0M |
+| the critical-function spine | BUILT | `catalog/critical-functions.json` + `platform/estate/libexec/critical-watch.py`: a dead critical function raises a structured incident, alerts, and invokes an agent with the incident attached |
+
+The live surfaces are the estate graph (`growmos context` — every row above is a node there),
+`crew/STATE.md` (the generated snapshot; regenerate it, never trust it), and `/fleet` (the live
+board). This block is dated **2026-10-28**: when it disagrees with those, they are right.
