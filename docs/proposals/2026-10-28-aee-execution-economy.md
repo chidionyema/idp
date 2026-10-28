@@ -9,6 +9,18 @@
 **Repository state at measurement:** `origin/main` = `8d2d86c62` ("the AEI collector gets its own
 directory and its own Flux row (#7341)")
 
+**CORRECTION (2026-10-28 21:40 UTC, after landing) — finding C2 was wrong.** The cloud-default
+failover code **is** version control. The deployed `~/.estate/litellm-local/front.py` and the
+repository copy `platform/llm/front.py` are **byte-identical** (md5 `27c2a236a1e40331d00f436d715a592a`,
+566 lines / 22 333 B), and the repository carries three tests for it
+(`tests/test_router_front.py`, `tests/test_router_front_fails_over_to_the_cloud.py`,
+`tests/test_router_front_falls_back_to_the_laptop_when_the_cloud_fails.py`). The G0 pass compared
+the deployed file with the laptop's own **backup**, `front.py.pre-6815`, and read it as the
+repository's copy. C2 and the G0 repair "land `front.py` in the repository" are struck below. C1
+was re-measured and **stands**: `llm/config.yaml` sha256 `4dab71e8…` is byte-identical to the
+deployed config, and `platform/llm/config.yaml` sha256 `6d381fd5…` carries neither
+`lane_registry` nor `route_table`.
+
 ---
 
 ## 0. What this document is, and what it is not
@@ -160,7 +172,7 @@ tests → deployment → observed usage → telemetry → open work → gap → 
 | # | Capability | Implementation | Callers | Authority | Tests | Deployment | Observed usage | Telemetry | Open work | Gap | Decision |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 1 | **LiteLLM router (cloud/default)** | `platform/llm/litellm.yaml`, `platform/llm/config.yaml` | every agent via `ESTATE_ZONE` | routing, quotas, master key | none found for the deployment itself | cluster Deployment | **unreachable** — `cluster-health` exit 124 | **none**: no `lane_registry`/`route_table` callback mounted | — | TLS down (F1); no supply discovery on the default route (C1) | **REUSE + REPAIR** — never replace |
-| 2 | **LiteLLM router (laptop/fallback)** | `~/.estate/litellm-local/` (front 566 lines, config 49 013 B) + `llm/config.yaml` | all local agents | same | — | launchd-managed local | **OPERATIONAL** — `narrate` and `groq/openai/gpt-oss-20b` complete | `action_ledger`, `route_table` | — | stale catalogue (F2); `front.py` drift (C2) | **REUSE + REPAIR** — land the front in the repo, reconcile the catalogue |
+| 2 | **LiteLLM router (laptop/fallback)** | `~/.estate/litellm-local/` (front 566 lines, config 49 013 B) + `llm/config.yaml` | all local agents | same | — | launchd-managed local | **OPERATIONAL** — `narrate` and `groq/openai/gpt-oss-20b` complete | `action_ledger`, `route_table` | — | stale catalogue (F2); the machine's copy of the front can drift from the repository's (C2') | **REUSE + REPAIR** — reconcile the catalogue; check the deployed front against the repository's |
 | 3 | **lane_registry** (supply discovery) | `platform/llm/lane_registry.py` | `route_table.py`; `bin/litellm-local` MODULES; `llm/config.yaml` callbacks | lane state, quota forecast, probes | `tests/test_lane_registry.py`, `tests/test_route_table.py` | **laptop only** | `estate_invoke router-lane-health` → "no router calls in the last 60 min" | its own state store | — | **not on the default route**; cannot see the cloud router's own lanes | **REUSE + EXTEND to the cloud router** — this is AEE's supply spine |
 | 4 | **route_table / routing-matrix / cost-ladder / router_catalog / availability.yaml** | `platform/llm/{route_table.py,routing-matrix.yaml,cost-ladder.yaml,cost-table.schema.json,hosting-cost-table.yaml,router_catalog.py,availability.yaml}` | router callbacks | lane selection + pricing | `tests/test_route_table.py` | via the router image | live on the laptop | — | — | two config copies (C1); stale model names inside the catalogue | **REUSE as the single supply/economics catalog** |
 | 5 | **AEI** (execution-intelligence / observation plane) | `packages/aei/` (`contract.py`, `core.py`, `analysis.py`, `pgstore.py`, `server.py`, `client.py`, `estate.py`), `bin/aei-collector`, `bin/aei-observe`, `platform/aei/aei.yaml`, `features/assurance/aei.feature` | FleetView / `/fleet` | observation, scoring | `packages/aei/tests/*` (3 test modules) | cluster Deployment (`platform/aei/aei.yaml`) + local collector | **NOT ESTABLISHED** — cluster unreachable | its own manifest contract (`aei.manifest.v1`: schema, component, version, owner, dependencies, events, metrics, correlation, visualisations, acceptance) | **#7311** OPEN, claimed by `pi-aei-ops` (paths include `platform/llm/callbacks/aei_observer.py`, `platform/llm/config.yaml`) | not yet mounted in a router config; the claim is the in-flight fix | **REUSE as the single observation + economic substrate** |
@@ -187,14 +199,21 @@ tests → deployment → observed usage → telemetry → open work → gap → 
   `route_table`. Two copies of one layer, diverged, and the divergence is exactly "the default
   route cannot see its own supply". **AEE must reconcile these into one parameterised source with
   two rendered targets, or the supply-discovery spine can never exist on the default route.**
-- **C2 — The cloud-default failover logic is outside version control.**
-  The deployed `~/.estate/litellm-local/front.py` is **566 lines / 22 333 B** and implements the
-  founder's 2026-10-26 ruling precisely: cloud first, answer-based failover, exponential
-  pass-over (`CLOUD_DOWN_S=60`, doubling to `CLOUD_DOWN_MAX_S=600`), and it re-asks the next
-  target the same question when the cloud accepts and then fails. The repository copy
-  `platform/llm/front.py` is **96 lines / 3 466 B** — byte-identical in size to
-  `front.py.pre-6815`, i.e. the pre-failover ancestor. The mechanism that implements the ruling
-  **cannot be reviewed, cannot be CI-tested, and is lost if this machine is rebuilt.**
+- **C2 — STRUCK (2026-10-28, measured): the cloud-default failover logic IS in version control.**
+  The deployed `~/.estate/litellm-local/front.py` and the repository copy `platform/llm/front.py`
+  are byte-identical — md5 `27c2a236a1e40331d00f436d715a592a`, 566 lines / 22 333 B — and that
+  copy implements the founder's 2026-10-26 ruling precisely: cloud first, answer-based
+  failover, exponential pass-over (`CLOUD_DOWN_S=60`, doubling to `CLOUD_DOWN_MAX_S=600`), and
+  it re-asks the next target the same question when the cloud accepts and then fails. It is
+  reviewed and CI-tested by `tests/test_router_front.py`,
+  `tests/test_router_front_fails_over_to_the_cloud.py` and
+  `tests/test_router_front_falls_back_to_the_laptop_when_the_cloud_fails.py`. The G0 pass
+  compared the deployed file with the laptop's `front.py.pre-6815` **backup** and read the
+  result as the repository's copy; that comparison was wrong.
+  *What remains true* is that the machine keeps its own copy of the front, so the two **can**
+  drift. The front door's authority must be the repository, and the deploy path must **prove**
+  the machine's copy matches it (a `sha256` comparison), rather than assuming a hand-copy did
+  what it said. That is a drift check, not a missing file.
 - **C3 — Two budget stores, with no declared authority boundary.**
   `bin/budget_governor.py` enforces a process-level test-time ceiling with information-gain and
   novelty checks and forced termination; `sovereign/engine/budget.py` holds durable, versioned,
@@ -327,7 +346,8 @@ rollback. A gate is closed only on the proof, not on the plan.
      document** — 15 of 15 rows carry a state and evidence.
   2. The supply is measured on **both** routes with a dated, repeatable probe. **NOT MET** —
      the cloud route is down (F1) and the laptop catalogue is stale (F2).
-  3. Every duplicate (C1–C6) has a named owner and a decision. **MET.**
+  3. Every duplicate (C1, C3–C6; C2 was struck as false on 2026-10-28) has a named owner and a
+     decision. **MET.**
 - **Proof.** This document, merged, with every quoted command re-runnable.
 - **Remaining G0 work, and who must do it.**
   - **Restore the cloud route** (TLS at `llm.mumchimp.com`, and the estate ingress that also
@@ -339,8 +359,11 @@ rollback. A gate is closed only on the proof, not on the plan.
   - **Reconcile the router catalogue** against the live provider model list and remove dead
     entries. *Owner: platform.* `groq/llama-3.1-8b-instant`, `groq/qwen/qwen3-32b` and
     `groq/meta-llama/llama-4-scout-17b-16e-instruct` are dead.
-  - **Land `front.py` in the repository** (C2). *Owner: platform.* The cloud-default failover is
-    currently unreviewable and unrecoverable.
+  - ~~**Land `front.py` in the repository** (C2).~~ **STRUCK 2026-10-28**: the repository copy is
+    byte-identical to the deployed one (md5 `27c2a236…`) and three tests cover it. What remains
+    is the **drift check**: the deploy path must compare the machine's copy with the
+    repository's, so a hand-edited front is caught before it becomes the running door.
+    *Owner: platform.*
 
 ### G1 — Canonical contracts (the shared vocabulary)
 
@@ -571,7 +594,7 @@ The last one is the Estate's rule in operational form: **unknown cost is shown a
 |---|---|---|---|
 | Supply truth on the default route | G2 | `platform/llm/litellm.yaml`, `platform/llm/config.base.yaml`, `platform/llm/lane_registry.py`, `platform/llm/route_table.py` | **must not collide with #7311's `platform/llm/config.yaml` claim** — split the ConfigMap change across two claims or sequence them |
 | Router catalogue reconciliation | G2 | `llm/config.yaml`, `platform/llm/routing-matrix.yaml` | needs #7311 to land first if both touch config |
-| `front.py` back into the repo | G0 | `platform/llm/front.py` | small, high value, unblocked |
+| `front.py` drift check (the deploy path compares the machine's copy with the repository's) | G0 | `platform/llm/front.py`, `bin/litellm-local` | small, unblocked — the copy already exists in the repo; the CHECK does not |
 | Work graph + contracts | G1, G3 | `sovereign/engine/work_graph.py`, `features/assurance/work-graph.feature`, `docs/specs/2026-10-28-aee-work-graph.md` | new paths, no collision |
 | Extend the existing execution substrate | G3, G5 | `platform/queue/dispatcher.py`, `platform/execution/**`, `tests/test_worker_pool.py`, `tests/test_queue_dispatcher.py` | **extend, do not replace.** The missing pytest modules for the pool, the queue and the worktree manager are part of this claim — the layer is validated by script only (§3.4) |
 | Economic allocation policy | G4 | `sovereign/engine/allocation.py`, `features/assurance/economic-allocation.feature` | new paths |
@@ -588,7 +611,7 @@ AEE issue exists yet; this proposal's issue is the record.
 | **Cloud route stays down** — every default-route claim in `AGENTS.md` §7a is false in practice | high | high | G0 measures it daily; the AEE records the serving route on every receipt so the policy can never be assumed |
 | **Ollama supply stays empty** — the cost floor is fictional | high | medium | Either restore supply or formally retire the lane in the cost ladder; AEE will not price an empty shelf |
 | **Two config copies drift again** (C1) | high | high | G2's parameterised single source with two rendered targets, plus a CI check that the renders match |
-| **Unversioned failover code is lost** (C2) | medium | high | G0 lands `front.py` in the repo and deletes the machine copy's authority |
+| **The machine's copy of the front drifts from the repository's** (C2') | medium | high | G0 adds a `sha256` check to the deploy path: the repository copy is the authority, and a hand-edited machine copy is refused |
 | **Duplicate budget authority** (C3) | medium | high | G1 writes the authority boundary; G4 binds reservations to exactly one store |
 | **AEI and the ledger both claim to be the economic spine** (C4) | medium | medium | G1: AEI reads the ledger; one signer |
 | **Learned routing is adopted on narrative** | medium | high | G4 fixes the deterministic-first rule and shadow mode in advance; the benchmark ladder is the only door |
@@ -635,7 +658,7 @@ and the real free-lane yield (no models pulled).
 | Ollama free lane | **DORMANT (no supply)** | `replicas: 0`; `/api/tags` → `[]` |
 | Goal / subgoal system | **OPERATIONAL** | `platform/estate/memory/plan.py`; this session |
 | Capability index | **IMPLEMENTED** | `bin/capability-index` on `origin/main` |
-| `front.py` cloud-default failover | **IMPLEMENTED but NOT VERSIONED** (C2) | deployed 566 lines vs repo 96 lines |
+| `front.py` cloud-default failover | **IMPLEMENTED and VERSIONED** | the deployed copy is byte-identical to `platform/llm/front.py` (md5 `27c2a236…`); three repository tests |
 | Estate memory plane | **DEGRADED** | `bin/estate-brief` → `URLError: EOF … _ssl.c:1129` |
 | RIP / Oracle / Stewardship | **NOT ESTABLISHED** | not measured in this pass |
 | AEE canonical entities | **SPECIFIED only** | zero occurrences on `origin/main` |
@@ -646,7 +669,7 @@ and the real free-lane yield (no models pulled).
 
 **It asks for one decision:** proceed with AEE as the **execution-economics sharpening of the
 Estate Master Epic**, starting with G0's four remaining repairs (cloud route, local supply,
-catalogue reconciliation, `front.py` into the repo) and G1's contracts.
+catalogue reconciliation, and a `front.py` drift check) and G1's contracts.
 
 **It does not ask for:** a new router, a new coordinator, a new budget store, a new verification
 engine, a new capability registry, a new task queue or worker pool, or a second programme
