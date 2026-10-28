@@ -19,26 +19,32 @@ worth stating exactly rather than rounding up.
 
 ### What NSVEE is today (measured, `nsvee/engine.py` at `205c3f196`)
 
+Sources are named by **symbol, not by line number**: a line number rots the next time the file is
+edited, and a rotted citation is a false one. `tests/test_nsvee_estate_enforcement.py` reads every
+symbol named here out of `nsvee/engine.py` and fails if one is gone, so this table cannot rot
+silently.
+
 | tier | what it does | where |
 |---|---|---|
-| 1 | `formalize(prompt)` turns a prompt into a `FormalSpec` with machine-checkable invariants and named ambiguities. An ambiguity ends the run as `HUMAN_INPUT_REQUIRED` — no code is emitted | `nsvee/engine.py:596` |
-| 2 | constrained JSON generation of `VerifiedTaskOutput{plan_steps, code_implementation, unit_tests, dependencies}` through a model-agnostic `Router` (`LiteLLMRouter`, `FakeRouter`) | `nsvee/engine.py:180`, `:222`, `:251` |
-| 3 | `_verify(out, timeout_s)` runs the generated code **and** its tests in a sandbox — `DockerRunner` (no network, read-only filesystem) with `RlimitsRunner` as the fallback — and returns verdicts `PASS`, `FAIL`, `TIMEOUT`, `OOM`, `SANDBOX_ERROR`. One `PASS` is not a verdict: the run is repeated (`budgets.confirmation_runs = 1`) to defeat flakes | `nsvee/engine.py:629`, `:287`, `:342`, `:434` |
-| 4 | orchestration and feedback: `budgets.max_retries = 4`, `max_wall_clock_s = 600`, feedback capped at `max_feedback_chars = 4000` with the last `max_feedback_history = 3` failure reports | `nsvee/engine.py:535`, `:651` |
+| 1 | `formalize(prompt)` turns a prompt into a `FormalSpec` with machine-checkable invariants and named ambiguities. An ambiguity ends the run as `HUMAN_INPUT_REQUIRED` — no code is emitted | `NSVEE.formalize`, `FormalSpec` |
+| 2 | constrained JSON generation of `VerifiedTaskOutput{plan_steps, code_implementation, unit_tests, dependencies}` through a model-agnostic `Router` (`LiteLLMRouter`, `FakeRouter`) | `VerifiedTaskOutput`, `Router`, `LiteLLMRouter`, `FakeRouter` |
+| 3 | `_verify(out, timeout_s)` runs the generated code **and** its tests in a sandbox — `DockerRunner` (no network, read-only filesystem) with `RlimitsRunner` as the fallback — and returns verdicts `PASS`, `FAIL`, `TIMEOUT`, `OOM`, `SANDBOX_ERROR`. One `PASS` is not a verdict: the run is repeated (`budgets.confirmation_runs = 1`) to defeat flakes | `NSVEE._verify`, `Verdict`, `DockerRunner`, `RlimitsRunner` |
+| 4 | orchestration and feedback: `budgets.max_retries = 4`, `max_wall_clock_s = 600`, feedback capped at `max_feedback_chars = 4000` with the last `max_feedback_history = 3` failure reports | `Budgets`, `NSVEE.run` |
 
 The terminal statuses a `PipelineReport` can carry are exactly: `VERIFIED`,
 `HUMAN_INPUT_REQUIRED`, `EXHAUSTED`, `SANDBOX_DEGRADED`, `FORMALIZATION_ERROR`
-(`nsvee/engine.py:545`, `:654`, `:669`, `:674`, `:718`, `:727`).
+(`PipelineReport.status`).
 
 `post_verify(out)` is the seam for an independent oracle — "check the artifact against something
 the model did not author". The base implementation returns `None`: it is a hook, not an
-implementation (`nsvee/engine.py:645`).
+implementation (`NSVEE.post_verify`).
 
 ### The gap that decides this ADR
 
-**There is no verify-only entry point.** The public surface of `NSVEE` is `formalize`,
-`post_verify` and `run`. `_verify` is private and takes a `VerifiedTaskOutput` — the object the
-generation pipeline itself produced. `run()` always starts from a prompt and generates.
+**There is no verify-only entry point.** The public surface of `NSVEE` is `NSVEE.formalize`,
+`NSVEE.post_verify` and `NSVEE.run`. `NSVEE._verify` is private and takes a `VerifiedTaskOutput`
+— the object the generation pipeline itself produced. `NSVEE.run()` always starts from a prompt
+and generates.
 
 So NSVEE can verify an artifact it generated. It cannot, today, verify an artifact that arrived
 from anywhere else: an agent's edit, a human's commit, a dependency bump.
@@ -184,6 +190,22 @@ The surfaces this ADR requires — the same list the checker enforces, in a mach
   {"id": "ci-verification", "path": ".github/workflows/verifier.yml", "markers": ["nsvee_enforcement", "receipt"]},
   {"id": "merge-gate", "path": ".github/workflows/ci.yml", "markers": ["nsvee_enforcement", "receipt"]}
 ]
+```
+
+And the engine surface this ADR cites, in the same machine-readable form, so the citation is
+checkable rather than decorative:
+
+```json
+{
+  "engine": "nsvee/engine.py",
+  "symbols": [
+    "NSVEE.formalize", "FormalSpec", "VerifiedTaskOutput", "Router", "LiteLLMRouter",
+    "FakeRouter", "NSVEE._verify", "Verdict", "DockerRunner", "RlimitsRunner",
+    "Budgets.max_retries", "Budgets.max_wall_clock_s", "Budgets.max_feedback_chars",
+    "Budgets.max_feedback_history", "Budgets.confirmation_runs", "PipelineReport.status",
+    "NSVEE.post_verify", "NSVEE.run"
+  ]
+}
 ```
 
 The markers are deliberately distinctive. The word "receipt" on its own was already in

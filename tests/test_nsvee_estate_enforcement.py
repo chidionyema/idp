@@ -109,6 +109,30 @@ def test_the_adr_and_the_engine_agree_on_the_terminal_statuses():
         assert status in text, f"the ADR must name the status {status}"
 
 
+def _adr_engine_symbols() -> list:
+    for block in _adr_json_blocks():
+        if isinstance(block, dict) and "engine" in block and "symbols" in block:
+            return block["symbols"]
+    raise AssertionError(
+        "the ADR must carry the machine-readable list of engine symbols it cites"
+    )
+
+
+def test_every_engine_symbol_the_adr_cites_exists():
+    """A citation that names a symbol the engine does not have is a false statement.
+
+    The ADR cites the engine by symbol rather than by line number, because a line number
+    rots on the next edit and a rotted citation is a false one. This is the check that
+    keeps those citations true.
+    """
+    source = ENGINE.read_text()
+    for symbol in _adr_engine_symbols():
+        leaf = symbol.rsplit(".", 1)[-1]
+        assert re.search(rf"\b{re.escape(leaf)}\b", source), (
+            f"the ADR cites {symbol}, but {leaf} does not exist in {ENGINE.name}"
+        )
+
+
 def test_the_adr_names_the_gap_the_code_has():
     """The gap is stated, and it is the gap."""
     text = _adr_text()
