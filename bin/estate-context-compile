@@ -1,0 +1,724 @@
+#!/usr/bin/env python3
+"""estate-context-compile -- the estate's ONE context compiler, as a client of the ONE engine.
+
+THE CONTRACT (C1, docs/specs/2026-10-26-context-compiler-and-execution-gateway.md):
+
+    resolve(task, *, surface, budget_tokens, tier) -> ContextPlan
+
+A ContextPlan is a bounded, ranked, provenance-carrying answer to "what do I need to read to
+do this task". It is deterministic: the same task, surface, tree and budget produce the same
+plan, byte for byte, and `plan_hash` proves it.
+
+THE RANKING IS NOT HERE, ON PURPOSE. The estate owns exactly one retrieval and ranking layer:
+the context engine (gortex, zzet/gortex v0.64.11, Apache-2.0). This compiler asks it for its
+ranked working set and keeps the order it gives. It does not score, does not weight, does not
+re-order, and does not carry a second index -- a second ranker here is the stitching
+AGENTS.md 6 forbids, and the earlier hand-written rg ranker in this file was exactly that
+stitching, so it was deleted rather than debugged.
+
+WHAT THIS FILE DOES DECIDE:
+  * WHICH DOOR. `local` uses the laptop fallback daemon (the same engine, running here);
+    `cluster` uses the broker, which is the only thing in the cluster that holds the engine's
+    token. A client never reaches past the broker.
+  * WHETHER THE ANSWER MAY BE SERVED AT ALL. The policy is the broker's (platform/estate/
+    context/broker.py): the index must match the commit asked about, the paths must be inside
+    the claim, the budget is a ceiling, no credential may leave. This file CALLS that policy
+    rather than re-implementing it -- one policy, one decision point.
+  * WHAT FITS. Items are taken in the engine's order until the MEASURED token count reaches
+    the budget. What does not fit is dropped and NAMED, never silently truncated.
+  * WHAT IS MISSING. The impact nodes the plan does not cover are listed, so a gap in the
+    answer is visible instead of implied.
+
+THE EVIDENCE. Every item carries its file, its lines, the SHA-256 of the file's bytes, the
+SHA-256 of the excerpt's bytes, the engine's rank, the impact evidence behind it (the
+engine's blast radius and the estate's own three-layer impact map), and a sentence saying why
+it is in the plan. The plan carries the commit it was read at and the commit the index was
+built from, and refuses to serve when they differ.
+
+Run: bin/estate-context-compile --task "..." [--json]
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
+# The estate's context package lives under platform/estate/context and is imported as
+# `estate.context.*` (a namespace package rooted at platform/). The name `platform` cannot be
+# used for it: the standard library owns that name, and a repo-local `platform` package would
+# shadow it for every importer in the estate.
+sys.path.insert(0, os.path.join(ROOT, "platform"))
+
+from estate.context import broker as BROKER  # noqa: E402
+from estate.context import broker_client as BROKER_CLIENT  # noqa: E402
+from estate.context import claims as CLAIMS  # noqa: E402
+from estate.context import local_engine as LOCAL_ENGINE  # noqa: E402
+from estate.context import plan as PLAN  # noqa: E402
+
+DEFAULT_BUDGET_TOKENS = 4000
+DEFAULT_TIER = "standard"
+DEFAULT_SURFACE = PLAN.DEFAULT_SURFACE
+DEFAULT_DOOR = "auto"
+DEFAULT_BROKER_URL = os.environ.get("ESTATE_CONTEXT_BROKER_URL", "http://127.0.0.1:8002")
+SECRET_DIR = os.environ.get("ESTATE_CONTEXT_SECRET_DIR", "/run/secrets/estate-context")
+AFFECTED_GRAPH = os.path.join(ROOT, "bin", "idp-affected-graph")
+CATALOG_PROJECTION = os.path.join(ROOT, "bin", "catalog-projection")
+REQUEST_CEILING = os.path.join(ROOT, "platform", "llm", "request_ceiling.py")
+
+# The shape of the ceiling's assignment, read from the source rather than from an import.
+_CEILING_PATTERN = re.compile(
+    r"MAX_INPUT_TOKENS\s*=\s*int\(\s*os\.environ\.get\(\s*"
+    r"[\"']ESTATE_MAX_INPUT_TOKENS[\"']\s*,\s*[\"'](\d+)[\"']\s*\)"
+)
+# The estate's ruler: the router counts a request in characters per token, and so does the
+# compiler, so a plan's budget and the ceiling it must fit under are counted the same way.
+_CHARS_PATTERN = re.compile(r"CHARS_PER_TOKEN\s*=\s*(\d+)")
+
+
+def _ruler() -> tuple[int, int]:
+    """(the ceiling, the estate's characters-per-token) read from the router's own module.
+
+    Both numbers live in platform/llm/request_ceiling.py and nowhere else, and both are READ
+    from its source rather than imported: importing that module executes its litellm import,
+    which took 49 seconds on a machine where litellm is installed (measured 2026-10-27). The
+    environment variable wins for the ceiling, exactly as it wins in the module. If the
+    source's shape is not the shape this reads, the compiler refuses rather than guessing.
+    """
+    env = os.environ.get("ESTATE_MAX_INPUT_TOKENS")
+    try:
+        with open(REQUEST_CEILING, encoding="utf-8") as fh:
+            source = fh.read()
+    except OSError as exc:
+        raise BROKER.EngineError(
+            f"the estate's request ceiling could not be read from {REQUEST_CEILING}: {exc}"
+        ) from exc
+    match = _CEILING_PATTERN.search(source)
+    if not match:
+        raise BROKER.EngineError(
+            f"the estate's request ceiling could not be read from {REQUEST_CEILING}: the "
+            "assignment is not in the shape this compiler reads"
+        )
+    ceiling = int(match.group(1))
+    if env:
+        try:
+            ceiling = int(env)
+        except ValueError as exc:
+            raise BROKER.EngineError(
+                f"ESTATE_MAX_INPUT_TOKENS is not a number: {env!r}"
+            ) from exc
+    ruler = _CHARS_PATTERN.search(source)
+    if not ruler:
+        raise BROKER.EngineError(
+            f"the estate's token ruler could not be read from {REQUEST_CEILING}: the assignment "
+            "is not in the shape this compiler reads"
+        )
+    return ceiling, int(ruler.group(1))
+
+
+def _ceiling() -> int:
+    """The estate's ONE per-request token ceiling, read from where it is written down.
+
+    platform/llm/request_ceiling.py is the only place the number lives, and the compiler READS
+    it rather than copying it: a second copy is a second ceiling, and two ceilings disagree
+    exactly when it matters. If the file cannot be read the compiler refuses -- a guessed
+    ceiling is a limit nobody chose.
+    """
+    return _ruler()[0]
+
+
+# --- the estate's own impact layer -------------------------------------------------------------
+def estate_affected(base: str | None = None, *, repo: str = ROOT) -> dict:
+    """The estate's three-layer impact map for the current change, or an empty map.
+
+    This is bin/idp-affected-graph -- layer 1 (code edges), layer 2 (prompt and schema),
+    layer 3 (graph topology), decided by Jev. It is the estate's IMPACT EVIDENCE. It is not a
+    ranker: nothing here decides the order of the plan.
+    """
+    if not os.path.exists(AFFECTED_GRAPH):
+        return {}
+    cmd = [sys.executable, AFFECTED_GRAPH, "--json"]
+    if base:
+        cmd += ["--base", base]
+    try:
+        proc = subprocess.run(  # noqa: S603 -- list form, no shell
+            cmd,
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return {}
+    if proc.returncode != 0:
+        return {}
+    try:
+        out = json.loads(proc.stdout)
+    except ValueError:
+        return {}
+    return out if isinstance(out, dict) else {}
+
+
+def catalog_evidence(repo: str = ROOT) -> dict:
+    """The estate's catalog projection: the module dependency graph, as impact evidence.
+
+    This is the WIDEST layer and the slowest (about 22 seconds over the estate), so it
+    belongs to the frontier tier and no other. It is evidence, never a ranker: the engine's
+    order is the plan's order at every tier.
+    """
+    if not os.path.exists(CATALOG_PROJECTION):
+        return {}
+    try:
+        proc = subprocess.run(  # noqa: S603 -- list form, no shell
+            [sys.executable, CATALOG_PROJECTION, "--json"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return {}
+    if proc.returncode != 0:
+        return {}
+    try:
+        parsed = json.loads(proc.stdout)
+    except ValueError:
+        return {}
+    if isinstance(parsed, list):
+        return {"entities": parsed}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def impact_evidence(tier: str, repo: str = ROOT, base: str | None = None) -> tuple[dict, dict]:
+    """The estate's own impact layers for this tier: (affected graph, catalog projection).
+
+    The tier decides how WIDE the evidence is, and the evidence never decides the order.
+    """
+    layers = PLAN.TIER_EVIDENCE.get(tier, ("engine",))
+    affected = estate_affected(base, repo=repo) if "estate" in layers else {}
+    catalog = catalog_evidence(repo) if "catalog" in layers else {}
+    return affected, catalog
+
+
+# --- the claim ---------------------------------------------------------------------------------
+def _github_issue(issue_number: int, repo: str = "chidionyema/idp") -> tuple[str, list[dict]]:
+    """The issue's state and comments, read the way the broker reads them.
+
+    The claim of record is the GitHub issue (AGENTS.md 5.1). This reads it; it never keeps a
+    second ledger, and it never invents a claim.
+    """
+    import urllib.error
+    import urllib.request
+
+    token = os.environ.get("GITHUB_TOKEN", "")
+    headers = {"Accept": "application/vnd.github+json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    state, comments = "", []
+    try:
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{repo}/issues/{issue_number}", headers=headers
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310
+            state = str(json.loads(resp.read().decode("utf-8")).get("state", ""))
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{repo}/issues/{issue_number}/comments", headers=headers
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310
+            comments = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return "", []
+    return state, comments
+
+
+def claim_paths_for(issue_number: int | None, agent: str | None, explicit: str | None) -> list[str]:
+    """The paths the caller holds, read from the claim of record.
+
+    An explicit --claim-paths is accepted for offline work (a laptop with no network); it is
+    the caller's own claim, stated by the caller, and it is recorded as such in the plan.
+    """
+    if explicit:
+        return [p.strip() for p in explicit.split(",") if p.strip()]
+    if not issue_number or not agent:
+        return []
+    state, comments = _github_issue(int(issue_number))
+    if not state:
+        return []
+    parsed = CLAIMS.parse_claims(CLAIMS.github_comment_bodies(comments))
+    return CLAIMS.paths_held_by(parsed, agent)
+
+
+# --- the refusal --------------------------------------------------------------------------------
+def refusal(decision: BROKER.Decision) -> dict:
+    """A refusal as an answer: the verdict, the reason, and the evidence behind it."""
+    return {
+        "allowed": False,
+        "verdict": decision.verdict,
+        "reason": decision.reason,
+        "evidence": dict(decision.evidence),
+        "items": [],
+        "used_tokens": 0,
+        "budget_tokens": 0,
+    }
+
+
+# --- the two doors ------------------------------------------------------------------------------
+def _local_door(
+    task: str,
+    *,
+    surface: str,
+    repo: str,
+    budget_tokens: int,
+    tier: str,
+    commit: str | None,
+    mode: str,
+    paths: list[str],
+    claim_paths: list[str],
+    secrets: dict[str, str],
+    engine: object | None,
+    base: str | None,
+    ceiling: int,
+    chars_per_token: int,
+) -> dict:
+    """The laptop door: the fallback daemon, under the broker's policy."""
+    eng = engine or LOCAL_ENGINE.LocalGortexEngine(repo)
+    try:
+        fresh = eng.freshness()
+    except LOCAL_ENGINE.EngineUnavailable as exc:
+        return refusal(
+            BROKER.Decision(
+                False,
+                BROKER.ENGINE_UNREACHABLE,
+                f"the context engine is not answering on this machine: {exc}",
+                {"engine": "gortex", "repo": repo},
+            )
+        )
+    index_commit = fresh.get("indexed_commit")
+    head_commit = fresh.get("head_commit")
+    state = BROKER.BrokerState(
+        index_commit=index_commit,
+        head_commit=head_commit,
+        claim_paths=claim_paths,
+        secrets=secrets,
+        engine_reachable=True,
+    )
+    request = BROKER.ContextRequest(
+        tool="smart_context",
+        paths=paths,
+        request_commit=commit,
+        mode=mode,
+        token_budget=budget_tokens,
+    )
+    decision = BROKER.decide_request(request, state)
+    if not decision.allow:
+        return refusal(decision)
+    try:
+        payload = eng.working_set(task, PLAN.ENGINE_TOKEN_BUDGET, paths=paths)
+    except LOCAL_ENGINE.EngineUnavailable as exc:
+        return refusal(
+            BROKER.Decision(
+                False,
+                BROKER.ENGINE_UNREACHABLE,
+                f"the context engine did not answer: {exc}",
+                {"engine": "gortex", "repo": repo},
+            )
+        )
+    affected, catalog = impact_evidence(tier, repo=repo, base=base)
+    built = PLAN.assemble(
+        PLAN.PlanInput(
+            task=task,
+            surface=surface,
+            tier=tier,
+            budget_tokens=budget_tokens,
+            repo_root=repo,
+            commit=str(commit or head_commit or ""),
+            index_commit=str(index_commit or ""),
+            engine_payload=payload,
+            affected=affected,
+            catalog=catalog,
+            ceiling=ceiling,
+            chars_per_token=chars_per_token,
+            door="local",
+            engine_info={
+                "engine": "gortex",
+                "version": getattr(eng, "version", lambda: "unknown")(),
+                "door": "laptop-fallback-daemon",
+                "indexed_commit": index_commit,
+                "last_indexed": fresh.get("last_indexed"),
+                "stale": fresh.get("stale"),
+                "affected_base": base,
+            },
+        )
+    )
+    return built
+
+
+def _cluster_door(
+    task: str,
+    *,
+    surface: str,
+    budget_tokens: int,
+    commit: str | None,
+    mode: str,
+    paths: list[str],
+    claim_issue: int | None,
+    claim_agent: str | None,
+    broker_url: str,
+    repo: str,
+    tier: str,
+    client: object | None,
+    ceiling: int,
+    chars_per_token: int,
+) -> dict:
+    """The cluster door: the broker, which is the only holder of the engine's token."""
+    bc = client or BROKER_CLIENT.BrokerClient(broker_url)
+    arguments: dict = {
+        "task": task,
+        "token_budget": budget_tokens,
+        "mode": mode,
+    }
+    if paths:
+        arguments["paths"] = paths
+    if commit:
+        arguments["commit"] = commit
+    if claim_issue:
+        arguments["claim_issue"] = int(claim_issue)
+    if claim_agent:
+        arguments["claim_agent"] = claim_agent
+    try:
+        result = bc.context(**arguments)
+    except BROKER_CLIENT.BrokerUnavailable as exc:
+        return refusal(
+            BROKER.Decision(
+                False,
+                BROKER.ENGINE_UNREACHABLE,
+                f"the context broker is unreachable: {exc}",
+                {"broker_url": broker_url},
+            )
+        )
+    body = result.get("structuredContent") or {}
+    if result.get("isError") or not body.get("allowed", True):
+        return {
+            "allowed": False,
+            "verdict": body.get("verdict", "REFUSED"),
+            "reason": body.get("reason", "the broker refused the request"),
+            "evidence": body.get("evidence", {}),
+            "items": [],
+            "used_tokens": 0,
+            "budget_tokens": budget_tokens,
+        }
+    try:
+        payload = json.loads(body.get("answer") or "{}")
+    except ValueError:
+        payload = {}
+    affected, catalog = impact_evidence(tier, repo=repo)
+    built = PLAN.assemble(
+        PLAN.PlanInput(
+            task=task,
+            surface=surface,
+            tier=tier,
+            budget_tokens=budget_tokens,
+            repo_root=repo,
+            commit=str(body.get("commit") or commit or ""),
+            index_commit=str(body.get("commit") or ""),
+            engine_payload=payload,
+            affected=affected,
+            catalog=catalog,
+            ceiling=ceiling,
+            chars_per_token=chars_per_token,
+            door="cluster",
+            engine_info={
+                "engine": "gortex",
+                "door": "cluster-broker",
+                "broker_url": broker_url,
+                "verdict": body.get("verdict"),
+            },
+        )
+    )
+    return built
+
+
+# --- the compiler -------------------------------------------------------------------------------
+def _build(
+    task: str,
+    *,
+    surface: str,
+    door: str,
+    budget_tokens: int,
+    tier: str,
+    repo: str,
+    commit: str | None,
+    mode: str,
+    paths: list[str],
+    held: list[str],
+    secrets: dict[str, str],
+    claim_issue: int | None,
+    claim_agent: str | None,
+    broker_url: str,
+    base: str | None,
+    engine: object | None,
+    client: object | None,
+    ceiling: int,
+    chars_per_token: int,
+) -> dict:
+    """Ask the chosen door for an answer. `auto` tries the cluster, then the laptop."""
+    if door in ("cluster", "auto"):
+        built = _cluster_door(
+            task,
+            surface=surface,
+            budget_tokens=budget_tokens,
+            commit=commit,
+            mode=mode,
+            paths=paths,
+            claim_issue=claim_issue,
+            claim_agent=claim_agent,
+            broker_url=broker_url,
+            repo=repo,
+            tier=tier,
+            client=client,
+            ceiling=ceiling,
+            chars_per_token=chars_per_token,
+        )
+        if door == "auto" and not built.get("allowed", True) and built.get("verdict") in (
+            BROKER.ENGINE_UNREACHABLE,
+        ):
+            # The cloud is the default route and the laptop is the fallback. When the cluster
+            # cannot answer, the fallback answers -- and the plan says which door it was, so
+            # nobody reads a laptop answer as a cluster answer.
+            built = _local_door(
+                task,
+                surface=surface,
+                repo=repo,
+                budget_tokens=budget_tokens,
+                tier=tier,
+                commit=commit,
+                mode=mode,
+                paths=paths,
+                claim_paths=list(held),
+                secrets=dict(secrets or {}),
+                engine=engine,
+                base=base,
+                ceiling=ceiling,
+                chars_per_token=chars_per_token,
+            )
+            built["fallback_from"] = "cluster"
+        return built
+    return _local_door(
+        task,
+        surface=surface,
+        repo=repo,
+        budget_tokens=budget_tokens,
+        tier=tier,
+        commit=commit,
+        mode=mode,
+        paths=paths,
+        claim_paths=list(held),
+        secrets=dict(secrets or {}),
+        engine=engine,
+        base=base,
+        ceiling=ceiling,
+        chars_per_token=chars_per_token,
+    )
+
+
+def resolve(
+    task: str,
+    *,
+    surface: str = DEFAULT_SURFACE,
+    door: str = DEFAULT_DOOR,
+    budget_tokens: int = DEFAULT_BUDGET_TOKENS,
+    tier: str = DEFAULT_TIER,
+    repo: str = ROOT,
+    commit: str | None = None,
+    mode: str = "committed",
+    paths: list[str] | None = None,
+    claim_paths: list[str] | None = None,
+    secrets: dict[str, str] | None = None,
+    claim_issue: int | None = None,
+    claim_agent: str | None = None,
+    broker_url: str = DEFAULT_BROKER_URL,
+    base: str | None = None,
+    engine: object | None = None,
+    client: object | None = None,
+) -> dict:
+    """Resolve a task into a ContextPlan. The one context compiler's entry point.
+
+    `surface` is the AGENT surface the plan is for (the contract's word) and `door` is how
+    the answer is reached (the estate's word): the cluster broker is the default route and
+    the laptop daemon is the fallback. "auto" tries the cluster and falls back to the
+    laptop, and the plan records which door actually answered.
+    """
+    task = str(task or "").strip()
+    if not task:
+        return refusal(BROKER.Decision(False, "BAD_REQUEST", "the request has no task", {}))
+    surface = str(surface or "").strip()
+    if not surface:
+        return refusal(
+            BROKER.Decision(False, "BAD_REQUEST", "the request names no surface", {})
+        )
+    if door not in PLAN.DOORS:
+        return refusal(
+            BROKER.Decision(False, "BAD_REQUEST", f"unknown door: {door!r}", {"door": door})
+        )
+    if tier not in PLAN.TIERS:
+        return refusal(
+            BROKER.Decision(False, "BAD_REQUEST", f"unknown tier: {tier!r}", {"tier": tier})
+        )
+    try:
+        ceiling, chars_per_token = _ruler()
+    except BROKER.EngineError as exc:
+        return refusal(BROKER.Decision(False, "BAD_REQUEST", str(exc), {}))
+    if budget_tokens > ceiling:
+        return refusal(
+            BROKER.Decision(
+                False,
+                "BUDGET_REFUSED",
+                f"a budget of {budget_tokens} tokens is above the surface's per-request ceiling "
+                f"of {ceiling}; the plan is refused rather than silently shrunk",
+                {"budget_tokens": budget_tokens, "ceiling": ceiling, "surface": surface},
+            )
+        )
+    held = claim_paths if claim_paths is not None else []
+    try:
+        built = _build(
+            task,
+            surface=surface,
+            door=door,
+            budget_tokens=budget_tokens,
+            tier=tier,
+            repo=repo,
+            commit=commit,
+            mode=mode,
+            paths=list(paths or []),
+            held=list(held),
+            secrets=dict(secrets or {}),
+            claim_issue=claim_issue,
+            claim_agent=claim_agent,
+            broker_url=broker_url,
+            base=base,
+            engine=engine,
+            client=client,
+            ceiling=ceiling,
+            chars_per_token=chars_per_token,
+        )
+    except PLAN.PlanError as exc:
+        return refusal(BROKER.Decision(False, "BUDGET_REFUSED", str(exc), {"ceiling": ceiling}))
+    if not built.get("allowed", True) and "verdict" not in built:
+        built["allowed"] = False
+    built, removed = PLAN.redact_plan(built, BROKER.scrub, secrets)
+    built["redacted"] = removed
+    for item in built.get("items") or []:
+        item["provenance"] = BROKER.provenance(
+            item.get("source", ""),
+            str(built.get("provenance", {}).get("commit", "")),
+            int(item.get("start_line") or 0),
+            int(item.get("end_line") or 0),
+            item.get("sha256"),
+        )
+    built["plan_hash"] = PLAN.plan_hash(built)
+    return built
+
+
+def compile_context(task: str, **kwargs) -> dict:
+    """The name this compiler had before it became a client of the engine. Same function."""
+    return resolve(task, **kwargs)
+
+
+def _load_secrets(directory: str) -> dict[str, str]:
+    """The named secrets to scrub with, from a mounted secret directory (or nothing)."""
+    out: dict[str, str] = {}
+    try:
+        names = sorted(os.listdir(directory))
+    except OSError:
+        return out
+    for name in names:
+        if name.startswith("."):
+            continue
+        path = os.path.join(directory, name)
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                value = fh.read().strip()
+        except OSError:
+            continue
+        if value:
+            out[name] = value
+    return out
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="estate-context-compile",
+        description="The estate's one context compiler: a client of the one context engine.",
+    )
+    parser.add_argument("--task", required=True, help="the question, as a task")
+    parser.add_argument("--surface", default=DEFAULT_SURFACE, help="the agent surface the plan is for")
+    parser.add_argument(
+        "--door",
+        default=DEFAULT_DOOR,
+        choices=list(PLAN.DOORS),
+        help="cluster (the default route), local (the laptop fallback), or auto",
+    )
+    parser.add_argument("--budget-tokens", type=int, default=DEFAULT_BUDGET_TOKENS)
+    parser.add_argument("--tier", default=DEFAULT_TIER, choices=list(PLAN.TIERS))
+    parser.add_argument("--repo", default=ROOT, help="the tree to read")
+    parser.add_argument("--base", default=None, help="the base ref the estate impact map diffs from")
+    parser.add_argument("--commit", default=None, help="the commit asked about (default: the engine's HEAD)")
+    parser.add_argument("--mode", default="committed", choices=["committed", "working_copy"])
+    parser.add_argument("--paths", default="", help="comma separated paths this question is about")
+    parser.add_argument("--claim-issue", type=int, default=None)
+    parser.add_argument("--claim-agent", default=None)
+    parser.add_argument("--claim-paths", default=None, help="comma separated globs this caller holds")
+    parser.add_argument("--broker-url", default=DEFAULT_BROKER_URL)
+    parser.add_argument("--json", action="store_true", help="print the plan as JSON")
+    args = parser.parse_args(argv)
+
+    paths = [p.strip() for p in (args.paths or "").split(",") if p.strip()]
+    held = claim_paths_for(args.claim_issue, args.claim_agent, args.claim_paths)
+    plan = resolve(
+        args.task,
+        surface=args.surface,
+        door=args.door,
+        budget_tokens=args.budget_tokens,
+        tier=args.tier,
+        repo=os.path.abspath(args.repo),
+        commit=args.commit,
+        mode=args.mode,
+        paths=paths,
+        claim_paths=held,
+        secrets=_load_secrets(SECRET_DIR),
+        claim_issue=args.claim_issue,
+        claim_agent=args.claim_agent,
+        broker_url=args.broker_url,
+        base=args.base,
+    )
+    if args.json:
+        print(json.dumps(plan, indent=2, sort_keys=True))
+    else:
+        if not plan.get("allowed", True):
+            print(f"REFUSED {plan.get('verdict')}: {plan.get('reason')}")
+        else:
+            print(
+                f"{len(plan.get('items') or [])} source(s), "
+                f"{plan.get('used_tokens', 0)}/{plan.get('budget_tokens', 0)} tokens, "
+                f"plan_hash {plan.get('plan_hash', '')[:16]}"
+            )
+            for item in plan.get("items") or []:
+                print(f"  {item.get('rank')}. {item.get('file')}  ({item.get('tokens')} tokens) -- {item.get('why')}")
+            dropped = plan.get("dropped") or []
+            if dropped:
+                print(f"  dropped {len(dropped)}: " + ", ".join(f"{d.get('file')} ({d.get('reason')})" for d in dropped[:8]))
+            uncovered = (plan.get("coverage") or {}).get("uncovered_impact_nodes") or []
+            if uncovered:
+                print(f"  uncovered impact nodes: {len(uncovered)}")
+    return 0 if plan.get("allowed", True) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

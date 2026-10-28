@@ -1,0 +1,219 @@
+# button: Build and publish the estate's context index
+# founder: The estate's ONE context engine (gortex) can only answer for a commit whose index it
+#   holds. This run builds that index for the commit that just landed, PROVES the engine's own
+#   freshness says the index matches the commit, proves the engine answers a real question from
+#   it, and publishes the index as an OCI artifact the broker's pod pulls.
+#
+# WHY CI BUILDS THE INDEX AND THE POD DOES NOT. Measured: indexing this repository is minutes
+# of CPU and the node's whole request budget is 1.8 CPU (docs/decisions/0034-workloads-are-
+# placed-by-the-free-tier-not-by-the-cluster.md). So the index is built here, once per commit,
+# and the pod opens the artifact instead of paying for the build on every restart.
+#
+# WHY THE ARTIFACT CARRIES THE SOURCE. The engine serves excerpts and file hashes; a graph
+# without the files it describes cannot answer honestly. The artifact therefore carries the
+# checkout AT THE COMMIT (so the engine's tracked path and the pod's /data/repo are the same
+# path, which is what keeps the index's paths repo-relative) and the store beside it.
+#
+# THE PROOF IS THE ENGINE'S OWN, NOT THIS WORKFLOW'S. The gate that matters is the engine's
+# freshness line: `gortex repos --json` must report indexed_commit == the commit this run
+# built, and stale == false. If the engine does not say so, the artifact is not published: an
+# index that lies about its commit would be served by the broker as if it were fresh, and the
+# broker's STALE_REJECT would be guarding a fiction.
+name: context-index
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write   # the artifact push uses GITHUB_TOKEN, like estate-state
+  id-token: write   # traded for the keyless cosign signature
+concurrency:
+  group: context-index-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  index:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GORTEX_VERSION: v0.64.11
+      # The release's own checksum, so the binary this run indexes with is the binary that was
+      # published. A tag can be moved; a digest cannot.
+      GORTEX_SHA_AMD64: dc137254d81fa1dca6a3db4239f2d3c045dbbca66b0b07870b4e512d256a2bc7
+      DATA: /data
+      ARTIFACT: oci://ghcr.io/${{ github.repository }}/context-index
+      HOME_DIR: /data/home
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: install the engine, verified against the release's own checksum
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/gortex.tar.gz \
+            "https://github.com/zzet/gortex/releases/download/${GORTEX_VERSION}/gortex_linux_amd64.tar.gz"
+          echo "${GORTEX_SHA_AMD64}  /tmp/gortex.tar.gz" | sha256sum -c -
+          mkdir -p /tmp/gortex && tar xzf /tmp/gortex.tar.gz -C /tmp/gortex
+          install -m 0755 "$(find /tmp/gortex -type f -name gortex | head -1)" /usr/local/bin/gortex
+          rm -rf /tmp/gortex /tmp/gortex.tar.gz
+          gortex version
+      - name: lay out the artifact at the path the pod mounts it on
+        run: |
+          set -euo pipefail
+          sudo mkdir -p "${DATA}/home/.gortex" "${DATA}/repo"
+          sudo chown -R "$(id -u):$(id -g)" "${DATA}"
+          # The source travels WITH the index, at the path the engine will be asked to read it
+          # from in the pod (/data/repo). The engine records the tracked path in its config, so
+          # building and serving at the same path is what keeps the index's paths repo-relative.
+          cp -a "${GITHUB_WORKSPACE}/." "${DATA}/repo/"
+          # The tracked repository, written by hand so it names the path the pod will use.
+          cat > "${DATA}/home/.gortex/config.yaml" <<YAML
+          repos:
+              - path: ${DATA}/repo
+          YAML
+          # The engine's own credential for this run. It never leaves the runner: it is minted
+          # here, used by the self-test, and gone when the job ends.
+          python3 -c "import secrets; print(secrets.token_urlsafe(32))" > "${DATA}/engine-token"
+      - name: start the engine and index the commit
+        env:
+          HOME: /data/home
+        run: |
+          set -euo pipefail
+          export GORTEX_DAEMON_HTTP_TOKEN="$(cat "${DATA}/engine-token")"
+          export GORTEX_DAEMON_HTTP_ADDR=127.0.0.1:7411
+          gortex daemon start --backend-path "${DATA}/home/.gortex/store/store.sqlite" --detach
+          # --wait blocks until the graph is queryable: "useful for CI / one-shot scripts".
+          gortex track "${DATA}/repo" --wait --wait-timeout 20m
+      - name: the engine says the index IS this commit
+        env:
+          HOME: /data/home
+        run: |
+          set -euo pipefail
+          gortex repos --json | tee "${DATA}/repos.json"
+          python3 - "${DATA}/repos.json" "${GITHUB_SHA}" <<'PY'
+          import json, sys
+          rows = json.load(open(sys.argv[1]))
+          want = sys.argv[2]
+          for row in rows:
+              if str(row.get("path", "")).endswith("/repo"):
+                  indexed = str(row.get("indexed_commit") or "")
+                  head = str(row.get("head_commit") or "")
+                  stale = bool(row.get("stale"))
+                  print("indexed_commit", indexed, "head_commit", head, "stale", stale)
+                  if indexed != want:
+                      raise SystemExit(f"FAIL the engine indexed {indexed}, not {want}")
+                  if head != want:
+                      raise SystemExit(f"FAIL the checkout is at {head}, not {want}")
+                  if stale:
+                      raise SystemExit("FAIL the engine calls its own index stale")
+                  raise SystemExit(0)
+          raise SystemExit("FAIL the engine is not tracking the checkout")
+          PY
+      - name: the engine answers a real question from the index it just built
+        env:
+          HOME: /data/home
+        run: |
+          set -euo pipefail
+          token="$(cat "${DATA}/engine-token")"
+          # POST /v1/tools/{name} is the engine's own HTTP surface -- the same one the broker
+          # calls in the pod. If it cannot answer here, it will not answer there.
+          curl -fsS -X POST http://127.0.0.1:7411/v1/tools/smart_context \
+            -H "Authorization: Bearer ${token}" -H 'Content-Type: application/json' \
+            -d '{"task":"estate context broker policy freshness claim","token_budget":2000}' \
+            | tee "${DATA}/smart-context.json" \
+            | python3 -c '
+          import json, sys
+          payload = json.load(sys.stdin)
+          working = payload.get("working_set") or []
+          print("working_set entries:", len(working))
+          if not working:
+              raise SystemExit("FAIL the engine answered with no working set")
+          for entry in working[:5]:
+              print("  ", entry.get("file"))
+          '
+      - name: write the manifest the broker reads as its ground truth
+        env:
+          HOME: /data/home
+        run: |
+          set -euo pipefail
+          python3 - "${DATA}" "${GITHUB_SHA}" "${GORTEX_VERSION}" <<'PY'
+          import hashlib, json, os, subprocess, sys
+          data, commit, version = sys.argv[1], sys.argv[2], sys.argv[3]
+          store = os.path.join(data, "home", ".gortex", "store", "store.sqlite")
+          def sha256(path):
+              h = hashlib.sha256()
+              with open(path, "rb") as fh:
+                  for chunk in iter(lambda: fh.read(1 << 20), b""):
+                      h.update(chunk)
+              return h.hexdigest()
+          def du(path):
+              return subprocess.run(["du", "-sb", path], capture_output=True, text=True).stdout.split()[0]
+          context = json.load(open(os.path.join(data, "smart-context.json")))
+          manifest = {
+              "commit": commit,
+              "engine": {"name": "gortex", "version": version},
+              "built_at": subprocess.run(["date", "-u", "+%Y-%m-%dT%H:%M:%SZ"], capture_output=True, text=True).stdout.strip(),
+              "source_dir": "/data/repo",
+              "store": {"path": "home/.gortex/store/store.sqlite", "sha256": sha256(store), "bytes": int(os.path.getsize(store))},
+              "source_bytes": int(du(os.path.join(data, "repo"))),
+              "artifact_bytes": int(du(data)),
+              "working_set_sample": [e.get("file") for e in (context.get("working_set") or [])[:10]],
+              "etag": context.get("etag"),
+          }
+          with open(os.path.join(data, "index.json"), "w", encoding="utf-8") as fh:
+              json.dump(manifest, fh, indent=2, sort_keys=True)
+          print(json.dumps(manifest, indent=2, sort_keys=True))
+          PY
+      - name: the artifact fits the volume the pod mounts it on
+        run: |
+          set -euo pipefail
+          # The broker's PVC is 2Gi and holds this artifact. An artifact that does not fit is
+          # an artifact the pod cannot serve, so this is a gate, not a note.
+          bytes="$(du -sb "${DATA}" | cut -f1)"
+          limit=$((2 * 1024 * 1024 * 1024))
+          if [ "$bytes" -ge "$limit" ]; then
+            echo "FAIL the context index artifact is ${bytes} bytes and does not fit the 2Gi volume the broker mounts"
+            exit 1
+          fi
+          echo "ok      the context index artifact is ${bytes} bytes and fits the 2Gi volume"
+      - name: drop what the engine does not need to serve an answer
+        run: |
+          set -euo pipefail
+          # The sidecar's session database, the cache and the models are the daemon's scratch
+          # space, not its index. They are not published.
+          rm -rf "${DATA}/home/.gortex/sidecar.sqlite"* "${DATA}/home/.gortex/cache" \
+                 "${DATA}/home/.gortex/models" "${DATA}/home/.gortex/notebook-cache" \
+                 "${DATA}/home/.gortex/memories" "${DATA}/repos.json" "${DATA}/smart-context.json" \
+                 "${DATA}/engine-token"
+          ls -la "${DATA}" "${DATA}/home/.gortex"
+      - uses: fluxcd/flux2/action@ed8c5f2c24d57715d08423d3c1a7b0554ceb030e # v2.9.4 -- flux push artifact
+      - name: publish the index, under its commit and as the rolling tag the pod pulls
+        env:
+          T: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$T" | flux push artifact "${ARTIFACT}:${GITHUB_SHA}" --path="${DATA}" \
+            --source="https://github.com/${{ github.repository }}" --revision="${GITHUB_SHA}" \
+            --creds "chidionyema:$(cat)" >/dev/null
+          # The rolling tag is what the pod pulls; the commit tag is what a reader can prove.
+          # The layer is the same content, so the second push moves the manifest, not the data.
+          printf '%s' "$T" | flux push artifact "${ARTIFACT}:latest" --path="${DATA}" \
+            --source="https://github.com/${{ github.repository }}" --revision="${GITHUB_SHA}" \
+            --creds "chidionyema:$(cat)" >/dev/null
+          echo "ok      context index published: ${ARTIFACT}:${GITHUB_SHA} and ${ARTIFACT}:latest"
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+      - uses: imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b # v0.7
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: sign the published index and verify the signature in this run
+        run: |
+          set -euo pipefail
+          ref="${ARTIFACT#oci://}:${GITHUB_SHA}"
+          digest=$(crane digest "$ref")
+          cosign sign --yes --new-bundle-format=false --use-signing-config=false "${ref%:*}@$digest"
+          cosign verify "${ref%:*}@$digest" \
+            --new-bundle-format=false \
+            --certificate-identity-regexp "^https://github.com/(${{ github.repository_owner }}|${{ vars.ESTATE_PREVIOUS_OWNER || github.repository_owner }})/${{ github.event.repository.name }}/" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            > /dev/null
+          echo "ok      context index signed and verified ${ref%:*}@$digest"
