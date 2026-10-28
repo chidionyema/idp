@@ -10,12 +10,18 @@ description: >
   Use this first whenever a Telegram agent stops answering.
 args:
   agent: {type: string, default: "all"}
-  heal: {type: bool, default: false}
-  json: {type: bool, default: false}
+  # The schema gate says an intent arg is a string: resolve_args coerces int and string only
+  # (docs/research/2026-10-25-constrained-formats.baseline.json, R1), so a bool arg arrives
+  # as a string anyway. These are strings on purpose.
+  heal: {type: string, default: "no"}
+  json: {type: string, default: "no"}
+# The doctor's own budget: one cluster read (20s) plus, with heal, one flux reconcile (45s) and
+# one re-read (20s) -- inside the executor's 100s ceiling, with room for the receipts.
+door_s: 90
 steps:
   - name: diagnose
     cmd: |
       h="{{heal}}"; j="{{json}}"; hf=""; jf="";
-      [ "$h" = "True" ] && hf="--heal";
-      [ "$j" = "True" ] && jf="--json";
+      case "$h" in yes|true|on|1) hf="--heal";; esac;
+      case "$j" in yes|true|on|1) jf="--json";; esac;
       python3 ~/.estate/libexec/telegram-agent-doctor.py --agent "{{agent}}" $hf $jf

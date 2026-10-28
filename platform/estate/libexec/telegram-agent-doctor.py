@@ -70,8 +70,8 @@ ESTATE_ZONE_DEFAULT = "mumchimp.com"
 # The one place the zone is written, when this script runs from a checkout.
 ZONE_CONFIG_RELATIVE = ("clusters", "oke", "estate-config.yaml")
 
-CLUSTER_TIMEOUT = 25  # a cluster link that cannot be read is blind, not a hang
-HEAL_TIMEOUT = 90  # flux reconcile has its own 2m budget; we give up first
+CLUSTER_TIMEOUT = 20  # a cluster link that cannot be read is blind, not a hang
+HEAL_TIMEOUT = 45  # flux reconcile has its own 2m budget; we give up first
 HTTP_TIMEOUT = 12
 
 OK = "ok"
@@ -272,10 +272,10 @@ def probe_http(link: dict, zone: str) -> tuple:
     url = link["url"].replace("${ESTATE_ZONE}", zone)
     started = time.time()
     try:
-        request = urllib.request.Request(
+        request = urllib.request.Request(  # noqa: S310 - https only, from the registry
             url, headers={"User-Agent": "telegram-agent-doctor/1"}
         )
-        with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT) as response:
+        with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT) as response:  # noqa: S310
             code = response.getcode()
             elapsed = time.time() - started
             if code == link.get("expect", 200):
@@ -288,8 +288,8 @@ def probe_http(link: dict, zone: str) -> tuple:
             exc.code, url, time.time() - started, url
         )
     except Exception as exc:  # noqa: BLE001 - any unreadable source is blind, not a crash
-        return BLIND, "{} in {:.2f}s  {}".format(
-            type(exc).__name__, time.time() - started, url
+        return BLIND, "{}: {} in {:.2f}s  {}".format(
+            type(exc).__name__, exc, time.time() - started, url
         )
 
 
@@ -555,6 +555,28 @@ def default_probe(link: dict) -> tuple:
     return probe_cluster(link)
 
 
+def make_probe():
+    """The real probe, with one piece of state: the cluster is ONE source.
+
+    When the cluster does not answer, every cluster link in the run is blind for the same
+    reason -- so the run waits for that answer once, not once per agent. A blind source that
+    is asked again is the same blind source asked again.
+    """
+    state = {"cluster_blind": ""}
+
+    def probe(link: dict) -> tuple:
+        if link["kind"] == "http":
+            return probe_http(link, resolve_zone())
+        if state["cluster_blind"]:
+            return BLIND, state["cluster_blind"]
+        status, detail = probe_cluster(link)
+        if status == BLIND:
+            state["cluster_blind"] = detail
+        return status, detail
+
+    return probe
+
+
 def default_healer(intent: str, args: dict) -> tuple:
     """The real heal: one estate intent, and its receipt."""
     rc, out, err, receipt = run_intent(intent, args, HEAL_TIMEOUT)
@@ -593,7 +615,7 @@ def main(argv: list) -> int:
             )
             return 2
 
-    report = diagnose(agents, default_probe)
+    report = diagnose(agents, make_probe())
 
     if want_heal:
         for agent in report["agents"]:
