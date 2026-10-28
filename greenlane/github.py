@@ -66,9 +66,26 @@ RED_CONCLUSIONS = {
 
 def _git_text(*args: str) -> Optional[str]:
     """git's stdout, UNSTRIPPED -- file contents keep their exact bytes (a trailing newline is
-    part of the file, and a merge that invents one is a change the image gate never asked for)."""
-    p = subprocess.run(["git", *args], capture_output=True, text=True)  # noqa: S603, S607 -- git with fixed argv, no shell
-    return p.stdout if p.returncode == 0 else None
+    part of the file, and a merge that invents one is a change the image gate never asked for).
+
+    None when git failed, and None when the output is not text. The second case is measured,
+    not theoretical (idp#7309, 2026-10-27): the image lane's diff carried a GIF, and reading
+    the lane's copy of it in text mode raised UnicodeDecodeError inside the tick's own
+    OBSERVATION of the lanes -- so one binary file on one lane killed every lane in the
+    estate, and the lane that was trying to land could not be judged. A file that is not text
+    is content, not a tag bump: the caller drops it instead of dying."""
+    p = subprocess.run(["git", *args], capture_output=True)  # noqa: S603, S607 -- git with fixed argv, no shell
+    if p.returncode != 0:
+        return None
+    if b"\x00" in p.stdout[:8000]:
+        # git's own rule for "this is binary": a NUL byte in the first 8000 bytes. A blob can
+        # be valid UTF-8 and still be binary, and reading it as text puts binary content where
+        # the engine expects a file it may rewrite. Not text, so not a tag bump.
+        return None
+    try:
+        return p.stdout.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
 
 
 def _apply_lane_tags(main_text: str, lane_text: str, tag_line) -> Optional[str]:
@@ -119,7 +136,19 @@ def _run(
     input: Optional[str] = None,
     env: Optional[dict] = None,
 ) -> str:
-    p = subprocess.run(args, capture_output=True, text=True, input=input, env=env)  # noqa: S603, S607 -- git/gh with fixed argv, no shell
+    # errors="replace", not the default strict: a tick must not die because ONE git command
+    # printed a byte it cannot decode. The same defect class as idp#7309 (a GIF in the image
+    # lane's diff killed every lane in the estate) reached here through every other command
+    # that prints file content, and a tick that dies takes the whole estate with it. The
+    # replacement character is honest about what happened: the bytes were not text.
+    p = subprocess.run(  # noqa: S603, S607 -- git/gh with fixed argv, no shell
+        args,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        input=input,
+        env=env,
+    )
     if check and p.returncode != 0:
         raise RuntimeError(
             f"{' '.join(args[:3])}: rc={p.returncode} {p.stderr.strip()[:400]}"
@@ -427,7 +456,7 @@ class GitHubBackend:
                 if lane_text is None:
                     dropped.append(
                         path
-                    )  # the lane DELETED it: a deletion is never a tag bump
+                    )  # the lane DELETED it, or it is not text: neither is a tag bump
                     continue
                 if base_text is None or not target.exists():
                     dropped.append(
@@ -438,7 +467,13 @@ class GitHubBackend:
                 if not grammar:
                     dropped.append(path)  # no grammar, no tag line, no candidate
                     continue
-                main_text = target.read_text()
+                try:
+                    main_text = target.read_text()
+                except UnicodeDecodeError:
+                    dropped.append(
+                        path
+                    )  # main's own copy is not text: it cannot be a tag bump either
+                    continue
                 merged = _apply_lane_tags(main_text, lane_text, grammar.TAG_LINE)
                 if merged is None:
                     dropped.append(path)  # a policy main does not have: a new image
