@@ -21,8 +21,13 @@ THE SELECTION RULES, and why each one is there. A volume is reclaimable only whe
 hold:
 
   * its lifecycle state is AVAILABLE and unattached -- a volume that is IN_USE or ATTACHED is
-    somebody's data -- or TERMINATED, which is dead: it cannot be mounted, so nothing can be
-    reading it, and it still counts against the tenancy's storage allowance;
+    somebody's data. A TERMINATED volume is dead AND ALREADY RELEASED: OCI keeps it listed,
+    but it holds no allowance and deleting it frees nothing. MEASURED 2026-10-28: the door
+    deleted seven of them, printed a receipt for each, and the compartment still listed the
+    same fourteen names with the same ages; what was over the allowance was the LIVE storage
+    (five attached volumes, 250GB, against 200GB). A door that claims to reclaim a dead
+    volume is a door that prints a receipt and frees nothing, so TERMINATED is kept here and
+    named as dead;
   * it has no attachment -- and the attachment API is the answer, not the volume list. MEASURED
     2026-10-28: `oci bv volume list` leaves its own "volume-attachments" field empty on every
     volume, attached or not, so a rule that trusted that field called five volumes in use
@@ -149,16 +154,17 @@ def reclaimable(
             "one of the oldest kept volumes (a long-lived PersistentVolume may point at it)",
         )
     if dead:
-        # A terminated volume is dead: it cannot be mounted, so no pod can be reading it, and a
-        # PersistentVolume that points at it is already broken. It still exists, and it still
-        # counts against the tenancy's storage allowance -- which is the whole reason the estate
-        # cannot create a volume. MEASURED 2026-10-28: the compartment held nine of these,
-        # 450GB, and deleting the three newest ones did NOT free the allowance, because a
-        # deleted volume becomes TERMINATED rather than gone. A door that keeps them "because
-        # they are not AVAILABLE" was keeping the capacity that was blocking the cluster.
+        # A TERMINATED volume is dead, and OCI has already released it: it is listed, but it
+        # holds no part of the tenancy's storage allowance, and deleting it changes nothing.
+        # MEASURED 2026-10-28: this door deleted seven TERMINATED volumes and printed
+        # `ok oci-reclaim deleted ...` for each one, and the compartment went on listing the
+        # same fourteen names with the same ages. The refusal ("You cannot create a volume
+        # because you have reached your limit") was explained by the LIVE storage -- five
+        # attached volumes, 250GB, against a 200GB Always Free allowance -- and only a volume
+        # that is still AVAILABLE and unattached can be deleted to move that number.
         return (
-            True,
-            f"terminated CSI volume, {volume.get('size-in-gbs')}GB, {age_h:.0f}h old: it is dead, and it still holds the allowance",
+            False,
+            "dead: OCI has already released it; deleting a TERMINATED volume changes nothing",
         )
     return (
         True,
