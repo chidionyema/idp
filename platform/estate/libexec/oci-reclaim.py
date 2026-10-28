@@ -20,8 +20,15 @@ own login door refuses for agents) or leave the cluster dead. This is that door.
 THE SELECTION RULES, and why each one is there. A volume is reclaimable only when ALL of these
 hold:
 
-  * its lifecycle state is AVAILABLE -- a volume that is IN_USE or ATTACHED is somebody's data;
-  * it has no attachment -- the OCI answer, not an assumption about who asked;
+  * its lifecycle state is AVAILABLE and unattached -- a volume that is IN_USE or ATTACHED is
+    somebody's data -- or TERMINATED, which is dead: it cannot be mounted, so nothing can be
+    reading it, and it still counts against the tenancy's storage allowance;
+  * it has no attachment -- and the attachment API is the answer, not the volume list. MEASURED
+    2026-10-28: `oci bv volume list` leaves its own "volume-attachments" field empty on every
+    volume, attached or not, so a rule that trusted that field called five volumes in use
+    reclaimable and the plan was wrong. The delete API then refused them, which is why the
+    apply was safe and the plan was not. The attachment list is fetched separately and the
+    rule reads it;
   * its name starts with "csi-" -- the CSI driver's own naming, so a boot volume or a volume the
     estate declared in terraform can never be selected by accident;
   * it carries the freeform tag role=persistent_volume -- the estate's own marker;
@@ -43,12 +50,21 @@ that pool with "LimitExceeded: nodes-per-node-pool limit has been exceeded" -- i
 `oci ce node-pool delete-node` itself, which is the operation that would have removed it
 (oke-check run 40650458830, 2026-10-28). The catch is closed the only way OCI lets it be
 closed: the compute API is not subject to the container-engine pool limit, so a node that is
-STOPPED is terminated through the compute API, and the boot volume it was holding is released
-with it. A node that is RUNNING is never a candidate: this door prunes a machine that serves
-nothing, and it never touches a machine that does.
+STOPPED is terminated through the compute API. A node that is RUNNING is never a candidate:
+this door prunes a machine that serves nothing, and it never touches a machine that does.
+
+The boot volume of that node is NOT chased here, and the reason is measured rather than
+assumed: `oci compute instance get` does not expose the boot volume of an instance in any
+field this CLI prints, and `oci bv volume list` does not list the node's boot volume at all.
+A rule that looked for it found nothing, and a door that claimed to delete it would be
+claiming a target it cannot see. The node pool creates its nodes with
+`is_preserve_boot_volume = false`, so the termination releases the boot volume with the
+instance; MEASURED 2026-10-28: after the termination the compartment listing no longer holds
+the node's 100GB boot volume. The door says what it did and stops there.
 
 USAGE
-  oci-reclaim.py --volumes volumes.json [--keep-oldest 3] [--older-than-hours 24]
+  oci-reclaim.py --volumes volumes.json --attachments attachments.json
+                 [--keep-oldest 3] [--older-than-hours 24]
                  [--ids-out ids.txt] [--now 2026-10-28T00:00:00Z]
   oci-reclaim.py --node-instance instance.json
 
@@ -78,16 +94,44 @@ def _parse_time(value: str) -> datetime | None:
     return stamp
 
 
+def attached_volume_ids(attachments: list) -> set[str]:
+    """The volume ids the attachment API says are attached to an instance.
+
+    The shape is OCI's own: `oci compute volume-attachment list` answers a list of objects with
+    hyphenated keys, each carrying the id of the volume it attaches. A list that is empty or
+    unreadable is not evidence that nothing is attached -- it is the absence of evidence, and
+    the caller is expected to have refused to run in that case.
+    """
+    ids: set[str] = set()
+    for item in attachments or []:
+        if not isinstance(item, dict):
+            continue
+        for key in ("volume-id", "volume_id"):
+            value = item.get(key)
+            if value:
+                ids.add(str(value))
+                break
+    return ids
+
+
 def reclaimable(
-    volume: dict, now: datetime, older_than_hours: int, keep: set[str]
+    volume: dict,
+    now: datetime,
+    older_than_hours: int,
+    keep: set[str],
+    attached: set[str] | None = None,
 ) -> tuple[bool, str]:
     """True when this volume may be deleted, and the one-line reason either way."""
     name = volume.get("display-name") or ""
     state = (volume.get("lifecycle-state") or "").upper()
-    if state != "AVAILABLE":
-        return False, f"state {state or 'unknown'}, not AVAILABLE"
-    if volume.get("volume-attachments"):
-        return False, "attached to an instance"
+    dead = state == "TERMINATED"
+    if state not in ("AVAILABLE", "TERMINATED"):
+        return False, f"state {state or 'unknown'}, not AVAILABLE or TERMINATED"
+    if not dead:
+        if attached is not None and volume.get("id") in attached:
+            return False, "attached to an instance (the attachment API says so)"
+        if volume.get("volume-attachments"):
+            return False, "attached to an instance"
     if not name.startswith("csi-"):
         return False, "not a CSI volume (name does not start with csi-)"
     tags = volume.get("freeform-tags") or {}
@@ -103,6 +147,18 @@ def reclaimable(
         return (
             False,
             "one of the oldest kept volumes (a long-lived PersistentVolume may point at it)",
+        )
+    if dead:
+        # A terminated volume is dead: it cannot be mounted, so no pod can be reading it, and a
+        # PersistentVolume that points at it is already broken. It still exists, and it still
+        # counts against the tenancy's storage allowance -- which is the whole reason the estate
+        # cannot create a volume. MEASURED 2026-10-28: the compartment held nine of these,
+        # 450GB, and deleting the three newest ones did NOT free the allowance, because a
+        # deleted volume becomes TERMINATED rather than gone. A door that keeps them "because
+        # they are not AVAILABLE" was keeping the capacity that was blocking the cluster.
+        return (
+            True,
+            f"terminated CSI volume, {volume.get('size-in-gbs')}GB, {age_h:.0f}h old: it is dead, and it still holds the allowance",
         )
     return (
         True,
@@ -135,15 +191,6 @@ def node_may_be_terminated(instance: dict) -> tuple[bool, str]:
     if state in ("TERMINATING", "TERMINATED"):
         return False, f"state {state}: it is already going or gone"
     return False, f"state {state or 'unknown'}: not a state this door acts on"
-
-
-def node_boot_volume(instance: dict) -> str:
-    """The OCID of the instance's boot volume, or "" when there is none."""
-    for key in ("boot-volume-id", "boot_volume_id"):
-        value = instance.get(key)
-        if value:
-            return str(value)
-    return ""
 
 
 def main(argv: list[str]) -> int:
@@ -194,6 +241,12 @@ def _volumes_main(argv: list[str]) -> int:
         help="minimum age of a reclaimable volume",
     )
     ap.add_argument(
+        "--attachments",
+        default="",
+        help="the OCI `oci compute volume-attachment list --output json` file; the "
+        "attachment truth the rules read (the volume list does not carry it)",
+    )
+    ap.add_argument(
         "--ids-out", default="", help="write the chosen OCIDs here, one per line"
     )
     ap.add_argument(
@@ -216,6 +269,20 @@ def _volumes_main(argv: list[str]) -> int:
         print("FAIL  oci-reclaim  the volume file is not a list of volumes")
         return 2
 
+    attached: set[str] = set()
+    if args.attachments:
+        try:
+            with open(args.attachments) as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError) as exc:
+            print(f"FAIL  oci-reclaim  cannot read {args.attachments}: {exc}")
+            return 2
+        items = doc.get("data", doc) if isinstance(doc, dict) else doc
+        if not isinstance(items, list):
+            print("FAIL  oci-reclaim  the attachment file is not a list of attachments")
+            return 2
+        attached = attached_volume_ids(items)
+
     now = _parse_time(args.now) if args.now else datetime.now(timezone.utc)
     if now is None:
         print(f"FAIL  oci-reclaim  cannot read --now {args.now}")
@@ -231,7 +298,13 @@ def _volumes_main(argv: list[str]) -> int:
     chosen_gb = 0
     print("volume                                          size  age     verdict")
     for volume in ordered:
-        ok, reason = reclaimable(volume, now, args.older_than_hours, keep)
+        ok, reason = reclaimable(
+            volume,
+            now,
+            args.older_than_hours,
+            keep,
+            attached if args.attachments else None,
+        )
         name = (volume.get("display-name") or "?")[:44]
         size = volume.get("size-in-gbs")
         age_h = _age_of(volume, now) / 3600.0
@@ -248,6 +321,10 @@ def _volumes_main(argv: list[str]) -> int:
         f"ok    oci-reclaim  {len(chosen)} volume(s) reclaimable, {chosen_gb}GB; "
         f"{len(volumes) - len(chosen)} kept, {kept_gb}GB"
     )
+    if args.attachments:
+        print(
+            f"ok    oci-reclaim  {len(attached)} volume(s) attached, per the attachment API"
+        )
     if args.ids_out:
         with open(args.ids_out, "w") as fh:
             for ocid in chosen:

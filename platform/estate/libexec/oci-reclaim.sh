@@ -86,9 +86,10 @@ else
 fi
 
 LIST=$(mktemp -t oci-reclaim-volumes.XXXXXX)
+ATTACH=$(mktemp -t oci-reclaim-attachments.XXXXXX)
 IDS=$(mktemp -t oci-reclaim-ids.XXXXXX)
 INST=$(mktemp -t oci-reclaim-instance.XXXXXX)
-trap 'rm -f "$LIST" "$IDS" "$INST"' EXIT
+trap 'rm -f "$LIST" "$ATTACH" "$IDS" "$INST"' EXIT
 
 if [ "$WHAT" = "node" ]; then
   # The node mode: reclaim the capacity a node that never came up is holding. OKE refuses to
@@ -121,48 +122,14 @@ if [ "$WHAT" = "node" ]; then
       echo "keep  oci-reclaim  $VERDICT"
       ;;
   esac
-  # The boot volume the node was holding: it is released when the termination settles, and it
-  # is deleted only when OCI says it is free (AVAILABLE, no attachment).
-  BOOT=$(python3 -c "
-import json
-d = json.load(open('$INST'))
-d = d.get('data', d)
-print(d.get('boot-volume-id') or '')
-" 2>/dev/null || echo "")
-  if [ -n "$BOOT" ]; then
-    VOLSTATE=$(oci bv volume get --volume-id "$BOOT" --config-file "$OCI_CONFIG" \
-      --profile "$OCI_PROFILE" --output json 2>/dev/null | python3 -c "
-import json, sys
-try:
-    d = json.load(sys.stdin)
-except ValueError:
-    print('unknown'); raise SystemExit(0)
-d = d.get('data', d)
-print(d.get('lifecycle-state') or 'unknown')
-" 2>/dev/null || echo unknown)
-    ATTACHMENTS=$(oci compute volume-attachment list --compartment-id "$COMPARTMENT" --all \
-      --config-file "$OCI_CONFIG" --profile "$OCI_PROFILE" --output json 2>/dev/null | python3 -c "
-import json, sys
-try:
-    d = json.load(sys.stdin)
-except ValueError:
-    print(0); raise SystemExit(0)
-items = d.get('data', d) if isinstance(d, dict) else d
-print(sum(1 for a in (items or []) if a.get('volume-id') == '$BOOT'))
-" 2>/dev/null || echo "?")
-    if [ "$VOLSTATE" = "AVAILABLE" ] && [ "$ATTACHMENTS" = "0" ]; then
-      if [ "$MODE" = "plan" ]; then
-        echo "plan  oci-reclaim  the boot volume $BOOT is free and would be deleted"
-      elif oci bv volume delete --volume-id "$BOOT" --force --config-file "$OCI_CONFIG" \
-        --profile "$OCI_PROFILE" >/dev/null 2>/tmp/oci-reclaim-boot.err; then
-        echo "ok    oci-reclaim  deleted the boot volume $BOOT (the node's)"
-      else
-        echo "keep  oci-reclaim  the boot volume $BOOT is free but OCI refused the delete: $(grep -o '"message": "[^"]*"' /tmp/oci-reclaim-boot.err | head -1)"
-      fi
-    else
-      echo "keep  oci-reclaim  the boot volume $BOOT is $VOLSTATE with $ATTACHMENTS attachment(s): it is released when the termination settles, then run the door again"
-    fi
-  fi
+  # The boot volume of the node is not chased here, and the reason is measured: OCI's
+  # `compute instance get` does not expose an instance's boot volume in any field this CLI
+  # prints, and `oci bv volume list` does not list it either. A door that claimed to delete
+  # a volume it cannot see would be claiming a target it does not have. The node pool
+  # creates its nodes with is_preserve_boot_volume = false, so the termination releases the
+  # boot volume with the instance: MEASURED 2026-10-28, the compartment listing no longer
+  # holds the node's 100GB boot volume after the termination settled.
+  echo "ok    oci-reclaim  the node's boot volume is released by the termination (is_preserve_boot_volume = false); nothing else to delete"
   exit 0
 fi
 
@@ -171,7 +138,19 @@ if ! oci bv volume list "${OCI_ARGS[@]}" --output json >"$LIST" 2>/tmp/oci-recla
   exit 2
 fi
 
-python3 "$HERE/oci-reclaim.py" --volumes "$LIST" --keep-oldest "$KEEP_OLDEST" \
+# The attachment truth, from the API that owns it. MEASURED 2026-10-28: the volume list leaves
+# its own "volume-attachments" field empty on every volume, attached or not, so a rule that
+# trusted it called five volumes that were in use reclaimable. The delete API refused them
+# later, which kept the apply safe and the plan wrong. The attachment list is the answer, and
+# if it cannot be read the door is BLIND rather than optimistic.
+if ! oci compute volume-attachment list --compartment-id "$COMPARTMENT" --all \
+  --config-file "$OCI_CONFIG" --profile "$OCI_PROFILE" --output json >"$ATTACH" 2>/tmp/oci-reclaim-attach.err; then
+  echo "BLIND oci-reclaim  oci compute volume-attachment list failed: $(tail -2 /tmp/oci-reclaim-attach.err | tr '\n' ' ' | cut -c1-200)"
+  exit 2
+fi
+
+python3 "$HERE/oci-reclaim.py" --volumes "$LIST" --attachments "$ATTACH" \
+  --keep-oldest "$KEEP_OLDEST" \
   --older-than-hours "$OLDER_THAN_HOURS" --ids-out "$IDS" || exit 2
 
 COUNT=$(wc -l <"$IDS" | tr -d ' ')
