@@ -36,6 +36,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -50,6 +51,7 @@ CENSUS = Path(
     )
 )
 RESCUE_MAX = int(os.environ.get("ESTATE_RESCUE_MAX", "25"))
+RESCUE_SECONDS = int(os.environ.get("ESTATE_RESCUE_SECONDS", "240"))
 PREFIX = "backup/preserve-"
 GIT_TIMEOUT = 25
 PUSH_TIMEOUT = 60
@@ -116,6 +118,16 @@ def origin_heads(repo):
         for line in out.splitlines()
         if "\t" in line
     }, None
+
+
+def main_commits(repo):
+    """Every commit origin/main holds, in one git call.
+
+    Asking git once per branch is one process per branch and the estate has sixty of them: one
+    rev-list is the difference between a second and a minute, and this runs on a timer.
+    """
+    rc, out = git(["rev-list", "origin/main"], repo=repo, timeout=90)
+    return set(out.split()) if rc == 0 else None
 
 
 def on_main(sha, repo):
@@ -282,13 +294,16 @@ def plan(remote_refs, repo):
     branches, err = local_branches(repo)
     if branches is None:
         return None, "cannot read local branches: {}".format(err)
+    landed = main_commits(repo)
     for row in branches:
         name = row["name"]
         if name.startswith(PREFIX):
             continue  # a salvage branch is already the safe copy
         if name in remote_refs:
             continue  # origin already holds it
-        if on_main(row["sha"], repo):
+        if landed is not None and row["sha"] in landed:
+            continue  # it is on main; nothing is at risk
+        if landed is None and on_main(row["sha"], repo):
             continue  # it is on main; nothing is at risk
         rows.append(
             {
@@ -337,6 +352,7 @@ def rescue(rows, budget, repo):
     """Push the planned items, in order, up to the budget. Returns the same rows, judged."""
     out = []
     pushed = 0
+    started = time.time()
     for row in rows:
         if pushed >= budget:
             out.append(

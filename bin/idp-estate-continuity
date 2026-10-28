@@ -135,7 +135,7 @@ case "${1:-run}" in
 run)
 	census
 	census_rc=$?
-	rescue "$2"
+	rescue "${2:-}"
 	rescue_rc=$?
 	rescued=$(python3 - "$RESCUE_LEDGER" <<'PY' 2>/dev/null || echo 0
 import json, sys
