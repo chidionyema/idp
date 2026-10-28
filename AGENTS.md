@@ -320,6 +320,26 @@ What it means operationally, and what it does not:
 - **It is a standing expectation, not a decoration.** When the frontier lanes are down, this lane
   is the one that carries the work; that is why the ladder puts a second provider's home above
   the last rung, and why the drill grades the lanes rather than trusting them.
+- **A promotion is part of the estate's performance review, and it moves money.** When a model
+  is promoted, the estate uses it more: we pay that provider more, and we get more tokens with
+  it. The founder's numbers, 2026-10-28: **MiniMax is about $20 a month now, and $50 next
+  month** for more usage, because the lane has been impressive. The traffic moves the other way
+  too — **Codex and Kimi are used less** until they perform better, **Claude is on the watch
+  list** depending on its performance, and **DeepSeek and GLM are solid** where they are. That
+  is a judgement about performance, attributed to the founder and recorded as one: the spend it
+  implies is the founder's number, not a measurement this estate took. A promotion moves usage;
+  it does not make one lane the only lane (§7a stands, and the free floor is not reversed).
+- **The concept, in the founder's words: the estate rewards performance and punishes slop.** A
+  lane earns usage by carrying the work when it matters and by being right in a way that can
+  be checked; it loses usage by slop — narrating instead of proving, asserting instead of
+  measuring, claiming a repair it never verified, or reporting a board all clear when the
+  board could not be seen. The same law binds agents and models (§3), so the reward follows
+  the evidence and not the eloquence. How the estate grades a lane, and how the reward is
+  set, is in ADR 0038.
+- **The review reads the metrics, not the mood.** It is supported by the founder's metric
+  collection lane: per-lane availability verdicts on the drill's schedule, tokens and spend
+  per provider, the record of service, and the truthfulness of each answer. A metric that
+  cannot be collected is `UNKNOWN` — never quietly zero, and never a guess.
 
 ## 8. Placement — the free tier decides, not the cluster
 
