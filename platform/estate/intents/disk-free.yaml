@@ -1,71 +1,58 @@
 name: disk-free
 description: >-
   Free space now, inside the door's 100s, by running the estate's own cleaner
-  (platform/estate/libexec/disk-cleanup.sh) in apply mode under time budgets it can fit.
-  Deletes ONLY what the cleaner already allows -- package-manager caches, dangling images and
-  build cache, settled agent worktrees it archives first, stale temp, leftover Chrome code-sign
-  clones, and (under its critical floor) re-installable toolchain weight -- and widens nothing.
+  (platform/estate/libexec/disk-cleanup.sh) in apply mode under a budget it can finish. It deletes
+  ONLY what the cleaner already allows -- package-manager caches, dangling images and build
+  cache, settled agent worktrees it archives first, stale temp, leftover Chrome code-sign
+  clones, and (under its floor) re-installable toolchain weight -- and widens nothing.
   worktrees=true by default because that is where the gigabytes are.
-  The phases that reclaim the most run FIRST: under a full disk the time budget is what binds, so
-  the critical tier (old node/rust toolchains, ollama models, cargo/go caches, a git repack) and
-  the multi-GB Chrome clones get a call of their own before the per-worktree walk, which costs
-  ~3s per checkout and often reclaims nothing because the worktrees belong to live agents.
-  Every phase either runs inside what is left of its budget or is SKIPPED BY NAME with the seconds
-  it was denied, and free space is reported before and after, measured. Exit 4 means phases were
-  skipped: run it again and it continues, because every phase is idempotent. Use when
-  bin/idp-disk-guard says the volume is under the door's floor.
+  ONE ORDER, AND IT IS THE ENGINE'S: caches, then the toolchain tier, then docker, then
+  worktrees, then temp, then the Chrome clones. The toolchain tier is second because it is the
+  only tier with real weight and the phases after it are slow and usually yield nothing; the
+  door used to ask for the toolchain tier "first", which selected it but did not reorder it, so
+  the worktree walk ran in front of the 2.2G and the door spent its budget there. Now one call,
+  in the engine's order, spends the budget where the bytes are.
+  Every phase either runs inside what is left of the budget or is SKIPPED BY NAME with the
+  seconds it was denied, and free space is reported before and after, measured. A delete is
+  bounded (30s) and resumable, so a run that is cut short says the work is still owed instead of
+  failing. Exit 4 means work remains: the resident guardian (ai.estate.disk-watch) carries it,
+  or run this door again -- every phase is idempotent.
+  The RESIDENT GUARDIAN is the estate's continuous answer; this door is the on-demand sweep.
+  Use when bin/idp-disk-guard says the volume is under the door's floor.
 class: mutate
 args:
   worktrees: {type: bool, default: true, description: "also remove settled agent worktrees (archived first)"}
   trash: {type: bool, default: false, description: "also empty ~/.Trash (the user's; opt-in)"}
-# 95, not 100: four cheap steps run around the two cleaning calls, and a door that declares exactly
-# the ceiling spends its last second being killed.
+  target_mb: {type: int, default: 0, description: "keep reclaiming until this much is free; 0 = no target"}
+# 95, not 100: the steps around the cleaning call need a few seconds, and a door that declares
+# exactly the ceiling spends its last second being killed.
 door_s: 95
 halt_on_failure: false
 steps:
   - name: before
     cmd: |
       df -k /System/Volumes/Data | awk 'NR==2 {printf "free before: %dM on %s\n", $4/1024, $9}'
-  - name: first
-    # The tier that can actually move a full disk, and the multi-GB Chrome clones.
+  - name: clean
+    # One call, in the engine's order, with a budget it can finish inside the door. The cleaner's
+    # own status is carried out of the step: 0 every phase ran, 4 work still owed, 3 something
+    # that should be gone is still there, 5 another run holds the lock and is doing the work.
     on_fail: continue
     cmd: |
-      DISK_CLEANUP_PHASES=critical,clones \
-        bash ~/.estate/libexec/disk-cleanup.sh true {{trash}} 0 {{worktrees}} 34
-      echo $? > ~/.estate/disk-free.a.rc
-  - name: second
-    # Caches, docker, the worktree walk, stale temp, then the du report of where the space is.
-    on_fail: continue
-    cmd: |
-      DISK_CLEANUP_PHASES=caches,docker,worktrees,temp,scan \
-        bash ~/.estate/libexec/disk-cleanup.sh true {{trash}} 0 {{worktrees}} 42
-      echo $? > ~/.estate/disk-free.b.rc
+      env DISK_CLEANUP_TARGET_MB={{target_mb}} \
+        bash ~/.estate/libexec/disk-cleanup.sh true {{trash}} 0 {{worktrees}} 78
+      echo $? > ~/.estate/disk-free.rc
   - name: after
     on_fail: continue
     cmd: |
       df -k /System/Volumes/Data | awk 'NR==2 {printf "free after: %dM on %s\n", $4/1024, $9}'
   - name: verdict
-    # The cleaner's own status, carried out of the intent, worst of the two calls:
-    #   0 every phase ran / 4 the budget ran out with phases still owed (run again)
-    #   3 something that should be gone is still there / 5 another run held the lock
     cmd: |
-      a=$(cat ~/.estate/disk-free.a.rc 2>/dev/null || echo 1)
-      b=$(cat ~/.estate/disk-free.b.rc 2>/dev/null || echo 1)
-      rc=0
-      for r in "$a" "$b"; do
-        case "$r" in
-          0) ;;
-          3) rc=3 ;;
-          4) [ "$rc" != 3 ] && rc=4 ;;
-          5) [ "$rc" = 0 ] && rc=5 ;;
-          *) [ "$rc" = 0 ] && rc=1 ;;
-        esac
-      done
+      rc=$(cat ~/.estate/disk-free.rc 2>/dev/null || echo 1)
       case "$rc" in
         0) echo "verdict: every phase ran" ;;
-        4) echo "verdict: budget spent, phases remain -- run disk-free again to continue" ;;
-        5) echo "verdict: another run held the lock and did the work: nothing done here" ;;
+        4) echo "verdict: the budget was spent with work still owed -- the guardian continues it, or run disk-free again" ;;
+        5) echo "verdict: another run holds the lock and is doing the work (the measured free space is above)"; rc=0 ;;
         3) echo "verdict: a target survived deletion (see the lines above)" ;;
-        *) echo "verdict: the cleaner could not run (first=$a second=$b)" ;;
+        *) echo "verdict: the cleaner could not run (rc=$rc)" ;;
       esac
       exit "$rc"
