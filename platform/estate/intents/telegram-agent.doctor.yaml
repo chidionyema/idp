@@ -1,0 +1,21 @@
+name: telegram-agent.doctor
+description: >
+  Is every Telegram agent healthy RIGHT NOW, which link broke, and what fixes it? One door for
+  the founder's standing requirement that any agent can monitor live, diagnose and resolve an
+  issue with any Telegram agent (Otto included). Walks each Telegram agent's chain in the
+  order a message meets it -- edge, workload, registration, answer -- names the FIRST broken
+  link with the sanctioned fix (flux-reconcile, through the intent layer, never by hand), and
+  with heal=true applies that fix and re-checks the link afterwards. A source that cannot be
+  read is BLIND, never a failure and never a pass. Exit 0 healthy, 1 a link is broken, 3 blind.
+  Use this first whenever a Telegram agent stops answering.
+args:
+  agent: {type: string, default: "all"}
+  heal: {type: bool, default: false}
+  json: {type: bool, default: false}
+steps:
+  - name: diagnose
+    cmd: |
+      h="{{heal}}"; j="{{json}}"; hf=""; jf="";
+      [ "$h" = "True" ] && hf="--heal";
+      [ "$j" = "True" ] && jf="--json";
+      python3 ~/.estate/libexec/telegram-agent-doctor.py --agent "{{agent}}" $hf $jf
