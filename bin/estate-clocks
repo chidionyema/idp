@@ -23,13 +23,19 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "scheduling" / "CLOCKS.md"
 
+# libyaml when the machine has it. Measured 2026-10-28 on scheduler/schedule.yml
+# alone: 1.20s with the pure-Python loader, 0.05s with libyaml. The view read 753
+# platform manifests, so the loader WAS the view: bin/estate-clocks took 65.8s, and a
+# view nobody waits for is a view nobody reads.
+_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
 
 def _read_schedule_yml(root: Path) -> list[dict]:
     """Read scheduler/schedule.yml and return a list of clock dicts."""
     spec = root / "scheduler" / "schedule.yml"
     if not spec.exists():
         return []
-    data = yaml.safe_load(spec.read_text()) or {}
+    data = yaml.load(spec.read_text(), Loader=_LOADER) or {}
     jobs = data.get("jobs", {})
     clocks = []
     for name, job in jobs.items():
@@ -76,17 +82,95 @@ def _read_schedule_yml(root: Path) -> list[dict]:
     return clocks
 
 
+def _warn(message: str) -> None:
+    """A source that cannot be read is reported, not fatal.
+
+    2026-10-28: this tool died on `platform/vendors/templates/externalsecrets.yaml` --
+    a TEMPLATE holding ${...} placeholders, which is not YAML -- and every clock in the
+    estate went down with it. A view that cannot survive one unreadable file is a view
+    that cannot show the dead scheduler.
+    """
+    print("estate-clocks: {}".format(message), file=sys.stderr)
+
+
+def _documents(content: str, source: str) -> list:
+    """The YAML mappings in a file, or an empty list when the file is not YAML.
+
+    A manifest template, a chart with placeholders, and a file that is a list rather
+    than a mapping are all things this tree contains. None of them is a clock, and none
+    of them may take the whole view down.
+    """
+    try:
+        docs = list(yaml.load_all(content, Loader=_LOADER))
+    except yaml.YAMLError as exc:
+        _warn(
+            "{} is not readable YAML ({}); it is not listed as a clock".format(
+                source, str(exc).split("\n")[0]
+            )
+        )
+        return []
+    return [doc for doc in docs if isinstance(doc, dict)]
+
+
+def _namespace_for(yaml_path: Path, cache: dict):
+    """The namespace a manifest inherits from its nearest kustomization.
+
+    Measured 2026-10-28: this walked the parents and re-parsed the same
+    kustomization.yaml once per file, which is most of why the view took a minute.
+    The answer for a directory does not change while the view is built, so it is
+    cached.
+    """
+    key = str(yaml_path.parent)
+    if key in cache:
+        return cache[key]
+    namespace = None
+    kustomization = None
+    for parent in [yaml_path.parent] + list(yaml_path.parents):
+        if (parent / "kustomization.yaml").exists():
+            kustomization = parent / "kustomization.yaml"
+            break
+    if kustomization is not None:
+        try:
+            kuname = yaml.load(kustomization.read_text(), Loader=_LOADER) or {}
+            # First check if kustomization has namespace directly set
+            ns_from_kustomize = kuname.get("namespace")
+            if ns_from_kustomize:
+                namespace = ns_from_kustomize
+            else:
+                # Look for namespace.yaml in resources
+                for res in kuname.get("resources", []) or []:
+                    if str(res).endswith("namespace.yaml"):
+                        ns_path = kustomization.parent / str(res)
+                        if ns_path.exists():
+                            ns_doc = (
+                                yaml.load(ns_path.read_text(), Loader=_LOADER) or {}
+                            )
+                            if ns_doc.get("kind") == "Namespace":
+                                namespace = (ns_doc.get("metadata") or {}).get("name")
+                                break
+        except Exception:
+            namespace = None
+    cache[key] = namespace
+    return namespace
+
+
 def _read_cronjobs(root: Path) -> list[dict]:
     """Read all CronJob YAMLs under platform/** and return a list of clock dicts."""
     clocks = []
     platform_dir = root / "platform"
     if not platform_dir.exists():
         return []
+    ns_cache = {}
 
     for yaml_path in platform_dir.rglob("*.yaml"):
         try:
             content = yaml_path.read_text()
         except Exception:
+            continue
+
+        # A CronJob manifest says so, and 753 platform files are read here. A file
+        # without the token cannot be a clock, so it is not parsed at all.
+        if "CronJob" not in content:
             continue
 
         # Get the first comment line for description
@@ -99,10 +183,9 @@ def _read_cronjobs(root: Path) -> list[dict]:
             elif stripped and not stripped.startswith("#"):
                 break
 
-        # Parse all documents
-        for doc in yaml.safe_load_all(content):
-            if doc is None:
-                continue
+        # Parse all documents. A file that is not YAML (a template) is reported and
+        # skipped; it must not take the whole clock view down with it.
+        for doc in _documents(content, str(yaml_path.relative_to(root))):
             if doc.get("kind") != "CronJob":
                 continue
 
@@ -112,37 +195,7 @@ def _read_cronjobs(root: Path) -> list[dict]:
 
             # If no namespace, try to find it from kustomization in the same dir
             if not namespace:
-                # Walk up to find nearest kustomization.yaml
-                kustomization = None
-                for parent in [yaml_path.parent] + list(yaml_path.parents):
-                    if (parent / "kustomization.yaml").exists():
-                        kustomization = parent / "kustomization.yaml"
-                        break
-                if kustomization and kustomization.exists():
-                    try:
-                        kuname = yaml.safe_load(kustomization.read_text())
-                        # First check if kustomization has namespace directly set
-                        ns_from_kustomize = kuname.get("namespace")
-                        if ns_from_kustomize:
-                            namespace = ns_from_kustomize
-                        else:
-                            # Look for namespace.yaml in resources
-                            resources = kuname.get("resources", [])
-                            for res in resources:
-                                if (
-                                    res.endswith("namespace.yaml")
-                                    or res == "namespace.yaml"
-                                ):
-                                    ns_path = kustomization.parent / res
-                                    if ns_path.exists():
-                                        ns_doc = yaml.safe_load(ns_path.read_text())
-                                        if ns_doc.get("kind") == "Namespace":
-                                            namespace = ns_doc.get("metadata", {}).get(
-                                                "name"
-                                            )
-                                            break
-                    except Exception:
-                        pass
+                namespace = _namespace_for(yaml_path, ns_cache)
 
             if not namespace:
                 namespace = "(namespace set by Flux)"
@@ -179,6 +232,11 @@ def _read_github_workflows(root: Path) -> list[dict]:
         except Exception:
             continue
 
+        # A workflow with a schedule says so. 34 files are read here and most of them
+        # are not clocks.
+        if "schedule" not in content:
+            continue
+
         # Get the first # comment line for description
         first_comment = ""
         for line in content.splitlines():
@@ -189,7 +247,10 @@ def _read_github_workflows(root: Path) -> list[dict]:
             elif stripped and not stripped.startswith("#"):
                 break
 
-        doc = yaml.safe_load(content)
+        docs = _documents(content, str(yml_path.relative_to(root)))
+        if not docs:
+            continue
+        doc = docs[0]
         if doc is None:
             continue
 
@@ -264,7 +325,7 @@ def render(repo_root: Path) -> str:
         "",
         f"{len(clocks)} clocks: {github_count} on GitHub Actions, {mac_count} on the Mac scheduler, {cluster_count} CronJobs in the cluster.",
         "",
-        "Regenerate with `bin/estate-clocks`; the test tests/test_clocks_table_matches_sources.py fails when this page is stale.",
+        "Regenerate with `bin/estate-clocks`; the test tests/test_estate_clocks.py fails when this page is stale.",
         "",
         "| Clock | Where it runs | Cron | Source | What it does |",
         "| ----- | ------------- | ---- | ------ | ------------ |",

@@ -419,6 +419,12 @@ def main(argv=None) -> int:
     parser.add_argument("--home", default="")
     parser.add_argument("--snapshot", default=str(DEFAULT_SNAPSHOT))
     parser.add_argument("--strict", action="store_true")
+    parser.add_argument(
+        "--no-refresh",
+        action="store_true",
+        help="judge the live half exactly as it is found, without reconciling it first "
+        "(CI, and anyone who wants to see whether the scheduled cycle is ticking)",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
@@ -482,8 +488,28 @@ def main(argv=None) -> int:
     store_records = []
     live_write = None
     live_store_present = door.DB_PATH.exists()
+    facts["live_refresh"] = None
     if live_store_present:
         store = door.Store(door.DB_PATH)
+        # The live half must be current when it is judged. The scheduled row
+        # (com.estate.registry-reconcile) is DECLARED, and on this machine it was not
+        # ticking: 2026-10-28, the store's last heartbeat was 25.3h old, because the
+        # Mac's Dagster is not loaded and the cluster's is not ready. So the gate
+        # reconciles the half it is about to judge instead of judging a stale one, and it
+        # keeps the age it found: that age is the fact about the scheduled cycle, and it
+        # is reported whether or not the refresh worked.
+        if getattr(door, "AUTO_REFRESH", True) and not args.no_refresh:
+            refresh = door.ensure_live(ctx, store, why="gate", records=records)
+            facts["live_refresh"] = refresh
+            if refresh.get("refreshed"):
+                facts.setdefault("findings", []).append(
+                    "the scheduled reconcile had not ticked ({} ago when the gate "
+                    "arrived); the gate refreshed the live half on read".format(
+                        _human_age(refresh.get("age_s"))
+                        if refresh.get("age_s") is not None
+                        else "of unknown age"
+                    )
+                )
         try:
             store_records = store.all()
         except sqlite3.Error as exc:
@@ -666,6 +692,14 @@ def main(argv=None) -> int:
                 "age unknown" if age is None else _human_age(age),
             )
         )
+        refresh = facts.get("live_refresh") or {}
+        if refresh.get("refreshed"):
+            print(
+                "live: refreshed on read in {}s ({} record(s)) -- the live half judged "
+                "below is the estate as it is now".format(
+                    refresh.get("duration_s"), refresh.get("records")
+                )
+            )
     elif live_store_present:
         print(
             "live: the store has never been reconciled by a census -- the live half's "
