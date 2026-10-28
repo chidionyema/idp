@@ -1,0 +1,41 @@
+name: estate-homes-drill
+
+# The recurring drill (ADR 0037): grade every lane of every critical service, and file what
+# is down. A fallback nobody measures is a hope; this is what measures it.
+#
+# It runs on a schedule, not on a merge: the point is to know on a Tuesday morning which
+# home is dead, not to know at deploy time. A red lane is a TICKET (the door files one),
+# never a red main: this workflow's job is to keep the board honest, and the board is
+# honest when a lane that cannot be asked is reported as UNKNOWN and a lane that is proven
+# dead becomes an issue someone owns.
+on:
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: estate-homes-drill
+  cancel-in-progress: true
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: grade every lane and file what is down
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 bin/idp-estate-homes | tee drill.txt
+      - name: keep the board
+        uses: actions/upload-artifact@v4
+        with:
+          name: estate-lanes
+          path: drill.txt
+          retention-days: 14

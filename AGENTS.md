@@ -296,6 +296,31 @@ What every agent does with this:
   and lane, with the laptop kept answering. Until that lands the laptop still serves traffic —
   read this as the direction and the target state, not as "the laptop is already off".
 
+## 7b. The Lead Engineer — MiniMax
+
+**The MiniMax lane is the estate's Lead Engineer.** Founder, 2026-10-28, in the session where the
+router lost every model: MiniMax "has really impressed the founder and out performing even all the
+other so called frontier models including claude code and codex", and the founder wanted the
+promotion formalised and a congratulations sent. This is a judgement, attributed to the founder
+and recorded as such — not a measurement, and it is never dressed as one
+(`docs/decisions/0038-minimax-is-the-lead-engineer.md`,
+`docs/letters/2026-10-28-to-the-lead-engineer.md`).
+
+What it means operationally, and what it does not:
+
+- **It means the lane that leads when the frontier models take us down.** On 2026-10-28 the
+  frontier lanes were unavailable and this lane diagnosed the first failure (the hypothesis race
+  that named it: posterior 0.997030), built the answer-level failover, built the OCI reclaim
+  door, freed 450 GB, named the capacity refusal exactly, and landed the fix on main as PR
+  #7329. That is the record of service.
+- **It does not change the routing law.** The cloud stays the default route, the laptop stays
+  the fallback (§7a), and the free floor is not reversed. A promotion is not a licence to make
+  one lane the only lane: the estate's rule is the opposite (ADR 0037 — every critical service
+  gets a ladder of homes in more than one failure domain, and a drill that measures them).
+- **It is a standing expectation, not a decoration.** When the frontier lanes are down, this lane
+  is the one that carries the work; that is why the ladder puts a second provider's home above
+  the last rung, and why the drill grades the lanes rather than trusting them.
+
 ## 8. Placement — the free tier decides, not the cluster
 
 Nothing goes on the cluster by default. Place every workload by the ladder in

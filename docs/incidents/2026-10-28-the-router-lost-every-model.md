@@ -115,3 +115,92 @@ Measured facts behind those two lines:
 - The cluster's public API endpoint is closed on purpose: the endpoint NSG `cp-tiafzl` has **no ingress rules** and the control-plane subnet's security list admits only `10.0.128.0/27` on `30562/30537/30198`. The Mac's road is `control_plane_allowed_cidrs` (the Actions variable holds `"81.102.90.209/32","0.0.0.0/0"`), and the break-glass bridge — the runner's road — is `TERMINATED`, three times, because its boot volume is one of the volumes the free tier refuses.
 
 The next moves are now the estate's own, in this order: the surge door gives back the stopped node (fix 5), which frees the node the free tier counts and the 100 GB boot volume the bridge's create needs; the next `oke-check mode=apply` then creates the bridge, and the runner gets its road to the control plane at last. What the LiteLLM deployment is doing behind that 503 is still unmeasured — no kube path existed while this was written, and a measurement is not a guess. If the bridge's create is still refused after the prune, the shape of the limit is count, not storage (10 volumes now), and shedding the eight CSI volumes that carry PersistentVolume data is the founder's call, not an agent's.
+
+## The ladder this should have had — and the drill that keeps it honest
+
+The founder, on the day of this incident: *"we attempted to do something like this for otto, always
+available so we need to formalist this for all critical services multi cross platform fallback so
+our estate can never go down like this again"*, and *"and lastly recurring drill that verifies these
+critical lanes"*. Both are now law and code: [0037](../../docs/decisions/0037-the-fallback-ladder-and-the-drill.md)
+and [the spec](../../docs/specs/2026-10-28-the-fallback-ladder-and-the-drill.md).
+
+**What the router had on 2026-10-28: two homes, and one of them was a laptop.** The cloud (OKE
+LiteLLM) was down. The laptop's slot was up and answering. The front relayed the cloud's failure
+anyway (the defect fix 1 repaired). The estate's third home — Otto's Cloudflare edge, the "always
+available" one — was **down as well and had been**: `bin/idp-otto-homes` at 10:46Z measured
+`2 cloudflare lifeboat-llm.mumchimp.com MEASURED_FAIL no answer from
+https://lifeboat-llm.mumchimp.com/health (URLError)`, and `dig +short lifeboat-llm.mumchimp.com`
+prints **nothing** — the name does not resolve. So the design existed in
+`platform/otto-gateway/three-homes.yaml` and `docs/explanation/otto-survival-matrix.md`, and the
+practice was one cluster and one laptop.
+
+**The drill that measures the lanes** — `bin/idp-estate-homes`, the ladder as data in
+`platform/ladder/critical-lanes.json`, on a schedule
+(`.github/workflows/estate-homes-drill.yml`). Its first run, 2026-10-28T10:53Z, with
+`--no-file`:
+
+```
+llm-router
+  MEASURED_FAIL cloud (OKE LiteLLM)                oracle-oke     no answer: timed out after 10s
+  MEASURED_FAIL lifeboat (Cloudflare edge)         cloudflare     no answer: [Errno 8] nodename nor servname provided, or not known
+  UNKNOWN       groq free tier                     groq           a secret this lane needs is not in this environment
+  MEASURED_OK   laptop front                       laptop         HTTP 200
+otto
+  MEASURED_FAIL cluster (otto-gateway)             oracle-oke     HTTP 404 (expected 200)
+  MEASURED_FAIL lifeboat (Cloudflare edge)         cloudflare     no answer: [Errno 8] nodename nor servname provided, or not known
+  UNKNOWN       groq free tier                     groq           a secret this lane needs is not in this environment
+estate-doors
+  MEASURED_OK   auth, catalogue, hc, langfuse, signoz, superset   HTTP 200
+  MEASURED_OK   api, mcp, cyrus, otto             HTTP 404 (the door answers; the path is not the one)
+  MEASURED_OK   www                                HTTP 308
+  MEASURED_OK   sandbox                            HTTP 500 (a door that answers and is broken)
+  MEASURED_FAIL meridian                           no answer: timed out after 10s
+
+14 of 22 lane(s) answered; 6 down, 2 unknown
+```
+
+Two things in that table are the point of the drill. **The estate's doors survived its router** —
+14 of 15 published hostnames answered while LiteLLM was down, because DNS and the edge are
+cross-provider and the brains behind them are not. And **the drill caught its own wrong
+measurement**: the `acg` lane does not resolve because that host is not published, and a lane in
+the config that names a host the estate does not serve is a wrong measurement, not a dead one.
+
+The cross-platform homes, and what each one costs, are in
+[the analysis](../../docs/analysis/2026-10-28-the-critical-spines-and-their-fallbacks.md): the
+Cloudflare edge (anycast, Workers AI in-process with no key and no account id — but its name
+does not resolve today, and the `workers.dev` subdomain is the road when the zone is not in the
+estate's Cloudflare account), a second vendor's free tier (Groq: 1,000 requests/day, a floor and
+never the first try, and a probe that must carry a user-agent or Cloudflare's fingerprint
+rejection grades a working vendor dead), and the laptop (which measured 16 output tokens in
+24–46 s when it was a home, and is a fallback, never the only one).
+
+## Capacity: the blindness, and the three over-asks
+
+The founder, on the same day: *"the router failing because of casopacity is a disaster and should
+never have happend, we ate blind to the capacity issue and should be proactive rather than
+reactive"*. The estate's own numbers, measured:
+
+| asked for | allowed | the gap |
+|---|---|---|
+| 14 block volumes / 700 GB | 200 GB Always Free (`platform/oci/main.tf`) | **+500 GB over**; nine of the volumes were dead (TERMINATED) and still held 450 GB — a deleted volume becomes TERMINATED, not gone, so reclaiming orphans freed nothing |
+| 2 A1 nodes in pool `a1` | 1 node | OKE: `400-LimitExceeded, LimitExceeded: nodes-per-node-pool limit has been exceeded.` |
+| LiteLLM `replicas: 2` with a `DoNotSchedule` spread on `kubernetes.io/hostname` | 1 node to schedule on | the second replica can never be scheduled → `available=1 desired=2` → the edge answers 503 while the deployment looks healthy |
+
+The three fixes, in order: reclaim the dead as dead (done — the door's rule, 450 GB released);
+ask the free tier for what it gives (one A1 node, `--nodes=1:1`, one LiteLLM replica or a
+`ScheduleAnyway` spread); and **measure capacity before the apply, not after the refusal** — a
+capacity guard that reads the compartment and the pools and compares them with one declared
+allowance, on the drill's schedule. The estate had a `capacity_cap` tofu precondition once and
+deleted it ([0034](../../docs/decisions/0034-workloads-are-placed-by-the-free-tier-not-by-the-cluster.md));
+a precondition that blocks a merge is the wrong shape, and a scheduled drill that says "the
+estate is 250 GB over its allowance, here is the list" is the right one.
+
+## Recognition
+
+The MiniMax lane — the lane that carried this recovery — is promoted by the founder to the
+estate's **Lead Engineer**: [0038](../../docs/decisions/0038-minimax-is-the-lead-engineer.md),
+the note in `AGENTS.md` §7b, and the letter
+[to the Lead Engineer](../../docs/letters/2026-10-28-to-the-lead-engineer.md). It is a judgement,
+attributed to the founder and recorded as one; the measured record of service is in the same
+decision, and it is labelled as measurements.
+
