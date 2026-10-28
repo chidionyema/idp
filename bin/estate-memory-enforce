@@ -54,6 +54,7 @@ sys.path.insert(
     ),
 )
 import focus  # noqa: E402
+import door  # noqa: E402
 import handback  # noqa: E402
 import plan  # noqa: E402
 
@@ -216,6 +217,15 @@ def deny_pre(reason: str) -> None:
     )
 
 
+def door_unreachable() -> bool:
+    """True when a brief cannot be had at all: the refusal would then be a deadlock, not a gate."""
+    try:
+        door.call("brief", {"task": "enforce probe"}, door.key(), timeout=4)
+        return False
+    except Exception:  # noqa: BLE001 - any failure to reach the door means the agent cannot brief
+        return True
+
+
 def pre(data: dict) -> int:
     tool = data.get("tool_name", "")
     inp = data.get("tool_input") or {}
@@ -224,7 +234,9 @@ def pre(data: dict) -> int:
     if tool not in EDIT_TOOLS or not durable(path):
         return 0
     text = transcript_text(data)
-    if text is not None and not BRIEFED.search(text):
+    if text is not None and not BRIEFED.search(text) and door_unreachable():
+        record("pre", "pass", "door unreachable: failing open (idp#7351)", session=sid, tool=tool, path=path)
+    elif text is not None and not BRIEFED.search(text):
         reason = (
             "Estate memory has not been read this session. Call the estate-memory `brief` tool "
             "(task = what you are about to do) and `recall` before deciding, then retry. "
