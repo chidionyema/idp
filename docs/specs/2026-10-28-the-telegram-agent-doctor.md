@@ -71,7 +71,8 @@ into the job's own status; the doctor reads that status.
 error: an unreadable source is not zero. A doctor that reports "the answer link failed" when it
 merely could not look would send every agent chasing a failure that does not exist. So:
 
-- `BLIND` exits **3**, `FAIL` exits **1**, healthy exits **0**.
+- The doctor SCRIPT exits **3** for blind, **1** for broken, **0** for healthy. The INTENT
+  that fronts it does not propagate that code — see *Two exits* below.
 - A blind link does **not** stop the walk: a later link may still be broken, and that is the
   more actionable fact. The walk stops only at a `FAIL`.
 - A blind link is **not** healed: repairing what you cannot read is a blind action. The doctor
@@ -124,6 +125,42 @@ otto-gateway  Otto's Telegram door (the estate's one bot, @Ottototbot)
 
 Every agent in the estate is in that output, whether it is healthy or not. `agent=<id>` narrows
 it; `json=true` gives the same facts as JSON for another agent to consume.
+
+## Two exits: the finding and the answer
+
+There are two exit codes in this door, and they answer two different questions.
+
+**The doctor's script exits on what it found.** `0` healthy, `1` a link is broken, `2` the
+registry of agents could not be read, `3` blind. That is the machine contract another agent
+consumes, and it is a *finding*.
+
+**The intent exits on whether the door answered.** `0` whenever the doctor answered — healthy,
+broken or blind — and the doctor's own exit code only when the doctor itself could not run. The
+verdict is the last line of the output (`verdict: OK -- ...`, `verdict: FAIL -- ...`,
+`verdict: BLIND -- ...`); with `json=true`, stdout stays a pure JSON document and the verdict
+line goes to stderr.
+
+The reason is measured, not stylistic. The estate's policy reads an intent's own 30-day
+not-ok rate and **refuses** a verb whose failure probability reaches 0.8
+(`platform/estate/bin/estate-execute`, `policy_decide`). A doctor's non-zero exit means "a
+Telegram agent is broken" or "the estate is dark" — exactly the states the door exists to
+report — so a door that exited on its verdict would be refused precisely when it is needed.
+Measured on 2026-10-28, with the estate already dark from this laptop, the shadow policy said:
+
+```
+[estate] policy shadow: would refuse telegram-agent.doctor -- 5/5 runs not ok in 30d, p_fail=0.86
+```
+
+A door that dies when the estate is broken does not serve the founder's requirement. The
+general fix belongs to the executor, which already knows the defect: its per-intent
+`exit_is_finding` flag (`docs/specs/2026-09-29-machine-learning-dept.md` §6a) is where a
+diagnostic verb's non-zero exit is labelled a finding, estate-wide, for `voice-doctor`,
+`router-doctor` and the rest. Until that flag exists, the translation lives in the intent,
+where it can be read and removed in one place.
+
+The one case where the intent does fail is the one case that is a failure of the door: the
+doctor could not be run at all (no interpreter, no script, a crash). Then the exit code is the
+doctor's own, and it says so on stderr.
 
 ## What this door is not
 
