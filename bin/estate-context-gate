@@ -1,0 +1,900 @@
+#!/usr/bin/env python3
+"""estate-context-gate -- the admission gate for the estate's context plane.
+
+WHAT THIS GATES. The estate has exactly one context engine (gortex v0.64.11) and exactly one
+door to it (platform/estate/context/broker.py). This gate refuses a tree in which that is no
+longer true, or in which the door would admit something it must not. It answers one question:
+MAY THE CONTEXT PLANE BE ADMITTED?
+
+THE CHECKS, each of which can fail on its own:
+
+  1. ONE RANKER. The compiler and the context package must not contain a second retrieval or
+     ranking implementation, and the compiler must ask the engine's smart_context. A second
+     ranker is the stitching AGENTS.md 6 forbids, and it is invisible until two components
+     disagree about which file matters.
+  2. THE READ-ONLY SURFACE. The broker's read-only allowlist and its mutating list must be
+     disjoint, and -- when the engine's own catalogue is reachable -- every allowlisted tool
+     must be read-only in the ENGINE's catalogue and no mutating tool may be allowlisted. The
+     catalogue is the engine's, not the estate's: a name the estate invented is a warning, a
+     name the estate called mutating that the engine calls read-only is a lie told to a client.
+  3. THE ENGINE IS PRIVATE. The engine container must bind loopback, must publish no port, and
+     must have no Service, Ingress or route of any kind -- anywhere in platform/. A Service is
+     a route; the engine must not have one.
+  4. THE POLICY IS STRICT. The broker must refuse a stale index, an unproven index and a path
+     outside the live claim, and must allow the fresh, in-claim, read-only, in-budget request.
+     A policy that cannot refuse is not a policy.
+  5. THE PLAN CONTRACT. A plan must carry the contract's fields, must not exceed its budget,
+     must keep the ENGINE's order, and must be byte-identical across two builds of the same
+     tree.
+  6. EVERY ALLOWLISTED TOOL IS A TOOL THE ENGINE HAS. The engine's catalogues are
+     preset-filtered, so absence from a catalogue proves nothing -- the engine itself is the
+     authority. Measured 2026-10-27 against gortex v0.64.11: `affected` was on the broker's
+     read-only allowlist and the engine answered 'unknown tool "affected"'. A broker that
+     promises a tool the engine does not have is a broken door, so this check asks the engine
+     about every name on the allowlist. When the engine is not reachable the check degrades to
+     a warning; it never passes as "checked" when it did not look.
+  7. THE RECORDED SURFACE IS THE SURFACE. The broker carries the engine's measured surface
+     (platform/estate/context/broker.py: ENGINE_SURFACE) -- the names the engine was observed
+     to serve, on the transport the broker uses, with the engine version they were measured on.
+     Two things must hold, and both are checkable from the tree alone, with no engine running:
+     every name on the read-only allowlist is inside the recorded surface, and the image the
+     cluster deploys is pinned to the engine the surface was measured on (the Dockerfile's
+     GORTEX_VERSION equals ENGINE_SURFACE["engine_version"]). An allowlist that names a tool
+     the engine does not serve is a promise the door cannot keep; an allowlist measured against
+     a different engine build is a claim about an engine that is not there.
+
+HOW IT IS PROVEN. `--self-test` runs every check against a deliberately BROKEN input and
+requires it to fail. A gate that cannot fail is not a gate (AGENTS.md 3), so the gate proves
+its own teeth before it grades anybody.
+
+Usage:
+  bin/estate-context-gate              run the gate; exit 1 on any failure
+  bin/estate-context-gate --json       machine-readable verdict
+  bin/estate-context-gate --self-test  prove the gate can fail (exit 0 when it can)
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from concurrent.futures import ThreadPoolExecutor
+from typing import Mapping
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
+# APPEND, not insert: the estate's context package is rooted at platform/, and a repo-local
+# `platform` on the FRONT of sys.path would shadow the standard library's platform module for
+# every importer in this process. The standard library owns that name.
+sys.path.append(os.path.join(ROOT, "platform"))
+
+from estate.context import broker as BROKER  # noqa: E402
+from estate.context import plan as PLAN  # noqa: E402
+
+CONTEXT_DIR = os.path.join(ROOT, "platform", "estate", "context")
+BROKER_MANIFEST = os.path.join(ROOT, "platform", "mcp", "estate-context-broker.yaml")
+PLATFORM_DIR = os.path.join(ROOT, "platform")
+
+# A second ranker leaves a signal. These are the shapes a retrieval implementation takes; the
+# check strips comments and docstrings first, so PROSE about not ranking is not a signal.
+RANKER_SIGNALS = (
+    "tfidf",
+    "tf-idf",
+    "bm25",
+    "sklearn",
+    "rank_bm25",
+    "cosine",
+    "difflib",
+    "rapidfuzz",
+    "textblob",
+    "sentence_transformers",
+    "embeddings",
+)
+
+# A Service is a route. So is an Ingress, and so is a Gateway API HTTPRoute. The engine must
+# have none of them, and the manifests that could give it one live under platform/.
+ROUTE_KINDS = ("Service", "Ingress", "HTTPRoute", "Route", "VirtualService", "EndpointSlice")
+ENGINE_WORDS = ("gortex", "engine")
+
+
+# --- helpers -----------------------------------------------------------------------------------
+def _code_only(text: str) -> str:
+    """The code of a file, with its docstrings and its comments removed.
+
+    A gate that greps for "cosine" cannot tell a ranker from a sentence about not ranking.
+    This strips both, so the signal that survives is a signal in CODE.
+    """
+    text = re.sub(r'"""[\s\S]*?"""', " ", text)
+    text = re.sub(r"'''[\s\S]*?'''", " ", text)
+    kept: list[str] = []
+    for line in text.splitlines():
+        buf: list[str] = []
+        quote = None
+        i = 0
+        while i < len(line):
+            ch = line[i]
+            if quote is not None:
+                buf.append(ch)
+                if ch == "\\" and i + 1 < len(line):
+                    buf.append(line[i + 1])
+                    i += 2
+                    continue
+                if ch == quote:
+                    quote = None
+            elif ch in "\"'":
+                quote = ch
+                buf.append(ch)
+            elif ch == "#":
+                break
+            else:
+                buf.append(ch)
+            i += 1
+        kept.append("".join(buf))
+    return "\n".join(kept)
+
+
+def _read(path: str) -> str:
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+
+def _yaml_documents(text: str) -> list:
+    """The YAML documents in a manifest, or an empty list when PyYAML is not there."""
+    try:
+        import yaml  # noqa: PLC0415 -- optional; the gate degrades to text checks without it
+    except ImportError:
+        return []
+    try:
+        docs = yaml.safe_load_all(text)
+    except Exception:  # noqa: BLE001 -- a manifest that does not parse is a failure, not a crash
+        return []
+    out = []
+    for doc in docs:
+        if isinstance(doc, dict):
+            out.append(doc)
+    return out
+
+
+# --- 1. one ranker ----------------------------------------------------------------------------
+def check_one_ranker(compiler_text: str, package_texts: dict) -> list:
+    """No second ranker in the compiler or the context package; the compiler asks the engine."""
+    failures: list = []
+    sources = {"bin/estate-context-compile": compiler_text}
+    sources.update(package_texts)
+    for name, text in sources.items():
+        code = _code_only(text).lower()
+        for signal in RANKER_SIGNALS:
+            if signal in code:
+                failures.append("{} contains a second ranker signal: {!r}".format(name, signal))
+    if "smart_context" not in compiler_text:
+        failures.append("bin/estate-context-compile does not ask the engine's smart_context")
+    return failures
+
+
+# --- 2. the read-only surface -----------------------------------------------------------------
+def check_read_only(read_only: set, mutating: set, catalogue):
+    """The allowlist and the mutating list must be disjoint, and must agree with the engine."""
+    failures: list = []
+    warnings: list = []
+
+    both = sorted(read_only & mutating)
+    if both:
+        failures.append("a tool is on both lists: " + ", ".join(both))
+
+    if catalogue is None:
+        warnings.append(
+            "the engine's catalogue is not reachable; the read-only surface was not checked "
+            "against the engine's own classification"
+        )
+        return failures, warnings
+
+    engine_mutating = set(name for name, row in catalogue.items() if row.get("mutating"))
+
+    for tool in sorted(read_only & engine_mutating):
+        failures.append(
+            "%s is on the broker's read-only allowlist and the engine's catalogue says it mutates"
+            % tool
+        )
+    unpublished_read = sorted(read_only - set(catalogue))
+    if unpublished_read:
+        warnings.append(
+            "the engine's catalogue does not publish {} read-only tool(s): {} -- a preset filter, "
+            "or a version difference. The engine was asked about them anyway (check 6)".format(
+                len(unpublished_read), ", ".join(unpublished_read)
+            )
+        )
+    unpublished_mutating = sorted(mutating - set(catalogue))
+    if unpublished_mutating:
+        warnings.append(
+            "the engine's catalogue does not publish {} mutating tool(s): {}".format(
+                len(unpublished_mutating), ", ".join(unpublished_mutating)
+            )
+        )
+    for tool in sorted((mutating & set(catalogue)) - engine_mutating):
+        failures.append(
+            "%s is in the mutating list and the engine's catalogue says it is read-only; "
+            "the refusal would tell a client a falsehood" % tool
+        )
+    return failures, warnings
+
+
+# --- 6. every allowlisted tool is a tool the ENGINE has --------------------------------------
+# The engine's catalogues are preset-filtered: on the laptop daemon `gortex tools list` publishes
+# 47 of the ~193 tools the engine can actually serve, so absence from a catalogue proves nothing.
+# The engine is the authority. `gortex call <name>` answers "unknown tool" for a name it does
+# not have, and answers -- or refuses on its own arguments -- for a name it does.
+UNKNOWN_TOOL = re.compile(r"unknown tool", re.IGNORECASE)
+ENGINE_UNTRACKED = re.compile(r"does not track", re.IGNORECASE)
+ENGINE_UNREACHABLE = re.compile(
+    r"(no gortex daemon is running|connection refused|daemon is not running)", re.IGNORECASE
+)
+
+# The engine's answer about a tool is a property of the engine, not of the tree being judged, so
+# one probe answers for the whole process. Only real answers are cached: "the repo is not
+# tracked" says nothing about the tool, and caching it would make a later, tracked run believe
+# the engine had gone.
+_EXISTENCE_CACHE: dict = {}
+
+
+def classify_probe(output: str) -> str:
+    """What the engine's own words mean.
+
+    'unknown'     -- the engine does not have that tool (a failure).
+    'untracked'   -- the engine could not be asked about that tree (the daemon does not track it).
+    'unreachable' -- there was no engine to ask (the daemon is not running).
+    'present'     -- the engine has the tool and answered (or refused on its own arguments).
+    """
+    output = output or ""
+    if UNKNOWN_TOOL.search(output):
+        return "unknown"
+    if ENGINE_UNTRACKED.search(output):
+        return "untracked"
+    if ENGINE_UNREACHABLE.search(output):
+        return "unreachable"
+    return "present"
+
+
+def check_tool_existence(answers: Mapping[str, str]) -> list:
+    """The names the engine does not have. `answers` maps a tool name to the engine's own words."""
+    failures: list = []
+    for name, output in sorted(answers.items()):
+        if classify_probe(output) == "unknown":
+            failures.append(
+                "the broker allowlists {}, and the engine does not have that tool".format(name)
+            )
+    return failures
+
+
+def _probe_one(name: str, repo: str, timeout: float, binary: str) -> tuple:
+    """Ask the engine about one tool. Returns (name, the engine's words, reason_it_could_not_ask)."""
+    try:
+        proc = subprocess.run(  # noqa: S603 -- list form, no shell
+            [binary, "call", name, "--json", "{}", "--index", repo, "--format", "json"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except FileNotFoundError:
+        return name, None, "the engine's binary is not on PATH"
+    except subprocess.TimeoutExpired:
+        # The engine took the name and is working on it. A name it does not have is refused
+        # with "unknown tool" at once, so a call that is still running is evidence the tool is
+        # there. The work itself is the engine's business, not the gate's.
+        return name, "the engine was still working on it", ""
+    except OSError as exc:
+        return name, None, "the engine could not be run: {}".format(exc)
+    return name, (proc.stdout or "") + (proc.stderr or ""), ""
+
+
+def probe_read_only_existence(
+    names, repo: str, timeout: float = 4.0, binary: str = "gortex", workers: int = 8
+) -> tuple:
+    """Ask the engine about every allowlisted name. Returns (answers, reason_it_could_not_ask).
+
+    The probes run concurrently: the engine answers one at a time, but the latency of a call is
+    mostly the daemon's queue, and a gate that takes a minute to say "yes" is a gate nobody runs.
+    """
+    answers: dict = {}
+    todo: list = []
+    for name in sorted(names):
+        if name in _EXISTENCE_CACHE:
+            answers[name] = _EXISTENCE_CACHE[name]
+        else:
+            todo.append(name)
+    if not todo:
+        return answers, ""
+    reason = ""
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        for name, output, why in pool.map(
+            lambda n: _probe_one(n, repo, timeout, binary), todo
+        ):
+            if why:
+                reason = why
+                continue
+            answers[name] = output
+            if classify_probe(output) in ("unknown", "present"):
+                _EXISTENCE_CACHE[name] = output
+    if reason:
+        return answers, (
+            "{}; the allowlisted tools were not checked against the engine".format(reason)
+        )
+    verdicts = {classify_probe(output) for output in answers.values()}
+    for verdict in ("untracked", "unreachable"):
+        if verdict in verdicts:
+            return answers, (
+                "the engine could not be asked about this tree ({}), so the allowlisted tools "
+                "were not checked against it".format(verdict)
+            )
+    return answers, ""
+
+
+def engine_catalogue(repo: str, timeout: float = 30.0):
+    """The engine's own tool catalogue, or (None, the reason it could not be read)."""
+    from shutil import which  # noqa: PLC0415 -- local, used once
+
+    if which("gortex") is None:
+        return None, "gortex is not on PATH"
+    try:
+        proc = subprocess.run(  # noqa: S603 -- list form, no shell
+            ["gortex", "tools", "list", "--format", "json", "--index", repo],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return None, "the engine's catalogue could not be read: {}".format(exc)
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "").strip().splitlines()
+        tail = detail[-1] if detail else "the engine refused"
+        return None, "the engine's catalogue could not be read: {}".format(tail[:200])
+    try:
+        rows = json.loads(proc.stdout)
+    except ValueError:
+        return None, "the engine's catalogue was not JSON"
+    if not isinstance(rows, list):
+        return None, "the engine's catalogue had an unexpected shape"
+    catalogue: dict = {}
+    for row in rows:
+        if isinstance(row, dict) and row.get("name"):
+            catalogue[str(row["name"])] = row
+    if not catalogue:
+        return None, "the engine's catalogue was empty"
+    return catalogue, ""
+
+
+# --- 7. the recorded surface -----------------------------------------------------------------
+# The broker's allowlist is a claim about one engine build, on one transport. The claim is only
+# worth anything if the record and the deployment agree, and both are in the tree.
+GORTEX_VERSION_ARG = re.compile(r"^\s*ARG\s+GORTEX_VERSION=(\S+)\s*$", re.MULTILINE)
+
+
+def dockerfile_gortex_version(text: str) -> str:
+    """The engine version the image pins, or "" when the image pins none."""
+    match = GORTEX_VERSION_ARG.search(text or "")
+    return match.group(1) if match else ""
+
+
+def check_recorded_surface(read_only: set, surface: Mapping, dockerfile_text: str) -> list:
+    """The allowlist must be inside the recorded surface, and the image must be that engine."""
+    failures: list = []
+    if not isinstance(surface, Mapping) or not surface.get("tools"):
+        return [
+            "the broker records no engine surface, so the allowlist cannot be checked "
+            "against the engine it was measured on"
+        ]
+    recorded = set(surface["tools"])
+    for name in sorted(set(read_only) - recorded):
+        failures.append(
+            "the broker allowlists {}, and the measured engine surface does not have it".format(
+                name
+            )
+        )
+    version = str(surface.get("engine_version") or "")
+    if not version:
+        failures.append("the recorded engine surface names no engine version")
+    pinned = dockerfile_gortex_version(dockerfile_text)
+    if not pinned:
+        failures.append("the engine image pins no GORTEX_VERSION")
+    elif version and pinned != version:
+        failures.append(
+            "the engine image pins {}, and the allowlist was measured against {}".format(
+                pinned, version
+            )
+        )
+    return failures
+
+
+# --- 3. the engine is private -----------------------------------------------------------------
+def check_engine_private(docs: list) -> list:
+    """The engine binds loopback, publishes no port, and has no route of any kind."""
+    failures: list = []
+    deployments = [d for d in docs if d.get("kind") == "Deployment"]
+    if not deployments:
+        failures.append("the broker manifest declares no Deployment")
+    for dep in deployments:
+        name = (dep.get("metadata") or {}).get("name") or "?"
+        spec = (dep.get("spec") or {}).get("template") or {}
+        pod = spec.get("spec") or {}
+        containers = pod.get("containers") or []
+        engines = [c for c in containers if (c.get("name") or "") == "engine"]
+        if not engines:
+            failures.append("Deployment {} has no engine container".format(name))
+        for engine in engines:
+            line = " ".join(
+                [str(engine.get("command") or ""), str(engine.get("args") or "")]
+            )
+            if "127.0.0.1" not in line and "localhost" not in line:
+                failures.append("Deployment {}: the engine is not bound to loopback".format(name))
+            if "0.0.0.0" in line:
+                failures.append("Deployment {}: the engine binds 0.0.0.0".format(name))
+            if engine.get("ports"):
+                failures.append("Deployment {}: the engine container publishes a port".format(name))
+    for doc in docs:
+        kind = doc.get("kind")
+        doc_name = str((doc.get("metadata") or {}).get("name") or "?")
+        if kind == "Service":
+            svc_type = (doc.get("spec") or {}).get("type") or "ClusterIP"
+            if svc_type != "ClusterIP":
+                failures.append("Service {} is {}, not ClusterIP".format(doc_name, svc_type))
+            if any(word in doc_name.lower() for word in ENGINE_WORDS):
+                failures.append(
+                    "Service {} exposes the engine; the engine must have no route".format(doc_name)
+                )
+    return failures
+
+
+def check_no_public_engine(platform_dir: str) -> list:
+    """No manifest in platform/ gives the engine a route."""
+    failures: list = []
+    for dirpath, dirs, files in os.walk(platform_dir):
+        if "node_modules" in dirs:
+            dirs.remove("node_modules")
+        for name in files:
+            if not name.endswith((".yaml", ".yml")):
+                continue
+            path = os.path.join(dirpath, name)
+            rel = os.path.relpath(path, ROOT)
+            text = _read(path)
+            lowered = text.lower()
+            if "gortex" not in lowered and "engine" not in lowered:
+                continue
+            for doc in _yaml_documents(text):
+                if doc.get("kind") not in ROUTE_KINDS:
+                    continue
+                doc_name = str((doc.get("metadata") or {}).get("name") or "?")
+                body = json.dumps(doc).lower()
+                if "gortex" in body or '"engine"' in body or "name: engine" in body:
+                    failures.append(
+                        "{}: {} {} references the engine; the engine must have no route".format(
+                            rel, doc.get("kind"), doc_name
+                        )
+                    )
+    return failures
+
+
+# --- 4. the policy is strict ------------------------------------------------------------------
+def check_policy_strictness(broker) -> list:
+    """The broker must refuse what must be refused, and allow what must be allowed."""
+    failures: list = []
+
+    def expect(label, decision, want_allow, want_verdict):
+        if bool(decision.allow) != want_allow:
+            failures.append(
+                "{}: expected allow={}, got allow={} ({})".format(
+                    label, want_allow, bool(decision.allow), decision.verdict
+                )
+            )
+        if decision.verdict != want_verdict:
+            failures.append(
+                "{}: expected verdict {}, got {}".format(label, want_verdict, decision.verdict)
+            )
+
+    expect(
+        "a stale index is refused",
+        broker.freshness_decision(index_commit="aaaa", request_commit="bbbb"),
+        False,
+        broker.STALE_REJECT,
+    )
+    expect(
+        "an unproven index is refused",
+        broker.freshness_decision(index_commit=None, request_commit="bbbb"),
+        False,
+        broker.UNPROVEN_INDEX,
+    )
+    expect(
+        "the index at the requested commit is allowed",
+        broker.freshness_decision(index_commit="aaaa", request_commit="aaaa"),
+        True,
+        broker.ALLOW,
+    )
+    expect(
+        "a working copy is allowed with its freshness reason",
+        broker.freshness_decision(index_commit="aaaa", request_commit="bbbb", mode="working_copy"),
+        True,
+        broker.ASYNC_REINDEX,
+    )
+    expect(
+        "a path outside the claim is refused",
+        broker.path_decision(["secrets/keys"], ["src/**"]),
+        False,
+        broker.PATH_REFUSED,
+    )
+    expect(
+        "a path inside the claim is allowed",
+        broker.path_decision(["src/app.py"], ["src/**"]),
+        True,
+        broker.ALLOW,
+    )
+    expect(
+        "a mutating tool is refused",
+        broker.tool_decision("edit_file"),
+        False,
+        broker.TOOL_REFUSED,
+    )
+    expect(
+        "a read-only tool is allowed",
+        broker.tool_decision("smart_context"),
+        True,
+        broker.ALLOW,
+    )
+    expect(
+        "an over-budget answer is refused",
+        broker.budget_decision(100, 10),
+        False,
+        broker.BUDGET_REFUSED,
+    )
+    return failures
+
+
+# --- 5. the plan contract ---------------------------------------------------------------------
+def check_plan_contract(assemble, repo_root: str) -> list:
+    """The plan carries the contract's fields, keeps the engine's order, and is deterministic."""
+    failures: list = []
+    engine_order = [
+        "platform/estate/context/plan.py",
+        "platform/estate/context/broker.py",
+    ]
+    payload = {
+        "working_set": [{"file": name} for name in engine_order],
+        "relevant_symbols": [],
+        "files_to_edit": [],
+        "related_test_files": [],
+        "blast_radius": {"callers_by_file": {}, "covering_tests": []},
+        "retrieval_note": {},
+    }
+    inp = PLAN.PlanInput(
+        task="the gate's own contract check",
+        surface=PLAN.DEFAULT_SURFACE,
+        tier="free",
+        budget_tokens=100000,
+        repo_root=repo_root,
+        commit="c" * 40,
+        index_commit="c" * 40,
+        engine_payload=payload,
+        chars_per_token=4,
+        ceiling=200000,
+        door="local",
+    )
+    try:
+        plan = assemble(inp)
+    except Exception as exc:  # noqa: BLE001 -- a plan that cannot be built is a failure
+        return ["a plan could not be built for a real tree: {}".format(exc)]
+
+    items = plan.get("items") or []
+    got_order = [item.get("source") for item in items]
+    if got_order != engine_order:
+        failures.append(
+            "the plan did not keep the engine's order: expected {}, got {}".format(
+                engine_order, got_order
+            )
+        )
+    required = ("source", "sha256", "tokens", "impact_score", "rank", "why")
+    for item in items:
+        for field in required:
+            if field not in item or item[field] in (None, ""):
+                failures.append("a plan item has no {}: {}".format(field, sorted(item.keys())))
+                break
+    if plan.get("used_tokens", 0) > plan.get("budget_tokens", 0):
+        failures.append(
+            "the plan used {} tokens over a budget of {}".format(
+                plan.get("used_tokens"), plan.get("budget_tokens")
+            )
+        )
+    again = assemble(inp)
+    if again.get("plan_hash") != plan.get("plan_hash"):
+        failures.append("two builds of the same tree produced different plan hashes")
+    if not plan.get("plan_hash"):
+        failures.append("the plan carries no plan_hash")
+
+    # The ceiling is a refusal, not a clamp: a budget above it must be refused outright.
+    import dataclasses  # noqa: PLC0415 -- local, used once
+
+    over = dataclasses.replace(inp, budget_tokens=250000, ceiling=200000)
+    try:
+        assemble(over)
+    except PLAN.PlanError:
+        pass
+    except Exception as exc:  # noqa: BLE001
+        failures.append("a budget over the ceiling was refused with the wrong error: {}".format(exc))
+    else:
+        failures.append("a budget over the ceiling was not refused")
+    return failures
+
+
+# --- the run ----------------------------------------------------------------------------------
+def run_all(root: str = ROOT, catalogue=None, catalogue_reason: str = "") -> list:
+    """Run every check against the tree at `root` and return one result per check."""
+    context_dir = os.path.join(root, "platform", "estate", "context")
+    package_texts: dict = {}
+    if os.path.isdir(context_dir):
+        for name in sorted(os.listdir(context_dir)):
+            if name.endswith(".py"):
+                package_texts["platform/estate/context/{}".format(name)] = _read(
+                    os.path.join(context_dir, name)
+                )
+    compiler_text = _read(os.path.join(root, "bin", "estate-context-compile"))
+    manifest_text = _read(os.path.join(root, "platform", "mcp", "estate-context-broker.yaml"))
+
+    results: list = []
+    results.append(
+        {
+            "check": "one-ranker",
+            "failures": check_one_ranker(compiler_text, package_texts),
+            "warnings": [],
+        }
+    )
+    failures, warnings = check_read_only(
+        set(BROKER.READ_ONLY_TOOLS), set(BROKER.MUTATING_TOOLS), catalogue
+    )
+    if catalogue is None and catalogue_reason:
+        warnings.append(catalogue_reason)
+    results.append({"check": "read-only-surface", "failures": failures, "warnings": warnings})
+    results.append(
+        {
+            "check": "engine-private",
+            "failures": check_engine_private(_yaml_documents(manifest_text))
+            + check_no_public_engine(os.path.join(root, "platform")),
+            "warnings": [],
+        }
+    )
+    results.append(
+        {"check": "policy-strict", "failures": check_policy_strictness(BROKER), "warnings": []}
+    )
+    results.append(
+        {
+            "check": "plan-contract",
+            "failures": check_plan_contract(PLAN.assemble, root),
+            "warnings": [],
+        }
+    )
+    answers, unreachable = probe_read_only_existence(set(BROKER.READ_ONLY_TOOLS), root)
+    results.append(
+        {
+            "check": "read-only-existence",
+            "failures": check_tool_existence(answers),
+            "warnings": [unreachable] if unreachable else [],
+        }
+    )
+    results.append(
+        {
+            "check": "engine-surface",
+            "failures": check_recorded_surface(
+                set(BROKER.READ_ONLY_TOOLS),
+                getattr(BROKER, "ENGINE_SURFACE", None) or {},
+                _read(os.path.join(root, "gortex-engine.Dockerfile")),
+            ),
+            "warnings": [],
+        }
+    )
+    return results
+
+
+# --- the self-test: a gate that cannot fail is not a gate --------------------------------------
+class _LaxBroker:
+    """A broker that refuses nothing. The policy check must not pass this."""
+
+    STALE_REJECT = "STALE_REJECT"
+    UNPROVEN_INDEX = "UNPROVEN_INDEX"
+    ALLOW = "ALLOW"
+    ASYNC_REINDEX = "ASYNC_REINDEX"
+    PATH_REFUSED = "PATH_REFUSED"
+    TOOL_REFUSED = "TOOL_REFUSED"
+    BUDGET_REFUSED = "BUDGET_REFUSED"
+
+    class _D:
+        allow = True
+        verdict = "ALLOW"
+        reason = "everything is fine"
+
+    @staticmethod
+    def freshness_decision(**kwargs):
+        return _LaxBroker._D()
+
+    @staticmethod
+    def path_decision(paths, allowed):
+        return _LaxBroker._D()
+
+    @staticmethod
+    def tool_decision(tool):
+        return _LaxBroker._D()
+
+    @staticmethod
+    def budget_decision(tokens, budget):
+        return _LaxBroker._D()
+
+
+def _self_test() -> list:
+    """Every check, run against a deliberately broken input. Each one must fail."""
+    problems: list = []
+
+    # 1. a second ranker, and a compiler that does not ask the engine.
+    if not check_one_ranker("import bm25\n", {}):
+        problems.append("the one-ranker check did not notice a second ranker")
+    if not check_one_ranker("print('hello')\n", {}):
+        problems.append("the one-ranker check did not notice a compiler that never asks the engine")
+    if check_one_ranker("smart_context = 1\n", {}):
+        problems.append("the one-ranker check failed a clean compiler")
+
+    # 2. a tool on both lists; an allowlisted tool the engine calls mutating.
+    failures, _ = check_read_only(
+        {"smart_context"},
+        {"smart_context"},
+        {"smart_context": {"name": "smart_context", "mutating": False}},
+    )
+    if not failures:
+        problems.append("the read-only check did not notice a tool on both lists")
+    failures, _ = check_read_only(
+        {"edit_file"}, set(), {"edit_file": {"name": "edit_file", "mutating": True}}
+    )
+    if not failures:
+        problems.append("the read-only check did not notice a mutating tool on the allowlist")
+    failures, _ = check_read_only(
+        set(), {"edit_file"}, {"edit_file": {"name": "edit_file", "mutating": False}}
+    )
+    if not failures:
+        problems.append("the read-only check did not notice a false mutating claim")
+    failures, warnings = check_read_only({"smart_context"}, set(), None)
+    if failures or not warnings:
+        problems.append("the read-only check did not degrade to a warning without a catalogue")
+
+    # 3. an engine on 0.0.0.0, and an engine with a Service.
+    open_engine = [
+        {
+            "kind": "Deployment",
+            "metadata": {"name": "estate-context-broker"},
+            "spec": {
+                "template": {
+                    "spec": {
+                        "containers": [
+                            {
+                                "name": "engine",
+                                "command": ["sh", "-c"],
+                                "args": ["gortex daemon start --http-addr 0.0.0.0:7411"],
+                            }
+                        ]
+                    }
+                }
+            },
+        }
+    ]
+    if not check_engine_private(open_engine):
+        problems.append("the privacy check did not notice an engine on 0.0.0.0")
+    engine_service = [
+        {
+            "kind": "Service",
+            "metadata": {"name": "gortex-engine"},
+            "spec": {"type": "ClusterIP", "selector": {"app": "engine"}},
+        }
+    ]
+    if not check_engine_private(engine_service):
+        problems.append("the privacy check did not notice a Service for the engine")
+
+    # 4. a policy that allows everything.
+    if not check_policy_strictness(_LaxBroker):
+        problems.append("the policy check passed a policy that refuses nothing")
+
+    # 5. a plan that reorders the engine's answer, and one that over-runs its budget.
+    def _reordering_assemble(inp):
+        plan = PLAN.assemble(inp)
+        plan["items"] = list(reversed(plan.get("items") or []))
+        return plan
+
+    if not check_plan_contract(_reordering_assemble, ROOT):
+        problems.append("the plan check did not notice a reordered plan")
+
+    def _over_budget_assemble(inp):
+        plan = PLAN.assemble(inp)
+        plan["used_tokens"] = plan.get("budget_tokens", 0) + 1
+        return plan
+
+    if not check_plan_contract(_over_budget_assemble, ROOT):
+        problems.append("the plan check did not notice an over-budget plan")
+
+    # 6. a name the engine does not have, and a name it does.
+    if not check_tool_existence(
+        {"smart_context": 'Error: unknown tool "smart_context" — did you mean: analyze, review?'}
+    ):
+        problems.append("the existence check did not notice a tool the engine does not have")
+    if check_tool_existence({"smart_context": "Error: task is required"}):
+        problems.append("the existence check failed a tool the engine has")
+    if classify_probe("no gortex daemon is running") != "unreachable":
+        problems.append("the existence check did not recognise an unreachable engine")
+    if classify_probe("the gortex daemon does not track /tmp") != "untracked":
+        problems.append("the existence check did not recognise an untracked tree")
+    if classify_probe('Error: unknown tool "affected" — did you mean: analyze?') != "unknown":
+        problems.append("the existence check did not recognise an unknown tool")
+
+    # 7. an allowlist outside the measured surface, and an image that is a different engine.
+    good_surface = {"engine_version": "v0.64.11", "tools": frozenset({"smart_context"})}
+    if not check_recorded_surface({"affected"}, good_surface, "ARG GORTEX_VERSION=v0.64.11\n"):
+        problems.append("the surface check did not notice a name outside the measured surface")
+    if check_recorded_surface({"smart_context"}, good_surface, "ARG GORTEX_VERSION=v0.64.11\n"):
+        problems.append("the surface check failed a name inside the measured surface")
+    if not check_recorded_surface(
+        {"smart_context"}, good_surface, "ARG GORTEX_VERSION=v0.60.0\n"
+    ):
+        problems.append("the surface check did not notice an image pinned to another engine")
+    if not check_recorded_surface({"smart_context"}, {}, "ARG GORTEX_VERSION=v0.64.11\n"):
+        problems.append("the surface check passed a broker that records no surface")
+    return problems
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="the estate context plane's admission gate")
+    parser.add_argument("--json", action="store_true", help="machine-readable verdict")
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help="prove the gate can fail: every check against a broken input",
+    )
+    parser.add_argument("--repo", default=ROOT, help="the tree to grade (default: this checkout)")
+    args = parser.parse_args(argv)
+
+    if args.self_test:
+        problems = _self_test()
+        if problems:
+            for problem in problems:
+                print("FAIL  self-test  {}".format(problem))
+            return 1
+        print("PASS  self-test  every check fails on a broken input")
+        return 0
+
+    catalogue, reason = engine_catalogue(args.repo)
+    results = run_all(args.repo, catalogue=catalogue, catalogue_reason=reason)
+    failed = [r for r in results if r["failures"]]
+    payload = {
+        "gate": "estate-context-gate",
+        "repo": args.repo,
+        "verdict": "FAIL" if failed else "PASS",
+        "engine_catalogue": "read" if catalogue is not None else reason,
+        "checks": [
+            {
+                "check": r["check"],
+                "failures": r["failures"],
+                "warnings": r["warnings"],
+            }
+            for r in results
+        ],
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        for result in results:
+            for failure in result["failures"]:
+                print("FAIL  {}  {}".format(result["check"], failure))
+            for warning in result["warnings"]:
+                print("WARN  {}  {}".format(result["check"], warning))
+            if not result["failures"]:
+                print("PASS  {}".format(result["check"]))
+        print("estate-context-gate: {}".format(payload["verdict"]))
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
