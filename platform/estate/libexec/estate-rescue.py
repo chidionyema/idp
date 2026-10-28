@@ -354,12 +354,12 @@ def rescue(rows, budget, repo):
     pushed = 0
     started = time.time()
     for row in rows:
-        if pushed >= budget:
+        if pushed >= budget or (time.time() - started) >= RESCUE_SECONDS:
             out.append(
                 dict(
                     row,
                     verdict="DEFERRED",
-                    why="the rescue budget for this run is spent",
+                    why="the rescue budget or clock for this run is spent",
                 )
             )
             continue
