@@ -20742,6 +20742,7 @@
           "--json",
           "--kind",
           "--limit",
+          "--no-refresh",
           "--out",
           "--plane",
           "--state",
@@ -42799,6 +42800,7 @@
           "--home",
           "--idp",
           "--json",
+          "--no-refresh",
           "--snapshot",
           "--strict"
         ],
