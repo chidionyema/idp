@@ -1318,6 +1318,19 @@ def test_landing_an_adopted_pr_whose_branch_refuses_pushes_lands_via_the_lane_pr
     ), "the lane PR that carried the land is merged, not closed"
 
 
+def _git_bytes(cwd: Path, *args: str) -> bytes:
+    """git's stdout as bytes: a binary file cannot be read as text, and a test about binary
+    files that reads them as text fails in the test instead of in the code under test."""
+    return subprocess.run(
+        ["git", "-C", str(cwd), *args], capture_output=True, check=True
+    ).stdout
+
+
+# A GIF header and the bytes that follow it: 0xb0 at offset 6 is not a valid UTF-8 start byte,
+# which is exactly the byte the Greenlane's own tick died on (idp#7309, 2026-10-27).
+GIF = b"GIF89a" + bytes([0xB0, 0x00, 0x10, 0x00, 0xF0, 0x00, 0x00]) + b"\x00" * 8
+
+
 def _image_policy(repo: Path, tag: str) -> None:
     (repo / "k.yaml").write_text(
         "images:\n"
@@ -1417,4 +1430,63 @@ def test_a_human_lane_is_still_graded_on_its_own_head(repo):
     assert not e._held(s.lanes["lane/a"], main)
     assert graded == [(lane_head, main)], (
         "a human lane must be graded on its own head, never on a projection"
+    )
+
+
+def test_a_binary_file_on_the_image_lane_does_not_kill_the_tick(repo):
+    """idp#7309, 2026-10-27: the image lane's diff carried a GIF, and the tick read the lane's
+    copy of it with `git show` in text mode. The decode raised UnicodeDecodeError inside the
+    tick's own OBSERVATION of the lanes -- so one binary file on one lane killed every lane:
+    the reconcile lane could not be observed, judged or landed, and the estate's deploys
+    waited behind it. A binary file is content, not a tag bump: it is left out of the
+    candidate, and the tag lines beside it still land."""
+    _image_policy(repo, "v1")
+    (repo / "logo.gif").write_bytes(GIF)
+    _git(repo, "add", "k.yaml", "logo.gif")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "checkout", "-q", "-b", BOT_LANE)
+    _image_policy(repo, "v2")
+    (repo / "logo.gif").write_bytes(GIF + b"\x00")  # the lane's own copy: still binary
+    _git(repo, "commit", "-q", "-am", "platform: image update -> v2")
+    lane = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-q", "main")
+    _git(repo, "commit", "-q", "--allow-empty", "-m", "main moves on")
+    main = _git(repo, "rev-parse", "HEAD")
+    b = Recorded({}, image_only_diff=ROOT / "bin/idp-image-only-diff")
+    candidate = b.rebase(lane, main, BOT_LANE)  # must not raise
+    assert candidate, "the image lane must still produce a candidate"
+    assert "newTag: v2" in _git(repo, "show", f"{candidate}:k.yaml"), (
+        "the tag did not land because a binary file sat beside it"
+    )
+    assert _git_bytes(repo, "show", f"{candidate}:logo.gif") == GIF, (
+        "the lane's binary change rode into the candidate"
+    )
+
+
+def test_a_binary_file_in_main_does_not_kill_the_tick(repo):
+    """The other side of the same crash (idp#7309): the candidate is built from main's own
+    worktree, so reading MAIN's copy of a file the lane touched raised UnicodeDecodeError
+    there too. A file main holds as binary is not a tag bump either: it is left out, main keeps
+    its own bytes, and the lane's tag still lands."""
+    _image_policy(repo, "v1")
+    (repo / "asset.txt").write_text("text\n")
+    _git(repo, "add", "k.yaml", "asset.txt")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "checkout", "-q", "-b", BOT_LANE)
+    _image_policy(repo, "v2")
+    (repo / "asset.txt").write_text("the lane's text\n")
+    _git(repo, "commit", "-q", "-am", "platform: image update -> v2")
+    lane = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-q", "main")
+    (repo / "asset.txt").write_bytes(GIF)  # main's copy is a binary file now
+    _git(repo, "commit", "-q", "-am", "main's copy is binary")
+    main = _git(repo, "rev-parse", "HEAD")
+    b = Recorded({}, image_only_diff=ROOT / "bin/idp-image-only-diff")
+    candidate = b.rebase(lane, main, BOT_LANE)  # must not raise
+    assert candidate, "the image lane must still produce a candidate"
+    assert "newTag: v2" in _git(repo, "show", f"{candidate}:k.yaml"), (
+        "the tag did not land because main held a binary file"
+    )
+    assert _git_bytes(repo, "show", f"{candidate}:asset.txt") == GIF, (
+        "the lane's text rode into a file main holds as binary"
     )
