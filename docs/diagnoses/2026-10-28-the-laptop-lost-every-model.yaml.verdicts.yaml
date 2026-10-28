@@ -1,0 +1,103 @@
+description: 'On 2026-10-28 the laptop router (127.0.0.1:4000) gave every caller the
+  OKE cloud''s own failure while a healthy local router sat unused beside it, so an
+  OKE outage took out every model on the laptop -- the exact outcome the front''s
+  own 2026-10-21 law forbids. This record answers: why did the laptop lose every model?
+  The priors and the likelihoods below are what each hypothesis predicts about the
+  front''s code and about the two routers; every count is a measurement taken in this
+  session on this machine, and the command that produced it is named in the item.
+  The winning hypothesis is what the fix (platform/llm/front.py deciding on the answer
+  instead of the connect) is built on. '
+hypotheses:
+- name: H1
+  description: 'the laptop''s own slot was unhealthy, the way it was on 2026-10-21:
+    the router on 4001 accepted connections and never answered them, so the front
+    had nothing to fall back to and the cloud was the only route left'
+  prior: 0.4
+- name: H2
+  description: 'the laptop''s slot was healthy and the front decided on the connect:
+    the cloud is the first target (the founder''s 2026-10-26 ruling) and the cloud
+    leg relays whatever status line it reads, so a cloud that accepted the connection
+    and then answered 5xx or stalled was never passed over, and the healthy local
+    slot was never asked'
+  prior: 0.35
+- name: H3
+  description: the laptop's key or its lanes were missing (config drift), so the local
+    router had nothing to serve and the front's fallback could not have helped either
+  prior: 0.25
+evidence:
+- name: 'the laptop''s own slot, asked directly: curl -s -o /dev/null -w ''%{http_code}
+    %{time_total}'' http://127.0.0.1:4001/v1/models -H ''Authorization: Bearer $LITELLM_API_KEY''
+    answered 200 in 0.006 s, and a real POST http://127.0.0.1:4001/v1/chat/completions
+    (model fast) answered 200 with a completion body in 5.5 s'
+  observed:
+    slot_answered_200: 2
+  likelihoods:
+    H1:
+      slot_answered_200: 0.1
+      slot_failed: 0.9
+    H2:
+      slot_answered_200: 0.9
+      slot_failed: 0.1
+    H3:
+      slot_answered_200: 0.1
+      slot_failed: 0.9
+- name: 'the OKE cloud asked directly with the laptop key (a burst of four authenticated
+    requests through /tmp/cloud_probe.py, which never prints the key): two answered
+    503 in 3.1-3.4 s carrying the edge''s own ''Starting up'' page (Server: nginx/1.27.5),
+    and two were still waiting at the 12.5 s client timeout'
+  observed:
+    cloud_answered_503: 2
+    cloud_stalled: 2
+  likelihoods:
+    H1:
+      cloud_answered_503: 0.5
+      cloud_stalled: 0.4
+      cloud_answered: 0.1
+    H2:
+      cloud_answered_503: 0.5
+      cloud_stalled: 0.4
+      cloud_answered: 0.1
+    H3:
+      cloud_answered_503: 0.5
+      cloud_stalled: 0.4
+      cloud_answered: 0.1
+- name: 'the same request asked through the laptop''s front: the caller received the
+    cloud''s own answer (the 503 ''Starting up'' page, and a 504 after about 62 s
+    from the edge''s proxy timeout) and never the local slot''s 200, although that
+    same slot answered 200 when asked directly (the evidence item above)'
+  observed:
+    front_relayed_the_cloud_failure: 2
+    front_answered_from_the_laptop_slot: 0
+  likelihoods:
+    H1:
+      front_relayed_the_cloud_failure: 0.2
+      front_answered_from_the_laptop_slot: 0.8
+    H2:
+      front_relayed_the_cloud_failure: 0.97
+      front_answered_from_the_laptop_slot: 0.03
+    H3:
+      front_relayed_the_cloud_failure: 0.55
+      front_answered_from_the_laptop_slot: 0.45
+- name: 'the front''s own code, in platform/llm/front.py at commit 1b5772253 (origin/main):
+    route() builds its targets as [CLOUD] then the answering laptop slots then the
+    sick ones, and the cloud leg writes the status line it read straight to the caller
+    and returns; the only path to a laptop slot is a refused connect, and a 5xx or
+    a stall is never seen as a failure'
+  observed:
+    front_decides_on_the_connect_only: 1
+  likelihoods:
+    H1:
+      front_decides_on_the_connect_only: 0.85
+      front_decides_on_the_answer: 0.15
+    H2:
+      front_decides_on_the_connect_only: 0.98
+      front_decides_on_the_answer: 0.02
+    H3:
+      front_decides_on_the_connect_only: 0.85
+      front_decides_on_the_answer: 0.15
+posteriors:
+  H1: 0.0005187097
+  H2: 0.9970295767
+  H3: 0.0024517137
+winner: H2
+computed_at: '2026-10-28T01:24:55Z'

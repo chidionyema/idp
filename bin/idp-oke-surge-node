@@ -23,6 +23,59 @@ active() { oci ce node-pool get --node-pool-id "$POOL" --query 'data.nodes[?"lif
   | python3 -c 'import sys,json; print("\n".join(json.load(sys.stdin) or []))'; }
 BUCKET="${DRILL_RECEIPT_BUCKET:-estate-drill-receipts}"; ns=(); [ -n "${OCI_OS_NAMESPACE:-}" ] && ns=(--namespace-name "$OCI_OS_NAMESPACE")
 if [ "${1:-}" = --finish ]; then
+  # An interrupted surge leaves the pool at two nodes: the one that kept serving and the one that
+  # never came up (its instance is STOPPED). OKE cannot shrink a pool with an update, so the pool
+  # stays at two, the free tier's one-node allowance is spent, and every apply of the cluster is
+  # refused with "nodes-per-node-pool limit has been exceeded" (2026-10-28) -- the cluster could not
+  # create the bridge that is its only road in. The node that is not running serves nothing and is
+  # the one that goes; the running node is never touched. The rule lives in bin/lib/node_prune.py,
+  # where it is tested without a cloud.
+  # Every pool is read, not just the first: the cluster holds an `a1` pool and an `a1-spot` pool,
+  # and the order `oci ce node-pool list` returns them in is not a promise. The rule decides which
+  # pool is the interrupted surge; a pool with no nodes, or with two running nodes, is left alone.
+  pruned=0
+  # `--query 'data[].id' --raw-output` prints a JSON ARRAY, so it is read as JSON and printed one
+  # id per line. Word-splitting it (2026-10-28) made every "pool id" a fragment of the array,
+  # every pool read failed, the rule saw no nodes, and the door fell through and deleted nothing.
+  pools=$(oci ce node-pool list --cluster-id "$CID" --compartment-id "$COMP" --query 'data[].id' --raw-output 2>/dev/null \
+    | python3 "$IDP/bin/lib/node_prune.py" ids 2>/dev/null || true)
+  echo "surge-finish: pools to read: $(printf '%s' "$pools" | tr '\n' ' ')"
+  for POOL in $pools; do
+    [ -n "$POOL" ] || continue
+    node_rows=""
+    for id in $(oci ce node-pool get --node-pool-id "$POOL" --query 'data.nodes[].id' --raw-output 2>/dev/null \
+      | python3 "$IDP/bin/lib/node_prune.py" ids 2>/dev/null || true); do
+      st=$(oci compute instance get --instance-id "$id" --query 'data."lifecycle-state"' --raw-output 2>/dev/null || true)
+      nm=$(oci compute instance get --instance-id "$id" --query 'data."display-name"' --raw-output 2>/dev/null || true)
+      [ -n "$st" ] || continue
+      node_rows="$node_rows$id	$nm	$st
+"
+    done
+    verdict=$(printf '%s' "$node_rows" | python3 -c '
+import json, sys
+rows = []
+for line in sys.stdin.read().splitlines():
+    parts = line.split("\t")
+    if len(parts) == 3:
+        rows.append({"id": parts[0], "name": parts[1], "state": parts[2]})
+print(json.dumps(rows))
+' | python3 "$IDP/bin/lib/node_prune.py" 2>/dev/null || echo "REFUSE the pool's nodes could not be read")
+    echo "surge-finish: pool $POOL reads: $(printf '%s' "$verdict" | tr '\n' ' ')"
+    if printf '%s' "$verdict" | grep -q '^PRUNE '; then
+      printf '%s\n' "$verdict" | while read -r _ nid nname; do
+        [ -n "$nid" ] || continue
+        oci compute volume-attachment list --compartment-id "$COMP" --instance-id "$nid" --query 'data[].volume-id' --raw-output 2>/dev/null \
+          | sed "s|^|surge-finish: detaching volume |" || true
+        echo "surge-finish: node $nname ($nid) is not running; deleting it with the size decremented, the running node kept"
+        oci ce node-pool delete-node --node-pool-id "$POOL" --node-id "$nid" --is-decrement-size true --force >/dev/null
+        echo "surge-finish: node $nid deleted; the pool is back to one node"
+      done
+      pruned=1
+      break
+    fi
+  done
+  [ "$pruned" -eq 1 ] && exit 0
+  POOL=$(oci ce node-pool list --cluster-id "$CID" --compartment-id "$COMP" --query 'data[0].id' --raw-output)
   # Second half, from a fresh run with a fresh token (crew#516 run 33101801971 exit 4/5): the pool
   # holds the old and the new node; delete the OLDEST (by time-created) with the size decremented,
   # only once a receipt no older than SURGE_RECEIPT_MAX_AGE_SECONDS shows the NEWEST node Ready.
@@ -48,7 +101,7 @@ except ValueError: print("BLIND receipt state/cluster unreadable: %s" % (body.st
 try: head = json.loads(sys.argv[1])
 except ValueError: print("BLIND object head for state/cluster was not readable JSON: %s" % sys.argv[1].strip().splitlines()[:1]); sys.exit(0)
 if len(rows) != 2: print("REFUSE expected 2 ACTIVE nodes in the pool, found %d" % len(rows)); sys.exit(0)
-rows.sort(key=lambda r: r["t"]); old, new = rows
+rows.sort(key=lambda r: (r.get("t") or "")); old, new = rows
 age = receipt_age(head, 1.0, "surge-finish")                 # seconds, on the store clock alone  
 if age > int(sys.argv[2]): print("STALE receipt written %ds ago (%s)" % (age, r.get("at"))); sys.exit(0)
 ready = any(n.get("name") == new["ip"] and n.get("ready") is True for n in r.get("nodes", []))

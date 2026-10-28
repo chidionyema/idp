@@ -34,6 +34,10 @@ def front(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "SLOTS", (a, b))
     monkeypatch.setattr(mod, "ACTIVE", tmp_path / "active")
     monkeypatch.setattr(mod, "LISTEN", ("127.0.0.1", f))
+    # These tests grade the laptop slots. The cloud leg is off here, so no test reaches the
+    # real cloud; the cloud is graded in test_router_front_fails_over_to_the_cloud.py and
+    # test_router_front_falls_back_to_the_laptop_when_the_cloud_fails.py.
+    monkeypatch.setattr(mod, "CLOUD", "")
     return mod
 
 

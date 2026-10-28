@@ -261,6 +261,21 @@ def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> lis
     """The reasons this change may not land; empty means it passes. `fetch(repo, n)` returns
     (issue dict, comments list)."""
     refs = CLAIM_REF.findall(text)
+    # The same issue, once per commit (2026-10-28). A lane's commits each carry the two
+    # trailers, so the text this gate reads -- `git log --format=%B base..head` -- holds one
+    # `Claim:` line per commit. Measured on a 16-commit lane with two issues: 32 Claim lines, 32
+    # issue lookups and 32 comment lookups, 27s of GitHub API, and lane-submit's 40s step was
+    # killed before the push it had already proved. The lookups answer the same question every
+    # time: an issue is open or it is not, and its newest CLAIM comment is one comment. So each
+    # distinct (repo, issue) is fetched once, and the verdict is the one the repeats produced.
+    seen: set[tuple[str, str]] = set()
+    unique_refs: list[tuple[str, str]] = []
+    for ref in refs:
+        if ref in seen:
+            continue
+        seen.add(ref)
+        unique_refs.append(ref)
+    refs = unique_refs
     agents = AGENT.findall(text)
     if not refs:
         return [
