@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- bin/idp-estate-continuity, copied to ~/.estate/bin: launchd cannot run a shell against
+     ~/Documents (TCC, exit 126). WHY python3 IS ProgramArguments[0] AND NOT THE SCRIPT: the grant
+     is per binary, and the disk-watch job measured this on 2026-10-14 -- /bin/bash as the
+     responsible process gets "Operation not permitted" on ~/Documents/code/idp, the framework
+     python3 does not. The script stays a child (subprocess.call, not exec), so the responsible
+     process stays python3. -->
+<!-- WHAT IT DOES: every 15 minutes, census the estate's in-flight work (work-inflight) and
+     rescue everything that exists only on this machine to origin as backup/preserve-* branches
+     (estate-rescue). Founder, 2026-10-28: "no automated continuity ... reliance on founder
+     memory is stupid for autonomous estate". It only ADDS branches: no push to main, no force,
+     no delete. -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>ai.estate.continuity</string>
+  <key>ProgramArguments</key><array>
+    <string>/Library/Frameworks/Python.framework/Versions/3.12/bin/python3</string>
+    <string>-c</string>
+    <string>import subprocess, sys; sys.exit(subprocess.call(sys.argv[1:]))</string>
+    <string>/bin/bash</string>
+    <string>${HOME}/.estate/bin/idp-estate-continuity</string>
+  </array>
+  <key>StartInterval</key><integer>900</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>${HOME}/.estate/continuity.out.log</string>
+  <key>StandardErrorPath</key><string>${HOME}/.estate/continuity.err.log</string>
+</dict></plist>

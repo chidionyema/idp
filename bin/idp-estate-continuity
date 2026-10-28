@@ -1,0 +1,171 @@
+#!/bin/bash
+# estate-continuity: the estate's own continuity job. Census, then rescue, then say so.
+#
+# WHY. Founder, 2026-10-28: "if macbook dies now, all that work is in the abyss ... no automated
+# continuity ... reliance on founder memory is stupid for autonomous estate". Measured the same
+# day: the census (work-inflight) saw 233 work items, 88 of them RECOVERABLE, and most of those
+# existed only in this repository -- a commit on no remote, a dirty worktree, a stash. A dead
+# session took them with it, and nothing on the estate noticed.
+#
+# WHAT ONE RUN DOES
+#   1. census  ~/.estate/libexec/work-inflight.py 7 chidionyema/idp idp
+#              -> ~/.estate/results/work-inflight/latest.{json,md}: what is in flight, graded.
+#   2. rescue  ~/.estate/libexec/estate-rescue.py
+#              -> copies everything that exists only here to origin as backup/preserve-<date>-<name>.
+#                 It only ever ADDS branches: no push to main, no force, no delete, no touch of
+#                 another agent's index, files or HEAD.
+#   3. report one measured line to ~/.estate/continuity.log, and notify at most once an hour
+#      when work was rescued or when either step could not be read (BLIND is never clean).
+#
+# RUNS FROM ~/.estate/bin, never ~/Documents: launchd cannot start a shell on a file under
+# ~/Documents (TCC, exit 126). bin/estate-runtime-sync stages this file there from the
+# repository, so the job follows the code and not this laptop's memory.
+#
+#   estate-continuity            one run
+#   estate-continuity --dry-run  the census and the plan, nothing pushed
+#   estate-continuity status     the last measured lines and the ledger's summary
+#   estate-continuity install    render the plist into ~/Library/LaunchAgents and arm it
+set -uo pipefail
+
+LIBEXEC="$HOME/.estate/libexec"
+LOG="$HOME/.estate/continuity.log"
+ALERT_STAMP="$HOME/.estate/continuity.last-alert"
+LEDGER="$HOME/.estate/results/work-inflight/latest.json"
+RESCUE_LEDGER="$HOME/.estate/results/continuity/latest.json"
+DAYS="${ESTATE_CONTINUITY_DAYS:-7}"
+ALERT_EVERY="${ESTATE_CONTINUITY_ALERT_EVERY:-3600}"
+
+note() { echo "$(date -u +%FT%TZ) $*" >>"$LOG"; }
+
+notify() {
+	/usr/bin/osascript -e "display notification \"$1\" with title \"Estate continuity\" sound name \"Basso\"" >/dev/null 2>&1
+}
+
+maybe_alert() {
+	local now last
+	now=$(date +%s)
+	last=$(cat "$ALERT_STAMP" 2>/dev/null || echo 0)
+	if [ $((now - last)) -ge "$ALERT_EVERY" ]; then
+		notify "$1"
+		date +%s >"$ALERT_STAMP"
+	fi
+}
+
+census() {
+	local rc
+	python3 "$LIBEXEC/work-inflight.py" "$DAYS" chidionyema/idp idp >>"$LOG" 2>&1
+	rc=$?
+	if [ "$rc" -ne 0 ]; then
+		note "census BLIND exit $rc (the board is stale; the estate cannot say what is in flight)"
+		return 1
+	fi
+	return 0
+}
+
+rescue() {
+	local rc
+	if [ "${1:-}" = "--dry-run" ]; then
+		python3 "$LIBEXEC/estate-rescue.py" --dry-run >>"$LOG" 2>&1
+	else
+		python3 "$LIBEXEC/estate-rescue.py" >>"$LOG" 2>&1
+	fi
+	rc=$?
+	return "$rc"
+}
+
+ledger_count() {
+	python3 - "$1" <<'PY' 2>/dev/null || echo "?"
+import json, sys
+try:
+    with open(sys.argv[1]) as fh:
+        data = json.load(fh)
+except Exception:
+    print("?")
+    raise SystemExit(0)
+if isinstance(data, dict):
+    for key in ("live", "rescued"):
+        if key in data:
+            print(key)
+            raise SystemExit(0)
+    counts = data.get("counts") or data.get("summary") or {}
+    if isinstance(counts, dict):
+        print(" ".join("{}={}".format(k, counts[k]) for k in sorted(counts)))
+        raise SystemExit(0)
+print("?")
+PY
+}
+
+status() {
+	echo "--- last measured lines ($LOG) ---"
+	tail -n 20 "$LOG" 2>/dev/null || echo "(no log yet)"
+	echo "--- board ---"
+	ledger_count "$LEDGER"
+	echo "--- rescue ledger ---"
+	ledger_count "$RESCUE_LEDGER"
+}
+
+install_plist() {
+	local tmpl=""
+	local candidate
+	for candidate in \
+		"$HOME/Documents/code/idp/launchd/ai.estate.continuity.plist.tmpl" \
+		"$HOME/.estate/launchd/ai.estate.continuity.plist.tmpl"; do
+		[ -f "$candidate" ] && tmpl="$candidate" && break
+	done
+	if [ -z "$tmpl" ]; then
+		echo "no plist template found (looked in ~/Documents/code/idp/launchd and ~/.estate/launchd)"
+		return 1
+	fi
+	# the binary, not a function named install: bash resolves a function before a PATH lookup,
+	# so `install -m 644 ...` inside a function called install would call itself.
+	/usr/bin/install -m 644 "$tmpl" "$HOME/Library/LaunchAgents/ai.estate.continuity.plist" || return 1
+	echo "installed ~/Library/LaunchAgents/ai.estate.continuity.plist"
+	if command -v launchctl >/dev/null 2>&1; then
+		launchctl bootout "gui/$(id -u)/ai.estate.continuity" >/dev/null 2>&1
+		launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/ai.estate.continuity.plist" >/dev/null 2>&1 &&
+			echo "armed: ai.estate.continuity (every 15 minutes)" ||
+			echo "not armed now; it starts at the next login"
+	else
+		echo "no launchctl here; it starts at the next login"
+	fi
+	return 0
+}
+
+case "${1:-run}" in
+run)
+	census
+	census_rc=$?
+	rescue "$2"
+	rescue_rc=$?
+	rescued=$(python3 - "$RESCUE_LEDGER" <<'PY' 2>/dev/null || echo 0
+import json, sys
+try:
+    with open(sys.argv[1]) as fh:
+        print(json.load(fh).get("rescued", 0))
+except Exception:
+    print(0)
+PY
+)
+	note "continuity run: census exit $census_rc, rescue exit $rescue_rc, rescued $rescued item(s)"
+	if [ "$census_rc" -ne 0 ]; then
+		maybe_alert "The estate could not read its own board (BLIND). Work may be at risk and nobody is reading the census."
+	elif [ "$rescued" -gt 0 ]; then
+		maybe_alert "Rescued $rescued item(s) to origin as backup/preserve-* branches. The work is off the laptop now."
+	fi
+	exit 0
+	;;
+--dry-run)
+	census
+	census_rc=$?
+	rescue --dry-run
+	rescue_rc=$?
+	note "continuity dry run: census exit $census_rc, rescue exit $rescue_rc"
+	exit 0
+	;;
+status) status ;;
+install) install_plist ;;
+*)
+	echo "usage: estate-continuity [run|--dry-run|status|install]"
+	exit 2
+	;;
+esac
