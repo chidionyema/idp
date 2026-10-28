@@ -1,0 +1,208 @@
+# AEI -- the estate's execution-intelligence collector, in OKE.
+#
+# WHAT THIS IS. The collector that receives execution evidence from the estate's agents and
+# from the router's own callback, appends it to the estate's Postgres, and serves it back for
+# analysis. It is the ONE writer of the AEI ledger: the laptop's SQLite file is the same
+# contract on a laptop, and packages/aei/src/aei/pgstore.py is the same store over Postgres.
+# There is no second evidence authority here: Aevum remains the estate's signed evidence
+# layer (decision 0028) and AEI is the OBSERVED-execution plane beside it -- which is exactly
+# what the delivered research note called for (a local append-only staging plane pending Aevum
+# integration, not a competing canonical backend).
+#
+# WHY POSTGRES AND NOT A VOLUME (decision 0034, the free-tier ladder). A PVC-backed SQLite
+# file would be a stateful workload on the node with a volume nobody else uses. The estate
+# already runs Postgres (estate-db), it is the estate's own database, and CloudNativePG owns
+# it. The AEI tables live in their own DATABASE, aei_evidence, with their own role, so the
+# ledger is queryable with SQL by the same tools that query everything else and it survives a
+# pod restart without a volume.
+#
+# THE SECRET. Kyverno's secrets-not-from-env-vars forbids a secret in an env var, so the
+# password and the API token arrive as FILES and the wrapper reads them. The DSN is assembled
+# here from the registered password -- never a vault property named aei_dsn, because no such
+# entry exists and root-trust refuses a credential born nobody knows how.
+#
+# WHY TWO REPLICAS. The observability namespace is labelled availability.idp/tier: founder-
+# facing, so every Deployment in it must run at least two replicas and spread across nodes
+# (platform/scheduling/require-availability.yaml). Two collectors writing the same Postgres
+# is safe by construction: an event_id is written once, and the sequence is the database's.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aei
+  labels:
+    app.kubernetes.io/name: aei
+    app.kubernetes.io/part-of: idp
+    estate.io/component: observability
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: aei
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: aei
+        app.kubernetes.io/part-of: idp
+        estate.io/component: observability
+    spec:
+      automountServiceAccountToken: false
+      # A DoNotSchedule topology spread, the shape ClusterPolicy require-availability accepts
+      # verbatim. Two replicas on one node are one replica.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: aei
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: aei
+          # UNTAGGED ON PURPOSE. Flux image automation moves the tag from
+          # platform/aei/kustomization.yaml ({"$imagepolicy": "flux-system:aei:tag"}),
+          # the same way aevum's is moved. A literal tag here is what put aevum in
+          # ImagePullBackOff for days.
+          image: ghcr.io/chidionyema/aei
+          env:
+            - name: PYTHONPATH
+              value: /app
+            - name: AEI_STORE
+              value: postgres
+            - name: AEI_HOST
+              value: 0.0.0.0
+            - name: AEI_PORT
+              value: "8766"
+            # The collector binds a routable address because the router pod pushes to it. The
+            # opt-in is explicit; the API still refuses every unauthenticated call.
+            - name: AEI_ALLOW_PUBLIC_BIND
+              value: "1"
+          # SECRETS ARRIVE AS FILES, NEVER ENV (Kyverno secrets-not-from-env-vars).
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              # NOTE: no dollar-brace name appears anywhere in this file, comments included --
+              # Flux substitutes them in a reconciled manifest BEFORE the pod runs, comments too,
+              # and its --strict mode treats an unset name as fatal. Shell variables here use
+              # command substitution, the same shape platform/observability/aevum.yaml uses.
+              export AEI_API_TOKEN="$(cat /run/secrets/aei/api-token)"
+              export AEI_POSTGRES_DSN="postgresql://aei_evidence:$(cat /run/secrets/aei/postgres-password)@estate-rw.estate-db.svc.cluster.local:5432/aei_evidence"
+              exec python -m aei.server --host 0.0.0.0 --port 8766 --store postgres
+          ports:
+            - name: http
+              containerPort: 8766
+          # EXEC, NOT httpGet: httpGet is probed from outside the pod namespace, so a loopback
+          # listener answers connection refused for ever while the process is healthy.
+          # /healthz carries no data and needs no token, so the probe never handles a secret.
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import urllib.request as u; u.urlopen('http://127.0.0.1:8766/healthz', timeout=3)
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import urllib.request as u; u.urlopen('http://127.0.0.1:8766/healthz', timeout=3)
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/secrets/aei
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: secrets
+          secret:
+            secretName: aei-collector
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aei
+  labels:
+    app.kubernetes.io/name: aei
+    app.kubernetes.io/part-of: idp
+    estate.io/component: observability
+    # The catalogue entity this port belongs to. Policy require-catalogue-entity refuses a
+    # Service without it, and bin/catalog-platform generates the entity from the Flux row.
+    backstage.io/kubernetes-id: layer-observability
+spec:
+  selector:
+    app.kubernetes.io/name: aei
+  ports:
+    - name: http
+      port: 8766
+      targetPort: http
+---
+# ONE ExternalSecret, reading the entry the register names
+# (docs/reference/policy/root-trust.md), whose two keys bin/idp-estate-seed mints: the
+# Postgres role password and the API token the router's callback authenticates with.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: aei-collector
+  labels:
+    app.kubernetes.io/name: aei
+    estate.io/component: observability
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: estate-vault
+    kind: ClusterSecretStore
+  target:
+    name: aei-collector
+    creationPolicy: Owner
+  data:
+    - secretKey: postgres-password
+      remoteRef:
+        key: aei-observer
+        property: postgres-password
+    - secretKey: api-token
+      remoteRef:
+        key: aei-observer
+        property: api-token
+---
+# A drain must never take both replicas. Without this the collector is one eviction from
+# silent -- the estate would keep routing and stop recording, which is the failure mode that
+# looks like a healthy estate.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: aei
+  labels:
+    app.kubernetes.io/name: aei
+    estate.io/component: observability
+spec:
+  # maxUnavailable, never minAvailable: a budget that refuses every drain is an outage
+  # (platform/scheduling/require-availability.yaml, rule a-pdb-never-refuses-every-drain).
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: aei

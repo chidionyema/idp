@@ -227,6 +227,23 @@ spec:
   owner: aevum_evidence
   ensure: present
 ---
+# The execution-intelligence collector's database (decision 0045). New, like aevum-evidence:
+# nothing to copy. The collector creates its own two tables (aei_events, aei_evaluations) on
+# first boot -- the schema belongs to the program that writes it, not to a migration here --
+# and this resource is what gives that program a database of its own to write in. One database
+# per consumer, so the collector can be reasoned about, and revoked, on its own.
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: aei-evidence
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: aei_evidence
+  owner: aei_evidence
+  ensure: present
+---
 # The estate's memory layer (platform/unified-memory-server). New, like via-negativa: nothing to
 # copy. vector for the same reason as via-negativa: pgvector is not a trusted extension, so the
 # operator creates it and the server's own CREATE EXTENSION IF NOT EXISTS finds it present.

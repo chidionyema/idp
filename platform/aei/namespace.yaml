@@ -1,0 +1,23 @@
+# The observability Namespace, owned by the AEI row.
+#
+# It used to live in platform/observability/namespace.yaml, a directory that no Flux row
+# reconciles (measured 2026-10-28 from the cluster-state receipt: 53 live Kustomizations, none
+# of them on ./platform/observability). Meanwhile platform/ns-fences -- a LIVE row -- applies
+# NetworkPolicies into this namespace, so on a fresh cluster the fences had nothing to land in.
+# The Namespace moved here so the one reconciled row that needs it is the one that creates it.
+#
+# When the observability row is restored, this object goes back to platform/observability with
+# it. It carries kustomize.toolkit.fluxcd.io/prune: disabled, so neither row can garbage-
+# collect it out from under the other (portal 404, 2026-08-29 01:05Z, idp#648).
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    # Never garbage-collected by Flux: a namespace moved between Kustomization rows or
+    # dropped from git stays, with everything in it (portal 404, 2026-08-29 01:05Z, idp#648).
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: observability
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    idp.estate/edge-attach: "true"
+    availability.idp/tier: founder-facing  # superset is a routed founder surface (decision 0018)   # the shared Gateway selects route namespaces by this label
