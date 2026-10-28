@@ -1,0 +1,27 @@
+name: telegram-agent.doctor
+description: >
+  Is every Telegram agent healthy RIGHT NOW, which link broke, and what fixes it? One door for
+  the founder's standing requirement that any agent can monitor live, diagnose and resolve an
+  issue with any Telegram agent (Otto included). Walks each Telegram agent's chain in the
+  order a message meets it -- edge, workload, registration, answer -- names the FIRST broken
+  link with the sanctioned fix (flux-reconcile, through the intent layer, never by hand), and
+  with heal=true applies that fix and re-checks the link afterwards. A source that cannot be
+  read is BLIND, never a failure and never a pass. Exit 0 healthy, 1 a link is broken, 3 blind.
+  Use this first whenever a Telegram agent stops answering.
+args:
+  agent: {type: string, default: "all"}
+  # The schema gate says an intent arg is a string: resolve_args coerces int and string only
+  # (docs/research/2026-10-25-constrained-formats.baseline.json, R1), so a bool arg arrives
+  # as a string anyway. These are strings on purpose.
+  heal: {type: string, default: "no"}
+  json: {type: string, default: "no"}
+# The doctor's own budget: one cluster read (20s) plus, with heal, one flux reconcile (45s) and
+# one re-read (20s) -- inside the executor's 100s ceiling, with room for the receipts.
+door_s: 90
+steps:
+  - name: diagnose
+    cmd: |
+      h="{{heal}}"; j="{{json}}"; hf=""; jf="";
+      case "$h" in yes|true|on|1) hf="--heal";; esac;
+      case "$j" in yes|true|on|1) jf="--json";; esac;
+      python3 ~/.estate/libexec/telegram-agent-doctor.py --agent "{{agent}}" $hf $jf

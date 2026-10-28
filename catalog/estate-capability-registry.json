@@ -3,10 +3,10 @@
   "generator": "bin/capability-index emit",
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
-    "intent": 102,
-    "layer": 209,
+    "intent": 103,
+    "layer": 210,
     "service": 121,
-    "tool": 443,
+    "tool": 444,
     "workflow": 80
   },
   "records": [
@@ -4353,6 +4353,54 @@
       ]
     },
     {
+      "id": "cap:intent/telegram-agent.doctor",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "Is every Telegram agent healthy RIGHT NOW, which link broke, and what fixes it? One door for the founder's standing requirement that any agent can monitor live, diagnose and resolve an issue with any Telegram agent (Otto included). Walks each Telegram agent's chain in the order a message meets it -- edge, workload, registration, answer -- names the FIRST broken link with the sanctioned fix (flux-reconcile, through the intent layer, never by hand), and with heal=true applies that fix and re-checks the link afterwards. A source that cannot be read is BLIND, never a failure and never a pass. Exit 0 healthy, 1 a link is broken, 3 blind. Use this first whenever a Telegram agent stops answering. args: agent: {type: string, default: \"all\"} # The schema gate says an intent arg is a string: resolve_args coerces int and string only # (docs/research/2026-10-25-constrained-formats.baseline.json, R1), so a bool arg arrives # as a string anyway. These are strings on purpose. heal: {type: string, default: \"no\"} json: {type: string, default: \"no\"} # The doctor's own budget: one cluster read (20s) plus, with heal, one flux reconcile (45s) and # one re-read (20s) -- inside the executor's 100s ceiling, with room for the receipts. door_s: 90 steps: - name: diagnose cmd: | h=\"{{heal}}\"; j=\"{{json}}\"; hf=\"\"; jf=\"\"; case \"$h\" in yes|true|on|1) hf=\"--heal\";; esac; case \"$j\" in yes|true|on|1) jf=\"--json\";; esac; python3 ~/.estate/libexec/telegram-agent-doctor.py --agent \"{{agent}}\" $hf $jf",
+      "contract": {
+        "inputs": [
+          "agent",
+          "heal",
+          "json"
+        ],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/telegram-agent.doctor.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
       "id": "cap:intent/token-proof",
       "schema_version": 1,
       "kind": "intent",
@@ -6971,6 +7019,56 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/libexec/symbol_slicer.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-libexec-telegram-agent-doctor",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "telegram-agent-doctor -- is every Telegram agent healthy, which link broke, and what fixes it.",
+      "contract": {
+        "inputs": [
+          "--agent",
+          "--heal",
+          "--json"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/libexec/telegram-agent-doctor.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -39449,6 +39547,51 @@
           "edge": "invokes"
         }
       ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/idp-storage-budget",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "Fail when committed demand for OCI block storage exceeds the Always Free allowance.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/idp-storage-budget",
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",
