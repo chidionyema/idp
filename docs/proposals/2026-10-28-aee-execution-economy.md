@@ -174,6 +174,9 @@ tests → deployment → observed usage → telemetry → open work → gap → 
 | 13 | **Goal / subgoal system** | `platform/estate/memory/plan.py`; the plan/BDD/complete-goal tools | every agent session | the objective of record | `sovereign/tests/bdd/` | local library | OPERATIONAL (this session) | — | — | no dependency graph, no economics | **REUSE as AEE's `Objective` / `WorkNode` spine** |
 | 14 | **Capability registry** | `bin/capability-index` (on `origin/main`, from #7252); `catalog/estate.db` (~40 MB); `catalog/estate-capability-registry.json` (newer, not in the stale checkout) | agents, `/fleet` | one agreed source of truth per state | — | repo + catalog | **NOT ESTABLISHED** | — | #7252 | three artefacts describing one layer (C6) | **REUSE — extend the existing index; AEE must not add a fourth** |
 | 15 | **RIP / Oracle / Stewardship** | referenced by the AEE specification; a spec exists (`docs/specs/2026-09-15-asymmetric-compute-leverage-spec-v0.1.md` for RIP) | — | — | — | — | — | — | — | **NOT ESTABLISHED** by this pass | **DECLINE for AEE v1** — do not build on a capability not yet proven; revisit at G4 |
+| 16 | **Task queue** | `platform/queue/dispatcher.py` (SQLite `state/queue.db`) | the worker pool, the orchestrator | task admission and claim | **no dedicated test module found** | local library | **NOT ESTABLISHED** | task rows | — | no dependency, no contract, no reservation, no idempotency key | **REUSE + EXTEND** — the AEE `WorkNode` is a superset of this row (§3.4) |
+| 17 | **Worker pool + worktree isolation** | `platform/execution/worker_pool.py`, `platform/execution/worktree_manager.py`, `platform/execution/integration.py` (N=10 end-to-end), `platform/orchestrator.py` | the integration harness | concurrent headless execution, isolated worktrees | **validated by script** (`validate.py`, `n10_validator.py`), not by pytest | local library | **NOT ESTABLISHED** | pool status, span telemetry | — | no admission by cost/contract; no per-attempt economics | **REUSE** — G5's concurrency envelope is a policy over this pool |
+| 18 | **Periodic job scheduler** | `scheduler/dagster.yaml`, `scheduler/estate_scheduler/*` | launchd/GitOps jobs | when jobs fire | — | local | **NOT ESTABLISHED** | — | — | different concern (triggers, not dependencies) | **REUSE, keep the boundary** — not the work graph |
 
 ### 3.1 Conflicts and duplications found (binding on the design)
 
@@ -252,6 +255,27 @@ as one, `ExecutionContract` as one) and **extends eight**. It adds **no** router
 coordinator service, **no** budget store, **no** capability registry and **no** verification
 engine. That is the shape that satisfies `AGENTS.md` §6.
 
+### 3.4 The headless execution substrate already exists — and the AEE must not build a second
+
+The AEE specification's headless-execution requirements (isolated workspaces and Git worktrees,
+declared mutation boundaries, controlled integration, bounded concurrency, durable checkpoints,
+idempotency, bounded retries, reconciliation of uncertain side effects) are **mostly already
+implemented in the Estate**, under `platform/`. A first pass that missed this would have built a
+second executor. It is recorded here explicitly so that it is not built.
+
+| Existing | What it does | What the AEE adds | Decision |
+|---|---|---|---|
+| `platform/queue/dispatcher.py` | a SQLite task queue (`state/queue.db`): `tasks(id, goal, status, agent_id, worktree_path, created_at, updated_at)`; `push_task`; `claim_task(agent_id)` under `BEGIN IMMEDIATE` (atomic claim) which creates the task's Git worktree via `git worktree add --detach` | dependency edges, readiness, barriers, node state, contract + reservation binding | **REUSE as the queue.** The AEE's `WorkNode` is a **superset** of this row; the migration path is to extend the table, not to add a second queue. |
+| `platform/execution/worker_pool.py` | N-configurable long-lived workers (default 10, bounded), boot/scale/status, graceful scale-down that lets in-flight tasks finish | reservation-aware admission, per-node contracts, economic receipts per attempt | **REUSE** — G5's concurrency envelope is a *policy over this pool*, not a new pool. |
+| `platform/execution/worktree_manager.py` | one isolated Git worktree and branch per task, spawned and cleaned up | declared mutation boundaries per node, revision-scoped branches | **REUSE** |
+| `platform/execution/integration.py` | end-to-end parallel execution at N=10, wiring the worker pool, worktree manager, dispatcher, `platform/orchestrator.py`, the judge worker, the pareval layer and the telemetry outbox | controlled integration *by graph revision* rather than by wave | **REUSE** — it is already the integration seam |
+| `platform/execution/validate.py`, `n10_validator.py`, `final_integration_test.py` | end-to-end system validation at N=10 (worker pool, worktree isolation, …) against `tests/verification/harness.py` | the AEE's fault-injection scenarios | **REUSE as the harness G5 extends.** Note these are **validation scripts, not pytest suites**: the execution substrate is implemented and validated by script, and has **no dedicated test module** — `git ls-tree` over `tests/` finds none for the pool, the queue or the worktree manager. That is a real gap in G0's "TESTED" column for this layer. |
+| `scheduler/` (`dagster.yaml`, `scheduler/estate_scheduler/{definitions,describe,gitops_sync,gitops_drift,holmes_watch,import_launchd,load_gate}.py`) | a Dagster-backed **periodic job** scheduler (gitops sync, drift, watches, load gate) | — | **REUSE, and keep the boundary.** This schedules *when jobs fire*; the AEE schedules *what work depends on what*. Different concerns. AEE must not grow a trigger scheduler, and must not treat Dagster as the work-graph. |
+
+**The consequence for the plan:** the genuinely new work in G3/G5 is the **dependency-aware graph,
+the contract, the reservation and the economics** — not the executor. That shrinks G3 and G5 and
+removes a whole class of duplication risk from the programme.
+
 ---
 
 # PART B — THE PROPOSAL
@@ -267,8 +291,11 @@ The **intelligence spine** is the LiteLLM router plus `lane_registry`; the AEE a
 at what price, under what deadline and capacity reservation — and an **`EconomicReceipt`** per
 attempt. A single **allocation policy** — deterministic first, learned only where evidence
 justifies it — reads the lane supply, the cost ladder and the reservations, and emits contracts.
-**Nothing owns execution that does not already own it.** The AEE's own logic is a *library and a
-contract*, not a service.
+The **execution substrate is already there** — the task queue (`platform/queue/dispatcher.py`),
+the worker pool and worktree manager (`platform/execution/`), the orchestrator and the N=10
+integration harness (§3.4) — and the `WorkGraph` is what schedules onto it. **Nothing owns
+execution that does not already own it.** The AEE's own logic is a *library and a contract*, not
+a service.
 
 ### 4.1 The five invariants that make this AEE and not a second estate
 
@@ -361,7 +388,10 @@ rollback. A gate is closed only on the proof, not on the plan.
   `GraphRevision`, each revision signed by the existing receipt chain, each revision digested by
   the existing Merkle DAG (`dag.py`).
 - **Reuses.** `sovereign/engine/workflow.py` (Temporal), `plan.py` (sub-goals), `receipts.py`
-  (chain), `dag.py` (digest).
+  (chain), `dag.py` (digest), and the **existing execution substrate** — `platform/queue/dispatcher.py`
+  (the queue a node is admitted to), `platform/execution/worktree_manager.py` (the isolated
+  workspace), `platform/execution/worker_pool.py` (the worker that runs it) (§3.4). The AEE adds
+  the graph, the contract and the revision; it does not add an executor.
 - **Exit criteria.**
   1. **No hard-dependency cycles** may be committed. (Falsifier: a graph with a cycle is
      rejected.)
@@ -403,7 +433,9 @@ rollback. A gate is closed only on the proof, not on the plan.
 
 - **Scope.** Capacity reservations, work stealing across workers, and the concurrency envelope.
 - **Reuses.** `budget.py` (reservation rows), `workflow.py` (worker semantics), `Temporal`
-  (task queues and workers), the FleetView/NATS event substrate.
+  (task queues and workers), the FleetView/NATS event substrate, and the **existing worker pool
+  and dispatcher** (`platform/execution/worker_pool.py`, `platform/queue/dispatcher.py`) — G5 is a
+  *policy over the pool the Estate already has*, not a new pool (§3.4).
 - **Exit criteria.**
   1. **Concurrent independent tasks** run concurrently; **dependent** tasks do not.
   2. **Overlapping-code conflict** is detected before integration, not after.
@@ -541,6 +573,7 @@ The last one is the Estate's rule in operational form: **unknown cost is shown a
 | Router catalogue reconciliation | G2 | `llm/config.yaml`, `platform/llm/routing-matrix.yaml` | needs #7311 to land first if both touch config |
 | `front.py` back into the repo | G0 | `platform/llm/front.py` | small, high value, unblocked |
 | Work graph + contracts | G1, G3 | `sovereign/engine/work_graph.py`, `features/assurance/work-graph.feature`, `docs/specs/2026-10-28-aee-work-graph.md` | new paths, no collision |
+| Extend the existing execution substrate | G3, G5 | `platform/queue/dispatcher.py`, `platform/execution/**`, `tests/test_worker_pool.py`, `tests/test_queue_dispatcher.py` | **extend, do not replace.** The missing pytest modules for the pool, the queue and the worktree manager are part of this claim — the layer is validated by script only (§3.4) |
 | Economic allocation policy | G4 | `sovereign/engine/allocation.py`, `features/assurance/economic-allocation.feature` | new paths |
 | Verification binding | G6 | `nsvee/`, `features/assurance/` | coordinate with #3525 |
 | Economics visibility on `/fleet` | G7 | `backstage/packages/app/src/modules/room/` | coordinate with #7344 |
@@ -592,6 +625,9 @@ and the real free-lane yield (no models pulled).
 | NSVEE | **IMPLEMENTED, TESTED; operational path NOT ESTABLISHED** | `nsvee/engine.py` |
 | Sovereign engine (Battalion) | **IMPLEMENTED, TESTED; operational path NOT ESTABLISHED** | `sovereign/engine/`, `features/battalion/` |
 | Temporal `SessionWorkflow` | **IMPLEMENTED; deployment NOT ESTABLISHED** | `sovereign/engine/workflow.py`; cluster unreachable |
+| Task queue (`platform/queue/dispatcher.py`) | **IMPLEMENTED; no dedicated test module; operational path NOT ESTABLISHED** | SQLite `state/queue.db`; atomic `claim_task`; worktree per task |
+| Worker pool + worktree manager + N=10 integration | **IMPLEMENTED, validated by script; operational path NOT ESTABLISHED** | `platform/execution/`; `validate.py`, `n10_validator.py` |
+| Periodic job scheduler (Dagster) | **IMPLEMENTED; operational path NOT ESTABLISHED** | `scheduler/dagster.yaml`, `scheduler/estate_scheduler/` |
 | `budget_governor` | **IMPLEMENTED, TESTED** | `bin/budget_governor.py` |
 | Durable budget | **IMPLEMENTED, TESTED; operational path NOT ESTABLISHED** | `sovereign/engine/budget.py` |
 | `action_ledger` | **IMPLEMENTED; live on the laptop** | `platform/llm/action_ledger.py` |
@@ -613,9 +649,9 @@ Estate Master Epic**, starting with G0's four remaining repairs (cloud route, lo
 catalogue reconciliation, `front.py` into the repo) and G1's contracts.
 
 **It does not ask for:** a new router, a new coordinator, a new budget store, a new verification
-engine, a new capability registry, or a second programme alongside the Master Epic. Two new
-structures (`WorkGraph`+`GraphRevision`, `ExecutionContract`) and eight extensions of existing
-Estate structures are the whole of it.
+engine, a new capability registry, a new task queue or worker pool, or a second programme
+alongside the Master Epic. Two new structures (`WorkGraph`+`GraphRevision`, `ExecutionContract`)
+and eight extensions of existing Estate structures are the whole of it.
 
 **It does not claim:** that any cluster-hosted capability is working, that the cloud route is
 working, that the free lane exists, or that the Estate's current spend is known. Those are the
