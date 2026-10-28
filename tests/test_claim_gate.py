@@ -91,6 +91,43 @@ def test_a_range_naming_two_agents_is_refused():
     assert "idp-60" in out[0] and "idp-99" in out[0]
 
 
+def test_the_same_issue_is_looked_up_once_however_many_commits_name_it():
+    """A lane's commits each carry the two trailers, so the text the gate reads holds one
+    `Claim:` line per commit (2026-10-28: 16 commits, 2 issues, 32 lines). Fetching each line
+    separately cost 32 issue lookups and 32 comment lookups -- 27s of GitHub API -- and lane-submit
+    killed the step at its 40s cap before the push it had already proved. The lookups answer the
+    same question every time, so each distinct issue is fetched once."""
+    g = _gate()
+    calls: list[int] = []
+
+    def fetch(repo, n):
+        calls.append(n)
+        return _issue(claim=_claim())
+
+    text = "".join(
+        "fix(voice): a thing\n\nClaim: Mumchimp/crew#12\nAgent: idp-60\n"
+        for _ in range(16)
+    )
+    assert g.verdict(text, FILES, "Mumchimp/idp", fetch, NOW) == []
+    assert calls == [12]
+
+
+def test_two_distinct_issues_are_each_looked_up_once():
+    g = _gate()
+    calls: list[int] = []
+
+    def fetch(repo, n):
+        calls.append(n)
+        return _issue(claim=_claim())
+
+    text = "".join(
+        f"fix(voice): a thing\n\nClaim: Mumchimp/crew#{n}\nAgent: idp-60\n"
+        for n in (12, 13, 12, 13, 12)
+    )
+    assert g.verdict(text, FILES, "Mumchimp/idp", fetch, NOW) == []
+    assert calls == [12, 13]
+
+
 def test_a_range_naming_one_agent_twice_still_passes():
     # The refusal above is about DIFFERENT names, not about a lane carrying several commits.
     # One agent's multi-commit lane is the ordinary case and must not be refused.

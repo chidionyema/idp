@@ -249,6 +249,11 @@ def answers(url: str, within_s: int) -> bool:
 # the holdout trial merged in #4909 while the router still ran the commit before it).
 ROUTER = Path(os.environ.get("ESTATE_ROUTER_DIR") or STATE / "litellm-local")
 ROUTER_LABEL = "com.estate.litellm-local"
+# The front is its own process, launched from the same stage directory (bin/litellm-local
+# `front`): new bytes in the stage are not a new front until the label is restarted, and a
+# front that is not restarted is a router fix that waits for a human -- exactly the holdout
+# this file was written for (2026-09-29, #4909), one layer out.
+ROUTER_FRONT_LABEL = "com.estate.litellm-front"
 ROUTER_PROBE = "http://127.0.0.1:4000/health/liveliness"
 
 
@@ -267,6 +272,11 @@ def router_files() -> list[tuple[Path, str]]:
         (TREE / "llm/config.yaml", "config.yaml"),
         (TREE / "platform/llm/artifact_tier.py", "modules/artifact_tier.py"),
         (TREE / "platform/llm/artifact-tier.yaml", "modules/artifact-tier.yaml"),
+        # The front travels with the router (2026-10-28): it is the process every model call
+        # goes through, and a fix to it that only reaches main is a fix the laptop does not
+        # have. It is copied to the stage's top level, which is where bin/litellm-local
+        # launches it from.
+        (TREE / "platform/llm/front.py", "front.py"),
     ] + [(TREE / "platform/llm" / n, f"modules/{n}") for n in mods]
     seen: set[str] = set()
     unique: list[tuple[Path, str]] = []
@@ -376,6 +386,29 @@ def restart_router() -> bool:
     return True
 
 
+def restart_front(previous: "dict[str, bytes | None]", within_s: int = 120) -> str:
+    """Put a changed front into service. Returns a note, or "" when the front did not change.
+
+    The front is a separate launchd label, so copied bytes are not a running front. A front
+    that does not come back with the new bytes is rolled back the same way the router is: the
+    previous bytes go back and the label is restarted again.
+    """
+    if "front.py" not in previous:
+        return ""
+    kickstart(ROUTER_FRONT_LABEL)
+    if answers(ROUTER_PROBE, within_s):
+        return f"; front restarted {ROUTER_FRONT_LABEL}"
+    old = previous["front.py"]
+    if old is None:
+        (ROUTER / "front.py").unlink(missing_ok=True)
+    else:
+        (ROUTER / "front.py").write_bytes(old)
+    kickstart(ROUTER_FRONT_LABEL)
+    answers(ROUTER_PROBE, within_s)
+    alert(f"front from main did not come back; the previous front is back in service")
+    return f"; FRONT KEPT previous"
+
+
 def sync_router(within_s: int = 120) -> list[str]:
     if not (ROUTER / "modules").is_dir():
         return []
@@ -396,7 +429,8 @@ def sync_router(within_s: int = 120) -> list[str]:
         voice = "voice ready" if answers(VOICE_PROBE, 5) else "voice STILL NOT READY"
         if voice != "voice ready":
             alert(f"router took {names} from main but voice is still not ready")
-        return staged + [f"router {names}; deployed {ROUTER_LABEL}; {voice}"]
+        front = restart_front(previous)
+        return staged + [f"router {names}; deployed {ROUTER_LABEL}; {voice}{front}"]
     for name, old in previous.items():
         dst = ROUTER / name
         if old is None:

@@ -1,0 +1,45 @@
+name: oci-reclaim
+description: >
+  Free OCI capacity that orphaned block volumes are holding. The estate's Always Free tenancy
+  hit its volume quota on 2026-09-07 and has been unable to create a single volume since:
+  `oci bv volume create` answers LimitExceeded ("You cannot create a volume because you have
+  reached your limit"), the bridge instance's boot volume was refused (oke-check run
+  40608600584), and the cluster's LiteLLM -- the cloud route of the estate's router -- answers
+  503 "Starting up" for every caller. The quota was held by 14 CSI volumes, every one of them
+  AVAILABLE with no attachment, created 2026-08-25..2026-09-07 by node replacements.
+  A dry run is the default: it lists every volume in the compartment with the reason it was kept
+  or chosen, and the totals. apply=true deletes the chosen volumes one at a time, prints a
+  receipt line per deletion, and re-lists the compartment so the answer is measured.
+  what=node is the second mode, and it is the door for the other half of the estate's missing
+  capacity: a worker node that never came up (the pool "a1" held one RUNNING node and one
+  STOPPED node since 2026-08-27). OKE refuses to remove that node from its pool --
+  "LimitExceeded: nodes-per-node-pool limit has been exceeded" (oke-check run 40650458830) --
+  because the pool is already over the free tier's node limit, so the compute API is the door
+  that can close the catch: it does not count pool nodes. Only a STOPPED instance is ever a
+  candidate, and the boot volume the node was holding is deleted only when OCI says it is free.
+  The rules are in platform/estate/libexec/oci-reclaim.py and are proved offline by
+  tests/estate/test_oci_reclaim.py: AVAILABLE, no attachment, a csi- name, the tag
+  role=persistent_volume, at least older_than_hours old, and never among the keep_oldest
+  oldest -- the oldest are kept because a long-lived PersistentVolume may point at them
+  (backstage/pgdata-postgres-0, prospector/prospector-store-api-data) and that data cannot be
+  reproduced from the API. Nothing else in the estate can free OCI capacity: this is the door.
+class: mutate
+args:
+  # A string, not a bool: the executor's resolve_args coerces int and string only, so a bool
+  # arrives as the word "True"/"False" and the door would read "False" as a yes. "true" and
+  # "false" are what the door reads, and "false" is the default -- a plan, never a deletion.
+  apply: {type: string, default: "false"}
+  keep_oldest: {type: int, default: 3}
+  older_than_hours: {type: int, default: 24}
+  compartment_id: {type: string, default: ""}
+  # what: "volumes" (default) or "node". node_id: the instance OCID for the node mode.
+  what: {type: string, default: "volumes"}
+  node_id: {type: string, default: ""}
+# 90, and it fits the executor's ceiling of 100: the list, the selection, the deletes and the
+# re-list are one OCI conversation. A delete that fails exits 3 and the receipt says which.
+door_s: 90
+halt_on_failure: true
+steps:
+  - name: oci-reclaim
+    cmd: >
+      bash ~/.estate/libexec/oci-reclaim.sh {{apply}} {{keep_oldest}} {{older_than_hours}} {{compartment_id}} {{what}} {{node_id}}
