@@ -249,11 +249,16 @@ def _run_wt(
 def test_worktrees_removes_only_the_settled_and_keeps_every_kind_of_work(tmp_path):
     home, repo, wts = _worktrees(tmp_path)
     busy = subprocess.Popen(["sleep", "60"], cwd=wts["busy"])
+    # The busy check is handed a listing (a seam) instead of a live lsof: the walk of every open
+    # file on the machine is slower under load, and a test that depends on the machine's load
+    # is a flaky test. The listing is what the check consumes, so the test supplies it.
+    cwds = tmp_path / "cwds.txt"
+    cwds.write_text(f"n{wts['busy']}\n")
     try:
-        dry = _run_wt(home, repo, "false", "false", "0", "true")
+        dry = _run_wt(home, repo, "false", "false", "0", "true", cwds_file=str(cwds))
         assert dry.returncode == 0, dry.stdout + dry.stderr
         assert all(w.exists() for w in wts.values()), "a dry run removed a worktree"
-        r = _run_wt(home, repo, "true", "false", "0", "true")
+        r = _run_wt(home, repo, "true", "false", "0", "true", cwds_file=str(cwds))
     finally:
         busy.kill()
     assert r.returncode == 0, r.stdout + r.stderr
@@ -566,6 +571,22 @@ def test_a_wedged_docker_is_cut_off_and_counted_as_a_failure(tmp_path):
     assert p.returncode == 3
 
 
+def test_a_blind_busy_check_keeps_every_worktree(tmp_path):
+    """A busy check that could not be made must not delete a worktree (2026-10-28).
+
+    `lsof -a -d cwd` walks every open file on the machine; under load it exceeds its bound, the
+    listing comes back truncated, and an agent's worktree looks idle. The consequence in
+    production is a checkout vanishing under a live agent, so a blind check keeps everything.
+    """
+    home, repo, wts = _worktrees(tmp_path)
+    blind = tmp_path / "cwds.txt"
+    blind.write_text("")
+    r = _run_wt(home, repo, "true", "false", "0", "true", cwds_file=str(blind))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert all(w.exists() for w in wts.values()), r.stdout
+    assert "the busy check is blind" in r.stdout, r.stdout
+
+
 def test_a_second_run_waits_for_the_first(tmp_path):
     home = _home(tmp_path)
     holder = subprocess.Popen(["sleep", "30"])
@@ -577,6 +598,49 @@ def test_a_second_run_waits_for_the_first(tmp_path):
         assert f"another disk-cleanup (pid {holder.pid}) is running" in p.stdout
         assert all((home / c / "blob").exists() for c in CACHES), (
             "a second run deleted anyway"
+        )
+    finally:
+        holder.kill()
+
+
+def test_a_recycled_pid_does_not_close_the_door(tmp_path):
+    """The pid in the lock is alive, but it is not the cleaner that wrote it (2026-10-28).
+
+    Measured in production: the holder's pid had been RECYCLED onto an unrelated process, so
+    `kill -0` was happy and the cleaner answered "another disk-cleanup is running" forever,
+    while the volume sat under the executor's floor and every door in the estate was refused.
+    The lock records the holder's start time next to its pid; a mismatch means the pid was
+    recycled, and the lock is stale.
+    """
+    home = _home(tmp_path)
+    holder = subprocess.Popen(["sleep", "30"])
+    try:
+        lock = home / ".estate/disk-cleanup.lock"
+        lock.mkdir(parents=True)
+        (lock / "pid").write_text(str(holder.pid))
+        (lock / "start").write_text("Tue Jan  1 00:00:00 2019")
+        p = _run(home, "true")
+        assert "another disk-cleanup" not in p.stdout, p.stdout
+    finally:
+        holder.kill()
+
+
+def test_a_live_lock_with_the_holder_start_time_is_respected(tmp_path):
+    home = _home(tmp_path)
+    holder = subprocess.Popen(["sleep", "30"])
+    try:
+        lock = home / ".estate/disk-cleanup.lock"
+        lock.mkdir(parents=True)
+        (lock / "pid").write_text(str(holder.pid))
+        start = subprocess.run(
+            ["ps", "-p", str(holder.pid), "-o", "lstart="],
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        (lock / "start").write_text(start)
+        p = _run(home, "true")
+        assert f"another disk-cleanup (pid {holder.pid}) is running" in p.stdout, (
+            p.stdout
         )
     finally:
         holder.kill()
@@ -1171,3 +1235,255 @@ def test_the_critical_tier_dry_run_touches_none_of_the_new_families(tmp_path):
     assert _loose_count(repo) > 0, "a dry run must not repack anything"
     assert (home / CARGO_REGISTRY / "blob").exists()
     assert (home / GO_MODCACHE / "blob").exists()
+
+
+# ---------------------------------------------------------------------------
+# THE TARGET, THE RESULT LINE, THE INCREMENTAL MODE AND THE RESIDENT GUARDIAN (2026-10-28).
+#
+# The cleaner became target-driven and incremental because the old watcher was neither: it ran
+# the FULL sweep with a 240s budget every five minutes, held the reclaim lock for 240 of every
+# 300 seconds, and freed nothing, because the phases it reached first yield nothing and the
+# tier that holds the weight was last. These tests pin the new contract: one machine-readable
+# result, a target that stops the reclaim, an incremental mode that skips the slow phases, and
+# a guardian that does nothing at all when the volume is healthy.
+
+GUARDIAN = Path(__file__).resolve().parents[2] / "bin/idp-disk-watch"
+
+
+def _target_env(home: Path, **extra: str) -> dict:
+    env = {
+        **os.environ,
+        "HOME": str(home),
+        "DISK_GUARD_PATH": str(home),
+        "DISK_CLEANUP_RUST_ROOTS": str(home / "Documents/code"),
+        "DISK_CLEANUP_TMP_ROOT": "",
+        "DISK_CLEANUP_SYSTEM_SPOTS": "",
+        "DISK_CLEANUP_CRIT_MB": "999999999",
+        # the surface scan must look at a directory that exists and says nothing, so the estate
+        # keeps every package that its OWN runtime does not name
+        "DISK_CLEANUP_SURFACE_DIRS": str(home / "surface"),
+        "DISK_CLEANUP_RUNTIME_TREE": str(home / "runtime"),
+    }
+    for k, v in extra.items():
+        env[k] = str(v)
+    return env
+
+
+def _npm_home(tmp_path: Path) -> Path:
+    home = tmp_path / "home"
+    nm = home / ".nvm/versions/node/v22.15.1/lib/node_modules"
+    (nm / "promptfoo").mkdir(parents=True)
+    (nm / "promptfoo" / "blob").write_bytes(os.urandom(30 * 1024 * 1024))
+    (nm / "@openai/codex").mkdir(parents=True)
+    (nm / "@openai/codex" / "blob").write_bytes(os.urandom(30 * 1024 * 1024))
+    (home / ".estate/libexec").mkdir(parents=True)
+    (home / "surface").mkdir(parents=True)
+    (home / "runtime").mkdir(parents=True)
+    return home
+
+
+def test_the_result_line_is_machine_readable(tmp_path):
+    """The guardian parses this line and nothing else, so its shape is a contract."""
+    home = _home(tmp_path)
+    r = _run(home, "false", "false")
+    assert re.search(
+        r"^RESULT mode=\S+ free_before_mb=\d+ free_after_mb=\d+ target_mb=\d+ met=\S+ freed_mb=-?\d+$",
+        r.stdout,
+        re.M,
+    ), r.stdout
+
+
+def test_an_unused_global_npm_package_is_reclaimed_and_the_keep_list_is_kept(tmp_path):
+    """The measured 1702M (promptfoo) and the measured 672M (@openai/codex), in one fixture."""
+    home = _npm_home(tmp_path)
+    # a target the volume cannot reach, so the tier actually reclaims (a target already met
+    # stops the reclaim on purpose -- that is the next test)
+    env = _target_env(home, DISK_CLEANUP_TARGET_MB="999999999")
+    r = subprocess.run(
+        ["bash", str(SCRIPT), "true", "false"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not (
+        home / ".nvm/versions/node/v22.15.1/lib/node_modules/promptfoo"
+    ).exists(), r.stdout
+    assert (
+        home / ".nvm/versions/node/v22.15.1/lib/node_modules/@openai/codex"
+    ).exists(), r.stdout
+    assert "keep   npm-global" in r.stdout and "@openai" in r.stdout, r.stdout
+
+
+def test_a_package_the_estates_own_runtime_names_is_kept(tmp_path):
+    home = _npm_home(tmp_path)
+    surface = home / "surface"
+    (surface / "epic.md").write_text("we run promptfoo in CI\n")
+    env = _target_env(home, DISK_CLEANUP_TARGET_MB="999999999")
+    r = subprocess.run(
+        ["bash", str(SCRIPT), "true", "false"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert (home / ".nvm/versions/node/v22.15.1/lib/node_modules/promptfoo").exists(), (
+        r.stdout
+    )
+    assert "the estate's own runtime names it" in r.stdout, r.stdout
+
+
+def test_a_claude_build_is_a_file_and_is_reclaimed(tmp_path):
+    """A claude build is a regular file (~273M each). The rule asked for a directory, so it
+    could never fire and 546M of superseded builds was unreachable."""
+    home = tmp_path / "home"
+    versions = home / ".local/share/claude/versions"
+    versions.mkdir(parents=True)
+    (versions / "2.1.307").write_bytes(os.urandom(30 * 1024 * 1024))
+    (versions / "2.1.400").write_bytes(os.urandom(30 * 1024 * 1024))
+    (home / ".estate/libexec").mkdir(parents=True)
+    env = _target_env(home, DISK_CLEANUP_TARGET_MB="999999999")
+    r = subprocess.run(
+        ["bash", str(SCRIPT), "true", "false"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not (versions / "2.1.307").exists(), r.stdout
+    assert (versions / "2.1.400").exists(), r.stdout
+
+
+def test_a_met_target_stops_the_reclaim_and_says_so(tmp_path):
+    """Reclaiming past the goal is disruption nobody asked for."""
+    home = _npm_home(tmp_path)
+    env = _target_env(home, DISK_CLEANUP_TARGET_MB="1")
+    r = subprocess.run(
+        ["bash", str(SCRIPT), "true", "false"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert (home / ".nvm/versions/node/v22.15.1/lib/node_modules/promptfoo").exists(), (
+        r.stdout
+    )
+    assert "the target (1M free) is met" in r.stdout, r.stdout
+    assert re.search(r"^RESULT .*met=yes ", r.stdout, re.M), r.stdout
+
+
+def test_an_unreachable_target_prints_a_measured_blocked_by_table(tmp_path):
+    home = _npm_home(tmp_path)
+    env = _target_env(home, DISK_CLEANUP_TARGET_MB="999999999")
+    r = subprocess.run(
+        ["bash", str(SCRIPT), "true", "false"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert "blocked by" in r.stdout, r.stdout
+    assert re.search(r"^    \d+M  \S+  \(.+\)$", r.stdout, re.M), r.stdout
+    assert re.search(r"^RESULT .*met=no ", r.stdout, re.M), r.stdout
+
+
+def test_the_incremental_mode_skips_the_slow_phases(tmp_path):
+    """The guardian's mode: the two fast tiers only, no HOME scan, no worktree walk, no docker."""
+    home = _home(tmp_path)
+    env = _target_env(home, DISK_CLEANUP_INCREMENTAL="1")
+    # worktrees=true: the phase is then WANTED, so the engine prints why it skipped it
+    r = subprocess.run(
+        ["bash", str(SCRIPT), "true", "false", "0", "true"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert re.search(r"^RESULT mode=incremental ", r.stdout, re.M), r.stdout
+    # the slow phases are SKIPPED BY NAME, not run and failed
+    assert "SKIP   docker" in r.stdout, r.stdout
+    assert "SKIP   worktrees" in r.stdout, r.stdout
+
+
+def test_the_guardian_does_nothing_when_the_volume_is_healthy(tmp_path):
+    home = tmp_path / "home"
+    (home / ".estate").mkdir(parents=True)
+    calls = tmp_path / "calls"
+    cleaner = tmp_path / "cleaner.sh"
+    cleaner.write_text(f"#!/bin/bash\necho called >> {calls}\necho 'RESULT mode=x'\n")
+    cleaner.chmod(0o755)
+    env = {
+        **os.environ,
+        "HOME": str(home),
+        "DISK_GUARD_PATH": str(home),
+        "DISK_WATCH_TARGET_MB": "1",  # met: the volume is above the goal
+        "DISK_WATCH_CYCLE_S": "1",
+        "DISK_WATCH_CLEANER": str(cleaner),
+        "DISK_WATCH_RAM_FLOOR_MB": "0",  # the brake must not fire in a test
+        "DISK_WATCH_SWAP_MAX_PCT": "100",
+    }
+    proc = subprocess.Popen(
+        [sys.executable, str(GUARDIAN)],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        time.sleep(4)
+    finally:
+        proc.terminate()
+        proc.wait(timeout=15)
+    hb = home / ".estate/heartbeats/disk-guardian.json"
+    assert hb.is_file(), "the guardian must write its heartbeat"
+    import json as _json
+
+    data = _json.loads(hb.read_text())
+    assert data["state"] == "healthy", data
+    assert data["free_mb"] > 0, data
+    assert not calls.exists(), "a healthy guardian must not run the cleaner"
+
+
+def test_the_guardian_takes_one_bounded_step_when_the_volume_is_under_the_target(
+    tmp_path,
+):
+    home = tmp_path / "home"
+    (home / ".estate").mkdir(parents=True)
+    cleaner = tmp_path / "cleaner.sh"
+    cleaner.write_text(
+        "echo 'RESULT mode=incremental free_before_mb=100 free_after_mb=142 "
+        "target_mb=4000 met=no freed_mb=42'\n"
+    )
+    cleaner.chmod(0o755)
+    env = {
+        **os.environ,
+        "HOME": str(home),
+        "DISK_GUARD_PATH": str(home),
+        "DISK_WATCH_TARGET_MB": "4000",  # never met here
+        "DISK_WATCH_CYCLE_S": "1",
+        "DISK_WATCH_CLEANER": str(cleaner),
+        "DISK_WATCH_RAM_FLOOR_MB": "0",
+        "DISK_WATCH_SWAP_MAX_PCT": "100",
+    }
+    proc = subprocess.Popen(
+        [sys.executable, str(GUARDIAN)],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        time.sleep(4)
+    finally:
+        proc.terminate()
+        proc.wait(timeout=15)
+    import json as _json
+
+    hb = _json.loads((home / ".estate/heartbeats/disk-guardian.json").read_text())
+    assert hb["state"] == "reclaiming", hb
+    assert hb["last_freed_mb"] == "42", hb
+    log = (home / ".estate/disk-watch.log").read_text()
+    assert "freed=42M" in log, log
+    assert "met=no" in log, log
