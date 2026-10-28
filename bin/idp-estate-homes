@@ -37,6 +37,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -144,21 +145,26 @@ def _headers(leg: dict, env: dict) -> dict:
 
 
 def grade_service(service: dict, env: dict, timeout: float, zone: str = "") -> list:
-    """Grade every lane of one service. Pure: it asks, it does not file."""
-    results = []
-    for leg in service.get("legs") or []:
+    """Grade every lane of one service. Pure: it asks, it does not file.
+
+    The lanes are asked at the same time. A drill that takes the sum of every lane's
+    timeout is a drill nobody runs, and one that is cut off mid-board says nothing at all
+    about the lanes it never reached.
+    """
+    legs = service.get("legs") or []
+    results = [None] * len(legs)
+    tasks = []
+    for index, leg in enumerate(legs):
         url = _expand(str(leg.get("url") or ""), env).replace("{zone}", zone)
+        base = {
+            "service": service.get("service"),
+            "leg": leg.get("name"),
+            "provider": leg.get("provider"),
+            "role": leg.get("role"),
+            "url": url,
+        }
         if not url:
-            results.append(
-                {
-                    "service": service.get("service"),
-                    "leg": leg.get("name"),
-                    "provider": leg.get("provider"),
-                    "url": url,
-                    "verdict": UNKNOWN,
-                    "detail": "the lane has no url",
-                }
-            )
+            results[index] = dict(base, verdict=UNKNOWN, detail="the lane has no url")
             continue
         expect = tuple(leg.get("expect") or (200,))
         headers = _headers(leg, env)
@@ -167,37 +173,27 @@ def grade_service(service: dict, env: dict, timeout: float, zone: str = "") -> l
             # lane may be perfectly alive, and the runner is simply not the machine that has
             # the key. UNKNOWN is what the drill reports; a wrong verdict here would file a
             # ticket against a healthy home.
-            results.append(
-                {
-                    "service": service.get("service"),
-                    "leg": leg.get("name"),
-                    "provider": leg.get("provider"),
-                    "role": leg.get("role"),
-                    "url": url,
-                    "verdict": UNKNOWN,
-                    "detail": "a secret this lane needs is not in this environment",
-                }
+            results[index] = dict(
+                base,
+                verdict=UNKNOWN,
+                detail="a secret this lane needs is not in this environment",
             )
             continue
-        verdict, detail = probe(
-            url,
-            headers=headers,
-            timeout=timeout,
-            expect=expect,
-            expect_any=bool(leg.get("expect_any")),
+        tasks.append(
+            (index, base, url, headers, expect, bool(leg.get("expect_any")))
         )
-        results.append(
-            {
-                "service": service.get("service"),
-                "leg": leg.get("name"),
-                "provider": leg.get("provider"),
-                "role": leg.get("role"),
-                "url": url,
-                "verdict": verdict,
-                "detail": detail,
+    if tasks:
+        with ThreadPoolExecutor(max_workers=min(8, len(tasks))) as pool:
+            futures = {
+                pool.submit(probe, url, headers, timeout, expect, expect_any): index
+                for index, _base, url, headers, expect, expect_any in tasks
             }
-        )
-    return results
+            for future in as_completed(futures):
+                index = futures[future]
+                base = next(task[1] for task in tasks if task[0] == index)
+                verdict, detail = future.result()
+                results[index] = dict(base, verdict=verdict, detail=detail)
+    return [row for row in results if row is not None]
 
 
 def vault_get(entry: str, field: str = "") -> str:

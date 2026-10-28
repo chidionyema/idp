@@ -1,0 +1,12 @@
+{
+  "allowance": {
+    "block_storage_gb": 200,
+    "nodes_per_pool": 1,
+    "notes": "The Always Free allowance the estate's OCI tenancy is on (platform/oci/main.tf: 'Block storage is 200 GB Always Free'). It is declared here once so the guard, the drill and the docs read the same number instead of repeating it in prose."
+  },
+  "sources": {
+    "block_storage": "oci bv volume list --compartment-id <compartment> --all",
+    "nodes": "oci ce node-pool list --cluster-id <cluster> --all",
+    "replicas": "platform/llm/litellm.yaml (replicas) against the nodes the pool can schedule"
+  }
+}

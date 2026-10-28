@@ -1,0 +1,424 @@
+#!/usr/bin/env python3
+"""idp-estate-capacity -- ask what the estate asks for versus what the free tier gives.
+
+The estate's router died of capacity on 2026-10-28 and the estate was blind to it: the
+vendor's 400 was the first thing anybody read.
+
+    (400, LimitExceeded, false) You cannot create a volume because you have reached your limit.
+    400-LimitExceeded, LimitExceeded: nodes-per-node-pool limit has been exceeded.
+
+This door asks the question BEFORE the apply, and it answers with measurements:
+
+    bin/idp-estate-capacity            # the board: what is measured, what is over
+    bin/idp-estate-capacity --json     # the same, as data
+
+Exit: 0 nothing is over the allowance, 1 something is over it, 2 the door is BLIND (it could
+not read the account, so it says so instead of saying all clear).
+
+The allowance is declared ONCE, in platform/ladder/capacity.json, so this door, the drill and
+the docs read the same number instead of each repeating it in prose.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+IDP = Path(__file__).resolve().parent.parent
+ALLOWANCE_FILE = IDP / "platform/ladder/capacity.json"
+OCI_CONFIG = os.environ.get("OCI_CONFIG", str(Path.home() / ".oci/config"))
+OCI_PROFILE = os.environ.get("OCI_PROFILE", "agent")
+TIMEOUT = 60
+
+OK = "OK"
+OVER = "OVER"
+BLOCKED = "BLOCKED"
+BLIND = "BLIND"
+
+
+# ---------------------------------------------------------------- the allowance
+
+
+def load_allowance(path: Path = ALLOWANCE_FILE) -> dict:
+    """The declared allowance. A missing file is a blind door, not a default of zero: a
+    default would make every compartment look over budget, and a wrong board trains the
+    estate to ignore the board."""
+    try:
+        doc = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise Blind(f"the allowance cannot be read: {exc}") from exc
+    allowance = doc.get("allowance") or {}
+    if "block_storage_gb" not in allowance or "nodes_per_pool" not in allowance:
+        raise Blind(f"{path} does not declare block_storage_gb and nodes_per_pool")
+    return allowance
+
+
+class Blind(RuntimeError):
+    """The door could not see what it needed to see."""
+
+
+# ---------------------------------------------------------------- the measurements
+
+
+def oci_json(args: list) -> dict:
+    """Run one oci command and read its JSON. Nothing here prints a credential: the CLI
+    never writes the key, and the error text is trimmed to a single line."""
+    cmd = ["oci", *args, "--output", "json", "--config-file", OCI_CONFIG, "--profile", OCI_PROFILE]
+    try:
+        done = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT, check=False)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise Blind(f"the oci CLI could not be run: {exc}") from exc
+    if done.returncode != 0:
+        tail = " ".join((done.stderr or "").strip().splitlines()[-1:])[:200]
+        raise Blind(f"oci {' '.join(args[:3])} failed: {tail}")
+    try:
+        return json.loads(done.stdout or "{}")
+    except json.JSONDecodeError as exc:
+        raise Blind(f"oci {' '.join(args[:3])} did not answer with JSON: {exc}") from exc
+
+
+def _main_checkout() -> Path:
+    """The main checkout of this repository. A worktree has no terraform.tfvars of its own
+    (it is git-ignored and written by bin/idp-oci-login)."""
+    try:
+        done = subprocess.run(
+            ["git", "-C", str(IDP), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        common = (done.stdout or "").strip()
+        if common:
+            return Path(common).parent
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return IDP
+
+
+def compartment_id(env: dict | None = None) -> str:
+    """The compartment is an identifier, not a credential, so it is read here."""
+    env = env if env is not None else os.environ
+    found = env.get("OCI_COMPARTMENT_OCID", "").strip()
+    if found:
+        return found
+    for candidate in (
+        IDP / "platform/oci/terraform.tfvars",
+        _main_checkout() / "platform/oci/terraform.tfvars",
+    ):
+        try:
+            for line in candidate.read_text().splitlines():
+                if line.strip().startswith("compartment_ocid"):
+                    found = line.split('"')[1]
+                    break
+        except (OSError, IndexError):
+            continue
+        if found:
+            return found
+    # The vault's identifier (a compartment OCID is an identifier, not a credential, so it
+    # is read here; the KEY is never read outside the founder's own terminal).
+    vault = Path(env.get("ESTATE_SECRETS", str(IDP.parent / "estate-secrets")))
+    vfile = vault / "secrets" / env.get("OCI_ENV", "dev") / "OCI_COMPARTMENT_OCID.yaml"
+    if vfile.exists() and shutil.which("sops"):
+        try:
+            done = subprocess.run(
+                [
+                    "sops",
+                    "-d",
+                    "--extract",
+                    '["OCI_COMPARTMENT_OCID"]',
+                    str(vfile),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+                env={
+                    **os.environ,
+                    "SOPS_AGE_KEY_FILE": env.get(
+                        "SOPS_AGE_KEY_FILE", str(Path.home() / ".config/prospector/age-key.txt")
+                    ),
+                },
+            )
+            if done.returncode == 0 and (done.stdout or "").strip():
+                return done.stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            pass
+    # The repository variable the CI door itself uses (vars.OCI_COMPARTMENT_OCID).
+    if shutil.which("gh"):
+        slug = env.get("GITHUB_REPOSITORY", "chidionyema/idp")
+        try:
+            done = subprocess.run(
+                ["gh", "api", f"repos/{slug}/actions/variables/OCI_COMPARTMENT_OCID", "--jq", ".value"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            if done.returncode == 0 and (done.stdout or "").strip():
+                return done.stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            pass
+    raise Blind("no compartment: set OCI_COMPARTMENT_OCID or write platform/oci/terraform.tfvars")
+
+
+def volume_rows(compartment: str) -> list:
+    doc = oci_json(["bv", "volume", "list", "--compartment-id", compartment, "--all"])
+    return doc.get("data") or []
+
+
+def cluster_ids(compartment: str) -> list:
+    doc = oci_json(["ce", "cluster", "list", "--compartment-id", compartment, "--all"])
+    return [row.get("id") for row in (doc.get("data") or []) if row.get("id")]
+
+
+def instance_rows(compartment: str) -> list:
+    """The compute instances of the compartment. The NODE COUNT comes from here, not from
+    the node pool's own list: MEASURED 2026-10-28, `oci ce node-pool list` reported 0 nodes
+    for pool `a1` while `oci compute instance list` showed the pool's A1 node RUNNING. The
+    list field is not the truth about the estate's nodes -- the same shape as the volume
+    attachment field that made the reclaim door's plan wrong."""
+    doc = oci_json(["compute", "instance", "list", "--compartment-id", compartment, "--all"])
+    return doc.get("data") or []
+
+
+def wanted_replicas(path: Path = IDP / "platform/llm/litellm.yaml") -> int:
+    """How many LiteLLM replicas the manifest asks for. Read as text on purpose: the
+    manifest is YAML and the repository does not depend on a YAML library being installed
+    where this door runs."""
+    try:
+        text = path.read_text()
+    except OSError:
+        return 0
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("replicas:"):
+            value = stripped.split(":", 1)[1].split("#")[0].strip().strip("\"'")
+            try:
+                return int(value)
+            except ValueError:
+                return 0
+    return 0
+
+
+# ---------------------------------------------------------------- the findings
+
+
+def storage_finding(volumes: list, allowance_gb: int) -> dict:
+    """What the block volumes hold, and what they hold that is dead.
+
+    A TERMINATED volume cannot be mounted and is therefore harmless to the cluster, but it
+    is still LISTED, and the allowance it was counted against is still gone. So the two are
+    reported apart: live is what the cluster uses, dead is what the account still carries.
+    """
+    live_gb = 0
+    dead_gb = 0
+    live_count = 0
+    dead_count = 0
+    for volume in volumes:
+        size = int(volume.get("size-in-gbs") or volume.get("size_in_gbs") or 0)
+        state = (volume.get("lifecycle-state") or volume.get("lifecycle_state") or "").upper()
+        if state in ("TERMINATED", "TERMINATING"):
+            dead_gb += size
+            dead_count += 1
+        else:
+            live_gb += size
+            live_count += 1
+    over = live_gb > allowance_gb
+    return {
+        "check": "block storage",
+        "measured": f"{live_count} live volume(s), {live_gb}GB live; {dead_count} dead, {dead_gb}GB",
+        "allowance": f"{allowance_gb}GB",
+        "verdict": OVER if over else OK,
+        "detail": (
+            f"the account holds {live_gb}GB of live block storage and the allowance is {allowance_gb}GB"
+            if over
+            else f"{live_gb}GB of live block storage against a {allowance_gb}GB allowance"
+        ),
+    }
+
+
+def node_finding(instances: list, allowance_nodes: int) -> dict:
+    """The estate's worker nodes, counted from the compute API.
+
+    A RUNNING node is a live node. A STOPPED node holds the allowance and serves nothing --
+    it is the estate's capacity spent on nothing. A TERMINATED node is dead and gone.
+    """
+    workers = [
+        row
+        for row in instances
+        if (row.get("display-name") or "").startswith("oke-")
+        or (row.get("lifecycle-state") or "").upper() in ("RUNNING", "STOPPED")
+        and (row.get("shape") or "").startswith("VM.Standard.A1")
+    ]
+    live = [row for row in workers if (row.get("lifecycle-state") or "").upper() == "RUNNING"]
+    stopped = [row for row in workers if (row.get("lifecycle-state") or "").upper() == "STOPPED"]
+    over = len(live) > allowance_nodes
+    measured = f"{len(live)} live node(s), {len(stopped)} stopped"
+    if over:
+        detail = (
+            f"the estate runs {len(live)} worker nodes and the allowance is {allowance_nodes}; "
+            "OKE refuses the pool update with 'nodes-per-node-pool limit has been exceeded'"
+        )
+    elif stopped:
+        detail = (
+            f"{len(stopped)} stopped node(s) hold the allowance and serve nothing: they are "
+            "capacity spent on silence"
+        )
+    else:
+        detail = f"{len(live)} live node(s) against an allowance of {allowance_nodes}"
+    return {
+        "check": "worker nodes",
+        "measured": measured,
+        "allowance": f"{allowance_nodes} node(s)",
+        "verdict": OVER if over else OK,
+        "detail": detail,
+    }
+
+
+def pool_finding(pools: list, allowance_nodes: int) -> list:
+    """The state of each node pool.
+
+    A pool that is NEEDS_ATTENTION cannot be reconciled: OKE refuses the update while the
+    pool is over the limit, and the pool stays over the limit until something is given
+    back. A pool in that state is not a capacity number, it is a blocked estate.
+    """
+    findings = []
+    for pool in pools:
+        name = pool.get("name") or pool.get("id") or "?"
+        state = (pool.get("lifecycle-state") or pool.get("lifecycle_state") or "").upper()
+        blocked = state not in ("ACTIVE", "")
+        findings.append(
+            {
+                "check": f"node pool {name}",
+                "measured": f"{state or 'unknown'}",
+                "allowance": f"{allowance_nodes} node(s)",
+                "verdict": BLOCKED if blocked else OK,
+                "detail": (
+                    f"the pool {name} is {state}: OKE cannot reconcile it while it is over the "
+                    "free tier's limit, and every apply is refused until the estate gives "
+                    "capacity back"
+                    if blocked
+                    else f"the pool {name} is {state}"
+                ),
+            }
+        )
+    return findings
+
+
+def replica_finding(replicas: int, schedulable_nodes: int, spread: str = "DoNotSchedule") -> dict:
+    """The replica that can never be scheduled.
+
+    MEASURED 2026-10-28: the LiteLLM deployment was 'available=1 desired=2' with a
+    DoNotSchedule spread on kubernetes.io/hostname on a pool that can hold one node. The
+    deployment looks healthy; the edge answers 503. This is the most expensive kind of
+    outage, because every dashboard says the estate is up.
+    """
+    if replicas <= 0 or schedulable_nodes <= 0:
+        return {
+            "check": "router replicas",
+            "measured": f"{replicas} replica(s), {schedulable_nodes} schedulable node(s)",
+            "allowance": "-",
+            "verdict": OK,
+            "detail": "nothing to compare: the manifest or the pool could not be read",
+        }
+    over = replicas > schedulable_nodes
+    return {
+        "check": "router replicas",
+        "measured": f"{replicas} replica(s), {schedulable_nodes} schedulable node(s)",
+        "allowance": f"{schedulable_nodes} schedulable node(s)",
+        "verdict": OVER if over else OK,
+        "detail": (
+            f"{replicas} replicas on {schedulable_nodes} schedulable node(s) with a {spread} "
+            "spread: the extra replica can never be scheduled, and the edge answers 503 while "
+            "the deployment looks healthy"
+            if over
+            else f"{replicas} replica(s) fit on {schedulable_nodes} schedulable node(s)"
+        ),
+    }
+
+
+# ---------------------------------------------------------------- the board
+
+
+def render(findings: list) -> str:
+    lines = []
+    for finding in findings:
+        mark = {"OVER": "OVER", "BLOCKED": "BLOCK"}.get(finding["verdict"], "ok  ")
+        lines.append(
+            f"{mark}    {finding['check']:<26} {finding['measured']}  (allowance {finding['allowance']})"
+        )
+        if finding["verdict"] != OK:
+            lines.append(f"        -> {finding['detail']}")
+    return "\n".join(lines)
+
+
+def measure(env: dict | None = None) -> list:
+    """Everything the door knows, measured."""
+    allowance = load_allowance()
+    compartment = compartment_id(env)
+    volumes = volume_rows(compartment)
+    findings = [storage_finding(volumes, int(allowance["block_storage_gb"]))]
+    instances = instance_rows(compartment)
+    findings.append(node_finding(instances, int(allowance["nodes_per_pool"])))
+    pools = []
+    for cluster in cluster_ids(compartment):
+        doc = oci_json(
+            [
+                "ce",
+                "node-pool",
+                "list",
+                "--cluster-id",
+                cluster,
+                "--compartment-id",
+                compartment,
+                "--all",
+            ]
+        )
+        pools.extend(doc.get("data") or [])
+    if pools:
+        findings.extend(pool_finding(pools, int(allowance["nodes_per_pool"])))
+    replicas = wanted_replicas()
+    live_nodes = len(
+        [
+            row
+            for row in instances
+            if (row.get("lifecycle-state") or "").upper() == "RUNNING"
+            and (row.get("display-name") or "").startswith("oke-")
+        ]
+    )
+    if replicas:
+        findings.append(
+            replica_finding(replicas, live_nodes or int(allowance["nodes_per_pool"]))
+        )
+    return findings
+
+
+def main(argv: list) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--json", action="store_true", help="the board as data")
+    args = parser.parse_args(argv)
+    try:
+        findings = measure()
+    except Blind as exc:
+        print(f"BLIND idp-estate-capacity  {exc}")
+        return 2
+    over = [f for f in findings if f["verdict"] in (OVER, BLOCKED)]
+    if args.json:
+        print(json.dumps({"findings": findings, "over": len(over)}, indent=2))
+    else:
+        print(render(findings))
+        if over:
+            print(f"OVER   {len(over)} of {len(findings)} check(s) are over the allowance or blocked")
+        else:
+            print(f"ok     {len(findings)} check(s), none over the allowance")
+    return 1 if over else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
