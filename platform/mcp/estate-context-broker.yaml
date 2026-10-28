@@ -1,0 +1,238 @@
+# THE ESTATE CONTEXT BROKER: the one public door to the estate's context.
+#
+# WHAT THIS IS. One Deployment in the mcp namespace holding two containers: the broker (the
+# public door, reached only through agentgateway's /context/mcp route) and the context engine
+# (private, bound to 127.0.0.1 inside this pod, with no Service and no route of any kind).
+# A client that bypasses its own harness still cannot reach the engine, because the only path
+# to it is the broker's policy.
+#
+# WHY THE ENGINE IS A SIDECAR AND NOT ITS OWN DEPLOYMENT. A separate Deployment would need a
+# Service for the broker to call, and a Service is a route: anything in the cluster that can
+# reach the address can reach the engine. A sidecar bound to loopback has no address to reach.
+# The isolation is the network namespace, not a policy that can be misconfigured.
+#
+# WHY THE INDEX IS AN ARTIFACT AND NOT A CLONE. The engine indexes the source at the commit CI
+# indexed (.github/workflows/context-index.yml), and it does that in CI, not in this pod: the
+# measured cost of indexing this repository is minutes of CPU, and the node's whole request
+# budget is 1.8 CPU. The init container pulls the artifact the CI job published; the engine
+# opens the store it carries and serves it. The manifest beside it (/data/index.json) is the
+# broker's ground truth for freshness: an answer is served only for the commit that manifest
+# names, and every other commit is refused as STALE_REJECT.
+#
+# THE PVC. local-path, one node, 2Gi: the artifact is ~300 MiB (the source clone plus the
+# engine's store) and pulling it on every pod restart would cost a 300 MiB download per
+# restart. local-path is a node-local volume, so the pod is pinned to the node that holds it;
+# that is the price of a free volume, and the estate's placement law (docs/decisions/0034)
+# puts "always-on on the node" above "a paid block volume".
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: estate-context-index
+  namespace: mcp
+  labels: { app.kubernetes.io/name: estate-context-broker, app.kubernetes.io/part-of: idp }
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: local-path
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: estate-context-broker
+  namespace: mcp
+  labels: { app.kubernetes.io/name: estate-context-broker, app.kubernetes.io/part-of: idp }
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  # Recreate, not RollingUpdate: the volume is ReadWriteOnce, so a surge pod cannot mount it
+  # while the old one holds it. One replica, not two, for the same reason.
+  strategy: { type: Recreate }
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: estate-context-broker }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: estate-context-broker, app.kubernetes.io/part-of: idp }
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      initContainers:
+        # The engine's own credential. Generated here, in the pod, and never in git, never in
+        # the vault and never on the wire: the broker is the only client, and the token dies
+        # with the pod. A shared secret both sides hold is not a boundary -- a secret in the
+        # same pod as its user is a convention -- so the boundary here is the loopback bind,
+        # and the token is what stops a second client in this pod from being casual.
+        - name: engine-token
+          image: ghcr.io/chidionyema/estate-context-broker
+          command: ["python3", "-c"]
+          args:
+            - |
+              import os, secrets, pathlib
+              path = pathlib.Path("/run/estate/engine-token")
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_text(secrets.token_urlsafe(32))
+              os.chmod(path, 0o400)
+          volumeMounts:
+            - { name: run, mountPath: /run/estate }
+          resources:
+            requests: { cpu: 5m, memory: 16Mi }
+            limits: { cpu: 50m, memory: 64Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+        # The per-commit index artifact CI published. A pull that fails is NOT fatal: the pod
+        # starts, the broker answers with UNPROVEN_INDEX, and the door says "not proven" out
+        # loud instead of crash-looping. A door that is closed with a reason beats a door that
+        # is closed with a stack trace.
+        - name: pull-index
+          image: ghcr.io/fluxcd/flux-cli:v2.9.4
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              if flux pull artifact oci://ghcr.io/chidionyema/idp/context-index:latest --output /data; then
+                echo "context-index: pulled $(cat /data/index.json 2>/dev/null | head -c 200)"
+              else
+                echo "context-index: no artifact yet; the broker will refuse with UNPROVEN_INDEX"
+                exit 0
+              fi
+          env:
+            - { name: DOCKER_CONFIG, value: /creds }
+          volumeMounts:
+            - { name: index, mountPath: /data }
+            - { name: creds, mountPath: /creds, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+      containers:
+        # THE ENGINE. Private. Loopback only, no Service, no route, no public address. It
+        # serves the index CI built and answers the broker's questions; it has no idea a
+        # client exists, which is the point.
+        - name: engine
+          image: ghcr.io/chidionyema/gortex-engine
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              export GORTEX_DAEMON_HTTP_TOKEN="$(cat /run/estate/engine-token)"
+              exec gortex daemon start --http-addr 127.0.0.1:7411 --http-auth-token "$GORTEX_DAEMON_HTTP_TOKEN"
+          env:
+            # HOME carries the store: the engine's index lives under $HOME/.gortex, and the
+            # artifact CI published was built with exactly this HOME, so the pod opens the
+            # index CI made instead of building one.
+            - { name: HOME, value: /data/home }
+          volumeMounts:
+            - { name: index, mountPath: /data }
+            - { name: run, mountPath: /run/estate, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          # The engine's own probes. An exec probe, and it has to be one: the engine binds
+          # loopback on purpose (that is the whole isolation), so a kubelet httpGet or
+          # tcpSocket probe -- which arrives on the pod's address -- can never reach it, and
+          # a probe that cannot reach its own container is a probe that fails forever. The
+          # exec probe runs INSIDE the container, so 127.0.0.1 is the engine's own
+          # loopback, and it asks the daemon the question the daemon answers for the broker:
+          # GET /healthz. The broker's own readiness probe (/healthz on 8002) is the end-to-end
+          # one; this is the engine's.
+          startupProbe:
+            exec: { command: ["sh", "-c", "curl -sf -o /dev/null http://127.0.0.1:7411/healthz"] }
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            exec: { command: ["sh", "-c", "curl -sf -o /dev/null http://127.0.0.1:7411/healthz"] }
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            exec: { command: ["sh", "-c", "curl -sf -o /dev/null http://127.0.0.1:7411/healthz"] }
+            periodSeconds: 10
+            failureThreshold: 3
+        # THE DOOR. Everything a client can reach goes through here, and everything here goes
+        # through the policy: claim, freshness, budget, secrets, provenance.
+        - name: broker
+          image: ghcr.io/chidionyema/estate-context-broker
+          command: ["python3", "-m", "estate.context.server"]
+          env:
+            - { name: ESTATE_CONTEXT_ENGINE_URL, value: "http://127.0.0.1:7411" }
+            - { name: ESTATE_CONTEXT_ENGINE_TOKEN_FILE, value: "/run/estate/engine-token" }
+            - { name: ESTATE_CONTEXT_INDEX_DIR, value: "/data" }
+            - { name: ESTATE_CONTEXT_SOURCE_DIR, value: "/data/repo" }
+            # The secret directory: one file per secret, the file's name is the secret's name.
+            # The broker scrubs every one of those values out of an answer before it goes out.
+            - { name: ESTATE_CONTEXT_SECRET_DIR, value: "/run/secrets/mcp" }
+            - { name: ESTATE_CONTEXT_GITHUB_TOKEN_FILE, value: "/run/secrets/mcp/GITHUB_MCP_TOKEN" }
+            - { name: ESTATE_CONTEXT_GITHUB_REPO, value: "chidionyema/idp" }
+            - { name: HOME, value: /tmp }
+            # The broker's bind address. The default in the code is the loopback (a laptop
+            # must not publish this door); the pod's Service reaches the container on the
+            # pod's own interface, so here it is that interface.
+            - { name: ESTATE_CONTEXT_BIND, value: "0.0.0.0" }
+          ports:
+            - { name: mcp, containerPort: 8002 }
+          volumeMounts:
+            - { name: index, mountPath: /data, readOnly: true }
+            - { name: run, mountPath: /run/estate, readOnly: true }
+            - { name: mcp-gateway, mountPath: /run/secrets/mcp, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            httpGet: { path: /healthz, port: mcp }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: mcp }
+            periodSeconds: 30
+            failureThreshold: 3
+      volumes:
+        - name: index
+          persistentVolumeClaim: { claimName: estate-context-index }
+        - name: run
+          emptyDir: { sizeLimit: 1Mi }
+        - name: tmp
+          emptyDir: { sizeLimit: 16Mi }
+        - name: creds
+          secret: { secretName: ghcr-pull, items: [ { key: .dockerconfigjson, path: config.json } ] }
+        # The gateway's own key and the minted GitHub token. The broker reads the issue
+        # record with the token (the claim of record is the GitHub issue) and scrubs both
+        # values out of every answer.
+        - name: mcp-gateway
+          secret: { secretName: mcp-gateway }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: estate-context-broker
+  namespace: mcp
+  labels: { app.kubernetes.io/name: estate-context-broker, backstage.io/kubernetes-id: founder-mcp-gateway }
+spec:
+  # ClusterIP only. The engine has no Service at all: a Service is a route, and the engine
+  # must not have one.
+  selector: { app.kubernetes.io/name: estate-context-broker }
+  ports:
+    - { name: mcp, port: 8002, targetPort: mcp }
