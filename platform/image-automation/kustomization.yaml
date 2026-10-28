@@ -26,3 +26,4 @@ resources:
   - hindsight-api.yaml
   - efda.yaml
   - spine.yaml
+  - aei.yaml
