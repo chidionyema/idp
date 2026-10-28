@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+"""Run one REAL task through the estate's router and record it as AEI evidence.
+
+WHAT THIS IS. Not a synthetic probe. This makes an actual model call through the estate's router
+(the cloud route by default, per AGENTS.md 7a), around it runs one real tool action, and then it
+verifies that the evidence landed in the collector by reading the collector's own API back. The
+verification is a fact about the ledger, not a claim in a log line: if the events are not there,
+this exits non-zero.
+
+WHAT IT RECORDS. Metadata only: the model that answered, the tokens it used, the latency, the
+status, and the cost DERIVED from the estate's own price table (marked `evidence_grade: derived`).
+Never the prompt, never the answer, never the tool's arguments -- the AEI schema refuses
+unclassified attributes, so there is nowhere to put them.
+
+    bin/aei-observe --model groq --label baseline
+    bin/aei-observe --model groq --label candidate --router http://127.0.0.1:4001
+
+Two runs with the same task are comparable: the collector's /api/compare answers with the
+difference, and only a run that VERIFIED is comparable with another.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.request
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC = REPO_ROOT / "packages" / "aei" / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from aei.estate import emitter, identity, router_call, task, tool, verification  # noqa: E402
+from aei.core import utc_now  # noqa: E402
+
+TOKEN_FILE = Path(os.environ.get("AEI_HOME", Path.home() / ".estate" / "aei")) / "token"
+PORT_FILE = Path(os.environ.get("AEI_HOME", Path.home() / ".estate" / "aei")) / "port"
+DEFAULT_ROUTER = os.environ.get("ESTATE_ROUTER_URL", "https://llm.mumchimp.com")
+
+
+def _collector_url() -> str:
+    """Where the collector is listening.
+
+    AEI_COLLECTOR_URL wins (the OKE collector's Service, when the agent runs in the cluster).
+    Otherwise the laptop collector's own port file says which free port it took -- 8766 is
+    taken on this laptop by the estate's bridge daemons, so the port is chosen at start time and
+    written down rather than guessed. 8768 is the first port the collector owns (the ledger
+    that declares it: catalog/ports.yaml).
+    """
+    if os.environ.get("AEI_COLLECTOR_URL"):
+        return os.environ["AEI_COLLECTOR_URL"].rstrip("/")
+    if PORT_FILE.exists():
+        return f"http://127.0.0.1:{PORT_FILE.read_text().strip()}"
+    return "http://127.0.0.1:8768"
+
+
+def _token() -> str:
+    if os.environ.get("AEI_API_TOKEN"):
+        return os.environ["AEI_API_TOKEN"]
+    return TOKEN_FILE.read_text().strip()
+
+
+def _revision() -> str:
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return out.stdout.strip() or "unknown"
+    except Exception:  # noqa: BLE001 - the revision is an identifier, not a gate
+        return "unknown"
+
+
+def _collector_get(path: str, token: str) -> dict:
+    req = urllib.request.Request(  # noqa: S310 - the estate's own collector, read from the port file
+        f"{_collector_url()}{path}", headers={"Authorization": f"Bearer {token}"}
+    )
+    with urllib.request.urlopen(req, timeout=10) as response:  # noqa: S310 - same collector, http scheme only
+        return json.loads(response.read())
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--router", default=DEFAULT_ROUTER, help="the estate router base URL"
+    )
+    parser.add_argument(
+        "--model", default=os.environ.get("ESTATE_ROUTER_MODEL", "default")
+    )
+    parser.add_argument("--label", default="run", help="a short name for this run")
+    parser.add_argument(
+        "--task-id",
+        default=None,
+        help="the task id. Two runs of the SAME task share one, and only then are they comparable.",
+    )
+    parser.add_argument(
+        "--agent", default=os.environ.get("ESTATE_AGENT", "aei-observe")
+    )
+    parser.add_argument("--harness", default="aei-observe")
+    parser.add_argument(
+        "--prompt",
+        default="Reply with the single word: PONG",
+        help="the task. Recorded as metadata only; never stored in the ledger.",
+    )
+    args = parser.parse_args()
+
+    stamp = utc_now().replace(":", "").replace("-", "")[:15]
+    run_id = f"run-{stamp}-{args.label}"
+    ident = identity(
+        run_id=run_id,
+        task_id=args.task_id or f"task-{args.label}",
+        agent_id=args.agent,
+        harness_id=args.harness,
+        revision=_revision(),
+        trace_id=run_id,
+    )
+    client = emitter(ident, endpoint=_collector_url(), token=_token())
+    started = time.monotonic()
+    exit_code = 0
+    result: dict = {}
+    try:
+        with task(client, ident):
+            with tool(
+                client, ident, "git-head", source_path=str(REPO_ROOT), tool_kind="vcs"
+            ):
+                result["revision"] = _revision()
+
+            result["router"] = router_call(
+                client,
+                ident,
+                [{"role": "user", "content": args.prompt}],
+                model=args.model,
+                router_url=args.router,
+                api_key=os.environ.get("LITELLM_API_KEY", ""),
+            )
+
+            # A real tool action: read a real file and record its size and digest. The content
+            # is not recorded; the measurement is.
+            target = REPO_ROOT / "AGENTS.md"
+            if target.is_file():
+                data = target.read_bytes()
+                with tool(
+                    client,
+                    ident,
+                    "read-file",
+                    source_path=str(target),
+                    tool_kind="fs_read",
+                    attributes={
+                        "bytes_in": len(data),
+                        "source_sha": hashlib.sha256(data).hexdigest(),
+                    },
+                ):
+                    result["file_bytes"] = len(data)
+                    result["file_sha"] = hashlib.sha256(data).hexdigest()
+
+            # The verification is a fact about the ledger, not a claim in a log line: the events
+            # are flushed, the collector is read back, and the run only passes if the model call
+            # is actually in there with its tokens.
+            client.flush(timeout=5.0)
+            with verification(client, ident, verifier="aei-observe/ledger"):
+                ledger = _collector_get(f"/api/run?id={run_id}", _token())
+                events = ledger.get("events", [])
+                completed = [e for e in events if e.get("type") == "model.completed"]
+                if not completed:
+                    raise RuntimeError("no model.completed event reached the collector")
+                tokens = completed[-1]["attributes"].get("input_tokens", 0)
+                if not tokens:
+                    raise RuntimeError("the model call reported no input tokens")
+                result["events"] = len(events)
+                result["input_tokens"] = tokens
+    except Exception as exc:  # noqa: BLE001 - the failure is the report
+        exit_code = 1
+        result["error"] = f"{type(exc).__name__}: {exc}"
+    finally:
+        client.flush(timeout=3.0)
+        client.close(timeout=3.0)
+
+    result.update(
+        {
+            "run_id": run_id,
+            "task_id": ident["task_id"],
+            "label": args.label,
+            "model": result.get("router", {}).get("model", args.model),
+            "deployment_model": result.get("router", {}).get("deployment_model"),
+            "latency_ms": result.get("router", {}).get("latency_ms"),
+            "cost_usd": result.get("router", {}).get("cost_usd"),
+            "cost_grade": result.get("router", {}).get("cost_grade"),
+            "emitter": client.stats(),
+            "elapsed_s": round(time.monotonic() - started, 3),
+            "collector": _collector_url(),
+        }
+    )
+    result.pop("router", None)
+    print(json.dumps(result, indent=2, default=str))
+    return exit_code
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

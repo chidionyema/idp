@@ -87,6 +87,13 @@ aevum-evidence            signing-key                ed25519_hex
 # Minted as a missing property, so the Postgres password and the signing key that are
 # already in the vault are not touched.
 aevum-evidence            api-key                    hex32
+# The execution-intelligence collector (decision 0045). TWO properties on ONE entry, because
+# they are two sides of one plane: postgres-password is the collector's own database role
+# (estate-db role aei_evidence), and api-token is the credential the router's callback
+# presents to the collector's API. The token is minted here, never printed, and reaches both
+# pods as a mounted FILE -- Kyverno's secrets-not-from-env-vars refuses a secret in an env var.
+aei-observer               postgres-password          hex32
+aei-observer               api-token                  hex32
 hindsight                 HINDSIGHT_API_LLM_BASE_URL  const:https://llm.$ZONE
 mcp-gateway               MCP_GATEWAY_KEY             hex32
 backstage-env             BACKEND_SECRET              urlsafe32

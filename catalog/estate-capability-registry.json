@@ -4,9 +4,9 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 101,
-    "layer": 207,
+    "layer": 208,
     "service": 120,
-    "tool": 440,
+    "tool": 442,
     "workflow": 79
   },
   "records": [
@@ -9606,6 +9606,52 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/llm/artifact_tier.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-llm-callbacks-aei_observer",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "The estate router's AEI observer: every routed call becomes one execution-evidence event.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/callbacks/aei_observer.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -20746,6 +20792,122 @@
           "id": "cap:tool/claim-gate",
           "edge": "invokes"
         },
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/aei-collector",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "The estate's AEI collector: one process, one append-only ledger, one API.",
+      "contract": {
+        "inputs": [
+          "--db",
+          "--host",
+          "--port"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/aei-collector",
+      "depends_on": [
+        {
+          "id": "cap:tool/port-gate",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/aei-observe",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "Run one REAL task through the estate's router and record it as AEI evidence.",
+      "contract": {
+        "inputs": [
+          "--agent",
+          "--harness",
+          "--label",
+          "--model",
+          "--prompt",
+          "--router",
+          "--task-id"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/aei-observe",
+      "depends_on": [
         {
           "id": "cap:tool/start",
           "edge": "invokes"
