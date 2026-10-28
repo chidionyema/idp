@@ -58,13 +58,24 @@ def _home(tmp_path: Path) -> Path:
     return home
 
 
+def _tmp_root(home: Path) -> Path:
+    """The temp root a test may reclaim: its own directory, never the machine's $TMPDIR."""
+    root = home.parent / "T"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
 def _run(home: Path, *args: str) -> subprocess.CompletedProcess:
     env = {
         **os.environ,
         "HOME": str(home),
         "DISK_GUARD_PATH": str(home),
         "DISK_CLEANUP_RUST_ROOTS": str(home / "Documents/code"),
-        "DISK_CLEANUP_TMP_ROOT": "",
+        # The temp tier reads and DELETES under this root, so a test never points it at the
+        # machine's real $TMPDIR: measured 2026-10-28, the suite was deleting the real temp
+        # root (300 directories in one run) because this was empty. A test's own directory is
+        # the only root a test may reclaim.
+        "DISK_CLEANUP_TMP_ROOT": str(_tmp_root(home)),
         "DISK_CLEANUP_SYSTEM_SPOTS": "",
         # The critical tier is off here: these tests are about the allow-list, and the tier must
         # not fire because of whatever free space the machine running them happens to have.
@@ -233,7 +244,7 @@ def _run_wt(
         "DISK_CLEANUP_WT_REPOS": str(repo),
         "DISK_CLEANUP_WT_IDLE_MIN": idle,
         "DISK_CLEANUP_WT_FRESH_MIN": "0",
-        "DISK_CLEANUP_TMP_ROOT": "",
+        "DISK_CLEANUP_TMP_ROOT": str(_tmp_root(home)),
         "DISK_CLEANUP_SYSTEM_SPOTS": "",
         **{f"DISK_CLEANUP_{k.upper()}": v for k, v in extra.items()},
     }

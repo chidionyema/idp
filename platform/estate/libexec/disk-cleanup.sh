@@ -1055,34 +1055,72 @@ if [ -n "$TMP_ROOT" ] && phase_gate temp 8; then
     # 2026-10-28: du per candidate cost 33ms and the set held 2684 directories -- 88s of an 78s
     # budget, so the tier never got to the deletions. One du over the set is 3.8s.
     sizef=$(mktemp "${TMPDIR:-/tmp}/tmpsz.XXXXXX" 2>/dev/null || echo)
+    namesf=$(mktemp "${TMPDIR:-/tmp}/tmpnames.XXXXXX" 2>/dev/null || echo)
     freed_kb=0; freed_n=0
-    if [ -n "$sizef" ]; then
-      printf '%s\n' "$cands" | tr '\n' '\0' | xargs -0 du -sk 2>/dev/null |
-        awk '{p=$0; sub(/^[ \t]*[0-9]+[ \t]*/,"",p); print p "\t" $1}' > "$sizef" || true
+    if [ -n "$sizef" ] && [ -n "$namesf" ]; then
+      # ONE list of names, NUL separated: the same list feeds the du and the find, so the two
+      # measurements cannot disagree about which paths are candidates.
+      printf '%s\n' "$cands" | tr '\n' '\0' > "$namesf"
+      du_rc=0
+      tmo 40 xargs -0 du -sk <"$namesf" >"$sizef.raw" 2>/dev/null || du_rc=$?
+      if [ "$du_rc" != 0 ]; then
+        echo "  BLIND  tmp  the size measurement did not finish (rc=$du_rc): only the candidates that were measured are reclaimed, the rest wait for the next cycle"
+      fi
+      awk '{p=$0; sub(/^[ \t]*[0-9]+[ \t]*/,"",p); print p "\t" $1}' "$sizef.raw" > "$sizef"
     else
       cands=""
     fi
-    # both bounded: a whole-machine lsof listing and a find of $TMPDIR are two of the slowest
-    # things here, and under a budget they get what is left rather than all of it.
-    # A BLIND LISTING KEEPS EVERY CANDIDATE (2026-10-28): the listing is what says "a process
-    # has this open", and a check that could not be made must not be the reason something
-    # another process is using gets deleted. The timeout is 142, and the exit status is read
-    # from the bounded call itself (a pipeline would report sed's status, not the timeout's).
-    open_rc=0
+    # ONE WALK ANSWERS EVERY CANDIDATE'S THREE QUESTIONS (2026-10-28). Measured on this machine:
+    # the per-candidate form -- two finds and one scan of the whole open-file listing per
+    # candidate -- is O(candidates x open-files), and with 2684 candidates and a whole-machine
+    # lsof listing it ran past the door's own ceiling with nothing printed. The three facts are
+    # now collected once: one find over $TMP_ROOT for everything written recently and every
+    # .git under it, one lsof listing mapped to the top-level entry that holds the open file,
+    # and the sizes above. The decision is one pass over the candidates with those three sets
+    # already in memory.
+    setf=$(mktemp "${TMPDIR:-/tmp}/tmpsets.XXXXXX" 2>/dev/null || echo)
     openf=$(mktemp "${TMPDIR:-/tmp}/open.XXXXXX" 2>/dev/null || echo)
-    OPEN=""
-    if [ -n "$openf" ]; then
+    decf=$(mktemp "${TMPDIR:-/tmp}/tmpdec.XXXXXX" 2>/dev/null || echo)
+    find_rc=0; open_rc=0
+    if [ -n "$setf" ] && [ -n "$openf" ] && [ -n "$decf" ]; then
+      # The walk covers the CANDIDATES, not $TMPDIR: a walk of the whole temp root reads every
+      # directory in it -- including the estate's own pytest scratch, which is not a candidate
+      # but is the biggest thing in there -- and the depth is measured from each candidate, so
+      # a checkout or a fresh file three levels under a candidate is found exactly as before.
+      # find takes its paths BEFORE its expression, so the paths are handed to it by a shell
+      # that puts them first; 500 candidates per invocation keeps it to a handful of walks.
+      tmo 25 xargs -0 -n 500 sh -c 'find "$@" -maxdepth 3 \( -name .git -o -mmin -'"$TMP_IDLE_MIN"' \) -print' sh \
+        <"$namesf" >"$setf.raw" 2>/dev/null || find_rc=$?
       tmo 20 lsof -Fn >"$openf" 2>/dev/null || open_rc=$?
-      OPEN=$(sed -n 's/^n//p' "$openf")
-      rm -f "$openf"
     else
-      open_rc=1
+      find_rc=1; open_rc=1
     fi
-    if [ "$open_rc" -ne 0 ]; then
-      echo "  keep   tmp  the open-file listing did not complete (rc=$open_rc): no temp directory is deleted on a guess"
-      OPEN=""
+    # Each set holds the TOP-LEVEL entry under $TMP_ROOT, because that is the unit the loop
+    # decides about. "G" is a git checkout, "R" was written recently, "O" has a file open.
+    if [ "$find_rc" = 0 ] && [ "$open_rc" = 0 ]; then
+      {
+        awk -v root="$TMP_ROOT" '{p=$0; if (index(p, root"/")==1) p=substr(p, length(root)+2);
+          split(p,a,"/"); top=root"/"a[1];
+          if (a[length(a)]==".git") print "G\t" top; else print "R\t" top}' "$setf.raw"
+        sed -n 's/^n//p' "$openf" | awk -v root="$TMP_ROOT" 'index($0, root"/")==1 {
+          p=substr($0, length(root)+2); split(p,a,"/"); print "O\t" root"/"a[1]}'
+      } | sort -u > "$setf"
+      awk -F'\t' -v idle="$TMP_IDLE_MIN" '
+        FILENAME==ARGV[1] { if ($1=="G") g[$2]=1; else if ($1=="R") r[$2]=1; else o[$2]=1; next }
+        FILENAME==ARGV[2] { p=$1; k=$2;
+          if (g[p]) print "keep\t" p "\t" k "\tholds a git checkout";
+          else if (r[p]) print "keep\t" p "\t" k "\twritten in the last " idle "m";
+          else if (o[p]) print "keep\t" p "\t" k "\ta process has a file open under it";
+          else print "go\t" p "\t" k "\t" }
+      ' "$setf" "$sizef" > "$decf"
+    else
+      # A BLIND LISTING KEEPS EVERY CANDIDATE (2026-10-28): the listing is what says "a process
+      # has this open", and a check that could not be made must not be the reason something
+      # another process is using gets deleted.
+      echo "  keep   tmp  the open-file listing did not complete (open rc=$open_rc, find rc=$find_rc): no temp directory is deleted on a guess"
+      : > "$decf"
     fi
-    while IFS="$(printf '\t')" read -r p k; do
+    while IFS="$(printf '\t')" read -r act p k reason; do
       [ -n "$p" ] || continue
       # the step is bounded: a step that cannot finish inside the budget says so and leaves the
       # rest for the next cycle, instead of running past the door's own ceiling.
@@ -1091,20 +1129,19 @@ if [ -n "$TMP_ROOT" ] && phase_gate temp 8; then
         budget_hit=1; break
       fi
       m=$((k / 1024))
-      if [ "$open_rc" -ne 0 ]; then
-        echo "  keep   tmp  ${m}M  $p  (the open-file listing was blind: nothing is deleted on a guess)"; continue; fi
-      if [ -n "$(find "$p" -maxdepth 3 -mmin -"$TMP_IDLE_MIN" -print 2>/dev/null | head -1)" ]; then
-        echo "  keep   tmp  ${m}M  $p  (written in the last ${TMP_IDLE_MIN}m)"; continue; fi
-      if [ -n "$(find "$p" -maxdepth 3 -name .git -print 2>/dev/null | head -1)" ]; then
-        echo "  keep   tmp  ${m}M  $p  (holds a git checkout)"; continue; fi
-      if printf '%s\n' "$OPEN" | awk -v w="$p" 'index($0, w"/")==1 || $0==w {f=1} END{exit !f}'; then
-        echo "  keep   tmp  ${m}M  $p  (a process has a file open under it)"; continue; fi
+      case "$act" in
+        keep) echo "  keep   tmp  ${m}M  $p  ($reason)"; continue;;
+        go) ;;
+        *) continue;;
+      esac
       if [ "$APPLY" = 0 ]; then echo "  would  tmp  ${m}M  $p"; continue; fi
       rm -rf "$p"
       if [ -e "$p" ]; then echo "  !! tmp $p still there after delete"; fails=$((fails + 1))
       else freed_kb=$((freed_kb + k)); freed_n=$((freed_n + 1)); fi
-    done <"$sizef"
-    [ -n "$sizef" ] && rm -f "$sizef"
+    done <"$decf"
+    for f in "$sizef" "$sizef.raw" "$namesf" "$setf" "$setf.raw" "$openf" "$decf"; do
+      [ -n "$f" ] && rm -f "$f"
+    done
     if [ "$freed_n" -gt 0 ]; then
       echo "  freed  tmp  $((freed_kb / 1024))M in $freed_n directories under $TMP_ROOT"
     fi
