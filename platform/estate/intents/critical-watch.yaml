@@ -1,0 +1,47 @@
+name: critical-watch
+description: >-
+  The estate-wide critical-function spine. It reads catalog/critical-functions.json -- the one
+  declarative registry of the functions the estate cannot work without -- and measures each one:
+  LIVENESS (is it running: a heartbeat file, a socket, a port, an HTTP endpoint, a launchd job, a
+  command, a file) and, where one is declared, its GOAL (is it doing its job: free space on a
+  volume, a numeric field in a heartbeat). A function that is ALIVE and missing its goal is
+  FAILING, which is the case the old disk watcher was: running, ticking, freeing nothing.
+  Verdicts are PASS, FAIL and BLIND. BLIND is a verdict, not a quiet PASS: a probe that cannot be
+  measured proves nothing, and reporting it as PASS is how a gate stops being a gate.
+  A failure raises a structured incident (~/.estate/incidents/<id>.json, a ledger, and
+  latest.json), alerts (a macOS notification and ~/.estate/alerts/inbox.jsonl), and wakes an agent
+  to resolve it with the structured data attached -- through the estate's session door when it is
+  up, and through the local claude lane when it is not, always recording which lane was used.
+  Alerts and invocations are deduplicated and backed off (300s, 600s, 1200s, 1800s), so a function
+  that stays dead does not spawn an agent storm.
+  Exit 0: every function PASSes. Exit 1: at least one FAILs. Exit 2: at least one is BLIND and
+  none FAILs. dry_run=1 measures and reports without raising anything.
+class: mutate
+args:
+  registry: {type: string, default: "", description: "path to the registry; the runtime tree's catalog/ by default"}
+  only: {type: string, default: "", description: "check one function id"}
+  dry_run: {type: int, default: 0, description: "1 = measure and report only; raise nothing"}
+door_s: 90
+halt_on_failure: false
+steps:
+  - name: check
+    on_fail: continue
+    cmd: |
+      REG=""
+      [ -n {{registry}} ] && REG="--registry {{registry}}"
+      ONLY=""
+      [ -n {{only}} ] && ONLY="--only {{only}}"
+      DRY=""
+      [ "{{dry_run}}" = "1" ] && DRY="--dry-run"
+      python3 ~/.estate/libexec/critical-watch.py --json $REG $ONLY $DRY
+      echo $? > ~/.estate/critical-watch.rc
+  - name: verdict
+    cmd: |
+      rc=$(cat ~/.estate/critical-watch.rc 2>/dev/null || echo 1)
+      case "$rc" in
+        0) echo "verdict: every critical function passes" ;;
+        1) echo "verdict: at least one critical function FAILED -- the incident, the alert and the agent are in ~/.estate/incidents/" ;;
+        2) echo "verdict: at least one critical function is BLIND (the probe could not be measured)" ;;
+        *) echo "verdict: the spine could not run (rc=$rc)" ;;
+      esac
+      exit "$rc"
