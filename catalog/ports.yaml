@@ -21,6 +21,13 @@ ports:
   - {port: 3210, service: dagster-webserver,    compose: none}
   - {port: 3310, service: agentgateway,         compose: mcp/agentgateway.yml}
   - {port: 4000, service: litellm,              compose: llm/litellm.yml}
+  # The router slots behind the front. bin/litellm-local starts the router itself on
+  # 4001 or 4002 (PORT="${LITELLM_LOCAL_PORT:-4001}") and binds it to loopback; the front on
+  # 4000 forwards to whichever slot is live. An agent that proves a model call goes to the
+  # slot it can see, and a probe of a slot port is a claim like any other -- so the slots are
+  # declared here, not probed on faith.
+  - {port: 4001, service: litellm-router-slot,  compose: none, bind: 127.0.0.1}
+  - {port: 4002, service: litellm-router-slot,  compose: none, bind: 127.0.0.1}
   # Otto's own switch, the otto-brain sidecar: the same litellm binary on the pod's
   # loopback, walking home 1 -> home 2 -> home 3. Loopback only and never a Service,
   # so no other workload can reach the founder's laptop through it (R20).
@@ -50,6 +57,16 @@ ports:
   - {port: 8765, service: consultd,             compose: none}
   - {port: 8766, service: kimi_bridge,          compose: none}
   - {port: 8767, service: kimi_bridge,          compose: none}
+  # The AEI collector (packages/aei): the execution-intelligence collector that records what
+  # the estate's agents actually did, one metadata-only event per observed action. It binds
+  # loopback only and takes the first free port of the four it owns; bin/aei-collector writes
+  # the port it took into ~/.estate/aei/port, so there is one port and nobody guesses it.
+  # 8768/8769/8772/8773 are the four this lane owns: 8770 and 8771 are the mac door and the
+  # voice loop, 8787 and 8788 the board and the cockpit.
+  - {port: 8768, service: aei-collector,         compose: none, bind: 127.0.0.1}
+  - {port: 8769, service: aei-collector,         compose: none, bind: 127.0.0.1}
+  - {port: 8772, service: aei-collector,         compose: none, bind: 127.0.0.1}
+  - {port: 8773, service: aei-collector,         compose: none, bind: 127.0.0.1}
   # The bounded command door (~/.estate/bin/mac-door, LaunchAgent com.estate.mac-door), published
   # with `tailscale serve --tcp 8770`; platform/tailscale/policy.hujson grants exactly this port.
   # The voice loop also defaulted to 8770, so bin/start's voice probe and the intent observer

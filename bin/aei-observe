@@ -50,13 +50,14 @@ def _collector_url() -> str:
     AEI_COLLECTOR_URL wins (the OKE collector's Service, when the agent runs in the cluster).
     Otherwise the laptop collector's own port file says which free port it took -- 8766 is
     taken on this laptop by the estate's bridge daemons, so the port is chosen at start time and
-    written down rather than guessed.
+    written down rather than guessed. 8768 is the first port the collector owns (the ledger
+    that declares it: catalog/ports.yaml).
     """
     if os.environ.get("AEI_COLLECTOR_URL"):
         return os.environ["AEI_COLLECTOR_URL"].rstrip("/")
     if PORT_FILE.exists():
         return f"http://127.0.0.1:{PORT_FILE.read_text().strip()}"
-    return "http://127.0.0.1:8766"
+    return "http://127.0.0.1:8768"
 
 
 def _token() -> str:

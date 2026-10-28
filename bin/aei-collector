@@ -45,12 +45,19 @@ SRC = REPO_ROOT / "packages" / "aei" / "src"
 PORT = int(os.environ.get("AEI_PORT", "0"))
 HOST = "127.0.0.1"
 PORT_FILE = HOME / "port"
+# The four ports the collector owns, all declared in catalog/ports.yaml.
+CANDIDATES = (8768, 8769, 8772, 8773)
 # The reference build's port, 8766, is TAKEN on this laptop by the estate's own bridge daemons
 # (estate-core/scripts/kimi_bridge.py and a sibling), and they are not ours to stop. So the
-# collector takes the first free port from this range and WRITES IT DOWN in ~/.estate/aei/port.
+# collector takes the first free port from CANDIDATES and WRITES IT DOWN in ~/.estate/aei/port.
 # Every agent that wants to reach the collector reads that file, so there is one port, known to
 # everyone, and no agent has to guess it. AEI_PORT overrides the range when a machine wants a
 # fixed port.
+#
+# The candidates are DECLARED ports (catalog/ports.yaml, the estate's ledger of what a service
+# may bind): 8766/8767 belong to the kimi bridge, 8770/8771 to the mac door and the voice loop,
+# 8787/8788 to the board and the cockpit. A port nobody declared is a port the estate's
+# port-gate refuses, so the collector may only choose from the four it owns.
 
 
 def _ensure_home() -> None:
@@ -67,7 +74,7 @@ def _port() -> int:
         return PORT
     import socket
 
-    for candidate in range(8766, 8801):
+    for candidate in CANDIDATES:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
             probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
@@ -75,7 +82,10 @@ def _port() -> int:
             except OSError:
                 continue
             return candidate
-    raise SystemExit("aei-collector: no free port between 8766 and 8800")
+    raise SystemExit(
+        "aei-collector: every declared collector port is taken: "
+        + ", ".join(str(p) for p in CANDIDATES)
+    )
 
 
 def _token() -> str:
