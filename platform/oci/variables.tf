@@ -20,13 +20,18 @@ variable "ssh_public_key" {
 }
 
 variable "worker_ocpus" {
-  type    = number
-  default = 6
+  type = number
+  # 2026-10-28: the Always Free allowance is 2 OCPU, and the node that is actually running is
+  # already 2 OCPU / 12 GB (oci compute instance list, 2026-10-28). The pool asked for 6 / 24,
+  # and a shape the running node does not have is why every apply wanted a SURGE node -- which
+  # wants a boot volume the allowance refuses. Ask for what the node already is.
+  default = 2
 }
 
 variable "worker_memory_gb" {
-  type    = number
-  default = 24
+  type = number
+  # 2026-10-28: 24 -> 12, the free tier's allowance and the running node's own size.
+  default = 12
 }
 
 variable "kubernetes_version" {

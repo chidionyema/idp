@@ -220,9 +220,15 @@ spec:
             - --cloud-provider=oci
             - --max-node-provision-time=25m
             # min:max: the max is estate-defaults node_pool.max_nodes (tests/test_crew539_cp4_autoscaler_row.py pins them equal)
-            - --nodes=1:2:$(NODEPOOL_ID)
+            # 2026-10-28: 1:2 -> 1:1. The Always Free allowance is ONE A1 node, and the vendor
+            # refused every apply with "400-LimitExceeded, LimitExceeded: nodes-per-node-pool
+            # limit has been exceeded" (oke-check run 40677882283).
+            - --nodes=1:1:$(NODEPOOL_ID)
             # crew#539 CP10: the preemptible pool, from zero; max is estate-defaults node_pool.spot_max_nodes
-            - --nodes=0:1:$(SPOT_NODEPOOL_ID)
+            # 2026-10-28: 0:1 -> 0:0. The free tier's node allowance is spent by the one
+            # on-demand node, and a preemptible node is paid capacity the allowance does not
+            # carry.
+            - --nodes=0:0:$(SPOT_NODEPOOL_ID)
             - --scale-down-delay-after-add=10m
             - --scale-down-unneeded-time=10m
             - --unremovable-node-recheck-timeout=5m
