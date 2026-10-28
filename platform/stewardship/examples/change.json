@@ -1,0 +1,1 @@
+{"mode":"execute","risk":"low","reversible":true,"blast_radius":"isolated","estimated_cost":0,"claim_valid":true,"independent_verification":true,"baseline_evidence":"trace:sample-baseline","rollback_plan":"revert the scoped patch"}
