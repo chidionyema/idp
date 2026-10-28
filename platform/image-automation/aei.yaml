@@ -1,0 +1,39 @@
+# The execution-intelligence collector's image (packages/aei, decision 0045).
+#
+# build-multiarch discovers aei.Dockerfile on its own -- bin/dockerfiles names it `aei` from the
+# file stem -- and pushes `main-<run>-<sha>` like every other estate image. This row is what
+# moves platform/observability/kustomization.yaml onto each new one.
+#
+# WHY THE FILE IS AT THE REPOSITORY ROOT. bin/dockerfiles gives an image the context of its
+# Dockerfile's directory, and the AEI package lives in packages/aei, not under platform/. An
+# image that carries the collector therefore builds from the repository root -- the same shape
+# efda.Dockerfile, factory.Dockerfile and spine.Dockerfile already use.
+#
+# THE SAME MISTAKE AS AEVUM IS NOT REPEATED HERE. The first version of aevum's Deployment asked
+# for a version tag this repository does not produce, and its pods sat in ImagePullBackOff for
+# days. The tag in platform/observability/kustomization.yaml is always one this pipeline built.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: aei
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/aei
+  interval: 5m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: aei
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: aei
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc
