@@ -79,6 +79,17 @@ else
 fi
 T_START=$(date +%s)
 budget_hit=0
+# The machine contract: exactly one RESULT line per run, whatever happened to the run. Measured
+# 2026-10-28: a step that ran past the door's ceiling was killed and printed nothing, so the
+# guardian could not tell a step that freed nothing from a step that was killed before it could
+# say. The EXIT trap prints the line for every way a run ends other than the ordinary one, and
+# the TERM trap is what makes the executor's own kill produce a line instead of a silence.
+mode=full; before_mb=0; after_mb=0; met=n/a; RESULT_PRINTED=0
+result_line() {
+  [ "$RESULT_PRINTED" = 1 ] && return 0
+  RESULT_PRINTED=1
+  echo "RESULT mode=$mode free_before_mb=$before_mb free_after_mb=$after_mb target_mb=$TARGET_MB met=$met freed_mb=$((after_mb - before_mb))"
+}
 # remaining: whole seconds left of BUDGET, or a large number when unbounded (so every `-lt` test
 # below reads the same way whether a bound was given or not).
 remaining() {
@@ -265,13 +276,17 @@ fi
 echo $$ >"$LOCK/pid"
 # The start time goes in beside the pid: it is what makes a recycled pid detectable.
 ps -p $$ -o lstart= 2>/dev/null | sed 's/^ *//; s/ *$//' >"$LOCK/start"
-trap 'rm -rf "$LOCK"' EXIT
+trap 'rm -rf "$LOCK"; result_line' EXIT
+trap 'rm -rf "$LOCK"; result_line; exit 143' TERM
 size_m() {
   [ -e "$1" ] || { echo 0; return; }
   # Through tmo, so a du of a multi-GB cache or worktree is bounded by the budget as well: this
   # function is called once per target and once per candidate worktree, and an unbounded du here
   # is what ate a 78s budget before the phase gates could help (2026-10-25).
-  local k; k=$(tmo 20 du -sk "$1" 2>/dev/null | awk '{print $1}')
+  # The bound is the second argument when given: the ranked table walks whole trees and needs a
+  # shorter leash than a single target does (2026-10-28).
+  local bound="${2:-20}" k
+  k=$(tmo "$bound" du -sk "$1" 2>/dev/null | awk '{print $1}')
   [ -n "$k" ] && echo $((k / 1024)) || echo 0
 }
 
@@ -381,8 +396,10 @@ target_met() {
 blocked_row() {  # PATH REASON
   local p=$1 why=$2 m
   [ -e "$p" ] || return 0
-  m=$(size_m "$p")
-  echo "    ${m}M  $p  ($why)"
+  # 10s per row, not the default 20: the table has seven rows and a walk that does not finish
+  # is a row that says BLIND rather than a number nobody measured.
+  m=$(size_m "$p" 10)
+  if [ "$m" = 0 ]; then echo "    BLIND  $p  ($why)"; else echo "    ${m}M  $p  ($why)"; fi
 }
 
 # THE CRITICAL TIER. Measured 2026-10-24 on the founder's laptop: the volume sat at 7.7Gi free
@@ -1022,11 +1039,29 @@ fi
 # it only at reboot). An entry goes when it is ours, has a tool's temp name, nothing under it was
 # written in TMP_IDLE_MIN (6h), it holds no git checkout (the pass above judges those) and no
 # process has a file open or its cwd under it. Only top-level entries of $TMPDIR, never $TMPDIR.
-TMP_NAMES='^(go-build[0-9]+|tmp\.[A-Za-z0-9]{6,}|tmp[a-z0-9_]{8}|jest_[a-z0-9]+|pytest-of-[A-Za-z0-9_-]+)$'
+# The estate's own scratch shares $TMPDIR with everyone else's. Measured 2026-10-28 on this
+# machine: idp-ci-site.<pid> -- 237MB of built mkdocs site, one directory per gate run, left
+# behind by the runs the executor's 100s ceiling killed before their own rm could run; xfs-<hex>
+# -- 2684 directories holding a node_modules archive.zip each, 997MB, written by a runaway in a
+# single burst; pip-build-env-<hex> -- pip's build environments, 63MB in 10 of them. None of
+# these is a checkout and none of them is a cache anything reads again; they are what fills the
+# volume until the executor refuses every door but the cleaner's own.
+TMP_NAMES='^(go-build[0-9]+|tmp\.[A-Za-z0-9]{6,}|tmp[a-z0-9_]{8}|jest_[a-z0-9]+|pytest-of-[A-Za-z0-9_-]+|idp-ci-site\.[0-9]+|xfs-[A-Za-z0-9]+|pip-build-env-[A-Za-z0-9_]+)$'
 if [ -n "$TMP_ROOT" ] && phase_gate temp 8; then
   cands=$(tmo 15 find "$TMP_ROOT" -mindepth 1 -maxdepth 1 -user "$(id -u)" -mmin +"$TMP_IDLE_MIN" 2>/dev/null |
           while IFS= read -r p; do printf '%s\n' "${p##*/}" | grep -Eq "$TMP_NAMES" && printf '%s\n' "$p"; done)
   if [ -n "$cands" ]; then
+    # ONE du for the whole candidate set, and the size rides along with the path. Measured
+    # 2026-10-28: du per candidate cost 33ms and the set held 2684 directories -- 88s of an 78s
+    # budget, so the tier never got to the deletions. One du over the set is 3.8s.
+    sizef=$(mktemp "${TMPDIR:-/tmp}/tmpsz.XXXXXX" 2>/dev/null || echo)
+    freed_kb=0; freed_n=0
+    if [ -n "$sizef" ]; then
+      printf '%s\n' "$cands" | tr '\n' '\0' | xargs -0 du -sk 2>/dev/null |
+        awk '{p=$0; sub(/^[ \t]*[0-9]+[ \t]*/,"",p); print p "\t" $1}' > "$sizef" || true
+    else
+      cands=""
+    fi
     # both bounded: a whole-machine lsof listing and a find of $TMPDIR are two of the slowest
     # things here, and under a budget they get what is left rather than all of it.
     # A BLIND LISTING KEEPS EVERY CANDIDATE (2026-10-28): the listing is what says "a process
@@ -1047,8 +1082,15 @@ if [ -n "$TMP_ROOT" ] && phase_gate temp 8; then
       echo "  keep   tmp  the open-file listing did not complete (rc=$open_rc): no temp directory is deleted on a guess"
       OPEN=""
     fi
-    while IFS= read -r p; do
-      m=$(size_m "$p")
+    while IFS="$(printf '\t')" read -r p k; do
+      [ -n "$p" ] || continue
+      # the step is bounded: a step that cannot finish inside the budget says so and leaves the
+      # rest for the next cycle, instead of running past the door's own ceiling.
+      if [ "$BUDGET" != 0 ] && [ "$(remaining)" -lt 5 ]; then
+        echo "  SKIP   tmp  $(remaining)s left of a ${BUDGET}s budget: stopped before the rest of $TMP_ROOT, run again"
+        budget_hit=1; break
+      fi
+      m=$((k / 1024))
       if [ "$open_rc" -ne 0 ]; then
         echo "  keep   tmp  ${m}M  $p  (the open-file listing was blind: nothing is deleted on a guess)"; continue; fi
       if [ -n "$(find "$p" -maxdepth 3 -mmin -"$TMP_IDLE_MIN" -print 2>/dev/null | head -1)" ]; then
@@ -1060,10 +1102,12 @@ if [ -n "$TMP_ROOT" ] && phase_gate temp 8; then
       if [ "$APPLY" = 0 ]; then echo "  would  tmp  ${m}M  $p"; continue; fi
       rm -rf "$p"
       if [ -e "$p" ]; then echo "  !! tmp $p still there after delete"; fails=$((fails + 1))
-      else echo "  freed  tmp  ${m}M  $p"; fi
-    done <<EOF
-$cands
-EOF
+      else freed_kb=$((freed_kb + k)); freed_n=$((freed_n + 1)); fi
+    done <"$sizef"
+    [ -n "$sizef" ] && rm -f "$sizef"
+    if [ "$freed_n" -gt 0 ]; then
+      echo "  freed  tmp  $((freed_kb / 1024))M in $freed_n directories under $TMP_ROOT"
+    fi
   fi
 fi
 
@@ -1189,13 +1233,18 @@ if [ "$TARGET_MB" -gt 0 ]; then
 fi
 mode=full
 [ "$INCREMENTAL" = 1 ] && mode=incremental
-echo "RESULT mode=$mode free_before_mb=$before_mb free_after_mb=$after_mb target_mb=$TARGET_MB met=$met freed_mb=$((after_mb - before_mb))"
+result_line
 
 # BLOCKED BY (2026-10-28). When a target was set and the run did not reach it, the run says what
 # stands in the way, ranked, with each thing measured and the reason it was kept.
 if [ "$TARGET_MB" -gt 0 ] && [ "$after_mb" -lt "$TARGET_MB" ]; then
-  if [ "$INCREMENTAL" = 1 ] && [ "$(remaining)" -lt 12 ]; then
-    echo "blocked by: the keep lines above name every target that was not reclaimed (no room left to measure them)"
+  if [ "$INCREMENTAL" = 1 ]; then
+    # The ranked table measures whole trees: measured 2026-10-28, the worktrees row alone is a
+    # 14.8s walk over 5.4GB and the tool cache a 6.0s walk over 2.2GB. In the guardian's
+    # incremental cycle that is the budget the reclaiming phases need, so the table is the FULL
+    # run's report (the door's disk-free intent) and the incremental cycle answers with its
+    # RESULT line and the keep lines, which already name every target that was not reclaimed.
+    echo "blocked by: the keep lines above name every target that was not reclaimed (the ranked, measured table is the full run's)"
   else
     echo "blocked by (nothing below was deleted; each row is measured):"
     blocked_row "$HOME/.nvm/versions/node" "the node runtime: the estate's own code names a version inside it"
