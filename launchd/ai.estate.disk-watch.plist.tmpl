@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- bin/idp-disk-watch, copied to ~/.estate/bin: launchd cannot run /bin/sh under ~/Documents (TCC). -->
+<!-- bin/idp-disk-watch, copied to ~/.estate/bin: launchd cannot start /bin/sh on a file under
+     ~/Documents (TCC, exit 126). -->
 <!-- WHY python3 IS ProgramArguments[0] AND NOT the script. Measured 2026-10-14: a launchd job whose
      responsible process is /bin/bash gets "Operation not permitted" on ~/Documents/code/idp, so the
      worktree pass in disk-cleanup.sh could not run `git worktree list` and freed 0M on every 5-minute
@@ -10,16 +11,26 @@
      binary, so the binary is named here rather than the rendered PYTHON_BIN: `command -v python3`
      can resolve to /usr/bin/python3, which has no grant. The script stays a child (subprocess.call,
      not exec), so the responsible process stays python3. -->
+<!-- RESIDENT, NOT A TICK. 2026-10-28: the old job was StartInterval 300 and, on every tick, ran the
+     FULL cleaner with a 240s budget -- it held the reclaim lock for 240 of every 300 seconds (every
+     interactive door that wanted space found it held and did nothing) and freed 0M, because the
+     phases it reached first yield nothing while the tier that holds the weight was last and never
+     reached inside the budget. The founder: "60s is too long ... more optimal than once massive
+     cleanup that times out". So the job is now a resident guardian (KeepAlive) that costs one
+     statvfs per healthy cycle and takes ONE bounded reclaim step only when the volume is under the
+     target. ThrottleInterval 60 stops a crash loop from becoming a hot loop; the guardian is
+     supposed to run forever, not restart fast. -->
 <plist version="1.0"><dict>
   <key>Label</key><string>ai.estate.disk-watch</string>
   <key>ProgramArguments</key><array>
     <string>/Library/Frameworks/Python.framework/Versions/3.12/bin/python3</string>
     <string>-c</string>
     <string>import subprocess, sys; sys.exit(subprocess.call(sys.argv[1:]))</string>
-    <string>/bin/bash</string>
+    <string>/Library/Frameworks/Python.framework/Versions/3.12/bin/python3</string>
     <string>${HOME}/.estate/bin/idp-disk-watch</string>
   </array>
-  <key>StartInterval</key><integer>300</integer>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>60</integer>
   <key>RunAtLoad</key><true/>
   <key>StandardOutPath</key><string>${HOME}/.estate/disk-watch.out.log</string>
   <key>StandardErrorPath</key><string>${HOME}/.estate/disk-watch.err.log</string>
