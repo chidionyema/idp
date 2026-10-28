@@ -43,14 +43,35 @@ def _volume(ocid: str, name: str, **over):
     return volume
 
 
-def _select(volumes, tmp_path, keep_oldest=1, older_than_hours=24):
+def _select(volumes, tmp_path, keep_oldest=1, older_than_hours=24, attached=()):
     """Run the real helper over a fixture and return the OCIDs it chose.
 
     The fixture and the id file live in this test's own directory: the suite runs under xdist,
     and a shared path would make one worker's cleanup delete another worker's answer.
+
+    `attached` is the volume ids the ATTACHMENT API says are attached to an instance -- the
+    truth the rules read, fetched separately from the volume list (MEASURED 2026-10-28: the
+    volume list leaves its own "volume-attachments" field empty on every volume, attached or
+    not, so a rule that trusted that field called five volumes in use reclaimable).
     """
     fixture = tmp_path / "oci-reclaim-fixture.json"
     fixture.write_text(json.dumps({"data": volumes}))
+    attachments = tmp_path / "oci-reclaim-attachments.json"
+    attachments.write_text(
+        json.dumps(
+            {
+                "data": [
+                    {
+                        "id": f"ocid1.volumeattachment.{i}",
+                        "volume-id": volume_id,
+                        "instance-id": "ocid1.instance.1",
+                        "lifecycle-state": "ATTACHED",
+                    }
+                    for i, volume_id in enumerate(attached)
+                ]
+            }
+        )
+    )
     ids = tmp_path / "oci-reclaim-ids.txt"
     proc = subprocess.run(
         [
@@ -58,6 +79,8 @@ def _select(volumes, tmp_path, keep_oldest=1, older_than_hours=24):
             str(HELPER),
             "--volumes",
             str(fixture),
+            "--attachments",
+            str(attachments),
             "--keep-oldest",
             str(keep_oldest),
             "--older-than-hours",
@@ -103,13 +126,63 @@ def test_a_volume_that_is_attached_is_kept(tmp_path) -> None:
     assert "attached to an instance" in out
 
 
+def test_a_volume_the_attachment_api_says_is_attached_is_kept(tmp_path) -> None:
+    """The regression for the measured defect: the volume list does not carry the attachment.
+
+    The list answers "volume-attachments": null for a volume that IS attached to a node, so a
+    rule that trusted the list called five volumes in use reclaimable. The attachment API is
+    the truth about an attachment, and the rule reads it.
+    """
+    chosen, out = _select(
+        [_volume("ocid1.volume.9", "csi-ffff")],
+        tmp_path,
+        keep_oldest=0,
+        attached=["ocid1.volume.9"],
+    )
+    assert chosen == [], out
+    assert "the attachment API says so" in out
+
+
+def test_a_volume_the_attachment_api_does_not_list_is_reclaimable(tmp_path) -> None:
+    chosen, out = _select(
+        [_volume("ocid1.volume.10", "csi-gggg")],
+        tmp_path,
+        keep_oldest=0,
+        attached=["ocid1.volume.other"],
+    )
+    assert chosen == ["ocid1.volume.10"], out
+    assert "RECLAIM" in out
+
+
 def test_a_volume_in_use_is_kept(tmp_path) -> None:
     chosen, out = _select(
         [_volume("ocid1.volume.3", "csi-cccc", **{"lifecycle-state": "IN_USE"})],
         tmp_path,
     )
     assert chosen == [], out
-    assert "not AVAILABLE" in out
+    assert "not AVAILABLE or TERMINATED" in out
+
+
+def test_a_terminated_volume_is_reclaimable_because_it_is_dead(tmp_path) -> None:
+    """A terminated volume is dead, and it still holds the storage allowance.
+
+    MEASURED 2026-10-28: deleting a volume leaves it in state TERMINATED, and nine of those
+    held 450GB of the tenancy's allowance -- which is why deleting three of them did not free
+    the allowance and the cluster could not create a volume. A door that kept them "because
+    they are not AVAILABLE" was keeping the capacity that was blocking the cluster.
+    """
+    dead = _volume("ocid1.volume.11", "csi-hhhh", **{"lifecycle-state": "TERMINATED"})
+    chosen, out = _select([dead], tmp_path, keep_oldest=0)
+    assert chosen == ["ocid1.volume.11"], out
+    assert "it is dead" in out
+
+
+def test_a_terminated_volume_is_never_mistaken_for_an_attached_one(tmp_path) -> None:
+    """A dead volume is not attached, and the rule does not need the attachment API to say so."""
+    dead = _volume("ocid1.volume.12", "csi-iiii", **{"lifecycle-state": "TERMINATED"})
+    chosen, out = _select([dead], tmp_path, keep_oldest=0, attached=["ocid1.volume.12"])
+    assert chosen == ["ocid1.volume.12"], out
+    assert "it is dead" in out
 
 
 def test_a_volume_that_is_not_a_csi_volume_is_kept(tmp_path) -> None:
@@ -195,7 +268,6 @@ def _node_verdict(state: str, tmp_path) -> str:
                 "data": {
                     "id": "ocid1.instance.1",
                     "lifecycle-state": state,
-                    "boot-volume-id": "ocid1.bootvolume.1",
                 }
             }
         )
@@ -250,3 +322,18 @@ def test_the_intent_carries_the_node_mode() -> None:
     assert 'what: {type: string, default: "volumes"}' in body
     assert 'node_id: {type: string, default: ""}' in body
     assert "{{what}} {{node_id}}" in body
+
+
+def test_the_door_does_not_claim_a_boot_volume_it_cannot_see() -> None:
+    """The door may not name a volume OCI does not show it.
+
+    MEASURED 2026-10-28: `oci compute instance get` prints no boot-volume field for an
+    instance and `oci bv volume list` does not list the node's boot volume, so the old
+    extraction path could only ever produce an empty id. A door that promised to delete a
+    boot volume it cannot name is a promise it cannot keep.
+    """
+    body = SCRIPT.read_text()
+    assert "boot-volume-id" not in body
+    assert "is_preserve_boot_volume = false" in body
+    helper = HELPER.read_text()
+    assert "def node_boot_volume" not in helper
