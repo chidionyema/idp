@@ -1,0 +1,24 @@
+name: oci-nodepool-reconcile
+description: >
+  Remove phantom nodes from OKE node pools (idp#7343). MEASURED 2026-10-28: pool a1 size 2,
+  both instances TERMINATED, NODEPOOL_RECONCILE work request FAILED, so OKE refuses to create
+  replacements. For every node pool in the cluster the door lists the pool's nodes and reads
+  each instance's lifecycle state from the compute API (the instance's own state is the truth,
+  never the pool record). A node is a phantom only when its instance is TERMINATED/TERMINATING
+  or absent. Dry run is the default and prints node id, pool says, instance says, verdict.
+  apply=true runs `oci ce node-pool delete-node --is-decrement-size true --force` for each
+  phantom, one at a time, prints a receipt per node, then re-reads the pool and prints the
+  measured result. RUNNING/STOPPED/PROVISIONING nodes are never touched; no volume or
+  instance is ever deleted. Rules: platform/estate/libexec/oci-nodepool-reconcile.py, proved
+  offline by tests/estate/test_oci_nodepool_reconcile.py.
+class: mutate
+args:
+  # A string, not a bool: resolve_args coerces int and string only; "false" is a plan.
+  apply: {type: string, default: "false"}
+  compartment_id: {type: string, default: ""}
+door_s: 100
+halt_on_failure: true
+steps:
+  - name: oci-nodepool-reconcile
+    cmd: >
+      bash ~/.estate/libexec/oci-nodepool-reconcile.sh {{apply}} {{compartment_id}}
