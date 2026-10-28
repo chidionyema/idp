@@ -1,0 +1,31 @@
+# The context broker's image rolls on every main build, the same way the estate's other doors do
+# (estate-mcp.yaml, crew#458 row 3). build-multiarch pushes
+# ghcr.io/chidionyema/estate-context-broker:main-<run>-<sha>; the policy picks the highest run
+# and ImageUpdateAutomation (backstage.yaml, path ./platform) writes it into
+# platform/mcp/kustomization.yaml on flux/image-updates. One automation writes both newTag lines
+# for this pod, because the broker and the engine are one pod and must move together.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: estate-context-broker
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/estate-context-broker
+  interval: 5m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: estate-context-broker
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: estate-context-broker
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc

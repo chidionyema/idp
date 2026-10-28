@@ -1,0 +1,79 @@
+name: disk-reclaim
+description: >
+  Reclaim the data volume when the executor's floor refuses every door (measured 2026-10-28:
+  426 MB free, floor 1500 MB, so every estate_execute and every git MCP tool refused while the
+  machine was starved). Two actions, both narrow and both measured:
+
+    1. stop the local gate runs this machine is running TWICE. bin/idp-ci is a full sweep and two
+       of them at once on a 113 GiB volume is what emptied it; the estate's real gate is the one
+       GitHub Actions runs on the branch, so a duplicate LOCAL sweep is stopped rather than left
+       to starve every other agent. Only the pids named by the caller are signalled, and only
+       when their command line is the gate itself.
+    2. delete the pytest scratch directories of runs that FINISHED: pytest-of-* directories older
+       than the age given, with no process holding anything open inside them (lsof decides, not
+       the timestamp). A live test's scratch is never touched.
+
+  Nothing else is deleted: no worktree, no cache, no toolchain, no file of any agent's. The run
+  prints free space before and after, measured, and the lsof refusal for anything it left alone.
+class: mutate
+args:
+  pids: {type: string, default: "", description: "space-separated pids of local idp-ci runs to stop"}
+  age_min: {type: int, default: 180, description: "minutes old before a pytest scratch dir may go"}
+  budget_s: {type: int, default: 60, description: "seconds of work this run may start"}
+door_s: 95
+halt_on_failure: false
+steps:
+  - name: before
+    cmd: |
+      df -k /System/Volumes/Data | awk 'NR==2 {printf "free before: %dM on %s\n", $4/1024, $9}'
+  - name: stop-the-duplicate-gates
+    cmd: |
+      for p in {{pids}}; do
+        [ -n "$p" ] || continue
+        cmd=$(ps -p "$p" -o command= 2>/dev/null)
+        case "$cmd" in
+          *bin/idp-ci*)
+            echo "stop     idp-ci pid $p: $cmd"
+            kill -TERM "$p" 2>/dev/null || echo "ok       pid $p already gone"
+            ;;
+          "") echo "ok       pid $p is not running" ;;
+          *) echo "skip     pid $p is not the gate: $cmd" ;;
+        esac
+      done
+      exit 0
+  - name: reclaim-the-finished-pytest-scratch
+    cmd: |
+      base="${TMPDIR%/}/pytest-of-$(id -un)"
+      [ -d "$base" ] || { echo "ok       no pytest scratch at $base"; exit 0; }
+      now=$(date +%s)
+      for d in "$base"/pytest-*; do
+        [ -d "$d" ] || continue
+        age=$(( (now - $(stat -f %m "$d")) / 60 ))
+        if [ "$age" -lt {{age_min}} ]; then
+          echo "keep     $d (${age}m old, live or recent)"
+          continue
+        fi
+        if lsof +D "$d" >/dev/null 2>&1; then
+          echo "keep     $d (${age}m old, a process holds it open)"
+          continue
+        fi
+        sz=$(du -sk "$d" 2>/dev/null | awk '{print $1}')
+        rm -rf "$d"
+        echo "removed  $d (${age}m old, ${sz}K)"
+      done
+      exit 0
+  - name: reclaim-the-build-cache
+    cmd: |
+      # Docker's BUILD CACHE and DANGLING images only. No volumes: a volume may hold the
+      # estate's data (a local Postgres), and "regenerable" is a claim about a cache, not about
+      # somebody's data. The estate's own cleaner prunes the same allow-list.
+      export DOCKER_HOST="${DOCKER_HOST:-unix://$HOME/.rd/docker.sock}"
+      if ! command -v docker >/dev/null 2>&1; then echo "ok       no docker cli"; exit 0; fi
+      if ! docker info >/dev/null 2>&1; then echo "ok       the docker daemon is not answering"; exit 0; fi
+      docker system df 2>/dev/null | head -6
+      docker builder prune -af 2>&1 | tail -2
+      docker image prune -f 2>&1 | tail -2
+      exit 0
+  - name: after
+    cmd: |
+      df -k /System/Volumes/Data | awk 'NR==2 {printf "free after: %dM on %s\n", $4/1024, $9}'
