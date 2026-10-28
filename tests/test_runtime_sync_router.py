@@ -112,6 +112,50 @@ def test_an_unchanged_router_is_left_running(tmp_path, monkeypatch):
     assert mod.sync_router() == [] and calls["kick"] == 0
 
 
+def test_a_changed_front_reaches_the_router_and_the_front_is_restarted(
+    tmp_path, monkeypatch
+):
+    # 2026-10-28: the front is the process every model call goes through, and the sync carried
+    # the router's modules but not the front, so a fix to the front waited for a hand copy.
+    _estate(tmp_path, live="same", main="same")
+    (tmp_path / "tree/platform/llm/front.py").write_text("new front")
+    (tmp_path / "router/front.py").write_text("old front")
+    mod = _load(tmp_path, monkeypatch)
+    calls = _stub(mod, monkeypatch, comes_back=True)
+    fronts: list[str] = []
+    monkeypatch.setattr(mod, "kickstart", fronts.append)
+    notes = mod.sync_router()
+    assert (tmp_path / "router/front.py").read_text() == "new front"
+    assert fronts == [mod.ROUTER_FRONT_LABEL]
+    assert "front restarted" in notes[0] and not calls["alerts"]
+
+
+def test_a_front_that_does_not_come_back_keeps_the_previous_bytes(
+    tmp_path, monkeypatch
+):
+    _estate(tmp_path, live="same", main="same")
+    (tmp_path / "tree/platform/llm/front.py").write_text("new front")
+    (tmp_path / "router/front.py").write_text("old front")
+    mod = _load(tmp_path, monkeypatch)
+    calls = _stub(mod, monkeypatch, comes_back=True)
+    fronts: list[str] = []
+    monkeypatch.setattr(mod, "kickstart", fronts.append)
+    probes = {"n": 0}
+
+    def answers(url, s):
+        if url == mod.VOICE_PROBE:
+            return True
+        probes["n"] += 1
+        # the router answers before the front is restarted; the front does not come back after
+        return probes["n"] == 1
+
+    monkeypatch.setattr(mod, "answers", answers)
+    notes = mod.sync_router()
+    assert (tmp_path / "router/front.py").read_text() == "old front"
+    assert fronts == [mod.ROUTER_FRONT_LABEL, mod.ROUTER_FRONT_LABEL]
+    assert calls["alerts"] and "FRONT KEPT previous" in notes[0]
+
+
 def test_a_router_that_does_not_come_back_gets_its_previous_modules(
     tmp_path, monkeypatch
 ):

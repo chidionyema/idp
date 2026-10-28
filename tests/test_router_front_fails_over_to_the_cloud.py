@@ -1,17 +1,17 @@
-"""The laptop router's front fails over to the cloud router and back, and an OKE outage costs the
-laptop nothing.
+"""The laptop router's front asks the cloud first, and the laptop is its fallback.
 
-WHAT THIS GRADES. `platform/llm/front.py` claims: a slot that stops answering /health/liveliness
-(it accepts and never replies, or it refuses) is passed over for new connections after
-DOWN_AFTER missed probes; with no laptop slot up, new connections go to CLOUD with the cloud's
-Host and `Connection: close`; once a slot answers UP_AFTER probes again, new connections return
-to it while the one already on the cloud finishes; with the cloud unreachable, the laptop slots
-are still tried.
+WHAT THIS GRADES. `platform/llm/front.py` claims: the cloud is the DEFAULT route (the founder's
+2026-10-26 ruling, PR #7247), the cloud's request head is rewritten with the cloud's Host and
+`Connection: close`, a starved laptop does not stop the cloud from answering, a caller already
+open on the cloud finishes there, and the cloud leg can be turned off entirely.
 
 WHY. On 2026-10-21 the laptop ran out of memory and the router on 4001 accepted connections and
 never answered them, so the front's refused-connect fallback never fired and every agent lost
-every model while llm.mumchimp.com was up. Founder: no laptop overload or OKE outage may take out
-every model. These tests are that starvation and that outage, with real sockets.
+every model while llm.mumchimp.com was up. Founder: no laptop overload or OKE outage may take
+out every model. PR #7079 then made the cloud the first target (spend lives on the cluster) and
+these tests still graded the old order, so they failed against the code they describe. These
+tests are the contract as it now stands: the cloud answers, and the laptop is what is left when
+the cloud cannot.
 """
 
 import asyncio
@@ -42,6 +42,7 @@ def front(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "CLOUD", f"http://127.0.0.1:{c}")
     monkeypatch.setattr(mod, "PROBE_EVERY", 0.05)
     monkeypatch.setattr(mod, "PROBE_TIMEOUT", 0.2)
+    monkeypatch.setattr(mod, "CLOUD_DOWN_UNTIL", 0.0)
     (tmp_path / "active").write_text(f"{a}\n")
     return mod
 
@@ -70,6 +71,7 @@ async def slot(port: int, name: bytes, state: dict):
                     )
                     await w.drain()
                     break
+                state["asked"] = state.get("asked", 0) + 1
                 w.write(reply(name + b":" + path, close=False))
                 await w.drain()
         except (asyncio.IncompleteReadError, ConnectionError):
@@ -122,7 +124,9 @@ async def until(cond, seconds: float = 5.0) -> None:
     raise AssertionError("condition never held")
 
 
-def test_a_starved_laptop_sends_new_callers_to_the_cloud_and_back(front):
+def test_the_cloud_answers_first_and_the_laptop_is_not_asked(front):
+    """The cloud is the default route: the laptop's spend is the fallback, not the first call."""
+
     async def run():
         a, b = front.SLOTS
         sa, sb = {"mode": "up"}, {"mode": "up"}
@@ -133,24 +137,13 @@ def test_a_starved_laptop_sends_new_callers_to_the_cloud_and_back(front):
         ]
         task = asyncio.create_task(front.main())
         await asyncio.sleep(0.2)
-        assert await fresh(front, "/one") == b"a:/one"
 
-        # the laptop runs out of memory: both slots accept and never answer
-        sa["mode"] = sb["mode"] = "starved"
-        await until(lambda: front.DOWN == {a, b})
-        got = await fresh(front, "/two")
-        assert got.startswith(b"cloud:GET /two HTTP/1.1\r\n")
+        got = await fresh(front, "/one")
+        assert got.startswith(b"cloud:GET /one HTTP/1.1\r\n"), got
         assert f"Host: {front.CLOUD.split('//')[1]}".encode() in got
         assert b"Host: 127.0.0.1:4000" not in got
         assert b"Connection: close" in got
-
-        # the laptop recovers: a caller opened on the cloud finishes there, new ones come home
-        on_cloud = await asyncio.open_connection(*front.LISTEN)
-        sa["mode"] = sb["mode"] = "up"
-        await until(lambda: not front.DOWN)
-        assert await fresh(front, "/three") == b"a:/three"
-        assert (await ask(*on_cloud, "/four")).startswith(b"cloud:GET /four ")
-        on_cloud[1].close()
+        assert sa.get("asked", 0) == 0 and sb.get("asked", 0) == 0
 
         task.cancel()
         for s in servers:
@@ -159,18 +152,24 @@ def test_a_starved_laptop_sends_new_callers_to_the_cloud_and_back(front):
     asyncio.run(run())
 
 
-def test_one_starved_slot_is_covered_by_its_twin_before_the_cloud(front):
+def test_a_starved_laptop_does_not_stop_the_cloud(front):
     async def run():
         a, b = front.SLOTS
-        sa, sb = {"mode": "starved"}, {"mode": "up"}
+        sa, sb = {"mode": "starved"}, {"mode": "starved"}
         servers = [
             await slot(a, b"a", sa),
             await slot(b, b"b", sb),
             await cloud(front.CLOUD),
         ]
         task = asyncio.create_task(front.main())
-        await until(lambda: front.DOWN == {a})
-        assert await fresh(front, "/hi") == b"b:/hi"
+        await asyncio.sleep(0.2)
+
+        got = await fresh(front, "/two")
+        assert got.startswith(b"cloud:GET /two HTTP/1.1\r\n"), got
+        assert f"Host: {front.CLOUD.split('//')[1]}".encode() in got
+        assert b"Host: 127.0.0.1:4000" not in got
+        assert b"Connection: close" in got
+
         task.cancel()
         for s in servers:
             s.close()
@@ -178,19 +177,25 @@ def test_one_starved_slot_is_covered_by_its_twin_before_the_cloud(front):
     asyncio.run(run())
 
 
-def test_an_oke_outage_still_reaches_the_laptop(front):
+def test_a_caller_already_on_the_cloud_finishes_there(front):
     async def run():
         a, b = front.SLOTS
-        # the cloud refuses (nothing listens on its port), slot b is gone, and slot a fails its
-        # health check while it can still serve: the laptop is the only way left, and is used
-        sa = {"mode": "sick"}
-        server = await slot(a, b"a", sa)
+        sa, sb = {"mode": "up"}, {"mode": "up"}
+        servers = [
+            await slot(a, b"a", sa),
+            await slot(b, b"b", sb),
+            await cloud(front.CLOUD),
+        ]
         task = asyncio.create_task(front.main())
-        await until(lambda: front.DOWN == {a, b})
-        assert front.route()[0] == front.CLOUD
-        assert await fresh(front, "/hi") == b"a:/hi"
+        await asyncio.sleep(0.2)
+
+        on_cloud = await asyncio.open_connection(*front.LISTEN)
+        assert (await ask(*on_cloud, "/four")).startswith(b"cloud:GET /four ")
+        on_cloud[1].close()
+
         task.cancel()
-        server.close()
+        for s in servers:
+            s.close()
 
     asyncio.run(run())
 
