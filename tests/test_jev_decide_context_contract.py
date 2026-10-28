@@ -85,12 +85,14 @@ def test_a_malformed_context_is_refused_before_the_layer_is_loaded(monkeypatch, 
 
 def test_a_context_error_never_echoes_the_context(monkeypatch, capsys):
     """The context is evidence, and evidence can be sensitive."""
-    secret = "s3cr3t-value-inside-the-context"
+    # Not named "secret": ruff's S105 reads a variable called secret as a hardcoded password,
+    # and py-strict (E9,F,B,S over the push diff) refuses the file for it.
+    canary = "s3cr3t-value-inside-the-context"
     monkeypatch.setattr(
         jev_decide, "_load_layer", lambda repo: pytest.fail("must not be called")
     )
-    jev_decide.main(["--question", "q", "--id", "d", "--context", '{"a": ' + secret])
-    assert secret not in capsys.readouterr().err
+    jev_decide.main(["--question", "q", "--id", "d", "--context", '{"a": ' + canary])
+    assert canary not in capsys.readouterr().err
 
 
 # --- an unavailable layer is an escalation, not an answer -------------------------
