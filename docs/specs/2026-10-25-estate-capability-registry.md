@@ -80,6 +80,15 @@ Schema enforcement is generative, not after-the-fact (T-1): producers emit throu
 - **Reconciliation path (the net under the wire).** Every 15 min, a job diffs *declared* (registry)
   against *observed* (estate-inventory, cluster API, intent filesystem scan) — the telemetry-coverage
   pattern lifted one level. Every diff row is a finding with an owner; BLIND if a source cannot answer.
+- **Read refresh (the door, 2026-10-28).** The scheduled job needs a runner, and on the machine that
+  owns the store there was none: the Mac's Dagster is not loaded and the cluster's was not ready, so
+  the row had not ticked for 25.3h while the founder's question was answered from a store nobody had
+  refreshed. So the door reconciles the live half when it is read and the half is past its bound
+  (900s), with the same instrument the row runs (`census --write` → one implementation, one
+  heartbeat). A door that answers from a stale store is a false claim; the founder asks the door, not
+  the row. The scheduled row stays declared, so a scheduler that comes back also ticks it. What the
+  refresh does NOT do is hide a dead scheduler: the gate names the age it found, so "the cycle is not
+  ticking" is still on the record next to "the half you are reading was reconciled 2s ago".
 - **Read semantics.** Snapshot-consistent per record with `observed_at` on every field. Cross-record
   transactional consistency is **deliberately not provided** — the registry is a discovery surface, not
   a ledger of record; work_item and interaction records live in Postgres (§14 substrate).
@@ -233,14 +242,23 @@ now a queryable count with a freshness bound, not an audit somebody runs once.
 ### 13.4 What is NOT built (the honest list)
 
 1. The JetStream consumer for `capability.changed` (section 5's S = 60s is unproven).
-2. The 15-minute reconciliation job is now DECLARED but not yet running on this machine.
-   `scheduler/schedule.yml` carries `com.estate.registry-reconcile` (every 15 min, `runs_on: mac`),
-   which runs `bin/capability-index census --write` -- the same cycle, as a scheduled job rather
-   than something an agent remembers to run. Measured 2026-10-26: the estate's one scheduler
-   (`ai.estate.scheduler`, the launchd job that runs the Dagster daemon) is NOT loaded on this
-   Mac, so the row ticks wherever that scheduler runs and not before. The door is the door either
-   way: `bin/capability-index census --write` reconciles, tombstones and writes the store, and it
-   was run by hand to prove the cycle (two deleted tools tombstoned in one pass).
+2. The 15-minute reconciliation job is now DECLARED and the DOOR refreshes the live half, but the
+   SCHEDULED cycle still has no runner on this machine. `scheduler/schedule.yml` carries
+   `com.estate.registry-reconcile` (every 15 min, `runs_on: mac`), which runs
+   `bin/capability-index census --write` — the same cycle, as a scheduled job rather than something
+   an agent remembers to run. Measured 2026-10-26: the estate's one scheduler (`ai.estate.scheduler`,
+   the launchd job that runs the Dagster daemon) is NOT loaded on this Mac, so the row ticks wherever
+   that scheduler runs and not before. Measured 2026-10-28, on this machine: the live half's last
+   heartbeat was **25.3h old** — the row had not ticked, and nothing had said so, because the one
+   view that shows the estate's clocks (`bin/estate-clocks`) was itself dead: it died on a Helm
+   TEMPLATE under `platform/vendors/templates/` that is not YAML, and it took 65.8s to run even
+   before that. Both are fixed here: the clock view survives a template and takes 1.1s, and the door
+   reconciles the live half on read, so the store is current whenever anyone asks. What is still NOT
+   built: a runner for the scheduled row. 41 rows in `schedule.yml` are `runs_on: mac`, the Mac's
+   Dagster is not installed (no `dagster` package, the plist is `ai.estate.scheduler.plist.disabled`),
+   and the cluster's Dagster builds only `runs_on: cluster` rows. Closing that is a decision about
+   where the estate's one scheduler lives, not a line of code, and it is named here rather than
+   hidden: the door's refresh is the compensation, and the gate says which one happened.
 3. The router pre-dispatch read (section 8): the router does not consult the registry yet,
    so `unknown capacity is refuse` is not enforced anywhere.
 4. The Face/Fleet tiles (A3). The MCP surface is the agent-readable half and it ships.
@@ -260,6 +278,15 @@ half whose reconcile heartbeat has gone past an hour. It does not fail on: a wor
 repository does not declare, a capability with no proof (that is `declared`, which is the
 point), or a stale reconcile heartbeat outside `--strict` (the estate's one scheduler may
 simply be running somewhere else -- so it is a named finding, not a false red).
+
+**The gate judges a live half that is current (2026-10-28).** By default the gate reconciles the
+live half before it judges it (the same instrument, the same heartbeat) and it prints the age it
+found: "the scheduled reconcile had not ticked (25.3h ago when the gate arrived); the gate
+refreshed the live half on read". So the strict verdict is about the estate as it is now, and the
+fact that the SCHEDULED cycle had gone quiet is still on the record. `--no-refresh` judges the half
+exactly as it finds it, and then a heartbeat older than an hour is a failure under `--strict` --
+which is the falsifier for the whole mechanism, and the way to see whether the scheduled cycle is
+alive without the door covering for it.
 
 ---
 
@@ -300,7 +327,7 @@ that causes drift, and a map that drifts is trusted anyway.
 | E-2 | A component is removed | the witness names a capability the estate no longer has: the gate fails (FAIL), and the live half tombstones it on the next reconciliation cycle (I-5) |
 | E-3 | main moves under the lane | the truth is a function of the tree, so a moved main can change it: the gate re-derives the witness against the lane's own tree, and the workflow regenerates it. Measured 2026-10-26, on the lane that built this registry: a rebase onto a moved main changed the tree, and the witness had to be re-derived against it |
 | E-4 | somebody hand-edits the witness | drift: the gate compares the committed bytes with a fresh generation and fails. The claim-gate exempts the witness path from claim coverage (it is generated, so it belongs to nobody's claim); the gate is what proves its content -- two layers, each doing its own job |
-| E-5 | the live estate changes (an intent installed, a workload deleted on the cluster) | the live half is reconciled on a cycle: `com.estate.registry-reconcile` in `scheduler/schedule.yml` runs `bin/capability-index census --write` every 15 minutes, which tombstones what was removed and records what appeared. It is a scheduled job, not a ritual. The reconcile leaves a heartbeat (`census.reconciled`), so the gate can name the live half's age instead of assuming it: a heartbeat older than an hour is a finding, and a failure under `--strict` |
+| E-5 | the live estate changes (an intent installed, a workload deleted on the cluster) | the live half is reconciled on a cycle: `com.estate.registry-reconcile` in `scheduler/schedule.yml` runs `bin/capability-index census --write` every 15 minutes, which tombstones what was removed and records what appeared. It is a scheduled job, not a ritual. The reconcile leaves a heartbeat (`census.reconciled`), so the gate can name the live half's age instead of assuming it: a heartbeat older than an hour is a finding, and a failure under `--strict`. Since 2026-10-28 the door also reconciles on read, so a read never answers from a half that has gone quiet, and the age the gate found is printed beside the verdict |
 | E-6 | CI has no estate state (`~/.estate`, the installed intents) | BLIND is a verdict: the gate says BLIND for the live coverage and does not pretend. The repo half is still checked in full |
 | E-7 | the gate has to be shown able to fail | every invariant ships with the case that trips it, and the drift check ships with a seeded lag (`tests/test_capability_registry.py`) |
 

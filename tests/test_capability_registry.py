@@ -434,11 +434,11 @@ def test_the_reconcile_cycle_is_a_scheduled_job():
     assert "cron:" in row, "a reconcile with no schedule is a ritual, not a cycle"
 
 
-def _gate(env_extra):
+def _gate(env_extra, args=()):
     env = dict(os.environ)
     env.update(env_extra)
     return subprocess.run(
-        [sys.executable, str(GATE)],
+        [sys.executable, str(GATE), *args],
         capture_output=True,
         text=True,
         env=env,
@@ -485,9 +485,9 @@ def test_the_census_leaves_a_heartbeat_and_a_stopped_cycle_is_caught(live_store)
     """A quiet estate writes no changed records, so the reconcile leaves a heartbeat.
 
     Without one, "the live half is current" is a belief. With one, a cycle that has
-    stopped is visible: under --strict the gate refuses a live half whose heartbeat
-    has gone past the bound, because the records it reports are older than the
-    report suggests.
+    stopped is visible: with --no-refresh the gate judges the half exactly as it
+    finds it, and under --strict it refuses a live half whose heartbeat has gone past
+    the bound, because the records it reports are older than the report suggests.
     """
     db, env = live_store
     import shutil
@@ -515,7 +515,7 @@ def test_the_census_leaves_a_heartbeat_and_a_stopped_cycle_is_caught(live_store)
     conn.close()
 
     strict = subprocess.run(
-        [sys.executable, str(GATE), "--strict"],
+        [sys.executable, str(GATE), "--strict", "--no-refresh"],
         capture_output=True,
         text=True,
         env={**os.environ, **aged_env},
@@ -526,9 +526,106 @@ def test_the_census_leaves_a_heartbeat_and_a_stopped_cycle_is_caught(live_store)
 
     # and in the default mode it is a finding, not a failure: the estate's scheduler
     # may simply be running somewhere else.
-    default = _gate(aged_env)
+    default = _gate(aged_env, args=["--no-refresh"])
     assert default.returncode == 0, default.stdout + default.stderr
     assert "reconcile cycle is not ticking" in default.stdout, default.stdout
+
+
+def test_the_gate_reconciles_a_quiet_live_half_and_says_which_cycle_did_not_tick(
+    live_store,
+):
+    """The default judgement refreshes the half it judges, and keeps the fact.
+
+    2026-10-28, measured on this machine: the scheduled row (com.estate.registry-
+    reconcile) had not ticked for 25.3h -- the Mac's Dagster is not loaded and the
+    cluster's is not ready -- so the live half was stale while the founder's question
+    was answered from it. The gate reconciles the half it is about to judge instead of
+    judging a stale one, and the fact that the SCHEDULED cycle had gone quiet is still
+    on the record: a door that refreshes is not a scheduler that ticks.
+    """
+    import shutil
+    import sqlite3
+
+    db, env = live_store
+    aged = db.parent / "aged-by-refresh.db"
+    shutil.copyfile(str(db), str(aged))
+    aged_env = dict(env)
+    aged_env["ESTATE_REGISTRY_DB"] = str(aged)
+
+    old = (datetime.now(timezone.utc) - timedelta(hours=6)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    conn = sqlite3.connect(str(aged))
+    conn.execute("update events set at = ? where type = 'census.reconciled'", (old,))
+    conn.commit()
+    conn.close()
+
+    result = _gate(aged_env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "refreshed on read" in result.stdout, result.stdout
+    assert "the scheduled reconcile had not ticked" in result.stdout, result.stdout
+
+    # the store really was reconciled: the heartbeat moved off the aged stamp.
+    conn = sqlite3.connect(str(aged))
+    at = conn.execute(
+        "select at from events where type = 'census.reconciled' order by seq desc limit 1"
+    ).fetchone()[0]
+    conn.close()
+    assert at != old, "the gate must have reconciled the half it judged"
+
+
+def test_a_read_refreshes_a_live_half_that_has_gone_quiet(door):
+    """The door does not answer from a store that has stopped tracking the estate.
+
+    A door that answers from a stale store is a false claim, and the founder asks the
+    door, not the row. The refresh is the same instrument the row runs -- one
+    reconcile, one implementation -- and it leaves the same heartbeat behind.
+    """
+    import sqlite3
+
+    ctx = door.Context(idp=REPO)
+    store = door.Store(door.DB_PATH)
+    store.open()
+    door.write_census(ctx, store)
+
+    old = (datetime.now(timezone.utc) - timedelta(hours=6)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    conn = sqlite3.connect(str(door.DB_PATH))
+    conn.execute("update events set at = ? where type = 'census.reconciled'", (old,))
+    conn.commit()
+    conn.close()
+    _at, age = door.live_heartbeat(store)
+    assert age is not None and age > door.LIVE_MAX_AGE_S
+
+    records, source = door.load_records(ctx)
+    assert source == "store" and records
+    _at2, age2 = door.live_heartbeat(store)
+    assert age2 is not None and age2 < 120, (
+        "the read must have reconciled the live half"
+    )
+
+
+def test_a_read_never_creates_a_live_store_where_there_was_none(door):
+    """BLIND stays BLIND: a read must not invent a live half."""
+    assert not door.DB_PATH.exists()
+    records, source = door.load_records(door.Context(idp=REPO))
+    assert source == "snapshot"
+    assert records
+    assert not door.DB_PATH.exists(), "a read must not create the live half"
+
+
+def test_a_read_does_not_reconcile_a_live_half_inside_its_bound(door):
+    """The refresh is bounded, so a read stays cheap when the estate has not moved."""
+    ctx = door.Context(idp=REPO)
+    store = door.Store(door.DB_PATH)
+    store.open()
+    door.write_census(ctx, store)
+    before = door.live_heartbeat(store)[0]
+
+    door.load_records(ctx)
+    after = door.live_heartbeat(store)[0]
+    assert after == before, "a live half inside its bound must not be reconciled again"
 
 
 def test_the_gate_says_blind_rather_than_pretending_when_there_is_no_live_store(
