@@ -166,7 +166,11 @@ for s in items:
 print("echo " + shlex.quote("keys   bitwarden: %d %s" % (len(names), ",".join(sorted(names)))))
 '
   if command -v kubectl >/dev/null; then
-    bw_env="$(kubectl -n llm get secrets -o json --request-timeout=20s 2>/dev/null | "$VENV/bin/python" -c "$bw_py")" || bw_env=""
+    # --request-timeout does not bound kubectl when the cluster is unreachable (measured
+    # 2026-10-28: a 5 s timeout still hung past 55 s, so every slot boot stalled here, never
+    # bound its port, and every caller of :4000 got 502). kubectl ignores SIGALRM too (a perl
+    # alarm left it hung 5 min), so the ceiling is subprocess's SIGKILL.
+    bw_env="$("$VENV/bin/python" -c 'import subprocess, sys; sys.stdout.buffer.write(subprocess.run(sys.argv[1:], capture_output=True, timeout=25).stdout)' kubectl -n llm get secrets -o json --request-timeout=20s 2>/dev/null | "$VENV/bin/python" -c "$bw_py")" || bw_env=""
     eval "$bw_env"
   fi
   unset bw_py bw_env
