@@ -22,7 +22,7 @@ mlflow==3.17.2
 wandb==0.30.0
 
 # --- LLM / LiteLLM (already in main requirements, but pinned here for research) ---
-litellm==1.88.6
+litellm==1.100.4
 openai==2.54.0
 
 # --- data validation ---
