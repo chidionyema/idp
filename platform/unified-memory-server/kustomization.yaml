@@ -10,4 +10,4 @@ images:
     # 2026-10-26: main-14784 predated the rung work, so the rolled store could not label a write
     # by its evidence and the brief above the memories still called itself VERIFIED. The build of
     # f3fcbfb99 carries both (#7170): a write earns its rung, and the brief names what it measured.
-    newTag: main-14928-f3fcbfb99007ebf401aef79421cd7ad925b09f1c # {"$imagepolicy": "flux-system:unified-memory-server:tag"}
+    newTag: main-14961-7919fa308dbb319ed0541d5ac251cc9f7a18709d # {"$imagepolicy": "flux-system:unified-memory-server:tag"}

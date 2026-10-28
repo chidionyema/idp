@@ -23,7 +23,7 @@ images:
     # 193 of 193 memories raw_source, and `bin/memory-gate` failing at rung 3 on the pod
     # (AttributeError: module 'em' has no attribute 'claim_checker'). Pinned to the build of the
     # main that carries it, so Flux converges on the door every agent writes through.
-    newTag: main-14931-5b52f36c580e070d98ecc1d8aa403f7272d11b5a # {"$imagepolicy": "flux-system:estate-mcp:tag"}
+    newTag: main-14980-51226d876f397a74853960f555d3326591f70539 # {"$imagepolicy": "flux-system:estate-mcp:tag"}
 configMapGenerator:
   - name: mcp-config
     files:
