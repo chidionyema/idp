@@ -10,8 +10,13 @@ No cluster, no network, no executor: the walk takes a probe, so a test drives it
 
 from __future__ import annotations
 
+import json as jsonlib
+import os
 import runpy
+import subprocess
 from pathlib import Path
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCTOR = ROOT / "platform/estate/libexec/telegram-agent-doctor.py"
@@ -203,3 +208,90 @@ def test_the_report_names_the_agent_and_the_counts_and_the_exit_code_separates_b
     assert blind["counts"]["broken"] == 0
     assert blind["counts"]["blind"] == 1
     assert "FIRST UNREADABLE LINK" in DOCTOR_MODULE["render"](blind)
+
+
+def _intent_step(agent="all", heal="no", json_mode="no"):
+    """The intent's own step, with the placeholders the executor fills in."""
+    intent = yaml.safe_load(INTENT.read_text(encoding="utf-8"))
+    cmd = intent["steps"][0]["cmd"]
+    return (
+        cmd.replace("{{agent}}", agent)
+        .replace("{{heal}}", heal)
+        .replace("{{json}}", json_mode)
+    )
+
+
+def _run_intent_step(tmp_path, doctor_exit=0, doctor_stdout="", json_mode="no"):
+    """Run the intent's step against a stubbed python3, so the door's own exit semantics are
+    measured with no cluster, no network and no doctor."""
+    stub_dir = tmp_path / "bin"
+    stub_dir.mkdir(parents=True, exist_ok=True)
+    stub = stub_dir / "python3"
+    stub.write_text(
+        "#!/bin/sh\ncat <<'STDOUT'\n{}\nSTDOUT\nexit {}\n".format(
+            doctor_stdout, doctor_exit
+        ),
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    env = dict(os.environ)
+    env["PATH"] = str(stub_dir) + os.pathsep + env["PATH"]
+    return subprocess.run(
+        ["bash", "-c", _intent_step(json_mode=json_mode)],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+
+def test_the_door_answers_even_when_the_doctor_found_a_broken_link(tmp_path):
+    """Given the doctor found a broken link and exited 1, when the intent's step runs, then
+    the door exits 0 and says what it found. A doctor's finding is not a failure of the door:
+    the estate's policy refuses a verb whose 30-day not-ok rate passes 0.8
+    (platform/estate/bin/estate-execute), and a door that exited on its verdict would be
+    refused exactly when the estate is broken."""
+    done = _run_intent_step(tmp_path, doctor_exit=1)
+
+    assert done.returncode == 0, done.stderr
+    assert "verdict: FAIL" in done.stdout
+    assert "first broken link" in done.stdout
+
+
+def test_the_door_answers_even_when_the_estate_is_dark(tmp_path):
+    """Given the doctor could not read a source and exited 3, when the intent's step runs,
+    then the door exits 0 and says BLIND. Blind is a reading of the estate, not a failure of
+    the door -- and it is the state the founder needs the door for most."""
+    done = _run_intent_step(tmp_path, doctor_exit=3)
+
+    assert done.returncode == 0, done.stderr
+    assert "verdict: BLIND" in done.stdout
+
+
+def test_the_door_fails_when_the_doctor_itself_could_not_run(tmp_path):
+    """Given the doctor could not be run at all (no python, no script, a crash), when the
+    intent's step runs, then the door exits non-zero and says so on stderr. A door that
+    cannot fail is not a door: this is the one case where the intent must not answer 0."""
+    done = _run_intent_step(tmp_path, doctor_exit=127)
+
+    assert done.returncode == 127
+    assert "the doctor itself failed" in done.stderr
+
+
+def test_json_mode_keeps_stdout_a_pure_json_document(tmp_path):
+    """Given json=true, when the intent's step runs, then stdout parses as JSON and the
+    verdict line goes to stderr -- another agent consumes the document without having to
+    strip a line of prose off it."""
+    done = _run_intent_step(
+        tmp_path,
+        doctor_exit=0,
+        doctor_stdout=jsonlib.dumps(
+            {"counts": {"healthy": 1, "broken": 0, "blind": 0}}
+        ),
+        json_mode="yes",
+    )
+
+    assert done.returncode == 0, done.stderr
+    assert jsonlib.loads(done.stdout)["counts"]["healthy"] == 1
+    assert "verdict:" not in done.stdout
+    assert "verdict: OK" in done.stderr
