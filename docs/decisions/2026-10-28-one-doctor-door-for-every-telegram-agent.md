@@ -78,6 +78,17 @@ place a founder watches, not a new page.
 to repair, `json=true` to consume. No browser, no founder present, no new MCP tool — the intent
 layer already is the agent interface.
 
+**D8. The scheduled plane is READ, not duplicated.**
+Measured 2026-10-28: `.github/workflows/otto-parity.yml` already runs every fifteen minutes,
+mints a kubeconfig through OCI's OIDC, grades both Ottos and the layers under them, and alerts
+the founder on Telegram when a tick turns red. That is the scheduler and the alerter, and it
+stays. The doctor **reads** that verdict — one `gh api` call, the last run's conclusion — and
+reports it next to its own chain, so there is one set of rows and two planes: the scheduled one
+and the callable one. The scheduled verdict is **context, not a link**: that tick grades the
+layers under the Ottos too, so a red tick is not proof about a Telegram agent and never becomes
+one agent's "first broken link". The merge direction is fixed: the parity playbook asks this
+doctor for the Telegram rows (Wave 1 of the programme) rather than keeping its own.
+
 ## Consequences
 
 - **Cost:** one more door in the intent set, and a small script in `platform/estate/libexec/`.
@@ -91,6 +102,6 @@ layer already is the agent interface.
   blind; it does not repair a cluster from a laptop. A scheduled run of this door on a machine
   that can reach the cluster is the next wave, and it is where "monitor live" becomes a fact
   rather than a capability.
-- **What it deliberately leaves alone:** the reconciler and the answer probe keep their jobs and
-  their receipts. If this door ever duplicates them, it is wrong and the duplication is the
-  defect to remove.
+- **What this deliberately leaves alone:** the reconciler and the answer probe keep their jobs and
+  their receipts, and the parity tick keeps its schedule and its Telegram alert. If this door
+  ever duplicates them, it is wrong and the duplication is the defect to remove.

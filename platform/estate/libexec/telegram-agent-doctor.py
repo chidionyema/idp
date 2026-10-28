@@ -201,6 +201,19 @@ DECLARED_OUT = [
     }
 ]
 
+# The scheduled plane, READ and not duplicated. The estate already runs otto-parity every
+# fifteen minutes (.github/workflows/otto-parity.yml): it mints a kubeconfig, grades both
+# Ottos and the layers under them, and alerts the founder on Telegram when the tick turns
+# red. That is the scheduler and the alerter. The doctor does not grade the same thing a
+# second time -- it reads that verdict and puts it next to its own chain, so there is one
+# set of rows and two planes: the scheduled one and the callable one.
+SCHEDULED_PLANES = [
+    {
+        "workflow": "otto-parity.yml",
+        "what": "the estate's own 15-minute SLA tick for both Ottos and the layers under them -- it already alerts the founder on Telegram when a tick turns red",
+    }
+]
+
 
 # --------------------------------------------------------------------------------------
 # Running things through the estate's own layer. Every action this doctor takes goes
@@ -242,6 +255,35 @@ def run_intent(intent: str, args: dict, timeout: int) -> tuple:
             receipt = line.split("ticket=", 1)[1].strip()
             break
     return proc.returncode, proc.stdout or "", proc.stderr or "", receipt
+
+
+def probe_workflow(workflow: str) -> tuple:
+    """The last verdict of a scheduled workflow -- the scheduled plane, read.
+
+    The verdict is context, not a link in the chain: the tick grades the Ottos AND the
+    layers under them, so a red tick is not proof about a Telegram agent. It is reported,
+    with its run, next to the chain this doctor walked.
+    """
+    path = "actions/runs?workflow_id={}&per_page=1".format(workflow)
+    rc, out, err, _receipt = run_intent(
+        "gh-api", {"path": path, "params": "--jq .workflow_runs[0].conclusion"}, 30
+    )
+    if rc == 124:
+        return BLIND, "the workflow API did not answer in 30s"
+    if rc != 0:
+        lines = (err or out or "").strip().splitlines()
+        return BLIND, "the workflow API did not answer: {}".format(
+            (lines[-1] if lines else "")[:160]
+        )
+    lines = [line.strip() for line in out.strip().splitlines() if line.strip()]
+    verdict = lines[-1] if lines else ""
+    if not verdict:
+        return BLIND, "{} has never run".format(workflow)
+    if verdict == "success":
+        return OK, "the last tick of {} was green".format(workflow)
+    if verdict == "failure":
+        return FAIL, "the last tick of {} was red".format(workflow)
+    return BLIND, "the last tick of {} was {}".format(workflow, verdict)
 
 
 # --------------------------------------------------------------------------------------
@@ -442,9 +484,22 @@ def walk(agent: dict, probe) -> dict:
     }
 
 
-def diagnose(agents: list, probe) -> dict:
+def diagnose(agents: list, probe, scheduled=None) -> dict:
     """Walk every agent's chain and summarise."""
     reports = [walk(agent, probe) for agent in agents]
+    planes = []
+    for plane in SCHEDULED_PLANES:
+        status, detail = (
+            scheduled(plane["workflow"]) if scheduled else (BLIND, "not read")
+        )
+        planes.append(
+            {
+                "workflow": plane["workflow"],
+                "what": plane["what"],
+                "status": status,
+                "detail": detail,
+            }
+        )
     broken = [report for report in reports if report["first_broken"]]
     blind = [
         report
@@ -461,6 +516,7 @@ def diagnose(agents: list, probe) -> dict:
         "zone": resolve_zone(),
         "agents": reports,
         "declared_out": DECLARED_OUT,
+        "scheduled": planes,
         "counts": {
             "agents": len(reports),
             "healthy": len(healthy),
@@ -539,6 +595,15 @@ def render(report: dict) -> str:
         lines.append("")
     for out in report["declared_out"]:
         lines.append("not a Telegram agent: {} -- {}".format(out["id"], out["why"]))
+    if report.get("scheduled"):
+        lines.append("")
+        lines.append("the scheduled plane (read, not graded again):")
+        for plane in report["scheduled"]:
+            lines.append(
+                "  {:<5} {:<16} {}".format(
+                    plane["status"], plane["workflow"], plane["detail"]
+                )
+            )
     counts = report["counts"]
     lines.append(
         "{} agents: {} healthy, {} broken, {} blind".format(
@@ -615,7 +680,7 @@ def main(argv: list) -> int:
             )
             return 2
 
-    report = diagnose(agents, make_probe())
+    report = diagnose(agents, make_probe(), scheduled=probe_workflow)
 
     if want_heal:
         for agent in report["agents"]:

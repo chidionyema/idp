@@ -88,6 +88,26 @@ this doctor, and there never will be.
 The heal returns a **receipt** — the intent's ticket id — so the repair is a fact someone can
 point at, not a sentence.
 
+## The scheduled plane, read and not duplicated
+
+The estate already runs a scheduled verdict for Otto: `.github/workflows/otto-parity.yml`, every
+fifteen minutes. It mints a kubeconfig through OCI's OIDC, grades both Ottos and the layers
+under them (Flux rows, router, bus, memory, the door, Telegram's own webhook verdict, the
+in-cluster answer probe), and **alerts the founder on Telegram** when a tick turns red or
+green again.
+
+That is the scheduler and the alerter, and it is good work. The doctor does **not** grade the
+same thing a second time: it **reads** that verdict and puts it next to its own chain, so
+there is one set of rows and two planes — the scheduled one (parity, which alerts) and the
+callable one (this doctor, which an agent can ask and which can heal).
+
+The scheduled verdict is **context, not a link**. A red tick is not proof about a Telegram
+agent, because that tick grades the layers under the Ottos too; so a red tick never becomes
+some agent's "first broken link". It is reported, with its workflow, next to the chain.
+
+The merge this implies is in the programme (Wave 1): the parity playbook should ask this
+doctor for the Telegram rows rather than keeping its own.
+
 ## The contract
 
 ```

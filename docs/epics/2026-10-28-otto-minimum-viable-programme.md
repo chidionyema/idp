@@ -54,7 +54,11 @@ for the laptop router, `k8s-diag` for the cluster, `silence-audit` for alert cov
 the founder-surfaces probe and Otto's two CronJobs. Nothing joined them for a Telegram agent, so
 an agent told "Otto is not answering" had to re-derive which of four links broke, using
 whichever door it happened to guess. The cost is not one bad incident; it is that the estate
-could not *see* Otto at all.
+could not *see* Otto at all. Measured 2026-10-28: the estate does run a scheduled verdict for
+Otto — `.github/workflows/otto-parity.yml`, every fifteen minutes, alerting the founder on
+Telegram — but that tick answers the **founder**, on a schedule, about both Ottos and the layers
+under them. It is not a door an agent can ask, it does not name the first broken link, and it
+cannot repair anything. The estate could watch Otto; it could not *ask*.
 
 **RC4 — Otto's own control plane was blind, so Otto could not read its own state.**
 Measured 2026-10-28, from this laptop: the cluster did not answer (`kubectl` reached the
@@ -101,15 +105,16 @@ Telegram agent's chain; it exits 0 healthy / 1 broken / 3 blind; `--heal` repair
 `flux-reconcile` and re-reads the link; the contract is pinned by
 `tests/test_telegram_agent_doctor.py`.
 
-### Wave 1 — the doctor runs, and the estate can see
+### Wave 1 — the scheduled plane and the callable door become one
 
-Run the doctor every five minutes from a machine that can reach the cluster; write its verdict
-into the capability registry's health store; raise an alert when a Telegram agent's link is
-`FAIL`, naming the link.
+The estate already runs `otto-parity.yml` every fifteen minutes and alerts the founder on
+Telegram. Wave 1 makes that tick **ask this doctor** for the Telegram rows instead of keeping
+its own, writes the doctor's verdict into the capability registry's health store, and puts it
+on `/fleet`.
 
-**DoD:** a real receipt every five minutes on the real path, and an alert whose body names the
-broken link. `silence-audit` then stops calling a Telegram agent "SILENT" — it is HEARD, or it
-is broken and named.
+**DoD:** the parity tick's Telegram rows come from the doctor (one set of rows, not two), the
+doctor's verdict appears on `/fleet` with the link named, and an agent can call the same door
+and get the same answer the founder sees.
 
 ### Wave 2 — the answer floor becomes a gate
 
@@ -139,7 +144,8 @@ answers on Telegram.
 Otto is fully onboarded when all five are true, and each is checkable:
 
 1. **Its state is readable** — one call says every Telegram agent's health, and says which
-   link broke (Wave 0).
+   link broke (Wave 0), next to the verdict the scheduled tick already reaches the founder
+   with (Wave 1).
 2. **Its health is watched** — a scheduled verdict, an alert that names the link, and a receipt
    (Wave 1).
 3. **Its delivery is gated** — nothing claims Otto is done unless the gate agrees (Wave 2).

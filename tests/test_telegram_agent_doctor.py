@@ -143,6 +143,30 @@ def test_the_registry_names_only_doors_that_exist_and_manifests_that_exist():
     assert INTENT.exists()
     assert INTENT.read_text(encoding="utf-8").count("telegram-agent-doctor.py") == 1
 
+    for plane in DOCTOR_MODULE["SCHEDULED_PLANES"]:
+        assert (ROOT / ".github/workflows" / plane["workflow"]).exists(), plane[
+            "workflow"
+        ]
+
+
+def test_the_scheduled_plane_is_read_and_never_graded_again():
+    """Given the estate's own fifteen-minute SLA tick, when the doctor reports, then the
+    tick's verdict is read and shown as context -- and it does NOT become a broken link of a
+    Telegram agent, because that tick grades the layers under the Ottos too. One set of rows,
+    two planes: the scheduled one and the callable one."""
+
+    def scheduled(workflow):
+        return "FAIL", "the last tick of {} was red".format(workflow)
+
+    report = DOCTOR_MODULE["diagnose"](
+        [_agent(["first"])], lambda link: ("ok", "answered"), scheduled=scheduled
+    )
+    assert report["scheduled"][0]["workflow"] == "otto-parity.yml"
+    assert report["scheduled"][0]["status"] == "FAIL"
+    assert report["counts"]["broken"] == 0
+    assert report["agents"][0]["first_broken"] is None
+    assert "the scheduled plane" in DOCTOR_MODULE["render"](report)
+
 
 def test_the_doctor_covers_every_telegram_agent_the_estate_declares():
     """Given the estate's one Telegram bot owner, when the registry is read, then the door
