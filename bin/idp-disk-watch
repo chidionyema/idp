@@ -16,7 +16,8 @@ WHAT IT IS. A resident process, not a tick:
   * healthy  -> one statvfs, one heartbeat, sleep. Nothing else. The volume is not walked, no
     cache is measured, nothing is deleted. Cost of a healthy cycle: microseconds.
   * under pressure (free < target) -> ONE bounded step of the estate's cleaner, in the cleaner
-    INCREMENTAL mode (the caches and the toolchain tier only), with a time budget. Every step is
+    INCREMENTAL mode (the caches, the toolchain tier and the estate's own temp scratch), with a
+    time budget. Every step is
     idempotent, so a step that did not finish is the next step's work. The guardian never deletes
     anything itself: the cleaner is the only implementation of the reclaim policy, and every
     safety rule (keep-lists, open files, the estate's own runtime naming a thing, the founder's

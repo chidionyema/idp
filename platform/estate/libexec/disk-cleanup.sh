@@ -73,7 +73,7 @@ INCREMENTAL="${DISK_CLEANUP_INCREMENTAL:-0}"
 if [ -n "${DISK_CLEANUP_PHASES:-}" ]; then
   PHASES="$DISK_CLEANUP_PHASES"
 elif [ "$INCREMENTAL" = 1 ]; then
-  PHASES="caches,critical"
+  PHASES="caches,critical,temp"
 else
   PHASES="all"
 fi
@@ -537,7 +537,7 @@ crit_tier() {
   #     is what made the hot path slow enough to time out. The reference set is ONE grep for
   #     every candidate, cached (below). Nothing here re-measures what it already knows.
   npm_globals() {
-    local nmroot kb path base scope full ver names_file refs refs_raw rc m key cache pkgs=""
+    local nmroot kb path base scope full ver names_file refs rc m key cache pkgs="" tmp_refs
     for nmroot in "$HOME/.nvm/versions/node"/*/lib/node_modules; do
       [ -d "$nmroot" ] || continue
       pkgs="$pkgs$(du -k -d 2 "$nmroot" 2>/dev/null | awk -v root="$nmroot" -F'\t' '
@@ -572,13 +572,41 @@ crit_tier() {
     if [ -f "$cache.refs" ] && [ "$(cat "$cache.key" 2>/dev/null)" = "$key" ]; then
       refs=$(cat "$cache.refs")
     else
-      refs_raw=$(tmo 20 grep -rhoFf "$names_file" $SURFACE_DIRS 2>/dev/null); rc=$?
-      if [ "$rc" = 142 ]; then
-        echo "  BLIND  npm-global  the surface scan did not finish in 20s: every package kept"
-        rm -f "$names_file"
-        return 0
+      # THE SCAN READS THE RUNTIME TREE WITH GIT (measured 2026-10-28). The runtime tree is a
+      # git checkout, and `git grep` reads it in 0.2s where a recursive grep took 30s and timed
+      # out -- the volume was 99% full, and every plain read of the tree paid for that. A BLIND
+      # scan keeps every package, so the cost was silently the loss of the whole tier. One
+      # `git grep -l` per package name says whether the estate names it; the directories OUTSIDE
+      # the checkout (the installed libexec, the estate's bin, the launch agents) are small and
+      # are read the ordinary way.
+      refs=""
+      if git -C "$RUNTIME_TREE" rev-parse --git-dir >/dev/null 2>&1; then
+        while IFS= read -r nm; do
+          [ -n "$nm" ] || continue
+          if git -C "$RUNTIME_TREE" grep -lF -- "$nm" -- . >/dev/null 2>&1; then
+            refs="$refs$nm
+"
+          fi
+        done <"$names_file"
+      else
+        # A runtime tree that is not a checkout is read the ordinary way, inside the same
+        # bound. If that read cannot finish, the tier is BLIND and keeps every package: a
+        # surface that cannot be read must never decide that the estate uses nothing.
+        tmp_refs=$(mktemp "${TMPDIR:-/tmp}/npmrefs.XXXXXX") || tmp_refs=""
+        if [ -n "$tmp_refs" ]; then
+          tmo 20 grep -rhoFf "$names_file" $SURFACE_DIRS >"$tmp_refs" 2>/dev/null
+          rc=$?
+          if [ "$rc" = 142 ]; then
+            echo "  BLIND  npm-global  the surface scan did not finish in 20s: every package kept"
+            rm -f "$tmp_refs" "$names_file"
+            return 0
+          fi
+          refs=$(sort -u <"$tmp_refs")
+          rm -f "$tmp_refs"
+        fi
       fi
-      refs=$(printf '%s\n' "$refs_raw" | sort -u)
+      outside=$(tmo 10 grep -rhoFf "$names_file" "$HOME/.estate/libexec" "$HOME/.estate/bin" "$HOME/Library/LaunchAgents" 2>/dev/null)
+      refs=$(printf '%s\n%s\n' "$refs" "$outside" | sort -u)
       mkdir -p "$(dirname "$cache")" 2>/dev/null
       printf '%s\n' "$refs" >"$cache.refs" 2>/dev/null
       printf '%s\n' "$key" >"$cache.key" 2>/dev/null
@@ -994,17 +1022,36 @@ fi
 # it only at reboot). An entry goes when it is ours, has a tool's temp name, nothing under it was
 # written in TMP_IDLE_MIN (6h), it holds no git checkout (the pass above judges those) and no
 # process has a file open or its cwd under it. Only top-level entries of $TMPDIR, never $TMPDIR.
-TMP_NAMES='^(go-build[0-9]+|tmp\.[A-Za-z0-9]{6,}|tmp[a-z0-9_]{8}|jest_[a-z0-9]+)$'
-if [ "$WORKTREES" = 1 ] && [ -n "$TMP_ROOT" ] && phase_gate temp 8; then
+TMP_NAMES='^(go-build[0-9]+|tmp\.[A-Za-z0-9]{6,}|tmp[a-z0-9_]{8}|jest_[a-z0-9]+|pytest-of-[A-Za-z0-9_-]+)$'
+if [ -n "$TMP_ROOT" ] && phase_gate temp 8; then
   cands=$(tmo 15 find "$TMP_ROOT" -mindepth 1 -maxdepth 1 -user "$(id -u)" -mmin +"$TMP_IDLE_MIN" 2>/dev/null |
           while IFS= read -r p; do printf '%s\n' "${p##*/}" | grep -Eq "$TMP_NAMES" && printf '%s\n' "$p"; done)
   if [ -n "$cands" ]; then
     # both bounded: a whole-machine lsof listing and a find of $TMPDIR are two of the slowest
     # things here, and under a budget they get what is left rather than all of it.
-    OPEN=$(tmo 20 lsof -Fn 2>/dev/null | sed -n 's/^n//p')
+    # A BLIND LISTING KEEPS EVERY CANDIDATE (2026-10-28): the listing is what says "a process
+    # has this open", and a check that could not be made must not be the reason something
+    # another process is using gets deleted. The timeout is 142, and the exit status is read
+    # from the bounded call itself (a pipeline would report sed's status, not the timeout's).
+    open_rc=0
+    openf=$(mktemp "${TMPDIR:-/tmp}/open.XXXXXX" 2>/dev/null || echo)
+    OPEN=""
+    if [ -n "$openf" ]; then
+      tmo 20 lsof -Fn >"$openf" 2>/dev/null || open_rc=$?
+      OPEN=$(sed -n 's/^n//p' "$openf")
+      rm -f "$openf"
+    else
+      open_rc=1
+    fi
+    if [ "$open_rc" -ne 0 ]; then
+      echo "  keep   tmp  the open-file listing did not complete (rc=$open_rc): no temp directory is deleted on a guess"
+      OPEN=""
+    fi
     while IFS= read -r p; do
       m=$(size_m "$p")
-      if [ -n "$(find "$p" -mmin -"$TMP_IDLE_MIN" -print 2>/dev/null | head -1)" ]; then
+      if [ "$open_rc" -ne 0 ]; then
+        echo "  keep   tmp  ${m}M  $p  (the open-file listing was blind: nothing is deleted on a guess)"; continue; fi
+      if [ -n "$(find "$p" -maxdepth 3 -mmin -"$TMP_IDLE_MIN" -print 2>/dev/null | head -1)" ]; then
         echo "  keep   tmp  ${m}M  $p  (written in the last ${TMP_IDLE_MIN}m)"; continue; fi
       if [ -n "$(find "$p" -maxdepth 3 -name .git -print 2>/dev/null | head -1)" ]; then
         echo "  keep   tmp  ${m}M  $p  (holds a git checkout)"; continue; fi
