@@ -3,8 +3,11 @@ description: >-
   Free space now, inside the door's 100s, by running the estate's own cleaner
   (platform/estate/libexec/disk-cleanup.sh) in apply mode under a budget it can finish. It deletes
   ONLY what the cleaner already allows -- package-manager caches, dangling images and build
-  cache, settled agent worktrees it archives first, stale temp, leftover Chrome code-sign
-  clones, and (under its floor) re-installable toolchain weight -- and widens nothing.
+  cache, settled agent worktrees it archives first, stale temp (including the pytest scratch
+  every local gate run leaves behind), leftover Chrome code-sign clones, and (under its floor)
+  re-installable toolchain weight -- and widens nothing. The estate's own tool cache is not
+  weight: it holds the gate's python, kyverno, helm and the rest, and reclaiming it takes the
+  estate's own doors down with it.
   worktrees=true by default because that is where the gigabytes are.
   ONE ORDER, AND IT IS THE ENGINE'S: caches, then the toolchain tier, then docker, then
   worktrees, then temp, then the Chrome clones. The toolchain tier is second because it is the
