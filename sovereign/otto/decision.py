@@ -58,10 +58,10 @@ import time
 import urllib.error
 import urllib.request
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 SCHEMA = "founder.decision.v1"
 MAX_OPTIONS = 5
@@ -354,7 +354,7 @@ def expire_due(path: Optional[Path] = None, now: Optional[datetime] = None) -> l
     moment = now or _now()
     state = load_state(path)
     expired = []
-    for decision_id, rec in state["decisions"].items():
+    for rec in state["decisions"].values():
         if rec.get("state") != STATE_ASKED:
             continue
         deadline = rec.get("deadline_at")
@@ -781,7 +781,7 @@ def _url_reachable(url: str, timeout_s: float = 3.0) -> bool:
     try:
         with urllib.request.urlopen(request, timeout=timeout_s) as response:  # noqa: S310
             return 200 <= int(response.status) < 500
-    except urllib.error.HTTPError as exc:
+    except urllib.error.HTTPError:
         # The gateway answers 4xx/5xx for a bot path it does not like; it is still ALIVE.
         return True
     except (urllib.error.URLError, OSError, ValueError):
