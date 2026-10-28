@@ -36,6 +36,18 @@ ports:
   # The estate MCP server (ADR 0006, one interface): datasette-mcp bound to loopback,
   # reached by bin/idp-verifier-curl and the verifier daemon. mcp/agentgateway.yml:117.
   - {port: 8001, service: estate-mcp,           compose: mcp/agentgateway.yml, bind: 127.0.0.1}
+  # The estate's CONTEXT BROKER: the one door to the context engine (ADR
+  # 2026-10-27-the-estate-context-broker-is-the-only-door). bin/estate-context-compile
+  # asks the BROKER, never the engine, and it asks it on the loopback -- which is exactly
+  # what R22 mechanism 4 refuses when the port is not declared here. In the cluster the
+  # broker is a ClusterIP Service in the mcp namespace (platform/mcp/estate-context-broker.yaml);
+  # on a laptop it is the loopback door.
+  - {port: 8002, service: estate-context-broker, compose: none, bind: 127.0.0.1}
+  # The CONTEXT ENGINE's own port, and the reason it is safe to publish: the engine binds
+  # it on the loopback INSIDE the broker's pod, has no Service and no route of any kind
+  # (bin/estate-context-gate refuses an engine that has either). The only client is the
+  # broker, in the same network namespace.
+  - {port: 7411, service: gortex-engine,         compose: none, bind: 127.0.0.1}
   - {port: 7107, service: backstage-backend,    compose: none, bind: 127.0.0.1}
   - {port: 8000, service: healthchecks,         compose: none, bind: 127.0.0.1}
   - {port: 8080, service: prospector-edge,      compose: prospector, bind: 127.0.0.1}

@@ -6,6 +6,8 @@ resources:
   - router-events.yaml
   - hermes-agent.yaml
   - estate-mcp.yaml
+  - estate-context-broker.yaml
+  - gortex-engine.yaml
   - estate-scheduler.yaml
   - prospector.yaml
   - lago-api.yaml
