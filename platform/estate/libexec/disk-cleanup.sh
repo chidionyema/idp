@@ -28,6 +28,20 @@
 # Under the floor, the log ends with WHERE the space is (largest dirs, big files, system spots),
 # measured, not a fixed list -- see "where the space is" below.
 #
+# THE TARGET (DISK_CLEANUP_TARGET_MB, 2026-10-28). The cleaner used to have no goal: it deleted
+# an allow-list and reported what was left, and the caller had to decide whether that was enough.
+# The estate's executor has one hard number -- MIN_FREE_MB in mcp/plugins/estate_executor.py --
+# and it REFUSES to start a job below it ("the volume has 424 MB free, under this door's 1500 MB
+# floor"). So the cleaner is given that same number as a goal: keep reclaiming until the volume
+# has at least this much free. 0 = no target (the old behaviour: one pass, then report).
+# When a target is set and not reached, the run ends with a ranked "blocked by" table: each thing
+# that stands in the way, measured, with the reason it was kept.
+#
+# THE MODE (DISK_CLEANUP_INCREMENTAL=1). The resident guardian's mode: ONE small bounded step --
+# no discovery walk of HOME, no worktree walk, no docker probe, no scan. Every step is
+# idempotent, so a step that did not finish is simply the next step's work. This is the shape the
+# founder asked for: "more optimal than once massive cleanup that times out etc".
+#
 # Exit: 0 ok, 3 a target that should be gone is not (verify failed), 4 the time budget ran out
 # before every phase ran (run it again), 5 another run holds the lock and did the work instead
 # (nothing done here -- 0 would say the disk is clear), 1 refused.
@@ -49,7 +63,20 @@ APPLY="${1:-false}"; TRASH="${2:-false}"; ONLY_BELOW_MB="${3:-0}"; WORKTREES="${
 #   DISK_CLEANUP_PHASES  comma list, or `all` (default): caches,docker,worktrees,temp,clones,critical,scan
 #
 # Exit 4 = the budget ran out before every phase ran; run it again to continue.
-BUDGET="${5:-0}"; PHASES="${DISK_CLEANUP_PHASES:-all}"
+BUDGET="${5:-0}"
+TARGET_MB="${DISK_CLEANUP_TARGET_MB:-0}"
+INCREMENTAL="${DISK_CLEANUP_INCREMENTAL:-0}"
+# The phases. The guardian's mode runs two of them: the caches (fast, always safe) and the
+# critical tier (the toolchains, which is where the volume's weight actually is). The others are
+# deliberately not in it -- a worktree walk is another agent's checkout, and a docker probe
+# against an engine that is not answering costs more than it returns.
+if [ -n "${DISK_CLEANUP_PHASES:-}" ]; then
+  PHASES="$DISK_CLEANUP_PHASES"
+elif [ "$INCREMENTAL" = 1 ]; then
+  PHASES="caches,critical"
+else
+  PHASES="all"
+fi
 T_START=$(date +%s)
 budget_hit=0
 # remaining: whole seconds left of BUDGET, or a large number when unbounded (so every `-lt` test
@@ -101,6 +128,9 @@ T_SPOTS="${DISK_CLEANUP_SPOTS_TIMEOUT:-45}"
 SYSTEM_SPOTS="${DISK_CLEANUP_SYSTEM_SPOTS-/System/Volumes/Update /private/var/vm}"
 SCAN_FILE="${DISK_CLEANUP_SCAN_FILE:-$HOME/.estate/disk-cleanup.last-scan}"
 CRIT_MB="${DISK_CLEANUP_CRIT_MB:-10240}"   # free-space floor under which the toolchain tier runs
+# How long ONE delete may run. A delete of several GB outlasts a door's ceiling, so it is cut
+# short here and resumed by the next step (rm -rf of what is left continues where it stopped).
+DELETE_S="${DISK_CLEANUP_DELETE_S:-30}"
 # The estate's own git clone: repacked under the floor, never deleted (git gc keeps every
 # reachable object). Space-separated; each path is resolved, so a symlinked clone is done once.
 GIT_REPOS="${DISK_CLEANUP_GIT_REPOS:-$HOME/.estate/graph/estate-graph}"
@@ -108,6 +138,21 @@ REPACK_MIN_KB="${DISK_CLEANUP_REPACK_MIN_KB:-65536}"  # below this much loose ob
 T_REPACK="${DISK_CLEANUP_GIT_TIMEOUT:-300}"          # git gc is bounded: a wedged repo must not hang the tick
 CARGO_REGISTRY="${DISK_CLEANUP_CARGO_REGISTRY:-$HOME/.cargo/registry}"
 GO_MODCACHE="${DISK_CLEANUP_GO_MODCACHE:-${GOPATH:-$HOME/go}/pkg/mod}"
+# THE ESTATE'S OWN EXECUTABLE SURFACE (2026-10-28). The places where a name means "the estate
+# runs this". A mention in docs/ is a note about the estate; a mention here is the estate running
+# it. The installed runtime tree is the authority: it is what the doors actually execute.
+RUNTIME_TREE="${DISK_CLEANUP_RUNTIME_TREE:-$HOME/.estate/runtime/idp}"
+SURFACE_DIRS="${DISK_CLEANUP_SURFACE_DIRS:-$RUNTIME_TREE/bin $RUNTIME_TREE/launchd $RUNTIME_TREE/tests $RUNTIME_TREE/.github $RUNTIME_TREE/platform $RUNTIME_TREE/mcp $RUNTIME_TREE/sovereign $HOME/.estate/libexec $HOME/.estate/bin $HOME/Library/LaunchAgents}"
+# The global npm packages the estate runs, by name or by scope. Everything else inside a node
+# version the estate keeps is reclaimable (`npm i -g <name>` brings it back). The scopes are the
+# estate's own: @anthropic-ai/claude-code and @earendil-works/pi-coding-agent are installed by
+# .github/workflows/agent-sandbox.yml, @openai and cline are the estate's agent lanes, and
+# @playwright/cli and puppeteer-core are what the browser skills drive.
+NPM_GLOBAL_KEEP="${DISK_CLEANUP_NPM_GLOBAL_KEEP:-npm yarn corepack pnpm typescript ts-node @earendil-works @anthropic-ai @openai @playwright cline pi-subagents puppeteer-core}"
+# The estate's tool cache is the estate's OWN TOOLING (the gate's python, kyverno, helm,
+# kustomize, kubeconform, flux, conftest, temporal, sops, the router's venv, the voice models,
+# the bus). It is reported, never reclaimed: see the critical tier, section 8.
+TOOL_CACHE="${DISK_CLEANUP_TOOL_CACHE:-$HOME/.cache/estate-tools}"
 # The process patterns the critical tier's guards ask about ("is a cargo/rustc/go/git-gc
 # running?"). They are read from the environment, with today's patterns as the DEFAULTS, so a
 # TEST can point them at a name no process can have. The guard is machine-wide (pgrep -f), so a
@@ -132,6 +177,11 @@ for v in CARGO_PROC GO_PROC GIT_BUSY OLLAMA_PROC; do
 done
 [ -n "${HOME:-}" ] && [ "$HOME" != / ] || { echo "REFUSED HOME is unset or /"; exit 1; }
 case "$APPLY" in True|true) APPLY=1;; *) APPLY=0;; esac
+# INCREMENTAL comes from a door as the word "true" (the intent's bool shape), and from the
+# guardian as the number 1. Both mean the same thing, so both are accepted: a door that passed
+# "true" and was not understood would silently run the FULL sweep (a du of HOME and a walk of
+# every worktree) inside the guardian's step.
+case "$INCREMENTAL" in True|true|1) INCREMENTAL=1;; *) INCREMENTAL=0;; esac
 case "$TRASH" in True|true) TRASH=1;; *) TRASH=0;; esac
 case "$WORKTREES" in True|true) WORKTREES=1;; *) WORKTREES=0;; esac
 for v in WT_IDLE_MIN WT_FRESH_MIN WT_STALE_MIN WT_ARCHIVE_MAX_MB WT_QUARANTINE_DAYS TMP_IDLE_MIN \
@@ -183,14 +233,38 @@ LOCK="${DISK_CLEANUP_LOCK:-$HOME/.estate/disk-cleanup.lock}"
 mkdir -p "$(dirname "$LOCK")"
 if ! mkdir "$LOCK" 2>/dev/null; then
   holder=$(cat "$LOCK/pid" 2>/dev/null || echo)
+  holder_start=$(cat "$LOCK/start" 2>/dev/null || echo)
+  # A STALE LOCK MUST NOT CLOSE THE DOOR, AND A LIVE ONE MUST NOT BE IGNORED (2026-10-28).
+  # The pid in the lock is not proof that the holder is alive: a pid that the kernel RECYCLED
+  # onto an unrelated process keeps `kill -0` happy forever, and the estate's door stayed shut
+  # ("another disk-cleanup is running", exit 5) while the volume sat under the executor's floor.
+  # The lock therefore records the holder's START TIME next to its pid: a pid that is alive but
+  # whose start time no longer matches was recycled, and the lock is stale. The start time is
+  # the proof, not the pid, and the comparison is exact.
+  # A lock with no recorded start time (an older run, or one written by hand) is HELD while its
+  # pid lives. That is the conservative answer: a check that cannot be made must never be the
+  # reason a live agent's worktree is deleted.
   if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
+    if [ -n "$holder_start" ]; then
+      live_start=$(ps -p "$holder" -o lstart= 2>/dev/null | sed 's/^ *//; s/ *$//')
+      if [ -n "$live_start" ] && [ "$live_start" != "$holder_start" ]; then holder=""; fi
+    fi
+  else
+    holder=""
+  fi
+  if [ -n "$holder" ]; then
     # NOT 0 (2026-10-25): measured through the disk-free door, a second call answered "nothing done"
     # and the door's verdict printed "every phase ran" -- a caller read a clear disk it never
     # touched. 5 is a distinct status so the verdict can say whose work it is.
-    echo "ok      another disk-cleanup (pid $holder) is running: nothing done here"; exit 5; fi
+    # The free space is in the line because this is not a failure: it is another run doing the
+    # work, and a caller that asked for space needs the number either way.
+    _fk=$(free_k 2>/dev/null); _fk=${_fk:-0}
+    echo "ok      another disk-cleanup (pid $holder) is running: nothing done here ($(( _fk / 1024 ))M free on $VOL)"; exit 5; fi
   rm -rf "$LOCK"; mkdir "$LOCK" 2>/dev/null || { echo "ok      lost the lock race: nothing done here"; exit 5; }
 fi
 echo $$ >"$LOCK/pid"
+# The start time goes in beside the pid: it is what makes a recycled pid detectable.
+ps -p $$ -o lstart= 2>/dev/null | sed 's/^ *//; s/ *$//' >"$LOCK/start"
 trap 'rm -rf "$LOCK"' EXIT
 size_m() {
   [ -e "$1" ] || { echo 0; return; }
@@ -220,8 +294,15 @@ uv-cache|$HOME/.cache/uv|(^|/)uv( |$)"
 # nothing. A discovery step that cannot finish is BLIND for that one target family, not a reason to
 # lose the rest of the run.
 T_FIND="${DISK_CLEANUP_FIND_TIMEOUT:-25}"
-found=$(tmo "$T_FIND" find $RUST_ROOTS -maxdepth 6 \( -name node_modules -o -name .git -o -path '*/.claude/worktrees' \) -prune \
-       -o -type d -name target -prune -print 2>/dev/null); find_rc=$?
+# The guardian's mode does not walk the estate's checkouts: a find of ~/Documents (a FileProvider
+# folder) took more than 25s on this laptop, and it finds build output, not the weight that is
+# actually on the volume.
+if [ "$INCREMENTAL" = 1 ]; then
+  found=""; find_rc=0
+else
+  found=$(tmo "$T_FIND" find $RUST_ROOTS -maxdepth 6 \( -name node_modules -o -name .git -o -path '*/.claude/worktrees' \) -prune \
+         -o -type d -name target -prune -print 2>/dev/null); find_rc=$?
+fi
 [ "$find_rc" = 142 ] && echo "  BLIND  rust-target  the find of $RUST_ROOTS did not finish in ${T_FIND}s: no Cargo target/ dirs this run"
 while IFS= read -r t; do
   [ -f "${t%/target}/Cargo.toml" ] || continue
@@ -283,6 +364,391 @@ if [ "$BUDGET" != 0 ]; then
   _left=$(remaining); _cap=$(( _left > 12 ? (_left - 4) / 3 : 4 ))
   [ "$_cap" -lt "$T_STEP" ] && T_STEP="$_cap"
   [ "$T_INFO" -gt "$_cap" ] && T_INFO="$_cap"
+fi
+# THE TARGET, AS A TEST (2026-10-28). 0 when the goal is met, so every reclaim family can stop
+# the moment the volume is back above it. Reclaiming past the goal is disruption nobody asked
+# for. With no goal (TARGET_MB=0) the target is never met, so every family runs and the
+# reclaim is not silently truncated.
+target_met() {
+  [ "$TARGET_MB" -gt 0 ] || return 1
+  local f; f=$(( $(free_k) / 1024 ))
+  [ "$f" -ge "$TARGET_MB" ]
+}
+
+# ONE ROW OF THE "BLOCKED BY" TABLE (2026-10-28): a thing that was measured, and the reason it
+# was not reclaimed. A target-driven cleaner that cannot say what stands in its way is just a
+# cleaner that runs.
+blocked_row() {  # PATH REASON
+  local p=$1 why=$2 m
+  [ -e "$p" ] || return 0
+  m=$(size_m "$p")
+  echo "    ${m}M  $p  ($why)"
+}
+
+# THE CRITICAL TIER. Measured 2026-10-24 on the founder's laptop: the volume sat at 7.7Gi free
+# (92% used) with every allow-list target empty, because the growers were never on it --
+# ~/.nvm/versions/node 2570M, ~/.rustup/toolchains 2659M, ~/.local/share/claude/versions 545M
+# (three superseded builds) and ~/.ollama/models 3.5G before the founder killed the laptop's
+# ollama on 2026-09-10 ("no i killed ollama because machine is slow"). The allow-list deletes
+# CACHES; these are the same kind of thing one level up: a toolchain, re-installed on demand.
+#
+# The same day, later: the volume was back under the floor at 8725M free and the tier above had
+# nothing left to give -- the ollama weights were gone, one node version and one rustup
+# toolchain remained, and the claude builds were one. The growers that were left were the
+# estate's own: the graph clone's loose git objects (3.05 GiB, repacked, not deleted) and the
+# build tools' package caches (~/.cargo/registry 1081M, ~/go/pkg/mod 774M, both re-fetched on
+# demand). A safeguard that cannot reach a healthy disk is a safeguard that stays armed and
+# does nothing, so the tier grew those families too -- each with the same evidence and the same
+# way back.
+#
+# It runs only under a critical floor (CRIT_MB, default 10240M free -- 10G on a 113Gi volume,
+# which is macOS's own 10% headroom advice; a 4000M floor would not have fired on this machine,
+# whose free space was 7885M) and only with apply=true. Under the floor the alternative is a
+# machine that cannot write (bin/idp-disk-guard: "writes fail in ways that read as unrelated
+# faults"), and the founder's order is "we must never be in trouble". Above the floor every one
+# of these is listed and nothing is touched.
+#
+# KEPT, per target, and why:
+#   - the newest of a family: the one a command with no pin resolves to;
+#   - a version the estate's own runtime names (~/.estate/libexec/*, platform/estate/libexec/*):
+#     pi and cline run node out of a pinned path, and deleting it breaks them mid-task;
+#   - anything a running process holds open (one lsof listing, the same one the Chrome-clone
+#     pass uses): a file open under it is a file in use;
+#   - rustup's own default toolchain, and any ollama server that is running;
+#   - a cargo/rustc or a go build that is running, and a git gc/repack already in flight:
+#     those are writing into what they would reclaim.
+# Everything else goes, and every line says how to get it back.
+crit_held=""
+crit_reclaim() {  # NAME PATH HOW-TO-GET-IT-BACK
+  local name=$1 path=$2 regen=$3 m left rc
+  # An rm -rf of several GB cannot be undone mid-way, so under a budget it is only started when
+  # there is room to finish and report: a half-deleted node version is a broken node version.
+  # The size the caller already measured (one du per root, not one per candidate). A caller that
+  # does not have one gets it measured here.
+  m="${4:-}"
+  [ -n "$m" ] || m=$(size_m "$path")
+  if [ "$(remaining)" -lt 10 ]; then
+    echo "  SKIP   $name  ${m}M  $path  ($(remaining)s left of a ${BUDGET}s budget: run again)"
+    budget_hit=1; return 0
+  fi
+  if [ "$APPLY" = 0 ]; then echo "  would  $name  ${m}M  $path  ($regen)"; return 0; fi
+  # A delete is BOUNDED and RESUMABLE (2026-10-28). `rm -rf` of several GB outlasts a door's
+  # ceiling: measured 2026-10-28, the 100s door SIGTERMed a 1.7G delete mid-way (exit 124) and
+  # the run reported nothing at all. rm of what is left continues where it stopped, so a bounded
+  # delete is not a failure -- it is work still owed (exit 4), and the resident guardian carries
+  # it into its next step on its own.
+  tmo "$DELETE_S" rm -rf "$path" >/dev/null 2>&1; rc=$?
+  if [ "$rc" = 142 ]; then
+    echo "  step   $name  ${m}M  $path  (the delete is still going: the next step continues it)"
+    budget_hit=1; return 0
+  fi
+  left=$(size_m "$path")
+  if [ "$left" -le 1 ]; then echo "  freed  $name  ${m}M  $path  ($regen)"
+  else echo "  !! $name still holds ${left}M after delete: $path"; fails=$((fails + 1)); fi
+}
+crit_in_use() {  # 0 when a process holds a file open under $1
+  printf '%s\n' "$crit_held" | awk -v w="$1" 'index($0, w"/")==1 || $0==w {f=1} END{exit !f}'
+}
+# A REPACK is not a delete: git gc rewrites the same objects into one pack file and keeps every
+# reachable one (git's own guarantee). Only unreachable objects older than gc.pruneExpire (two
+# weeks by default) are pruned. Measured before and after, so the line states what it freed.
+crit_repack() {  # NAME REPO
+  local name=$1 repo=$2 before_m after_m loose_before loose_after out rc
+  loose_before=$(git -C "$repo" count-objects -v 2>/dev/null | awk '$1=="size:"{print $2}')
+  case "$loose_before" in ''|*[!0-9]*) loose_before=0;; esac
+  before_m=$(size_m "$repo/.git")
+  out=$(tmo "$T_REPACK" git -C "$repo" gc --quiet 2>&1); rc=$?
+  loose_after=$(git -C "$repo" count-objects -v 2>/dev/null | awk '$1=="size:"{print $2}')
+  case "$loose_after" in ''|*[!0-9]*) loose_after=0;; esac
+  after_m=$(size_m "$repo/.git")
+  if [ "$rc" -ne 0 ]; then
+    echo "  !! $name  git gc did not finish (exit $rc): $(printf '%s' "$out" | tail -1)"
+    fails=$((fails + 1)); return 0
+  fi
+  if [ "$loose_after" -ge "$loose_before" ]; then
+    echo "  keep   $name  ${after_m}M  $repo/.git  (git gc left ${loose_after}K of loose objects)"; return 0
+  fi
+  echo "  freed  $name  $(((loose_before - loose_after) / 1024))M of loose objects  $repo/.git  (${before_m}M -> ${after_m}M on disk; git gc: the same objects, one packed file)"
+}
+crit_pinned_nodes() {  # the node versions the estate's own runtime names
+  local d
+  for d in "$HOME/.estate/libexec" "$RUST_ROOTS/platform/estate/libexec"; do
+    [ -d "$d" ] || continue
+    grep -hoa '\.nvm/versions/node/[A-Za-z0-9._-]*' "$d"/* 2>/dev/null
+  done | sed 's|.*/||' | sort -u
+}
+crit_tier() {
+  local free_mb=$1 v name m newest pinned default keep held rc
+  echo "critical tier: ${free_mb}M free on $VOL is under CRIT_MB=${CRIT_MB}M -- the toolchains below are re-installed on demand"
+  held=$(tmo 60 lsof -nPw -Fn 2>/dev/null); rc=$?
+  if [ "$rc" -gt 1 ]; then
+    echo "  BLIND  critical-tier  lsof could not answer (exit $rc): everything kept"; fails=$((fails + 1)); return 0
+  fi
+  crit_held=$(printf '%s\n' "$held" | sed -n 's/^n//p')
+
+  # 1. ollama's weights. The founder killed the laptop's ollama on 2026-09-10; if a server is
+  #    running now, someone is serving from these and they stay.
+  if [ -d "$HOME/.ollama/models" ]; then
+    if pgrep -x "$OLLAMA_PROC" >/dev/null 2>&1; then
+      echo "  keep   ollama-models  $(size_m "$HOME/.ollama/models")M  $HOME/.ollama/models  (an ollama server is running)"
+    else
+      crit_reclaim ollama-models "$HOME/.ollama/models" "ollama pull <model>"
+    fi
+  fi
+
+  # 2. node versions under nvm.
+  if [ -d "$HOME/.nvm/versions/node" ]; then
+    newest=$(ls -1 "$HOME/.nvm/versions/node" 2>/dev/null | sort -V | tail -1)
+    pinned=$(crit_pinned_nodes)
+    if [ -z "$newest" ]; then
+      echo "  keep   node-version  all  (no version could be ordered: nothing is removed)"
+    else
+      for v in "$HOME/.nvm/versions/node"/*; do
+        [ -d "$v" ] || continue
+        name=${v##*/}
+        m=$(size_m "$v")
+        if [ "$name" = "$newest" ]; then echo "  keep   node-version  ${m}M  $v  (the newest installed)"; continue; fi
+        if [ -n "$pinned" ] && printf '%s\n' "$pinned" | grep -qx "$name"; then
+          echo "  keep   node-version  ${m}M  $v  (the estate's runtime names it)"; continue; fi
+        if crit_in_use "$v"; then echo "  keep   node-version  ${m}M  $v  (a process holds it open)"; continue; fi
+        crit_reclaim node-version "$v" "nvm install $name"
+      done
+    fi
+  fi
+
+  # 2b. estate-unused GLOBAL npm packages inside a node version the estate keeps.
+  #     Measured 2026-10-28: ~/.nvm/versions/node/v22.15.1 held 3083M and 1702M of it was ONE
+  #     package -- `promptfoo` -- that nothing in the estate ran (one line in a docs/epics file).
+  #     The node RUNTIME is protected above: the version the estate's own code names is kept. The
+  #     PACKAGES inside a kept version were on no list at all, so nothing ever reclaimed them,
+  #     and 1.7G sat on a 113Gi volume that the executor's floor refuses to work on. A package
+  #     goes only when all four hold:
+  #       1. it is not on the estate's keep-list (the CLIs the estate runs: npm, yarn, corepack,
+  #          pnpm, typescript, the pi/cline/codex packages);
+  #       2. no running process holds a file open under it;
+  #       3. nothing in the estate's OWN executable surface names it (see SURFACE_DIRS): a
+  #          mention in docs/ is a note about the estate, not the estate running it;
+  #       4. its directory is a direct child of a node version's lib/node_modules, or one level
+  #          deeper for a scoped package (@scope/name).
+  #     ONE MEASUREMENT FOR THE WHOLE ROOT (2026-10-28). The sizes come from ONE
+  #     `du -sk -d 2` per root: it walks the filesystem once and prints every child (and every
+  #     grandchild, for a scoped package) with its size. The old shape called du once per
+  #     candidate -- twenty walks of the same 1.8G of small files, for the same numbers, which
+  #     is what made the hot path slow enough to time out. The reference set is ONE grep for
+  #     every candidate, cached (below). Nothing here re-measures what it already knows.
+  npm_globals() {
+    local nmroot kb path base scope full ver names_file refs refs_raw rc m key cache pkgs=""
+    for nmroot in "$HOME/.nvm/versions/node"/*/lib/node_modules; do
+      [ -d "$nmroot" ] || continue
+      pkgs="$pkgs$(du -k -d 2 "$nmroot" 2>/dev/null | awk -v root="$nmroot" -F'\t' '
+        { kb=$1; path=$2; n=split(path, parts, "/"); base=parts[n];
+          rn=split(root, rparts, "/"); depth=n-rn;
+          if (depth==1) { if (base !~ /^@/) print kb "\t" path; }
+          else if (depth==2) { if (parts[n-1] ~ /^@/) print kb "\t" path; } }')
+"
+    done
+    [ -n "$pkgs" ] || return 0
+    names_file=$(mktemp "${TMPDIR:-/tmp}/npmnames.XXXXXX") || return 0
+    # NO EMPTY PATTERN IN THE NAMES FILE (measured 2026-10-28): $pkgs already ends in a newline,
+    # so `printf '%s\n'` added a second one and the first line of the names file was EMPTY. An
+    # empty grep pattern matches at EVERY position, and with -o that prints nothing at all --
+    # so the surface scan returned an empty reference set, every package looked unreferenced, and
+    # the tier deleted packages the estate's own runtime names. The list is now printed without
+    # a trailing newline and the names file is filtered, so no empty pattern can reach grep.
+    printf '%s' "$pkgs" | awk -F'\t' 'NF>=2 { path=$2; n=split(path,parts,"/"); base=parts[n];
+      if (base == "") next; sc=parts[n-1]; print base; if (sc ~ /^@/) print sc }' |
+      grep -v '^$' | sort -u >"$names_file"
+    if [ ! -s "$names_file" ]; then
+      echo "  BLIND  npm-global  no package names were measured: every package kept"
+      rm -f "$names_file"; return 0
+    fi
+    # The surface scan is CACHED (2026-10-28). The estate's own surface changes when the
+    # runtime syncs, not every twenty seconds; re-grepping the whole runtime tree on every tick
+    # was the second half of the hot path's cost. The key is the installed runtime's identity:
+    # its git HEAD when it is a checkout, and the mtime of ~/.estate/libexec, which is where a
+    # door's helper lands. A surface that cannot be read keeps every package.
+    cache="$HOME/.estate/disk-cleanup.surface"
+    key="$(git -C "$RUNTIME_TREE" rev-parse --short HEAD 2>/dev/null || echo none)-$(stat -f %m "$HOME/.estate/libexec" 2>/dev/null || echo 0)"
+    if [ -f "$cache.refs" ] && [ "$(cat "$cache.key" 2>/dev/null)" = "$key" ]; then
+      refs=$(cat "$cache.refs")
+    else
+      refs_raw=$(tmo 20 grep -rhoFf "$names_file" $SURFACE_DIRS 2>/dev/null); rc=$?
+      if [ "$rc" = 142 ]; then
+        echo "  BLIND  npm-global  the surface scan did not finish in 20s: every package kept"
+        rm -f "$names_file"
+        return 0
+      fi
+      refs=$(printf '%s\n' "$refs_raw" | sort -u)
+      mkdir -p "$(dirname "$cache")" 2>/dev/null
+      printf '%s\n' "$refs" >"$cache.refs" 2>/dev/null
+      printf '%s\n' "$key" >"$cache.key" 2>/dev/null
+    fi
+    rm -f "$names_file"
+    while IFS=$'\t' read -r kb path; do
+      [ -n "$path" ] || continue
+      if target_met; then
+        echo "  note   npm-global  the target (${TARGET_MB}M free) is met: the remaining packages are kept"
+        break
+      fi
+      m=$(( kb / 1024 ))
+      base=${path##*/}
+      scope=${path%/*}; scope=${scope##*/}
+      full=$base
+      case "$scope" in @*) full="$scope/$base";; esac
+      ver=${path%/lib/node_modules/*}; ver=${ver##*/}
+      case " $NPM_GLOBAL_KEEP " in
+        *" $base "*) echo "  keep   npm-global  ${m}M  $path  (on the estate's keep-list)"; continue;;
+        *" $scope "*) echo "  keep   npm-global  ${m}M  $path  (on the estate's keep-list: $scope)"; continue;;
+      esac
+      if crit_in_use "$path"; then echo "  keep   npm-global  ${m}M  $path  (a process holds it open)"; continue; fi
+      if printf '%s\n' "$refs" | grep -qxF "$base" || printf '%s\n' "$refs" | grep -qxF "$scope"; then
+        echo "  keep   npm-global  ${m}M  $path  (the estate's own runtime names it)"; continue; fi
+      if [ "$m" -lt 20 ]; then echo "  -      npm-global  ${m}M  $path  (too small to be worth a step)"; continue; fi
+      crit_reclaim npm-global "$path" "nvm exec $ver npm i -g $full" "$m"
+    done <<EOF
+$pkgs
+EOF
+  }
+  npm_globals
+
+  # 3. rustup toolchains.
+  if [ -d "$HOME/.rustup/toolchains" ]; then
+    default=$(sed -n 's/^default_toolchain = "\(.*\)"/\1/p' "$HOME/.rustup/settings.toml" 2>/dev/null | head -1)
+    for v in "$HOME/.rustup/toolchains"/*; do
+      [ -d "$v" ] || continue
+      name=${v##*/}
+      m=$(size_m "$v")
+      keep=0
+      if [ -n "$default" ]; then
+        case "$name" in "$default"|"$default"-*) keep=1;; esac
+      fi
+      if [ "$keep" = 1 ]; then echo "  keep   rust-toolchain  ${m}M  $v  (rustup's default toolchain)"; continue; fi
+      if crit_in_use "$v"; then echo "  keep   rust-toolchain  ${m}M  $v  (a process holds it open)"; continue; fi
+      crit_reclaim rust-toolchain "$v" "rustup toolchain install $name"
+    done
+  fi
+
+  # 4. superseded claude-code builds. ONE du for the whole directory: these are three files, and
+  #    asking du once per file is asking the filesystem the same question three times.
+    # ONE du for the whole directory: these are three files, and asking du once per file is
+    # asking the filesystem the same question three times. `du -a` is REQUIRED: on BSD du (macOS)
+    # a plain `du -d 1` lists only DIRECTORIES, and -a is mutually exclusive with -d, so the
+    # measured files (2.1.307, 2.1.308, 2.1.309) never appeared in the table and the tier could
+    # not fire. `du -k -a` lists the files; the awk keeps only the direct children.
+    if [ -d "$HOME/.local/share/claude/versions" ]; then
+      newest=$(ls -1 "$HOME/.local/share/claude/versions" 2>/dev/null | sort -V | tail -1)
+      du -k -a "$HOME/.local/share/claude/versions" 2>/dev/null |
+      awk -F'\t' -v root="$HOME/.local/share/claude/versions" '
+        { d=$2; sub("^" root "/", "", d); if (d != "" && d !~ "/") print $1 "\t" $2 }' |
+    while IFS=$'\t' read -r kb v; do
+      [ -e "$v" ] || continue
+      # A claude build is a FILE, not a directory (measured 2026-10-28: ~/.local/share/claude/
+      # versions holds 2.1.307, 2.1.308 and 2.1.309 as regular files of ~273M each). This test
+      # asked for a directory, so the tier skipped all three and 546M of superseded builds was
+      # unreachable -- the rule was there, and it could never fire.
+      name=${v##*/}
+      m=$(( kb / 1024 ))
+      if target_met; then
+        echo "  note   claude-version  the target (${TARGET_MB}M free) is met: the remaining builds are kept"
+        break
+      fi
+      if [ -n "$newest" ] && [ "$name" = "$newest" ]; then
+        echo "  keep   claude-version  ${m}M  $v  (the newest installed)"; continue; fi
+      if crit_in_use "$v"; then echo "  keep   claude-version  ${m}M  $v  (a process holds it open)"; continue; fi
+      crit_reclaim claude-version "$v" "claude's updater re-downloads it" "$m"
+    done
+  fi
+
+  # 5. the estate's own git clone: loose objects, repacked. Measured 2026-10-24 on the founder's
+  #    laptop: ~/.estate/graph/estate-graph held 5415 loose objects = 3.05 GiB while its pack held
+  #    11 MiB -- every session transcript the router drained into it was written as a loose
+  #    object and never repacked. `git fsck --unreachable` found none: all 8340 objects are
+  #    reachable, so this is not garbage, it is the same content stored as 5415 files instead of
+  #    one pack. `git gc` repacks it: no reachable object is lost, and only unreachable objects
+  #    older than gc.pruneExpire (two weeks by default) are pruned. This is the one place the
+  #    tier rewrites rather than deletes, and it is why it is measured before and after.
+  for repo in $GIT_REPOS; do
+    [ -d "$repo/.git" ] || continue
+    repo=$(cd "$repo" 2>/dev/null && pwd -P) || continue
+    [ -n "$repo" ] || continue
+    loose=$(git -C "$repo" count-objects -v 2>/dev/null | awk '$1=="size:"{print $2}')
+    case "$loose" in ''|*[!0-9]*) loose=0;; esac
+    if [ "$loose" -lt "$REPACK_MIN_KB" ]; then
+      echo "  keep   git-repack  $((loose / 1024))M  $repo  (only ${loose}K of loose objects)"; continue
+    fi
+    if pgrep -f "$GIT_BUSY" >/dev/null 2>&1; then
+      echo "  keep   git-repack  $((loose / 1024))M  $repo  (a git gc/repack is already running)"; continue
+    fi
+    if crit_in_use "$repo/.git"; then
+      echo "  keep   git-repack  $((loose / 1024))M  $repo  (a process holds it open)"; continue
+    fi
+    if [ "$APPLY" = 0 ]; then
+      echo "  would  git-repack  $((loose / 1024))M  $repo/.git  (git gc: the same objects, one packed file)"; continue
+    fi
+    crit_repack git-repack "$repo"
+  done
+
+  # 6. cargo's registry: the crates it downloaded. Measured 2026-10-24: ~/.cargo/registry held
+  #    1081M (src 1018M, index 59M, cache 4M). `cargo fetch` re-downloads and re-extracts all of
+  #    it, so it is a download cache one level up from the build caches the allow-list deletes.
+  #    A cargo or rustc process running means a build may be writing into it: it stays.
+  if [ -d "$CARGO_REGISTRY" ]; then
+    if pgrep -f "$CARGO_PROC" >/dev/null 2>&1; then
+      echo "  keep   cargo-registry  $(size_m "$CARGO_REGISTRY")M  $CARGO_REGISTRY  (a cargo/rustc process is running)"
+    elif crit_in_use "$CARGO_REGISTRY"; then
+      echo "  keep   cargo-registry  $(size_m "$CARGO_REGISTRY")M  $CARGO_REGISTRY  (a process holds it open)"
+    else
+      crit_reclaim cargo-registry "$CARGO_REGISTRY" "cargo fetch"
+    fi
+  fi
+
+  # 7. the Go module cache: the modules it downloaded. Measured 2026-10-24: ~/go/pkg/mod held
+  #    774M (golang.org 341M, github.com 222M, the download cache 212M). `go mod download`
+  #    re-fetches every one of them.
+  if [ -d "$GO_MODCACHE" ]; then
+    if pgrep -f "$GO_PROC" >/dev/null 2>&1; then
+      echo "  keep   go-modcache  $(size_m "$GO_MODCACHE")M  $GO_MODCACHE  (a go build is running)"
+    elif crit_in_use "$GO_MODCACHE"; then
+      echo "  keep   go-modcache  $(size_m "$GO_MODCACHE")M  $GO_MODCACHE  (a process holds it open)"
+    else
+      crit_reclaim go-modcache "$GO_MODCACHE" "go mod download"
+    fi
+  fi
+
+  # 8. THE ESTATE'S TOOL CACHE IS NOT A RECLAIM TIER (measured 2026-10-28; the tier was REMOVED).
+  #    It looked like 2210M of regenerable tooling: py312-venv 654M, kyverno 257M, temporal
+  #    153M, flux 76M, conftest 62M, helm 59M, kustomize 15M, kubeconform 14M, yamllint-venv
+  #    11M, nsvee-venv 23M, wheelhouse 3M -- the rest LIVE (litellm-venv 555M, sherpa-models
+  #    211M, sops 52M, bin 45M, nats-server 19M, voice-talk 11M).
+  #    The cleaner deleted the regenerable half, and the estate's own gate then reported
+  #    "helm or kyverno CLI not installed" and ran its tests against a missing python
+  #    (~/.cache/estate-tools/py312-venv). Every one of those binaries IS the estate's
+  #    workflow: bin/idp-ci needs kyverno, helm, kustomize, kubeconform, flux, conftest and
+  #    py312-venv, and the sovereign session door needs temporal. Reclaiming a tool the
+  #    estate's own doors use is not reclaiming; it is an outage with a download attached.
+  #    A tier that can only delete the estate's own tooling is a tier that must not exist,
+  #    so it is gone. The weight is reclaimed where it is genuinely reclaimable: the caches
+  #    above, the uv cache, the Go module cache, the npm globals nothing names, and the
+  #    superseded claude builds.
+  if [ -d "$TOOL_CACHE" ]; then
+    echo "  keep   estate-tool  $(size_m "$TOOL_CACHE")M  $TOOL_CACHE  (the estate's own tooling: the gate, the doors and the router need it)"
+  fi
+}
+
+now_mb=$(( $(free_k) / 1024 ))
+# The tier fires on the space as it stands now, after the caches, the worktrees and the Chrome
+# clones above have had their turn: a floor that was crossed by them is no longer a floor.
+# 2026-10-28: it also fires when a TARGET was set and not met. CRIT_MB is the estate's own
+# emergency line; the target is the caller's goal, and the two are not the same number.
+crit_wanted=0
+[ "$CRIT_MB" -gt 0 ] && [ "$now_mb" -lt "$CRIT_MB" ] && crit_wanted=1
+[ "$TARGET_MB" -gt 0 ] && [ "$now_mb" -lt "$TARGET_MB" ] && crit_wanted=1
+# The gate: the tier needs room to finish a delete and report it. In the guardian's mode the
+# step is small and bounded, so the gate is smaller.
+crit_min="${DISK_CLEANUP_CRIT_MIN_S:-25}"
+[ "$INCREMENTAL" = 1 ] && crit_min=8
+if [ "$crit_wanted" = 1 ] && phase_gate critical "$crit_min"; then
+  crit_tier "$now_mb"
 fi
 docker_on=0; phase_gate docker 12 && docker_on=1
 if [ "$docker_on" = 1 ] && [ -x "$DOCKER" ] && [ -x "$RDCTL" ] && tmo "$T_INFO" "$DOCKER" --context rancher-desktop info >/dev/null 2>&1; then
@@ -373,6 +839,8 @@ unsettled() {
   if git -C "$repo" worktree list --porcelain | awk -v w="$wt" '$1=="worktree"{c=($2==w)} c&&$1=="locked"{f=1} END{exit !f}'; then
     echo "locked"; return; fi
   # lsof reports resolved paths (/private/tmp), git the path it was given (/tmp): compare both.
+  if [ "$CWDS_BLIND" = 1 ]; then
+    echo "the busy check was blind: the cwd listing did not complete, so this worktree is kept"; return; fi
   if printf '%s\n' "$CWDS" | awk -v w="$wt" -v r="$(cd "$wt" && pwd -P)" \
        'index($0, w"/")==1 || $0==w || index($0, r"/")==1 || $0==r {f=1} END{exit !f}'; then
     echo "a process is working inside it"; return; fi
@@ -418,7 +886,32 @@ if [ "$WORKTREES" = 1 ] && phase_gate worktrees 15; then
   # `git status` refreshes and rewrites the index when it can, which would reset the very idle
   # clock read above: every run would keep the worktree it looked at.
   export GIT_OPTIONAL_LOCKS=0
-  CWDS=$(tmo 20 lsof -a -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
+  # A BLIND BUSY-CHECK MUST NOT DELETE A LIVE WORKTREE (2026-10-28). `lsof -a -d cwd` walks
+  # every open file on the machine; on a loaded machine it takes longer than the bound, the
+  # listing comes back TRUNCATED, and a worktree with an agent's working directory inside it
+  # looks idle. The worktree test that proves this failed under load exactly that way, and the
+  # consequence in production is an agent's checkout vanishing under it. So the listing's exit
+  # status is read: the timeout (142) or an empty listing means the check could not be made,
+  # and a check that could not be made keeps every worktree.
+  cwds_rc=0
+  cwf=$(mktemp "${TMPDIR:-/tmp}/cwds.XXXXXX" 2>/dev/null || echo)
+  CWDS=""
+  if [ -n "${DISK_CLEANUP_CWDS_FILE:-}" ]; then
+    # A SEAM (2026-10-28): the listing comes from a file instead of a live lsof. It makes the
+    # busy check deterministic for a test, and it lets a caller that already holds a listing
+    # hand it over instead of paying for another walk of every open file on the machine.
+    CWDS=$(sed -n 's/^n//p' "$DISK_CLEANUP_CWDS_FILE" 2>/dev/null)
+    [ -s "$DISK_CLEANUP_CWDS_FILE" ] || cwds_rc=1
+  elif [ -n "$cwf" ]; then
+    tmo 20 lsof -a -d cwd -Fn >"$cwf" 2>/dev/null || cwds_rc=$?
+    CWDS=$(sed -n 's/^n//p' "$cwf")
+    rm -f "$cwf"
+  else
+    cwds_rc=1
+  fi
+  CWDS_BLIND=0
+  if [ "$cwds_rc" -ne 0 ] || [ -z "$CWDS" ]; then CWDS_BLIND=1; fi
+  [ "$CWDS_BLIND" = 1 ] && echo "  note   worktrees  the busy check is blind (the cwd listing rc=$cwds_rc): no worktree is removed on a guess"
   # A CLAIMED WORKTREE IS NEVER REMOVED (2026-10-25). Measured 2026-10-24: the governed
   # disk-cleanup intent (worktrees=true) removed a live agent's worktree at
   # ~/.estate/worktrees/deps-zod-mlflow while that agent was working in it -- the checkout is
@@ -561,219 +1054,6 @@ if [ -n "$CLONES" ] && [ -d "$CLONES" ] && phase_gate clones 12; then
   fi
 fi
 
-# THE CRITICAL TIER. Measured 2026-10-24 on the founder's laptop: the volume sat at 7.7Gi free
-# (92% used) with every allow-list target empty, because the growers were never on it --
-# ~/.nvm/versions/node 2570M, ~/.rustup/toolchains 2659M, ~/.local/share/claude/versions 545M
-# (three superseded builds) and ~/.ollama/models 3.5G before the founder killed the laptop's
-# ollama on 2026-09-10 ("no i killed ollama because machine is slow"). The allow-list deletes
-# CACHES; these are the same kind of thing one level up: a toolchain, re-installed on demand.
-#
-# The same day, later: the volume was back under the floor at 8725M free and the tier above had
-# nothing left to give -- the ollama weights were gone, one node version and one rustup
-# toolchain remained, and the claude builds were one. The growers that were left were the
-# estate's own: the graph clone's loose git objects (3.05 GiB, repacked, not deleted) and the
-# build tools' package caches (~/.cargo/registry 1081M, ~/go/pkg/mod 774M, both re-fetched on
-# demand). A safeguard that cannot reach a healthy disk is a safeguard that stays armed and
-# does nothing, so the tier grew those families too -- each with the same evidence and the same
-# way back.
-#
-# It runs only under a critical floor (CRIT_MB, default 10240M free -- 10G on a 113Gi volume,
-# which is macOS's own 10% headroom advice; a 4000M floor would not have fired on this machine,
-# whose free space was 7885M) and only with apply=true. Under the floor the alternative is a
-# machine that cannot write (bin/idp-disk-guard: "writes fail in ways that read as unrelated
-# faults"), and the founder's order is "we must never be in trouble". Above the floor every one
-# of these is listed and nothing is touched.
-#
-# KEPT, per target, and why:
-#   - the newest of a family: the one a command with no pin resolves to;
-#   - a version the estate's own runtime names (~/.estate/libexec/*, platform/estate/libexec/*):
-#     pi and cline run node out of a pinned path, and deleting it breaks them mid-task;
-#   - anything a running process holds open (one lsof listing, the same one the Chrome-clone
-#     pass uses): a file open under it is a file in use;
-#   - rustup's own default toolchain, and any ollama server that is running;
-#   - a cargo/rustc or a go build that is running, and a git gc/repack already in flight:
-#     those are writing into what they would reclaim.
-# Everything else goes, and every line says how to get it back.
-crit_held=""
-crit_reclaim() {  # NAME PATH HOW-TO-GET-IT-BACK
-  local name=$1 path=$2 regen=$3 m left
-  # An rm -rf of several GB cannot be undone mid-way, so under a budget it is only started when
-  # there is room to finish and report: a half-deleted node version is a broken node version.
-  m=$(size_m "$path")
-  if [ "$(remaining)" -lt 10 ]; then
-    echo "  SKIP   $name  ${m}M  $path  ($(remaining)s left of a ${BUDGET}s budget: run again)"
-    budget_hit=1; return 0
-  fi
-  if [ "$APPLY" = 0 ]; then echo "  would  $name  ${m}M  $path  ($regen)"; return 0; fi
-  rm -rf "$path"
-  left=$(size_m "$path")
-  if [ "$left" -le 1 ]; then echo "  freed  $name  ${m}M  $path  ($regen)"
-  else echo "  !! $name still holds ${left}M after delete: $path"; fails=$((fails + 1)); fi
-}
-crit_in_use() {  # 0 when a process holds a file open under $1
-  printf '%s\n' "$crit_held" | awk -v w="$1" 'index($0, w"/")==1 || $0==w {f=1} END{exit !f}'
-}
-# A REPACK is not a delete: git gc rewrites the same objects into one pack file and keeps every
-# reachable one (git's own guarantee). Only unreachable objects older than gc.pruneExpire (two
-# weeks by default) are pruned. Measured before and after, so the line states what it freed.
-crit_repack() {  # NAME REPO
-  local name=$1 repo=$2 before_m after_m loose_before loose_after out rc
-  loose_before=$(git -C "$repo" count-objects -v 2>/dev/null | awk '$1=="size:"{print $2}')
-  case "$loose_before" in ''|*[!0-9]*) loose_before=0;; esac
-  before_m=$(size_m "$repo/.git")
-  out=$(tmo "$T_REPACK" git -C "$repo" gc --quiet 2>&1); rc=$?
-  loose_after=$(git -C "$repo" count-objects -v 2>/dev/null | awk '$1=="size:"{print $2}')
-  case "$loose_after" in ''|*[!0-9]*) loose_after=0;; esac
-  after_m=$(size_m "$repo/.git")
-  if [ "$rc" -ne 0 ]; then
-    echo "  !! $name  git gc did not finish (exit $rc): $(printf '%s' "$out" | tail -1)"
-    fails=$((fails + 1)); return 0
-  fi
-  if [ "$loose_after" -ge "$loose_before" ]; then
-    echo "  keep   $name  ${after_m}M  $repo/.git  (git gc left ${loose_after}K of loose objects)"; return 0
-  fi
-  echo "  freed  $name  $(((loose_before - loose_after) / 1024))M of loose objects  $repo/.git  (${before_m}M -> ${after_m}M on disk; git gc: the same objects, one packed file)"
-}
-crit_pinned_nodes() {  # the node versions the estate's own runtime names
-  local d
-  for d in "$HOME/.estate/libexec" "$RUST_ROOTS/platform/estate/libexec"; do
-    [ -d "$d" ] || continue
-    grep -hoa '\.nvm/versions/node/[A-Za-z0-9._-]*' "$d"/* 2>/dev/null
-  done | sed 's|.*/||' | sort -u
-}
-crit_tier() {
-  local free_mb=$1 v name m newest pinned default keep held rc
-  echo "critical tier: ${free_mb}M free on $VOL is under CRIT_MB=${CRIT_MB}M -- the toolchains below are re-installed on demand"
-  held=$(tmo 60 lsof -nPw -Fn 2>/dev/null); rc=$?
-  if [ "$rc" -gt 1 ]; then
-    echo "  BLIND  critical-tier  lsof could not answer (exit $rc): everything kept"; fails=$((fails + 1)); return 0
-  fi
-  crit_held=$(printf '%s\n' "$held" | sed -n 's/^n//p')
-
-  # 1. ollama's weights. The founder killed the laptop's ollama on 2026-09-10; if a server is
-  #    running now, someone is serving from these and they stay.
-  if [ -d "$HOME/.ollama/models" ]; then
-    if pgrep -x "$OLLAMA_PROC" >/dev/null 2>&1; then
-      echo "  keep   ollama-models  $(size_m "$HOME/.ollama/models")M  $HOME/.ollama/models  (an ollama server is running)"
-    else
-      crit_reclaim ollama-models "$HOME/.ollama/models" "ollama pull <model>"
-    fi
-  fi
-
-  # 2. node versions under nvm.
-  if [ -d "$HOME/.nvm/versions/node" ]; then
-    newest=$(ls -1 "$HOME/.nvm/versions/node" 2>/dev/null | sort -V | tail -1)
-    pinned=$(crit_pinned_nodes)
-    if [ -z "$newest" ]; then
-      echo "  keep   node-version  all  (no version could be ordered: nothing is removed)"
-    else
-      for v in "$HOME/.nvm/versions/node"/*; do
-        [ -d "$v" ] || continue
-        name=${v##*/}
-        m=$(size_m "$v")
-        if [ "$name" = "$newest" ]; then echo "  keep   node-version  ${m}M  $v  (the newest installed)"; continue; fi
-        if [ -n "$pinned" ] && printf '%s\n' "$pinned" | grep -qx "$name"; then
-          echo "  keep   node-version  ${m}M  $v  (the estate's runtime names it)"; continue; fi
-        if crit_in_use "$v"; then echo "  keep   node-version  ${m}M  $v  (a process holds it open)"; continue; fi
-        crit_reclaim node-version "$v" "nvm install $name"
-      done
-    fi
-  fi
-
-  # 3. rustup toolchains.
-  if [ -d "$HOME/.rustup/toolchains" ]; then
-    default=$(sed -n 's/^default_toolchain = "\(.*\)"/\1/p' "$HOME/.rustup/settings.toml" 2>/dev/null | head -1)
-    for v in "$HOME/.rustup/toolchains"/*; do
-      [ -d "$v" ] || continue
-      name=${v##*/}
-      m=$(size_m "$v")
-      keep=0
-      if [ -n "$default" ]; then
-        case "$name" in "$default"|"$default"-*) keep=1;; esac
-      fi
-      if [ "$keep" = 1 ]; then echo "  keep   rust-toolchain  ${m}M  $v  (rustup's default toolchain)"; continue; fi
-      if crit_in_use "$v"; then echo "  keep   rust-toolchain  ${m}M  $v  (a process holds it open)"; continue; fi
-      crit_reclaim rust-toolchain "$v" "rustup toolchain install $name"
-    done
-  fi
-
-  # 4. superseded claude-code builds.
-  if [ -d "$HOME/.local/share/claude/versions" ]; then
-    newest=$(ls -1 "$HOME/.local/share/claude/versions" 2>/dev/null | sort -V | tail -1)
-    for v in "$HOME/.local/share/claude/versions"/*; do
-      [ -d "$v" ] || continue
-      name=${v##*/}
-      m=$(size_m "$v")
-      if [ -n "$newest" ] && [ "$name" = "$newest" ]; then
-        echo "  keep   claude-version  ${m}M  $v  (the newest installed)"; continue; fi
-      if crit_in_use "$v"; then echo "  keep   claude-version  ${m}M  $v  (a process holds it open)"; continue; fi
-      crit_reclaim claude-version "$v" "claude's updater re-downloads it"
-    done
-  fi
-
-  # 5. the estate's own git clone: loose objects, repacked. Measured 2026-10-24 on the founder's
-  #    laptop: ~/.estate/graph/estate-graph held 5415 loose objects = 3.05 GiB while its pack held
-  #    11 MiB -- every session transcript the router drained into it was written as a loose
-  #    object and never repacked. `git fsck --unreachable` found none: all 8340 objects are
-  #    reachable, so this is not garbage, it is the same content stored as 5415 files instead of
-  #    one pack. `git gc` repacks it: no reachable object is lost, and only unreachable objects
-  #    older than gc.pruneExpire (two weeks by default) are pruned. This is the one place the
-  #    tier rewrites rather than deletes, and it is why it is measured before and after.
-  for repo in $GIT_REPOS; do
-    [ -d "$repo/.git" ] || continue
-    repo=$(cd "$repo" 2>/dev/null && pwd -P) || continue
-    [ -n "$repo" ] || continue
-    loose=$(git -C "$repo" count-objects -v 2>/dev/null | awk '$1=="size:"{print $2}')
-    case "$loose" in ''|*[!0-9]*) loose=0;; esac
-    if [ "$loose" -lt "$REPACK_MIN_KB" ]; then
-      echo "  keep   git-repack  $((loose / 1024))M  $repo  (only ${loose}K of loose objects)"; continue
-    fi
-    if pgrep -f "$GIT_BUSY" >/dev/null 2>&1; then
-      echo "  keep   git-repack  $((loose / 1024))M  $repo  (a git gc/repack is already running)"; continue
-    fi
-    if crit_in_use "$repo/.git"; then
-      echo "  keep   git-repack  $((loose / 1024))M  $repo  (a process holds it open)"; continue
-    fi
-    if [ "$APPLY" = 0 ]; then
-      echo "  would  git-repack  $((loose / 1024))M  $repo/.git  (git gc: the same objects, one packed file)"; continue
-    fi
-    crit_repack git-repack "$repo"
-  done
-
-  # 6. cargo's registry: the crates it downloaded. Measured 2026-10-24: ~/.cargo/registry held
-  #    1081M (src 1018M, index 59M, cache 4M). `cargo fetch` re-downloads and re-extracts all of
-  #    it, so it is a download cache one level up from the build caches the allow-list deletes.
-  #    A cargo or rustc process running means a build may be writing into it: it stays.
-  if [ -d "$CARGO_REGISTRY" ]; then
-    if pgrep -f "$CARGO_PROC" >/dev/null 2>&1; then
-      echo "  keep   cargo-registry  $(size_m "$CARGO_REGISTRY")M  $CARGO_REGISTRY  (a cargo/rustc process is running)"
-    elif crit_in_use "$CARGO_REGISTRY"; then
-      echo "  keep   cargo-registry  $(size_m "$CARGO_REGISTRY")M  $CARGO_REGISTRY  (a process holds it open)"
-    else
-      crit_reclaim cargo-registry "$CARGO_REGISTRY" "cargo fetch"
-    fi
-  fi
-
-  # 7. the Go module cache: the modules it downloaded. Measured 2026-10-24: ~/go/pkg/mod held
-  #    774M (golang.org 341M, github.com 222M, the download cache 212M). `go mod download`
-  #    re-fetches every one of them.
-  if [ -d "$GO_MODCACHE" ]; then
-    if pgrep -f "$GO_PROC" >/dev/null 2>&1; then
-      echo "  keep   go-modcache  $(size_m "$GO_MODCACHE")M  $GO_MODCACHE  (a go build is running)"
-    elif crit_in_use "$GO_MODCACHE"; then
-      echo "  keep   go-modcache  $(size_m "$GO_MODCACHE")M  $GO_MODCACHE  (a process holds it open)"
-    else
-      crit_reclaim go-modcache "$GO_MODCACHE" "go mod download"
-    fi
-  fi
-}
-
-# The tier fires on the space as it stands now, after the caches, the worktrees and the Chrome
-# clones above have had their turn: a floor that was crossed by them is no longer a floor.
-now_mb=$(( $(free_k) / 1024 ))
-if [ "$CRIT_MB" -gt 0 ] && [ "$now_mb" -lt "$CRIT_MB" ] && phase_gate critical 25; then
-  crit_tier "$now_mb"
-fi
 
 if [ "$APPLY" = 1 ]; then
   after=$(free_k)
@@ -783,6 +1063,10 @@ fi
 # Report-only: the big things a human decides about. Sizes measured now, nothing deleted.
 # (The toolchain paths are listed here too: under the critical floor above they are reclaimed,
 # and only then -- this list is what the founder reads when the floor is not reached.)
+# The guardian's mode skips this: six du walks of multi-gigabyte trees, and a walk of every
+# worktree, cost more than the step is worth. The "blocked by" rows below carry the same
+# information when it matters.
+if [ "$INCREMENTAL" != 1 ]; then
 echo "not touched (owner decides):"
 for p in "$HOME/.cache/estate-tools" "$HOME/.nvm/versions/node" "$HOME/.ollama" "$HOME/.rustup" \
          "$HOME/Library/Caches/Google" "$HOME/Library/Application Support/rancher-desktop"; do
@@ -792,6 +1076,7 @@ done
 git -C "$HOME/Documents/code/idp" worktree list 2>/dev/null | awk 'NR>1 {print $1}' | while read -r wt; do
   [ -d "$wt" ] && echo "  $(size_m "$wt")M  worktree $wt"
 done
+fi
 
 # WHERE THE SPACE IS (2026-10-20). The list above is fixed, so on 2026-10-19 the log read "nothing
 # left to free" at 249M free while 6.3G of Chrome clones, an 8.6G staged macOS update and 0.8G of
@@ -828,7 +1113,9 @@ scan() {
     else echo "  system  unreadable  $p"; fi
   done
 }
-if [ "$APPLY" = 0 ] || [ "$(($(free_k) / 1024))" -lt "$ONLY_BELOW_MB" ]; then
+# The guardian's mode does not scan: a du of HOME takes minutes, and the last measurement is
+# already in $SCAN_FILE for whoever reads it.
+if [ "$INCREMENTAL" != 1 ] && { [ "$APPLY" = 0 ] || [ "$(($(free_k) / 1024))" -lt "$ONLY_BELOW_MB" ]; }; then
   echo "where the space is (nothing here is deleted; owner decides):"
   # A du of HOME takes minutes, so under a budget the scan either fits in what is left or is not
   # started: T_SCAN is narrowed to the remaining seconds (du then says BLIND if that was not
@@ -845,6 +1132,35 @@ if [ "$APPLY" = 0 ] || [ "$(($(free_k) / 1024))" -lt "$ONLY_BELOW_MB" ]; then
     scan | tee "$SCAN_FILE.tmp" && mv "$SCAN_FILE.tmp" "$SCAN_FILE"
   fi
 fi
+# THE MEASURED RESULT (2026-10-28). One machine-readable line, so a caller that cannot read the
+# prose still knows what happened: the resident guardian parses THIS line and nothing else.
+after_mb=$(( $(free_k) / 1024 ))
+before_mb=$(( before / 1024 ))
+met=n/a
+if [ "$TARGET_MB" -gt 0 ]; then
+  if [ "$after_mb" -ge "$TARGET_MB" ]; then met=yes; else met=no; fi
+fi
+mode=full
+[ "$INCREMENTAL" = 1 ] && mode=incremental
+echo "RESULT mode=$mode free_before_mb=$before_mb free_after_mb=$after_mb target_mb=$TARGET_MB met=$met freed_mb=$((after_mb - before_mb))"
+
+# BLOCKED BY (2026-10-28). When a target was set and the run did not reach it, the run says what
+# stands in the way, ranked, with each thing measured and the reason it was kept.
+if [ "$TARGET_MB" -gt 0 ] && [ "$after_mb" -lt "$TARGET_MB" ]; then
+  if [ "$INCREMENTAL" = 1 ] && [ "$(remaining)" -lt 12 ]; then
+    echo "blocked by: the keep lines above name every target that was not reclaimed (no room left to measure them)"
+  else
+    echo "blocked by (nothing below was deleted; each row is measured):"
+    blocked_row "$HOME/.nvm/versions/node" "the node runtime: the estate's own code names a version inside it"
+    blocked_row "$HOME/.rustup" "rustup: the default toolchain is kept"
+    blocked_row "$TOOL_CACHE" "the estate's tool cache: the live components are kept"
+    blocked_row "${GOPATH:-$HOME/go}/pkg/mod" "the Go module cache: a running go build holds it"
+    blocked_row "$HOME/.ollama" "ollama's weights: an ollama server is running"
+    blocked_row "$HOME/Documents/code/idp-worktrees" "agent worktrees: each is claimed, dirty or in use"
+    blocked_row "$HOME/Library/Application Support/rancher-desktop" "the container engine's VM disk"
+  fi
+fi
+
 [ "$fails" = 0 ] || exit 3
 # 4, not 0: the phases that did not run are work still owed, and a caller that reads 0 would
 # report a disk it never finished clearing. The output above names every phase that was skipped.
