@@ -45,6 +45,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from fnmatch import fnmatch
@@ -63,6 +64,22 @@ KEY_PATH = Path(
     )
 )
 SNAPSHOT_PATH = IDP / "catalog" / "estate-capability-registry.json"
+
+# The live half's freshness bound. The reconcile row (`com.estate.registry-reconcile`,
+# scheduler/schedule.yml) ticks every 15 minutes on the estate's one scheduler, so a
+# live store older than that is behind the estate.
+#
+# 2026-10-28, measured on this machine: the scheduled row had not ticked for 25.3h --
+# the Mac's Dagster is not loaded (ai.estate.scheduler.plist.disabled) and the cluster's
+# is not ready -- so the live half was stale while the founder's question ("what can this
+# estate do") was answered from a store nobody had refreshed. The door refreshes it on
+# read: a door that answers from a stale store is a false claim, and the founder asks
+# the door, not the row.
+LIVE_MAX_AGE_S = int(os.environ.get("ESTATE_REGISTRY_LIVE_MAX_AGE_S", "900"))
+
+# Reads refresh the live half unless the caller says otherwise (CI, the gate's own
+# falsifiers, and any test that wants the store exactly as it is).
+AUTO_REFRESH = True
 
 SCHEMA_VERSION = 1
 KINDS = (
@@ -2658,11 +2675,178 @@ def render_record(record) -> str:
     return "\n".join(lines)
 
 
-def load_records(ctx: Context, use_store: bool = True):
+def _parse_iso(stamp):
+    text = (stamp or "").replace("Z", "+00:00")
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def live_heartbeat(store):
+    """(at, age_s) of the last reconcile, or (None, None) when there has never been one."""
+    try:
+        conn = store.open()
+        row = conn.execute(
+            "select at from events where type = 'census.reconciled' "
+            "order by seq desc limit 1"
+        ).fetchone()
+    except sqlite3.Error:
+        return (None, None)
+    if not row:
+        return (None, None)
+    at = row[0]
+    try:
+        age = (now_utc() - _parse_iso(at)).total_seconds()
+    except (TypeError, ValueError):
+        return (at, None)
+    return (at, age)
+
+
+def write_census(ctx: Context, store, records=None, issues=None) -> dict:
+    """THE reconcile: census -> store -> tombstone -> heartbeat.
+
+    `census --write` and the door's refresh both come through here, so the live half has
+    one implementation and not two that can disagree about what it means.
+
+    `records` may be passed in when the caller has already run the census (the gate
+    does), so the estate is censused once and not twice per judgement.
+    """
+    if records is None:
+        records, issues = census(ctx)
+    if issues is None:
+        issues = {}
+    written = 0
+    for record in records.values():
+        ok, _msg = store.write(record, record.get("writer") or "repo")
+        written += 1 if ok else 0
+    result = reconcile(store, records.keys())
+    # The reconcile leaves a heartbeat. Without one, "the live half is current" would be
+    # a belief: a quiet estate writes no changed records, so the last write tells you
+    # nothing about whether the cycle is still ticking. The heartbeat is what the gate
+    # reads to say how old the live half is.
+    store.event(
+        "census.reconciled",
+        None,
+        {
+            "records": len(records),
+            "written": written,
+            "tombstoned": len(result.get("tombstoned", [])),
+            "unregistered": len(result.get("unregistered", [])),
+        },
+    )
+    return {
+        "records": len(records),
+        "written": written,
+        "issues": issues,
+        "reconcile": result,
+    }
+
+
+def _claim_refresh_lock(lock: Path) -> bool:
+    """Take the refresh lock, or say why not.
+
+    A lock left behind by a killed process must not block the estate forever, so a lock
+    older than ten minutes is taken over.
+    """
+    for _attempt in (0, 1):
+        try:
+            fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            os.write(fd, str(os.getpid()).encode())
+            os.close(fd)
+            return True
+        except FileExistsError:
+            try:
+                age = time.time() - lock.stat().st_mtime
+            except OSError:
+                return False
+            if age > 600:
+                try:
+                    lock.unlink()
+                except OSError:
+                    return False
+                continue
+            return False
+        except OSError:
+            return False
+    return False
+
+
+def ensure_live(
+    ctx: Context, store=None, max_age_s=None, why: str = "read", records=None
+) -> dict:
+    """Reconcile the live half when it is past its bound.
+
+    Returns what happened, so a caller can say it in its own words: {"refreshed": bool,
+    "age_s": the age before the refresh (or None), "duration_s", "records", "reason"}.
+
+    A store that does not exist is NOT created: the estate is BLIND where it never had a
+    live half, and a read must not invent one. A refresh is skipped when another process
+    holds the lock (it is doing the same work), and a refresh that fails leaves the store
+    exactly as it was, with the reason.
+    """
+    bound = LIVE_MAX_AGE_S if max_age_s is None else int(max_age_s)
+    store = store or Store(DB_PATH)
+    at, age = live_heartbeat(store)
+    if age is not None and age <= bound:
+        return {
+            "refreshed": False,
+            "age_s": age,
+            "at": at,
+            "why": why,
+            "reason": "the live half is inside its {}s bound".format(bound),
+        }
+    lock = Path(str(DB_PATH) + ".refresh.lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    if not _claim_refresh_lock(lock):
+        return {
+            "refreshed": False,
+            "age_s": age,
+            "at": at,
+            "why": why,
+            "reason": "another process is refreshing the live half",
+        }
+    try:
+        started = time.monotonic()
+        payload = write_census(ctx, store, records=records)
+        return {
+            "refreshed": True,
+            "age_s": age,
+            "at": at,
+            "why": why,
+            "duration_s": round(time.monotonic() - started, 2),
+            "records": payload["records"],
+            "written": payload["written"],
+            "reason": "the live half was past its {}s bound and was reconciled".format(
+                bound
+            ),
+        }
+    except Exception as exc:  # noqa: BLE001 -- a failed refresh must not fail the read
+        return {
+            "refreshed": False,
+            "age_s": age,
+            "at": at,
+            "why": why,
+            "reason": "the refresh failed: {}: {}".format(type(exc).__name__, exc),
+        }
+    finally:
+        try:
+            lock.unlink()
+        except OSError:
+            pass
+
+
+def load_records(ctx: Context, use_store: bool = True, refresh: bool = True):
     """Where a read comes from: the live store when it has one, the committed snapshot
-    otherwise. The snapshot is repo-derived, so a read from it is honest but unproven."""
+    otherwise. The snapshot is repo-derived, so a read from it is honest but unproven.
+
+    A read from the live store refreshes it first when it is past its bound: the door
+    must not answer from a store that has stopped tracking the estate.
+    """
     if use_store and DB_PATH.exists():
         store = Store(DB_PATH)
+        if refresh and AUTO_REFRESH:
+            ensure_live(ctx, store, why="read")
         records = store.all()
         if records:
             return records, "store"
@@ -2682,6 +2866,12 @@ def main(argv=None) -> int:
     parser.add_argument("--idp", default="")
     parser.add_argument("--home", default="")
     parser.add_argument("--db", default="")
+    parser.add_argument(
+        "--no-refresh",
+        action="store_true",
+        help="do not refresh the live half on read (CI, tests, and anyone who wants "
+        "the store exactly as it is)",
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_census = sub.add_parser("census", help="rebuild the census from the estate")
@@ -2734,42 +2924,20 @@ def main(argv=None) -> int:
     )
     if args.db:
         globals()["DB_PATH"] = Path(args.db)
+    if args.no_refresh:
+        globals()["AUTO_REFRESH"] = False
 
     if args.cmd == "census":
-        records, issues = census(ctx)
         if args.write:
             store = Store(DB_PATH)
-            written = 0
-            for record in records.values():
-                ok, _msg = store.write(record, record.get("writer") or "repo")
-                written += 1 if ok else 0
-            result = reconcile(store, records.keys())
-            # The reconcile leaves a heartbeat. Without one, "the live half is current"
-            # would be a belief: a quiet estate writes no changed records, so the last
-            # write tells you nothing about whether the cycle is still ticking. The
-            # heartbeat is what the gate reads to say how old the live half is.
-            store.event(
-                "census.reconciled",
-                None,
-                {
-                    "records": len(records),
-                    "written": written,
-                    "tombstoned": len(result.get("tombstoned", [])),
-                    "unregistered": len(result.get("unregistered", [])),
-                },
-            )
-            payload = {
-                "records": len(records),
-                "written": written,
-                "issues": issues,
-                "reconcile": result,
-            }
+            payload = write_census(ctx, store)
             print(
                 json.dumps(payload, indent=2)
                 if args.json
                 else json.dumps(payload, indent=2)
             )
             return 0
+        records, issues = census(ctx)
         if args.json:
             print(
                 json.dumps(
