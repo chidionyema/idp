@@ -5,7 +5,22 @@
 # pytest-bdd, not behave (LAW 43): the repository already holds 61 Gherkin
 # .feature files and pytest-bdd binds them to pytest, so idp-ci keeps one test
 # runner. behave would be a second runner with its own reporting.
-pytest>=8.0
+# pytest 9.2.0 (published 2026-10-27T21:30Z) removed the private
+# `FixtureManager._arg2fixturedefs` that pytest-bdd reads in
+# `pytest_bdd/scenario.py` (`find_fixturedefs_for_step`). With an open upper bound, every CI
+# run from that minute resolved to 9.2.0 and every scenario in `sovereign/tests/bdd` died
+# during collection with
+#   AttributeError: 'FixtureManager' object has no attribute '_arg2fixturedefs'
+# Measured 2026-10-28, greenlane run 40621180043 (job 122595594796, the acceptance leg):
+# "85 failed, 104 passed, 1 xfailed" -- on a candidate that changed nothing but an image
+# tag. The `bdd` gate was therefore red for EVERY candidate in the estate and nothing could
+# reach main through the Greenlane.
+#
+# The pin is below 9.2, not below 9: pytest 9.0.0 and 9.1.0 both kept the attribute and the
+# suite was green on them for months, so 9.1.x stays eligible and takes patch fixes.
+# `sovereign/tests/bdd/test_pytest_bdd_compat.py` guards both halves of this: the pytest that
+# runs the suite still hands pytest-bdd the map it reads, and this pin is still here.
+pytest>=8.0,<9.2
 pytest-bdd>=8.0
 # crew#584 (founder 2026-08-28, "we spend too much time running tests"): parallelism is the default
 # nobody types (pyproject.toml addopts = -n auto). Measured on the idp#609 change set, 17 files:
