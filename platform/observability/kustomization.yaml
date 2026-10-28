@@ -2,7 +2,11 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: observability
 resources:
-  - namespace.yaml
+  # The Namespace moved to platform/aei/namespace.yaml: no Flux row reconciles this directory
+  # (measured 2026-10-28 from the cluster-state receipt), while platform/ns-fences -- a live
+  # row -- applies NetworkPolicies INTO this namespace, so on a fresh cluster the fences had
+  # nowhere to land. The AEI row (clusters/oke/aei.yaml) now owns it. When this directory gets
+  # its row back, the Namespace object goes back with it.
   - helmrepository.yaml
   - signoz.yaml
   - telemetry-coverage.yaml
@@ -66,3 +70,7 @@ patches:
 images:
   - name: ghcr.io/chidionyema/aevum
     newTag: main-14961-7919fa308dbb319ed0541d5ac251cc9f7a18709d # {"$imagepolicy": "flux-system:aevum:tag"}
+# The AEI collector's image is pinned in platform/aei/kustomization.yaml, the directory that has
+# its own Flux row (clusters/oke/aei.yaml) -- a manifest in a directory no row reconciles is a
+# document, not a deployment. Flux image automation moves that pin the same way it moves this
+# one (platform/image-automation/aei.yaml), so the tag follows the collector without a hand.
