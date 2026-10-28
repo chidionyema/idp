@@ -1,0 +1,422 @@
+#!/usr/bin/env python3
+"""The drill: grade every lane of every critical service, and file what is down.
+
+    bin/idp-estate-homes                 grade every lane and print the board
+    bin/idp-estate-homes --json          the same board, as data
+    bin/idp-estate-homes --no-file       grade only: do not touch GitHub
+    bin/idp-estate-homes --service llm-router   grade one service
+
+WHY THIS EXISTS. On 2026-10-28 the estate's router lost every model: the cloud route was
+down and the laptop route was up, and the front handed the caller the cloud's 503 anyway
+(docs/incidents/2026-10-28-the-router-lost-every-model.md). The failover that would have
+saved it existed only on paper, because nothing ever MEASURED that the second lane was
+alive. A fallback nobody checks is a hope. This door checks.
+
+THE VOCABULARY is Otto's, unchanged (bin/idp-otto-homes): MEASURED_OK, MEASURED_FAIL,
+UNKNOWN. A lane is MEASURED_OK only when a question only a working lane can answer came
+back. A lane that could not be asked at all is UNKNOWN, which is neither a pass nor a
+failure. NOT_HERE is for a lane that lives on another machine -- a loopback lane is not
+"down" from a runner that is not the laptop.
+
+THE LADDER IS CONFIGURATION, NOT CODE: platform/ladder/critical-lanes.json. Adding a home
+is a line in that file. This door knows how to ask a lane a question; it does not know
+which lanes exist.
+
+THE FILEING IS THE POINT. A dead lane is a ticket, not a log line: the drill opens (or
+comments on) one issue per service whose lane is down, and closes it when the lane comes
+back. A drill that only prints is a report, and reports are read by nobody.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import socket
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+from urllib.parse import urlsplit
+
+IDP = Path(__file__).resolve().parent.parent
+DEFAULT_CONFIG = IDP / "platform/ladder/critical-lanes.json"
+
+OK, FAIL, UNKNOWN, NOT_HERE = "MEASURED_OK", "MEASURED_FAIL", "UNKNOWN", "NOT_HERE"
+DEFAULT_TIMEOUT = 10.0
+ISSUE_PREFIX = "[lane]"
+# Every probe names itself. MEASURED 2026-09-10 (bin/idp-otto-homes): api.groq.com answers
+# HTTP 403 with body "error code: 1010" to Python's default User-Agent -- Cloudflare's
+# browser-fingerprint rejection -- and HTTP 200 to the very same request one second later
+# carrying a plain agent string. A probe without this line grades a working vendor dead.
+USER_AGENT = "idp-estate-homes/1 (+bin/idp-estate-homes)"
+# Where a secret may live, in the order it is asked for. The estate's vault is read through
+# bin/idp-cloud, which never prints a value it returns into a log line or an argument.
+SECRET_SOURCES = {
+    "GROQ_API_KEY": [("human-groq", "GROQ_API_KEY"), ("litellm-upstream", "GROQ_API_KEY")],
+    "LIFEBOAT_KEY": [("otto-lifeboat", "LIFEBOAT_KEY")],
+}
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _expand(text: str, env: dict) -> str:
+    """Replace ${NAME} with the environment's value. A missing name is left as it is, so a
+    leg that needs a secret says which secret is missing instead of probing nothing."""
+    out = text
+    for name, value in env.items():
+        out = out.replace("${" + name + "}", value)
+    return out
+
+
+def _is_loopback(url: str) -> bool:
+    host = (urlsplit(url).hostname or "").lower()
+    return host in ("127.0.0.1", "localhost", "::1", "0.0.0.0")
+
+
+def probe(
+    url: str,
+    headers: dict | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+    expect: tuple = (200,),
+    expect_any: bool = False,
+) -> tuple:
+    """Ask a lane one question. Returns (verdict, detail).
+
+    An HTTP answer of any code means the lane ANSWERED, so the verdict turns on the code
+    the lane was asked to give: the code it promised (expect) is MEASURED_OK, any other
+    code is MEASURED_FAIL, and no answer at all is MEASURED_FAIL for a lane that lives
+    somewhere else and NOT_HERE for one that lives on this machine only.
+    """
+    request = urllib.request.Request(url, method="GET")
+    request.add_header("user-agent", USER_AGENT)
+    for key, value in (headers or {}).items():
+        request.add_header(key, value)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            code = int(response.status)
+    except urllib.error.HTTPError as exc:
+        code = int(exc.code)
+    except urllib.error.URLError as exc:
+        reason = exc.reason
+        if _is_loopback(url):
+            return NOT_HERE, f"not this host ({reason})"
+        if isinstance(reason, socket.timeout):
+            return FAIL, f"no answer: timed out after {timeout:.0f}s"
+        return FAIL, f"no answer: {reason}"
+    except (TimeoutError, socket.timeout):
+        return FAIL, f"no answer: timed out after {timeout:.0f}s"
+    except OSError as exc:
+        if _is_loopback(url):
+            return NOT_HERE, f"not this host ({exc})"
+        return FAIL, f"no answer: {exc}"
+    if expect_any:
+        return OK, f"HTTP {code}"
+    if code in expect:
+        return OK, f"HTTP {code}"
+    return FAIL, f"HTTP {code} (expected {', '.join(str(c) for c in expect)})"
+
+
+def load_config(path: Path) -> dict:
+    """Read the ladder. A ladder that cannot be read is a blind drill, and a blind drill
+    is refused out loud rather than reported as 'all clear'."""
+    with path.open(encoding="utf-8") as handle:
+        config = json.load(handle)
+    if not isinstance(config.get("services"), list) or not config["services"]:
+        raise ValueError(f"{path}: no services in the ladder")
+    return config
+
+
+def _zone(config: dict, env: dict) -> str:
+    name = config.get("zone_env") or "ESTATE_ZONE"
+    return env.get(name) or config.get("zone_default") or ""
+
+
+def _headers(leg: dict, env: dict) -> dict:
+    headers = {}
+    for key, value in (leg.get("headers") or {}).items():
+        headers[key] = _expand(str(value), env)
+    return headers
+
+
+def grade_service(service: dict, env: dict, timeout: float, zone: str = "") -> list:
+    """Grade every lane of one service. Pure: it asks, it does not file."""
+    results = []
+    for leg in service.get("legs") or []:
+        url = _expand(str(leg.get("url") or ""), env).replace("{zone}", zone)
+        if not url:
+            results.append(
+                {
+                    "service": service.get("service"),
+                    "leg": leg.get("name"),
+                    "provider": leg.get("provider"),
+                    "url": url,
+                    "verdict": UNKNOWN,
+                    "detail": "the lane has no url",
+                }
+            )
+            continue
+        expect = tuple(leg.get("expect") or (200,))
+        headers = _headers(leg, env)
+        if "${" in url or any("${" in value for value in headers.values()):
+            # A lane that needs a secret this host does not carry is UNKNOWN, not FAIL: the
+            # lane may be perfectly alive, and the runner is simply not the machine that has
+            # the key. UNKNOWN is what the drill reports; a wrong verdict here would file a
+            # ticket against a healthy home.
+            results.append(
+                {
+                    "service": service.get("service"),
+                    "leg": leg.get("name"),
+                    "provider": leg.get("provider"),
+                    "role": leg.get("role"),
+                    "url": url,
+                    "verdict": UNKNOWN,
+                    "detail": "a secret this lane needs is not in this environment",
+                }
+            )
+            continue
+        verdict, detail = probe(
+            url,
+            headers=headers,
+            timeout=timeout,
+            expect=expect,
+            expect_any=bool(leg.get("expect_any")),
+        )
+        results.append(
+            {
+                "service": service.get("service"),
+                "leg": leg.get("name"),
+                "provider": leg.get("provider"),
+                "role": leg.get("role"),
+                "url": url,
+                "verdict": verdict,
+                "detail": detail,
+            }
+        )
+    return results
+
+
+def vault_get(entry: str, field: str = "") -> str:
+    """Read one value out of the estate's vault. The value never reaches a log line, an
+    argument list or a report: it goes from the vault into a header and nowhere else."""
+    try:
+        out = subprocess.run(
+            [str(IDP / "bin/idp-cloud"), "secret", "get", entry],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    raw = (out.stdout or "").strip()
+    if not raw or out.returncode != 0:
+        return ""
+    if not field:
+        return raw
+    try:
+        return str(json.loads(raw).get(field) or "")
+    except (json.JSONDecodeError, AttributeError):
+        return raw
+
+
+def resolve_secret(name: str, env: dict) -> str:
+    """The environment first, then the vault. A secret that is in neither is UNKNOWN where it
+    is used, never a failed lane."""
+    value = env.get(name) or ""
+    if value:
+        return value
+    for entry, field in SECRET_SOURCES.get(name, []):
+        value = vault_get(entry, field)
+        if value:
+            return value
+    return ""
+
+
+def grade(config: dict, env: dict, timeout: float = DEFAULT_TIMEOUT, only: str = "") -> list:
+    zone = _zone(config, env)
+    resolved = dict(env)
+    needed = set()
+    for service in config["services"]:
+        for leg in service.get("legs") or []:
+            if leg.get("secret"):
+                needed.add(leg["secret"])
+    for name in sorted(needed):
+        value = resolve_secret(name, env)
+        if value:
+            resolved[name] = value
+    results = []
+    for service in config["services"]:
+        if only and service.get("service") != only:
+            continue
+        results.extend(grade_service(service, resolved, timeout, zone))
+    return results
+
+
+def render(results: list) -> str:
+    """The board. One line per lane, then the count that matters."""
+    lines = []
+    current = ""
+    for row in results:
+        if row["service"] != current:
+            current = row["service"]
+            lines.append(f"\n{current}")
+        lines.append(
+            f"  {row['verdict']:<13} {row.get('leg') or '?':<34} "
+            f"{(row.get('provider') or '-'):<14} {row['detail']}"
+        )
+    alive = sum(1 for r in results if r["verdict"] == OK)
+    down = [r for r in results if r["verdict"] == FAIL]
+    blind = [r for r in results if r["verdict"] == UNKNOWN]
+    lines.append("")
+    lines.append(
+        f"{alive} of {len(results)} lane(s) answered; {len(down)} down, {len(blind)} unknown"
+    )
+    for row in down:
+        lines.append(f"  DOWN    {row['service']} / {row['leg']}: {row['detail']}")
+    for row in blind:
+        lines.append(f"  UNKNOWN {row['service']} / {row['leg']}: {row['detail']}")
+    return "\n".join(lines)
+
+
+def _gh(args: list) -> tuple:
+    proc = subprocess.run(
+        ["gh"] + args, capture_output=True, text=True, timeout=60, check=False
+    )
+    return proc.returncode, (proc.stdout or "").strip(), (proc.stderr or "").strip()
+
+
+def file_issues(results: list, dry_run: bool = False) -> list:
+    """One ticket per service with a lane down. Comment on the open one; close it when
+    the lane comes back. A drill that only prints is a report."""
+    actions = []
+    services = []
+    for row in results:
+        if row["service"] not in services:
+            services.append(row["service"])
+    for service in services:
+        rows = [r for r in results if r["service"] == service]
+        down = [r for r in rows if r["verdict"] == FAIL]
+        blind = [r for r in rows if r["verdict"] == UNKNOWN]
+        title_prefix = f"{ISSUE_PREFIX} {service}: a lane is down"
+        code, out, err = _gh(
+            [
+                "issue",
+                "list",
+                "--search",
+                f'in:title "{ISSUE_PREFIX} {service}"',
+                "--state",
+                "open",
+                "--json",
+                "number,title",
+                "--limit",
+                "20",
+            ]
+        )
+        if code != 0:
+            actions.append(f"could not read the issues for {service}: {err}")
+            continue
+        try:
+            issues = json.loads(out or "[]")
+        except json.JSONDecodeError:
+            issues = []
+        body = render(rows)
+        if down:
+            # Only a PROVEN dead lane files. An UNKNOWN lane is a question this host could
+            # not ask (a secret it does not carry, a name it cannot resolve); filing a ticket
+            # for that would train the estate to ignore tickets.
+            if issues:
+                number = issues[0]["number"]
+                if dry_run:
+                    actions.append(f"would comment on issue #{number} ({service})")
+                    continue
+                code, _, err = _gh(["issue", "comment", str(number), "--body", body])
+                actions.append(
+                    f"commented on #{number} ({service})"
+                    if code == 0
+                    else f"FAILED #{number}: {err}"
+                )
+                continue
+            if dry_run:
+                actions.append(f"would open an issue for {service}")
+                continue
+            code, out, err = _gh(["issue", "create", "--title", title_prefix, "--body", body])
+            actions.append(
+                f"opened an issue for {service}"
+                if code == 0
+                else f"FAILED to open an issue for {service}: {err}"
+            )
+            continue
+        for issue in issues:
+            if dry_run:
+                actions.append(f"would close #{issue['number']} ({service})")
+                continue
+            code, _, err = _gh(
+                [
+                    "issue",
+                    "comment",
+                    str(issue["number"]),
+                    "--body",
+                    f"every lane of {service} answered again at {_now()}\n\n{body}",
+                ]
+            )
+            if code == 0:
+                code, _, err = _gh(["issue", "close", str(issue["number"])])
+            actions.append(
+                f"closed #{issue['number']} ({service})"
+                if code == 0
+                else f"FAILED #{issue['number']}: {err}"
+            )
+    return actions
+
+
+def main(argv: list) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", default=str(DEFAULT_CONFIG))
+    parser.add_argument("--json", action="store_true", help="print the board as data")
+    parser.add_argument("--no-file", action="store_true", help="do not open or close issues")
+    parser.add_argument("--service", default="", help="grade one service only")
+    parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
+    args = parser.parse_args(argv)
+
+    env = dict(os.environ)
+    try:
+        config = load_config(Path(args.config))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(f"BLIND  estate-homes  cannot read the ladder: {exc}", file=sys.stderr)
+        return 2
+
+    results = grade(config, env, timeout=args.timeout, only=args.service)
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "generated_at": _now(),
+                    "lanes": results,
+                    "summary": {
+                        "total": len(results),
+                        "alive": sum(1 for r in results if r["verdict"] == OK),
+                        "down": sum(1 for r in results if r["verdict"] == FAIL),
+                        "unknown": sum(1 for r in results if r["verdict"] == UNKNOWN),
+                        "not_here": sum(1 for r in results if r["verdict"] == NOT_HERE),
+                    },
+                },
+                indent=2,
+            )
+        )
+    else:
+        print(f"Estate lanes, {_now()}")
+        print(render(results))
+
+    if not args.no_file:
+        for action in file_issues(results):
+            print(f"  filed  {action}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

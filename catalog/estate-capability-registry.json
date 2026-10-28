@@ -6,8 +6,8 @@
     "intent": 102,
     "layer": 209,
     "service": 120,
-    "tool": 442,
-    "workflow": 79
+    "tool": 443,
+    "workflow": 80
   },
   "records": [
     {
@@ -30404,6 +30404,71 @@
       ]
     },
     {
+      "id": "cap:tool/idp-estate-homes",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "The drill: grade every lane of every critical service, and file what is down.",
+      "contract": {
+        "inputs": [
+          "--body",
+          "--config",
+          "--json",
+          "--limit",
+          "--no-file",
+          "--search",
+          "--service",
+          "--state",
+          "--timeout",
+          "--title"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/idp-estate-homes",
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-otto-homes",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
       "id": "cap:tool/idp-estate-seed",
       "schema_version": 1,
       "kind": "tool",
@@ -46572,6 +46637,55 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/estate-escrow.yml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:workflow/gha-estate-homes-drill",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "estate-homes-drill -- the GitHub Actions workflow estate-homes-drill.yml.",
+      "contract": {
+        "inputs": [
+          "schedule",
+          "workflow_dispatch"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/estate-homes-drill.yml",
       "depends_on": [],
       "metrics": [],
       "blind": [
