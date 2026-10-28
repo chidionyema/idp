@@ -1,0 +1,23 @@
+{
+  "schema": "aei.manifest.v1",
+  "component": "estate-router",
+  "version": "0.1.0",
+  "owner": "estate-platform",
+  "dependencies": ["platform/llm/front.py", "platform/llm/route_table.py", "platform/llm/efficiency_gateway.py", "platform/observability/signoz.yaml"],
+  "events": ["task.started", "task.completed", "model.requested", "model.first_token", "model.completed", "model.failed", "retry.started", "verification.passed", "verification.failed"],
+  "metrics": [
+    {"name":"model_latency","unit":"ms","source":"paired model events","reliability":"observed_when_paired"},
+    {"name":"request_cost","unit":"USD","source":"model completion cost field","reliability":"partial_when_missing"},
+    {"name":"verification_success","unit":"count","source":"verification events","reliability":"observed_when_instrumented"}
+  ],
+  "correlation": {"run_id":"agent run identity", "task_id":"stable task identity", "trace_id":"W3C trace identity"},
+  "visualisations": [
+    {"type":"waterfall","evidence_field":"event_id"},
+    {"type":"problem_graph","evidence_field":"event_id"},
+    {"type":"comparison","evidence_field":"event_id"},
+    {"type":"waste","evidence_field":"event_id"},
+    {"type":"scorecard","evidence_field":"event_id"},
+    {"type":"optimisation_map","evidence_field":"event_id"}
+  ],
+  "acceptance": ["features/aei.feature", "tests/test_aei.py"]
+}

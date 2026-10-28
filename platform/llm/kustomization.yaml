@@ -55,6 +55,12 @@ configMapGenerator:
       - pobr_gate_wrapper.py=callbacks/pobr_gate_wrapper.py
       - pobr_schema.py=callbacks/pobr_schema.py
       - pobr_gate.py=callbacks/pobr_gate.py
+      # The execution-intelligence observer (decision 0045): every routed call becomes one AEI
+      # event. It lives here, beside the other router callbacks, because the router is where
+      # the estate's model traffic is -- and because a callback the router cannot import is a
+      # router that fails every request, which is why the module ships in the same pull
+      # request as the config.yaml line that names it.
+      - aei_observer.py=callbacks/aei_observer.py
 generatorOptions:
   disableNameSuffixHash: false
 # WAVE 1 OF THE ROLL ONTO THE ENFORCING CNI.

@@ -1,0 +1,243 @@
+#!/usr/bin/env python3
+"""The estate's AEI collector: one process, one append-only ledger, one API.
+
+WHAT THIS IS. The collector is the only thing that writes execution evidence. Agents -- laptop
+agents, the router's own callback, anything in the cluster -- POST events to it; it appends them
+to a ledger and serves them back for analysis. There is no second writer and no second ledger
+(see packages/aei/src/aei/pgstore.py for the Postgres backing the OKE collector uses).
+
+WHY IT IS A DOOR AND NOT A SCRIPT. Every action in this estate goes through an intent or a
+governed entrypoint. This one is an entrypoint: it starts a long-lived process, so it has to be
+startable, stoppable and inspectable without a shell, and it has to leave a log line that proves
+what is running. The log is at ~/.estate/aei/collector.log and the first line says which store
+and which port, because "the collector is up" is a claim until a log line says it.
+
+THE TOKEN. The API is token-authenticated. The token is generated once, on first run, and kept in
+~/.estate/aei/token with 0600. It is never printed, never written into the repository, and never
+sent anywhere except the loopback API. Agents read it from the file.
+
+    bin/aei-collector start        # foreground; Ctrl-C stops it
+    bin/aei-collector run          # background; writes a pidfile and a log
+    bin/aei-collector stop
+    bin/aei-collector status
+    bin/aei-collector token-path   # prints the PATH of the token, never the token
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import secrets
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+HOME = Path(os.environ.get("AEI_HOME", Path.home() / ".estate" / "aei"))
+DB = HOME / "aei.sqlite3"
+TOKEN_FILE = HOME / "token"
+PID_FILE = HOME / "collector.pid"
+LOG_FILE = HOME / "collector.log"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC = REPO_ROOT / "packages" / "aei" / "src"
+PORT = int(os.environ.get("AEI_PORT", "0"))
+HOST = "127.0.0.1"
+PORT_FILE = HOME / "port"
+# The reference build's port, 8766, is TAKEN on this laptop by the estate's own bridge daemons
+# (estate-core/scripts/kimi_bridge.py and a sibling), and they are not ours to stop. So the
+# collector takes the first free port from this range and WRITES IT DOWN in ~/.estate/aei/port.
+# Every agent that wants to reach the collector reads that file, so there is one port, known to
+# everyone, and no agent has to guess it. AEI_PORT overrides the range when a machine wants a
+# fixed port.
+
+
+def _ensure_home() -> None:
+    HOME.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(HOME, 0o700)
+    except OSError:
+        pass
+
+
+def _port() -> int:
+    """The port the collector listens on: AEI_PORT, else the first free port in the range."""
+    if PORT:
+        return PORT
+    import socket
+
+    for candidate in range(8766, 8801):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                probe.bind((HOST, candidate))
+            except OSError:
+                continue
+            return candidate
+    raise SystemExit("aei-collector: no free port between 8766 and 8800")
+
+
+def _token() -> str:
+    """The API token: generated once, kept 0600, never printed."""
+    _ensure_home()
+    if not TOKEN_FILE.exists():
+        TOKEN_FILE.write_text(secrets.token_urlsafe(32))
+        os.chmod(TOKEN_FILE, 0o600)
+    return TOKEN_FILE.read_text().strip()
+
+
+def _env() -> dict:
+    env = dict(os.environ)
+    env["AEI_API_TOKEN"] = _token()
+    env["PYTHONPATH"] = os.pathsep.join([str(SRC), env.get("PYTHONPATH", "")]).rstrip(
+        os.pathsep
+    )
+    return env
+
+
+def _pid() -> int | None:
+    try:
+        pid = int(PID_FILE.read_text().strip())
+    except (OSError, ValueError):
+        return None
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return None
+    return pid
+
+
+def cmd_start() -> int:
+    _ensure_home()
+    port = _port()
+    cmd = [
+        sys.executable,
+        "-m",
+        "aei.server",
+        "--db",
+        str(DB),
+        "--host",
+        HOST,
+        "--port",
+        str(port),
+    ]
+    PORT_FILE.write_text(str(port))
+    print(
+        f"aei-collector: starting on http://{HOST}:{port}/ store=sqlite db={DB}",
+        flush=True,
+    )
+    proc = subprocess.run(cmd, env=_env(), cwd=str(REPO_ROOT))
+    return proc.returncode
+
+
+def cmd_run() -> int:
+    _ensure_home()
+    if _pid():
+        print(f"aei-collector: already running (pid {_pid()})")
+        return 0
+    port = _port()
+    cmd = [
+        sys.executable,
+        "-m",
+        "aei.server",
+        "--db",
+        str(DB),
+        "--host",
+        HOST,
+        "--port",
+        str(port),
+    ]
+    with LOG_FILE.open("a") as log:
+        proc = subprocess.Popen(
+            cmd,
+            env=_env(),
+            cwd=str(REPO_ROOT),
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    PID_FILE.write_text(str(proc.pid))
+    PORT_FILE.write_text(str(port))
+    time.sleep(1.0)
+    if proc.poll() is not None:
+        PID_FILE.unlink(missing_ok=True)
+        PORT_FILE.unlink(missing_ok=True)
+        last = LOG_FILE.read_text().splitlines()[-1:] if LOG_FILE.exists() else []
+        print(f"aei-collector: FAILED to start; last log line: {last}")
+        return 1
+    print(
+        f"aei-collector: running (pid {proc.pid}) url=http://{HOST}:{port}/ log={LOG_FILE} db={DB}"
+    )
+    return 0
+
+
+def cmd_stop() -> int:
+    pid = _pid()
+    if not pid:
+        print("aei-collector: not running")
+        return 0
+    os.kill(pid, signal.SIGTERM)
+    for _ in range(50):
+        if _pid() is None:
+            break
+        time.sleep(0.1)
+    PID_FILE.unlink(missing_ok=True)
+    print(f"aei-collector: stopped (pid {pid})")
+    return 0
+
+
+def cmd_status() -> int:
+    pid = _pid()
+    port = PORT_FILE.read_text().strip() if PORT_FILE.exists() else str(_port())
+    health = None
+    try:
+        import urllib.request
+
+        req = urllib.request.Request(
+            f"http://{HOST}:{port}/health",
+            headers={"Authorization": f"Bearer {_token()}"},
+        )  # noqa: S310 - loopback only, the port is this collector's own
+        with urllib.request.urlopen(req, timeout=2) as response:  # noqa: S310 - loopback only
+            health = json.loads(response.read())
+    except Exception as exc:  # noqa: BLE001 - the status is the report, not an exception
+        health = {"error": type(exc).__name__}
+    print(
+        json.dumps(
+            {
+                "running": bool(pid),
+                "pid": pid,
+                "endpoint": f"http://{HOST}:{port}/",
+                "db": str(DB),
+                "log": str(LOG_FILE),
+                "health": health,
+            },
+            indent=2,
+        )
+    )
+    return 0 if pid else 1
+
+
+def cmd_token_path() -> int:
+    _token()
+    print(TOKEN_FILE)
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "command", choices=["start", "run", "stop", "status", "token-path"]
+    )
+    args = parser.parse_args()
+    return {
+        "start": cmd_start,
+        "run": cmd_run,
+        "stop": cmd_stop,
+        "status": cmd_status,
+        "token-path": cmd_token_path,
+    }[args.command]()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
