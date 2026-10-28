@@ -16,9 +16,16 @@ description: >
   "LimitExceeded: nodes-per-node-pool limit has been exceeded" (oke-check run 40650458830) --
   because the pool is already over the free tier's node limit, so the compute API is the door
   that can close the catch: it does not count pool nodes. Only a STOPPED instance is ever a
-  candidate, and the boot volume the node was holding is deleted only when OCI says it is free.
+  candidate. The node's boot volume is not chased: OCI's instance get does not expose it and
+  the volume list does not list it, and the pool creates nodes with
+  is_preserve_boot_volume = false, so the termination releases it with the instance.
   The rules are in platform/estate/libexec/oci-reclaim.py and are proved offline by
-  tests/estate/test_oci_reclaim.py: AVAILABLE, no attachment, a csi- name, the tag
+  tests/estate/test_oci_reclaim.py: AVAILABLE and unattached (the attachment API is the truth
+  about an attachment -- MEASURED 2026-10-28, the volume list leaves its own
+  "volume-attachments" field empty on every volume, attached or not, so the plan used to call
+  five volumes in use reclaimable), or TERMINATED, which is dead -- it cannot be mounted, and
+  it still holds the tenancy's storage allowance, which is what the cluster was waiting on --
+  plus a csi- name, the tag
   role=persistent_volume, at least older_than_hours old, and never among the keep_oldest
   oldest -- the oldest are kept because a long-lived PersistentVolume may point at them
   (backstage/pgdata-postgres-0, prospector/prospector-store-api-data) and that data cannot be
