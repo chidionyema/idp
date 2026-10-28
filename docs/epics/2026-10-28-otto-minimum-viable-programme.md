@@ -113,9 +113,10 @@ described.
 ### Wave 0 — the one doctor door (this PR)
 
 **DoD:** `estate-invoke telegram-agent.doctor` exists; it names the first broken link of every
-Telegram agent's chain; it exits 0 healthy / 1 broken / 3 blind; `--heal` repairs through
-`flux-reconcile` and re-reads the link; the contract is pinned by
-`tests/test_telegram_agent_doctor.py`.
+Telegram agent's chain; the doctor script exits 0 healthy / 1 broken / 3 blind and the intent
+that fronts it exits 0 whenever it answered — the verdict is the last line, and `json=true`
+keeps stdout a pure JSON document; `--heal` repairs through `flux-reconcile` and re-reads the
+link; the contract is pinned by `tests/test_telegram_agent_doctor.py`.
 
 ### Wave 1 — the scheduled plane and the callable door become one
 
@@ -179,6 +180,14 @@ Otto is fully onboarded when all five are true, and each is checkable:
 - **A doctor is a new thing that can be wrong.** It is pinned by tests that drive the walk with
   a fake probe — no cluster, no network, no executor — so the contract is falsifiable even
   while the estate is down.
+- **A doctor that exits on its verdict gets refused by the estate's own policy.** Measured
+  2026-10-28, with the estate already dark from this laptop: `would refuse
+  telegram-agent.doctor -- 5/5 runs not ok in 30d, p_fail=0.86`. The policy reads an intent's
+  30-day not-ok rate, and a doctor's non-zero exit means *the estate is broken*, not that the
+  verb is broken — so the intent exits 0 whenever it answered and prints the verdict, while the
+  general fix (the executor's per-intent `exit_is_finding` flag,
+  `docs/specs/2026-09-29-machine-learning-dept.md` §6a) is what every diagnostic verb in the
+  estate needs, `voice-doctor` and `router-doctor` included.
 - **Waves 3 and 4 are product work**, and the product is the cheap part. If the estate spends
   its remaining effort on the portal page, the door work goes unfinished and Otto stays
   unprovable. The order above is not a preference; it is the dependency.

@@ -89,6 +89,23 @@ layers under the Ottos too, so a red tick is not proof about a Telegram agent an
 one agent's "first broken link". The merge direction is fixed: the parity playbook asks this
 doctor for the Telegram rows (Wave 1 of the programme) rather than keeping its own.
 
+**D9. The doctor's exit code is a FINDING; the door's exit code is the ANSWER.**
+The script keeps the four-state contract (0 healthy / 1 broken / 2 registry unreadable / 3
+blind): that is what another agent consumes. The intent does not propagate it — the intent
+exits 0 whenever the door answered, and prints the verdict as its last line. Measured reason,
+not taste: the estate's policy refuses a verb whose 30-day not-ok probability reaches 0.8
+(`platform/estate/bin/estate-execute`, `policy_decide`), and a doctor's non-zero exit means
+"a Telegram agent is broken" or "the estate is dark" — the states the door exists to report.
+With the estate already dark from this laptop, the shadow policy said on 2026-10-28:
+`would refuse telegram-agent.doctor -- 5/5 runs not ok in 30d, p_fail=0.86`. A door that
+dies exactly when the estate is broken does not serve the founder's requirement. The general
+fix stays with the executor, which already knows this defect: its per-intent
+`exit_is_finding` flag (`docs/specs/2026-09-29-machine-learning-dept.md` §6a) is where a
+diagnostic verb's non-zero exit is labelled a finding estate-wide — for `voice-doctor`,
+`router-doctor` and the rest. Until that flag exists, the translation lives in the intent,
+where it is readable and removable in one place. The one exit that is a real failure of the
+door is the doctor not running at all.
+
 ## Consequences
 
 - **Cost:** one more door in the intent set, and a small script in `platform/estate/libexec/`.
@@ -96,7 +113,9 @@ doctor for the Telegram rows (Wave 1 of the programme) rather than keeping its o
   runtime sync without a release.
 - **What this makes harder:** the doctor is a new thing that can be wrong. It is pinned by tests
   that drive the walk with a fake probe — no cluster, no network, no executor — so the contract
-  is falsifiable without the estate being up.
+  is falsifiable without the estate being up. The intent's own exit semantics are pinned the
+  same way: the step is run against a stubbed interpreter, so "the door answers even when the
+  estate is broken" and "the door fails when the doctor cannot run" are measured, not assumed.
 - **What it does not fix:** the cluster being dark, the memory door being down, and a laptop
   under its disk floor are three separate estate incidents. The doctor reports them honestly as
   blind; it does not repair a cluster from a laptop. A scheduled run of this door on a machine

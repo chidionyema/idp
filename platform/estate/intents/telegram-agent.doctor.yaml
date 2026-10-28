@@ -6,7 +6,19 @@ description: >
   order a message meets it -- edge, workload, registration, answer -- names the FIRST broken
   link with the sanctioned fix (flux-reconcile, through the intent layer, never by hand), and
   with heal=true applies that fix and re-checks the link afterwards. A source that cannot be
-  read is BLIND, never a failure and never a pass. Exit 0 healthy, 1 a link is broken, 3 blind.
+  read is BLIND, never a failure and never a pass.
+  TWO EXITS, and the difference matters. The doctor SCRIPT exits on what it found: 0 healthy,
+  1 a link is broken, 2 the registry of agents could not be read, 3 blind. This INTENT exits on
+  whether the door ANSWERED: 0 when it answered, and the doctor's own exit code only when the
+  doctor itself could not run. The verdict is printed as the last line ("verdict: OK|FAIL|
+  BLIND -- ...") and, with json=true, stdout stays a pure JSON document and the verdict line
+  goes to stderr. A doctor's non-zero exit is a FINDING, not a failure of the door: the
+  estate's policy reads an intent's 30-day not-ok rate and refuses a verb at p>=0.8
+  (platform/estate/bin/estate-execute, policy_decide), so a door that exited on its verdict
+  would be refused exactly when the estate is broken. Measured 2026-10-28: the shadow policy
+  already said "would refuse telegram-agent.doctor -- 5/5 runs not ok in 30d, p_fail=0.86".
+  The executor's own per-intent exit_is_finding flag
+  (docs/specs/2026-09-29-machine-learning-dept.md 6a) is where that belongs estate-wide.
   Use this first whenever a Telegram agent stops answering.
 args:
   agent: {type: string, default: "all"}
@@ -24,4 +36,16 @@ steps:
       h="{{heal}}"; j="{{json}}"; hf=""; jf="";
       case "$h" in yes|true|on|1) hf="--heal";; esac;
       case "$j" in yes|true|on|1) jf="--json";; esac;
-      python3 ~/.estate/libexec/telegram-agent-doctor.py --agent "{{agent}}" $hf $jf
+      # rc=0 first, so the doctor's exit code is read whether or not the shell is errexit.
+      rc=0
+      python3 ~/.estate/libexec/telegram-agent-doctor.py --agent "{{agent}}" $hf $jf || rc=$?
+      case "$rc" in
+        0) v="OK -- every Telegram agent's chain is intact";;
+        1) v="FAIL -- a Telegram agent's chain is broken; the first broken link is named above";;
+        2) v="BLIND -- the registry of Telegram agents could not be read";;
+        3) v="BLIND -- a source could not be read; the estate is dark from here";;
+        *) echo "verdict: the doctor itself failed (exit $rc)" >&2; exit "$rc";;
+      esac
+      # json=true keeps stdout a pure JSON document, so the verdict line goes to stderr there.
+      if [ -n "$jf" ]; then echo "verdict: $v" >&2; else echo "verdict: $v"; fi
+      exit 0
