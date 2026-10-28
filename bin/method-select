@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""method-select: run the estate's deterministic method selector over one request.
+
+Read-only by construction: it reads a JSON request from a file argument or stdin, writes
+the selection to stdout, and does nothing else. It holds no credential, opens no socket,
+writes no file, and executes no method - a selection is a recommendation that the estate's
+decision layer may accept or refuse.
+
+Usage:
+    bin/method-select request.json
+    cat request.json | bin/method-select
+
+Exit status:
+    0  a selection was produced (ALLOW, REQUIRE_AUTHORIZATION, REASSESS or ABSTAIN)
+    2  the request was refused (malformed, or no eligible method)
+    1  the request could not be read
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+_SRC = Path(__file__).resolve().parents[1] / "packages" / "method_selector" / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+from method_selector import select_safe  # noqa: E402
+
+
+def main(argv):
+    if len(argv) > 2:
+        sys.stderr.write("usage: method-select [request.json]\n")
+        return 1
+    try:
+        if len(argv) == 2:
+            payload = json.loads(Path(argv[1]).read_text(encoding="utf-8"))
+        else:
+            payload = json.loads(sys.stdin.read())
+    except (OSError, ValueError) as error:
+        sys.stderr.write("method-select: cannot read the request: %s\n" % error)
+        return 1
+    if not isinstance(payload, dict):
+        sys.stderr.write("method-select: the request must be a JSON object\n")
+        return 1
+    selection = select_safe(payload)
+    sys.stdout.write(json.dumps(selection.to_dict(), indent=2, sort_keys=True) + "\n")
+    return 2 if selection.policy_decision == "REFUSE" else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
