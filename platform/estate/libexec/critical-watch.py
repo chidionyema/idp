@@ -182,9 +182,13 @@ def probe_liveness(spec: dict) -> tuple[str, str, dict]:
         if kind == "http":
             url = spec["url"]
             ev["url"] = url
-            req = urllib.request.Request(url, method="GET")
+            # Only http and https are ever opened: the registry is estate-owned, and a file:
+            # or custom scheme there would read the disk instead of probing a service.
+            if not str(url).startswith(("http://", "https://")):
+                return FAIL, f"{url} is not an http or https URL: not probed", ev
+            req = urllib.request.Request(url, method="GET")  # noqa: S310 -- scheme checked above
             try:
-                with urllib.request.urlopen(
+                with urllib.request.urlopen(  # noqa: S310 -- scheme checked above
                     req, timeout=int(spec.get("timeout_s", 5))
                 ) as r:
                     status = r.status
@@ -201,7 +205,7 @@ def probe_liveness(spec: dict) -> tuple[str, str, dict]:
             label = spec["label"]
             ev["label"] = label
             uid = os.getuid()
-            p = subprocess.run(
+            p = subprocess.run(  # noqa: S603 -- constant binary, argv built here
                 ["/bin/launchctl", "print", f"gui/{uid}/{label}"],
                 capture_output=True,
                 text=True,
@@ -216,7 +220,7 @@ def probe_liveness(spec: dict) -> tuple[str, str, dict]:
             argv = list(spec["argv"])
             ev["argv"] = argv
             try:
-                p = subprocess.run(
+                p = subprocess.run(  # noqa: S603 -- the registry is estate-owned; argv is a list, no shell
                     argv,
                     capture_output=True,
                     text=True,
@@ -281,7 +285,7 @@ def probe_goal(spec: dict | None) -> tuple[str | None, str, dict]:
             label = spec["label"]
             ev["label"] = label
             uid = os.getuid()
-            p = subprocess.run(
+            p = subprocess.run(  # noqa: S603 -- constant binary, argv built here
                 ["/bin/launchctl", "print", f"gui/{uid}/{label}"],
                 capture_output=True,
                 text=True,
@@ -342,7 +346,7 @@ def alert(source: str, level: str, msg: str) -> None:
         pass
     try:
         safe = msg.replace("\\", "").replace('"', "'")[:180]
-        subprocess.run(
+        subprocess.run(  # noqa: S603 -- constant binary, the message is quoted and truncated above
             [
                 "/usr/bin/osascript",
                 "-e",
@@ -390,8 +394,13 @@ def invoke_agent(fn: dict, incident: dict) -> dict:
         "budget": remediation.get("budget", 20),
     }
     try:
-        proc = subprocess.run(
-            ["/bin/bash", str(INVOKE), "--json", str(json.dumps(payload))],
+        proc = subprocess.run(  # noqa: S603 -- constant binary and script path, the payload is passed as one argument
+            [
+                "/bin/bash",
+                str(INVOKE),
+                "--json",
+                str(json.dumps(payload)),
+            ],
             capture_output=True,
             text=True,
             timeout=60,
@@ -534,7 +543,7 @@ def main(argv: list[str] | None = None) -> int:
     results = [check_function(f) for f in functions]
     state = load_backoff()
     incidents = []
-    for fn, res in zip(functions, results):
+    for fn, res in zip(functions, results):  # noqa: B905 -- same length by construction; this file also runs on the gate's 3.9 python
         if res["verdict"] == PASS:
             # A function that comes back stops counting against itself: its backoff resets, so a
             # later failure alerts immediately instead of waiting out the ladder it climbed.
