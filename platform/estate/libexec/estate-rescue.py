@@ -72,7 +72,7 @@ def git(args, repo=None, cwd=None, timeout=GIT_TIMEOUT, env=None):
     if env:
         full_env.update(env)
     try:
-        p = subprocess.run(
+        p = subprocess.run(  # noqa: S603 - argv is fixed here, never a shell string
             ["git", "-C", str(cwd or repo or REPO)] + list(args),
             capture_output=True,
             text=True,
