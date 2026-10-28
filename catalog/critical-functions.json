@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "updated_at": "2026-10-28",
+  "why": "The estate-wide critical-function spine. A function is listed here when the estate cannot work without it. The spine (platform/estate/libexec/critical-watch.py) measures each one's LIVENESS (is it running?) and, where one exists, its GOAL (is it doing its job?). A function that is alive but missing its goal is FAILING -- that is the failure the 2026-10-28 disk watcher was: alive, ticking, and freeing nothing. The registry is data, not code: adding a function is a file edit, and the detector is the one implementation that reads it.",
+  "probe_types": {
+    "heartbeat_file": "a JSON file whose `at` field must be younger than max_age_s",
+    "unix_socket": "a unix socket that must accept a connection",
+    "tcp": "a TCP port that must accept a connection",
+    "http": "an HTTP GET that must answer with expect_status (default 200)",
+    "launchd": "a launchd label that must be loaded and running",
+    "command": "an argv that must exit with expect_rc (default 0)",
+    "file": "a path that must exist"
+  },
+  "goal_types": {
+    "free_space_mb": "free space on a volume must be at least min_mb",
+    "heartbeat_field_min": "a numeric field in a heartbeat JSON must be at least min"
+  },
+  "functions": [
+    {
+      "id": "disk-guardian",
+      "title": "the disk reclaim guardian",
+      "severity": "critical",
+      "owner": "pi",
+      "why_it_is_critical": "the executor refuses to start a job when the data volume has less than MIN_FREE_MB (1500MB) free, so under the floor every agent's door is closed and the estate stops",
+      "liveness": {
+        "type": "heartbeat_file",
+        "path": "~/.estate/heartbeats/disk-guardian.json",
+        "max_age_s": 180
+      },
+      "goal": {
+        "type": "free_space_mb",
+        "path": "/System/Volumes/Data",
+        "min_mb": 1500
+      },
+      "remediation": {
+        "runner": "claude",
+        "repo": "/Users/roseonyema/Documents/code/idp",
+        "budget": 20,
+        "task": "The estate's disk reclaim guardian (ai.estate.disk-watch) is not healthy. The evidence is in ~/.estate/incidents/latest.json: read it, then make the volume healthy again WITHOUT deleting another agent's work, another agent's dirty or claimed worktree, the founder's running Chrome, or any live tooling. The cleaner is ~/.estate/libexec/disk-cleanup.sh: run it in incremental mode with DISK_CLEANUP_TARGET_MB=2500, one bounded step at a time. If the guardian process is not loaded, load it: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.estate.disk-watch.plist. Report what you measured, not what you intended."
+      }
+    },
+    {
+      "id": "executor",
+      "title": "the executor daemon",
+      "severity": "critical",
+      "owner": "pi",
+      "why_it_is_critical": "every agent's tool calls go through the executor door; without it no agent can run a command at all",
+      "liveness": {
+        "type": "unix_socket",
+        "path": "~/.estate/executor.sock"
+      },
+      "goal": {
+        "type": "launchd_running",
+        "label": "ai.estate.executor",
+        "min_mb": 0
+      },
+      "remediation": {
+        "runner": "claude",
+        "repo": "/Users/roseonyema/Documents/code/idp",
+        "budget": 20,
+        "task": "The estate's executor daemon is not answering on ~/.estate/executor.sock. The evidence is in ~/.estate/incidents/latest.json. Find why (launchctl print gui/$(id -u)/ai.estate.executor, the daemon log, the disk floor in mcp/plugins/estate_executor.py) and bring it back without losing anyone else's queued work."
+      }
+    },
+    {
+      "id": "estate-bus",
+      "title": "the estate event bus",
+      "severity": "important",
+      "owner": "pi",
+      "why_it_is_critical": "state is streamed over this bus; without it the estate's surfaces go stale and agents cannot be told what happened",
+      "liveness": {
+        "type": "tcp",
+        "host": "127.0.0.1",
+        "port": 4222
+      },
+      "remediation": {
+        "runner": "claude",
+        "repo": "/Users/roseonyema/Documents/code/idp",
+        "budget": 20,
+        "task": "The estate's event bus (NATS) is not accepting connections on 127.0.0.1:4222. The evidence is in ~/.estate/incidents/latest.json. Check launchctl print gui/$(id -u)/ai.estate.nats and the bus logs, and bring it back."
+      }
+    }
+  ]
+}

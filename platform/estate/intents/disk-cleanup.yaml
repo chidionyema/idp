@@ -1,22 +1,40 @@
 name: disk-cleanup
 description: >-
-  Free the laptop's data volume by deleting ONLY regenerable package-manager caches (yarn berry,
-  go-build, pip, Homebrew, npm/npx, Cargo target/ dirs in the idp main checkout, never other agents' worktrees). Dry run by default: lists each target with its measured size
-  plus the large things it will never touch (estate-tools, worktrees, nvm, ollama). apply=true
-  deletes the allow-list, verifies each target is gone (exit 3 if not), and reports free space
-  measured before and after. trash=true also empties ~/.Trash (the user's; opt-in only).
-  only_below_mb=N applies only while free space is under N MB (the scheduled row uses the
-  guard's 10G floor). worktrees=true also removes settled agent worktrees: clean, every commit on
-  a branch/tag/remote, unlocked, idle 6h, no process inside, via `git worktree remove` without
-  --force (restorable with `git worktree add`). Under a critical floor (DISK_CLEANUP_CRIT_MB,
-  default 10240M free) it also reclaims regenerable toolchain weight: ~/.ollama/models when no
-  ollama server runs, old ~/.nvm/versions/node/*, old ~/.rustup/toolchains/*, old
-  ~/.local/share/claude/versions/* -- keeping the newest of each family, any version the estate's
-  own runtime names, anything a running process holds open, and rustup's default toolchain.
-  bin/idp-disk-guard reports the pressure; this acts on it.
-  The dry run's "where the space is" measurement (a du of HOME) and the apply run's phases are
-  each bounded by budget_s: a phase that cannot fit in what is left is skipped by name and the
-  exit status is 4 (run it again to continue). Exit 3 still means a target survived deletion.
+  Free the laptop's data volume by deleting ONLY regenerable weight. Dry run by default: every
+  target with its measured size. apply=true deletes the allow-list and nothing else, then proves
+  it: each target must be gone (exit 3 if not), and the free space before and after is measured,
+  not estimated.
+  The allow-list is package-manager caches (yarn berry, go-build, pip, Homebrew, npm/npx, uv),
+  the estate's own temp scratch (including the pytest scratch every local gate run leaves
+  behind), and the Cargo target/ dirs of the idp main checkout. Under a floor it also reclaims
+  re-installable toolchain weight: superseded node versions, old rustup toolchains, superseded
+  claude-code builds, and the estate's own global npm packages that nothing in the estate runs --
+  keeping the newest of each family, any version the estate's own runtime names, anything a
+  running process holds open, and rustup's default toolchain.
+  THE ESTATE'S TOOL CACHE IS NEVER RECLAIMED (measured 2026-10-28). It looked like 1330M of
+  regenerable tooling, and reclaiming it deleted kyverno, helm, kustomize, kubeconform, flux,
+  conftest, temporal and the gate's own python -- so the estate's own gate then reported "helm
+  or kyverno CLI not installed". A tool the estate's own doors use is not reclaimable weight.
+  THE ORDER IS THE ENGINE'S, and there is only one: caches, then the toolchain tier, then docker,
+  then worktrees, then temp, then the Chrome clones, then the report. The toolchain tier is
+  SECOND because it is the only tier with real weight (2.2G measured) and because the phases
+  after it are slow and usually yield nothing (a worktree is another agent's checkout; the
+  container engine is not answering). Nothing is reclaimed past the target: the run stops the
+  moment the volume is back above it.
+  target_mb=N is that target (0 = no target). The executor's own floor is 1500 MB
+  (MIN_FREE_MB in mcp/plugins/estate_executor.py) and it refuses to start a job below it, so a
+  target at or above it is what keeps the estate's doors working.
+  incremental=1 is the resident guardian's mode: the fast tiers only -- caches, the toolchain
+  tier and the temp scratch -- with no HOME scan, no worktree walk and no docker probe. Every
+  step is idempotent, so a step that did not finish is the next step's work.
+  only_below_mb=N applies only while free space is under N MB. trash=true also empties ~/.Trash
+  (the user's; opt-in only). worktrees=true also removes settled agent worktrees: clean, every
+  commit on a branch/tag/remote, unlocked, idle 6h, no process inside, via `git worktree remove`
+  without --force (restorable with `git worktree add`).
+  A delete is bounded (DELETE_S, 30s) and resumable: rm of what is left continues where it
+  stopped, so a run that is cut short says so and the work is still owed (exit 4) rather than
+  failing. Exit 5 means another run holds the lock and is doing the work: that is not a failure,
+  and the verdict prints the measured free space.
 class: mutate
 args:
   apply: {type: bool, default: false}
@@ -24,11 +42,30 @@ args:
   only_below_mb: {type: int, default: 0}
   worktrees: {type: bool, default: false}
   budget_s: {type: int, default: 78, description: "seconds of work the cleaner may start; keep under door_s"}
+  target_mb: {type: int, default: 0, description: "keep reclaiming until this much is free; 0 = no target"}
+  incremental: {type: int, default: 0, description: "guardian mode: the fast tiers only, no HOME scan"}
 # 95, and it used to declare nothing at all, so it inherited the ceiling: the dry run's du of HOME
 # (T_SCAN 300s) then hit the door at 100s and reported a timeout with no measurement in it.
 door_s: 95
 halt_on_failure: true
 steps:
-  - name: disk-cleanup
-    cmd: >
-      bash ~/.estate/libexec/disk-cleanup.sh {{apply}} {{trash}} {{only_below_mb}} {{worktrees}} {{budget_s}}
+  - name: run
+    # The cleaner's own status is carried out of the step, so the verdict below can say what
+    # happened in one line -- including the case that is not a failure (5: another run holds the
+    # lock and is doing the work).
+    on_fail: continue
+    cmd: |
+      env DISK_CLEANUP_TARGET_MB={{target_mb}} DISK_CLEANUP_INCREMENTAL={{incremental}} \
+        bash ~/.estate/libexec/disk-cleanup.sh {{apply}} {{trash}} {{only_below_mb}} {{worktrees}} {{budget_s}}
+      echo $? > ~/.estate/disk-cleanup.rc
+  - name: verdict
+    cmd: |
+      rc=$(cat ~/.estate/disk-cleanup.rc 2>/dev/null || echo 1)
+      case "$rc" in
+        0) echo "verdict: the cleaner ran" ;;
+        5) echo "verdict: another run holds the lock and is doing the work (the measured free space is above)"; rc=0 ;;
+        4) echo "verdict: the budget ran out with work still owed -- the resident guardian carries it, or run this door again" ;;
+        3) echo "verdict: a target survived deletion (see the lines above)" ;;
+        *) echo "verdict: the cleaner could not run (rc=$rc)" ;;
+      esac
+      exit "$rc"

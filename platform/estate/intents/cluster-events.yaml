@@ -11,7 +11,9 @@ steps:
       # `-n ""` is not a valid kubectl flag, so an empty namespace means every namespace.
       # `get events` no longer accepts --field-selector/--sort-by (kubectl routes it to the
       # `events` verb), so the Warning filter and the ordering happen here.
-      ns='{{namespace}}'
+      # NO SHELL QUOTES AROUND A TEMPLATE: interpolate() already quotes the value, so `ns=''`
+      # is an empty value (the 2026-10-18 shape that made site-onboard dead at every door).
+      ns={{namespace}}
       if [ -n "$ns" ]; then nsflag="-n $ns"; else nsflag=-A; fi
       KUBECONFIG={{kubeconfig}} kubectl --request-timeout=30s \
         $nsflag get events -o json 2>/dev/null | python3 -c "

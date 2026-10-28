@@ -3,13 +3,63 @@
   "generator": "bin/capability-index emit",
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
-    "intent": 103,
-    "layer": 210,
+    "intent": 105,
+    "layer": 211,
     "service": 121,
     "tool": 444,
     "workflow": 80
   },
   "records": [
+    {
+      "id": "cap:intent/agent-invoke",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "Wake an agent to resolve a failed critical function, with the structured data attached. The estate's session door (sb start) is tried first -- it is the sanctioned fleet-scale work plane, with its budget, its approval gates and its runner registry -- and the local claude lane is the fallback, because the session door is down at the moment (Temporal unreachable; nothing listens on 127.0.0.1:16223). Which lane was used is returned in the result, because a claim of \"an agent was invoked\" that does not say how is not a claim. The task is free text, and it is what the woken agent is told to do; put the measurements, the paths and the constraint in it (\"measure what you changed; do not touch another agent's worktrees\"). The incident is optional and is appended to the prompt verbatim. class: mutate args: task: {type: string, default: \"\", description: \"what the woken agent must do\"} incident: {type: string, default: \"\", description: \"optional JSON incident record, appended verbatim\"} runner: {type: string, default: \"claude\", description: \"the session plane's runner registry name\"} repo: {type: string, default: \"\", description: \"the repository the agent works in\"} budget: {type: int, default: 20, description: \"the session plane's budget\"} door_s: 90 halt_on_failure: false steps: - name: invoke on_fail: continue cmd: | # The payload is built from the ENVIRONMENT, not from quoted template text: interpolate() # already quotes, so a second pair of quotes around an empty value is literal text (the # 2026-10-18 shape that made site-onboard dead at every door), and a task that contains a # quote or a newline survives this way and cannot break the command. TASK={{task}} INCIDENT={{incident}} RUNNER={{runner}} REPO={{repo}} BUDGET={{budget}} \\ python3 -c 'import json,os; print(json.dumps({\"task\": os.environ.get(\"TASK\",\"\"), \"incident\": json.loads(os.environ.get(\"INCIDENT\") or \"{}\"), \"runner\": os.environ.get(\"RUNNER\",\"claude\"), \"repo\": os.environ.get(\"REPO\",\"\"), \"budget\": int(os.environ.get(\"BUDGET\") or \"20\")}))' \\ > ~/.estate/agent-invoke.payload.json bash ~/.estate/libexec/agent-invoke.sh --task-file ~/.estate/agent-invoke.payload.json echo $? > ~/.estate/agent-invoke.rc - name: verdict cmd: | rc=$(cat ~/.estate/agent-invoke.rc 2>/dev/null || echo 1) case \"$rc\" in 0) echo \"verdict: an agent was invoked; the lane it used is in the line above\" ;; 3) echo \"verdict: no agent could be invoked (no session door and no local claude lane)\" ;; *) echo \"verdict: the invocation door could not run (rc=$rc)\" ;; esac exit \"$rc",
+      "contract": {
+        "inputs": [
+          "budget",
+          "incident",
+          "repo",
+          "runner",
+          "task"
+        ],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/agent-invoke.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
     {
       "id": "cap:intent/audit",
       "schema_version": 1,
@@ -340,7 +390,7 @@
       "id": "cap:intent/cluster-events",
       "schema_version": 1,
       "kind": "intent",
-      "summary": "Composite intent. Warning events since timestamp. Default 1h. args: since:     {type: string, default: \"1h\"} namespace: {type: string, default: \"\"} kubeconfig: {type: string, default: \"\"} steps: - name: events cmd: | # `-n \"\"` is not a valid kubectl flag, so an empty namespace means every namespace. # `get events` no longer accepts --field-selector/--sort-by (kubectl routes it to the # `events` verb), so the Warning filter and the ordering happen here. ns='{{namespace}}' if [ -n \"$ns\" ]; then nsflag=\"-n $ns\"; else nsflag=-A; fi KUBECONFIG={{kubeconfig}} kubectl --request-timeout=30s \\ $nsflag get events -o json 2>/dev/null | python3 -c \" import json, sys evs = [e for e in json.load(sys.stdin).get('items', []) if e.get('type') == 'Warning'] evs.sort(key=lambda e: e.get('lastTimestamp') or '') print(f'{len(evs)} warning events:') for e in evs[-20:]: obj = e.get('involvedObject', {}) msg = e.get('message', '')[:80] print(f\\\"  {e.get('lastTimestamp', '')} {obj.get('kind')}/{obj.get('name')} \u2014 {msg}\\\")",
+      "summary": "Composite intent. Warning events since timestamp. Default 1h. args: since:     {type: string, default: \"1h\"} namespace: {type: string, default: \"\"} kubeconfig: {type: string, default: \"\"} steps: - name: events cmd: | # `-n \"\"` is not a valid kubectl flag, so an empty namespace means every namespace. # `get events` no longer accepts --field-selector/--sort-by (kubectl routes it to the # `events` verb), so the Warning filter and the ordering happen here. # NO SHELL QUOTES AROUND A TEMPLATE: interpolate() already quotes the value, so `ns=''` # is an empty value (the 2026-10-18 shape that made site-onboard dead at every door). ns={{namespace}} if [ -n \"$ns\" ]; then nsflag=\"-n $ns\"; else nsflag=-A; fi KUBECONFIG={{kubeconfig}} kubectl --request-timeout=30s \\ $nsflag get events -o json 2>/dev/null | python3 -c \" import json, sys evs = [e for e in json.load(sys.stdin).get('items', []) if e.get('type') == 'Warning'] evs.sort(key=lambda e: e.get('lastTimestamp') or '') print(f'{len(evs)} warning events:') for e in evs[-20:]: obj = e.get('involvedObject', {}) msg = e.get('message', '')[:80] print(f\\\"  {e.get('lastTimestamp', '')} {obj.get('kind')}/{obj.get('name')} \u2014 {msg}\\\")",
       "contract": {
         "inputs": [
           "kubeconfig",
@@ -620,6 +670,54 @@
       ]
     },
     {
+      "id": "cap:intent/critical-watch",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "The estate-wide critical-function spine. It reads catalog/critical-functions.json -- the one declarative registry of the functions the estate cannot work without -- and measures each one: LIVENESS (is it running: a heartbeat file, a socket, a port, an HTTP endpoint, a launchd job, a command, a file) and, where one is declared, its GOAL (is it doing its job: free space on a volume, a numeric field in a heartbeat). A function that is ALIVE and missing its goal is FAILING, which is the case the old disk watcher was: running, ticking, freeing nothing. Verdicts are PASS, FAIL and BLIND. BLIND is a verdict, not a quiet PASS: a probe that cannot be measured proves nothing, and reporting it as PASS is how a gate stops being a gate. A failure raises a structured incident (~/.estate/incidents/<id>.json, a ledger, and latest.json), alerts (a macOS notification and ~/.estate/alerts/inbox.jsonl), and wakes an agent to resolve it with the structured data attached -- through the estate's session door when it is up, and through the local claude lane when it is not, always recording which lane was used. Alerts and invocations are deduplicated and backed off (300s, 600s, 1200s, 1800s), so a function that stays dead does not spawn an agent storm. Exit 0: every function PASSes. Exit 1: at least one FAILs. Exit 2: at least one is BLIND and none FAILs. dry_run=1 measures and reports without raising anything. class: mutate args: registry: {type: string, default: \"\", description: \"path to the registry; the runtime tree's catalog/ by default\"} only: {type: string, default: \"\", description: \"check one function id\"} dry_run: {type: int, default: 0, description: \"1 = measure and report only; raise nothing\"} door_s: 90 halt_on_failure: false steps: - name: check on_fail: continue cmd: | REG=\"\" [ -n {{registry}} ] && REG=\"--registry {{registry}}\" ONLY=\"\" [ -n {{only}} ] && ONLY=\"--only {{only}}\" DRY=\"\" [ \"{{dry_run}}\" = \"1\" ] && DRY=\"--dry-run\" python3 ~/.estate/libexec/critical-watch.py --json $REG $ONLY $DRY echo $? > ~/.estate/critical-watch.rc - name: verdict cmd: | rc=$(cat ~/.estate/critical-watch.rc 2>/dev/null || echo 1) case \"$rc\" in 0) echo \"verdict: every critical function passes\" ;; 1) echo \"verdict: at least one critical function FAILED -- the incident, the alert and the agent are in ~/.estate/incidents/\" ;; 2) echo \"verdict: at least one critical function is BLIND (the probe could not be measured)\" ;; *) echo \"verdict: the spine could not run (rc=$rc)\" ;; esac exit \"$rc",
+      "contract": {
+        "inputs": [
+          "dry_run",
+          "only",
+          "registry"
+        ],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/critical-watch.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
       "id": "cap:intent/crystallize",
       "schema_version": 1,
       "kind": "intent",
@@ -729,12 +827,14 @@
       "id": "cap:intent/disk-cleanup",
       "schema_version": 1,
       "kind": "intent",
-      "summary": "Free the laptop's data volume by deleting ONLY regenerable package-manager caches (yarn berry, go-build, pip, Homebrew, npm/npx, Cargo target/ dirs in the idp main checkout, never other agents' worktrees). Dry run by default: lists each target with its measured size plus the large things it will never touch (estate-tools, worktrees, nvm, ollama). apply=true deletes the allow-list, verifies each target is gone (exit 3 if not), and reports free space measured before and after. trash=true also empties ~/.Trash (the user's; opt-in only). only_below_mb=N applies only while free space is under N MB (the scheduled row uses the guard's 10G floor). worktrees=true also removes settled agent worktrees: clean, every commit on a branch/tag/remote, unlocked, idle 6h, no process inside, via `git worktree remove` without --force (restorable with `git worktree add`). Under a critical floor (DISK_CLEANUP_CRIT_MB, default 10240M free) it also reclaims regenerable toolchain weight: ~/.ollama/models when no ollama server runs, old ~/.nvm/versions/node/*, old ~/.rustup/toolchains/*, old ~/.local/share/claude/versions/* -- keeping the newest of each family, any version the estate's own runtime names, anything a running process holds open, and rustup's default toolchain. bin/idp-disk-guard reports the pressure; this acts on it. The dry run's \"where the space is\" measurement (a du of HOME) and the apply run's phases are each bounded by budget_s: a phase that cannot fit in what is left is skipped by name and the exit status is 4 (run it again to continue). Exit 3 still means a target survived deletion. class: mutate args: apply: {type: bool, default: false} trash: {type: bool, default: false} only_below_mb: {type: int, default: 0} worktrees: {type: bool, default: false} budget_s: {type: int, default: 78, description: \"seconds of work the cleaner may start; keep under door_s\"} # 95, and it used to declare nothing at all, so it inherited the ceiling: the dry run's du of HOME # (T_SCAN 300s) then hit the door at 100s and reported a timeout with no measurement in it. door_s: 95 halt_on_failure: true steps: - name: disk-cleanup cmd: > bash ~/.estate/libexec/disk-cleanup.sh {{apply}} {{trash}} {{only_below_mb}} {{worktrees}} {{budget_s}}",
+      "summary": "Free the laptop's data volume by deleting ONLY regenerable weight. Dry run by default: every target with its measured size. apply=true deletes the allow-list and nothing else, then proves it: each target must be gone (exit 3 if not), and the free space before and after is measured, not estimated. The allow-list is package-manager caches (yarn berry, go-build, pip, Homebrew, npm/npx, uv), the estate's own temp scratch (including the pytest scratch every local gate run leaves behind), and the Cargo target/ dirs of the idp main checkout. Under a floor it also reclaims re-installable toolchain weight: superseded node versions, old rustup toolchains, superseded claude-code builds, and the estate's own global npm packages that nothing in the estate runs -- keeping the newest of each family, any version the estate's own runtime names, anything a running process holds open, and rustup's default toolchain. THE ESTATE'S TOOL CACHE IS NEVER RECLAIMED (measured 2026-10-28). It looked like 1330M of regenerable tooling, and reclaiming it deleted kyverno, helm, kustomize, kubeconform, flux, conftest, temporal and the gate's own python -- so the estate's own gate then reported \"helm or kyverno CLI not installed\". A tool the estate's own doors use is not reclaimable weight. THE ORDER IS THE ENGINE'S, and there is only one: caches, then the toolchain tier, then docker, then worktrees, then temp, then the Chrome clones, then the report. The toolchain tier is SECOND because it is the only tier with real weight (2.2G measured) and because the phases after it are slow and usually yield nothing (a worktree is another agent's checkout; the container engine is not answering). Nothing is reclaimed past the target: the run stops the moment the volume is back above it. target_mb=N is that target (0 = no target). The executor's own floor is 1500 MB (MIN_FREE_MB in mcp/plugins/estate_executor.py) and it refuses to start a job below it, so a target at or above it is what keeps the estate's doors working. incremental=1 is the resident guardian's mode: the fast tiers only -- caches, the toolchain tier and the temp scratch -- with no HOME scan, no worktree walk and no docker probe. Every step is idempotent, so a step that did not finish is the next step's work. only_below_mb=N applies only while free space is under N MB. trash=true also empties ~/.Trash (the user's; opt-in only). worktrees=true also removes settled agent worktrees: clean, every commit on a branch/tag/remote, unlocked, idle 6h, no process inside, via `git worktree remove` without --force (restorable with `git worktree add`). A delete is bounded (DELETE_S, 30s) and resumable: rm of what is left continues where it stopped, so a run that is cut short says so and the work is still owed (exit 4) rather than failing. Exit 5 means another run holds the lock and is doing the work: that is not a failure, and the verdict prints the measured free space. class: mutate args: apply: {type: bool, default: false} trash: {type: bool, default: false} only_below_mb: {type: int, default: 0} worktrees: {type: bool, default: false} budget_s: {type: int, default: 78, description: \"seconds of work the cleaner may start; keep under door_s\"} target_mb: {type: int, default: 0, description: \"keep reclaiming until this much is free; 0 = no target\"} incremental: {type: int, default: 0, description: \"guardian mode: the fast tiers only, no HOME scan\"} # 95, and it used to declare nothing at all, so it inherited the ceiling: the dry run's du of HOME # (T_SCAN 300s) then hit the door at 100s and reported a timeout with no measurement in it. door_s: 95 halt_on_failure: true steps: - name: run # The cleaner's own status is carried out of the step, so the verdict below can say what # happened in one line -- including the case that is not a failure (5: another run holds the # lock and is doing the work). on_fail: continue cmd: | env DISK_CLEANUP_TARGET_MB={{target_mb}} DISK_CLEANUP_INCREMENTAL={{incremental}} \\ bash ~/.estate/libexec/disk-cleanup.sh {{apply}} {{trash}} {{only_below_mb}} {{worktrees}} {{budget_s}} echo $? > ~/.estate/disk-cleanup.rc - name: verdict cmd: | rc=$(cat ~/.estate/disk-cleanup.rc 2>/dev/null || echo 1) case \"$rc\" in 0) echo \"verdict: the cleaner ran\" ;; 5) echo \"verdict: another run holds the lock and is doing the work (the measured free space is above)\"; rc=0 ;; 4) echo \"verdict: the budget ran out with work still owed -- the resident guardian carries it, or run this door again\" ;; 3) echo \"verdict: a target survived deletion (see the lines above)\" ;; *) echo \"verdict: the cleaner could not run (rc=$rc)\" ;; esac exit \"$rc",
       "contract": {
         "inputs": [
           "apply",
           "budget_s",
+          "incremental",
           "only_below_mb",
+          "target_mb",
           "trash",
           "worktrees"
         ],
@@ -779,9 +879,10 @@
       "id": "cap:intent/disk-free",
       "schema_version": 1,
       "kind": "intent",
-      "summary": "Free space now, inside the door's 100s, by running the estate's own cleaner (platform/estate/libexec/disk-cleanup.sh) in apply mode under time budgets it can fit. Deletes ONLY what the cleaner already allows -- package-manager caches, dangling images and build cache, settled agent worktrees it archives first, stale temp, leftover Chrome code-sign clones, and (under its critical floor) re-installable toolchain weight -- and widens nothing. worktrees=true by default because that is where the gigabytes are. The phases that reclaim the most run FIRST: under a full disk the time budget is what binds, so the critical tier (old node/rust toolchains, ollama models, cargo/go caches, a git repack) and the multi-GB Chrome clones get a call of their own before the per-worktree walk, which costs ~3s per checkout and often reclaims nothing because the worktrees belong to live agents. Every phase either runs inside what is left of its budget or is SKIPPED BY NAME with the seconds it was denied, and free space is reported before and after, measured. Exit 4 means phases were skipped: run it again and it continues, because every phase is idempotent. Use when bin/idp-disk-guard says the volume is under the door's floor. class: mutate args: worktrees: {type: bool, default: true, description: \"also remove settled agent worktrees (archived first)\"} trash: {type: bool, default: false, description: \"also empty ~/.Trash (the user's; opt-in)\"} # 95, not 100: four cheap steps run around the two cleaning calls, and a door that declares exactly # the ceiling spends its last second being killed. door_s: 95 halt_on_failure: false steps: - name: before cmd: | df -k /System/Volumes/Data | awk 'NR==2 {printf \"free before: %dM on %s\\n\", $4/1024, $9}' - name: first # The tier that can actually move a full disk, and the multi-GB Chrome clones. on_fail: continue cmd: | DISK_CLEANUP_PHASES=critical,clones \\ bash ~/.estate/libexec/disk-cleanup.sh true {{trash}} 0 {{worktrees}} 34 echo $? > ~/.estate/disk-free.a.rc - name: second # Caches, docker, the worktree walk, stale temp, then the du report of where the space is. on_fail: continue cmd: | DISK_CLEANUP_PHASES=caches,docker,worktrees,temp,scan \\ bash ~/.estate/libexec/disk-cleanup.sh true {{trash}} 0 {{worktrees}} 42 echo $? > ~/.estate/disk-free.b.rc - name: after on_fail: continue cmd: | df -k /System/Volumes/Data | awk 'NR==2 {printf \"free after: %dM on %s\\n\", $4/1024, $9}' - name: verdict # The cleaner's own status, carried out of the intent, worst of the two calls: #   0 every phase ran / 4 the budget ran out with phases still owed (run again) #   3 something that should be gone is still there / 5 another run held the lock cmd: | a=$(cat ~/.estate/disk-free.a.rc 2>/dev/null || echo 1) b=$(cat ~/.estate/disk-free.b.rc 2>/dev/null || echo 1) rc=0 for r in \"$a\" \"$b\"; do case \"$r\" in 0) ;; 3) rc=3 ;; 4) [ \"$rc\" != 3 ] && rc=4 ;; 5) [ \"$rc\" = 0 ] && rc=5 ;; *) [ \"$rc\" = 0 ] && rc=1 ;; esac done case \"$rc\" in 0) echo \"verdict: every phase ran\" ;; 4) echo \"verdict: budget spent, phases remain -- run disk-free again to continue\" ;; 5) echo \"verdict: another run held the lock and did the work: nothing done here\" ;; 3) echo \"verdict: a target survived deletion (see the lines above)\" ;; *) echo \"verdict: the cleaner could not run (first=$a second=$b)\" ;; esac exit \"$rc",
+      "summary": "Free space now, inside the door's 100s, by running the estate's own cleaner (platform/estate/libexec/disk-cleanup.sh) in apply mode under a budget it can finish. It deletes ONLY what the cleaner already allows -- package-manager caches, dangling images and build cache, settled agent worktrees it archives first, stale temp (including the pytest scratch every local gate run leaves behind), leftover Chrome code-sign clones, and (under its floor) re-installable toolchain weight -- and widens nothing. The estate's own tool cache is not weight: it holds the gate's python, kyverno, helm and the rest, and reclaiming it takes the estate's own doors down with it. worktrees=true by default because that is where the gigabytes are. ONE ORDER, AND IT IS THE ENGINE'S: caches, then the toolchain tier, then docker, then worktrees, then temp, then the Chrome clones. The toolchain tier is second because it is the only tier with real weight and the phases after it are slow and usually yield nothing; the door used to ask for the toolchain tier \"first\", which selected it but did not reorder it, so the worktree walk ran in front of the 2.2G and the door spent its budget there. Now one call, in the engine's order, spends the budget where the bytes are. Every phase either runs inside what is left of the budget or is SKIPPED BY NAME with the seconds it was denied, and free space is reported before and after, measured. A delete is bounded (30s) and resumable, so a run that is cut short says the work is still owed instead of failing. Exit 4 means work remains: the resident guardian (ai.estate.disk-watch) carries it, or run this door again -- every phase is idempotent. The RESIDENT GUARDIAN is the estate's continuous answer; this door is the on-demand sweep. Use when bin/idp-disk-guard says the volume is under the door's floor. class: mutate args: worktrees: {type: bool, default: true, description: \"also remove settled agent worktrees (archived first)\"} trash: {type: bool, default: false, description: \"also empty ~/.Trash (the user's; opt-in)\"} target_mb: {type: int, default: 0, description: \"keep reclaiming until this much is free; 0 = no target\"} # 95, not 100: the steps around the cleaning call need a few seconds, and a door that declares # exactly the ceiling spends its last second being killed. door_s: 95 halt_on_failure: false steps: - name: before cmd: | df -k /System/Volumes/Data | awk 'NR==2 {printf \"free before: %dM on %s\\n\", $4/1024, $9}' - name: clean # One call, in the engine's order, with a budget it can finish inside the door. The cleaner's # own status is carried out of the step: 0 every phase ran, 4 work still owed, 3 something # that should be gone is still there, 5 another run holds the lock and is doing the work. on_fail: continue cmd: | env DISK_CLEANUP_TARGET_MB={{target_mb}} \\ bash ~/.estate/libexec/disk-cleanup.sh true {{trash}} 0 {{worktrees}} 78 echo $? > ~/.estate/disk-free.rc - name: after on_fail: continue cmd: | df -k /System/Volumes/Data | awk 'NR==2 {printf \"free after: %dM on %s\\n\", $4/1024, $9}' - name: verdict cmd: | rc=$(cat ~/.estate/disk-free.rc 2>/dev/null || echo 1) case \"$rc\" in 0) echo \"verdict: every phase ran\" ;; 4) echo \"verdict: the budget was spent with work still owed -- the guardian continues it, or run disk-free again\" ;; 5) echo \"verdict: another run holds the lock and is doing the work (the measured free space is above)\"; rc=0 ;; 3) echo \"verdict: a target survived deletion (see the lines above)\" ;; *) echo \"verdict: the cleaner could not run (rc=$rc)\" ;; esac exit \"$rc",
       "contract": {
         "inputs": [
+          "target_mb",
           "trash",
           "worktrees"
         ],
@@ -3457,7 +3558,7 @@
       "id": "cap:intent/pr.create",
       "schema_version": 1,
       "kind": "intent",
-      "summary": "Open a pull request on any estate repo. The general door: pr-open is bound to the idp repo (pytest, -R chidionyema/idp, idp hook secrets) and open-pr is a stale hard-coded one-off (feat/pobr, 2026-10), so repos outside idp had no PR door at all \u2014 measured 2026-10-25 when lane-submit refused hermes-agent with \"BLIND no bin/claim-gate in this checkout\". Refuses main/master as head. Never merges: open the PR, then stop \u2014 CI and the repo's own automation converge from there (AGENTS.md section 2). For repos served by the Greenlane (claim-gate present), use lane-submit instead: it proves the branch green and lands it. class: mutate args: repo:   {type: string, required: true, help: \"Absolute path of the checkout gh runs in\"} branch: {type: string, required: true, help: \"Head branch name; must already be pushed to origin; never main\"} title:  {type: string, required: true, help: \"PR title\"} body_file: {type: string, required: true, help: \"Path to the PR body markdown file\"} base:   {type: string, default: main, help: \"Base branch (default main)\"} halt_on_failure: true steps: - name: pr-create cmd: | set -e case \"{{branch}}\" in ''|main|master) echo \"refused: head branch '{{branch}}'\" >&2; exit 1;; esac cd {{repo}} gh pr create --repo chidionyema/$(basename {{repo}}) --base {{base}} --head {{branch}} --title {{title}} --body-file {{body_file}}",
+      "summary": "Open a pull request on any estate repo. The general door: pr-open is bound to the idp repo (pytest, -R chidionyema/idp, idp hook secrets) and open-pr is a stale hard-coded one-off (feat/pobr, 2026-10), so repos outside idp had no PR door at all \u2014 measured 2026-10-25 when lane-submit refused hermes-agent with \"BLIND no bin/claim-gate in this checkout\". Refuses main/master as head. Never merges: open the PR, then stop \u2014 CI and the repo's own automation converge from there (AGENTS.md section 2). For repos served by the Greenlane (claim-gate present), use lane-submit instead: it proves the branch green and lands it. class: mutate args: repo:   {type: string, required: true, help: \"Absolute path of the checkout gh runs in\"} branch: {type: string, required: true, help: \"Head branch name; must already be pushed to origin; never main\"} title:  {type: string, required: true, help: \"PR title\"} body_file: {type: string, required: true, help: \"Path to the PR body markdown file\"} base:   {type: string, default: main, help: \"Base branch (default main)\"} halt_on_failure: true steps: - name: pr-create cmd: | set -e # NO SHELL QUOTES AROUND A TEMPLATE: interpolate() already quotes the value, so a second # pair of quotes passes the two characters '' to the command (the 2026-10-18 defect that # made site-onboard refuse its own default). A required arg has no default, and a quoted # template for it is literal text, not an argument. case {{branch}} in ''|main|master) echo \"refused: head branch {{branch}}\" >&2; exit 1;; esac cd {{repo}} gh pr create --repo chidionyema/$(basename {{repo}}) --base {{base}} --head {{branch}} --title {{title}} --body-file {{body_file}}",
       "contract": {
         "inputs": [
           "base",
@@ -6213,6 +6314,57 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/libexec/code-review-t3.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-libexec-critical-watch",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "critical-watch.py -- the estate-wide critical-function spine.",
+      "contract": {
+        "inputs": [
+          "--dry-run",
+          "--json",
+          "--only",
+          "--registry"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/libexec/critical-watch.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -29825,7 +29977,7 @@
       "id": "cap:tool/idp-disk-watch",
       "schema_version": 1,
       "kind": "tool",
-      "summary": "!/bin/bash",
+      "summary": "idp-disk-watch -- the estate's resident reclaim guardian.",
       "contract": {
         "inputs": [],
         "outputs": [
@@ -29859,10 +30011,6 @@
       "writer": "repo",
       "path": "bin/idp-disk-watch",
       "depends_on": [
-        {
-          "id": "cap:tool/idp-disk-guard",
-          "edge": "invokes"
-        },
         {
           "id": "cap:tool/start",
           "edge": "invokes"

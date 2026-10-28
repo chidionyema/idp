@@ -20,6 +20,10 @@ steps:
   - name: pr-create
     cmd: |
       set -e
-      case "{{branch}}" in ''|main|master) echo "refused: head branch '{{branch}}'" >&2; exit 1;; esac
+      # NO SHELL QUOTES AROUND A TEMPLATE: interpolate() already quotes the value, so a second
+      # pair of quotes passes the two characters '' to the command (the 2026-10-18 defect that
+      # made site-onboard refuse its own default). A required arg has no default, and a quoted
+      # template for it is literal text, not an argument.
+      case {{branch}} in ''|main|master) echo "refused: head branch {{branch}}" >&2; exit 1;; esac
       cd {{repo}}
       gh pr create --repo chidionyema/$(basename {{repo}}) --base {{base}} --head {{branch}} --title {{title}} --body-file {{body_file}}
