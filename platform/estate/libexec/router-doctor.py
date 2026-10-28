@@ -237,6 +237,13 @@ def heal_patch():
     return reinstall()
 
 
+def dropped_lanes(source: str, runtime: str) -> list:
+    """Lanes the source config declares that the rendered runtime config does not serve (#7352)."""
+    want = re.findall(r"model_name:\s*(\S+)", source)
+    have = set(re.findall(r"model_name:\s*(\S+)", runtime))
+    return sorted({n for n in want if n not in have})
+
+
 def check_lanes():
     cfg = STAGE / "config.runtime.yaml"
     if not cfg.exists():
@@ -247,10 +254,14 @@ def check_lanes():
         for n in ("claude-*", "efficiency_gateway", "anthropic_beta_passthrough")
         if n not in text
     ]
-    return (
-        not missing,
-        "missing: %s" % missing if missing else "claude-* lane + efficiency gateway",
-    )
+    src = STAGE / "config.yaml"
+    dropped = dropped_lanes(src.read_text(), text) if src.exists() else []
+    if missing or dropped:
+        return False, "missing: %s; dropped (key absent at render): %s" % (
+            missing,
+            dropped,
+        )
+    return True, "claude-* lane + efficiency gateway + every declared lane served"
 
 
 def heal_lanes():
