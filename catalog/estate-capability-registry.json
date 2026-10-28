@@ -4,7 +4,7 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 102,
-    "layer": 209,
+    "layer": 210,
     "service": 121,
     "tool": 443,
     "workflow": 80
@@ -7470,6 +7470,58 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/memory/test_handback.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-nsvee_enforcement",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "The binding half of ADR 0046: a verified artifact is bound to a commit by a receipt.",
+      "contract": {
+        "inputs": [
+          "--commit",
+          "--print-contract",
+          "--receipt",
+          "--tree",
+          "--verify-receipt"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/nsvee_enforcement.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
