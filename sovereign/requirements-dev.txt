@@ -5,7 +5,22 @@
 # pytest-bdd, not behave (LAW 43): the repository already holds 61 Gherkin
 # .feature files and pytest-bdd binds them to pytest, so idp-ci keeps one test
 # runner. behave would be a second runner with its own reporting.
-pytest>=8.0
+# pytest 9.2.0 (uploaded to PyPI 2026-10-27T21:30) renamed the private
+# FixtureManager attribute `_arg2fixturedefs`, and pytest-bdd 9.0.0 -- the newest
+# pytest-bdd there is -- still reads it (pytest_bdd/scenario.py:65,
+# `fixturemanager._arg2fixturedefs.items()`). So every candidate whose acceptance
+# shards ran after that upload died on the first scenario that binds a step:
+# `AttributeError: 'FixtureManager' object has no attribute '_arg2fixturedefs'`
+# (pytest_bdd/scenario.py:145 inject_fixturedefs_for_step). Measured 2026-10-28 on
+# run 122622836332 (candidate bcbcb787171b): the three `bdd-suites (acceptance,
+# ...)` legs red while `bdd-suites (tests, all)` passed, and the same red was
+# already on candidate b4391, which changed no test file -- it was the upload,
+# not the lane.
+#
+# pytest 9.1.1 still carries `_arg2fixturedefs` (9 reads in _pytest/fixtures.py),
+# so the ceiling is 9.2, not 9. Raise it when a pytest-bdd release reads the new
+# name; until then the ceiling is what keeps the acceptance suite runnable.
+pytest>=8.0,<9.2
 pytest-bdd>=8.0
 # crew#584 (founder 2026-08-28, "we spend too much time running tests"): parallelism is the default
 # nobody types (pyproject.toml addopts = -n auto). Measured on the idp#609 change set, 17 files:
