@@ -188,6 +188,32 @@ These rules bind every agent, whatever model or runtime:
    on the real path the founder uses. Closing it releases the claim.
 7. **One capability at a time per agent.** Finish, or release, before claiming the next.
 
+## 5a. The lead engineer owns the outcome
+
+One agent is the lead engineer for the estate at any moment, and the lead is judged on the OUTCOME:
+the thing working for its real caller, the route answering, the model serving -- not the commit, not
+the plan, not the busy-ness. "Built" and "operating" are different facts and the lead reports which
+one it means.
+
+Three laws follow, and they are the same law seen from three sides:
+
+- **One owner, one lane.** Every piece of work has exactly one owner and exactly one claim. A
+  second agent on the same work is not help; it is a second copy of a layer (section 6), and a second
+  copy of a door is how an estate ends up with eleven ways to do one thing and nobody able to say
+  which one is true. Duplicating work and creating a mess at the same time is the failure mode, not
+  parallelism.
+- **Never route around a door with a temporary door.** When a refusal blocks the work, the refusal
+  is the estate telling the truth about something -- the disk, the claim, the gate, the quota. Fix
+  that, or add the capability properly (section 7, and the registry). A throwaway intent that
+  hides the refusal leaves the estate slower and messier while looking busier.
+- **Parallel work is a spec handed to the fleet plane.** The lead writes the spec -- what, where,
+  what counts as proof, what must not change -- and hands it to headless agents through the session
+  plane (`sb start`), never by spawning ad-hoc copies of itself. If the session plane is down, the
+  lead does the work itself and says the plane is down; it does not fake parallelism.
+
+The lead also owns the mess: every worktree, claim, lane and door it opens is either closed or
+explained before the lead reports.
+
 The founder sees every live claim on /fleet: who, what, which paths, and heartbeat age. Never restart
 another agent's process. Never touch the Telegram token's polling.
 
