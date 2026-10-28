@@ -4,7 +4,7 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 102,
-    "layer": 209,
+    "layer": 210,
     "service": 121,
     "tool": 443,
     "workflow": 80
@@ -2008,7 +2008,7 @@
       "id": "cap:intent/jev.decide",
       "schema_version": 1,
       "kind": "intent",
-      "summary": "Ask the estate's ONE decision layer (ADR 0030) a bounded question, and get back a typed answer with a confidence instead of a yes/no with none. Use it wherever a turn would otherwise pick an option, rate something, or assume a boolean: which lane a task belongs in, whether a change is inside the claim, whether a failure is the kind already seen, whether a diff needs the full suite. It returns {answer, confidence, escalated} and records the decision in estate.db jev_decisions, which is what the Fleet page reads. SOURCES OF TRUTH. `sovereign/policy.py` [jev]: default_confidence_floor (0.7), timeout_ms (2000), escalate_on_timeout (true), force_on_decisions (true). The floor is one value for the estate; pass --threshold only to argue with it for one call, not to fork it. AN ESCALATION IS NOT A NO. `escalated=true` (or `_fallback=jev_unavailable`, confidence null) means the layer was consulted and could not answer. Route it to human review or a deeper check per ADR 0030's escalation table; never read it as evidence for either side. This intent never refuses and never exits non-zero on a decision. Exit 2 is a usage error. args: question:    {type: string, required: true,  description: \"The bounded question, in plain language.\"} id:          {type: string, required: true,  description: \"Names the decision, e.g. greenlane.land.\"} kind:        {type: string, default: \"noul\", description: \"noul (true/false) | choice | score.\"} options:     {type: string, default: \"\",     description: \"Comma-separated, for kind=choice.\"} levels:      {type: string, default: \"\",     description: \"Comma-separated, for kind=score.\"} layer:       {type: string, default: \"agent\", description: \"guard|agent|hook|consensus|verifier.\"} context:     {type: string, default: \"{}\",   description: \"JSON object of evidence. Never secrets.\"} threshold:   {type: string, default: \"\",     description: \"Escalate below this confidence; default is policy [jev].\"} repo:        {type: string, default: \"~/Documents/code/idp\", description: \"Repo holding mcp/plugins/jev.py.\"} # A call is one HTTP round trip bounded by policy [jev] timeout_ms (2000) -- a door of 30 leaves # room for process start and a slow filesystem without offering a verb the door cannot fit. door_s: 30 halt_on_failure: false steps: - name: decide # The executor SHELL-QUOTES every {{arg}} it substitutes (an empty arg arrives as ''), so the # template must not quote them again -- doing so turned `estate's` into an unterminated quote # and the whole step died on line 4 (measured 2026-10-18). Unquoted here, and assigned to a # shell variable before the emptiness test so `set -u` and `set -e` are both honest. cmd: | set -euo pipefail thr={{threshold}} opts={{options}} lvls={{levels}} args=(--question {{question}} --id {{id}} --kind {{kind}} --layer {{layer}} --context {{context}} --repo {{repo}}) if [ -n \"$opts\" ]; then args+=(--options \"$opts\"); fi if [ -n \"$lvls\" ]; then args+=(--levels \"$lvls\"); fi if [ -n \"$thr\" ]; then args+=(--threshold \"$thr\"); fi python3 ~/.estate/libexec/jev-decide.py \"${args[@]}",
+      "summary": "Ask the estate's ONE decision layer (ADR 0030) a bounded question, and get back a typed answer with a confidence instead of a yes/no with none. Use it wherever a turn would otherwise pick an option, rate something, or assume a boolean: which lane a task belongs in, whether a change is inside the claim, whether a failure is the kind already seen, whether a diff needs the full suite. It returns {answer, confidence, escalated} and records the decision in estate.db jev_decisions, which is what the Fleet page reads. SOURCES OF TRUTH. `sovereign/policy.py` [jev]: default_confidence_floor (0.7), timeout_ms (2000), escalate_on_timeout (true), force_on_decisions (true). The floor is one value for the estate; pass --threshold only to argue with it for one call, not to fork it. AN ESCALATION IS NOT A NO. `escalated=true` (or `_fallback=jev_unavailable`, confidence null) means the layer was consulted and could not answer. Route it to human review or a deeper check per ADR 0030's escalation table; never read it as evidence for either side. This intent never refuses and never exits non-zero on a decision. Exit 2 is a usage error. THE CONTEXT CONTRACT. `context` is a JSON object, passed as a JSON-ENCODED STRING (the door passes every argument as one shell-quoted value, so whitespace and braces inside the JSON arrive intact -- quoting is not the trap). A context that is not JSON, or is JSON but not an object, is refused with exit 2 BEFORE the decision layer is consulted: a bad argument costs no call and no vendor round trip, and it can never be mistaken for an unavailable layer. The error never echoes the context, because the context is evidence. args: question:    {type: string, required: true,  description: \"The bounded question, in plain language.\"} id:          {type: string, required: true,  description: \"Names the decision, e.g. greenlane.land.\"} kind:        {type: string, default: \"noul\", description: \"noul (true/false) | choice | score.\"} options:     {type: string, default: \"\",     description: \"Comma-separated, for kind=choice.\"} levels:      {type: string, default: \"\",     description: \"Comma-separated, for kind=score.\"} layer:       {type: string, default: \"agent\", description: \"guard|agent|hook|consensus|verifier.\"} context:     {type: string, default: \"{}\",   description: \"JSON object of evidence, encoded as a JSON string (e.g. {\\\"k\\\":\\\"v\\\"}). A malformed context, or one that is not an object, is refused with exit 2 before any call. Never secrets.\"} threshold:   {type: string, default: \"\",     description: \"Escalate below this confidence; default is policy [jev].\"} repo:        {type: string, default: \"~/Documents/code/idp\", description: \"Repo holding mcp/plugins/jev.py.\"} # A call is one HTTP round trip bounded by policy [jev] timeout_ms (2000) -- a door of 30 leaves # room for process start and a slow filesystem without offering a verb the door cannot fit. door_s: 30 halt_on_failure: false steps: - name: decide # The executor SHELL-QUOTES every {{arg}} it substitutes (an empty arg arrives as ''), so the # template must not quote them again -- doing so turned `estate's` into an unterminated quote # and the whole step died on line 4 (measured 2026-10-18). Unquoted here, and assigned to a # shell variable before the emptiness test so `set -u` and `set -e` are both honest. cmd: | set -euo pipefail thr={{threshold}} opts={{options}} lvls={{levels}} args=(--question {{question}} --id {{id}} --kind {{kind}} --layer {{layer}} --context {{context}} --repo {{repo}}) if [ -n \"$opts\" ]; then args+=(--options \"$opts\"); fi if [ -n \"$lvls\" ]; then args+=(--levels \"$lvls\"); fi if [ -n \"$thr\" ]; then args+=(--threshold \"$thr\"); fi python3 ~/.estate/libexec/jev-decide.py \"${args[@]}",
       "contract": {
         "inputs": [
           "context",
@@ -7470,6 +7470,58 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/memory/test_handback.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-nsvee_enforcement",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "The binding half of ADR 0046: a verified artifact is bound to a commit by a receipt.",
+      "contract": {
+        "inputs": [
+          "--commit",
+          "--print-contract",
+          "--receipt",
+          "--tree",
+          "--verify-receipt"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/nsvee_enforcement.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
