@@ -131,6 +131,18 @@ spec:
             - { name: GENERIC_USER_ID_ATTRIBUTE, value: email }
             - { name: GENERIC_USER_EMAIL_ATTRIBUTE, value: email }
             - { name: PROXY_BASE_URL, value: "https://llm.${ESTATE_ZONE}" }
+            # The execution-intelligence collector (decision 0045). The router is the ONE place
+            # every agent's model call passes, so it is where execution is observed: each
+            # routed call becomes one AEI event (model, tokens, latency, status) carrying no
+            # prompt and no answer. The collector lives in the observability namespace and the
+            # llm fence already permits that egress (allow-declared-egress).
+            #
+            # Both names are CONFIG, not credentials: a URL and the PATH of the token file. The
+            # token itself is read from the mounted file per call, never from the environment
+            # (Kyverno secrets-not-from-env-vars). A collector that is down loses evidence and
+            # never a call -- the callback fails open by law (LAW 38).
+            - { name: AEI_COLLECTOR_URL, value: "http://aei.observability.svc.cluster.local:8766" }
+            - { name: AEI_API_TOKEN_FILE, value: /run/secrets/aei/api-token }
             # What turns zeroedge_gateway.py from a registered no-op into the optimizer it was
             # written to be. The shim has been in `litellm_settings.callbacks` since it landed
             # and, with this unset, returned every request byte-identical -- so the five-layer
@@ -193,6 +205,9 @@ spec:
             - { name: human-deepseek, mountPath: /run/secrets/human/deepseek, readOnly: true }
             - { name: tmp, mountPath: /tmp }
             - { name: pobr-agent-key, mountPath: /etc/litellm/keys, readOnly: true }
+            # The collector's API token, as a file. Optional, so a router whose vault entry is
+            # not minted yet still starts and still serves every call.
+            - { name: aei-observer, mountPath: /run/secrets/aei, readOnly: true }
           resources:
             # OOMKilled at 1Gi within 19s of start on the -database image (Prisma engine plus the
             # proxy), 10 restarts on 2026-08-26 23:2xZ; node has 20Gi allocatable.
@@ -274,6 +289,10 @@ spec:
           # optional: PoBR is off in config.yaml until its receipt signer exists; a missing key held
           # the router at ContainerCreating (otto-parity 36505775873, progress deadline exceeded).
           secret: { secretName: litellm-pobr-agent-key, optional: true }
+        - name: aei-observer
+          # optional: same reason as the PoBR key above. A router with no collector token
+          # serves every call and records no evidence -- a gap, not an outage.
+          secret: { secretName: litellm-aei-observer, optional: true }
 ---
 apiVersion: v1
 kind: Service

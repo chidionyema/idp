@@ -1,0 +1,171 @@
+description: >-
+  The estate's router makes every model call, and the estate could not answer, from its own
+  record, what one execution cost, or how two executions compare. This record asks why that is
+  so, and fixes four explanations before the evidence is read. The priors were set from what was
+  already known on 2026-10-28: the router has no AEI-shaped observer on it, so a missing surface
+  was the leading explanation before anything was measured.
+
+  WHERE THE MEASUREMENTS CAME FROM, AND WHAT THEY COULD NOT SEE. The live router path was the
+  laptop's LiteLLM on 127.0.0.1:4001, because the cloud default route https://llm.mumchimp.com
+  answered 503 with the ingress "Starting up" page and carried no traffic to measure. The
+  router's configured callbacks, the per-call row it writes, the estate's readers of per-call
+  facts and the estate's price table were read from origin/main. The cluster was NOT reachable
+  from the laptop, so nothing here claims what the cluster's own pods hold: the cluster's
+  action ledger was measured on 2026-10-25 (docs/diagnoses/2026-10-25-cluster-action-ledger-
+  records-nothing.yaml) and wrote no rows at all on that day. Where a count is a count of
+  observations, it is the count of what was observed, not a sample of everything.
+
+  THE FIVE EXECUTION FACTS, used throughout: model, deployment, tokens, latency, cost. A
+  per-call record that holds one of them is not an execution record; the question is whether
+  any surface in the estate holds them together, joined to the execution they belong to, with
+  a cost that is derived rather than guessed.
+hypotheses:
+- name: H1
+  description: >-
+    No surface in the estate records the execution facts together, joined to an execution, with
+    a derived cost. The router path's per-call records are a signed receipt of hashes (the
+    action ledger's row) and a trace in the trace store; the cost is nowhere; nothing joins a
+    call to the agent's execution; and no estate surface reads per-call facts per execution.
+    A new observation surface -- a callback that writes metadata-only execution events into a
+    store the estate queries -- is the missing piece, and it duplicates neither the trace store
+    nor the signed receipt.
+  prior: 0.4
+- name: H2
+  description: >-
+    The facts ARE written, but to a place nothing reads: the per-call records exist (the
+    action ledger's row, the trace export), and what is missing is a reader, not a writer. A
+    new collector would be a second copy of what the estate already writes.
+  prior: 0.2
+- name: H3
+  description: >-
+    The facts are written and read, and the only thing missing is the cost: the spend header
+    reads 0.0 where the call was paid, and the deployment in use has no price row. The fix
+    belongs in the price table, and a run-scoped comparison is a nice-to-have nobody asked for.
+  prior: 0.2
+- name: H4
+  description: >-
+    Everything the estate needs is already written, read and priced; the estate's record
+    answers both questions today, and this delivery is a duplicate of the estate's tracing.
+  prior: 0.2
+evidence:
+- name: >-
+    the five execution facts held TOGETHER in one record the estate can read back (measured on
+    origin/main, 2026-10-28: the action ledger's per-call row holds the model name and hashes
+    of the request and the result; the trace export holds model, tokens and latency; the spend
+    header holds a cost of 0.0 on a paid call)
+  observed:
+    held_together: 0
+    split_across_records: 1
+  likelihoods:
+    H1:
+      held_together: 0.1
+      split_across_records: 0.9
+    H2:
+      held_together: 0.5
+      split_across_records: 0.5
+    H3:
+      held_together: 0.65
+      split_across_records: 0.35
+    H4:
+      held_together: 0.8
+      split_across_records: 0.2
+- name: >-
+    the cost of a call in the estate's own record (measured 2026-10-28: x-litellm-key-spend
+    read 0.0 on a real paid-lane call to minimax, and the deployment the live default route
+    used, openai/openai/gpt-oss-120b, has no price row in platform/llm/config.yaml)
+  observed:
+    cost_held: 0
+    cost_missing: 1
+  likelihoods:
+    H1:
+      cost_held: 0.1
+      cost_missing: 0.9
+    H2:
+      cost_held: 0.8
+      cost_missing: 0.2
+    H3:
+      cost_held: 0.05
+      cost_missing: 0.95
+    H4:
+      cost_held: 0.9
+      cost_missing: 0.1
+- name: >-
+    a call joined to the agent's execution, by a task or run id, in the estate's own record
+    (measured 2026-10-28: the router's response headers carry no task or run id, no estate
+    client sends one -- 0 hits in the repository -- and the action ledger's row carries a
+    session id, not a task or run id)
+  observed:
+    joinable: 0
+    not_joinable: 1
+  likelihoods:
+    H1:
+      joinable: 0.05
+      not_joinable: 0.95
+    H2:
+      joinable: 0.4
+      not_joinable: 0.6
+    H3:
+      joinable: 0.75
+      not_joinable: 0.25
+    H4:
+      joinable: 0.85
+      not_joinable: 0.15
+- name: >-
+    an estate surface that reads per-call facts for an execution (measured on origin/main,
+    2026-10-28: the estate's readers of per-call facts are the trace probes --
+    probes/langfuse.py, bin/langfuse-verify -- and no surface reads an execution-keyed record)
+  observed:
+    reader_exists: 0
+    no_reader: 1
+  likelihoods:
+    H1:
+      reader_exists: 0.1
+      no_reader: 0.9
+    H2:
+      reader_exists: 0.15
+      no_reader: 0.85
+    H3:
+      reader_exists: 0.8
+      no_reader: 0.2
+    H4:
+      reader_exists: 0.9
+      no_reader: 0.1
+- name: >-
+    the per-call spend header the estate's own spend gate reads, on a real paid-lane call
+    (x-litellm-key-spend on a minimax call through the live router, 2026-10-28)
+  observed:
+    recorded_zero: 1
+    recorded_the_spend: 0
+  likelihoods:
+    H1:
+      recorded_zero: 0.85
+      recorded_the_spend: 0.15
+    H2:
+      recorded_zero: 0.6
+      recorded_the_spend: 0.4
+    H3:
+      recorded_zero: 0.95
+      recorded_the_spend: 0.05
+    H4:
+      recorded_zero: 0.15
+      recorded_the_spend: 0.85
+- name: >-
+    the deployment the live default route actually used against the estate's price table
+    (openai/openai/gpt-oss-120b in the six priced deployments of platform/llm/config.yaml,
+    measured 2026-10-28)
+  observed:
+    no_price_row: 1
+    priced: 0
+  likelihoods:
+    H1:
+      no_price_row: 0.9
+      priced: 0.1
+    H2:
+      no_price_row: 0.85
+      priced: 0.15
+    H3:
+      no_price_row: 0.9
+      priced: 0.1
+    H4:
+      no_price_row: 0.3
+      priced: 0.7
