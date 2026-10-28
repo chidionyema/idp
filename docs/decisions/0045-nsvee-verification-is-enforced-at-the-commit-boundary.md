@@ -1,6 +1,6 @@
 # 0045 — NSVEE verification is enforced at the commit boundary
 
-- **Date:** 2026-10-27
+- **Date:** 2026-10-28 (decision taken 2026-10-27; landed 2026-10-28)
 - **Claim:** idp#7298 · agent `estate-agent`
 - **Gate:** `tests/test_nsvee_estate_enforcement.py` — this ADR's contract is executable, and the
   test fails when the code and this document drift apart
@@ -59,7 +59,7 @@ that the committed code passes. The estate does not grade a proxy (`AGENTS.md` �
 
 | the founder expects | what the tree measures |
 |---|---|
-| NSVEE verifies every agent artifact, estate-wide | no estate surface references NSVEE at all: `rg -i nsvee` outside `nsvee/`, `docs/` and `tests/` returns nothing. The engine is a library nobody calls |
+| NSVEE verifies every agent artifact, estate-wide | no estate surface references NSVEE at all: `git grep -l -i nsvee origin/main` outside `nsvee/`, `docs/` and `tests/` returns nothing. pi *development* sessions have exercised the engine directly (`import nsvee`, `python3 -m nsvee` appear in 8 session transcripts under `~/.pi/agent/sessions/`), but no runtime surface — intent, MCP tool, CI job — calls it. An agent today reaches it only by hand-writing Python against the library |
 | the verification is automatic | nothing invokes it. There is no receipt, no gate, no verdict bound to a change |
 | an agent cannot ship unverified code | the commit path runs ruff format, ruff check, tsc, shellcheck and yamllint (`.githooks/pre-commit`) and CI runs the fast gate. None of those verify semantics |
 | there is a verdict per change | there is a `PipelineReport` per *run*, unbound to any commit, tree, or artifact digest |
