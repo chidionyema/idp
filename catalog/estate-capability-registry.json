@@ -5,7 +5,7 @@
   "counts": {
     "intent": 102,
     "layer": 209,
-    "service": 120,
+    "service": 121,
     "tool": 443,
     "workflow": 80
   },
@@ -15801,6 +15801,55 @@
         "health",
         "proof",
         "metrics"
+      ]
+    },
+    {
+      "id": "cap:service/default/aei",
+      "schema_version": 1,
+      "kind": "service",
+      "summary": "Deployment aei in namespace default",
+      "contract": {
+        "inputs": [
+          "kubernetes API"
+        ],
+        "outputs": [
+          "pods"
+        ],
+        "errors": [
+          "image pull, admission, probe failures"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "batch"
+      },
+      "owner": "@chidionyema",
+      "plane": "cluster",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform,clusters"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "cluster",
+      "path": "platform/aei/aei.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "also_declared_in": [
+        "platform/aei/aei.yaml"
       ]
     },
     {

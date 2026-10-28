@@ -1,0 +1,40 @@
+# AEI -- the estate's execution-intelligence collector, as its own workload with its own Flux row.
+#
+# WHY IT IS NOT IN platform/observability. Measured 2026-10-28 from the cluster-state receipt
+# (state/cluster, timestamp 2026-10-27T11:00:45Z): 53 live Flux Kustomizations and NOT ONE of
+# them reconciles ./platform/observability. The row existed in 15f4a8192 and 86b74738e, was
+# dropped by c96359f4b ("~80 flux rows down to 7") and was restored by d73db7199/c920a0f32 --
+# none of which is an ancestor of main, so the restore never landed. A manifest in a directory
+# that no row applies is a document, not a deployment: the aevum Deployment was measured at 0
+# replicas in the same receipt, and bin/idp-surface-liveness fails on exactly this class
+# ("founder-collector -> observability-collector").
+#
+# WHY IT IS NOT THE WHOLE platform/observability ROW. Restoring that row would re-apply the
+# suspended signoz HelmRelease, the dependency-blocked langfuse, superset with its founder-facing
+# HTTPRoutes, and Jobs such as metabase-volume-removal -- a blast radius far past this change
+# and against the free-tier placement ladder (decision 0034). So AEI gets the estate's own
+# pattern instead: platform/jit -> clusters/oke/jit.yaml, one directory, one row, one workload.
+#
+# THE NAMESPACE LIVES HERE NOW. The observability Namespace moved from platform/observability to
+# this directory because no reconciled row created it, while platform/ns-fences (a live row)
+# applies NetworkPolicies INTO that namespace -- so on a fresh cluster the fences could not
+# apply at all. This row is the one that guarantees the namespace its collector runs in. When
+# the observability row is finally restored, the Namespace object goes back with it; the object
+# carries kustomize.toolkit.fluxcd.io/prune: disabled, so no row can garbage-collect it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: observability
+resources:
+  - namespace.yaml
+  - aei.yaml
+# The tag is moved by Flux image automation (platform/image-automation/aei.yaml), the same way
+# aevum's is moved. It is pinned here rather than in aei.yaml so the marker sits on one line
+# the automation owns -- and because a literal tag in the Deployment is what put aevum in
+# ImagePullBackOff on 2026-09-12.
+#
+# The tag below is the one this repository actually published for main 868f775a (build-multiarch
+# run 14989): bin/idp-image-pin-guard asks the registry for every tag this file pins, and a tag
+# the registry does not have is a pod in ImagePullBackOff.
+images:
+  - name: ghcr.io/chidionyema/aei
+    newTag: main-14989-868f775a48145500b27c832914c5680af127087f # {"$imagepolicy": "flux-system:aei:tag"}
