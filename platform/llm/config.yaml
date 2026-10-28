@@ -919,7 +919,12 @@ litellm_settings:
   # Active Focus and writes its turn to working memory -- one place for every agent, instead
   # of an adapter per runtime (platform/llm/active_memory.py). Last, so the ceiling above
   # judges the request as the client sent it and the brief rides only a call that passed.
-  callbacks: ["otel", "efficiency_gateway.proxy_handler_instance", "request_ceiling.proxy_handler_instance", "active_memory.proxy_handler_instance", "no_handback.proxy_handler_instance", "graph_capture.proxy_handler_instance", "action_ledger.proxy_handler_instance"]
+  # aei_observer (decision 0045): every routed call becomes one execution-evidence event --
+  # model, tokens, latency, status, and no content. LAST, so it observes the call as it was
+  # actually served, after the ceiling has judged it and the memory brief has ridden on it.
+  # It is a no-op when the collector is not configured, and it fails open always: a telemetry
+  # failure may never fail a request (LAW 38).
+  callbacks: ["otel", "efficiency_gateway.proxy_handler_instance", "request_ceiling.proxy_handler_instance", "active_memory.proxy_handler_instance", "no_handback.proxy_handler_instance", "graph_capture.proxy_handler_instance", "action_ledger.proxy_handler_instance", "aei_observer.proxy_handler_instance"]
   # Every routed call lands in Langfuse (platform/observability) as a trace, whatever product made
   # it: tracing at the router is the one instrument, not one SDK per product (crew#325 showcase).
   # Keys arrive as env from the litellm-langfuse ExternalSecret; LANGFUSE_HOST is set in litellm.yaml.

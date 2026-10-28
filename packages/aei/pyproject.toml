@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "estate-aei"
+version = "0.1.0"
+description = "Agent Execution Intelligence: the estate's observed, append-only execution evidence plane."
+requires-python = ">=3.9"
+# Standard library only, on purpose: the collector must start on a laptop and in a cluster pod
+# with nothing to install and nothing to break. The Postgres backing is optional and is imported
+# lazily by aei.pgstore, so the SQLite spool never needs a driver.
+dependencies = []
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.1"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
