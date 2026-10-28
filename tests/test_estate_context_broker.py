@@ -158,9 +158,9 @@ def test_an_unreachable_engine_is_refused_not_served_from_cache():
 
 # --- secrets -----------------------------------------------------------------------------------
 def test_a_named_secret_value_is_replaced_with_an_opaque_reference():
-    text = "the gateway wants token sk-live-abcdef123456789 for the call"
-    clean, removed = scrub(text, {"MCP_GATEWAY_KEY": "sk-live-abcdef123456789"})
-    assert "sk-live-abcdef123456789" not in clean
+    text = "the gateway wants token estate-test-value-01 for the call"
+    clean, removed = scrub(text, {"MCP_GATEWAY_KEY": "estate-test-value-01"})
+    assert "estate-test-value-01" not in clean
     assert "REF:MCP_GATEWAY_KEY" in clean
     assert removed == ["MCP_GATEWAY_KEY"]
 
@@ -185,8 +185,8 @@ def test_a_private_key_block_is_removed_whole():
 
 
 def test_a_value_bound_to_a_credential_shaped_name_is_removed_and_the_name_kept():
-    clean, removed = scrub('GITHUB_TOKEN = "a93kd0mzq1x7"', {})
-    assert "a93kd0mzq1x7" not in clean
+    clean, removed = scrub('GITHUB_TOKEN = "estate-test-token-01"', {})
+    assert "estate-test-token-01" not in clean
     assert "REF:GITHUB_TOKEN" in clean
     assert "GITHUB_TOKEN" in removed
 
@@ -214,11 +214,11 @@ def test_every_excerpt_carries_file_commit_lines_and_digest():
 
 def test_an_excerpt_is_scrubbed_on_the_way_out():
     env = envelope(
-        "here is the key sk-live-abcdef123456789",
+        "here is the key estate-test-value-01",
         provenance("f.py", "abc", 1, 1, "d"),
-        secrets={"MCP_GATEWAY_KEY": "sk-live-abcdef123456789"},
+        secrets={"MCP_GATEWAY_KEY": "estate-test-value-01"},
     )
-    assert "sk-live-abcdef123456789" not in env["content"]
+    assert "estate-test-value-01" not in env["content"]
     assert env["redacted"] == ["MCP_GATEWAY_KEY"]
 
 

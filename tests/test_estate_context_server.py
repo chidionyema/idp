@@ -132,7 +132,7 @@ def _setup(
     monkeypatch.setattr(
         broker_server,
         "_load_named_secrets",
-        lambda: {"MCP_GATEWAY_KEY": "sk-live-abcdef123456789"},
+        lambda: {"MCP_GATEWAY_KEY": "estate-test-value-01"},
     )
     return engine
 
@@ -302,7 +302,7 @@ def test_a_secret_in_the_answer_is_scrubbed_before_it_leaves(monkeypatch):
     _setup(
         monkeypatch,
         engine=FakeEngine(
-            {"working_set": [], "note": "the key is sk-live-abcdef123456789"}
+            {"working_set": [], "note": "the key is estate-test-value-01"}
         ),
     )
     httpd, base = _serve_in_thread()
@@ -320,7 +320,7 @@ def test_a_secret_in_the_answer_is_scrubbed_before_it_leaves(monkeypatch):
             },
         )
         sc = out["result"]["structuredContent"]
-        assert "sk-live-abcdef123456789" not in sc["answer"]
+        assert "estate-test-value-01" not in sc["answer"]
         assert "REF:MCP_GATEWAY_KEY" in sc["answer"]
         assert sc["redacted"] == ["MCP_GATEWAY_KEY"]
     finally:
@@ -454,7 +454,7 @@ def test_an_excerpt_is_scrubbed_of_a_named_secret(monkeypatch, tmp_path):
     envelope around it."""
     source = tmp_path / "pkg" / "broker.py"
     source.parent.mkdir(parents=True)
-    source.write_text("TOKEN = 'sk-live-abcdef123456789'\n", encoding="utf-8")
+    source.write_text("TOKEN = 'estate-test-value-01'\n", encoding="utf-8")
     monkeypatch.setattr(broker_server, "SOURCE_DIR", str(tmp_path))
     name = plan_rules.repo_name(str(tmp_path))
     excerpts = broker_server._excerpts_from(
@@ -464,8 +464,8 @@ def test_an_excerpt_is_scrubbed_of_a_named_secret(monkeypatch, tmp_path):
             ]
         },
         "abc123",
-        {"MCP_GATEWAY_KEY": "sk-live-abcdef123456789"},
+        {"MCP_GATEWAY_KEY": "estate-test-value-01"},
     )
     assert excerpts
-    assert "sk-live-abcdef123456789" not in excerpts[0]["content"]
+    assert "estate-test-value-01" not in excerpts[0]["content"]
     assert "REF:MCP_GATEWAY_KEY" in excerpts[0]["content"]
