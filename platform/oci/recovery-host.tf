@@ -153,6 +153,14 @@ resource "oci_identity_policy" "recovery" {
     # mounts and identifies the surviving volumes and copies them off-provider (plan step 3).
     "Allow dynamic-group ${oci_identity_dynamic_group.recovery.name} to use instance-agent-command-execution-family in compartment id ${var.compartment_ocid} where request.instance.id = '${oci_core_instance.recovery.id}'",
     "Allow dynamic-group ${oci_identity_dynamic_group.recovery.name} to manage objects in compartment id ${var.compartment_ocid} where target.bucket.name = '${oci_objectstorage_bucket.router_recovery.name}'",
+    # The CI principal needs the same door, or the declared repair path cannot reach the host.
+    # 2026-10-29: .github/workflows/recovery-data.yml creates a Run Command against this instance
+    # and the create returned NotAuthorizedOrNotFound, because estate-github-actions held only
+    # `manage secret-family` (platform/oci/github-actions.tf) and no Run Command at all. The door
+    # was declared and unusable: a host with no cloudflared connector (Cloudflare 1033) could not
+    # be repaired by the workflow that existed to repair it. Scoped to THIS instance only, because
+    # the group matches every GitHub Actions principal in the tenancy.
+    "Allow dynamic-group ${oci_identity_dynamic_group.github_actions.name} to use instance-agent-command-execution-family in compartment id ${var.compartment_ocid} where request.instance.id = '${oci_core_instance.recovery.id}'",
   ]
 }
 

@@ -19,7 +19,12 @@ write_files:
     permissions: "0755"
     content: |
       #!/usr/bin/env bash
-      # Fetch the vault entry and the config bundle. Prints "changed" when the bundle moved.
+      # Fetch the vault entry and the config bundle. Prints "changed" when either moved.
+      #
+      # "changed" covers the ENV file too (2026-10-29). It used to mean only "the bundle moved",
+      # so a re-minted tunnel token -- the vault entry changed, the bundle did not -- was never
+      # signalled and the connector kept running on the old token. The token is exactly what the
+      # tunnel needs; a changed token must restart the connector.
       set -euo pipefail
       export OCI_CLI_AUTH=instance_principal SUPPRESS_LABEL_WARNING=True
       mkdir -p /etc/estate/router && chmod 0700 /etc/estate
@@ -30,6 +35,10 @@ write_files:
       oci secrets secret-bundle get --secret-id "$sid" --region '${region}' \
         --query 'data."secret-bundle-content".content' --raw-output | base64 -d |
         python3 -c 'import json,sys; [print(k + "=" + v) for k, v in json.load(sys.stdin).items()]' > /etc/estate/router.env.new
+      env_changed=1
+      if cmp -s /etc/estate/router.env.new /etc/estate/router.env 2>/dev/null; then
+        env_changed=0
+      fi
       mv /etc/estate/router.env.new /etc/estate/router.env
       oci os object get --namespace '${namespace}' --bucket-name '${bucket}' --name bundle.tgz \
         --file /etc/estate/bundle.tgz.new --region '${region}'
@@ -38,6 +47,9 @@ write_files:
         tar -xzf /etc/estate/bundle.tgz.new -C /etc/estate/router.new
         rm -rf /etc/estate/router && mv /etc/estate/router.new /etc/estate/router
         mv /etc/estate/bundle.tgz.new /etc/estate/bundle.tgz
+        echo "changed"
+      elif [ "$env_changed" = 1 ]; then
+        rm -f /etc/estate/bundle.tgz.new
         echo "changed"
       else
         rm -f /etc/estate/bundle.tgz.new
@@ -70,10 +82,19 @@ write_files:
     content: |
       [Unit]
       Description=Cloudflare Tunnel for llm.mumchimp.com (#7387)
-      After=estate-router.service
+      # NOT After=estate-router.service (2026-10-29). The tunnel's origin is the router's
+      # 127.0.0.1:4000, but the tunnel must not WAIT for the router to start: estate-router
+      # restarts forever on any failure, and a unit that never reaches active blocks every unit
+      # ordered after it. The tunnel was never started because the router could not stay up, and
+      # with no connector Cloudflare answered 1033 for llm-recovery.mumchimp.com.
+      After=network-online.target
       Wants=network-online.target
 
       [Service]
+      # The tunnel needs /etc/estate/router.env (it carries TUNNEL_TOKEN). It had no fetch of its
+      # own: if the vault entry had not arrived by the time the unit started, podman --env-file
+      # failed and the unit crash-looped forever with nothing to show for it.
+      ExecStartPre=/etc/estate/router-fetch
       ExecStartPre=-/usr/bin/podman rm -f estate-tunnel
       ExecStart=/usr/bin/podman run --name estate-tunnel --network host --env-file /etc/estate/router.env \
         --memory 256m --log-opt max-size=10m --log-opt max-file=3 \
@@ -88,11 +109,14 @@ write_files:
   - path: /etc/systemd/system/estate-router-refresh.service
     content: |
       [Unit]
-      Description=Re-read the router bundle; restart the router when it changed
+      Description=Re-read the router bundle; restart the router and the tunnel when it changed
 
       [Service]
       Type=oneshot
-      ExecStart=/bin/bash -c '/etc/estate/router-fetch | grep -q changed && systemctl restart estate-router || true'
+      # The tunnel too (2026-10-29): the vault entry carries the tunnel token, and a re-read that
+      # changes the token must reach the connector. Restarting only the router left the connector
+      # running on a token the router had already moved past.
+      ExecStart=/bin/bash -c '/etc/estate/router-fetch | grep -q changed && { systemctl restart estate-router; systemctl restart estate-tunnel; } || true'
 
   - path: /etc/systemd/system/estate-router-refresh.timer
     content: |
