@@ -157,6 +157,17 @@ case "$MODE" in
     printf '%-5s %-18s rc=%-3s %4ss  %s\n' "$([ $prc -eq 0 ] && echo ok || echo FAIL)" "playbook" "$prc" 0 "$PLAYBOOK"
     [ $prc -eq 0 ] || FAILED="$FAILED playbook"
     bg_revoke; trap - EXIT ;;
+  --apply-targets)
+    # 2026-10-29 (#7387): on an Always Free tenancy OKE cannot exist (cluster-count 0), so a full
+    # apply asks for a cluster and fails, and turning the module's cluster off would destroy its
+    # subnets (plan run 40837953669: 52 destroys, the workers subnet among them). This applies only
+    # the named addresses and what they depend on -- the recovery host -- and touches nothing else.
+    [ -n "${OCI_CI:-}" ] || { echo "exit 3: --apply-targets runs from Actions only"; exit 3; }
+    [ -n "${OKE_APPLY_TARGETS:-}" ] || { echo "exit 64: OKE_APPLY_TARGETS is empty"; exit 64; }
+    TARGETS=(); for a in $OKE_APPLY_TARGETS; do TARGETS+=(-target="$a"); done
+    step recreate-guard "$IDP/bin/idp-recreate-guard" "$TF" "${TFVARS[@]}" "${TARGETS[@]}" || { echo "exit 3: recreate-guard refused; import the live resource"; exit 3; }
+    step tofu-plan-targets bash -c 'tofu plan -input=false -no-color -lock=false "$@" | grep -E "^\s*# .* (will|must) be |^Plan:" | sed "s/^/      | /"' _ "${TFVARS[@]}" "${TARGETS[@]}"
+    step tofu-apply tofu apply -auto-approve "${TFVARS[@]}" "${TARGETS[@]}" ;;
   --replace-cluster)
     # 2026-10-29 (#7387): OKE reported the cluster ACTIVE with no control-plane instances; every
     # pool work request failed "NoKubeConfigException, kmi count is 0", so it could be neither
@@ -176,7 +187,7 @@ case "$MODE" in
     step recreate-guard "$IDP/bin/idp-recreate-guard" "$TF" "${TFVARS[@]}" || { echo "exit 3: recreate-guard refused; import the live resource"; exit 3; }
     step tofu-apply tofu apply -auto-approve "${TFVARS[@]}"
     step flux-bootstrap "$IDP/bin/idp-flux-bootstrap" ;;
-  *) echo "usage: $0 [--check|--apply|--surge-node|--surge-finish|--break-glass|--teardown-rebuild|--replace-cluster]"; exit 64 ;;
+  *) echo "usage: $0 [--check|--apply|--surge-node|--surge-finish|--break-glass|--teardown-rebuild|--replace-cluster|--apply-targets]"; exit 64 ;;
 esac
 
 # --- verify: the platform answers, measured from outside ---------------------------------------

@@ -154,7 +154,7 @@ resource "oci_core_instance" "bridge" {
   metadata = {
     ssh_authorized_keys = var.ssh_public_key
     user_data = base64encode(templatefile("${path.module}/cloud-init/bridge.yaml", {
-      cluster_id          = local.oke_enabled ? module.oke.cluster_id : ""
+      cluster_id          = module.oke.cluster_id
       region              = var.region
       tailscale_secret_id = data.oci_vault_secrets.tailscale.secrets[0].id
     }))

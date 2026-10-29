@@ -24,8 +24,12 @@ on:
       mode:
         description: "check (compare and report drift), apply (apply the declared state and seed the vault), or probe (read-only dump of the identity domain's sign-on policies -- the one knob an API-key laptop cannot read)"
         type: choice
-        options: [check, apply, probe, surge-node, surge-finish, break-glass, replace-cluster]
+        options: [check, apply, probe, surge-node, surge-finish, break-glass, replace-cluster, apply-targets]
         default: check
+      targets:
+        description: "apply-targets only: space-separated tofu addresses to apply (and what they depend on), nothing else"
+        type: string
+        default: "oci_core_instance.recovery oci_core_volume_attachment.surviving oci_identity_policy.recovery oci_core_network_security_group_security_rule.recovery_egress"
       playbook:
         description: "Break-glass only: runs the one named recovery playbook while the runner is admitted to the cluster; diagnose, architect-doctor and secret-census are read-only"
         type: choice
@@ -95,6 +99,7 @@ jobs:
           OCI_S3_SECRET_KEY: ${{ secrets.OCI_S3_SECRET_KEY }}
           OKE_SSH_PUBKEY_TEXT: ${{ vars.OKE_SSH_PUBKEY }}
           OKE_ALLOWED_CIDRS: ${{ vars.OKE_ALLOWED_CIDRS }}
+          OKE_APPLY_TARGETS: ${{ inputs.targets }}   # read by --apply-targets only
           BREAK_GLASS_PLAYBOOK: ${{ inputs.playbook || 'diagnose' }}   # crew#539: read by --break-glass only
           ESTATE_FOUNDER_EMAIL: ${{ vars.ESTATE_FOUNDER_EMAIL }}   # platform/oci/langfuse.tf seeds the Langfuse login
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # bin/idp-oke-rebuild reads run history through gh; without it those rows are BLIND (run 32988930880)
