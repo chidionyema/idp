@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# idp#7391: is there a copy of the estate database, and how old is it? Read from the backend.
+# The CronJob in platform/estate-db/backup/cronjob.yaml writes estate-db/latest.json last, so its
+# presence means the dump above it landed. Same grading shape as bin/idp-shop-backup.
+#   ok      estate-db-backup  <stamp, age, bytes>  -- fresh and complete
+#   FAIL    estate-db-backup  <why>                -- no receipt, stale, incomplete dump
+#   BLIND   estate-db-backup  <why>                -- nothing could be read; nothing was graded
+# Override ESTATE_DB_BACKUP_MAX_AGE_HOURS (default 26) and ESTATE_DB_BACKUP_BUCKET.
+set -uo pipefail
+IDP=$(cd "$(dirname "$0")/.." && pwd)
+BUCKET="${ESTATE_DB_BACKUP_BUCKET:-estate-db-backups}"
+MAX_HOURS="${ESTATE_DB_BACKUP_MAX_AGE_HOURS:-26}"
+blind() { printf 'BLIND   estate-db-backup  %s\n' "$1"; exit 2; }
+fail() { printf 'FAIL    estate-db-backup  %s\n' "$1"; exit 1; }
+command -v python3 >/dev/null || blind "python3 is not installed"
+
+# Tests inject a receipt and head by file; production reads both from the bucket.
+if [ -n "${ESTATE_DB_BACKUP_HEAD_FILE:-}" ] && [ -n "${ESTATE_DB_BACKUP_BODY_FILE:-}" ]; then
+	head=$(cat "$ESTATE_DB_BACKUP_HEAD_FILE")
+	bodyf=$ESTATE_DB_BACKUP_BODY_FILE
+else
+	head=$("$IDP/bin/idp-cloud" object head --bucket "$BUCKET" --name estate-db/latest.json 2>&1)
+	rc=$?
+	if [ $rc -ne 0 ]; then
+		case "$head" in
+		*404* | *NotFound* | *"not found"*)
+			fail "no receipt estate-db/latest.json in bucket $BUCKET: the CronJob has never completed a verified copy" ;;
+		*) blind "object head failed: $(printf '%s' "$head" | tail -1 | cut -c1-160)" ;;
+		esac
+	fi
+	body=$("$IDP/bin/idp-cloud" object get --bucket "$BUCKET" --name estate-db/latest.json 2>&1) \
+		|| blind "object get failed: $(printf '%s' "$body" | tail -1 | cut -c1-160)"
+	[ -n "$body" ] || blind "object get returned an empty body"
+	bodyf=$(mktemp)
+	trap 'rm -f "$bodyf"' EXIT
+	printf '%s' "$body" >"$bodyf"
+fi
+
+IDP_LIB="$IDP/bin/lib" python3 - "$head" "$bodyf" "$MAX_HOURS" <<'PY'
+import json, os, pathlib, sys
+sys.path.insert(0, os.environ.get("IDP_LIB", ""))
+from receipt_age import receipt_age  # the store's clock, never this machine's
+
+head, path, max_hours = sys.argv[1], sys.argv[2], float(sys.argv[3])
+try:
+    receipt = json.loads(pathlib.Path(path).read_text())
+    head = json.loads(head)
+except ValueError as exc:
+    sys.exit(f"BLIND   estate-db-backup  unreadable JSON: {exc}")
+age = receipt_age(head, 3600.0, "estate-db-backup")
+if "stamp" not in receipt:
+    sys.exit("BLIND   estate-db-backup  the receipt carries no stamp")
+problems = []
+if age > max_hours:
+    problems.append(f"the last copy is {age:.1f} h old, over {max_hours:g} h")
+if receipt.get("complete") is not True:
+    problems.append("the dump is not marked complete")
+if not receipt.get("bytes"):
+    problems.append("the dump is empty")
+if problems:
+    print("FAIL    estate-db-backup  " + "; ".join(problems))
+    raise SystemExit(1)
+print(f"ok      estate-db-backup  {receipt['stamp']} ({age:.1f} h old), {receipt['bytes']} bytes")
+PY
