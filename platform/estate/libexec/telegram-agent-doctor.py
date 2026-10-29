@@ -257,16 +257,29 @@ def run_intent(intent: str, args: dict, timeout: int) -> tuple:
     return proc.returncode, proc.stdout or "", proc.stderr or "", receipt
 
 
-def probe_workflow(workflow: str) -> tuple:
+def probe_workflow(workflow: str, run=None) -> tuple:
     """The last verdict of a scheduled workflow -- the scheduled plane, read.
 
     The verdict is context, not a link in the chain: the tick grades the Ottos AND the
     layers under them, so a red tick is not proof about a Telegram agent. It is reported,
     with its run, next to the chain this doctor walked.
+
+    `run` is the caller's own way of asking the estate (a test passes its own); the default
+    is the real intent layer.
     """
+    run = run or run_intent
     path = "actions/workflows/{}/runs?per_page=1".format(workflow)
-    rc, out, err, _receipt = run_intent(
-        "gh-api", {"path": path, "params": "--jq .workflow_runs[0].conclusion"}, 30
+    # MEASURED 2026-10-29: asking for the conclusion alone is a lie waiting to happen. A tick
+    # that is RUNNING has a null conclusion, so jq prints nothing, and an empty answer read as
+    # "has never run" -- a false statement about a workflow that ticks every fifteen minutes.
+    # So the state is asked for too, and a run that has not concluded is named as such.
+    rc, out, err, _receipt = run(
+        "gh-api",
+        {
+            "path": path,
+            "params": "--jq .workflow_runs[0]|[.status,.conclusion]|@tsv",
+        },
+        30,
     )
     if rc == 124:
         return BLIND, "the workflow API did not answer in 30s"
@@ -275,8 +288,16 @@ def probe_workflow(workflow: str) -> tuple:
         return BLIND, "the workflow API did not answer: {}".format(
             (lines[-1] if lines else "")[:160]
         )
-    lines = [line.strip() for line in out.strip().splitlines() if line.strip()]
-    verdict = lines[-1] if lines else ""
+    lines = [line.rstrip("\r\n") for line in (out or "").splitlines() if line.strip()]
+    if not lines:
+        return BLIND, "{} has never run".format(workflow)
+    fields = lines[-1].split("\t")
+    state = fields[0].strip()
+    verdict = fields[1].strip() if len(fields) > 1 else ""
+    if state and state != "completed":
+        return BLIND, "the last tick of {} is {} -- it has not concluded yet".format(
+            workflow, state
+        )
     if not verdict:
         return BLIND, "{} has never run".format(workflow)
     if verdict == "success":
