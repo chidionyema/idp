@@ -4,8 +4,17 @@
 # principal -- the vault entry `router-recovery` (vendor keys, the laptop caller key, the tunnel
 # token) and the config bundle in its own bucket -- so it starts with no Kubernetes, no cluster
 # secret store and no laptop. Both units restart on any exit; a timer re-reads the bundle.
+# The bundle mounts at /bundle: /app is the image's own code (mounting over it crash-looped the router).
 
 write_files:
+  # Run Command executes as `ocarun`; without this it cannot read the router's logs or restart it,
+  # and a broken host can only be replaced, never repaired (2026-10-29: "Interactive authentication
+  # required"). The recovery path must be able to recover itself.
+  - path: /etc/sudoers.d/101-oracle-cloud-agent-run-command
+    permissions: "0440"
+    content: |
+      ocarun ALL=(ALL) NOPASSWD:ALL
+
   - path: /etc/estate/router-fetch
     permissions: "0755"
     content: |
@@ -45,11 +54,11 @@ write_files:
       ExecStartPre=/etc/estate/router-fetch
       ExecStartPre=-/usr/bin/podman rm -f estate-router
       ExecStart=/usr/bin/podman run --name estate-router --network host --env-file /etc/estate/router.env \
-        -e PYTHONPATH=/app/modules -e ESTATE_ROUTER_CONFIG=/app/config.yaml \
+        -e PYTHONPATH=/bundle/modules -e ESTATE_ROUTER_CONFIG=/bundle/config.yaml \
         -e ESTATE_ROUTER_HOSTS=llm.mumchimp.com,llm-recovery.mumchimp.com,127.0.0.1:4000,localhost:4000 \
         --memory 900m --log-opt max-size=20m --log-opt max-file=3 \
-        -v /etc/estate/router:/app:ro,Z ghcr.io/berriai/litellm-database:v1.98.0 \
-        --config /app/config.yaml --host 127.0.0.1 --port 4000
+        -v /etc/estate/router:/bundle:ro,Z ghcr.io/berriai/litellm:v1.98.0 \
+        --config /bundle/config.yaml --host 127.0.0.1 --port 4000
       ExecStop=/usr/bin/podman stop -t 30 estate-router
       Restart=always
       RestartSec=10
