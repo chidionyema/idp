@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "why": "One place decides how bad an error is and who takes it. The estate master epic's R-14 asks for one priority function, not four conventions; platform/queue/dispatcher.py's tasks table had no priority column at all. Read by platform/estate/libexec/incident-loop.py and by nothing else.",
+  "severities": {
+    "critical": { "base": 100, "sla_minutes": 15 },
+    "major": { "base": 60, "sla_minutes": 60 },
+    "minor": { "base": 20, "sla_minutes": 240 }
+  },
+  "blast_radius": {
+    "main": { "weight": 40 },
+    "service": { "weight": 25 },
+    "tooling": { "weight": 10 },
+    "lane": { "weight": 5 },
+    "local": { "weight": 1 }
+  },
+  "age": { "per_hour": 2, "max": 40 },
+  "capacity_cost": { "per_10m": 1, "max": 20 },
+  "label_thresholds": { "P0": 100, "P1": 50, "P2": 0 },
+  "sla_by_label": { "P0": 15, "P1": 60, "P2": 240 },
+  "sense": {
+    "window_hours": 24,
+    "max_new_per_tick": 3,
+    "max_open_incidents": 50,
+    "verify_per_tick": 5,
+    "failure_conclusions": ["failure", "timed_out", "startup_failure"],
+    "door_kinds": ["refuse-ceiling", "error"],
+    "ignore_workflows": [],
+    "door_quiet_minutes": 30
+  },
+  "dispatch": {
+    "max_sessions": 2,
+    "session_min_score": 50,
+    "session_budget": 20,
+    "runner_timeout": 30,
+    "runners": ["llm", "claude"],
+    "queue_db": "~/.estate/state/queue.db",
+    "repo": "chidionyema/idp"
+  },
+  "graph": {
+    "root": "~/Documents/code/estate-graph",
+    "journal": "incident-loop"
+  },
+  "labels": ["P0", "P1", "P2"]
+}
