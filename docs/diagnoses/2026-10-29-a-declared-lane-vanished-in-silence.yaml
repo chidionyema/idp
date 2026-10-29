@@ -1,0 +1,94 @@
+description: 'On 2026-10-29 the laptop router served eight lanes and silently did not serve fifteen
+  others, among them `voice` -- the estate''s brain lane -- and no record anywhere said why. The
+  caller saw "no healthy deployments for this model"; the operator saw a count in a log line.
+  This record answers: why did a DECLARED lane vanish from a running router without a word? Every
+  count below is a measurement taken on this machine on 2026-10-29, and the command that
+  produced it is named in the item. The winning hypothesis is what the fix is built on: a
+  declared capability is either served (and therefore proven) or refused with a named reason
+  (and therefore visible), and never silently absent.'
+
+hypotheses:
+- name: H1
+  description: "the AMBIENT ENVIRONMENT of the router process decided the served set: the render
+    skips any model whose credential env var this process does not hold, so which lanes existed
+    depended on which keys the unsupervised process happened to have, not on the repository"
+  prior: 0.45
+- name: H2
+  description: "the SOURCE CONFIGURATION had lost those models -- config drift upstream in the
+    generated llm/config.yaml -- so the lanes were never declared and never rendered"
+  prior: 0.35
+- name: H3
+  description: "the credential was PRESENT but rejected at request time (an auth failure), so the
+    lane was rendered, served in the model list, and refused only when it was called"
+  prior: 0.20
+evidence:
+- name: "the source config and the rendered config compared, and the ledger of that render: the
+    source (the generated llm/config.yaml staged at ~/.estate/litellm-local/config.yaml) names
+    thirteen distinct credential env refs and the voice lane; the rendered runtime config
+    (~/.estate/router-state/config.runtime.yaml) keeps two of them; the lanes.json written by
+    that render records eight served and fifteen dropped, voice among the dropped, with no
+    reason recorded for any of them (measured with grep/ls on ~/.estate/router-state)"
+  observed:
+    source_credential_refs: 13
+    runtime_credential_refs: 2
+    lanes_dropped_without_a_reason: 15
+  likelihoods:
+    H1:
+      source_credential_refs: 0.95
+      runtime_credential_refs: 0.95
+      lanes_dropped_without_a_reason: 0.95
+    H2:
+      source_credential_refs: 0.10
+      runtime_credential_refs: 0.10
+      lanes_dropped_without_a_reason: 0.60
+    H3:
+      source_credential_refs: 0.95
+      runtime_credential_refs: 0.90
+      lanes_dropped_without_a_reason: 0.05
+- name: "the wrapper's own render code carries the branch that skips a model whose credential
+    env var is absent -- bin/litellm-local, staged copy at ~/.estate/litellm-local/litellm-local
+    line 209: if key.startswith('os.environ/') and not os.environ.get(key.split('/', 1)[1]):
+    (read from the staged bytes, which are the repo's bytes)"
+  observed:
+    skip_branch_present: 1
+  likelihoods:
+    H1:
+      skip_branch_present: 0.95
+    H2:
+      skip_branch_present: 0.10
+    H3:
+      skip_branch_present: 0.10
+- name: "the live router process on :4001 (LiteLLM) held GROQ_API_KEY and none of
+    the other twelve vendor keys in its environment -- the keys of the routers it was serving
+    from are not the keys of the models it was asked to serve (measured from the process
+    environment; names only, no value read)"
+  observed:
+    vendor_keys_present: 1
+    vendor_keys_declared: 13
+  likelihoods:
+    H1:
+      vendor_keys_present: 0.95
+      vendor_keys_declared: 0.95
+    H2:
+      vendor_keys_present: 0.50
+      vendor_keys_declared: 0.10
+    H3:
+      vendor_keys_present: 0.90
+      vendor_keys_declared: 0.95
+- name: "a request for a lane the render had dropped was refused with 'no healthy deployments
+    for this model' -- an answer that names a missing DEPLOYMENT and never the missing
+    CREDENTIAL that caused the drop (measured 2026-10-29: Codex's request for gpt-6.1-sol
+    through the running router on :4001, and the router's own error text)"
+  observed:
+    refusals_naming_a_missing_deployment: 1
+    refusals_naming_a_missing_credential: 0
+  likelihoods:
+    H1:
+      refusals_naming_a_missing_deployment: 0.95
+      refusals_naming_a_missing_credential: 0.95
+    H2:
+      refusals_naming_a_missing_deployment: 0.60
+      refusals_naming_a_missing_credential: 0.30
+    H3:
+      refusals_naming_a_missing_deployment: 0.50
+      refusals_naming_a_missing_credential: 0.20
