@@ -3,10 +3,10 @@
   "generator": "bin/capability-index emit",
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
-    "intent": 105,
+    "intent": 106,
     "layer": 212,
     "service": 121,
-    "tool": 444,
+    "tool": 445,
     "workflow": 80
   },
   "records": [
@@ -1526,6 +1526,62 @@
       "rung": null,
       "writer": "intents",
       "path": "platform/estate/intents/flux-suspend.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:intent/founder.decision",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "Put ONE structured decision in front of the founder on the estate's Otto Telegram chat, and read the answer back in the same shape you asked in. This is the door for every agent that needs a human decision and must not guess: the founder answers with a comment on the decision message, in his own words, and the answer comes back typed -- an option key when he picked one, the whole comment verbatim when he did not. HOW IT WORKS. The founder receives exactly ONE message per decision, carrying the decision id, the question, the options and the links; he comments `dec-1a2b3c4d ship` (or any comment containing the id and a choice). The door matches deterministically: an exact option key (case-insensitive) or `approve`/`deny` picks that option; anything else is recorded VERBATIM as the answer with `option: null`. A comment that cannot be parsed is never silently coerced into an option and never dropped. FAIL CLOSED. No answer by the deadline is `state: expired` -- never \"assumed yes\". Asking twice with the same `--decision-id` never sends a second message. NO MODEL IN THE PATH. Delivery is one Bot API call and matching is a pure function, so a 503 router cannot break this door. OUTPUT: one JSON object with `decision_id`, `state` (asked | answered | expired), `option`, `answer` (the founder's comment, verbatim), `answered_at`, `message_id`, and `bus` (skipped | open | answered | unavailable). The bus session is OPT-IN (`bus: \"true\"`): it is what puts the founder's comment into the estate's signed receipt chain, but a bus session makes the estate's card post a line message too, and the founder gets exactly ONE message per decision. With `bus` false the door's own message and the founder's comment are the record. TO READ A DECISION BACK: pass `--decision-id` with no `--question`. args: question:    {type: string, default: \"\", description: \"The decision, in one sentence.\"} options:     {type: string, default: \"\", description: \"Up to 5 options, \\\"key: label, key2: label2\\\".\"} context:     {type: string, default: \"\", description: \"Up to 5 links (issue / PR / lane), comma separated.\"} deadline_min: {type: string, default: \"60\", description: \"Minutes the founder has before the decision expires.\"} requester:   {type: string, default: \"\", description: \"Who is asking, e.g. \\\"pi @ idp\\\".\"} decision_id: {type: string, default: \"\", description: \"Read this decision back instead of asking a new one.\"} wait:        {type: string, default: \"0\", description: \"Seconds to wait for the founder's answer (0 = return the id at once).\"} take_webhook: {type: string, default: \"false\", description: \"true: hold the bot's updates while this decision is live (only when the estate's own reader is unreachable).\"} bus: {type: string, default: \"false\", description: \"true: also open a bus session for the decision (the estate's card then posts a line message as well).\"} repo:        {type: string, default: \"~/Documents/code/idp\", description: \"Repo holding bin/founder-decision.\"} state:       {type: string, default: \"\", description: \"Path of the decision state file (default ~/.estate/sovereign/decisions.json).\"} # One Bot API call plus a bounded wait: the wait is the caller's choice and the executor's # own ceiling bounds it. Silence inside that window is `expired`, never a yes. door_s: 95 halt_on_failure: false steps: - name: decision cmd: | set -euo pipefail if [ -n \"{{decision_id}}\" ]; then python3 {{repo}}/bin/founder-decision --repo {{repo}} show --decision-id \"{{decision_id}}\" exit 0 fi args=(ask --question \"{{question}}\" --options \"{{options}}\" --context \"{{context}}\") args+=(--deadline-min \"{{deadline_min}}\" --requester \"{{requester}}\") if [ \"{{wait}}\" != \"0\" ] && [ -n \"{{wait}}\" ]; then args+=(--wait \"{{wait}}\"); fi if [ \"{{take_webhook}}\" = \"true\" ]; then args+=(--take-webhook); fi if [ \"{{bus}}\" = \"true\" ]; then args+=(--bus); fi if [ -n \"{{state}}\" ]; then args+=(--state \"{{state}}\"); fi python3 {{repo}}/bin/founder-decision --repo {{repo}} \"${args[@]}",
+      "contract": {
+        "inputs": [
+          "bus",
+          "context",
+          "deadline_min",
+          "decision_id",
+          "options",
+          "question",
+          "repo",
+          "requester",
+          "state",
+          "take_webhook",
+          "wait"
+        ],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/founder.decision.yaml",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -25964,6 +26020,66 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/flux-board-reconcile",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/founder-decision",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "founder-decision -- the founder-decision door, from a shell.",
+      "contract": {
+        "inputs": [
+          "--bus",
+          "--comment",
+          "--context",
+          "--deadline-min",
+          "--decision-id",
+          "--options",
+          "--question",
+          "--repo",
+          "--requester",
+          "--seconds",
+          "--state",
+          "--take-webhook",
+          "--text",
+          "--wait"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/founder-decision",
       "depends_on": [],
       "metrics": [],
       "blind": [
