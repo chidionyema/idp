@@ -141,7 +141,9 @@ def job_pid(label):
     """The pid launchd reports for this job, or None when it has no live process."""
     r = subprocess.run(
         ["launchctl", "print", f"gui/{os.getuid()}/{label}"],
-        capture_output=True, text=True, timeout=10,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     for line in r.stdout.splitlines():
         line = line.strip()
@@ -224,7 +226,9 @@ def main():
     # storm it is left to finish, same rule as a wedge.
     load = load1()
     if load >= WEDGE_LOAD_MAX and job_pid(label):
-        log(f"probe refused :{port} but {label} is booting under load {load:.0f} -- not restarting")
+        log(
+            f"probe refused :{port} but {label} is booting under load {load:.0f} -- not restarting"
+        )
         s["failures"] = 0
         save_state(s)
         return
