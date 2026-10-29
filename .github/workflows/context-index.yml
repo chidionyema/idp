@@ -125,6 +125,10 @@ jobs:
             | python3 -c '
           import json, sys
           payload = json.load(sys.stdin)
+          # The engine answers in the MCP tool-result envelope (see unwrap_engine_envelope in
+          # platform/estate/context/broker.py): open it, or a good answer reads as an empty one.
+          if isinstance(payload.get("content"), list):
+              payload = next((json.loads(c["text"]) for c in payload["content"] if c.get("type") == "text"), {})
           working = payload.get("working_set") or []
           print("working_set entries:", len(working))
           if not working:
@@ -150,6 +154,8 @@ jobs:
           def du(path):
               return subprocess.run(["du", "-sb", path], capture_output=True, text=True).stdout.split()[0]
           context = json.load(open(os.path.join(data, "smart-context.json")))
+          if isinstance(context.get("content"), list):
+              context = next((json.loads(c["text"]) for c in context["content"] if c.get("type") == "text"), {})
           manifest = {
               "commit": commit,
               "engine": {"name": "gortex", "version": version},
