@@ -29,8 +29,8 @@ READ-ONLY: it fetches, reads and prints. It writes one file, its own result.
     limit   max hits printed per source (default 8)
     json    write ~/.estate/results/work-discover/latest.json and print it
 
-Exit status: 0 when the search ran (even with no hits), 2 on a bad argument. A source that
-is unavailable is reported as unavailable; it never silently shrinks the answer.
+Exit status: 0 when the search ran (even with no hits), 2 on a bad argument,
+124 when any source timed out. Partial hits are retained; timeout is never success.
 """
 
 from __future__ import annotations
@@ -43,6 +43,7 @@ import pathlib
 import re
 import subprocess
 import time
+import threading
 from datetime import datetime, timedelta, timezone
 
 HOME = pathlib.Path.home()
@@ -51,6 +52,7 @@ RESULTS = HOME / ".estate" / "results" / "work-discover"
 BRIEF = HOME / ".estate" / "memory" / "bin" / "estate-brief"
 GROWMOS = HOME / ".local" / "bin" / "growmos"
 GRAPH = HOME / "Documents" / "code" / "estate-graph"
+_SOURCE_STATUS = threading.local()
 
 STOP = {
     "the",
@@ -146,11 +148,26 @@ def run(args, cwd=None, timeout=25, env=None):
             timeout=timeout,
             env=env,
         )
+        if p.returncode == 124:
+            _SOURCE_STATUS.timed_out = True
         return p.returncode, (p.stdout or "") + (p.stderr or "")
     except FileNotFoundError:
         return 127, f"{args[0]}: not found"
-    except subprocess.TimeoutExpired:
-        return 124, f"{args[0]}: timed out after {timeout}s"
+    except subprocess.TimeoutExpired as exc:
+        _SOURCE_STATUS.timed_out = True
+
+        def decoded(value):
+            return (
+                value.decode("utf-8", errors="replace")
+                if isinstance(value, bytes)
+                else (value or "")
+            )
+
+        partial = decoded(exc.stdout) + decoded(exc.stderr)
+        return (
+            124,
+            partial + f"\n{args[0]}: timed out after {timeout}s; OPTIMISATION REQUIRED",
+        )
 
 
 def terms_of(query: str):
@@ -664,6 +681,7 @@ def main(argv=None):
     sources = []
 
     def one(name, fn, *a):
+        _SOURCE_STATUS.timed_out = False
         t0 = time.time()
         try:
             hits, err = fn(*a)
@@ -672,6 +690,7 @@ def main(argv=None):
         return {
             "name": name,
             "ok": not err,
+            "timed_out": bool(getattr(_SOURCE_STATUS, "timed_out", False)),
             "error": err,
             "hits": hits,
             "seconds": round(time.time() - t0, 2),
@@ -711,7 +730,8 @@ def main(argv=None):
         print(json.dumps(payload, indent=2))
     else:
         print_human(payload)
-    return 0
+    # A partial answer remains available, but the enclosing executor must see the timeout.
+    return 124 if any(s["timed_out"] for s in sources) else 0
 
 
 if __name__ == "__main__":

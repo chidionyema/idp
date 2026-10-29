@@ -488,10 +488,15 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
                     rc = result.returncode
                     stdout = result.stdout
                     stderr = result.stderr
-                except subprocess.TimeoutExpired:
-                    log(f"  TIMEOUT ({step_timeout}s of a {budget}s budget from {budget_from})")
+                except subprocess.TimeoutExpired as exc:
+                    log(f"  TIMEOUT ({step_timeout}s of a {budget}s budget from {budget_from}); OPTIMISATION REQUIRED")
                     rc = 124
-                    stdout = ""
+                    stdout = exc.stdout or ""
+                    stderr = exc.stderr or ""
+                    if isinstance(stdout, bytes):
+                        stdout = stdout.decode("utf-8", errors="replace")
+                    if isinstance(stderr, bytes):
+                        stderr = stderr.decode("utf-8", errors="replace")
                 except Exception as e:
                     log(f"  ERROR: {e}")
                     rc = 1
