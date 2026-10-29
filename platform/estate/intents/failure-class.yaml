@@ -1,0 +1,94 @@
+name: failure-class
+description: >-
+  The estate's ONE failure-class authority. A failure CLASS has a deterministic identity
+  (fcr-<sha20> over the canonical [kind, signature]), so two agents that hit the same failure
+  land on the same record and cannot each believe they are the first to see it. One owner at a
+  time: the lease carries a monotonic fencing token, an expiry and reassignment, so a crashed
+  owner's late write is refused rather than landing on a class that has moved on. The correction
+  broadcast is PULL-BASED -- another agent asks check and inherits what is already published,
+  instead of re-deriving the diagnosis -- and every surface acknowledges it by recording an
+  observation and then an adoption. Adoption requires that the surface SAW the class and then
+  stopped producing it: a surface that never saw the failure has adopted nothing. A class that
+  reappears after it was resolved is a RECURRENCE: it re-opens, counts, and records the
+  prevention gap. The estate issue stays the tracker of record; this lease never grants
+  permission to write files. Exit codes: 0 the operation succeeded, 1 it was REFUSED, 2 BLIND.
+class: mutate
+args:
+  mode: {type: string, default: "check", description: "identify | open | claim | renew | release | resolve | check | observe | adopt | coverage | events | summary"}
+  class_id: {type: string, default: "", description: "the failure class id, e.g. fcr-0123456789abcdef0123"}
+  kind: {type: string, default: "", description: "failure kind, e.g. python-lint.rule"}
+  signature: {type: string, default: "", description: "failure signature, e.g. F401"}
+  owner: {type: string, default: "unknown", description: "the agent taking the lease"}
+  token: {type: int, default: 0, description: "the fencing token held by the owner"}
+  surface: {type: string, default: "", description: "the enforcement surface, e.g. idp-python-strict"}
+  invariant: {type: string, default: "", description: "what must hold for this class to be closed"}
+  issue: {type: int, default: 0, description: "the estate issue that is the tracker of record"}
+  correction: {type: string, default: "", description: "the published correction"}
+  receipt_file: {type: string, default: "", description: "an assurance receipt that justifies the correction"}
+  evidence: {type: string, default: "", description: "evidence that this surface saw or adopted the class"}
+door_s: 60
+halt_on_failure: false
+steps:
+  - name: class
+    on_fail: continue
+    cmd: |
+      LIB="$HOME/.estate/libexec/failure_class.py"
+      [ -f "$LIB" ] || LIB="$HOME/.estate/runtime/idp/platform/estate/libexec/failure_class.py"
+      if [ ! -f "$LIB" ]; then
+        echo "BLIND failure_class.py could not be found" >&2
+        echo 2 > ~/.estate/failure-class.rc
+      else
+        case "{{mode}}" in
+          identify|open)
+            python3 "$LIB" "{{mode}}" --kind {{kind}} --signature {{signature}} \
+              --invariant {{invariant}} --owner {{owner}}
+            echo $? > ~/.estate/failure-class.rc
+            ;;
+          claim|renew|release)
+            python3 "$LIB" "{{mode}}" --class {{class_id}} --owner {{owner}} --token {{token}}
+            echo $? > ~/.estate/failure-class.rc
+            ;;
+          resolve)
+            RECEIPT=""
+            [ -n {{receipt_file}} ] && RECEIPT="--receipt-file {{receipt_file}}"
+            python3 "$LIB" resolve --class {{class_id}} --owner {{owner}} --token {{token}} \
+              --correction {{correction}} $RECEIPT
+            echo $? > ~/.estate/failure-class.rc
+            ;;
+          observe)
+            python3 "$LIB" observe --class {{class_id}} --surface {{surface}} \
+              --evidence {{evidence}}
+            echo $? > ~/.estate/failure-class.rc
+            ;;
+          adopt)
+            python3 "$LIB" adopt --class {{class_id}} --surface {{surface}} \
+              --version {{token}} --evidence {{evidence}}
+            echo $? > ~/.estate/failure-class.rc
+            ;;
+          check)
+            python3 "$LIB" check --class {{class_id}} --kind {{kind}} --signature {{signature}}
+            echo $? > ~/.estate/failure-class.rc
+            ;;
+          coverage|summary)
+            python3 "$LIB" "{{mode}}"
+            echo $? > ~/.estate/failure-class.rc
+            ;;
+          events)
+            python3 "$LIB" events --class {{class_id}}
+            echo $? > ~/.estate/failure-class.rc
+            ;;
+          *)
+            echo "BLIND unknown mode {{mode}}" >&2
+            echo 2 > ~/.estate/failure-class.rc
+            ;;
+        esac
+      fi
+  - name: verdict
+    cmd: |
+      rc=$(cat ~/.estate/failure-class.rc 2>/dev/null || echo 1)
+      case "$rc" in
+        0) echo "verdict: the failure class operation succeeded" ;;
+        1) echo "verdict: REFUSED -- the class has one owner, a stale fencing token is refused, or an adoption has no observation behind it" ;;
+        *) echo "verdict: BLIND -- the failure-class store could not be read, and an unreadable store is never a success" ;;
+      esac
+      exit "$rc"

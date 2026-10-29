@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# estate-failure-class -- the estate's ONE failure-class authority.
+#
+# One class identity for a failure, one owner at a time, one published correction, and an
+# acknowledgement from every surface that has seen it. The correction broadcast is PULL-BASED:
+# another agent asks `check` and inherits what is already known, instead of re-deriving the
+# diagnosis from scratch.
+#
+#   bin/estate-failure-class identify --kind python-lint.rule --signature F401
+#   bin/estate-failure-class open --kind python-lint.rule --signature F401 \
+#       --invariant "ruff reports an unused import" --issue 7452 --owner pi
+#   bin/estate-failure-class claim --class fcr-... --owner pi --ttl-s 3600
+#   bin/estate-failure-class resolve --class fcr-... --owner pi --token 1 \
+#       --correction "remove the unused import as a separate authoring step"
+#   bin/estate-failure-class check --kind python-lint.rule --signature F401
+#   bin/estate-failure-class observe --class fcr-... --surface idp-python-strict
+#   bin/estate-failure-class adopt  --class fcr-... --surface idp-python-strict --version 1
+#
+# Exit codes: 0 the operation succeeded, 1 it was REFUSED (a live lease, a stale fencing token,
+# an adoption without an observation, a resolution without a verifiable receipt), 2 BLIND.
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+lib=""
+for candidate in \
+  "$HOME/.estate/libexec/failure_class.py" \
+  "$here/../platform/estate/libexec/failure_class.py" \
+  "$here/../libexec/failure_class.py"; do
+  if [ -f "$candidate" ]; then
+    lib="$candidate"
+    break
+  fi
+done
+
+if [ -z "$lib" ]; then
+  echo "BLIND failure_class.py could not be found (looked in ~/.estate/libexec and the checkout)" >&2
+  exit 2
+fi
+
+exec python3 "$lib" "$@"

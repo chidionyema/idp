@@ -1,0 +1,184 @@
+{
+  "schema": "estate.decision-assurance.policy/v1",
+  "version": "1.0.0",
+  "updated": "2026-10-29",
+  "notes": [
+    "The Method Selection Principle: every consequential decision uses the CHEAPEST ADEQUATE method capable of establishing the required confidence, correctness or risk bound. The choice is made by this registry, never by the agent that wants the decision.",
+    "A decision class that is deterministic (lint, schema, formatting) gets a deterministic check. A Monte Carlo tax on a lint failure is a tax on honesty.",
+    "epsilon is the tolerated probability of an SLO breach. l_max is the loss bound the decision must respect.",
+    "Tiers: tier0 deterministic fast path, tier1 bounded stochastic assurance with reusable evidence, tier2 deep simulation plus independent evaluation.",
+    "provenance on every parameter is 'measured' (transcribed from a real artifact, with the artifact named) or 'assumed' (declared by an author). An assumed parameter never silently becomes a measured fact: the receipt carries the flags and the gate refuses to auto-admit on them."
+  ],
+  "exit_codes": {
+    "PASS": 0,
+    "BLOCK": 1,
+    "BLIND": 2
+  },
+  "tiers": {
+    "tier0": {
+      "method": "deterministic",
+      "max_seconds": 30,
+      "max_samples": 0,
+      "independent_evaluation": false
+    },
+    "tier1": {
+      "method": "monte_carlo",
+      "max_seconds": 120,
+      "max_samples": 20000,
+      "independent_evaluation": false
+    },
+    "tier2": {
+      "method": "monte_carlo",
+      "max_seconds": 900,
+      "max_samples": 200000,
+      "independent_evaluation": true
+    }
+  },
+  "decision_classes": {
+    "lint.schema": {
+      "method": "deterministic",
+      "tier": "tier0",
+      "epsilon": 0.0,
+      "l_max": 0.0,
+      "reason": "A lint or schema failure has an exact answer. It is decided by running the checker, not by sampling it."
+    },
+    "security.protocol": {
+      "method": "formal",
+      "tier": "tier0",
+      "epsilon": 0.0,
+      "l_max": 0.0,
+      "reason": "A protocol invariant is either true or false. Simulation can only ever understate a violation; a formal argument is stronger and cheaper."
+    },
+    "router.failover": {
+      "method": "monte_carlo",
+      "tier": "tier1",
+      "epsilon": 0.05,
+      "l_max": 900.0,
+      "reason": "Provider failure, retry and fallback behaviour under correlated outages is stochastic and its tail decides whether a request is served at all. The only adequate method is simulation of the correlated system."
+    },
+    "capacity.plan": {
+      "method": "monte_carlo",
+      "tier": "tier1",
+      "epsilon": 0.1,
+      "l_max": 1.0,
+      "reason": "Capacity plans are decided by the tail of arrival and service distributions, not by their means."
+    },
+    "cost.forecast": {
+      "method": "monte_carlo",
+      "tier": "tier1",
+      "epsilon": 0.15,
+      "l_max": 100.0,
+      "reason": "Spend forecasts are dominated by tail usage; a mean is not a forecast."
+    }
+  },
+  "scenarios": {
+    "router.correlated-outage": {
+      "version": "1.0.0",
+      "model_version": "router.failover/v1",
+      "description": "One request through the LiteLLM router's fallback chain while providers fail. Independent per-provider failure is the wrong model: a shared cause takes a whole chain down at once, and the independent model understates the tail it is used to bound.",
+      "source": {
+        "path": "llm/config.yaml",
+        "digest": "sha256:4dab71e85247efe653a06ffbdd8025b2f8b00e75793d30d47a134613e7785fcd",
+        "note": "The receipt is bound to this digest. If llm/config.yaml changes, the transcribed parameters are stale and the evidence no longer supports the candidate: the gate says so instead of pretending."
+      },
+      "chain": "default",
+      "chains": {
+        "default": ["gemini", "groq"],
+        "deepseek": ["gemini", "minimax", "groq"],
+        "minimax": ["minimax_m31f", "gemini", "groq"],
+        "groq": ["cerebras", "sambanova", "nvidia", "openrouter"]
+      },
+      "parameters": {
+        "attempts_per_provider": {
+          "value": 3,
+          "provenance": "measured",
+          "evidence": "1 + llm/config.yaml router_settings.num_retries (2)"
+        },
+        "num_retries": {
+          "value": 2,
+          "provenance": "measured",
+          "evidence": "llm/config.yaml router_settings.num_retries"
+        },
+        "cooldown_time_s": {
+          "value": 60,
+          "provenance": "measured",
+          "evidence": "llm/config.yaml router_settings.cooldown_time"
+        },
+        "allowed_fails": {
+          "value": 3,
+          "provenance": "measured",
+          "evidence": "llm/config.yaml router_settings.allowed_fails"
+        },
+        "provider_timeout_s": {
+          "value": {
+            "gemini": 300,
+            "groq": 60,
+            "minimax": 300,
+            "minimax_m31f": 300,
+            "cerebras": 60,
+            "sambanova": 60,
+            "nvidia": 90,
+            "openrouter": 90
+          },
+          "provenance": "measured",
+          "evidence": "llm/config.yaml model_list[*].litellm_params.timeout"
+        },
+        "l_max": {
+          "value": 900.0,
+          "provenance": "assumed",
+          "evidence": "SLO: one model request is served within 900 s. The worst case for the default chain is 3x300 (gemini) + 3x60 (groq) = 1080 s, so this bound is inside the reachable envelope."
+        },
+        "success_mean_s": {
+          "value": 2.5,
+          "provenance": "assumed",
+          "evidence": "declared latency of a healthy provider call; replaced by telemetry when the estate has it"
+        },
+        "success_sd_s": {
+          "value": 1.2,
+          "provenance": "assumed",
+          "evidence": "declared spread of a healthy provider call"
+        },
+        "p_fail": {
+          "value": 0.02,
+          "provenance": "assumed",
+          "evidence": "declared per-provider failure probability in the healthy state"
+        },
+        "p_fail_outage": {
+          "value": 0.9,
+          "provenance": "assumed",
+          "evidence": "declared probability that a provider is down once a shared outage is active"
+        },
+        "p_common": {
+          "value": 0.01,
+          "provenance": "assumed",
+          "evidence": "declared probability per request of a shared-cause outage affecting the whole chain"
+        },
+        "p_timeout_given_failure": {
+          "value": 0.5,
+          "provenance": "assumed",
+          "evidence": "declared split between a provider timing out (full timeout consumed) and refusing fast"
+        },
+        "fast_error_s": {
+          "value": 1.0,
+          "provenance": "assumed",
+          "evidence": "declared cost of a fast provider-side refusal"
+        }
+      },
+      "sensitivity": ["independent", "low_fail", "high_fail", "high_common"],
+      "delta": 0.05
+    }
+  },
+  "hypothesis": {
+    "minimum_residual_prior": 0.05,
+    "falsified_likelihood": 0.05,
+    "max_expansion_proposals": 3,
+    "evidence_costs": {
+      "default": 1.0,
+      "expensive": 5.0
+    },
+    "synonyms": {
+      "no space left": ["no space left", "enospc", "disk full", "out of disk", "no space left on device"],
+      "disk full": ["disk full", "no space left", "enospc", "out of disk", "no space left on device"]
+    }
+  }
+}

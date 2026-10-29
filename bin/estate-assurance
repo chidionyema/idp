@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# estate-assurance -- the estate's decision-assurance door.
+#
+# The Method Selection Principle: every consequential decision uses the CHEAPEST ADEQUATE method
+# capable of establishing the required confidence, correctness or risk bound, and the choice is
+# made by policy (catalog/decision-assurance.json), never by the agent that wants the decision.
+#
+#   bin/estate-assurance method --class router.failover
+#   bin/estate-assurance simulate --scenario router.correlated-outage --seed 42 --samples 2000 \
+#       --candidate llm/config.yaml --out /tmp/receipt.json
+#   bin/estate-assurance verify --receipt /tmp/receipt.json --candidate llm/config.yaml
+#   bin/estate-assurance gate --class router.failover --receipt /tmp/receipt.json
+#   bin/estate-assurance packet --input /tmp/incident.json
+#
+# Exit codes: 0 PASS (or REVIEW_REQUIRED, which blocks nothing and admits nothing), 1 BLOCK,
+# 2 BLIND. A gate that cannot fail is not a gate; a measurement that could not be taken is never
+# zero and never a pass.
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+lib=""
+for candidate in \
+  "$HOME/.estate/libexec/assurance.py" \
+  "$here/../platform/estate/libexec/assurance.py" \
+  "$here/../libexec/assurance.py"; do
+  if [ -f "$candidate" ]; then
+    lib="$candidate"
+    break
+  fi
+done
+
+if [ -z "$lib" ]; then
+  echo "BLIND assurance.py could not be found (looked in ~/.estate/libexec and the checkout)" >&2
+  exit 2
+fi
+
+exec python3 "$lib" "$@"

@@ -1,0 +1,90 @@
+name: assurance
+description: >-
+  The estate's decision-assurance door: the Method Selection Principle made executable.
+  Every consequential decision uses the cheapest ADEQUATE method capable of establishing the
+  required confidence, correctness or risk bound, and the choice is made by policy
+  (catalog/decision-assurance.json) rather than by the agent that wants the decision. An agent
+  that declares monte_carlo_required=false for a class policy says needs simulation has that
+  declaration REFUSED and reported; an agent that asks for MORE assurance gets it.
+  The Monte Carlo runtime is deterministic (splitmix64, versioned), models correlated
+  common-cause failures rather than independent ones, and reports what the doctrine names:
+  expected loss, P(L > L_max), CVaR_0.99 and P_hat(SLO breach) + uncertainty margin <= epsilon.
+  Every parameter carries provenance (measured from a named artifact, or assumed by an author),
+  and an assumed parameter never silently becomes a fact: the receipt carries the flags.
+  The receipt estate.decision-assurance/v1 is verified by DETERMINISTIC RECOMPUTATION -- the
+  simulation is re-run from the receipt's own seed and sample count -- so a tampered number
+  cannot pass, and a scenario whose source artifact changed underneath it is stale, not valid.
+  The same door compiles the hypothesis space: evidence is content-addressed, a hypothesis is a
+  causal mechanism (so paraphrases merge and conjunctions stay distinct), the unexplained
+  residual is a first-class hypothesis that is never pruned, and evidence that refutes every
+  live hypothesis triggers deterministic space expansion instead of a confident wrong winner.
+  Exit codes: 0 PASS (or REVIEW_REQUIRED, which blocks nothing and admits nothing), 1 BLOCK,
+  2 BLIND. Greenlane remains the only admission authority.
+class: mutate
+args:
+  mode: {type: string, default: "method", description: "method | simulate | verify | gate | packet"}
+  decision_class: {type: string, default: "router.failover", description: "policy class, e.g. router.failover"}
+  scenario: {type: string, default: "router.correlated-outage", description: "scenario id"}
+  chain: {type: string, default: "", description: "fallback chain to simulate, e.g. default"}
+  seed: {type: int, default: 42, description: "PRNG seed; the same seed reproduces the number"}
+  samples: {type: int, default: 2000, description: "simulation samples"}
+  candidate: {type: string, default: "", description: "the artifact the decision is about"}
+  receipt: {type: string, default: "", description: "path to an assurance receipt"}
+  input: {type: string, default: "", description: "hypothesis-space input document (JSON)"}
+door_s: 90
+halt_on_failure: false
+steps:
+  - name: assure
+    on_fail: continue
+    cmd: |
+      LIB="$HOME/.estate/libexec/assurance.py"
+      [ -f "$LIB" ] || LIB="$HOME/.estate/runtime/idp/platform/estate/libexec/assurance.py"
+      if [ ! -f "$LIB" ]; then
+        echo "BLIND assurance.py could not be found" >&2
+        echo 2 > ~/.estate/assurance.rc
+      else
+        CAND=""
+        [ -n {{candidate}} ] && CAND="--candidate {{candidate}}"
+        CHAIN=""
+        [ -n {{chain}} ] && CHAIN="--chain {{chain}}"
+        RECEIPT=""
+        [ -n {{receipt}} ] && RECEIPT="--receipt {{receipt}}"
+        INPUT=""
+        [ -n {{input}} ] && INPUT="--input {{input}}"
+        case "{{mode}}" in
+          method)
+            python3 "$LIB" method --class {{decision_class}}
+            echo $? > ~/.estate/assurance.rc
+            ;;
+          simulate)
+            python3 "$LIB" simulate --scenario {{scenario}} --seed {{seed}} \
+              --samples {{samples}} --decision-class {{decision_class}} $CHAIN $CAND
+            echo $? > ~/.estate/assurance.rc
+            ;;
+          verify)
+            python3 "$LIB" verify $RECEIPT $CAND
+            echo $? > ~/.estate/assurance.rc
+            ;;
+          gate)
+            python3 "$LIB" gate --class {{decision_class}} $RECEIPT $CAND
+            echo $? > ~/.estate/assurance.rc
+            ;;
+          packet)
+            python3 "$LIB" packet $INPUT
+            echo $? > ~/.estate/assurance.rc
+            ;;
+          *)
+            echo "BLIND unknown mode {{mode}}" >&2
+            echo 2 > ~/.estate/assurance.rc
+            ;;
+        esac
+      fi
+  - name: verdict
+    cmd: |
+      rc=$(cat ~/.estate/assurance.rc 2>/dev/null || echo 1)
+      case "$rc" in
+        0) echo "verdict: the assurance evidence is present, reproducible and inside the bound (or REVIEW_REQUIRED, which blocks nothing and admits nothing)" ;;
+        1) echo "verdict: BLOCKED -- the evidence is missing, stale, tampered with, or outside the policy's bound" ;;
+        *) echo "verdict: BLIND -- the assurance could not be measured, and a measurement that could not be taken is never a pass" ;;
+      esac
+      exit "$rc"

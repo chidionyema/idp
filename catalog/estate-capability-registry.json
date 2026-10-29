@@ -3,8 +3,8 @@
   "generator": "bin/capability-index emit",
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
-    "intent": 110,
-    "layer": 216,
+    "intent": 112,
+    "layer": 218,
     "service": 121,
     "tool": 447,
     "workflow": 85
@@ -52,6 +52,60 @@
       "rung": null,
       "writer": "intents",
       "path": "platform/estate/intents/agent-invoke.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:intent/assurance",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "The estate's decision-assurance door: the Method Selection Principle made executable. Every consequential decision uses the cheapest ADEQUATE method capable of establishing the required confidence, correctness or risk bound, and the choice is made by policy (catalog/decision-assurance.json) rather than by the agent that wants the decision. An agent that declares monte_carlo_required=false for a class policy says needs simulation has that declaration REFUSED and reported; an agent that asks for MORE assurance gets it. The Monte Carlo runtime is deterministic (splitmix64, versioned), models correlated common-cause failures rather than independent ones, and reports what the doctrine names: expected loss, P(L > L_max), CVaR_0.99 and P_hat(SLO breach) + uncertainty margin <= epsilon. Every parameter carries provenance (measured from a named artifact, or assumed by an author), and an assumed parameter never silently becomes a fact: the receipt carries the flags. The receipt estate.decision-assurance/v1 is verified by DETERMINISTIC RECOMPUTATION -- the simulation is re-run from the receipt's own seed and sample count -- so a tampered number cannot pass, and a scenario whose source artifact changed underneath it is stale, not valid. The same door compiles the hypothesis space: evidence is content-addressed, a hypothesis is a causal mechanism (so paraphrases merge and conjunctions stay distinct), the unexplained residual is a first-class hypothesis that is never pruned, and evidence that refutes every live hypothesis triggers deterministic space expansion instead of a confident wrong winner. Exit codes: 0 PASS (or REVIEW_REQUIRED, which blocks nothing and admits nothing), 1 BLOCK, 2 BLIND. Greenlane remains the only admission authority. class: mutate args: mode: {type: string, default: \"method\", description: \"method | simulate | verify | gate | packet\"} decision_class: {type: string, default: \"router.failover\", description: \"policy class, e.g. router.failover\"} scenario: {type: string, default: \"router.correlated-outage\", description: \"scenario id\"} chain: {type: string, default: \"\", description: \"fallback chain to simulate, e.g. default\"} seed: {type: int, default: 42, description: \"PRNG seed; the same seed reproduces the number\"} samples: {type: int, default: 2000, description: \"simulation samples\"} candidate: {type: string, default: \"\", description: \"the artifact the decision is about\"} receipt: {type: string, default: \"\", description: \"path to an assurance receipt\"} input: {type: string, default: \"\", description: \"hypothesis-space input document (JSON)\"} door_s: 90 halt_on_failure: false steps: - name: assure on_fail: continue cmd: | LIB=\"$HOME/.estate/libexec/assurance.py\" [ -f \"$LIB\" ] || LIB=\"$HOME/.estate/runtime/idp/platform/estate/libexec/assurance.py\" if [ ! -f \"$LIB\" ]; then echo \"BLIND assurance.py could not be found\" >&2 echo 2 > ~/.estate/assurance.rc else CAND=\"\" [ -n {{candidate}} ] && CAND=\"--candidate {{candidate}}\" CHAIN=\"\" [ -n {{chain}} ] && CHAIN=\"--chain {{chain}}\" RECEIPT=\"\" [ -n {{receipt}} ] && RECEIPT=\"--receipt {{receipt}}\" INPUT=\"\" [ -n {{input}} ] && INPUT=\"--input {{input}}\" case \"{{mode}}\" in method) python3 \"$LIB\" method --class {{decision_class}} echo $? > ~/.estate/assurance.rc ;; simulate) python3 \"$LIB\" simulate --scenario {{scenario}} --seed {{seed}} \\ --samples {{samples}} --decision-class {{decision_class}} $CHAIN $CAND echo $? > ~/.estate/assurance.rc ;; verify) python3 \"$LIB\" verify $RECEIPT $CAND echo $? > ~/.estate/assurance.rc ;; gate) python3 \"$LIB\" gate --class {{decision_class}} $RECEIPT $CAND echo $? > ~/.estate/assurance.rc ;; packet) python3 \"$LIB\" packet $INPUT echo $? > ~/.estate/assurance.rc ;; *) echo \"BLIND unknown mode {{mode}}\" >&2 echo 2 > ~/.estate/assurance.rc ;; esac fi - name: verdict cmd: | rc=$(cat ~/.estate/assurance.rc 2>/dev/null || echo 1) case \"$rc\" in 0) echo \"verdict: the assurance evidence is present, reproducible and inside the bound (or REVIEW_REQUIRED, which blocks nothing and admits nothing)\" ;; 1) echo \"verdict: BLOCKED -- the evidence is missing, stale, tampered with, or outside the policy's bound\" ;; *) echo \"verdict: BLIND -- the assurance could not be measured, and a measurement that could not be taken is never a pass\" ;; esac exit \"$rc",
+      "contract": {
+        "inputs": [
+          "candidate",
+          "chain",
+          "decision_class",
+          "input",
+          "mode",
+          "receipt",
+          "samples",
+          "scenario",
+          "seed"
+        ],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/assurance.yaml",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -1249,6 +1303,63 @@
       "rung": null,
       "writer": "intents",
       "path": "platform/estate/intents/explore.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:intent/failure-class",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "The estate's ONE failure-class authority. A failure CLASS has a deterministic identity (fcr-<sha20> over the canonical [kind, signature]), so two agents that hit the same failure land on the same record and cannot each believe they are the first to see it. One owner at a time: the lease carries a monotonic fencing token, an expiry and reassignment, so a crashed owner's late write is refused rather than landing on a class that has moved on. The correction broadcast is PULL-BASED -- another agent asks check and inherits what is already published, instead of re-deriving the diagnosis -- and every surface acknowledges it by recording an observation and then an adoption. Adoption requires that the surface SAW the class and then stopped producing it: a surface that never saw the failure has adopted nothing. A class that reappears after it was resolved is a RECURRENCE: it re-opens, counts, and records the prevention gap. The estate issue stays the tracker of record; this lease never grants permission to write files. Exit codes: 0 the operation succeeded, 1 it was REFUSED, 2 BLIND. class: mutate args: mode: {type: string, default: \"check\", description: \"identify | open | claim | renew | release | resolve | check | observe | adopt | coverage | events | summary\"} class_id: {type: string, default: \"\", description: \"the failure class id, e.g. fcr-0123456789abcdef0123\"} kind: {type: string, default: \"\", description: \"failure kind, e.g. python-lint.rule\"} signature: {type: string, default: \"\", description: \"failure signature, e.g. F401\"} owner: {type: string, default: \"unknown\", description: \"the agent taking the lease\"} token: {type: int, default: 0, description: \"the fencing token held by the owner\"} surface: {type: string, default: \"\", description: \"the enforcement surface, e.g. idp-python-strict\"} invariant: {type: string, default: \"\", description: \"what must hold for this class to be closed\"} issue: {type: int, default: 0, description: \"the estate issue that is the tracker of record\"} correction: {type: string, default: \"\", description: \"the published correction\"} receipt_file: {type: string, default: \"\", description: \"an assurance receipt that justifies the correction\"} evidence: {type: string, default: \"\", description: \"evidence that this surface saw or adopted the class\"} door_s: 60 halt_on_failure: false steps: - name: class on_fail: continue cmd: | LIB=\"$HOME/.estate/libexec/failure_class.py\" [ -f \"$LIB\" ] || LIB=\"$HOME/.estate/runtime/idp/platform/estate/libexec/failure_class.py\" if [ ! -f \"$LIB\" ]; then echo \"BLIND failure_class.py could not be found\" >&2 echo 2 > ~/.estate/failure-class.rc else case \"{{mode}}\" in identify|open) python3 \"$LIB\" \"{{mode}}\" --kind {{kind}} --signature {{signature}} \\ --invariant {{invariant}} --owner {{owner}} echo $? > ~/.estate/failure-class.rc ;; claim|renew|release) python3 \"$LIB\" \"{{mode}}\" --class {{class_id}} --owner {{owner}} --token {{token}} echo $? > ~/.estate/failure-class.rc ;; resolve) RECEIPT=\"\" [ -n {{receipt_file}} ] && RECEIPT=\"--receipt-file {{receipt_file}}\" python3 \"$LIB\" resolve --class {{class_id}} --owner {{owner}} --token {{token}} \\ --correction {{correction}} $RECEIPT echo $? > ~/.estate/failure-class.rc ;; observe) python3 \"$LIB\" observe --class {{class_id}} --surface {{surface}} \\ --evidence {{evidence}} echo $? > ~/.estate/failure-class.rc ;; adopt) python3 \"$LIB\" adopt --class {{class_id}} --surface {{surface}} \\ --version {{token}} --evidence {{evidence}} echo $? > ~/.estate/failure-class.rc ;; check) python3 \"$LIB\" check --class {{class_id}} --kind {{kind}} --signature {{signature}} echo $? > ~/.estate/failure-class.rc ;; coverage|summary) python3 \"$LIB\" \"{{mode}}\" echo $? > ~/.estate/failure-class.rc ;; events) python3 \"$LIB\" events --class {{class_id}} echo $? > ~/.estate/failure-class.rc ;; *) echo \"BLIND unknown mode {{mode}}\" >&2 echo 2 > ~/.estate/failure-class.rc ;; esac fi - name: verdict cmd: | rc=$(cat ~/.estate/failure-class.rc 2>/dev/null || echo 1) case \"$rc\" in 0) echo \"verdict: the failure class operation succeeded\" ;; 1) echo \"verdict: REFUSED -- the class has one owner, a stale fencing token is refused, or an adoption has no observation behind it\" ;; *) echo \"verdict: BLIND -- the failure-class store could not be read, and an unreadable store is never a success\" ;; esac exit \"$rc",
+      "contract": {
+        "inputs": [
+          "class_id",
+          "correction",
+          "evidence",
+          "invariant",
+          "issue",
+          "kind",
+          "mode",
+          "owner",
+          "receipt_file",
+          "signature",
+          "surface",
+          "token"
+        ],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/failure-class.yaml",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -6287,6 +6398,74 @@
       ]
     },
     {
+      "id": "cap:layer/platform-estate-libexec-assurance",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "assurance.py -- the estate's decision-assurance and hypothesis-space substrate.",
+      "contract": {
+        "inputs": [
+          "--candidate",
+          "--catalog",
+          "--chain",
+          "--class",
+          "--decision-class",
+          "--decision-id",
+          "--evidence-digest",
+          "--formal-invariant",
+          "--impact",
+          "--input",
+          "--monte-carlo-required",
+          "--out",
+          "--reason",
+          "--receipt",
+          "--requested-method",
+          "--requested-tier",
+          "--samples",
+          "--scenario",
+          "--seed",
+          "--stochastic",
+          "--tier"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/libexec/assurance.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
       "id": "cap:layer/platform-estate-libexec-bus-start",
       "schema_version": 1,
       "kind": "layer",
@@ -6929,6 +7108,76 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/libexec/estate-truth.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-libexec-failure_class",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "failure_class.py -- the estate's ONE failure-class authority.",
+      "contract": {
+        "inputs": [
+          "--class",
+          "--correction",
+          "--db",
+          "--decision-class",
+          "--description",
+          "--evidence",
+          "--invariant",
+          "--issue",
+          "--kind",
+          "--name",
+          "--owner",
+          "--receipt",
+          "--receipt-file",
+          "--signature",
+          "--surface",
+          "--token",
+          "--ttl-s",
+          "--version"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-libexec-assurance",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/libexec/failure_class.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -37960,12 +38209,18 @@
         "inputs": [
           "--cached",
           "--check",
+          "--class",
+          "--evidence",
           "--fix",
           "--ignore",
+          "--kind",
           "--name-only",
           "--per-file-ignores",
           "--quiet",
-          "--select"
+          "--select",
+          "--signature",
+          "--surface",
+          "--version"
         ],
         "outputs": [
           "stdout",
