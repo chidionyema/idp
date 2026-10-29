@@ -273,6 +273,34 @@ def test_every_fallback_chain_ends_in_the_free_floor(tmp_path, monkeypatch):
         )
 
 
+def test_the_render_returns_without_the_interpreter_finalizer():
+    """The render's work is done when the files are written; the shutdown is not part of it.
+
+    Measured 2026-10-29: a render that had already written config.runtime.yaml and
+    lanes.json sat in Python's interpreter shutdown for 4 h 33 m, garbage-collecting
+    litellm's module graph (sampled: Py_FinalizeEx -> finalize_modules -> gc_collect_main).
+    The slot waiting for it never bound its port, so the router could not be deployed at all.
+    The fix is to leave the interpreter before the finalizer runs -- but only when the block
+    runs as a script, because a test executes the same block in-process and os._exit would
+    take the test runner with it.
+    """
+    text = open(WRAPPER).read()
+    assert 'if __name__ == "__main__":' in text, (
+        "the render has no guarded exit: the finalizer can still hold the slot"
+    )
+    block = _render_block()
+    assert "os._exit(0)" in block, "the render does not skip the finalizer"
+    guard = block.index('if __name__ == "__main__":')
+    assert guard > block.index("yaml.safe_dump"), (
+        "the exit is before the config is written"
+    )
+    assert block.index("os._exit(0)") > block.index("yaml.safe_dump"), (
+        "the exit is before the config is written"
+    )
+    # And the guard must not fire in-process: the tests above execute this block.
+    assert __name__ != "__main__"
+
+
 def test_the_kubectl_step_is_bounded():
     """A hung kubectl stalls every slot boot, so the render must kill it, not wait for it."""
     text = open(WRAPPER).read()

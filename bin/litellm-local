@@ -376,6 +376,23 @@ if _still_refused:
                                      "key": "lane:" + _r["lane"], "text": _r["lane"] + " refused: " + _r["reason"]}) + "\n")
     except OSError:
         pass
+# The render must RETURN, and the work is done when the files are written.
+#
+# Measured 2026-10-29: a render that had already written config.runtime.yaml and lanes.json sat
+# in Python's interpreter shutdown for 4 h 33 m, garbage-collecting litellm's module graph
+# (sampled: Py_FinalizeEx -> finalize_modules -> gc_collect_main, state R). The slot waiting for
+# it never bound its port, so the router could not be deployed at all -- the zero-gap swap
+# timed out at its own 180 s window and the old router kept serving the old bytes. The fix is
+# not a bigger window: the finalizer is not part of the render. os._exit skips it, and the
+# explicit flush keeps the lines an operator reads.
+#
+# __name__ is "__main__" when the wrapper runs this block as a script, and something else when a
+# test executes the very same block in-process -- where os._exit would take the test runner
+# with it. So the guard is on the name, not on the environment.
+if __name__ == "__main__":
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
 PY
 
   # Every model the providers serve, written into every installed harness (router_catalog.py).
