@@ -239,11 +239,20 @@ def test_a_recovered_function_clears_its_backoff(tmp_path):
     assert "thing" not in json.loads(state_file.read_text())
 
 
-def test_a_missing_registry_is_blind_rather_than_a_pass(tmp_path):
+def test_a_missing_registry_fails_loudly_rather_than_passing(tmp_path):
+    """A spine that cannot find its own registry has lost the ability to watch anything, and
+    that is the most urgent thing it can report (measured 2026-10-28: it printed BLIND into a
+    log nobody read and the whole watch surface went dark without a word to anyone).
+
+    So it FAILS (rc 1) and ALERTS. It used to print FAIL and exit 2, which the intent maps to
+    "at least one function is BLIND" -- two verdicts for one fact."""
     state = _state(tmp_path)
     r = _run(state, tmp_path / "nope.json")
-    assert r.returncode == 2, r.stdout + r.stderr
-    assert "BLIND" in r.stdout
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "FAIL" in r.stdout, r.stdout
+    inbox = state / "alerts" / "inbox.jsonl"
+    assert inbox.exists(), "a missing registry must alert, not only print"
+    assert "registry is missing" in inbox.read_text(), inbox.read_text()
 
 
 def test_the_spine_writes_its_own_heartbeat(tmp_path):

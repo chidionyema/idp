@@ -60,6 +60,42 @@ mkdir -p "$LOGDIR"
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 LOG="$LOGDIR/agent-$STAMP.log"
 
+# --- a bounded run, without `timeout` ---------------------------------------
+# `timeout` is NOT on launchd's PATH (/usr/bin:/bin): /usr/local/bin/timeout exists on the
+# user's PATH but a launchd job never sees it, so the old `timeout 90 "$SB" start` failed with
+# "timeout: command not found" in exactly the context where the spine needs it. The estate
+# already has a portable answer -- a perl fork + alarm that signals the whole PROCESS GROUP,
+# which is what makes it safe for a command that spawns children. This is that pattern, used
+# here. It also bounds the session door so a hung Temporal cannot hold the spine.
+bounded() {
+	local secs="$1"
+	shift
+	/usr/bin/perl -e '
+		my $timeout = shift @ARGV;
+		my $pid = fork();
+		die "fork failed: $!" unless defined $pid;
+		if ($pid == 0) {
+			setpgrp(0, 0);
+			exec { $ARGV[0] } @ARGV;
+			exit 127;
+		}
+		my $deadline = time + $timeout;
+		while (1) {
+			my $r = waitpid($pid, 1);
+			last if $r == $pid;
+			if (time >= $deadline) {
+				kill "TERM", -$pid;
+				select(undef, undef, undef, 0.5);
+				kill "KILL", -$pid;
+				waitpid($pid, 0);
+				exit 124;
+			}
+			select(undef, undef, undef, 0.1);
+		}
+		exit($? >> 8);
+	' "$secs" "$@"
+}
+
 # --- lane 1: the estate's own session door ---------------------------------
 temporal_open() {
 	/usr/bin/python3 - "$TEMPORAL" <<'PY'
@@ -80,7 +116,7 @@ if temporal_open; then
 	SB="${ESTATE_SB:-$HOME/Documents/code/idp/bin/sb}"
 	[ -x "$SB" ] || SB="$(command -v sb 2>/dev/null)"
 	if [ -n "$SB" ] && [ -x "$SB" ]; then
-		OUT=$(cd "$REPO" 2>/dev/null && timeout 90 "$SB" start --task "$TASK" --runner "$RUNNER" --budget "$BUDGET" --json 2>&1)
+		OUT=$(cd "$REPO" 2>/dev/null && bounded 40 "$SB" start --task "$TASK" --runner "$RUNNER" --budget "$BUDGET" --json 2>&1)
 		RC=$?
 		if [ "$RC" = 0 ]; then
 			printf '{"invoked": true, "invoked_via": "session", "rc": 0, "log": "%s", "output": %s}\n' \
@@ -111,11 +147,17 @@ or scratch, and do not hand-apply infrastructure.
 
 $INCIDENT"
 
+# The WHOLE background subshell is redirected, not just the claude command inside it. Measured
+# 2026-10-28: with only the inner command redirected, the subshell still held the caller's
+# stdout pipe open, so critical-watch.py's capture_output read blocked until its own 60s
+# timeout and recorded `invoked: false` for an agent that was in fact running. A background
+# child must never hold the pipe its caller is reading. stdin comes from /dev/null so the
+# agent cannot wait on a terminal that will never answer.
 (
 	cd "$REPO" 2>/dev/null || cd "$HOME" || exit 1
-	"$CLAUDE" -p "$PROMPT" --permission-mode acceptEdits >"$LOG" 2>&1
+	"$CLAUDE" -p "$PROMPT" --permission-mode acceptEdits
 	echo "exit=$?" >>"$LOG"
-) &
+) >>"$LOG" 2>&1 </dev/null &
 PID=$!
 printf '{"invoked": true, "invoked_via": "local-claude", "pid": %s, "log": "%s", "note": "the estate session door was unreachable (Temporal); the local claude lane was used instead"}\n' \
 	"$PID" "$LOG"

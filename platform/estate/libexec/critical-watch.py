@@ -296,6 +296,119 @@ def probe_goal(spec: dict | None) -> tuple[str | None, str, dict]:
             if "state = running" not in p.stdout:
                 return FAIL, f"the launchd job {label} is loaded but not running", ev
             return PASS, f"the launchd job {label} is running", ev
+        if kind == "parallel_agent_capacity":
+            # THE PARALLEL-CAPACITY MODEL, AS A MEASUREMENT.
+            #
+            # The founder, 2026-10-29: "scale means the number of agents we can run in
+            # parallel", and "look why are we even checking out worktrees on this mac book,
+            # i think we cant scale like this". The answer is arithmetic, and it is the
+            # estate's to measure rather than assume:
+            #
+            #   capacity = (free_mb - reserve_mb) / per_agent_mb
+            #
+            # `reserve_mb` is the executor's own floor (1500MB): below it, every agent's door
+            # is closed, so that space is not available to an agent at all. `per_agent_mb` is
+            # the measured cost of ONE more agent's checkout -- the thing that has to be
+            # measured, because it is the number the whole scale model rests on.
+            #
+            # A capacity model that is not a measurement is a story. So this goal measures
+            # the free space, divides it by the per-agent cost the registry declares, and
+            # FAILS when the estate can no longer host the number of parallel agents it
+            # says it needs. The per-agent cost in the registry is the MEASURED one, and
+            # `bin/idp-estate-capacity` prints the measurement that produced it.
+            path = spec.get("path", "/System/Volumes/Data")
+            ev["path"] = path
+            st = os.statvfs(path)
+            free = int(st.f_bavail * st.f_frsize / (1024 * 1024))
+            reserve = int(spec.get("reserve_mb", 1500))
+            per_agent = int(spec["per_agent_mb"])
+            want = int(spec["min_agents"])
+            ev["free_mb"], ev["reserve_mb"] = free, reserve
+            ev["per_agent_mb"], ev["min_agents"] = per_agent, want
+            if per_agent <= 0:
+                return BLIND, "the per-agent cost is not a positive number", ev
+            capacity = max(0, (free - reserve) // per_agent)
+            ev["capacity_agents"] = capacity
+            if capacity < want:
+                return (
+                    FAIL,
+                    f"{free}MB free on {path} leaves room for {capacity} parallel agent(s) "
+                    f"at {per_agent}MB each ({reserve}MB is the executor's floor), "
+                    f"and the estate needs {want}",
+                    ev,
+                )
+            return (
+                PASS,
+                f"{free}MB free on {path} leaves room for {capacity} parallel agent(s) "
+                f"at {per_agent}MB each (the estate needs {want})",
+                ev,
+            )
+        if kind == "worktree_count":
+            # The sprawl, counted. Each registered worktree is one more agent's checkout
+            # sitting on the laptop, and the count is the cheapest honest measure of the
+            # estate's local parallelism.
+            roots = spec.get("roots") or []
+            if isinstance(roots, str):
+                roots = [roots]
+            count = 0
+            seen = []
+            for root in roots:
+                rp = expand(root)
+                if not rp.is_dir():
+                    continue
+                for child in rp.iterdir():
+                    if child.is_dir():
+                        count += 1
+                        seen.append(str(child))
+            ev["roots"] = [str(expand(r)) for r in roots]
+            ev["count"] = count
+            want_max = int(spec["max"])
+            ev["max"] = want_max
+            if count > want_max:
+                return (
+                    FAIL,
+                    f"{count} agent checkout(s) are registered under the estate's worktree "
+                    f"roots, and the budget is {want_max}",
+                    ev,
+                )
+            return PASS, f"{count} agent checkout(s) against a budget of {want_max}", ev
+        if kind == "git_head_is":
+            # The runtime tree's freshness. MEASURED 2026-10-28: the tree rolled back to an
+            # old commit and the spine went BLIND because the registry it reads was not in
+            # that commit. The rollback was visible nowhere; this goal is where it becomes
+            # visible.
+            repo = expand(spec["repo"])
+            ref = spec.get("ref", "origin/main")
+            ev["repo"], ev["ref"] = str(repo), ref
+            if not repo.is_dir():
+                return BLIND, f"the repository {repo} does not exist", ev
+
+            def _rev(refname: str) -> str:
+                p = subprocess.run(  # noqa: S603 -- constant binary, argv built here
+                    ["git", "-C", str(repo), "rev-parse", refname],
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                )
+                return p.stdout.strip() if p.returncode == 0 else ""
+
+            head = _rev("HEAD")
+            other = _rev(ref)
+            if not head or not other:
+                return (
+                    BLIND,
+                    f"the repository {repo} could not resolve HEAD and {ref}",
+                    ev,
+                )
+            ev["head"], ev["ref_sha"] = head, other
+            if head != other:
+                return (
+                    FAIL,
+                    f"the runtime tree is at {head[:12]} but {ref} is at {other[:12]}: "
+                    "the estate is running code that is not on main",
+                    ev,
+                )
+            return PASS, f"the runtime tree is at {head[:12]}, the same as {ref}", ev
     except (KeyError, ValueError, TypeError, OSError) as exc:
         return BLIND, f"the goal probe is malformed: {exc}", ev
     return BLIND, f"unknown goal type '{kind}'", ev
@@ -304,8 +417,18 @@ def probe_goal(spec: dict | None) -> tuple[str | None, str, dict]:
 # --------------------------------------------------------------------------- the loop
 
 
-def check_function(fn: dict) -> dict:
-    """One function's verdict, with the evidence that produced it."""
+def check_function(fn: dict, kind: str = "function") -> dict:
+    """One entry's verdict, with the evidence that produced it.
+
+    `kind` is "function" or "assumption". The two are measured the same way and cost the
+    same to reason about; the difference is what the founder asked for on 2026-10-29: "we
+    need to know this when our underlying assumtions break". A function is something the
+    estate RUNS; an assumption is something the estate BELIEVES (that the disk can hold N
+    parallel agents, that the runtime tree is on main, that the session plane answers). A
+    broken assumption is invisible by construction -- nothing crashes when the estate's
+    capacity quietly halves -- so it gets the same incident, the same alert and the same
+    agent invocation as a dead function.
+    """
     live_v, live_why, live_ev = probe_liveness(fn.get("liveness", {}))
     goal_v, goal_why, goal_ev = probe_goal(fn.get("goal"))
     if live_v == FAIL:
@@ -321,10 +444,15 @@ def check_function(fn: dict) -> dict:
     why = live_why if live_v != PASS else goal_why
     return {
         "id": fn.get("id"),
+        "kind": kind,
         "title": fn.get("title", fn.get("id")),
         "severity": fn.get("severity", "critical"),
         "verdict": verdict,
         "why": why,
+        # `invoke: false` means: tell the founder, do not wake an agent. It is for an
+        # assumption the estate cannot fix by itself (a cluster that is down, a service the
+        # founder owns), where an agent woken every backoff step is a cost and a nuisance.
+        "invoke": bool(fn.get("invoke", True)),
         "liveness": {"verdict": live_v, "why": live_why, "evidence": live_ev},
         "goal": {"verdict": goal_v, "why": goal_why, "evidence": goal_ev},
         "remediation": fn.get("remediation", {}),
@@ -464,11 +592,16 @@ def raise_incident(fn: dict, result: dict, state: dict, dry_run: bool) -> dict |
         pass
 
     level = "error" if result["verdict"] == FAIL else "warning"
-    if result["verdict"] == FAIL:
+    if result["verdict"] == FAIL and result.get("invoke", True):
         # A dead critical function gets an agent with the structured data to resolve it. A BLIND
         # probe is a measurement that could not be made: it is alerted, but no agent is woken for
         # it -- the function may be perfectly well.
         incident["invocation"] = invoke_agent(fn, incident)
+    elif result["verdict"] == FAIL:
+        incident["invocation"] = {
+            "invoked": False,
+            "reason": "the registry says this one is alerted, not fixed by an agent",
+        }
     else:
         incident["invocation"] = {
             "invoked": False,
@@ -492,6 +625,41 @@ def raise_incident(fn: dict, result: dict, state: dict, dry_run: bool) -> dict |
         "last_incident": incident["id"],
     }
     return incident
+
+
+def _alert_missing_registry(msg: str) -> None:
+    """The registry itself is missing or unreadable: say so loudly, and say it where a human sees it.
+
+    This is the one failure the spine cannot report through its normal path, because the normal
+    path needs the registry. So it writes the alert by hand, to the same inbox, and raises a
+    macOS notification, and it does NOT wake an agent: with no registry there is no structured
+    remediation to attach, and a claude run with no data is a cost and a nuisance.
+    """
+    try:
+        INBOX.parent.mkdir(parents=True, exist_ok=True)
+        row = {
+            "at": now_iso(),
+            "source": "critical-watch",
+            "level": "error",
+            "message": f"the spine's own registry is missing: {msg}",
+        }
+        with INBOX.open("a") as fh:
+            fh.write(json.dumps(row) + "\n")
+    except OSError:
+        pass
+    try:
+        safe = msg.replace("\\", "").replace('"', "'")[:180]
+        subprocess.run(  # noqa: S603 -- constant binary, the message is quoted and truncated above
+            [
+                "/usr/bin/osascript",
+                "-e",
+                f'display notification "{safe}" with title "Estate spine" sound name "Basso"',
+            ],
+            capture_output=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass
 
 
 def write_heartbeat(summary: dict) -> None:
@@ -519,31 +687,56 @@ def main(argv: list[str] | None = None) -> int:
 
     reg_path = registry_path(a.registry)
     if reg_path is None:
+        # A MISSING REGISTRY IS AN ALERT, NOT A SILENT BLIND. Measured 2026-10-28: the runtime
+        # tree rolled back to a commit without catalog/critical-functions.json, the detector
+        # found no registry, and it printed BLIND into a log nobody read -- so the estate's
+        # entire watch surface went dark without a word to anyone. The founder, 2026-10-29:
+        # "we need to know this when our underlying assumptions break". A spine that cannot
+        # find its own registry has lost the ability to watch anything, and that is the most
+        # urgent thing it can report.
         msg = "no critical-functions registry found (looked in the repo, the runtime tree and $CRITICAL_WATCH_REGISTRY)"
         if a.json:
-            print(json.dumps({"verdict": BLIND, "error": msg}))
+            print(json.dumps({"verdict": FAIL, "error": msg}))
         else:
-            print(f"BLIND {msg}")
+            print(f"FAIL {msg}")
         write_heartbeat({"state": "blind", "error": msg})
-        return 2
+        if not a.dry_run:
+            _alert_missing_registry(msg)
+        # FAIL is rc 1 (measured 2026-10-29: this returned 2, which the intent maps to "at least
+        # one function is BLIND" -- so the detector printed FAIL and the door said BLIND, two
+        # verdicts for one fact). The heartbeat still says "blind": the spine cannot see.
+        return 1
     try:
         registry = json.loads(reg_path.read_text())
     except (OSError, json.JSONDecodeError) as exc:
-        print(f"BLIND the registry {reg_path} could not be read: {exc}")
+        msg = f"the registry {reg_path} could not be read: {exc}"
+        print(f"FAIL {msg}")
         write_heartbeat({"state": "blind", "error": str(exc)})
+        if not a.dry_run:
+            _alert_missing_registry(msg)
         return 2
 
-    functions = registry.get("functions", [])
+    functions = list(registry.get("functions", []))
+    # ASSUMPTIONS ARE FIRST-CLASS CITIZENS. The founder, 2026-10-29: "we need to know this
+    # when our underlying assumptions break". An assumption is something the estate BELIEVES
+    # rather than RUNS -- that the laptop can still host N parallel agents, that the runtime
+    # tree is on main, that the session plane answers. When one breaks, nothing crashes and
+    # nothing logs: the estate simply gets quieter and slower. So they are measured by the
+    # same probe machinery and they take the same incident -> alert -> agent path.
+    assumptions = list(registry.get("assumptions", []))
+    entries = [("function", f) for f in functions] + [
+        ("assumption", a) for a in assumptions
+    ]
     if a.only:
-        functions = [f for f in functions if f.get("id") == a.only]
-        if not functions:
-            print(f"BLIND no function named {a.only} in {reg_path}")
+        entries = [(k, e) for k, e in entries if e.get("id") == a.only]
+        if not entries:
+            print(f"BLIND no function or assumption named {a.only} in {reg_path}")
             return 2
 
-    results = [check_function(f) for f in functions]
+    results = [check_function(e, kind) for kind, e in entries]
     state = load_backoff()
     incidents = []
-    for fn, res in zip(functions, results):  # noqa: B905 -- same length by construction; this file also runs on the gate's 3.9 python
+    for (kind, fn), res in zip(entries, results):  # noqa: B905 -- same length by construction; this file also runs on the gate's 3.9 python
         if res["verdict"] == PASS:
             # A function that comes back stops counting against itself: its backoff resets, so a
             # later failure alerts immediately instead of waiting out the ladder it climbed.
@@ -552,6 +745,7 @@ def main(argv: list[str] | None = None) -> int:
             continue
         incident = raise_incident(fn, res, state, a.dry_run)
         if incident:
+            incident["kind"] = kind
             incidents.append(incident)
     if not a.dry_run:
         save_backoff(state)
@@ -560,7 +754,8 @@ def main(argv: list[str] | None = None) -> int:
     summary = {
         "at": now_iso(),
         "registry": str(reg_path),
-        "functions": results,
+        "functions": [r for r in results if r["kind"] == "function"],
+        "assumptions": [r for r in results if r["kind"] == "assumption"],
         "incidents": [i["id"] for i in incidents],
         "counts": {v: verdicts.count(v) for v in (PASS, FAIL, BLIND)},
     }
@@ -575,7 +770,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(summary, indent=1))
     else:
         for r in results:
-            print(f"{r['verdict']:<5} {r['id']:<20} {r['why']}")
+            print(f"{r['verdict']:<5} {r['kind']:<10} {r['id']:<24} {r['why']}")
         for i in incidents:
             inv = i.get("invocation", {})
             via = inv.get("invoked_via", "not invoked")
