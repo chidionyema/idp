@@ -133,23 +133,57 @@ else
   ok "/etc/estate/router.env already carries a tunnel token"
 fi
 
-# Repair 2: the ordering. estate-tunnel.service has After=estate-router.service, and a router that
-# is in a restart loop keeps the tunnel from starting at all. The tunnel only needs the router to
-# be reachable, not to be started first, so the ordering is relaxed and the tunnel is asked for
-# explicitly.
+# Repair 2: the ordering and the missing credential fetch. The RUNNING host still carries the
+# unit that was installed at first boot -- the cloud-init change only reaches a new boot -- so
+# this drop-in carries both fixes to the live unit:
+#   * After=estate-router.service  -- a router in a restart loop keeps the tunnel from starting
+#     at all. The tunnel only needs the router to be reachable, not to be started first.
+#   * ExecStartPre=/etc/estate/router-fetch -- the unit had none, so if the vault entry had not
+#     arrived by the time the unit started, `podman --env-file` failed and the unit crash-looped
+#     silently, forever.
+#
+# A DROP-IN, not `systemctl edit --full`: --full REPLACES the unit file, and a heredoc carrying
+# only [Unit] would delete the [Service] section -- ExecStart and all -- leaving a unit that
+# starts and does nothing. A drop-in adds to the unit; an empty `After=` assignment resets the
+# list, and the new After= replaces the inherited one.
 if systemctl cat estate-tunnel.service >/dev/null 2>&1; then
+  need_dropin=0
   if systemctl show estate-tunnel.service -p After 2>/dev/null | grep -q 'estate-router.service'; then
     say "state  estate-tunnel.service  After= includes estate-router.service"
-    mkdir -p /etc/systemd/system
-    systemctl edit --full estate-tunnel.service >/dev/null 2>&1 <<'EOF'
-[Unit]
-After=network-online.target
-Wants=network-online.target
-EOF
-    systemctl daemon-reload
-    ok "estate-tunnel.service no longer waits for estate-router.service"
+    need_dropin=1
   else
     ok "estate-tunnel.service does not wait for estate-router.service"
+  fi
+  if ! systemctl show estate-tunnel.service -p ExecStartPre 2>/dev/null | grep -q 'router-fetch'; then
+    say "state  estate-tunnel.service  has no ExecStartPre=router-fetch"
+    need_dropin=1
+  else
+    ok "estate-tunnel.service fetches its credentials before starting"
+  fi
+  if [ "$need_dropin" = "1" ]; then
+    mkdir -p /etc/systemd/system/estate-tunnel.service.d
+    cat >/etc/systemd/system/estate-tunnel.service.d/10-no-router-wait.conf <<'EOF'
+[Unit]
+After=
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStartPre=
+ExecStartPre=/etc/estate/router-fetch
+EOF
+    systemctl daemon-reload
+    if systemctl show estate-tunnel.service -p After 2>/dev/null | grep -q 'estate-router.service'; then
+      bad "the drop-in did not take: After= still names estate-router.service"
+    else
+      ok "estate-tunnel.service no longer waits for estate-router.service"
+    fi
+    # The unit must still have its ExecStart: a repair that removes it would be a second outage.
+    if systemctl show estate-tunnel.service -p ExecStart 2>/dev/null | grep -q 'podman run'; then
+      ok "estate-tunnel.service still carries its ExecStart"
+    else
+      bad "estate-tunnel.service has no ExecStart: the unit would start and do nothing"
+    fi
   fi
 fi
 
