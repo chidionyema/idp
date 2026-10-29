@@ -468,3 +468,91 @@ def test_one_success_still_clears_a_dead_lane(mod):
     assert reg.state("moonshot/kimi-k3") == "dead"
     reg.observe_success("moonshot/kimi-k3", 120.0)
     assert reg.state("moonshot/kimi-k3") == "ready"
+
+
+# ------------------------------------------------- the forecast sees the vendor's numbers
+
+
+class _HiddenResp:
+    """A LiteLLM 1.98 ModelResponse: vendor headers in _hidden_params, `llm_provider-` prefixed."""
+
+    def __init__(self, remaining, reset="30"):
+        self._hidden_params = {
+            "additional_headers": {
+                "llm_provider-x-ratelimit-remaining-requests": str(remaining),
+                "llm_provider-x-ratelimit-reset-requests": reset,
+            }
+        }
+
+
+def test_remaining_quota_is_read_where_litellm_puts_it(mod):
+    """Measured 2026-10-29: 298,231 observations, not one remaining-quota number -- the
+    registry read only `.headers`, and LiteLLM 1.98 forwards the vendor's headers in
+    `_hidden_params["additional_headers"]`. The forecast had never had an input."""
+    hdrs = mod._hdrs_of(_HiddenResp(512))
+    assert hdrs["x-ratelimit-remaining-requests"] == "512"
+
+
+def test_a_lane_is_condemned_before_its_429(mod):
+    """The vendor says 3 requests are left: no user request is sent to find out."""
+    dep = "groq/llama-3.3-70b-versatile"
+    reg = _registry(mod)
+    reg.observe_success(dep, 120.0, mod._hdrs_of(_HiddenResp(3)))
+    assert reg.state(dep) == "exhausted"
+    assert reg._lanes[dep]["reason"] == "headroom"
+    assert not reg.servable(dep)
+
+
+def test_a_sliding_daily_window_is_not_readmitted_by_one_request(mod):
+    """Measured 2026-10-29: Groq's daily quota readmitted 370 times in a day, a median 33 s
+    after exhausting. The reset it named passed, one request squeezed through, the lane went
+    back to ready, and the next user got the 429. Room, not a clock, readmits."""
+    dep = "groq/llama-3.3-70b-versatile"
+    reg = _registry(mod)
+    reg.observe_failure(dep, 429, "Rate limit reached on requests per day (RPD)")
+    reg._lanes[dep]["reset_at"] = (
+        1.0  # the short reset the sliding window named, passed
+    )
+    reg.observe_success(dep, 120.0, mod._hdrs_of(_HiddenResp(1)))
+    assert reg.state(dep) == "exhausted"
+
+
+def test_headroom_readmits(mod):
+    """With room again, the lane rejoins -- and its wait is forgotten."""
+    dep = "groq/llama-3.3-70b-versatile"
+    reg = _registry(mod)
+    reg.observe_success(dep, 120.0, mod._hdrs_of(_HiddenResp(3)))
+    assert reg.state(dep) == "exhausted"
+    reg._lanes[dep]["reset_at"] = 1.0
+    reg.observe_success(dep, 120.0, mod._hdrs_of(_HiddenResp(800)))
+    assert reg.state(dep) == "ready"
+    assert reg._lanes[dep]["headroom_wait_s"] == 0
+
+
+def test_a_groq_reset_duration_is_read(mod):
+    """Measured 2026-10-29, a real Groq answer: `x-ratelimit-reset-requests: 24h0m0s`. float()
+    refused it, so the reset was dropped and the hold fell back to a guess."""
+    now = 1000.0
+    assert (
+        mod._reset_epoch({"x-ratelimit-reset-requests": "24h0m0s"}, now) == now + 86400
+    )
+    assert (
+        mod._reset_epoch({"x-ratelimit-reset-requests": "1m26.5s"}, now) == now + 86.5
+    )
+    assert mod._go_duration_s("547ms") == 0.547
+    assert mod._go_duration_s("soon") is None
+
+
+def test_a_200_that_says_zero_left_condemns_until_the_vendor_reset(mod):
+    """The exact answer Groq gave on 2026-10-29: HTTP 200, remaining-requests 0, reset 24h0m0s.
+    It is the request that 'squeezed through' -- it must hold the lane for the vendor's day."""
+    dep = "groq/llama-3.3-70b-versatile"
+    reg = _registry(mod)
+    hdrs = {
+        "x-ratelimit-remaining-requests": "0",
+        "x-ratelimit-limit-requests": "1000",
+        "x-ratelimit-reset-requests": "24h0m0s",
+    }
+    reg.observe_success(dep, 120.0, hdrs)
+    assert reg.state(dep) == "exhausted"
+    assert reg._lanes[dep]["reset_at"] > __import__("time").time() + 86000
