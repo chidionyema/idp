@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""idp-disk-watch -- the estate's resident reclaim guardian.
+"""idp-disk-watch -- the estate's resident reclaim guardian, with the firewall's third leg.
 
 WHY THIS EXISTS. 2026-10-28. The watcher this replaces was a 5-minute tick that ran the FULL
 cleaner with a 240s budget: it held the reclaim lock for 240 of every 300 seconds, so every
@@ -25,6 +25,36 @@ WHAT IT IS. A resident process, not a tick:
   * never disruptive -> the step is bounded (STEP_BUDGET_S, 90s), so the reclaim lock is held for
     at most that long, and a door that finds it held is told "another run is doing the work" with
     the measured free space, which is not a failure.
+
+THE THIRD LEG OF THE EPISTEMIC FIREWALL (2026-10-29). The first two legs grade what an AGENT
+says (bin/epistemic_firewall.py: a claim needs three independent pieces of evidence) and what it
+was TOLD to do (bin/trajectory_lock.py: it may not wander off the ticket). Neither can see a
+resident worker: this guardian has no transcript, no plan and no claims to grade -- and the
+measured consequence was eight hours of the same nothing. From ~/.estate/disk-watch.log:
+
+    step free=2361M target=2500M rc=3 freed=-2M met=no after=2280M
+    step free=2280M target=2500M rc=4 freed=?M met=? after=?M
+
+rc=4 is a step cut short. `freed=?M` is the guardian reporting a field it never measured, because
+the child was SIGKILLed before it could print its one RESULT line. The guardian then did exactly
+the same thing again, for thirty minutes: 2361 -> 2280 -> 1759 -> 919 -> 437 -> 396 MB. Diligent,
+looping, and blind. So this guardian now does three things it did not do before:
+
+  1. IT OWNS THE MEASUREMENT. The freed-bytes and target-met fields are the GUARDIAN's own
+     statvfs readings, before and after the step -- not the child's self-report. The child is
+     still the only thing that deletes anything, but it is not the only thing that measures, and a
+     worker's report of its own success is not evidence. ("When Do Agent Loops Mistake Stagnation
+     for Progress?", OpenAlex W7171902361: a frontier agent claimed improvement on every one of
+     54 cycles while 56% of those cycles measured zero or below.)
+  2. IT TERMINATES BEFORE IT KILLS. The step is cut short with SIGTERM first, so the cleaner's
+     EXIT trap runs and prints its RESULT line; SIGKILL is the last resort, after a grace period.
+     A step that ends now always ends with a measured line.
+  3. IT ESCALATES INSTEAD OF REPEATING. Each step is judged by the shared gate
+     (platform/estate/libexec/epistemic_loop.py) against the measured free space. An action that
+     measures no progress three times is a LOOP, not work. The guardian then walks a phase ladder
+     -- add the worktree tier, then docker and clones -- and when every rung has looped it stops
+     stepping and raises a structured incident with an agent invocation, because the answer is no
+     longer "try the same thing again".
 
 THE TARGET. The executor refuses to start a job below MIN_FREE_MB (1500 MB, in
 mcp/plugins/estate_executor.py), so the guardian's goal is the estate's goal: keep the volume
@@ -60,11 +90,13 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 VOLUME = os.environ.get("DISK_GUARD_PATH", "/System/Volumes/Data")
 TARGET_MB = int(os.environ.get("DISK_WATCH_TARGET_MB", "2500"))
@@ -80,7 +112,28 @@ CLEANER = os.environ.get(
 RAM_FLOOR_MB = int(os.environ.get("DISK_WATCH_RAM_FLOOR_MB", "200"))
 SWAP_MAX_PCT = int(os.environ.get("DISK_WATCH_SWAP_MAX_PCT", "70"))
 BRAKE_PROCS = os.environ.get("DISK_WATCH_BRAKE_PROCS", "ollama").split()
+# A brake that fires every cycle is a loop, not a brake.
+BRAKE_COOLDOWN_S = int(os.environ.get("DISK_WATCH_BRAKE_COOLDOWN_S", "300"))
 FAIL_ALERT_EVERY_S = int(os.environ.get("DISK_WATCH_FAIL_ALERT_EVERY_S", "3600"))
+# The escalation ladder: what the guardian tries next when the current phase set measurably
+# does not work. The base set is the safe one; the worktree tier is where the gigabytes are
+# (measured 2026-10-29: 35 registered worktrees, 11.29 GB, of which 4.55 GB is the same
+# tracked content materialised 27 times) and it is protected by the cleaner's own claim checks,
+# so asking for it is safe -- it is the cleaner's policy that decides what it may delete.
+PHASE_LADDER = (
+    "caches,critical,temp",
+    "caches,critical,temp,worktrees",
+    "caches,critical,temp,worktrees,docker,clones",
+)
+ESCALATION_STATE = Path(
+    os.environ.get(
+        "DISK_WATCH_ESCALATION_STATE", os.path.expanduser("~/.estate/disk-watch.escalation.json")
+    )
+)
+# How long the guardian waits before it may raise the incident again after a full-ladder
+# escalation. The spine's own backoff is separate: this is the guardian's, because the guardian
+# is the thing that noticed.
+ESCALATION_ALERT_EVERY_S = int(os.environ.get("DISK_WATCH_ESCALATION_ALERT_S", "1800"))
 
 _STOP = False
 
@@ -113,29 +166,78 @@ def free_mb() -> int | None:
     return int(st.f_bavail * st.f_frsize / (1024 * 1024))
 
 
-def memory_pressure() -> tuple[bool, str]:
-    """(under pressure, measured) -- an unreadable measurement is UNKNOWN, never zero."""
-    free_ram = None
-    swap_pct = None
+def _mach_free_ram_mb() -> int | None:
+    """Free RAM in MB, read straight from the kernel. None when it cannot be read.
+
+    MEASURED 2026-10-29: shelling out to `vm_stat` cost 0.11 s normally, but 7.6 s on the
+    stressed volume where this guardian actually runs -- a spawn, not a measurement, was the
+    cost. `host_statistics64` answers in 0.1 ms and spawns nothing, so the brake's input no
+    longer depends on the machine being healthy enough to fork.
+
+    This is the same number `vm_stat` reports as "Pages free" plus "Pages speculative".
+    """
     try:
-        with open("/usr/bin/vm_stat") as fh:
-            page_size = 4096
-            for line in fh:
-                if line.startswith("Mach Virtual Memory Statistics"):
-                    continue
-                if "page size of" in line:
-                    page_size = int(line.split("page size of")[1].split()[0])
-                elif line.startswith("Pages free"):
-                    free_ram = int(line.split(":")[1].strip().rstrip(".")) * page_size // (1024 * 1024)
-                elif line.startswith("Pages speculative"):
-                    spec = int(line.split(":")[1].strip().rstrip(".")) * page_size // (1024 * 1024)
-                    if free_ram is not None:
-                        free_ram += spec
-    except (OSError, ValueError, IndexError):
-        pass
+        import ctypes
+
+        libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True)
+        host = libc.mach_host_self()
+
+        class VMStat(ctypes.Structure):
+            _fields_ = [
+                (n, ctypes.c_uint32)
+                for n in ("free_count", "active_count", "inactive_count", "wire_count")
+            ] + [
+                (n, ctypes.c_uint64)
+                for n in (
+                    "zero_fill_count",
+                    "reactivations",
+                    "pageins",
+                    "pageouts",
+                    "faults",
+                    "cow_faults",
+                    "lookups",
+                    "hits",
+                    "purges",
+                )
+            ] + [
+                ("purgeable_count", ctypes.c_uint32),
+                ("speculative_count", ctypes.c_uint32),
+            ] + [
+                (n, ctypes.c_uint64)
+                for n in ("decompressions", "compressions", "swapins", "swapouts")
+            ] + [
+                ("compressor_page_count", ctypes.c_uint32),
+                ("throttled_count", ctypes.c_uint32),
+                ("external_page_count", ctypes.c_uint32),
+                ("internal_page_count", ctypes.c_uint32),
+            ] + [("total_uncompressed_pages_in_compressor", ctypes.c_uint64)]
+
+        stat = VMStat()
+        count = ctypes.c_uint32(ctypes.sizeof(VMStat))
+        if libc.host_statistics64(host, 4, ctypes.byref(stat), ctypes.byref(count)) != 0:
+            return None
+        page_size = ctypes.c_uint32()
+        libc.host_page_size(host, ctypes.byref(page_size))
+        if not page_size.value:
+            return None
+        return (
+            stat.free_count + stat.speculative_count
+        ) * page_size.value // (1024 * 1024)
+    except Exception:  # ctypes, struct layout, symbol -- any of it means "not measured"
+        return None
+
+
+def _mach_swap_pct() -> int | None:
+    """Swap usage as a percentage, read straight from the kernel. None when unavailable.
+
+    `host_statistics64` gives swapins/swapouts (cumulative counters), not current usage, so the
+    current figure comes from `sysctl vm.swapusage` -- executed, not read, because on this
+    machine the sysctl binary is not a text file.
+    """
+    sysctl = shutil.which("sysctl") or "/usr/sbin/sysctl"
     try:
         out = subprocess.run(
-            ["/usr/sbin/sysctl", "-n", "vm.swapusage"],
+            [sysctl, "-n", "vm.swapusage"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -143,9 +245,35 @@ def memory_pressure() -> tuple[bool, str]:
         m = re.search(r"used\s*=\s*([\d.]+)[MG]", out)
         t = re.search(r"total\s*=\s*([\d.]+)[MG]", out)
         if m and t and float(t.group(1)) > 0:
-            swap_pct = int(float(m.group(1)) / float(t.group(1)) * 100)
+            return int(float(m.group(1)) / float(t.group(1)) * 100)
     except (OSError, subprocess.SubprocessError, ValueError):
         pass
+    return None
+
+
+def memory_pressure() -> tuple[bool, str]:
+    """(under pressure, measured) -- an unreadable measurement is UNKNOWN, never zero.
+
+    MEASURED 2026-10-29, twice:
+      * /usr/bin/vm_stat on this machine is a Mach-O BINARY. Reading the file produced 134 KB of
+        Mach-O segments and no "Pages free" line at all, so the RAM reading was ALWAYS None --
+        the guardian printed "free=?M" every cycle and braked on swap alone.
+      * Executing it fixed the reading but cost a process spawn: 0.11 s when the machine is
+        healthy, 7.6 s on the stressed volume where the guardian actually runs. A brake whose
+        input costs a fork is a brake that stops working exactly when it is needed.
+
+    So RAM comes from the kernel through `host_statistics64` (0.1 ms, no spawn), with the
+    executed `vm_stat` as the fallback for a machine where the mach call does not work. Swap
+    comes from `sysctl vm.swapusage`, executed.
+
+    The binaries are resolved through PATH, with the absolute path as the fallback, because a
+    measurement the guardian cannot be tested against is a measurement nobody can falsify.
+    launchd's PATH is /usr/bin:/bin, so the fallback is what runs in production.
+    """
+    free_ram = _mach_free_ram_mb()
+    swap_pct = _mach_swap_pct()
+    if free_ram is None:
+        free_ram = _vm_stat_free_ram_mb()
     measured = f"free={free_ram if free_ram is not None else '?'}M RAM swap={swap_pct if swap_pct is not None else '?'}%"
     if free_ram is not None and free_ram < RAM_FLOOR_MB:
         return True, measured
@@ -154,8 +282,56 @@ def memory_pressure() -> tuple[bool, str]:
     return False, measured
 
 
-def brake(measured: str) -> None:
-    """Stop the one process that grinds an 8GB laptop. Nothing else is touched."""
+def _vm_stat_free_ram_mb() -> int | None:
+    """Free RAM in MB from `vm_stat`, EXECUTED (never read -- it is a binary). None if unreadable."""
+    vm_stat = shutil.which("vm_stat") or "/usr/bin/vm_stat"
+    try:
+        proc = subprocess.run(
+            [vm_stat],
+            capture_output=True,
+            timeout=10,
+        )
+        text = proc.stdout.decode("utf-8", "replace")
+        page_size = 4096
+        free_ram = None
+        for line in text.splitlines():
+            if "page size of" in line:
+                page_size = int(line.split("page size of")[1].split()[0])
+            elif line.startswith("Pages free"):
+                free_ram = int(line.split(":")[1].strip().rstrip(".")) * page_size // (1024 * 1024)
+            elif line.startswith("Pages speculative"):
+                spec = int(line.split(":")[1].strip().rstrip(".")) * page_size // (1024 * 1024)
+                if free_ram is not None:
+                    free_ram += spec
+        return free_ram
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+        return None
+
+
+_LAST_BRAKE = 0.0
+
+
+def brake(pressure: bool, measured: str) -> None:
+    """Stop the one process that grinds an 8GB laptop. Nothing else is touched.
+
+    The brake refuses to fire unless pressure was MEASURED (measured 2026-10-29: brake() took
+    only a string, so any caller -- including one that never checked -- could stop the founder's
+    tooling; a brake that is a property of its caller is not a brake). A caller that did not
+    measure pressure passes pressure=False and nothing is stopped.
+
+
+    The brake is a brake, not a loop: measured 2026-10-29, ollama was stopped on EVERY cycle
+    (20s apart) while the swap stayed high, because nothing remembered that it had already
+    stopped it. Each stop is logged as if it were new, which made the log a lie about how often
+    the estate interfered with the founder's tooling. One stop per cooldown, and the log says
+    when the next one is allowed.
+    """
+    global _LAST_BRAKE
+    if not pressure:
+        return
+    now = time.time()
+    if now - _LAST_BRAKE < BRAKE_COOLDOWN_S:
+        return
     for proc in BRAKE_PROCS:
         try:
             if subprocess.run(
@@ -164,7 +340,11 @@ def brake(measured: str) -> None:
                 subprocess.run(
                     ["/usr/bin/pkill", "-TERM", "-x", proc], capture_output=True, timeout=10
                 )
-                log(f"memory brake: stopped {proc} ({measured})")
+                _LAST_BRAKE = now
+                log(
+                    f"memory brake: stopped {proc} ({measured}); "
+                    f"the next stop is at most {BRAKE_COOLDOWN_S}s away"
+                )
         except (OSError, subprocess.SubprocessError):
             continue
 
@@ -181,29 +361,165 @@ def parse_result(stdout: str) -> dict:
     return out
 
 
-def step(free_before: int) -> tuple[int, dict, str]:
+# -- the third leg: the gate the worker cannot write to -----------------------------------------------
+
+
+def _load_gate():
+    """Find platform/estate/libexec/epistemic_loop.py, wherever this guardian was installed.
+
+    Two layouts exist: in a checkout it is ../platform/estate/libexec, and installed it is
+    ../libexec (bin/ and libexec/ are siblings under ~/.estate). A guardian that cannot find the
+    gate must SAY so rather than silently go back to the behaviour that looped for eight hours.
+    """
+    here = Path(__file__).resolve().parent
+    for cand in (here.parent / "libexec", here.parent / "platform" / "estate" / "libexec"):
+        if (cand / "epistemic_loop.py").exists():
+            if str(cand) not in sys.path:
+                sys.path.insert(0, str(cand))
+            try:
+                import epistemic_loop  # noqa: PLC0415 -- a deliberate, reported import
+
+                return epistemic_loop
+            except ImportError:
+                continue
+    return None
+
+
+_GATE = _load_gate()
+_GATE_WARNED = False
+
+
+def gate():
+    """The shared gate, or None when it could not be loaded (which is itself reported)."""
+    global _GATE_WARNED
+    if _GATE is None and not _GATE_WARNED:
+        _GATE_WARNED = True
+        log(
+            "BLIND the epistemic gate (epistemic_loop.py) could not be loaded; the guardian "
+            "cannot grade its own steps and will keep stepping without escalation"
+        )
+    return _GATE
+
+
+# -- the escalation state ---------------------------------------------------------------------------
+
+
+def load_escalation() -> dict:
+    try:
+        data = json.loads(ESCALATION_STATE.read_text())
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def save_escalation(state: dict) -> None:
+    try:
+        ESCALATION_STATE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = ESCALATION_STATE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state, indent=1))
+        os.replace(tmp, ESCALATION_STATE)
+    except OSError:
+        pass
+
+
+# -- the step ---------------------------------------------------------------------------------------
+
+
+def step(free_before: int, beat=None, phases: str = "") -> tuple[int, dict, str]:
     """ONE bounded step of the estate's cleaner, in its incremental mode.
 
     Returns (exit code, the parsed RESULT line, the raw output). A step that is cut short is not
     a failure: the cleaner bounds its own deletes and resumes them on the next step.
+
+    `beat` is called while the step runs, so the guardian can keep its heartbeat fresh DURING a
+    long step. Measured 2026-10-29: the heartbeat was written only AFTER the step returned, so a
+    guardian working correctly for 90s looked dead to the spine (max_age 180s) and the spine
+    raised a false incident and woke an agent for a guardian that was doing its job.
+
+    `phases` overrides the cleaner's phase set, which is how the escalation ladder reaches the
+    worktree tier. Empty means the cleaner's own incremental default.
     """
     env = dict(os.environ)
     env["DISK_CLEANUP_INCREMENTAL"] = "1"
     env["DISK_CLEANUP_TARGET_MB"] = str(TARGET_MB)
     env["DISK_CLEANUP_DELETE_S"] = str(max(10, STEP_BUDGET_S // 3))
+    if phases:
+        env["DISK_CLEANUP_PHASES"] = phases
+    argv = ["/bin/bash", CLEANER, "true", "false", "0", "false", str(STEP_BUDGET_S)]
     try:
-        proc = subprocess.run(
-            ["/bin/bash", CLEANER, "true", "false", "0", "false", str(STEP_BUDGET_S)],
+        proc = subprocess.Popen(
+            argv,
             env=env,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            timeout=STEP_BUDGET_S + 30,
         )
-    except subprocess.TimeoutExpired:
-        return 4, {}, "the step ran past its bound and was cut short"
     except OSError as exc:
         return 1, {}, f"the cleaner could not be started: {exc}"
-    return proc.returncode, parse_result(proc.stdout), proc.stdout
+    deadline = time.time() + STEP_BUDGET_S + 30
+    out = ""
+    while True:
+        try:
+            out, _ = proc.communicate(timeout=15)
+            break
+        except subprocess.TimeoutExpired:
+            # Still working: say so, so the spine sees a live guardian.
+            if beat is not None:
+                beat()
+            if time.time() > deadline:
+                # TERM FIRST, THEN KILL. Measured 2026-10-29: the guardian used SIGKILL,
+                # which the cleaner's trap cannot catch, so the step ended with NO RESULT line
+                # and the guardian logged freed=?M -- a field it had never measured. SIGTERM
+                # lets the cleaner's EXIT trap print the line it owes; SIGKILL is the last
+                # resort, after a grace period.
+                try:
+                    proc.terminate()
+                except OSError:
+                    pass
+                try:
+                    out, _ = proc.communicate(timeout=10)
+                except subprocess.TimeoutExpired:
+                    try:
+                        proc.kill()
+                    except OSError:
+                        pass
+                    try:
+                        out, _ = proc.communicate(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        out = ""
+                return 4, parse_result(out), out
+    return proc.returncode, parse_result(out), out
+
+
+def synth_result(free_before: int, free_after: int | None) -> dict:
+    """The guardian's OWN RESULT line, from its own statvfs readings.
+
+    This is the measurement the guardian reports, because the child's self-report is not
+    evidence -- and because a step cut short by the door's ceiling produced no line at all, so
+    the guardian was printing `?` for a number it could measure for itself.
+
+    When the volume cannot be read at all, the fields say `blind` rather than a number. The
+    contract is not "never print a non-numeric field"; it is "never print a number this file did
+    not measure". A zero here would be a claim that nothing was freed, which is a different fact
+    from "the volume could not be read".
+    """
+    if free_after is None:
+        return {
+            "mode": "guardian",
+            "free_before_mb": str(free_before),
+            "free_after_mb": "blind",
+            "target_mb": str(TARGET_MB),
+            "met": "blind",
+            "freed_mb": "blind",
+        }
+    return {
+        "mode": "guardian",
+        "free_before_mb": str(free_before),
+        "free_after_mb": str(free_after),
+        "target_mb": str(TARGET_MB),
+        "met": "yes" if free_after >= TARGET_MB else "no",
+        "freed_mb": str(free_after - free_before),
+    }
 
 
 def heartbeat(state: str, free: int | None, extra: dict) -> None:
@@ -243,20 +559,105 @@ def notify(message: str) -> None:
         pass
 
 
+def escalate_incident(reason: str, evidence: dict) -> None:
+    """The guardian has run out of rungs: raise a structured incident and wake an agent.
+
+    The founder's rule (2026-09-12, AGENTS.md section 3): a safeguard is operational only when
+    it decides on real actions and someone is woken to act on the decision. The incident carries
+    the measured evidence -- what the ladder was, what each rung freed, why it stopped -- so the
+    agent does not have to re-derive what the guardian already proved.
+    """
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    incident = {
+        "id": f"disk-guardian-loop-{stamp}",
+        "function": "disk-guardian",
+        "kind": "loop",
+        "severity": "critical",
+        "detected_at": now_iso(),
+        "why": reason,
+        "evidence": evidence,
+    }
+    try:
+        d = Path(os.path.expanduser("~/.estate/incidents"))
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{incident['id']}.json").write_text(json.dumps(incident, indent=1))
+        with (d / "ledger.jsonl").open("a") as fh:
+            fh.write(json.dumps(incident) + "\n")
+    except OSError:
+        pass
+    try:
+        inbox = Path(os.path.expanduser("~/.estate/alerts/inbox.jsonl"))
+        inbox.parent.mkdir(parents=True, exist_ok=True)
+        with inbox.open("a") as fh:
+            fh.write(
+                json.dumps(
+                    {
+                        "ts": time.time(),
+                        "source": "disk-guardian",
+                        "level": "error",
+                        "msg": reason,
+                    }
+                )
+                + "\n"
+            )
+    except OSError:
+        pass
+    notify("The disk guardian exhausted every phase set without freeing space. See the incident.")
+    invoke = Path(os.path.expanduser("~/.estate/libexec/agent-invoke.sh"))
+    if invoke.exists():
+        payload = {
+            "incident": incident,
+            "task": (
+                "The estate's disk reclaim guardian measured no progress through every phase set "
+                "it has (caches, critical, temp, worktrees, docker, clones) and stopped stepping. "
+                "Read ~/.estate/incidents/latest.json and the ledger at "
+                "~/.estate/loops/progress.jsonl, then find the mass that is actually reclaimable. "
+                "Do not repeat a phase set the ledger already shows to have failed, do not delete "
+                "another agent's live, dirty or claimed worktree, and do not touch the founder's "
+                "running Chrome or live tooling. Report what you measured."
+            ),
+            "runner": "claude",
+            "repo": os.path.expanduser("~/Documents/code/idp"),
+            "budget": 20,
+        }
+        try:
+            subprocess.run(
+                ["/bin/bash", str(invoke), "--json", json.dumps(payload)],
+                capture_output=True,
+                text=True,
+                timeout=90,
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+
 def main() -> int:
+    if "--print-gate" in sys.argv:
+        # The gate's presence is a fact the estate must be able to check from outside the
+        # guardian: a guardian that lost its gate must be visible, not silently degraded.
+        g = gate()
+        if g is None:
+            print("BLIND epistemic_loop.py could not be loaded")
+            return 2
+        print(f"epistemic_loop loaded from {g.__file__}")
+        return 0
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
     steps = 0
     last_fail_alert = 0.0
+    state = load_escalation()
+    rung = int(state.get("rung", 0))
+    last_escalation_alert = float(state.get("last_alert", 0.0))
     log(
         f"guardian started: target={TARGET_MB}M on {VOLUME}, cycle={CYCLE_S}s, "
-        f"step budget={STEP_BUDGET_S}s, cleaner={CLEANER}"
+        f"step budget={STEP_BUDGET_S}s, cleaner={CLEANER}, "
+        f"gate={'epistemic_loop' if gate() else 'BLIND'}"
     )
     while not _STOP:
         free = free_mb()
         pressure, measured = memory_pressure()
         if pressure:
-            brake(measured)
+            brake(True, measured)
         if free is None:
             heartbeat("blind", None, {"memory": measured})
             log(f"BLIND cannot read {VOLUME}: the guardian cannot see the volume")
@@ -266,31 +667,147 @@ def main() -> int:
         if free >= TARGET_MB:
             # Healthy: nothing is measured, nothing is deleted. This cycle costs one statvfs.
             heartbeat("healthy", free, {"memory": measured, "steps": steps})
+            # A rung that produced progress is a rung that worked: fall back to the safe base.
+            if rung:
+                rung = 0
+                state = {"rung": 0, "last_alert": last_escalation_alert}
+                save_escalation(state)
+                log("the volume is above the target; the escalation ladder resets to its base rung")
             time.sleep(CYCLE_S)
             continue
 
-        # Under pressure: one bounded step.
-        rc, result, raw = step(free)
+        # Under pressure: one bounded step. The heartbeat goes out BEFORE the step, and is
+        # refreshed while it runs: a guardian that is working is alive, and the spine must never
+        # have to guess which of the two it is looking at.
+        step_started = now_iso()
+        phases = PHASE_LADDER[min(rung, len(PHASE_LADDER) - 1)]
+
+        def beat() -> None:
+            heartbeat(
+                "reclaiming",
+                free,
+                {"memory": measured, "steps": steps, "step_started_at": step_started},
+            )
+
+        beat()
+        rc, result, raw = step(free, beat)
         steps += 1
-        after = result.get("free_after_mb")
-        freed = result.get("freed_mb", "?")
-        met = result.get("met", "?")
+        after_mb = free_mb()
+        # THE GUARDIAN OWNS THE MEASUREMENT. The child's RESULT line is data; the guardian's own
+        # statvfs reading is the evidence. When the child was cut short and printed nothing, the
+        # guardian still reports a number, because it measured one.
+        child_after = result.get("free_after_mb")
+        if after_mb is None and child_after and child_after.isdigit():
+            # The guardian's own statvfs failed but the child managed to measure the volume
+            # before it was cut short. Use the child's measurement and say where it came from.
+            after_mb = int(child_after)
+            own = synth_result(free, after_mb)
+            own["free_after_source"] = "child"
+        else:
+            own = synth_result(free, after_mb)
+            own["free_after_source"] = "guardian"
+        if child_after and child_after.isdigit():
+            own["child_free_after_mb"] = child_after
+        freed = own["freed_mb"]
+        met = own["met"]
+        after = own["free_after_mb"]
+
+        verdict_row = None
+        g = gate()
+        if g is not None:
+            ledger = g.LoopLedger()
+            prog = g.ProgressGate(
+                subject="disk-guardian",
+                metric="free_mb",
+                ledger=ledger,
+                no_progress_limit=int(os.environ.get("DISK_WATCH_NO_PROGRESS_LIMIT", "3")),
+                direction="higher",
+            )
+            verdict_row = prog.judge(
+                f"cleaner phases={phases} budget={STEP_BUDGET_S}",
+                {"free_mb": free},
+                {"free_mb": after_mb},
+                detail={"rc": rc, "child_result": result, "raw_tail": raw[-400:]},
+            )
+
         heartbeat(
             "reclaiming",
-            int(after) if after and after.isdigit() else free,
+            int(after) if after.isdigit() else free,
             {
                 "memory": measured,
                 "steps": steps,
+                "step_started_at": step_started,
                 "last_rc": rc,
                 "last_freed_mb": freed,
                 "last_met": met,
-                "last_result": result,
+                "last_result": own,
+                "phases": phases,
+                "rung": rung,
+                "verdict": (verdict_row or {}).get("verdict"),
             },
         )
         log(
             f"step free={free}M target={TARGET_MB}M rc={rc} freed={freed}M met={met} "
-            f"after={after or '?'}M memory={measured}"
+            f"after={after}M memory={measured} phases={phases} "
+            f"verdict={(verdict_row or {}).get('verdict', 'none')}"
         )
+
+        # THE LOOP BREAKER. An action that measurably does not work is not repeated: the
+        # guardian walks the ladder instead, and when every rung has failed it stops stepping
+        # and wakes an agent with the evidence. Measured 2026-10-29: the guardian repeated one
+        # useless step for thirty minutes while the volume fell from 2361M to 396M.
+        verdict = str((verdict_row or {}).get("verdict", ""))
+        looped = bool(g is not None and verdict == str(g.LOOP))
+        blind = bool(g is not None and verdict == str(g.BLIND))
+        if blind:
+            # BLIND IS NOT ZERO. The volume could not be measured, so the guardian does not know
+            # whether it is making progress -- and it says so instead of quietly stepping on.
+            now = time.time()
+            if now - last_escalation_alert >= ESCALATION_ALERT_EVERY_S:
+                last_escalation_alert = now
+                save_escalation({"rung": rung, "last_alert": last_escalation_alert})
+                escalate_incident(
+                    "the volume could not be measured, so the guardian cannot tell progress "
+                    "from stagnation; it stopped stepping rather than stepping blind",
+                    {
+                        "ladder": list(PHASE_LADDER),
+                        "rung": rung,
+                        "free_mb": free,
+                        "target_mb": TARGET_MB,
+                        "last_result": own,
+                        "verdict": verdict_row,
+                    },
+                )
+                log("BLIND the volume could not be measured; an incident was raised")
+        if looped:
+            if rung < len(PHASE_LADDER) - 1:
+                rung += 1
+                state = {"rung": rung, "last_alert": last_escalation_alert}
+                save_escalation(state)
+                log(
+                    f"LOOP the phase set {phases} measured no progress; escalating to "
+                    f"{PHASE_LADDER[rung]} instead of repeating it"
+                )
+            else:
+                now = time.time()
+                if now - last_escalation_alert >= ESCALATION_ALERT_EVERY_S:
+                    last_escalation_alert = now
+                    state = {"rung": rung, "last_alert": last_escalation_alert}
+                    save_escalation(state)
+                    escalate_incident(
+                        "every reclaim phase set measured no progress; the guardian stopped "
+                        "stepping rather than repeating a step that does not work",
+                        {
+                            "ladder": list(PHASE_LADDER),
+                            "rung": rung,
+                            "free_mb": free,
+                            "target_mb": TARGET_MB,
+                            "last_result": own,
+                            "verdict": verdict_row,
+                        },
+                    )
+                    log("ESCALATED every phase set failed; an incident was raised and an agent woken")
+
         if rc == 3:
             # A delete that could not be proven: rare, and worth saying out loud.
             now = time.time()

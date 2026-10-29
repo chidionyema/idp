@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# epistemic-loop -- the estate's proof-of-progress door.
+#
+# The third leg of the epistemic firewall. The first two grade what an AGENT says
+# (bin/epistemic_firewall.py) and what it was told to do (bin/trajectory_lock.py). This one
+# grades what the WORLD did, measured from outside the worker, and it is the leg a resident
+# daemon needs -- a guardian has no transcript, no plan and no claims to grade.
+#
+# Measured 2026-10-29: the reclaim guardian repeated one useless step for thirty minutes while
+# the volume fell from 2361 MB to 396 MB, and logged freed=?M for a number it had never measured.
+# Nothing in the estate could tell the difference between "working on a hard problem" and
+# "repeating an identical no-op forever". This door can.
+#
+#   bin/epistemic-loop judge --subject disk-guardian --metric free_mb \
+#       --action "cleaner phases=caches" --before '{"free_mb":100}' --after '{"free_mb":100}'
+#   bin/epistemic-loop summary --subject disk-guardian
+#   bin/epistemic-loop fan-out --probe "name|source|command" --probe "n2|s2|true"
+#
+# The ledger is append-only and lives outside the worker's reach: exactly-once is enforced
+# outside the model (arXiv 2609.29095), and the gate is one the worker cannot write to
+# (arXiv 2609.27871).
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The installed copy lives at ~/.estate/libexec/epistemic_loop.py; the checkout copy at
+# platform/estate/libexec/epistemic_loop.py. Both are the same file; the door finds whichever
+# exists, and says so when it finds neither.
+lib=""
+for candidate in \
+  "$HOME/.estate/libexec/epistemic_loop.py" \
+  "$here/../platform/estate/libexec/epistemic_loop.py" \
+  "$here/../libexec/epistemic_loop.py"; do
+  if [ -f "$candidate" ]; then
+    lib="$candidate"
+    break
+  fi
+done
+
+if [ -z "$lib" ]; then
+  echo "BLIND epistemic_loop.py could not be found (looked in ~/.estate/libexec and the checkout)" >&2
+  exit 2
+fi
+
+exec python3 "$lib" "$@"

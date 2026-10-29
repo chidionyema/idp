@@ -1,0 +1,69 @@
+name: epistemic-loop
+description: >-
+  The epistemic firewall's THIRD LEG: proof of progress, measured from outside the worker.
+  The estate already grades what an AGENT says (bin/epistemic_firewall.py) and what it was told
+  to do (bin/trajectory_lock.py). Neither can see a resident worker -- a guardian that wakes
+  every 20 seconds, runs a bounded step and gets nothing back has no transcript, no plan and no
+  claims to grade. Measured 2026-10-29: the reclaim guardian repeated one useless step for thirty
+  minutes while the volume fell from 2361 MB to 396 MB, reporting freed=?M for a number it had
+  never measured. This door grades the WORLD, not the worker's report of the world.
+  The verdicts are PROGRESS, NO_PROGRESS, REGRESSION, LOOP and BLIND. BLIND is not zero: a
+  measurement that could not be taken is never progress. LOOP means the same action measured no
+  progress three times, and the answer is a DIFFERENT action or a human -- never a fourth
+  identical attempt.
+  The ledger is append-only (~/.estate/loops/progress.jsonl) and the gate owns it, so the loop
+  count is derived from history rather than from the worker's memory: exactly-once lives outside
+  the model (arXiv 2609.29095; the gate the worker cannot write to, arXiv 2609.27871).
+  fan_out takes several measurements in as few passes as possible, runs correlated probes only
+  once (semantic false consensus, arXiv 2610.17869; memory correlation bias, arXiv 2608.19701),
+  counts INDEPENDENT SOURCES rather than probes, and parallelises only when the critical path
+  plus alignment costs less than the serial cost (arXiv 2610.08647).
+class: mutate
+args:
+  mode: {type: string, default: "summary", description: "judge | summary | fan-out"}
+  subject: {type: string, default: "", description: "what is being watched, e.g. disk-guardian"}
+  metric: {type: string, default: "", description: "the measured fact, e.g. free_mb"}
+  action: {type: string, default: "", description: "the action being graded"}
+  before: {type: string, default: "", description: "JSON measurement before, e.g. {\"free_mb\": 100}"}
+  after: {type: string, default: "", description: "JSON measurement after"}
+  direction: {type: string, default: "higher", description: "higher | lower"}
+  ledger: {type: string, default: "", description: "path to the append-only ledger"}
+  limit: {type: int, default: 3, description: "no-progress attempts before an action is a loop"}
+  probe: {type: string, default: "", description: "fan-out probe: name|source|command"}
+  budget_s: {type: int, default: 60, description: "the evidence budget, in seconds"}
+door_s: 90
+halt_on_failure: false
+steps:
+  - name: grade
+    on_fail: continue
+    cmd: |
+      LEDGER=""
+      [ -n {{ledger}} ] && LEDGER="--ledger {{ledger}}"
+      case "{{mode}}" in
+        judge)
+          python3 ~/.estate/libexec/epistemic_loop.py judge \
+            --subject {{subject}} --metric {{metric}} --action {{action}} \
+            --before {{before}} --after {{after}} --direction {{direction}} \
+            --limit {{limit}} $LEDGER
+          echo $? > ~/.estate/epistemic-loop.rc
+          ;;
+        fan-out)
+          PROBE=""
+          [ -n {{probe}} ] && PROBE="--probe {{probe}}"
+          python3 ~/.estate/libexec/epistemic_loop.py fan-out $PROBE --budget-s {{budget_s}}
+          echo $? > ~/.estate/epistemic-loop.rc
+          ;;
+        *)
+          python3 ~/.estate/libexec/epistemic_loop.py summary --subject {{subject}} $LEDGER
+          echo $? > ~/.estate/epistemic-loop.rc
+          ;;
+      esac
+  - name: verdict
+    cmd: |
+      rc=$(cat ~/.estate/epistemic-loop.rc 2>/dev/null || echo 1)
+      case "$rc" in
+        0) echo "verdict: the measured state moved, or the ledger was read" ;;
+        1) echo "verdict: the action did not move the measured state (LOOP, REGRESSION or BLIND) -- escalate with the structured data instead of repeating it" ;;
+        *) echo "verdict: the epistemic loop could not run (rc=$rc)" ;;
+      esac
+      exit "$rc"
