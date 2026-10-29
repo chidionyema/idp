@@ -47,6 +47,28 @@ slot that is slow under load still answers, a cloud in cooldown is known not to.
 still the default route whenever it is answering, so the founder's 2026-10-26 ruling stands.
 The record of the reasoning is docs/diagnoses/2026-10-29-the-front-put-the-dead-cloud-first.yaml.
 
+WHY (2026-10-29, DR by claudecode). Two more defects in the same class -- the cloud's failure
+cost the caller more than the caller could afford, and the front forgot what it had proved.
+
+  * THE COOLDOWN WAS FORGOTTEN BY A RESTART. CLOUD_DOWN_UNTIL was an in-memory module global.
+    mark_cloud_down() set it, but a front RESTART re-imported the module and the cooldown was
+    gone, so the route was [CLOUD] + healthy + sick again -- the dead cloud first again. The
+    front's own log printed `front: the cloud failed to answer (N in a row); the laptop answers
+    for 600s` over and over, and every restart re-armed the cloud that had just been proved
+    dead. Dead knowledge that dies with the process is not knowledge.
+  * ONE CLOUD ATTEMPT COULD EAT THE CALLER'S WHOLE BUDGET. ANSWER_TIMEOUT was 120 s -- the
+    entire time one dead-cloud attempt could take. The caller's budget here is 60 s, so even the
+    FIRST attempt after a restart could not fit inside it.
+
+So the cooldown is now kept where a restart can find it (an absolute wall-clock deadline, not a
+monotonic one -- a monotonic clock starts over with the process, which is the bug), written
+through a temp file and os.replace so a kill mid-write cannot leave a torn file for the next
+boot to guess about. A missing, unreadable or corrupt file means NO cooldown -- there is no
+evidence the cloud is down -- and never a crash; a write failure never stops the router serving.
+And the cloud now has a budget of its own: ANSWER_TIMEOUT / 6, capped at 20 s. The cloud stays
+the DEFAULT route whenever it is answering; this bounds the FAILURE path, it does not demote
+the cloud.
+
 The cloud leg parses the request (head, then body) because a replay needs the request again.
 The laptop leg stays bytes only: no parsing, no buffering, exactly as before.
 """
