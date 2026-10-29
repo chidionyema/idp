@@ -47,10 +47,17 @@ __all__ = [
     "Verdict",
     "VerificationLevel",
     "VerificationReceipt",
+    "WASTE_CLASSES",
     "WorkNode",
 ]
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9._:-]{2,127}$")
+
+# What a spend turned into. The vocabulary is closed: the estate reports a spend
+# as productive, wasted, reserved (held but not yet spent) or unknown, and
+# "unknown" is never quietly read as "free". G4's allocation writes "reserved";
+# the runtime writes the rest once the attempt is measured.
+WASTE_CLASSES = ("productive", "wasted", "reserved", "unknown")
 
 
 class ContractError(ValueError):
@@ -60,7 +67,8 @@ class ContractError(ValueError):
 def _check_id(value: object, what: str) -> str:
     if not isinstance(value, str) or not ID_RE.match(value):
         raise ContractError(
-            "%s must be a lowercase identifier (a-z, 0-9, . _ : -), got %r" % (what, value)
+            "%s must be a lowercase identifier (a-z, 0-9, . _ : -), got %r"
+            % (what, value)
         )
     return value
 
@@ -96,7 +104,12 @@ class NodeState(str, Enum):
     REPLACED = "replaced"
 
 
-TERMINAL_STATES = (NodeState.ACCEPTED, NodeState.FAILED, NodeState.CANCELLED, NodeState.REPLACED)
+TERMINAL_STATES = (
+    NodeState.ACCEPTED,
+    NodeState.FAILED,
+    NodeState.CANCELLED,
+    NodeState.REPLACED,
+)
 
 
 class NodeKind(str, Enum):
@@ -164,7 +177,13 @@ class Correlation:
     contract_id: str
 
     def __post_init__(self) -> None:
-        for name in ("objective_id", "graph_id", "node_id", "attempt_id", "contract_id"):
+        for name in (
+            "objective_id",
+            "graph_id",
+            "node_id",
+            "attempt_id",
+            "contract_id",
+        ):
             _check_id(getattr(self, name), name)
 
     def as_dict(self) -> Dict[str, str]:
@@ -231,7 +250,9 @@ class Objective:
         for c in self.acceptance:
             if c.id == criterion_id:
                 return c
-        raise ContractError("no acceptance criterion %r on objective %r" % (criterion_id, self.id))
+        raise ContractError(
+            "no acceptance criterion %r on objective %r" % (criterion_id, self.id)
+        )
 
 
 @dataclass(frozen=True)
@@ -371,7 +392,9 @@ class ExecutionContract:
         object.__setattr__(self, "scope", tuple(self.scope))
         levels = tuple(_as_enum(VerificationLevel, v) for v in self.verification_levels)
         if not levels:
-            raise ContractError("a contract must require at least one verification level")
+            raise ContractError(
+                "a contract must require at least one verification level"
+            )
         object.__setattr__(self, "verification_levels", levels)
         if self.max_attempts < 1:
             raise ContractError("a contract must allow at least one attempt")
@@ -455,6 +478,8 @@ class EconomicReceipt:
     tokens_in: int = 0
     tokens_out: int = 0
     ledger_hash: str = ""
+    unit_price_usd_per_1k: float = 0.0
+    waste_class: str = "unknown"
 
     def __post_init__(self) -> None:
         _check_id(self.id, "economic receipt id")
@@ -471,6 +496,13 @@ class EconomicReceipt:
                 )
         if self.tokens_in < 0 or self.tokens_out < 0:
             raise ContractError("token counts cannot be negative")
+        if self.unit_price_usd_per_1k < 0:
+            raise ContractError("a unit price cannot be negative")
+        if self.waste_class not in WASTE_CLASSES:
+            raise ContractError(
+                "waste_class must be one of %s, got %r"
+                % (list(WASTE_CLASSES), self.waste_class)
+            )
 
     @property
     def cost_known(self) -> bool:
