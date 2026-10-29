@@ -1,0 +1,73 @@
+# button: the estate's progress report, on the estate's clock
+# founder: "How does this help us with CI and the greenlane?" -- by measuring the delivery chain
+# (claim -> lane -> CI -> greenlane verdict -> landed -> live) in one report, every fifteen
+# minutes, and publishing it where every surface reads it. #6687.
+#
+# WHY A WORKFLOW AND NOT A LANE. This reports; it does not change the estate. It reads the
+# Greenlane state ref, the Actions API, the claims register, the decision-door state and the
+# cluster receipt, and it publishes one artefact. It commits nothing to main and gates nothing:
+# the only thing that can fail here is the measurement itself, and a source that cannot be read
+# is BLIND in the report, never zero.
+#
+# WHY EVERY FIFTEEN MINUTES. The founder's questions are asked in conversation, not on a
+# dashboard's schedule, and the report is what a voice answer and a Telegram answer read. A
+# report that is an hour old answers a question about an hour ago. Fifteen minutes is the
+# estate's own lane tick, so the report and the lane tell the same story.
+name: estate-progress
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write   # traded for the OCI session (the bucket that carries the published report)
+  actions: read     # the CI half of the chain is the Actions API
+concurrency:
+  group: estate-progress
+  cancel-in-progress: false
+jobs:
+  progress:
+    if: github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - name: the Greenlane state ref
+        # The chain's own record lives on a ref, not on a branch, so a shallow clone does not
+        # have it. This is the same fetch the estate uses everywhere else.
+        run: git fetch origin +refs/greenlane/state:refs/greenlane/state
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: the report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          OCI_CLI_AUTH: security_token
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
+        run: |
+          set -uo pipefail
+          python3 bin/estate-progress \
+            --repo "$GITHUB_WORKSPACE" \
+            --hours 24 \
+            --out "$RUNNER_TEMP/progress" \
+            --publish
+          echo "exit $?"
+      - name: the report, on the run
+        if: always()
+        run: |
+          set -uo pipefail
+          if [ -f "$RUNNER_TEMP/progress/estate-progress.md" ]; then
+            cat "$RUNNER_TEMP/progress/estate-progress.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "no report was written; read the step above" >> "$GITHUB_STEP_SUMMARY"
+          fi

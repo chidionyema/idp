@@ -3,11 +3,11 @@
   "generator": "bin/capability-index emit",
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
-    "intent": 109,
+    "intent": 110,
     "layer": 216,
     "service": 121,
     "tool": 447,
-    "workflow": 84
+    "workflow": 85
   },
   "records": [
     {
@@ -1157,6 +1157,54 @@
       "rung": null,
       "writer": "intents",
       "path": "platform/estate/intents/estate-truth.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:intent/estate.progress",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "How the estate is doing: what landed, what is in flight, what is stuck and why, what CI did, and what could not be read. One report, one writer, every surface renders the same numbers. \"How are we doing?\" is enough. args: root: {type: string, default: \"~/Documents/code/idp\"} hours: {type: int, default: 24} fresh: {type: string, default: \"false\"} halt_on_failure: false steps: - name: progress # WHY THIS WAY. The voice surface speaks an intent's LAST stdout line, so this prints the # spoken sentence and nothing else. It serves the CACHED report by default: the writer is the # scheduled workflow, and a surface must not wait for a measurement to answer the founder. # `fresh=true` recomputes it now. A source that cannot be read is named as blind, never as # zero, and the verdict says so. cmd: | ROOT={{root}} HOURS={{hours}} FRESH={{fresh}} if [ \"$FRESH\" = \"true\" ]; then python3 \"$ROOT/bin/estate-progress\" --repo \"$ROOT\" --hours \"$HOURS\" --speak else python3 \"$ROOT/bin/estate-progress\" --read --speak fi",
+      "contract": {
+        "inputs": [
+          "fresh",
+          "hours",
+          "root"
+        ],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/estate.progress.yaml",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -47756,6 +47804,55 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/estate-inventory.yml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:workflow/gha-estate-progress",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "estate-progress -- the GitHub Actions workflow estate-progress.yml.",
+      "contract": {
+        "inputs": [
+          "schedule",
+          "workflow_dispatch"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/estate-progress.yml",
       "depends_on": [],
       "metrics": [],
       "blind": [
