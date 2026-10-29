@@ -1,0 +1,103 @@
+#cloud-config
+# The recovery host (platform/oci/recovery-host.tf, #7387): the estate's router on podman + systemd,
+# reachable only through a Cloudflare Tunnel. Everything it needs arrives at boot by instance
+# principal -- the vault entry `router-recovery` (vendor keys, the laptop caller key, the tunnel
+# token) and the config bundle in its own bucket -- so it starts with no Kubernetes, no cluster
+# secret store and no laptop. Both units restart on any exit; a timer re-reads the bundle.
+
+write_files:
+  - path: /etc/estate/router-fetch
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      # Fetch the vault entry and the config bundle. Prints "changed" when the bundle moved.
+      set -euo pipefail
+      export OCI_CLI_AUTH=instance_principal SUPPRESS_LABEL_WARNING=True
+      mkdir -p /etc/estate/router && chmod 0700 /etc/estate
+      sid="$(oci vault secret list --compartment-id '${compartment_id}' --region '${region}' \
+        --name router-recovery --lifecycle-state ACTIVE --query 'data[0].id' --raw-output)"
+      [ -n "$sid" ] && [ "$sid" != null ] || { echo "BLIND router-fetch: no ACTIVE vault entry router-recovery" >&2; exit 2; }
+      umask 077
+      oci secrets secret-bundle get --secret-id "$sid" --region '${region}' \
+        --query 'data."secret-bundle-content".content' --raw-output | base64 -d |
+        python3 -c 'import json,sys; [print(k + "=" + v) for k, v in json.load(sys.stdin).items()]' > /etc/estate/router.env.new
+      mv /etc/estate/router.env.new /etc/estate/router.env
+      oci os object get --namespace '${namespace}' --bucket-name '${bucket}' --name bundle.tgz \
+        --file /etc/estate/bundle.tgz.new --region '${region}'
+      if ! cmp -s /etc/estate/bundle.tgz.new /etc/estate/bundle.tgz 2>/dev/null; then
+        rm -rf /etc/estate/router.new && mkdir -p /etc/estate/router.new
+        tar -xzf /etc/estate/bundle.tgz.new -C /etc/estate/router.new
+        rm -rf /etc/estate/router && mv /etc/estate/router.new /etc/estate/router
+        mv /etc/estate/bundle.tgz.new /etc/estate/bundle.tgz
+        echo "changed"
+      else
+        rm -f /etc/estate/bundle.tgz.new
+      fi
+
+  - path: /etc/systemd/system/estate-router.service
+    content: |
+      [Unit]
+      Description=The estate router (LiteLLM) on the recovery host (#7387)
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      ExecStartPre=/etc/estate/router-fetch
+      ExecStartPre=-/usr/bin/podman rm -f estate-router
+      ExecStart=/usr/bin/podman run --name estate-router --network host --env-file /etc/estate/router.env \
+        -e PYTHONPATH=/app/modules -e ESTATE_ROUTER_CONFIG=/app/config.yaml \
+        -e ESTATE_ROUTER_HOSTS=llm.mumchimp.com,llm-recovery.mumchimp.com,127.0.0.1:4000,localhost:4000 \
+        --memory 3g --log-opt max-size=20m --log-opt max-file=3 \
+        -v /etc/estate/router:/app:ro,Z ghcr.io/berriai/litellm-database:v1.98.0 \
+        --config /app/config.yaml --host 127.0.0.1 --port 4000
+      ExecStop=/usr/bin/podman stop -t 30 estate-router
+      Restart=always
+      RestartSec=10
+
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /etc/systemd/system/estate-tunnel.service
+    content: |
+      [Unit]
+      Description=Cloudflare Tunnel for llm.mumchimp.com (#7387)
+      After=estate-router.service
+      Wants=network-online.target
+
+      [Service]
+      ExecStartPre=-/usr/bin/podman rm -f estate-tunnel
+      ExecStart=/usr/bin/podman run --name estate-tunnel --network host --env-file /etc/estate/router.env \
+        --memory 256m --log-opt max-size=10m --log-opt max-file=3 \
+        docker.io/cloudflare/cloudflared:2024.12.2 tunnel --no-autoupdate run
+      ExecStop=/usr/bin/podman stop -t 10 estate-tunnel
+      Restart=always
+      RestartSec=10
+
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /etc/systemd/system/estate-router-refresh.service
+    content: |
+      [Unit]
+      Description=Re-read the router bundle; restart the router when it changed
+
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/bash -c '/etc/estate/router-fetch | grep -q changed && systemctl restart estate-router || true'
+
+  - path: /etc/systemd/system/estate-router-refresh.timer
+    content: |
+      [Unit]
+      Description=Every 10 minutes, the router bundle
+
+      [Timer]
+      OnBootSec=10min
+      OnUnitActiveSec=10min
+
+      [Install]
+      WantedBy=timers.target
+
+runcmd:
+  - [bash, -c, "dnf install -y podman python39-oci-cli || dnf install -y podman python3-oci-cli"]
+  - [systemctl, daemon-reload]
+  - [systemctl, enable, --now, estate-router.service, estate-tunnel.service, estate-router-refresh.timer]
