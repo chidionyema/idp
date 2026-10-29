@@ -42,6 +42,7 @@ import os
 import re
 import socket
 import sys
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -271,8 +272,17 @@ _HEREDOC = re.compile(
 _STRING = re.compile(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"")
 
 
+@lru_cache(maxsize=4096)
 def _code(command: str) -> str:
-    """The command with heredoc bodies and quoted strings removed: what the shell runs."""
+    """The command with heredoc bodies and quoted strings removed: what the shell runs.
+
+    Memoized (2026-10-29). `_code` is pure -- same command in, same string out -- but it ran
+    the heredoc and quoted-string regexes over the same commands again and again: the outcome
+    check asks "did a command of this kind run?" for every agent sentence x every outcome,
+    and each question re-derived the code of every command in the session. Measured on a real
+    41 MB pi transcript: 569 `_code` calls cost 3.44 s of the gate's 7.1 s. The cache makes it
+    one call per distinct command.
+    """
     return _STRING.sub(" _ ", _HEREDOC.sub(r"\1", command))
 
 
@@ -782,22 +792,55 @@ def _blind(why: str) -> dict:
     }
 
 
+# The most of a transcript the gate reads (2026-10-29). The gate grades the prior session's
+# LAST work -- `last_turn()` already looks only at the turns after the last prompt -- but it
+# used to read and parse the WHOLE file to do it. The newest pi transcript on this machine was
+# 41 MB / 6486 lines, and the gate on it ran 64.5 s: pi's firewall hook timed out every
+# session start with `spawnSync python3 ETIMEDOUT`, so the gate never answered at all. A gate
+# whose cost is unbounded in its input is a gate that eventually stops answering. 1 MiB is
+# ~20x a normal transcript, reads every normal session whole, and still carries the last turn
+# plus the context the rule needs.
+TAIL_BYTES = 1 * 1024 * 1024
+
+
+def _tail_lines(p: Path, limit: int = TAIL_BYTES) -> list[str]:
+    """The last `limit` bytes of a transcript, cut at a LINE boundary, as lines in file order.
+
+    Read from the end so the cost is O(limit), not O(file). The cut lands on a newline, so the
+    first returned line is a whole JSON line: the slice is never half a turn.
+    """
+    try:
+        size = p.stat().st_size
+        with p.open("rb") as fh:
+            if size > limit:
+                fh.seek(size - limit)
+                fh.readline()  # discard the partial line the seek landed inside
+            data = fh.read()
+    except OSError as exc:
+        raise OSError(str(exc)) from exc
+    return data.decode("utf-8", errors="replace").splitlines()
+
+
 def grade_file(path: Path | str, turn_only: bool = False) -> dict:
     """Read a pi session transcript (one JSON object per line) and grade it.
 
     Fail-closed: a missing file, or any line that will not parse, is BLIND -- never a clean bill.
     A transcript we could not read is not evidence that the agent did not lie.
+
+    Bounded read (2026-10-29): the tail of the file, not all of it. The gate grades the prior
+    session's last work; reading 41 MB to decide about the last turn is how the gate stopped
+    answering (see TAIL_BYTES).
     """
     p = Path(path)
     if not p.exists():
         return _blind(f"{p} does not exist")
     try:
-        raw = p.read_text(errors="replace")
+        lines = _tail_lines(p)
     except OSError as exc:
         return _blind(f"{p} could not be read: {exc}")
 
     turns: list[dict] = []
-    for n, line in enumerate(raw.splitlines(), 1):
+    for n, line in enumerate(lines, 1):
         if not line.strip():
             continue
         try:
