@@ -11,6 +11,13 @@ digraph {
   "oci_objectstorage_object_lifecycle_policy.shop_backups" [label="oci_objectstorage_object_lifecycle_policy\nshop_backups"];
   "oci_identity_policy.workers_write_shop_backups" [label="oci_identity_policy\nworkers_write_shop_backups"];
   "oci_identity_policy.workers_autoscale" [label="oci_identity_policy\nworkers_autoscale"];
+  "oci_objectstorage_bucket.router_recovery" [label="oci_objectstorage_bucket\nrouter_recovery"];
+  "oci_core_network_security_group.recovery" [label="oci_core_network_security_group\nrecovery"];
+  "oci_core_network_security_group_security_rule.recovery_egress" [label="oci_core_network_security_group_security_rule\nrecovery_egress"];
+  "oci_core_instance.recovery" [label="oci_core_instance\nrecovery"];
+  "oci_core_volume_attachment.surviving" [label="oci_core_volume_attachment\nsurviving"];
+  "oci_identity_dynamic_group.recovery" [label="oci_identity_dynamic_group\nrecovery"];
+  "oci_identity_policy.recovery" [label="oci_identity_policy\nrecovery"];
   "oci_identity_policy.provers_read_verdict_key" [label="oci_identity_policy\nprovers_read_verdict_key"];
   "random_password.superset_db" [label="random_password\nsuperset_db"];
   "oci_vault_secret.superset_db_password" [label="oci_vault_secret\nsuperset_db_password"];
