@@ -4,7 +4,7 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 106,
-    "layer": 212,
+    "layer": 213,
     "service": 121,
     "tool": 445,
     "workflow": 80
@@ -6568,6 +6568,60 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/libexec/estate-inventory.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-libexec-estate-rescue",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "estate-rescue -- put the estate's in-flight work where a dead laptop cannot take it.",
+      "contract": {
+        "inputs": [
+          "--abbrev-ref",
+          "--dry-run",
+          "--heads",
+          "--is-ancestor",
+          "--max",
+          "--porcelain",
+          "--repo"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/libexec/estate-rescue.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
