@@ -7,7 +7,7 @@
     "layer": 213,
     "service": 121,
     "tool": 446,
-    "workflow": 82
+    "workflow": 83
   },
   "records": [
     {
@@ -49275,6 +49275,54 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/reconcile-backstage.yml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:workflow/gha-recovery-data",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "recovery-data -- the GitHub Actions workflow recovery-data.yml.",
+      "contract": {
+        "inputs": [
+          "workflow_dispatch"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/recovery-data.yml",
       "depends_on": [],
       "metrics": [],
       "blind": [
