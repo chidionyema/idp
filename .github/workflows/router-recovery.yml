@@ -146,6 +146,9 @@ jobs:
           OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
           OCI_S3_ACCESS_KEY: ${{ secrets.OCI_S3_ACCESS_KEY }}
           OCI_S3_SECRET_KEY: ${{ secrets.OCI_S3_SECRET_KEY }}
+          OKE_SSH_PUBKEY_TEXT: ${{ vars.OKE_SSH_PUBKEY }}   # bin/idp-oci-login --check refuses without it (run 40845502703)
+          OKE_ALLOWED_CIDRS: ${{ vars.OKE_ALLOWED_CIDRS }}
+          ESTATE_FOUNDER_EMAIL: ${{ vars.ESTATE_FOUNDER_EMAIL }}
           SEED_DEEPSEEK_API_KEY: ${{ secrets.SEED_DEEPSEEK_API_KEY }}
           SEED_GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
           SEED_OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
