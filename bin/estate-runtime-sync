@@ -486,23 +486,7 @@ def alert(text: str) -> None:
             )
             + "\n"
         )
-    msg = text.replace("\\", "").replace('"', "'")[:200]
-    # A notification is never worth killing the sync for. 2026-10-29: a slow osascript raised
-    # TimeoutExpired inside this function, which killed the whole convergence run mid-tick and
-    # left the laptop running a seven-hour-old tree with nobody noticing. The log is the
-    # record; the notification is best-effort.
-    try:
-        subprocess.run(
-            [
-                "/usr/bin/osascript",
-                "-e",
-                f'display notification "{msg}" with title "Estate runtime" sound name "Basso"',
-            ],
-            capture_output=True,
-            timeout=10,
-        )
-    except (subprocess.SubprocessError, OSError):
-        pass
+
 
 
 SERVICES = [
