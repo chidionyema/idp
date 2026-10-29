@@ -22,6 +22,15 @@ GraphRevision) and the ExecutionContract. The other eight extend what the
 estate already runs.
 """
 
+from .allocation import (
+    Allocation,
+    AllocationError,
+    AllocationRequest,
+    SupplyOffer,
+    allocate,
+    estimate_cost_usd,
+    select_offer,
+)
 from .contracts import (
     AcceptanceCriterion,
     AttemptOutcome,
@@ -41,6 +50,7 @@ from .contracts import (
     Verdict,
     VerificationLevel,
     VerificationReceipt,
+    WASTE_CLASSES,
     WorkNode,
 )
 from .digest import canonical_bytes, digest_of
@@ -60,6 +70,9 @@ from .graph import (
 __all__ = [
     "AcceptanceCriterion",
     "AcceptanceRequiredError",
+    "Allocation",
+    "AllocationError",
+    "AllocationRequest",
     "AttemptOutcome",
     "CapacityReservation",
     "ContractError",
@@ -80,13 +93,18 @@ __all__ = [
     "ReservationError",
     "ReservationState",
     "ScopeError",
+    "SupplyOffer",
     "UnknownNodeError",
     "Verdict",
     "VerificationLevel",
     "VerificationReceipt",
     "VerificationRequiredError",
+    "WASTE_CLASSES",
     "WorkGraph",
     "WorkNode",
+    "allocate",
     "canonical_bytes",
     "digest_of",
+    "estimate_cost_usd",
+    "select_offer",
 ]
