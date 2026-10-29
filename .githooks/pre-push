@@ -165,6 +165,9 @@ while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
       fi
       continue
     fi
+    # Declarative config is neither language and has no parser here (HCL is refused by bash -n
+    # and py_compile alike: a new platform/oci/*.tf could never be pushed). CI validates these.
+    case "$f" in *.tf|*.tfvars|*.hcl|*.json|*.md|*.txt) continue ;; esac
     # Unknown: no shebang, not a known extension. Accept it when EITHER parser reads it --
     # a file with no shebang is still one of the two languages, and refusing it would be the
     # same defect in the other direction.
