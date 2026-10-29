@@ -32,6 +32,28 @@ while [ $# -gt 0 ]; do
     *) echo "usage: bin/idp-tests-for [--list] [--base REF] [--for PATH]..." >&2; exit 64 ;;
   esac; shift
 done
+# The diff base must resolve to a commit that has a MERGE BASE against HEAD, or the selection
+# below is a lie and the run is a false green. Measured 2026-10-29 on the Greenlane candidate
+# 6708a6cd (run 40841861081, job 123340048564): the job checked out at fetch-depth 1, so
+# origin/main was never fetched, `git diff origin/main...HEAD` failed with "fatal: bad
+# revision", the changed set came back empty, and this script printed "nothing changed against
+# origin/main, nothing to run" and exited 0 -- a candidate went green over a new test that
+# fails locally, and it landed on main. `set -euo pipefail` cannot catch that: the changed set
+# is a brace group inside a pipeline, so errexit is suppressed there and the failing git call
+# is swallowed.
+# So the base is resolved HERE, before anything is selected, and an unresolvable base is BLIND
+# (LAW 28: never a pass): exit 2, with the base named. The check is on the MERGE BASE, not on
+# the ref -- a depth-1 fetch of main resolves origin/main and still has no merge base
+# (measured: `git rev-parse origin/main` rc=0, `git merge-base origin/main HEAD` rc=1), because
+# the candidate's own ancestry is truncated at the shallow boundary too. A push to main is not
+# blind: origin/main == HEAD there, the merge base is HEAD, and an empty diff is the truth.
+# --for PATH stays git-free: a hypothetical path has no base and no diff to resolve.
+if [ -z "$forced" ]; then
+  if ! git -C "$IDP" merge-base "$base" HEAD >/dev/null 2>&1; then
+    echo "BLIND  tests-for: the diff base '$base' has no merge base against HEAD; the selection would be empty and a failing test would never run"
+    exit 2
+  fi
+fi
 if [ -n "$forced" ]; then
   changed=$(printf '%s' "$forced" | sort -u)
   SKIP_TESTS_ON_TRIVIAL=0   # a hypothetical path has no diff to call trivial

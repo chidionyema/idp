@@ -183,12 +183,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { suite: acceptance, shard: render }
-          - { suite: acceptance, shard: 1/2 }
-          - { suite: acceptance, shard: 2/2 }
-          - { suite: tests, shard: all }
+          - { suite: acceptance, shard: render, depth: 1 }
+          - { suite: acceptance, shard: 1/2, depth: 1 }
+          - { suite: acceptance, shard: 2/2, depth: 1 }
+          - { suite: tests, shard: all, depth: 0 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The depth is per leg, and the tests leg needs the whole history. That leg grades the
+          # candidate's OWN diff -- `git diff origin/main...HEAD` needs main's history on the
+          # runner. A depth-1 checkout has neither origin/main nor a merge base: the diff fails
+          # with "fatal: bad revision 'origin/main...HEAD'", bin/idp-tests-for degrades to
+          # "nothing changed ... nothing to run", and the root suite goes GREEN over a new test
+          # that fails locally. Measured 2026-10-29 on the Greenlane candidate 6708a6cd (run
+          # 40841861081, job 123340048564): "fatal: bad revision 'origin/main...HEAD'", then
+          # "30 passed" -- and that candidate landed on main. The acceptance legs never diff
+          # against a base, so they stay shallow; the full fetch costs 8.2 s (measured on this
+          # repository: every head and every tag). This is the rule the offline-gate already
+          # obeys (tests/test_queue_candidate_is_graded_on_its_diff.py asserts its checkout is
+          # fetch-depth 0), applied to the leg that was left out.
+          fetch-depth: ${{ matrix.depth }}
       # crew#539, 2026-08-28: bin/idp-kyverno-render judges renders against this estate's
       # ClusterPolicies, and two of them -- no-optional-secret-references and
       # money-rail-single-writer -- live in prospector, not here. CI had no copy, so it silently
