@@ -38,6 +38,15 @@ cloud stays the first target (the founder's 2026-10-26 ruling: the cloud is the 
 the laptop is the fallback), and a cloud that just failed is passed over for CLOUD_DOWN_S seconds
 so one outage costs one request the wait and not every request.
 
+WHY (2026-10-29). The pass-over decided WHICH targets were tried but not IN WHAT ORDER: route()
+built healthy + [CLOUD] + sick, so a cloud already known not to answer sat AHEAD of the slots
+that had merely missed a probe. Under fleet load the slot's 3 s probe missed, the slot was marked
+down, and every caller was handed the cloud the front had just proved dead -- 753 requests in a
+row, each stalled on it. So a cloud in cooldown is now tried LAST, behind even the sick slots: a
+slot that is slow under load still answers, a cloud in cooldown is known not to. The cloud is
+still the default route whenever it is answering, so the founder's 2026-10-26 ruling stands.
+The record of the reasoning is docs/diagnoses/2026-10-29-the-front-put-the-dead-cloud-first.yaml.
+
 The cloud leg parses the request (head, then body) because a replay needs the request again.
 The laptop leg stays bytes only: no parsing, no buffering, exactly as before.
 """
@@ -95,16 +104,21 @@ def backends() -> list:
 def route() -> list:
     """Cloud first (the founder's 2026-10-26 ruling: the cloud is the default route, the
     laptop is the fallback), then the answering laptop slots, then the slots that stopped
-    answering. A cloud that just failed moves behind the answering slots for CLOUD_DOWN_S
-    seconds: the laptop answers while the cloud is down, and the cloud is still in the route
-    so a laptop with no slot at all still reaches it."""
+    answering. A cloud that just failed moves LAST for CLOUD_DOWN_S seconds -- behind every
+    laptop slot, including the ones that only missed their probes: the laptop answers while the
+    cloud is down, and the cloud is still in the route so a laptop with no slot at all still
+    reaches it."""
     slots = backends()
     healthy = [p for p in slots if p not in DOWN]
     sick = [p for p in slots if p in DOWN]
     if not CLOUD:
         return healthy + sick
     if time.monotonic() < CLOUD_DOWN_UNTIL:
-        return healthy + [CLOUD] + sick
+        # A cloud that just failed is tried last, behind even the slots that missed probes: a
+        # slot that is slow under load still answers; a cloud in cooldown is known not to. Put
+        # ahead of the sick slots, it took every request when the fleet's load slowed the slot's
+        # 3 s probe (2026-10-29: 24 cloud failures in a row, each request stalled on the dead leg).
+        return healthy + sick + [CLOUD]
     return [CLOUD] + healthy + sick
 
 

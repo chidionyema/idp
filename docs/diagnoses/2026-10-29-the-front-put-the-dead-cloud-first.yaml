@@ -1,0 +1,85 @@
+description: 'On 2026-10-29 the laptop front (:4000) took 753 requests in a row to the cloud that had
+  just failed, at the same time as a laptop slot was answering. The front had a cooldown for
+  exactly this -- mark_cloud_down() passes the cloud over for CLOUD_DOWN_S seconds, doubling per
+  consecutive failure -- and the trail shows it firing: 85 of the failures were logged with the
+  pass-over already saturated at its 600 s cap. So the cloud WAS being passed over, and it was
+  STILL tried first. This record answers: why did a front with a working cooldown keep handing
+  callers the cloud it had just proved dead? Every count below is a measurement taken on this
+  machine on 2026-10-29, and the command that produced it is named in the item. The winning
+  hypothesis is what the fix is built on: the cooldown decided WHICH targets were tried but not
+  IN WHAT ORDER, and it ordered the known-dead cloud ahead of the sick slots, so the pass-over
+  changed nothing for a caller.'
+
+hypotheses:
+- name: H1
+  description: "the cooldown's ORDER was wrong: route() built the list as healthy + [CLOUD] + sick,
+    so a cloud already known not to answer was placed AHEAD of the slots that merely missed their
+    probes. The cooldown engaged correctly -- the cloud was in the list, marked down and passed
+    over for up to 600 s -- but the ordering meant every caller still paid the dead cloud's wait
+    before the front ever reached a slot"
+  prior: 0.50
+- name: H2
+  description: "the cooldown never engaged: mark_cloud_down() was never reached for these requests
+    (the cloud was failing before the front saw the failure, or the failure was not classified as
+    a server-side failure), so the cloud was first because the cooldown had not marked it down at
+    all"
+  prior: 0.30
+- name: H3
+  description: "there was nothing to fall back to: the laptop slots were genuinely dead as well, so
+    the ordering of the list could not have changed any caller's outcome and the outage was the
+    cloud's, not the front's"
+  prior: 0.20
+evidence:
+- name: "the front's own route() measured in the outage's state -- both laptop slots in DOWN and
+    the cloud inside its cooldown -- at the base commit and at the head of this lane (measured with
+    `python3 measure_front_route.py <checkout>` against the two checkouts on 2026-10-29): the base
+    returned route=https://cloud.example,4001,4002 (cloud_is_first=True) and the head returned
+    route=4001,4002,https://cloud.example (cloud_is_last=True)"
+  observed:
+    routes_with_the_known_dead_cloud_first: 1
+    routes_with_the_known_dead_cloud_last: 1
+  likelihoods:
+    H1:
+      routes_with_the_known_dead_cloud_first: 0.98
+      routes_with_the_known_dead_cloud_last: 0.02
+    H2:
+      routes_with_the_known_dead_cloud_first: 0.80
+      routes_with_the_known_dead_cloud_last: 0.20
+    H3:
+      routes_with_the_known_dead_cloud_first: 0.50
+      routes_with_the_known_dead_cloud_last: 0.50
+- name: "the cooldown's own trail: the front logged consecutive cloud failures up to 753 in a row,
+    and 85 of the logged failures carried a pass-over already saturated at the 600 s cap
+    ('the laptop answers for 600s') -- so mark_cloud_down() ran, and the cloud WAS marked down
+    and passed over (measured with `rg -o 'the cloud failed to answer' ~/.estate/runs/` and
+    `rg -o 'the laptop answers for' ~/.estate/runs/` on 2026-10-29)"
+  observed:
+    failures_logged_with_the_cooldown_saturated_at_its_cap: 85
+    failures_logged_with_no_cooldown_at_all: 0
+  likelihoods:
+    H1:
+      failures_logged_with_the_cooldown_saturated_at_its_cap: 0.98
+      failures_logged_with_no_cooldown_at_all: 0.02
+    H2:
+      failures_logged_with_the_cooldown_saturated_at_its_cap: 0.02
+      failures_logged_with_no_cooldown_at_all: 0.98
+    H3:
+      failures_logged_with_the_cooldown_saturated_at_its_cap: 0.90
+      failures_logged_with_no_cooldown_at_all: 0.10
+- name: "whether a working slot was there to be used: the front logged 'new connections -> slots
+    [4001]' 9 times and 'new connections -> https://llm.mumchimp.com' 6 times in the same window,
+    so at least one laptop slot was answering while the cloud was failing 753 times in a row
+    (measured with `rg -o 'front: new connections ->' ~/.estate/runs/` on 2026-10-29)"
+  observed:
+    windows_with_a_laptop_slot_answering: 9
+    windows_with_no_laptop_slot_answering: 6
+  likelihoods:
+    H1:
+      windows_with_a_laptop_slot_answering: 0.95
+      windows_with_no_laptop_slot_answering: 0.05
+    H2:
+      windows_with_a_laptop_slot_answering: 0.90
+      windows_with_no_laptop_slot_answering: 0.10
+    H3:
+      windows_with_a_laptop_slot_answering: 0.05
+      windows_with_no_laptop_slot_answering: 0.95
