@@ -10,6 +10,7 @@ rule it broke:
 
     no hard-dependency cycles          -> CycleError
     no accepted node without evidence  -> VerificationRequiredError
+    objective acceptance independent of the work -> IndependenceRequiredError
     no completed child under an unaccepted parent -> AcceptanceRequiredError
     auditable evidence invalidation    -> the receipts stay, the node resets
     coordinated mutation ownership     -> OwnershipError
@@ -82,6 +83,10 @@ class ReservationError(GraphError):
 
 class ContractViolation(GraphError):
     """A mutation contradicts the contract attached to the node."""
+
+
+class IndependenceRequiredError(GraphError):
+    """Objective acceptance was signed by the agent that did the work."""
 
 
 def _scope_allows(pattern: str, path: str) -> bool:
@@ -264,7 +269,9 @@ class WorkGraph:
         self._revision(MutationOp.ADD, who, "added node %s" % node.id)
         return node
 
-    def attach_contract(self, contract: ExecutionContract, *, actor: str = "") -> ExecutionContract:
+    def attach_contract(
+        self, contract: ExecutionContract, *, actor: str = ""
+    ) -> ExecutionContract:
         who = self._actor(actor)
         node = self.node(contract.node_id)
         self._check_scope(contract.scope, "contract %r" % contract.id)
@@ -277,7 +284,9 @@ class WorkGraph:
                     )
         self.contracts[contract.id] = contract
         self._set(node.id, contract_id=contract.id)
-        self._revision(MutationOp.ADD, who, "attached contract %s to %s" % (contract.id, node.id))
+        self._revision(
+            MutationOp.ADD, who, "attached contract %s to %s" % (contract.id, node.id)
+        )
         return contract
 
     # ---- evidence and money ------------------------------------------
@@ -293,7 +302,20 @@ class WorkGraph:
 
     def record_verification(self, receipt: VerificationReceipt) -> VerificationReceipt:
         if receipt.node_id not in self.nodes:
-            raise UnknownNodeError("verification names unknown node %r" % receipt.node_id)
+            raise UnknownNodeError(
+                "verification names unknown node %r" % receipt.node_id
+            )
+        node = self.nodes[receipt.node_id]
+        if (
+            receipt.level is VerificationLevel.OBJECTIVE
+            and node.owner
+            and receipt.verifier == node.owner
+        ):
+            raise IndependenceRequiredError(
+                "objective verification %r for node %r was signed by %r, which owns the work; "
+                "objective acceptance must be independent of the work that was done"
+                % (receipt.id, receipt.node_id, receipt.verifier)
+            )
         self.verifications[receipt.id] = receipt
         return receipt
 
@@ -345,21 +367,26 @@ class WorkGraph:
         self._revision(MutationOp.ADD, who, "reserved %s for %s" % (rid, node_id))
         return reservation
 
-    def commit_reservation(self, reservation_id: str, *, actor: str = "") -> CapacityReservation:
+    def commit_reservation(
+        self, reservation_id: str, *, actor: str = ""
+    ) -> CapacityReservation:
         who = self._actor(actor)
         reservation = self.reservations.get(reservation_id)
         if reservation is None:
             raise ReservationError("no reservation %r" % reservation_id)
         if reservation.state is not ReservationState.HELD:
             raise ReservationError(
-                "reservation %r is %s, not held" % (reservation_id, reservation.state.value)
+                "reservation %r is %s, not held"
+                % (reservation_id, reservation.state.value)
             )
         spent = replace(reservation, state=ReservationState.COMMITTED)
         self.reservations[reservation_id] = spent
         self._revision(MutationOp.ADD, who, "committed %s" % reservation_id)
         return spent
 
-    def release_reservation(self, reservation_id: str, *, actor: str = "") -> CapacityReservation:
+    def release_reservation(
+        self, reservation_id: str, *, actor: str = ""
+    ) -> CapacityReservation:
         """Give the capacity back. A reservation is never dropped."""
         who = self._actor(actor)
         reservation = self.reservations.get(reservation_id)
@@ -390,7 +417,9 @@ class WorkGraph:
         who = self._actor(actor)
         node = self.node(node_id)
         if node.state not in (NodeState.PENDING, NodeState.READY):
-            raise ContractViolation("node %r is %s and cannot start" % (node_id, node.state.value))
+            raise ContractViolation(
+                "node %r is %s and cannot start" % (node_id, node.state.value)
+            )
         running = self._set(
             node_id,
             state=NodeState.RUNNING,
@@ -445,11 +474,13 @@ class WorkGraph:
             receipt = self.verifications.get(vid)
             if receipt is None:
                 raise VerificationRequiredError(
-                    "node %r names verification %r, which does not exist" % (node_id, vid)
+                    "node %r names verification %r, which does not exist"
+                    % (node_id, vid)
                 )
             if receipt.node_id != node_id:
                 raise VerificationRequiredError(
-                    "verification %r belongs to node %r, not %r" % (vid, receipt.node_id, node_id)
+                    "verification %r belongs to node %r, not %r"
+                    % (vid, receipt.node_id, node_id)
                 )
             if receipt.verdict is Verdict.PASS:
                 passed.add(receipt.level)
@@ -483,10 +514,13 @@ class WorkGraph:
                 "node %r does not depend on %r, so nothing to integrate into"
                 % (into_id, node_id)
             )
-        evidence = [self.verifications[v] for v in verification_ids if v in self.verifications]
+        evidence = [
+            self.verifications[v] for v in verification_ids if v in self.verifications
+        ]
         if not evidence:
             raise VerificationRequiredError(
-                "integrating %r into %r needs the integrating evidence" % (node_id, into_id)
+                "integrating %r into %r needs the integrating evidence"
+                % (node_id, into_id)
             )
         if not any(e.verdict is Verdict.PASS for e in evidence):
             raise VerificationRequiredError(
@@ -499,7 +533,9 @@ class WorkGraph:
         )
         merged = tuple(sorted(set(target.verification_ids) | set(verification_ids)))
         self._set(into_id, verification_ids=merged)
-        self._revision(MutationOp.INTEGRATE, who, "integrated %s into %s" % (node_id, into_id))
+        self._revision(
+            MutationOp.INTEGRATE, who, "integrated %s into %s" % (node_id, into_id)
+        )
         return self.node(node_id)
 
     def block(self, node_id: str, reason: str, *, actor: str = "") -> WorkNode:
@@ -515,7 +551,9 @@ class WorkGraph:
         who = self._actor(actor)
         node = self.node(node_id)
         if node.state is not NodeState.BLOCKED:
-            raise ContractViolation("node %r is %s, not blocked" % (node_id, node.state.value))
+            raise ContractViolation(
+                "node %r is %s, not blocked" % (node_id, node.state.value)
+            )
         unblocked = self._set(node_id, state=NodeState.PENDING, reason="")
         self._revision(MutationOp.UNBLOCK, who, "unblocked %s" % node_id)
         return unblocked
@@ -525,7 +563,10 @@ class WorkGraph:
         who = self._actor(actor)
         node = self.node(node_id)
         if node.state is not NodeState.FAILED:
-            raise ContractViolation("only a failed node can be retried, %r is %s" % (node_id, node.state.value))
+            raise ContractViolation(
+                "only a failed node can be retried, %r is %s"
+                % (node_id, node.state.value)
+            )
         contract = self.contract_for(node_id)
         if contract is not None:
             done = len(self.attempts.get(node_id, []))
@@ -534,8 +575,12 @@ class WorkGraph:
                     "contract %r allows %d attempts and %d are used"
                     % (contract.id, contract.max_attempts, done)
                 )
-        retried = self._set(node_id, state=NodeState.PENDING, attempt_id=attempt_id, reason="")
-        self._revision(MutationOp.RETRY, who, "retrying %s as %s" % (node_id, attempt_id))
+        retried = self._set(
+            node_id, state=NodeState.PENDING, attempt_id=attempt_id, reason=""
+        )
+        self._revision(
+            MutationOp.RETRY, who, "retrying %s as %s" % (node_id, attempt_id)
+        )
         return retried
 
     def replace(
@@ -565,7 +610,9 @@ class WorkGraph:
         if lane is not None:
             existing = self.contract_for(node_id)
             if existing is None:
-                raise ContractViolation("node %r has no contract to change the lane of" % node_id)
+                raise ContractViolation(
+                    "node %r has no contract to change the lane of" % node_id
+                )
             swapped = replace(existing, lane=lane)
             self.contracts[swapped.id] = swapped
         replaced = self._set(
@@ -598,17 +645,25 @@ class WorkGraph:
                 NodeState.ACCEPTED,
                 NodeState.CANCELLED,
             ):
-                self._set(other.id, state=NodeState.BLOCKED, reason="dependency %s cancelled" % node_id)
+                self._set(
+                    other.id,
+                    state=NodeState.BLOCKED,
+                    reason="dependency %s cancelled" % node_id,
+                )
         self._revision(MutationOp.CANCEL, who, "cancelled %s: %s" % (node_id, reason))
         return cancelled
 
     def reprioritise(self, node_id: str, priority: int, *, actor: str = "") -> WorkNode:
         who = self._actor(actor)
         moved = self._set(node_id, priority=int(priority))
-        self._revision(MutationOp.REPRIORITISE, who, "reprioritised %s to %d" % (node_id, priority))
+        self._revision(
+            MutationOp.REPRIORITISE, who, "reprioritised %s to %d" % (node_id, priority)
+        )
         return moved
 
-    def replan(self, node_id: str, depends_on: Sequence[str], *, actor: str = "") -> WorkNode:
+    def replan(
+        self, node_id: str, depends_on: Sequence[str], *, actor: str = ""
+    ) -> WorkNode:
         """Change what a node depends on. The plan changed, so the evidence
         for the old plan no longer stands for the node."""
         who = self._actor(actor)
@@ -620,12 +675,18 @@ class WorkGraph:
         if self._would_cycle(node_id, deps):
             raise CycleError("replanning %r would close a dependency loop" % node_id)
         replanned = self._set(
-            node_id, depends_on=deps, state=NodeState.PENDING, verification_ids=(), reason="replanned"
+            node_id,
+            depends_on=deps,
+            state=NodeState.PENDING,
+            verification_ids=(),
+            reason="replanned",
         )
         self._revision(MutationOp.REPLAN, who, "replanned %s" % node_id)
         return replanned
 
-    def split(self, node_id: str, parts: Sequence[WorkNode], *, actor: str = "") -> List[WorkNode]:
+    def split(
+        self, node_id: str, parts: Sequence[WorkNode], *, actor: str = ""
+    ) -> List[WorkNode]:
         """Replace a node with the parts that together satisfy it."""
         who = self._actor(actor)
         node = self.node(node_id)
@@ -645,8 +706,16 @@ class WorkGraph:
             created.append(replace(part, depends_on=deps))
             self.nodes[part.id] = created[-1]
         # The parent is replaced, not deleted: the record of what it was stays.
-        self._set(node_id, state=NodeState.REPLACED, reason="split into %d parts" % len(created))
-        self._revision(MutationOp.SPLIT, who, "split %s into %s" % (node_id, [p.id for p in created]))
+        self._set(
+            node_id,
+            state=NodeState.REPLACED,
+            reason="split into %d parts" % len(created),
+        )
+        self._revision(
+            MutationOp.SPLIT,
+            who,
+            "split %s into %s" % (node_id, [p.id for p in created]),
+        )
         return created
 
     def spawn(self, node_id: str, child: WorkNode, *, actor: str = "") -> WorkNode:
@@ -659,13 +728,19 @@ class WorkGraph:
         deps = tuple(child.depends_on) or (parent.id,)
         self._require_deps(deps, "spawned node %r" % child.id)
         if self._would_cycle(child.id, deps):
-            raise CycleError("spawned node %r would depend on its own descendant" % child.id)
+            raise CycleError(
+                "spawned node %r would depend on its own descendant" % child.id
+            )
         spawned = replace(child, depends_on=deps)
         self.nodes[child.id] = spawned
-        self._revision(MutationOp.SPAWN, who, "spawned %s after %s" % (child.id, parent.id))
+        self._revision(
+            MutationOp.SPAWN, who, "spawned %s after %s" % (child.id, parent.id)
+        )
         return spawned
 
-    def merge(self, node_ids: Sequence[str], merged: WorkNode, *, actor: str = "") -> WorkNode:
+    def merge(
+        self, node_ids: Sequence[str], merged: WorkNode, *, actor: str = ""
+    ) -> WorkNode:
         """Combine several nodes into one."""
         who = self._actor(actor)
         ids = list(node_ids)
@@ -685,14 +760,20 @@ class WorkGraph:
                     deps.append(dep)
         self._require_deps(deps, "merged node %r" % merged.id)
         if self._would_cycle(merged.id, deps):
-            raise CycleError("merged node %r would depend on its own descendant" % merged.id)
+            raise CycleError(
+                "merged node %r would depend on its own descendant" % merged.id
+            )
         self.nodes[merged.id] = replace(merged, depends_on=tuple(deps))
         for nid in ids:
-            self._set(nid, state=NodeState.REPLACED, reason="merged into %s" % merged.id)
+            self._set(
+                nid, state=NodeState.REPLACED, reason="merged into %s" % merged.id
+            )
         self._revision(MutationOp.MERGE, who, "merged %s into %s" % (ids, merged.id))
         return self.nodes[merged.id]
 
-    def join(self, node_ids: Sequence[str], *, join_id: str = "", actor: str = "") -> WorkNode:
+    def join(
+        self, node_ids: Sequence[str], *, join_id: str = "", actor: str = ""
+    ) -> WorkNode:
         """Create a barrier that stands for all of the given nodes."""
         who = self._actor(actor)
         ids = list(node_ids)
@@ -703,7 +784,12 @@ class WorkGraph:
         jid = join_id or "join-%s" % ("-".join(sorted(ids))[:48])
         if jid in self.nodes:
             raise ContractError("node %r already exists" % jid)
-        barrier = WorkNode(id=jid, kind=NodeKind.BARRIER, title="join %s" % ", ".join(sorted(ids)), depends_on=tuple(ids))
+        barrier = WorkNode(
+            id=jid,
+            kind=NodeKind.BARRIER,
+            title="join %s" % ", ".join(sorted(ids)),
+            depends_on=tuple(ids),
+        )
         self.nodes[jid] = barrier
         self._revision(MutationOp.JOIN, who, "joined %s into %s" % (ids, jid))
         return barrier

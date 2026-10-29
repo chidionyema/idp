@@ -129,6 +129,10 @@ class VerificationLevel(str, Enum):
 class Verdict(str, Enum):
     PASS = "pass"  # noqa: S105 -- a verdict, not a password
     FAIL = "fail"
+    # The evidence did not decide: the verifier's infrastructure broke, or a
+    # person has to decide. It is not a pass and it is not a failure of the
+    # work, and it is never counted as either.
+    INCONCLUSIVE = "inconclusive"
 
 
 class ReservationState(str, Enum):

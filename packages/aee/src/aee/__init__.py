@@ -59,12 +59,21 @@ from .graph import (
     ContractViolation,
     CycleError,
     GraphError,
+    IndependenceRequiredError,
     OwnershipError,
     ReservationError,
     ScopeError,
     UnknownNodeError,
     VerificationRequiredError,
     WorkGraph,
+)
+from .verification import (
+    NSVEE_STATUSES,
+    level_for_tier,
+    receipt_for,
+    receipt_from_nsvee,
+    report_digest,
+    verdict_for_status,
 )
 
 __all__ = [
@@ -84,8 +93,10 @@ __all__ = [
     "ExecutionContract",
     "GraphError",
     "GraphRevision",
+    "IndependenceRequiredError",
     "IntelligenceLane",
     "MutationOp",
+    "NSVEE_STATUSES",
     "NodeKind",
     "NodeState",
     "Objective",
@@ -106,5 +117,10 @@ __all__ = [
     "canonical_bytes",
     "digest_of",
     "estimate_cost_usd",
+    "level_for_tier",
+    "receipt_for",
+    "receipt_from_nsvee",
+    "report_digest",
     "select_offer",
+    "verdict_for_status",
 ]
