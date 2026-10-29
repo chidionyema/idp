@@ -53,3 +53,10 @@ Feature: The founder-decision door
     Given one live decision with options ship and hold
     When the founder comments a bare option key
     Then the decision is answered
+
+  Scenario: A late answer is still an answer
+    Given a decision that expired without an answer
+    When the founder comments dec-1a2b3c4d ship after the deadline
+    Then the decision is answered late
+    And the reported option is ship
+    And the founder's comment is stored verbatim

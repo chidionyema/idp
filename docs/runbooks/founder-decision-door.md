@@ -57,9 +57,13 @@ Matching is deterministic:
 | `dec-306c912e do it after the cluster comes back` | `option: null`, the comment verbatim |
 | `ship` (exactly one decision is live) | `option: "ship"` -- an exact key only |
 | `what is the status of the cluster?` | nothing -- an ordinary chat message is never captured |
+| `dec-306c912e ship` (after the deadline passed) | `option: "ship"`, `late: true` -- a late answer is still an answer |
 
 A comment that cannot be parsed is **never coerced** into an option and **never dropped**:
 it is stored verbatim with `option: null`.
+
+A comment that arrives after the deadline is recorded too, with `late: true`. Silence is what
+expires a decision; the founder's explicit words are not silence.
 
 ## One message, outside the decision flow
 
@@ -75,7 +79,8 @@ argument: no agent can turn the decision door into a chatty surface.
 
 No answer by the deadline is `state: expired`, `option: null`, `answer: null`. The door
 never reports a decision the founder did not make. A wait that ends before the deadline
-leaves the decision `asked` -- the wait ending is not the decision expiring.
+leaves the decision `asked` -- the wait ending is not the decision expiring. An answer that
+arrives after the deadline is still recorded, with `late: true`.
 
 ## Where the record lives
 
@@ -104,7 +109,8 @@ Rules, in this order:
    answers, the estate's reader is alive and the door **does not** take over.
 2. Only then does the door delete the webhook, and it keeps the URL so it can put it back.
 3. The door restores the registration as soon as the last live decision closes (answered or
-   expired). `bin/founder-decision poll` does it.
+   expired -- an expired decision is closed). `bin/founder-decision poll` does it: it expires
+   what is due first, then hands the webhook back.
 4. If the estate's gateway re-registers the webhook while the door is holding it,
    `getUpdates` answers 409 and the door **yields**. There is never more than one reader.
 

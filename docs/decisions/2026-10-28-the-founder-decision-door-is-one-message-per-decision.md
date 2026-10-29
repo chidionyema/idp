@@ -37,6 +37,11 @@ Two facts shaped the design, both measured rather than assumed:
   dropped.
 * Silence is `expired`, never an assumed yes. A wait that ends before the deadline leaves the
   decision `asked`; the wait ending is not the decision expiring.
+* A LATE answer is still an answer. Silence is what expires a decision; the founder's explicit
+  words never do. If the founder answers after the deadline, the door records the comment with
+  `late: true` rather than dropping it. The first live run measured this: the decision
+  `dec-306c912e` expired unanswered at its deadline, and the rule was written because the
+  founder's words must never be discarded on a technicality.
 * Delivery and recording call no model. The door imports nothing but the standard library, and
   a test asserts that it imports no model client.
 
@@ -59,7 +64,9 @@ unreachable the door says `bus: "unavailable"` rather than pretending a receipt 
 estate's reader of the founder's replies. While that ingress is unreachable, the founder's
 reply has nowhere to land, so the door may HOLD the bot's updates -- but only after it has
 checked that the registered webhook URL does not answer, and it restores the registration as
-soon as the last live decision closes. If the estate's gateway re-registers the webhook, the
+soon as the last live decision closes -- including a decision that closed by EXPIRY, because
+an expired decision is closed and the founder's next words belong to the estate's reader.
+If the estate's gateway re-registers the webhook, the
 door yields (`getUpdates` answers 409). There is never more than one reader of the founder's
 replies.
 
@@ -85,6 +92,9 @@ replies.
 
 * The door delivered message 2056 to the founder's chat (the estate's card posted a second
   line message for the bus session -- 2057 -- which is why the bus session is opt-in now).
+* The decision `dec-306c912e` reached its deadline with no answer and became `expired`:
+  fail-closed, measured, on the real path. The webhook was handed back to the estate when the
+  decision closed.
 * The founder's four earlier Telegram messages had been sitting in Telegram's queue,
   undelivered, because the estate's reader was down. The door read them, correctly did NOT
   capture them as an answer (they quote no decision id and are not an option key), and the

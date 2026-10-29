@@ -684,18 +684,25 @@ class Door:
         return send_message(token, chat, text)
 
     def answer(self, decision_id: str, comment: str) -> Optional[dict]:
-        """Record the founder's comment as the answer. Idempotent: the first answer wins."""
+        """Record the founder's comment as the answer. Idempotent: the first answer wins.
+
+        A LATE answer is still an answer: the founder's explicit words are never dropped
+        because the clock ran out. The record says `late: true`, so the reader can see that
+        the deadline was blown. Silence is what expires; an explicit answer never does.
+        """
         state = load_state(self.state_file)
         record = state["decisions"].get(decision_id)
         if record is None:
             return None
-        if record.get("state") != STATE_ASKED:
+        if record.get("state") not in (STATE_ASKED, STATE_EXPIRED):
             return record
         request = DecisionRequest.from_dict(record)
         answer = match_comment(comment, request)
         if answer.kind == "unrelated":
             return record
         moment = _now()
+        if record.get("state") == STATE_EXPIRED:
+            record["late"] = True
         record["state"] = STATE_ANSWERED
         record["option"] = answer.option
         record["answer"] = answer.text
@@ -725,6 +732,13 @@ class Door:
                 continue
             if decision_id in text:
                 return self.answer(decision_id, text)
+        # A late answer: the founder answered after the deadline. His words are an answer,
+        # not silence, and the record says so.
+        for decision_id, record in state["decisions"].items():
+            if record.get("state") != STATE_EXPIRED:
+                continue
+            if decision_id in text:
+                return self.answer(decision_id, text)
         live = [r for r in state["decisions"].values() if r.get("state") == STATE_ASKED]
         if len(live) == 1:
             record = live[0]
@@ -750,6 +764,9 @@ class Door:
             record = self.absorb(text)
             if record and record.get("state") == STATE_ANSWERED:
                 answered.append(record.get("decision_id"))
+        # Expire first, then hand the estate its webhook back: a decision that closed by
+        # EXPIRY is closed, and the estate's own reader must get the founder's replies back.
+        expire_due(self.state_file)
         state = load_state(self.state_file)
         held = [
             rec

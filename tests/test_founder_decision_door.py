@@ -117,6 +117,18 @@ def _one_live_decision(door) -> dict:
     return _ask(door, decision_id="dec-1a2b3c4d")
 
 
+@given("a decision that expired without an answer", target_fixture="record")
+def _a_decision_that_expired(door) -> dict:
+    record = _ask(door, decision_id="dec-1a2b3c4d")
+    state = decision.load_state(door.state_file)
+    state["decisions"]["dec-1a2b3c4d"]["deadline_at"] = decision._iso(
+        decision._now() - timedelta(minutes=1)
+    )
+    decision.save_state(state, door.state_file)
+    decision.expire_due(door.state_file)
+    return record
+
+
 @when("the agent asks the founder")
 def _agent_asks(door, record) -> dict:
     return record
@@ -151,6 +163,14 @@ def _founder_comments_plain(door) -> dict:
     return absorbed or {}
 
 
+@when(
+    "the founder comments dec-1a2b3c4d ship after the deadline", target_fixture="record"
+)
+def _founder_comments_late(door) -> dict:
+    absorbed = door.absorb("dec-1a2b3c4d ship")
+    return absorbed or {}
+
+
 @when("the founder comments ship while two decisions are live")
 def _founder_comments_ambiguous(door) -> dict:
     absorbed = door.absorb("ship")
@@ -177,6 +197,12 @@ def _message_carries(door) -> None:
 @then("the decision is answered")
 def _answered(record) -> None:
     assert record["state"] == "answered", record.get("state")
+
+
+@then("the decision is answered late")
+def _answered_late(record) -> None:
+    assert record["state"] == "answered", record.get("state")
+    assert record.get("late") is True, "a late answer must say it was late"
 
 
 @then("the reported option is ship")
@@ -384,3 +410,68 @@ def test_the_rendered_message_carries_the_options_and_the_links():
     assert "#7341" in message
     assert "lane/founder-decision" in message
     assert "pi @ idp" in message
+
+
+def test_a_late_answer_is_recorded_as_an_answer(tmp_path):
+    """The founder's words are an answer; the clock running out is not a reason to drop them."""
+    door = decision.Door(
+        state_file=tmp_path / "d.json", bus=False, transport=lambda t: 1
+    )
+    request = decision.build_request(
+        question="Ship it?",
+        options="ship: land it, hold: wait",
+        decision_id="dec-1a2b3c4d",
+    )
+    door.ask(request)
+    state = decision.load_state(door.state_file)
+    state["decisions"]["dec-1a2b3c4d"]["deadline_at"] = decision._iso(
+        decision._now() - timedelta(minutes=1)
+    )
+    decision.save_state(state, door.state_file)
+    decision.expire_due(door.state_file)
+    assert decision.get_decision("dec-1a2b3c4d", door.state_file)["state"] == "expired"
+
+    record = door.absorb("dec-1a2b3c4d ship")
+    assert record["state"] == "answered"
+    assert record["late"] is True
+    assert record["option"] == "ship"
+    assert record["answer"] == "dec-1a2b3c4d ship"
+
+
+def test_the_door_gives_the_webhook_back_when_the_last_decision_closes(
+    tmp_path, monkeypatch
+):
+    """The estate's own reader must get the founder's replies back once no decision is live."""
+    restored = []
+    monkeypatch.setattr(decision, "get_updates", lambda token: [])
+    monkeypatch.setattr(
+        decision,
+        "set_webhook",
+        lambda token, url: bool(restored.append((token, url))) or True,
+    )
+    door = decision.Door(
+        state_file=tmp_path / "d.json",
+        bus=False,
+        transport=lambda t: 1,
+        token="t",  # noqa: S106 - a placeholder for a unit test, not a credential
+        chat_id="c",
+    )
+    request = decision.build_request(
+        question="Ship it?",
+        options="ship: land it, hold: wait",
+        decision_id="dec-1a2b3c4d",
+    )
+    door.ask(request)
+    state = decision.load_state(door.state_file)
+    record = state["decisions"]["dec-1a2b3c4d"]
+    record["webhook_held"] = True
+    record["webhook_url"] = "https://otto.mumchimp.com/webhook/telegram"
+    record["deadline_at"] = decision._iso(decision._now() - timedelta(minutes=1))
+    decision.save_state(state, door.state_file)
+
+    out = door.poll()
+    assert out["restored"] == ["dec-1a2b3c4d"], out
+    assert restored == [("t", "https://otto.mumchimp.com/webhook/telegram")]
+    after = decision.get_decision("dec-1a2b3c4d", door.state_file)
+    assert after["state"] == "expired"
+    assert after["webhook_held"] is False
