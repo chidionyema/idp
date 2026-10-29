@@ -644,15 +644,26 @@ def _row(claim_no, age):
     }
 
 
-def test_a_dead_gh_answers_the_router_with_the_last_register_aged(tmp_path, monkeypatch):
+def test_a_dead_gh_answers_the_router_with_the_last_register_aged(
+    tmp_path, monkeypatch
+):
     monkeypatch.setenv("ESTATE_MEMORY_HOME", str(tmp_path))  # no snapshot in the way
-    monkeypatch.setattr(focus, "_gh", lambda args, timeout: None)  # 2026-10-28: gh cut at 3.0 s
+    monkeypatch.setattr(
+        focus, "_gh", lambda args, timeout: None
+    )  # 2026-10-28: gh cut at 3.0 s
     reg = tmp_path / "focus-register.json"
     _register(reg, NOW - 900, [_row(1, 60), _row(2, focus.LAPSE_S - 300)])
     rows = focus.live_focus(str(reg), NOW, fallback=True)
-    assert [(r["claim"], r["live"], r["heartbeat_age_s"], r["stale_s"]) for r in rows] == [
+    assert [
+        (r["claim"], r["live"], r["heartbeat_age_s"], r["stale_s"]) for r in rows
+    ] == [
         ("idp#1", True, 960, 900),
-        ("idp#2", False, focus.LAPSE_S + 600, 900),  # lapsed since the read: not shown live
+        (
+            "idp#2",
+            False,
+            focus.LAPSE_S + 600,
+            900,
+        ),  # lapsed since the read: not shown live
     ]
     # the gates decide coverage on the ledger only: unknown stays unknown
     assert focus.live_focus(str(reg), NOW) is None

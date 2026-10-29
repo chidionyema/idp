@@ -30,7 +30,12 @@ def _snap(facts=(), focus_rows=(), facts_at=NOW, focus_at=NOW):
 
 
 def _fact(key, text, kind="fact", at="2026-10-27T10:00:00+00:00"):
-    return {"key": key, "content": text, "provenance": {"kind": kind}, "recorded_at": at}
+    return {
+        "key": key,
+        "content": text,
+        "provenance": {"kind": kind},
+        "recorded_at": at,
+    }
 
 
 # --- R2 is reached with a correct signature ----------------------------------------------------
@@ -87,14 +92,18 @@ def test_a_failed_write_leaves_the_old_copy_and_no_litter(tmp_path, monkeypatch)
         raise OSError(28, "No space left on device")
 
     monkeypatch.setattr(snapshot.os, "replace", full)
-    assert "No space left" in snapshot.write_local(_snap([_fact("b", "new")]), path, floor_mb=0)
+    assert "No space left" in snapshot.write_local(
+        _snap([_fact("b", "new")]), path, floor_mb=0
+    )
     assert [f["key"] for f in snapshot.read_local(path)["facts"]] == ["a"]
     assert os.listdir(tmp_path) == ["snapshot.json"]
 
 
 def test_the_document_is_bounded_and_keeps_the_newest_facts():
     facts = [
-        _fact(f"k{i}", "x" * 200, at=f"2026-10-{10 + i % 18:02d}T00:00:{i % 60:02d}+00:00")
+        _fact(
+            f"k{i}", "x" * 200, at=f"2026-10-{10 + i % 18:02d}T00:00:{i % 60:02d}+00:00"
+        )
         for i in range(400)
     ]
     body = snapshot.encode(_snap(facts), max_bytes=20_000)
@@ -122,13 +131,17 @@ def test_a_young_local_copy_is_used_without_asking_r2(tmp_path):
     def never(_cfg):
         raise AssertionError("R2 asked for a young copy")
 
-    assert snapshot.load(path, cfg={"x": 1}, now=NOW, getter=never)["facts_at"] == NOW - 60
+    assert (
+        snapshot.load(path, cfg={"x": 1}, now=NOW, getter=never)["facts_at"] == NOW - 60
+    )
 
 
 def test_an_old_local_copy_is_replaced_by_a_newer_r2_copy(tmp_path, monkeypatch):
     monkeypatch.setattr(snapshot, "DISK_FLOOR_MB", 0)
     path = str(tmp_path / "s.json")
-    snapshot.write_local(_snap(facts_at=NOW - 7200, focus_at=NOW - 7200), path, floor_mb=0)
+    snapshot.write_local(
+        _snap(facts_at=NOW - 7200, focus_at=NOW - 7200), path, floor_mb=0
+    )
     remote = snapshot.encode(_snap([_fact("r", "from r2")], facts_at=NOW - 300))
     got = snapshot.load(path, cfg={"x": 1}, now=NOW, getter=lambda _c: remote)
     assert [f["key"] for f in got["facts"]] == ["r"]
@@ -137,13 +150,21 @@ def test_an_old_local_copy_is_replaced_by_a_newer_r2_copy(tmp_path, monkeypatch)
 
 def test_r2_down_still_answers_with_the_old_local_copy(tmp_path):
     path = str(tmp_path / "s.json")
-    snapshot.write_local(_snap([_fact("a", "old")], facts_at=NOW - 7200), path, floor_mb=0)
+    snapshot.write_local(
+        _snap([_fact("a", "old")], facts_at=NOW - 7200), path, floor_mb=0
+    )
 
     def down(_cfg):
         raise OSError("r2 unreachable")
 
-    assert [f["key"] for f in snapshot.load(path, cfg={"x": 1}, now=NOW, getter=down)["facts"]] == ["a"]
-    assert snapshot.load(str(tmp_path / "none.json"), cfg={"x": 1}, now=NOW, getter=down) is None
+    assert [
+        f["key"]
+        for f in snapshot.load(path, cfg={"x": 1}, now=NOW, getter=down)["facts"]
+    ] == ["a"]
+    assert (
+        snapshot.load(str(tmp_path / "none.json"), cfg={"x": 1}, now=NOW, getter=down)
+        is None
+    )
 
 
 # --- answering from it ---------------------------------------------------------------------------
@@ -152,14 +173,31 @@ def test_r2_down_still_answers_with_the_old_local_copy(tmp_path):
 def test_a_brief_from_the_snapshot_has_the_servers_shape_and_says_what_it_is():
     snap = _snap(
         [
-            _fact("router.lanes", "the laptop router dropped 19 lanes", "incident", "2026-10-28T01:00:00+00:00"),
-            _fact("memory.home", "unified memory ran only in the OKE cluster", "incident", "2026-10-28T02:00:00+00:00"),
-            _fact("adr.34", "workloads are placed by the free tier", "decision", "2026-09-26T00:00:00+00:00"),
+            _fact(
+                "router.lanes",
+                "the laptop router dropped 19 lanes",
+                "incident",
+                "2026-10-28T01:00:00+00:00",
+            ),
+            _fact(
+                "memory.home",
+                "unified memory ran only in the OKE cluster",
+                "incident",
+                "2026-10-28T02:00:00+00:00",
+            ),
+            _fact(
+                "adr.34",
+                "workloads are placed by the free tier",
+                "decision",
+                "2026-09-26T00:00:00+00:00",
+            ),
             _fact("misc", "unrelated note", "fact"),
         ],
         facts_at=NOW - 3600,
     )
-    b = snapshot.brief(snap, "why did unified memory go down with the cluster", limit=2, now=NOW)
+    b = snapshot.brief(
+        snap, "why did unified memory go down with the cluster", limit=2, now=NOW
+    )
     assert [f["key"] for f in b["relevant"]] == ["memory.home"]
     assert [f["key"] for f in b["recent"]] == ["router.lanes", "adr.34"]
     assert b["search_by_meaning"] is False
@@ -168,8 +206,20 @@ def test_a_brief_from_the_snapshot_has_the_servers_shape_and_says_what_it_is():
 
 def test_the_snapshot_focus_is_aged_so_a_lapsed_claim_is_not_live():
     rows = [
-        {"claim": "idp#1", "agent": "a", "paths": "x", "heartbeat_age_s": 60, "live": True},
-        {"claim": "idp#2", "agent": "b", "paths": "y", "heartbeat_age_s": 7000, "live": True},
+        {
+            "claim": "idp#1",
+            "agent": "a",
+            "paths": "x",
+            "heartbeat_age_s": 60,
+            "live": True,
+        },
+        {
+            "claim": "idp#2",
+            "agent": "b",
+            "paths": "y",
+            "heartbeat_age_s": 7000,
+            "live": True,
+        },
     ]
     got = snapshot.focus_rows(_snap(focus_rows=rows, focus_at=NOW - 600), now=NOW)
     assert [(r["claim"], r["live"], r["stale_s"]) for r in got] == [
@@ -207,7 +257,13 @@ class _Bucket:
 def test_the_writer_stores_facts_and_focus_and_proves_the_read_back(capsys):
     w = _writer()
     bucket = _Bucket()
-    briefs = {t: {"relevant": [_fact(f"k.{t}", f"about {t}")], "recent": [_fact("d", "decided", "decision")]} for t in ("a", "b")}
+    briefs = {
+        t: {
+            "relevant": [_fact(f"k.{t}", f"about {t}")],
+            "recent": [_fact("d", "decided", "decision")],
+        }
+        for t in ("a", "b")
+    }
     rc = w.write(
         cfg={"x": 1},
         topics=["a", "b"],
@@ -225,9 +281,13 @@ def test_the_writer_stores_facts_and_focus_and_proves_the_read_back(capsys):
     assert "read back sha256 equal" in out
 
 
-def test_a_dead_door_keeps_the_old_facts_and_their_age_and_goes_red_when_too_old(capsys):
+def test_a_dead_door_keeps_the_old_facts_and_their_age_and_goes_red_when_too_old(
+    capsys,
+):
     w = _writer()
-    old = snapshot.encode(_snap([_fact("kept", "from before")], facts_at=NOW - w.FACTS_STALE_S - 1))
+    old = snapshot.encode(
+        _snap([_fact("kept", "from before")], facts_at=NOW - w.FACTS_STALE_S - 1)
+    )
     bucket = _Bucket(old)
 
     def dead(_task):
@@ -245,7 +305,9 @@ def test_a_dead_door_keeps_the_old_facts_and_their_age_and_goes_red_when_too_old
     out = capsys.readouterr().out
     snap = snapshot.decode(bucket.body)
     assert [f["key"] for f in snap["facts"]] == ["kept"]
-    assert snap["facts_at"] == NOW - w.FACTS_STALE_S - 1  # old facts are never re-stamped new
+    assert (
+        snap["facts_at"] == NOW - w.FACTS_STALE_S - 1
+    )  # old facts are never re-stamped new
     assert snap["focus_at"] == NOW  # the ledger was up: focus is fresh
     assert rc == 1 and "FAIL" in out and "door" in out
 
@@ -273,7 +335,15 @@ def test_a_read_back_that_differs_is_a_failed_run(capsys):
 
 def test_focus_rows_survive_the_write_unchanged():
     # the writer stores focus.register_from_issues rows; age_rows is what readers apply
-    rows = [{"claim": "idp#3", "agent": "x", "paths": "p", "heartbeat_age_s": 5, "live": True}]
+    rows = [
+        {
+            "claim": "idp#3",
+            "agent": "x",
+            "paths": "p",
+            "heartbeat_age_s": 5,
+            "live": True,
+        }
+    ]
     assert focus.age_rows(rows, 0)[0]["live"] is True
 
 

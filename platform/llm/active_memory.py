@@ -332,7 +332,9 @@ def _focus_body(rows: list) -> dict:
             if isinstance(r, dict)
         ],
     }
-    stale_s = max((r.get("stale_s") or 0 for r in rows if isinstance(r, dict)), default=0)
+    stale_s = max(
+        (r.get("stale_s") or 0 for r in rows if isinstance(r, dict)), default=0
+    )
     if stale_s:
         body["stale_s"] = stale_s
     return body

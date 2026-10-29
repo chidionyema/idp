@@ -648,7 +648,8 @@ def test_a_dead_door_with_nothing_in_ram_is_answered_from_the_snapshot(
     # the model is told the facts are old and why, never handed them as new
     assert "memory server unreachable; from the snapshot, facts 2h00m old" in last
     assert any(
-        "brief unreadable" in r.getMessage() and "serving snapshot age=" in r.getMessage()
+        "brief unreadable" in r.getMessage()
+        and "serving snapshot age=" in r.getMessage()
         for r in caplog.records
     )
 
@@ -680,7 +681,9 @@ def test_a_good_brief_is_kept_in_the_local_snapshot_for_the_next_outage(
 ):
     mod = _load(monkeypatch, tmp_path)
     mod.keep_brief(json.loads(json.dumps(BRIEF)), now=1000.0)
-    for t in [t for t in __import__("threading").enumerate() if t.name == "snapshot-keep"]:
+    for t in [
+        t for t in __import__("threading").enumerate() if t.name == "snapshot-keep"
+    ]:
         t.join(5)
     snap = mod._snap().read_local()
     assert {f["key"] for f in snap["facts"]} == {"edge.acme", "d.1"}
