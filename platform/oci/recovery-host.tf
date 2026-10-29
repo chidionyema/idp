@@ -13,7 +13,11 @@
 # write to the only copy of the estate's data before it has been copied off this provider.
 
 locals {
-  recovery_shape = "VM.Standard.A1.Flex" # Always Free; any other shape costs money (R14)
+  # Always Free shapes only (R14). A1.Flex was refused "Out of host capacity" in AD-1 and AD-2 on
+  # every attempt (apply runs 40844922528 .. 40851920814); E2.1.Micro (AMD, 1 OCPU burst, 1 GB) is
+  # the other Always Free shape and is placed when A1 is not. The router measured ~275 MB RSS; the
+  # host adds a swap file. Back to A1 (resize) when its capacity returns.
+  recovery_shape = "VM.Standard.E2.1.Micro"
   # Router first (#7387): AD-1, where the csi-* volumes live, answered "Out of host capacity" for
   # every A1 shape (apply runs 40844922528, 40845457597, 40846485384, 40847574642). The router is
   # stateless, so it starts in AD-2 now; the volumes attach only within their own AD, so they are
@@ -76,9 +80,12 @@ resource "oci_core_instance" "recovery" {
   # 1 OCPU / 6 GB, not the 2 / 12 the AD offers: AD-1 answered "Out of host capacity" for 2 / 12
   # (apply run 40844922528 and retries), and small A1 shapes are placed far more often. The router
   # and the tunnel need under 2 GB; A1.Flex resizes in place when capacity returns.
-  shape_config {
-    ocpus         = 1
-    memory_in_gbs = 6
+  dynamic "shape_config" {
+    for_each = endswith(local.recovery_shape, ".Flex") ? [1] : []
+    content {
+      ocpus         = 1
+      memory_in_gbs = 6
+    }
   }
 
   create_vnic_details {
@@ -91,7 +98,7 @@ resource "oci_core_instance" "recovery" {
   source_details {
     source_type             = "image"
     source_id               = data.oci_core_images.ol9_arm.images[0].id
-    boot_volume_size_in_gbs = 50 # the floor; 3 x 50 GB volumes + this = the 200 GB free allowance
+    boot_volume_size_in_gbs = 50 # 3 x 50 GB volumes + this = the 200 GB free allowance
   }
 
   metadata = {
