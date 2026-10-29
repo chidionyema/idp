@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "updated": "2026-10-29",
+  "why": "The estate had a process for ownership (claims) and a process for code (gates, CI, Greenlane) and no process for truth: nothing standing said whether the founder's own path answered. Every predicate here is a question about the founder's real path, and every one of them is answered with MEASURED_OK, MEASURED_FAIL or UNKNOWN. UNKNOWN is never OK.",
+  "rules": [
+    "A predicate's verdict is about its ANSWER, never about the connect: a path that refuses the connection has been measured, and it did not work.",
+    "A credential that is absent from this host does not stop the measurement. The path is asked anyway; a refusal is MEASURED_FAIL and a success without the credential is UNKNOWN (the endpoint answers, the founder's credentialed path is not proven).",
+    "The aggregate verdict is total: any MEASURED_FAIL makes it MEASURED_FAIL, any UNKNOWN makes it UNKNOWN, and only an all-OK set is MEASURED_OK. There is no path by which the estate is reported healthy by omission.",
+    "No predicate may print a credential, a prompt body or a response body. The probe prompt is the fixed string 'Reply with exactly: PONG' and the expected token is PONG."
+  ],
+  "predicates": [
+    {
+      "id": "router.cloud.completion",
+      "summary": "a real chat completion through llm.mumchimp.com answers 200 with the token PONG",
+      "kind": "http",
+      "scope": "any",
+      "method": "POST",
+      "url": "https://llm.mumchimp.com/v1/chat/completions",
+      "auth_env": "LITELLM_CLOUD_PROBE_KEY",
+      "auth_scheme": "Bearer",
+      "body": {
+        "model": "default",
+        "messages": [{ "role": "user", "content": "Reply with exactly: PONG" }]
+      },
+      "expect_status": 200,
+      "expect_contains": "PONG",
+      "timeout_s": 45,
+      "subjects": [
+        "platform/llm/front.py",
+        "platform/llm/litellm.yaml",
+        "platform/llm/config.yaml",
+        "bin/litellm-local"
+      ]
+    },
+    {
+      "id": "router.laptop.completion",
+      "summary": "a real chat completion through the laptop front (127.0.0.1:4000) answers 200 with the token PONG",
+      "kind": "http",
+      "scope": "laptop",
+      "method": "POST",
+      "url": "http://127.0.0.1:4000/v1/chat/completions",
+      "auth_env": "LITELLM_LAPTOP_KEY",
+      "auth_scheme": "Bearer",
+      "body": {
+        "model": "claude-haiku-4-5-20251001",
+        "messages": [{ "role": "user", "content": "Reply with exactly: PONG" }]
+      },
+      "expect_status": 200,
+      "expect_contains": "PONG",
+      "timeout_s": 85,
+      "subjects": [
+        "platform/llm/front.py",
+        "bin/litellm-local"
+      ]
+    },
+    {
+      "id": "router.lanes.accounted",
+      "summary": "every lane the router declares is accounted for as served or refused, with a reason",
+      "kind": "file",
+      "scope": "laptop",
+      "path": "~/.estate/router-state/lanes.json",
+      "assert": "declared_accounted",
+      "subjects": [
+        "bin/litellm-local"
+      ]
+    },
+    {
+      "id": "memory.recall",
+      "summary": "the memory door the Mac bridge reads carries a door, so the founder's recall path exists",
+      "kind": "file",
+      "scope": "laptop",
+      "path": "~/.estate/memory/runtimes.json",
+      "assert": "door_present",
+      "subjects": [
+        "platform/estate/memory/**"
+      ]
+    },
+    {
+      "id": "estate-db.rows",
+      "summary": "estate-db answers a query, so the estate's durable state is reachable",
+      "kind": "command",
+      "scope": "cluster",
+      "command": [
+        "kubectl",
+        "-n",
+        "estate-db",
+        "exec",
+        "deploy/estate-db-postgresql",
+        "--",
+        "psql",
+        "-tAc",
+        "select count(*) from pg_class"
+      ],
+      "expect_rc": 0,
+      "timeout_s": 30,
+      "subjects": [
+        "platform/oci/**"
+      ]
+    }
+  ],
+  "paths": {
+    "bin/idp-estate-truth": ["router.lanes.accounted"],
+    "platform/estate/libexec/estate-truth.py": ["router.lanes.accounted"],
+    "platform/estate/intents/estate-truth.yaml": ["router.lanes.accounted"],
+    "catalog/truth-contract.json": ["router.lanes.accounted"],
+    "bin/litellm-local": ["router.laptop.completion", "router.lanes.accounted"],
+    "platform/llm/front.py": ["router.cloud.completion", "router.laptop.completion"]
+  }
+}

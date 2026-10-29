@@ -1,0 +1,61 @@
+name: estate-truth
+
+# The estate's truth instrument, run where the laptop is not: a GitHub runner can measure the
+# cloud route and every public surface even when the laptop is dead, which is exactly the case
+# the laptop's own schedule cannot cover.
+#
+# WHAT IT DOES: runs platform/estate/libexec/estate-truth.py against catalog/truth-contract.json
+# and publishes the verdict as the job's summary. It never prints a credential, a prompt body
+# or a response body -- the probe prompt is the fixed string "Reply with exactly: PONG".
+#
+# WHY A WORKFLOW AND NOT THE CLUSTER: the cluster this estate runs on was deleted on
+# 2026-10-29 (lifecycleState DELETED). An instrument that lives inside the thing it measures
+# cannot report that the thing is gone.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  truth:
+    name: the founder's path
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: measure
+        id: measure
+        run: |
+          set +e
+          python3 platform/estate/libexec/estate-truth.py --json > truth.json 2> truth.err
+          rc=$?
+          echo "exit=${rc}" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY'
+          import json
+          try:
+              doc = json.load(open("truth.json"))
+          except Exception as exc:
+              print("the instrument did not answer: %s" % exc)
+              raise SystemExit(0)
+          for p in doc.get("predicates", []):
+              print("%-8s %-26s %s" % (p["verdict"], p["id"], p["detail"]))
+          print("TRUTH VERDICT: %s" % doc.get("verdict"))
+          PY
+
+      - name: the verdict
+        if: always()
+        run: |
+          {
+            echo "### The founder's path"
+            echo
+            cat truth.json 2>/dev/null || echo "(no measurement)"
+            echo
+            cat truth.err 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
