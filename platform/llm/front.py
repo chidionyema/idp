@@ -127,6 +127,39 @@ CLOUD_FAILURES = 0  # how many times the cloud has failed in a row
 # test, a second router) may point elsewhere after this module is imported, and a cooldown
 # written to the wrong directory is a cooldown nobody reads.
 CLOUD_STATE_ENV = "ESTATE_ROUTER_CLOUD_STATE"
+# Where THIS front keeps its cooldown when no override is given. It is a RUNTIME directory, and
+# it is per-INSTANCE:
+#
+# * Never the source tree. The front's own directory is the repo checkout under test and the
+#   live runtime directory in production -- writing there drops a state file into the git
+#   worktree, and every test that imports the module then reads a cooldown a previous test
+#   left behind, so one test's failure silently changes another test's verdict.
+# * Never the shared estate state. ACTIVE names the SLOT FLEET, not this front, so deriving
+#   the path from ACTIVE made every front that shared ACTIVE share one cooldown: one front's
+#   dead cloud silenced the cloud for all of them, and the live estate's router-state
+#   directory collected a file that belonged to no lane. The default is its own directory,
+#   `~/.estate/front-state/`, which belongs to no lane and to no slot.
+#
+# The instance name makes the file per-front: two fronts on two ports keep two cooldowns and
+# neither can overwrite the other. The name is the front's LISTEN PORT, not its PID: the
+# cooldown must SURVIVE A RESTART, and a restart changes the PID while keeping the port. The
+# directory is created on demand; a front that cannot create it still serves (the write is best
+# effort by design).
+CLOUD_STATE_DIR_ENV = "ESTATE_ROUTER_CLOUD_STATE_DIR"
+CLOUD_STATE_DIR_DEFAULT = pathlib.Path.home() / ".estate" / "front-state"
+
+
+def cloud_state_dir() -> pathlib.Path:
+    """The runtime directory where THIS front keeps its cooldown.
+
+    RESOLVED AT USE TIME, never at import time: the directory may be repointed by a caller (a
+    test, a second router) after this module is imported, and a cooldown written to the wrong
+    place is a cooldown nobody reads.
+    """
+    override = os.environ.get(CLOUD_STATE_DIR_ENV)
+    if override:
+        return pathlib.Path(override)
+    return CLOUD_STATE_DIR_DEFAULT
 
 
 def cloud_state_path() -> pathlib.Path:
@@ -134,7 +167,9 @@ def cloud_state_path() -> pathlib.Path:
     override = os.environ.get(CLOUD_STATE_ENV)
     if override:
         return pathlib.Path(override)
-    return ACTIVE.with_name("cloud-down")
+    # The LISTEN PORT names the instance: it survives a restart (the cooldown is what must
+    # survive) and separates two fronts (each must keep its own).
+    return cloud_state_dir() / f"cloud-down-{LISTEN[1]}"
 
 
 # The most one dead-cloud attempt may take, in seconds. It is inside the caller's budget (60 s)
