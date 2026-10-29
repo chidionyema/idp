@@ -8929,12 +8929,7 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": [
-          {
-            "id": "cap:layer/platform-queue-dispatcher",
-            "edge": "imports"
-          }
-        ]
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -8984,12 +8979,7 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": [
-          {
-            "id": "cap:layer/platform-queue-dispatcher",
-            "edge": "imports"
-          }
-        ]
+        "depends_on": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -12590,11 +12580,15 @@
       "id": "cap:layer/platform-queue-dispatcher",
       "schema_version": 1,
       "kind": "layer",
-      "summary": "CREATE TABLE IF NOT EXISTS tasks (",
+      "summary": "The estate's task queue.",
       "contract": {
         "inputs": [
+          "--binary",
           "--detach",
-          "--force"
+          "--force",
+          "--git-dir",
+          "--porcelain",
+          "--show-current"
         ],
         "outputs": [
           "stdout",

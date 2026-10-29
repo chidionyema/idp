@@ -13,6 +13,34 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
+def _queue_dispatcher():
+    """The queue dispatcher, loaded the way platform/ has to be loaded.
+
+    platform/ has no __init__.py (idp#3564): it collides with the stdlib `platform` module
+    the moment anything imports it bare, and pytest itself imports `platform` at startup.
+    So 'from platform.queue import dispatcher' raises ModuleNotFoundError ("'platform' is
+    not a package"), the worker loop caught it, logged it and died -- before it claimed a
+    single task. The pool had never run anything.
+
+    The queue package is loaded by file path and its own loader (platform/queue/__init__.py)
+    does the seeding, so there is one implementation of the workaround rather than one per
+    caller.
+    """
+    import importlib.util
+    import os
+    import sys
+
+    if "platform.queue" not in sys.modules:
+        root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        spec = importlib.util.spec_from_file_location(
+            "platform.queue", os.path.join(root, "queue", "__init__.py")
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["platform.queue"] = module
+        spec.loader.exec_module(module)
+    return sys.modules["platform.queue"].load_dispatcher()
+
+
 class WorkerPool:
     """
     N-configurable worker pool.
@@ -121,7 +149,7 @@ class WorkerPool:
         Single worker loop.
         Poll queue → claim task → execute → complete → repeat.
         """
-        from platform.queue import dispatcher
+        dispatcher = _queue_dispatcher()
 
         worker_info = self.workers[worker_id]
         logger.info(f"[{worker_id}] Worker loop started")
