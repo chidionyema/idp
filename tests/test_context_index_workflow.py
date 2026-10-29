@@ -30,3 +30,13 @@ def test_the_artifact_is_pushed_from_a_writable_parent():
     push = text.index("| flux push artifact")  # the command, not the uses: comment
     assert text.index('sudo mv "${DATA}" "${STAGE}/data"') < push
     assert '--path="/data"' not in text
+
+
+def test_the_registry_login_carries_its_credentials():
+    """A bare docker/login-action fails "Username and password required" (run 40853469951), which
+    skips the signature step: the index was published but never signed."""
+    text = WORKFLOW.read_text()
+    step = text[text.index("docker/login-action@") :]
+    block = step[: step.index("- uses: imjasonh")]
+    assert "registry: ghcr.io" in block
+    assert "password: ${{ secrets.GITHUB_TOKEN }}" in block
