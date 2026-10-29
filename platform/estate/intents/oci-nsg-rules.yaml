@@ -1,0 +1,41 @@
+name: oci-nsg-rules
+description: >
+  Read and write an OCI network security group's rules with a signed REST call.
+
+  The estate's OCI CLI is 3.90.3 and cannot write NSG rules at all: there is no
+  `oci network security-rule` command and no `--security-group-rules` option on
+  `oci network nsg update`. The endpoint NSG the OKE cluster's API server sits behind
+  (`cp-tiafzl`) has NO rules in either direction, which is why 141.147.80.229:6443 answers
+  TCP_CLOSED, why kubectl cannot reach the cluster, and why the estate's memory door (the
+  unified memory server, which lives in that cluster) and the cloud router both sit dead
+  behind it.
+
+  This door signs one request the way OCI asks for -- Signature version=1 over the canonical
+  request, RSA-SHA256 with the profile's own key from ~/.oci/config -- and prints the
+  server's own answer. The signature conventions are tried in the order OCI's SDK and CLI
+  use them, so a 401 names the convention the account refuses rather than guessing again.
+
+  The private key is read from the profile's key_file and is never printed, and no secret
+  value ever appears in the output. `probe` is read-only and prints which convention
+  authenticates; `show` prints the rules; `apply` replaces the whole rule set with the
+  JSON file given and prints what the server now holds.
+
+  The rules JSON uses OCI's own camelCase shape:
+  [{"direction":"INGRESS","protocol":"6","source":"0.0.0.0/0",
+    "tcpOptions":{"destinationPortRange":{"max":6443,"min":6443}}}]
+class: mutate
+args:
+  action: {type: string, default: "show", description: "probe | show | cluster | raw-cluster | raw-get | run-command | entitlement | sdk-facts | create-nsg | attach | port-check | diagnose | storage | volumes-raw | reclaim-volumes | set-rules | set-list-rules | delete-nsg"}
+  keep: {type: string, default: "3", description: "how many of the oldest csi volumes to keep"}
+  nsg: {type: string, default: "ocid1.networksecuritygroup.oc1.uk-london-1.aaaaaaaaii3pthmob5wnz3gjufri564cfdp47jytvnrjwkxbhinh3gqtu7oa", description: "the nsg's ocid"}
+  rules: {type: string, default: "", description: "path to the rules JSON"}
+  pool: {type: string, default: "ocid1.nodepool.oc1.uk-london-1.aaaaaaaawsykhagdekeqlo7fwpzrsfdrzijay7dzllnwux3nxnul34spge3q", description: "the node pool's ocid"}
+  host: {type: string, default: "141.147.80.229", description: "host for port-check"}
+  port: {type: string, default: "6443", description: "port for port-check"}
+  path: {type: string, default: "", description: "an OCI API path for raw-get, e.g. /20160918/volumes; for run-command, the path of the script to run on the instance"}
+halt_on_failure: false
+steps:
+  - name: run
+    cmd: >
+      ~/.local/share/uv/tools/oci-cli/bin/python3 ~/.estate/libexec/oci-nsg.py
+      {{action}} {{keep}} {{nsg}} {{rules}} {{pool}} {{host}} {{port}} {{path}}
