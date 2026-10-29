@@ -199,6 +199,13 @@ jobs:
           T: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          # flux stages its tarball as a sibling of --path (it failed 2026-10-29 with
+          # "open /data1488864184: permission denied"), and / is not writable by the runner.
+          # The artifact carries content only, so push from a writable parent.
+          STAGE="$(mktemp -d)"
+          sudo mv "${DATA}" "${STAGE}/data"
+          sudo chown -R "$(id -u):$(id -g)" "${STAGE}"
+          DATA="${STAGE}/data"
           printf '%s' "$T" | flux push artifact "${ARTIFACT}:${GITHUB_SHA}" --path="${DATA}" \
             --source="https://github.com/${{ github.repository }}" --revision="${GITHUB_SHA}" \
             --creds "chidionyema:$(cat)" >/dev/null
