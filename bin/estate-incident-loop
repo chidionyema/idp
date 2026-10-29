@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# The estate incident loop: one error -> one ticket -> one priority -> one dispatch -> one lesson.
+#
+# WHY THIS EXISTS. The estate master epic's R-14 asks for "an error results in a ticket being
+# raised, prioritised, assigned and depending on capacity an agent is automatically launched",
+# and its own coverage table records R-14 as missing: "no path from a red CI job to an owned
+# ticket to a dispatched agent". Every part of that path existed separately; the join did not.
+#
+# WHAT IT IS. A thin door over platform/estate/libexec/incident-loop.py, which holds the loop,
+# the one incident ledger (~/.estate/state/incidents.db) and the one policy
+# (catalog/incident-policy.json). The same code is reachable as the governed intent
+# `incident-loop`, so an agent never has to shell out to reach it.
+#
+#   bin/estate-incident-loop tick     # one pass of the whole loop
+#   bin/estate-incident-loop sense    # what the sensors see right now
+#   bin/estate-incident-loop list     # the ledger
+#
+# WHERE THE CODE COMES FROM. This file is staged into ~/.estate/bin by estate-runtime-sync, so
+# the copy under ~/.estate/bin cannot find the tree by walking up from itself. The tree is
+# found by looking for the loop next to this script first, then in the estate's runtime mirror
+# (the tree the sync keeps on main, and the one launchd may read without a TCC grant).
+#
+# WHY PATH IS SET HERE. launchd's PATH is /usr/bin:/bin, and the estate's gh lives in
+# /opt/homebrew/bin; a watcher that cannot find gh senses nothing. The sensor's own binaries
+# are named here so the tick works under launchd and under a shell alike.
+set -euo pipefail
+export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+for CANDIDATE in "$HERE/../platform/estate/libexec/incident-loop.py" \
+                 "$HOME/.estate/runtime/idp/platform/estate/libexec/incident-loop.py"; do
+  if [ -f "$CANDIDATE" ]; then
+    exec python3 "$CANDIDATE" "$@"
+  fi
+done
+echo "estate-incident-loop: the loop is not installed (looked in $HERE/../platform/estate/libexec and $HOME/.estate/runtime/idp/platform/estate/libexec)" >&2
+exit 2
