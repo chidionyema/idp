@@ -1,0 +1,358 @@
+#!/usr/bin/env python3
+"""One command answers: is Otto onboarded into the estate?
+
+The founder asked (2026-10-29) for Otto to be "fully ready and onboarded into the estate as
+soon as infrastructure is ready". That question has an answer, and the answer is four
+receipts -- not a paragraph:
+
+  manifests       Otto's manifests do not name a layer the estate owns. This is ADR 0047's
+                  promise made enforceable: the conformance gate (bin/otto-conformance-gate)
+                  grades the tree and carries today's known violations as debt with the wave
+                  that owns each one. Offline; it is the same gate CI runs.
+  single-writer   The estate's one Telegram bot has one webhook writer. OWNER.yaml names the
+                  three checks and says "Enforcement: bin/idp-rules" -- MEASURED 2026-10-29:
+                  there is no bin/idp-rules in this repository, so nothing enforced them.
+                  They are run here, offline, against the manifests.
+  door-registry   The doctor knows every Telegram surface the estate runs, the declared owner
+                  is registered, and every registered agent has a manifest in the tree. The
+                  doctor is the ONE door; this row checks that the door knows the door.
+  runtime         The doctor itself: is every Telegram agent healthy right now, which link
+                  broke, and what repairs it. Delegated, never re-implemented -- a second
+                  health plane would be a second layer of the same thing (AGENTS.md, one of
+                  each layer).
+
+BLIND IS NOT FAIL. A row whose source cannot be read is BLIND: the estate being dark is not
+Otto being broken, and the answer says so instead of inventing a failure. Exit 2 says "could
+not tell", exit 1 says "not ready, and here is why", exit 0 says "onboarded".
+
+    bin/otto-readiness-gate            the four rows, the runtime included
+    bin/otto-readiness-gate --offline  the three offline rows only (no network, no cluster)
+    bin/otto-readiness-gate --json     the same verdict as a JSON document
+    bin/otto-readiness-gate --idp DIR grade another estate root (the tests use a fixture)
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import runpy
+from pathlib import Path
+
+IDP = Path(__file__).resolve().parent.parent
+CONFORMANCE_GATE = IDP / "bin/otto-conformance-gate"
+DOCTOR_REL = ("platform", "estate", "libexec", "telegram-agent-doctor.py")
+
+OK = "ok"
+FAIL = "FAIL"
+BLIND = "BLIND"
+
+# A manifest that can RUN something. A declaration (OWNER.yaml names the operation) is not a
+# workload, and a workload is what can call the Bot API.
+WORKLOAD_KINDS = ("Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob")
+
+# The Telegram surfaces. OWNER.yaml's prohibited list names exactly these four, so the
+# checks are scoped to them -- and the scope is what keeps this gate fast enough to run by
+# hand: the estate has 767 platform manifests, and parsing all of them on a loaded laptop
+# takes minutes. The setWebhook scan below still reads every one of them as TEXT.
+TELEGRAM_SCOPE = ("otto-gateway", "otto-golden", "jit", "hermes-agent")
+
+
+def _load(path: Path, name: str) -> dict:
+    return runpy.run_path(str(path), run_name=name)
+
+
+def _strip_comments(text: str) -> str:
+    """The manifest's code, with its comments removed.
+
+    A comment that mentions setWebhook is legal in this estate -- the declaration in
+    OWNER.yaml names the rule, and the rule is about calls. So the comments come off first
+    and what is left is what a process would run.
+    """
+    kept = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        kept.append(line.split(" #", 1)[0])
+    return "\n".join(kept)
+
+
+def _yaml_docs(path: Path) -> list:
+    try:
+        import yaml
+    except ImportError:
+        return []
+    try:
+        return [d for d in yaml.safe_load_all(path.read_text()) if isinstance(d, dict)]
+    except Exception:  # noqa: BLE001 - an unreadable manifest is a BLIND row, not a crash
+        return []
+
+
+def _scoped_manifests(root: Path) -> list:
+    paths = []
+    for scope in TELEGRAM_SCOPE:
+        directory = root / "platform" / scope
+        if directory.is_dir():
+            paths += sorted(directory.rglob("*.yaml"))
+    return paths
+
+
+def _workload_index(root: Path) -> dict:
+    """Every workload manifest of the Telegram surfaces, by the name it answers to."""
+    index = {}
+    for path in _scoped_manifests(root):
+        for doc in _yaml_docs(path):
+            if doc.get("kind") not in WORKLOAD_KINDS:
+                continue
+            name = str((doc.get("metadata") or {}).get("name") or "")
+            if name:
+                index.setdefault(name, path)
+    return index
+
+
+def row_manifests(root: Path) -> tuple:
+    """ADR 0047's four rules, graded against Otto's manifests."""
+    module = _load(CONFORMANCE_GATE, "otto_conformance_gate")
+    directories = [root / rel for rel in module["DEFAULT_REL_DIRS"]]
+    report = module["grade"](directories)
+    if report["verdict"] == "BLIND":
+        return BLIND, "the manifests could not be read"
+    if report["verdict"] == "FAIL":
+        first = report["new"][0]
+        return FAIL, "{} new violation(s); first: {} {} {} -- {}".format(
+            len(report["new"]),
+            first["rule"],
+            first["file"],
+            first["needle"],
+            first["detail"],
+        )
+    return OK, "{} baselined debt row(s), 0 new violation(s)".format(
+        len(report["debt"])
+    )
+
+
+def row_single_writer(root: Path) -> tuple:
+    """The three checks OWNER.yaml names, run against the manifests.
+
+    OWNER.yaml points at "bin/idp-rules" for enforcement. MEASURED 2026-10-29: no such
+    script exists in this repository, so the checks were documentation. They are checks now.
+    """
+    # The Bot API may only be called from one place. The scan reads every platform manifest
+    # as TEXT -- one read, and the YAML is parsed only for the few that mention the API --
+    # because the estate has 767 platform manifests and parsing all of them takes minutes.
+    needles = ("setWebhook", "deleteWebhook", "getUpdates")
+    hits = {needle: [] for needle in needles}
+    for path in sorted(root.glob("platform/**/*.yaml")):
+        text = path.read_text()
+        if not any(needle in text for needle in needles):
+            continue
+        code = _strip_comments(text)
+        kinds = {doc.get("kind") for doc in _yaml_docs(path)}
+        if not kinds & set(WORKLOAD_KINDS):
+            continue
+        for needle in needles:
+            if needle in code:
+                hits[needle].append(path)
+    callers = hits["setWebhook"] + hits["deleteWebhook"]
+    relative = sorted(str(p.relative_to(root)) for p in callers)
+    if len(relative) != 1:
+        return FAIL, "{} manifests call setWebhook/deleteWebhook: {}".format(
+            len(relative), ", ".join(relative) or "none"
+        )
+    if not relative[0].endswith("otto-gateway/registration-reconciler.yaml"):
+        return (
+            FAIL,
+            "the webhook writer is {} -- it must be the registration reconciler".format(
+                relative[0]
+            ),
+        )
+    getters = [str(p.relative_to(root)) for p in hits["getUpdates"]]
+    if getters:
+        return FAIL, "a manifest long-polls the Bot API: {}".format(", ".join(getters))
+    hermes = root / "platform/hermes-agent"
+    holders = [
+        str(p.relative_to(root))
+        for p in sorted(hermes.glob("*.yaml"))
+        if "TELEGRAM_BOT_TOKEN" in _strip_comments(p.read_text())
+    ]
+    if holders:
+        return FAIL, "hermes-agent carries the bot token: {}".format(", ".join(holders))
+    golden = root / "platform/otto-golden/httproute.yaml"
+    if golden.exists() and "/telegram-webhook" in _strip_comments(golden.read_text()):
+        return FAIL, "otto-golden still serves a telegram webhook path"
+    return OK, "one writer ({}), no long-poll, hermes-agent holds no token".format(
+        relative[0]
+    )
+
+
+def row_door_registry(root: Path, doctor_path: Path) -> tuple:
+    """The doctor knows the estate's Telegram surfaces, and the declared owner is one of them."""
+    module = _load(doctor_path, "telegram_agent_doctor")
+    agents = module["TELEGRAM_AGENTS"]
+    ids = sorted(agent["id"] for agent in agents)
+    if not ids:
+        return BLIND, "the doctor's registry is empty"
+    intent = root / "platform/estate/intents/telegram-agent.doctor.yaml"
+    if not intent.exists():
+        return FAIL, "the doctor intent is missing: {}".format(
+            str(intent.relative_to(root)) if intent.is_relative_to(root) else intent
+        )
+    owner = ""
+    owner_doc = root / "platform/otto-gateway/OWNER.yaml"
+    for doc in _yaml_docs(owner_doc):
+        annotations = (doc.get("metadata") or {}).get("annotations") or {}
+        owner = str(annotations.get("idp.estate/owner") or owner)
+    if owner and owner not in ids:
+        return (
+            FAIL,
+            "the declared owner '{}' is not in the doctor's registry ({})".format(
+                owner, ", ".join(ids)
+            ),
+        )
+    workloads = _workload_index(root)
+    missing = [agent_id for agent_id in ids if agent_id not in workloads]
+    if missing:
+        return FAIL, "registered agents have no manifest: {}".format(", ".join(missing))
+    return OK, "{} agents ({}){}".format(
+        len(ids), ", ".join(ids), ", the declared owner is registered" if owner else ""
+    )
+
+
+def row_runtime(doctor_path: Path) -> tuple:
+    """The doctor answers: is every Telegram agent healthy right now?"""
+    module = _load(doctor_path, "telegram_agent_doctor")
+    report = module["diagnose"](
+        module["TELEGRAM_AGENTS"],
+        module["make_probe"](),
+        scheduled=module["probe_workflow"],
+    )
+    counts = report.get("counts") or {}
+    broken = counts.get("broken") or 0
+    blind = counts.get("blind") or 0
+    healthy = counts.get("healthy") or 0
+    first = ""
+    for agent in report.get("agents") or []:
+        row = agent.get("first_broken")
+        if row:
+            first = "{}: {} -- {}".format(
+                agent["id"], row.get("id"), row.get("detail", "")
+            )
+            break
+    if broken:
+        return FAIL, "{} broken, {} healthy, {} blind; first broken link: {}".format(
+            broken, healthy, blind, first
+        )
+    if blind:
+        return BLIND, "{} blind, {} healthy; the estate is dark from here".format(
+            blind, healthy
+        )
+    return OK, "{} agents healthy".format(healthy)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="run only the offline rows (no network, no cluster)",
+    )
+    parser.add_argument("--json", action="store_true", help="print the verdict as JSON")
+    parser.add_argument(
+        "--idp",
+        default=str(IDP),
+        help="the estate root to grade (the tests use a fixture)",
+    )
+    args = parser.parse_args()
+
+    root = Path(args.idp).resolve()
+    doctor_path = root.joinpath(*DOCTOR_REL)
+    if not doctor_path.exists():
+        doctor_path = IDP.joinpath(*DOCTOR_REL)
+
+    rows = [
+        ("manifests", lambda: row_manifests(root)),
+        ("single-writer", lambda: row_single_writer(root)),
+        ("door-registry", lambda: row_door_registry(root, doctor_path)),
+    ]
+    skipped = []
+    if not args.offline:
+        rows.append(("runtime", lambda: row_runtime(doctor_path)))
+    else:
+        # --offline runs the rows that can be answered from the tree. The runtime row is NOT
+        # answered by it, and the verdict must say so: the 2026-10-29 review found this gate
+        # printing "READY  Otto is onboarded: every row is proven" after skipping the one row
+        # that proves he is. A gate that overstates is worse than a gate that is silent.
+        skipped.append("runtime")
+
+    results = []
+    for name, row in rows:
+        try:
+            status, detail = row()
+        except Exception as exc:  # noqa: BLE001 - a row that cannot run is blind, not a crash
+            status, detail = BLIND, "the row could not run: {}".format(exc)
+        results.append({"row": name, "status": status, "detail": detail})
+    for name in skipped:
+        results.append(
+            {
+                "row": name,
+                "status": "SKIPPED",
+                "detail": "not run: --offline answers the tree, not the estate",
+            }
+        )
+
+    statuses = {r["status"] for r in results if r["status"] != "SKIPPED"}
+    if FAIL in statuses:
+        verdict = "NOT READY"
+    elif BLIND in statuses:
+        verdict = "BLIND"
+    else:
+        verdict = "READY"
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "verdict": verdict,
+                    "scope": "offline" if args.offline else "full",
+                    "skipped": skipped,
+                    "rows": results,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 1 if verdict == "NOT READY" else (2 if verdict == "BLIND" else 0)
+
+    for result in results:
+        print(
+            "{:<6} otto-readiness: {} -- {}".format(
+                result["status"], result["row"], result["detail"]
+            )
+        )
+    if args.offline:
+        print(
+            "{}  otto-readiness (offline): the tree rows are proven; the runtime row was NOT run"
+            " -- Otto is NOT PROVEN onboarded until this gate answers READY without --offline".format(
+                verdict
+            )
+        )
+    else:
+        print(
+            "{}  otto-readiness: {}".format(
+                verdict,
+                {
+                    "READY": "Otto is onboarded: every row is proven",
+                    "NOT READY": "Otto is not onboarded: the failing row is named above",
+                    "BLIND": "Otto is not PROVEN onboarded: a row could not be read",
+                }[verdict],
+            )
+        )
+    if verdict == "NOT READY":
+        return 1
+    if verdict == "BLIND":
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,624 @@
+#!/usr/bin/env python3
+"""Otto's manifests must not name a layer the estate owns.
+
+ADR 0047 (`docs/decisions/0047-otto-is-the-estates-front-door-not-a-second-agent-platform.md`)
+named the concept: Otto is the estate's front door, and below the seam it owns nothing -- it
+borrows the estate's one router, one memory, one executor, one verifier, one identity and one
+secret store. A decision that is only a document does not move a manifest, and three decisions
+in this tree had exactly that fate until this gate existed:
+
+  ADR 0036 (2026-10-02) deleted `otto_facts`, hindsight and the `otto-memory-store` Job. The
+  Job is still in the tree, the deployment still points at hindsight, and a NetworkPolicy still
+  opens the road to the hindsight namespace.
+  AGENTS.md 7a makes the estate's cloud router the default route and the laptop the fallback.
+  The deployment's default route is a pod-local loopback -- the in-pod lifeboat -- so every
+  turn walks around the estate's router, its budgets and its ledger.
+  `docs/specs/otto-door-hands-and-senses.md` step 6 says a model-driven shell never runs in
+  the process that holds the bot token, the database password and the GitHub token, and that
+  `code_execution` is left out of `OTTO_TOOLSETS` until the sandbox lands. The secret-holding
+  container has both.
+
+So the rules are four, and each one is a receipt with a file, a needle and a ticket:
+
+  R1  no manifest names a memory plane the estate retired
+  R2  the door's default route is not a pod-local loopback
+  R3  no shell toolset in a container that mounts secrets
+  R4  no credential literal in a manifest: a key comes from the vault by name
+
+A GATE THAT CANNOT FAIL IS NOT A GATE. This one is proven able to fail: it exits 1 on a
+manifest that introduces a violation, and `tests/test_otto_conformance_gate.py` feeds it one.
+
+THE BASELINE IS THE DEBT, NOT A PERMISSION. The violations that exist today are listed in
+BASELINE with the wave that owns each one, so the gate is green on main and refuses any NEW
+one. The debt is printed on every run, so it is never invisible. A baseline entry whose
+violation is gone is reported as resolved and must be removed: the debt only shrinks.
+
+    bin/otto-conformance-gate            grade Otto's manifests
+    bin/otto-conformance-gate --json     the same verdict as a JSON document
+    bin/otto-conformance-gate --dir DIR  grade another directory (the tests use a fixture)
+
+Exit: 0 conformant (debt printed), 1 a new violation, 2 BLIND (the manifests could not be read).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover - the CI image installs pyyaml for this gate
+    print(
+        "BLIND  otto-conformance: pyyaml is not installed (pip install pyyaml)",
+        file=sys.stderr,
+    )
+    raise SystemExit(2) from None
+
+IDP = Path(__file__).resolve().parent.parent
+# The surfaces Otto owns. hermes-agent is in the list because it is the container that HOLDS
+# the bot token: a rule about secret-holding containers that does not read that container is
+# a rule that grades the wrong tree. Measured 2026-10-29 (the review that found this): the
+# gate graded platform/otto-gateway alone, so the shell toolset in the hermes-agent container
+# was never graded at all.
+DEFAULT_REL_DIRS = (
+    "platform/otto-gateway",
+    "platform/otto-golden",
+    "platform/hermes-agent",
+)
+DEFAULT_DIRS = tuple(IDP / rel for rel in DEFAULT_REL_DIRS)
+
+# The planes ADR 0036 retired on 2026-10-02. The estate's one memory plane is cortex, reached
+# through the estate's own MCP door; a manifest that still names one of these names a second
+# memory plane, and the next cluster bootstrapped from this tree would build it again.
+RETIRED_PLANES = ("hindsight", "otto-memory-store", "otto_facts")
+
+# A pod-local address. Reached from inside the pod it crosses no Service, no CNI and no node,
+# which is what makes the lifeboat worth having -- and what makes it a bad DEFAULT: a turn
+# answered there is a turn the estate's router never sees and never accounts for.
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+# The founder's standard, in the estate's own words: a model-driven shell never runs in the
+# process that holds the bot token, the database password and the GitHub token.
+SHELL_TOOLSETS = ("terminal", "code_execution", "computer_use")
+
+# Environment names that name the route a turn takes. A proxy (ALL_PROXY, HTTPS_PROXY) and a
+# sidecar's own listen address are not routes and are not flagged.
+ROUTE_ENV_NAMES = (
+    "LITELLM_BASE_URL",
+    "OPENAI_BASE_URL",
+    "ANTHROPIC_BASE_URL",
+    "OTTO_BASE_URL",
+)
+
+# A key name that means "this value is a credential".
+CREDENTIAL_HINTS = ("API_KEY", "TOKEN", "SECRET", "PASSWORD", "AUTHKEY", "PRIVATE_KEY")
+
+# A key that points AT a secret is not itself a secret.
+SECRET_POINTER_KEYS = ("secretKey", "secretName", "secretRef", "secret")
+
+# What a credential literal looks like: a vendor prefix, or a long opaque blob. A name of a
+# secret ("otto-gateway-channels") is not a credential and must not be graded as one.
+CREDENTIAL_PREFIXES = (
+    "sk-",
+    "sk-ant-",
+    "gsk_",
+    "csk-",
+    "AIza",
+    "nvapi-",
+    "xai-",
+    "hf_",
+)
+
+WORKLOAD_KINDS = ("Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob")
+
+# The debt that exists today, and the wave that owns each row. Each entry is
+# (rule, file, needle): the exact finding that is carried, so a NEW finding in the same file
+# is still refused. Removing a row here is how a wave closes.
+BASELINE = (
+    (
+        "R1",
+        "platform/otto-gateway/deployment.yaml",
+        "OTTO_MEMORY_HINDSIGHT_URL",
+        "wave 2 -- ADR 0036: remember is the door's only memory",
+    ),
+    (
+        "R1",
+        "platform/otto-gateway/memory-store-job.yaml",
+        "OTTO_MEMORY_HINDSIGHT_URL",
+        "wave 2 -- ADR 0036: the retired memory store Job is still in the tree",
+    ),
+    (
+        "R1",
+        "platform/otto-gateway/memory-store-job.yaml",
+        "app.kubernetes.io/name:otto-memory-store",
+        "wave 2 -- ADR 0036: the retired memory store Job is still in the tree",
+    ),
+    (
+        "R1",
+        "platform/otto-gateway/memory-store-job.yaml",
+        "name:otto-memory-store-8",
+        "wave 2 -- ADR 0036: the retired memory store Job is still in the tree",
+    ),
+    (
+        "R1",
+        "platform/otto-gateway/network-policy.yaml",
+        "kubernetes.io/metadata.name:hindsight",
+        "wave 2 -- ADR 0036: the road to the retired plane is still open",
+    ),
+    (
+        "R1",
+        "platform/otto-golden/deployment.yaml",
+        "OTTO_MEMORY_HINDSIGHT_URL",
+        "wave 2 -- ADR 0036: the second Otto names the retired plane too",
+    ),
+    (
+        "R1",
+        "platform/otto-golden/network-policy.yaml",
+        "kubernetes.io/metadata.name:hindsight",
+        "wave 2 -- ADR 0036: the road to the retired plane is still open here too",
+    ),
+    (
+        "R1",
+        "platform/hermes-agent/gateway.yaml",
+        "HINDSIGHT_API_URL",
+        "wave 2 -- ADR 0036: the gateway still answers from the retired plane",
+    ),
+    (
+        "R2",
+        "platform/otto-gateway/deployment.yaml",
+        "LITELLM_BASE_URL",
+        "wave 1 -- AGENTS.md 7a: the estate's router is the default; the lifeboat is last",
+    ),
+    (
+        "R3",
+        "platform/otto-gateway/deployment.yaml",
+        "gateway/terminal",
+        "wave 3 -- a shell runs in a sandbox Job with no secrets",
+    ),
+    (
+        "R3",
+        "platform/otto-gateway/deployment.yaml",
+        "gateway/code_execution",
+        "wave 3 -- code_execution stays out until the sandbox lands",
+    ),
+)
+
+
+@dataclass
+class Finding:
+    rule: str
+    file: str
+    needle: str
+    detail: str
+
+    @property
+    def key(self) -> tuple[str, str, str]:
+        return (self.rule, self.file, self.needle)
+
+
+def _is_loopback(value: str) -> bool:
+    low = value.lower()
+    if not low.startswith(("http://", "https://")):
+        return False
+    host = low.split("://", 1)[1].split("/", 1)[0].split("@")[-1]
+    host = host.split(":")[0]
+    return host in LOOPBACK_HOSTS
+
+
+def _looks_like_reference(value: str) -> bool:
+    """A credential by NAME, not by literal: a path, a template or an env reference."""
+    if not value:
+        return True
+    if value.startswith(("/", "os.environ/", "{{", "$", "env:", "secretKeyRef")):
+        return True
+    if "{{" in value or "}}" in value:
+        return True
+    if value.endswith((".yaml", ".json", ".pem", ".key", ".txt")):
+        return True
+    return False
+
+
+def _looks_like_credential(value: str) -> bool:
+    """A literal credential: a vendor prefix, or a long opaque blob with mixed classes."""
+    if any(value.startswith(prefix) for prefix in CREDENTIAL_PREFIXES):
+        return True
+    if len(value) < 24 or " " in value:
+        return False
+    return any(c.isdigit() for c in value) and any(c.isalpha() for c in value)
+
+
+def _embedded(value: str):
+    """Parse a YAML document embedded in a string, or None when it is not one.
+
+    A ConfigMap carries a config as a string. Scanning that string as TEXT would read its
+    comments as findings -- the estate's own rule is that a comment about a dead port stays
+    legal -- so the string is parsed and only its VALUES are graded.
+    """
+    if "\n" not in value:
+        return None
+    try:
+        parsed = yaml.safe_load(value)
+    except yaml.YAMLError:
+        return None
+    return parsed if isinstance(parsed, (dict, list)) else None
+
+
+def _named_values(node):
+    """Yield (key, value) for every string in a parsed document.
+
+    An environment entry is a mapping with a NAME and a VALUE; the name is the key that
+    matters, so an entry is yielded under its own name rather than under the word "value".
+    """
+    if isinstance(node, dict):
+        name = node.get("name")
+        if isinstance(name, str) and isinstance(node.get("value"), str):
+            yield name, node["value"]
+        for key, value in node.items():
+            if key == "value" and isinstance(name, str) and isinstance(value, str):
+                continue
+            if isinstance(value, str):
+                yield key, value
+            else:
+                yield from _named_values(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _named_values(item)
+
+
+def _is_name_key(key: str) -> bool:
+    return key == "name" or key.endswith("/name")
+
+
+def _retired_findings(doc, rel: str, out: list) -> None:
+    """R1: a retired memory plane named by a KEY, by a URL, or by a name.
+
+    Free text is not a finding. A comment, a script or a docstring that mentions a dead
+    plane is legal in this estate -- a comment about a dead port stays legal -- so only three
+    shapes count: a key that names the plane, a URL that resolves to it, and a name that IS
+    the plane's (a resource name, a label, a namespace).
+    """
+    keyed = set()
+    for key, _value in _named_values(doc):
+        low = key.lower()
+        for plane in RETIRED_PLANES:
+            if plane in low:
+                keyed.add(key)
+                out.append(
+                    Finding(
+                        "R1",
+                        rel,
+                        key,
+                        "{} names the retired memory plane '{}'".format(key, plane),
+                    )
+                )
+                break
+    for key, value in _named_values(doc):
+        low = value.lower()
+        for plane in RETIRED_PLANES:
+            if plane not in low:
+                continue
+            if low.startswith(("http://", "https://")):
+                if key in keyed:
+                    break
+                needle = "{}:{}".format(key, value.split("//", 1)[1].split("/")[0])
+                detail = "{} points at the retired memory plane '{}'".format(key, plane)
+            elif (_is_name_key(key) or value.strip().lower() == plane) and not (
+                key == "name" and value in keyed
+            ):
+                needle = "{}:{}".format(key, value.strip())
+                detail = "{} names the retired memory plane '{}'".format(key, plane)
+            else:
+                continue
+            out.append(Finding("R1", rel, needle, detail))
+            break
+
+
+def _credential_findings(doc, rel: str, out: list) -> None:
+    """R4: a credential literal in a manifest."""
+    for key, value in _named_values(doc):
+        if not any(hint in key.upper() for hint in CREDENTIAL_HINTS):
+            continue
+        if key in SECRET_POINTER_KEYS:
+            continue
+        if _looks_like_reference(value) or not _looks_like_credential(value):
+            continue
+        out.append(
+            Finding(
+                "R4",
+                rel,
+                key,
+                "{} carries a literal credential; a key belongs to the vault by name".format(
+                    key
+                ),
+            )
+        )
+
+
+def _pod_spec(doc) -> dict:
+    """The pod spec of a workload, whatever shape carries it.
+
+    A Deployment hides its pod under spec.template; a Job hides it under
+    spec.jobTemplate.spec.template; a CronJob one level deeper again. The retired memory store
+    is a Job, so a rule that only reads spec.template never sees it -- and a rule that cannot
+    see a Job cannot see the Job that still carries the retired plane.
+    """
+    spec = doc.get("spec") or {}
+    pod = ((spec.get("template") or {}).get("spec")) or {}
+    if not pod:
+        job = (spec.get("jobTemplate") or {}).get("spec") or {}
+        pod = ((job.get("template") or {}).get("spec")) or {}
+        if not pod:
+            job = (job.get("jobTemplate") or {}).get("spec") or {}
+            pod = ((job.get("template") or {}).get("spec")) or {}
+    return pod or {}
+
+
+def _containers(doc) -> list:
+    pod = _pod_spec(doc)
+    containers = list(pod.get("containers") or [])
+    containers += list(pod.get("initContainers") or [])
+    return containers
+
+
+def _holds_secrets(container) -> bool:
+    for mount in container.get("volumeMounts") or []:
+        path = str(mount.get("mountPath") or "")
+        name = str(mount.get("name") or "")
+        if path.startswith("/run/secrets") or "secret" in name.lower():
+            return True
+    for source in container.get("envFrom") or []:
+        if "secretRef" in source:
+            return True
+    for item in container.get("env") or []:
+        if "secretKeyRef" in (item.get("valueFrom") or {}):
+            return True
+    return False
+
+
+def _toolsets(container) -> list:
+    for item in container.get("env") or []:
+        name = str(item.get("name") or "")
+        if name.endswith("TOOLSETS"):
+            value = str(item.get("value") or "")
+            return [t.strip() for t in value.split(",") if t.strip()]
+    return []
+
+
+def _env_items(container) -> list:
+    return list(container.get("env") or [])
+
+
+def _route_findings(doc, rel: str, out: list) -> None:
+    """R2: the default route is a pod-local loopback."""
+    pod = _pod_spec(doc)
+    envs = list(pod.get("env") or [])
+    for container in _containers(doc):
+        envs = envs + _env_items(container)
+    for item in envs:
+        name = str(item.get("name") or "")
+        value = item.get("value")
+        if not isinstance(value, str):
+            continue
+        if name not in ROUTE_ENV_NAMES and not name.endswith("_BASE_URL"):
+            continue
+        if _is_loopback(value):
+            out.append(
+                Finding(
+                    "R2",
+                    rel,
+                    name,
+                    "{} points at the pod-local loopback {}".format(name, value),
+                )
+            )
+
+
+def _shell_findings(doc, rel: str, out: list) -> None:
+    """R3: a shell toolset in a container that mounts secrets."""
+    for container in _containers(doc):
+        if not _holds_secrets(container):
+            continue
+        name = str(container.get("name") or "?")
+        for toolset in _toolsets(container):
+            if toolset in SHELL_TOOLSETS:
+                out.append(
+                    Finding(
+                        "R3",
+                        rel,
+                        "{}/{}".format(name, toolset),
+                        "container '{}' mounts secrets and enables the shell toolset '{}'".format(
+                            name, toolset
+                        ),
+                    )
+                )
+
+
+def scan(directory: Path) -> list:
+    findings = []
+    seen = set()
+    for path in sorted(directory.glob("*.yaml")):
+        rel = str(path.relative_to(IDP)) if path.is_relative_to(IDP) else str(path)
+        try:
+            text = path.read_text()
+        except OSError as exc:
+            findings.append(Finding("READ", rel, path.name, str(exc)))
+            continue
+        try:
+            docs = list(yaml.safe_load_all(text))
+        except yaml.YAMLError as exc:
+            findings.append(
+                Finding(
+                    "READ",
+                    rel,
+                    path.name,
+                    "the manifest does not parse: {}".format(exc),
+                )
+            )
+            continue
+        for doc in docs:
+            if not isinstance(doc, dict):
+                continue
+            before = len(findings)
+            _retired_findings(doc, rel, findings)
+            _credential_findings(doc, rel, findings)
+            if doc.get("kind") in WORKLOAD_KINDS:
+                _route_findings(doc, rel, findings)
+                _shell_findings(doc, rel, findings)
+            for finding in findings[before:]:
+                if finding.key in seen:
+                    findings.remove(finding)
+                else:
+                    seen.add(finding.key)
+    return findings
+
+
+def scan_all(directories) -> tuple:
+    """Every finding in every directory, and the set of files that were actually read.
+
+    The file set matters: a baseline row is only "resolved" if the file that carried it was
+    read in THIS run. Otherwise grading one directory reports another directory's rows as
+    resolved -- a false receipt, and a receipt is only worth what it measured. That defect was
+    found by the 2026-10-29 review of this gate, on `otto-conformance-gate --dir
+    platform/otto-golden`, which printed "R2 ... is resolved" for a file it never opened.
+    """
+    findings = []
+    read = set()
+    for directory in directories:
+        findings.extend(scan(directory))
+        for path in sorted(directory.glob("*.yaml")):
+            read.add(str(path.relative_to(IDP)) if path.is_relative_to(IDP) else str(path))
+    return findings, read
+
+
+def grade(directories) -> dict:
+    """Grade manifest directories and return the verdict as data.
+
+    The gate's answer is a verdict; the doors that need it (the readiness gate, the tests)
+    need the same answer as data, so the walk lives here and main() only prints it.
+    """
+    if isinstance(directories, (str, Path)):
+        directories = [Path(directories)]
+    directories = [Path(d) for d in directories]
+    missing = [str(d) for d in directories if not d.is_dir()]
+    if missing:
+        return {
+            "verdict": "BLIND",
+            "unreadable": [
+                {
+                    "rule": "READ",
+                    "file": str(directory),
+                    "needle": "directory",
+                    "detail": "the manifest directory does not exist",
+                }
+                for directory in missing
+            ],
+            "new": [],
+            "debt": [],
+            "resolved": [],
+        }
+    findings, read = scan_all(directories)
+    unreadable = [f for f in findings if f.rule == "READ"]
+    baseline = {(rule, file, needle): owner for rule, file, needle, owner in BASELINE}
+    debt = []
+    new = []
+    for finding in findings:
+        if finding.key in baseline:
+            debt.append((finding, baseline[finding.key]))
+        else:
+            new.append(finding)
+    found = {f.key for f in findings}
+    stale = [key for key in baseline if key not in found and key[1] in read]
+    if unreadable:
+        return {
+            "verdict": "BLIND",
+            "unreadable": [asdict(f) for f in unreadable],
+            "new": [],
+            "debt": [],
+            "resolved": [],
+        }
+    return {
+        "verdict": "FAIL" if new else "OK",
+        "unreadable": [],
+        "new": [asdict(f) for f in new],
+        "debt": [{"finding": asdict(f), "owner": owner} for f, owner in debt],
+        "resolved": [list(k) for k in stale],
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--dir",
+        action="append",
+        default=None,
+        help="a manifest directory to grade (repeatable; default: Otto's three surfaces)",
+    )
+    parser.add_argument("--json", action="store_true", help="print the verdict as JSON")
+    args = parser.parse_args()
+
+    directories = [Path(d) for d in args.dir] if args.dir else list(DEFAULT_DIRS)
+    missing = [d for d in directories if not d.is_dir()]
+    if missing:
+        for directory in missing:
+            print(
+                "BLIND  otto-conformance: {} is not a directory".format(directory),
+                file=sys.stderr,
+            )
+        return 2
+
+    report = grade(directories)
+    if report["verdict"] == "BLIND":
+        for finding in report["unreadable"]:
+            print(
+                "BLIND  otto-conformance: {} {}".format(
+                    finding["file"], finding["detail"]
+                ),
+                file=sys.stderr,
+            )
+        return 2
+
+    debt = report["debt"]
+    new = report["new"]
+    resolved = report["resolved"]
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 1 if new else 0
+
+    for row in debt:
+        finding = row["finding"]
+        print(
+            "debt  {} {} {} -- {}".format(
+                finding["rule"], finding["file"], finding["needle"], row["owner"]
+            )
+        )
+    for key in resolved:
+        print(
+            "ok    otto-conformance: {} {} {} is resolved -- remove it from BASELINE".format(
+                key[0], key[1], key[2]
+            )
+        )
+    for finding in new:
+        print(
+            "FAIL  {} {} {} -- {}".format(
+                finding["rule"], finding["file"], finding["needle"], finding["detail"]
+            )
+        )
+    if new:
+        print(
+            "FAIL  otto-conformance: {} new violation(s); {} baselined debt row(s)".format(
+                len(new), len(debt)
+            )
+        )
+        return 1
+    print(
+        "ok    otto-conformance: {} baselined debt row(s), 0 new violation(s)".format(
+            len(debt)
+        )
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

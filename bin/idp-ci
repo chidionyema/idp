@@ -256,6 +256,24 @@ fi
     fail=1
   fi
 
+  # Otto's manifests must not name a layer the estate owns (ADR 0047: Otto is the estate's
+  # front door, and below the seam it borrows the estate's one router, one memory, one
+  # executor, one verifier, one identity and one secret store). Three decisions in this tree
+  # had become documents only -- ADR 0036's memory planes, the estate's router as the default
+  # route, and the shell inside the secret-holding container -- and a decision that is only a
+  # document does not move a manifest. The gate carries today's known violations as DEBT with
+  # the wave that owns each one and refuses any NEW one; the debt is printed on every run.
+  # Proven able to fail: tests/test_otto_conformance_gate.py feeds it a violating manifest.
+  if [ -x "$IDP/bin/otto-conformance-gate" ]; then
+    if touched platform/otto-gateway/ || touched bin/otto-conformance-gate; then
+      echo "  Otto conformance (no second layer under the front door)..."
+      (cd "$IDP" && bin/otto-conformance-gate) || fail=1
+    fi
+  else
+    say "FAIL  otto-conformance-gate  bin/otto-conformance-gate is missing -- the front door is unguarded"
+    fail=1
+  fi
+
   # face licence (spec 2026-10-03-face-experience-10x.md §6): no non-commercial asset reaches the
   # shipped face. The face shipped brunette.glb, a CC BY-NC avatar, into a product the estate is
   # trying to sell; VERSIONS said so in a sentence nothing read. This rung turns that sentence into
