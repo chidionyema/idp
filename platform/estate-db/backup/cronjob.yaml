@@ -1,0 +1,119 @@
+# A daily logical copy of the estate's one PostgreSQL, off the volume, made by the cluster.
+#
+# idp#7391: the newest object in estate-db-backups was 2026-09-08 and no job in platform/estate-db
+# wrote one. The shop database has a verified daily copy (platform/prospector/store-db-backup.yaml);
+# the database that holds every other product's rows had none. Same shape, same rules:
+#   * pg_dumpall from the cluster's own image (pg_dump refuses a server newer than itself).
+#   * It refuses to upload a copy it cannot verify: the dump must end with pg_dumpall's own
+#     completion marker, and must not have collapsed against the previous receipt.
+#   * The receipt estate-db/latest.json is written last, so its presence means the copy landed.
+#     bin/idp-estate-db-backup grades that receipt from the backend (fresh within 26 h or FAIL).
+#
+# No credential in this file: the upload uses the node's instance principal, and the superuser
+# password is read from the CNPG-managed secret by reference.
+# Node cost: requests 100m/256Mi for a few minutes a day; no block volume (emptyDir only).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: estate-db-backup
+  namespace: estate-db
+spec:
+  schedule: "41 3 * * *"          # off the hour and off the shop's 03:17
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 86400
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile: { type: RuntimeDefault }
+          initContainers:
+            - name: dump
+              image: ghcr.io/chidionyema/postgres-partman:18.1-postgres-partman
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  pg_dumpall --host estate-rw --username "$PGUSER" --no-password | gzip -9 > /work/estate.sql.gz
+                  gzip -t /work/estate.sql.gz
+                  ls -l /work/estate.sql.gz
+              env:
+                - { name: PGUSER, valueFrom: { secretKeyRef: { name: estate-db-superuser, key: username } } }
+                - { name: PGPASSWORD, valueFrom: { secretKeyRef: { name: estate-db-superuser, key: password } } }
+              resources:
+                requests: { cpu: 100m, memory: 256Mi }
+                limits: { cpu: 500m, memory: 512Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+              volumeMounts:
+                - { name: work, mountPath: /work }
+          containers:
+            - name: upload
+              image: ghcr.io/oracle/oci-cli:20260826
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+                  oci --auth instance_principal os object get --bucket-name "$BUCKET" \
+                    --name estate-db/latest.json --file /work/previous.json >/dev/null 2>&1 || : > /work/previous.json
+                  python3 - "$STAMP" <<'PY'
+                  import gzip, hashlib, json, os, pathlib, sys
+                  stamp = sys.argv[1]
+                  path = pathlib.Path("/work/estate.sql.gz")
+                  tail = gzip.open(path, "rt", errors="replace").read()[-200:]
+                  receipt = {
+                      "stamp": stamp,
+                      "object": f"estate-db/estate-{stamp}.sql.gz",
+                      "bytes": path.stat().st_size,
+                      "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                      "complete": "PostgreSQL database cluster dump complete" in tail,
+                  }
+                  if not receipt["complete"]:
+                      sys.exit("REFUSED: dump lacks pg_dumpall's completion marker (truncated)")
+                  raw = pathlib.Path("/work/previous.json").read_text().strip()
+                  if raw:
+                      prev = json.loads(raw)
+                      floor = prev["bytes"] * float(os.environ["MIN_SIZE_RATIO"])
+                      if receipt["bytes"] < floor:
+                          sys.exit(f"REFUSED: {receipt['bytes']} bytes under {floor:.0f} "
+                                   f"({os.environ['MIN_SIZE_RATIO']} of {prev['bytes']} at {prev['stamp']})")
+                  pathlib.Path("/work/receipt.json").write_text(json.dumps(receipt, indent=2, sort_keys=True))
+                  print(json.dumps(receipt, sort_keys=True))
+                  PY
+                  NAME="$(python3 -c 'import json;print(json.load(open("/work/receipt.json"))["object"])')"
+                  oci --auth instance_principal os object put --bucket-name "$BUCKET" \
+                    --name "$NAME" --file /work/estate.sql.gz --content-type application/gzip --force
+                  oci --auth instance_principal os object put --bucket-name "$BUCKET" \
+                    --name estate-db/latest.json --file /work/receipt.json --content-type application/json --force
+                  echo "estate-db copied to $BUCKET/$NAME"
+              env:
+                - { name: HOME, value: /tmp }
+                - { name: BUCKET, value: estate-db-backups }
+                - { name: MIN_SIZE_RATIO, value: "0.5" }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { cpu: 500m, memory: 512Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+              volumeMounts:
+                - { name: work, mountPath: /work }
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - name: work
+              emptyDir: { sizeLimit: 2Gi }
+            - name: tmp
+              emptyDir: { sizeLimit: 64Mi }

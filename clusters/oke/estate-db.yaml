@@ -51,6 +51,26 @@ spec:
       name: estate
       namespace: estate-db
 ---
+# Part 2b (idp#7391): the daily dump of the estate database to estate-db-backups. Depends on the
+# cluster because the job connects to estate-rw. The receipt is graded by bin/idp-estate-db-backup.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    idp.estate.io/runtime: always-on
+  name: estate-db-backup
+  namespace: flux-system
+spec:
+  interval: 30s
+  dependsOn:
+    - name: estate-db
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/estate-db/backup
+  prune: true
+  timeout: 2m
+---
 # Part 3: the catalog's schema, applied to the estate's own Postgres (the record
 # itself -- D1: one Postgres, the existing one). Depends on estate-db, because the
 # schema lands in that cluster's `estate` database and a Job that starts before
