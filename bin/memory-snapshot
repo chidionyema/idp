@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+"""bin/memory-snapshot -- write, pull and check memory's second home (idp#7397).
+
+WHY. On 2026-10-28 the OKE cluster went dark and took unified memory with it: one Postgres, one
+cluster, no copy anywhere else. The laptop disk was at zero the same evening. The memory snapshot
+(platform/estate/memory/snapshot.py) is the copy that lives on neither: Cloudflare R2, written by
+GitHub Actions (.github/workflows/memory-snapshot.yml, ADR 0034 rung 2), read by the router's
+Active Memory and Active Focus when the door is down.
+
+    bin/memory-snapshot write    # the scheduled job: briefs through the door + the claim ledger -> R2
+    bin/memory-snapshot pull     # any machine: R2 -> the local copy (~/.estate/memory/snapshot.json)
+    bin/memory-snapshot check    # read R2 and grade the ages; exit 1 when the facts are too old
+
+`write` asks the door for one brief per standing topic (TOPICS, the estate's own subjects) and keeps
+the union, so a reader's word-ranked brief has the facts the server's meaning-ranked one would have
+led with. When the door is down it keeps the facts already in R2 and their old stamp -- never
+re-dated -- and still refreshes the focus half from GitHub, which was up. Every upload is read back
+and its sha256 compared (LAW 15: the upload receipt is never the proof).
+
+SECRETS by name only (AGENTS.md section 4): MCP_GATEWAY_KEY for the door; R2_ACCOUNT_ID,
+R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET for the bucket; GH_TOKEN for gh.
+
+Rows, then one verdict line (FAIL exits 1, BLIND exits 2):
+    ok      door         16/16 briefs answered, 212 facts
+    ok      focus        14 claims from the ledger
+    ok      r2           412 KB written to memory/snapshot.json, read back sha256 equal
+    ok      memory-snapshot  facts 0m old, focus 0m old
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import os
+import sys
+import time
+
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "platform", "estate", "memory"))
+
+import focus  # noqa: E402
+import snapshot  # noqa: E402
+
+# A writer every 15 minutes: six hours of no new facts is the door down for 24 runs in a row.
+FACTS_STALE_S = 6 * 3600
+BRIEF_LIMIT = 30  # the server's own cap (BriefRequest.limit le=30)
+DOOR_TIMEOUT_S = 20.0
+FOCUS_TIMEOUT_S = 30.0
+# The standing subjects of the estate. "" asks for the newest decisions and incidents alone.
+TOPICS = [
+    "",
+    "model routing, the cloud router and the laptop router lanes",
+    "unified memory, Active Memory and the memory door",
+    "Active Focus, claims and the claim ledger",
+    "the OKE cluster, node pools, capacity and the free tier",
+    "deploys: Flux, image automation and the Greenlane",
+    "secrets, the vault and estate-secrets",
+    "the laptop: disk, launchd jobs and the watchdog",
+    "Otto, Telegram and the founder decision door",
+    "voice, the face and fleetview",
+    "Backstage, the catalog and the site",
+    "CI gates, claim-gate and the diagnosis gate",
+    "incidents and outages",
+    "founder decisions and rulings",
+    "costs, budgets and vendor keys",
+    "disaster recovery, escrow and backups",
+]
+
+
+def say(verdict: str, what: str, text: str) -> None:
+    print(f"{verdict:<7} {what:<12} {text}", flush=True)
+
+
+def _age(seconds: float) -> str:
+    s = max(0, int(seconds))
+    return f"{s // 3600}h{s % 3600 // 60:02d}m" if s >= 3600 else f"{s // 60}m"
+
+
+def write(cfg, topics, brief_fn, focus_fn, get, put, now: float = 0.0) -> int:
+    now = now or time.time()
+    red = 0
+    try:
+        old = snapshot.decode(get(cfg))
+    except Exception:  # noqa: BLE001 - the first run finds no object
+        old = None
+    old = old or {"facts": [], "facts_at": 0, "focus": [], "focus_at": 0}
+
+    facts, failed = {}, []
+    for t in topics:
+        try:
+            b = brief_fn(t) or {}
+        except Exception as exc:  # noqa: BLE001 - one dead topic is a row, not a crash
+            failed.append(f"{t or '(recent)'}: {exc}")
+            continue
+        for f in (b.get("relevant") or []) + (b.get("recent") or []):
+            if isinstance(f, dict) and f.get("key"):
+                facts[str(f["key"])] = f
+    answered = len(topics) - len(failed)
+    if answered and failed:  # a partial read keeps what it could not re-read
+        for f in old["facts"]:
+            facts.setdefault(str(f.get("key")), f)
+    if answered:
+        facts_list, facts_at = list(facts.values()), now
+        say("ok", "door", f"{answered}/{len(topics)} briefs answered, {len(facts_list)} facts")
+    else:
+        facts_list, facts_at = old["facts"], float(old.get("facts_at") or 0)
+    if failed:
+        say("note", "door", f"{len(failed)} brief(s) unanswered: {failed[0][:160]}")
+
+    rows = focus_fn()
+    if rows is None:
+        rows, focus_at = old["focus"], float(old.get("focus_at") or 0)
+        say("note", "focus", "claim ledger unreadable; keeping the last register")
+    else:
+        focus_at = now
+        say("ok", "focus", f"{len(rows)} claims from the ledger")
+
+    run = os.environ.get("GITHUB_RUN_ID")
+    body = snapshot.encode(
+        {
+            "version": snapshot.VERSION,
+            "namespace": "estate",
+            "source": f"actions run {run}" if run else "bin/memory-snapshot",
+            "facts_at": facts_at,
+            "facts": facts_list,
+            "focus_at": focus_at,
+            "focus": rows,
+        }
+    )
+    try:
+        put(cfg, body)
+        back = get(cfg)
+    except Exception as exc:  # noqa: BLE001
+        say("FAIL", "r2", f"write or read-back failed: {exc}")
+        return 1
+    if hashlib.sha256(back).hexdigest() != hashlib.sha256(body).hexdigest():
+        say("FAIL", "r2", "read back differs from what was written")
+        return 1
+    say("ok", "r2", f"{len(body) // 1024} KB written to {snapshot.OBJECT_KEY}, read back sha256 equal")
+
+    facts_age = now - facts_at
+    if facts_age > FACTS_STALE_S:
+        say("FAIL", "door", f"no fact read through the door for {_age(facts_age)} (limit {_age(FACTS_STALE_S)}); readers are on old memory")
+        red += 1
+    verdict = "FAIL" if red else "ok"
+    say(verdict, "memory-snapshot", f"facts {_age(facts_age)} old, focus {_age(now - focus_at)} old")
+    return 1 if red else 0
+
+
+def _door_brief_fn():
+    import door  # noqa: PLC0415
+
+    key = door.key().strip()
+    if not key:
+        say("BLIND", "door", f"no {door.MANIFEST['door']['key_env']} in the environment or the vault")
+        sys.exit(2)
+
+    def brief(task: str) -> dict:
+        b = door.call("brief", {"task": task, "limit": BRIEF_LIMIT}, key, DOOR_TIMEOUT_S)
+        for k in ("relevant", "recent"):  # ghost focus facts never reach the snapshot
+            b[k], _ = focus.drop_stale(b.get(k) or [])
+        return b
+
+    return brief
+
+
+def _bucket():
+    cfg = snapshot.r2_config()
+    if not cfg:
+        say("BLIND", "r2", "R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET: not all set")
+        sys.exit(2)
+    return cfg
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("command", choices=("write", "pull", "check"))
+    args = ap.parse_args(argv)
+    cfg = _bucket()
+    if args.command == "write":
+        return write(
+            cfg,
+            TOPICS,
+            _door_brief_fn(),
+            lambda: focus.live_focus(
+                os.path.join(os.environ.get("RUNNER_TEMP", "/tmp"), "focus-register.json"),
+                timeout=FOCUS_TIMEOUT_S,
+            ),
+            snapshot.r2_get,
+            snapshot.r2_put,
+        )
+    try:
+        snap = snapshot.decode(snapshot.r2_get(cfg))
+    except Exception as exc:  # noqa: BLE001
+        say("FAIL", "r2", f"{snapshot.OBJECT_KEY} unreadable: {exc}")
+        return 1
+    if not snap:
+        say("FAIL", "r2", f"{snapshot.OBJECT_KEY} is not a snapshot")
+        return 1
+    now = time.time()
+    facts_age, focus_age = now - float(snap.get("facts_at") or 0), now - float(snap.get("focus_at") or 0)
+    if args.command == "pull":
+        why = snapshot.write_local(snap)
+        if why:
+            say("FAIL", "local", f"{snapshot.local_path()} not written: {why}")
+            return 1
+        say("ok", "local", f"{len(snap['facts'])} facts, {len(snap['focus'])} claims -> {snapshot.local_path()}")
+    red = facts_age > FACTS_STALE_S
+    say("FAIL" if red else "ok", "memory-snapshot", f"facts {_age(facts_age)} old ({len(snap['facts'])}), focus {_age(focus_age)} old ({len(snap['focus'])})")
+    return 1 if red else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

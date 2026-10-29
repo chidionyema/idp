@@ -1,0 +1,125 @@
+description: 'Active Focus is read from the GitHub claim ledger (platform/estate/memory/focus.py
+  live_focus), and GitHub stayed up through the 2026-10-28 outage. Even so the laptop
+  router logged 87 `active_memory focus unreadable: claim ledger unreadable (gh)`,
+  58 `focus unreadable: no answer inside 3.5s`, and 145 focus reads that ended `nothing
+  to serve`. Question: why was focus missing while its ledger was up -- did the router
+  cut every gh read (its background refresh too) at a deadline shorter than the search
+  takes, and drop the register already on disk when it did; was GitHub down or rate-limiting
+  the search; was gh missing or unauthenticated in the router''s launchd environment;
+  or did the full disk break gh or the register file. Hypotheses and likelihoods written
+  before the measurements; measured 2026-10-29 02:45-03:45Z, idp#7397.
+
+  '
+hypotheses:
+- name: H1
+  description: the claim search takes longer than BUDGET_S (3.0 s on the laptop);
+    _door_focus cut every gh read at BUDGET_S process-wide, the background refresh
+    included, so a stale register could never be refreshed, and live_focus answered
+    unknown on a cut read instead of the register already on disk
+  prior: 0.3
+- name: H2
+  description: GitHub was down, or rate-limited the search API
+  prior: 0.25
+- name: H3
+  description: gh was missing or unauthenticated in the router's launchd environment
+  prior: 0.2
+- name: H4
+  description: the full disk broke gh or the focus register file (ENOSPC)
+  prior: 0.25
+evidence:
+- name: 'controlled pair, the exact read the router makes (focus.live_focus on a fresh
+    cache path), 2026-10-29 03:42-03:44Z: timeout=3.0 -> None (3.0 s), timeout=10.0
+    -> 13 rows, then again 3.0 -> None, 10.0 -> 13 rows. Only the deadline changed'
+  observed:
+    flips_with_deadline: 2
+  likelihoods:
+    H1:
+      flips_with_deadline: 0.9
+      no_flip: 0.1
+    H2:
+      flips_with_deadline: 0.1
+      no_flip: 0.9
+    H3:
+      flips_with_deadline: 0.05
+      no_flip: 0.95
+    H4:
+      flips_with_deadline: 0.1
+      no_flip: 0.9
+- name: 'the search alone, `gh issue list --search "CLAIM agent= in:comments updated:>=<2h>
+    sort:updated-desc" --limit 50 --json number,title,comments`: 4.6 s real, rc=0
+    (2026-10-29 02:46Z), against ACTIVE_MEMORY_BUDGET_S=3 set by bin/litellm-local'
+  observed:
+    over_budget: 1
+  likelihoods:
+    H1:
+      over_budget: 0.9
+      under_budget: 0.1
+    H2:
+      over_budget: 0.5
+      under_budget: 0.5
+    H3:
+      over_budget: 0.5
+      under_budget: 0.5
+    H4:
+      over_budget: 0.5
+      under_budget: 0.5
+- name: 'the code on main: _door_focus sets focus.FOCUS_TIMEOUT_S = min(.., BUDGET_S)
+    on the module, which the background focus-refresh thread reads too; live_focus
+    returns None when gh fails and never reads focus-register.json past its 300 s
+    TTL'
+  observed:
+    refresh_capped: 1
+  likelihoods:
+    H1:
+      refresh_capped: 0.95
+      refresh_uncapped: 0.05
+    H2:
+      refresh_capped: 0.5
+      refresh_uncapped: 0.5
+    H3:
+      refresh_capped: 0.5
+      refresh_uncapped: 0.5
+    H4:
+      refresh_capped: 0.5
+      refresh_uncapped: 0.5
+- name: 'GitHub''s own answer: `gh api rate_limit` search 30/30 remaining, graphql
+    4975/5000 (2026-10-29 02:46Z), and the controlled pair''s 10 s read returned rows'
+  observed:
+    ledger_reachable: 1
+  likelihoods:
+    H1:
+      ledger_reachable: 0.9
+      ledger_unreachable: 0.1
+    H2:
+      ledger_reachable: 0.1
+      ledger_unreachable: 0.9
+    H3:
+      ledger_reachable: 0.8
+      ledger_unreachable: 0.2
+    H4:
+      ledger_reachable: 0.6
+      ledger_unreachable: 0.4
+- name: '~/.estate/memory/focus-register.json after the disk-full hours: intact, 5705
+    bytes, 10 rows, written 2026-10-29T01:41:14Z'
+  observed:
+    intact: 1
+  likelihoods:
+    H1:
+      intact: 0.8
+      corrupt: 0.2
+    H2:
+      intact: 0.8
+      corrupt: 0.2
+    H3:
+      intact: 0.8
+      corrupt: 0.2
+    H4:
+      intact: 0.3
+      corrupt: 0.7
+posteriors:
+  H1: 0.9983815347
+  H2: 0.0003337042
+  H3: 0.0005339267
+  H4: 0.0007508344
+winner: H1
+computed_at: '2026-10-29T03:46:08Z'

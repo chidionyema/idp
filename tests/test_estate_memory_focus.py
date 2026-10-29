@@ -624,3 +624,64 @@ def test_claim_open_declares_a_file_before_it_exists():
     ]
     with pytest.raises(SystemExit):
         mod.globs_for([], [""])
+
+
+# --- an unreadable ledger (#7397): the router falls back, the gates do not ------------------------
+
+
+def _register(path, at, rows):
+    path.write_text(json.dumps({"at": at, "rows": rows}))
+
+
+def _row(claim_no, age):
+    return {
+        "claim": f"idp#{claim_no}",
+        "title": "t",
+        "agent": "a",
+        "paths": "x",
+        "heartbeat_age_s": age,
+        "live": age < focus.LAPSE_S,
+    }
+
+
+def test_a_dead_gh_answers_the_router_with_the_last_register_aged(tmp_path, monkeypatch):
+    monkeypatch.setenv("ESTATE_MEMORY_HOME", str(tmp_path))  # no snapshot in the way
+    monkeypatch.setattr(focus, "_gh", lambda args, timeout: None)  # 2026-10-28: gh cut at 3.0 s
+    reg = tmp_path / "focus-register.json"
+    _register(reg, NOW - 900, [_row(1, 60), _row(2, focus.LAPSE_S - 300)])
+    rows = focus.live_focus(str(reg), NOW, fallback=True)
+    assert [(r["claim"], r["live"], r["heartbeat_age_s"], r["stale_s"]) for r in rows] == [
+        ("idp#1", True, 960, 900),
+        ("idp#2", False, focus.LAPSE_S + 600, 900),  # lapsed since the read: not shown live
+    ]
+    # the gates decide coverage on the ledger only: unknown stays unknown
+    assert focus.live_focus(str(reg), NOW) is None
+
+
+def test_a_register_older_than_the_lapse_says_nothing_true(tmp_path, monkeypatch):
+    monkeypatch.setenv("ESTATE_MEMORY_HOME", str(tmp_path))
+    monkeypatch.setattr(focus, "_gh", lambda args, timeout: None)
+    reg = tmp_path / "focus-register.json"
+    _register(reg, NOW - focus.LAPSE_S - 1, [_row(1, 0)])
+    assert focus.live_focus(str(reg), NOW, fallback=True) is None
+
+
+def test_the_gh_read_gets_the_callers_deadline(tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(focus, "_gh", lambda args, timeout: seen.append(timeout))
+    focus.live_focus(str(tmp_path / "c.json"), NOW, timeout=10.0)
+    focus.live_focus(str(tmp_path / "c.json"), NOW)
+    assert seen == [10.0, focus.FOCUS_TIMEOUT_S]
+
+
+def test_a_full_disk_never_truncates_the_register(tmp_path, monkeypatch):
+    reg = tmp_path / "focus-register.json"
+    _register(reg, NOW, [_row(1, 0)])
+
+    def full(*_a):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(focus.os, "replace", full)
+    focus.save_json(str(reg), {"at": NOW + 1, "rows": []})
+    assert json.loads(reg.read_text())["rows"][0]["claim"] == "idp#1"
+    assert os.listdir(tmp_path) == ["focus-register.json"]
