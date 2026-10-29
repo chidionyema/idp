@@ -210,6 +210,38 @@ def test_the_report_names_the_agent_and_the_counts_and_the_exit_code_separates_b
     assert "FIRST UNREADABLE LINK" in DOCTOR_MODULE["render"](blind)
 
 
+def test_a_tick_that_is_running_now_is_not_reported_as_never_run():
+    """Given the scheduled tick's last run is still running, when the doctor reads the
+    scheduled plane, then it says the tick has not concluded yet -- NOT that the workflow
+    has never run. MEASURED 2026-10-29: a running tick has a null conclusion, so the API
+    answer was empty and the doctor said 'otto-parity.yml has never run' about a workflow
+    that ticks every fifteen minutes. An empty answer is not evidence of absence."""
+    status, detail = DOCTOR_MODULE["probe_workflow"](
+        "otto-parity.yml",
+        run=lambda intent, args, timeout: (
+            0,
+            "in_progress\t\n",
+            "",
+            "INTENT-20261029-000000-abc123",
+        ),
+    )
+
+    assert status == "BLIND"
+    assert "has never run" not in detail
+    assert "not concluded yet" in detail
+
+
+def test_a_workflow_with_no_runs_at_all_is_reported_as_never_run():
+    """Given the API answers with no run at all, when the doctor reads the scheduled plane,
+    then it says the workflow has never run -- the one case where that sentence is true."""
+    status, detail = DOCTOR_MODULE["probe_workflow"](
+        "otto-parity.yml", run=lambda intent, args, timeout: (0, "", "", "")
+    )
+
+    assert status == "BLIND"
+    assert "has never run" in detail
+
+
 def _intent_step(agent="all", heal="no", json_mode="no"):
     """The intent's own step, with the placeholders the executor fills in."""
     intent = yaml.safe_load(INTENT.read_text(encoding="utf-8"))
