@@ -36,6 +36,7 @@ def test_the_policy_scores_a_critical_incident_above_a_minor_one():
     policy = module.load_policy()
     critical, critical_label = module.score_incident(policy, "critical", "main")
     minor, minor_label = module.score_incident(policy, "minor", "local")
-    assert critical < minor, (critical, minor)
+    assert critical > minor, (critical, minor)
+    assert isinstance(critical, float) and isinstance(minor, float)
     assert critical_label == "P0", critical_label
     assert minor_label == "P2", minor_label
