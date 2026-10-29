@@ -165,6 +165,11 @@ case "$MODE" in
     [ -n "${OCI_CI:-}" ] || { echo "exit 3: --apply-targets runs from Actions only"; exit 3; }
     [ -n "${OKE_APPLY_TARGETS:-}" ] || { echo "exit 64: OKE_APPLY_TARGETS is empty"; exit 64; }
     TARGETS=(); for a in $OKE_APPLY_TARGETS; do TARGETS+=(-target="$a"); done
+    # OKE_APPLY_REPLACE: addresses to recreate (cloud-init runs only at first boot, so a changed
+    # user_data needs a new instance). Each must also be a target; nothing outside them is touched.
+    for a in ${OKE_APPLY_REPLACE:-}; do
+      case " $OKE_APPLY_TARGETS " in *" $a "*) TARGETS+=(-replace="$a") ;; *) echo "exit 64: replace $a is not a target"; exit 64 ;; esac
+    done
     step recreate-guard "$IDP/bin/idp-recreate-guard" "$TF" "${TFVARS[@]}" "${TARGETS[@]}" || { echo "exit 3: recreate-guard refused; import the live resource"; exit 3; }
     step tofu-plan-targets bash -c 'tofu plan -input=false -no-color -lock=false "$@" | grep -E "^\s*# .* (will|must) be |^Plan:" | sed "s/^/      | /"' _ "${TFVARS[@]}" "${TARGETS[@]}"
     step tofu-apply tofu apply -auto-approve "${TFVARS[@]}" "${TARGETS[@]}" ;;
