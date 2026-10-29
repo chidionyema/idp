@@ -134,9 +134,9 @@ def call(method: str, path: str, body: dict, facts: dict) -> tuple:
         )
     )
     headers["Authorization"] = authorization
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310 - the scheme is https by construction
         "https://%s%s" % (host, path), data=raw or None, method=method
-    )  # noqa: S310 - the scheme is https by construction
+    )
     for name, value in headers.items():
         req.add_header(name, value)
     try:

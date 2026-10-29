@@ -1,0 +1,136 @@
+description: 'On 2026-10-29 the truth instrument could not measure the router''s own
+  ledger. The predicate `router.lanes.accounted` asks whether every lane the router
+  declares is accounted for as served or refused, and it answers by reading `~/.estate/router-state/lanes.json`,
+  the ledger the laptop router writes at every render. The instrument did not answer
+  MEASURED_OK or MEASURED_FAIL: it answered UNKNOWN, with the reason "the measurement
+  raised TypeError: unhashable type: ''dict''". This record answers: why could the
+  instrument not read a ledger the router had just written? The winning hypothesis
+  is that BOTH halves were wrong, and each was wrong in a different way. The INSTRUMENT
+  did set arithmetic over the refusal list as if every refusal were a plain name,
+  while the ledger refuses a lane with an object that carries the lane AND the reason
+  it is refused, and a reason is the whole point of the ledger. The LEDGER, meanwhile,
+  counted refusal ENTRIES where it should have counted lane NAMES (three cerebras
+  deployments are refused under one lane name with three different missing credentials),
+  and it kept the lanes the render DERIVED inside the served set, so its own counts
+  could not be added up by a reader. Every count below is a measurement taken on this
+  machine on 2026-10-29, and the command that produced it is named in the item.'
+hypotheses:
+- name: H1
+  description: 'the instrument was wrong and the ledger was right: the ledger refuses
+    a lane with an OBJECT (the lane and the reason it is refused), and the instrument''s
+    `declared_accounted` check did set arithmetic over the refusal list as if every
+    entry were a plain string, so `set(refused)` raised `TypeError: unhashable type:
+    ''dict''` and the predicate could not be measured at all'
+  prior: 0.4
+- name: H2
+  description: 'the ledger was genuinely incomplete: some declared lanes were neither
+    served nor refused, so the accounting was broken and the instrument was right
+    to refuse'
+  prior: 0.1
+- name: H3
+  description: the ledger was absent, stale or unreadable -- the file the instrument
+    read was not the file the router wrote
+  prior: 0.05
+- name: H4
+  description: 'BOTH halves were wrong, in different ways: the instrument could not
+    read object-shaped refusals, and the ledger''s own arithmetic counted refusal
+    entries where it should count lane names and kept the derived lanes inside the
+    served set, so its `declared_accounted` flag was false on a ledger that accounts
+    for every declared lane'
+  prior: 0.45
+evidence:
+- name: 'the instrument''s own answer names the failure precisely: the predicate came
+    back UNKNOWN with the reason ''the measurement raised TypeError: unhashable type:
+    ''''dict'''''' -- an exception raised INSIDE the evaluator, not a verdict (measured
+    with `python3 platform/estate/libexec/estate-truth.py --predicate router.lanes.accounted`
+    on 2026-10-29)'
+  observed:
+    evaluator_exceptions_naming_a_dict: 1
+    evaluator_exceptions_naming_a_missing_or_unreadable_file: 0
+  likelihoods:
+    H1:
+      evaluator_exceptions_naming_a_dict: 0.98
+      evaluator_exceptions_naming_a_missing_or_unreadable_file: 0.02
+    H2:
+      evaluator_exceptions_naming_a_dict: 0.05
+      evaluator_exceptions_naming_a_missing_or_unreadable_file: 0.05
+    H3:
+      evaluator_exceptions_naming_a_dict: 0.05
+      evaluator_exceptions_naming_a_missing_or_unreadable_file: 0.9
+    H4:
+      evaluator_exceptions_naming_a_dict: 0.98
+      evaluator_exceptions_naming_a_missing_or_unreadable_file: 0.02
+- name: 'the ledger the instrument read is a well-formed ledger: `declared` holds
+    22 lane names, `served` holds 26, `refused` holds 8 objects of the shape {lane,
+    reason, verdict}, and the set arithmetic over the LANE NAMES accounts for every
+    declared lane -- 14 declared lanes are served and 8 are refused, 14 + 8 = 22 (measured
+    with a python one-liner over ~/.estate/router-state/lanes.json on 2026-10-29)'
+  observed:
+    refusal_entries_that_are_objects: 8
+    declared_lanes_accounted_for: 22
+  likelihoods:
+    H1:
+      refusal_entries_that_are_objects: 0.98
+      declared_lanes_accounted_for: 0.95
+    H2:
+      refusal_entries_that_are_objects: 0.6
+      declared_lanes_accounted_for: 0.05
+    H3:
+      refusal_entries_that_are_objects: 0.4
+      declared_lanes_accounted_for: 0.3
+    H4:
+      refusal_entries_that_are_objects: 0.95
+      declared_lanes_accounted_for: 0.9
+- name: 'the ledger''s own counts did not add up for a reader: it said 26 served and
+    8 refused out of 22 declared, because the served set also holds the lanes the
+    render DERIVED (the Ollama free floor, the `gpt-6.1-sol` row, the provider rows,
+    the restored `voice` alias), which are not declared lanes at all -- so the ledger
+    could not be read as declared == served + refused even after the exception was
+    fixed (read from ~/.estate/router-state/lanes.json on 2026-10-29)'
+  observed:
+    served_lanes_that_were_never_declared: 12
+    derived_lanes_listed_separately_in_the_ledger: 0
+  likelihoods:
+    H1:
+      served_lanes_that_were_never_declared: 0.9
+      derived_lanes_listed_separately_in_the_ledger: 0.95
+    H2:
+      served_lanes_that_were_never_declared: 0.7
+      derived_lanes_listed_separately_in_the_ledger: 0.6
+    H3:
+      served_lanes_that_were_never_declared: 0.4
+      derived_lanes_listed_separately_in_the_ledger: 0.2
+    H4:
+      served_lanes_that_were_never_declared: 0.95
+      derived_lanes_listed_separately_in_the_ledger: 0.95
+- name: 'the ledger''s own `declared_accounted` flag was FALSE on a ledger that accounts
+    for every declared lane by name: after the render at 14:51:36Z the ledger held
+    18 served declared lanes, 8 refusal ENTRIES and 22 declared lanes, and it computed
+    18 + 8 = 26 against 22 -- because the eight refusal entries named only FOUR lanes
+    (glm, cerebras, nvidia, sambanova: three cerebras deployments and three sambanova
+    deployments are refused under one lane name each, with three different missing
+    credentials), and 18 + 4 = 22 (measured with a python one-liner over ~/.estate/router-state/lanes.json
+    on 2026-10-29)'
+  observed:
+    refusal_entries_that_name_fewer_lanes_than_there_are_entries: 8
+    ledger_flag_false_on_a_ledger_that_accounts_for_every_lane: 1
+  likelihoods:
+    H1:
+      refusal_entries_that_name_fewer_lanes_than_there_are_entries: 0.05
+      ledger_flag_false_on_a_ledger_that_accounts_for_every_lane: 0.05
+    H2:
+      refusal_entries_that_name_fewer_lanes_than_there_are_entries: 0.2
+      ledger_flag_false_on_a_ledger_that_accounts_for_every_lane: 0.4
+    H3:
+      refusal_entries_that_name_fewer_lanes_than_there_are_entries: 0.1
+      ledger_flag_false_on_a_ledger_that_accounts_for_every_lane: 0.2
+    H4:
+      refusal_entries_that_name_fewer_lanes_than_there_are_entries: 0.99
+      ledger_flag_false_on_a_ledger_that_accounts_for_every_lane: 0.99
+posteriors:
+  H1: 0.0
+  H2: 0.0
+  H3: 0.0
+  H4: 1.0
+winner: H4
+computed_at: '2026-10-29T15:36:35Z'

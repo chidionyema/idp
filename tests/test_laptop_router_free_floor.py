@@ -35,7 +35,7 @@ def _render_block():
     return text[body_start:body_end]
 
 
-def _render(tmp_path, model_list, fallbacks=None, env=None):
+def _render(tmp_path, model_list, fallbacks=None, env=None, block_litellm=False):
     """Run the wrapper's own render block over a config and return (kept, router_settings)."""
     import yaml
 
@@ -49,14 +49,19 @@ def _render(tmp_path, model_list, fallbacks=None, env=None):
     cfg_path.write_text(yaml.safe_dump(cfg))
     out_path = tmp_path / "config.runtime.yaml"
 
-    # The render imports litellm only for its provider table. Stub it: the tests here are about
-    # the lane arithmetic, not about which vendors LiteLLM knows.
-    stub = types.ModuleType("litellm")
-    stub.provider_list = ["groq", "openai", "anthropic"]
-    sys.modules.setdefault("litellm", stub)
-
     saved_argv, saved_env = list(sys.argv), dict(os.environ)
     saved_modules = {k: v for k, v in sys.modules.items() if k == "litellm"}
+
+    # The render imports litellm only for its provider table. Stub it: the tests here are about
+    # the lane arithmetic, not about which vendors LiteLLM knows. With block_litellm the stub is
+    # NOT injected and `import litellm` is made to fail, which proves the render reads the
+    # provider names out of LiteLLM's source instead of paying for the import.
+    if not block_litellm:
+        stub = types.ModuleType("litellm")
+        stub.provider_list = ["groq", "openai", "anthropic"]
+        sys.modules.setdefault("litellm", stub)
+    else:
+        sys.modules["litellm"] = None
     printed = []
 
     class _Capture:
@@ -191,6 +196,75 @@ def test_every_declared_lane_is_accounted_for(tmp_path):
     assert set(ledger["declared"]) <= accounted
 
 
+def test_the_ledger_says_whether_it_adds_up(tmp_path):
+    """A ledger a reader can check: declared == declared_served + refused, and the lanes the
+    render DERIVED are listed apart, because a derived lane is not a declared one.
+
+    Measured 2026-10-29: the ledger said 26 served and 8 refused out of 22 declared, because
+    the served set also held the derived lanes (the free floor, the Codex row, the provider
+    rows, the restored `voice` alias). The counts did not add up for a reader, and the truth
+    instrument's `declared_accounted` predicate could not be measured at all.
+    """
+    _render(
+        tmp_path, [_default_model(), _groq_model()], env={"GROQ_API_KEY": "sk-present"}
+    )
+    ledger = json.loads((tmp_path / "lanes.json").read_text())
+    declared = set(ledger["declared"])
+    served = set(ledger["declared_served"])
+    refused = {r["lane"] for r in ledger["refused"]}
+    assert ledger["declared_accounted"] is True
+    assert len(served) + len(refused) == len(declared)
+    assert served | refused == declared
+    assert not (set(ledger["added"]) & declared)
+    assert set(ledger["served"]) == served | set(ledger["added"])
+
+
+def test_the_ledger_counts_lanes_and_not_refusal_entries(tmp_path):
+    """One lane can be refused more than once, and the ledger must count it once.
+
+    Measured 2026-10-29 on the live laptop: three cerebras deployments were refused under one
+    lane name with three different missing credentials, so the ledger held 8 refusal entries
+    for 4 lanes and read 18 served + 8 refused = 26 out of 22 declared -- declared_accounted
+    false for a ledger that accounted for every lane. The accounting is over lane NAMES.
+    """
+    models = [
+        _default_model(),
+        _groq_model(),
+        {
+            "model_name": "cerebras",
+            "litellm_params": {
+                "model": "cerebras/llama-3.3-70b",
+                "api_key": "os.environ/CEREBRAS_API_KEY",
+            },
+        },
+        {
+            "model_name": "cerebras",
+            "litellm_params": {
+                "model": "cerebras/llama-3.1-8b",
+                "api_key": "os.environ/CEREBRAS_API_KEY_2",
+            },
+        },
+        {
+            "model_name": "cerebras",
+            "litellm_params": {
+                "model": "cerebras/llama-3.1-70b",
+                "api_key": "os.environ/CEREBRAS_API_KEY_3",
+            },
+        },
+    ]
+    _render(tmp_path, models, env={"GROQ_API_KEY": "sk-present"})
+    ledger = json.loads((tmp_path / "lanes.json").read_text())
+    declared = set(ledger["declared"])
+    served = set(ledger["declared_served"])
+    refused = {r["lane"] for r in ledger["refused"]}
+    assert len(ledger["refused"]) == 3, (
+        "the test wants three refusal entries for one lane"
+    )
+    assert len(refused) == 1, "the three refusals are one lane"
+    assert ledger["declared_accounted"] is True, ledger.get("declared_unaccounted")
+    assert served | refused == declared
+
+
 def test_voice_is_served_from_a_surviving_deployment(tmp_path):
     """The brain lane must not vanish with the vendor that named it."""
     kept, _ = _render(
@@ -306,6 +380,88 @@ def test_the_kubectl_step_is_bounded():
     text = open(WRAPPER).read()
     assert "subprocess.run(sys.argv[1:], capture_output=True, timeout=25)" in text, (
         "the kubectl step is not bounded by a killable timeout"
+    )
+
+
+def test_the_launcher_never_shells_out_to_a_bare_python3():
+    """A bare `python3` is Apple's xcrun shim under launchd, and xcrun can hang.
+
+    Measured 2026-10-29 on this machine: slot 4002 sat in `python3 -c <otel probe>` for ten
+    minutes with 0.02s of CPU. The sample showed the process inside
+    `xcrun_main2 -> xcinfocache_resolve_sdkroot -> cltools_lookup_boot_system_sdk`: under
+    launchd the PATH is /usr/bin:/bin:/usr/sbin:/sbin, so `python3` is /usr/bin/python3, the
+    shim that asks xcrun for an SDK. The render never started, the swap reported "slot 4002
+    not live after 180s", and the slot stayed deaf. Every interpreter the launcher names must
+    therefore be an absolute path to the venv's own python.
+    """
+    text = open(WRAPPER).read()
+    bare = [
+        line
+        for line in text.splitlines()
+        if "python3" in line
+        and not line.strip().startswith("#")
+        and '"$VENV/bin/python"' not in line
+        and "python3.1" not in line
+    ]
+    assert bare == [], "the launcher still shells out to a bare python3: %r" % (bare,)
+
+
+def test_the_otel_probe_is_bounded():
+    """The probe that decides whether the router exports OTEL must not be able to hang."""
+    text = open(WRAPPER).read()
+    assert "signal.alarm(5)" in text, "the OTLP probe is not bounded by an alarm"
+
+
+def test_the_render_does_not_need_litellm_imported(tmp_path):
+    """The render must not import LiteLLM, because that import is what stops the router booting.
+
+    Measured 2026-10-29 on this machine: `import litellm` alone ran past the executor's 100
+    second ceiling, so the render could not finish inside the swap's 180 second window, slot
+    4002 never came up and the estate's free floor stayed out of service. The render must get
+    the provider names from LiteLLM's own source instead -- so a render run in a FRESH
+    interpreter that has the real LiteLLM installed must finish without importing it.
+    """
+    import subprocess
+
+    venv = os.path.expanduser("~/.cache/estate-tools/litellm-venv/bin/python")
+    if not os.path.exists(venv):
+        pytest.skip("the laptop router's venv is not on this machine")
+    import yaml
+
+    cfg = {
+        "model_list": [_default_model(), _groq_model()],
+        "router_settings": {"fallbacks": []},
+        "litellm_settings": {"callbacks": []},
+        "general_settings": {},
+    }
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml.safe_dump(cfg))
+    out_path = tmp_path / "config.runtime.yaml"
+    block_path = tmp_path / "render.py"
+    block_path.write_text(_render_block())
+    runner = tmp_path / "runner.py"
+    runner.write_text(
+        "import os, sys, yaml\n"
+        "block = open(sys.argv[1]).read()\n"
+        "sys.argv = ['render', sys.argv[2], sys.argv[3]]\n"
+        "scope = {'os': os, 'sys': sys, 'yaml': yaml, '__name__': '__render__'}\n"
+        "exec(compile(block, 'render', 'exec'), scope)\n"
+        "print('LITELLM_IMPORTED', 'litellm' in sys.modules)\n"
+    )
+    env = dict(os.environ)
+    env["GROQ_API_KEY"] = "sk-present"
+    proc = subprocess.run(
+        [venv, str(runner), str(block_path), str(cfg_path), str(out_path)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=env,
+    )
+    assert proc.returncode == 0, (
+        "the render failed without the litellm import: %s" % (proc.stderr[-400:])
+    )
+    assert "LITELLM_IMPORTED False" in proc.stdout, (
+        "the render imported litellm: %s" % proc.stdout[-200:]
     )
 
 

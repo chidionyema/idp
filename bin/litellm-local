@@ -84,6 +84,14 @@ plist() {
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>10</integer>
+  <!-- The slot must BOOT, and booting is CPU work: the render reads the config, decides the
+       lanes and writes the ledger. Measured 2026-10-29 on this machine: the same one-second
+       probe took 1.14s in the foreground and 1m43s under launchd, with 0.04s of CPU -- macOS
+       gives a background-QoS launchd agent a sliver of a thrashing box, so the render never
+       finished and the swap reported "slot 4002 not live after 180s". ProcessType=Interactive
+       is the knob macOS provides for a service that must answer promptly. -->
+  <key>ProcessType</key><string>Interactive</string>
+  <key>LowPriorityIO</key><false/>
   $exit_timeout
   <key>StandardOutPath</key><string>$LOG</string>
   <key>StandardErrorPath</key><string>$LOG</string>
@@ -130,7 +138,14 @@ run() {
   # enough: LiteLLM still built span and metric exporters from these variables alone, and retried
   # the dead :4318 on every batch (8,394 ConnectionErrors in litellm-local.log, 2026-10-10).
   _otel_ep="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://127.0.0.1:4318}"
-  if python3 -c 'import socket,sys; from urllib.parse import urlparse as u; e=u(sys.argv[1]); socket.create_connection((e.hostname, e.port or 4318), timeout=1).close()' "$_otel_ep" 2>/dev/null; then
+  # The probe runs the VENV's interpreter, ABSOLUTE, never a bare `python3`. Measured 2026-10-29
+  # on this machine: under launchd the PATH is /usr/bin:/bin:/usr/sbin:/sbin, so a bare `python3`
+  # is Apple's shim, which runs `xcrun` to find an SDK; xcrun sat in
+  # `xcinfocache_resolve_sdkroot -> cltools_lookup_boot_system_sdk` for 10+ minutes with 0.02s
+  # of CPU, so slot 4002 never finished booting and the swap reported "slot 4002 not live after
+  # 180s". The alarm bounds the probe itself: a probe that cannot answer in 5s is a probe that
+  # does not get to hold the router hostage.
+  if "$VENV/bin/python" -c 'import signal,socket,sys; from urllib.parse import urlparse as u; signal.alarm(5); e=u(sys.argv[1]); socket.create_connection((e.hostname, e.port or 4318), timeout=1).close()' "$_otel_ep" 2>/dev/null; then
     export OTEL_EXPORTER_OTLP_ENDPOINT="$_otel_ep"
     export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
     export OTEL_SERVICE_NAME=litellm-local
@@ -277,8 +292,59 @@ if "gpt-6.1-sol" not in {m["model_name"] for m in kept}:
 # Several keys for one provider are several deployments of one lane. A new provider is a new
 # Bitwarden entry; nothing here or in any harness changes.
 import re
-import litellm
-known = {getattr(p, "value", p) for p in litellm.provider_list}
+
+
+def _provider_names_from_source():
+    """LiteLLM's provider names, read out of LiteLLM's OWN source, without importing LiteLLM.
+
+    Measured 2026-10-29 on this machine: `import litellm` inside this render took more than
+    100 seconds, so the render could not finish inside the swap's 180 second window, slot 4002
+    never came up, and the estate's free floor stayed out of service. The import bought exactly
+    one thing -- the set of provider names -- and LiteLLM's own `provider_list` is
+    `list(LlmProviders)` (litellm/__init__.py, lazy loaded on purpose to keep the import
+    cheap). `LlmProviders` is a plain (str, Enum) in litellm/types/utils.py, so the same names
+    are read here by PARSING that file: milliseconds, no import, and the source of truth is
+    still LiteLLM's own file rather than a copy of it.
+    """
+    import ast
+    import importlib.util
+    import pathlib
+
+    try:
+        spec = importlib.util.find_spec("litellm")
+    except (ImportError, ValueError):
+        return set()
+    if spec is None or not spec.submodule_search_locations:
+        return set()
+    enum_file = pathlib.Path(list(spec.submodule_search_locations)[0]) / "types" / "utils.py"
+    try:
+        tree = ast.parse(enum_file.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, SyntaxError, ValueError):
+        return set()
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == "LlmProviders":
+            names = set()
+            for stmt in node.body:
+                if (
+                    isinstance(stmt, ast.Assign)
+                    and isinstance(stmt.value, ast.Constant)
+                    and isinstance(stmt.value.value, str)
+                ):
+                    names.add(stmt.value.value)
+            return names
+    return set()
+
+
+# A stubbed module (the tests inject one) is authoritative; otherwise read the source. If the
+# source cannot be read, pay for the import rather than silently lose the provider lanes.
+_stub = sys.modules.get("litellm")
+if _stub is not None and hasattr(_stub, "provider_list"):
+    known = {getattr(p, "value", p) for p in _stub.provider_list}
+else:
+    known = _provider_names_from_source()
+    if not known:
+        import litellm
+        known = {getattr(p, "value", p) for p in litellm.provider_list}
 alias = {"nvidia": "nvidia_nim"}          # key names that differ from LiteLLM's provider name
 never = {"anthropic"}                     # claude-* relays the caller's own Max token
 # A key that only one endpoint honours (#5691): ZAI_API_KEY is the GLM Coding Plan key, which
@@ -317,22 +383,54 @@ if "gpt-6.1-sol" in served and "ollama" in served:
         rs["fallbacks"].append({"gpt-6.1-sol": ["ollama"]})
 # The trace exporter retried a collector nobody runs (3,367 ConnectionErrors in one log window).
 # Serve the otel callback only when its endpoint answers, same rule as lanes with no key.
+import signal
 import socket
 from urllib.parse import urlparse
+
+
+def _probe_timeout(_signum, _frame):
+    raise TimeoutError("the OTLP probe took longer than 5s")
+
+
 ep = urlparse(os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318"))
+signal.signal(signal.SIGALRM, _probe_timeout)
+signal.alarm(5)
 try:
     socket.create_connection((ep.hostname, ep.port or 4318), timeout=1).close()
     otel_up = True
-except OSError:
+except (OSError, TimeoutError):
     otel_up = False
+finally:
+    signal.alarm(0)
 if not otel_up:
     cfg.setdefault("litellm_settings", {})["callbacks"] = [
         c for c in cfg["litellm_settings"].get("callbacks", []) if c != "otel"]
-# The router's own account of what it serves, readable without a log.
+# The router's own account of what it serves, readable without a log. The accounting is
+# EXPLICIT: every lane the repository declares is either served or refused, and the lanes the
+# render DERIVED (the free floor, the row Codex asks for, the provider rows, the restored
+# `voice` alias) are listed apart, because a derived lane is not a declared one and counting it
+# as one would make the ledger read 26 served out of 22 declared. Measured 2026-10-29: the
+# ledger said 26 served and 8 refused out of 22 declared, and the truth instrument's
+# `declared_accounted` predicate could not be measured at all.
 import json, time
+_declared = sorted(set(declared))
+_declared_served = sorted(set(declared) & served)
+_refused_final = [r for r in refused if r["lane"] not in served]
+# The accounting counts LANES, not refusal entries: three cerebras deployments can be refused
+# under one lane name with three different missing credentials, and counting them three times
+# would make 18 served + 8 refused look like 26 out of 22 declared. Measured 2026-10-29: the
+# ledger read declared_accounted=false with 18 served and 8 refusals out of 22 declared, and
+# the truth instrument could not tell a real gap from a double count.
+_refused_names = sorted({r["lane"] for r in _refused_final})
+_unaccounted = sorted(set(_declared) - set(served) - set(_refused_names))
 json.dump({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "served": sorted(served),
-           "declared": sorted(set(declared)),
-           "refused": [r for r in refused if r["lane"] not in served],
+           "declared": _declared,
+           "declared_served": _declared_served,
+           "added": sorted(served - set(_declared)),
+           "declared_accounted": not _unaccounted,
+           "declared_unaccounted": _unaccounted,
+           "refused": _refused_final,
+           "refused_lanes": _refused_names,
            "providers": dict(sorted(providers.items())),
            "bases": {p: b for p, b in bases.items() if p in providers},
            "fallbacks": chains, "otel": otel_up},
@@ -455,10 +553,21 @@ swap() {
   unload "$(slot_label "$next")"
   plist "$(slot_label "$next")" run "$next"
   launchctl bootstrap "gui/$(id -u)" "$AGENTS/$(slot_label "$next").plist"
-  for _ in $(seq 1 90); do live "$next" && break; sleep 2; done
+  # Measured 2026-10-29 on this machine: importing LiteLLM ran past 100s in the FOREGROUND, so
+  # a 180s window could never be enough -- the slot needs minutes to answer, and the swap
+  # killed it every time it did not. The window is 600s, it reports progress so an operator can
+  # see it moving, and a slot that is still booting is LEFT booting: the next swap finds it
+  # already up, and the founder's callers are on the old slot the whole time.
+  local waited=0
+  while [ "$waited" -lt 600 ]; do
+    live "$next" && break
+    sleep 10
+    waited=$((waited + 10))
+    [ $((waited % 60)) -eq 0 ] && echo "wait   slot $next is still booting (${waited}s of 600s)"
+  done
   if ! live "$next"; then
-    unload "$(slot_label "$next")"
-    echo "FAIL  slot $next not live after 180s; slot ${cur:-none} keeps serving; last log lines:"
+    echo "FAIL  slot $next not live after ${waited}s; slot ${cur:-none} keeps serving and the new slot keeps booting."
+    echo "      last log lines:"
     tail -20 "$LOG"; return 1
   fi
   printf '%s\n' "$next" > "$ACTIVE.tmp" && mv "$ACTIVE.tmp" "$ACTIVE"

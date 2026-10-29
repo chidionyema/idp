@@ -275,6 +275,27 @@ def eval_command(pred: dict) -> tuple:
     return OK, "exit 0 in %.2fs" % elapsed, elapsed
 
 
+def _refused_lanes(refused) -> set:
+    """The lanes a refusal list names.
+
+    A refusal is either a lane NAME or an object that carries the lane and WHY it was refused.
+    The reason is the point: a lane refused without its reason is a lane that vanished in
+    silence, which is the defect the ledger was written to end. So both shapes are read, and
+    neither shape is an excuse for the instrument to answer UNKNOWN: measured 2026-10-29, the
+    ledger's objects raised `TypeError: unhashable type: 'dict'` here and the predicate could
+    not be measured at all.
+    """
+    lanes = set()
+    for item in refused or []:
+        if isinstance(item, str):
+            lanes.add(item)
+        elif isinstance(item, dict):
+            name = item.get("lane") or item.get("model_name") or ""
+            if name:
+                lanes.add(name)
+    return lanes
+
+
 def eval_file(pred: dict) -> tuple:
     """One file in the estate's own state. The estate's state missing IS a failure: the
     founder's path cannot work without it."""
@@ -311,7 +332,7 @@ def eval_file(pred: dict) -> tuple:
                 % path,
                 time.time() - started,
             )
-        unaccounted = sorted(set(declared) - set(served) - set(refused))
+        unaccounted = sorted(set(declared) - set(served) - _refused_lanes(refused))
         if unaccounted:
             return (
                 FAIL,
@@ -322,7 +343,11 @@ def eval_file(pred: dict) -> tuple:
         return (
             OK,
             "%d declared lane(s) accounted for: %d served, %d refused"
-            % (len(declared), len(served), len(refused)),
+            % (
+                len(declared),
+                len(set(declared) & set(served)),
+                len(_refused_lanes(refused)),
+            ),
             time.time() - started,
         )
     if assertion == "door_present":

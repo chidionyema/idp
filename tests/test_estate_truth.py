@@ -200,6 +200,37 @@ def test_every_declared_lane_is_accounted_for(tmp_path):
     assert "accounted" in detail
 
 
+def test_a_refusal_that_carries_its_reason_is_still_a_refusal(tmp_path):
+    """The router refuses a lane with an OBJECT that names the lane and the reason.
+
+    Measured 2026-10-29: the instrument did set arithmetic over the refusal list as if every
+    entry were a plain name, so `set(refused)` raised `TypeError: unhashable type: 'dict'` and
+    the predicate answered UNKNOWN -- the instrument could not read a ledger the router had
+    just written, because the ledger refused a lane the way it is supposed to: with the reason.
+    """
+    lanes = tmp_path / "lanes.json"
+    lanes.write_text(
+        json.dumps(
+            {
+                "declared": ["a", "b"],
+                "served": ["a"],
+                "refused": [
+                    {
+                        "lane": "b",
+                        "reason": "credential ZAI_API_KEY absent",
+                        "verdict": "MEASURED_FAIL",
+                    }
+                ],
+            }
+        )
+    )
+    verdict, detail, _ = truth.eval_file(
+        {"path": str(lanes), "assert": "declared_accounted"}
+    )
+    assert verdict == OK, detail
+    assert "1 refused" in detail
+
+
 def test_a_lane_that_is_neither_served_nor_refused_is_a_failure(tmp_path):
     """The defect this instrument exists to catch: a declared capability that is simply absent."""
     lanes = tmp_path / "lanes.json"
