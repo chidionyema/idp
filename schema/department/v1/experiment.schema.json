@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:estate:schema:department.v1.experiment",
+  "title": "department.v1.experiment",
+  "description": "An executable plan: what will be built, in which sandbox, judged by which fixtures. A text-only report is not an experiment.",
+  "allOf": [
+    {
+      "$ref": "urn:estate:schema:department.v1.envelope"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "experiment"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "plan",
+            "sandbox",
+            "acceptance_fixtures"
+          ],
+          "properties": {
+            "plan": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sandbox": {
+              "type": "string",
+              "minLength": 1
+            },
+            "acceptance_fixtures": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "candidates": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

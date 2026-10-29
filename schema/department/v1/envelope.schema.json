@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:estate:schema:department.v1.envelope",
+  "title": "department.v1.envelope",
+  "description": "The mandatory envelope on every department record and event (Media Department charter v1 §4, idp#7395). Every field is required; a field that may be empty is declared nullable here and is made non-null by the transition that needs it (platform/department/contract.py TRANSITION_REQUIRES). Department-neutral: Media is the first instance, Research and Science reuse it (charter M7). A record is data a worker proposes; it is admitted only by contract.admit(), never by schema validity alone.",
+  "type": "object",
+  "required": [
+    "schema_version", "department_id", "objective_id", "run_id", "parent_run_id", "kind", "state",
+    "source_ref", "source_revision", "evidence_refs", "artifact_uri", "artifact_sha256",
+    "created_at", "expires_at", "authority", "policy_decision", "budget_cap_usd", "spend_usd",
+    "evaluator_id", "verdict", "reason", "payload"
+  ],
+  "properties": {
+    "schema_version": { "const": "department.v1", "description": "major version of this family; a breaking change is department.v2 in a new directory (docs/departments/media/README.md, compatibility policy)" },
+    "department_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,40}$" },
+    "objective_id": { "type": "string", "pattern": "^obj-[a-z0-9-]{3,64}$" },
+    "run_id": { "type": "string", "pattern": "^run-[a-z0-9-]{3,64}$", "description": "immutable reference this write is recorded under" },
+    "parent_run_id": { "type": ["string", "null"], "pattern": "^run-[a-z0-9-]{3,64}$" },
+    "kind": { "enum": ["objective", "opportunity", "experiment", "artifact", "review", "decision", "outcome", "event"] },
+    "state": { "$ref": "#/$defs/state" },
+    "source_ref": { "type": "string", "minLength": 1, "description": "where the input came from: an issue, a commit path, an event id. Never empty." },
+    "source_revision": { "type": "string", "minLength": 1, "description": "the revision of source_ref this record was derived from; checked against the current revision at admission (stale provenance is refused)" },
+    "evidence_refs": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
+    "artifact_uri": { "type": ["string", "null"], "minLength": 1 },
+    "artifact_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": ["string", "null"], "format": "date-time" },
+    "authority": { "type": "string", "minLength": 1, "description": "the role the writer acts under; must be a role the department config grants that writer" },
+    "policy_decision": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["door", "decision_id", "verdict"],
+          "properties": {
+            "door": { "type": "string", "minLength": 1, "description": "the existing authorization door, e.g. founder.decision" },
+            "decision_id": { "type": "string", "minLength": 1 },
+            "verdict": { "enum": ["allow", "deny"] }
+          }
+        }
+      ]
+    },
+    "budget_cap_usd": { "type": "number", "minimum": 0 },
+    "spend_usd": { "type": "number", "minimum": 0 },
+    "evaluator_id": { "type": ["string", "null"], "minLength": 1 },
+    "verdict": { "enum": ["pass", "fail", "inconclusive", null] },
+    "reason": { "type": "string", "minLength": 1 },
+    "payload": { "type": "object" }
+  },
+  "$defs": {
+    "state": {
+      "enum": ["NEW", "TRIAGED", "RESEARCHING", "PROTOTYPING", "EVALUATING", "PROPOSED", "APPROVED", "SHIPPING", "VERIFYING", "OPERATING", "LEARNING", "BLOCKED", "PARKED", "REJECTED"]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "uri"],
+      "properties": {
+        "kind": {
+          "enum": ["observation", "test", "artifact", "citation", "generated"],
+          "description": "observation = read from a running system (a production log line, a probe); generated = produced by a model. A generated item is never accepted where an observation is required."
+        },
+        "uri": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "observed_by": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

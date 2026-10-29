@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:estate:schema:department.v1.artifact",
+  "title": "department.v1.artifact",
+  "description": "A produced media or code artifact. ADR 0037: a generative artifact may exist only in the labelled creative lane, never in the truth lane.",
+  "allOf": [
+    {
+      "$ref": "urn:estate:schema:department.v1.envelope"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "artifact"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "media_type",
+            "lane",
+            "generative",
+            "licence",
+            "author_id"
+          ],
+          "properties": {
+            "media_type": {
+              "type": "string",
+              "minLength": 1
+            },
+            "lane": {
+              "enum": [
+                "truth",
+                "creative"
+              ]
+            },
+            "generative": {
+              "type": "boolean"
+            },
+            "licence": {
+              "type": "string",
+              "minLength": 1
+            },
+            "author_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "payload": {
+            "properties": {
+              "generative": {
+                "const": true
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "properties": {
+              "lane": {
+                "const": "creative"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

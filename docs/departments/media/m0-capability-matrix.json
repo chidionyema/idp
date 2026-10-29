@@ -1,0 +1,596 @@
+{
+  "schema_version": "media.m0.v1",
+  "generator": "bin/media-dept-baseline",
+  "issue": "chidionyema/idp#7395",
+  "source_sha": "ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e",
+  "base_sha": "ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e",
+  "measured_at": "2026-10-29T03:49:47Z",
+  "observed_live_note": "The OKE cluster API did not answer on 2026-10-29 (kubectl: context deadline exceeded). Every cluster-placed row is BLIND, not down and not up.",
+  "rows": [
+    {
+      "id": "director-engine",
+      "area": "film",
+      "claim": "pure-function director: shot table, coalescer, limiter, narrator (ADR 0037)",
+      "paths": [
+        "platform/voice-router/internal/director/director.go",
+        "platform/voice-router/internal/director/director_test.go"
+      ],
+      "registry_refs": [
+        "cap:layer/platform-voice-router-internal-director-director",
+        "cap:service/voice-router/voice-router-director"
+      ],
+      "implemented": true,
+      "implemented_at_base": true,
+      "tested": "unknown",
+      "ci_wired": false,
+      "observed_live": "blind",
+      "broken": false,
+      "unknown": [
+        {
+          "field": "tested",
+          "why": "go test not run locally: a voice-router build filled the laptop disk on 2026-10-29"
+        },
+        {
+          "field": "observed_live",
+          "why": "no instrument reached the runtime; deployment is never inferred from YAML"
+        }
+      ],
+      "evidence": [
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:platform/voice-router/internal/director/director.go",
+          "exit_code": 0
+        },
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:platform/voice-router/internal/director/director_test.go",
+          "exit_code": 0
+        },
+        {
+          "command": "pgrep -x voice-router",
+          "exit_code": 0,
+          "output_sha256": "182036151f71842393ce9cfc777c5e9987ae5d8bf45629c29735f6570fc7da9d",
+          "output_tail": "55534"
+        }
+      ]
+    },
+    {
+      "id": "director-cue-publisher",
+      "area": "film",
+      "claim": "voice-router director publishes estate.cinema.cue frames",
+      "paths": [
+        "platform/voice-router/cmd/voice-router/director.go",
+        "platform/voice-router/deploy/director.yaml"
+      ],
+      "registry_refs": [
+        "cap:layer/platform-voice-router-cmd-voice-router-director"
+      ],
+      "implemented": true,
+      "implemented_at_base": true,
+      "tested": "none",
+      "ci_wired": null,
+      "observed_live": "blind",
+      "broken": false,
+      "unknown": [
+        {
+          "field": "observed_live",
+          "why": "no instrument reached the runtime; deployment is never inferred from YAML"
+        }
+      ],
+      "evidence": [
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:platform/voice-router/cmd/voice-router/director.go",
+          "exit_code": 0
+        },
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:platform/voice-router/deploy/director.yaml",
+          "exit_code": 0
+        },
+        {
+          "command": "kubectl get nodes --request-timeout=5s",
+          "exit_code": 124,
+          "output_sha256": "4d8c4d33634c73332d5e8d2a3e9ce71f0a9786f3244ab899ca921578a19caf0b",
+          "output_tail": "timeout after 15s"
+        }
+      ]
+    },
+    {
+      "id": "scene-frame-contract",
+      "area": "event-contract",
+      "claim": "estate.scene.frame JetStream contract (spec RG4, ADR 0038)",
+      "paths": [
+        "platform/event-bus/contract/estate.scene.frame.json"
+      ],
+      "registry_refs": [],
+      "implemented": false,
+      "implemented_at_base": false,
+      "tested": "none",
+      "ci_wired": null,
+      "observed_live": "not_applicable",
+      "broken": false,
+      "unknown": [],
+      "evidence": [
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:platform/event-bus/contract/estate.scene.frame.json",
+          "exit_code": 1
+        }
+      ]
+    },
+    {
+      "id": "legacy-cinema-cue",
+      "area": "event-contract",
+      "claim": "unschema'd core-NATS estate.cinema.cue topic, consumed by Fleet",
+      "paths": [
+        "backstage/plugins/fleetview-backend/src/fleetview_backend/nats_adapter.py"
+      ],
+      "registry_refs": [],
+      "implemented": true,
+      "implemented_at_base": true,
+      "tested": "pass",
+      "ci_wired": false,
+      "observed_live": "blind",
+      "broken": false,
+      "unknown": [
+        {
+          "field": "observed_live",
+          "why": "no instrument reached the runtime; deployment is never inferred from YAML"
+        }
+      ],
+      "evidence": [
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:backstage/plugins/fleetview-backend/src/fleetview_backend/nats_adapter.py",
+          "exit_code": 0
+        },
+        {
+          "command": "python3 -m pytest -q -p no:cacheprovider -n 0 backstage/plugins/fleetview-backend/tests/test_cinema_cues.py",
+          "exit_code": 0,
+          "output_sha256": "8fd3fb189f9a78956531f736b555769a3da83c980d9b95038d8db0b486bee4b8",
+          "output_tail": "5 passed in 4.20s"
+        },
+        {
+          "command": "kubectl get nodes --request-timeout=5s",
+          "exit_code": 124,
+          "output_sha256": "4d8c4d33634c73332d5e8d2a3e9ce71f0a9786f3244ab899ca921578a19caf0b",
+          "output_tail": "timeout after 15s"
+        }
+      ]
+    },
+    {
+      "id": "agent-event-contract",
+      "area": "event-contract",
+      "claim": "estate.agent.event schema, one subject family",
+      "paths": [
+        "platform/event-bus/contract/estate.agent.event.json"
+      ],
+      "registry_refs": [],
+      "implemented": true,
+      "implemented_at_base": true,
+      "tested": "pass",
+      "ci_wired": true,
+      "observed_live": "blind",
+      "broken": false,
+      "unknown": [
+        {
+          "field": "observed_live",
+          "why": "no instrument reached the runtime; deployment is never inferred from YAML"
+        }
+      ],
+      "evidence": [
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:platform/event-bus/contract/estate.agent.event.json",
+          "exit_code": 0
+        },
+        {
+          "command": "python3 -m pytest -q -p no:cacheprovider -n 0 tests/test_estate_agent_event_contract.py",
+          "exit_code": 0,
+          "output_sha256": "456eaf99e833f9d210e2652c1277101f546ad6ab68f9c671e256dc2bae1d43bc",
+          "output_tail": "4 passed in 12.91s"
+        },
+        {
+          "command": "kubectl get nodes --request-timeout=5s",
+          "exit_code": 124,
+          "output_sha256": "4d8c4d33634c73332d5e8d2a3e9ce71f0a9786f3244ab899ca921578a19caf0b",
+          "output_tail": "timeout after 15s"
+        }
+      ]
+    },
+    {
+      "id": "fleet-stage",
+      "area": "fleet",
+      "claim": "FleetReactorApp WebGL stage (three.js) handling cue frames",
+      "paths": [
+        "backstage/packages/app/src/modules/room/ui/FleetReactorApp.tsx",
+        "backstage/packages/app/package.json"
+      ],
+      "registry_refs": [
+        "cap:service/backstage/fleetview-voice",
+        "cap:intent/fleet-regression"
+      ],
+      "implemented": true,
+      "implemented_at_base": true,
+      "tested": "none",
+      "ci_wired": null,
+      "observed_live": "blind",
+      "broken": false,
+      "unknown": [
+        {
+          "field": "observed_live",
+          "why": "no instrument reached the runtime; deployment is never inferred from YAML"
+        }
+      ],
+      "evidence": [
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:backstage/packages/app/src/modules/room/ui/FleetReactorApp.tsx",
+          "exit_code": 0
+        },
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:backstage/packages/app/package.json",
+          "exit_code": 0
+        },
+        {
+          "command": "kubectl get nodes --request-timeout=5s",
+          "exit_code": 124,
+          "output_sha256": "4d8c4d33634c73332d5e8d2a3e9ce71f0a9786f3244ab899ca921578a19caf0b",
+          "output_tail": "timeout after 15s"
+        }
+      ]
+    },
+    {
+      "id": "face-console",
+      "area": "face",
+      "claim": "the phone console: FacePage, EstateFace, faceEngine",
+      "paths": [
+        "backstage/packages/app/src/modules/home/FacePage.tsx",
+        "backstage/packages/app/src/modules/home/EstateFace.tsx",
+        "backstage/packages/app/src/modules/home/faceEngine.ts"
+      ],
+      "registry_refs": [],
+      "implemented": true,
+      "implemented_at_base": true,
+      "tested": "none",
+      "ci_wired": null,
+      "observed_live": "blind",
+      "broken": false,
+      "unknown": [
+        {
+          "field": "observed_live",
+          "why": "no instrument reached the runtime; deployment is never inferred from YAML"
+        }
+      ],
+      "evidence": [
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:backstage/packages/app/src/modules/home/FacePage.tsx",
+          "exit_code": 0
+        },
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:backstage/packages/app/src/modules/home/EstateFace.tsx",
+          "exit_code": 0
+        },
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:backstage/packages/app/src/modules/home/faceEngine.ts",
+          "exit_code": 0
+        },
+        {
+          "command": "kubectl get nodes --request-timeout=5s",
+          "exit_code": 124,
+          "output_sha256": "4d8c4d33634c73332d5e8d2a3e9ce71f0a9786f3244ab899ca921578a19caf0b",
+          "output_tail": "timeout after 15s"
+        }
+      ]
+    },
+    {
+      "id": "voice-media-backend",
+      "area": "fleet",
+      "claim": "fleetview-backend voice media (TTS, warm, backoff)",
+      "paths": [
+        "backstage/plugins/fleetview-backend/src/fleetview_backend/voice_media.py"
+      ],
+      "registry_refs": [],
+      "implemented": true,
+      "implemented_at_base": true,
+      "tested": "pass",
+      "ci_wired": false,
+      "observed_live": "blind",
+      "broken": false,
+      "unknown": [
+        {
+          "field": "observed_live",
+          "why": "no instrument reached the runtime; deployment is never inferred from YAML"
+        }
+      ],
+      "evidence": [
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:backstage/plugins/fleetview-backend/src/fleetview_backend/voice_media.py",
+          "exit_code": 0
+        },
+        {
+          "command": "python3 -m pytest -q -p no:cacheprovider -n 0 backstage/plugins/fleetview-backend/tests/test_voice_tts_backoff.py backstage/plugins/fleetview-backend/tests/test_voice_warm.py",
+          "exit_code": 0,
+          "output_sha256": "7b534af796a93ac7334475f7a05dcb45451caa72738383610f3266ae57368111",
+          "output_tail": "7 passed in 14.77s"
+        },
+        {
+          "command": "kubectl get nodes --request-timeout=5s",
+          "exit_code": 124,
+          "output_sha256": "4d8c4d33634c73332d5e8d2a3e9ce71f0a9786f3244ab899ca921578a19caf0b",
+          "output_tail": "timeout after 15s"
+        }
+      ]
+    },
+    {
+      "id": "research-engine-adapter",
+      "area": "research",
+      "claim": "objective adapter: pick objective, post report, Continue/Park",
+      "paths": [
+        "platform/research-engine/objective-adapter.py",
+        "platform/research-engine/cronjob.yaml"
+      ],
+      "registry_refs": [
+        "cap:layer/platform-research-engine-objective-adapter",
+        "cap:service/research/research-engine"
+      ],
+      "implemented": true,
+      "implemented_at_base": true,
+      "tested": "pass",
+      "ci_wired": true,
+      "observed_live": "blind",
+      "broken": false,
+      "unknown": [
+        {
+          "field": "observed_live",
+          "why": "no instrument reached the runtime; deployment is never inferred from YAML"
+        }
+      ],
+      "evidence": [
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:platform/research-engine/objective-adapter.py",
+          "exit_code": 0
+        },
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:platform/research-engine/cronjob.yaml",
+          "exit_code": 0
+        },
+        {
+          "command": "python3 -m pytest -q -p no:cacheprovider -n 0 tests/test_research_adapter_reads_founder_objectives.py tests/test_research_objective_adapter_continues_only_when_ticked.py tests/test_research_objective_lane_per_issue.py",
+          "exit_code": 0,
+          "output_sha256": "fc608cc461d9bd52a953f94e880e9876a8f1eb96193901f2ced8eae07643f048",
+          "output_tail": "36 passed in 15.68s"
+        },
+        {
+          "command": "kubectl get nodes --request-timeout=5s",
+          "exit_code": 124,
+          "output_sha256": "4d8c4d33634c73332d5e8d2a3e9ce71f0a9786f3244ab899ca921578a19caf0b",
+          "output_tail": "timeout after 15s"
+        }
+      ]
+    },
+    {
+      "id": "authorization-door",
+      "area": "governance",
+      "claim": "founder.decision door: one structured decision, answer read back",
+      "paths": [
+        "sovereign/otto/decision.py"
+      ],
+      "registry_refs": [
+        "cap:intent/founder.decision"
+      ],
+      "implemented": true,
+      "implemented_at_base": true,
+      "tested": "pass",
+      "ci_wired": true,
+      "observed_live": "not_applicable",
+      "broken": false,
+      "unknown": [],
+      "evidence": [
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:sovereign/otto/decision.py",
+          "exit_code": 0
+        },
+        {
+          "command": "python3 -m pytest -q -p no:cacheprovider -n 0 tests/test_founder_decision_door.py",
+          "exit_code": 0,
+          "output_sha256": "b98641014e7d12d16953f5ec61406f2fb45f0abe1f9704eb186eef7706fd6834",
+          "output_tail": "16 passed in 15.49s"
+        }
+      ]
+    },
+    {
+      "id": "claim-workflow",
+      "area": "governance",
+      "claim": "claim-open / claim-gate: issue CLAIM, heartbeat, path collision check",
+      "paths": [
+        "bin/claim-open",
+        "bin/claim-gate"
+      ],
+      "registry_refs": [
+        "cap:tool/claim-open",
+        "cap:tool/claim-gate"
+      ],
+      "implemented": true,
+      "implemented_at_base": true,
+      "tested": "pass",
+      "ci_wired": true,
+      "observed_live": "not_applicable",
+      "broken": false,
+      "unknown": [],
+      "evidence": [
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:bin/claim-open",
+          "exit_code": 0
+        },
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:bin/claim-gate",
+          "exit_code": 0
+        },
+        {
+          "command": "python3 -m pytest -q -p no:cacheprovider -n 0 tests/test_claim_gate.py tests/test_claim_open_worktree.py",
+          "exit_code": 0,
+          "output_sha256": "5243060c12e47a57e772e4034a973e3fe175aa85baf591050edbb7b7b68a9636",
+          "output_tail": "38 passed in 235.49s (0:03:55)"
+        }
+      ]
+    },
+    {
+      "id": "capability-registry",
+      "area": "governance",
+      "claim": "capability-index: the non-duplication query surface",
+      "paths": [
+        "bin/capability-index",
+        "catalog/estate-capability-registry.json"
+      ],
+      "registry_refs": [],
+      "implemented": true,
+      "implemented_at_base": true,
+      "tested": "none",
+      "ci_wired": null,
+      "observed_live": "not_applicable",
+      "broken": false,
+      "unknown": [],
+      "evidence": [
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:bin/capability-index",
+          "exit_code": 0
+        },
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:catalog/estate-capability-registry.json",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "id": "temporal-orchestrator",
+      "area": "runtime",
+      "claim": "Temporal sovereign-worker (durable workflows the department must reuse)",
+      "paths": [],
+      "registry_refs": [
+        "cap:service/temporal/sovereign-worker",
+        "cap:service/temporal/temporal-frontend-mesh"
+      ],
+      "implemented": true,
+      "implemented_at_base": true,
+      "tested": "none",
+      "ci_wired": null,
+      "observed_live": "blind",
+      "broken": false,
+      "unknown": [
+        {
+          "field": "implemented",
+          "why": "code lives outside this repository's tree; registry declaration only"
+        },
+        {
+          "field": "observed_live",
+          "why": "no instrument reached the runtime; deployment is never inferred from YAML"
+        }
+      ],
+      "evidence": [
+        {
+          "command": "kubectl get nodes --request-timeout=5s",
+          "exit_code": 124,
+          "output_sha256": "4d8c4d33634c73332d5e8d2a3e9ce71f0a9786f3244ab899ca921578a19caf0b",
+          "output_tail": "timeout after 15s"
+        }
+      ]
+    },
+    {
+      "id": "dagster-orchestrator",
+      "area": "runtime",
+      "claim": "Dagster (scheduled scans the department must reuse)",
+      "paths": [],
+      "registry_refs": [
+        "cap:service/dagster/estate-db-copy-dagster-r3"
+      ],
+      "implemented": true,
+      "implemented_at_base": true,
+      "tested": "none",
+      "ci_wired": null,
+      "observed_live": "blind",
+      "broken": false,
+      "unknown": [
+        {
+          "field": "implemented",
+          "why": "code lives outside this repository's tree; registry declaration only"
+        },
+        {
+          "field": "observed_live",
+          "why": "no instrument reached the runtime; deployment is never inferred from YAML"
+        }
+      ],
+      "evidence": [
+        {
+          "command": "kubectl get nodes --request-timeout=5s",
+          "exit_code": 124,
+          "output_sha256": "4d8c4d33634c73332d5e8d2a3e9ce71f0a9786f3244ab899ca921578a19caf0b",
+          "output_tail": "timeout after 15s"
+        }
+      ]
+    },
+    {
+      "id": "department-contract",
+      "area": "department",
+      "claim": "department.v1 schemas + state machine (this lane's M1)",
+      "paths": [
+        "schema/department/v1/envelope.schema.json",
+        "platform/department/contract.py"
+      ],
+      "registry_refs": [],
+      "implemented": false,
+      "implemented_at_base": false,
+      "tested": "none",
+      "ci_wired": null,
+      "observed_live": "not_applicable",
+      "broken": false,
+      "unknown": [
+        {
+          "field": "tested",
+          "why": "not implemented at the source sha"
+        }
+      ],
+      "evidence": [
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:schema/department/v1/envelope.schema.json",
+          "exit_code": 1
+        },
+        {
+          "command": "git cat-file -e ddcdf7fd5a9a4d9d2095ddb88c762d0cd82e5c8e:platform/department/contract.py",
+          "exit_code": 1
+        }
+      ]
+    }
+  ],
+  "gaps": [
+    {
+      "rank": 1,
+      "id": "G1-department-contract",
+      "gap": "No department contract: no schema, no state machine, no admission gate for autonomous work.",
+      "extend": "schema/ (beside schema/intent) and the founder.decision door; closed by this lane's M1"
+    },
+    {
+      "rank": 2,
+      "id": "G2-scene-frame-contract",
+      "gap": "The scene contract the spec requires (RG4) does not exist; Fleet still consumes the unschema'd core-NATS estate.cinema.cue topic.",
+      "extend": "platform/event-bus/contract/ (same family as estate.agent.event.json); retire estate.cinema.cue in the same change (ADR 0038)"
+    },
+    {
+      "rank": 3,
+      "id": "G3-liveness-blind",
+      "gap": "Every cluster-placed media capability is BLIND: the OKE API does not answer, so no row can be observed_live.",
+      "extend": "bin/capability-index prove receipts once the cluster is replaced (lane/oke-replace-cluster); no new probe stack"
+    },
+    {
+      "rank": 4,
+      "id": "G4-tests-not-in-ci",
+      "gap": "Director Go tests and fleetview-backend cinema/voice tests exist but no workflow on main runs them.",
+      "extend": "the existing ci.yml jobs (as platform/messaging's go test is wired today); no new workflow"
+    },
+    {
+      "rank": 5,
+      "id": "G5-research-waits-on-founder",
+      "gap": "The research engine terminates in a report and waits on a founder Continue/Park tick; it measured 0 admitted claims on a wrong lane.",
+      "extend": "objective-adapter + founder.decision door, driven by the department state machine (M2/M4); no second approval stack"
+    },
+    {
+      "rank": 6,
+      "id": "G6-durable-runtime-unproven",
+      "gap": "The department's durable runtime (Temporal, Dagster, JetStream) is declared but not observable while the cluster is gone.",
+      "extend": "Temporal sovereign-worker + JetStream (M2); the registry's own agent-invoke row records Temporal unreachable"
+    }
+  ]
+}

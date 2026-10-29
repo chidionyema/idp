@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:estate:schema:department.v1.outcome",
+  "title": "department.v1.outcome",
+  "description": "A measured baseline-to-treatment delta. measured_by names the command or probe; a number without one is refused.",
+  "allOf": [
+    {
+      "$ref": "urn:estate:schema:department.v1.envelope"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "outcome"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "metric",
+            "baseline",
+            "treatment",
+            "unit",
+            "measured_by"
+          ],
+          "properties": {
+            "metric": {
+              "type": "string",
+              "minLength": 1
+            },
+            "baseline": {
+              "type": "number"
+            },
+            "treatment": {
+              "type": "number"
+            },
+            "unit": {
+              "type": "string",
+              "minLength": 1
+            },
+            "measured_by": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  ]
+}
