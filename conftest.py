@@ -24,6 +24,27 @@ if os.getpriority(os.PRIO_PROCESS, 0) < SUITE_NICE:
     os.nice(SUITE_NICE - os.getpriority(os.PRIO_PROCESS, 0))
 
 
+def _isolate_router_front_state() -> None:
+    """Keep the suite out of the LIVE router's state directory.
+
+    The front persists the cloud's cooldown to a runtime directory
+    (`~/.estate/front-state/`, per-instance, named by the listen port). A test that imports the
+    real front module and lets it write its default path drops a `cloud-down-<port>` file into
+    that live directory -- the suite pollutes the estate it is supposed to be testing, and the
+    next run inherits the previous run's cooldown.
+
+    This is the same class as the git-config guard below: the operator's environment is not
+    the suite's scratch space. The override is set BEFORE any test imports the front, and it
+    points at a throwaway directory, so the live state directory is never written by a test.
+    """
+    if "ESTATE_ROUTER_CLOUD_STATE_DIR" not in os.environ:
+        root = Path(tempfile.mkdtemp(prefix="idp-suite-front-state-"))
+        os.environ["ESTATE_ROUTER_CLOUD_STATE_DIR"] = str(root)
+
+
+_isolate_router_front_state()
+
+
 def _git_config_without_operator_hooks() -> Path:
     """The operator's global config, copied verbatim, then the hooks directory overridden
     (last value wins). A copy rather than an `[include]`: git 2.39 on the Mac did not follow
