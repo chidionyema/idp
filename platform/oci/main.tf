@@ -29,7 +29,9 @@ module "oke" {
 
   ssh_public_key = var.ssh_public_key
 
-  worker_pools = local.oke_enabled ? {
+  # A filtered for-expression, not `cond ? {...} : {}`: the two arms of a conditional must share a
+  # type, and an empty map does not (apply run 40836409036).
+  worker_pools = { for name, pool in {
     a1 = {
       description = "one A1 node: the Always Free allowance plus paid growth under the estate-defaults cap"
       # crew#539 CP10: the capacity class a pod's affinity reads (platform/scheduling/capacity-affinity.yaml).
@@ -86,7 +88,7 @@ module "oke" {
       preemptible_config       = { enable = true, is_preserve_boot_volume = false }
       node_labels              = { "estate.io/capacity" = "preemptible" }
     }
-  } : {}
+  } : name => pool if local.oke_enabled }
 }
 
 output "cluster_id" {
