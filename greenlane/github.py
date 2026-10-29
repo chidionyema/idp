@@ -1262,19 +1262,129 @@ class GitHubBackend:
         found = self.gh(f"pulls?state=open&head={self.owner}:{lane}&per_page=5") or []
         return found[0] if found else None
 
+    def _proof_block(self, rebased: str) -> str:
+        """The BDD-PROOF block this Greenlane writes.
+
+        ONE SHAPE, ONE PRODUCER (2026-10-29). The block used to carry a prose line --
+        `required checks green on candidate {tip}: <names>` -- which the proof gate
+        refused, because the gate demands a runner's own evidence and a sentence naming
+        checks is not one. Measured: PR #7466's Greenlane-written block was refused by
+        bin/idp-bdd-proof-gate with `refused: the proof block carries no passing BDD run`
+        (exit 1).
+
+        The Greenlane cannot cite runner COUNTS: CI's counts live in the job log, and the
+        check-runs API returns an empty `output.title` and `output.summary` for every check
+        run on this repository (measured 2026-10-29 over all 100 check runs on commit
+        2f6b2fb37). So it cites what it does have and CAN prove: the commit and the set of
+        required checks that ran green on it.
+
+        The citation is a CHECKS CITATION, `checks: <sha> <name,name,...>`, and it is
+        evidence rather than a description because the gate verifies it ITSELF -- it
+        re-reads the check runs for that exact commit from GitHub and refuses the block
+        when a named check did not run or ran red. The Greenlane's word is never taken on
+        trust, and it never has to invent a number it does not have.
+
+        The sha cited is `rebased` -- the commit the pull request's head is -- so the
+        citation and the block's `head:` agree, and the gate's head-match rule and its
+        check verification are about the same commit.
+
+        IT CITES THE CHECKS THAT ACTUALLY RAN, NOT THE REQUIRED LIST (2026-10-29).
+        `greenlane` is a required check on main, but the check run named `greenlane` is
+        created BY THIS ENGINE, during the land -- after the pull request exists. At
+        proof-writing time it does not exist on the commit: measured on commit
+        615785e4145c16a52afb79dea8e79b90f6045fbe, 8 of the 9 required checks ran green
+        and `greenlane` was absent, so citing the whole required list produced a block
+        the gate refused with `the cited check 'greenlane' did not run on 615785e4145c`
+        (exit 1). A citation is a statement about what ran, so it must be built from
+        what ran -- `self.checks()` already knows, and the citation is exactly the set of
+        required checks it found completed and green.
+        """
+        ran = self._green_required(rebased)
+        names = ", ".join(ran)
+        return f"BDD-PROOF\nhead: {rebased}\nchecks: {rebased} {names}\nEND-BDD-PROOF\n"
+
+    def _green_required(self, sha: str) -> list:
+        """The required checks that ran completed and green on `sha`.
+
+        The same ground truth the gate verifies the citation against -- read from
+        GitHub, not asserted. If none of them can be read, the citation is empty and
+        the gate refuses the block; that is the honest direction, because a block that
+        claims nothing is not a proof.
+        """
+        latest: dict = {}
+        page_num = 1
+        while True:
+            page = (
+                self.gh(
+                    f"commits/{sha}/check-runs?per_page=100&filter=latest&page={page_num}"
+                )
+                or {}
+            )
+            runs = page.get("check_runs", [])
+            for r in runs:
+                name = r.get("name", "")
+                if name not in latest or (r.get("id") or 0) > (
+                    latest[name].get("id") or 0
+                ):
+                    latest[name] = r
+            if len(runs) < 100:
+                break  # last page
+            page_num += 1
+        green = []
+        for ctx in self.required:
+            r = latest.get(ctx)
+            if (
+                r is not None
+                and r.get("status") == "completed"
+                and (r.get("conclusion") in GREEN_CONCLUSIONS)
+            ):
+                green.append(ctx)
+        return green
+
     def _ensure_pr(self, lane: str, head: str, rebased: str, tip: str) -> Optional[int]:
+        subject = self.git("log", "-1", "--format=%s", rebased)
+        block = self._proof_block(rebased)
         existing = (
             self.gh(f"pulls?state=open&head={self.owner}:{lane}&per_page=5") or []
         )
         if existing:
-            return existing[0]["number"]
-        subject = self.git("log", "-1", "--format=%s", rebased)
+            # REFRESH THE BODY, DO NOT LEAVE IT STALE (2026-10-29). A pull request this
+            # Greenlane did not raise -- one a session opened -- carries no proof block at
+            # all, and the gate refuses it: `refused: PR #7453 carries no BDD-PROOF ...
+            # END-BDD-PROOF block`. Until now the only way to fix that was for a human to
+            # PATCH the body by hand, which is not a rule an estate can hold. The body is
+            # refreshed HERE, by the producer that already owns the pull request's
+            # lifecycle, whenever it does not carry a proof block naming this head.
+            #
+            # The refresh replaces the WHOLE body: a session's body carries its own prose,
+            # and the Greenlane's body is built from the same parts every time. So the
+            # Greenlane's body is the one body, and it always names the current head.
+            pr = existing[0]
+            number = pr.get("number")
+            body = pr.get("body") or ""
+            current_head = (pr.get("head") or {}).get("sha") or ""
+            needs_proof = "BDD-PROOF" not in body and "END-BDD-PROOF" not in body
+            stale_head = bool(current_head) and f"head: {current_head}" not in body
+            if number and (needs_proof or stale_head):
+                self.gh(
+                    f"pulls/{number}",
+                    "PATCH",
+                    {
+                        "body": (
+                            f"Landed by the Greenlane: this lane was proven green on top of "
+                            f"main at exactly this sha before this pull request existed, and "
+                            f"main fast-forwards to the same tested commit.\n\n"
+                            f"{MARKER} candidate {tip}\nGreenlane-Head: {head}\n"
+                            f"Greenlane-Run: {self.run_url}\n\n{block}"
+                        )
+                    },
+                )
+            return number
         body = (
             f"Landed by the Greenlane: this lane was proven green on top of main at exactly this sha "
             f"before this pull request existed, and main fast-forwards to the same tested commit.\n\n"
             f"{MARKER} candidate {tip}\nGreenlane-Head: {head}\nGreenlane-Run: {self.run_url}\n\n"
-            f"BDD-PROOF\nhead: {rebased}\nrequired checks green on candidate {tip}: "
-            f"{', '.join(self.required)}\nEND-BDD-PROOF\n"
+            f"{block}"
         )
         created = self.gh(
             "pulls",

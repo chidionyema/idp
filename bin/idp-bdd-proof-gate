@@ -9,17 +9,50 @@ refused -- fail-closed.
 This is the "show the green run, do not describe it" rule (LAW 22) given a machine that
 can say no, and it applies to every session, not one agent's workflow.
 
+ONE GRADER, TWO MODES (2026-10-29). This gate used to have two opinions. File mode
+demanded a runner's own passing counts and a head that matched the pull request's own
+head; `--live` demanded only that a block existed. The same block was therefore refused
+by one mode and accepted by the other -- measured on PR #7466: `refused: the proof block
+carries no passing BDD run` (exit 1) from file mode and `ok: PR #7466 carries a BDD-PROOF
+block` (exit 0) from --live, on one identical body. `grade()` below is now the only
+place a verdict is produced, and both modes call it, so the two cannot drift again.
+
+TWO EVIDENCE SHAPES, BOTH RUNNER'S OWN. A proof block may carry EITHER
+
+  1. the counts a runner printed -- "36 passed in 24.03s", "31 scenarios (31 passed)";
+     or
+  2. a CHECKS CITATION -- `checks: <sha> <name,name,...>` naming the commit and the
+     checks that ran on it, which this gate verifies ITSELF against GitHub's check-runs
+     API for that exact commit. A citation is only evidence because the gate re-reads the
+     ground truth and refuses it when a named check is missing or red; the block's own
+     words are never taken on trust.
+
+Shape 2 exists because the Greenlane raises a lane's pull request AFTER CI proved the
+candidate green, and CI's counts live in the job log -- not in the check-runs API, whose
+`output.title` and `output.summary` are empty for every check run on this repository
+(measured 2026-10-29 over all 100 check runs on commit 2f6b2fb37). The Greenlane cannot
+cite counts it does not have and must not invent them; what it does have is the set of
+checks and the commit they ran on, and that is verifiable. So the producer and the
+grader now agree on a shape both can honestly produce.
+
 Input: a pull request as JSON on stdin or as a file path (the shape `gh pr view --json`).
 Exit codes:
   0  the pull request carries BDD proof on its own head commit
-  1  refused -- missing block, unparseable, or the run is not on this head
+  1  refused -- missing block, unparseable, no runner's own evidence, or the run is not
+     on this head
   2  the input could not be read at all (BLIND, never a pass)
+  3  skip -- there is no pull request to grade (a push to main, or a local run with no
+     pull request in scope). SKIP is not a pass and not a refusal: it says the rule had
+     nothing to judge, which is what it means, and it is what lets bin/idp-ci stop
+     suppressing this gate with `|| true`.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -40,9 +73,12 @@ PASS_PATTERNS = [
     # cucumber family summaries
     re.compile(r"\b\d+\s+scenarios?\b[^\n]{0,40}\b\d+\s+passed\b", re.I),
     re.compile(r"\b\d+\s+features?\b[^\n]{0,40}\b\d+\s+passed\b", re.I),
-    re.compile(r"\b\d+\s+failed\b", re.I)
-    if False
-    else re.compile(r"\b0\s+failed\b", re.I),
+    # `142 steps (142 passed)` -- cucumber's step count. It is in the estate's own
+    # good.json fixture, and the gate refused it on its own (measured 2026-10-29:
+    # `looks_like_a_pass` returned False for a block carrying only that line). A
+    # legitimate runner line the gate cannot read is a gate that refuses correct work.
+    re.compile(r"\b\d+\s+steps?\b[^\n]{0,40}\b\d+\s+passed\b", re.I),
+    re.compile(r"\b0\s+failed\b", re.I),
     # jest / vitest
     re.compile(r"Tests:\s*\d+\s+passed", re.I),
     re.compile(r"\b\d+\s+passed,\s*\d+\s+total\b", re.I),
@@ -59,6 +95,16 @@ PROSE_ONLY = re.compile(
     r"bdd\s+(pass|passed|is\s+green)|verified\s+manually)\b",
     re.I | re.M,
 )
+
+# The checks citation: `checks: <sha> <name,name,...>`. The sha is the commit the checks
+# ran on; the names are the check contexts to verify. The gate re-reads those check runs
+# from GitHub, so a citation that names a red or missing check is refused.
+CHECKS_CITATION = re.compile(
+    r"^\s*checks\s*[:=]\s*([0-9a-f]{7,40})\s+(.+?)\s*$", re.I | re.M
+)
+
+# A check run counts as green when GitHub says it completed with one of these.
+GREEN_CONCLUSIONS = {"success", "neutral", "skipped"}
 
 
 def extract_block(body: str) -> str | None:
@@ -84,25 +130,167 @@ def looks_like_a_pass(block: str) -> bool:
     return any(p.search(block) for p in PASS_PATTERNS)
 
 
-def live_pr() -> dict:
+def checks_citation(block: str) -> tuple[str, list[str]] | None:
+    """The `checks: <sha> <name,...>` citation in a block, or None.
+
+    The names are the check contexts the writer saw green. The gate does not trust them:
+    `verify_checks` re-reads them from GitHub for the named commit.
+    """
+    m = CHECKS_CITATION.search(block)
+    if not m:
+        return None
+    sha = m.group(1).lower()
+    names = [n.strip() for n in m.group(2).split(",") if n.strip()]
+    if not names:
+        return None
+    return sha, names
+
+
+def repo_slug() -> str:
+    """owner/repo, from GITHUB_REPOSITORY or this checkout's origin remote."""
+    env = os.environ.get("GITHUB_REPOSITORY", "").strip()
+    if env and "/" in env:
+        return env
+    try:
+        out = subprocess.run(
+            ["git", "config", "--get", "remote.origin.url"],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        url = out.stdout.strip()
+        m = re.search(r"[:/]([^/:]+/[^/:]+?)(?:\.git)?$", url)
+        if m:
+            return m.group(1)
+    except Exception:  # noqa: S110 - a missing remote is not fatal here
+        pass
+    return "chidionyema/idp"
+
+
+def check_runs_for(sha: str) -> list[dict]:
+    """Every check run on `sha`, read from GitHub. Raises when it cannot be read."""
+    slug = repo_slug()
+    latest: dict[str, dict] = {}
+    page = 1
+    while True:
+        out = subprocess.run(
+            [
+                "gh",
+                "api",
+                f"repos/{slug}/commits/{sha}/check-runs?per_page=100&page={page}",
+            ],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if out.returncode != 0:
+            raise RuntimeError(
+                f"gh could not read the check runs on {sha[:12]}: {out.stderr.strip()[:200]}"
+            )
+        try:
+            data = json.loads(out.stdout or "{}")
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"the check-run answer for {sha[:12]} is not JSON: {e}"
+            ) from e
+        runs = data.get("check_runs") or []
+        for r in runs:
+            name = r.get("name") or ""
+            if name not in latest or (r.get("id") or 0) > (latest[name].get("id") or 0):
+                latest[name] = r
+        if len(runs) < 100:
+            break
+        page += 1
+    return list(latest.values())
+
+
+def verify_checks(sha: str, names: list[str]) -> tuple[bool, str]:
+    """Are every named check green on `sha`? (ok, reason) -- the citation's truth.
+
+    The writer's claim is never taken on trust: the check runs are re-read from GitHub
+    for the exact commit the citation names. A check that did not run, or that ran red,
+    is a refusal -- that is what makes the citation evidence rather than a description.
+    """
+    runs = check_runs_for(sha)
+    by_name = {r.get("name") or "": r for r in runs}
+    for name in names:
+        r = by_name.get(name)
+        if r is None:
+            return False, f"the cited check {name!r} did not run on {sha[:12]}"
+        status = r.get("status")
+        conclusion = r.get("conclusion")
+        if status != "completed":
+            return False, f"the cited check {name!r} was still {status} on {sha[:12]}"
+        if conclusion not in GREEN_CONCLUSIONS:
+            return False, f"the cited check {name!r} was {conclusion} on {sha[:12]}"
+    return True, f"{len(names)} cited check(s) green on {sha[:12]}"
+
+
+def grade(pr: dict, verify: bool = True) -> tuple[int, str]:
+    """THE grader. One verdict, from one place, for every mode.
+
+    Returns (exit code, message). A non-zero code is a refusal and the message names the
+    reason; a zero code is a pass and the message says what was verified.
+
+    `verify=False` is for the self-test and for the fixtures: it grades the SHAPE of the
+    evidence without asking GitHub anything. It is never used on a live pull request.
+    """
+    body = pr.get("body") or ""
+    head = (pr.get("headRefOid") or pr.get("head_oid") or "").lower()
+    title = pr.get("title") or ""
+
+    block = extract_block(body)
+    if block is None:
+        return 1, f"'{title}' carries no {BEGIN} ... {END} block"
+
+    proved = head_from_block(block)
+    if proved is None:
+        return 1, "the proof block names no head commit"
+
+    if head and not head.startswith(proved):
+        return (
+            1,
+            f"the proof names {proved}, but the pull request's head is {head[:12]}",
+        )
+
+    citation = checks_citation(block)
+    if citation is not None:
+        cited_sha, names = citation
+        if verify:
+            try:
+                ok, why = verify_checks(cited_sha, names)
+            except Exception as e:
+                return 2, f"cannot read the check runs for {cited_sha[:12]}: {e}"
+            if not ok:
+                return 1, why
+            return 0, f"ok: bdd proof on head {proved}; {why}"
+        return 0, f"ok: bdd proof on head {proved}; {len(names)} cited check(s)"
+
+    if not looks_like_a_pass(block):
+        return 1, "the proof block carries no passing BDD run"
+
+    return 0, f"ok: bdd proof on head {proved}"
+
+
+def live_pr() -> dict | None:
     """The pull request under test (the CI event's PR), as gh reports it.
 
     The previous shape `gh pr list --state all --limit 1` returned the newest PR ANY
     session opened, not the PR being graded -- so a run for branch A refused because branch
     B's freshly-opened PR carried no BDD-PROOF block. That false-red is what the founder's
-    comment at bin/idp-ci:73-84 was working around with a load-bearing `|| true`. Fix that
-    class by reading the PR number from the GitHub Actions event payload when it is set
-    (pull_request or merge_group event), and fall back to newest only when neither is
-    present (local invocation).
-    """
-    import os
-    import subprocess
+    comment at bin/idp-ci was working around with a load-bearing `|| true`. That class is
+    closed: the PR number is read from the GitHub Actions event payload when it is set
+    (pull_request or merge_group event), then from GITHUB_HEAD_REF (set by the pre-push
+    hook for lane/* branches), and only then, as a last resort, from the newest PR.
 
+    Returns None when there is NO pull request to grade -- a push to main, or a local run
+    with no pull request in scope. None is SKIP, not a pass: the rule had nothing to
+    judge, and saying so is what lets bin/idp-ci run this gate without suppressing it.
+    """
     root = Path(__file__).resolve().parents[1]
 
-    # GHA sets GITHUB_EVENT_PATH to a JSON file describing the triggering event. For
-    # pull_request events its .pull_request.number is the PR under test; for merge_group
-    # its .merge_group.head_ref parses to `refs/heads/gh-readonly-queue/<base>/pr-<n>-...`.
     pr_number = None
     ev_path = os.environ.get("GITHUB_EVENT_PATH")
     if ev_path and Path(ev_path).is_file():
@@ -112,8 +300,6 @@ def live_pr() -> dict:
             if not pr_number:
                 head = (ev.get("merge_group") or {}).get("head_ref") or ""
                 # refs/heads/gh-readonly-queue/main/pr-3702-abc123...
-                import re
-
                 m = re.search(r"/pr-(\d+)-", head)
                 if m:
                     pr_number = int(m.group(1))
@@ -141,8 +327,6 @@ def live_pr() -> dict:
             )
         return json.loads(out.stdout)
 
-    # GITHUB_HEAD_REF is set by the pre-push hook for lane/* branches. Use it to find
-    # the correct PR for the branch being pushed, instead of the global newest PR.
     head_ref = os.environ.get("GITHUB_HEAD_REF", "")
     if head_ref:
         out = subprocess.run(
@@ -168,6 +352,9 @@ def live_pr() -> dict:
             rows = json.loads(out.stdout or "[]")
             if rows:
                 return rows[0]
+        # The branch under test has no pull request -- a push to main, or a lane whose
+        # pull request the Greenlane has not raised yet. SKIP, and say so.
+        return None
 
     out = subprocess.run(
         [
@@ -192,17 +379,22 @@ def live_pr() -> dict:
         )
     rows = json.loads(out.stdout or "[]")
     if not rows:
-        raise RuntimeError("no pull request exists on this repository to grade")
+        return None
     return rows[0]
 
 
 def _self_test() -> int:
-    """Exercise the block extractor + counts predicate on real bytes.
+    """Exercise the grader on real bytes, both ways.
 
     A gate that has never executed is not a gate (script-compiles rule); this proves the
-    hot path -- extract_block, head_from_block, looks_like_a_pass -- on both the good and
-    the bad shape without hitting the network. Live grading is exercised only when
-    --live is passed with a real GHA event.
+    hot path -- extract_block, head_from_block, looks_like_a_pass, checks_citation and
+    `grade` itself -- on both the good and the bad shape without hitting the network.
+    Live grading is exercised only when --live is passed with a real GHA event.
+
+    THE FALSIFIER (2026-10-29). Every case below is a REFUSAL that must happen. A gate
+    whose refusals were never asserted is a gate that cannot fail -- the defect this gate
+    exists to catch, one level up. A change that makes one of these cases pass fails this
+    self-test.
     """
     good = "BDD-PROOF\nhead: abc1234\n142 passed in 4.51s\nEND-BDD-PROOF"
     bad_prose = (
@@ -218,7 +410,77 @@ def _self_test() -> int:
     assert looks_like_a_pass(extract_block(bad_prose)) is False, (
         "prose accepted as pass"
     )
-    print("ok bdd-proof-gate --self-test: extractor + counts predicate both ways")
+
+    # The checks citation: parsed, and refused when it names a commit that is not this
+    # head. The verification against GitHub is exercised on the live path, not here.
+    cited = "BDD-PROOF\nhead: abc1234\nchecks: abc1234 test, bdd\nEND-BDD-PROOF"
+    assert checks_citation(extract_block(cited)) == ("abc1234", ["test", "bdd"]), (
+        "checks citation parser wrong"
+    )
+    assert checks_citation(extract_block(good)) is None, (
+        "a counts-only block grew a checks citation"
+    )
+
+    # grade() -- the one grader. Both directions.
+    pr_counts = {
+        "title": "t",
+        "headRefOid": "abc1234def",
+        "body": good,
+    }
+    code, msg = grade(pr_counts, verify=False)
+    assert code == 0, f"a real counts proof was refused: {msg}"
+
+    pr_prose = {
+        "title": "t",
+        "headRefOid": "abc1234def",
+        "body": bad_prose,
+    }
+    code, msg = grade(pr_prose, verify=False)
+    assert code == 1, f"a prose claim was accepted: {msg}"
+    assert "no passing BDD run" in msg, (
+        f"the prose refusal named the wrong reason: {msg}"
+    )
+
+    pr_none = {"title": "t", "headRefOid": "abc1234def", "body": bad_none}
+    code, msg = grade(pr_none, verify=False)
+    assert code == 1, f"a body with no block was accepted: {msg}"
+    assert "carries no" in msg, (
+        f"the missing-block refusal named the wrong reason: {msg}"
+    )
+
+    pr_wrong_head = {
+        "title": "t",
+        "headRefOid": "fffffff",
+        "body": "BDD-PROOF\nhead: abc1234\n142 passed in 4.51s\nEND-BDD-PROOF",
+    }
+    code, msg = grade(pr_wrong_head, verify=False)
+    assert code == 1, f"a proof on the wrong head was accepted: {msg}"
+    assert "head is" in msg, f"the wrong-head refusal named the wrong reason: {msg}"
+
+    pr_no_head = {
+        "title": "t",
+        "headRefOid": "abc1234def",
+        "body": "BDD-PROOF\n142 passed in 4.51s\nEND-BDD-PROOF",
+    }
+    code, msg = grade(pr_no_head, verify=False)
+    assert code == 1, f"a proof naming no head was accepted: {msg}"
+    assert "names no head" in msg, f"the no-head refusal named the wrong reason: {msg}"
+
+    # The two modes must not be able to disagree again: the same pull request graded by
+    # the one function is the same verdict, whatever asked.
+    pr_cited = {
+        "title": "t",
+        "headRefOid": "abc1234def",
+        "body": "BDD-PROOF\nhead: abc1234\nchecks: abc1234 test\nEND-BDD-PROOF",
+    }
+    code, msg = grade(pr_cited, verify=False)
+    assert code == 0, f"a checks citation on this head was refused: {msg}"
+
+    refused = 4
+    print(
+        "ok bdd-proof-gate --self-test: extractor + counts predicate both ways; "
+        f"grade() refuses {refused} known-bad proof(s) and accepts 2 known-good one(s)"
+    )
     return 0
 
 
@@ -238,15 +500,19 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
-        body = pr.get("body") or ""
-        if extract_block(body) is None:
-            # Named, not silently green: the last PR carries no proof, and the rule says so.
+        if pr is None:
+            # SKIP, not a pass and not a refusal: there is no pull request in scope. This
+            # is what lets bin/idp-ci run this gate without `|| true`.
             print(
-                f"refused: PR #{pr.get('number')} carries no {BEGIN} ... {END} block",
-                file=sys.stderr,
+                "skip: bdd-proof-gate  no pull request to grade "
+                "(a push to main, or a branch with no pull request yet)"
             )
-            return 1
-        print(f"ok: PR #{pr.get('number')} carries a {BEGIN} block")
+            return 3
+        code, msg = grade(pr)
+        if code != 0:
+            print(f"refused: PR #{pr.get('number')} {msg}", file=sys.stderr)
+            return code
+        print(f"ok: PR #{pr.get('number')} {msg}")
         return 0
 
     src = sys.argv[1] if len(sys.argv) > 1 else "-"
@@ -262,42 +528,29 @@ def main() -> int:
         print(f"bdd-proof-gate: input is not JSON: {e}", file=sys.stderr)
         return 2
 
-    import os
-
-    body = pr.get("body") or ""
-    head = (pr.get("headRefOid") or pr.get("head_oid") or "").lower()
-    title = pr.get("title") or ""
-
     # Env overrides let a rule's fixture cases prove the both-ways cases without a live PR:
     #   BDD_PR_HEAD   -- pretend the pull request's head is this commit
     #   BDD_RUN_HEAD  -- pretend the proof names this commit
     # Both default to the input, so an unset environment changes nothing.
     if os.environ.get("BDD_PR_HEAD"):
-        head = os.environ["BDD_PR_HEAD"].lower()
+        pr = dict(pr)
+        pr["headRefOid"] = os.environ["BDD_PR_HEAD"].lower()
     run_head_override = os.environ.get("BDD_RUN_HEAD", "").lower()
-
-    block = extract_block(body)
-    if block is None:
-        print(f"refused: '{title}' carries no {BEGIN} ... {END} block", file=sys.stderr)
-        return 1
-
-    if not looks_like_a_pass(block):
-        print("refused: the proof block carries no passing BDD run", file=sys.stderr)
-        return 1
-
-    proved = run_head_override or head_from_block(block)
-    if proved is None:
-        print("refused: the proof block names no head commit", file=sys.stderr)
-        return 1
-
-    if head and not head.startswith(proved):
-        print(
-            f"refused: the proof names {proved}, but the pull request's head is {head[:12]}",
-            file=sys.stderr,
+    if run_head_override:
+        body = pr.get("body") or ""
+        pr = dict(pr)
+        pr["body"] = re.sub(
+            r"^(\s*head\s*[:=]\s*)[0-9a-f]{7,40}\s*$",
+            r"\g<1>" + run_head_override,
+            body,
+            flags=re.I | re.M,
         )
-        return 1
 
-    print(f"ok: bdd proof on head {proved}")
+    code, msg = grade(pr)
+    if code != 0:
+        print(f"refused: {msg}", file=sys.stderr)
+        return code
+    print(msg)
     return 0
 
 

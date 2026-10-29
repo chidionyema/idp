@@ -416,26 +416,45 @@ else say "FAIL  yamllint is not installed -- run bin/idp-install-deps"; fail=1; 
 # and its live gate manufactured work -- it refused rules whose only grader was a job the founder
 # had just deleted, which is a table defending itself rather than the estate.
 
-# The bdd-proof gate, named here on purpose. It is a rule in rules.yaml like the rest, but its
-# live case -- reading the most recent pull request on this repository and refusing one that
-# carries no BDD-PROOF block -- needs a line in this file that says the gate's name, so
-# bin/idp-rules can check that the claim in rules.yaml is still true (pointer_is_stale). The
-# registry above runs it; this line is what makes that fact checkable rather than asserted.
+# live case -- reading the pull request under test and refusing one that carries no BDD-PROOF
+# block -- needs a line in this file that says the gate's name, so bin/idp-rules can check that
+# the claim in rules.yaml is still true (pointer_is_stale). The registry above runs it; this
+# line is what makes that fact checkable rather than asserted.
 #
-# THE `|| true` IS LOAD-BEARING AND MUST NOT BE REMOVED UNTIL live_pr() CHANGES (measured
-# 2026-09-13, the reason this comment is here rather than a second silent exception). The gate's
-# live_pr() runs `gh pr list --state all --limit 1` with no reference to the branch under test,
-# so on this repository it grades THE NEWEST PULL REQUEST ANY SESSION OPENED, not this run's.
-# Called during CI for branch feat/async-dispatch it answered about PR #3398 flux/image-updates
-# -- another session's work. Making this line fail the run would therefore fail a correct branch
-# for a foreign pull request's missing proof block, which is precisely the guard-that-refuses-
-# correct-work defect (R38). The suppression stays until live_pr() takes the PR under test
-# (GitHub exposes it as the pull_request payload; see bin/idp-bdd-proof-gate, input named in
-# its own docstring as "a pull request as JSON on stdin"). The BLIND that made this line look
-# broken was itself only a symptom of the missing token: with GH_TOKEN set the gate reads a pull
-# request and returns a real verdict, so the line is no longer blind -- it is simply aimed at the
-# wrong pull request, which no change to this file can fix.
-python3 "$IDP/bin/idp-bdd-proof-gate" --live || true
+# THE `|| true` IS GONE, AND HERE IS WHY THAT IS SAFE NOW (2026-10-29). It used to be
+# load-bearing: the gate's live_pr() ran `gh pr list --state all --limit 1`, which returned the
+# newest pull request ANY session opened -- not the pull request this run was grading. Called
+# during CI for branch feat/async-dispatch it answered about PR #3398 flux/image-updates, another
+# session's work, so making the line fail the run would fail a correct branch for a foreign pull
+# request's missing proof block. That is the guard-that-refuses-correct-work defect (R38), and
+# the suppression was the honest way to hold it until the gate could be aimed.
+#
+# THE GATE CAN NOW BE AIMED, SO THE SUPPRESSION IS A DEFECT AND NOT A SAFETY (2026-10-29).
+# live_pr() reads the pull request under test from the GitHub Actions event payload
+# (GITHUB_EVENT_PATH: the pull_request number, or the merge_group's /pr-NNN- head ref), then
+# from GITHUB_HEAD_REF, and only then falls back to the newest pull request. Measured 2026-10-29
+# on PR #7466: the same body graded by file mode and by --live gave `refused: the proof block
+# carries no passing BDD run` (exit 1) and `ok: PR #7466 carries a BDD-PROOF block` (exit 0) --
+# the same evidence, two verdicts, because two functions graded it. Both modes now call one
+# grader, `grade()`, and the gate returns exit 3 (SKIP) when there is no pull request in scope.
+#
+# So the line below is now a real gate: 1 (refused) and 2 (BLIND) fail the run, 0 passes, and 3
+# (no pull request to grade -- a push to main, or a lane whose pull request the Greenlane has
+# not raised yet) is skipped. A gate that cannot fail is not a gate; this one can, and it is
+# proven to fail on known-bad proof by the gate's own --self-test and by
+# tests/test_bdd_proof_gate.py.
+# The exit status is captured OUTSIDE the `if !` -- inside it, `$?` is the status of the
+# NEGATED test, which is 0 whatever the gate returned. Measured: `if ! f; then echo $?; fi`
+# with f returning 3 prints 0. So a rung that read `$?` inside the `if !` could never tell
+# SKIP (3) from a refusal (1), and every refusal would have been reported as a skip.
+python3 "$IDP/bin/idp-bdd-proof-gate" --live
+rc=$?
+if [ "$rc" = 3 ]; then
+  say "skip  bdd-proof  no pull request to grade"
+elif [ "$rc" != 0 ]; then
+  say "FAIL  bdd-proof  the pull request under test carries no accepted BDD proof (rc=$rc)"
+  fail=1
+fi
 
 # 1c.3 schema, every intent's args block against the door that runs it (bin/schema-conformance).
 #      The estate's agent door (platform/estate/bin/estate-execute, resolve_args) accepts any
