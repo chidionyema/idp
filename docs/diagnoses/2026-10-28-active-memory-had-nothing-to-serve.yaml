@@ -1,0 +1,103 @@
+description: 'Active Memory (platform/llm/active_memory.py) is built never to be in the way:
+  a failed brief read serves the last good answer. During the 2026-10-28 outage the laptop
+  router logged 841 brief reads that ended `nothing to serve` against 57 that served
+  stale. Question: why did the fallback have nothing -- was the last good answer held
+  only in router RAM for 30 minutes with no durable second source, was the callback
+  not running at all, was the read deadline (ACTIVE_MEMORY_BUDGET_S) too short for
+  a door that was answering slowly, or did the reads succeed and the brief come back
+  empty. Hypotheses and likelihoods written before the counts were taken; counted from
+  ~/Library/Logs/litellm-local.log and main on 2026-10-29 ~02:50Z, idp#7397. The log
+  lines carry no date, so the counts span every outage the current log holds, and
+  they come from correlated windows: n_eff_divisor 10.
+
+  '
+n_eff_divisor: 10
+hypotheses:
+- name: H1
+  description: the only fallback was in-process RAM (_last_good), keyed by the task
+    and bounded by STALE_MAX_S (1800 s); an outage longer than 30 minutes, a task
+    not asked before, or a router restart had nothing, because there was no durable
+    or remote second source
+  prior: 0.3
+- name: H2
+  description: the callback was not loaded or not invoked, so no brief was attempted
+  prior: 0.2
+- name: H3
+  description: the door was answering, only slower than BUDGET_S; a longer deadline
+    would have got the briefs
+  prior: 0.3
+- name: H4
+  description: the reads succeeded and the brief was empty (no facts for these tasks)
+  prior: 0.2
+evidence:
+- name: 'brief failures by fallback outcome in the laptop router log: `nothing to serve`
+    841, `serving stale age=` 57'
+  observed:
+    nothing: 841
+    stale: 57
+  likelihoods:
+    H1:
+      nothing: 0.9
+      stale: 0.1
+    H2:
+      nothing: 0.5
+      stale: 0.5
+    H3:
+      nothing: 0.4
+      stale: 0.6
+    H4:
+      nothing: 0.5
+      stale: 0.5
+- name: 'brief failures by shape: connection-level (390 TLS EOF, 6 handshake timed
+    out, 2 reset) against waits that ran out (257 read timed out, 190 no answer inside
+    3.5s, 53 urlopen timed out)'
+  observed:
+    connection: 398
+    wait: 500
+  likelihoods:
+    H1:
+      connection: 0.5
+      wait: 0.5
+    H2:
+      connection: 0.5
+      wait: 0.5
+    H3:
+      connection: 0.1
+      wait: 0.9
+    H4:
+      connection: 0.5
+      wait: 0.5
+- name: 'the callback ran: the same log holds 2256 active_memory lines, among them
+    `active_memory injected agent=pi chars=2444` x115 and `agent=claude-cli` rows'
+  observed:
+    ran: 1
+  likelihoods:
+    H1:
+      ran: 0.95
+      silent: 0.05
+    H2:
+      ran: 0.02
+      silent: 0.98
+    H3:
+      ran: 0.95
+      silent: 0.05
+    H4:
+      ran: 0.95
+      silent: 0.05
+- name: 'the code on main: _last_good is a module dict, STALE_MAX_S defaults to 1800,
+    and neither fetch_brief nor async_pre_call_hook reads any disk or remote copy'
+  observed:
+    ram_only: 1
+  likelihoods:
+    H1:
+      ram_only: 0.95
+      durable: 0.05
+    H2:
+      ram_only: 0.5
+      durable: 0.5
+    H3:
+      ram_only: 0.5
+      durable: 0.5
+    H4:
+      ram_only: 0.5
+      durable: 0.5

@@ -24,6 +24,8 @@ def _load(
     monkeypatch.setenv("ESTATE_MEMORY_URL", url)
     monkeypatch.setenv("ESTATE_MEMORY_TOKEN_FILE", str(token))
     monkeypatch.setenv("ESTATE_FOCUS_URL", focus_url)
+    # the router folds good briefs into the local snapshot: never the real ~/.estate/memory
+    monkeypatch.setenv("ESTATE_MEMORY_HOME", str(tmp_path / "memory"))
     spec = importlib.util.spec_from_file_location(
         "active_memory", os.path.join(ROOT, "platform", "llm", "active_memory.py")
     )
@@ -437,7 +439,8 @@ def _door_mode(monkeypatch, tmp_path, rows, key="gw-key"):
         ),
     )
     focus = types.SimpleNamespace(
-        live_focus=lambda: rows,
+        live_focus=lambda **kw: focus.asked.append(kw) or rows,
+        asked=[],
         drop_stale=lambda items: ([i for i in items if i.get("key") != "d.1"], []),
     )
     mod._lib = lambda: (door, focus)
@@ -585,9 +588,106 @@ def test_a_stale_answer_is_not_served_past_its_age(monkeypatch, tmp_path):
     assert mod.stale("brief:never-seen") is None
 
 
-def test_the_door_focus_gh_wait_never_outlasts_the_router_budget(monkeypatch, tmp_path):
+def test_a_caller_never_waits_past_the_budget_but_the_refresh_gets_its_own(
+    monkeypatch, tmp_path
+):
+    # 2026-10-28 (#7397): the gh search took 4.6 s and every read, the background refresh too,
+    # was cut at BUDGET_S 3.0, so the register was never refreshed once it went stale.
     mod, _ = _door_mode(monkeypatch, tmp_path, rows=[])
     focus = mod._lib()[1]
-    focus.FOCUS_TIMEOUT_S = 8.0
-    mod._door_focus()
-    assert focus.FOCUS_TIMEOUT_S <= mod.BUDGET_S
+    mod._read_focus(time.time())  # a caller waiting
+    mod._focus_refresh.acquire()
+    mod._refresh_focus(time.time())  # the background refresh (it releases the lock)
+    assert [a["timeout"] for a in focus.asked] == [mod.BUDGET_S, mod.FOCUS_REFRESH_S]
+    assert mod.FOCUS_REFRESH_S > 4.6 > mod.BUDGET_S
+    assert all(a["fallback"] is True for a in focus.asked)
+
+
+# --- the second home (#7397): the door is down, RAM has nothing, the snapshot answers -----------
+
+
+def _snapshot(mod, facts, focus_rows=(), facts_age=7200, focus_age=600):
+    snap_mod = mod._snap()
+    now = time.time()
+    why = snap_mod.write_local(
+        {
+            "version": 1,
+            "namespace": "estate",
+            "source": "test",
+            "facts_at": now - facts_age,
+            "facts": facts,
+            "focus_at": now - focus_age,
+            "focus": list(focus_rows),
+        },
+        floor_mb=0,
+    )
+    assert why == ""
+    return snap_mod
+
+
+def test_a_dead_door_with_nothing_in_ram_is_answered_from_the_snapshot(
+    monkeypatch, tmp_path, caplog
+):
+    mod = _load(monkeypatch, tmp_path)
+    _wire(mod, brief=OSError("EOF occurred in violation of protocol"), focus=FOCUS)
+    _snapshot(
+        mod,
+        [
+            {
+                "key": "edge.acme",
+                "content": "meridian serves the Traefik default cert; HTTP-01 fails",
+                "provenance": {"kind": "incident"},
+                "recorded_at": "2026-10-27T10:00:00+00:00",
+            }
+        ],
+    )
+    with caplog.at_level("WARNING"):
+        out = _pre(mod, _call("fix the meridian cert"))
+    last = out["messages"][-1]["content"]
+    assert "meridian serves the Traefik default cert" in last
+    # the model is told the facts are old and why, never handed them as new
+    assert "memory server unreachable; from the snapshot, facts 2h00m old" in last
+    assert any(
+        "brief unreadable" in r.getMessage()
+        and "serving snapshot age=" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def test_a_dead_ledger_is_answered_from_the_snapshot_focus_aged_to_now(
+    monkeypatch, tmp_path
+):
+    mod = _load(monkeypatch, tmp_path)
+    _wire(mod, focus=OSError("fleetview is on the dead cluster"))
+    row = {
+        "claim": "idp#7397",
+        "title": "memory second home",
+        "agent": "claude-memory",
+        "paths": "platform/estate/memory/snapshot.py",
+        "heartbeat_age_s": 60,
+        "live": True,
+    }
+    lapsed = dict(row, claim="idp#1", agent="gone", heartbeat_age_s=7000)
+    _snapshot(mod, [], focus_rows=[row, lapsed], focus_age=600)
+    last = _pre(mod, _call("anything"))["messages"][-1]["content"]
+    assert "Active Focus (claim ledger unreadable; as read 10m ago)" in last
+    assert "#7397 claude-memory" in last
+    # 7000 s + the snapshot's 600 s is past the 2 h lapse: shown lapsed, not live
+    assert "#1 gone" not in last
+
+
+def test_a_good_brief_is_kept_in_the_local_snapshot_for_the_next_outage(
+    monkeypatch, tmp_path
+):
+    mod = _load(monkeypatch, tmp_path)
+    mod.keep_brief(json.loads(json.dumps(BRIEF)), now=1000.0)
+    for t in [
+        t for t in __import__("threading").enumerate() if t.name == "snapshot-keep"
+    ]:
+        t.join(5)
+    snap = mod._snap().read_local()
+    assert {f["key"] for f in snap["facts"]} == {"edge.acme", "d.1"}
+    assert snap["facts_at"] == 1000.0
+    # once a minute, not once a call
+    mod.keep_brief({"relevant": [{"key": "new"}]}, now=1010.0)
+    assert {f["key"] for f in mod._snap().read_local()["facts"]} == {"edge.acme", "d.1"}

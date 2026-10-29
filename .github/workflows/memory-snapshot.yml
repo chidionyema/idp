@@ -1,0 +1,69 @@
+# button: Snapshot estate memory
+# founder: Keeps a copy of the estate's memory and focus on a second cloud, so agents still remember when the cluster or the laptop is down.
+# idp#7397. On 2026-10-28 the OKE cluster went dark and unified memory went with it: one Postgres,
+# one cluster, no copy anywhere else; the laptop disk was at zero the same evening. Every 15
+# minutes this job reads the estate's memory through the door (one brief per standing topic) and
+# the focus register from the GitHub claim ledger, writes the snapshot to Cloudflare R2 (a second
+# cloud: not OCI, not the laptop), reads it back and compares sha256. The router's Active Memory
+# and Active Focus read it when the door is down (platform/estate/memory/snapshot.py).
+#
+# A run goes red when no fact has been read through the door for 6 hours: readers are then on
+# old memory, and that is an outage, not a pass. Credentials are the repository's own seed
+# secrets, by name, deliberately not the OCI vault the escrow job uses: this copy exists for the
+# day OCI is the provider that failed. idp is public, so the snapshot never touches git.
+# Cost: £0 (public-repo runner minutes, R2 ingress free, ~0.5 MB per write).
+name: memory-snapshot
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - .github/workflows/memory-snapshot.yml
+      - bin/memory-snapshot
+      - platform/estate/memory/snapshot.py
+      - platform/estate/memory/focus.py
+      - tests/test_memory_snapshot.py
+permissions:
+  contents: read
+  issues: read   # the claim ledger the focus half is read from
+concurrency:
+  group: memory-snapshot
+  cancel-in-progress: false
+jobs:
+  test:
+    # a pull request proves the code, never writes the bucket: a PR run is not the scheduled writer
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.9"   # the oldest python that runs these files (macOS system python3)
+      - run: pip install -q pytest
+      - run: python -m pytest -q -o addopts="" tests/test_memory_snapshot.py
+  snapshot:
+    if: github.event_name != 'pull_request' && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: bin/memory-snapshot write
+        env:
+          MCP_GATEWAY_KEY: ${{ secrets.SEED_MCP_GATEWAY_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.SEED_R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.SEED_R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.SEED_R2_BUCKET }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          bin/memory-snapshot write 2>&1 | tee snapshot.out
+      - name: the verdict is on the run summary, pass or fail
+        if: always()
+        run: |
+          printf '### memory-snapshot\n```\n%s\n```\n' "$(cat snapshot.out 2>/dev/null || echo 'no verdict: the writer died before printing one')" >> "$GITHUB_STEP_SUMMARY"
