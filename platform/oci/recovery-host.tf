@@ -68,9 +68,12 @@ resource "oci_core_instance" "recovery" {
   display_name        = "${var.cluster_name}-recovery"
   shape               = local.recovery_shape
 
+  # 1 OCPU / 6 GB, not the 2 / 12 the AD offers: AD-1 answered "Out of host capacity" for 2 / 12
+  # (apply run 40844922528 and retries), and small A1 shapes are placed far more often. The router
+  # and the tunnel need under 2 GB; A1.Flex resizes in place when capacity returns.
   shape_config {
-    ocpus         = 2
-    memory_in_gbs = 12
+    ocpus         = 1
+    memory_in_gbs = 6
   }
 
   create_vnic_details {
