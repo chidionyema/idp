@@ -424,3 +424,128 @@ def test_no_repo_anywhere_is_blind_not_a_traceback(monkeypatch):
     with pytest.raises(SystemExit) as e:
         g.repo_slug()
     assert str(e.value).startswith("BLIND claim-gate")
+
+
+# ---------------------------------------------------------------- the truth obligation
+#
+# Founder, 2026-10-29: "a claim should have come with proof"; "following estate rules must not
+# be optional"; "we are totally out of touch with reality". The estate had a process for
+# ownership and a process for code and no process for truth, so every gate was green on
+# 2026-10-29 while the founder's path answered nothing. These tests are the obligation: a
+# change on a truth path cannot land without the measurement of the predicate it touches, and a
+# change that lands while the founder's path is broken has to say so.
+
+TRUTH_FILES = ["bin/litellm-local"]
+
+
+def _truth_root(
+    tmp_path, verdict="MEASURED_OK", generated=None, detail="", predicates=None
+):
+    """A tree with a contract and a snapshot, so the gate can be judged without the estate."""
+    root = tmp_path / "tree"
+    (root / "catalog").mkdir(parents=True)
+    (root / "catalog" / "truth-contract.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "predicates": [{"id": "router.laptop.completion", "kind": "http"}],
+                "paths": {"bin/litellm-local": ["router.laptop.completion"]},
+            }
+        )
+    )
+    if predicates is None:
+        predicates = [
+            {
+                "id": "router.laptop.completion",
+                "verdict": verdict,
+                "detail": detail,
+                "scope": "laptop",
+            }
+        ]
+    (root / "catalog" / "truth-verdicts.json").write_text(
+        json.dumps(
+            {
+                "generated_at": generated or NOW.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "verdict": verdict,
+                "predicates": predicates,
+            }
+        )
+    )
+    return root
+
+
+def test_a_change_off_a_truth_path_asks_for_nothing(tmp_path):
+    g = _gate()
+    root = _truth_root(tmp_path, verdict="MEASURED_FAIL")
+    assert (
+        g.truth_problems("fix: a thing\n", ["bin/voice-doctor"], NOW, root=root) == []
+    )
+
+
+def test_a_measured_predicate_asks_for_nothing(tmp_path):
+    g = _gate()
+    root = _truth_root(tmp_path, verdict="MEASURED_OK")
+    assert g.truth_problems("fix: a thing\n", TRUTH_FILES, NOW, root=root) == []
+
+
+def test_an_unknown_predicate_is_refused(tmp_path):
+    g = _gate()
+    root = _truth_root(tmp_path, verdict="UNKNOWN")
+    out = g.truth_problems("fix: a thing\n", TRUTH_FILES, NOW, root=root)
+    assert out and "UNKNOWN" in out[0]
+    assert "never ok" in out[0]
+
+
+def test_a_predicate_with_no_measurement_is_refused(tmp_path):
+    g = _gate()
+    root = _truth_root(tmp_path, predicates=[])
+    out = g.truth_problems("fix: a thing\n", TRUTH_FILES, NOW, root=root)
+    assert out and "NO measurement" in out[0]
+
+
+def test_a_failed_predicate_must_be_named(tmp_path):
+    """A change may land while the founder's path is broken -- but not in silence."""
+    g = _gate()
+    root = _truth_root(tmp_path, verdict="MEASURED_FAIL", detail="HTTP 401")
+    out = g.truth_problems("fix: a thing\n", TRUTH_FILES, NOW, root=root)
+    assert out and "MEASURED_FAIL" in out[0]
+    assert "Proof: router.laptop.completion" in out[0]
+
+
+def test_naming_the_failed_predicate_is_what_the_gate_asks_for(tmp_path):
+    g = _gate()
+    root = _truth_root(tmp_path, verdict="MEASURED_FAIL", detail="HTTP 401")
+    text = "fix: a thing\n\nProof: router.laptop.completion\n"
+    assert g.truth_problems(text, TRUTH_FILES, NOW, root=root) == []
+
+
+def test_a_stale_measurement_is_not_evidence(tmp_path):
+    g = _gate()
+    old = (NOW - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    root = _truth_root(tmp_path, verdict="MEASURED_OK", generated=old)
+    out = g.truth_problems("fix: a thing\n", TRUTH_FILES, NOW, root=root)
+    assert out and "not evidence about now" in out[0]
+
+
+def test_a_missing_snapshot_is_refused_on_a_truth_path(tmp_path):
+    g = _gate()
+    root = tmp_path / "tree"
+    (root / "catalog").mkdir(parents=True)
+    (root / "catalog" / "truth-contract.json").write_text(
+        json.dumps(
+            {"version": 1, "predicates": [], "paths": {"bin/litellm-local": ["p"]}}
+        )
+    )
+    out = g.truth_problems("fix: a thing\n", TRUTH_FILES, NOW, root=root)
+    assert out and "no measurement" in out[0]
+
+
+def test_the_contract_in_this_repo_is_well_formed():
+    """The contract the estate actually ships must name only predicates it declares."""
+    root = Path(__file__).resolve().parent.parent
+    contract = json.loads((root / "catalog" / "truth-contract.json").read_text())
+    ids = {p["id"] for p in contract["predicates"]}
+    assert ids
+    for path, wanted in contract["paths"].items():
+        for pid in wanted:
+            assert pid in ids, "%s names an unknown predicate %s" % (path, pid)

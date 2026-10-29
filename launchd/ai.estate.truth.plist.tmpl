@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- bin/idp-estate-truth, copied to ~/.estate/bin: launchd cannot run a shell against
+     ~/Documents (TCC, exit 126). WHY python3 IS ProgramArguments[0] AND NOT THE SCRIPT: the
+     grant is per binary, and /bin/bash as the responsible process gets "Operation not
+     permitted" on ~/Documents/code/idp while the framework python3 does not. The script stays a
+     child (subprocess.call, not exec), so the responsible process stays python3. -->
+<!-- WHAT IT DOES: every 15 minutes, measure whether the founder's own path works -- a real
+     completion through the laptop front, the router's own lane ledger, the memory door -- and
+     write the verdict to ~/.estate/results/truth/latest.json. Founder, 2026-10-29: the estate
+     has no process for truth, so every gate was green while the founder's path answered
+     nothing. A verdict is MEASURED_OK, MEASURED_FAIL or UNKNOWN, and UNKNOWN is never OK. -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>ai.estate.truth</string>
+  <key>ProgramArguments</key><array>
+    <string>/Library/Frameworks/Python.framework/Versions/3.12/bin/python3</string>
+    <string>-c</string>
+    <string>import subprocess, sys; sys.exit(subprocess.call(sys.argv[1:]))</string>
+    <string>/bin/bash</string>
+    <string>${HOME}/.estate/bin/idp-estate-truth</string>
+  </array>
+  <key>StartInterval</key><integer>900</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>${HOME}/.estate/truth.out.log</string>
+  <key>StandardErrorPath</key><string>${HOME}/.estate/truth.err.log</string>
+</dict></plist>

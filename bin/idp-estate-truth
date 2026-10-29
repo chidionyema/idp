@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# idp-estate-truth -- measure whether the founder's path works, and say so.
+#
+# The instrument lives in platform/estate/libexec/estate-truth.py and is staged to
+# ~/.estate/libexec/estate-truth.py by bin/estate-runtime-sync, so the same bytes answer on
+# the laptop, on a runner and inside the runtime tree. This launcher finds it; it never
+# re-implements it, because two instruments that disagree are one instrument too many.
+#
+#   bin/idp-estate-truth                 # the board: one line per predicate, one verdict
+#   bin/idp-estate-truth --json          # the same, as data
+#   bin/idp-estate-truth --write-snapshot catalog/truth-verdicts.json
+#
+# Exit: 0 the verdict is MEASURED_OK, 1 MEASURED_FAIL, 2 UNKNOWN. A door that cannot fail is
+# not a door.
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "${here}/.." && pwd)"
+
+for candidate in \
+  "${root}/platform/estate/libexec/estate-truth.py" \
+  "${HOME}/.estate/libexec/estate-truth.py" \
+  "${HOME}/.estate/runtime/idp/platform/estate/libexec/estate-truth.py"
+do
+  if [ -f "${candidate}" ]; then
+    exec python3 "${candidate}" "$@"
+  fi
+done
+
+echo "FAIL    idp-estate-truth  no estate-truth.py found (looked in ${root}/platform/estate/libexec, ${HOME}/.estate/libexec)" >&2
+exit 2

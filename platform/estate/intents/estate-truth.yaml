@@ -1,0 +1,19 @@
+name: estate-truth
+description: >-
+  Measure whether the founder's own path actually works, and give every question a verdict.
+  The estate had a process for ownership (claims) and a process for code (gates, CI, Greenlane)
+  and no process for truth, so on 2026-10-29 every gate was green while the founder's router
+  answered nothing. This instrument asks the declared predicates of catalog/truth-contract.json
+  -- a real completion through the cloud route, a real completion through the laptop front, the
+  router's own lane ledger, the memory door, estate-db -- and answers MEASURED_OK,
+  MEASURED_FAIL or UNKNOWN for each. The aggregate is total: any failure makes it a failure,
+  any UNKNOWN makes it UNKNOWN, and UNKNOWN is never OK, so the estate cannot be reported
+  healthy by omission. Writes ~/.estate/results/truth/latest.json; the scheduled job also
+  writes the machine-generated catalog/truth-verdicts.json that a gate verifies. Read-only
+  apart from those result files.
+class: read
+door_s: 100
+steps:
+  - name: estate-truth
+    cmd: >
+      python3 ~/.estate/libexec/estate-truth.py

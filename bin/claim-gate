@@ -58,6 +58,7 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 DEPENDABOT = "dependabot[bot]"
 MAX_AGE = timedelta(hours=2)
@@ -73,6 +74,116 @@ CLAIM = re.compile(
     r"heartbeat=(?P<hb>\S+)\s*$",
     re.M,
 )
+PROOF = re.compile(r"^Proof:\s*(?P<ids>[^\n]+?)\s*$", re.M)
+
+# The truth obligation. The estate had a process for ownership and a process for code and no
+# process for truth, so on 2026-10-29 every gate was green while the founder's path answered
+# nothing (founder: "we are totally out of touch with reality and no sense or awareness of
+# implications of our decisions"; "a claim should have come with proof"; "following estate rules
+# must not be optional"). The contract says which path answers which predicate; the snapshot is
+# the measurement; and this gate refuses a change whose evidence is missing, unknown, or silent.
+TRUTH_CONTRACT_REL = "catalog/truth-contract.json"
+TRUTH_SNAPSHOT_REL = "catalog/truth-verdicts.json"
+# A measurement older than this is not evidence about now. Seven days: the instrument runs every
+# fifteen minutes on the laptop and every fifteen minutes on a runner, so a week-old snapshot
+# means the instrument stopped, not that the estate is quiet.
+TRUTH_MAX_AGE = timedelta(days=7)
+TRUTH_OK = "MEASURED_OK"
+TRUTH_FAIL = "MEASURED_FAIL"
+TRUTH_UNKNOWN = "UNKNOWN"
+
+
+def truth_problems(
+    text: str, files: list[str], now: datetime, root: Path | None = None
+) -> list[str]:
+    """The proof obligation, enforced.
+
+    A change that touches a path named by the truth contract must carry the measurement of the
+    predicate that path answers. There are three cases and no fourth:
+
+      - the predicate has no measurement at all -> REFUSE: unknown is never ok;
+      - the predicate is UNKNOWN -> REFUSE: unknown is never ok;
+      - the predicate is MEASURED_FAIL -> the change must NAME it in a `Proof:` trailer, so a
+        change that lands while the founder's path is broken cannot land in silence.
+
+    A predicate that is MEASURED_OK asks for nothing: the measurement already proves it, and a
+    gate that asks for more would be ceremony.
+
+    WHAT THIS GATE CANNOT DO, SAID PLAINLY: it cannot prove the measurement was true. The
+    snapshot is a witness, and a witness in a repository can be written by the person it is
+    about. That is why the measurement is also published to the claim issue (durable, off the
+    machine, in the founder's eyes) and why the snapshot is refused when it is stale. The gate
+    enforces EVIDENCE, FRESHNESS and ACKNOWLEDGEMENT; whether the change addresses the failure
+    it names stays a human judgement, and pretending otherwise would be a gate that cannot fail.
+    """
+    root = root or (Path(__file__).resolve().parent.parent)
+    contract_path = root / TRUTH_CONTRACT_REL
+    if not contract_path.is_file():
+        return []  # the law is not installed on this tree; nothing to enforce
+    try:
+        contract = json.loads(contract_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"the truth contract cannot be read: {exc}"]
+    wanted: set[str] = set()
+    for pattern, ids in (contract.get("paths") or {}).items():
+        if any(covered_by(f, pattern) for f in files):
+            wanted.update(i for i in ids if i)
+    if not wanted:
+        return []
+    problems: list[str] = []
+    snapshot_path = root / TRUTH_SNAPSHOT_REL
+    if not snapshot_path.is_file():
+        return [
+            "the change touches a truth path (%s) and there is no measurement: %s is absent. "
+            "Run bin/idp-estate-truth --write-snapshot %s and land it."
+            % (", ".join(sorted(wanted)), TRUTH_SNAPSHOT_REL, TRUTH_SNAPSHOT_REL)
+        ]
+    try:
+        snapshot = json.loads(snapshot_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"the truth snapshot cannot be read: {exc}"]
+    measured = {p.get("id"): p for p in (snapshot.get("predicates") or [])}
+    generated = snapshot.get("generated_at")
+    try:
+        when = datetime.fromisoformat(str(generated).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        when = None
+    if when is None:
+        problems.append(
+            "the truth snapshot carries no usable generated_at (%r): it cannot be evidence"
+            % generated
+        )
+    elif now - when > TRUTH_MAX_AGE:
+        problems.append(
+            "the truth snapshot is %d days old (%s): a stale measurement is not evidence about "
+            "now. Run bin/idp-estate-truth --write-snapshot %s and land it."
+            % ((now - when).days, generated, TRUTH_SNAPSHOT_REL)
+        )
+    named = set()
+    for match in PROOF.finditer(text):
+        named.update(i.strip() for i in match.group("ids").split(",") if i.strip())
+    for pid in sorted(wanted):
+        pred = measured.get(pid)
+        if pred is None:
+            problems.append(
+                "the change touches a truth path and the predicate %s has NO measurement: "
+                "unknown is never ok" % pid
+            )
+            continue
+        verdict = pred.get("verdict")
+        if verdict == TRUTH_UNKNOWN:
+            problems.append(
+                "the predicate %s is UNKNOWN (%s): unknown is never ok, so this change cannot "
+                "land on an unmeasured path" % (pid, pred.get("detail", "")[:120])
+            )
+        elif verdict == TRUTH_FAIL:
+            if pid not in named:
+                problems.append(
+                    "the predicate %s is MEASURED_FAIL (%s): the founder's path is broken and this "
+                    "change lands on it. Name it in the commit message: `Proof: %s`"
+                    % (pid, pred.get("detail", "")[:120], pid)
+                )
+    return problems
 
 
 def covered_by(path: str, pattern: str) -> bool:
@@ -348,17 +459,27 @@ def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> lis
     # there. Two layers, each doing its own job: this one says who owns the file (nobody), that
     # one says whether it is true (the gate).
     WITNESS_EXEMPT = re.compile(r"^catalog/estate-capability-registry\.json$")
+    # The truth snapshot is a witness too: it is written by the instrument, not by an agent,
+    # and it is refreshed on a schedule. It is exempt from the CLAIM requirement, and its
+    # CONTENT is checked where it matters -- bin/claim-gate's truth obligation, which refuses a
+    # change on a truth path when the snapshot is missing, stale, unknown or failing.
+    TRUTH_WITNESS_EXEMPT = re.compile(r"^catalog/truth-verdicts\.json$")
     outside = [
         f
         for f in files
         if f not in covered
         and not DEMOS_EXEMPT.match(f)
         and not WITNESS_EXEMPT.match(f)
+        and not TRUTH_WITNESS_EXEMPT.match(f)
     ]
     if not problems and outside:
         problems.append(
             f"{len(outside)} file(s) outside every claim's paths: {', '.join(outside[:10])}"
         )
+    # The truth obligation runs after the claim check, so the message a change's author reads
+    # is about the claim first and about the evidence second: the claim says who owns the
+    # files, the evidence says whether the thing those files carry works.
+    problems.extend(truth_problems(text, files, now))
     return problems
 
 
