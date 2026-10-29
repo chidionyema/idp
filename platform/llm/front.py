@@ -54,6 +54,7 @@ The laptop leg stays bytes only: no parsing, no buffering, exactly as before.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import pathlib
 import ssl
@@ -90,6 +91,49 @@ DRAIN_TIMEOUT = 30.0
 DOWN: set = set()  # slots that missed DOWN_AFTER probes in a row
 CLOUD_DOWN_UNTIL = 0.0  # monotonic time until which the cloud is passed over
 CLOUD_FAILURES = 0  # how many times the cloud has failed in a row
+# Where the cloud cooldown is kept across a restart. The cooldown is DEAD KNOWLEDGE: the front
+# already proved the cloud cannot answer, and a restart must not forget that. The deadline is an
+# absolute wall-clock epoch (not monotonic), because a monotonic clock starts over with the
+# process -- which is exactly the bug this file is here to close.
+#
+# The path is derived from THIS front's own ACTIVE file, not from a fixed location: a second
+# front (a test, a second router on another port) then keeps its knowledge in its own
+# directory and cannot read or overwrite the live router's. A front whose ACTIVE is the estate's
+# keeps it beside it, where an operator can see it.
+#
+# It is RESOLVED AT USE TIME, not at import time: ACTIVE is a module global that a caller (a
+# test, a second router) may point elsewhere after this module is imported, and a cooldown
+# written to the wrong directory is a cooldown nobody reads.
+CLOUD_STATE_ENV = "ESTATE_ROUTER_CLOUD_STATE"
+
+
+def cloud_state_path() -> pathlib.Path:
+    """Where THIS front keeps the cloud's cooldown."""
+    override = os.environ.get(CLOUD_STATE_ENV)
+    if override:
+        return pathlib.Path(override)
+    return ACTIVE.with_name("cloud-down")
+
+
+# The most one dead-cloud attempt may take, in seconds. It is inside the caller's budget (60 s)
+# so that a caller who arrives right after a front restart is answered by the laptop instead of
+# stalling on a cloud that cannot answer. The laptop slots keep ANSWER_TIMEOUT: a slot that is
+# slow under load is slow but real, and a cloud that cannot answer is the common failure.
+#
+# It is a FRACTION of ANSWER_TIMEOUT rather than a fixed number, for two reasons: the bound must
+# follow the caller's budget when that budget is changed, and the front's own tests (and any
+# other deployment) shorten ANSWER_TIMEOUT to keep a test fast -- a fixed 20 s here would make
+# every one of those tests wait 20 s for a cloud that is deliberately stalling.
+CLOUD_TIMEOUT_FRACTION = 1.0 / 6.0
+# The ceiling on the cloud's budget, so a very generous ANSWER_TIMEOUT cannot hand the caller
+# back a wait that is longer than the caller is willing to spend. This is the number that must
+# stay inside the 60 s caller budget of the 2026-10-29 incident.
+CLOUD_ANSWER_TIMEOUT_MAX = 20.0
+
+
+def cloud_answer_timeout() -> float:
+    """The most one cloud attempt may take, in seconds."""
+    return min(ANSWER_TIMEOUT * CLOUD_TIMEOUT_FRACTION, CLOUD_ANSWER_TIMEOUT_MAX)
 
 
 def backends() -> list:
@@ -122,6 +166,74 @@ def route() -> list:
     return [CLOUD] + healthy + sick
 
 
+def _cloud_state_write(deadline: float, failures: int) -> None:
+    """Keep the cloud's cooldown where a restart can find it.
+
+    Best effort by design: a router that cannot write its state must still serve. The write is
+    atomic (a temp file in the same directory, then os.replace) so a kill mid-write cannot leave
+    a half-written file that the next boot would have to guess about.
+    """
+    try:
+        state = cloud_state_path()
+        state.parent.mkdir(parents=True, exist_ok=True)
+        tmp = state.with_name(state.name + ".tmp")
+        tmp.write_text(
+            json.dumps({"deadline": deadline, "failures": failures}),
+            encoding="utf-8",
+        )
+        os.replace(tmp, state)
+    except OSError:
+        pass  # a router that cannot remember still routes
+
+
+def _cloud_state_read() -> tuple[float, int]:
+    """The cloud's cooldown as (absolute deadline, failures), or (0.0, 0) when there is none.
+
+    A missing, unreadable or corrupt state file means NO cooldown: there is no evidence the
+    cloud is down, so the cloud is tried. A bad state file must never be the reason the router
+    stops serving.
+    """
+    try:
+        data = json.loads(cloud_state_path().read_text(encoding="utf-8"))
+        deadline = float(data.get("deadline", 0.0))
+        failures = int(data.get("failures", 0))
+    except (OSError, ValueError, TypeError, AttributeError):
+        return 0.0, 0
+    if deadline <= 0.0:
+        return 0.0, 0
+    return deadline, max(0, failures)
+
+
+def _cloud_state_clear() -> None:
+    try:
+        cloud_state_path().unlink()
+    except OSError:
+        pass
+
+
+def restore_cloud_cooldown() -> None:
+    """Adopt the cooldown a previous front proved, so a restart does not re-arm a dead cloud.
+
+    Called once at start-up. The deadline is absolute, so it is compared against the wall clock;
+    a deadline that is already past means the cooldown is over and the cloud is tried again.
+    """
+    global CLOUD_DOWN_UNTIL, CLOUD_FAILURES
+    deadline, failures = _cloud_state_read()
+    if deadline <= 0.0:
+        return
+    remaining = deadline - time.time()
+    if remaining <= 0:
+        return  # the cooldown expired while the front was down
+    CLOUD_DOWN_UNTIL = time.monotonic() + remaining
+    CLOUD_FAILURES = failures
+    print(
+        f"front: the cloud was already down (a previous front proved it); "
+        f"the laptop answers for {remaining:.0f}s more",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
 def mark_cloud_down() -> None:
     """The cloud failed to answer. Pass over it for a while so the laptop answers instead.
 
@@ -133,6 +245,7 @@ def mark_cloud_down() -> None:
     CLOUD_FAILURES += 1
     cooldown = min(CLOUD_DOWN_S * 2 ** (CLOUD_FAILURES - 1), CLOUD_DOWN_MAX_S)
     CLOUD_DOWN_UNTIL = time.monotonic() + cooldown
+    _cloud_state_write(time.time() + cooldown, CLOUD_FAILURES)
     print(
         f"front: the cloud failed to answer ({CLOUD_FAILURES} in a row); "
         f"the laptop answers for {cooldown:.0f}s",
@@ -146,6 +259,7 @@ def mark_cloud_up() -> None:
     global CLOUD_DOWN_UNTIL, CLOUD_FAILURES
     CLOUD_DOWN_UNTIL = 0.0
     CLOUD_FAILURES = 0
+    _cloud_state_clear()
 
 
 async def answers(port: int) -> bool:
@@ -428,7 +542,9 @@ async def ask_cloud(client_r, client_w, target: str, held: Held):
         return ("retry", Refusal(b"", b"", None, back_w))
     body = asyncio.create_task(read_body(held, client_r))
     try:
-        status = await asyncio.wait_for(back_r.readline(), ANSWER_TIMEOUT)
+        # The cloud gets a budget of its own, inside the caller's: a cloud that cannot answer
+        # must not be able to eat the whole time the caller is willing to wait (2026-10-29).
+        status = await asyncio.wait_for(back_r.readline(), cloud_answer_timeout())
     except (asyncio.TimeoutError, OSError):
         held.forward = None
         await drain(held, body)
@@ -438,7 +554,7 @@ async def ask_cloud(client_r, client_w, target: str, held: Held):
     # A 1xx is not the answer; read on to the one that is.
     while status_code(status) // 100 == 1:
         try:
-            status = await asyncio.wait_for(back_r.readline(), ANSWER_TIMEOUT)
+            status = await asyncio.wait_for(back_r.readline(), cloud_answer_timeout())
         except (asyncio.TimeoutError, OSError):
             held.forward = None
             await drain(held, body)
@@ -558,6 +674,8 @@ async def handle(client_r, client_w) -> None:
 
 
 async def main() -> None:
+    # A restart must not re-arm a cloud the previous front already proved dead (2026-10-29).
+    restore_cloud_cooldown()
     # The previous owner of :4000 may still be releasing it during the one-time move to the front.
     for _ in range(60):
         try:

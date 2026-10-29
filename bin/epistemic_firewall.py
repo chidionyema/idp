@@ -283,7 +283,6 @@ def _code(command: str) -> str:
     41 MB pi transcript: 569 `_code` calls cost 3.44 s of the gate's 7.1 s. The cache makes it
     one call per distinct command.
     """
-    """The command with heredoc bodies and quoted strings removed: what the shell runs."""
     return _STRING.sub(" _ ", _HEREDOC.sub(r"\1", command))
 
 
