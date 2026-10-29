@@ -5,10 +5,22 @@ that did not run or ran red must be REFUSED.
 Everything here runs the REAL gate (bin/idp-bdd-proof-gate) as a subprocess. Nothing is
 re-implemented: the gate is the only grader, so a test that agreed with itself would
 prove nothing.
+
+THE PAYLOAD IS A COMMITTED FIXTURE, NOT A LIVE CALL. `tests/fixtures/bdd-proof/
+checkruns-615785e.json` is the verbatim check-runs answer GitHub returned for commit
+615785e4145c16a52afb79dea8e79b90f6045fbe (total_count 52, 52 check runs), captured
+2026-10-29. A test that called the network would prove whatever the network felt like
+that minute; a test that called itself would prove nothing. The fixture pins the ground
+truth the citation is verified against, so the falsifier is the same on every machine.
+
+The `gh` the gate shells out to is STUBBED to serve that fixture, so the gate's own
+verification path -- read the check runs for the cited commit, refuse a missing or red
+one -- is the code under test.
 """
 
 import json
 import os
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -16,8 +28,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 GATE = ROOT / "bin" / "idp-bdd-proof-gate"
 SHA = "615785e4145c16a52afb79dea8e79b90f6045fbe"
-PAYLOAD = Path("/tmp/dr-front/proof/checkruns-615785e.json")
-STUBBIN = Path("/tmp/dr-front/proof/stubbin")
+PAYLOAD = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "bdd-proof"
+    / "checkruns-615785e.json"
+)
 
 sys.path.insert(0, str(ROOT))
 from greenlane.github import GitHubBackend  # noqa: E402
@@ -33,6 +49,8 @@ REQUIRED = [
     "portal-app",
     "greenlane",
 ]
+
+GREEN = ("success", "neutral", "skipped")
 
 
 def _backend(payload):
@@ -50,11 +68,30 @@ def _backend(payload):
     return gg
 
 
-def _gate(pr_json, use_stub=True):
+def _stub_gh(tmp_path, payload=None, refuse=False):
+    """A `gh` on PATH that answers the gate's check-runs call, or refuses.
+
+    `payload=None` and `refuse=True` makes it fail, which is how the BLIND case is
+    FORCED rather than waited for: a test that depends on the network's mood is a
+    test that will one day report a green gate as a pass.
+    """
+    bindir = tmp_path / "bin"
+    bindir.mkdir(parents=True, exist_ok=True)
+    gh = bindir / "gh"
+    if refuse:
+        gh.write_text(
+            '#!/usr/bin/env bash\necho "gh: stub refuses to read the check runs" >&2\nexit 1\n'
+        )
+    else:
+        gh.write_text(f'#!/usr/bin/env bash\ncat "{PAYLOAD}"\n')
+    gh.chmod(gh.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return bindir
+
+
+def _gate(tmp_path, pr_json, refuse=False):
     env = dict(os.environ)
-    if use_stub:
-        env["PATH"] = f"{STUBBIN}:{env.get('PATH', '')}"
-    tmp = Path("/tmp/dr-front/proof/_gate_case.json")
+    env["PATH"] = f"{_stub_gh(tmp_path, refuse=refuse)}:{env.get('PATH', '')}"
+    tmp = tmp_path / "case.json"
     tmp.write_text(json.dumps(pr_json))
     p = subprocess.run(
         [sys.executable, str(GATE), str(tmp)],
@@ -62,8 +99,26 @@ def _gate(pr_json, use_stub=True):
         text=True,
         env=env,
         cwd=str(ROOT),
+        check=False,
     )
     return p.returncode, (p.stdout + p.stderr).strip()
+
+
+def test_the_fixture_is_the_measured_ground_truth():
+    """The fixture must be the real answer, not a hand-written shape.
+
+    A falsifier built on a payload the author invented would refuse exactly what it
+    was written to refuse and prove nothing about the real one. The numbers below are
+    the ones measured on 2026-10-29 for this commit.
+    """
+    payload = json.loads(PAYLOAD.read_text())
+    assert payload.get("total_count") == 52, (
+        f"unexpected total_count: {payload.get('total_count')}"
+    )
+    runs = payload.get("check_runs") or []
+    assert len(runs) == 52, f"expected 52 check runs, got {len(runs)}"
+    names = {r["name"] for r in runs}
+    assert "greenlane" not in names, "the fixture must NOT contain the landing check"
 
 
 def test_producer_cites_only_checks_that_actually_ran_green():
@@ -78,54 +133,59 @@ def test_producer_cites_only_checks_that_actually_ran_green():
         assert runs, f"{name} cited but absent from the payload"
         latest = max(runs, key=lambda r: r["id"])
         assert latest["status"] == "completed", f"{name} cited but not completed"
-        assert latest["conclusion"] in ("success", "neutral", "skipped"), (
+        assert latest["conclusion"] in GREEN, (
             f"{name} cited but concluded {latest['conclusion']}"
         )
 
 
-def test_producer_block_is_accepted_by_the_real_gate():
+def test_producer_block_is_accepted_by_the_real_gate(tmp_path):
     """The block the producer writes must pass the real gate against the real payload."""
     payload = json.loads(PAYLOAD.read_text())
     gg = _backend(payload)
     block = gg._proof_block(SHA)
     assert "greenlane" not in block, "the block names the absent check"
-    code, out = _gate({"number": 0, "title": "t", "headRefOid": SHA, "body": block})
+    code, out = _gate(
+        tmp_path, {"number": 0, "title": "t", "headRefOid": SHA, "body": block}
+    )
     assert code == 0, f"the real gate refused the producer's own block: {out}"
     assert "8 cited check(s) green" in out, f"unexpected gate output: {out}"
 
 
-def test_a_citation_naming_the_absent_greenlane_is_refused():
+def test_a_citation_naming_the_absent_greenlane_is_refused(tmp_path):
     """The shape the producer used to emit must still be refused -- the falsifier."""
     block = (
         f"BDD-PROOF\nhead: {SHA}\nchecks: {SHA} "
         + ", ".join(REQUIRED)
         + "\nEND-BDD-PROOF\n"
     )
-    code, out = _gate({"number": 0, "title": "t", "headRefOid": SHA, "body": block})
+    code, out = _gate(
+        tmp_path, {"number": 0, "title": "t", "headRefOid": SHA, "body": block}
+    )
     assert code == 1, f"a citation naming an absent check was accepted: {out}"
     assert "greenlane" in out, f"the refusal did not name the absent check: {out}"
 
 
-def test_a_citation_naming_a_red_check_is_refused():
+def test_a_citation_naming_a_red_check_is_refused(tmp_path):
     """A red check on the cited commit must be refused, not accepted."""
     payload = json.loads(PAYLOAD.read_text())
     red = next(
         (
             r["name"]
             for r in payload["check_runs"]
-            if r["conclusion"] not in ("success", "neutral", "skipped")
-            and r["name"] in REQUIRED
+            if r["conclusion"] not in GREEN and r["name"] in REQUIRED
         ),
         None,
     )
     if red is None:
         return  # no red required check on this commit: nothing to falsify
     block = f"BDD-PROOF\nhead: {SHA}\nchecks: {SHA} {red}\nEND-BDD-PROOF\n"
-    code, out = _gate({"number": 0, "title": "t", "headRefOid": SHA, "body": block})
+    code, out = _gate(
+        tmp_path, {"number": 0, "title": "t", "headRefOid": SHA, "body": block}
+    )
     assert code == 1, f"a red check was accepted: {out}"
 
 
-def test_an_unreadable_check_run_is_blind_not_a_pass():
+def test_an_unreadable_check_run_is_blind_not_a_pass(tmp_path):
     """A check-run answer that cannot be read -> the gate is BLIND (exit 2), never a pass.
 
     The failure is FORCED with a stub gh that refuses, so this case does not depend on the
@@ -135,30 +195,12 @@ def test_an_unreadable_check_run_is_blind_not_a_pass():
     payload = json.loads(PAYLOAD.read_text())
     gg = _backend(payload)
     block = gg._proof_block(SHA)
-    refuse_bin = Path("/tmp/dr-front/proof/refusebin")
-    refuse_bin.mkdir(parents=True, exist_ok=True)
-    refuse = refuse_bin / "gh"
-    refuse.write_text(
-        "#!/usr/bin/env bash\n"
-        'echo "gh: stub refuses to read the check runs" >&2\n'
-        "exit 1\n"
+    code, out = _gate(
+        tmp_path,
+        {"number": 0, "title": "t", "headRefOid": SHA, "body": block},
+        refuse=True,
     )
-    refuse.chmod(0o755)
-    env = dict(os.environ)
-    env["PATH"] = f"{refuse_bin}:{env.get('PATH', '')}"
-    tmp = Path("/tmp/dr-front/proof/_gate_refuse_case.json")
-    tmp.write_text(
-        json.dumps({"number": 0, "title": "t", "headRefOid": SHA, "body": block})
-    )
-    p = subprocess.run(
-        [sys.executable, str(GATE), str(tmp)],
-        capture_output=True,
-        text=True,
-        env=env,
-        cwd=str(ROOT),
-    )
-    out = (p.stdout + p.stderr).strip()
-    assert p.returncode == 2, f"an unreadable check-run answer was not BLIND: {out}"
+    assert code == 2, f"an unreadable check-run answer was not BLIND: {out}"
     assert "cannot read the check runs" in out, (
         f"the BLIND message named the wrong reason: {out}"
     )

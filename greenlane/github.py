@@ -249,8 +249,8 @@ class GitHubBackend:
         and prints nothing, while an unreachable/failing remote exits non-zero. Conflating the
         two is the whole defect this method guards, on a smaller scale.
         """
-        p = subprocess.run(  # noqa: S603, S607 -- git with fixed argv, no shell
-            ["git", "ls-remote", "--refs", "origin", STATE_REF],
+        p = subprocess.run(  # noqa: S603 -- git with fixed argv, no shell
+            ["git", "ls-remote", "--refs", "origin", STATE_REF],  # noqa: S607
             capture_output=True,
             text=True,
         )
@@ -368,9 +368,9 @@ class GitHubBackend:
 
         def ok(*args: str) -> subprocess.CompletedProcess:
             return subprocess.run(  # noqa: S603 -- fixed argv, no shell
-                ["git", *args],
+                ["git", *args],  # noqa: S607
                 capture_output=True,
-                text=True,  # noqa: S607
+                text=True,
             )
 
         if ok("merge-base", "--is-ancestor", sha, main).returncode == 0:
@@ -540,8 +540,8 @@ class GitHubBackend:
             )
             return _run("git", "-C", wt, "rev-parse", "HEAD")
         finally:
-            subprocess.run(  # noqa: S603, S607 -- git with fixed argv, no shell
-                ["git", "worktree", "remove", "--force", wt],
+            subprocess.run(  # noqa: S603 -- git with fixed argv, no shell
+                ["git", "worktree", "remove", "--force", wt],  # noqa: S607
                 capture_output=True,
             )
             shutil.rmtree(wt, ignore_errors=True)
@@ -847,8 +847,8 @@ class GitHubBackend:
                 new_tree = self.git("rev-parse", f"{tip}^{{tree}}").strip()
                 if old_tree == new_tree:
                     return
-            except Exception:
-                pass  # noqa: S110 -- old sha not resolvable locally; fall through and push
+            except Exception:  # noqa: S110 -- old sha not resolvable locally; fall through and push
+                pass
             # New content on a ref that already exists: the push event carries
             # before=<old candidate>, and the verifier grades
             # `git diff <before>...HEAD` -- the delta between two queue
