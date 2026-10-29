@@ -8,7 +8,7 @@
 
 _no_claude_guard() {
   blocked=0
-  while IFS= read -r local_ref local_sha remote_ref remote_sha; do
+  while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
     [ -z "$local_ref" ] && continue
     [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
     changed=$(git diff-tree --name-only -r "$remote_sha" "$local_sha" 2>/dev/null) || continue
@@ -104,17 +104,28 @@ cd "$repo_root"
 # crew#1194: syntax gate on the push diff. Parse-only checks, no execution.
 # A file with bad syntax on main makes main red. Main must be green.
 # Layer 1 of 3: pre-push | CI offline-gate | CI fast-gate.
-while IFS= read -r _ _ _ remote_sha; do
-  [ -n "$remote_sha" ] || continue
-  break
-done
-refs=""
-while IFS= read -r local_ref local_sha remote_ref remote_sha; do
-  refs="${refs}${local_ref} ${local_sha} ${remote_ref} ${remote_sha}"$'\n'
-done
-while IFS= read -r local_ref local_sha remote_ref remote_sha; do
+# #7434: the refs were read once at the top. Reading stdin again here yielded nothing, so every
+# layer below judged zero refs and passed.
+refs="$push_refs"
+while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
   [ "$local_sha" = "$remote_sha" ] && continue
-  diff_files=$(git diff --name-only "$remote_sha" "$local_sha" 2>/dev/null || true)
+  [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
+  # #7434: a new branch arrives with remote sha 0000, whose diff is empty; judge it against main.
+  from="$remote_sha"
+  [ "$from" = "0000000000000000000000000000000000000000" ] && from="$(git merge-base origin/main "$local_sha" 2>/dev/null || git rev-parse origin/main 2>/dev/null || echo "")"
+  diff_files=$(git diff --name-only --diff-filter=ACMR "$from" "$local_sha" 2>/dev/null || true)
+  # Layer 1c (#7434): ruff on the pushed Python, with the system ruff, so it runs in every
+  # checkout -- sparse worktrees carry no bin/idp-ci, and the fast gate below skips there.
+  py_files=$(printf '%s\n' $diff_files | grep -E '\.py$' | while read -r f; do [ -f "$f" ] && echo "$f"; done || true)
+  if [ -n "$py_files" ] && command -v ruff >/dev/null; then
+    # The estate's own ruff config (per-file ignores: asserts in tests), even in a sparse checkout.
+    ruff_cfg=""; [ -f pyproject.toml ] || ruff_cfg="--config $HOME/.estate/runtime/idp/pyproject.toml"
+    if ! ruff check $ruff_cfg --select E9,F,B,S $py_files >&2 || ! ruff format $ruff_cfg --check $py_files >&2; then
+      echo "pre-push REFUSED: ruff (E9,F,B,S or format) on the pushed Python; fix: ruff check --select E9,F,B,S --fix <files>; ruff format <files>" >&2
+      exit 1
+    fi
+    echo "ok    Layer 1c (ruff): $(printf '%s\n' $py_files | wc -l | tr -d ' ') pushed Python file(s) clean"
+  fi
   # Layer 1a: bash -n on shell files
   for f in $diff_files; do
     case "$f" in
