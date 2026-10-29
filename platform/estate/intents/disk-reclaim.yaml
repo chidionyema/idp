@@ -38,6 +38,7 @@ args:
   pids: {type: string, default: "", description: "space-separated pids of local idp-ci runs to stop"}
   age_min: {type: int, default: 180, description: "minutes old before a pytest scratch dir may go"}
   budget_s: {type: int, default: 60, description: "seconds of work this run may start"}
+  rm_age_min: {type: int, default: 120, description: "minutes old before a FINISHED job's run record may go"}
   dry: {type: int, default: 0, description: "1 = report what would go and remove nothing"}
 door_s: 95
 halt_on_failure: false
@@ -86,16 +87,53 @@ steps:
       # The estate's own home is 11.4G (measured 2026-10-28) and two of its parts are
       # regenerable by definition: the executor's per-job run records and the harness scratch
       # of runs that FINISHED. Age-gated and lsof-guarded: a live job is never touched.
+      # The run record of a job that has FINISHED is a log of a past job, not the job: the
+      # executor writes one .log/.pid/.exit per job and nothing ever read them again. The
+      # estate produced 23913 of them in one day (measured 2026-10-28, 57M), which is the
+      # estate's own weight growing under the floor that closes every door.
+      #
+      # The rule is age in MINUTES, not days, because the rate is the problem: a day of
+      # records is a day of growth. A record is only removed when the job it belongs to has
+      # an .exit file (the job finished) and that file is older than the age given, so a
+      # RUNNING job's log, pid and exit are never touched. dry=1 reports and removes nothing.
       set -uo pipefail
+      dry={{dry}}
+      rm_age={{rm_age_min}}
+      budget={{budget_s}}
       runs="$HOME/.estate/runs"
       if [ -d "$runs" ]; then
-        n=$(find "$runs" -type f -mtime +1 2>/dev/null | wc -l | tr -d ' ')
-        if [ "${n:-0}" -gt 0 ]; then
-          find "$runs" -type f -mtime +1 -delete 2>/dev/null
-          echo "removed  $n run records older than 24h from $runs"
+        list=$(mktemp "${TMPDIR:-/tmp}/runrec.XXXXXX" 2>/dev/null || echo)
+        if [ -z "$list" ]; then echo "ok       no temp file for the run-record list"; exit 0; fi
+        find "$runs" -maxdepth 1 -type f -name '*.exit' -mmin +"$rm_age" > "$list" 2>/dev/null
+        n=0
+        owed=0
+        # BOUNDED BY TIME, like the estate's own cleaner (DELETE_S): the phase stops when
+        # its budget is spent and says what is still owed, and the next run continues
+        # where it stopped. An unbounded loop over 24000 run records took longer than the
+        # door and was killed mid-pass on 2026-10-28, which is how a reclaim that frees
+        # space ends up freeing none of it.
+        deadline=$(( $(date +%s) + budget ))
+        while IFS= read -r f; do
+          if [ $((n % 100)) -eq 0 ] && [ "$(date +%s)" -ge "$deadline" ]; then
+            owed=$((owed + 1))
+            continue
+          fi
+          b="${f%.exit}"
+          if [ "$dry" = "1" ]; then
+            echo "would   $b"
+          else
+            rm -f "$b.exit" "$b.log" "$b.pid" 2>/dev/null
+          fi
+          n=$((n+1))
+        done < "$list"
+        rm -f "$list"
+        if [ "$dry" = "1" ]; then
+          echo "would remove $n finished run record(s) older than ${rm_age}m"
         else
-          echo "keep     no run record older than 24h"
+          echo "removed  $n finished run record(s) older than ${rm_age}m"
         fi
+        [ "$owed" -gt 0 ] && echo "owed     $owed more run record(s) than the ${budget}s budget reached; the next run continues"
+        exit 0
       fi
       exit 0
   - name: reclaim-the-estate-s-finished-harness-jobs
