@@ -172,6 +172,28 @@ jobs:
     cron: 0 9 * * *
     skip_on_battery: false
     timeout_s: 300
+  ai.estate.science-cycle:
+    # one autonomous preregistered programme per day: experimenter and verifier are different actors, exit 3 = not independently verified (a real failure, not ok_exit)
+    runs_on: mac
+    runs_on_ref: packages/science, claim chidionyema/idp#7372
+    env:
+      PYTHONPATH: $IDP/packages/science
+    command:
+    - ~/.claude/scripts/hc-wrap.sh
+    - science-cycle
+    - python3
+    - -m
+    - science.cycle
+    - --db
+    - ~/.estate/science/science.sqlite3
+    - --protocol
+    - $IDP/features/science/protocol.json
+    - --fixture
+    - $IDP/features/science/fixture.json
+    cron: 17 5 * * *
+    cwd: $IDP
+    skip_on_battery: false
+    timeout_s: 300
   ai.estate.sovereign-self-check:
     # its signals are the tracing last-ok marker and the alert inbox under ESTATE_HOME on the Mac; on a fresh emptyDir every run says continue (measured 2026-08-27 16:55Z from the script, not the command)
     runs_on: mac
