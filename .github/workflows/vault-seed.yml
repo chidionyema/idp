@@ -15,7 +15,7 @@ on:
       entry:
         description: "which vault entry to write"
         type: choice
-        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, holmes, tailscale-operator, laptop, hermes, science, newsroom, fleetview-voice, router-rows]
+        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, holmes, tailscale-operator, laptop, hermes, science, newsroom, fleetview-voice, router-rows, laptop-vendors]
         default: all
       delete:
         description: "schedule deletion of one vault entry by name (for a mis-named entry); the entry field is ignored when this is set"
@@ -49,6 +49,44 @@ jobs:
           domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
           oci_region: ${{ vars.OCI_REGION }}
+      # TEMPORARY, founder 2026-10-29 (#7403): an exception to LAW 34 (the Mac holds no vendor key).
+      # The OCI free trial ended, OKE was reclaimed, and the laptop router's vendor keys came from
+      # that cluster (kubectl -n llm get secrets), so pi had Groq (daily cap spent) and a 0.5B Ollama
+      # model and nothing else. This writes each SEED_*_API_KEY into estate-secrets as
+      # secrets/dev/<P>_API_KEY.yaml -- the exact name bin/litellm-local stages and decrypts into a
+      # lane -- so the laptop router serves them with no cluster. DELETE this step, and the
+      # files it wrote, the day llm.mumchimp.com answers again.
+      - name: laptop-vendors (temporary LAW 34 exception)
+        if: ${{ inputs.entry == 'laptop-vendors' }}
+        env:
+          OCI_CI: "1"
+          OCI_CLI_AUTH: security_token
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          DEEPSEEK_API_KEY: ${{ secrets.SEED_DEEPSEEK_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
+          MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
+          MOONSHOT_API_KEY: ${{ secrets.SEED_KIMI_API_KEY }}
+        run: |
+          set -euo pipefail
+          tok=$(bin/idp-github-app token vault-writer); echo "::add-mask::$tok"
+          git clone -q --depth 1 "https://x-access-token:${tok}@github.com/${GITHUB_REPOSITORY_OWNER}/estate-secrets" "$RUNNER_TEMP/estate-secrets"
+          for name in DEEPSEEK_API_KEY GEMINI_API_KEY OPENROUTER_API_KEY MINIMAX_API_KEY MOONSHOT_API_KEY; do
+            [ -n "${!name:-}" ] || { echo "skip    $name: no SEED secret"; continue; }
+            printf '%s' "${!name}" | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" dev "$name" "$name"
+            git -C "$RUNNER_TEMP/estate-secrets" add "secrets/dev/$name.yaml"
+            echo "ok      $name -> estate-secrets/secrets/dev/$name.yaml"
+          done
+          if git -C "$RUNNER_TEMP/estate-secrets" -c user.name=vault-seed -c user.email=vault-seed@users.noreply.github.com \
+               commit -q -m "laptop vendor keys, temporary LAW 34 exception (vault-seed run $GITHUB_RUN_ID)" 2>/dev/null; then
+            GH_TOKEN="$tok" git -C "$RUNNER_TEMP/estate-secrets" push -q origin HEAD || { echo "error   the push to estate-secrets was refused"; exit 1; }
+            echo "ok      laptop vendor keys delivered to estate-secrets"
+          else
+            echo "info    laptop vendor keys unchanged in estate-secrets"
+          fi
+          rm -rf "$RUNNER_TEMP/estate-secrets"
       - name: bin/idp-vault-put ${{ inputs.entry }}
         env:
           ENTRY: ${{ inputs.entry }}
