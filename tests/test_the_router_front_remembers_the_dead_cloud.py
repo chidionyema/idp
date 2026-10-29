@@ -331,3 +331,31 @@ def test_the_cooldown_survives_a_restart_of_the_same_front(tmp_path) -> None:
         )
         restarted.restore_cloud_cooldown()
         assert restarted.CLOUD_DOWN_UNTIL > 0.0, "the restart forgot the cloud was dead"
+
+
+def test_the_suite_never_writes_into_the_live_router_state() -> None:
+    """The suite must not pollute the estate it is testing.
+
+    KNOWN-BAD: the front's default state directory is the LIVE runtime directory
+    (`~/.estate/front-state/`). A test that imports the real front and lets it write its
+    default path drops a `cloud-down-<port>` file there -- the suite pollutes the live estate,
+    and the next run inherits the previous run's cooldown, so one run's failure silently
+    changes the next run's verdict.
+
+    The root conftest redirects `ESTATE_ROUTER_CLOUD_STATE_DIR` at collection time, before any
+    test imports the front.
+
+    Falsifier: with the guard removed, the default path is the LIVE directory and a write
+    lands there.
+    """
+    state_dir = os.environ.get("ESTATE_ROUTER_CLOUD_STATE_DIR")
+    assert state_dir, (
+        "the suite is not redirected: it writes into the live router state directory"
+    )
+    live = pathlib.Path.home() / ".estate" / "front-state"
+    assert pathlib.Path(state_dir).resolve() != live.resolve(), (
+        "the suite's state directory IS the live router state directory"
+    )
+    assert live not in pathlib.Path(state_dir).resolve().parents, (
+        "the suite's state directory is inside the live router state directory"
+    )
