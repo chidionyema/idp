@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:estate:schema:department.v1.opportunity",
+  "title": "department.v1.opportunity",
+  "description": "A ranked, bounded candidate piece of work under an objective. It must show the registry was queried for an existing implementation before it is ranked (AGENTS.md \u00a76).",
+  "allOf": [
+    {
+      "$ref": "urn:estate:schema:department.v1.envelope"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "opportunity"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "hypothesis",
+            "rank",
+            "non_duplication"
+          ],
+          "properties": {
+            "hypothesis": {
+              "type": "string",
+              "minLength": 1
+            },
+            "rank": {
+              "type": "number"
+            },
+            "non_duplication": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "query",
+                "registry_refs"
+              ],
+              "properties": {
+                "query": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "registry_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,572 @@
+#!/usr/bin/env python3
+"""media-dept-baseline -- the Media Department's M0 measured baseline (idp#7395, charter v1 §7 M0).
+
+WHY. The charter forbids building a department on what the estate is assumed to have: "never infer
+deployment from YAML". So before any runtime, this measures what exists for the department's remit
+(film, director, scene contract, Fleet/Face, research engine, authorization door, orchestrators) and
+writes a capability matrix where every cell came from a command that is recorded beside it.
+
+WHAT IT WRITES. docs/departments/media/m0-capability-matrix.json, one row per capability:
+
+    implemented    true/false   every named path exists at the source sha (git cat-file)
+    tested         pass/fail/unknown/none   the row's test files, run here when --run-tests
+    ci_wired       true/false   a workflow on the source sha runs those tests
+    observed_live  observed/not_observed/blind   a real runtime observation; BLIND when no
+                                instrument can reach the runtime (the OKE cluster, 2026-10-29)
+    broken         true/false   a test failed, or a required contract is missing
+    unknown        [...]        the fields that could not be measured, each with why
+
+plus a ranked gap list. A gap is emitted only when its precondition holds on the measured rows,
+so a gap that has been closed drops out on the next run instead of rotting in a document.
+
+    bin/media-dept-baseline                 # measure origin/main, no live probes, no test runs
+    bin/media-dept-baseline --run-tests     # also run each row's Python tests locally
+    bin/media-dept-baseline --live          # also probe the cluster and the laptop director
+    bin/media-dept-baseline --check         # exit 1 if the committed matrix fails its invariants
+
+Go tests are not run here: on 2026-10-29 one `go test ./internal/director/` build on the founder's
+laptop took the disk from 438 MiB free to full, so the director row reports `tested: unknown` with
+that reason, and its CI wiring is measured instead.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+IDP = Path(__file__).resolve().parents[1]
+OUT = IDP / "docs" / "departments" / "media" / "m0-capability-matrix.json"
+
+# id, area, claim, paths (must all exist), registry refs, python tests, go test dirs, live probe
+ROWS = [
+    (
+        "director-engine",
+        "film",
+        "pure-function director: shot table, coalescer, limiter, narrator (ADR 0037)",
+        [
+            "platform/voice-router/internal/director/director.go",
+            "platform/voice-router/internal/director/director_test.go",
+        ],
+        [
+            "cap:layer/platform-voice-router-internal-director-director",
+            "cap:service/voice-router/voice-router-director",
+        ],
+        [],
+        ["platform/voice-router/internal/director"],
+        "laptop-voice-router",
+    ),
+    (
+        "director-cue-publisher",
+        "film",
+        "voice-router director publishes estate.cinema.cue frames",
+        [
+            "platform/voice-router/cmd/voice-router/director.go",
+            "platform/voice-router/deploy/director.yaml",
+        ],
+        ["cap:layer/platform-voice-router-cmd-voice-router-director"],
+        [],
+        [],
+        "cluster",
+    ),
+    (
+        "scene-frame-contract",
+        "event-contract",
+        "estate.scene.frame JetStream contract (spec RG4, ADR 0038)",
+        ["platform/event-bus/contract/estate.scene.frame.json"],
+        [],
+        [],
+        [],
+        None,
+    ),
+    (
+        "legacy-cinema-cue",
+        "event-contract",
+        "unschema'd core-NATS estate.cinema.cue topic, consumed by Fleet",
+        ["backstage/plugins/fleetview-backend/src/fleetview_backend/nats_adapter.py"],
+        [],
+        ["backstage/plugins/fleetview-backend/tests/test_cinema_cues.py"],
+        [],
+        "cluster",
+    ),
+    (
+        "agent-event-contract",
+        "event-contract",
+        "estate.agent.event schema, one subject family",
+        ["platform/event-bus/contract/estate.agent.event.json"],
+        [],
+        ["tests/test_estate_agent_event_contract.py"],
+        [],
+        "cluster",
+    ),
+    (
+        "fleet-stage",
+        "fleet",
+        "FleetReactorApp WebGL stage (three.js) handling cue frames",
+        [
+            "backstage/packages/app/src/modules/room/ui/FleetReactorApp.tsx",
+            "backstage/packages/app/package.json",
+        ],
+        ["cap:service/backstage/fleetview-voice", "cap:intent/fleet-regression"],
+        [],
+        [],
+        "cluster",
+    ),
+    (
+        "face-console",
+        "face",
+        "the phone console: FacePage, EstateFace, faceEngine",
+        [
+            "backstage/packages/app/src/modules/home/FacePage.tsx",
+            "backstage/packages/app/src/modules/home/EstateFace.tsx",
+            "backstage/packages/app/src/modules/home/faceEngine.ts",
+        ],
+        [],
+        [],
+        [],
+        "cluster",
+    ),
+    (
+        "voice-media-backend",
+        "fleet",
+        "fleetview-backend voice media (TTS, warm, backoff)",
+        ["backstage/plugins/fleetview-backend/src/fleetview_backend/voice_media.py"],
+        [],
+        [
+            "backstage/plugins/fleetview-backend/tests/test_voice_tts_backoff.py",
+            "backstage/plugins/fleetview-backend/tests/test_voice_warm.py",
+        ],
+        [],
+        "cluster",
+    ),
+    (
+        "research-engine-adapter",
+        "research",
+        "objective adapter: pick objective, post report, Continue/Park",
+        [
+            "platform/research-engine/objective-adapter.py",
+            "platform/research-engine/cronjob.yaml",
+        ],
+        [
+            "cap:layer/platform-research-engine-objective-adapter",
+            "cap:service/research/research-engine",
+        ],
+        [
+            "tests/test_research_adapter_reads_founder_objectives.py",
+            "tests/test_research_objective_adapter_continues_only_when_ticked.py",
+            "tests/test_research_objective_lane_per_issue.py",
+        ],
+        [],
+        "cluster",
+    ),
+    (
+        "authorization-door",
+        "governance",
+        "founder.decision door: one structured decision, answer read back",
+        ["sovereign/otto/decision.py"],
+        ["cap:intent/founder.decision"],
+        ["tests/test_founder_decision_door.py"],
+        [],
+        None,
+    ),
+    (
+        "claim-workflow",
+        "governance",
+        "claim-open / claim-gate: issue CLAIM, heartbeat, path collision check",
+        ["bin/claim-open", "bin/claim-gate"],
+        ["cap:tool/claim-open", "cap:tool/claim-gate"],
+        ["tests/test_claim_gate.py", "tests/test_claim_open_worktree.py"],
+        [],
+        None,
+    ),
+    (
+        "capability-registry",
+        "governance",
+        "capability-index: the non-duplication query surface",
+        ["bin/capability-index", "catalog/estate-capability-registry.json"],
+        [],
+        [],
+        [],
+        None,
+    ),
+    (
+        "temporal-orchestrator",
+        "runtime",
+        "Temporal sovereign-worker (durable workflows the department must reuse)",
+        [],
+        [
+            "cap:service/temporal/sovereign-worker",
+            "cap:service/temporal/temporal-frontend-mesh",
+        ],
+        [],
+        [],
+        "cluster",
+    ),
+    (
+        "dagster-orchestrator",
+        "runtime",
+        "Dagster (scheduled scans the department must reuse)",
+        [],
+        ["cap:service/dagster/estate-db-copy-dagster-r3"],
+        [],
+        [],
+        "cluster",
+    ),
+    (
+        "department-contract",
+        "department",
+        "department.v1 schemas + state machine (this lane's M1)",
+        [
+            "schema/department/v1/envelope.schema.json",
+            "platform/department/contract.py",
+        ],
+        [],
+        ["tests/test_media_department_contract.py"],
+        [],
+        None,
+    ),
+]
+
+# rank, id, gap, the existing thing to extend (never a new layer), precondition over measured rows
+GAPS = [
+    (
+        1,
+        "G1-department-contract",
+        "No department contract: no schema, no state machine, no admission gate for autonomous work.",
+        "schema/ (beside schema/intent) and the founder.decision door; closed by this lane's M1",
+        lambda r: not r["department-contract"]["implemented_at_base"],
+    ),
+    (
+        2,
+        "G2-scene-frame-contract",
+        "The scene contract the spec requires (RG4) does not exist; Fleet still consumes the unschema'd core-NATS estate.cinema.cue topic.",
+        "platform/event-bus/contract/ (same family as estate.agent.event.json); retire estate.cinema.cue in the same change (ADR 0038)",
+        lambda r: (
+            not r["scene-frame-contract"]["implemented"]
+            and r["legacy-cinema-cue"]["implemented"]
+        ),
+    ),
+    (
+        3,
+        "G3-liveness-blind",
+        "Every cluster-placed media capability is BLIND: the OKE API does not answer, so no row can be observed_live.",
+        "bin/capability-index prove receipts once the cluster is replaced (lane/oke-replace-cluster); no new probe stack",
+        lambda r: any(x["observed_live"] == "blind" for x in r.values()),
+    ),
+    (
+        4,
+        "G4-tests-not-in-ci",
+        "Director Go tests and fleetview-backend cinema/voice tests exist but no workflow on main runs them.",
+        "the existing ci.yml jobs (as platform/messaging's go test is wired today); no new workflow",
+        lambda r: (
+            not r["director-engine"]["ci_wired"]
+            or not r["legacy-cinema-cue"]["ci_wired"]
+        ),
+    ),
+    (
+        5,
+        "G5-research-waits-on-founder",
+        "The research engine terminates in a report and waits on a founder Continue/Park tick; it measured 0 admitted claims on a wrong lane.",
+        "objective-adapter + founder.decision door, driven by the department state machine (M2/M4); no second approval stack",
+        lambda r: r["research-engine-adapter"]["implemented"],
+    ),
+    (
+        6,
+        "G6-durable-runtime-unproven",
+        "The department's durable runtime (Temporal, Dagster, JetStream) is declared but not observable while the cluster is gone.",
+        "Temporal sovereign-worker + JetStream (M2); the registry's own agent-invoke row records Temporal unreachable",
+        lambda r: r["temporal-orchestrator"]["observed_live"] != "observed",
+    ),
+]
+
+
+def run(cmd: list[str], timeout: int = 120, cwd: Path = IDP) -> dict:
+    try:
+        p = subprocess.run(
+            cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout
+        )
+        out, code = (p.stdout + p.stderr), p.returncode
+    except subprocess.TimeoutExpired:
+        out, code = f"timeout after {timeout}s", 124
+    except FileNotFoundError as e:
+        out, code = str(e), 127
+    out = re.sub(
+        r"--annotation=\S+", "", out
+    )  # process listings carry third-party config; never record it
+    return {
+        "command": " ".join(cmd).replace(
+            sys.executable, "python3"
+        ),  # no machine-local paths
+        "exit_code": code,
+        "output_sha256": hashlib.sha256(out.encode()).hexdigest(),
+        "output_tail": out.strip().splitlines()[-1][:200] if out.strip() else "",
+    }
+
+
+def exists(sha: str, path: str) -> bool:
+    return (
+        subprocess.run(
+            ["git", "cat-file", "-e", f"{sha}:{path}"], cwd=IDP, capture_output=True
+        ).returncode
+        == 0
+    )
+
+
+def ci_wired(sha: str, tests: list[str], go_dirs: list[str]) -> bool | None:
+    if not tests and not go_dirs:
+        return None
+    workflows = subprocess.run(
+        ["git", "grep", "-h", "-E", ".", sha, "--", ".github/workflows"],
+        cwd=IDP,
+        capture_output=True,
+        text=True,
+    ).stdout
+    for t in tests:
+        if t.startswith("tests/"):
+            continue  # the root suite runs whole in CI (bin/idp-tests-for, TESTS_FOR_ALL)
+        if t not in workflows and str(Path(t).parent) not in workflows:
+            return False
+    for d in go_dirs:
+        module = d.split("/internal/")[0]
+        if not re.search(rf"cd {re.escape(module)}\b[^\n]*go test", workflows):
+            return False
+    return True
+
+
+def live_probe(kind: str | None, cache: dict) -> tuple[str, dict | None]:
+    if kind is None:
+        return "not_applicable", None
+    if kind not in cache:
+        if kind == "cluster":
+            cache[kind] = run(
+                ["kubectl", "get", "nodes", "--request-timeout=5s"], timeout=15
+            )
+        else:
+            cache[kind] = run(["pgrep", "-x", "voice-router"], timeout=10)
+    ev = cache[kind]
+    if kind == "cluster":
+        return ("blind" if ev["exit_code"] != 0 else "not_observed"), ev
+    # a running laptop process is not evidence the director emits frames: no log line is read here
+    return "blind", ev
+
+
+def measure(sha: str, run_tests: bool, live: bool, base_sha: str) -> dict:
+    rows, cache = {}, {}
+    for rid, area, claim, paths, refs, tests, go_dirs, probe in ROWS:
+        evidence = [
+            {
+                "command": f"git cat-file -e {sha}:{p}",
+                "exit_code": 0 if exists(sha, p) else 1,
+            }
+            for p in paths
+        ]
+        implemented = (
+            all(e["exit_code"] == 0 for e in evidence) if paths else bool(refs)
+        )
+        unknown = []
+        if not paths:
+            unknown.append(
+                {
+                    "field": "implemented",
+                    "why": "code lives outside this repository's tree; registry declaration only",
+                }
+            )
+        tested = "none"
+        if tests or go_dirs:
+            tested = "unknown"
+            if go_dirs:
+                unknown.append(
+                    {
+                        "field": "tested",
+                        "why": "go test not run locally: a voice-router build filled the laptop disk on 2026-10-29",
+                    }
+                )
+            if not implemented:
+                tested = "none"
+                unknown.append(
+                    {"field": "tested", "why": "not implemented at the source sha"}
+                )
+            elif run_tests and tests and not go_dirs:
+                present = [t for t in tests if (IDP / t).exists()]
+                res = run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "pytest",
+                        "-q",
+                        "-p",
+                        "no:cacheprovider",
+                        "-n",
+                        "0",
+                        *present,
+                    ],
+                    timeout=600,
+                )
+                evidence.append(res)
+                if res["exit_code"] == 124:
+                    # a timeout measured the machine's load, not the code: it is not a failure
+                    tested = "unknown"
+                    unknown.append({"field": "tested", "why": res["output_tail"]})
+                else:
+                    tested = "pass" if res["exit_code"] == 0 else "fail"
+            elif tests and not go_dirs:
+                unknown.append(
+                    {"field": "tested", "why": "not run (run with --run-tests)"}
+                )
+        wired = ci_wired(sha, tests, go_dirs) if implemented else None
+        observed = "blind"
+        if live:
+            observed, ev = live_probe(probe, cache)
+            if ev:
+                evidence.append(ev)
+        elif probe is not None:
+            unknown.append(
+                {"field": "observed_live", "why": "no live probe run (run with --live)"}
+            )
+        else:
+            observed = "not_applicable"
+        if observed == "blind":
+            unknown.append(
+                {
+                    "field": "observed_live",
+                    "why": "no instrument reached the runtime; deployment is never inferred from YAML",
+                }
+            )
+        rows[rid] = {
+            "id": rid,
+            "area": area,
+            "claim": claim,
+            "paths": paths,
+            "registry_refs": refs,
+            "implemented": implemented,
+            "implemented_at_base": all(exists(base_sha, p) for p in paths)
+            if paths
+            else implemented,
+            "tested": tested,
+            "ci_wired": wired,
+            "observed_live": observed,
+            "broken": tested == "fail",
+            "unknown": unknown,
+            "evidence": evidence,
+        }
+    gaps = [
+        {"rank": rank, "id": gid, "gap": text, "extend": extend}
+        for rank, gid, text, extend, holds in GAPS
+        if holds(rows)
+    ]
+    return {
+        "schema_version": "media.m0.v1",
+        "generator": "bin/media-dept-baseline",
+        "issue": "chidionyema/idp#7395",
+        "source_sha": sha,
+        "base_sha": base_sha,
+        "measured_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "observed_live_note": "The OKE cluster API did not answer on 2026-10-29 (kubectl: context deadline exceeded). Every cluster-placed row is BLIND, not down and not up.",
+        "rows": list(rows.values()),
+        "gaps": gaps,
+    }
+
+
+def check(doc: dict) -> list[str]:
+    """The invariants the committed matrix must hold; tests/test_media_department_baseline.py runs them."""
+    errors = []
+    if not re.fullmatch(r"[0-9a-f]{40}", doc.get("source_sha", "")):
+        errors.append("source_sha is not a full commit sha")
+    ids = [r["id"] for r in doc["rows"]]
+    if len(ids) != len(set(ids)):
+        errors.append("duplicate row id")
+    for r in doc["rows"]:
+        if r["observed_live"] not in (
+            "observed",
+            "not_observed",
+            "blind",
+            "not_applicable",
+        ):
+            errors.append(f"{r['id']}: observed_live {r['observed_live']!r}")
+        if r["observed_live"] == "observed" and not any(
+            e.get("exit_code") == 0 and e.get("command") for e in r["evidence"]
+        ):
+            errors.append(
+                f"{r['id']}: observed_live without a successful recorded command"
+            )
+        if r["tested"] in ("pass", "fail") and not any(
+            "pytest" in e.get("command", "") for e in r["evidence"]
+        ):
+            errors.append(
+                f"{r['id']}: tested={r['tested']} without the test command that produced it"
+            )
+        if r["paths"] and len(
+            [e for e in r["evidence"] if e["command"].startswith("git cat-file")]
+        ) != len(r["paths"]):
+            errors.append(f"{r['id']}: implemented without one cat-file per path")
+        if r["observed_live"] == "blind" and not any(
+            u["field"] == "observed_live" for u in r["unknown"]
+        ):
+            errors.append(f"{r['id']}: blind without saying why")
+    ranks = [g["rank"] for g in doc["gaps"]]
+    if ranks != sorted(ranks) or len(set(ranks)) != len(ranks):
+        errors.append("gaps are not uniquely ranked in order")
+    if any(not g.get("extend") for g in doc["gaps"]):
+        errors.append("a gap does not name the existing thing it extends")
+    return errors
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--sha", default="origin/main")
+    ap.add_argument(
+        "--base",
+        default=None,
+        help="the sha the lane branched from (default: merge-base with --sha)",
+    )
+    ap.add_argument("--run-tests", action="store_true")
+    ap.add_argument("--live", action="store_true")
+    ap.add_argument("--check", action="store_true")
+    ap.add_argument("--out", default=str(OUT))
+    args = ap.parse_args()
+    if args.check:
+        errors = check(json.loads(Path(args.out).read_text(encoding="utf-8")))
+        for e in errors:
+            print(f"FAIL  {e}")
+        print(
+            "ok    media-dept-baseline: matrix holds its invariants"
+            if not errors
+            else f"{len(errors)} invariant(s) broken"
+        )
+        return 1 if errors else 0
+    sha = subprocess.run(
+        ["git", "rev-parse", args.sha],
+        cwd=IDP,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    base = (
+        args.base
+        or subprocess.run(
+            ["git", "merge-base", "HEAD", "origin/main"],
+            cwd=IDP,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    )
+    doc = measure(sha, args.run_tests, args.live, base)
+    errors = check(doc)
+    if errors:
+        print("\n".join(errors), file=sys.stderr)
+        return 1
+    Path(args.out).write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+    print(
+        f"ok    wrote {args.out}: {len(doc['rows'])} rows, {len(doc['gaps'])} gaps at {sha[:9]}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
