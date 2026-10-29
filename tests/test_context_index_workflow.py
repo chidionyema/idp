@@ -27,6 +27,6 @@ def test_every_working_set_read_unwraps_the_envelope_first():
 def test_the_artifact_is_pushed_from_a_writable_parent():
     """flux stages its tarball beside --path; pushing /data stages in / and is refused."""
     text = WORKFLOW.read_text()
-    push = text.index("flux push artifact")
+    push = text.index("| flux push artifact")  # the command, not the uses: comment
     assert text.index('sudo mv "${DATA}" "${STAGE}/data"') < push
     assert '--path="/data"' not in text
