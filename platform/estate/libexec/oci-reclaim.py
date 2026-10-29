@@ -106,10 +106,27 @@ def attached_volume_ids(attachments: list) -> set[str]:
     hyphenated keys, each carrying the id of the volume it attaches. A list that is empty or
     unreadable is not evidence that nothing is attached -- it is the absence of evidence, and
     the caller is expected to have refused to run in that case.
+
+    Each row carries its OWN lifecycle-state, and that state is what says whether the row is an
+    attachment at all. MEASURED 2026-10-29 on the estate's own compartment: 8 rows in state
+    DETACHED, every one of them naming a volume that was AVAILABLE and free. A rule that read
+    the volume-id without the row's state called all eight attached and reported live volumes
+    as in use. A DETACHED row is not an attachment.
+
+    A row whose state the door cannot read is a KEEP, not a guess: the door only acts on a
+    state it has read, and the absence of a state is the absence of evidence that the volume
+    is free.
     """
     ids: set[str] = set()
     for item in attachments or []:
         if not isinstance(item, dict):
+            continue
+        state = item.get("lifecycle-state")
+        if state is None:
+            state = item.get("lifecycle_state")
+        state = (state or "").strip().upper()
+        if state == "DETACHED":
+            # The row is the record of an attachment that is over. It attaches nothing.
             continue
         for key in ("volume-id", "volume_id"):
             value = item.get(key)
@@ -279,14 +296,32 @@ def _volumes_main(argv: list[str]) -> int:
     if args.attachments:
         try:
             with open(args.attachments) as fh:
-                doc = json.load(fh)
-        except (OSError, ValueError) as exc:
+                raw = fh.read()
+        except OSError as exc:
             print(f"FAIL  oci-reclaim  cannot read {args.attachments}: {exc}")
             return 2
-        items = doc.get("data", doc) if isinstance(doc, dict) else doc
-        if not isinstance(items, list):
-            print("FAIL  oci-reclaim  the attachment file is not a list of attachments")
-            return 2
+        if not raw.strip():
+            # MEASURED 2026-10-29: `oci compute volume-attachment list` answers an EMPTY
+            # collection with exit status 0 and ZERO BYTES on stdout -- not "[]", not an error.
+            # The empty file is that answer, and it means nothing is attached. It is NOT a
+            # broken file: a broken file is content that is not JSON, and that still refuses
+            # below. The caller has already refused to run when the LIST COMMAND FAILED
+            # (the shell checks the CLI's exit status), so by the time this file exists the
+            # command succeeded; a successful command that printed nothing printed the
+            # empty collection.
+            items = []
+        else:
+            try:
+                doc = json.loads(raw)
+            except ValueError as exc:
+                print(f"FAIL  oci-reclaim  cannot read {args.attachments}: {exc}")
+                return 2
+            items = doc.get("data", doc) if isinstance(doc, dict) else doc
+            if not isinstance(items, list):
+                print(
+                    "FAIL  oci-reclaim  the attachment file is not a list of attachments"
+                )
+                return 2
         attached = attached_volume_ids(items)
 
     now = _parse_time(args.now) if args.now else datetime.now(timezone.utc)

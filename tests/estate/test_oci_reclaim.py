@@ -18,6 +18,7 @@ ago, and the oldest volume, which a long-lived PersistentVolume may still point 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -260,6 +261,201 @@ def test_the_door_is_wired_an_intent_that_runs_this_script() -> None:
 # node limit ("LimitExceeded: nodes-per-node-pool limit has been exceeded", oke-check run
 # 40650458830), so the compute API is the door that can. The rule that keeps it honest is that
 # only a node that is not running is ever a candidate.
+
+
+# THE TWO DEFECTS MEASURED 2026-10-29, both falsified here.
+#
+# 1. An attachment row in lifecycle state DETACHED is not an attachment. MEASURED 2026-10-29:
+#    the compartment held 8 rows in state DETACHED whose volumes were AVAILABLE, and the rule
+#    read every row's volume-id as "attached", so live volumes were reported as in use.
+# 2. The OCI CLI answers an EMPTY collection with exit status 0 and ZERO BYTES on stdout --
+#    not an error, not "[]". MEASURED 2026-10-29 on the estate's own compartment:
+#      $ oci compute volume-attachment list --compartment-id <compartment> --all ... --output json
+#      rc=0
+#      $ wc -c < att.json
+#      0
+#    The door fed that to json.load, so it refused the whole compartment:
+#      FAIL  oci-reclaim  cannot read .../oci-reclaim-attachments.XXXXXX: Expecting value: line 1 column 1 (char 0)
+#      exit 2
+#    Both defects are conservative -- a false keep and a refusal -- which is why they survived:
+#    they block the door instead of breaking it.
+
+
+def _select_with_attachment_rows(volumes, tmp_path, rows, keep_oldest=0):
+    """Run the real helper over a fixture whose attachment rows are given verbatim.
+
+    The rows are the OCI answer as the API prints it, so a test can put a row in the
+    lifecycle state the API actually reports.
+    """
+    fixture = tmp_path / "oci-reclaim-rows-volumes.json"
+    fixture.write_text(json.dumps({"data": volumes}))
+    attachments = tmp_path / "oci-reclaim-rows-attachments.json"
+    attachments.write_text(json.dumps({"data": rows}))
+    ids = tmp_path / "oci-reclaim-rows-ids.txt"
+    proc = subprocess.run(
+        [
+            "python3",
+            str(HELPER),
+            "--volumes",
+            str(fixture),
+            "--attachments",
+            str(attachments),
+            "--keep-oldest",
+            str(keep_oldest),
+            "--older-than-hours",
+            "24",
+            "--ids-out",
+            str(ids),
+            "--now",
+            NOW,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    return [line for line in ids.read_text().splitlines() if line], proc.stdout
+
+
+def test_a_detached_attachment_row_does_not_count_as_attached(tmp_path) -> None:
+    """A DETACHED row is not an attachment: the volume it names is free to be reclaimed."""
+    rows = [
+        {
+            "id": "ocid1.volumeattachment.1",
+            "volume-id": "ocid1.volume.20",
+            "instance-id": "ocid1.instance.1",
+            "lifecycle-state": "DETACHED",
+        }
+    ]
+    chosen, out = _select_with_attachment_rows(
+        [_volume("ocid1.volume.20", "csi-detached")], tmp_path, rows
+    )
+    assert chosen == ["ocid1.volume.20"], out
+    assert "RECLAIM" in out
+
+
+def test_an_attached_attachment_row_still_counts_as_attached(tmp_path) -> None:
+    """The fix reads the row's own state, so an ATTACHED row keeps its volume."""
+    rows = [
+        {
+            "id": "ocid1.volumeattachment.2",
+            "volume-id": "ocid1.volume.21",
+            "instance-id": "ocid1.instance.1",
+            "lifecycle-state": "ATTACHED",
+        }
+    ]
+    chosen, out = _select_with_attachment_rows(
+        [_volume("ocid1.volume.21", "csi-attached")], tmp_path, rows
+    )
+    assert chosen == [], out
+    assert "the attachment API says so" in out
+
+
+def test_an_attachment_row_with_no_lifecycle_state_is_treated_as_attached(
+    tmp_path,
+) -> None:
+    """A row whose state the door cannot read is a keep, not a guess.
+
+    The door only acts on a state it has read. A row with no state is the absence of evidence,
+    and the absence of evidence keeps the volume.
+    """
+    rows = [{"id": "ocid1.volumeattachment.3", "volume-id": "ocid1.volume.22"}]
+    chosen, out = _select_with_attachment_rows(
+        [_volume("ocid1.volume.22", "csi-unknown-state")], tmp_path, rows
+    )
+    assert chosen == [], out
+    assert "the attachment API says so" in out
+
+
+def test_an_empty_attachment_collection_is_an_empty_collection_not_a_parse_failure(
+    tmp_path,
+) -> None:
+    """Zero bytes from a successful list is the empty collection it is.
+
+    The CLI writes nothing at all for an empty collection, so the file is empty. The door must
+    read that as "nothing is attached" -- not as a broken file, and not as a refusal of the
+    whole compartment.
+    """
+    fixture = tmp_path / "oci-reclaim-empty-volumes.json"
+    fixture.write_text(
+        json.dumps({"data": [_volume("ocid1.volume.23", "csi-empty-list")]})
+    )
+    attachments = tmp_path / "oci-reclaim-empty-attachments.json"
+    attachments.write_text("")
+    ids = tmp_path / "oci-reclaim-empty-ids.txt"
+    proc = subprocess.run(
+        [
+            "python3",
+            str(HELPER),
+            "--volumes",
+            str(fixture),
+            "--attachments",
+            str(attachments),
+            "--keep-oldest",
+            "0",
+            "--older-than-hours",
+            "24",
+            "--ids-out",
+            str(ids),
+            "--now",
+            NOW,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert [line for line in ids.read_text().splitlines() if line] == [
+        "ocid1.volume.23"
+    ]
+    assert "0 volume(s) attached" in proc.stdout
+
+
+def test_the_door_reclaims_when_the_attachment_collection_is_empty(tmp_path) -> None:
+    """The whole door, end to end, with the OCI CLI answering an empty collection.
+
+    This is the estate's own compartment as measured on 2026-10-29: the attachment collection
+    is empty and the CLI prints nothing for it. Before the fix the door refused the
+    compartment with a JSON parse failure and could not reclaim a single volume.
+    """
+    stub = tmp_path / "bin"
+    stub.mkdir()
+    (stub / "oci").write_text(
+        "#!/usr/bin/env bash\n"
+        "# A stub OCI: one AVAILABLE CSI volume, and an EMPTY attachment collection printed as\n"
+        "# zero bytes with exit status 0 -- exactly what the real CLI does.\n"
+        "if [ \"$1 $2\" = 'compute volume-attachment' ]; then exit 0; fi\n"
+        "if [ \"$1 $2\" = 'bv volume' ] && [ \"$3\" = 'list' ]; then\n"
+        "  cat <<'JSON'\n"
+        '{"data": [{"id": "ocid1.volume.30", "display-name": "csi-stub", '
+        '"lifecycle-state": "AVAILABLE", "size-in-gbs": 50, '
+        '"time-created": "2026-08-25T04:14:03Z", '
+        '"freeform-tags": {"role": "persistent_volume"}, "volume-attachments": null}]}\n'
+        "JSON\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 0\n"
+    )
+    (stub / "oci").chmod(0o755)
+    env = dict(os.environ)
+    env["PATH"] = f"{stub}:{env['PATH']}"
+    proc = subprocess.run(
+        [
+            "bash",
+            str(SCRIPT),
+            "plan",
+            "0",
+            "24",
+            "ocid1.compartment.oc1..test",
+            "volumes",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "1 volume(s) would be deleted" in proc.stdout, proc.stdout
 
 
 def _node_verdict(state: str, tmp_path) -> str:
