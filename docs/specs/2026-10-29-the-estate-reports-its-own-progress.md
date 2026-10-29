@@ -51,6 +51,11 @@ Prometheus exposition, for the one Prometheus) and `estate-progress.md` (the hum
 **One signal set.** Every surface renders the same numbers. A surface that wanted a new number
 adds it to the signal set, once; it does not measure it twice.
 
+**The sentence travels inside the report.** The report carries its own canonical spoken sentence
+(`speak`), produced by the same function that `--speak` prints. That is what lets a host with no
+writer installed still say exactly what the estate says, instead of each surface inventing its
+own wording for the same numbers.
+
 **Many readers.** `/fleet` reads it through the fleetview backend's `/progress` route
 (`fleetview_backend/progress.py`), the voice surface speaks the intent's last line, any agent
 asks the `estate.progress` intent, and the Prometheus scrapes the exposition. Nothing in a
@@ -108,6 +113,7 @@ never zero.
 | `deltas.landed_in_window` | landed this window minus landed last report | count | this report vs the previous | file read | same | estate | 15 min | 30 min | no previous report -> `available: false`, never a fake zero |
 | `deltas.queue_to_land_p50_min` | median wait, this report minus last | minutes | same | file read | same | estate | 15 min | 30 min | as above |
 | `verdict.state` | PROGRESSING / SLIPPING / STUCK / PARTIAL / UNKNOWN | enum | the signals above | computed | same | estate | 15 min | 30 min | chain unknown -> UNKNOWN |
+| `speak` | the canonical spoken sentence for this report | text | the signals above | computed | same | estate | 15 min | 30 min | a surface with no report speaks `unknown`, never a zero |
 
 ### The verdict, deterministically
 
@@ -122,6 +128,32 @@ No model reads a number in this report. The thresholds are written down here and
 * `PROGRESSING` - something landed, no rate tripped.
 * `PARTIAL` - it would have been PROGRESSING, but at least one source was BLIND. The estate does
   not get a clean bill of health it did not earn.
+
+### The door, and where the writer lives
+
+`platform/estate/intents/estate.progress.yaml` is the door every surface calls. It prints ONE
+line - the spoken sentence - because the voice surface speaks an intent's last stdout line. It
+serves the cached report by default (`fresh=true` recomputes it now), so a surface never waits
+on a measurement to answer the founder.
+
+The writer is resolved, in order, because the default root is a working checkout that may be on
+any branch:
+
+1. `~/.estate/bin/estate-progress` - the copy the runtime sync stages from `main`, so it is the
+   same bytes main carries, whatever this laptop's checkout happens to be on.
+2. `~/.estate/runtime/idp/bin/estate-progress` - the estate's own main tree.
+3. `<root>/bin/estate-progress` - the repo it was given.
+
+With none of them, the door still speaks: the report's own `speak` field is read from
+`~/.estate/progress/estate-progress.json` (override with `ESTATE_PROGRESS_REPORT`). With no
+report either, it says `Estate progress: unknown. No progress report is available on this host.`
+- unknown, never a zero, never a healthy green.
+
+Measured defect this fixes (2026-10-29): the intent's root default was `~/Documents/code/idp`,
+and the executor shell-quotes every argument, so the tilde was never expanded and the path was
+literal. On a host whose checkout is on a work branch the writer was not there at all
+(`ls ~/Documents/code/idp/bin/estate-progress` -> `No such file or directory`). The default is now
+empty and the script expands `$HOME` itself.
 
 ### How progress is proven
 

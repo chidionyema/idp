@@ -43,6 +43,28 @@ disagrees between surfaces - which is worse than no number, because it looks lik
    of inventing a baseline.
 6. The report is read, not pushed: surfaces serve the cached artefact (the writer runs on a
    schedule), so a founder question never waits on a measurement.
+7. The report carries its own canonical spoken sentence (`speak`), and the door that every surface
+   calls (`platform/estate/intents/estate.progress.yaml`) resolves the writer in a fixed order
+   (`~/.estate/bin`, then the estate's main tree, then the root it was given). A host with no
+   writer still speaks the sentence the report already carries; a host with no report says
+   `unknown`. Neither invents a number, and neither writes its own wording.
+
+### Why the sentence is inside the report
+
+Measured on 2026-10-29: the intent's root default was `~/Documents/code/idp` and the executor
+shell-quotes every argument, so the tilde was never expanded. On a host whose checkout sat on a
+work branch the writer was not there at all, and the door had nothing to speak. Two changes
+follow from that measurement, and both are architectural rather than local:
+
+* the canonical sentence lives in the report, so a missing writer costs a host its own wording,
+  not its truth;
+* the writer the door finds first is the copy the runtime sync stages into `~/.estate/bin` from
+  `main`, so the door and `main` always carry the same bytes - and a host that has neither still
+  answers.
+
+The same lesson applies to the sync itself: a notification failure must never kill a convergence
+tick (the `osascript` timeout of 2026-10-29 killed one, and the estate ran a seven-hour-old tree
+because nobody noticed). The log is the record; the notification is best-effort.
 
 ## Alternatives rejected
 

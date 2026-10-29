@@ -18,6 +18,22 @@ estate-execute estate.progress            # the spoken sentence
 estate-execute estate.progress --args fresh=true   # recompute now, then speak
 ```
 
+The door prints ONE line: the spoken sentence, because the voice surface speaks an intent's last
+stdout line. It serves the cached report by default and never waits on a measurement.
+
+### Where the writer is found
+
+The door looks for the writer in this order, because the default root is a working checkout that
+may be on any branch:
+
+1. `~/.estate/bin/estate-progress` - staged from `main` by the runtime sync.
+2. `~/.estate/runtime/idp/bin/estate-progress` - the estate's own main tree.
+3. `<root>/bin/estate-progress` - the repo passed as `root`.
+
+With none of them, the door speaks the sentence the report already carries (`speak`), read from
+`~/.estate/progress/estate-progress.json` (override with `ESTATE_PROGRESS_REPORT`). With no
+report either, it says the estate's progress is `unknown` - never a zero, never a green.
+
 Or directly:
 
 ```bash
@@ -45,7 +61,7 @@ bin/estate-progress --strict              # exit 1 unless the verdict is PROGRES
 ## What it writes
 
 ```
-~/.estate/progress/estate-progress.json   # the canonical signal set
+~/.estate/progress/estate-progress.json   # the canonical signal set, including its spoken sentence
 ~/.estate/progress/estate-progress.prom   # the same numbers as Prometheus exposition
 ~/.estate/progress/estate-progress.md     # the human view
 ```
