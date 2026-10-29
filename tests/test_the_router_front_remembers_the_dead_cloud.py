@@ -100,7 +100,12 @@ def test_the_cloud_cooldown_survives_a_restart(front) -> None:
 
 
 def test_the_restarted_front_does_not_put_the_dead_cloud_first(front) -> None:
-    """A restarted front passes the dead cloud over instead of trying it first."""
+    """A restarted front passes the dead cloud over instead of trying it first.
+
+    The dead cloud goes LAST -- behind even the slots that merely missed a probe: a slot that
+    is slow under load still answers, a cloud in cooldown is known not to (sibling fix
+    7e0b96914, carried here).
+    """
     front.mark_cloud_down()
     restarted = _load("router_front_cooldown_routes")
     restarted.restore_cloud_cooldown()
