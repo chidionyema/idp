@@ -166,7 +166,11 @@ for s in items:
 print("echo " + shlex.quote("keys   bitwarden: %d %s" % (len(names), ",".join(sorted(names)))))
 '
   if command -v kubectl >/dev/null; then
-    bw_env="$(kubectl -n llm get secrets -o json --request-timeout=20s 2>/dev/null | "$VENV/bin/python" -c "$bw_py")" || bw_env=""
+    # --request-timeout does not bound kubectl when the cluster is unreachable (measured
+    # 2026-10-28: a 5 s timeout still hung past 55 s, so every slot boot stalled here, never
+    # bound its port, and every caller of :4000 got 502). kubectl ignores SIGALRM too (a perl
+    # alarm left it hung 5 min), so the ceiling is subprocess's SIGKILL.
+    bw_env="$("$VENV/bin/python" -c 'import subprocess, sys; sys.stdout.buffer.write(subprocess.run(sys.argv[1:], capture_output=True, timeout=25).stdout)' kubectl -n llm get secrets -o json --request-timeout=20s 2>/dev/null | "$VENV/bin/python" -c "$bw_py")" || bw_env=""
     eval "$bw_env"
   fi
   unset bw_py bw_env
@@ -203,13 +207,70 @@ print("echo " + shlex.quote("keys   bitwarden: %d %s" % (len(names), ",".join(so
   "$VENV/bin/python" - "$CFG" "$RUNCFG" <<'PY'
 import os, sys, yaml
 cfg = yaml.safe_load(open(sys.argv[1]))
-kept, dropped = [], []
+kept, refused, declared = [], [], []
 for m in cfg.get("model_list", []):
+    declared.append(m["model_name"])
     key = str(m.get("litellm_params", {}).get("api_key", ""))
     if key.startswith("os.environ/") and not os.environ.get(key.split("/", 1)[1]):
-        dropped.append(m["model_name"])
+        # A declared capability whose credential is absent is REFUSED WITH A REASON, never
+        # dropped in silence. Measured 2026-10-29: the `voice` lane vanished from the laptop
+        # because the process that happened to be running held no key for it, and nothing said
+        # so -- the served set was a function of one unsupervised process's environment, not of
+        # the repository. A lane that cannot be served must be visible to whoever depends on
+        # it, with the credential that is missing named.
+        refused.append({"lane": m["model_name"],
+                        "reason": "credential " + key.split("/", 1)[1] + " absent",
+                        "verdict": "MEASURED_FAIL"})
     else:
         kept.append(m)
+# A pool that loses every deployment is a hole, not a lane: the caller asks for `voice` and the
+# router answers "no healthy deployments for this model". On the laptop the surviving vendors are
+# the ones whose keys this process holds, so the estate's brain lane is served by one of them
+# instead of vanishing with the vendors it named.
+if "voice" not in {m["model_name"] for m in kept}:
+    src = next((m for m in kept if m["model_name"] in ("default", "fast", "groq")), None)
+    if src is not None:
+        params = dict(src.get("litellm_params", {}))
+        params["timeout"] = 60
+        kept.append({"model_name": "voice", "litellm_params": params,
+                     "model_info": {"max_input_tokens": 131072}})
+# The free floor: Ollama, when this machine runs it and has a model pulled. It costs nothing and it
+# answers when every paid vendor refuses. A fallback nobody can reach is a hope, not a floor.
+# Measured 2026-10-28: Groq's daily token allowance was exhausted (Limit 200000, Used 199348),
+# so the only paid-independent route this machine had was the local floor.
+import json as _json, socket as _socket, urllib.request as _urlreq
+OLLAMA_BASE = "http://127.0.0.1:11434"
+ollama_models = []
+try:
+    _socket.create_connection(("127.0.0.1", 11434), timeout=1).close()
+    with _urlreq.urlopen(OLLAMA_BASE + "/api/tags", timeout=3) as _r:
+        ollama_models = [t.get("name", "") for t in _json.load(_r).get("models", [])]
+except Exception:
+    ollama_models = []
+if ollama_models:
+    pick = next((n for n in ollama_models if "qwen" in n), ollama_models[0])
+    kept.append({"model_name": "ollama",
+                 "litellm_params": {"model": "ollama/" + pick, "api_base": OLLAMA_BASE,
+                                    "timeout": 120, "keep_alive": "24h"},
+                 "model_info": {"max_input_tokens": 32768}})
+# Codex asks for `gpt-6.1-sol`, and the estate's cloud router published that model group from
+# ITS DATABASE (`store_model_in_db: true` in platform/llm/config.base.yaml) -- not from YAML,
+# which is why the name appears nowhere in the repo. Measured 2026-10-29: with the database on a
+# volume that is not yet restored, the laptop answered Codex with
+# "You passed in model=gpt-6.1-sol. There are no healthy deployments for this model".
+# So the laptop publishes the name too, as a MODEL ROW on the estate's standard tier.
+# A ROW, not an alias: the auth gate (local_caller_auth) decides whether a lane spends a key
+# the router holds by matching the REQUESTED name against the keyed lanes. An alias would
+# resolve to a keyed lane after that check, and every local caller would inherit the key.
+# A row carries its own `api_key`, so the gate sees it and asks for the laptop router key,
+# exactly as it does for `default`.
+if "gpt-6.1-sol" not in {m["model_name"] for m in kept}:
+    src = next((m for m in kept if m["model_name"] in ("default", "fast", "ollama")), None)
+    if src is not None:
+        row = {"model_name": "gpt-6.1-sol",
+               "litellm_params": dict(src.get("litellm_params", {})),
+               "model_info": dict(src.get("model_info", {}))}
+        kept.append(row)
 # Providers are derived, never declared: every <PROVIDER>_API_KEY[_N] this process holds whose
 # provider LiteLLM knows becomes the lane "<provider>/*", so every model that provider serves is
 # callable by its own name (deepseek/deepseek-chat, openrouter/qwen/qwen3-coder:free, ...).
@@ -245,9 +306,15 @@ chains = []
 for entry in rs.get("fallbacks", []):
     for src, tgts in entry.items():
         tgts = [t for t in tgts if t in served]
+        if "ollama" in served and "ollama" not in tgts:
+            tgts = tgts + ["ollama"]
         if src in served and tgts:
             chains.append({src: tgts})
 rs["fallbacks"] = chains
+# The new row needs its own chain, or a refusing vendor is the end of the road for it.
+if "gpt-6.1-sol" in served and "ollama" in served:
+    if not any("gpt-6.1-sol" in entry for entry in rs["fallbacks"]):
+        rs["fallbacks"].append({"gpt-6.1-sol": ["ollama"]})
 # The trace exporter retried a collector nobody runs (3,367 ConnectionErrors in one log window).
 # Serve the otel callback only when its endpoint answers, same rule as lanes with no key.
 import socket
@@ -264,7 +331,8 @@ if not otel_up:
 # The router's own account of what it serves, readable without a log.
 import json, time
 json.dump({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "served": sorted(served),
-           "dropped": sorted(set(dropped) - served),
+           "declared": sorted(set(declared)),
+           "refused": [r for r in refused if r["lane"] not in served],
            "providers": dict(sorted(providers.items())),
            "bases": {p: b for p, b in bases.items() if p in providers},
            "fallbacks": chains, "otel": otel_up},
@@ -291,7 +359,23 @@ if "no_handback.proxy_handler_instance" not in ls["callbacks"]:
     ls["callbacks"].append("no_handback.proxy_handler_instance")
 yaml.safe_dump(cfg, open(sys.argv[2], "w"), sort_keys=False)
 print(f"lanes  serving {len(kept)}: {sorted({m['model_name'] for m in kept})}")
-print(f"lanes  dropped {len(dropped)} with no key on this machine")
+_still_refused = [r for r in refused if r["lane"] not in served]
+print(f"lanes  refused {len(_still_refused)}: " + "; ".join(
+    f"{r['lane']} ({r['reason']})" for r in _still_refused))
+# A refused lane is an ALARM, not a log line. The estate's alert inbox is where a caller finds
+# out that a declared capability is not being served; a degraded router that says nothing in
+# the log is how a lane disappears for hours (2026-10-29: the `voice` lane, gone silently).
+if _still_refused:
+    _inbox = os.environ.get("ESTATE_ALERTS_INBOX") or os.path.join(
+        os.path.expanduser("~"), ".estate", "alerts", "inbox.jsonl")
+    try:
+        os.makedirs(os.path.dirname(_inbox), exist_ok=True)
+        with open(_inbox, "a") as _f:
+            for _r in _still_refused:
+                _f.write(json.dumps({"ts": time.time(), "source": "litellm-local",
+                                     "key": "lane:" + _r["lane"], "text": _r["lane"] + " refused: " + _r["reason"]}) + "\n")
+    except OSError:
+        pass
 PY
 
   # Every model the providers serve, written into every installed harness (router_catalog.py).
