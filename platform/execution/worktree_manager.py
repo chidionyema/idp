@@ -13,6 +13,34 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
+def _queue_dispatcher():
+    """The queue dispatcher, loaded the way platform/ has to be loaded.
+
+    platform/ has no __init__.py (idp#3564): it collides with the stdlib `platform` module
+    the moment anything imports it bare, and pytest itself imports `platform` at startup.
+    So 'from platform.queue import dispatcher' raises ModuleNotFoundError ("'platform' is
+    not a package"), and the sweep of orphaned worktrees caught that and did nothing at
+    all: every worktree was skipped and the sweep reported zero.
+
+    The queue package is loaded by file path and its own loader (platform/queue/__init__.py)
+    does the seeding, so there is one implementation of the workaround rather than one per
+    caller.
+    """
+    import importlib.util
+    import os
+    import sys
+
+    if "platform.queue" not in sys.modules:
+        root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        spec = importlib.util.spec_from_file_location(
+            "platform.queue", os.path.join(root, "queue", "__init__.py")
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["platform.queue"] = module
+        spec.loader.exec_module(module)
+    return sys.modules["platform.queue"].load_dispatcher()
+
+
 class WorktreeManager:
     """
     Manages git worktrees for task isolation.
@@ -24,7 +52,8 @@ class WorktreeManager:
         self.repo_root = repo_root or os.environ.get(
             "IDP_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         )
-        os.makedirs(self.base_path, exist_ok=True)
+        # The base directory is made when a worktree is made, not when the manager is
+        # built: constructing a manager creates nothing in the working directory.
 
     def create_worktree(self, task_id: int) -> str:
         """
@@ -32,10 +61,11 @@ class WorktreeManager:
         Returns: path to worktree
         """
         worktree_path = os.path.join(self.base_path, f"task-{task_id}")
+        os.makedirs(self.base_path, exist_ok=True)
 
         try:
             # Add worktree on a detached HEAD
-            result = subprocess.run(
+            result = subprocess.run(  # noqa: S603
                 [  # noqa: S607
                     "git",
                     "worktree",
@@ -43,7 +73,7 @@ class WorktreeManager:
                     worktree_path,
                     "--detach",
                     "HEAD",
-                ],  # noqa: S603
+                ],
                 cwd=self.repo_root,
                 capture_output=True,
                 text=True,
@@ -65,12 +95,25 @@ class WorktreeManager:
 
     def remove_worktree(self, task_id: int, force: bool = True) -> None:
         """
-        Remove a git worktree.
-        Force=True removes even if dirty.
+        Remove a git worktree, archiving what it holds first.
+
+        The archive is what makes the removal safe: uncommitted changes and untracked
+        files are kept in the estate's quarantine and the path is printed, so a removal is
+        never a silent loss. An archive over the cap keeps the worktree: the work is
+        worth more than the space.
         """
         worktree_path = os.path.join(self.base_path, f"task-{task_id}")
 
         try:
+            dispatcher = _queue_dispatcher()
+            archive = dispatcher.archive_worktree(worktree_path)
+            if archive == "refused":
+                logger.warning(
+                    "[WorktreeManager] keeping %s: its leftovers are over the archive cap",
+                    worktree_path,
+                )
+                return
+
             cmd = ["git", "worktree", "remove", worktree_path]
             if force:
                 cmd.append("--force")
@@ -87,6 +130,10 @@ class WorktreeManager:
                     f"[WorktreeManager] Failed to remove worktree {worktree_path}: {result.stderr}"
                 )
             else:
+                if archive:
+                    logger.info(
+                        "[WorktreeManager] Archived %s to %s", worktree_path, archive
+                    )
                 logger.info(f"[WorktreeManager] Removed worktree for task {task_id}")
 
         except Exception as e:
@@ -99,12 +146,12 @@ class WorktreeManager:
         Remove orphaned worktrees (tasks in terminal state or timeout).
         Returns: count of removed worktrees
         """
-        from platform.queue import dispatcher
         from datetime import timedelta
 
         removed = 0
 
         try:
+            dispatcher = _queue_dispatcher()
             worktrees = self._list_worktrees()
 
             for worktree_path in worktrees:
@@ -124,8 +171,15 @@ class WorktreeManager:
                         removed += 1
                         continue
 
-                    # Check if task is terminal
-                    if task.get("status") in ("done", "dead_letter"):
+                    # Check if task is terminal. The queue's terminal states are
+                    # 'success' and 'failed' (the worker pool's own words); 'done' and
+                    # 'dead_letter' are the older names and are still accepted.
+                    if task.get("status") in (
+                        "done",
+                        "dead_letter",
+                        "success",
+                        "failed",
+                    ):
                         self.remove_worktree(task_id, force=True)
                         removed += 1
                         continue
@@ -154,13 +208,13 @@ class WorktreeManager:
     def _list_worktrees(self) -> list[str]:
         """List all worktree paths."""
         try:
-            result = subprocess.run(
+            result = subprocess.run(  # noqa: S603
                 [  # noqa: S607
                     "git",
                     "worktree",
                     "list",
                     "--porcelain",
-                ],  # noqa: S603
+                ],
                 cwd=self.repo_root,
                 capture_output=True,
                 text=True,
