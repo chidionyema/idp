@@ -1,0 +1,899 @@
+#!/usr/bin/env python3
+"""One progress report for the whole estate: the delivery chain, measured, with the unknown
+named as unknown.
+
+WHY THIS EXISTS. The founder asks how the estate knows it is progressing, how it can optimise,
+and how it can know that what it does makes sense. Every stage of the chain already records what
+it did: the Greenlane state blob holds per-lane timings and failure reasons, the CI API holds
+every run, the focus register holds who claims what, the decision door holds what the founder was
+asked and what he answered, the cluster receipt holds what Flux made live. Nothing joined them,
+so the estate was blind to its own delivery chain while every number it needed was already on
+disk.
+
+This joins them into ONE report, written by ONE writer, that every surface renders: the same
+numbers on /fleet, on /face, spoken by the voice surface, and answerable by any agent through
+the `estate.progress` intent. Per-surface bespoke metrics are what this replaces; there is one
+signal set, not one per surface.
+
+THE ESTATE'S RULES, KEPT:
+  * A source that cannot be read is BLIND, never zero. An unread plane and an empty plane are
+    different facts, and a flattering zero is the failure this report exists to prevent.
+  * The verdict is a deterministic function of the signals, with the thresholds written down in
+    docs/specs/2026-10-29-the-estate-reports-its-own-progress.md. No model reads a number here.
+  * Progress is a DELTA against the previous report, not a feeling.
+  * This reports. It decides nothing, and it never blocks another agent's work.
+
+  bin/estate-progress [--repo PATH] [--state PATH] [--out DIR] [--hours N]
+                      [--previous PATH] [--no-ci] [--no-claims] [--no-live] [--no-decisions]
+                      [--read] [--json] [--speak] [--strict]
+
+  --read     serve the cached report instead of recomputing it (what a surface or an agent
+             asks for; the writer is the scheduled workflow).
+  --strict   exit 1 when the verdict is not PROGRESSING, or when any source is BLIND.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+SCHEMA = "estate.progress.v1"
+DEFAULT_OUT = Path.home() / ".estate" / "progress"
+REPORT_NAME = "estate-progress.json"
+PROM_NAME = "estate-progress.prom"
+MD_NAME = "estate-progress.md"
+STATE_REF = "refs/greenlane/state"
+RECEIPT_BUCKET = "estate-drill-receipts"
+RECEIPT_NAME = "state/cluster"
+# Where the published report lives: the same bucket the cluster receipt uses, so every surface
+# reads the estate's state through one channel it already knows.
+PUBLISH_NAME = "state/progress"
+DECISIONS_FILE = Path.home() / ".estate" / "sovereign" / "decisions.json"
+FOCUS_REGISTER = Path.home() / ".estate" / "memory" / "focus-register.json"
+
+# The thresholds the verdict uses. They are written down in the spec and pinned by the tests.
+STUCK_MIN = 120.0  # a lane held this long without moving
+CONFLICT_RATE_SLIPPING = 0.34  # a third of the batches in the window ending in conflict
+CI_FAIL_RATE_SLIPPING = 0.34  # a third of the runs in the window failing
+RECEIPT_STALE_MIN = 60.0  # a receipt older than this is not a fact about the cluster
+
+
+def run(cmd, timeout=60, cwd=None):
+    """(rc, stdout, stderr). A command that cannot run is rc 127, never an exception."""
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=cwd,
+        )
+    except subprocess.TimeoutExpired:
+        return 124, "", "timed out after %ss" % timeout
+    except FileNotFoundError:
+        return 127, "", "%s is not installed" % cmd[0]
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+def last_line(text, default="said nothing"):
+    lines = [ln for ln in (text or "").strip().splitlines() if ln.strip()]
+    return (lines[-1] if lines else default)[:200]
+
+
+def pct(values, q):
+    """The q-quantile of a list of numbers, or None when there is nothing to grade."""
+    if not values:
+        return None
+    xs = sorted(values)
+    if len(xs) == 1:
+        return round(xs[0], 2)
+    idx = int(round(q * (len(xs) - 1)))
+    return round(xs[idx], 2)
+
+
+def minutes_ago(now_min, stamp):
+    """Minutes between an engine timestamp (minutes since epoch) and now."""
+    if stamp is None:
+        return None
+    try:
+        return round(now_min - float(stamp), 2)
+    except (TypeError, ValueError):
+        return None
+
+
+class Sources:
+    """Every source the report reads, and how it went. A source that failed is BLIND."""
+
+    def __init__(self):
+        self.rows = []
+
+    def add(self, name, read, why="", as_of=None):
+        self.rows.append({"name": name, "read": read, "why": why, "as_of": as_of})
+        return read
+
+    def blind(self, name, why):
+        return self.add(name, "BLIND", why)
+
+    def state(self, name):
+        for row in self.rows:
+            if row["name"] == name:
+                return row
+        return {"name": name, "read": "BLIND", "why": "never read", "as_of": None}
+
+    @property
+    def blind_names(self):
+        return [r["name"] for r in self.rows if r["read"] == "BLIND"]
+
+
+# --- the Greenlane state: the delivery chain's own record ---------------------------------------
+def read_state(repo, state_path, sources):
+    """The state blob, or None. Its timings are engine minutes since epoch."""
+    if state_path:
+        path = Path(state_path)
+        if not path.exists():
+            sources.blind("greenlane_state", "%s does not exist" % path)
+            return None
+        raw = path.read_text()
+    else:
+        rc, out, err = run(
+            ["git", "-C", str(repo), "show", "%s:state.json" % STATE_REF], 60
+        )
+        if rc != 0:
+            sources.blind(
+                "greenlane_state",
+                "git show %s:state.json failed: %s" % (STATE_REF, last_line(err, out)),
+            )
+            return None
+        raw = out
+    try:
+        doc = json.loads(raw)
+    except ValueError as exc:
+        sources.blind("greenlane_state", "state.json is not JSON: %s" % exc)
+        return None
+    sources.add("greenlane_state", "yes", "", "the Greenlane state ref")
+    return doc
+
+
+def lane_signals(state, now_min, window_min):
+    """What the delivery chain looks like right now, and over the window."""
+    lanes = state.get("lanes") or {}
+    landings = state.get("landings") or []
+    history = state.get("history") or []
+
+    by_status = {}
+    reasons = {}
+    ages = []
+    for name, lane in lanes.items():
+        lane = lane or {}
+        status = str(lane.get("status") or "unknown")
+        by_status[status] = by_status.get(status, 0) + 1
+        age = minutes_ago(now_min, lane.get("arrived"))
+        if age is not None:
+            ages.append(age)
+        reason = lane.get("reason") or ""
+        if reason:
+            key = re.sub(r"https://\S+", "<url>", reason).strip()
+            reasons[key] = reasons.get(key, 0) + 1
+
+    landed_window = []
+    waits = []
+    for rec in landings:
+        landed = rec.get("landed")
+        if landed is None:
+            continue
+        age = minutes_ago(now_min, landed)
+        if age is not None and age <= window_min:
+            landed_window.append(rec.get("lane") or rec.get("batch"))
+        if rec.get("queued") is not None:
+            try:
+                waits.append(round(float(landed) - float(rec["queued"]), 2))
+            except (TypeError, ValueError):
+                pass
+
+    cycles = []
+    outcomes = {}
+    conflict_batches = 0
+    window_batches = 0
+    for rec in history:
+        outcome = str(rec.get("outcome") or "unknown")
+        action = rec.get("action") or ""
+        key = outcome + ("/" + action if action else "")
+        outcomes[key] = outcomes.get(key, 0) + 1
+        started, verdict_at = rec.get("started"), rec.get("verdict_at")
+        if started is not None and verdict_at is not None:
+            try:
+                cycles.append(round(float(verdict_at) - float(started), 2))
+            except (TypeError, ValueError):
+                pass
+        age = minutes_ago(now_min, verdict_at if verdict_at is not None else started)
+        if age is not None and age <= window_min:
+            window_batches += 1
+            if "conflict" in key:
+                conflict_batches += 1
+
+    return {
+        "lanes_inflight": len(lanes),
+        "lanes_by_status": by_status,
+        "oldest_lane_age_min": max(ages) if ages else None,
+        "landed_total": state.get("landed"),
+        "landed_in_window": len(landed_window),
+        "landed_lanes_in_window": landed_window[:20],
+        "queue_to_land_min": {
+            "n": len(waits),
+            "p50": pct(waits, 0.5),
+            "p90": pct(waits, 0.9),
+        },
+        "batch_cycle_min": {
+            "n": len(cycles),
+            "p50": pct(cycles, 0.5),
+            "p90": pct(cycles, 0.9),
+        },
+        "batches_in_window": window_batches,
+        "conflict_batches_in_window": conflict_batches,
+        "batch_outcomes": outcomes,
+        "conflicts_total": state.get("conflicts"),
+        "timed_out_total": len(state.get("timed") or {}),
+        "retired_total": len(state.get("retired") or {}),
+        "candidates_total": state.get("candidates"),
+        "current_batch": state.get("batch"),
+        "top_failure_reasons": [
+            {"reason": k, "lanes": v}
+            for k, v in sorted(reasons.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+        ],
+    }
+
+
+# --- CI: what the estate's gates actually did ------------------------------------------------------
+def ci_signals(owner, name, window_min, sources):
+    rc, out, err = run(
+        ["gh", "api", "repos/%s/%s/actions/runs?per_page=100" % (owner, name)], 45
+    )
+    if rc != 0:
+        sources.blind("ci_runs", "gh api actions/runs failed: %s" % last_line(err, out))
+        return None
+    try:
+        doc = json.loads(out or "{}")
+    except ValueError:
+        sources.blind("ci_runs", "gh api actions/runs returned no JSON")
+        return None
+    runs = doc.get("workflow_runs") or []
+    now = time.time()
+    in_window = []
+    failed = {}
+    durations = []
+    for item in runs:
+        started = item.get("run_started_at") or item.get("created_at")
+        ts = parse_ts(started)
+        if ts is not None and (now - ts) / 60.0 > window_min:
+            continue
+        in_window.append(item)
+        conclusion = item.get("conclusion") or item.get("status") or "unknown"
+        updated = parse_ts(item.get("updated_at"))
+        if updated is not None and ts is not None:
+            durations.append(max(0.0, round((updated - ts) / 60.0, 2)))
+        if conclusion == "failure":
+            workflow = item.get("name") or "unknown"
+            failed[workflow] = failed.get(workflow, 0) + 1
+    sources.add("ci_runs", "yes", "", "%d runs read" % len(runs))
+    failures = sum(failed.values())
+    return {
+        "runs_in_window": len(in_window),
+        "failed_in_window": failures,
+        "fail_rate": round(failures / len(in_window), 3) if in_window else None,
+        "duration_min": {
+            "n": len(durations),
+            "p50": pct(durations, 0.5),
+            "p90": pct(durations, 0.9),
+        },
+        "top_failing_workflows": [
+            {"workflow": k, "runs": v}
+            for k, v in sorted(failed.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+        ],
+    }
+
+
+def parse_ts(stamp):
+    if not stamp:
+        return None
+    try:
+        return time.mktime(time.strptime(str(stamp)[:19], "%Y-%m-%dT%H:%M:%S"))
+    except (TypeError, ValueError):
+        return None
+
+
+# --- claims: who is working what, and whether two agents are on the same files -------------------
+def claim_signals(sources):
+    if not FOCUS_REGISTER.exists():
+        sources.blind("claims", "%s does not exist" % FOCUS_REGISTER)
+        return None
+    try:
+        reg = json.loads(FOCUS_REGISTER.read_text())
+    except (OSError, ValueError) as exc:
+        sources.blind("claims", "focus register unreadable: %s" % exc)
+        return None
+    rows = reg.get("rows") or []
+    if not rows:
+        sources.blind("claims", "focus register holds no rows")
+        return None
+    now = time.time()
+    live = []
+    stale = 0
+    for row in rows:
+        # The register's own liveness flag first: it is what the write gate reads.
+        if row.get("live") is False:
+            continue
+        age_s = row.get("heartbeat_age_s")
+        if age_s is None:
+            hb = row.get("heartbeat") or row.get("heartbeat_at") or row.get("at") or ""
+            ts = parse_ts(str(hb)[:19])
+            age_s = (now - ts) if ts is not None else None
+        if age_s is not None and float(age_s) > 7200:
+            stale += 1
+            continue
+        live.append(row)
+    seen = {}
+    overlaps = 0
+    for row in live:
+        for path in str(row.get("paths") or "").split(","):
+            path = path.strip()
+            if not path:
+                continue
+            owner = seen.get(path)
+            if owner and owner != row.get("agent"):
+                overlaps += 1
+            seen[path] = row.get("agent")
+    sources.add("claims", "yes", "", "%d rows read" % len(rows))
+    return {
+        "live_claims": len(live),
+        "stale_claims": stale,
+        "overlapping_paths": overlaps,
+        "claims_by_agent": {
+            agent: sum(1 for r in live if r.get("agent") == agent)
+            for agent in sorted({str(r.get("agent")) for r in live})
+        },
+    }
+
+
+# --- the founder's queue: what was asked, answered, expired ---------------------------------------
+def decision_signals(sources):
+    if not DECISIONS_FILE.exists():
+        sources.blind("decisions", "%s does not exist" % DECISIONS_FILE)
+        return None
+    try:
+        doc = json.loads(DECISIONS_FILE.read_text())
+    except (OSError, ValueError) as exc:
+        sources.blind("decisions", "decision state unreadable: %s" % exc)
+        return None
+    decisions = (doc.get("decisions") or {}) if isinstance(doc, dict) else {}
+    counts = {"asked": 0, "answered": 0, "expired": 0, "other": 0}
+    for rec in decisions.values():
+        state = str((rec or {}).get("state") or "other")
+        counts[state if state in counts else "other"] += 1
+    sources.add("decisions", "yes", "", "%d decisions" % len(decisions))
+    counts["total"] = len(decisions)
+    return counts
+
+
+# --- what Flux made live: the last stage of the chain --------------------------------------------
+def live_signals(repo, sources, stale_min=RECEIPT_STALE_MIN):
+    """The cluster receipt, if it can be read and is fresh enough to be a fact."""
+    rc, out, err = run(
+        [
+            "bin/idp-cloud",
+            "object",
+            "get",
+            "--bucket",
+            RECEIPT_BUCKET,
+            "--name",
+            RECEIPT_NAME,
+        ],
+        60,
+        cwd=str(repo),
+    )
+    if rc != 0:
+        sources.blind(
+            "cluster_receipt", "receipt read failed: %s" % last_line(err, out)
+        )
+        return None
+    try:
+        doc = json.loads(out or "{}")
+    except ValueError:
+        sources.blind("cluster_receipt", "receipt is not JSON")
+        return None
+    stamp = doc.get("timestamp") or doc.get("generated_at") or ""
+    ts = parse_ts(str(stamp)[:19])
+    if ts is None:
+        sources.blind("cluster_receipt", "receipt carries no readable timestamp")
+        return None
+    age_min = round((time.time() - ts) / 60.0, 1)
+    if age_min > stale_min:
+        sources.blind(
+            "cluster_receipt",
+            "receipt is %.0f minutes old (max %d); a stale receipt is not a fact"
+            % (age_min, stale_min),
+        )
+        return None
+    sources.add("cluster_receipt", "yes", "", stamp)
+    return {
+        "receipt_age_min": age_min,
+        "flux_not_ready": doc.get("flux_not_ready"),
+        "pods_not_ready": doc.get("pods_not_ready"),
+        "deploy_short": doc.get("deploy_short"),
+        "nodes": doc.get("nodes"),
+        "pods": doc.get("pods"),
+    }
+
+
+# --- the verdict: deterministic, thresholds in the spec --------------------------------------------
+def verdict(signals):
+    """PROGRESSING / SLIPPING / STUCK / PARTIAL / UNKNOWN. No model, no feelings."""
+    why = []
+    chain = signals.get("chain")
+    if chain is None:
+        return {"state": "UNKNOWN", "why": ["the Greenlane state could not be read"]}
+    landed = chain.get("landed_in_window") or 0
+    conflicts = chain.get("conflict_batches_in_window") or 0
+    batches = chain.get("batches_in_window") or 0
+    conflict_rate = (conflicts / batches) if batches else None
+    ci = signals.get("ci") or {}
+    ci_fail = ci.get("fail_rate")
+    oldest = chain.get("oldest_lane_age_min")
+    inflight = chain.get("lanes_inflight") or 0
+    queue = (chain.get("queue_to_land_min") or {}).get("p50")
+
+    why.append(
+        "%d lanes landed in the window" % landed
+        if landed
+        else "no lane landed in the window"
+    )
+    if conflict_rate is not None:
+        why.append("conflict rate %.2f over %d batches" % (conflict_rate, batches))
+    if ci_fail is not None:
+        why.append(
+            "CI failure rate %.2f over %d runs"
+            % (ci_fail, ci.get("runs_in_window") or 0)
+        )
+    if oldest is not None and inflight:
+        why.append("oldest live lane is %.0f minutes old" % oldest)
+    if queue is not None:
+        why.append("queue to land p50 %.1f minutes" % queue)
+
+    blind = signals.get("blind") or []
+    if landed == 0 and oldest is not None and oldest >= STUCK_MIN and inflight:
+        state = "STUCK"
+    elif conflict_rate is not None and conflict_rate >= CONFLICT_RATE_SLIPPING:
+        state = "SLIPPING"
+    elif ci_fail is not None and ci_fail >= CI_FAIL_RATE_SLIPPING:
+        state = "SLIPPING"
+    elif landed == 0 and inflight:
+        state = "SLIPPING"
+    elif landed > 0:
+        state = "PROGRESSING"
+    else:
+        state = "UNKNOWN"
+    if state == "PROGRESSING" and blind:
+        state = "PARTIAL"
+        why.append("some sources are BLIND, so this is not a clean PROGRESSING")
+    return {"state": state, "why": why}
+
+
+def deltas(previous, signals):
+    """Progress is a delta against the previous report, not a feeling."""
+    if not previous:
+        return {"available": False, "why": "no previous report to compare with"}
+    prev_chain = (previous.get("signals") or {}).get("chain") or {}
+    chain = signals.get("chain") or {}
+    prev_q = (prev_chain.get("queue_to_land_min") or {}).get("p50")
+    now_q = (chain.get("queue_to_land_min") or {}).get("p50")
+
+    def diff(a, b):
+        if a is None or b is None:
+            return None
+        return round(float(b) - float(a), 2)
+
+    return {
+        "available": True,
+        "previous_generated_at": previous.get("generated_at"),
+        "landed_in_window": diff(
+            prev_chain.get("landed_in_window"), chain.get("landed_in_window")
+        ),
+        "queue_to_land_p50_min": diff(prev_q, now_q),
+        "lanes_inflight": diff(
+            prev_chain.get("lanes_inflight"), chain.get("lanes_inflight")
+        ),
+        "oldest_lane_age_min": diff(
+            prev_chain.get("oldest_lane_age_min"), chain.get("oldest_lane_age_min")
+        ),
+    }
+
+
+# --- the report -----------------------------------------------------------------------------------
+def build_report(args):
+    sources = Sources()
+    now_min = time.time() / 60.0
+    window_min = float(args.hours) * 60.0
+
+    state = read_state(args.repo, args.state, sources)
+    chain = lane_signals(state, now_min, window_min) if state else None
+
+    ci = None
+    if args.no_ci:
+        sources.add("ci_runs", "SKIPPED", "--no-ci")
+    else:
+        ci = ci_signals(args.repo_owner, args.repo_name, window_min, sources)
+
+    claims = None
+    if args.no_claims:
+        sources.add("claims", "SKIPPED", "--no-claims")
+    else:
+        claims = claim_signals(sources)
+
+    decisions = None
+    if args.no_decisions:
+        sources.add("decisions", "SKIPPED", "--no-decisions")
+    else:
+        decisions = decision_signals(sources)
+
+    live = None
+    if args.no_live:
+        sources.add("cluster_receipt", "SKIPPED", "--no-live")
+    else:
+        live = live_signals(args.repo, sources)
+
+    signals = {
+        "chain": chain,
+        "ci": ci,
+        "claims": claims,
+        "decisions": decisions,
+        "live": live,
+        "blind": sources.blind_names,
+    }
+    report = {
+        "schema": SCHEMA,
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "window_hours": args.hours,
+        "sources": sources.rows,
+        "signals": signals,
+    }
+    previous = None
+    prev_path = Path(args.previous) if args.previous else (Path(args.out) / REPORT_NAME)
+    if prev_path.exists() and not args.no_previous:
+        try:
+            previous = json.loads(prev_path.read_text())
+        except (OSError, ValueError):
+            previous = None
+    report["deltas"] = deltas(previous, signals)
+    report["verdict"] = verdict(signals)
+    return report
+
+
+def speak(report):
+    """One sentence for the voice surface. Every number in it is in the report."""
+    state = (report.get("verdict") or {}).get("state") or "UNKNOWN"
+    chain = (report.get("signals") or {}).get("chain") or {}
+    blind = (report.get("signals") or {}).get("blind") or []
+    landed = chain.get("landed_in_window")
+    inflight = chain.get("lanes_inflight")
+    oldest = chain.get("oldest_lane_age_min")
+    parts = ["Estate progress: %s." % state.lower()]
+    if landed is not None:
+        parts.append(
+            "%d lanes landed in the last %s hours."
+            % (landed, report.get("window_hours"))
+        )
+    if inflight:
+        parts.append("%d lanes in flight." % inflight)
+    if oldest is not None:
+        parts.append("Oldest live lane %.0f minutes old." % oldest)
+    if blind:
+        parts.append("%d sources blind: %s." % (len(blind), ", ".join(blind)))
+    return " ".join(parts)
+
+
+def prom(report):
+    """The same signals as Prometheus exposition, for the one Prometheus in platform/monitoring."""
+    signals = report.get("signals") or {}
+    chain = signals.get("chain") or {}
+    ci = signals.get("ci") or {}
+    live = signals.get("live") or {}
+
+    def gauge(value):
+        return "NaN" if value is None else value
+
+    lines = [
+        "# HELP estate_progress_landed_in_window Lanes landed inside the window",
+        "# TYPE estate_progress_landed_in_window gauge",
+        "estate_progress_landed_in_window %s" % gauge(chain.get("landed_in_window")),
+        "# HELP estate_progress_lanes_inflight Lanes the Greenlane is holding right now",
+        "# TYPE estate_progress_lanes_inflight gauge",
+        "estate_progress_lanes_inflight %s" % gauge(chain.get("lanes_inflight")),
+        "# HELP estate_progress_oldest_lane_age_min Age of the oldest lane in flight",
+        "# TYPE estate_progress_oldest_lane_age_min gauge",
+        "estate_progress_oldest_lane_age_min %s"
+        % gauge(chain.get("oldest_lane_age_min")),
+        "# HELP estate_progress_queue_to_land_p50_min Median minutes from arrival to landing",
+        "# TYPE estate_progress_queue_to_land_p50_min gauge",
+        "estate_progress_queue_to_land_p50_min %s"
+        % gauge((chain.get("queue_to_land_min") or {}).get("p50")),
+        "# HELP estate_progress_ci_runs_in_window CI runs started inside the window",
+        "# TYPE estate_progress_ci_runs_in_window gauge",
+        "estate_progress_ci_runs_in_window %s" % gauge(ci.get("runs_in_window")),
+        "# HELP estate_progress_ci_failed_in_window CI runs that failed inside the window",
+        "# TYPE estate_progress_ci_failed_in_window gauge",
+        "estate_progress_ci_failed_in_window %s" % gauge(ci.get("failed_in_window")),
+        "# HELP estate_progress_blind_sources Sources the report could not read",
+        "# TYPE estate_progress_blind_sources gauge",
+        "estate_progress_blind_sources %d" % len(signals.get("blind") or []),
+    ]
+    if live:
+        lines += [
+            "# HELP estate_progress_flux_not_ready Flux Kustomizations that are not ready",
+            "# TYPE estate_progress_flux_not_ready gauge",
+            "estate_progress_flux_not_ready %s" % gauge(live.get("flux_not_ready")),
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def markdown(report):
+    state = (report.get("verdict") or {}).get("state") or "UNKNOWN"
+    chain = (report.get("signals") or {}).get("chain") or {}
+    ci = (report.get("signals") or {}).get("ci") or {}
+    lines = [
+        "# The estate's progress report",
+        "",
+        "Generated by `bin/estate-progress` at %s. One writer, one signal set, every surface."
+        % report.get("generated_at"),
+        "",
+        "**Verdict: %s**" % state,
+        "",
+    ]
+    for why in (report.get("verdict") or {}).get("why") or []:
+        lines.append("- %s" % why)
+    lines += [
+        "",
+        "## The delivery chain",
+        "",
+        "| signal | value |",
+        "|---|---|",
+        "| lanes in flight | %s |" % chain.get("lanes_inflight"),
+        "| lanes landed in the window | %s |" % chain.get("landed_in_window"),
+        "| lanes landed ever | %s |" % chain.get("landed_total"),
+        "| queue to land p50 (min) | %s |"
+        % ((chain.get("queue_to_land_min") or {}).get("p50")),
+        "| queue to land p90 (min) | %s |"
+        % ((chain.get("queue_to_land_min") or {}).get("p90")),
+        "| batch cycle p50 (min) | %s |"
+        % ((chain.get("batch_cycle_min") or {}).get("p50")),
+        "| batches in the window | %s |" % chain.get("batches_in_window"),
+        "| conflict batches in the window | %s |"
+        % chain.get("conflict_batches_in_window"),
+        "| oldest lane age (min) | %s |" % chain.get("oldest_lane_age_min"),
+        "| conflicts ever | %s |" % chain.get("conflicts_total"),
+        "| lanes that timed out | %s |" % chain.get("timed_out_total"),
+        "",
+        "## CI",
+        "",
+        "| signal | value |",
+        "|---|---|",
+        "| runs in the window | %s |" % ci.get("runs_in_window"),
+        "| failed in the window | %s |" % ci.get("failed_in_window"),
+        "| failure rate | %s |" % ci.get("fail_rate"),
+        "| duration p50 (min) | %s |" % ((ci.get("duration_min") or {}).get("p50")),
+        "",
+        "## The sources",
+        "",
+        "| source | read | why | as of |",
+        "|---|---|---|---|",
+    ]
+    for row in report.get("sources") or []:
+        lines.append(
+            "| %s | %s | %s | %s |"
+            % (
+                row.get("name"),
+                row.get("read"),
+                (row.get("why") or "")[:120],
+                row.get("as_of") or "",
+            )
+        )
+    blind = (report.get("signals") or {}).get("blind") or []
+    if blind:
+        lines += [
+            "",
+            "## Blind",
+            "",
+            "These could not be read. They are unknown, never zero: %s."
+            % ", ".join(blind),
+        ]
+    delta = report.get("deltas") or {}
+    lines += ["", "## The delta since the last report", ""]
+    if delta.get("available"):
+        for key in (
+            "landed_in_window",
+            "queue_to_land_p50_min",
+            "lanes_inflight",
+            "oldest_lane_age_min",
+        ):
+            lines.append("- %s: %s" % (key, delta.get(key)))
+        lines.append("- previous report: %s" % delta.get("previous_generated_at"))
+    else:
+        lines.append("- %s" % (delta.get("why") or "no delta"))
+    return "\n".join(lines) + "\n"
+
+
+def write_report(report, out):
+    out.mkdir(parents=True, exist_ok=True)
+    (out / REPORT_NAME).write_text(json.dumps(report, indent=1, sort_keys=True) + "\n")
+    (out / PROM_NAME).write_text(prom(report))
+    (out / MD_NAME).write_text(markdown(report))
+
+
+def publish(report, repo):
+    """Publish the report to the estate bucket, so every surface reads the same artefact."""
+    path = Path(report["_published_path"])
+    body = {k: v for k, v in report.items() if not k.startswith("_")}
+    path.write_text(json.dumps(body, indent=1, sort_keys=True) + "\n")
+    rc, out, err = run(
+        [
+            "bin/idp-cloud",
+            "object",
+            "put",
+            "--bucket",
+            RECEIPT_BUCKET,
+            "--name",
+            PUBLISH_NAME,
+            "--file",
+            str(path),
+        ],
+        90,
+        cwd=str(repo),
+    )
+    if rc != 0:
+        return {"published": False, "why": last_line(err, out)}
+    return {"published": True, "bucket": RECEIPT_BUCKET, "name": PUBLISH_NAME}
+
+
+def fetch_published(repo):
+    """The published report, or None. A fetch that fails is a blind read, never a zero."""
+    rc, out, err = run(
+        [
+            "bin/idp-cloud",
+            "object",
+            "get",
+            "--bucket",
+            RECEIPT_BUCKET,
+            "--name",
+            PUBLISH_NAME,
+        ],
+        90,
+        cwd=str(repo),
+    )
+    if rc != 0:
+        return None, last_line(err, out)
+    try:
+        return json.loads(out or "{}"), None
+    except ValueError as exc:
+        return None, "published report is not JSON: %s" % exc
+
+
+def read_cached(out, max_age_s, repo):
+    """The cached report, refreshed from the published one when it is missing or stale."""
+    path = Path(out) / REPORT_NAME
+    cached = None
+    age_s = None
+    if path.exists():
+        try:
+            cached = json.loads(path.read_text())
+        except (OSError, ValueError):
+            cached = None
+        if cached is not None:
+            stamp = parse_ts(str((cached.get("generated_at") or "")[:19]))
+            if stamp is not None:
+                age_s = time.time() - stamp
+    if cached is not None and age_s is not None and age_s <= max_age_s:
+        return cached, {"from": "cache", "age_s": round(age_s, 1)}
+    fetched, why = fetch_published(repo)
+    if fetched is None:
+        if cached is not None:
+            return cached, {"from": "cache", "age_s": age_s, "stale": True, "why": why}
+        return None, {"from": "published", "why": why}
+    Path(out).mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(fetched, indent=1, sort_keys=True) + "\n")
+    return fetched, {"from": "published"}
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--repo", default=os.path.expanduser("~/Documents/code/idp"))
+    ap.add_argument("--repo-owner", default="chidionyema")
+    ap.add_argument("--repo-name", default="idp")
+    ap.add_argument(
+        "--state", help="a greenlane state.json on disk instead of the git ref"
+    )
+    ap.add_argument("--out", default=str(DEFAULT_OUT))
+    ap.add_argument("--hours", type=int, default=24)
+    ap.add_argument("--previous", help="the previous report to diff against")
+    ap.add_argument("--no-ci", action="store_true")
+    ap.add_argument("--no-claims", action="store_true")
+    ap.add_argument("--no-live", action="store_true")
+    ap.add_argument("--no-decisions", action="store_true")
+    ap.add_argument("--no-previous", action="store_true")
+    ap.add_argument(
+        "--read", action="store_true", help="serve the cached report, do not recompute"
+    )
+    ap.add_argument(
+        "--publish", action="store_true", help="publish the report to the estate bucket"
+    )
+    ap.add_argument(
+        "--max-age",
+        type=int,
+        default=1800,
+        help="seconds a cached report is served before it is refreshed from the published one",
+    )
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--speak", action="store_true")
+    ap.add_argument("--strict", action="store_true")
+    args = ap.parse_args(argv)
+
+    out = Path(args.out)
+    if args.read:
+        report, where = read_cached(out, args.max_age, args.repo)
+        if report is None:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "why": "no report yet: %s" % (where or {}).get("why"),
+                        "state": "UNKNOWN",
+                    },
+                    sort_keys=True,
+                )
+            )
+            return 2
+    else:
+        report = build_report(args)
+        write_report(report, out)
+        where = {"from": "computed"}
+        if args.publish:
+            report["_published_path"] = str(out / (PUBLISH_NAME.replace("/", "-")))
+            published = publish(report, args.repo)
+            report.pop("_published_path", None)
+            where["published"] = published
+
+    if args.speak and not args.json:
+        print(speak(report))
+    elif args.json:
+        print(json.dumps(report, indent=1, sort_keys=True))
+    else:
+        print(speak(report))
+        print(
+            json.dumps(
+                {
+                    "verdict": report.get("verdict"),
+                    "deltas": report.get("deltas"),
+                    "read": where,
+                },
+                sort_keys=True,
+            )
+        )
+
+    if args.strict:
+        state = (report.get("verdict") or {}).get("state")
+        blind = (report.get("signals") or {}).get("blind") or []
+        if state != "PROGRESSING" or blind:
+            print(
+                "FAIL    estate-progress  verdict=%s blind=%s"
+                % (state, ",".join(blind) or "none"),
+                file=sys.stderr,
+            )
+            return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
