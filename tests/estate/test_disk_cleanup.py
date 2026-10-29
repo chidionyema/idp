@@ -1484,10 +1484,31 @@ def test_the_guardian_does_nothing_when_the_volume_is_healthy(tmp_path):
 def test_the_guardian_takes_one_bounded_step_when_the_volume_is_under_the_target(
     tmp_path,
 ):
+    """The guardian steps when the volume is under its target, and it reports the delta it
+    measured ITSELF.
+
+    Measured 2026-10-29 (idp candidate run 40918565233, job 123605608770): this test failed
+    with `assert '0' == '42'`. The guardian was right and the test was stale: on 2026-10-29
+    `bin/idp-disk-watch` changed to own the measurement -- the cleaner's RESULT line is data,
+    the guardian's own statvfs reading is the evidence -- so with a cleaner that frees nothing
+    the guardian reports 0M, not the 42M the cleaner printed. The house contract is pinned at
+    unit level by `tests/estate/test_epistemic_loop.py::
+    test_the_guardian_reports_the_delta_it_measured_itself`; this test pinned its opposite, so
+    the two contradicted each other.
+
+    What it pins now, and what can still fail: the guardian takes exactly ONE bounded step
+    under the target; the number it reports is its own measurement and not the child's claim;
+    and the child's claim is kept as data (`child_free_after_mb`) rather than passed off as a
+    fact. If the guardian ever went back to trusting the child's self-report, the
+    `last_freed_mb != "42"` assertion and the log assertions fail.
+    """
     home = tmp_path / "home"
     (home / ".estate").mkdir(parents=True)
+    calls = tmp_path / "cleaner-calls"
     cleaner = tmp_path / "cleaner.sh"
     cleaner.write_text(
+        "#!/bin/bash\n"
+        'echo called >> "$CLEANER_CALLS"\n'
         "echo 'RESULT mode=incremental free_before_mb=100 free_after_mb=142 "
         "target_mb=4000 met=no freed_mb=42'\n"
     )
@@ -1496,6 +1517,7 @@ def test_the_guardian_takes_one_bounded_step_when_the_volume_is_under_the_target
         **os.environ,
         "HOME": str(home),
         "DISK_GUARD_PATH": str(home),
+        "CLEANER_CALLS": str(calls),
         # A target no volume on any machine is above, so the premise of this test -- "the
         # volume is under the target" -- is TRUE on a CI runner with 84G free as well as on
         # a machine whose disk is nearly full. Measured 2026-10-29 (idp candidate run
@@ -1504,7 +1526,14 @@ def test_the_guardian_takes_one_bounded_step_when_the_volume_is_under_the_target
         # passed on a machine that happened to be under pressure. The target is the
         # guardian's own knob (DISK_WATCH_TARGET_MB); the free space is the machine's.
         "DISK_WATCH_TARGET_MB": "10000000",  # never met, on any machine
-        "DISK_WATCH_CYCLE_S": "1",
+        # A cycle longer than the test's window, so the guardian takes exactly one step in
+        # it. Measured 2026-10-29: with CYCLE_S=1 it stepped four times inside the
+        # four-second window, and "one bounded step" was never actually asserted. The cycle
+        # is 10s and the window 6s, so the guardian is asleep when it is terminated: python
+        # retries an interrupted sleep, so a cycle LONGER than the wait would keep the
+        # process alive past `proc.wait(timeout=15)` and the test would fail on the
+        # termination rather than on the behaviour.
+        "DISK_WATCH_CYCLE_S": "10",
         "DISK_WATCH_CLEANER": str(cleaner),
         "DISK_WATCH_RAM_FLOOR_MB": "0",
         "DISK_WATCH_SWAP_MAX_PCT": "100",
@@ -1517,7 +1546,7 @@ def test_the_guardian_takes_one_bounded_step_when_the_volume_is_under_the_target
         text=True,
     )
     try:
-        time.sleep(4)
+        time.sleep(6)
     finally:
         proc.terminate()
         proc.wait(timeout=15)
@@ -1525,7 +1554,15 @@ def test_the_guardian_takes_one_bounded_step_when_the_volume_is_under_the_target
 
     hb = _json.loads((home / ".estate/heartbeats/disk-guardian.json").read_text())
     assert hb["state"] == "reclaiming", hb
-    assert hb["last_freed_mb"] == "42", hb
+    # ONE bounded step: the cleaner ran once, and the guardian counts it.
+    assert calls.read_text().split() == ["called"], calls.read_text()
+    assert hb["steps"] == 1, hb
+    # The number the guardian reports is the one it measured, not the one the cleaner printed.
+    assert hb["last_freed_mb"] != "42", hb
+    assert hb["last_freed_mb"] != "blind", hb
+    # The child's claim is kept as data, so it can be read without being believed.
+    assert hb["last_result"]["child_free_after_mb"] == "142", hb
     log = (home / ".estate/disk-watch.log").read_text()
-    assert "freed=42M" in log, log
+    assert "freed=42M" not in log, log
+    assert "freed=" in log, log
     assert "met=no" in log, log
