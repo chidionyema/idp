@@ -1,0 +1,58 @@
+# button: Protect the surviving data
+# founder: Mounts the surviving csi-* volumes read-only on the recovery host, says what each one holds, and with mode=copy streams each off-provider with a checksum.
+#
+# WHY (#7387, plan step 3). The OKE cluster left three 50 GB volumes, the only copy of the estate's
+# data: estate-db had no backup, and volume backups are refused at the free limit. Nothing may write
+# to them before they are copied. The recovery host has no SSH door, so this runs
+# platform/oci/recovery/data-volumes.sh on it through OCI Run Command and prints what it said.
+name: recovery-data
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "identify (read-only look) or copy (identify, then stream each volume to the host's bucket)"
+        type: choice
+        options: [identify, copy]
+        default: identify
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
+      - name: oci cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: data-volumes.sh ${{ inputs.mode }} on the recovery host
+        env:
+          OCI_CLI_AUTH: security_token
+          COMP: ${{ vars.OCI_COMPARTMENT_OCID }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          id=$(oci compute instance list -c "$COMP" --display-name estate-recovery --lifecycle-state RUNNING --query 'data[0].id' --raw-output)
+          [ -n "$id" ] && [ "$id" != null ] || { echo "BLIND   recovery-data  no RUNNING estate-recovery instance"; exit 2; }
+          content=$(MODE="$MODE" python3 -c 'import json,os; s=open("platform/oci/recovery/data-volumes.sh").read(); print(json.dumps({"source":{"sourceType":"TEXT","text":"cat > /var/tmp/data-volumes.sh <<'"'"'EOF'"'"'\n"+s+"\nEOF\nbash /var/tmp/data-volumes.sh "+os.environ["MODE"]+"\n"},"output":{"outputType":"TEXT"}}))')
+          cmd=$(oci instance-agent command create -c "$COMP" --display-name "recovery-data-$MODE-$GITHUB_RUN_ID" \
+            --timeout-in-seconds 6000 --target "{\"instanceId\":\"$id\"}" --content "$content" --query data.id --raw-output)
+          st=PENDING
+          for i in $(seq 1 200); do
+            st=$(oci instance-agent command-execution get --command-id "$cmd" --instance-id "$id" --query 'data."lifecycle-state"' --raw-output 2>/dev/null || echo PENDING)
+            case "$st" in SUCCEEDED|FAILED|TIMED_OUT|CANCELED) break;; esac; sleep 30
+          done
+          oci instance-agent command-execution get --command-id "$cmd" --instance-id "$id" --query 'data.content.text' --raw-output
+          echo "state: $st"; [ "$st" = SUCCEEDED ]
