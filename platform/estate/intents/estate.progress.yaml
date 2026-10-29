@@ -4,10 +4,11 @@ description: >
   and what could not be read. One report, one writer, every surface renders the same numbers.
   "How are we doing?" is enough.
 args:
-  root: {type: string, default: "~/Documents/code/idp"}
+  root: {type: string, default: "", description: "The repo to read the Greenlane state from (default ~/Documents/code/idp)."}
   hours: {type: int, default: 24}
   fresh: {type: string, default: "false"}
 halt_on_failure: false
+door_s: 90
 steps:
   - name: progress
     # WHY THIS WAY. The voice surface speaks an intent's LAST stdout line, so this prints the
@@ -15,12 +16,44 @@ steps:
     # scheduled workflow, and a surface must not wait for a measurement to answer the founder.
     # `fresh=true` recomputes it now. A source that cannot be read is named as blind, never as
     # zero, and the verdict says so.
+    #
+    # WHY IT RESOLVES THE WRITER (2026-10-29). The default root is a working checkout that may
+    # be on any branch, so the writer is not always there: the copy the estate stages into
+    # ~/.estate/bin comes first, then the estate's own main tree, then the root it was given. A
+    # host with none of them still speaks the sentence, because the canonical sentence travels
+    # INSIDE the report. A host with no report at all says it is unknown -- never zero.
     cmd: |
       ROOT={{root}}
       HOURS={{hours}}
       FRESH={{fresh}}
-      if [ "$FRESH" = "true" ]; then
-        python3 "$ROOT/bin/estate-progress" --repo "$ROOT" --hours "$HOURS" --speak
-      else
-        python3 "$ROOT/bin/estate-progress" --read --speak
+      [ -n "$ROOT" ] || ROOT="$HOME/Documents/code/idp"
+      REPORT="${ESTATE_PROGRESS_REPORT:-$HOME/.estate/progress/estate-progress.json}"
+
+      WRITER=""
+      try_writer() {
+        if [ -n "$1" ] && [ -x "$1" ]; then
+          WRITER="$1"
+          return 0
+        fi
+        return 1
+      }
+      try_writer "$HOME/.estate/bin/estate-progress" \
+        || try_writer "$HOME/.estate/runtime/idp/bin/estate-progress" \
+        || try_writer "$ROOT/bin/estate-progress" || true
+
+      SAID=""
+      if [ -n "$WRITER" ]; then
+        if [ "$FRESH" = "true" ]; then
+          SAID="$("$WRITER" --repo "$ROOT" --hours "$HOURS" --speak 2>/dev/null)" || SAID=""
+        else
+          SAID="$("$WRITER" --read --speak 2>/dev/null)" || SAID=""
+        fi
       fi
+
+      if [ -z "$SAID" ] && [ -f "$REPORT" ]; then
+        SAID="$(python3 -c 'import json, os, sys; d = json.load(open(sys.argv[1])) if os.path.exists(sys.argv[1]) else {}; print(d.get("speak") or "Estate progress: %s." % ((d.get("verdict") or {}).get("state") or "unknown").lower())' "$REPORT" 2>/dev/null)" || SAID=""
+      fi
+
+      [ -n "$SAID" ] || SAID="Estate progress: unknown. No progress report is available on this host."
+
+      echo "$SAID"
