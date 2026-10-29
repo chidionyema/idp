@@ -16,6 +16,13 @@ description: >
   per ADR 0030's escalation table; never read it as evidence for either side.
 
   This intent never refuses and never exits non-zero on a decision. Exit 2 is a usage error.
+
+  THE CONTEXT CONTRACT. `context` is a JSON object, passed as a JSON-ENCODED STRING (the door
+  passes every argument as one shell-quoted value, so whitespace and braces inside the JSON
+  arrive intact -- quoting is not the trap). A context that is not JSON, or is JSON but not an
+  object, is refused with exit 2 BEFORE the decision layer is consulted: a bad argument costs no
+  call and no vendor round trip, and it can never be mistaken for an unavailable layer. The
+  error never echoes the context, because the context is evidence.
 args:
   question:    {type: string, required: true,  description: "The bounded question, in plain language."}
   id:          {type: string, required: true,  description: "Names the decision, e.g. greenlane.land."}
@@ -23,7 +30,7 @@ args:
   options:     {type: string, default: "",     description: "Comma-separated, for kind=choice."}
   levels:      {type: string, default: "",     description: "Comma-separated, for kind=score."}
   layer:       {type: string, default: "agent", description: "guard|agent|hook|consensus|verifier."}
-  context:     {type: string, default: "{}",   description: "JSON object of evidence. Never secrets."}
+  context:     {type: string, default: "{}",   description: "JSON object of evidence, encoded as a JSON string (e.g. {\"k\":\"v\"}). A malformed context, or one that is not an object, is refused with exit 2 before any call. Never secrets."}
   threshold:   {type: string, default: "",     description: "Escalate below this confidence; default is policy [jev]."}
   repo:        {type: string, default: "~/Documents/code/idp", description: "Repo holding mcp/plugins/jev.py."}
 # A call is one HTTP round trip bounded by policy [jev] timeout_ms (2000) -- a door of 30 leaves

@@ -653,7 +653,13 @@ done
 # 4. incident_2026_08_24_dropped_assets: N inventory rows must yield N catalog
 #    entities and N database rows. catalog-gen silently dropped slug-colliding
 #    assets and db-gen doubled its table when two runs shared one tmp file.
-tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+# The mkdocs site directory is named here so the EXIT trap can take it with the rest of the
+# scratch. Measured 2026-10-28: a sweep killed by the executor's 100s ceiling left
+# ${TMPDIR}/idp-ci-site.<pid> behind -- 237MB of built site per killed run, one dir per attempt,
+# in the same $TMPDIR every agent reads. The rm on the success path never ran because the run
+# was terminated first. The trap is what makes the scratch self-cleaning under a kill.
+tmp="$(mktemp -d)"; trap 'rm -rf "$tmp" ${_IDP_CI_SITE:-}' EXIT
+trap 'rm -rf "$tmp" ${_IDP_CI_SITE:-}; exit 143' TERM
 FIX="$IDP/tests/fixtures/inventory.json"
 n=$(jq '.rows|length' "$FIX")
 INV="$FIX" OUT="$tmp" python3 "$IDP/bin/catalog-gen" >/dev/null
@@ -1145,8 +1151,9 @@ fi
 if ! touched docs/ mkdocs.yml bin/idp-ci; then
   say "ok    docs     no docs/ or mkdocs.yml change against $IDP_CI_BASE; the site was built on main"
 elif command -v mkdocs >/dev/null; then
-  mkd=$(cd "$IDP" && mkdocs build --strict -q -d "${TMPDIR:-/tmp}/idp-ci-site.$$" 2>&1); mkd_rc=$?
-  rm -rf "${TMPDIR:-/tmp}/idp-ci-site.$$"
+  _IDP_CI_SITE="${TMPDIR:-/tmp}/idp-ci-site.$$"
+  mkd=$(cd "$IDP" && mkdocs build --strict -q -d "$_IDP_CI_SITE" 2>&1); mkd_rc=$?
+  rm -rf "$_IDP_CI_SITE"; _IDP_CI_SITE=""
   if [ "$mkd_rc" -eq 0 ]; then
     say "ok    docs     mkdocs --strict built $(cd "$IDP" && grep -cE '^\s+- .*\.md$' mkdocs.yml) nav page(s)"
   else

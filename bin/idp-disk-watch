@@ -1,133 +1,306 @@
-#!/bin/bash
-# Watch the data volume every 5 minutes and say so before it is full, not after.
-#
-# WHY. 2026-09-27 the laptop reached 0.6 GB free mid-session with nothing warning: bin/idp-disk-guard
-# reports only when someone runs it, and ai.estate.disk-clean pointed at a script that no longer
-# existed and was not loaded. The founder: "dont wait for it to run out ... we must never be in trouble".
-#
-# Runs from ~/.estate/bin, never ~/Documents: launchd cannot start /bin/sh on a file under
-# ~/Documents (TCC, exit 126). Installed by copying this file there (see the plist template).
-#
-#   free < ACT_GB (20)       act early, on every run: the cache allow-list, Docker, AND settled agent
-#                            worktrees (clean, every commit on a ref, unlocked, idle 6h, no process
-#                            inside; `git worktree remove` without --force). 2026-09-27 the volume hit
-#                            160M free while ~9G sat in agent worktrees and 0M of caches was left:
-#                            acting only at 3G, on caches only, freed nothing. Nothing is signalled or
-#                            stopped; a removed worktree comes back with `git worktree add`.
-#   free < MIN_FREE_GB (10)  a macOS notification, at most once an hour
-#   free < CRIT_GB (3)       the same cleanup on every run, then a notification
-# Every run appends one measured line to ~/.estate/disk-watch.log.
-# It also watches memory: swap over SWAP_MAX_PCT (70%) or free RAM under RAM_FLOOR_MB (200M)
-# stops ollama (BRAKE_PROCS) and says so in the same log. See "MEMORY BRAKE" below.
-set -uo pipefail
-MIN_FREE_GB="${MIN_FREE_GB:-10}"
-CRIT_GB="${CRIT_GB:-3}"
-ACT_GB="${ACT_GB:-20}"
-ACTED="$HOME/.estate/disk-watch.last-clean"
-LOG="$HOME/.estate/disk-watch.log"
-STAMP="$HOME/.estate/disk-watch.last-alert"
-CLEANUP="$HOME/.estate/libexec/disk-cleanup.sh"
+#!/usr/bin/env python3
+"""idp-disk-watch -- the estate's resident reclaim guardian.
 
-# MEMORY BRAKE. The founder, 2026-09-10: "no i killed ollama because machine is slow" -- this
-# laptop has 8GB of RAM and no GPU, and a resident 7B model took it to load 95 with the swap
-# thrashing. ollama's own autostart was removed on 2026-10-24, but anything that reinstalls it (a
-# brew upgrade, a login item, another agent's setup) would grind the machine again, and nothing
-# else on the estate watches memory: this tick watches the disk.
-# Measured here 2026-10-24: 4.59G of 5.12G swap in use (89%), 113M of RAM unused, load average
-# 226 -- the grind is memory pressure, not the disk being full, and ollama was already dead.
-# So the tick measures memory and stops the one process that causes it, and only that: no
-# agent's work is signalled, nothing of the founder's is touched, and it says so in the log.
-BRAKE_PROCS="${DISK_WATCH_BRAKE_PROCS:-ollama}"
-RAM_FLOOR_MB="${DISK_WATCH_RAM_FLOOR_MB:-200}"
-SWAP_MAX_PCT="${DISK_WATCH_SWAP_MAX_PCT:-70}"
-brake() {
-	local free_mb swap_pct p vm sc
-	vm=$(command -v vm_stat 2>/dev/null || echo /usr/bin/vm_stat)
-	sc=$(command -v sysctl 2>/dev/null || echo /usr/sbin/sysctl)
-	# A measurement that cannot be read is UNKNOWN, not zero. Printing zero for an unreadable
-	# vm_stat would read as "no free RAM" and stop a process for the wrong reason, so both
-	# parsers print nothing when they cannot parse, and the brake then does nothing.
-	free_mb=$("$vm" 2>/dev/null | awk '
-		/page size of/ { for (i = 1; i <= NF; i++) if ($i == "of") psz = $(i + 1) }
-		/Pages free:/ { gsub(/\./, "", $3); f = $3 }
-		/Pages speculative:/ { gsub(/\./, "", $3); s = $3 }
-		END { if (psz > 0 && f != "") printf "%d", ((f + s) * psz) / 1048576 }')
-	swap_pct=$("$sc" -n vm.swapusage 2>/dev/null | awk '
-		{ for (i = 1; i <= NF; i++) { if ($i == "used" || $i == "total") { v = $(i + 2); gsub(/M/, "", v); if ($i == "used") u = v + 0; else t = v + 0 } } }
-		END { if (t > 0) printf "%d", (u / t) * 100 }')
-	local pressure=0
-	[ -n "$free_mb" ] && [ "$free_mb" -lt "$RAM_FLOOR_MB" ] && pressure=1
-	[ -n "$swap_pct" ] && [ "$swap_pct" -gt "$SWAP_MAX_PCT" ] && pressure=1
-	if [ "$pressure" = 0 ]; then
-		if [ -z "$free_mb" ] && [ -z "$swap_pct" ]; then
-			echo "$(date -u +%FT%TZ) memory unknown: no readable vm_stat and no readable swap (no brake)" >>"$LOG"
-		fi
-		return 0
-	fi
-	echo "$(date -u +%FT%TZ) memory pressure: free=${free_mb:-?}M RAM, swap=${swap_pct:-?}% (floors: ${RAM_FLOOR_MB}M, ${SWAP_MAX_PCT}%)" >>"$LOG"
-	for p in $BRAKE_PROCS; do
-		if /usr/bin/pgrep -x "$p" >/dev/null 2>&1; then
-			/usr/bin/pkill -TERM -x "$p" 2>/dev/null
-			echo "$(date -u +%FT%TZ) memory brake: stopped $p (free=${free_mb:-?}M RAM, swap=${swap_pct:-?}%)" >>"$LOG"
-		fi
-	done
-}
+WHY THIS EXISTS. 2026-10-28. The watcher this replaces was a 5-minute tick that ran the FULL
+cleaner with a 240s budget: it held the reclaim lock for 240 of every 300 seconds, so every
+interactive door that wanted space found the lock held and answered "another run is doing the
+work" -- and that run freed 0M, because the phases it reached first (empty caches, a container
+engine that is not answering, a walk of other agents' worktrees) yield nothing, while the tier
+that actually holds the weight (2.2G of toolchains, tool cache and estate-unused npm globals) was
+LAST and never reached inside the budget. The founder: "60s is too long ... needs to be cleaning
+up as long as something isn't useful and does break agents workflow" and "more optimal than once
+massive cleanup that times out".
 
-free_kb=$(df -k /System/Volumes/Data 2>/dev/null | awk 'NR==2 {print $4}')
-if [ -z "$free_kb" ]; then
-	echo "$(date -u +%FT%TZ) BLIND cannot read /System/Volumes/Data" >>"$LOG"
-	exit 0
-fi
-free_gb=$((free_kb / 1048576))
-echo "$(date -u +%FT%TZ) free=${free_gb}G" >>"$LOG"
-brake
-tail -n 5000 "$LOG" >"$LOG.tmp" 2>/dev/null && mv "$LOG.tmp" "$LOG"
+WHAT IT IS. A resident process, not a tick:
 
-notify() {
-	/usr/bin/osascript -e "display notification \"$1\" with title \"Estate disk\" sound name \"Basso\"" >/dev/null 2>&1
-}
+  * healthy  -> one statvfs, one heartbeat, sleep. Nothing else. The volume is not walked, no
+    cache is measured, nothing is deleted. Cost of a healthy cycle: microseconds.
+  * under pressure (free < target) -> ONE bounded step of the estate's cleaner, in the cleaner
+    INCREMENTAL mode (the caches, the toolchain tier and the estate's own temp scratch), with a
+    time budget. Every step is
+    idempotent, so a step that did not finish is the next step's work. The guardian never deletes
+    anything itself: the cleaner is the only implementation of the reclaim policy, and every
+    safety rule (keep-lists, open files, the estate's own runtime naming a thing, the founder's
+    running Chrome) lives there.
+  * never disruptive -> the step is bounded (STEP_BUDGET_S, 90s), so the reclaim lock is held for
+    at most that long, and a door that finds it held is told "another run is doing the work" with
+    the measured free space, which is not a failure.
 
-# A cleanup that exits non-zero (3: a BLIND repo or a delete it could not prove) is said, not only
-# logged: 2026-10-14 the worktree pass could not read the repo under launchd (TCC), and the volume
-# reached 0G while every tick looked like a clean run. At most once an hour.
-FAILSTAMP="$HOME/.estate/disk-watch.last-fail-alert"
-clean() {
-	[ -f "$CLEANUP" ] || { date +%s >"$ACTED"; return; }
-	# A BUDGET, because a tick must not outlive the next one (2026-10-25). Unbudgeted this ran for
-	# minutes on the founder's laptop; every door call that wanted the disk then found the lock held
-	# and answered "nothing done", so the agent that needed space could not get it and the log said
-	# the tick was still "running". 240s is well inside the 5-minute tick. A run that spends its
-	# budget exits 4 and the next tick continues it: every phase is idempotent, so nothing is lost.
-	WATCH_BUDGET="${DISK_CLEANUP_WATCH_BUDGET:-240}"
-	bash "$CLEANUP" true false 0 true "$WATCH_BUDGET" >>"$LOG" 2>&1
-	rc=$?
-	date +%s >"$ACTED"
-	# 4 (budget spent, phases owed, the next tick continues) and 5 (another run held the lock and did
-	# the work) are not failures and must not raise the alert: a loud tick every 5 minutes for work
-	# that is progressing is how a real alert stops being read.
-	case "$rc" in 0|4|5) return 0;; esac
-	last=$(cat "$FAILSTAMP" 2>/dev/null || echo 0)
-	if [ $(($(date +%s) - last)) -ge 3600 ]; then
-		notify "Cleanup failed (exit $rc): part of the disk could not be read or freed. See ~/.estate/disk-watch.log (BLIND / !! lines)."
-		date +%s >"$FAILSTAMP"
-	fi
-}
+THE TARGET. The executor refuses to start a job below MIN_FREE_MB (1500 MB, in
+mcp/plugins/estate_executor.py), so the guardian's goal is the estate's goal: keep the volume
+comfortably above the floor. TARGET_MB (2500) is the working level, so the floor is never a
+surprise, and the guardian stops the moment the target is met -- reclaiming past the goal is
+disruption nobody asked for.
 
-if [ "$free_gb" -lt "$ACT_GB" ] && [ "$free_gb" -ge "$CRIT_GB" ]; then
-	# Every run, not every 30 min (founder 2026-09-30: "it needs to run every 5 minutes so we never
-	# have to worry about this again"). A run with nothing to free costs seconds.
-	clean
-fi
-if [ "$free_gb" -lt "$CRIT_GB" ]; then
-	clean
-	after=$(($(df -k /System/Volumes/Data | awk 'NR==2 {print $4}') / 1048576))
-	notify "CRITICAL: ${free_gb} GB free, ${after} GB after clearing caches and settled worktrees. Run bin/idp-disk-guard."
-	date +%s >"$STAMP"
-elif [ "$free_gb" -lt "$MIN_FREE_GB" ]; then
-	last=$(cat "$STAMP" 2>/dev/null || echo 0)
-	if [ $(($(date +%s) - last)) -ge 3600 ]; then
-		notify "${free_gb} GB free (floor ${MIN_FREE_GB} GB). Run bin/idp-disk-guard."
-		date +%s >"$STAMP"
-	fi
-fi
-exit 0
+WHY 2500 AND NOT 4000 (measured 2026-10-28). The target has to be REACHABLE. With 4000 MB
+asked for, the measured blocked-by table showed everything left is protected: the node runtime
+1571M (the estate's own code names a version inside it), rustup 1341M (its default toolchain),
+the tool cache 1542M (the live components are kept), the Go module cache 773M (a build holds it)
+and ollama's weights. A target that cannot be met turns the guardian into a perpetual reclaim
+that eventually eats the tool cache's last-of-all entry (py312-venv, 654M, a 17-minute cold
+rebuild) and still misses the target. 2500 MB is reachable (2011M measured free, plus the ~660M
+of regenerable tool-cache weight and the 534M uv cache when no uv process is running) and it
+leaves 1000 MB of headroom above the executor's floor. The spine's FAIL threshold stays the
+floor itself (1500 MB, in catalog/critical-functions.json): that is the line the estate's doors
+break at, and it is the line an agent is woken for.
+
+THE HEARTBEAT. ~/.estate/heartbeats/disk-guardian.json, written every cycle. This is what the
+critical-function spine watches: the guardian being ALIVE is one thing, and the volume being
+above the floor is another, and the spine checks both -- because a guardian that runs and frees
+nothing is exactly the failure this file was written to end.
+
+THE MEMORY BRAKE. The founder, 2026-09-10: "no i killed ollama because machine is slow". A
+resident process on an 8GB laptop must not be the reason the machine crawls, so the guardian
+measures memory every cycle and stops the one process that causes the grind (ollama) when the
+RAM or swap floor is crossed. It touches nothing else, and it says so in the log.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+
+VOLUME = os.environ.get("DISK_GUARD_PATH", "/System/Volumes/Data")
+TARGET_MB = int(os.environ.get("DISK_WATCH_TARGET_MB", "2500"))
+CYCLE_S = int(os.environ.get("DISK_WATCH_CYCLE_S", "20"))
+STEP_BUDGET_S = int(os.environ.get("DISK_WATCH_STEP_BUDGET_S", "90"))
+LOG = os.environ.get("DISK_WATCH_LOG", os.path.expanduser("~/.estate/disk-watch.log"))
+HEARTBEAT = os.environ.get(
+    "DISK_WATCH_HEARTBEAT", os.path.expanduser("~/.estate/heartbeats/disk-guardian.json")
+)
+CLEANER = os.environ.get(
+    "DISK_WATCH_CLEANER", os.path.expanduser("~/.estate/libexec/disk-cleanup.sh")
+)
+RAM_FLOOR_MB = int(os.environ.get("DISK_WATCH_RAM_FLOOR_MB", "200"))
+SWAP_MAX_PCT = int(os.environ.get("DISK_WATCH_SWAP_MAX_PCT", "70"))
+BRAKE_PROCS = os.environ.get("DISK_WATCH_BRAKE_PROCS", "ollama").split()
+FAIL_ALERT_EVERY_S = int(os.environ.get("DISK_WATCH_FAIL_ALERT_EVERY_S", "3600"))
+
+_STOP = False
+
+
+def _stop(signum, _frame):  # pragma: no cover - signal path
+    global _STOP
+    _STOP = True
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def log(line: str) -> None:
+    """One line, appended. The log is the estate's evidence, so it is never truncated."""
+    try:
+        os.makedirs(os.path.dirname(LOG), exist_ok=True)
+        with open(LOG, "a") as fh:
+            fh.write(f"{now_iso()} {line}\n")
+    except OSError:
+        pass
+
+
+def free_mb() -> int | None:
+    """Free space on the data volume, in MB. None when it cannot be read (BLIND, not zero)."""
+    try:
+        st = os.statvfs(VOLUME)
+    except OSError:
+        return None
+    return int(st.f_bavail * st.f_frsize / (1024 * 1024))
+
+
+def memory_pressure() -> tuple[bool, str]:
+    """(under pressure, measured) -- an unreadable measurement is UNKNOWN, never zero."""
+    free_ram = None
+    swap_pct = None
+    try:
+        with open("/usr/bin/vm_stat") as fh:
+            page_size = 4096
+            for line in fh:
+                if line.startswith("Mach Virtual Memory Statistics"):
+                    continue
+                if "page size of" in line:
+                    page_size = int(line.split("page size of")[1].split()[0])
+                elif line.startswith("Pages free"):
+                    free_ram = int(line.split(":")[1].strip().rstrip(".")) * page_size // (1024 * 1024)
+                elif line.startswith("Pages speculative"):
+                    spec = int(line.split(":")[1].strip().rstrip(".")) * page_size // (1024 * 1024)
+                    if free_ram is not None:
+                        free_ram += spec
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        out = subprocess.run(
+            ["/usr/sbin/sysctl", "-n", "vm.swapusage"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout
+        m = re.search(r"used\s*=\s*([\d.]+)[MG]", out)
+        t = re.search(r"total\s*=\s*([\d.]+)[MG]", out)
+        if m and t and float(t.group(1)) > 0:
+            swap_pct = int(float(m.group(1)) / float(t.group(1)) * 100)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        pass
+    measured = f"free={free_ram if free_ram is not None else '?'}M RAM swap={swap_pct if swap_pct is not None else '?'}%"
+    if free_ram is not None and free_ram < RAM_FLOOR_MB:
+        return True, measured
+    if swap_pct is not None and swap_pct > SWAP_MAX_PCT:
+        return True, measured
+    return False, measured
+
+
+def brake(measured: str) -> None:
+    """Stop the one process that grinds an 8GB laptop. Nothing else is touched."""
+    for proc in BRAKE_PROCS:
+        try:
+            if subprocess.run(
+                ["/usr/bin/pgrep", "-x", proc], capture_output=True, timeout=10
+            ).returncode == 0:
+                subprocess.run(
+                    ["/usr/bin/pkill", "-TERM", "-x", proc], capture_output=True, timeout=10
+                )
+                log(f"memory brake: stopped {proc} ({measured})")
+        except (OSError, subprocess.SubprocessError):
+            continue
+
+
+def parse_result(stdout: str) -> dict:
+    """The cleaner's one machine-readable line: RESULT mode=... free_before_mb=... ."""
+    out: dict[str, str] = {}
+    for line in stdout.splitlines():
+        if line.startswith("RESULT "):
+            for token in line.split()[1:]:
+                if "=" in token:
+                    k, v = token.split("=", 1)
+                    out[k] = v
+    return out
+
+
+def step(free_before: int) -> tuple[int, dict, str]:
+    """ONE bounded step of the estate's cleaner, in its incremental mode.
+
+    Returns (exit code, the parsed RESULT line, the raw output). A step that is cut short is not
+    a failure: the cleaner bounds its own deletes and resumes them on the next step.
+    """
+    env = dict(os.environ)
+    env["DISK_CLEANUP_INCREMENTAL"] = "1"
+    env["DISK_CLEANUP_TARGET_MB"] = str(TARGET_MB)
+    env["DISK_CLEANUP_DELETE_S"] = str(max(10, STEP_BUDGET_S // 3))
+    try:
+        proc = subprocess.run(
+            ["/bin/bash", CLEANER, "true", "false", "0", "false", str(STEP_BUDGET_S)],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=STEP_BUDGET_S + 30,
+        )
+    except subprocess.TimeoutExpired:
+        return 4, {}, "the step ran past its bound and was cut short"
+    except OSError as exc:
+        return 1, {}, f"the cleaner could not be started: {exc}"
+    return proc.returncode, parse_result(proc.stdout), proc.stdout
+
+
+def heartbeat(state: str, free: int | None, extra: dict) -> None:
+    """The spine reads this file. It is written every cycle, healthy or not."""
+    payload = {
+        "at": now_iso(),
+        "state": state,
+        "free_mb": free,
+        "target_mb": TARGET_MB,
+        "volume": VOLUME,
+        "pid": os.getpid(),
+    }
+    payload.update(extra)
+    try:
+        os.makedirs(os.path.dirname(HEARTBEAT), exist_ok=True)
+        tmp = HEARTBEAT + ".tmp"
+        with open(tmp, "w") as fh:
+            json.dump(payload, fh)
+        os.replace(tmp, HEARTBEAT)
+    except OSError:
+        pass
+
+
+def notify(message: str) -> None:
+    """The house alert: a macOS notification. The spine's alerts go to the inbox as well."""
+    try:
+        subprocess.run(
+            [
+                "/usr/bin/osascript",
+                "-e",
+                f'display notification "{message}" with title "Estate disk" sound name "Basso"',
+            ],
+            capture_output=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def main() -> int:
+    signal.signal(signal.SIGTERM, _stop)
+    signal.signal(signal.SIGINT, _stop)
+    steps = 0
+    last_fail_alert = 0.0
+    log(
+        f"guardian started: target={TARGET_MB}M on {VOLUME}, cycle={CYCLE_S}s, "
+        f"step budget={STEP_BUDGET_S}s, cleaner={CLEANER}"
+    )
+    while not _STOP:
+        free = free_mb()
+        pressure, measured = memory_pressure()
+        if pressure:
+            brake(measured)
+        if free is None:
+            heartbeat("blind", None, {"memory": measured})
+            log(f"BLIND cannot read {VOLUME}: the guardian cannot see the volume")
+            time.sleep(CYCLE_S)
+            continue
+
+        if free >= TARGET_MB:
+            # Healthy: nothing is measured, nothing is deleted. This cycle costs one statvfs.
+            heartbeat("healthy", free, {"memory": measured, "steps": steps})
+            time.sleep(CYCLE_S)
+            continue
+
+        # Under pressure: one bounded step.
+        rc, result, raw = step(free)
+        steps += 1
+        after = result.get("free_after_mb")
+        freed = result.get("freed_mb", "?")
+        met = result.get("met", "?")
+        heartbeat(
+            "reclaiming",
+            int(after) if after and after.isdigit() else free,
+            {
+                "memory": measured,
+                "steps": steps,
+                "last_rc": rc,
+                "last_freed_mb": freed,
+                "last_met": met,
+                "last_result": result,
+            },
+        )
+        log(
+            f"step free={free}M target={TARGET_MB}M rc={rc} freed={freed}M met={met} "
+            f"after={after or '?'}M memory={measured}"
+        )
+        if rc == 3:
+            # A delete that could not be proven: rare, and worth saying out loud.
+            now = time.time()
+            if now - last_fail_alert >= FAIL_ALERT_EVERY_S:
+                notify("Reclaim could not prove a delete (exit 3). See ~/.estate/disk-watch.log")
+                last_fail_alert = now
+        time.sleep(CYCLE_S)
+    log("guardian stopped")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

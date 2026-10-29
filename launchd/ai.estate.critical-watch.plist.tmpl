@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The critical-function spine. It watches the functions the estate cannot work without
+     (catalog/critical-functions.json), raises a structured incident when one of them dies or
+     stops doing its job, alerts, and wakes an agent to resolve it.
+     WHY python3 IS ProgramArguments[0]: a launchd job whose responsible process is /bin/bash
+     gets "Operation not permitted" on ~/Documents (TCC), so the job could not read what it
+     needed to watch. The grant is per binary, so the framework python3 is named here rather than
+     the rendered PYTHON_BIN (`command -v python3` can resolve to /usr/bin/python3, which has no
+     grant). The script stays a child (subprocess.call, not exec), so the responsible process
+     stays python3.
+     StartInterval 60, not 300: the founder ("60s is too long" was said of the DISK cleaner, and
+     the same reasoning holds for a watcher -- a dead critical function is a dead estate). The
+     detector is cheap when everything is healthy: one statvfs, one socket connect, one file read
+     per function. -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>ai.estate.critical-watch</string>
+  <key>ProgramArguments</key><array>
+    <string>/Library/Frameworks/Python.framework/Versions/3.12/bin/python3</string>
+    <string>-c</string>
+    <string>import subprocess, sys; sys.exit(subprocess.call(sys.argv[1:]))</string>
+    <string>/Library/Frameworks/Python.framework/Versions/3.12/bin/python3</string>
+    <string>${HOME}/.estate/libexec/critical-watch.py</string>
+  </array>
+  <key>StartInterval</key><integer>60</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>${HOME}/.estate/critical-watch.out.log</string>
+  <key>StandardErrorPath</key><string>${HOME}/.estate/critical-watch.err.log</string>
+</dict></plist>

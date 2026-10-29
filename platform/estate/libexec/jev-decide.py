@@ -81,13 +81,26 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
 
+    # The context is validated BEFORE the layer is loaded. A malformed context is a usage error:
+    # it must not cost a call, a vendor round trip, or a row in jev_decisions, and it must not
+    # be mistakable for an unavailable decision layer (measured 2026-10-27, when a context closed
+    # before its last member died deep inside the call and the caller could not tell the two
+    # apart). The message never echoes the context -- the context is evidence, and evidence can
+    # be sensitive.
     try:
         context = json.loads(args.context)
     except json.JSONDecodeError as exc:
-        print(f"jev-decide: --context is not JSON: {exc}", file=sys.stderr)
+        print(
+            f"jev-decide: --context is not JSON: {exc}. "
+            'Pass it as a JSON-encoded string, e.g. --context \'{"k":"v"}\'',
+            file=sys.stderr,
+        )
         return 2
     if not isinstance(context, dict):
-        print("jev-decide: --context must be a JSON object", file=sys.stderr)
+        print(
+            "jev-decide: --context must be a JSON object, encoded as a string",
+            file=sys.stderr,
+        )
         return 2
 
     jev = _load_layer(args.repo)
@@ -142,6 +155,11 @@ def main(argv: list[str] | None = None) -> int:
     if result.get("_fallback"):
         fields.insert(0, f"_fallback={result['_fallback']}")
     fields.append(f"escalated={bool(result.get('escalated'))}")
+    if answer is None and bool(result.get("escalated")):
+        # ADR 0030: an escalation is not an answer. A null answer with escalated=true means the
+        # layer was consulted and could not answer -- it says so on the line, so a caller that
+        # reads answer=None cannot mistake the absence of a verdict for a verdict of absence.
+        fields.append("route=human_review")
     if result.get("latency_ms") is not None:
         fields.append(f"latency_ms={result['latency_ms']:.0f}")
     print(f"jev.decide[{args.layer}:{args.decision_id}]: " + " ".join(fields))

@@ -17,6 +17,7 @@ resources:
   - voice-router.yaml
   - rbac-floor.yaml
   - jit.yaml
+  - aei.yaml
   - bridge.yaml
   - meridian.yaml
   - epistemic-fabric.yaml

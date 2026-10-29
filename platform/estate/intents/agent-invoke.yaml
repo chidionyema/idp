@@ -1,0 +1,42 @@
+name: agent-invoke
+description: >-
+  Wake an agent to resolve a failed critical function, with the structured data attached.
+  The estate's session door (sb start) is tried first -- it is the sanctioned fleet-scale work
+  plane, with its budget, its approval gates and its runner registry -- and the local claude lane
+  is the fallback, because the session door is down at the moment (Temporal unreachable; nothing
+  listens on 127.0.0.1:16223). Which lane was used is returned in the result, because a claim of
+  "an agent was invoked" that does not say how is not a claim.
+  The task is free text, and it is what the woken agent is told to do; put the measurements, the
+  paths and the constraint in it ("measure what you changed; do not touch another agent's
+  worktrees"). The incident is optional and is appended to the prompt verbatim.
+class: mutate
+args:
+  task: {type: string, default: "", description: "what the woken agent must do"}
+  incident: {type: string, default: "", description: "optional JSON incident record, appended verbatim"}
+  runner: {type: string, default: "claude", description: "the session plane's runner registry name"}
+  repo: {type: string, default: "", description: "the repository the agent works in"}
+  budget: {type: int, default: 20, description: "the session plane's budget"}
+door_s: 90
+halt_on_failure: false
+steps:
+  - name: invoke
+    on_fail: continue
+    cmd: |
+      # The payload is built from the ENVIRONMENT, not from quoted template text: interpolate()
+      # already quotes, so a second pair of quotes around an empty value is literal text (the
+      # 2026-10-18 shape that made site-onboard dead at every door), and a task that contains a
+      # quote or a newline survives this way and cannot break the command.
+      TASK={{task}} INCIDENT={{incident}} RUNNER={{runner}} REPO={{repo}} BUDGET={{budget}} \
+        python3 -c 'import json,os; print(json.dumps({"task": os.environ.get("TASK",""), "incident": json.loads(os.environ.get("INCIDENT") or "{}"), "runner": os.environ.get("RUNNER","claude"), "repo": os.environ.get("REPO",""), "budget": int(os.environ.get("BUDGET") or "20")}))' \
+        > ~/.estate/agent-invoke.payload.json
+      bash ~/.estate/libexec/agent-invoke.sh --task-file ~/.estate/agent-invoke.payload.json
+      echo $? > ~/.estate/agent-invoke.rc
+  - name: verdict
+    cmd: |
+      rc=$(cat ~/.estate/agent-invoke.rc 2>/dev/null || echo 1)
+      case "$rc" in
+        0) echo "verdict: an agent was invoked; the lane it used is in the line above" ;;
+        3) echo "verdict: no agent could be invoked (no session door and no local claude lane)" ;;
+        *) echo "verdict: the invocation door could not run (rc=$rc)" ;;
+      esac
+      exit "$rc"

@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "estate-aee"
+version = "0.1.0"
+description = "Adaptive Intelligence and Execution Economy: the estate's shared contracts and the work graph."
+requires-python = ">=3.9"
+# Standard library only, on purpose: the contracts are typed data with refusals, and they
+# must be importable from a laptop, a pod or a decision layer with nothing installed.
+#
+# ONE estate import, and it is the estate's own: sovereign.config.canonical_json, the exact
+# serialisation every receipt line is hashed over (cp19). It is imported lazily inside the
+# function that needs it, so a caller that only reads contracts never pays for it -- and so
+# the work graph's digest and a receipt's digest are the same kind of address, computed one
+# way, by one function. There is deliberately no second serialisation in this package.
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]

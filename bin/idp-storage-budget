@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""Fail when committed demand for OCI block storage exceeds the Always Free allowance.
+
+Incident: docs/incidents/2026-10-28-the-router-lost-every-model.md. Block storage hit 200 GB and
+every volume and node create answered LimitExceeded. Nothing counted demand before the apply.
+
+Demand = boot volumes of the nodes the pools may run at once + every oci-bv PVC, each PVC rounded
+up to the CSI 50 GB minimum. Orphans are not in manifests; that live check is oci-reclaim's.
+"""
+import math
+import re
+import sys
+from pathlib import Path
+
+ALLOWANCE_GB = 200
+CSI_MIN_GB = 50
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def boot_gb(main_tf: str, nodes: int) -> int:
+    sizes = [int(m) for m in re.findall(r"boot_volume_size\s*=\s*(\d+)", main_tf)]
+    return (max(sizes) if sizes else 0) * nodes
+
+
+def pvc_gb(files: dict) -> list:
+    """One claim per real `storageClass(Name): oci-bv` line, sized by the nearest Gi within 4 lines."""
+    out = []
+    for name, text in files.items():
+        lines = text.splitlines()
+        for i, line in enumerate(lines):
+            if line.lstrip().startswith("#") or not re.search(r"storageClass(Name)?:\s*[\"']?oci-bv", line):
+                continue
+            window = lines[max(0, i - 4): i + 5]
+            sizes = [int(m.group(1)) for w in window
+                     for m in [re.search(r"(?:size|storage):\s*[\"']?(\d+)Gi", w)] if m]
+            if sizes:
+                out.append((name, math.ceil(sizes[0] / CSI_MIN_GB) * CSI_MIN_GB))
+    return out
+
+
+def check(main_tf: str, files: dict, nodes: int = 2, headroom: int = 0) -> tuple:
+    pvcs = pvc_gb(files)
+    total = boot_gb(main_tf, nodes) + sum(g for _, g in pvcs)
+    limit = ALLOWANCE_GB - headroom
+    return total <= limit, total, limit, pvcs
+
+
+def main(argv) -> int:
+    nodes = int(argv[1]) if len(argv) > 1 else 2
+    files = {str(p.relative_to(ROOT)): p.read_text() for p in (ROOT / "platform").rglob("*.yaml")}
+    ok, total, limit, pvcs = check((ROOT / "platform/oci/main.tf").read_text(), files, nodes)
+    for name, g in pvcs:
+        print(f"  pvc {g:>4} GB  {name}")
+    print(f"{'ok' if ok else 'FAIL'} storage-budget demand={total} GB limit={limit} GB nodes={nodes}")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

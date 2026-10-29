@@ -11,8 +11,15 @@ node_pool:
   # 12 OCPU / 48 GB on a Pay As You Go tenancy against the Always Free 2 OCPU / 12 GB. A number in
   # this file never stopped a node. The ceiling is the Oracle compartment quota written by
   # bin/idp-oci-bootstrap (platform/oci/policy/free-tier-quota.statements.json).
-  max_nodes: 3                        # crew#539 CP4: the Cluster Autoscaler may add this many nodes in total
-  spot_max_nodes: 2                   # crew#539 CP10: preemptible nodes the autoscaler may add (pool a1-spot, from 0)
+  # 2026-10-28: the Always Free allowance is ONE A1 node (2 OCPU / 12 GB), and the vendor
+  # refused every apply with "400-LimitExceeded, LimitExceeded: nodes-per-node-pool limit has
+  # been exceeded" (oke-check run 40677882283). Asking for three nodes is what the estate was
+  # refused for, so the ask is now exactly what the allowance gives: one node.
+  max_nodes: 1                        # crew#539 CP4: the Cluster Autoscaler may add this many nodes in total
+  # 2026-10-28: the preemptible pool asks for NO node. The free tier's node allowance is spent
+  # by the one on-demand node, and a preemptible node is paid capacity the allowance does not
+  # carry -- burst the estate does not have.
+  spot_max_nodes: 0                   # crew#539 CP10: preemptible nodes the autoscaler may add (pool a1-spot, from 0)
 llm:
   virtual_key_daily_usd: 5             # every consumer's router key (bin/idp-router-key); the kernel's alias carries the same $5/day
 capacity:

@@ -1,30 +1,3 @@
-# The registry witness is machine-generated, and the machine keeps it true.
-#
-# The Estate Capability Registry answers "what can this estate do" from a census of the
-# estate's own surfaces. The witness of that answer is catalog/estate-capability-registry.json,
-# committed, so a reviewer can see the map change in the diff and so CI can prove the map is
-# the map (bin/registry-gate: the committed snapshot must equal a fresh generation).
-#
-# A witness only proves something if it cannot go stale, and the way it used to go stale was
-# the founder's complaint: someone had to REMEMBER to refresh it. Relying on an agent (or a
-# human) to remember is what causes drift, and a map that drifts is worse than no map, because
-# it is trusted.
-#
-# So the refresh is not a task, it is a step in the pipeline. This workflow regenerates the
-# witness from the pull request's own tree -- the same door, the same bytes, on every
-# interpreter -- and commits it to the branch as the bot when it differs. The agent that built
-# the component never has to know this workflow exists.
-#
-# The guarantee, in three parts:
-#   1. the witness is a PURE FUNCTION of the tree (bin/capability-index emit --write);
-#   2. the merge point must be true: bin/registry-gate fails a lagging or diverged witness,
-#      and it is inside the required ci checks, so drift cannot land;
-#   3. reaching a true merge point costs nothing: this workflow does the regeneration.
-#
-# The commit carries the lane's own Claim/Agent trailers, copied from the head commit, so the
-# commit-gate sees one agent's work and the claim still names the work it lands on. The witness
-# path itself needs no claim of its own: it is generated, and bin/registry-gate is what proves
-# its content (the same shape as the demo renders, which no agent claims either).
 name: registry-snapshot
 on:
   pull_request:
@@ -49,6 +22,32 @@ jobs:
   regenerate:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # The bot's own push runs this repository's pre-push hook, and that hook runs the
+    # estate's fast gate (bin/idp-ci --fast). So the runner needs the SAME tools the
+    # fast-gate job installs -- without them the bot's commit lands and its PUSH is
+    # refused, and the witness never reaches the branch.
+    #
+    # MEASURED 2026-10-28, run 40739791452, job 122997978686: the regeneration step
+    # succeeded ("snapshot written: ... (956 records)") and the commit succeeded (the
+    # commit-msg hook stamped it), and then the push was refused by the pre-push hook:
+    #   FAIL  budget   ModuleNotFoundError: No module named 'yaml'
+    #   FAIL  schema   python3 yaml is unavailable / No module named pytest
+    #   FAIL  ruff     ruff: command not found
+    #   REFUSED: ruff is not installed and a Python file is staged
+    #   error: failed to push some refs
+    # So the door that is supposed to keep the witness true could not push a witness:
+    # every lane that adds a capability was unmergeable until an agent regenerated the
+    # witness by hand. The tools below are the ones .github/workflows/fast-gate.yml
+    # installs for the same gate, from the same pins, so CI and this door cannot
+    # disagree about what the gate needs.
+    #
+    # GH_TOKEN: the fast gate's claim-gate rung reads the claim off GitHub. Without the
+    # token it is BLIND ("gh: To use GitHub CLI in a GitHub Actions workflow, set the
+    # GH_TOKEN environment variable") and the bot's own commit is judged by nothing.
+    # With it, the claim is read: the trailers copied below name the claim, and the
+    # witness path itself is claim-exempt.
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -58,6 +57,25 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: sovereign/requirements*.txt
+      - name: the tools the repository's own hooks demand
+        # pytest-xdist: the repository's own pytest config (pyproject.toml
+        # addopts = "-n auto --ignore=tests/browser") makes -n a hard requirement of
+        # ANY pytest run in this tree, so the schema rung
+        # ("$MPY" -m pytest ... tests/test_schema_conformance.py) cannot start without
+        # the plugin that implements -n.
+        # MEASURED 2026-10-28, run 40757002500, job 123058495748: with the tools
+        # above installed and pytest-xdist missing, the bot's push was refused again:
+        #   FAIL  schema   a lane added a violation (rc=0) or the gate's proof broke (rc=4)
+        #           ERROR: usage: __main__.py [options] [file_or_dir] [...]
+        #           __main__.py: error: unrecognized arguments: -n .../test_schema_conformance.py
+        # The gate was right to refuse: it could not run its own proof. The fix is to
+        # install the plugin the repository's pytest config demands, not to weaken the
+        # gate. Pinned to the floor the estate already declares (pytest-xdist>=3.6 in
+        # sovereign/requirements-dev.txt), compatible with the pytest==8.4.2 pin.
+        run: pip install -q ruff==0.15.18 pyyaml yamllint==1.37.1 pytest==8.4.2 pytest-xdist==3.6.1 -r sovereign/requirements.txt
+      - uses: ./.github/actions/estate-tools
       - name: regenerate the witness from this tree
         # The door, not a script written here: one generator, so the bytes CI produces are the
         # bytes the laptop produces. It needs no third-party package (the census reads YAML
@@ -88,7 +106,7 @@ jobs:
             echo "The witness is a pure function of this tree; this commit is that function's"
             echo "output, written by the pipeline so no agent has to remember to refresh it."
             echo
-            echo "$claim"
+            printf '%s\n' "$claim"
           } > "$RUNNER_TEMP/witness-message.txt"
           git add catalog/estate-capability-registry.json
           git commit -q -F "$RUNNER_TEMP/witness-message.txt"

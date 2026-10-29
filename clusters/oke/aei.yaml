@@ -1,0 +1,44 @@
+# AEI -- the estate's execution-intelligence collector, and the row that makes it real.
+#
+# WHY THIS ROW EXISTS. The AEI collector's manifests sat in platform/observability/, a directory
+# that NO live Flux row reconciles: measured 2026-10-28 from the cluster-state receipt
+# (state/cluster, timestamp 2026-10-27T11:00:45Z) -- 53 live Kustomizations, and not one of them
+# on ./platform/observability. The row existed in 15f4a8192 and 86b74738e, was dropped by
+# c96359f4b ("~80 flux rows down to 7") and was restored by d73db7199/c920a0f32, none of which is
+# an ancestor of main, so the restore never landed. The same receipt measured the aevum Deployment
+# at 0 replicas: a manifest in an unreconciled directory is a document, not a deployment.
+#
+# So AEI gets the estate's own pattern -- platform/jit -> clusters/oke/jit.yaml -- one directory,
+# one row, one workload. The collector also carries the observability Namespace with it, because
+# no reconciled row created that namespace while platform/ns-fences (a live row) applies
+# NetworkPolicies into it.
+#
+# DEPENDS ON estate-db: the collector's ledger is its own database (aei_evidence) and role in the
+# estate's Postgres, not a volume on the node (decision 0034). DEPENDS ON secret-store: the
+# Postgres password and the API token come from the vault through the estate-vault
+# ClusterSecretStore, and a secret that has not landed must not be applied against.
+#
+# NOTE: this row deliberately does NOT restore the ./platform/observability row. That would
+# re-apply the suspended signoz HelmRelease, the dependency-blocked langfuse, superset with its
+# founder-facing HTTPRoutes and Jobs such as metabase-volume-removal -- a blast radius far past
+# this change and against the free-tier placement ladder (decision 0034). The observability row
+# is its own repair, with its own evidence.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    idp.estate.io/runtime: always-on
+  name: aei
+  namespace: flux-system
+spec:
+  interval: 30s
+  dependsOn:
+    - name: estate-db
+    - name: secret-store
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/aei
+  prune: true
+  wait: true
+  timeout: 5m

@@ -221,11 +221,42 @@ def _send_line(event, line: str) -> bool:
         return False
 
 
+def _decision_answer(text: str) -> Optional[dict]:
+    """A founder comment that quotes a live decision id IS that decision's answer.
+
+    The gateway is the estate's reader of the founder's replies, so this is where the answer
+    is captured when the gateway is alive and the door opened the decision on this host. The
+    door's own matcher decides: an option key picks that option, anything else is recorded
+    verbatim. A comment that answers nothing is returned as None and dispatched normally.
+    """
+    try:
+        decision = importlib.import_module("sovereign.otto.decision")
+    except Exception:
+        return None
+    try:
+        door = decision.Door(repo=str(_idp_root()))
+        return door.absorb(text)
+    except Exception:
+        return None
+
+
 def on_pre_gateway_dispatch(event=None, **_kw) -> Optional[dict]:
     """Spec 2.3: a photo with a caption never reaches the model as chat. It
     goes through `sb intake`, which extracts, commits under docs/ and writes
     a DOC_COMMIT receipt; the only reply is that receipt's one line. A photo
-    without a caption, or a message without a photo, is dispatched normally."""
+    without a caption, or a message without a photo, is dispatched normally.
+
+    The founder-decision door comes first: a comment that quotes a live decision id is that
+    decision's ANSWER, not chat. It is recorded, acknowledged with one line, and never
+    reaches the model."""
+    caption = str(getattr(event, "text", "") or "").strip()
+    if caption:
+        record = _decision_answer(caption)
+        if record and record.get("state") == "answered":
+            option = record.get("option") or "answered"
+            line = f"[ok] DECISION | {record.get('decision_id')} {option}"
+            _send_line(event, line)
+            return {"action": "skip", "reason": line}
     media = list(getattr(event, "media_urls", None) or [])
     caption = str(getattr(event, "text", "") or "").strip()
     if not media or not caption:

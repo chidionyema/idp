@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "estate-method-selector"
+version = "0.1.0"
+description = "A deterministic, evidence-gated method selector: a pure library beside the estate's decision layer."
+requires-python = ">=3.9"
+# Standard library only, on purpose: the selector is a pure function over typed data and
+# must be importable from a laptop, a pod or a decision layer without anything installed.
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,158 @@
+#!/usr/bin/env python3
+"""founder-decision -- the founder-decision door, from a shell.
+
+Any agent, any harness, no model in the path:
+
+    bin/founder-decision ask --question "Ship the AEI collector now?" \\
+        --options "ship: land it, hold: wait for the cluster" \\
+        --context "#7341" --requester "pi @ idp"
+    bin/founder-decision show --decision-id dec-1a2b3c4d
+    bin/founder-decision poll
+
+Every verb prints one JSON object on stdout. The library is `sovereign/otto/decision.py`;
+it is loaded by path so this works on a stdlib-only interpreter (the estate's card pulls
+httpx; the door must not).
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+import os
+import sys
+from pathlib import Path
+
+_IDP = Path(__file__).resolve().parent.parent
+_LIB = _IDP / "sovereign" / "otto" / "decision.py"
+
+
+def _load():
+    spec = importlib.util.spec_from_file_location("estate_founder_decision", _LIB)
+    if not spec or not spec.loader:
+        print(json.dumps({"ok": False, "error": f"cannot load {_LIB}"}))
+        raise SystemExit(2)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["estate_founder_decision"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _emit(payload: dict) -> int:
+    print(json.dumps(payload, indent=2, sort_keys=True, default=str))
+    return 0 if payload.get("ok", True) else 1
+
+
+def main(argv: list = None) -> int:
+    decision = _load()
+    ap = argparse.ArgumentParser(prog="founder-decision", description=__doc__)
+    ap.add_argument(
+        "--repo", default=os.environ.get("IDP", str(Path.home() / "Documents/code/idp"))
+    )
+    ap.add_argument("--state", default="", help="path of the decision state file")
+    sub = ap.add_subparsers(dest="verb", required=True)
+
+    ask = sub.add_parser("ask", help="ask the founder one decision")
+    ask.add_argument("--question", required=True)
+    ask.add_argument("--options", default="", help='"key: label, key2: label2"')
+    ask.add_argument(
+        "--context", default="", help="issue / PR / lane links, comma separated"
+    )
+    ask.add_argument("--deadline-min", type=int, default=decision.DEFAULT_DEADLINE_MIN)
+    ask.add_argument("--requester", default="")
+    ask.add_argument("--decision-id", default="")
+    ask.add_argument(
+        "--take-webhook",
+        action="store_true",
+        help="hold the bot's updates while this decision is live",
+    )
+    ask.add_argument(
+        "--bus",
+        action="store_true",
+        help="also open a bus session (the estate's card then posts a line message too)",
+    )
+    ask.add_argument(
+        "--wait",
+        type=float,
+        default=0.0,
+        help="seconds to wait for the founder's answer (0 = return the id at once)",
+    )
+
+    show = sub.add_parser("show", help="read one decision back")
+    show.add_argument("--decision-id", required=True)
+
+    answer = sub.add_parser("answer", help="record the founder's comment as the answer")
+    answer.add_argument("--decision-id", required=True)
+    answer.add_argument("--comment", required=True)
+
+    poll = sub.add_parser(
+        "poll", help="read the bot's pending updates and record answers"
+    )
+    poll.add_argument("--take-webhook", action="store_true")
+
+    reply = sub.add_parser("reply", help="send one message to the founder's chat")
+    reply.add_argument("--text", required=True)
+
+    wait = sub.add_parser("wait", help="wait for the founder, bounded")
+    wait.add_argument("--decision-id", required=True)
+    wait.add_argument("--seconds", type=float, default=60.0)
+
+    sub.add_parser("list", help="every decision this host knows")
+
+    args = ap.parse_args(argv)
+    state = Path(args.state).expanduser() if args.state else None
+    door = decision.Door(
+        state_file=state, repo=args.repo, bus=getattr(args, "bus", False)
+    )
+
+    if args.verb == "ask":
+        try:
+            request = decision.build_request(
+                question=args.question,
+                options=args.options,
+                context=args.context,
+                deadline_min=args.deadline_min,
+                requester=args.requester,
+                decision_id=args.decision_id,
+            )
+        except decision.DecisionError as exc:
+            return _emit({"ok": False, "error": str(exc)})
+        record = door.ask(request, take_webhook=args.take_webhook)
+        if args.wait > 0 and record.get("state") == decision.STATE_ASKED:
+            record = decision.wait_for_answer(door, request.decision_id, args.wait)
+        return _emit({**record, "ok": record.get("ok", True)})
+
+    if args.verb == "show":
+        record = door.show(args.decision_id)
+        if record is None:
+            return _emit({"ok": False, "error": f"no decision {args.decision_id}"})
+        return _emit({**record, "ok": True})
+
+    if args.verb == "answer":
+        record = door.answer(args.decision_id, args.comment)
+        if record is None:
+            return _emit({"ok": False, "error": f"no decision {args.decision_id}"})
+        return _emit({**record, "ok": True})
+
+    if args.verb == "poll":
+        return _emit(door.poll(take_webhook=args.take_webhook))
+
+    if args.verb == "reply":
+        message_id = door.reply(args.text)
+        if message_id is None:
+            return _emit({"ok": False, "error": "the message was not delivered"})
+        return _emit({"ok": True, "message_id": message_id})
+
+    if args.verb == "wait":
+        record = decision.wait_for_answer(door, args.decision_id, args.seconds)
+        return _emit({**record, "ok": True})
+
+    if args.verb == "list":
+        state_data = decision.load_state(state)
+        return _emit({"ok": True, "decisions": list(state_data["decisions"].values())})
+
+    return _emit({"ok": False, "error": f"unknown verb {args.verb}"})
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
