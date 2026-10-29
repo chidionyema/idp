@@ -126,55 +126,78 @@ while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
     fi
     echo "ok    Layer 1c (ruff): $(printf '%s\n' $py_files | wc -l | tr -d ' ') pushed Python file(s) clean"
   fi
-  # Layer 1a: bash -n on shell files
-  for f in $diff_files; do
-    case "$f" in
-    *.sh|*.bash) is_shell=1 ;;           # shell extension
-    bin/*|.githooks/*) is_shell=1 ;;           # shebang convention
-    *) is_shell=0 ;;                          # skip non-shell
+  # Layer 1a + 1b: one syntax gate, one classification, by SHEBANG (#7468).
+  # The old rule classified by path: everything under bin/ and .githooks/ was shell, so
+  # `bash -n` ran on the estate's own Python entry points (bin/idp-python-strict,
+  # bin/capability-index) and every push that touched one was refused with a bash syntax
+  # error -- the guard meant to protect the estate refused the estate's code. Measured
+  # 2026-10-29: `bin/idp-python-strict: line 54: syntax error near unexpected token '('`.
+  # The shebang says what the file IS; the path only guesses. One rule, used by both layers.
+  _file_kind() {
+    local first
+    first="$(head -n 1 "$1" 2>/dev/null || true)"
+    case "$first" in
+      '#!'*python*) echo python; return 0 ;;
+      '#!'*bash*|'#!'*/sh|'#!'*zsh|'#!'*ksh*) echo shell; return 0 ;;
     esac
-    if [ "$is_shell" = 1 ] && [ -f "$f" ]; then
-      if ! bash -n "$f" 2>&1; then
-        bash -n "$f" >&2
-        echo "pre-push REFUSED: syntax error in $f" >&2
-        exit 1
-      fi
-    fi
-  done
-  # Layer 1b: python3 -m py_compile on Python files
-  for f in $diff_files; do
-    case "$f" in
-    *.py) is_py=1 ;;                      # python extension
-    *) is_py=0 ;;                         # skip non-python
+    case "$1" in
+      *.py) echo python ;;
+      *.sh|*.bash) echo shell ;;
+      *) echo unknown ;;
     esac
-    if [ "$is_py" = 1 ] && [ -f "$f" ]; then
+  }
+  for f in $diff_files; do
+    [ -f "$f" ] || continue
+    kind="$(_file_kind "$f")"
+    if [ "$kind" = "python" ]; then
       if ! python3 -m py_compile "$f" 2>&1; then
         python3 -m py_compile "$f" >&2
         echo "pre-push REFUSED: syntax error in $f" >&2
         exit 1
       fi
+      continue
     fi
+    if [ "$kind" = "shell" ]; then
+      if ! bash -n "$f" 2>&1; then
+        bash -n "$f" >&2
+        echo "pre-push REFUSED: syntax error in $f" >&2
+        exit 1
+      fi
+      continue
+    fi
+    # Unknown: no shebang, not a known extension. Accept it when EITHER parser reads it --
+    # a file with no shebang is still one of the two languages, and refusing it would be the
+    # same defect in the other direction.
+    if bash -n "$f" >/dev/null 2>&1 || python3 -m py_compile "$f" >/dev/null 2>&1; then
+      continue
+    fi
+    echo "pre-push REFUSED: $f is readable as neither shell nor Python" >&2
+    exit 1
   done
-  # Layer 1c: no non-ASCII bytes on any tracked file
+  # Layer 1c: no non-ASCII bytes in the ADDED lines of the diff.
+  # The old check read the whole file, so it refused any push that touched a file that
+  # already held one -- this hook's own emoji, for one. It measured history, not the change:
+  # a file that has been clean for years could not be edited again. The rule is about what a
+  # push introduces, so it reads the added lines.
   for f in $diff_files; do
     [ -f "$f" ] || continue
-    if python3 -c "
+    added=$(git diff --no-color -U0 "$from" "$local_sha" -- "$f" 2>/dev/null | grep '^+' | grep -v '^+++' || true)
+    [ -n "$added" ] || continue
+    if printf '%s' "$added" | python3 -c "
 import sys
-with open('$f', 'rb') as fh:
-    for i, b in enumerate(fh.read()):
-        if b > 127:
-            sys.exit(i + 1)
-sys.exit(0)
+data = sys.stdin.buffer.read()
+bad = [i + 1 for i, b in enumerate(data) if b > 127]
+sys.exit(1 if bad else 0)
 " 2>&1; then
       : # clean
     else
-      python3 -c "
-with open('$f', 'rb') as fh:
-    data = fh.read()
-    positions = [(i+1, b) for i, b in enumerate(data) if b > 127]
-print('non-ASCII byte(s) at:', positions[:5], '(first 5)')
+      printf '%s' "$added" | python3 -c "
+import sys
+data = sys.stdin.buffer.read()
+bad = [i + 1 for i, b in enumerate(data) if b > 127]
+print('non-ASCII byte(s) at added line offset:', bad[:5], '(first 5)')
 " >&2
-      echo "pre-push REFUSED: non-ASCII bytes in $f" >&2
+      echo "pre-push REFUSED: non-ASCII bytes added in $f" >&2
       exit 1
     fi
   done
