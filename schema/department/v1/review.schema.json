@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:estate:schema:department.v1.review",
+  "title": "department.v1.review",
+  "description": "An independent evaluation of a prototype. The evaluator is never the prototype's author (enforced by contract.admit, not by the schema alone).",
+  "allOf": [
+    {
+      "$ref": "urn:estate:schema:department.v1.envelope"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "review"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "prototype_run_id",
+            "prototype_author_id",
+            "scorecard"
+          ],
+          "properties": {
+            "prototype_run_id": {
+              "type": "string",
+              "pattern": "^run-[a-z0-9-]{3,64}$"
+            },
+            "prototype_author_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "scorecard": {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": {
+                "type": "number"
+              }
+            },
+            "adversarial_results": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

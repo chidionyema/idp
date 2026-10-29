@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:estate:schema:department.v1.objective",
+  "title": "department.v1.objective",
+  "description": "A bounded goal the department works toward. Its owner is the founder or a mined, measured defect; nothing else may originate one.",
+  "allOf": [
+    {
+      "$ref": "urn:estate:schema:department.v1.envelope"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "objective"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "title",
+            "statement",
+            "origin",
+            "per_day_cap_usd"
+          ],
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "statement": {
+              "type": "string",
+              "minLength": 1
+            },
+            "origin": {
+              "enum": [
+                "founder",
+                "mined"
+              ]
+            },
+            "per_day_cap_usd": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    }
+  ]
+}

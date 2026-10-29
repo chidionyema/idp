@@ -1,0 +1,45 @@
+# The Media Department, as configuration over the one department contract (idp#7395, charter §4-5).
+# A second department (Research, Science -- charter M7) is a second file like this one, not a
+# second contract. Read by platform/department/contract.py load_config().
+#
+# workers is EMPTY on purpose: M1 ships no runtime, so no agent may write yet and every write is
+# refused as unauthorized_write (fail closed). M2 grants capability-scoped workers here in the same
+# change that wires them to the existing Temporal workers.
+department_id: media
+per_day_cap_usd: 10.0
+
+# The existing authorization doors an APPROVED record may cite. founder.decision is the door
+# already in the capability registry (cap:intent/founder.decision, sovereign/otto/decision.py).
+authorization_doors:
+  - founder.decision
+
+roles:
+  portfolio-governor:
+    states: [NEW, TRIAGED, BLOCKED, PARKED, REJECTED]
+    kinds: [objective, opportunity, event]
+  research-scout:
+    states: [RESEARCHING, BLOCKED]
+    kinds: [opportunity, experiment, event]
+  creative-director:
+    states: [RESEARCHING, PROTOTYPING]
+    kinds: [experiment, event]
+  prototype-studio:
+    states: [PROTOTYPING, BLOCKED]
+    kinds: [artifact, event]
+  evaluator:
+    states: [EVALUATING, PROPOSED, PROTOTYPING, REJECTED]
+    kinds: [review, event]
+  authorization-door:
+    states: [APPROVED, REJECTED, PARKED]
+    kinds: [decision, event]
+  delivery:
+    states: [SHIPPING, VERIFYING, BLOCKED]
+    kinds: [artifact, event]
+  verifier:
+    states: [OPERATING, BLOCKED]
+    kinds: [review, event]
+  learning-loop:
+    states: [LEARNING, TRIAGED, PARKED]
+    kinds: [outcome, event]
+
+workers: {}

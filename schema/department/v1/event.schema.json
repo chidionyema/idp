@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:estate:schema:department.v1.event",
+  "title": "department.v1.event",
+  "description": "One state transition, the immutable row every action writes. from_state is null only for the creation of a record.",
+  "allOf": [
+    {
+      "$ref": "urn:estate:schema:department.v1.envelope"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "event"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "subject_run_id",
+            "from_state",
+            "to_state",
+            "writer_id"
+          ],
+          "properties": {
+            "subject_run_id": {
+              "type": "string",
+              "pattern": "^run-[a-z0-9-]{3,64}$"
+            },
+            "from_state": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "urn:estate:schema:department.v1.envelope#/$defs/state"
+                }
+              ]
+            },
+            "to_state": {
+              "$ref": "urn:estate:schema:department.v1.envelope#/$defs/state"
+            },
+            "writer_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  ]
+}

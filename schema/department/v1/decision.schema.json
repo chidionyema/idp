@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:estate:schema:department.v1.decision",
+  "title": "department.v1.decision",
+  "description": "The answer of an existing authorization door (founder.decision today). The department reads the door; it does not host a second approval stack.",
+  "allOf": [
+    {
+      "$ref": "urn:estate:schema:department.v1.envelope"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "decision"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "door",
+            "decision_id",
+            "question",
+            "answer"
+          ],
+          "properties": {
+            "door": {
+              "type": "string",
+              "minLength": 1
+            },
+            "decision_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "question": {
+              "type": "string",
+              "minLength": 1
+            },
+            "answer": {
+              "enum": [
+                "allow",
+                "deny",
+                "expired"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}
