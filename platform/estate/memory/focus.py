@@ -85,11 +85,18 @@ def load_json(path: str) -> dict:
 
 
 def save_json(path: str, data: dict) -> None:
-    # a cache is an optimisation, never a dependency
-    with contextlib.suppress(Exception):
+    # a cache is an optimisation, never a dependency. Written beside and renamed over: open(path,
+    # "w") truncates first, so on a full disk (2026-10-28) the write failed after the old register
+    # was already gone -- the one copy the router could have fallen back to.
+    tmp = path + f".{os.getpid()}.tmp"
+    try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as f:
+        with open(tmp, "w") as f:
             json.dump(data, f)
+        os.replace(tmp, path)
+    except Exception:
+        with contextlib.suppress(Exception):
+            os.unlink(tmp)
 
 
 def _gh(args: list, timeout: float):
@@ -255,13 +262,67 @@ def mark_stuck(rows: list, progress_fn=None, now: float = 0.0) -> list:
     return rows
 
 
-def live_focus(path: str = "", now: float = 0.0):
-    """The register as a list of rows, or None when the ledger could not be read (unknown)."""
+def age_rows(rows: list, seconds: float) -> list:
+    """Register rows read `seconds` ago, as they stand now: every heartbeat is that much older,
+    `live` is the heartbeat rule again, and `stale_s` says how old the read is. A claim that has
+    lapsed since is shown lapsed; one that closed since cannot be known and is the price of an
+    old read, which is why the age is carried."""
+    seconds = max(0, int(seconds))
+    out = []
+    for r in rows or []:
+        if not isinstance(r, dict):
+            continue
+        r = dict(r)
+        age = r.get("heartbeat_age_s")
+        age = None if age is None else int(age) + seconds
+        r["heartbeat_age_s"] = age
+        r["live"] = age is not None and age < LAPSE_S
+        r["stale_s"] = seconds
+        out.append(r)
+    return out
+
+
+def last_register(path: str = "", now: float = 0.0):
+    """The newest register this machine has, aged to now, or None: the cache file, else the memory
+    snapshot's copy (snapshot.py). Older than LAPSE_S, every claim in it has lapsed by the rule,
+    so it would say nothing true and is not returned."""
+    now = now or time.time()
+    hit = load_json(path or focus_cache_path())
+    best = (hit.get("at", 0), hit.get("rows"))
+    with contextlib.suppress(Exception):
+        import snapshot  # noqa: PLC0415 - the sibling module
+
+        snap = snapshot.read_local()
+        if snap and float(snap.get("focus_at") or 0) > best[0]:
+            best = (float(snap["focus_at"]), snap.get("focus"))
+    at, rows = best
+    if not isinstance(rows, list) or now - at >= LAPSE_S:
+        return None
+    return age_rows(rows, now - at)
+
+
+def live_focus(
+    path: str = "", now: float = 0.0, timeout: float = 0.0, fallback: bool = False
+):
+    """The register as a list of rows, or None when the ledger could not be read (unknown).
+
+    `timeout` bounds the gh read (FOCUS_TIMEOUT_S by default). With `fallback`, an unreadable
+    ledger answers with last_register -- old rows, their age stated -- instead of None. The gates
+    keep fallback off: whether an edit is covered is decided on the ledger, never on an old copy.
+    The router turns it on (2026-10-28: 145 focus reads ended "nothing to serve" while the
+    register on disk was minutes old)."""
     path = path or focus_cache_path()
     now = now or time.time()
     hit = load_json(path)
     if now - hit.get("at", 0) < FOCUS_TTL_S and isinstance(hit.get("rows"), list):
         return hit["rows"]
+    rows = _read_ledger(path, now, timeout or FOCUS_TIMEOUT_S)
+    if rows is None and fallback:
+        return last_register(path, now)
+    return rows
+
+
+def _read_ledger(path: str, now: float, timeout: float):
     # A heartbeat is a comment, and a comment updates its issue: every live claim is on an issue
     # touched inside the lapse window. Asking only for those, newest first, keeps the answer
     # complete under the cap. Unfiltered, 130+ claimed issues came back in best-match order and
@@ -282,7 +343,7 @@ def live_focus(path: str = "", now: float = 0.0):
             "--json",
             "number,title,comments",
         ],
-        FOCUS_TIMEOUT_S,
+        timeout,
     )
     if out is None:
         return None

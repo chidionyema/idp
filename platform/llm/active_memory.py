@@ -25,6 +25,9 @@ into one <estate-memory> block appended to the last user message.
     that pasted one) is left alone.
   - Never in the way: every read has a deadline (ACTIVE_MEMORY_BUDGET_S), every failure is
     logged and the call goes on without the block. A memory outage costs memory, not answers.
+  - A second home (#7397): past the last good answer in RAM, the brief and the focus are served
+    from the memory snapshot (platform/estate/memory/snapshot.py), with their age in the block.
+    A dead cluster costs freshness, not memory.
 
 WHAT, after a call: the turn (human text and the reply) is written to the agent's working memory
 through /harness/memory/consolidate as one ephemeral_turn -- scratchpad, an hour, expired by the
@@ -108,6 +111,17 @@ _door_key: list = [0.0, ""]
 # beats no fact (the router lost ~2,100 reads to "no answer inside 3.5s" on 2026-10-21/22).
 STALE_MAX_S = float(os.environ.get("ACTIVE_MEMORY_STALE_MAX_S", "1800"))
 _last_good: dict[str, tuple[float, dict]] = {}
+# Past STALE_MAX_S, or after a restart emptied _last_good, the memory snapshot is the floor
+# (platform/estate/memory/snapshot.py, #7397): on 2026-10-28 the door was down for hours and 841
+# brief reads ended "nothing to serve". Found through MEMORY_LIB, else beside this file in the repo.
+SNAPSHOT_LIB = os.environ.get("ESTATE_SNAPSHOT_LIB") or os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "estate", "memory"
+)
+SNAP_KEEP_S = 60  # a good brief is folded into the local snapshot at most once a minute
+# The background focus refresh waits on nobody, so it is not cut at BUDGET_S (see _door_focus).
+FOCUS_REFRESH_S = float(os.environ.get("ACTIVE_FOCUS_REFRESH_S", "10"))
+_snap_tried: list = [0.0]
+_snap_kept: list = [0.0]
 _started: dict[str, float] = {}  # leg -> when its latest read began
 _elapsed: dict[str, float] = {}  # leg -> how long its latest finished read took
 
@@ -285,19 +299,27 @@ def _door_brief(task: str) -> dict | None:
     return brief
 
 
-def _door_focus() -> dict:
+def _door_focus(timeout: float = 0.0) -> dict:
     _, focus = _lib()
-    # focus.py lets gh run 8 s for the hooks; the router gives up at BUDGET_S + 0.5, so a slower gh
-    # was abandoned but kept running, uncached, and the next call started another.
-    focus.FOCUS_TIMEOUT_S = min(getattr(focus, "FOCUS_TIMEOUT_S", BUDGET_S), BUDGET_S)
-    rows = focus.live_focus()
+    # A caller waits at most BUDGET_S, so its gh read is cut there: past it, an abandoned gh kept
+    # running, uncached, and the next call started another. The background refresh is nobody's
+    # wait and gets FOCUS_REFRESH_S. Cutting it at BUDGET_S too killed every refresh, because the
+    # gh search itself takes longer (4.6 s measured 2026-10-29 against BUDGET_S 3.0), and once the
+    # register aged past FOCUS_STALE_S every caller had nothing (#7397). An unreadable ledger
+    # answers with the last register, aged (focus.last_register).
+    rows = focus.live_focus(timeout=timeout or BUDGET_S, fallback=True)
     if rows is None:
         return {
             "available": False,
             "error": "claim ledger unreadable (gh)",
             "claims": [],
         }
-    return {
+    return _focus_body(rows)
+
+
+def _focus_body(rows: list) -> dict:
+    """focus.py register rows in fleetview's /claims shape."""
+    body = {
         "available": True,
         "claims": [
             {
@@ -307,8 +329,111 @@ def _door_focus() -> dict:
                 "live": r.get("live") is True,
             }
             for r in rows
+            if isinstance(r, dict)
         ],
     }
+    stale_s = max(
+        (r.get("stale_s") or 0 for r in rows if isinstance(r, dict)), default=0
+    )
+    if stale_s:
+        body["stale_s"] = stale_s
+    return body
+
+
+# --------------------------------------------------------------------------- the snapshot
+
+
+def _snap():
+    """platform/estate/memory/snapshot.py, or None where it is not shipped: the router runs fine
+    without its second home, it only loses it."""
+    import sys  # noqa: PLC0415
+
+    for d in (MEMORY_LIB, SNAPSHOT_LIB):
+        if d and os.path.isdir(d) and d not in sys.path:
+            sys.path.insert(0, d)
+    try:
+        import snapshot  # noqa: PLC0415
+
+        return snapshot
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def snapshot_brief(task: str, now: float | None = None) -> tuple[dict, float] | None:
+    """(brief, facts age in seconds) answered from the local snapshot, or None. Local only: the
+    caller is waiting, so the R2 read happens in the background (_pull_snapshot)."""
+    snap_mod = _snap()
+    if snap_mod is None:
+        return None
+    now = time.time() if now is None else now
+    snap = snap_mod.read_local()
+    _pull_snapshot(snap_mod, snap, now)
+    if not snap or not snap.get("facts"):
+        return None
+    body = snap_mod.brief(snap, task, BRIEF_LIMIT, now)
+    if not (body["relevant"] or body["recent"]):
+        return None
+    return body, float(body["snapshot"]["facts_age_s"])
+
+
+def snapshot_focus(now: float | None = None) -> tuple[dict, float] | None:
+    snap_mod = _snap()
+    if snap_mod is None:
+        return None
+    now = time.time() if now is None else now
+    snap = snap_mod.read_local()
+    _pull_snapshot(snap_mod, snap, now)
+    if not snap or not snap.get("focus_at"):
+        return None
+    return _focus_body(snap_mod.focus_rows(snap, now)), now - float(snap["focus_at"])
+
+
+def _pull_snapshot(snap_mod: Any, local: dict | None, now: float) -> None:
+    """Refresh the local copy from R2 in the background, at most once per PULL_AFTER_S."""
+    if local and now - snap_mod.stamp(local) < snap_mod.PULL_AFTER_S:
+        return
+    if now - _snap_tried[0] < snap_mod.PULL_AFTER_S or not snap_mod.r2_config():
+        return
+    _snap_tried[0] = now
+    threading.Thread(
+        target=lambda: snap_mod.load(now=now), daemon=True, name="snapshot-pull"
+    ).start()
+
+
+def keep_brief(body: dict | None, now: float | None = None) -> None:
+    """Fold a good brief's facts into the local snapshot, at most once per SNAP_KEEP_S, so a
+    router restart or an hour-long door outage still has the facts this machine last read.
+    Bounded and floor-guarded by snapshot.write_local; never raises."""
+    now = time.time() if now is None else now
+    if not isinstance(body, dict) or now - _snap_kept[0] < SNAP_KEEP_S:
+        return
+    snap_mod = _snap()
+    if snap_mod is None:
+        return
+    _snap_kept[0] = now
+
+    def fold() -> None:
+        try:
+            snap = snap_mod.read_local() or {
+                "version": snap_mod.VERSION,
+                "namespace": NAMESPACE,
+                "facts": [],
+                "focus": [],
+            }
+            by_key = {
+                str(f.get("key")): f for f in snap["facts"] if isinstance(f, dict)
+            }
+            for f in (body.get("relevant") or []) + (body.get("recent") or []):
+                if isinstance(f, dict) and f.get("key"):
+                    by_key[str(f["key"])] = f
+            snap.update(facts=list(by_key.values()), facts_at=now, source="router")
+            why = snap_mod.write_local(snap)
+            if why:
+                log.warning("active_memory snapshot not kept: %s", why)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("active_memory snapshot not kept: %s", exc)
+
+    threading.Thread(target=fold, daemon=True, name="snapshot-keep").start()
 
 
 def _brief_key(task: str) -> str:
@@ -332,6 +457,7 @@ def fetch_brief(task: str, now: float | None = None) -> dict | None:
     _brief_cache[key] = (now, body if isinstance(body, dict) else None)
     if isinstance(body, dict):
         _last_good["brief:" + key] = (now, body)
+        keep_brief(body, now)
     if len(_brief_cache) > 512:  # a router lives for days; the cache must not
         for k, _ in sorted(_brief_cache.items(), key=lambda kv: kv[1][0])[:256]:
             _brief_cache.pop(k, None)
@@ -359,13 +485,14 @@ def fetch_focus(now: float | None = None) -> dict | None:
     with _focus_refresh:
         if _focus_cache[0] != stamp:  # another caller read it while this one waited
             return _focus_cache[1]
-        _read_focus(now)
+        _read_focus(now, BUDGET_S)
     return _focus_cache[1]
 
 
-def _read_focus(now: float) -> None:
+def _read_focus(now: float, timeout: float = 0.0) -> None:
     _focus_tried[0] = now
-    body = _door_focus() if DOOR == "mcp" else _get_json(FOCUS_URL, BUDGET_S)
+    timeout = timeout or BUDGET_S
+    body = _door_focus(timeout) if DOOR == "mcp" else _get_json(FOCUS_URL, timeout)
     body = body if isinstance(body, dict) else None
     # an unreadable answer never replaces a good one young enough to show
     if (
@@ -382,7 +509,7 @@ def _usable(body: dict | None) -> bool:
 
 def _refresh_focus(now: float) -> None:
     try:
-        _read_focus(now)
+        _read_focus(now, FOCUS_REFRESH_S)
     except Exception as exc:  # the stale answer stands; the next expiry tries again
         log.warning("active_memory focus refresh failed: %s", exc)
     finally:
@@ -424,6 +551,11 @@ def _live(claim: dict) -> bool:
     return claim.get("live") is True
 
 
+def _age(seconds: Any) -> str:
+    s = max(0, int(seconds or 0))
+    return f"{s // 3600}h{s % 3600 // 60:02d}m" if s >= 3600 else f"{s // 60}m"
+
+
 def _fact_line(f: dict) -> str:
     # The brief sends {text, metadata: {kind, subject, ...}} (as focus.drop_stale reads it). This
     # read {content, provenance.kind, key}, a shape the server never sends, so from the day it
@@ -448,7 +580,17 @@ def render(brief: dict | None, focus: dict | None, who: str) -> str:
         f for f in facts if isinstance(f, dict) and (f.get("text") or f.get("content"))
     ]
     if facts:
-        lines.append("Active Memory -- what the estate already knows about this task:")
+        snap = (brief or {}).get("snapshot")
+        if isinstance(snap, dict):
+            # an old fact is still worth reading, never worth reading as new
+            lines.append(
+                "Active Memory (memory server unreachable; from the snapshot, facts "
+                f"{_age(snap.get('facts_age_s'))} old) -- what the estate knew about this task:"
+            )
+        else:
+            lines.append(
+                "Active Memory -- what the estate already knows about this task:"
+            )
         for f in facts:
             lines.append(_fact_line(f))
     if focus is not None:
@@ -460,9 +602,14 @@ def render(brief: dict | None, focus: dict | None, who: str) -> str:
             live = [
                 c for c in focus.get("claims") or [] if isinstance(c, dict) and _live(c)
             ]
+            asof = (
+                f" (claim ledger unreadable; as read {_age(focus['stale_s'])} ago)"
+                if focus.get("stale_s")
+                else ""
+            )
             if live:
                 lines.append(
-                    "Active Focus -- live claims; do not edit a path another agent holds:"
+                    f"Active Focus{asof} -- live claims; do not edit a path another agent holds:"
                 )
                 for c in live[:MAX_FOCUS_ROWS]:
                     paths = c.get("paths") or []
@@ -475,7 +622,7 @@ def render(brief: dict | None, focus: dict | None, who: str) -> str:
                 if len(live) > MAX_FOCUS_ROWS:
                     lines.append(f"- +{len(live) - MAX_FOCUS_ROWS} more live claims")
             else:
-                lines.append("Active Focus: no live claims.")
+                lines.append(f"Active Focus{asof}: no live claims.")
     if not lines:
         return ""
     lines.append(
@@ -595,10 +742,13 @@ class ActiveMemory(CustomLogger):
                 else TimeoutError(f"no answer inside {BUDGET_S + 0.5:.1f}s")
                 for r in reads
             )
+            # fetch_focus keeps its own last good register (FOCUS_STALE_S); past it, and for the
+            # brief past STALE_MAX_S or after a restart, the snapshot is the floor.
             fallback = {
-                "brief": stale("brief:" + _brief_key(task)),
-                "focus": None,  # fetch_focus keeps its own last good register (FOCUS_STALE_S)
+                "brief": lambda: stale("brief:" + _brief_key(task)),
+                "focus": lambda: None,
             }
+            floor = {"brief": lambda: snapshot_brief(task), "focus": snapshot_focus}
             for name, r in (("brief", brief), ("focus", focus)):
                 # A focus read that "answered" that the ledger is unreadable is a failure too.
                 failed = isinstance(r, BaseException) or (
@@ -608,7 +758,9 @@ class ActiveMemory(CustomLogger):
                 )
                 if not failed:
                     continue
-                old = fallback[name]
+                old, served = fallback[name](), "serving stale"
+                if not old:
+                    old, served = floor[name](), "serving snapshot"
                 log.warning(
                     "active_memory %s unreadable for %s: %s at=%s waited=%.2fs "
                     "leg_elapsed=%s load1=%.1f %s",
@@ -619,7 +771,7 @@ class ActiveMemory(CustomLogger):
                     waited,
                     f"{_elapsed[name]:.2f}s" if name in _elapsed else "running",
                     os.getloadavg()[0],
-                    f"serving stale age={old[1]:.0f}s" if old else "nothing to serve",
+                    f"{served} age={old[1]:.0f}s" if old else "nothing to serve",
                 )
                 if old:
                     if name == "brief":

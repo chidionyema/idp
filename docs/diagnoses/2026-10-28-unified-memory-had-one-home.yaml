@@ -1,0 +1,133 @@
+description: 'From 2026-10-28 every agent lost unified memory: the door (https://mcp.mumchimp.com/estate/mcp,
+  platform/estate/memory/door.py) answered `memory store unreachable` / upstream deadline,
+  and bin/estate-memory-mcp brief failed `URLError EOF _ssl.c` (idp#7351). Question:
+  why did memory go down for everyone at once, and why was there nowhere else to read
+  it from -- did the memory store and its door share one home that died, did the memory
+  server itself fail inside a healthy cluster, was the door refusing a wrong key, or
+  was memory fine and the laptop clients broken (the laptop disk hit zero and the
+  JetStream store logged `no space left on device` the same evening). Hypotheses
+  and likelihoods written before the evidence was read; measured 2026-10-29 02:20-02:55Z
+  from the laptop and on main (ddcdf7fd5), idp#7397.
+
+  '
+hypotheses:
+- name: H1
+  description: unified memory had exactly one home -- estate-db Postgres, the memory
+    server and the MCP gateway all on the one OKE cluster, with no backup and no copy
+    elsewhere -- and the cluster died (Oracle removed the OKE entitlement), so every
+    path to memory died with it
+  prior: 0.3
+- name: H2
+  description: the memory server or its database failed (crash, bad roll-out, corruption)
+    inside an otherwise healthy cluster
+  prior: 0.25
+- name: H3
+  description: the door was up but refused the clients' key (MCP_GATEWAY_KEY wrong
+    or rotated)
+  prior: 0.2
+- name: H4
+  description: memory was fine and the laptop clients were broken (disk full, the
+    local NATS store, a bad local network)
+  prior: 0.25
+evidence:
+- name: 'the door probe from the laptop, key present, 2026-10-29 ~02:52Z: door.call("brief")
+    -> `URLError EOF occurred in violation of protocol (_ssl.c:1129)` after 0.7 s --
+    the edge closes the connection before any HTTP answer (no 401, no 5xx)'
+  observed:
+    tls_eof: 1
+  likelihoods:
+    H1:
+      tls_eof: 0.8
+      http_401: 0.02
+      http_5xx: 0.15
+      ok: 0.03
+    H2:
+      tls_eof: 0.15
+      http_401: 0.05
+      http_5xx: 0.75
+      ok: 0.05
+    H3:
+      tls_eof: 0.05
+      http_401: 0.85
+      http_5xx: 0.05
+      ok: 0.05
+    H4:
+      tls_eof: 0.2
+      http_401: 0.05
+      http_5xx: 0.05
+      ok: 0.7
+- name: 'the cluster API itself, ~/.estate/memory-forward.log 2026-10-29 02:23-02:25Z:
+    `dial tcp 141.147.80.229:6443: i/o timeout` (the memory port-forward cannot reach
+    the control plane at all)'
+  observed:
+    api_unreachable: 1
+  likelihoods:
+    H1:
+      api_unreachable: 0.95
+      api_up: 0.05
+    H2:
+      api_unreachable: 0.1
+      api_up: 0.9
+    H3:
+      api_unreachable: 0.1
+      api_up: 0.9
+    H4:
+      api_unreachable: 0.3
+      api_up: 0.7
+- name: 'the tenancy: Container Engine limits cluster-count=0, enhanced-cluster-count=0,
+    node-count=0; replace-cluster (run 40802847943) failed CreateCluster `400 LimitExceeded:
+    cluster-count` (recorded on main, ddcdf7fd5 / #7394)'
+  observed:
+    entitlement_removed: 1
+  likelihoods:
+    H1:
+      entitlement_removed: 0.9
+      entitlement_present: 0.1
+    H2:
+      entitlement_removed: 0.05
+      entitlement_present: 0.95
+    H3:
+      entitlement_removed: 0.05
+      entitlement_present: 0.95
+    H4:
+      entitlement_removed: 0.05
+      entitlement_present: 0.95
+- name: 'placement on main: unified-memory and estate-db are declared only under clusters/oke/
+    (unified-memory.yaml, estate-db.yaml), platform/estate-db/cluster/cluster.yaml has
+    no backup stanza (no barmanObjectStore, no ScheduledBackup), and no workflow, CronJob
+    or launchd job copies memory anywhere (rg over .github/workflows and platform)'
+  observed:
+    single_home: 1
+  likelihoods:
+    H1:
+      single_home: 0.95
+      second_home: 0.05
+    H2:
+      single_home: 0.5
+      second_home: 0.5
+    H3:
+      single_home: 0.5
+      second_home: 0.5
+    H4:
+      single_home: 0.5
+      second_home: 0.5
+- name: 'every brief failure in the laptop router log (~/Library/Logs/litellm-local.log,
+    898 lines) is transport-level -- 390 TLS EOF, 257 read timed out, 190 no answer
+    inside 3.5s, 53 urlopen timed out, 6 handshake timed out, 2 connection reset --
+    and not one is an HTTP 401 or 5xx. Counted as one observation: the lines come from
+    one outage window and are not independent'
+  observed:
+    all_transport: 1
+  likelihoods:
+    H1:
+      all_transport: 0.9
+      some_http: 0.1
+    H2:
+      all_transport: 0.2
+      some_http: 0.8
+    H3:
+      all_transport: 0.02
+      some_http: 0.98
+    H4:
+      all_transport: 0.5
+      some_http: 0.5
