@@ -6,7 +6,7 @@
     "intent": 110,
     "layer": 216,
     "service": 121,
-    "tool": 447,
+    "tool": 449,
     "workflow": 85
   },
   "records": [
@@ -29176,6 +29176,10 @@
           "edge": "invokes"
         },
         {
+          "id": "cap:tool/otto-conformance-gate",
+          "edge": "invokes"
+        },
+        {
           "id": "cap:tool/placement-audit",
           "edge": "invokes"
         },
@@ -44099,6 +44103,108 @@
       "depends_on": [
         {
           "id": "cap:tool/litellm-local",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/otto-conformance-gate",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "Otto's manifests must not name a layer the estate owns.",
+      "contract": {
+        "inputs": [
+          "--dir",
+          "--json"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/otto-conformance-gate",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/otto-readiness-gate",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "One command answers: is Otto onboarded into the estate?",
+      "contract": {
+        "inputs": [
+          "--idp",
+          "--json",
+          "--offline"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/otto-readiness-gate",
+      "depends_on": [
+        {
+          "id": "cap:tool/otto-conformance-gate",
           "edge": "invokes"
         }
       ],
