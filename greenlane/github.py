@@ -31,6 +31,14 @@ from typing import Optional
 from .engine import BOT_LANE, CONFLICT, LANDED, RED, TESTING
 
 STATE_REF = "refs/greenlane/state"
+# The capability witness is derived from the tree (`bin/capability-index emit`) and the
+# offline-gate's registry rung needs it byte-identical to what the tree emits. It used to be
+# regenerated only on pull requests (registry-snapshot.yml), and a lane has no pull request until
+# the engine lands it, so 14 of the last 18 red ci-success verdicts were this one rung (measured
+# 2026-10-29). The engine regenerates it on the candidate instead, inside the member's own squash.
+WITNESS = "catalog/estate-capability-registry.json"
+WITNESS_TOOL = "bin/capability-index"
+WITNESS_TIMEOUT_S = 120
 MARKER = "Greenlane-Batch:"
 ADOPTED = "Greenlane-Lane:"  # in a hand-raised PR's body once the engine has adopted it
 DEPENDABOT = (
@@ -592,6 +600,82 @@ class GitHubBackend:
             f"{sha}:refs/heads/{lane}",
         )
 
+    def _witness_merge_config(self) -> list[str]:
+        """`git -c` args that make the witness never conflict: its merge driver keeps our side.
+
+        The witness is regenerated after the pick, so whichever side a textual merge leaves is
+        overwritten. Without this, two lanes that each touched the file conflict forever.
+        """
+        attrs = Path(tempfile.mkdtemp(prefix="greenlane-attrs-")) / "attributes"
+        attrs.write_text(f"{WITNESS} merge=estate-witness\n")
+        return [
+            "-c",
+            "merge.estate-witness.driver=true",
+            "-c",
+            f"core.attributesFile={attrs}",
+        ]
+
+    def _regenerate_witness(self, wt: str, onto: str) -> None:
+        """Re-emit the witness in `wt` with origin/main's tool, and stage it. Never raises.
+
+        The tool run is main's copy (`onto`), and only when the lane leaves the tool untouched, so a
+        lane cannot change what its own witness is checked against: a lane that edits the tool keeps
+        the strict path and a human reviews that witness. The tool reads the tree with stdlib/ast
+        only and runs no repository code; the env carries no tokens.
+        """
+        home = ""
+        try:
+            if not (Path(wt) / WITNESS).exists():
+                return
+            main_tool = _run(
+                "git", "-C", wt, "show", f"{onto}:{WITNESS_TOOL}", check=False
+            )
+            tool_in_tree = Path(wt) / WITNESS_TOOL
+            if not main_tool or not tool_in_tree.exists():
+                return
+            if tool_in_tree.read_text().strip() != main_tool:
+                return  # the lane changes the tool itself: a human reviews that witness
+            home = tempfile.mkdtemp(prefix="greenlane-home-")
+            tool = Path(home) / "capability-index"
+            tool.write_text(main_tool + "\n")
+            env = {
+                "PATH": os.environ.get("PATH", ""),
+                "HOME": home,
+                "LANG": "C.UTF-8",
+            }
+            done = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                [
+                    sys.executable,
+                    str(tool),
+                    "--idp",
+                    wt,
+                    "--home",
+                    home,
+                    "--no-refresh",
+                    "emit",
+                    "--write",
+                    "--out",
+                    str(Path(wt) / WITNESS),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=WITNESS_TIMEOUT_S,
+                env=env,
+            )
+            if done.returncode == 0:
+                _run("git", "-C", wt, "add", WITNESS, check=False)
+            else:
+                print(
+                    f"greenlane: witness not regenerated (rc={done.returncode}): "
+                    f"{done.stderr.strip()[:200]}",
+                    flush=True,
+                )
+        except Exception as e:  # noqa: BLE001 -- a witness failure must never kill the tick
+            print(f"greenlane: witness not regenerated: {e}", flush=True)
+        finally:
+            if home:
+                shutil.rmtree(home, ignore_errors=True)
+
     def rebase(self, head: str, onto: str, lane: str = "") -> Optional[str]:
         """One squashed commit of the lane's work on top of `onto`, or None when it does not apply."""
         if lane.startswith("flux/") and self.image_only_diff is not None:
@@ -650,6 +734,7 @@ class GitHubBackend:
                     "git",
                     "-C",
                     wt,
+                    *self._witness_merge_config(),
                     "cherry-pick",
                     "--no-commit",
                     "--allow-empty",
@@ -661,6 +746,8 @@ class GitHubBackend:
             )
             if pick.returncode != 0:
                 return None
+            if not lane.startswith("flux/"):
+                self._regenerate_witness(wt, onto)
             if _run("git", "-C", wt, "status", "--porcelain") == "":
                 return None  # nothing to land
             # Subject, author and trailers come from the lane's OWN commits (`new`), not from
