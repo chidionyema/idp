@@ -7,7 +7,7 @@
     "layer": 213,
     "service": 121,
     "tool": 446,
-    "workflow": 81
+    "workflow": 82
   },
   "records": [
     {
@@ -47514,6 +47514,55 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/estate-state.yml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:workflow/gha-estate-watch",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "estate-watch -- the GitHub Actions workflow estate-watch.yml.",
+      "contract": {
+        "inputs": [
+          "schedule",
+          "workflow_dispatch"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/estate-watch.yml",
       "depends_on": [],
       "metrics": [],
       "blind": [

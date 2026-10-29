@@ -1,0 +1,60 @@
+# button: Watch the estate
+# founder: Every 15 minutes, asks each critical service's every home a question only a working one can answer, and files what is down; daily, measures what the estate asks of the free tier.
+#
+# WHY (#7412, 2026-10-29). bin/idp-estate-homes and bin/idp-estate-capacity were written after the
+# 2026-10-28 outage and nothing ran them: a drill that never runs looks like one that passes. On the
+# day the OCI free trial ended, the estate learned it from the vendor's 400s and from the founder;
+# a scheduled drill would have filed it. This runs on GitHub's runners, so it keeps answering when
+# the cluster, the recovery host or the laptop is gone -- the recovery path must not share the
+# failure it reports.
+name: estate-watch
+on:
+  schedule:
+    - cron: "*/15 * * * *" # the lanes
+    - cron: "41 5 * * *" # the capacity board, daily
+  workflow_dispatch:
+permissions:
+  id-token: write # the capacity board's OCI session
+  contents: read
+  issues: write # the drill opens and closes one issue per downed service
+concurrency: { group: estate-watch, cancel-in-progress: false }
+jobs:
+  homes:
+    if: github.event.schedule != '41 5 * * *'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: bin/idp-estate-homes (grade every lane, file what is down)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 bin/idp-estate-homes
+
+  capacity:
+    if: github.event.schedule == '41 5 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
+      - name: oci cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: bin/idp-estate-capacity (asked versus Always Free)
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_PROFILE: DEFAULT
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+        run: python3 bin/idp-estate-capacity
