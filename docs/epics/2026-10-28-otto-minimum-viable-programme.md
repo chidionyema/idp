@@ -89,6 +89,12 @@ is a judgement, and a judgement is not a thing a lane can gate on.
 **Otto is worth investing in — as a dispatcher over the estate's governed plane, and not as a
 second agent platform.**
 
+> **Amended 2026-10-29.** The verdict stands; the noun was wrong. *Dispatcher* implies Otto
+> routes work to capabilities it owns — it owns none of them. The accurate concept, ratified in
+> `docs/decisions/0047-otto-is-the-estates-front-door-not-a-second-agent-platform.md`, is that
+> **Otto is the estate's front door**: the surface layer plus the estate's human-in-the-loop
+> plane, standing on the estate's own layers. See the amendment at the end of this document.
+
 The reasoning, in the estate's own terms:
 
 - The capability is not the bottleneck. The estate has already built execution, memory,
@@ -191,3 +197,70 @@ Otto is fully onboarded when all five are true, and each is checkable:
 - **Waves 3 and 4 are product work**, and the product is the cheap part. If the estate spends
   its remaining effort on the portal page, the door work goes unfinished and Otto stays
   unprovable. The order above is not a preference; it is the dependency.
+
+---
+
+## Amendment — 2026-10-29: Otto is the estate's front door
+
+**Spec:** `docs/specs/2026-10-29-otto-is-the-estates-front-door.md`
+**Decision:** `docs/decisions/0047-otto-is-the-estates-front-door-not-a-second-agent-platform.md`
+**Issue:** chidionyema/idp#7408
+
+The founder's instruction of 2026-10-29: reconstruct the vision for Otto from every ticket,
+spec and decision; judge the architecture that resulted; re-propose so the concept and the
+architecture are unambiguous. This amendment records what that changed in this epic. It changes
+no finding above.
+
+### 1. The verdict's noun was wrong
+
+This epic called Otto "a dispatcher over the estate's governed plane". A dispatcher routes work
+to capabilities it owns; Otto owns none of them, and that is the finding, not a detail. The
+concept is now named once:
+
+> **Otto is the estate's front door.** Everything a human says to the estate, and everything the
+> estate needs a human to say, crosses Otto. Below the seam, Otto owns nothing: it borrows the
+> estate's one router, one memory, one executor, one verifier, one identity and one secret store.
+
+Otto keeps the seam, the thread, the trust classes, the presence, the media pipeline and the
+reply delivery — and it takes on the estate's human-in-the-loop plane (escalation, approval,
+structured decisions), which is new work and the strongest claim Otto has to centrality.
+
+### 2. The root causes gain one, and two decisions gain a gate
+
+RC1 said Otto was asked to be an agent and told to dispatch. The deeper cause is in the spec's
+§3.1: **every founder wish was answered locally, inside Otto, and no global constraint was
+applied to the parts as a set.** Two decisions were written and never executed:
+
+- **ADR 0036** (2026-10-02) — `otto_facts`, hindsight and the `otto-memory-store` Job are
+  deleted, writes move to `remember`. Measured 2026-10-29: the Job is still in the tree, the
+  deployment still points at hindsight, and `hermes-v2/otto/memory/` still ships `fast_recall.py`.
+- **`docs/specs/otto-door-hands-and-senses.md:200-203`** — a model-driven shell never runs in
+  the process that holds the bot token, the DB password and the GitHub token. Measured
+  2026-10-29: `terminal` and `code_execution` are in `OTTO_TOOLSETS` of exactly that container.
+
+A decision that is only a document does not move a manifest. The amendment therefore adds a
+gate, not another paragraph: a **manifest-conformance gate** that fails when Otto's manifests
+name a layer the estate owns.
+
+### 3. The programme gains the waves under the seam
+
+| Track | Wave | DoD in one line | State |
+|---|---|---|---|
+| Door (this epic) | 0 — the one doctor door | the doctor names the first broken link of every Telegram agent's chain | **landed** (#7361, #7380, #7386) |
+| Door | 1 — the scheduled plane asks the doctor | the tick's rows come from the doctor; the tick stops self-cancelling (#7354) | open |
+| Door | 2 — the answer floor becomes a gate | a delivery claim is refused when the answer link is FAIL | open |
+| Seam (the spec) | 1 — route through the estate, keep the lifeboat | the default route is the estate's cloud router; the lifeboat is last and accounted | open |
+| Seam | 2 — execute ADR 0036 | `remember` is Otto's only memory; the manifests name no other one | open |
+| Seam | 3 — the secretless shell | no shell in the secret-holding container; estate actions go through intents | open |
+| Seam | 4 — one verification plane | the doctor owns the verdict; the probe and the tick are inputs | open |
+| Seam | 5 — the human-in-the-loop plane | a blocked agent reaches the founder by voice or Telegram with the blocker named (#7388) | open |
+| Seam | 6 — more surfaces | one binding and one registry row per surface; the gateway untouched | open |
+
+**Order.** The seam waves 1–3 are independent of the door track and may land first — they are
+what make the door honest. The door's wave 1 depends on the seam's wave 4 (one verdict, one
+plane). The seam's wave 5 depends on the seam's waves 1 and 3: an escalation that cannot act
+is a notification. The seam's wave 6 depends on the door's wave 0, which has landed.
+
+**What the amendment does not do.** It reopens no finding above; it claims no wave done except
+wave 0, which has its own receipt; it touches no `AGENTS.md`, no lane value, no vault, and no
+cluster by hand.
