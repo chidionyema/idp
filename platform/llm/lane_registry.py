@@ -113,6 +113,15 @@ _REMAIN_HDRS = (
     "x-ratelimit-remaining",
 )
 
+# Requests the vendor must say are left before a lane takes real traffic. Below it the lane is
+# condemned BEFORE its 429 (forecast), and an exhausted lane is not readmitted by one request that
+# squeezed through a sliding daily window: measured 2026-10-29, Groq's daily quota was readmitted
+# 370 times in a day, each a median 33 s after exhausting, every time by a timer.
+HEADROOM_REQUESTS = float(os.environ.get("ESTATE_ROUTER_HEADROOM_REQUESTS", "20"))
+# How long a lane with no headroom waits before it is asked again; doubles to the cap.
+HEADROOM_WAIT_S = 300.0
+HEADROOM_WAIT_MAX_S = 3600.0
+
 _CREDIT_RE = re.compile(r"insufficient|balance|suspended|payment|402", re.I)
 _CALLER_ERROR_RE = re.compile(
     r"not found|does not exist|no deployments|model group|invalid model", re.I
@@ -192,8 +201,33 @@ def classify_failure(status: Optional[int], text: str) -> tuple[str, str]:
 
 
 def _hdrs_of(obj: Any) -> dict[str, str]:
-    """Headers from a LiteLLM response/exception, whatever shape it arrives in."""
+    """Headers from a LiteLLM response/exception, whatever shape it arrives in.
+
+    LiteLLM 1.98 forwards the vendor's headers on a response as
+    `_hidden_params["additional_headers"]`, each prefixed `llm_provider-`, and on an exception as
+    `litellm_response_headers`. Measured 2026-10-29: reading only `.headers`, the registry had
+    recorded 298,231 observations and not one remaining-quota number, so the forecast never ran.
+    """
     out: dict[str, str] = {}
+    hidden = getattr(obj, "_hidden_params", None)
+    if hidden is None and isinstance(obj, dict):
+        hidden = obj.get("_hidden_params")
+    extra = (
+        (hidden or {}).get("additional_headers") if isinstance(hidden, dict) else None
+    )
+    for raw in (extra, getattr(obj, "litellm_response_headers", None)):
+        if not raw:
+            continue
+        try:
+            for k in raw.keys():
+                key = str(k).lower()
+                if key.startswith("llm_provider-"):
+                    key = key[len("llm_provider-") :]
+                out.setdefault(key, str(raw.get(k, "")))
+        except Exception as exc:  # noqa: BLE001 - headers are best-effort telemetry
+            log.debug("[lane-registry] hidden headers skipped: %s", exc)
+    if out:
+        return out
     for carrier in (
         obj,
         getattr(obj, "response", None),
@@ -217,6 +251,19 @@ def _hdrs_of(obj: Any) -> dict[str, str]:
     return out
 
 
+_GO_DURATION_RE = re.compile(r"(\d+(?:\.\d+)?)(ms|h|m|s)")
+
+
+def _go_duration_s(v: str) -> Optional[float]:
+    """'24h0m0s' -> 86400.0; '547ms' -> 0.547; anything else -> None."""
+    v = str(v).strip()
+    parts = _GO_DURATION_RE.findall(v)
+    if not parts or "".join(n + u for n, u in parts) != v:
+        return None
+    scale = {"h": 3600.0, "m": 60.0, "s": 1.0, "ms": 0.001}
+    return sum(float(n) * scale[u] for n, u in parts)
+
+
 def _reset_epoch(hdrs: dict[str, str], now: float) -> Optional[float]:
     """reset headers: epoch seconds, ISO 8601, or relative seconds (retry-after)."""
     ra = hdrs.get("retry-after")
@@ -232,7 +279,12 @@ def _reset_epoch(hdrs: dict[str, str], now: float) -> Optional[float]:
         try:
             fv = float(v)
         except ValueError:
-            continue
+            # Groq (and other Go-built APIs) send durations: "24h0m0s", "1m26.5s", "547ms".
+            # float() refused them, so every Groq reset was dropped (measured 2026-10-29).
+            d = _go_duration_s(v)
+            if d is None:
+                continue
+            return now + d
         # heuristics are not guesswork here: epoch values are ~1.7e9, ms ~1.7e12, s/duration small
         if fv > 1e12:
             return fv / 1000.0
@@ -424,7 +476,15 @@ class LaneRegistry(CustomLogger):
                     except ValueError:
                         pass
             reset = _reset_epoch(hdrs, now)
-            if lane["state"] in (EXHAUSTED, DEAD, DRAINING):
+            rem = (
+                lane.get("remaining_requests")
+                if any(h in hdrs for h in _REMAIN_HDRS)
+                else None
+            )
+            if rem is not None and rem < HEADROOM_REQUESTS and lane["state"] != DEAD:
+                # The vendor says it is (nearly) out: no user request is sent to find out.
+                self._hold_for_headroom(lane, now, reset)
+            elif lane["state"] in (EXHAUSTED, DEAD, DRAINING):
                 # A success proves the lane answers; it does not prove the window rolled.
                 # DEAD is credit or auth, and an answered call disproves both outright.
                 # EXHAUSTED is a rate limit the vendor dated: wait for the reset it named,
@@ -440,6 +500,7 @@ class LaneRegistry(CustomLogger):
                     # the reset the vendor named when it 429'd us, not one on this success
                     named = lane.get("reset_at")
                     if named is not None and now >= named:
+                        lane["headroom_wait_s"] = 0
                         self._transition(lane, READY, "")
             elif (
                 reset
@@ -482,6 +543,21 @@ class LaneRegistry(CustomLogger):
             self._persist("observe", deployment, {"status": status, "state": state})
         except Exception as exc:  # noqa: BLE001 - LAW 38
             log.warning("[lane-registry] failure not recorded: %s", exc)
+
+    def _hold_for_headroom(
+        self, lane: dict[str, Any], now: float, reset: Optional[float]
+    ) -> None:
+        """Out of service until the vendor reports headroom again; the probe re-asks."""
+        wait = min(
+            max(float(lane.get("headroom_wait_s") or 0) * 2, HEADROOM_WAIT_S),
+            HEADROOM_WAIT_MAX_S,
+        )
+        lane["headroom_wait_s"] = wait
+        when = max(reset or 0.0, now + wait)
+        if lane["state"] == EXHAUSTED and lane.get("reason") == "headroom":
+            lane["reset_at"] = when
+            return
+        self._transition(lane, EXHAUSTED, "headroom", reset_at=when)
 
     def _forecast(self, lane: dict[str, Any]) -> Optional[float]:
         """remaining / consumption-rate = time to exhaustion; None when unknowable."""
@@ -546,7 +622,7 @@ class LaneRegistry(CustomLogger):
             )
             return
         try:
-            await asyncio.wait_for(
+            resp = await asyncio.wait_for(
                 litellm.acompletion(
                     model=params.get("model", deployment),
                     api_key=params.get("api_key"),
@@ -579,6 +655,22 @@ class LaneRegistry(CustomLogger):
                 self._transition(lane, state, reason)
             return
         self._persist("probe", deployment, {"verdict": "ok"})
+        # Answering is not the same as having room: the probe's own headers decide (a sliding
+        # daily window answers one probe and 429s the next user).
+        hdrs = _hdrs_of(resp)
+        for h in _REMAIN_HDRS:
+            if h in hdrs:
+                try:
+                    lane["remaining_requests"] = float(hdrs[h])
+                except ValueError:
+                    continue
+                if lane["remaining_requests"] < HEADROOM_REQUESTS:
+                    self._hold_for_headroom(
+                        lane, time.time(), _reset_epoch(hdrs, time.time())
+                    )
+                    return
+                break
+        lane["headroom_wait_s"] = 0
         self._transition(
             lane, READY, ""
         )  # a dead lane rejoins the moment credit returns

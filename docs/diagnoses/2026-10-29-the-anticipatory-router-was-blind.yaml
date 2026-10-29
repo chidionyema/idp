@@ -1,0 +1,88 @@
+description: 'On 2026-10-29 a vendor 429 kept reaching callers through the laptop router: Groq''s daily
+  request quota for openai/gpt-oss-120b was spent, and callers of `default` and `fast` got "Rate limit
+  reached ... requests per day (RPD): Limit 1000, Used 1000". The estate already runs an anticipatory
+  router (platform/llm/lane_registry.py + route_table.py) whose whole purpose is to see that coming and
+  route around it before a caller does. This record answers: why did a router built to know in advance
+  not know? Every count below was measured on this machine on 2026-10-29, and each item names the command
+  that produced it. The hypotheses and the likelihoods were written before the observed counts.'
+hypotheses:
+- name: H1
+  description: 'the registry was BLIND: the vendor sends remaining-quota and reset headers, but the registry
+    never read them (it looked only at `.headers`; LiteLLM 1.98 forwards them in `_hidden_params[''additional_headers'']`,
+    and Groq''s reset is a Go duration that float() refuses), so a daily-exhausted lane was readmitted
+    by a clock after a short sliding-window reset and served users with no requests left'
+  prior: 0.4
+- name: H2
+  description: 'the VENDOR gave nothing to read: Groq sends no remaining-quota or reset headers, so no
+    reader could have known in advance and a 429 is the first signal there is'
+  prior: 0.3
+- name: H3
+  description: 'the registry KNEW and routing IGNORED it: the lane was held exhausted, but the route table''s
+    all-condemned passthrough sent callers to it anyway'
+  prior: 0.3
+evidence:
+- name: 'remaining-quota numbers the registry ever recorded, counted per DEPLOYMENT (the 298,231 observe
+    rows are one router''s correlated stream, so the independent unit is the deployment): every record
+    in ~/.estate/router/lanes.json read for remaining_requests'
+  observed:
+    remaining_null: 8
+    remaining_number: 0
+  likelihoods:
+    H1:
+      remaining_null: 0.99
+      remaining_number: 0.01
+    H2:
+      remaining_null: 0.99
+      remaining_number: 0.01
+    H3:
+      remaining_null: 0.1
+      remaining_number: 0.9
+- name: 'what Groq actually sends: one direct call to api.groq.com for openai/gpt-oss-120b, headers read
+    with `curl -D -` -- HTTP 200, x-ratelimit-limit-requests 1000, x-ratelimit-remaining-requests 0, x-ratelimit-reset-requests
+    24h0m0s'
+  observed:
+    vendor_sends_remaining_and_reset: 1
+    vendor_sends_neither: 0
+  likelihoods:
+    H1:
+      vendor_sends_remaining_and_reset: 0.95
+      vendor_sends_neither: 0.05
+    H2:
+      vendor_sends_remaining_and_reset: 0.02
+      vendor_sends_neither: 0.98
+    H3:
+      vendor_sends_remaining_and_reset: 0.9
+      vendor_sends_neither: 0.1
+- name: 'how the exhausted lane came back today, counted per HOUR (370 readmissions fall in 15 distinct
+    hours since 2026-10-29T00:00Z, ~/.estate/router/lanes.jsonl): in every hour by the clock, in no hour
+    by reported room'
+  observed:
+    readmitted_by_clock: 15
+    readmitted_by_reported_room: 0
+  likelihoods:
+    H1:
+      readmitted_by_clock: 0.95
+      readmitted_by_reported_room: 0.05
+    H2:
+      readmitted_by_clock: 0.9
+      readmitted_by_reported_room: 0.1
+    H3:
+      readmitted_by_clock: 0.2
+      readmitted_by_reported_room: 0.8
+- name: 'the production path, measured: litellm.acompletion in the router''s own venv (~/.cache/estate-tools/litellm-venv,
+    LiteLLM 1.98.0) against the vendors that answered within 60 s. Groq: remaining-quota headers present
+    in _hidden_params[''additional_headers''] and absent from .headers. MiniMax: none sent. Likelihoods
+    are the ones fixed for the direct-call item above, written before either was observed.'
+  observed:
+    vendor_sends_remaining_and_reset: 1
+    vendor_sends_neither: 1
+  likelihoods:
+    H1:
+      vendor_sends_remaining_and_reset: 0.95
+      vendor_sends_neither: 0.05
+    H2:
+      vendor_sends_remaining_and_reset: 0.02
+      vendor_sends_neither: 0.98
+    H3:
+      vendor_sends_remaining_and_reset: 0.9
+      vendor_sends_neither: 0.1
