@@ -1,7 +1,13 @@
 # Incident: the cluster lost its control plane (2026-10-27 to 2026-10-29)
 
-Status: rebuild in flight under idp#7387 (`replace-cluster`). Founder approved 2026-10-29 and
-approved releasing all three legacy volumes.
+Status: OKE cannot be rebuilt. ROOT CAUSE (measured 2026-10-29 02:07 UTC, read-only OCI): the
+tenancy's Container Engine limits are `cluster-count=0`, `enhanced-cluster-count=0`,
+`node-count=0`. `replace-cluster` (run 40802847943) failed at CreateCluster with
+`400 LimitExceeded: cluster-count`. Oracle removed the OKE entitlement; the control plane was
+removed, not broken. The A1 compute allowance is intact. Everything below this paragraph
+(stale pools, 250 GB volumes, detached VNIC) was real but secondary. Path forward on #7387:
+single-node k3s on one A1 VM (50 GB boot), Flux bootstrapped to it; alternative is PAYG upgrade.
+Founder approved releasing the three legacy volumes.
 
 ## What happened
 - Node-pool records went stale: both pool nodes TERMINATED while OKE listed them ACTIVE. OKE's
@@ -25,6 +31,8 @@ Slots, not bytes: 200 GB / 50 GB = 4 volumes, shared by boot volumes and every o
 that creates a fifth volume (a node surge, a new PVC, a replacement node) fails.
 
 ## Weaknesses in the setup
+0. **Platform dependency on an entitlement nobody monitored.** No check read the tenancy's service
+   limits; the estate learned OKE was gone from a failed create, two days late. Add a daily limits probe.
 1. Capacity was never budgeted in slots (gate now exists: `bin/idp-storage-budget`, #7349; hard gate P1 #7370).
 2. Lifecycle leaks: dead PVs and TERMINATED volumes kept counting; no scheduled reclaim (#7367).
 3. Doors trusted control-plane records over the resource's own lifecycle state (#7368).
