@@ -76,14 +76,21 @@ def discover(
     providers: dict[str, list[str]], bases: dict[str, str] | None = None
 ) -> dict[str, list[str]]:
     """provider -> sorted "<provider>/<model>" ids, from each provider's own listing."""
-    import litellm
-
     bases = bases or {}
 
     def one(p: str, var: str) -> tuple[str, list[str]]:
         if p in bases:
             ids = listed(bases[p].rstrip("/"), os.environ.get(var, ""))
         else:
+            # LAZY (2026-10-29): litellm is imported here, not at the top of the function.
+            # A provider that answers its own listing needs no litellm at all, and the
+            # unconditional import made the catalogue unusable where litellm is not
+            # installed -- measured on the CI runner (idp candidate run 40876656109, job
+            # 123457294303): "ModuleNotFoundError: No module named 'litellm'" failed the
+            # test that proves a plan lane lists what the plan answers from its own
+            # endpoint. The import belongs to the one branch that calls litellm.
+            import litellm  # noqa: PLC0415 -- the branch that needs it, and only that one
+
             ids = litellm.get_valid_models(
                 check_provider_endpoint=True,
                 custom_llm_provider=p,

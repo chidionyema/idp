@@ -1,0 +1,94 @@
+description: 'On 2026-10-29 the CI root suite failed for the first time on the branch that touches the
+  router: tests/test_router_catalog.py::test_a_plan_lane_lists_what_the_plan_answers_from_its_own_endpoint
+  died with "ModuleNotFoundError: No module named ''litellm''" on the runner, while the same test
+  passes on the laptop (idp candidate run 40876656109, job 123457294303). This record answers:
+  why did the catalogue test that exercises a provider answering its OWN listing need litellm at
+  all? The winning hypothesis is what the fix is built on: discover() imported litellm as its
+  first statement, so a call in which no provider ever reaches the litellm branch still required
+  litellm to be installed, and the import belongs inside the one branch that calls it.'
+
+hypotheses:
+- name: H1
+  description: "discover() imported litellm as its FIRST statement, so every call required litellm
+    to be installed even when every provider answers its own listing and no branch ever calls it:
+    the optional dependency was on the path of a listing that does not use it"
+  prior: 0.60
+- name: H2
+  description: "litellm IS a declared dependency of the repository and the CI runner simply failed
+    to install it, so the runner's environment was incomplete and the module's import was
+    legitimate"
+  prior: 0.25
+- name: H3
+  description: "the listing of a provider that answers its own endpoint genuinely needs litellm
+    (the branch was wrong), so the import was required and the test asked for more than it should"
+  prior: 0.15
+evidence:
+- name: "the runner's traceback names platform/llm/router_catalog.py:79 -- the `import litellm`
+    statement that was the first line of discover() -- and no provider listing is on the stack
+    (measured from the job log of idp candidate run 40876656109, job 123457294303, 2026-10-29:
+    `tests/test_router_catalog.py:219: def discover( > import litellm E ModuleNotFoundError: No
+    module named 'litellm'`, and `platform/llm/router_catalog.py:79: ModuleNotFoundError`)"
+  observed:
+    failures_at_the_first_statement_of_discover: 1
+    failures_inside_a_provider_listing: 0
+  likelihoods:
+    H1:
+      failures_at_the_first_statement_of_discover: 0.95
+      failures_inside_a_provider_listing: 0.02
+    H2:
+      failures_at_the_first_statement_of_discover: 0.60
+      failures_inside_a_provider_listing: 0.15
+    H3:
+      failures_at_the_first_statement_of_discover: 0.05
+      failures_inside_a_provider_listing: 0.90
+- name: "the call under test gives every provider a base URL (bases={'zai': 'http://127.0.0.1:.../api/coding/paas/v4/'}),
+    so every provider takes the listed(base, key) branch and none reaches the branch that calls
+    litellm (measured by reading discover() in platform/llm/router_catalog.py on 2026-10-29, and
+    by the assertion in the test: the plan's own listing, less what the plan refuses)"
+  observed:
+    providers_that_reached_the_litellm_branch: 0
+    providers_that_reached_the_listed_branch: 1
+  likelihoods:
+    H1:
+      providers_that_reached_the_litellm_branch: 0.95
+      providers_that_reached_the_listed_branch: 0.95
+    H2:
+      providers_that_reached_the_litellm_branch: 0.85
+      providers_that_reached_the_listed_branch: 0.85
+    H3:
+      providers_that_reached_the_litellm_branch: 0.10
+      providers_that_reached_the_listed_branch: 0.20
+- name: "litellm is declared in exactly one requirement file in the tree, requirements-research.txt,
+    and in neither of the two the CI's root-suite leg installs (sovereign/requirements.txt and
+    sovereign/requirements-dev.txt, per .github/workflows/ci.yml) (measured with rg over the
+    tree on 2026-10-29)"
+  observed:
+    requirement_files_the_root_suite_installs_that_declare_litellm: 0
+    requirement_files_that_declare_litellm_anywhere_in_the_tree: 1
+  likelihoods:
+    H1:
+      requirement_files_the_root_suite_installs_that_declare_litellm: 0.95
+      requirement_files_that_declare_litellm_anywhere_in_the_tree: 0.90
+    H2:
+      requirement_files_the_root_suite_installs_that_declare_litellm: 0.05
+      requirement_files_that_declare_litellm_anywhere_in_the_tree: 0.10
+    H3:
+      requirement_files_the_root_suite_installs_that_declare_litellm: 0.10
+      requirement_files_that_declare_litellm_anywhere_in_the_tree: 0.80
+- name: "the same test passes where litellm is installed (the laptop) and fails where it is not
+    (the runner), so the failure tracks the presence of an optional dependency, not the listing's
+    logic (measured 2026-10-29: python3 -m pytest tests/test_router_catalog.py -q -> passed on
+    the laptop; the runner's job 123457294303 -> failed)"
+  observed:
+    runs_where_litellm_was_installed_that_passed: 1
+    runs_where_litellm_was_not_installed_that_failed: 1
+  likelihoods:
+    H1:
+      runs_where_litellm_was_installed_that_passed: 0.95
+      runs_where_litellm_was_not_installed_that_failed: 0.95
+    H2:
+      runs_where_litellm_was_installed_that_passed: 0.60
+      runs_where_litellm_was_not_installed_that_failed: 0.70
+    H3:
+      runs_where_litellm_was_installed_that_passed: 0.90
+      runs_where_litellm_was_not_installed_that_failed: 0.20

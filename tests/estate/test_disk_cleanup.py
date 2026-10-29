@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 import pytest
@@ -717,19 +719,37 @@ def test_the_default_build_pattern_names_every_kind_of_build(cmd, building):
     assert bool(re.search(default, cmd)) is building, cmd
 
 
+def _outside_root() -> Path:
+    """A directory that is outside HOME, /tmp and $TMPDIR -- where the guard must not judge.
+
+    MEASURED 2026-10-29 (idp candidate run 40876656109, job 123457294303): this fixture put
+    the "outside" worktree under pytest's tmp_path. On a Linux runner that path is under
+    /tmp, so the guard judged it -- "freed worktree .../elsewhere/wt-out" -- and the test
+    failed; on a Mac the same path sits under /var/folders, which is neither /tmp nor the
+    machine's $TMPDIR string, so the test passed there and failed in CI. The fixture now
+    says what it means: a checkout outside all three is not the estate's to judge.
+    /var/tmp is outside /tmp on both systems and exists on both.
+    """
+    return Path(tempfile.mkdtemp(prefix="estate-outside-", dir="/var/tmp")).resolve()
+
+
 def test_worktrees_under_tmpdir_are_judged_and_others_outside_home_are_not(tmp_path):
     """The dry run of 2026-10-14 had the $TMPDIR check inverted: a checkout in $TMPDIR was
     refused, and one anywhere else outside HOME and /tmp would have been judged."""
     home, repo, wts = _worktrees(tmp_path)
     t = tmp_path / "T"
-    inside, outside = t / "wt-in", tmp_path / "elsewhere/wt-out"
-    for wt in (inside, outside):
-        _git("worktree", "add", "-q", "--detach", str(wt), "main", cwd=repo)
-    r = _run_wt(home, repo, *APPLY_WT, tmp_root=str(t))
-    assert r.returncode == 0, r.stdout + r.stderr
-    assert not inside.exists(), r.stdout
-    assert outside.exists(), r.stdout
-    assert f"{outside}  (not under HOME, /tmp or $TMPDIR)" in r.stdout, r.stdout
+    outside_root = _outside_root()
+    try:
+        inside, outside = t / "wt-in", outside_root / "wt-out"
+        for wt in (inside, outside):
+            _git("worktree", "add", "-q", "--detach", str(wt), "main", cwd=repo)
+        r = _run_wt(home, repo, *APPLY_WT, tmp_root=str(t))
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert not inside.exists(), r.stdout
+        assert outside.exists(), r.stdout
+        assert f"{outside}  (not under HOME, /tmp or $TMPDIR)" in r.stdout, r.stdout
+    finally:
+        shutil.rmtree(outside_root, ignore_errors=True)
 
 
 def test_with_no_resolvable_tmp_root_an_outside_worktree_is_kept(tmp_path):
@@ -739,14 +759,18 @@ def test_with_no_resolvable_tmp_root_an_outside_worktree_is_kept(tmp_path):
     chain was correct in the blank direction only by accident of operator precedence,
     and the prior tests put every worktree under HOME so the unset path was never hit)."""
     home, repo, wts = _worktrees(tmp_path)
-    outside = tmp_path / "elsewhere/wt-out"
-    _git("worktree", "add", "-q", "--detach", str(outside), "main", cwd=repo)
-    # tmp_root points at a path that does not exist: the script's `else TMP_ROOT=; fi`
-    # blanks TMP_ROOT, so the guard runs with no TMPDIR to test against
-    r = _run_wt(home, repo, *APPLY_WT, tmp_root=str(tmp_path / "no-such-tmp"))
-    assert r.returncode == 0, r.stdout + r.stderr
-    assert outside.exists(), r.stdout
-    assert f"{outside}  (not under HOME, /tmp or $TMPDIR)" in r.stdout, r.stdout
+    outside_root = _outside_root()
+    try:
+        outside = outside_root / "wt-out"
+        _git("worktree", "add", "-q", "--detach", str(outside), "main", cwd=repo)
+        # tmp_root points at a path that does not exist: the script's `else TMP_ROOT=; fi`
+        # blanks TMP_ROOT, so the guard runs with no TMPDIR to test against
+        r = _run_wt(home, repo, *APPLY_WT, tmp_root=str(tmp_path / "no-such-tmp"))
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert outside.exists(), r.stdout
+        assert f"{outside}  (not under HOME, /tmp or $TMPDIR)" in r.stdout, r.stdout
+    finally:
+        shutil.rmtree(outside_root, ignore_errors=True)
 
 
 # --- Chrome code-sign clones, the 2h worktree idle, and the "where the space is" report ---------
@@ -1472,7 +1496,14 @@ def test_the_guardian_takes_one_bounded_step_when_the_volume_is_under_the_target
         **os.environ,
         "HOME": str(home),
         "DISK_GUARD_PATH": str(home),
-        "DISK_WATCH_TARGET_MB": "4000",  # never met here
+        # A target no volume on any machine is above, so the premise of this test -- "the
+        # volume is under the target" -- is TRUE on a CI runner with 84G free as well as on
+        # a machine whose disk is nearly full. Measured 2026-10-29 (idp candidate run
+        # 40876656109, job 123457294303): with a target of 4000M the guardian read the
+        # runner's real 84388M free, answered "healthy" and took no step, so this test only
+        # passed on a machine that happened to be under pressure. The target is the
+        # guardian's own knob (DISK_WATCH_TARGET_MB); the free space is the machine's.
+        "DISK_WATCH_TARGET_MB": "10000000",  # never met, on any machine
         "DISK_WATCH_CYCLE_S": "1",
         "DISK_WATCH_CLEANER": str(cleaner),
         "DISK_WATCH_RAM_FLOOR_MB": "0",
