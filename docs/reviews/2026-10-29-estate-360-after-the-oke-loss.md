@@ -68,3 +68,23 @@ Salvage the 13 LOST items. Exit: red lanes 0, LOST 0.
 1. k3s on one free A1 VM (recommended) vs PAYG upgrade with a card.
 2. Pause cluster-hosted product lanes until Wave 0 exits (recommended).
 3. Is estate-db's data recoverable from the old volumes? (OCI volumes still exist; an attached rescue VM could read them.)
+
+## 9. Ship-ready on the new infrastructure: what each in-flight lane needs
+Read from `lane/recovery-host` (4225ac406, verdict pending): one A1 VM, 2 OCPU / 12 GB, 50 GB boot, runs **the router (LiteLLM docker) and a
+Cloudflare Tunnel only**, with a `router-recovery` dispatch workflow. I found nothing in it for the memory door, estate-db, Flux, the bus or any
+other workload. So the new infrastructure today is a router, not a platform. The free A1 allowance is 4 OCPU / 24 GB, so about 2 OCPU / 12 GB is unused.
+
+| Needs | Lanes | Ships when |
+|---|---|---|
+| A router home | #7403/#7404 vault keys, #7381 boot storm, #7142 router front, #7366 off-laptop router | recovery-host lands and `router-recovery` runs green |
+| A memory-door home | #7397 memory second home (R2 snapshot, no cluster needed), #7369 | R2 snapshot job runs; the door itself needs a second host (docker on the same VM or the spare 2 OCPU) |
+| A cluster (k8s API, Flux) | #7311 AEI, #7371 execution substrate, spine, voice router, #7338 guardian, Prospector, Backstage | only after a decision: k3s on the spare capacity, or compose-on-VM for the few that matter |
+| GitHub only (ship now) | #7400 witness, #7399 CI metrics, #7298 NSVEE, #7391 backup job (runs on Actions), #7388 otto numum | ready now; red lanes need the shared `ci-success` cause traced |
+| Nothing infra | docs, ADRs, #7395 Media M0/M1, #7372 science kernel | ready now |
+
+**The guarantee we can make:** GitHub-only and no-infra lanes ship regardless. Router lanes ship the moment recovery-host lands. Cluster-hosted lanes
+cannot ship until a deploy target exists, so the missing piece is a **deploy-target contract**: each workload declares `target: github | vm-docker | k3s`
+in its manifest, and the Greenlane refuses a cluster-only workload while no cluster exists. That turns "blocked on infra" into a visible, ordered queue.
+
+**Immediate asks (owner):** land `lane/recovery-host` (desktop session); decide k3s vs compose for the remaining workloads (founder decision #3 below);
+trace the shared red `ci-success` (me, next).
