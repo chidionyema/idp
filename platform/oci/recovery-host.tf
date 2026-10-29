@@ -96,6 +96,13 @@ resource "oci_core_instance" "recovery" {
     }))
   }
 
+  agent_config {
+    plugins_config {
+      name          = "Compute Instance Run Command"
+      desired_state = "ENABLED"
+    }
+  }
+
   lifecycle {
     ignore_changes = [source_details[0].source_id, metadata["ssh_authorized_keys"]]
   }
@@ -127,6 +134,10 @@ resource "oci_identity_policy" "recovery" {
     "Allow dynamic-group ${oci_identity_dynamic_group.recovery.name} to read secret-family in compartment id ${var.compartment_ocid} where target.secret.name = 'router-recovery'",
     "Allow dynamic-group ${oci_identity_dynamic_group.recovery.name} to read objects in compartment id ${var.compartment_ocid} where target.bucket.name = '${oci_objectstorage_bucket.router_recovery.name}'",
     "Allow dynamic-group ${oci_identity_dynamic_group.recovery.name} to inspect secrets in compartment id ${var.compartment_ocid}",
+    # The host has no SSH door (no public IP, no bastion): Run Command is how the recovery lane
+    # mounts and identifies the surviving volumes and copies them off-provider (plan step 3).
+    "Allow dynamic-group ${oci_identity_dynamic_group.recovery.name} to use instance-agent-command-execution-family in compartment id ${var.compartment_ocid} where request.instance.id = '${oci_core_instance.recovery.id}'",
+    "Allow dynamic-group ${oci_identity_dynamic_group.recovery.name} to manage objects in compartment id ${var.compartment_ocid} where target.bucket.name = '${oci_objectstorage_bucket.router_recovery.name}'",
   ]
 }
 
