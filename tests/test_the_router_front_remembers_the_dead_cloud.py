@@ -203,3 +203,131 @@ def test_the_cooldown_expires_so_the_cloud_is_tried_again(front) -> None:
     restarted.restore_cloud_cooldown()
     assert restarted.CLOUD_DOWN_UNTIL == 0.0, "an expired cooldown must not linger"
     assert restarted.route()[0] == restarted.CLOUD
+
+
+def test_the_cooldown_never_lands_in_the_shared_estate_state(
+    front, tmp_path, monkeypatch
+) -> None:
+    """KNOWN-BAD (pre-fix): the cooldown was written into the estate's live router-state.
+
+    ACTIVE names the SLOT FLEET, not this front. Deriving the state path from ACTIVE meant
+    the live front wrote `~/.estate/router-state/cloud-down`, and every other front that
+    shared ACTIVE -- a test, a canary, a second router -- read and wrote the SAME file. One
+    front's dead cloud silenced the cloud for all of them, and the live estate's state
+    directory collected a file that belonged to no lane.
+
+    Falsifier: with the ACTIVE-derived path, the file is created next to ACTIVE, inside the
+    shared estate directory, and a second front with a different ACTIVE still resolves to it.
+    """
+    # No override: the DEFAULT path is what a real front uses.
+    monkeypatch.delenv("ESTATE_ROUTER_CLOUD_STATE", raising=False)
+    monkeypatch.setenv("ESTATE_ROUTER_CLOUD_STATE_DIR", str(tmp_path / "state"))
+
+    shared = tmp_path / "router-state"
+    shared.mkdir()
+    (shared / "active").write_text("4001\n")
+    front.ACTIVE = shared / "active"
+
+    state = front.cloud_state_path()
+
+    assert state.parent != shared, (
+        "the cooldown lands in the shared estate state: every front that shares ACTIVE "
+        "shares this file"
+    )
+    assert shared not in state.parents, (
+        f"the cooldown is written inside the shared estate state: {state}"
+    )
+
+    # And the file it does write is its own.
+    front.mark_cloud_down()
+    assert state.exists(), "the front did not remember the cooldown at all"
+    assert not (shared / "cloud-down").exists(), (
+        "the live estate's router-state directory was written to"
+    )
+
+
+def test_the_cooldown_never_lands_in_the_source_tree(
+    front, tmp_path, monkeypatch
+) -> None:
+    """KNOWN-BAD (pre-fix): the cooldown was written next to the front's SOURCE.
+
+    The front's own directory is the repo checkout under test and the live runtime directory
+    in production. Writing there drops a state file into the git worktree -- and every test
+    that imports the module then reads a cooldown a previous test left behind, so one test's
+    failure silently changes another test's verdict.
+
+    Falsifier: with the source-directory path, `mark_cloud_down()` creates a file inside the
+    checkout, and the next import of the module restores that cooldown.
+    """
+    monkeypatch.delenv("ESTATE_ROUTER_CLOUD_STATE", raising=False)
+    monkeypatch.setenv("ESTATE_ROUTER_CLOUD_STATE_DIR", str(tmp_path / "state"))
+
+    source_dir = pathlib.Path(front.__file__).resolve().parent
+
+    front.mark_cloud_down()
+    state = front.cloud_state_path()
+
+    assert source_dir not in state.parents, (
+        f"the cooldown is written inside the source tree: {state}"
+    )
+    assert not list(source_dir.glob("cloud-down*")), (
+        "the source tree was polluted with a runtime state file"
+    )
+
+
+def test_two_fronts_do_not_share_one_cooldown(tmp_path) -> None:
+    """Per-INSTANCE: two fronts keep two cooldowns and neither silences the other.
+
+    Falsifier: with a shared path, the second front's `restore_cloud_cooldown()` reads the
+    first front's state and its route drops the cloud -- one front's outage demoted the
+    cloud for a front that had never seen it fail.
+    """
+    first = _load("router_front_first_instance")
+    second = _load("router_front_second_instance")
+
+    first_state = tmp_path / "one" / "cloud-down"
+    second_state = tmp_path / "two" / "cloud-down"
+    first_state.parent.mkdir()
+    second_state.parent.mkdir()
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("ESTATE_ROUTER_CLOUD_STATE", str(first_state))
+        assert first.cloud_state_path() == first_state
+        first.mark_cloud_down()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("ESTATE_ROUTER_CLOUD_STATE", str(second_state))
+        assert second.cloud_state_path() == second_state
+        second.restore_cloud_cooldown()
+        assert second.CLOUD_DOWN_UNTIL == 0.0, (
+            "the second front inherited the first front's cooldown"
+        )
+
+    assert first_state.exists()
+    assert not second_state.exists()
+
+
+def test_the_cooldown_survives_a_restart_of_the_same_front(tmp_path) -> None:
+    """A restart must not re-arm a dead cloud -- the whole point of persisting it.
+
+    The instance is named by its LISTEN PORT, not its PID: a PID changes across a restart,
+    so a PID-named file would be a new file every boot and the cooldown would never survive.
+
+    Falsifier: with a PID-named state file, the restarted front resolves a DIFFERENT path
+    and `restore_cloud_cooldown()` has nothing to restore.
+    """
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("ESTATE_ROUTER_CLOUD_STATE_DIR", str(state_dir))
+        first = _load("router_front_restart_same_port")
+        first.LISTEN = ("127.0.0.1", 4000)
+        first.mark_cloud_down()
+        path = first.cloud_state_path()
+
+        restarted = _load("router_front_restart_same_port_again")
+        restarted.LISTEN = ("127.0.0.1", 4000)
+        assert restarted.cloud_state_path() == path, (
+            "the restarted front looks in a different place: the cooldown cannot survive"
+        )
+        restarted.restore_cloud_cooldown()
+        assert restarted.CLOUD_DOWN_UNTIL > 0.0, "the restart forgot the cloud was dead"
