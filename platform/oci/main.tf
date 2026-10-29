@@ -11,11 +11,6 @@ module "oke" {
   # Basic cluster: no control-plane charge (ADR 0004 decision 1).
   cluster_name       = var.cluster_name # crew#220 hand step 2: a drill cluster is the same module under another name
   cluster_type       = "basic"
-  # 2026-10-29 (#7387): the OCI free trial ended and the tenancy is Always Free only, where OKE's
-  # limits are cluster-count 0 and node-count 0 -- every CreateCluster is 400 LimitExceeded. The
-  # module still owns the VCN, subnets, NSGs and gateways the bridge and the recovery host
-  # (recovery-host.tf) stand on, so it stays; it only stops asking for a cluster and its pools.
-  create_cluster = local.oke_enabled
   kubernetes_version = var.kubernetes_version
   cni_type           = "flannel"
 
@@ -29,9 +24,7 @@ module "oke" {
 
   ssh_public_key = var.ssh_public_key
 
-  # A filtered for-expression, not `cond ? {...} : {}`: the two arms of a conditional must share a
-  # type, and an empty map does not (apply run 40836409036).
-  worker_pools = { for name, pool in {
+  worker_pools = {
     a1 = {
       description = "one A1 node: the Always Free allowance plus paid growth under the estate-defaults cap"
       # crew#539 CP10: the capacity class a pod's affinity reads (platform/scheduling/capacity-affinity.yaml).
@@ -88,7 +81,7 @@ module "oke" {
       preemptible_config       = { enable = true, is_preserve_boot_volume = false }
       node_labels              = { "estate.io/capacity" = "preemptible" }
     }
-  } : name => pool if local.oke_enabled }
+  }
 }
 
 output "cluster_id" {
@@ -97,10 +90,4 @@ output "cluster_id" {
 
 output "cluster_endpoints" {
   value = module.oke.cluster_endpoints
-}
-
-locals {
-  # Flip back to true only on a tenancy whose Container Engine limits allow a cluster again
-  # (bin/idp-estate-capacity measures them).
-  oke_enabled = false
 }
