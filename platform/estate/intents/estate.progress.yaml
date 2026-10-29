@@ -1,0 +1,26 @@
+name: estate.progress
+description: >
+  How the estate is doing: what landed, what is in flight, what is stuck and why, what CI did,
+  and what could not be read. One report, one writer, every surface renders the same numbers.
+  "How are we doing?" is enough.
+args:
+  root: {type: string, default: "~/Documents/code/idp"}
+  hours: {type: int, default: 24}
+  fresh: {type: string, default: "false"}
+halt_on_failure: false
+steps:
+  - name: progress
+    # WHY THIS WAY. The voice surface speaks an intent's LAST stdout line, so this prints the
+    # spoken sentence and nothing else. It serves the CACHED report by default: the writer is the
+    # scheduled workflow, and a surface must not wait for a measurement to answer the founder.
+    # `fresh=true` recomputes it now. A source that cannot be read is named as blind, never as
+    # zero, and the verdict says so.
+    cmd: |
+      ROOT={{root}}
+      HOURS={{hours}}
+      FRESH={{fresh}}
+      if [ "$FRESH" = "true" ]; then
+        python3 "$ROOT/bin/estate-progress" --repo "$ROOT" --hours "$HOURS" --speak
+      else
+        python3 "$ROOT/bin/estate-progress" --read --speak
+      fi
