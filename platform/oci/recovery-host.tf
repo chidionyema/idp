@@ -14,7 +14,12 @@
 
 locals {
   recovery_shape = "VM.Standard.A1.Flex" # Always Free; any other shape costs money (R14)
-  recovery_ad    = "lPOl:UK-LONDON-1-AD-1"  # where the csi-* volumes live; a volume attaches only within its AD
+  # Router first (#7387): AD-1, where the csi-* volumes live, answered "Out of host capacity" for
+  # every A1 shape (apply runs 40844922528, 40845457597, 40846485384, 40847574642). The router is
+  # stateless, so it starts in AD-2 now; the volumes attach only within their own AD, so they are
+  # attached when the host is in AD-1 (plan step 3 moves it there when capacity returns).
+  volumes_ad  = "lPOl:UK-LONDON-1-AD-1"
+  recovery_ad = "lPOl:UK-LONDON-1-AD-2"
   # The volumes the dead cluster's CSI driver created (tagged role=persistent_volume). Read as data,
   # never managed: tofu must never be able to destroy them.
   surviving_volumes = {
@@ -112,7 +117,7 @@ resource "oci_core_instance" "recovery" {
 }
 
 resource "oci_core_volume_attachment" "surviving" {
-  for_each        = local.surviving_volumes
+  for_each        = local.recovery_ad == local.volumes_ad ? local.surviving_volumes : {}
   attachment_type = "paravirtualized"
   instance_id     = oci_core_instance.recovery.id
   volume_id       = each.value
