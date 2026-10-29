@@ -1,0 +1,84 @@
+{
+  "contract_version": 1,
+  "counts": {
+    "MEASURED_FAIL": 4,
+    "MEASURED_OK": 0,
+    "UNKNOWN": 1
+  },
+  "generated_at": "2026-10-29T08:58:36Z",
+  "generator": "bin/idp-estate-truth",
+  "host": {
+    "hostname": "Roses-MBP",
+    "scope": "laptop"
+  },
+  "ok": false,
+  "predicates": [
+    {
+      "detail": "no answer: <urlopen error EOF occurred in violation of protocol (_ssl.c:1129)> (no LITELLM_CLOUD_PROBE_KEY on this host)",
+      "duration_s": 0.456,
+      "id": "router.cloud.completion",
+      "measured_at": "2026-10-29T08:57:11Z",
+      "scope": "any",
+      "verdict": "MEASURED_FAIL"
+    },
+    {
+      "detail": "no answer: timed out (no LITELLM_LAPTOP_KEY on this host)",
+      "duration_s": 85.019,
+      "id": "router.laptop.completion",
+      "measured_at": "2026-10-29T08:58:36Z",
+      "scope": "laptop",
+      "verdict": "MEASURED_FAIL"
+    },
+    {
+      "detail": "/Users/roseonyema/.estate/router-state/lanes.json does not account for its declared lanes (declared/served/refused missing)",
+      "duration_s": 0.002,
+      "id": "router.lanes.accounted",
+      "measured_at": "2026-10-29T08:57:11Z",
+      "scope": "laptop",
+      "verdict": "MEASURED_FAIL"
+    },
+    {
+      "detail": "/Users/roseonyema/.estate/memory/runtimes.json is absent",
+      "duration_s": 0.0,
+      "id": "memory.recall",
+      "measured_at": "2026-10-29T08:57:11Z",
+      "scope": "laptop",
+      "verdict": "MEASURED_FAIL"
+    },
+    {
+      "detail": "measurable only from the cluster scope; this host is laptop",
+      "duration_s": 0.0,
+      "id": "estate-db.rows",
+      "measured_at": "2026-10-29T08:57:11Z",
+      "scope": "cluster",
+      "verdict": "UNKNOWN"
+    }
+  ],
+  "scopes": {
+    "any": {
+      "counts": {
+        "MEASURED_FAIL": 1,
+        "MEASURED_OK": 0,
+        "UNKNOWN": 0
+      },
+      "verdict": "MEASURED_FAIL"
+    },
+    "cluster": {
+      "counts": {
+        "MEASURED_FAIL": 0,
+        "MEASURED_OK": 0,
+        "UNKNOWN": 1
+      },
+      "verdict": "UNKNOWN"
+    },
+    "laptop": {
+      "counts": {
+        "MEASURED_FAIL": 3,
+        "MEASURED_OK": 0,
+        "UNKNOWN": 0
+      },
+      "verdict": "MEASURED_FAIL"
+    }
+  },
+  "verdict": "MEASURED_FAIL"
+}

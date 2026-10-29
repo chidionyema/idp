@@ -3,11 +3,11 @@
   "generator": "bin/capability-index emit",
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
-    "intent": 107,
-    "layer": 213,
+    "intent": 108,
+    "layer": 214,
     "service": 121,
     "tool": 446,
-    "workflow": 83
+    "workflow": 84
   },
   "records": [
     {
@@ -1057,6 +1057,50 @@
       "rung": null,
       "writer": "intents",
       "path": "platform/estate/intents/estate-snapshot.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:intent/estate-truth",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "Measure whether the founder's own path actually works, and give every question a verdict. The estate had a process for ownership (claims) and a process for code (gates, CI, Greenlane) and no process for truth, so on 2026-10-29 every gate was green while the founder's router answered nothing. This instrument asks the declared predicates of catalog/truth-contract.json -- a real completion through the cloud route, a real completion through the laptop front, the router's own lane ledger, the memory door, estate-db -- and answers MEASURED_OK, MEASURED_FAIL or UNKNOWN for each. The aggregate is total: any failure makes it a failure, any UNKNOWN makes it UNKNOWN, and UNKNOWN is never OK, so the estate cannot be reported healthy by omission. Writes ~/.estate/results/truth/latest.json; the scheduled job also writes the machine-generated catalog/truth-verdicts.json that a gate verifies. Read-only apart from those result files. class: read door_s: 100 steps: - name: estate-truth cmd: > python3 ~/.estate/libexec/estate-truth.py",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/estate-truth.yaml",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -6625,6 +6669,58 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/libexec/estate-inventory.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-libexec-estate-truth",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "estate-truth -- the instrument that measures whether the founder's path actually works.",
+      "contract": {
+        "inputs": [
+          "--contract",
+          "--json",
+          "--predicate",
+          "--results",
+          "--write-snapshot"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/libexec/estate-truth.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -22661,6 +22757,10 @@
       "depends_on": [
         {
           "id": "cap:tool/claim-open",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-estate-truth",
           "edge": "invokes"
         },
         {
@@ -47514,6 +47614,55 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/estate-state.yml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:workflow/gha-estate-truth",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "estate-truth -- the GitHub Actions workflow estate-truth.yml.",
+      "contract": {
+        "inputs": [
+          "schedule",
+          "workflow_dispatch"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/estate-truth.yml",
       "depends_on": [],
       "metrics": [],
       "blind": [
