@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The estate incident loop, on a five minute timer: sense, prioritise, dispatch, verify, learn.
+     WHY python3 IS ProgramArguments[0] AND NOT the script. Measured 2026-10-14 on the disk
+     watcher: a launchd job whose responsible process is /bin/bash gets "Operation not permitted"
+     under ~/Documents (TCC), so the same shape is used here - the responsible process is
+     python3, and the script stays a child (subprocess.call, not exec). The grant is per binary,
+     so the binary is named here rather than a rendered PYTHON_BIN: `command -v python3` can
+     resolve to /usr/bin/python3, which has no grant.
+     THE LOOP RUNS FROM THE ESTATE'S RUNTIME MIRROR (~/.estate/runtime/idp), not from a working
+     checkout: it is the mirror that estate-runtime-sync keeps on main, so the watcher runs the
+     landed code and never a dirty tree. The mirror lives under ~/.estate, which launchd may
+     read without a TCC grant. -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>ai.estate.incident-watch</string>
+  <key>ProgramArguments</key><array>
+    <string>/Library/Frameworks/Python.framework/Versions/3.12/bin/python3</string>
+    <string>-c</string>
+    <string>import subprocess, sys; sys.exit(subprocess.call(sys.argv[1:]))</string>
+    <string>/bin/bash</string>
+    <string>${HOME}/.estate/bin/estate-incident-loop</string>
+    <string>tick</string>
+  </array>
+  <key>StartInterval</key><integer>300</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>${HOME}/.estate/state/incident-watch.out.log</string>
+  <key>StandardErrorPath</key><string>${HOME}/.estate/state/incident-watch.err.log</string>
+</dict></plist>
