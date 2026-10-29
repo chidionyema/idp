@@ -1,0 +1,78 @@
+description: 'On 2026-10-29 the laptop router could not be deployed at all: the zero-gap swap booted the
+  idle slot 4002, waited its own 180 s window, and reported "slot 4002 not live after 180s;
+  slot 4001 keeps serving". The old router kept serving the OLD bytes, so the fix that makes a
+  declared lane served-or-refused never reached the machine. This record answers: why did the
+  render never return, when the files it was asked to write were already on disk? Every count
+  below is a measurement taken on this machine on 2026-10-29, and the command that produced it
+  is named in the item. The winning hypothesis is what the fix is built on: the render''s work
+  is done when its files are written, and the interpreter''s finalizer is not part of the
+  render, so the render must leave the interpreter before the finalizer runs.'
+
+hypotheses:
+- name: H1
+  description: "the render's WORK was done -- its files were written -- and the process was then
+    held by the interpreter's SHUTDOWN: module teardown garbage-collecting litellm's object
+    graph, which is unbounded under memory pressure, so the slot waited on a process that had
+    already produced its output"
+  prior: 0.55
+- name: H2
+  description: "the render was still WORKING: importing litellm and deriving the provider table
+    is the slow part, so the slot simply needed longer than the swap's 180 s window"
+  prior: 0.30
+- name: H3
+  description: "the slot never reached the render at all (the launchd agent or the plist was
+    wrong), so the wait was for a process that did not exist"
+  prior: 0.15
+evidence:
+- name: "the stuck render process was sampled while it was alive (pid 8437, elapsed 4 h 33 m,
+    state R, footprint 106 MB): the stack is Py_FinalizeEx -> finalize_modules ->
+    gc_collect_main, i.e. the interpreter was SHUTTING DOWN, not working (measured with
+    `sample 8437 2 -file /tmp/sample8437.txt` on 2026-10-29)"
+  observed:
+    renders_sampled_in_the_interpreter_finalizer: 1
+    renders_sampled_deriving_the_provider_table: 0
+  likelihoods:
+    H1:
+      renders_sampled_in_the_interpreter_finalizer: 0.95
+      renders_sampled_deriving_the_provider_table: 0.05
+    H2:
+      renders_sampled_in_the_interpreter_finalizer: 0.05
+      renders_sampled_deriving_the_provider_table: 0.90
+    H3:
+      renders_sampled_in_the_interpreter_finalizer: 0.05
+      renders_sampled_deriving_the_provider_table: 0.05
+- name: "the render's output files were written long before the process ended: config.runtime.yaml
+    and lanes.json carried mtime 06:03 while that same render process was still alive at 09:59
+    -- 236 minutes after its last write -- and it was still running when the deploy was
+    abandoned (measured with ls -l on ~/.estate/router-state and ps on 2026-10-29)"
+  observed:
+    renders_that_wrote_their_files_and_then_did_not_return: 1
+    minutes_of_life_after_the_last_write: 236
+  likelihoods:
+    H1:
+      renders_that_wrote_their_files_and_then_did_not_return: 0.95
+      minutes_of_life_after_the_last_write: 0.95
+    H2:
+      renders_that_wrote_their_files_and_then_did_not_return: 0.05
+      minutes_of_life_after_the_last_write: 0.10
+    H3:
+      renders_that_wrote_their_files_and_then_did_not_return: 0.05
+      minutes_of_life_after_the_last_write: 0.05
+- name: "a render process for the NEW slot was observed running while the swap waited
+    (pid 97138, alive at 09:55, gone by 09:57), and the swap's own window ended with
+    'slot 4002 not live after 180s; slot 4001 keeps serving' -- so a render WAS started for
+    the slot and the slot's port was never bound (measured from ps and the install log on
+    2026-10-29)"
+  observed:
+    renders_started_for_the_new_slot: 1
+    slots_bound_its_port_inside_the_swap_window: 0
+  likelihoods:
+    H1:
+      renders_started_for_the_new_slot: 0.90
+      slots_bound_its_port_inside_the_swap_window: 0.90
+    H2:
+      renders_started_for_the_new_slot: 0.90
+      slots_bound_its_port_inside_the_swap_window: 0.40
+    H3:
+      renders_started_for_the_new_slot: 0.05
+      slots_bound_its_port_inside_the_swap_window: 0.90
