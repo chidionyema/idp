@@ -1,0 +1,13 @@
+{
+  "question": "Does the science kernel complete a preregistered programme with independent verification and no human step?",
+  "hypothesis": "The harnessed treatment raises verified completion rate over baseline on the frozen fixture",
+  "null_hypothesis": "Mean paired difference is zero",
+  "falsifier": "The seeded bootstrap 95% CI of the paired difference includes zero, or the verifier's recomputation disagrees",
+  "primary_metric": "verified_completion_rate",
+  "analysis_plan": "paired differences, seeded percentile bootstrap, 2000 resamples, seed 7",
+  "fixture_digest": "e8785a47d11b7458bc61ed7cc22ff945d12bb13e93ba08b7774884a8cd710beb",
+  "verifier": "science-verifier",
+  "budget_usd": 0,
+  "max_seconds": 120,
+  "risk_tier": "sandboxed"
+}
