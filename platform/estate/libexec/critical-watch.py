@@ -86,10 +86,11 @@ PASS, FAIL, BLIND = "PASS", "FAIL", "BLIND"
 def now_iso() -> str:
     """An ISO stamp the estate can trust.
 
-    The host clock is not trusted by default: on 2026-10-30 it read 2024-01-01 for about twenty
-    minutes, and this file's incident ids and detected_at stamps carried that date into the
-    estate's incident ledger. clock-guard compares the wall clock against CLOCK_MONOTONIC and,
-    when the wall clock is untrustworthy, this returns the projection instead."""
+    The host clock is not trusted by default: on 2026-10-29 it read 2024-01-01 for about
+    nineteen minutes, and this file's incident ids and detected_at stamps carried that date into
+    the estate's incident ledger. clock-guard compares the wall clock against the last trusted
+    reading and the estate's own incident ledger, and when the wall clock is untrustworthy this
+    returns the projection instead."""
     return clock_guard.stamp()
 
 

@@ -219,10 +219,11 @@ def open_ledger(path: Path | None = None) -> sqlite3.Connection:
 def wall_now() -> datetime:
     """The estate's trusted wall clock.
 
-    The host clock is not trusted by default: on 2026-10-30 it read 2024-01-01 for about twenty
-    minutes and every timestamp the estate wrote in that window was wrong. clock-guard judges the
-    wall clock against the kernel's own clock (the boot record plus CLOCK_MONOTONIC, with the
-    persisted sample and the estate's incident ledger as fallbacks) and, when they disagree, this
+    The host clock is not trusted by default: on 2026-10-29 it read 2024-01-01 for about
+    nineteen minutes and every timestamp the estate wrote in that window was wrong. clock-guard
+    judges the wall clock against the last trusted reading (the anchor) and the estate's own
+    incident ledger, and uses the kernel's boot record only as a consistency check, because on
+    macOS the boot record follows the wall clock through a step. When they disagree, this
     returns the projection instead of the regressed clock.
     """
     return datetime.fromtimestamp(clock_guard.trusted_epoch(), tz=timezone.utc)
