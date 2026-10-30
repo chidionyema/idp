@@ -53,12 +53,12 @@ def render(cmd: str, args: dict) -> str:
 def run_rendered(cmd: str, args: dict, tmp_path: Path) -> tuple[int, str, list[str]]:
     """Run the rendered step with python3 shadowed by a recorder; return (rc, out, recorded)."""
     tool_dir = tmp_path / "tool"
-    (tool_dir / "bin").mkdir(parents=True)
+    (tool_dir / "bin").mkdir(parents=True, exist_ok=True)
     (tool_dir / "bin" / "founder-decision").write_text("#!/bin/sh\nexit 0\n")
 
     record = tmp_path / "recorded.txt"
     stub_dir = tmp_path / "stub"
-    stub_dir.mkdir()
+    stub_dir.mkdir(exist_ok=True)
     stub = stub_dir / "python3"
     stub.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{record}"\nexit 0\n')
     stub.chmod(0o755)
@@ -119,6 +119,87 @@ def test_an_ask_carries_an_absolute_state_path_not_an_empty_one(tmp_path):
     state = recorded[recorded.index("--state") + 1]
     assert state.startswith("/"), f"the state path is not absolute: {state!r}"
     assert state != "''", "the state path was the empty-argument rendering"
+
+
+def test_the_global_options_come_before_the_verb(tmp_path):
+    """argparse accepts `--repo`/`--state` only BEFORE the verb.
+
+    Found 2026-10-30: the repaired intent passed `--state` AFTER the verb, and the door died
+    with `unrecognized arguments: --state ...` before it asked anything. The recorded argv is
+    the proof that the global options lead and the verb follows.
+    """
+    args = defaults()
+    args["question"] = "Authorise the guarded-path change?"
+    rc, out, recorded = run_rendered(step_cmd(), args, tmp_path)
+    assert rc == 0, out
+    assert recorded, f"the door called nothing:\n{out}"
+    verbs = {"ask", "show", "answer", "poll", "reply", "wait", "list"}
+    verb_positions = [i for i, token in enumerate(recorded) if token in verbs]
+    assert verb_positions, f"no verb in the recorded argv:\n{recorded}"
+    verb_at = verb_positions[0]
+    for option in ("--repo", "--state"):
+        assert option in recorded, f"{option} was not passed:\n{recorded}"
+        assert recorded.index(option) < verb_at, (
+            f"{option} comes after the verb {recorded[verb_at]!r}; argparse rejects that:\n{recorded}"
+        )
+
+
+def test_an_empty_option_reaches_the_door_as_an_empty_argument(tmp_path):
+    """`--options` defaults to empty. It must arrive EMPTY, not as the two characters ''.
+
+    interpolate() already shell-quotes, so `"{{options}}"` in the template is a literal pair
+    of quote characters INSIDE the value. The door would store `options: "''"` and the founder
+    would read a stray quote pair.
+    """
+    args = defaults()
+    args["question"] = "Authorise the guarded-path change?"
+    rc, out, recorded = run_rendered(step_cmd(), args, tmp_path)
+    assert rc == 0, out
+    assert "--options" in recorded, f"no options were passed:\n{recorded}"
+    value = recorded[recorded.index("--options") + 1]
+    assert value == "", (
+        f"the empty option arrived as {value!r}, not as an empty argument"
+    )
+    assert "--context" in recorded
+    assert recorded[recorded.index("--context") + 1] == ""
+
+
+def test_a_question_with_spaces_stays_one_argument(tmp_path):
+    args = defaults()
+    args["question"] = "Authorise the guarded-path change on lane/prepush-gherkin?"
+    rc, out, recorded = run_rendered(step_cmd(), args, tmp_path)
+    assert rc == 0, out
+    assert "--question" in recorded, f"no question was passed:\n{recorded}"
+    value = recorded[recorded.index("--question") + 1]
+    assert value == args["question"], f"the question was mangled into {value!r}"
+
+
+def test_the_absent_sentinel_is_compared_as_a_string_not_a_bash_error(tmp_path):
+    """`[ - != "-" ]` is a bash error, so the read-back branch never fires.
+
+    The template must read the sentinel through a VARIABLE. The proof is that the read-back
+    branch is actually TAKEN for a decision_id and NOT taken for the absent sentinel.
+    """
+    args = defaults()
+    args["decision_id"] = "dec-1a2b3c4d"
+    rc, out, recorded = run_rendered(step_cmd(), args, tmp_path)
+    assert rc == 0, out
+    assert "show" in recorded, f"the read-back branch was not taken:\n{recorded}"
+    assert "ask" not in recorded
+
+    args = defaults()
+    args["question"] = "Authorise the guarded-path change?"
+    rc, out, recorded = run_rendered(step_cmd(), args, tmp_path)
+    assert rc == 0, out
+    assert "ask" in recorded, f"the ask branch was not taken:\n{recorded}"
+
+
+def test_an_absent_question_refuses_and_asks_nothing(tmp_path):
+    args = defaults()  # question defaults to the absent sentinel
+    rc, out, recorded = run_rendered(step_cmd(), args, tmp_path)
+    assert rc != 0, "an absent question must be refused, not asked"
+    assert "question" in out.lower(), f"the refusal does not say why:\n{out}"
+    assert not recorded, f"the door asked something with no question:\n{recorded}"
 
 
 def test_a_read_back_still_reads_back(tmp_path):
