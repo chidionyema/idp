@@ -38,7 +38,9 @@ def _governance_path() -> str:
     ):
         if cand and os.path.isfile(os.path.join(cand, "governance", "registry.py")):
             return cand
-    raise SystemExit("estate: the governance package was not found (set ESTATE_GOVERNANCE_TREE)")
+    raise SystemExit(
+        "estate: the governance package was not found (set ESTATE_GOVERNANCE_TREE)"
+    )
 
 
 sys.path.insert(0, _governance_path())
@@ -58,6 +60,10 @@ def _self_test() -> int:
         receipt.verify(good)["ok"],
         receipt.has_receipt(receipt.format_receipt(good)),
         not receipt.has_receipt("it is all fine, trust me"),
+        not receipt.has_receipt("receipt"),
+        not receipt.has_receipt(
+            "the receipt is attached, see ~/.estate/state/receipts"
+        ),
     ]
     for name, ok in zip(
         (
@@ -68,6 +74,8 @@ def _self_test() -> int:
             "the receipt re-verifies",
             "a formatted receipt is recognised",
             "narration is not a receipt",
+            "the bare word 'receipt' is not a receipt",
+            "a receipt path is not a receipt",
         ),
         checks,
     ):
@@ -120,12 +128,18 @@ def main(argv: list[str]) -> int:
                 with open(args.file) as f:
                     text = f.read()
             except OSError as exc:
-                print(f"estate-receipt: no report at {args.file} ({exc})", file=sys.stderr)
+                print(
+                    f"estate-receipt: no report at {args.file} ({exc})", file=sys.stderr
+                )
                 return 2
         elif args.stdin or not sys.stdin.isatty():
             text = sys.stdin.read()
         ok = receipt.has_receipt(text)
-        print(f"{'ok  ' if ok else 'FAIL'}  receipt  the report carries machine-generated proof")
+        reason = receipt.receipt_reason(text)[1]
+        print(
+            f"{'ok  ' if ok else 'FAIL'}  receipt  "
+            + ("the report carries machine-generated proof" if ok else reason)
+        )
         return 0 if ok else 1
 
     command = [c for c in args.command if c != "--"]
@@ -135,7 +149,12 @@ def main(argv: list[str]) -> int:
 
     got = receipt.run_receipt(command, cwd=args.cwd)
     if args.save:
-        path = receipt.save(got, os.path.join(receipt.ledger.state_home(), "receipts", got["sha256"] + ".json"))
+        path = receipt.save(
+            got,
+            os.path.join(
+                receipt.ledger.state_home(), "receipts", got["sha256"] + ".json"
+            ),
+        )
         got["path"] = path
     if args.json:
         print(json.dumps(got, indent=2, default=str))

@@ -645,10 +645,54 @@ def test_the_receipt_launcher_reads_a_report_from_stdin():
 
     proc = subprocess.run(
         [sys.executable, str(REPO / "bin/estate-receipt"), "--has-receipt", "--stdin"],
-        input="ok  receipt  cmd  exit 0  sha256=abc123\n",
+        input=receipt.format_receipt(receipt.run_receipt(["true"], cwd=str(REPO)))
+        + "\n",
         capture_output=True,
         text=True,
         cwd=str(REPO),
         check=False,
     )
     assert proc.returncode == 0, proc.stdout
+
+
+def test_the_bare_word_receipt_is_not_proof():
+    """The founder's relayed directive (2026-10-30): no receipt keyword is proof.
+
+    The old check searched the text for the word "receipt" and called that proof, so an agent
+    could write "receipt" and pass. The check is now the machine's own shape.
+    """
+    for narration in (
+        "receipt\n",
+        "receipt\n",
+        "the receipt is attached: ~/.estate/state/receipts/abc.json\n",
+        "exit status: 0\nall good\n",
+        "sha256: " + ("a" * 64) + "\n",
+    ):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(REPO / "bin/estate-receipt"),
+                "--has-receipt",
+                "--stdin",
+            ],
+            input=narration,
+            capture_output=True,
+            text=True,
+            cwd=str(REPO),
+            check=False,
+        )
+        assert proc.returncode == 1, narration
+        assert "not machine-generated proof" in proc.stdout, proc.stdout
+
+    assert receipt.has_receipt("receipt") is False
+    ok, reason = receipt.receipt_reason("receipt")
+    assert ok is False
+    assert "missing" in reason
+
+
+def test_a_receipt_object_embedded_in_a_report_is_proof():
+    got = receipt.run_receipt(["echo", "hello"], cwd=str(REPO))
+    body = "Here is the proof:\n" + json.dumps(got) + "\n"
+    assert receipt.has_receipt(body) is True
+    ok, reason = receipt.receipt_reason(body)
+    assert ok is True, reason
