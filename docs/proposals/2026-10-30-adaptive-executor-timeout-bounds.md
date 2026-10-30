@@ -124,21 +124,23 @@ The resolver's evidence is a list of receipts:
 Receipt(shape="pytest", elapsed_sec=8.2, exit_code=0, killed_at_ceiling=False, repo="idp")
 ```
 
-Two facts are missing today and must be added before the learning loop is wired:
+Two facts were missing when this proposal was written. Both now exist, in the executor's own
+slice, with the executor's own tests (2026-10-30 --
+`docs/decisions/2026-10-30-the-executor-records-what-it-measured.md`):
 
-1. **Elapsed time per job.** `platform/executor/run.py` writes `<job>.log`, `<job>.pid` and
-   `<job>.exit`. The exit file carries the exit status and no duration. The ceiling probe
-   measures elapsed time locally but does not persist it. Without a per-job duration receipt
-   there is no shape-level distribution to learn from, and "learn from the past" would be a
-   slogan.
-2. **A stable command shape.** The shape key has to be a normal form of the command, not the
-   command itself: `pytest tests/` and `pytest tests/ -q` are one shape, `docker build` is
-   another. The shape key is a fingerprint of the executable plus the first non-flag argument
-   class, with flags stripped of their values. It must be recorded in the receipt, so the
-   evidence can be audited rather than trusted.
+1. **Elapsed time per job.** `platform/executor/run.py` used to write `<job>.log`, `<job>.pid`
+   and `<job>.exit`, and the exit file carried a status and no duration. It now writes
+   `<job>.receipt.json` beside them, with the elapsed seconds, the exit code, whether the
+   ceiling killed the job, and the repository it ran in.
+2. **A stable command shape.** The shape key is a normal form of the command: the executable's
+   name plus the flag names, with every value replaced by `<arg>`, and a digest of that
+   canonical form appended so the key can be audited by eye. `pytest tests/` and
+   `pytest tests/ -q` are one shape, `docker build` is another. It is recorded in the receipt,
+   so the evidence can be audited rather than trusted.
 
-Both are additions to the executor's receipt writer, in the executor's own slice, with the
-executor's own claim. They are not in this slice.
+What is still missing is the wire between the two halves: the door does not yet resolve a named
+bound from these receipts. Until it does, the executor writes one more file per job and nothing
+reads it -- which is the honest state, and the reason this proposal is still a proposal.
 
 ## Anti-gaming
 
