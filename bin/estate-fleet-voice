@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""idp#7490: the voice door of fleet comms. Speech in becomes a directive; the inbox is read aloud.
+
+    estate-fleet-voice hear <audio-file> [--kind directive|broadcast]
+        audio -> FleetView POST /voice/hear (transcribe) -> estate-fleet <kind> with channel=voice
+    estate-fleet-voice speak [text]
+        no text: read my pending inbox aloud (POST /voice/say) and ack ONLY after playback worked
+        text: speak it
+
+Config: $FLEETVIEW_URL (default http://127.0.0.1:18790), $ESTATE_AGENT (author; default founder),
+$ESTATE_FLEET_VOICE_PLAYER (command run with a wav path; default afplay). Needs ffmpeg.
+Exit 0 ok, 1 FAIL, 2 BLIND (FleetView or the voice engine unreachable: never silence reported as success).
+"""
+import os
+import subprocess
+import sys
+import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+FLEET = HERE / "estate-fleet"
+URL = os.environ.get("FLEETVIEW_URL", "http://127.0.0.1:18790").rstrip("/")
+TTS_RATE, ASR_RATE = 24000, 16000
+
+
+def blind(why):
+    print(f"BLIND   estate-fleet-voice  {why}")
+    sys.exit(2)
+
+
+def post(path, data, ctype, timeout=120):
+    req = urllib.request.Request(URL + path, data=data, headers={"Content-Type": ctype}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.read()
+    except urllib.error.HTTPError as e:
+        blind(f"{path} answered {e.code}: {e.read()[:160]!r}")
+    except Exception as e:
+        blind(f"cannot reach {URL}{path}: {type(e).__name__}")
+
+
+def ffmpeg(args, data=None):
+    p = subprocess.run(["ffmpeg", "-v", "error", *args], input=data, capture_output=True)
+    if p.returncode:
+        sys.exit(f"FAIL    estate-fleet-voice  ffmpeg: {p.stderr.decode()[:200]}")
+    return p.stdout
+
+
+def hear(audio, kind):
+    import json
+
+    pcm = ffmpeg(["-i", audio, "-f", "f32le", "-ac", "1", "-ar", str(ASR_RATE), "-"])
+    author = os.environ.get("ESTATE_AGENT", "founder")
+    q = urllib.parse.urlencode({"session_id": f"fleet-voice-{os.getpid()}", "author": author})
+    out = json.loads(post(f"/voice/hear?{q}", pcm, "application/octet-stream"))
+    text = (out.get("text") or "").strip()
+    if out.get("empty") or not text:
+        sys.exit("FAIL    estate-fleet-voice  nothing was heard: no directive sent")
+    env = {**os.environ, "ESTATE_FLEET_CHANNEL": "voice", "ESTATE_AGENT": author}
+    r = subprocess.run([sys.executable, str(FLEET), kind, text], env=env)
+    if r.returncode:
+        sys.exit(r.returncode)
+    print(f'ok      estate-fleet-voice  heard "{text}" and sent it as a {kind}')
+
+
+def play(pcm):
+    with tempfile.TemporaryDirectory() as d:
+        wav = Path(d) / "out.wav"
+        ffmpeg(["-f", "f32le", "-ar", str(TTS_RATE), "-ac", "1", "-i", "-", str(wav)], pcm)
+        player = os.environ.get("ESTATE_FLEET_VOICE_PLAYER", "afplay").split()
+        if subprocess.run([*player, str(wav)]).returncode:
+            sys.exit("FAIL    estate-fleet-voice  playback failed: inbox left un-acked")
+
+
+def speak(text):
+    if text:
+        play(post("/voice/say", ('{"text": %s}' % __import__("json").dumps(text)).encode(), "application/json"))
+        print("ok      estate-fleet-voice  spoke the text")
+        return
+    r = subprocess.run([sys.executable, str(FLEET), "inbox"], capture_output=True, text=True)
+    if r.returncode:
+        sys.stdout.write(r.stdout)
+        sys.exit(r.returncode)
+    lines = [ln for ln in r.stdout.splitlines() if ln.split(" ", 1)[0] in ("directive", "broadcast", "to")]
+    if not lines:
+        text = "You have no new messages."
+    else:
+        text = f"You have {len(lines)} new messages. " + " ".join(ln.split(" ", 3)[-1] for ln in lines)
+    play(post("/voice/say", ('{"text": %s}' % __import__("json").dumps(text)).encode(), "application/json"))
+    if lines:
+        subprocess.run([sys.executable, str(FLEET), "inbox", "--ack"], capture_output=True, check=True)
+    print(f"ok      estate-fleet-voice  read {len(lines)} message(s) aloud" + (" and acked them" if lines else ""))
+
+
+def main(argv):
+    if len(argv) >= 2 and argv[0] == "hear":
+        kind = argv[argv.index("--kind") + 1] if "--kind" in argv else "directive"
+        if kind not in ("directive", "broadcast"):
+            sys.exit("FAIL    estate-fleet-voice  --kind is directive or broadcast")
+        hear(argv[1], kind)
+    elif argv and argv[0] == "speak":
+        speak(" ".join(argv[1:]))
+    else:
+        sys.exit(__doc__)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
