@@ -223,6 +223,59 @@ def test_the_report_slices_carry_explicit_markers() -> None:
     assert helper.parse_slice("no markers here") == ""
 
 
+def test_the_final_command_compresses_the_report_on_the_host() -> None:
+    """The report must travel compressed, or the door costs one command per 900 bytes."""
+    body = helper.final_command("repair")
+    assert "gzip -c" in body, body
+    assert "base64" in body, body
+    assert "report_b64_bytes=" in body, body
+    assert "tr -d" in body, (
+        "GNU base64 wraps its output at 76 columns; the newlines must be stripped or the "
+        "reassembled payload will not decode"
+    )
+
+
+def test_the_slices_carry_the_compressed_report_not_the_raw_text() -> None:
+    """One protocol, one place: the slices read what the final command wrote."""
+    body = helper.slice_command(0)
+    assert helper.REPORT_B64_PATH in body, body
+    assert helper.REPORT_PATH not in body, body
+    later = helper.slice_command(helper.SLICE_BYTES)
+    assert helper.REPORT_B64_PATH in later, later
+
+
+def test_the_report_travels_compressed_so_the_door_costs_a_few_commands() -> None:
+    """Measured: a 15675-byte report took 18 raw slices, one agent poll each, about an hour.
+
+    The compressed report must cost a handful of commands, or every governed door use
+    risks the 120-minute CI job timeout.
+    """
+    report = ("estate-router: unit active=enabled\n" * 600).encode()[:15675]
+    assert len(report) == 15675
+    payload = helper.encode_report(report)
+    slices = (len(payload) + helper.SLICE_BYTES - 1) // helper.SLICE_BYTES
+    assert slices <= 6, (
+        f"the door must cost a handful of Run Commands, not {slices} "
+        f"({len(payload)} compressed bytes)"
+    )
+    assert helper.decode_report(payload) == report
+
+
+def test_the_compressed_report_round_trips_through_the_slice_protocol() -> None:
+    """The report the founder reads must be the host's bytes, through the real markers."""
+    report = bytes(range(256)) * 60
+    payload = helper.encode_report(report)
+    pieces = []
+    for offset in range(0, len(payload), helper.SLICE_BYTES):
+        captured = (
+            helper.SLICE_OPEN
+            + payload[offset : offset + helper.SLICE_BYTES]
+            + helper.SLICE_CLOSE
+        )
+        pieces.append(helper.parse_slice(captured))
+    assert helper.decode_report("".join(pieces)) == report
+
+
 def test_the_slices_reassemble_the_report_byte_for_byte(tmp_path: Path) -> None:
     """The report the founder reads must be the host's bytes, not a marker-laced copy."""
     body = "".join(f"estate line {i} " + "-" * 40 + "\n" for i in range(60))
