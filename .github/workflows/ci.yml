@@ -599,6 +599,21 @@ jobs:
           base="${BASE:-$(git merge-base origin/main "$HEAD")}"
           bin/claim-gate "$base" "$HEAD"
 
+  # The founder's laws, gated (founder, 2026-10-29: "my laws need to be gated"). Every law in
+  # platform/estate/governance/laws.yaml carries an executable check AND a falsifier: a
+  # known-bad fixture the check must reject. The gate runs the list and the falsifiers, and
+  # ci-success judges it, so a red law gate blocks the landing. It is not advisory: no
+  # continue-on-error on the job or on any step.
+  law-gate:
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || startsWith(github.ref, 'refs/heads/queue/')
+    runs-on: ubuntu-24.04
+    permissions: { contents: read, issues: read }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - name: the laws, decided (and every gate proven able to fail)
+        run: python3 bin/estate-law-gate
+
   ci-success:
     if: always()
     # security-scan is judged here since 2026-10-12. It sat outside this list for as long as the
@@ -620,7 +635,7 @@ jobs:
     # greenlane status read "success proven", and main fast-forwarded red -- four pushes in a row.
     # The loop now judges every key of `needs`, so this is the one list, and
     # tests/test_ci_success_judges_every_job.py fails if a job in this file is missing from it.
-    needs: [fast-gate, verifier, offline-gate, bdd, bdd-suites, messaging-demo, migrate-domain, executes-gate, feature-request-plan, ui-kit, claim-gate, security-scan]
+    needs: [fast-gate, verifier, offline-gate, bdd, bdd-suites, messaging-demo, migrate-domain, executes-gate, feature-request-plan, ui-kit, claim-gate, security-scan, law-gate]
     runs-on: ubuntu-24.04
     steps:
       - name: every required job in this workflow is success or skipped

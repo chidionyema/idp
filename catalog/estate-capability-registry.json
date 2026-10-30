@@ -4,9 +4,9 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 110,
-    "layer": 217,
+    "layer": 228,
     "service": 122,
-    "tool": 450,
+    "tool": 459,
     "workflow": 85
   },
   "records": [
@@ -6226,6 +6226,598 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/context/server.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-governance-checks",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "The law checks: every law is a machine decision, and every check can be made to fail.",
+      "contract": {
+        "inputs": [
+          "--name-only"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-nodesoftware-operator-controller-internal-controller-types",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/governance/checks.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-governance-executor_permission",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Direct-executor freedom, earned by measurement.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-governance-ledger",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-governance-registry",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/governance/executor_permission.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-governance-founder_intake",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Founder prompt intake: every founder prompt becomes structured, retrievable context.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-governance-ledger",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-memory-door",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/governance/founder_intake.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-governance-freeze",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Founder-approved work is frozen: the keys are taken away.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-governance-ledger",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/governance/freeze.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-governance-ledger",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "The violation ledger and the per-session state: one file every runtime writes.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/governance/ledger.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-governance-provider_renewal",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Governance bound to the model provider: repeated violations end the subscription.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-governance-ledger",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/governance/provider_renewal.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-governance-receipt",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Machine-generated receipts: the only currency a report to the founder is allowed to spend.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/governance/receipt.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-governance-registry",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "The law gate: the registry, the runner, the falsifier, and the audit for what is missing.",
+      "contract": {
+        "inputs": [
+          "--no-heading",
+          "--no-messages"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-governance-checks",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/governance/registry.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-governance-relaunch",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "The relaunch half of the supervisor: it outlives the session it replaces.",
+      "contract": {
+        "inputs": [
+          "--cwd",
+          "--grace",
+          "--instruction-file",
+          "--model",
+          "--pid",
+          "--print",
+          "--provider",
+          "--session",
+          "--session-id"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/governance/relaunch.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-governance-state_page",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "One infra-state page, computed once, published to every session.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-governance-ledger",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-governance-provider_renewal",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-governance-registry",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-memory-door",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-memory-focus",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/governance/state_page.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-governance-supervisor",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "The supervisor: one warning per violation class, then terminate and relaunch.",
+      "contract": {
+        "inputs": [
+          "--cwd",
+          "--instruction-file",
+          "--model",
+          "--pid",
+          "--provider",
+          "--session"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-governance-ledger",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/governance/supervisor.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -12914,7 +13506,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-governance-ledger",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -23063,6 +23660,10 @@
           "edge": "invokes"
         },
         {
+          "id": "cap:tool/estate-freeze",
+          "edge": "invokes"
+        },
+        {
           "id": "cap:tool/idp-estate-truth",
           "edge": "invokes"
         },
@@ -24655,6 +25256,56 @@
       ]
     },
     {
+      "id": "cap:tool/estate-executor-permission",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate-executor-permission -- may this session use the direct executor right now?",
+      "contract": {
+        "inputs": [
+          "--claim",
+          "--explain",
+          "--json",
+          "--session"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-executor-permission",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
       "id": "cap:tool/estate-face-avatar",
       "schema_version": 1,
       "kind": "tool",
@@ -24827,6 +25478,113 @@
       ]
     },
     {
+      "id": "cap:tool/estate-founder-intake",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate-founder-intake -- every founder prompt, analysed and retrievable.",
+      "contract": {
+        "inputs": [
+          "--file",
+          "--json",
+          "--no-publish",
+          "--repeat",
+          "--session",
+          "--stdin",
+          "--text"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-founder-intake",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/estate-freeze",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate-freeze -- founder-approved work is immutable to agents until a new approval.",
+      "contract": {
+        "inputs": [
+          "--approval",
+          "--approved-by",
+          "--check",
+          "--freeze",
+          "--json",
+          "--list",
+          "--note",
+          "--release"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-freeze",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
       "id": "cap:tool/estate-friction-tap",
       "schema_version": 1,
       "kind": "tool",
@@ -24975,6 +25733,61 @@
           "edge": "invokes"
         }
       ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/estate-law-gate",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate-law-gate -- the founder's laws, decided by machines, and the hunt for what is missing.",
+      "contract": {
+        "inputs": [
+          "--audit",
+          "--base",
+          "--cosmetic",
+          "--falsify",
+          "--head",
+          "--json",
+          "--proof-required",
+          "--self-test",
+          "--spec-trace"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-law-gate",
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",
@@ -25361,6 +26174,120 @@
       ]
     },
     {
+      "id": "cap:tool/estate-provider-renewal",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate-provider-renewal -- bind the governance to the model provider.",
+      "contract": {
+        "inputs": [
+          "--apply",
+          "--json",
+          "--status",
+          "--threshold"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-provider-renewal",
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-vendor-render",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/estate-receipt",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate-receipt -- machine-generated proof for every report to the founder.",
+      "contract": {
+        "inputs": [
+          "--cwd",
+          "--file",
+          "--has-receipt",
+          "--json",
+          "--save",
+          "--self-test",
+          "--stdin",
+          "--verify"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-receipt",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-law-gate",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
       "id": "cap:tool/estate-render-pages",
       "schema_version": 1,
       "kind": "tool",
@@ -25563,11 +26490,47 @@
       "path": "bin/estate-runtime-sync",
       "depends_on": [
         {
+          "id": "cap:tool/estate-executor-permission",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-founder-intake",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-freeze",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-law-gate",
+          "edge": "invokes"
+        },
+        {
           "id": "cap:tool/estate-memory-install",
           "edge": "invokes"
         },
         {
           "id": "cap:tool/estate-progress",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-provider-renewal",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-receipt",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-spec-status",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-state-page",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-supervisor",
           "edge": "invokes"
         },
         {
@@ -25938,6 +26901,170 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/estate-spatial-cli",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/estate-spec-status",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate-spec-status -- is a founder spec done? Only the proof decides.",
+      "contract": {
+        "inputs": [
+          "--all",
+          "--check",
+          "--json"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-spec-status",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/estate-state-page",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate-state-page -- one page that says what the estate's infra actually is, right now.",
+      "contract": {
+        "inputs": [
+          "--json",
+          "--no-publish",
+          "--telegram"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-state-page",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-brief",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/estate-supervisor",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate-supervisor -- one warning per violation class, then the keys are taken away.",
+      "contract": {
+        "inputs": [
+          "--class",
+          "--cwd",
+          "--detail",
+          "--json",
+          "--model",
+          "--no-relaunch",
+          "--pid",
+          "--provider",
+          "--session",
+          "--source",
+          "--status"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-supervisor",
       "depends_on": [],
       "metrics": [],
       "blind": [

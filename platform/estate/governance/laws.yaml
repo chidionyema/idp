@@ -1,0 +1,296 @@
+# The founder's laws, gated.
+#
+# A law here is not a sentence: it is a machine decision plus a falsifier. The falsifier is a
+# known-bad fixture the check MUST reject. A law whose check passes and whose falsifier also
+# passes is reported UNENFORCED and blocks -- a gate that cannot fail is not a gate
+# (AGENTS.md section 9, R2).
+#
+# ids are GOV-<n>. The founder's own laws are numbered LAW <n> (docs/FOUNDER.md,
+# docs/NEXT.md, docs/reference/policy/definition-of-done.md) and those numbers are HIS: a gate
+# here never claims to be the founder's LAW 3. A gate that claims a founder law says so with
+# `founder_law: LAW-<n>`, and every other founder law the estate states is reported by
+# bin/estate-law-gate --audit as prose-only: stated, never decided.
+
+laws:
+  - id: GOV-001
+    law: >-
+      No agent may change founder-approved work without a new founder approval: we kick the
+      door and take the keys away.
+    source: founder, 2026-10-29
+    severity: block
+    check:
+      type: grep_present
+      path: bin/estate-memory-enforce
+      pattern: "freeze\\.is_frozen"
+    falsifier:
+      files:
+        bin/estate-memory-enforce: "print('no governance here')\n"
+      check:
+        type: grep_present
+        path: bin/estate-memory-enforce
+        pattern: "freeze\\.is_frozen"
+
+  - id: GOV-002
+    law: >-
+      A claim is not an approval: the merge gate refuses a change to founder-approved work too,
+      so a frozen path cannot be landed by a different door.
+    source: founder, 2026-10-29
+    severity: block
+    check:
+      type: grep_present
+      path: bin/claim-gate
+      pattern: "frozen_problems"
+    falsifier:
+      files:
+        bin/claim-gate: "print('no freeze here')\n"
+      check:
+        type: grep_present
+        path: bin/claim-gate
+        pattern: "frozen_problems"
+
+  - id: GOV-003
+    law: >-
+      A session under lockdown has no write path at all: no file, no shell, no push. It stays
+      locked until its proof is green, so the fix cannot be faked by writing first.
+    source: founder, 2026-10-29
+    severity: block
+    check:
+      type: grep_present
+      path: bin/estate-memory-enforce
+      pattern: "is_locked"
+    falsifier:
+      files:
+        bin/estate-memory-enforce: "print('no lockdown here')\n"
+      check:
+        type: grep_present
+        path: bin/estate-memory-enforce
+        pattern: "is_locked"
+
+  - id: GOV-004
+    law: >-
+      Every law carries a falsifier and the runner proves it fails. A gate that cannot fail is
+      not a gate.
+    source: AGENTS.md section 9, R2
+    severity: block
+    check:
+      type: grep_present
+      path: platform/estate/governance/registry.py
+      pattern: "def run_falsifier"
+    falsifier:
+      files:
+        platform/estate/governance/registry.py: "def no_falsifier_here():\n    return True\n"
+      check:
+        type: grep_present
+        path: platform/estate/governance/registry.py
+        pattern: "def run_falsifier"
+
+  - id: GOV-005
+    law: >-
+      CI must not treat a required gate as advisory. The jobs the merge queue gates on carry
+      no continue-on-error.
+    source: founder, 2026-10-29 ("CI is too loose"); AGENTS.md section 9, R1
+    severity: block
+    check:
+      type: workflow_strict
+      workflow: .github/workflows/ci.yml
+      jobs: [ci-success, claim-gate, fast-gate, verifier, bdd-suites, offline-gate, security-scan]
+    falsifier:
+      files:
+        .github/workflows/ci.yml: |
+          name: ci
+          on: [pull_request]
+          jobs:
+            ci-success:
+              runs-on: ubuntu-24.04
+              continue-on-error: true
+              steps:
+                - run: echo hi
+      check:
+        type: workflow_strict
+        workflow: .github/workflows/ci.yml
+        jobs: [ci-success]
+
+  - id: GOV-006
+    law: >-
+      The law gate is a required CI job, not advice: it is in the workflow the merge queue
+      reads, and it is not on continue-on-error.
+    source: founder, 2026-10-29
+    severity: block
+    check:
+      type: grep_present
+      path: .github/workflows/ci.yml
+      pattern: "estate-law-gate"
+    falsifier:
+      files:
+        .github/workflows/ci.yml: |
+          name: ci
+          on: [pull_request]
+          jobs:
+            other:
+              runs-on: ubuntu-24.04
+              steps:
+                - run: echo hi
+      check:
+        type: grep_present
+        path: .github/workflows/ci.yml
+        pattern: "estate-law-gate"
+
+  - id: GOV-007
+    law: >-
+      Every session, in every runtime, starts from the same page: the estate's infra state.
+      The founder never has to repeat himself and no session works on a stale picture.
+    source: founder, 2026-10-29
+    severity: block
+    check:
+      type: grep_present
+      path: bin/estate-brief
+      pattern: "estate-state"
+    falsifier:
+      files:
+        bin/estate-brief: "print('no state page here')\n"
+      check:
+        type: grep_present
+        path: bin/estate-brief
+        pattern: "estate-state"
+
+  - id: GOV-008
+    law: >-
+      A model provider whose sessions keep breaking the laws loses its lanes: the rendered
+      router config drops its models, so the estate stops paying for it.
+    source: founder, 2026-10-29
+    severity: block
+    check:
+      type: grep_present
+      path: bin/idp-vendor-render
+      pattern: "denied_providers"
+    falsifier:
+      files:
+        bin/idp-vendor-render: "print('no renewal gate here')\n"
+      check:
+        type: grep_present
+        path: bin/idp-vendor-render
+        pattern: "denied_providers"
+
+  - id: GOV-009
+    law: >-
+      Every model group the router serves has a fallback chain. A group with none turns one
+      vendor's bad minute into an HTTP 500 for the caller.
+    source: founder, 2026-10-29 (minimax_m27 fell back to nothing and 500ed)
+    severity: block
+    check:
+      type: router_fallbacks
+      file: llm/config.yaml
+      except: [voice-*, narrate, ollama*, claude-*, embed*, image, vision, glm, openrouter]
+    falsifier:
+      files:
+        llm/config.yaml: |
+          model_list:
+            - model_name: minimax_m27
+              litellm_params:
+                model: openai/MiniMax-M2.7
+          router_settings:
+            fallbacks:
+              - deepseek: [gemini, groq]
+      check:
+        type: router_fallbacks
+        file: llm/config.yaml
+        except: [voice-*, narrate, ollama*, claude-*, embed*, image, vision, glm, openrouter]
+
+  - id: GOV-010
+    law: >-
+      No cosmetic or behaviour-free change is let in: a diff with no behaviour in it is
+      refused, and a change with no proof attached is refused.
+    source: founder, 2026-10-29 ("any tiny flow where cosmetic or technical we not letting in")
+    severity: warn
+    check:
+      type: diff_cosmetic
+      base: origin/main
+      head: HEAD
+    falsifier:
+      files:
+        app.py: "x = 1\n"
+      mutation:
+        files:
+          app.py: "x = 1\n\n# a comment that changes nothing\n"
+      check:
+        type: diff_cosmetic
+        base: origin/main
+        head: HEAD
+
+  - id: GOV-011
+    law: >-
+      Every change carries proof: a test that moved with it, or a Proof: trailer naming the
+      command that shows the behaviour changed. A change with no proof is refused.
+    source: founder, 2026-10-29 ("proof, not assertion")
+    severity: warn
+    check:
+      type: diff_proof_required
+      base: origin/main
+      head: HEAD
+    falsifier:
+      files:
+        app.py: "x = 1\n"
+      mutation:
+        files:
+          app.py: "x = 2\n"
+      check:
+        type: diff_proof_required
+        base: origin/main
+        head: HEAD
+
+  - id: GOV-012
+    law: >-
+      Zero-gravity: no change adds a cloud-provider, machine or account string. The founder's
+      LAW 1, and the estate already ships the gate that decides it.
+    source: docs/reference/policy/definition-of-done.md (LAW 1 zero-gravity)
+    founder_law: LAW-1
+    severity: block
+    check:
+      type: grep_present
+      path: bin/cloud-agnostic-gate
+      pattern: "cloud"
+    falsifier:
+      files:
+        bin/cloud-agnostic-gate: "print('nothing to decide here')\n"
+      check:
+        type: grep_present
+        path: bin/cloud-agnostic-gate
+        pattern: "cloud"
+
+  - id: GOV-013
+    law: >-
+      The direct executor is freedom earned by measurement: it is granted only when the law
+      gate is green with its falsifiers run, the session is not locked, and the session holds
+      a live claim. A gate that reports nothing proves nothing, so an empty law report is a
+      refusal, never a permission.
+    source: founder, 2026-10-29 ("once the enforcement is active and proven, the fleet may use
+      the direct executor")
+    severity: block
+    check:
+      type: executor_permission
+    falsifier:
+      files:
+        platform/estate/governance/executor_permission.py: |
+          """The known-bad build: it grants the direct executor whatever the gate says."""
+
+
+          def evaluate(
+              session,
+              root=None,
+              claim="",
+              gate_report=None,
+              state=None,
+              live_claims=None,
+          ):
+              return {
+                  "session": session,
+                  "granted": True,
+                  "reasons": [],
+                  "laws": 99,
+                  "failing": [],
+                  "locked": False,
+                  "claims": ["1"],
+                  "decided_at": "2026-01-01T00:00:00Z",
+              }
+      check:
+        type: executor_permission

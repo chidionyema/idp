@@ -1,0 +1,96 @@
+description: 'A caller asking the laptop router for the served model group `minimax_m27` got
+  HTTP 500 with "No fallback model group found for original model_group=minimax_m27". Question:
+  is the fault (H1) the router''s own configuration -- the served group had no fallback key of
+  its own and LiteLLM resolves fallbacks by exact model-group key, so a sibling key like
+  `minimax` covers nothing -- or (H2) the MiniMax vendor was failing for every group, so no
+  chain could have saved the call, or (H3) the router process was running a different config
+  from the tree''s, i.e. a stale deployment. The fix under test adds one fallback key per served
+  MiniMax text group.
+
+  '
+hypotheses:
+- name: H1
+  description: the rendered config had no fallback key for the served model group itself, and
+    LiteLLM resolves fallbacks by exact key, so the failure was a configuration defect
+  prior: 0.3333333333
+- name: H2
+  description: the MiniMax vendor was failing for every group, so no fallback chain existed
+    or would have helped
+  prior: 0.3333333333
+- name: H3
+  description: the tree held the fallback key and the router process was running a stale copy
+    of the config
+  prior: 0.3333333333
+evidence:
+- name: the tree''s rendered router config at the failing commit (llm/config.yaml, platform/llm/config.yaml)
+  observed:
+    key_absent: 1
+    key_present: 0
+  likelihoods:
+    H1:
+      key_absent: 0.99
+      key_present: 0.01
+    H2:
+      key_absent: 0.5
+      key_present: 0.5
+    H3:
+      key_absent: 0.05
+      key_present: 0.95
+- name: the fallback map the running router reported in its own error message
+  observed:
+    key_absent: 1
+    key_present: 0
+  likelihoods:
+    H1:
+      key_absent: 0.99
+      key_present: 0.01
+    H2:
+      key_absent: 0.5
+      key_present: 0.5
+    H3:
+      key_absent: 0.9
+      key_present: 0.1
+- name: the class of failure the router named ("No fallback model group found for original
+    model_group=minimax_m27")
+  observed:
+    config_error: 1
+    upstream_error: 0
+  likelihoods:
+    H1:
+      config_error: 0.98
+      upstream_error: 0.02
+    H2:
+      config_error: 0.05
+      upstream_error: 0.95
+    H3:
+      config_error: 0.6
+      upstream_error: 0.4
+- name: the router''s internal retries of the failed call
+  observed:
+    same_config_error: 2
+    recovered: 0
+  likelihoods:
+    H1:
+      same_config_error: 0.95
+      recovered: 0.05
+    H2:
+      same_config_error: 0.4
+      recovered: 0.6
+    H3:
+      same_config_error: 0.6
+      recovered: 0.4
+- name: the MiniMax family''s own coverage in the tree''s fallback map (minimax, minimax_json,
+    minimax_m27, minimax_m31f)
+  observed:
+    groups_without_own_key: 3
+    groups_with_own_key: 1
+  likelihoods:
+    H1:
+      groups_without_own_key: 0.95
+      groups_with_own_key: 0.05
+    H2:
+      groups_without_own_key: 0.5
+      groups_with_own_key: 0.5
+    H3:
+      groups_without_own_key: 0.1
+      groups_with_own_key: 0.9

@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""estate-freeze -- founder-approved work is immutable to agents until a new approval.
+
+    estate-freeze --freeze 'path/glob' [--freeze 'another/glob'] --approval 'founder#1234'
+    estate-freeze --release 'path/glob' --approval 'founder#5678'
+    estate-freeze --list
+    estate-freeze --check 'path/to/file'
+
+We kick the door and take the keys away (founder, 2026-10-29): a frozen path is refused by
+the write gate AND by the merge gate, so it cannot be changed by any other door. Only a new
+founder approval releases it, and the release is recorded.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+
+
+def _governance_path() -> str:
+    """Where the governance package lives: this checkout, or the estate's runtime tree."""
+
+    repo_root = os.path.dirname(HERE)
+    for cand in (
+        os.environ.get("ESTATE_GOVERNANCE_TREE", ""),
+        os.path.join(repo_root, "platform", "estate"),
+        os.path.join(repo_root, "runtime", "idp", "platform", "estate"),
+        os.path.expanduser("~/.estate/runtime/idp/platform/estate"),
+    ):
+        if cand and os.path.isfile(os.path.join(cand, "governance", "registry.py")):
+            return cand
+    raise SystemExit("estate: the governance package was not found (set ESTATE_GOVERNANCE_TREE)")
+
+
+sys.path.insert(0, _governance_path())
+
+from governance import freeze  # noqa: E402
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--freeze", action="append", default=[])
+    ap.add_argument("--release", default="")
+    ap.add_argument("--approval", default="")
+    ap.add_argument("--approved-by", default="founder")
+    ap.add_argument("--note", default="")
+    ap.add_argument("--list", action="store_true")
+    ap.add_argument("--check", default="")
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args(argv[1:])
+
+    if args.list:
+        rows = freeze.entries()
+        if args.json:
+            print(json.dumps(rows, indent=2, default=str))
+        else:
+            for row in rows:
+                print(f"{row['pattern']}  approved_by={row.get('approved_by')}  "
+                      f"approval={row.get('approval')}  at={row.get('at')}")
+        return 0
+
+    if args.check:
+        ok, entry = freeze.is_frozen(args.check)
+        if args.json:
+            print(json.dumps({"frozen": ok, "entry": entry}, indent=2, default=str))
+        else:
+            print(f"{'FROZEN' if ok else 'free'}  {args.check}")
+            if ok:
+                print(freeze.refusal(args.check))
+        return 0
+
+    if args.release:
+        if not args.approval:
+            ap.error("--release needs the founder approval that authorises it")
+        done = freeze.release(args.release, args.approval)
+        print(f"{'released' if done else 'FAIL'}  {args.release}  approval={args.approval}")
+        return 0 if done else 1
+
+    if args.freeze:
+        if not args.approval:
+            ap.error("--freeze needs the founder approval that created it")
+        rows = freeze.freeze(
+            args.freeze, args.approval, approved_by=args.approved_by, note=args.note
+        )
+        for row in rows:
+            print(f"frozen  {row['pattern']}  approval={row.get('approval')}")
+        return 0
+
+    ap.error("nothing to do: --freeze, --release, --list or --check")
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

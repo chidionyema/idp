@@ -7,6 +7,10 @@
 Every runtime's session-start hook runs this; none has memory code of its own. It never blocks a
 session: an unreachable door, a missing key or a slow answer prints nothing and exits 0, with one
 line on stderr saying why. The key is read by name (MCP_GATEWAY_KEY, then the vault), never argv.
+
+It also carries the estate-state page (founder, 2026-10-29: "broadcast to everyone ... we are all
+on the same page"): the measured state of the laws, the specs, the providers, the claims and the
+lockdowns, so every session starts from the same picture and nobody repeats a question.
 """
 
 from __future__ import annotations
@@ -29,6 +33,38 @@ import door  # noqa: E402
 import focus  # noqa: E402
 
 ITEM_CHARS = 400
+
+
+def _governance_path() -> str:
+    """Where the governance package lives: this checkout, or the estate's runtime tree."""
+
+    repo_root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    for cand in (
+        os.environ.get("ESTATE_GOVERNANCE_TREE", ""),
+        os.path.join(repo_root, "platform", "estate"),
+        os.path.join(repo_root, "runtime", "idp", "platform", "estate"),
+        os.path.expanduser("~/.estate/runtime/idp/platform/estate"),
+    ):
+        if cand and os.path.isfile(os.path.join(cand, "governance", "registry.py")):
+            return cand
+    return ""
+
+
+def state_section() -> str:
+    """The estate-state page: one measured picture every session starts from."""
+    gp = _governance_path()
+    if not gp:
+        return ""
+    if gp not in sys.path:
+        sys.path.insert(0, gp)
+    try:
+        from governance import state_page  # noqa: PLC0415 - resolved at runtime by design
+
+        root = os.path.abspath(os.path.join(os.path.dirname(gp), ".."))
+        return state_page.current(root)
+    except Exception as exc:  # never block a session on the page
+        print(f"estate-brief: no state page ({type(exc).__name__}: {str(exc)[:120]})", file=sys.stderr)
+        return ""
 
 # The focus rules live in platform/estate/memory/focus.py, shared with bin/estate-memory-mcp:
 # the hook alone retired ghosts and the tools agents call mid-session did not (idp#6543).
@@ -61,7 +97,8 @@ def render(brief: dict) -> str:
 
     recent, relevant = lines(brief.get("recent", [])), lines(brief.get("relevant", []))
     register = focus.render_register(brief.get("active_focus"))
-    if not recent and not relevant and not register:
+    page = state_section()
+    if not recent and not relevant and not register and not page:
         return ""
     out = [
         "<estate-memory>",
@@ -74,6 +111,8 @@ def render(brief: dict) -> str:
         out += ["Nearest to this task:", *relevant]
     if register:
         out.append(register)
+    if page:
+        out += ["<estate-state>", page.strip(), "</estate-state>"]
     return "\n".join([*out, "</estate-memory>"])
 
 
@@ -85,22 +124,25 @@ def main(argv: list[str]) -> int:
     args = ap.parse_args(argv)
 
     secret = door.key()
+    brief: dict = {}
     if not secret:
         print(
             f"estate-brief: no {door.MANIFEST['door']['key_env']} and no vault entry; no brief",
             file=sys.stderr,
         )
-        return 0
-    try:
-        brief = door.call(
-            "brief", {"task": args.task, "limit": args.limit}, secret, args.timeout
-        )
-    except Exception as e:  # never block a session on memory
-        print(
-            f"estate-brief: no brief ({type(e).__name__}: {str(e)[:160]})",
-            file=sys.stderr,
-        )
-        return 0
+    else:
+        try:
+            brief = door.call(
+                "brief", {"task": args.task, "limit": args.limit}, secret, args.timeout
+            )
+        except Exception as e:  # never block a session on memory
+            print(
+                f"estate-brief: no brief ({type(e).__name__}: {str(e)[:160]})",
+                file=sys.stderr,
+            )
+            brief = {}
+    brief.setdefault("recent", [])
+    brief.setdefault("relevant", [])
     brief["recent"], _ = drop_stale_focus(brief.get("recent", []))
     brief["relevant"], _ = drop_stale_focus(brief.get("relevant", []))
     brief["active_focus"] = focus.live_focus()
