@@ -66,3 +66,18 @@ def test_direct_message_reaches_only_its_target(bus):
 def test_unreachable_bus_is_blind_not_empty(bus):
     r = run("nats://127.0.0.1:1", "x", "inbox")
     assert r.returncode == 2 and "BLIND" in r.stdout
+
+
+def test_send_rejects_flag_as_agent():
+    """`send --to x text` used to store a message on estate.fleet.to.--to; it must refuse (#7481)."""
+    import subprocess, sys
+    from pathlib import Path
+
+    fleet = Path(__file__).resolve().parent.parent / "bin" / "estate-fleet"
+    r = subprocess.run(
+        [sys.executable, str(fleet), "send", "--to", "x", "hello"],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode != 0
+    assert "nothing was sent" in r.stderr

@@ -102,6 +102,8 @@ def main(argv):
     if not argv:
         sys.exit(__doc__)
     c, rest = argv[0], argv[1:]
+    if c == "send" and rest and rest[0].startswith("-"):
+        sys.exit(f"estate-fleet: send takes '<agent> <text>', not a flag ({rest[0]!r}); nothing was sent")
     if c == "send" and len(rest) >= 2:
         asyncio.run(publish(f"estate.fleet.to.{rest[0]}", " ".join(rest[1:]), "to"))
     elif c == "broadcast" and rest:
