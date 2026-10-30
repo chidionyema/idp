@@ -93,6 +93,149 @@ def lane_names(vendor: dict) -> set:
     return names
 
 
+HOST_RE = re.compile(r"api_base:\s*https?://([^/\s]+)")
+URL_HOST_RE = re.compile(r"https?://([^/\s\"]+)")
+CRED_RE = re.compile(r"api_key:\s*os\.env(?:ironment)?/([A-Za-z0-9_]+)")
+CRED_ANY_RE = re.compile(r"os\.env(?:ironment)?/([A-Za-z0-9_]+)")
+ENTRY_RE = re.compile(r"^-\s*model_name:\s*([\w.\-]+)\s*$")
+
+
+def spend_signals(vendor: dict) -> tuple:
+    """The endpoints and the credential one vendor's lanes spend.
+
+    A provider is not the registry block that happens to name it: the MiniMax account is
+    spent by rows declared under other vendors' blocks too (the `default`, `fast` and
+    `voice` pools carry a MiniMax row). So a denial has to be keyed on what is spent --
+    the endpoint and the credential -- not on where the row was declared.
+    """
+    router = vendor.get("router") or {}
+    text = "\n".join(router.get(f) or "" for f in ("lanes", "cluster_lanes"))
+    return set(HOST_RE.findall(text)), set(CRED_RE.findall(text))
+
+
+def strip_denied_rows(text: str, hosts: set, creds: set) -> str:
+    """Drop every lane row that spends a denied provider, wherever it was declared.
+
+    The rows are edited line by line: a dropped row takes its own lines and nothing else,
+    so the comments that explain the block around it stay.
+    """
+    if not (hosts or creds):
+        return text
+    lines = text.split("\n")
+    out = []
+    i = 0
+    while i < len(lines):
+        if not ENTRY_RE.match(lines[i]):
+            out.append(lines[i])
+            i += 1
+            continue
+        j = i + 1
+        while j < len(lines) and (lines[j][:1] in (" ", "\t") or lines[j] == ""):
+            j += 1
+        entry = "\n".join(lines[i:j])
+        if (set(HOST_RE.findall(entry)) & hosts) or (set(CRED_RE.findall(entry)) & creds):
+            i = j
+            continue
+        out.extend(lines[i:j])
+        i = j
+    return "\n".join(out)
+
+
+def strip_denied_pass_through(text: str, hosts: set, creds: set) -> str:
+    """Drop the pass-through endpoints that spend a denied provider.
+
+    The image pass-through spends the MiniMax account directly (the key rides in a
+    header, not in a lane), so a denial that left it in place would still pay the
+    provider it just refused to renew.
+    """
+    if not (hosts or creds):
+        return text
+    lines = text.split("\n")
+    out = []
+    i = 0
+    while i < len(lines):
+        m = re.match(r"^(\s*)pass_through_endpoints:\s*$", lines[i])
+        if not m:
+            out.append(lines[i])
+            i += 1
+            continue
+        key_indent = len(m.group(1))
+        j = i + 1
+        while j < len(lines) and lines[j].startswith(" ") and (
+            len(lines[j]) - len(lines[j].lstrip()) > key_indent
+        ):
+            j += 1
+        block = lines[i + 1 : j]
+        kept = []
+        k = 0
+        while k < len(block):
+            em = re.match(r"^(\s*)-\s*path:", block[k])
+            if not em:
+                kept.append(block[k])
+                k += 1
+                continue
+            entry_indent = len(em.group(1))
+            e = k + 1
+            while e < len(block) and block[e].startswith(" ") and (
+                len(block[e]) - len(block[e].lstrip()) > entry_indent
+            ):
+                e += 1
+            entry = "\n".join(block[k:e])
+            if (set(URL_HOST_RE.findall(entry)) & hosts) or (
+                set(CRED_ANY_RE.findall(entry)) & creds
+            ):
+                k = e
+                continue
+            kept.extend(block[k:e])
+            k = e
+        if kept:
+            out.append(lines[i])
+            out.extend(kept)
+        i = j
+    return "\n".join(out)
+
+
+class Denial:
+    """What a denied provider costs the estate, and what a denial must remove.
+
+    Three things, and all three are spend: the provider's own lanes, the rows anywhere
+    that spend its endpoint or its credential, and the groups that then serve nothing.
+    """
+
+    def __init__(self, vendors: dict):
+        self.providers = denied_providers()
+        self.hosts: set = set()
+        self.creds: set = set()
+        self.groups: set = set()
+        self.rows: dict = {}
+        for name, v in vendors.items():
+            if name not in self.providers:
+                continue
+            self.groups |= lane_names(v)
+            hosts, creds = spend_signals(v)
+            self.hosts |= hosts
+            self.creds |= creds
+        before: dict = {}
+        after: dict = {}
+        for name, v in vendors.items():
+            if name in self.providers:
+                continue
+            router = v.get("router") or {}
+            for field in ("lanes", "cluster_lanes"):
+                text = router.get(field) or ""
+                if not text:
+                    continue
+                stripped = strip_denied_rows(text, self.hosts, self.creds)
+                self.rows[(name, field)] = stripped
+                for group in re.findall(r"- model_name:\s*([\w.\-]+)", text):
+                    before[group] = before.get(group, 0) + 1
+                for group in re.findall(r"- model_name:\s*([\w.\-]+)", stripped):
+                    after[group] = after.get(group, 0) + 1
+        for group, count in before.items():
+            if after.get(group, 0) == 0:
+                self.groups.add(group)
+
+
 def filter_chain(text: str, denied_lanes: set) -> str:
     """Strip denied lanes out of the fallback chains, and drop the chains left empty.
 
@@ -115,12 +258,9 @@ def filter_chain(text: str, denied_lanes: set) -> str:
     return "\n".join(out)
 
 
-def blocks(vendors: dict, field: str, indent: int) -> str:
-    denied = denied_providers()
-    denied_lanes = set()
-    for name, v in vendors.items():
-        if name in denied:
-            denied_lanes |= lane_names(v)
+def blocks(vendors: dict, field: str, indent: int, denial: Denial) -> str:
+    denied = denial.providers
+    denied_lanes = denial.groups
     out = []
     for name, v in vendors.items():
         if name in denied:
@@ -131,7 +271,7 @@ def blocks(vendors: dict, field: str, indent: int) -> str:
             raise SystemExit(
                 f"BLIND   vendor-render   {name}: router field(s) {sorted(unknown)} unknown to the renderer"
             )
-        txt = router.get(field)
+        txt = denial.rows.get((name, field), router.get(field))
         if txt:
             if field in ("fallbacks", "cluster_fallbacks"):
                 txt = filter_chain(txt, denied_lanes)
@@ -163,14 +303,16 @@ def console_lanes(vendors: dict) -> set:
 
 
 def render(vendors: dict, base_text: str, base_name: str) -> str:
+    denial = Denial(vendors)
     lines = []
     for line in base_text.splitlines():
         spec = FIELDS.get(line.strip())
         if spec:
-            lines.append(blocks(vendors, spec[0], spec[1]))
+            lines.append(blocks(vendors, spec[0], spec[1], denial))
         else:
             lines.append(line)
-    return HEADER.format(base=base_name) + "\n".join(lines) + "\n"
+    text = HEADER.format(base=base_name) + "\n".join(lines) + "\n"
+    return strip_denied_pass_through(text, denial.hosts, denial.creds)
 
 
 def main() -> int:
