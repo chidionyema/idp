@@ -1,48 +1,65 @@
 #!/usr/bin/env python3
 """clock-guard -- can the estate trust the host wall clock?
 
-WHY. 2026-10-30. Six Pi agent sessions and the Codex desktop app were created on this host
-between 00:00 and 00:20 real time, and every one of them stamped itself with the wall clock the
-kernel was serving at that moment: 2024-01-01. The transcript filenames, the session UUIDv7
-timestamps, the Codex Chromium profile files and the estate's own incident files all carry
-2024-01-01, because they were all written while the kernel clock read 2024-01-01. The kernel
-process start times prove the clock itself moved; Pi and Codex faithfully recorded what they
-were given. A clock that lies is not a formatting problem: every timestamp the estate writes --
-session ids, incident ledgers, ticket ages, backoff windows -- becomes wrong in the same second,
-silently.
+WHY. 2026-10-29. This host's wall clock fell back to 2024-01-01T00:00:00 at power-on and
+stayed there for about nineteen minutes, until the time service corrected it forward. Six Pi
+agent sessions, the Codex desktop profile and the estate's own incident files were created in
+that window, and every one of them carried 2024-01-01, because the kernel was serving that
+time. The kernel process start times prove the clock itself moved; Pi and Codex faithfully
+recorded what they were given. A clock that lies is not a formatting problem: every timestamp
+the estate writes -- session ids, incident ledgers, ticket ages, backoff windows -- becomes
+wrong in the same second, silently.
 
 WHAT IT IS. One module, one state file, one verdict. The wall clock is checked against
-witnesses that it cannot argue with:
+witnesses that it cannot argue with, in this order:
 
-  A. the kernel  kern.boottime (the kernel's boot record) plus CLOCK_MONOTONIC. The boot record
-     is captured once, at boot, and does not follow a later change of the wall clock; the
-     monotonic clock cannot be set at all. Together they are an estimate of the true current
-     time, and they exist on the first run, with no history and no state file.
-  B. the sample  the previous reading of both clocks, kept in ~/.estate/state/clock-skew.json.
-     Relative, and needs a previous reading.
-  C. the ledger  the last timestamp the estate's own incident ledger recorded while its clock
-     was good. Absolute, coarse, and independent of both of the above.
+  A. the anchor  the last trusted reading of both clocks, kept in
+     ~/.estate/state/clock-skew.json. It is the only witness that knows what the clock said
+     before, so it decides first: relative inside one boot, absolute across a reboot.
+  B. the ledger  the last timestamp the estate's own incident ledger recorded while its clock
+     was sane (SELECT MAX(last_seen) FROM incidents, read only). Coarse, absolute, and
+     independent of the anchor: it catches a clock that was already wrong when the anchor was
+     taken.
+  C. the kernel  kern.boottime plus CLOCK_MONOTONIC. A rate and consistency check only.
+
+WHY THE KERNEL IS LAST. It is not an absolute witness of the wall clock on this host, and the
+measurement says so exactly. On 2026-10-29 the clock was set back to 2024-01-01T00:00:00 at
+power-on and the kernel booted 24 s later, with the boot record carrying that 2024 stamp. When
+the time service corrected the clock forward by 89,245,001.563908 s, the boot record moved by
+the same amount:
+
+  1704067224.000002 + 89245001.563908 = 1793312225.563910
+
+1704067224 is 2024-01-01T00:00:24Z, the stamp in the kernel's own boot record. So on macOS
+kern.boottime follows the wall clock through a step, and kern.boottime + CLOCK_MONOTONIC is
+almost exactly the wall clock -- which means it cannot witness a step, and a guard that treats
+it as absolute is a guard that is blind exactly when it matters. It is kept as a consistency
+check: on a host whose boot record does not follow the clock, a gross disagreement is still
+evidence, and it is the last witness to be asked. It never vetoes the anchor or the ledger,
+and it never supplies a projection while either of them can.
 
 The verdict is one of five things:
 
-  ok       the wall clock agrees with the witnesses
-  backward the wall clock went backwards (the clock was set, or the host woke from a stale RTC)
+  ok       a witness agrees that the wall clock has not moved
+  backward the wall clock went backwards (it was set, or the host came up on a stale clock)
   forward  the wall clock jumped forwards faster than real time
   unknown  no witness has anything to say yet
   blind    no witness could be read, so no verdict is possible
 
 The verdict carries the honest consequence: `projected_epoch` is the time the estate is allowed
 to stamp with. While the wall clock is untrusted that is the projection from the witness that
-detected the fault -- the kernel's own estimate, the last trusted reading plus the monotonic
-elapsed time, or the ledger's last sane timestamp -- never the regressed wall clock. A
-regressed timestamp is not a timestamp; it is a lie that sorts badly and ages wrongly.
+detected the fault -- the last trusted reading plus the real time that has passed since it, or
+the ledger's last sane timestamp -- never the regressed wall clock. A regressed timestamp is
+not a timestamp; it is a lie that sorts badly and ages wrongly.
 
 STATE. One JSON file, ~/.estate/state/clock-skew.json, holding the last trusted reading:
 
   {"wall": 1760000000.0, "monotonic": 29761.03, "at": "2026-10-30T06:22:19Z"}
 
-While the clock is untrusted the file keeps the trusted wall reading and advances only the
-monotonic reference, so the baseline survives the bad window instead of being overwritten by it.
+While the clock is untrusted the file keeps the trusted wall reading, marks it "anchored" and
+advances only the monotonic reference, so the baseline survives the bad window instead of being
+overwritten by it. An anchored entry mixes two timelines, so it is compared absolutely and is
+excluded from the wall-versus-monotonic skew test.
 
 HOW TO USE IT.
 
@@ -80,6 +97,13 @@ BLIND = "blind"
 SLACK_S = 2.0
 SLACK_FRACTION = 0.05
 
+# The kernel witness is a consistency check between two estimates of the same instant, so its
+# tolerance is tight: the boot record is parsed to the microsecond and the residual on a
+# healthy host is under a millisecond. 10 ppm of uptime absorbs the drift a host accumulates
+# while its clock is slewed, and nothing else.
+KERNEL_TOLERANCE_S = 2.0
+KERNEL_DRIFT_FRACTION = 1e-5
+
 _BOOTTIME = re.compile(r"sec\s*=\s*(\d+)(?:\D+usec\s*=\s*(\d+))?")
 
 
@@ -109,12 +133,14 @@ def monotonic() -> float:
 
 
 def kernel_epoch() -> float | None:
-    """The kernel's own estimate of the true current time.
+    """The kernel's own estimate of the current time, for a consistency check.
 
-    kern.boottime is the kernel's boot record: captured once, at boot, from the clock as it
-    then was. CLOCK_MONOTONIC counts from that boot and cannot be set. Their sum is the time
-    the kernel believes it is, and it does not move when the wall clock is moved -- which is
-    exactly what a witness has to do. Returns None when the kernel will not say.
+    kern.boottime is the kernel's boot record and CLOCK_MONOTONIC counts from that boot, so
+    their sum is the time the kernel believes it is. On this host it is NOT an absolute witness
+    of the wall clock: macOS moves the boot record with the wall clock when the clock is
+    stepped, so the sum tracks the wall clock almost exactly and cannot see a step. It is used
+    only to check that the wall clock and the kernel's own clock are telling the same story,
+    and it is the last witness asked. Returns None when the kernel will not say.
     """
     try:
         binary = shutil.which("sysctl")
@@ -208,6 +234,24 @@ def tolerance(monotonic_delta: float) -> float:
     return max(SLACK_S, SLACK_FRACTION * abs(monotonic_delta))
 
 
+def kernel_tolerance(uptime: float) -> float:
+    """How far the kernel's own estimate may differ from the wall clock before it is evidence."""
+    return max(KERNEL_TOLERANCE_S, KERNEL_DRIFT_FRACTION * abs(uptime))
+
+
+def _advance(previous: dict, current: dict) -> float:
+    """Real seconds elapsed since the anchor was taken.
+
+    Inside one boot this is the monotonic delta, which nothing can set. Across a reboot the
+    monotonic clock restarts, so the only real time that can be proven here is the uptime of
+    the current boot: a lower bound, because the power-off time is not knowable from here.
+    """
+    delta = current["monotonic"] - previous["monotonic"]
+    if delta <= 0:
+        delta = max(0.0, current["monotonic"])
+    return delta
+
+
 def judge(
     previous: dict | None,
     current: dict,
@@ -218,6 +262,11 @@ def judge(
 
     Pure: no clock, no file, no state. The witnesses are passed in, so every branch is
     testable without touching the machine's real time.
+
+    The order is the point: the anchor (what the clock said before) decides first, the ledger
+    (what the estate itself recorded) second, and the kernel (a consistency check that
+    follows the wall clock through a step on this host) last. A witness that cannot see the
+    fault must never be able to overrule one that can.
     """
     verdict = {
         "state": UNKNOWN,
@@ -233,114 +282,156 @@ def judge(
         "kernel_epoch": kernel,
         "kernel_deviation_s": None,
         "ledger_epoch": ledger,
+        "reboot": False,
+        "anchored": False,
     }
 
-    # Witness A: the kernel. Absolute, available on the first run, and measured to be
-    # independent of the wall clock on this host: during the 2026-10-30 event the boot record
-    # still read 2026-10-29 22:17:05 while the clock read 2024-01-01, so it does not follow a
-    # later change of the wall clock. When the kernel can be asked, it decides.
+    # The kernel's deviation is recorded whenever the kernel can be reached, even when the
+    # anchor or the ledger decides: a witness that was not asked still has something to say
+    # about the diagnosis.
     if kernel is not None:
-        deviation = current["wall"] - kernel
-        verdict["kernel_deviation_s"] = round(deviation, 3)
-        if deviation < -SLACK_S:
-            verdict["state"] = BACKWARD
-            verdict["projected_epoch"] = kernel
-            verdict["witness"] = "kernel"
-            verdict["reason"] = (
-                f"the wall clock is {abs(deviation):.0f}s behind the kernel's own clock "
-                "(the boot record plus the monotonic clock): it was set, or the host woke "
-                "from a stale clock"
-            )
-            return verdict
-        if deviation > SLACK_S:
-            verdict["state"] = FORWARD
-            verdict["projected_epoch"] = kernel
-            verdict["witness"] = "kernel"
-            verdict["reason"] = (
-                f"the wall clock is {deviation:.0f}s ahead of the kernel's own clock: it was set"
-            )
-            return verdict
-        # The kernel agrees, so the wall clock is trustworthy now. A previous sample that
-        # disagrees is stale -- the clock has been corrected since it was taken -- and it is
-        # re-baselined rather than allowed to untrust a clock the kernel vouches for.
-        if previous is not None:
-            wall_delta = current["wall"] - previous["wall"]
-            monotonic_delta = current["monotonic"] - previous["monotonic"]
-            verdict["wall_delta_s"] = round(wall_delta, 3)
-            verdict["monotonic_delta_s"] = round(monotonic_delta, 3)
-            verdict["skew_s"] = round(wall_delta - monotonic_delta, 3)
-        verdict["state"] = OK
-        verdict["trusted"] = True
-        verdict["projected_epoch"] = current["wall"]
-        verdict["witness"] = "kernel"
-        verdict["reason"] = (
-            f"the wall clock agrees with the kernel's own clock within {SLACK_S:.1f}s"
-        )
-        return verdict
+        verdict["kernel_deviation_s"] = round(current["wall"] - kernel, 3)
 
-    # Witness B: the previous sample. Relative, and needs a previous reading.
-    sample_blind = False
+    # --- Witness A: the anchor. What the clock said the last time we looked. --------------
     if previous is not None:
         wall_delta = current["wall"] - previous["wall"]
         monotonic_delta = current["monotonic"] - previous["monotonic"]
+        anchored = bool(previous.get("anchored"))
+        reboot = monotonic_delta <= 0
         verdict["wall_delta_s"] = round(wall_delta, 3)
         verdict["monotonic_delta_s"] = round(monotonic_delta, 3)
-        skew = wall_delta - monotonic_delta
-        verdict["skew_s"] = round(skew, 3)
-        tol = tolerance(monotonic_delta)
-        if monotonic_delta <= 0:
-            sample_blind = True
-        elif wall_delta < -tol:
+        verdict["reboot"] = reboot
+        verdict["anchored"] = anchored
+
+        if anchored:
+            # An anchored entry mixes two timelines: its wall is a projection and its
+            # monotonic is the reading at the moment of the fault. Only an absolute
+            # comparison against the projection is meaningful.
+            if wall_delta < -SLACK_S:
+                verdict["state"] = BACKWARD
+                verdict["projected_epoch"] = previous["wall"] + _advance(
+                    previous, current
+                )
+                verdict["witness"] = "anchor"
+                verdict["reason"] = (
+                    f"the wall clock is {abs(wall_delta):.0f}s behind the trusted anchor: "
+                    "the clock is still regressed"
+                )
+                return verdict
+        elif reboot:
+            # The monotonic clock restarted: the host rebooted. The wall clock is then
+            # compared with the anchor absolutely, because a power-off can legitimately
+            # move it forward by any amount.
+            if wall_delta < -SLACK_S:
+                verdict["state"] = BACKWARD
+                verdict["projected_epoch"] = previous["wall"] + _advance(
+                    previous, current
+                )
+                verdict["witness"] = "anchor"
+                verdict["reason"] = (
+                    "the host rebooted (the monotonic clock restarted) and the wall clock "
+                    f"is {abs(wall_delta):.0f}s behind the trusted anchor: the clock came "
+                    "up on a stale time"
+                )
+                return verdict
+        else:
+            skew = wall_delta - monotonic_delta
+            verdict["skew_s"] = round(skew, 3)
+            tol = tolerance(monotonic_delta)
+            if wall_delta < -tol:
+                verdict["state"] = BACKWARD
+                verdict["projected_epoch"] = previous["wall"] + _advance(
+                    previous, current
+                )
+                verdict["witness"] = "anchor"
+                verdict["reason"] = (
+                    f"the wall clock went backwards {abs(wall_delta):.0f}s while real time "
+                    f"advanced {monotonic_delta:.0f}s: it was set"
+                )
+                return verdict
+            if skew > tol:
+                verdict["state"] = FORWARD
+                verdict["projected_epoch"] = previous["wall"] + _advance(
+                    previous, current
+                )
+                verdict["witness"] = "anchor"
+                verdict["reason"] = (
+                    f"the wall clock jumped forward {skew:.0f}s ahead of real time: it was set"
+                )
+                return verdict
+
+    # --- Witness B: the estate's own ledger. Coarse, absolute, independent of the anchor. ---
+    if ledger is not None:
+        behind = ledger - current["wall"]
+        if behind > SLACK_S:
             verdict["state"] = BACKWARD
-            verdict["projected_epoch"] = previous["wall"] + monotonic_delta
-            verdict["witness"] = "sample"
+            verdict["projected_epoch"] = ledger
+            verdict["witness"] = "ledger"
             verdict["reason"] = (
-                f"the wall clock went backwards {abs(wall_delta):.0f}s while real time "
-                f"advanced {monotonic_delta:.0f}s: it was set, or the host woke from a "
-                "stale clock"
-            )
-            return verdict
-        elif skew > tol:
-            verdict["state"] = FORWARD
-            verdict["projected_epoch"] = previous["wall"] + monotonic_delta
-            verdict["witness"] = "sample"
-            verdict["reason"] = (
-                f"the wall clock jumped forward {skew:.0f}s ahead of real time: it was set"
+                f"the wall clock is {behind:.0f}s behind the estate's own incident ledger: "
+                "the clock was already wrong when it was last sane"
             )
             return verdict
 
-    # Witness C: the estate's own ledger. Coarse, absolute, and only consulted when the
-    # kernel and the sample have nothing to say.
-    if kernel is None and ledger is not None and current["wall"] < ledger - SLACK_S:
-        verdict["state"] = BACKWARD
-        verdict["projected_epoch"] = ledger
-        verdict["witness"] = "ledger"
-        verdict["wall_delta_s"] = round(current["wall"] - ledger, 3)
-        verdict["reason"] = (
-            f"the wall clock is {ledger - current['wall']:.0f}s behind the estate's own "
-            "incident ledger: the clock was already wrong when it was last sane"
-        )
-        return verdict
+    # --- Witness C: the kernel. A consistency check, asked last, and never a veto. --------
+    if kernel is not None:
+        deviation = verdict["kernel_deviation_s"]
+        tol = kernel_tolerance(current["monotonic"])
+        if abs(deviation) > tol:
+            verdict["state"] = BACKWARD if deviation < 0 else FORWARD
+            verdict["witness"] = "kernel"
+            if previous is not None:
+                verdict["projected_epoch"] = previous["wall"] + _advance(
+                    previous, current
+                )
+            else:
+                # No anchor and no ledger: the kernel's own estimate is the only time
+                # anybody can offer, and the disagreement is what proves it does not
+                # follow the wall clock on this host.
+                verdict["projected_epoch"] = kernel
+            verdict["reason"] = (
+                f"the wall clock is {abs(deviation):.0f}s "
+                f"{'behind' if deviation < 0 else 'ahead of'} the kernel's own clock "
+                "(the boot record plus the monotonic clock)"
+            )
+            return verdict
 
-    if sample_blind:
-        verdict["state"] = BLIND
-        verdict["reason"] = (
-            "the monotonic clock did not advance "
-            f"({verdict['monotonic_delta_s']}s): no verdict is possible"
-        )
-        return verdict
-
+    # --- Nothing objected. ---------------------------------------------------------------
     if previous is not None:
         verdict["state"] = OK
         verdict["trusted"] = True
         verdict["projected_epoch"] = current["wall"]
+        verdict["witness"] = "anchor"
+        if verdict["reboot"]:
+            verdict["reason"] = (
+                "the host rebooted (the monotonic clock restarted) and the wall clock is "
+                "not behind the trusted anchor: the reboot is not a clock fault"
+            )
+        else:
+            verdict["reason"] = (
+                "the wall clock and the monotonic clock agree within "
+                f"{tolerance(verdict['monotonic_delta_s'] or 0.0):.1f}s"
+            )
+        return verdict
+
+    if ledger is not None:
+        verdict["state"] = OK
+        verdict["trusted"] = True
+        verdict["projected_epoch"] = current["wall"]
+        verdict["witness"] = "ledger"
         verdict["reason"] = (
-            f"the wall clock and the monotonic clock agree within "
-            f"{tolerance(verdict['monotonic_delta_s'] or 0.0):.1f}s"
+            "the wall clock is not behind the estate's own incident ledger"
         )
         return verdict
 
-    verdict["reason"] = "no previous sample: there is no evidence either way"
+    verdict["reason"] = (
+        "no previous sample and no ledger: there is no evidence either way"
+    )
+    if kernel is not None:
+        verdict["reason"] += (
+            "; the kernel's boot record agrees with the wall clock, but it follows the wall "
+            "clock through a step, so it is not evidence of the wall clock's truth"
+        )
     return verdict
 
 
@@ -354,18 +445,18 @@ def observe(path: Path | None = None, sampler=None, kernel=None, ledger=None) ->
         ledger = ledger_epoch()
     previous = load(target)
     if previous is None and target.exists():
-        # The state file exists but cannot be read. The kernel witness does not depend on it,
-        # so a verdict is still possible; without the kernel there is nothing to judge against
-        # and the guard fails closed.
-        if kernel is None:
-            verdict = judge(None, current, None, ledger)
+        # The state file exists but cannot be read, so the anchor is gone. The ledger and
+        # the kernel can still be asked: whatever they say, the state is re-baselined. Only
+        # when no witness can be reached at all does the guard fail closed.
+        verdict = judge(None, current, kernel, ledger)
+        if verdict["state"] == UNKNOWN and kernel is None and ledger is None:
             verdict["state"] = BLIND
+            verdict["trusted"] = False
             verdict["reason"] = (
                 f"the state file {target} exists but could not be read and no other witness "
                 "could be reached: no verdict is possible"
             )
             return verdict
-        verdict = judge(None, current, kernel, ledger)
         verdict["reason"] += (
             f"; the state file {target} could not be read and is re-baselined"
         )
@@ -376,9 +467,10 @@ def observe(path: Path | None = None, sampler=None, kernel=None, ledger=None) ->
 def commit(path: Path | None = None, sampler=None, kernel=None, ledger=None) -> dict:
     """The verdict for right now, and the state becomes the next comparison.
 
-    While the clock is untrusted the state keeps the trusted wall reading and advances only the
-    monotonic reference. Overwriting it with the regressed reading would destroy the baseline
-    exactly when it is needed: the next tick would compare 2024 with 2024 and call it fine.
+    While the clock is untrusted the state keeps the trusted wall reading, marks it anchored
+    and advances only the monotonic reference. Overwriting it with the regressed reading would
+    destroy the baseline exactly when it is needed: the next tick would compare 2024 with 2024
+    and call it fine.
     """
     target = Path(path) if path else state_path()
     current = (sampler or sample)()

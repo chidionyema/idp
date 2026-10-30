@@ -28,14 +28,17 @@ door_s: 100
 halt_on_failure: false
 steps:
   - name: loop
+    # The executor shell-quotes every {{var}} itself (shlex.quote in estate-execute's
+    # interpolate()), so the placeholders are bare here. Quoting them again would send the
+    # literal quotes to the script and break every argument.
     cmd: |
-      python3 ~/.estate/libexec/incident-loop.py "{{action}}" \
-        --repo "{{repo}}" \
-        --incident "{{incident}}" \
-        --severity "{{severity}}" \
-        --blast "{{blast}}" \
-        --title "{{title}}" \
-        --url "{{url}}" \
-        --state "{{state}}" \
-        --lane "{{lane}}" \
-        --worktree "{{worktree}}"
+      python3 ~/.estate/libexec/incident-loop.py {{action}} \
+        --repo {{repo}} \
+        --incident {{incident}} \
+        --severity {{severity}} \
+        --blast {{blast}} \
+        --title {{title}} \
+        --url {{url}} \
+        --state {{state}} \
+        --lane {{lane}} \
+        --worktree {{worktree}}
