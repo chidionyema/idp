@@ -1,0 +1,274 @@
+{
+  "schema_version": 1,
+  "status": "DRAFT_ACCEPTANCE_CONTRACT_NOT_ENFORCEMENT",
+  "claim": "chidionyema/idp#7480",
+  "policy": "Missing evidence remains UNPROVEN. These definitions do not activate CI, certify operation, or amend historical founder policy.",
+  "contracts": [
+    {
+      "id": "MEM-01",
+      "feature": "Founder directives survive sessions",
+      "status": "BROKEN",
+      "invariant": "Each authenticated directive is durably captured once, then retrieved and applied by every in-scope runtime without the founder repeating it.",
+      "sli_target": "100% mandatory directives in controlled cross-session acceptance cases; zero acknowledged directives lost",
+      "target_authority": "founder FR-012; zero-loss acceptance target selected in this audit",
+      "existing_work": [
+        "#6156",
+        "#6164"
+      ],
+      "positive_proof": "A later unrelated task in a separate session must obey the applicable directive; demonstrate real refusal of a violating action.",
+      "negative_cases": "Omit the directive, restart sessions, supersede it, revoke it, and attempt a forged founder quotation.",
+      "operational_evidence": null
+    },
+    {
+      "id": "MEM-02",
+      "feature": "Authenticated memory door",
+      "status": "BROKEN",
+      "invariant": "A real authenticated caller can brief, recall and remember through the existing door.",
+      "sli_target": "Every required operation succeeds for the acceptance run; no HTTP-only or in-pod-only substitute",
+      "target_authority": "ADR 0036; founder FR-003",
+      "existing_work": [
+        "#7397",
+        "#7387"
+      ],
+      "positive_proof": "Trace/log correlation from the actual external caller through the gateway to the memory service.",
+      "negative_cases": "Door outage, authentication failure, malformed response, and unavailable downstream return failure/unknown.",
+      "operational_evidence": null
+    },
+    {
+      "id": "MEM-03",
+      "feature": "Every harness covered",
+      "status": "UNPROVEN",
+      "invariant": "Enumerate all deployed harnesses and transports; installation and real consumption are required for each.",
+      "sli_target": "100% inventory coverage, including Codex; denominator cannot omit an active runtime",
+      "target_authority": "founder FR-004/FR-012",
+      "existing_work": [
+        "#6156"
+      ],
+      "positive_proof": "Installed contract plus real independent session consumption/application evidence per harness.",
+      "negative_cases": "Missing Codex integration, direct-provider path, absent extension or memory tool, disabled callback.",
+      "operational_evidence": null
+    },
+    {
+      "id": "MEM-04",
+      "feature": "Running-session propagation",
+      "status": "UNPROVEN",
+      "invariant": "New, changed and revoked directives reach already-running and new sessions with a visible version.",
+      "sli_target": "<=60 seconds from durable commit to each eligible session acknowledgment/application",
+      "target_authority": "engineering target proposed by this audit; not an achieved or previously approved SLA",
+      "existing_work": [
+        "#6156",
+        "#6164"
+      ],
+      "positive_proof": "Authoritative write event linked to per-session received/applied events; explicit sample window and denominator.",
+      "negative_cases": "Drop an event, reconnect after a gap, replay twice, revoke during a long turn.",
+      "operational_evidence": null
+    },
+    {
+      "id": "MEM-05",
+      "feature": "Semantic and hybrid recall",
+      "status": "UNPROVEN",
+      "invariant": "Recover paraphrased estate facts with citations; prove embedding and adopted retrieval engine participation.",
+      "sli_target": "No regression on a versioned held-out estate gold set; required founder constraints 100%",
+      "target_authority": "ADR 0036; LongMemEval-informed test dimensions",
+      "existing_work": [
+        "#6159",
+        "#6164"
+      ],
+      "positive_proof": "Candidate-bound embedding coverage plus query/ranking traces and estate-specific scored answers.",
+      "negative_cases": "No embeddings, wrong query/passage mode, empty store, contradictory distractor, unavailable engine.",
+      "operational_evidence": null
+    },
+    {
+      "id": "MEM-06",
+      "feature": "Temporal validity and supersession",
+      "status": "UNPROVEN",
+      "invariant": "Return the applicable directive/fact at the requested time; preserve its predecessor and revocation.",
+      "sli_target": "100% deterministic temporal/supersession acceptance cases",
+      "target_authority": "master epic T-2; ADR 0036",
+      "existing_work": [
+        "#6164"
+      ],
+      "positive_proof": "Real versioned writes, as-of queries and applied-version evidence.",
+      "negative_cases": "Expired, future-dated, superseded and contradictory records; clock skew.",
+      "operational_evidence": null
+    },
+    {
+      "id": "MEM-07",
+      "feature": "Authority, provenance and isolation",
+      "status": "UNPROVEN",
+      "invariant": "Authenticated founder directives are policy inputs; recalled agent/model prose stays data. Tenant boundaries hold.",
+      "sli_target": "Zero unauthorized reads/writes, forged-authority promotions or cross-tenant leakage in acceptance suite",
+      "target_authority": "AGENTS gate 7; ADR 0036",
+      "existing_work": [
+        "#6164",
+        "#7443"
+      ],
+      "positive_proof": "Existing identity and write-guard verdicts tied to real authenticated caller and proposition.",
+      "negative_cases": "Client-supplied marker/opt-out, forged founder text, unknown identity, revoked credential.",
+      "operational_evidence": null
+    },
+    {
+      "id": "MEM-08",
+      "feature": "Evidence-bearing memory writes",
+      "status": "UNPROVEN",
+      "invariant": "Evidence must support the actual proposition; successful unrelated commands do not certify it.",
+      "sli_target": "100% mandatory claims bound to proposition, immutable subject and trusted verifier",
+      "target_authority": "2026-10-26 memory-rung ADR; strengthened audit acceptance",
+      "existing_work": [
+        "#6164",
+        "#7443"
+      ],
+      "positive_proof": "One existing trusted verifier validates subject, authority, digest, observation and asserted property.",
+      "negative_cases": "echo/true success unrelated to claim; stale, replayed, tampered or wrong-SHA proof.",
+      "operational_evidence": null
+    },
+    {
+      "id": "MEM-09",
+      "feature": "Active Focus lifecycle",
+      "status": "UNPROVEN",
+      "invariant": "Claims enter, refresh, lapse and close consistently in hook, bridge, router and Fleet.",
+      "sli_target": "Closed-claim removal <=300s existing cache boundary; no lapsed claim retained as live beyond 2h heartbeat rule",
+      "target_authority": "focus.py STATE_TTL_S/FOCUS_TTL_S; AGENTS \u00a75",
+      "existing_work": [
+        "#6597",
+        "#7397"
+      ],
+      "positive_proof": "Real claim ledger transitions observed through all readers; recompute liveness on cached reads.",
+      "negative_cases": "Unknown ledger, slow refresh, corrupt cache, closed issue, missing heartbeat.",
+      "operational_evidence": null
+    },
+    {
+      "id": "MEM-10",
+      "feature": "Ownership and lockdown refusal",
+      "status": "UNPROVEN",
+      "invariant": "Every durable action seam refuses unauthorized, overlapping, frozen or locked actions.",
+      "sli_target": "100% negative acceptance cases; zero ordinary bypasses",
+      "target_authority": "founder FR-005/FR-006/FR-007; AGENTS \u00a75",
+      "existing_work": [
+        "#7474"
+      ],
+      "positive_proof": "Actual editor/executor/push-path refusal events visible on Fleet; no code-presence proxy.",
+      "negative_cases": "Raw shell write, alternate harness, missing session id, unknown focus, stale policy, client opt-out.",
+      "operational_evidence": null
+    },
+    {
+      "id": "MEM-11",
+      "feature": "Goal persistence and adaptation",
+      "status": "UNPROVEN",
+      "invariant": "Goals, progress and attempts survive restart; repeated no-progress causes bounded alternative action/escalation.",
+      "sli_target": "No unbounded attempt/cost/time loops; 100% resume cases in deterministic suite",
+      "target_authority": "master epic; existing Definition of Done session-resume 100%",
+      "existing_work": [
+        "#7443",
+        "#7452"
+      ],
+      "positive_proof": "Durable plan history, measured outcome changes and resumed run record.",
+      "negative_cases": "Crash mid-step, duplicate delivery, stale heartbeat with no progress, exhausted budget.",
+      "operational_evidence": null
+    },
+    {
+      "id": "MEM-12",
+      "feature": "Working memory and consolidation",
+      "status": "UNPROVEN",
+      "invariant": "Scratchpad, preference recurrence, approvals and idempotency persist appropriately; derived facts retain taint.",
+      "sli_target": "100% restart/atomicity/isolation cases; quality change measured on held-out estate cases",
+      "target_authority": "active-runtime/harness source; Muse comparison",
+      "existing_work": [
+        "#6159",
+        "#6164"
+      ],
+      "positive_proof": "Real restart/consume/replay evidence; consolidation improvements measured rather than asserted.",
+      "negative_cases": "MCP transport omits turn capture, duplicate request, expired approval, model output promoted as founder authority.",
+      "operational_evidence": null
+    },
+    {
+      "id": "MEM-13",
+      "feature": "Backup and restore",
+      "status": "UNPROVEN",
+      "invariant": "Acknowledged directives recover off the failed machine/cloud with correct version and access policy.",
+      "sli_target": "Directive RPO=0 target; restore RTO<=15 minutes target in controlled recovery exercise",
+      "target_authority": "engineering targets selected in this audit, unproven; #7397 supplies existing recovery work",
+      "existing_work": [
+        "#7397",
+        "#7391"
+      ],
+      "positive_proof": "Successful restore into isolated target, read-back and actual caller use; never delete surviving data to test.",
+      "negative_cases": "Cluster outage, laptop loss, corrupt snapshot, old snapshot, unavailable credentials.",
+      "operational_evidence": null
+    },
+    {
+      "id": "MEM-14",
+      "feature": "Agent identity and DNA",
+      "status": "SOURCE_UNRESOLVED",
+      "invariant": "One persistent authenticated agent record links sessions, claims, evaluation history, capabilities and capacity; distinguish descriptive DNA from authority.",
+      "sli_target": "100% session/claim/evaluation linkage in acceptance inventory; no identity inferred solely from display name",
+      "target_authority": "master epic R-12; exact agent-DNA primary requirement still to recover",
+      "existing_work": [
+        "#7480"
+      ],
+      "positive_proof": "Authoritative identity record and real cross-session linkage, with separate workload identity.",
+      "negative_cases": "Duplicate display names, model switch, unknown/forged header, expired identity.",
+      "operational_evidence": null
+    },
+    {
+      "id": "MEM-15",
+      "feature": "Latency and retrieval budget",
+      "status": "UNPROVEN",
+      "invariant": "Measure useful complete responses and memory overhead under defined load; empty answers are failures.",
+      "sli_target": "API p95<2s; agent-step p95<10s; no >10% p95 regression; explicit window/load/sample count required",
+      "target_authority": "existing docs/reference/policy/definition-of-done.md",
+      "existing_work": [
+        "#6164"
+      ],
+      "positive_proof": "Trace-derived percentiles from real caller requests, with cache/degraded paths reported separately.",
+      "negative_cases": "Cold cache, slow embed/focus, deadline overrun, degraded answer omitted from denominator.",
+      "operational_evidence": null
+    },
+    {
+      "id": "MEM-16",
+      "feature": "Fleet and founder service path",
+      "status": "UNPROVEN",
+      "invariant": "The founder can inspect instruction version, agent uptake, service levels and pass/refuse live from normal voice/mobile surfaces.",
+      "sli_target": "All acceptance events visible with identity and timestamps; no laptop-only manual approval dependency",
+      "target_authority": "founder FR-011; AGENTS \u00a73/\u00a79",
+      "existing_work": [
+        "#6164",
+        "#7474"
+      ],
+      "positive_proof": "Real voice/mobile interaction correlated to runtime evidence and Fleet stream.",
+      "negative_cases": "Disconnected/reconnected stream, stale renderer cache, inaccessible panel, terminal-only approval.",
+      "operational_evidence": null
+    },
+    {
+      "id": "MEM-17",
+      "feature": "Mandatory CI and continuous acceptance",
+      "status": "NOT_ACTIVATED",
+      "invariant": "Extend existing memory-gate, evidence verifier and ci-success; require correct-candidate behavior and fresh applicable operational evidence.",
+      "sli_target": "No missing, stale, unrelated, skipped, empty or unknown mandatory proof accepted",
+      "target_authority": "founder FR-003..FR-007",
+      "existing_work": [
+        "#6164",
+        "#7443",
+        "#7474"
+      ],
+      "positive_proof": "Required-check/Greenlane decision linked to exact candidate and real deployed usage; continuous revocation on red/stale evidence.",
+      "negative_cases": "Wrong PR/SHA/image, success string, continue-on-error, skipped required job, no logs, expired window.",
+      "operational_evidence": null
+    },
+    {
+      "id": "MEM-18",
+      "feature": "Estate-wide reuse and failure immunity",
+      "status": "UNPROVEN",
+      "invariant": "Apply the same contracts to all estate layers; recurring failures produce deterministic inherited prevention.",
+      "sli_target": "Every in-scope service maps requirements->verifier->evidence->release decision; no blanket pass from a memory-only result",
+      "target_authority": "founder FR-004; Loop Engineering doctrine",
+      "existing_work": [
+        "#7452",
+        "#7480"
+      ],
+      "positive_proof": "Per-service owner and acceptance inventory, recurrence measurement and deployed refusal evidence.",
+      "negative_cases": "Undeclared service, unowned capability, duplicated layer, repeat failure with no prevention.",
+      "operational_evidence": null
+    }
+  ]
+}

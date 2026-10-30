@@ -1,0 +1,3122 @@
+{
+  "method": "rg textual inventory; presence is discovery, not proof of review or operation.",
+  "scope": "Current sparse working tree; historical branch and remote-only documents still require reconciliation.",
+  "candidates": [
+    {
+      "path": "docs/reports/2026-10-02-memory-inventory-measured.md",
+      "hits": [
+        {
+          "line": 31,
+          "text": "| 2 | **unified-memory-server** | `unified-memory` ns | `0/0` replicas, KEDA `min 1 / max 1`; **answered a live PUT with 200 CREATED** and a GET with the fact | \u2705 **OPERATIONAL** \u2014 on-demand by design (`idp.estate.io/runtime: on-demand`) |"
+        },
+        {
+          "line": 53,
+          "text": "| `unified-memory-server` | `main.py:390` ranks by `embedding <=> %s::vector` \u2014 nothing computes the embedding it compares against |"
+        },
+        {
+          "line": 69,
+          "text": "1. **`unified-memory-server 0/0 replicas` was reported as \"never ran\".** Wrong. Its"
+        },
+        {
+          "line": 80,
+          "text": "  the store (unified memory server on the one Postgres) stay. Substituting a redb file beside"
+        }
+      ],
+      "total_hits": 4
+    },
+    {
+      "path": ".github/workflows/oke-check.yml",
+      "hits": [
+        {
+          "line": 32,
+          "text": "        options: [diagnose, architect-doctor, otto-parity, otto-lockdown, otto-restore, healthchecks-door, cilium-unchain, cilium-replace, helm-retry, webhooks-restart, namespace-unstick, ghcr-pull-restore, k8sgpt-analyze, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize, catalogue-roll, router-spend, registries-conf, ns-fences, secret-census, secret-reclaim]"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/reports/flux-state.md",
+      "hits": [
+        {
+          "line": 92,
+          "text": "| Kustomization | flux-system | unified-memory | Ready | main@5c10459 | 2026-10-08T06:10:39Z |  |"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": ".github/workflows/vault-seed.yml",
+      "hits": [
+        {
+          "line": 157,
+          "text": "            # The fleetview-backend sidecar needs the unified-memory surface token to call"
+        },
+        {
+          "line": 163,
+          "text": "            # The token MUST match what unified-memory-server registered at boot. unified-memory"
+        },
+        {
+          "line": 165,
+          "text": "            # Step 1: read unified-memory surface-token from the OCI vault."
+        },
+        {
+          "line": 170,
+          "text": "            # Read the existing token that unified-memory-server registered at boot."
+        },
+        {
+          "line": 172,
+          "text": "            _tok=$(bin/idp-cloud secret get unified-memory | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[\"surface-token\"])')"
+        }
+      ],
+      "total_hits": 5
+    },
+    {
+      "path": ".github/workflows/otto-parity.yml",
+      "hits": [
+        {
+          "line": 8,
+          "text": "# SLA (founder 2026-09-29, \"need strict slas\"): graded every 15 minutes; the first red tick and the"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/reference/policy/definition-of-done.md",
+      "hits": [
+        {
+          "line": 151,
+          "text": "Breach rule: any security metric non-zero is lockdown. All non-essential agents halt. Founder"
+        },
+        {
+          "line": 231,
+          "text": "| Security metric non-zero | Lockdown: halt all non-essential agents, catastrophic alert |"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "bin/intent-hydrate",
+      "hits": [
+        {
+          "line": 70,
+          "text": "            skipped.append(f\"env {e.get('name')}: secret ref or DNA reference\")"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/reference/policy/root-trust.md",
+      "hits": [
+        {
+          "line": 111,
+          "text": "| `concierge-twilio` phone numbers (`MOM_PHONE_NUMBER`, `GUARDIAN_PHONE_NUMBER`) | platform/human-vault-bridge/externalsecrets.yaml (generated from the `twilio` vendor row) | Twilio | Customer | The two E.164 numbers are **not credentials** -- they are the allowlist the product's one door reads, and they are declared as separate `data[]` fields on this entry rather than in a second store (LAW 44: one credential is not two entries). `MOM_PHONE_NUMBER` is Nunn's WhatsApp number and the ONLY sender `/webhook/whatsapp` will answer; `GUARDIAN_PHONE_NUMBER` is the founder's, for the alerts a failed "
+        },
+        {
+          "line": 112,
+          "text": "| `concierge-twilio` (`TWILIO_WHATSAPP_NUMBER`) | platform/human-vault-bridge/externalsecrets.yaml (generated from the `twilio` vendor row) | Twilio | Customer | Same fact class as the two phone numbers above, and the same LAW 44 reasoning: declared as separate `data[]` fields on this one entry rather than a second store. `TWILIO_WHATSAPP_NUMBER` is the sender identity Twilio's API requires on every outbound message (the concierge's own number, not Mum's or the founder's). `PUBLIC_SERVER_URL` was a field here too and was removed 2026-10-13: it is the endpoint's own Modal URL, issued by Modal a"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "docs/reference/policy/notification-channels.md",
+      "hits": [
+        {
+          "line": 4,
+          "text": "the founder, 'send this' \u2014 so it's hard to locate information\", and \"use Slack for alerts and keep"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/reference/incidents/2026-09-06-calico-cutover-blacked-out-every-public-site.md",
+      "hits": [
+        {
+          "line": 5,
+          "text": "Later founder record from the same evening, cited by the lockdown follow-up:"
+        },
+        {
+          "line": 10,
+          "text": "cluster by hand (the lockdown refuses it), every apply went through git or the oke-check"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": ".github/workflows/feature-request-enable.yml",
+      "hits": [
+        {
+          "line": 1,
+          "text": "# crew#584 CP-K (founder 2026-08-29: \"how does the self service lean vs enterprise, not seeing it"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "bin/estate-state-page",
+      "hits": [
+        {
+          "line": 12,
+          "text": "The page is written to ~/.estate/state/state-page.md, published into unified memory (so every"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/reference/requirements/founder-requirements-2026-08-24.md",
+      "hits": [
+        {
+          "line": 50,
+          "text": "| 02:58Z | Unify the fragmented data pipeline (currently 77 non-joining record locations and 6 scheduling roots) into one model. | \"but ... this is data sciences proble , we need unification of dta pipeline ,work is recorded in 77 places that do not j | other | OPEN |"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/reference/specs/kini-master-spec.md",
+      "hits": [
+        {
+          "line": 63,
+          "text": "  app) or by a catastrophic alert (lockdown, integrity failure)."
+        },
+        {
+          "line": 152,
+          "text": "2. Catastrophic alerts (integrity failure, lockdown, dead man's switch"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "bin/estate-founder-intake",
+      "hits": [
+        {
+          "line": 13,
+          "text": "to unified memory so any session can recall it. A prompt that repeats an earlier one is"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "bin/idp/migrate-domain/console/phases.mjs",
+      "hits": [
+        {
+          "line": 16,
+          "text": "export const PHASES = ['discover', 'validate', 'prepare', 'verify', 'cutover', 'lockdown']"
+        },
+        {
+          "line": 223,
+          "text": "// ------------------------------------------------------------ 6. LOCKDOWN"
+        },
+        {
+          "line": 228,
+          "text": "export async function lockdown(domain, { dir = STATE_DIR, dns = z, resolvers = RESOLVERS, ask = askNs } = {}) {"
+        }
+      ],
+      "total_hits": 3
+    },
+    {
+      "path": "bin/idp/migrate-domain/lib/notify.mjs",
+      "hits": [
+        {
+          "line": 13,
+          "text": "  'migration.lockdown_done',"
+        },
+        {
+          "line": 23,
+          "text": "  'migration.lockdown_done': '\ud83d\udd12',"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "bin/idp/migrate-domain/migrate-domain.mjs",
+      "hits": [
+        {
+          "line": 90,
+          "text": "const needsToken = !dryRun && phase !== 'discover' && phase !== 'lockdown' && phase !== 'cutover'"
+        },
+        {
+          "line": 236,
+          "text": "  if (step === 'lockdown') {"
+        },
+        {
+          "line": 239,
+          "text": "    const r = await ph.lockdown(domain)"
+        },
+        {
+          "line": 247,
+          "text": "    await note('migration.lockdown_done', { status: 'complete' })"
+        },
+        {
+          "line": 306,
+          "text": "    say(dim('  Next: node scripts/migrate-domain.mjs ' + domain + ' --phase=lockdown'))"
+        }
+      ],
+      "total_hits": 5
+    },
+    {
+      "path": "docs/epics/2026-10-25-estate-master-epic.md",
+      "hits": [
+        {
+          "line": 30,
+          "text": "| 7 | **CONSTRAINTS** | What may not be done? | `AGENTS.md`, Active Focus claims, budget/capacity store | live |"
+        },
+        {
+          "line": 51,
+          "text": "| R-03 | \"harmonise \u2026 a congruent architecture\" | one of each layer; duplicates merged or deleted | \u00a76.1 layer table + findings F-01\u2026F-08 | architecture |"
+        },
+        {
+          "line": 60,
+          "text": "| R-12 | \"persistent agent identity\" | an agent is an entity with history, claims, scores, capacity | identity record + claim ledger + eval history | identity |"
+        },
+        {
+          "line": 78,
+          "text": "| R-30 | \"we have all the building blocks \u2026 unified memory, context, active focus active memory, realtime, fleet\" | composition beats construction | each new capability names the blocks it composes | all |"
+        },
+        {
+          "line": 119,
+          "text": "| Live claims | #7003, #6921, #7116, #7113 | estate-memory Active Focus |"
+        },
+        {
+          "line": 138,
+          "text": "| `docs/specs/2026-10-19-active-memory-and-focus-vs-muse.md` | 6,936 B | active focus vs muse |"
+        },
+        {
+          "line": 146,
+          "text": "(`bin/estate-claim-check`), the graph (`growmos`), active memory/focus, the greenlane"
+        },
+        {
+          "line": 154,
+          "text": "## 4. Congruency findings \u2014 the \"slab of mess\", named"
+        },
+        {
+          "line": 180,
+          "text": "| R-03 congruency | partial | \u00a74 findings open | 0 |"
+        },
+        {
+          "line": 234,
+          "text": "| 6 | **Memory** | facts store (rungs), graph, active memory/focus | fix the focus read (F-03); serve \u00a70 fields 3, 5, 6 |"
+        },
+        {
+          "line": 670,
+          "text": "  derived:     {focus: [...], memory: [...]}   # what Active Focus/Memory contributed"
+        },
+        {
+          "line": 691,
+          "text": "query surface \u2014 the **Brain API** \u2014 over unified memory, the active-focus claim registry, the knowledge"
+        },
+        {
+          "line": 735,
+          "text": "| W-18 | unified memory + active focus involved | PROVEN | this agent's own context carries Active Memory and Active Focus; `unified-memory` 1/1 | \u2014 \u00b7 EPIC-061 | \u2014 |"
+        },
+        {
+          "line": 740,
+          "text": "| W-23 | all agents and bots (Otto, JEV, k8 agents) in sync across goals, state, events, history, capabilities | ABSENT | no published agent state; Active Focus is per-agent, not shared | R-57 \u00b7 EPIC-069 | W2 |"
+        },
+        {
+          "line": 742,
+          "text": "| W-25 | architectural coherence and congruence as a headline; where Temporal sits beside NATS/JetStream | DESIGNED | `temporal` 6/6 pods, `temporalio/server` + `postgres12_pgx`, 512 shards; JetStream + PVC; \u00a714 assigns one job per plane | R-51/R-52 \u00b7 EPIC-073 | W0 |"
+        }
+      ],
+      "total_hits": 18
+    },
+    {
+      "path": "bin/idp-oke-break-glass",
+      "hits": [
+        {
+          "line": 655,
+          "text": "  # it once, in its own namespace; anything else is drift the lockdown playbook deletes."
+        },
+        {
+          "line": 725,
+          "text": "# otto-lockdown: crew#736 step 1 (founder 2026-08-31 09:20Z: \"Revoke that ClusterRoleBinding"
+        },
+        {
+          "line": 731,
+          "text": "pb_otto_lockdown() {"
+        },
+        {
+          "line": 764,
+          "text": "# otto-restore: the undo of otto-lockdown (LAW 16, crew#736). Resumes the Flux row so the"
+        },
+        {
+          "line": 1710,
+          "text": "  --list) echo \"diagnose architect-doctor otto-homes otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset ns-fences secret-census secret-reclaim\"; exit 0 ;;"
+        },
+        {
+          "line": 1715,
+          "text": "  otto-lockdown) pb_otto_lockdown ;;"
+        }
+      ],
+      "total_hits": 6
+    },
+    {
+      "path": "bin/lib/nodesoftware_operator_gate.py",
+      "hits": [
+        {
+          "line": 31,
+          "text": "# Free-form rollback commands are forbidden by the lockdown; the Operator ships"
+        },
+        {
+          "line": 103,
+          "text": "                \"match every node; the lockdown refuses that)\","
+        },
+        {
+          "line": 227,
+          "text": "                        \"by the lockdown)\","
+        },
+        {
+          "line": 242,
+          "text": "    exact 'lockdown refused its own install request' class of incident."
+        },
+        {
+          "line": 295,
+          "text": "                f\"other, which is the lockdown-refuses-its-own-install-request class of incident\","
+        }
+      ],
+      "total_hits": 5
+    },
+    {
+      "path": "bin/estate-memory-enforce",
+      "hits": [
+        {
+          "line": 22,
+          "text": "  lockdown  Refuse any durable edit while this session is under lockdown. A session that"
+        },
+        {
+          "line": 61,
+          "text": "# The founder's governance: frozen paths and session lockdown. Harness-agnostic on purpose --"
+        },
+        {
+          "line": 207,
+          "text": "    (the keys are taken away), and a session under lockdown cannot write until its proof is"
+        },
+        {
+          "line": 223,
+          "text": "            f\"this session is under lockdown for {state.get('violation_class', 'a law')} \""
+        },
+        {
+          "line": 279,
+          "text": "        deny_pre(f\"No active focus for this change. {why}\")"
+        }
+      ],
+      "total_hits": 5
+    },
+    {
+      "path": "bin/litellm-local",
+      "hits": [
+        {
+          "line": 50,
+          "text": "MODULES=\"local_caller_auth.py efficiency_gateway.py request_ceiling.py anthropic_beta_passthrough.py graph_capture.py action_ledger.py router_catalog.py lane_registry.py route_table.py active_memory.py\""
+        },
+        {
+          "line": 172,
+          "text": "  # Active Memory (platform/llm/active_memory.py): every call through this router carries the"
+        },
+        {
+          "line": 178,
+          "text": "  export ACTIVE_MEMORY_BUDGET_S=\"${ACTIVE_MEMORY_BUDGET_S:-3}\""
+        },
+        {
+          "line": 183,
+          "text": "  [ -n \"${MCP_GATEWAY_KEY:-}\" ] || echo \"warn  no MCP_GATEWAY_KEY: calls carry Active Focus but no Active Memory brief\""
+        },
+        {
+          "line": 275,
+          "text": "# Every call carries the estate brief and live claims (platform/llm/active_memory.py); the"
+        },
+        {
+          "line": 277,
+          "text": "if \"active_memory.proxy_handler_instance\" not in ls[\"callbacks\"]:"
+        },
+        {
+          "line": 278,
+          "text": "    ls[\"callbacks\"].append(\"active_memory.proxy_handler_instance\")"
+        },
+        {
+          "line": 314,
+          "text": "  # active_memory.py imports the door and the focus rules from here (ESTATE_MEMORY_LIB)."
+        }
+      ],
+      "total_hits": 8
+    },
+    {
+      "path": "bin/intent-compile",
+      "hits": [
+        {
+          "line": 6,
+          "text": "This compiler \u2014 plain Python, no model anywhere in it \u2014 merges an intent with the founder's DNA"
+        },
+        {
+          "line": 7,
+          "text": "(the data: block of clusters/*/estate-config.yaml) and emits the manifests. Change the DNA, run the"
+        },
+        {
+          "line": 25,
+          "text": "  2. an intent that SPEAKS any DNA value (the zone, the registry, an endpoint) anywhere in its"
+        },
+        {
+          "line": 31,
+          "text": "Exit 0 compiled, 1 refused, 2 BLIND (no DNA found)."
+        },
+        {
+          "line": 52,
+          "text": "    dna: dict[str, str] = {}"
+        },
+        {
+          "line": 55,
+          "text": "        dna.update({k: str(v) for k, v in (doc or {}).get(\"data\", {}).items()})"
+        },
+        {
+          "line": 56,
+          "text": "    return dna"
+        },
+        {
+          "line": 67,
+          "text": "def spoken_dna(text: str, dna: dict[str, str]) -> list[str]:"
+        },
+        {
+          "line": 68,
+          "text": "    \"\"\"DNA values the intent text speaks. Values under 6 chars are skipped: 'oci' is a substring"
+        },
+        {
+          "line": 71,
+          "text": "    return sorted(k for k, v in dna.items() if len(v) >= 6 and v.lower() in low)"
+        },
+        {
+          "line": 153,
+          "text": "def compile_storage(i: dict, out: pathlib.Path, src: str, dna: dict[str, str]) -> list[str]:"
+        },
+        {
+          "line": 154,
+          "text": "    provider = dna.get(\"ESTATE_STORAGE_PROVIDER\", \"\")"
+        },
+        {
+          "line": 163,
+          "text": "        + \"# deploy, permanent ruling 2026-09-01). Flipping ESTATE_STORAGE_PROVIDER in the DNA\\n\""
+        },
+        {
+          "line": 220,
+          "text": "def compile_secret(i: dict, out: pathlib.Path, src: str, dna: dict[str, str]) -> list[str]:"
+        },
+        {
+          "line": 223,
+          "text": "    provider = dna.get(\"ESTATE_STORAGE_PROVIDER\", \"\")"
+        }
+      ],
+      "total_hits": 23
+    },
+    {
+      "path": "bin/idp-ci",
+      "hits": [
+        {
+          "line": 227,
+          "text": "    if touched mcp/plugins/estate_memory.py || touched platform/unified-memory-server/ \\"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "bin/idp-shadow",
+      "hits": [
+        {
+          "line": 405,
+          "text": "# unified-memory-server or voice-router failed on `no matches for kind \"ExternalSecret\"`, and"
+        },
+        {
+          "line": 416,
+          "text": "# `no matches for kind \"HTTPRoute\"` and unified-memory-server on `no matches for kind"
+        },
+        {
+          "line": 428,
+          "text": "# MEASURED 2026-10-14 (run 38526820263, #6148): platform/unified-memory-server failed on `no"
+        }
+      ],
+      "total_hits": 3
+    },
+    {
+      "path": "platform/backstage/overlays/oke/kustomization.yaml",
+      "hits": [
+        {
+          "line": 414,
+          "text": "            # tag:founder-mac to and nobody else -- not this Pod's own catalogue Service, and not"
+        },
+        {
+          "line": 505,
+          "text": "            # The unified-memory-server's surface token for the harness telemetry panel (#6227)."
+        },
+        {
+          "line": 506,
+          "text": "            # The token is the estate's own surface token (vault entry unified-memory, key surface-token),"
+        },
+        {
+          "line": 509,
+          "text": "            - {name: ESTATE_MEMORY_URL, value: \"http://unified-memory-server.unified-memory.svc.cluster.local:8000\"}"
+        },
+        {
+          "line": 510,
+          "text": "            - {name: ESTATE_MEMORY_HOST, value: \"unified-memory.estate.internal\"}"
+        }
+      ],
+      "total_hits": 5
+    },
+    {
+      "path": "platform/backstage/overlays/oke/sunshine-egress.yaml",
+      "hits": [
+        {
+          "line": 18,
+          "text": "    # A new FOUNDER_MAC_TS_IP therefore lands only on a fresh Service: delete it and Flux recreates."
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "platform/otto-gateway/three-homes.yaml",
+      "hits": [
+        {
+          "line": 76,
+          "text": "      # seconds of a founder waiting on a service that was already gone."
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/tutorials/demo/intent.md",
+      "hits": [
+        {
+          "line": 11,
+          "text": "REFUSED speaks-the-zone.json: speaks estate DNA (ESTATE_ZONE); agents are blind to those values, the compiler injects them"
+        },
+        {
+          "line": 19,
+          "text": "the zone name, and the compiler read the DNA and caught it."
+        },
+        {
+          "line": 41,
+          "text": "the DNA says `ESTATE_STORAGE_PROVIDER: oci`, got an OCI Object Storage bucket module. No emitted"
+        }
+      ],
+      "total_hits": 3
+    },
+    {
+      "path": "bin/memory-forward-launchd",
+      "hits": [
+        {
+          "line": 2,
+          "text": "# Keep a laptop-local road to the unified-memory-server open, and the surface token fresh."
+        },
+        {
+          "line": 5,
+          "text": "# harness.py) reads the unified-memory-server through ESTATE_MEMORY_URL, but the server is a"
+        },
+        {
+          "line": 6,
+          "text": "# ClusterIP inside the cluster (clusters/oke/unified-memory.yaml) -- no ingress, so from the"
+        },
+        {
+          "line": 8,
+          "text": "# (vault entry unified-memory, key surface-token, read from the cluster secret the"
+        },
+        {
+          "line": 19,
+          "text": "TOKEN_DIR=\"${HOME}/.estate/unified-memory\""
+        },
+        {
+          "line": 33,
+          "text": "\ttok=\"$(\"$KUBECTL\" -n unified-memory get secret unified-memory \\"
+        },
+        {
+          "line": 46,
+          "text": "say \"forward: starting on 127.0.0.1:${PORT} -> unified-memory-server:8000\""
+        },
+        {
+          "line": 48,
+          "text": "\t\"$KUBECTL\" -n unified-memory port-forward --address 127.0.0.1 \\"
+        },
+        {
+          "line": 49,
+          "text": "\t\tsvc/unified-memory-server \"${PORT}:8000\" >>\"$LOG\" 2>&1"
+        }
+      ],
+      "total_hits": 9
+    },
+    {
+      "path": "platform/calico/raw/calico-node.yaml",
+      "hits": [
+        {
+          "line": 281,
+          "text": "            # securityfs, read by Felix to detect kernel lockdown."
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "bin/idp-estate-seed",
+      "hits": [
+        {
+          "line": 71,
+          "text": "# the memory layer (platform/unified-memory-server): its Postgres role, and the one surface"
+        },
+        {
+          "line": 76,
+          "text": "unified-memory            surface-token              urlsafe32"
+        },
+        {
+          "line": 88,
+          "text": "backstage-env             MEMORY_SURFACE_TOKEN        copy:unified-memory.surface-token"
+        },
+        {
+          "line": 109,
+          "text": "unified-memory    LITELLM_API_KEY            embed,embed-query"
+        }
+      ],
+      "total_hits": 4
+    },
+    {
+      "path": "platform/calico/raw-migration/calico.yaml",
+      "hits": [
+        {
+          "line": 7698,
+          "text": "            # Felix reads /sys/kernel/security/lockdown to detect kernel"
+        },
+        {
+          "line": 7699,
+          "text": "            # lockdown=confidentiality; under it, ftrace is disabled and Felix"
+        },
+        {
+          "line": 7733,
+          "text": "        # securityfs, read by Felix to detect kernel lockdown=confidentiality."
+        },
+        {
+          "line": 7735,
+          "text": "        # start; Felix treats an unreadable lockdown file as \"not locked down\"."
+        }
+      ],
+      "total_hits": 4
+    },
+    {
+      "path": "bin/langfuse-up",
+      "hits": [
+        {
+          "line": 70,
+          "text": "    # ESTATE_EMAIL is DNA (clusters/oke/estate-config.yaml, founder 2026-09-02): one place, never a literal."
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "bin/estate-brief",
+      "hits": [
+        {
+          "line": 63,
+          "text": "    register = focus.render_register(brief.get(\"active_focus\"))"
+        },
+        {
+          "line": 106,
+          "text": "    brief[\"active_focus\"] = focus.live_focus()"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "bin/estate-memory-mcp",
+      "hits": [
+        {
+          "line": 100,
+          "text": "        retired ghosts but the tools agents call mid-session did not, so a dead \"ACTIVE FOCUS\""
+        },
+        {
+          "line": 120,
+          "text": "                    payload[\"active_focus\"] = register"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "bin/memory-gate",
+      "hits": [
+        {
+          "line": 65,
+          "text": "  [ -d \"$IDP/platform/unified-memory-server\" ] \\"
+        },
+        {
+          "line": 66,
+          "text": "    || bad \"platform/unified-memory-server is missing -- the door would have nothing behind it\""
+        },
+        {
+          "line": 67,
+          "text": "  [ -f \"$IDP/clusters/oke/unified-memory.yaml\" ] \\"
+        },
+        {
+          "line": 68,
+          "text": "    || bad \"clusters/oke/unified-memory.yaml is missing -- the store would never be scheduled\""
+        },
+        {
+          "line": 73,
+          "text": "  SC=\"$IDP/platform/unified-memory-server/security_core.py\""
+        },
+        {
+          "line": 78,
+          "text": "    bad \"platform/unified-memory-server/security_core.py is missing\""
+        }
+      ],
+      "total_hits": 6
+    },
+    {
+      "path": "platform/llm/active_memory.py",
+      "hits": [
+        {
+          "line": 1,
+          "text": "\"\"\"Every model call through the router carries the estate's Active Memory and Active Focus."
+        },
+        {
+          "line": 4,
+          "text": "unified memory -- through its own MCP bridge and session hooks. Otto answered from a store of its"
+        },
+        {
+          "line": 16,
+          "text": "Memory); fleetview's /claims answers with who holds which files right now (Active Focus -- the"
+        },
+        {
+          "line": 26,
+          "text": "  - Never in the way: every read has a deadline (ACTIVE_MEMORY_BUDGET_S), every failure is"
+        },
+        {
+          "line": 69,
+          "text": "log = logging.getLogger(\"active_memory\")"
+        },
+        {
+          "line": 82,
+          "text": "BUDGET_S = float(os.environ.get(\"ACTIVE_MEMORY_BUDGET_S\", \"1.5\"))"
+        },
+        {
+          "line": 83,
+          "text": "MAX_CHARS = int(os.environ.get(\"ACTIVE_MEMORY_MAX_CHARS\", \"2400\"))"
+        },
+        {
+          "line": 84,
+          "text": "BRIEF_LIMIT = int(os.environ.get(\"ACTIVE_MEMORY_BRIEF_LIMIT\", \"5\"))"
+        },
+        {
+          "line": 101,
+          "text": "STALE_MAX_S = float(os.environ.get(\"ACTIVE_MEMORY_STALE_MAX_S\", \"1800\"))"
+        },
+        {
+          "line": 391,
+          "text": "        lines.append(\"Active Memory -- what the estate already knows about this task:\")"
+        },
+        {
+          "line": 398,
+          "text": "                f\"Active Focus: unreadable right now ({_clip(focus.get('error'), 120)}).\""
+        },
+        {
+          "line": 406,
+          "text": "                    \"Active Focus -- live claims; do not edit a path another agent holds:\""
+        },
+        {
+          "line": 419,
+          "text": "                lines.append(\"Active Focus: no live claims.\")"
+        },
+        {
+          "line": 505,
+          "text": "class ActiveMemory(CustomLogger):"
+        },
+        {
+          "line": 512,
+          "text": "                log.debug(\"active_memory skip: %s\", why or \"already carries a brief\")"
+        }
+      ],
+      "total_hits": 21
+    },
+    {
+      "path": "platform/active-runtime/src/telemetry/active-otel-exporter.ts",
+      "hits": [
+        {
+          "line": 28,
+          "text": "    \"active_memory.prefetch.duration_ms\","
+        },
+        {
+          "line": 33,
+          "text": "    \"active_memory.brief.tokens\","
+        },
+        {
+          "line": 38,
+          "text": "    \"active_memory.facts.consolidated_total\","
+        },
+        {
+          "line": 43,
+          "text": "    \"active_memory.facts.archived_total\","
+        },
+        {
+          "line": 48,
+          "text": "    \"active_focus.attempts_total\","
+        },
+        {
+          "line": 53,
+          "text": "    \"active_focus.strategy_pivots_total\","
+        },
+        {
+          "line": 54,
+          "text": "    { description: \"Number of times Active Focus locked a failing strategy class and forced a pivot\" }"
+        },
+        {
+          "line": 58,
+          "text": "    \"active_focus.circuit_breaker_trips_total\","
+        },
+        {
+          "line": 63,
+          "text": "    \"active_focus.approval_gate_events_total\","
+        },
+        {
+          "line": 68,
+          "text": "    \"active_focus.run.cost_usd\","
+        }
+      ],
+      "total_hits": 10
+    },
+    {
+      "path": "platform/active-runtime/src/index.ts",
+      "hits": [
+        {
+          "line": 2,
+          "text": "import { ActiveMemoryEngine } from \"./memory/active-memory-engine\";"
+        },
+        {
+          "line": 11,
+          "text": "import { ToolMetadata } from \"./focus/active-focus-controller\";"
+        },
+        {
+          "line": 22,
+          "text": "  const memoryEngine = new ActiveMemoryEngine(cortexAdapter, customMemory);"
+        },
+        {
+          "line": 43,
+          "text": "     * Binds any agent step model into the enforced Active Memory + Active Focus runtime."
+        }
+      ],
+      "total_hits": 4
+    },
+    {
+      "path": "platform/llm/action_ledger.py",
+      "hits": [
+        {
+          "line": 23,
+          "text": "     director and the unified memory server consume. One event, three consumers."
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "platform/llm/config.base.yaml",
+      "hits": [
+        {
+          "line": 87,
+          "text": "  # active_memory (2026-10-20): every chat call carries the estate's Active Memory brief and"
+        },
+        {
+          "line": 88,
+          "text": "  # Active Focus and writes its turn to working memory -- one place for every agent, instead"
+        },
+        {
+          "line": 89,
+          "text": "  # of an adapter per runtime (platform/llm/active_memory.py). Last, so the ceiling above"
+        },
+        {
+          "line": 91,
+          "text": "  callbacks: [\"otel\", \"efficiency_gateway.proxy_handler_instance\", \"request_ceiling.proxy_handler_instance\", \"active_memory.proxy_handler_instance\"]"
+        }
+      ],
+      "total_hits": 4
+    },
+    {
+      "path": "platform/active-runtime/src/adapters/cortex-convex-adapter.ts",
+      "hits": [
+        {
+          "line": 6,
+          "text": "} from \"../memory/active-memory-engine\";"
+        },
+        {
+          "line": 7,
+          "text": "import { ApprovalStoreAdapter } from \"../focus/active-focus-controller\";"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "platform/active-runtime/src/focus/active-focus-controller.ts",
+      "hits": [
+        {
+          "line": 1,
+          "text": "// src/focus/active-focus-controller.ts"
+        },
+        {
+          "line": 32,
+          "text": "export class ActiveFocusController {"
+        },
+        {
+          "line": 51,
+          "text": "      return `[${value.map((item) => ActiveFocusController.canonicalizePayload(item)).join(\",\")}]`;"
+        },
+        {
+          "line": 56,
+          "text": "      (k) => `${JSON.stringify(k)}:${ActiveFocusController.canonicalizePayload(record[k])}`"
+        },
+        {
+          "line": 67,
+          "text": "    const canonicalArgs = ActiveFocusController.canonicalizePayload(params.args);"
+        },
+        {
+          "line": 132,
+          "text": "    const payloadHash = ActiveFocusController.computePayloadApprovalHash({"
+        },
+        {
+          "line": 285,
+          "text": "        reason: `Active Focus circuit breaker tripped (attempts=${this.ledger.length}/${this.constraints.maxAttempts}, cost=$${this.spentUsd.toFixed(4)}/$${this.constraints.maxBudgetUsd}, elapsed=${elapsedMs}ms).`,"
+        },
+        {
+          "line": 323,
+          "text": "          `ACTIVE FOCUS PIVOT REQUIRED: Strategy class \"${params.strategyClass}\" failed ${failuresInClass} times (latest error: ${params.errorSummary ?? \"unknown\"}).`,"
+        }
+      ],
+      "total_hits": 8
+    },
+    {
+      "path": "platform/active-runtime/src/mcp/active-mcp-proxy.ts",
+      "hits": [
+        {
+          "line": 2,
+          "text": "import { ToolMetadata } from \"../focus/active-focus-controller\";"
+        },
+        {
+          "line": 71,
+          "text": "   * If an Active Focus retry or network blip replays the exact same step and payload,"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "platform/active-runtime/src/runtime/default-agent-wrapper.ts",
+      "hits": [
+        {
+          "line": 2,
+          "text": "import { ActiveMemoryEngine } from \"../memory/active-memory-engine\";"
+        },
+        {
+          "line": 4,
+          "text": "  ActiveFocusController,"
+        },
+        {
+          "line": 8,
+          "text": "} from \"../focus/active-focus-controller\";"
+        },
+        {
+          "line": 38,
+          "text": "    systemPromptWithActiveMemory: string;"
+        },
+        {
+          "line": 58,
+          "text": "    private readonly memoryEngine: ActiveMemoryEngine,"
+        },
+        {
+          "line": 65,
+          "text": "   * Wraps ANY agent driver so Active Memory pre-fetch, Active Focus obstacle recovery,"
+        },
+        {
+          "line": 77,
+          "text": "    // 1. Pre-Turn Associative Active Memory Injection"
+        },
+        {
+          "line": 87,
+          "text": "    // 2. Initialize Active Focus Controller with safe production defaults"
+        },
+        {
+          "line": 103,
+          "text": "    const focusController = new ActiveFocusController(fullConstraints, this.approvalStore);"
+        },
+        {
+          "line": 127,
+          "text": "        reason: `Active Focus circuit breaker tripped: ${preflightRejections} tool calls rejected before execution (limit ${fullConstraints.maxAttempts}).`,"
+        },
+        {
+          "line": 138,
+          "text": "    // 3. Active Focus Execution Loop"
+        },
+        {
+          "line": 142,
+          "text": "        systemPromptWithActiveMemory: fullSystemPrompt,"
+        }
+      ],
+      "total_hits": 12
+    },
+    {
+      "path": "platform/active-runtime/src/memory/active-memory-engine.ts",
+      "hits": [
+        {
+          "line": 1,
+          "text": "// src/memory/active-memory-engine.ts"
+        },
+        {
+          "line": 35,
+          "text": "export class ActiveMemoryEngine {"
+        },
+        {
+          "line": 113,
+          "text": "      \"=== ACTIVE MEMORY BRIEF (VERIFIED & EVENT-TIME ORDERED) ===\","
+        }
+      ],
+      "total_hits": 3
+    },
+    {
+      "path": "platform/active-runtime/eslint.config.mjs",
+      "hits": [
+        {
+          "line": 13,
+          "text": "                \"Direct Cortex SDK access is forbidden in agents. Use createFleetGateway() so Active Memory bi-temporal guards run automatically.\","
+        },
+        {
+          "line": 18,
+          "text": "                \"Direct MCP tool execution is forbidden in agents. Route all tools through ActiveMcpProxyServer for Active Focus & Approval gates.\","
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "platform/llm/litellm.yaml",
+      "hits": [
+        {
+          "line": 113,
+          "text": "            # Active Memory on every chat call (active_memory.py, in the request-ceiling"
+        },
+        {
+          "line": 117,
+          "text": "            - { name: ESTATE_MEMORY_URL, value: \"http://unified-memory-server.unified-memory.svc.cluster.local:8000\" }"
+        },
+        {
+          "line": 118,
+          "text": "            - { name: ESTATE_MEMORY_HOST, value: \"unified-memory.estate.internal\" }"
+        }
+      ],
+      "total_hits": 3
+    },
+    {
+      "path": "platform/active-runtime/tests/hardening.spec.ts",
+      "hits": [
+        {
+          "line": 9,
+          "text": "import { ActiveMemoryEngine } from \"../src/memory/active-memory-engine\";"
+        },
+        {
+          "line": 10,
+          "text": "import { ActiveFocusController, ToolMetadata } from \"../src/focus/active-focus-controller\";"
+        },
+        {
+          "line": 48,
+          "text": "  let engine: ActiveMemoryEngine;"
+        },
+        {
+          "line": 56,
+          "text": "    engine = new ActiveMemoryEngine(cortex, new CustomFastMemoryStore());"
+        },
+        {
+          "line": 84,
+          "text": "    const controller = new ActiveFocusController(constraints, cortex);"
+        }
+      ],
+      "total_hits": 5
+    },
+    {
+      "path": "platform/active-runtime/tests/telemetry-and-webhooks.spec.ts",
+      "hits": [
+        {
+          "line": 9,
+          "text": "import { ActiveMemoryEngine } from \"../src/memory/active-memory-engine\";"
+        },
+        {
+          "line": 10,
+          "text": "import { ToolMetadata } from \"../src/focus/active-focus-controller\";"
+        },
+        {
+          "line": 44,
+          "text": "  let memoryEngine: ActiveMemoryEngine;"
+        },
+        {
+          "line": 54,
+          "text": "    memoryEngine = new ActiveMemoryEngine(cortexAdapter, new CustomFastMemoryStore());"
+        }
+      ],
+      "total_hits": 4
+    },
+    {
+      "path": "platform/active-runtime/tests/active-runtime.spec.ts",
+      "hits": [
+        {
+          "line": 9,
+          "text": "import { ActiveMemoryEngine } from \"../src/memory/active-memory-engine\";"
+        },
+        {
+          "line": 10,
+          "text": "import { ActiveFocusController, ToolMetadata } from \"../src/focus/active-focus-controller\";"
+        },
+        {
+          "line": 48,
+          "text": "describe(\"Day-0 Production Verification: Active Memory & Active Focus\", () => {"
+        },
+        {
+          "line": 49,
+          "text": "  let memoryEngine: ActiveMemoryEngine;"
+        },
+        {
+          "line": 59,
+          "text": "    memoryEngine = new ActiveMemoryEngine(cortexAdapter, new CustomFastMemoryStore());"
+        },
+        {
+          "line": 183,
+          "text": "    const controller = new ActiveFocusController("
+        },
+        {
+          "line": 246,
+          "text": "  it(\"Edge Case 5, 6 & 7 (Active Focus Strategy Pivot, Anti-Cheating Guard & Epilogue Archival)\", async () => {"
+        }
+      ],
+      "total_hits": 7
+    },
+    {
+      "path": "platform/llm/external-secret.yaml",
+      "hits": [
+        {
+          "line": 106,
+          "text": "# The memory server's surface token, for the router's active_memory callback (every chat call"
+        },
+        {
+          "line": 122,
+          "text": "      remoteRef: { key: unified-memory, property: surface-token }"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "platform/llm/config.yaml",
+      "hits": [
+        {
+          "line": 855,
+          "text": "  # active_memory (2026-10-20): every chat call carries the estate's Active Memory brief and"
+        },
+        {
+          "line": 856,
+          "text": "  # Active Focus and writes its turn to working memory -- one place for every agent, instead"
+        },
+        {
+          "line": 857,
+          "text": "  # of an adapter per runtime (platform/llm/active_memory.py). Last, so the ceiling above"
+        },
+        {
+          "line": 859,
+          "text": "  callbacks: [\"otel\", \"efficiency_gateway.proxy_handler_instance\", \"request_ceiling.proxy_handler_instance\", \"active_memory.proxy_handler_instance\"]"
+        }
+      ],
+      "total_hits": 4
+    },
+    {
+      "path": "platform/llm/kustomization.yaml",
+      "hits": [
+        {
+          "line": 39,
+          "text": "      # Active Memory + Active Focus on every chat call, for every agent (active_memory.py)."
+        },
+        {
+          "line": 40,
+          "text": "      - active_memory.py"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "platform/gvisor-runtime/runtimeinstall.yaml",
+      "hits": [
+        {
+          "line": 40,
+          "text": "      the lockdown blocks every other writer."
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "platform/unified-memory-server/main.py",
+      "hits": [
+        {
+          "line": 40,
+          "text": "    ActiveMemoryEngine,"
+        },
+        {
+          "line": 82,
+          "text": "# The estate's own surface token (vault entry unified-memory, key surface-token). Registered at"
+        },
+        {
+          "line": 125,
+          "text": "# -- the router's Active Memory callback gives it 1.5 s -- so its embed gets BRIEF_EMBED_DEADLINE_S"
+        },
+        {
+          "line": 1128,
+          "text": "    summary=\"Build active context brief for an agent run (Active Memory pre-fetch)\","
+        },
+        {
+          "line": 1138,
+          "text": "    Calls ActiveMemoryEngine.buildActiveContextBrief and returns the brief text."
+        },
+        {
+          "line": 1155,
+          "text": "        engine = ActiveMemoryEngine(cortex, scratchpad, _harness_telemetry)"
+        },
+        {
+          "line": 1169,
+          "text": "    summary=\"Consolidate extracted facts after an agent run (Active Memory post-write)\","
+        },
+        {
+          "line": 1179,
+          "text": "    Calls ActiveMemoryEngine.consolidateTurnCandidates to gate ephemeral facts,"
+        },
+        {
+          "line": 1187,
+          "text": "        engine = ActiveMemoryEngine(cortex, scratchpad, _harness_telemetry)"
+        },
+        {
+          "line": 1239,
+          "text": "    Wire this into the /fleet view so the founder can watch Active Memory and"
+        },
+        {
+          "line": 1240,
+          "text": "    Active Focus operating in real time."
+        }
+      ],
+      "total_hits": 11
+    },
+    {
+      "path": "platform/unified-memory-server/image.yaml",
+      "hits": [
+        {
+          "line": 2,
+          "text": "# unified-memory-server) and pushes main-<run>-<sha>; this policy is what moves the tag in"
+        },
+        {
+          "line": 7,
+          "text": "  name: unified-memory-server"
+        },
+        {
+          "line": 10,
+          "text": "  image: ghcr.io/chidionyema/unified-memory-server"
+        },
+        {
+          "line": 18,
+          "text": "  name: unified-memory-server"
+        },
+        {
+          "line": 22,
+          "text": "    name: unified-memory-server"
+        }
+      ],
+      "total_hits": 5
+    },
+    {
+      "path": "platform/unified-memory-server/tests/test_harness_cortex_search.py",
+      "hits": [
+        {
+          "line": 11,
+          "text": "from harness import ActiveMemoryEngine, HarnessTelemetry, PostgresCortexAdapter"
+        },
+        {
+          "line": 112,
+          "text": "    engine = ActiveMemoryEngine(adapter, Scratch(), HarnessTelemetry())"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "platform/unified-memory-server/tests/test_ranking_and_consolidation.py",
+      "hits": [
+        {
+          "line": 221,
+          "text": "        for d in yaml.safe_load_all((HERE / \"oke-unified-memory.yaml\").read_text())"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "platform/unified-memory-server/tests/test_harness.py",
+      "hits": [
+        {
+          "line": 24,
+          "text": "    ActiveFocusController,"
+        },
+        {
+          "line": 349,
+          "text": "    controller = ActiveFocusController("
+        },
+        {
+          "line": 457,
+          "text": "    controller = ActiveFocusController("
+        }
+      ],
+      "total_hits": 3
+    },
+    {
+      "path": "platform/unified-memory-server/oke-unified-memory.yaml",
+      "hits": [
+        {
+          "line": 13,
+          "text": "  name: unified-memory"
+        },
+        {
+          "line": 14,
+          "text": "  labels: { app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: unified-memory }"
+        },
+        {
+          "line": 21,
+          "text": "  name: unified-memory"
+        },
+        {
+          "line": 22,
+          "text": "  namespace: unified-memory"
+        },
+        {
+          "line": 27,
+          "text": "    name: unified-memory"
+        },
+        {
+          "line": 43,
+          "text": "      remoteRef: { key: unified-memory, property: surface-token }"
+        },
+        {
+          "line": 45,
+          "text": "      remoteRef: { key: unified-memory, property: LITELLM_API_KEY }"
+        },
+        {
+          "line": 50,
+          "text": "  name: unified-memory-server"
+        },
+        {
+          "line": 51,
+          "text": "  namespace: unified-memory"
+        },
+        {
+          "line": 52,
+          "text": "  labels: { app.kubernetes.io/name: unified-memory-server, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: unified-memory }"
+        },
+        {
+          "line": 60,
+          "text": "    matchLabels: { app.kubernetes.io/name: unified-memory-server }"
+        },
+        {
+          "line": 63,
+          "text": "      labels: { app.kubernetes.io/name: unified-memory-server, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: unified-memory }"
+        },
+        {
+          "line": 74,
+          "text": "          image: ghcr.io/chidionyema/unified-memory-server"
+        },
+        {
+          "line": 117,
+          "text": "          secret: { secretName: unified-memory, defaultMode: 256 }"
+        },
+        {
+          "line": 122,
+          "text": "  name: unified-memory-server"
+        }
+      ],
+      "total_hits": 29
+    },
+    {
+      "path": "platform/unified-memory-server/consolidation.py",
+      "hits": [
+        {
+          "line": 1,
+          "text": "\"\"\"The scheduled half of Active Memory consolidation (a CronJob; see oke-unified-memory.yaml)."
+        },
+        {
+          "line": 4,
+          "text": "/harness/memory/consolidate, where ActiveMemoryEngine gates ephemeral facts into the scratchpad,"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "platform/unified-memory-server/kustomization.yaml",
+      "hits": [
+        {
+          "line": 4,
+          "text": "  - oke-unified-memory.yaml"
+        },
+        {
+          "line": 9,
+          "text": "  - name: ghcr.io/chidionyema/unified-memory-server"
+        },
+        {
+          "line": 10,
+          "text": "    newTag: main-14661-08ba50a6c7ac79a7d782a40b63892db2caaeb889 # {\"$imagepolicy\": \"flux-system:unified-memory-server:tag\"}"
+        }
+      ],
+      "total_hits": 3
+    },
+    {
+      "path": "platform/unified-memory-server/Dockerfile",
+      "hits": [
+        {
+          "line": 1,
+          "text": "# unified-memory-server: the estate's memory layer (\u00a76: exactly one). Image:"
+        },
+        {
+          "line": 2,
+          "text": "# ghcr.io/chidionyema/unified-memory-server (bin/dockerfiles names it after this directory)."
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "platform/unified-memory-server/schema.sql",
+      "hits": [
+        {
+          "line": 349,
+          "text": "-- (2026-10-01, test_unified_memory_spec_bdd.py) and the memory gate's old probe wrote these"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/tutorials/demo/placement.md",
+      "hits": [
+        {
+          "line": 19,
+          "text": "WARN - /Users/chidionyema/dev/code/idp/reports/placement.json - main - com.founder.boardserve is a long-running service on a laptop. Anything depending on it is depending on the lid being open."
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "platform/unified-memory-server/harness.py",
+      "hits": [
+        {
+          "line": 25,
+          "text": "    ActiveFocusController       \u2014 circuit breakers, strategy lock, approval gate"
+        },
+        {
+          "line": 28,
+          "text": "    ActiveMemoryEngine         \u2014 buildActiveContextBrief, consolidateTurnCandidates, archiveProjectScope"
+        },
+        {
+          "line": 236,
+          "text": "        resource = Resource.create({\"service.name\": \"unified-memory-server\"})"
+        },
+        {
+          "line": 770,
+          "text": "# Focus Controller \u2014 mirrors src/focus/active-focus-controller.ts"
+        },
+        {
+          "line": 797,
+          "text": "class ActiveFocusController:"
+        },
+        {
+          "line": 1018,
+          "text": "                f\"Active Focus circuit breaker tripped \""
+        },
+        {
+          "line": 1072,
+          "text": "                    f'ACTIVE FOCUS PIVOT REQUIRED: Strategy class \"{strategy_class}\" '"
+        },
+        {
+          "line": 1092,
+          "text": "# Memory Engine \u2014 mirrors src/memory/active-memory-engine.ts"
+        },
+        {
+          "line": 1098,
+          "text": "class ActiveMemoryEngine:"
+        },
+        {
+          "line": 1192,
+          "text": "                \"=== ACTIVE MEMORY BRIEF (VERIFIED & EVENT-TIME ORDERED) ===\\n\""
+        },
+        {
+          "line": 1544,
+          "text": "    Wraps any agent driver so Active Memory pre-fetch, Active Focus obstacle recovery,"
+        },
+        {
+          "line": 1550,
+          "text": "        memory_engine: ActiveMemoryEngine,"
+        },
+        {
+          "line": 1551,
+          "text": "        focus_controller: ActiveFocusController,"
+        },
+        {
+          "line": 1645,
+          "text": "                reason=f\"Active Focus circuit breaker tripped: {preflight_rejections} tool calls rejected before execution \""
+        },
+        {
+          "line": 1656,
+          "text": "        # 3. Active Focus execution loop"
+        }
+      ],
+      "total_hits": 16
+    },
+    {
+      "path": "platform/unified-memory-server/hedge.py",
+      "hits": [
+        {
+          "line": 11,
+          "text": "briefs took 20 s and came back with search_by_meaning false, and the router's Active Memory"
+        },
+        {
+          "line": 13,
+          "text": "vector, because that half waits for the embed. Measured: one router chat call, `active_memory"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "platform/estate-db/cluster/cluster.yaml",
+      "hits": [
+        {
+          "line": 235,
+          "text": "      # memory / memory_app: the estate's memory layer (platform/unified-memory-server). `memory`"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "platform/estate-db/cluster/databases.yaml",
+      "hits": [
+        {
+          "line": 230,
+          "text": "# The estate's memory layer (platform/unified-memory-server). New, like via-negativa: nothing to"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "platform/estate-db/cluster/secrets.yaml",
+      "hits": [
+        {
+          "line": 372,
+          "text": "# builds the server's DATABASE_URL in its own namespace (platform/unified-memory-server)."
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "platform/nodesoftware-operator/CRD-SPEC.md",
+      "hits": [
+        {
+          "line": 85,
+          "text": "mechanic\" path the lockdown blocks."
+        },
+        {
+          "line": 127,
+          "text": "The lockdown applies here: a CR that selects **all** nodes (no selector, or an"
+        },
+        {
+          "line": 255,
+          "text": "keeps the lockdown's \"no arbitrary host-side execution\" property intact while"
+        },
+        {
+          "line": 269,
+          "text": "  set. Default refusal because the lockdown forbids silent ignores."
+        },
+        {
+          "line": 300,
+          "text": "These annotations are how the lockdown's \"human fingerprint on risky changes\""
+        },
+        {
+          "line": 302,
+          "text": "can set; the RBAC split is the lockdown's proof that the Operator is not"
+        },
+        {
+          "line": 303,
+          "text": "autonomously taking the same risks the lockdown used to block."
+        },
+        {
+          "line": 311,
+          "text": "field is a knob the lockdown's \"no operator autonomy over fleet\" spirit has to"
+        },
+        {
+          "line": 317,
+          "text": "is the lockdown's leverage; we keep it closed."
+        }
+      ],
+      "total_hits": 9
+    },
+    {
+      "path": "platform/nodesoftware-operator/controller/README.md",
+      "hits": [
+        {
+          "line": 129,
+          "text": "  `gvisor-runsc-exception.yaml` PolicyException. The operator's lockdown grant replaces the"
+        },
+        {
+          "line": 169,
+          "text": "This is the operator's lockdown grant: while the CR is suspended, no node is touched. Flipping"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "docs/marketing/bundles/eng-ops.md",
+      "hits": [
+        {
+          "line": 30,
+          "text": "| **Agent Workforce** | A crewAI cronjob with persistent memory | An agent that runs on your plane, with your identity, with your secrets |"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "platform/nodesoftware-operator/rbac.yaml",
+      "hits": [
+        {
+          "line": 2,
+          "text": "# to do its job, and nothing more. The lockdown's spirit (\"every mutation the"
+        },
+        {
+          "line": 46,
+          "text": "      is not a user principal, so the founder lockdown passes it."
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "platform/nodesoftware-operator/RECONCILE-SPEC.md",
+      "hits": [
+        {
+          "line": 120,
+          "text": "is the lockdown's \"every node mutation goes through the same cordoned-pod"
+        },
+        {
+          "line": 153,
+          "text": "first. The lockdown's \"no surprise host mutation while a workload is running\""
+        },
+        {
+          "line": 181,
+          "text": "## Failure handling (what the lockdown's \"FailClosed\" actually buys us)"
+        },
+        {
+          "line": 192,
+          "text": "the \"no autonomous retry on cluster mutation\" property the lockdown enforces."
+        },
+        {
+          "line": 207,
+          "text": "  see. The lockdown's whole point is to keep mutations observable and bounded."
+        },
+        {
+          "line": 217,
+          "text": "  the Operator is a typed installer that the lockdown's audit story already"
+        },
+        {
+          "line": 222,
+          "text": "- It does not change node labels or taints. The lockdown reserves label/taint"
+        },
+        {
+          "line": 242,
+          "text": "  the rollout is not \"Verified\", the controller is wrong, and the lockdown re-binds."
+        },
+        {
+          "line": 249,
+          "text": "These three artefacts are the lockdown's \"no claim without evidence\" property,"
+        }
+      ],
+      "total_hits": 9
+    },
+    {
+      "path": "platform/estate/governance/specs.yaml",
+      "hits": [
+        {
+          "line": 25,
+          "text": "  - id: SPEC-lockdown"
+        },
+        {
+          "line": 58,
+          "text": "      - \"the record is retrievable from unified memory\""
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "platform/ns-fences/allowances.yaml",
+      "hits": [
+        {
+          "line": 169,
+          "text": "    # unified-memory: the fleetview sidecar's /fleet harness panel calls unified-memory-server"
+        },
+        {
+          "line": 172,
+          "text": "    egress: [dagster, estate-db, event-bus, identity, kyverno, llm, robusta, tailscale, unified-memory, keda]"
+        },
+        {
+          "line": 252,
+          "text": "    # unified-memory: the HTTP add-on's interceptor is the only door to the memory server, which"
+        },
+        {
+          "line": 254,
+          "text": "    # (platform/unified-memory-server/oke-unified-memory.yaml, HTTPScaledObject)."
+        },
+        {
+          "line": 255,
+          "text": "    egress: [observability, unified-memory]"
+        },
+        {
+          "line": 277,
+          "text": "    # unified-memory: every chat call through the router carries the estate's Active Memory"
+        },
+        {
+          "line": 278,
+          "text": "    # brief (platform/llm/active_memory.py posts /memories/brief before the call and the turn to"
+        },
+        {
+          "line": 281,
+          "text": "    # unified-memory's ingress_from too."
+        },
+        {
+          "line": 282,
+          "text": "    egress: [observability, estate-db, notify, event-bus, unified-memory]"
+        },
+        {
+          "line": 289,
+          "text": "    # unified-memory: the memory server embeds every fact it stores, and every recall query,"
+        },
+        {
+          "line": 290,
+          "text": "    # through the `embed` lane (MEMORY_EMBED_URL, platform/unified-memory-server/oke-unified-memory.yaml:83)."
+        },
+        {
+          "line": 291,
+          "text": "    ingress_from: [edge, healing, agent-workforce, mcp, hindsight, otto-gateway, robusta, research, cyrus, via-negativa, sovereign-system, forge, voice-router, backstage, unified-memory]"
+        },
+        {
+          "line": 321,
+          "text": "    # keda: the memory server (unified-memory) is reached through the HTTP add-on's interceptor."
+        },
+        {
+          "line": 322,
+          "text": "    egress: [observability, hindsight, robusta, llm, keda, unified-memory]"
+        },
+        {
+          "line": 536,
+          "text": "    ingress_from: [backstage, otto-gateway, hindsight, temporal, llm, observability, commerce, dagster, research, guacamole, healthchecks, via-negativa, sovereign-system, forge, unified-memory, quad]"
+        }
+      ],
+      "total_hits": 18
+    },
+    {
+      "path": "docs/how-to/onboarding/notify.md",
+      "hits": [
+        {
+          "line": 6,
+          "text": "`/notify/founder-telegram` with a title and body. The platform fan-out reaches Telegram, Slack,"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "platform/ns-fences/network/keda.yaml",
+      "hits": [
+        {
+          "line": 118,
+          "text": "          kubernetes.io/metadata.name: unified-memory"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "platform/ns-fences/network/mcp.yaml",
+      "hits": [
+        {
+          "line": 109,
+          "text": "          kubernetes.io/metadata.name: unified-memory"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "platform/ns-fences/network/estate-db.yaml",
+      "hits": [
+        {
+          "line": 172,
+          "text": "          kubernetes.io/metadata.name: unified-memory"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/how-to/onboarding/intent.md",
+      "hits": [
+        {
+          "line": 9,
+          "text": "with the founder's DNA (`clusters/*/estate-config.yaml`) and writes the manifests"
+        },
+        {
+          "line": 10,
+          "text": "deterministically. Change one DNA value and recompile: every compiled workload follows, the agents"
+        },
+        {
+          "line": 26,
+          "text": "- DNA keys: `ESTATE_ZONE`, `ESTATE_REGISTRY`, `ESTATE_STORAGE_PROVIDER` in"
+        },
+        {
+          "line": 32,
+          "text": "2. `python3 bin/intent-compile` \u2014 refusals name the exact field or the DNA value spoken."
+        }
+      ],
+      "total_hits": 4
+    },
+    {
+      "path": "platform/ns-fences/network/llm.yaml",
+      "hits": [
+        {
+          "line": 106,
+          "text": "          kubernetes.io/metadata.name: unified-memory"
+        },
+        {
+          "line": 180,
+          "text": "          kubernetes.io/metadata.name: unified-memory"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "platform/ns-fences/network/backstage.yaml",
+      "hits": [
+        {
+          "line": 124,
+          "text": "          kubernetes.io/metadata.name: unified-memory"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "platform/estate/governance/laws.yaml",
+      "hits": [
+        {
+          "line": 51,
+          "text": "      A session under lockdown has no write path at all: no file, no shell, no push. It stays"
+        },
+        {
+          "line": 61,
+          "text": "        bin/estate-memory-enforce: \"print('no lockdown here')\\n\""
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "platform/estate/governance/state_page.py",
+      "hits": [
+        {
+          "line": 9,
+          "text": "the open specs, the live claims, the violations by class, and the sessions under lockdown."
+        },
+        {
+          "line": 18,
+          "text": "    unified memory                  so a session that starts later recalls it by asking"
+        },
+        {
+          "line": 163,
+          "text": "    lines.append(\"## Lockdown\")"
+        }
+      ],
+      "total_hits": 3
+    },
+    {
+      "path": "platform/estate/governance/ledger.py",
+      "hits": [
+        {
+          "line": 18,
+          "text": "THE SESSION STATE. A session under lockdown has a file of its own:"
+        },
+        {
+          "line": 169,
+          "text": "    \"\"\"Put a session under lockdown: no writes, no pushes, until the hole is proven fixed.\"\"\""
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "platform/estate/governance/supervisor.py",
+      "hits": [
+        {
+          "line": 3,
+          "text": "THE FOUNDER'S RULE (2026-10-29): \"no excuses\", \"agents are under lockdown\", \"they have to be"
+        },
+        {
+          "line": 16,
+          "text": "THE LOCKDOWN. A terminated session's replacement starts locked: the write gate refuses its"
+        },
+        {
+          "line": 64,
+          "text": "        \"You are relaunched under lockdown because this session broke the estate law class \""
+        },
+        {
+          "line": 207,
+          "text": "            f\"relaunched under lockdown. The proof that lifts the lock is: {out['proof']}\""
+        }
+      ],
+      "total_hits": 4
+    },
+    {
+      "path": "platform/estate/governance/founder_intake.py",
+      "hits": [
+        {
+          "line": 28,
+          "text": "STORAGE. The structured record goes to unified memory through the memory door, so every"
+        },
+        {
+          "line": 171,
+          "text": "    \"\"\"Store the structured prompt in unified memory, through the estate's memory door.\"\"\""
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "platform/estate/governance/relaunch.py",
+      "hits": [
+        {
+          "line": 66,
+          "text": "    parser = argparse.ArgumentParser(description=\"relaunch a session under lockdown\")"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "platform/edge/prospector-gateway.yaml",
+      "hits": [
+        {
+          "line": 13,
+          "text": "# git is the only writer of this cluster (platform/edge/flux-only-writes.yaml, founder lockdown"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "platform/edge/flux-only-writes.yaml",
+      "hits": [
+        {
+          "line": 1,
+          "text": "# Founder lockdown, 2026-09-03 (\"if you dont cone up with solutin then lockdown is happening\","
+        },
+        {
+          "line": 15,
+          "text": "# Founder break-glass, 2026-09-05: the lockdown also refused `flux reconcile`, so during an"
+        },
+        {
+          "line": 24,
+          "text": "# is, every verb and every kind. The lockdown still binds every other ocid1.user.* principal,"
+        },
+        {
+          "line": 27,
+          "text": "# Proof it refuses and passes: tests/test_incident_founder_lockdown_flux_only_writes.py."
+        },
+        {
+          "line": 36,
+          "text": "    policies.kyverno.io/category: founder lockdown 2026-09-03"
+        },
+        {
+          "line": 56,
+          "text": "          # CREATE, so the lockdown above refused them, and refusing them breaks every client that"
+        },
+        {
+          "line": 61,
+          "text": "          # nothing off the lockdown, because there is no write to refuse."
+        },
+        {
+          "line": 70,
+          "text": "          # Break-glass for the founder (2026-09-25): the LLM router's config ConfigMap needs hot-fixing during incidents, and every other path is a git push through a saturated Flux controller. This entry lets one specific OCI user write ConfigMaps in the `llm` namespace ONLY -- no other resource, no other namespace. Every other ocid1.user.* principal still hits the lockdown."
+        },
+        {
+          "line": 87,
+          "text": "          Founder lockdown 2026-09-03: {{ request.userInfo.username }} may not"
+        }
+      ],
+      "total_hits": 9
+    },
+    {
+      "path": "platform/sandbox/launch/arm-voice-bench.yaml",
+      "hits": [
+        {
+          "line": 4,
+          "text": "# principal (platform/edge/flux-only-writes.yaml, the founder lockdown of 2026-09-03: \"Git is the"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "platform/edge/kustomization.yaml",
+      "hits": [
+        {
+          "line": 50,
+          "text": "  # Founder lockdown 2026-09-03: git is the only writer; any OCI user principal is refused on a"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/decisions/0008-every-founder-action-is-a-portal-button.md",
+      "hits": [
+        {
+          "line": 4,
+          "text": "  from backstage\" / \"design full founder self service features for estate using backstage\" / \"to"
+        },
+        {
+          "line": 5,
+          "text": "  allow founder to fully self service infra, stack, apps, need thorough audit, research, online"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "platform/estate/memory/focus.py",
+      "hits": [
+        {
+          "line": 1,
+          "text": "\"\"\"Active Focus, derived from the claim ledger instead of typed by hand (idp#6543 follow-on)."
+        },
+        {
+          "line": 3,
+          "text": "The defect this retires: \"ACTIVE FOCUS claim idp6525 ...\" was an ordinary memory fact. Nothing"
+        },
+        {
+          "line": 39,
+          "text": "    r\"^\\s*ACTIVE FOCUS claim\\s+([A-Za-z]*)#?(\\d+)\\b\", re.IGNORECASE"
+        },
+        {
+          "line": 377,
+          "text": "            \"Active focus: no live claim. Claim before changing files (bin/claim-open).\""
+        },
+        {
+          "line": 379,
+          "text": "    out = [\"Active focus (read from open claims, so never stale):\"]"
+        }
+      ],
+      "total_hits": 5
+    },
+    {
+      "path": "platform/cortex/statefulset.yaml",
+      "hits": [
+        {
+          "line": 7,
+          "text": "#      the unified memory server (platform/unified-memory-server), behind the existing"
+        },
+        {
+          "line": 20,
+          "text": "# platform/unified-memory-server, not this one. This file is the laptop store."
+        },
+        {
+          "line": 34,
+          "text": "    idp.estate.io/shape: \"laptop store; the cluster uses the engine inside unified-memory-server\""
+        }
+      ],
+      "total_hits": 3
+    },
+    {
+      "path": "platform/cortex/manifests.yaml",
+      "hits": [
+        {
+          "line": 4,
+          "text": "# unified memory server with Cortex as its engine -- no Service, ConfigMap or alert here is on"
+        },
+        {
+          "line": 78,
+          "text": "# unified-memory-server looked like at 0 replicas. \"Up\" is not \"in use\"."
+        },
+        {
+          "line": 91,
+          "text": "          expr: up{job=~\"cortex-local|unified-memory-server\"} == 0"
+        }
+      ],
+      "total_hits": 3
+    },
+    {
+      "path": "platform/notify/namespace.yaml",
+      "hits": [
+        {
+          "line": 2,
+          "text": "# everywhere (R75). Named channels define the routing (founder-telegram, Slack, email). All credentials"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "platform/weave-gitops/rbac.yaml",
+      "hits": [
+        {
+          "line": 102,
+          "text": "#   kubectl auth can-i impersonate users/founder --as=system:serviceaccount:weave-gitops:weave-gitops"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/decisions/decision-matrix.yaml",
+      "hits": [
+        {
+          "line": 57,
+          "text": "          operability:         {score: 4, evidence: \"clusters/oke/estate-config.yaml\"}                                           # FOUNDER_MAC_TS_IP row; serverinfo probe; brew service"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "platform/mcp/external-secret.yaml",
+      "hits": [
+        {
+          "line": 78,
+          "text": "# unified memory server. Same vault entry the server registers at boot (unified-memory,"
+        },
+        {
+          "line": 83,
+          "text": "  name: unified-memory-surface"
+        },
+        {
+          "line": 88,
+          "text": "  target: { name: unified-memory-surface, creationPolicy: Owner }"
+        },
+        {
+          "line": 91,
+          "text": "      remoteRef: { key: unified-memory, property: surface-token }"
+        }
+      ],
+      "total_hits": 4
+    },
+    {
+      "path": "platform/mcp/estate-mcp.yaml",
+      "hits": [
+        {
+          "line": 77,
+          "text": "            # crew#982: the one memory (platform/unified-memory-server) behind the one MCP voice, so"
+        },
+        {
+          "line": 81,
+          "text": "            - { name: ESTATE_MEMORY_HOST, value: unified-memory.estate.internal }"
+        },
+        {
+          "line": 82,
+          "text": "            - { name: ESTATE_MEMORY_TOKEN_FILE, value: /run/secrets/unified-memory/token }"
+        },
+        {
+          "line": 113,
+          "text": "            - { name: unified-memory, mountPath: /run/secrets/unified-memory, readOnly: true }"
+        },
+        {
+          "line": 182,
+          "text": "        - name: unified-memory"
+        },
+        {
+          "line": 183,
+          "text": "          secret: { secretName: unified-memory-surface, optional: true }"
+        }
+      ],
+      "total_hits": 6
+    },
+    {
+      "path": "docs/decisions/0036-one-memory-plane-and-it-is-cortex.md",
+      "hits": [
+        {
+          "line": 1,
+          "text": "# 0036 \u2014 One memory plane: the unified memory server, with Cortex as its retrieval engine"
+        },
+        {
+          "line": 24,
+          "text": "real code, not a description of it. **The estate already has a working unified memory**, behind"
+        },
+        {
+          "line": 42,
+          "text": "- `unified-memory-server` \u2014 0 replicas **by design** (KEDA scale-to-zero,"
+        },
+        {
+          "line": 48,
+          "text": "`unified-memory-server/main.py:390` ranks by pgvector cosine (`embedding <=> %s::vector`), but"
+        },
+        {
+          "line": 60,
+          "text": "- **The store stays** the unified memory server on the one estate Postgres. One Postgres is LAW."
+        },
+        {
+          "line": 73,
+          "text": "| Requirement | Cortex | unified-memory-server today | otto/memory | Hindsight |"
+        }
+      ],
+      "total_hits": 6
+    },
+    {
+      "path": "platform/lifeboat/src/index.js",
+      "hits": [
+        {
+          "line": 33,
+          "text": "// considered and the founder's spec names it. It is one more service that can be having a"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/decisions/2026-09-01-diamond-standard-jit-compiler.md",
+      "hits": [
+        {
+          "line": 7,
+          "text": "estate name; a deterministic, non-AI compiler merges each intent with the founder's DNA"
+        },
+        {
+          "line": 15,
+          "text": "| The compiler | `bin/intent-compile` | validates, then refuses any intent that *speaks* a DNA value anywhere in its text (blindness is checked, not assumed), then emits hardened manifests referencing estate values only as `${ESTATE_*}` for Flux to substitute \u2014 the compiled files themselves carry no estate name |"
+        },
+        {
+          "line": 17,
+          "text": "| The DNA keys | `clusters/oke/estate-config.yaml` | `ESTATE_REGISTRY`, `ESTATE_STORAGE_PROVIDER` join `ESTATE_ZONE` as the one place those names live |"
+        }
+      ],
+      "total_hits": 3
+    },
+    {
+      "path": "docs/decisions/0026-crossplane-owns-day-2-and-terraform-owns-the-ground.md",
+      "hits": [
+        {
+          "line": 176,
+          "text": "   `Kustomization` rows in `clusters/oke/platform.yaml`. `ESTATE_OCI_REGION` joins the DNA."
+        },
+        {
+          "line": 201,
+          "text": "  the DNA (below) and `access` (`private`\u2192`NoPublicAccess`, `public-read`\u2192`ObjectRead`)."
+        },
+        {
+          "line": 215,
+          "text": "  the new branch with `ESTATE_STORAGE_PROVIDER=crossplane` DNA produces a Claim that (a) validates"
+        }
+      ],
+      "total_hits": 3
+    },
+    {
+      "path": "docs/decisions/2026-09-01-standards-lockdown-guarantee.md",
+      "hits": [
+        {
+          "line": 102,
+          "text": "- `APPROVE: crew#802 lockdown` \u2014 starts steps 1, 3, 4 and 5 as branches for his merge."
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/NEXT.md",
+      "hits": [
+        {
+          "line": 302,
+          "text": "| PLANNED | [crew#653](https://github.com/chidionyema/crew/issues/653) | CP5 | **One founder surface.** Backstage \u2192 Architecture: estate, cluster, per-service, plain Eng | **NO DATE** | open; no lane named it in its newest handoff |"
+        },
+        {
+          "line": 568,
+          "text": "| PLANNED | [crew#736](https://github.com/chidionyema/crew/issues/736) | CP1 | G4(c)+(b): `bin/idp-oke-break-glass` rows, `otto-lockdown`, pr-evidence rule. DoD: otto-pa | **NO DATE** | open; no lane named it in its newest handoff |"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "docs/pr-bodies/crew562-jump-desk.md",
+      "hits": [
+        {
+          "line": 13,
+          "text": "- LAW 1 zero-gravity: `brew bundle` from the Brewfile -> Jump Desktop Connect on the Mac -> founder's account added once -> the Mac's icon on the phone; no estate service in the path"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/decisions/0035-dros-kernel-enforcer-runs-as-one-node-daemonset.md",
+      "hits": [
+        {
+          "line": 21,
+          "text": "  `lockdown,capability,yama,selinux,bpf` on 10.0.148.221 and 10.0.159.197 (read through the"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/pr-bodies/crew561-otto-mac-run.md",
+      "hits": [
+        {
+          "line": 5,
+          "text": "Port 22 is macOS Remote Login; Otto's identity to it is an ed25519 key minted on the apply runner (`bin/idp-bootstrap-macrun`, vault `hermes-mac-run`, private half base64 in one line), mounted into the pod (`mac-run-key.yaml`), used by `mac-run`, and authorised on the Mac by `bin/idp-mac-adopt-otto`, which reads the public half from the apply run's log. The tailnet policy is two rules: `tag:k8s` to `tag:founder-mac` on 22 and 5900 (Guacamole), `group:founder` to `tag:founder-mac:*` and `autogroup:self:*`; tagOwners for both tags are admins only. The from-scratch proof is break-glass playbook `"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/tickets/2026-09-27-voice-umbrella-features-and-composition-bench.md",
+      "hits": [
+        {
+          "line": 136,
+          "text": "| Postgres + NATS + llama.cpp stack | **refuse as new stack** | NATS already exists (voice_media publishes to it). The llama.cpp brain already exists (`platform/edge-runtime`, `resident-brain.yaml`). Memory is `platform/unified-memory-server`. A second copy would break \u00a76. |"
+        },
+        {
+          "line": 137,
+          "text": "| `FleetCRDTMemory` (HLC + bi-temporal facts + asyncpg) | **idea only** | Memory has one home (unified-memory-server). Bi-temporal `valid_from/valid_to` is a proposal for that schema, not a new store. |"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "docs/specs/2026-09-08-estate-world-model-simulate-before-execute.md",
+      "hits": [
+        {
+          "line": 3,
+          "text": "Founder record: `~/.claude/docs/founder/2026-09-08T2341Z-and-thislaos-link-the-tickets-28028451.md`"
+        },
+        {
+          "line": 144,
+          "text": "Source record: `~/.claude/docs/founder/2026-09-08T2341Z-and-thislaos-link-the-tickets-28028451.md`. Nothing below is edited; the sections above are the grounded delta against it."
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "docs/specs/2026-10-19-active-memory-and-focus-vs-muse.md",
+      "hits": [
+        {
+          "line": 1,
+          "text": "# Active Memory and Active Focus: the estate against Meta Muse"
+        },
+        {
+          "line": 10,
+          "text": "`ACTIVE FOCUS claim idp6525 ...` was an ordinary memory fact: hand-typed, no lifecycle, nothing"
+        },
+        {
+          "line": 44,
+          "text": "| Stuck detection | consecutive no-progress ticks | a live claim open 3h+ with no commit on its paths since is flagged STUCK in the register every agent reads. Observed from outside the agent; reads this checkout's refs, so it under-reports until fetched. `ActiveFocusController` is still code with no process | **even for claims**, behind for in-run loops |"
+        },
+        {
+          "line": 68,
+          "text": "- The CronJob's pod fence is the namespace-level `unified-memory` egress to estate-db; it was not"
+        }
+      ],
+      "total_hits": 4
+    },
+    {
+      "path": "docs/synthesis/2026-09-20-full-capability-map.html",
+      "hits": [
+        {
+          "line": 113,
+          "text": "<div class=\"tablewrap\"><table><thead><tr><th>Harness</th><th>What it is</th><th>Where</th><th>State</th></tr></thead><tbody><tr><td><strong>Claude Code</strong></td><td>the main working harness; 31 wired hook entries, 77 guard tools, 43 incident tests</td><td><code>~/.claude</code>, <code>claude-guards</code></td><td><strong>live</strong></td></tr><tr><td><strong>pi</strong></td><td>second harness; <code>fleetview-directives.ts</code>, <code>read-shunt.ts</code>; no <code>tool_call</code> hook, no permission model</td><td><code>~/.pi/agent</code></td><td><strong>live, ungoverned</strong></td><"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/synthesis/2026-10-02-memory-systems-synthesis.md",
+      "hits": [
+        {
+          "line": 45,
+          "text": "### \u2705 2. `unified-memory-server` \u2014 the store"
+        },
+        {
+          "line": 49,
+          "text": "| **Where** | namespace `unified-memory`; `main.py` (584 lines) + `security_core.py` |"
+        },
+        {
+          "line": 93,
+          "text": "| **Gap** | Nothing routes to it. `estate_memory.py` moved off it to unified-memory on 2026-09-29. It is still wired into `hermes-agent` via `HERMES_HINDSIGHT_URL` \u2014 a URL alone makes the plugin *available*, and nothing uses it. |"
+        }
+      ],
+      "total_hits": 3
+    },
+    {
+      "path": "docs/demo/demo-standard.md",
+      "hits": [
+        {
+          "line": 20,
+          "text": "`demos/drill-evidence.tape` \u2014 the login drill's shape, its config coming from the estate DNA, and"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/synthesis/2026-09-20-full-capability-map.md",
+      "hits": [
+        {
+          "line": 44,
+          "text": "| **pi-governance** | 4-pillar DNA extension (epistemic humility, semantic tools, P-P-E, closed-loop self-healing) | `prospector/pi-governance/` | **built \u2014 not installed** |"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/specs/otto-capability-inventory.md",
+      "hits": [
+        {
+          "line": 691,
+          "text": "| CP8 `sa-blind-elsewhere` | Service account cannot read secrets outside its namespace | \"kube-system secrets now refused \u2014 the RBAC lockdown holds\", 2026-08-31 |"
+        },
+        {
+          "line": 806,
+          "text": "862 why is Otto not working \u00b7 819 a paying customer onboards themselves \u00b7 734 P0 green baseline and Otto lockdown \u00b7 763 crew agents run in pods like Otto \u00b7 798 Slack by purpose \u00b7 736 unbreakable release contract \u00b7 755 release word from Telegram \u00b7 761 Otto total coverage from the backend \u00b7 278 Otto must be trustworthy \u00b7 756 DSPy on every prompt surface \u00b7 290 continuity through any single loss \u00b7 491 memory to a real vector/graph provider \u00b7 496 incident 2026-08-27 refusals \u00b7 671 Telegram surface polish \u00b7 684 ops dashboard and Tools page \u00b7 764 picture evidence before UI release \u00b7 529 independent c"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "docs/specs/2026-09-29-deterministic-delivery-acceptance.md",
+      "hits": [
+        {
+          "line": 101,
+          "text": "  unified memory server, `~/.estate`, crew \u2014 and records its actions in the same place \u2014 the"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/synthesis/2026-09-20-harness-composition-and-enforcement.html",
+      "hits": [
+        {
+          "line": 170,
+          "text": "<ul><li>Pi extensions: <code>fleetview-directives.ts</code>, <code>read-shunt.ts</code>. <strong>No <code>tool_call</code> handler in either.</strong> <code>~/.pi/agent/settings.json</code> has <strong>no permission model</strong>. Pi documents no bash-timeout env var.</li><li><code>claude-guards</code> searched for <code>\\.pi/</code>, <code>pi-coding-agent</code>, <code>PI_SESSION</code>, <code>PI_CODING_AGENT</code> \u2192 <strong>zero hits.</strong> The guard estate covers Claude Code only.</li><li><code>slow_commands.py</code>'s timing corpus is built from Claude Code transcripts, so tool calls"
+        },
+        {
+          "line": 253,
+          "text": "<div class=\"tablewrap\"><table><thead><tr><th>Tool</th><th>What it does</th></tr></thead><tbody><tr><td><code>action_items</code></td><td>Every action item in every programme doc, extracted and tracked without anyone asking.</td></tr><tr><td><code>blocker-guard</code></td><td>Stop hook (LAW 47 / R30). A reply that says FOUNDER ACTION: or STAGED: must have reached the</td></tr><tr><td><code>board-deliver</code></td><td>Hand a running session the board messages it has not seen yet.</td></tr><tr><td><code>board_serve</code></td><td>Serve the founder's board on a fixed local URL, so reading it need"
+        },
+        {
+          "line": 329,
+          "text": "<div class=\"tablewrap\"><table><thead><tr><th>Script</th><th>What it does</th></tr></thead><tbody><tr><td><code>agent_simulator.py</code></td><td>agent_simulator.py \u2014 Simulated agent traffic (Round H2).</td></tr><tr><td><code>alarm_gate.py</code></td><td>alarm_gate \u2014 decide whether an alarm state is worth telling the founder AGAIN.</td></tr><tr><td><code>alert-resolver.py</code></td><td>Alert Resolution System \u2014 PROBE-VERIFIED resolution (Fire 4-LF fix).</td></tr><tr><td><code>alert_router.py</code></td><td>alert_router.py \u2014 Multi-channel alert routing. Telegram, email, Slack, webhook, PagerDut"
+        },
+        {
+          "line": 331,
+          "text": "<div class=\"tablewrap\"><table><thead><tr><th>Script</th><th>What it does</th></tr></thead><tbody><tr><td><code>agent_estate_sync.py</code></td><td>Mirror the agent estate -- ~/.claude -- into this repo, and fail when the two drift.</td></tr><tr><td><code>backfill_ladder_prices.py</code></td><td>C1 \u2014 move the live catalogue off the flat \u00a349 onto the L1 segment ladder.</td></tr><tr><td><code>backfill_price_anchors.py</code></td><td>Backfill cited price anchors onto PASS dossiers generated before the check existed.</td></tr><tr><td><code>backfill_tiers.py</code></td><td>Fill <code>ambition_tier</"
+        }
+      ],
+      "total_hits": 4
+    },
+    {
+      "path": "docs/synthesis/capability-catalogue.html",
+      "hits": [
+        {
+          "line": 129,
+          "text": "<div class=\"tablewrap\"><table><thead><tr><th>Capability</th><th>What it does</th><th>Source</th><th>State</th></tr></thead><tbody><tr><td>Guardian 3-tier engine</td><td>autonomous / human-confirm / founder-gate risk tiers</td><td><code>mums-concierge/guardian_engine.py</code> (30 tests)</td><td><strong>built-elsewhere</strong></td></tr><tr><td>Budget + rate gates</td><td>daily $, per-minute rate, approval thresholds</td><td><code>sovereign/sentinel/src/guardrails/mod.rs</code></td><td>built</td></tr><tr><td>Semantic boundary</td><td>intent vs allowed-action boundary</td><td><code>sentinel/src/"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/synthesis/2026-09-20-harness-composition-and-enforcement.md",
+      "hits": [
+        {
+          "line": 263,
+          "text": "- `prospector/pi-governance/src/index.ts` \u2014 the four-pillar DNA extension (`EPISTEMIC HUMILITY`,"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/specs/2026-10-19-problem-solving-playbook.md",
+      "hits": [
+        {
+          "line": 12,
+          "text": "| `f18d1f67` | Status audit: \"what is the status of active memory and active focus\" | 228 |"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/diagnoses/2026-10-20-stdlib-callers-skipped-as-graph-drain.yaml",
+      "hits": [
+        {
+          "line": 3,
+          "text": "  active_memory line since the callback shipped (#6651): not injected, not unreadable,"
+        },
+        {
+          "line": 4,
+          "text": "  not skipped. Question: why does a live, keyed agent get no Active Memory -- is the"
+        },
+        {
+          "line": 31,
+          "text": "    fast-lane chat call with x-estate-agent=active-memory-proof logged nothing under"
+        },
+        {
+          "line": 32,
+          "text": "    User-Agent Python-urllib and logged `active_memory injected agent=active-memory-proof"
+        },
+        {
+          "line": 33,
+          "text": "    chars=2067` under User-Agent active-memory-proof/1.0 (does flipping only the User-Agent"
+        },
+        {
+          "line": 84,
+          "text": "- name: 'active_memory WARNING lines (injected / unreadable / exception) naming fleetview-voice"
+        }
+      ],
+      "total_hits": 6
+    },
+    {
+      "path": "docs/specs/zero-trust-boundary.md",
+      "hits": [
+        {
+          "line": 62,
+          "text": "lockdown. A laptop cannot run this drill and must not be able to. In two fenced namespaces it:"
+        },
+        {
+          "line": 135,
+          "text": "  0023 rule 3, and `if is_founder()` in any service is the defect."
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "docs/specs/2026-10-02-memory-plane-cortex-adoption.md",
+      "hits": [
+        {
+          "line": 24,
+          "text": "{'memories': [{'text': 'memory gate probe: unified memory write path', 'metadata': {...}}], 'namespace': 'estate'}"
+        },
+        {
+          "line": 33,
+          "text": "- **`unified-memory-server` at 0 replicas is not a failure.** Its Flux Kustomization declares"
+        },
+        {
+          "line": 46,
+          "text": "| `unified-memory-server` | `main.py:390` ranks by `embedding <=> %s::vector`; nothing anywhere computes one |"
+        },
+        {
+          "line": 75,
+          "text": "| `unified-memory-server` | `unified-memory` ns | **wakes on demand and answers** (\u00a70.2) \u2014 `remember` returned `version:1`, `recall` returned the fact |"
+        },
+        {
+          "line": 116,
+          "text": "   own token/tenant model from `unified-memory-server` wraps Cortex; Cortex never faces a"
+        },
+        {
+          "line": 135,
+          "text": "   \u2502 growmos       \u2502    \u2502  unified-memory-server\u2502    \u2502 Hindsight        \u2502"
+        },
+        {
+          "line": 385,
+          "text": "- `unified-memory-server` 0/0 replicas, KEDA 0/1 \u2014 `kubectl get all -n unified-memory`"
+        }
+      ],
+      "total_hits": 7
+    },
+    {
+      "path": "docs/diagnoses/2026-10-20-agents-other-than-claude-code-never-reach-unified-memory.yaml",
+      "hits": [
+        {
+          "line": 1,
+          "text": "description: 'Only Claude Code reads the unified memory; Otto, face, fleet and jev"
+        },
+        {
+          "line": 7,
+          "text": "  and the unified-memory-server pod log since it started (01:30:34Z, image main-14651)."
+        },
+        {
+          "line": 12,
+          "text": "  description: no agent but Claude Code has any call path to the unified memory --"
+        },
+        {
+          "line": 16,
+          "text": "  description: agents are wired to the unified memory and call it, but the server"
+        },
+        {
+          "line": 25,
+          "text": "    fleetview) whose container env carries a unified-memory address (of 5; otto and"
+        }
+      ],
+      "total_hits": 5
+    },
+    {
+      "path": "docs/diagnoses/2026-10-13-recall-query-embedded-as-passage.yaml",
+      "hits": [
+        {
+          "line": 1,
+          "text": "description: 'unified-memory recall, 2026-10-13. Question: why does POST /memories/recall"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "tests/test_the_memory_server_can_reach_the_lane_it_embeds_with.py",
+      "hits": [
+        {
+          "line": 20,
+          "text": "DEPLOY = ROOT / \"platform\" / \"unified-memory-server\" / \"oke-unified-memory.yaml\""
+        },
+        {
+          "line": 21,
+          "text": "HERE = \"unified-memory\""
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "tests/test_rule4_admission.py",
+      "hits": [
+        {
+          "line": 164,
+          "text": "    policy/fixtures that no runner named (see the Unification Move in AGENTS.md). A file"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/specs/2026-10-24-estate-cloud-migration-plan.md",
+      "hits": [
+        {
+          "line": 245,
+          "text": "- **P2.T2 \u2014 Capture/ledger parity.** Confirm what the cluster does with `graph_capture`, `action_ledger`, `active_memory`, `no_handback`, budgets (ns `llm` has `router-event-publisher` \u2014 read its spec/code path in idp). If the cluster lacks laptop-equivalent capture, founder decides: port modules via lane, or accept a documented capture gap with a dated fix. **No silent ledger gap.**"
+        },
+        {
+          "line": 321,
+          "text": "Forwards to cluster: `14222`\u2192NATS 4222, `18222`\u2192NATS 8222, `15432`\u2192Postgres 5432, `18000`\u2192unified-memory, `18888`\u2192searxng."
+        },
+        {
+          "line": 324,
+          "text": "OKE API `https://141.147.80.229:6443`; contexts `context-estate-crq7jwxsjxq`, `oke` (rancher-desktop = stale). ns: `llm`, `event-bus`, `estate-db` (CloudNativePG `estate-rw`), `temporal`, `backstage`, `mcp`, `unified-memory`, `voice-router`, `estate-bridge`, plus platform (flux, external-secrets, cert-manager, keda, kyverno, spire, coroot, robusta, monitoring, chaos-mesh, weave-gitops, crossplane). Tailnet `tail3f2ff4.ts.net`; laptop = `roses-macbook-pro` = `100.98.58.115`; linux nodes include `backstage-fleetview-mac` (100.83.63.31, ssh:22 times out), `hermes-pod-1`, `otto-pod-1`, `jit-broker"
+        }
+      ],
+      "total_hits": 3
+    },
+    {
+      "path": "tests/test_memory_router_key_covers_its_lanes.py",
+      "hits": [
+        {
+          "line": 15,
+          "text": "MANIFEST = ROOT / \"platform/unified-memory-server/oke-unified-memory.yaml\""
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "tests/test_unified_memory_server.py",
+      "hits": [
+        {
+          "line": 1,
+          "text": "\"\"\"platform/unified-memory-server against a real PostgreSQL, never a mock."
+        },
+        {
+          "line": 6,
+          "text": "manifest (oke-unified-memory.yaml) gives it -- the case where row-level security used to"
+        },
+        {
+          "line": 42,
+          "text": "SERVER_DIR = Path(__file__).resolve().parents[1] / \"platform\" / \"unified-memory-server\""
+        },
+        {
+          "line": 73,
+          "text": "        \"unified_memory_main_\" + uuid.uuid4().hex[:8], SERVER_DIR / \"main.py\""
+        }
+      ],
+      "total_hits": 4
+    },
+    {
+      "path": "tests/test_estate_memory_prefetch_shape.py",
+      "hits": [
+        {
+          "line": 3,
+          "text": "harness_memory_prefetch (platform/unified-memory-server/main.py) takes run_id, task,"
+        },
+        {
+          "line": 6,
+          "text": "_harness_call swallows 4xx as a silent degrade, so no recall ever carried the Active Memory"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "tests/test_the_broker_can_be_asked_from_outside_the_cluster.py",
+      "hits": [
+        {
+          "line": 10,
+          "text": "Two doors were added for it. The tailnet's is the founder's own devices, and it only exists if four files agree: the Service"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "tests/test_estate_memory_consolidate_body.py",
+      "hits": [
+        {
+          "line": 3,
+          "text": "harness_memory_consolidate (platform/unified-memory-server/main.py) takes"
+        },
+        {
+          "line": 63,
+          "text": "        subject=\"unified-memory\","
+        },
+        {
+          "line": 74,
+          "text": "    assert \"project_id=unified-memory\" in request.full_url"
+        },
+        {
+          "line": 80,
+          "text": "    assert cand[\"subject\"] == \"unified-memory\""
+        }
+      ],
+      "total_hits": 4
+    },
+    {
+      "path": "docs/specs/deepseek-work-order.md",
+      "hits": [
+        {
+          "line": 47,
+          "text": "   the cluster's Git-only-writer lockdown."
+        },
+        {
+          "line": 107,
+          "text": "| 8 | Remove every authorization branch from `estate_memory`'s recall path; it filters on the injected header alone | ZT step 3 | repo | no `is_founder`-shaped branch remains in the service, and the recall test passes with the header as its only input |"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "tests/test_the_memory_server_asks_its_lane_as_a_question.py",
+      "hits": [
+        {
+          "line": 21,
+          "text": "DEPLOY = ROOT / \"platform\" / \"unified-memory-server\" / \"oke-unified-memory.yaml\""
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "tests/test_active_memory.py",
+      "hits": [
+        {
+          "line": 1,
+          "text": "\"\"\"platform/llm/active_memory.py: the router gives every agent's chat call the estate memory, run on real call shapes.\"\"\""
+        },
+        {
+          "line": 28,
+          "text": "        \"active_memory\", os.path.join(ROOT, \"platform\", \"llm\", \"active_memory.py\")"
+        },
+        {
+          "line": 31,
+          "text": "    sys.modules[\"active_memory\"] = mod"
+        },
+        {
+          "line": 61,
+          "text": "            \"paths\": [\"platform/llm/active_memory.py\"],"
+        },
+        {
+          "line": 126,
+          "text": "    assert \"#6645 claude: platform/llm/active_memory.py\" in last"
+        },
+        {
+          "line": 131,
+          "text": "    assert out[\"metadata\"][\"active_memory\"][\"agent\"] == \"claude-cli\""
+        },
+        {
+          "line": 189,
+          "text": "    monkeypatch.setenv(\"ACTIVE_MEMORY_BUDGET_S\", \"0.2\")"
+        },
+        {
+          "line": 214,
+          "text": "        \"Active Focus: unreadable right now (gh rate limited)\""
+        },
+        {
+          "line": 370,
+          "text": "            \"paths\": \"platform/llm/active_memory.py\","
+        },
+        {
+          "line": 381,
+          "text": "    assert \"#6597 claude: platform/llm/active_memory.py\" in last and \"6525\" not in last"
+        },
+        {
+          "line": 391,
+          "text": "    assert \"Active Focus: unreadable right now\" in out[\"messages\"][-1][\"content\"]"
+        },
+        {
+          "line": 411,
+          "text": "        \"active_memory.proxy_handler_instance\" in cfg[\"litellm_settings\"][\"callbacks\"]"
+        },
+        {
+          "line": 417,
+          "text": "    assert \"active_memory.py\" in gen[\"litellm-request-ceiling\"]"
+        },
+        {
+          "line": 429,
+          "text": "    assert \"unified-memory\" in rows[\"llm\"][\"egress\"]"
+        },
+        {
+          "line": 430,
+          "text": "    assert \"llm\" in rows[\"unified-memory\"][\"ingress_from\"]"
+        }
+      ],
+      "total_hits": 16
+    },
+    {
+      "path": "docs/specs/2026-09-29-machine-learning-dept.md",
+      "hits": [
+        {
+          "line": 30,
+          "text": "| Unified memory server | deployed 44h, **0/0 replicas, no caller anywhere** | `kubectl get scaledobject -n unified-memory` |"
+        },
+        {
+          "line": 55,
+          "text": "| Scale-to-zero substrate | KEDA + HTTPScaledObject (unified-memory proves the pattern) | operating |"
+        },
+        {
+          "line": 58,
+          "text": "| Memory (cluster) | `platform/unified-memory-server` (Postgres, MAPLE guard, curation worker) | deployed, asleep |"
+        },
+        {
+          "line": 109,
+          "text": "- Fix the laptop MCP's import (`graphiti_core` in the estate venv) or delete it \u2014 one memory, not two. The cluster server is the one (memory: unified-memory-server-is-the-memory)."
+        },
+        {
+          "line": 110,
+          "text": "- Give `unified-memory-server` its first caller: `estate-execute` posts each ticket's outcome line to it; the Stop hook path reads back \"what happened last time this intent failed\"."
+        },
+        {
+          "line": 153,
+          "text": "`unified-memory-server`'s pod (already scale-to-zero) \u2014 no new always-on pod."
+        }
+      ],
+      "total_hits": 6
+    },
+    {
+      "path": "tests/test_estate_brief_drops_stale_focus.py",
+      "hits": [
+        {
+          "line": 32,
+          "text": "    items = [fact(\"ACTIVE FOCUS claim idp6525: lane verdicts\"), fact(\"unrelated fact\")]"
+        },
+        {
+          "line": 42,
+          "text": "        fact(\"ACTIVE FOCUS claim idp6543: gap analysis\"),"
+        },
+        {
+          "line": 43,
+          "text": "        fact(\"ACTIVE FOCUS claim idp9999: unreachable\"),"
+        },
+        {
+          "line": 55,
+          "text": "        fact(\"ACTIVE FOCUS was discussed\"),"
+        },
+        {
+          "line": 56,
+          "text": "        fact(\"ACTIVE FOCUS claimless\"),"
+        },
+        {
+          "line": 73,
+          "text": "            fact(\"ACTIVE FOCUS claim idp6525: a\"),"
+        },
+        {
+          "line": 74,
+          "text": "            fact(\"ACTIVE FOCUS claim #6525: b\"),"
+        },
+        {
+          "line": 75,
+          "text": "            fact(\"ACTIVE FOCUS claim 6525: c\"),"
+        },
+        {
+          "line": 123,
+          "text": "        [fact(\"ACTIVE FOCUS claim idp6525: a\")], cache_path=str(tmp_path / \"c.json\")"
+        }
+      ],
+      "total_hits": 9
+    },
+    {
+      "path": "docs/SHOWCASE.md",
+      "hits": [
+        {
+          "line": 232,
+          "text": "| flux-row | `cluster-kustomization-unified-memory-oke` | described and linked |"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "tests/test_the_shadow_stands_in_the_database.py",
+      "hits": [
+        {
+          "line": 3,
+          "text": "Incident: every DB-backed path (llm, temporal, unified-memory-server, hindsight...) resolves"
+        },
+        {
+          "line": 87,
+          "text": "    assert \"ssl=on\" in container[\"args\"][0]  # unified-memory connects sslmode=require"
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "tests/test_estate_memory_mcp.py",
+      "hits": [
+        {
+          "line": 1,
+          "text": "\"\"\"The one memory behind the one voice: mcp/plugins/estate_memory.py -> the unified memory server."
+        },
+        {
+          "line": 35,
+          "text": "    \"\"\"A stand-in for the unified memory server: it keeps what was PUT, lists it on GET,"
+        },
+        {
+          "line": 155,
+          "text": "            \"host\": \"unified-memory.estate.internal\","
+        },
+        {
+          "line": 177,
+          "text": "    # are the active-memory side channel and are pinned in test_estate_memory_consolidate_body.py."
+        },
+        {
+          "line": 186,
+          "text": "    assert h1[\"Host\"] == h2[\"Host\"] == h3[\"Host\"] == \"unified-memory.estate.internal\""
+        },
+        {
+          "line": 399,
+          "text": "    assert headers[\"Host\"] == \"unified-memory.estate.internal\""
+        }
+      ],
+      "total_hits": 6
+    },
+    {
+      "path": "docs/audits/2026-09-07-product-audit.md",
+      "hits": [
+        {
+          "line": 44,
+          "text": "  the founder's bot), the zero-trust boundary as a service, and the agent workforce"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "tests/test_estate_memory_focus.py",
+      "hits": [
+        {
+          "line": 1,
+          "text": "\"\"\"Active Focus is read from the claim ledger, ghosts never reach an agent, and memory + focus are"
+        },
+        {
+          "line": 58,
+          "text": "    ghost = {\"text\": \"ACTIVE FOCUS claim idp6525: lane verdicts\"}"
+        },
+        {
+          "line": 59,
+          "text": "    live = {\"text\": \"ACTIVE FOCUS claim idp6579: dns-01\"}"
+        },
+        {
+          "line": 72,
+          "text": "    item = {\"text\": \"ACTIVE FOCUS claim idp1: x\"}"
+        },
+        {
+          "line": 93,
+          "text": "        \"relevant\": [{\"text\": \"ACTIVE FOCUS claim idp6525: dead\"}],"
+        },
+        {
+          "line": 104,
+          "text": "    assert result[\"structuredContent\"][\"active_focus\"] == rows"
+        },
+        {
+          "line": 105,
+          "text": "    assert text[\"active_focus\"] == rows"
+        }
+      ],
+      "total_hits": 7
+    },
+    {
+      "path": "tests/fixtures/reloader/kyverno-test.yaml",
+      "hits": [
+        {
+          "line": 3,
+          "text": "# Phase 2 of the Unification Move: a structural check on a manifest is graded by the tool that"
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "tests/test_the_shadow_lays_the_estate_floor_before_any_path.py",
+      "hits": [
+        {
+          "line": 4,
+          "text": "platform/llm, temporal, epistemic-fabric, unified-memory-server or voice-router failed on"
+        },
+        {
+          "line": 92,
+          "text": "    unified-memory-server on no kind \"HTTPScaledObject\". Production lays both.\"\"\""
+        },
+        {
+          "line": 123,
+          "text": "    # platform/llm's HTTPRoute is on main; HTTPScaledObject arrives with unified-memory's branch"
+        },
+        {
+          "line": 181,
+          "text": "    \"\"\"2026-10-14 (run 38526820263): platform/unified-memory-server failed on no kind"
+        },
+        {
+          "line": 212,
+          "text": "    image = (REPO / \"platform/unified-memory-server/image.yaml\").read_text()"
+        }
+      ],
+      "total_hits": 5
+    },
+    {
+      "path": "docs/evidence/placement-audit.txt",
+      "hits": [
+        {
+          "line": 12,
+          "text": "\u001b[33mWARN\u001b[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - com.founder.boardserve is a long-running service on a laptop. Anything depending on it is depending on the lid being open."
+        }
+      ],
+      "total_hits": 1
+    },
+    {
+      "path": "docs/explanation/founder-self-service-research.md",
+      "hits": [
+        {
+          "line": 1,
+          "text": "# Founder self-service through Backstage: the field, 2026-08-28"
+        },
+        {
+          "line": 41,
+          "text": "4. **Flux plugin wired for sync/suspend**, ServiceAccount scoped to only the namespaces the founder's products run in (not cluster-admin). Proven by: `readOnly: false` only on that ServiceAccount's RBAC bindings, verified with `kubectl auth can-i --as=<sa>`."
+        }
+      ],
+      "total_hits": 2
+    },
+    {
+      "path": "docs/evidence/2026-09-15-asymmetric-compute-leverage-research.md",
+      "hits": [
+        {
+          "line": 137,
+          "text": "  a rented Mac Mini's unified memory. An 80B-total/3B-active MoE model (Qwen3-Coder-Next class)"
+        },
+        {
+          "line": 218,
+          "text": "| Rented Mac Mini, flat monthly (Hetzner, candidate only) | ~\u20ac64/mo (~\u00a354/mo), 32GB unified memory | none named, standing monthly lease | founder's email, 2026-09-14 \u2014 **founder-supplied, unverified against Hetzner's own pricing page** |"
+        },
+        {
+          "line": 219,
+          "text": "| Rented Mac Mini, flat monthly (Scaleway, candidate only) | ~\u20ac80/mo (~\u00a368/mo), 32GB unified memory | none named, standing monthly lease | founder's email, 2026-09-14 \u2014 **founder-supplied, unverified**; possibly a different Scaleway product line than the hourly row above, not reconciled |"
+        },
+        {
+          "line": 282,
+          "text": "- Whether an MoE model (e.g., Qwen3-Coder-Next class) fits the rented-Mac unified-memory profile"
+        }
+      ],
+      "total_hits": 4
+    },
+    {
+      "path": "docs/explanation/flux-only-writes.md",
+      "hits": [
+        {
+          "line": 3,
+          "text": "On 2026-09-03 the founder ordered a lockdown after the estate inventory showed objects that no"
+        },
+        {
+          "line": 6,
+          "text": "with a solution then lockdown is happening\". This page records the first of the three"
+        },
+        {
+          "line": 35,
+          "text": "  other enforced policies in this folder, and it is the behaviour the lockdown asks for."
+        }
+      ],
+      "total_hits": 3
+    },
+    {
+      "path": "tests/fixtures/nodesoftware-operator/bad.yaml",
+      "hits": [
+        {
+          "line": 8,
+          "text": "# The three failures cover the three lockdown-relevant refusals:"
+        }
+      ],
+      "total_hits": 1
+    }
+  ]
+}
