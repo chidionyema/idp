@@ -23,3 +23,24 @@ def test_intake_is_executable_and_classifies():
     )
     assert r.returncode == 0, r.stderr
     assert '"fingerprint"' in r.stdout and '"sentences"' in r.stdout
+
+
+def test_repeat_hit_is_reported_not_crashed(tmp_path):
+    """Regression: the CLI read 'similarity'/'text' while find_repeat returns 'score'/'earlier'; any real hit crashed."""
+    env = {**os.environ, "ESTATE_HOME": str(tmp_path), "HOME": str(tmp_path)}
+    text = "Never repeat yourself and close the loop on every instruction."
+    subprocess.run(
+        [str(BIN), "--no-publish", "--text", text],
+        env=env,
+        capture_output=True,
+        timeout=60,
+    )
+    r = subprocess.run(
+        [str(BIN), "--repeat", text],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert "Traceback" not in r.stderr, r.stderr
+    assert r.returncode == 2 and r.stdout.startswith("REPEAT")
