@@ -15,6 +15,7 @@ on:
       - 'platform/oci/**'
       - '.github/workflows/estate-dag-gen.yml'
       - 'bin/estate-dag-gen'
+      - 'bin/estate-dag-changed'
   workflow_dispatch:
 
 jobs:
@@ -38,11 +39,20 @@ jobs:
         if: github.event_name == 'push'
         run: |
           BEFORE="${{ github.event.before }}"
-          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            BEFORE="$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)"
-          fi
-          changed="$(git diff --name-only "$BEFORE" "$GITHUB_SHA" -- \
+          # The Greenlane force-pushes a rebased commit onto every lane branch, so
+          # `github.event.before` is usually unreachable and is never fetched into
+          # the checkout. The old inline `git diff --name-only "$BEFORE" ...` then
+          # died with
+          #   fatal: bad object 6e30a21f49b3ac86219bd8d751911a603313840e
+          #   ##[error]Process completed with exit code 128.
+          # and left this check red on every lane PR while saying nothing about
+          # the DAG (measured 2026-10-30 on PR #7492, job 123834033723; also
+          # #7484 and #7485).
+          # bin/estate-dag-changed answers the same question and never refuses:
+          # it falls back to the nearest base it can prove and says so.
+          changed="$(bin/estate-dag-changed --base "$BEFORE" --head "$GITHUB_SHA" -- \
             'platform/oci/**' '.github/workflows/estate-dag-gen.yml' 'bin/estate-dag-gen' \
+            'bin/estate-dag-changed' \
             ':!platform/oci/github-actions.tf')"
           if [ -z "$changed" ]; then
             echo "only platform/oci/github-actions.tf changed (crew#6227): nothing the DAG reads"
