@@ -244,3 +244,76 @@ def test_fs_guard_blocks_raw_redirects_and_allows_the_doors():
     for cmd in allowed_cmds:
         allowed, reason = fs_guard.check_command_allowed(cmd)
         assert allowed, f"expected {cmd!r} to be allowed, got: {reason}"
+
+
+def test_fs_guard_does_not_false_positive_on_quoted_operators(tmp_path):
+    # Found live, not in a unit test: a real SEARCH/REPLACE payload whose *replacement
+    # text* contains `if used >= limit:` was refused as a raw write-redirect, because the
+    # original pattern scanned the whole command string for a bare `>` with no notion of
+    # quoting. A `>` inside a single-quoted printf payload never reaches the shell as an
+    # operator, so it is not a redirect this layer should refuse.
+    fs_guard = _load_fs_guard()
+    allowed_cmds = [
+        "printf 'if used >= limit:\\n    return 0\\n' | bin/estate-patch f.py --receipt x",
+        "printf 'a << b; List<int> x;' | bin/estate-patch f.py --receipt x",
+        'git commit -m "uses >= and <= and << in the message"',
+    ]
+    for cmd in allowed_cmds:
+        allowed, reason = fs_guard.check_command_allowed(cmd)
+        assert allowed, f"expected {cmd!r} to be allowed, got: {reason}"
+    # the fix must not open a real hole: an UNQUOTED redirect is still refused
+    blocked_cmds = [
+        "echo hi > AGENTS.md",
+        "echo hi >> src/sample.py",
+        "printf 'safe text' > src/sample.py",
+    ]
+    for cmd in blocked_cmds:
+        allowed, reason = fs_guard.check_command_allowed(cmd)
+        assert not allowed, f"expected {cmd!r} to still be blocked"
+
+
+def test_a_real_patch_round_trips_through_the_live_executor(tmp_path):
+    """End-to-end through the actual dispatch path (platform/estate/bin/estate-execute),
+    not just the two CLI tools in isolation: a read, then a patch whose replacement text
+    contains `>=`, through a real intent, exactly as an agent would run it. This is the
+    path test_fs_guard_* above cannot reach on its own -- fs_guard only matters inside
+    estate-execute's subprocess dispatch, and the false positive above only showed up
+    here, not in a direct subprocess.run of bin/estate-patch."""
+    _sandbox(tmp_path)
+    intents_dir = tmp_path / "platform" / "estate" / "intents"
+    intents_dir.mkdir(parents=True)
+    (intents_dir / "_proof.yaml").write_text(
+        "name: _proof\n"
+        "description: test fixture\n"
+        "tools: [bin/estate-patch]\n"
+        "halt_on_failure: true\n"
+        "steps:\n"
+        "  - name: patch\n"
+        "    cmd: |\n"
+        "      printf '<<<< SEARCH\\n    remaining = limit - used\\n    return max(0, "
+        "remaining)\\n====\\n    if used >= limit:\\n        return 0\\n    return limit - "
+        f'used\\n>>>>\\n\' | {ESTATE_PATCH} src/sample.py --receipt "{{receipt}}"\n'
+    )
+    receipt = _receipt_from(_read(tmp_path, "src/sample.py", "1:3").stdout)
+    (intents_dir / "_proof.yaml").write_text(
+        (intents_dir / "_proof.yaml").read_text().replace("{receipt}", receipt)
+    )
+    estate_execute = ROOT / "platform" / "estate" / "bin" / "estate-execute"
+    env = _env(tmp_path)
+    # estate-execute's own ticket ledger is always Path.home() / ".estate" / "estate.db" --
+    # it does not honor ESTATE_HOME (that env var belongs to bin/estate-read and
+    # bin/estate-patch, not the executor). Without isolating HOME too, this test would write
+    # real ticket state into the actual home directory and race with every other parallel
+    # test/run that touches it -- the likely cause of a flake seen once while shipping this fix.
+    env["HOME"] = str(tmp_path)
+    result = subprocess.run(
+        [sys.executable, str(estate_execute), "--from", str(tmp_path), "_proof"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert "REFUSED" not in result.stdout, result.stdout
+    assert "if used >= limit:" in (tmp_path / "src" / "sample.py").read_text(), (
+        result.stdout
+    )
