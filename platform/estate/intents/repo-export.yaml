@@ -1,0 +1,68 @@
+name: repo-export
+description: >
+  Pack a path of this repo into ONE file sized for another model's context window (repomix), so
+  the founder can hand the estate's own code to Gemini, Argon, or any other model directly --
+  without copying file by file or pasting a stale snapshot. First-class because that handoff is
+  now how the estate gets reviewed from outside itself: a capability reached by one command
+  (`estate_invoke repo-export`), not a laptop-only script someone has to remember exists.
+  Defaults to the whole repo, XML output (repomix's own recommended format for LLM context), and
+  tree-sitter compression on -- signatures and structure kept, implementation bodies stripped --
+  so more of the repo fits the same token budget. repomix prints its own file count and
+  tokenizer-measured token count on success; that line is the budget check, not a guess made here.
+  Reads the filesystem and writes one output file; touches nothing else the estate owns, so this
+  is a read, not a mutation. repomix itself is pinned (no silent upgrade onto a tool-poisoning
+  release) and fetched through npx the one time per version it is not already cached.
+class: read
+args:
+  path:
+    type: string
+    default: "."
+    help: "Directory or file glob to pack, relative to the repo root"
+  output:
+    type: string
+    default: "/tmp/repo-export/pack.xml"
+    help: "Where to write the packed file"
+  format:
+    type: string
+    default: "xml"
+    help: "xml | markdown | plain"
+  compress:
+    type: string
+    default: "true"
+    help: "true|false -- tree-sitter compression: keep signatures, strip bodies, so more repo fits the same token budget"
+  include:
+    type: string
+    default: ""
+    help: "Comma-separated glob to include (e.g. platform/llm/**,docs/diagnoses/**); empty packs everything not gitignored"
+  ignore:
+    type: string
+    default: ""
+    help: "Comma-separated glob to additionally exclude, on top of .gitignore"
+tools: [npx]
+door_s: 100
+halt_on_failure: true
+steps:
+  - name: pack
+    cmd: |
+      set -euo pipefail
+      mkdir -p "$(dirname {{output}})"
+      REPOMIX_ARGS=(--style {{format}})
+      if [ "{{compress}}" = "true" ]; then
+        REPOMIX_ARGS+=(--compress)
+      fi
+      if [ -n "{{include}}" ]; then
+        REPOMIX_ARGS+=(--include "{{include}}")
+      fi
+      if [ -n "{{ignore}}" ]; then
+        REPOMIX_ARGS+=(--ignore "{{ignore}}")
+      fi
+      npx -y repomix@1.18.1 {{path}} "${REPOMIX_ARGS[@]}" --output {{output}}
+  - name: verdict
+    cmd: |
+      set -euo pipefail
+      if [ ! -s {{output}} ]; then
+        echo "verdict: pack produced no file at {{output}}"
+        exit 1
+      fi
+      bytes=$(wc -c < {{output}} | tr -d ' ')
+      echo "verdict: packed ${bytes} bytes to {{output}} -- hand this one file to the other model's context window"
