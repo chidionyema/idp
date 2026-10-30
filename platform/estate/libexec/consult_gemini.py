@@ -2,7 +2,7 @@
 """consult.gemini: ask Gemini for an architectural review of the estate, through the router.
 
 Usage (via the intent): consult_gemini.py question=<text> [files=a,b] [model=gemini/gemini-3.8-flash]
-                        [max_bytes=400000] [timeout=85]
+                        [max_bytes=400000] [timeout=70]
 
 One door. The call goes to the estate router (llm.mumchimp.com), never to Google direct, so
 spend lands on the router ledger and under its daily ceiling. If the consultant lane refuses or
@@ -18,6 +18,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -28,6 +29,7 @@ ROUTER = os.environ.get("ESTATE_ROUTER_URL", "https://llm.mumchimp.com")
 # (measured 2026-10-30), so it silently falls back to MiniMax. Ask for the live model by name.
 DEFAULT_MODEL = "gemini/gemini-3.8-flash"
 FALLBACK_MODEL = "default"
+FALLBACK_RESERVE_S = 25  # time held back for the fallback inside the 100s door
 DEFAULT_MAX_BYTES = 400_000
 SYSTEM = (
     "You are the long-term architectural consultant to a one-founder engineering estate. "
@@ -98,6 +100,9 @@ def _post(url, key, payload, timeout):
 def ask(model, question, context, key, timeout, post=_post):
     body = {
         "model": model,
+        # Gemini 3.x "thinks" by default and `minimal` is a 400 on this model; `low` keeps a
+        # real review inside the 100s door (measured 2026-10-30: 34s vs 46s on a trivial prompt).
+        "reasoning_effort": "low",
         "messages": [
             {"role": "system", "content": SYSTEM},
             {
@@ -126,13 +131,16 @@ def consult(question, files, model, max_bytes, timeout, key, brief="", post=_pos
         )
     context, cut = build_context(files, max_bytes, brief)
     notes = [f"context cut or skipped: {', '.join(cut)}"] if cut else []
+    started = time.monotonic()
     try:
         text, replied = ask(model, question, context, key, timeout, post)
     except ConsultError as first:
         if model == FALLBACK_MODEL:
             raise
         notes.append(f"{model} failed ({first}); retried on {FALLBACK_MODEL}")
-        text, replied = ask(FALLBACK_MODEL, question, context, key, timeout, post)
+        # One door bounds the whole invocation: the retry gets what the first ask left.
+        left = max(15, int(timeout + FALLBACK_RESERVE_S - (time.monotonic() - started)))
+        text, replied = ask(FALLBACK_MODEL, question, context, key, left, post)
     return text, replied, model, notes
 
 
@@ -186,7 +194,7 @@ def main(argv):
             files,
             a.get("model", DEFAULT_MODEL),
             int(a.get("max_bytes", DEFAULT_MAX_BYTES)),
-            int(a.get("timeout", 85)),
+            int(a.get("timeout", 70)),
             key,
             brief=_brief(),
         )
