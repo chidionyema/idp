@@ -59,7 +59,7 @@ spec:
   # stateless -- Telegram delivers each update once to the Service and any replica may answer;
   # nothing exclusive is held (no volume outlives the pod), so the earlier one-pod Recreate
   # caution protected nothing and went.
-  replicas: 2
+  replicas: 1  # ADR 0048: one node, one replica -- a second replica lands on the same A1 VM, so it buys no availability.
   selector:
     matchLabels:
       app: otto-golden

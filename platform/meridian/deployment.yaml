@@ -67,7 +67,7 @@ spec:
   # crew#555: a founder-facing Deployment runs at least 2, and they must not share a node -- one
   # pod is one node event away from a 503 (the catalogue outage of 2026-08-28 06:20Z). Two pods at
   # 60m each is 120m of the node's 1.8 CPU budget.
-  replicas: 2
+  replicas: 1  # ADR 0048: one node, one replica -- a second replica lands on the same A1 VM, so it buys no availability.
   selector:
     matchLabels:
       app.kubernetes.io/name: meridian
