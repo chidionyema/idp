@@ -466,6 +466,12 @@ PLAN_OBSERVE_FILE = "observe.jsonl"
 # but nobody can audit is a complaint, not a gate (idp#7518, acceptance I4).
 PLAN_REFUSAL_FILE = "refusals.jsonl"
 
+# Where the door records every INTENT invocation, with the session that made it. An intent that
+# ran with no session at all is recorded as `anonymous`: identity-less automation stays ALLOWED
+# (standing estate policy), but it must be VISIBLE. Work nobody can attribute is not governed
+# work, and an unrecorded intent is how the intent door became a blind spot (idp#7576).
+PLAN_INTENT_FILE = "intents.jsonl"
+
 # Commands that only read. Everything else is work. This list is deliberately small and
 # deliberately conservative in the other direction: an unknown command is WORK, because a gate
 # that passes what it cannot classify is a gate that cannot fail (R1).
@@ -601,6 +607,45 @@ _GH_READ = frozenset({"view", "list", "status", "search", "auth"})
 
 # A command that chains anything is not a read: `cat x; rm y` reads and writes.
 _CHAIN = re.compile(r"[|;&`]|&&|\|\||\$\(|\n")
+
+# A leading `cd <dir>` is working-directory setup, not work: it changes nothing outside the
+# step's own shell. Almost every intent step opens with one (`cd /path && git show ...`), so
+# treating it as a chain made the intent door refuse plain reads -- a false refusal is worse
+# than a missing refusal, because it teaches the estate that the gate is noise (idp#7576).
+_CD_PREFIX = re.compile(r"^\s*cd\s+(?:\"[^\"]*\"|'[^']*'|\S+)\s*(?:&&|;)\s*(.*)$")
+
+
+def _strip_leading_cd(cmd: str) -> str:
+    """Drop leading directory-change segments, leaving the command that actually does the work."""
+    out = cmd
+    while True:
+        m = _CD_PREFIX.match(out)
+        if not m:
+            return out
+        out = m.group(1)
+
+
+def _writes_a_file(cmd: str) -> bool:
+    """True when the command redirects output INTO a file that persists.
+
+    `git show x > out.yml` writes a file; the old classifier had no notion of redirection, so
+    that write was classified as a READ -- a write the gate could not see (idp#7576).
+    """
+    return ">" in cmd
+
+
+# A descriptor move (`2>&1`, `>&2`) and a discard (`2>/dev/null`) neither create a file nor
+# chain anything. They are everywhere in the intent library (15 intents move a descriptor, 23
+# discard one), so treating them as work would refuse plain reads -- and a false refusal is
+# worse than a missing refusal, because it teaches the estate to route around its own gate.
+_FD_MOVE = re.compile(r"\d*>&-?\d+")
+_FD_DISCARD = re.compile(r"\d*>/dev/null")
+
+
+def _scrub_descriptors(cmd: str) -> str:
+    """Remove descriptor moves and discards, leaving the command that actually does the work."""
+    out = _FD_DISCARD.sub(" ", cmd)
+    return _FD_MOVE.sub(" ", out)
 
 
 def ledger_path(session_id: str) -> str:
@@ -917,6 +962,15 @@ def is_read_only_command(command: str) -> bool:
         return False
     if shell_plan_call(cmd):
         return True
+    # A leading `cd <dir>` is setup; what follows is what the step actually does.
+    cmd = _strip_leading_cd(cmd)
+    if not cmd.strip():
+        return False
+    # Descriptor moves and discards are neither work nor a chain.
+    cmd = _scrub_descriptors(cmd)
+    # Output into a file is work, whatever the command reads.
+    if _writes_a_file(cmd):
+        return False
     if _CHAIN.search(cmd):
         return False
     toks = cmd.split()
@@ -1088,6 +1142,42 @@ def record_unplanned(command: str, session_id: str = "", source: str = "door") -
             fh.write(line + "\n")
     except Exception:  # noqa: BLE001 - recording must never break the door
         return
+
+
+def record_intent(
+    intent_name: str,
+    session_id: str = "",
+    source: str = "intent-door",
+    detail: str = "",
+) -> bool:
+    """One line: this intent ran, and the session that ran it.
+
+    Every intent invocation is recorded, including the ones with no session at all: those are
+    recorded as `anonymous`. Identity-less automation is ALLOWED by standing estate policy --
+    trapping it would break the fleet collector, the reaper and the lane watcher -- but it must
+    be VISIBLE, because work nobody can attribute is exactly how the intent door became a blind
+    spot (idp#7576). The record is what turns "I could not find the work" into "here is the
+    session, or here is the fact that there was none".
+    """
+    try:
+        os.makedirs(PLAN_LEDGER_DIR, exist_ok=True)
+        line = json.dumps(
+            {
+                "at": time.time(),
+                "session": session_id or "anonymous",
+                "intent": intent_name or "",
+                "source": source,
+                "detail": (detail or "")[:2000],
+            },
+            sort_keys=True,
+        )
+        with open(
+            os.path.join(PLAN_LEDGER_DIR, PLAN_INTENT_FILE), "a", encoding="utf-8"
+        ) as fh:
+            fh.write(line + "\n")
+        return True
+    except Exception:  # noqa: BLE001 - recording must never break the door
+        return False
 
 
 def _publish_cli(argv: list) -> int:
