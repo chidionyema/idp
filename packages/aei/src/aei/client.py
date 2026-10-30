@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import queue
 import threading
-import time
 import urllib.request
 from .core import make_event
 
@@ -68,16 +67,20 @@ class Emitter:
         ledger already, and it needs to keep observing afterwards. close() would stop the
         worker, so there is a third door: wait for the queue and carry on.
         """
-        deadline = time.monotonic() + timeout
-        while not self.q.empty() and time.monotonic() < deadline:
-            time.sleep(0.02)
-        time.sleep(0.1)
+        # A dequeued event is still unfinished until its HTTP exchange completes.
+        # Queue.task_done() notifies this condition after success or failure.
+        with self.q.all_tasks_done:
+            self.q.all_tasks_done.wait_for(
+                lambda: self.q.unfinished_tasks == 0, timeout=max(0, timeout)
+            )
         return self.stats()
 
     def stats(self):
+        with self.q.mutex:
+            pending = self.q.unfinished_tasks
         return {
             "sent": self.sent,
             "dropped": self.dropped,
             "errors": self.errors,
-            "pending": self.q.qsize(),
+            "pending": pending,
         }
