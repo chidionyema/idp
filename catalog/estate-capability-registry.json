@@ -4,10 +4,10 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 112,
-    "layer": 236,
+    "layer": 237,
     "service": 121,
     "tool": 466,
-    "workflow": 86
+    "workflow": 87
   },
   "records": [
     {
@@ -11905,6 +11905,52 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/llm/cassette.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-llm-catalog_gate",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Catalog gate: ask every provider this router depends on, live, whether the exact model and",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/llm/catalog_gate.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -52218,6 +52264,56 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/repo-hygiene.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:workflow/gha-router-catalog-gate",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "router-catalog-gate -- the GitHub Actions workflow router-catalog-gate.yml.",
+      "contract": {
+        "inputs": [
+          "schedule",
+          "workflow_dispatch",
+          "workflow_call"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/router-catalog-gate.yml",
       "depends_on": [],
       "metrics": [],
       "blind": [

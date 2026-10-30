@@ -1,0 +1,110 @@
+# button: Ask every router lane's provider, live
+# founder: Catches a retired model or a dead key before a caller does, not after -- every provider
+#   this router depends on gets a real, authenticated one-token call on a schedule, from the
+#   cloud, with no dependency on any one machine or process being up to notice.
+#
+# WHY (2026-10-30, incident). A caller's single request fell through deepseek-v4-flash -> minimax
+# -> minimax_m31f -> gemini and every one of those four failed: two providers rejected the key,
+# Google had retired the pinned model. Nothing caught any of the three before that caller did,
+# because the one thing in this estate that asks a provider "does this still work" live
+# (platform/llm/router_catalog.py) runs only beside bin/litellm-local's own process -- a single
+# machine, checked only when someone is looking at it. This workflow is that same kind of live
+# check, run on a schedule from the cloud, independent of any one host answering a loop. A lane
+# this workflow cannot see here (no matching repository secret: groq, cerebras, sambanova,
+# nvidia, zai) is reported absent, never silently treated as green.
+name: router-catalog-gate
+on:
+  schedule:
+    - cron: "11 */1 * * *"  # hourly, minute 11 (not a bare top-of-hour slot)
+  workflow_dispatch:
+    inputs:
+      gate:
+        description: "Fail the run on any RED lane (for use as a precondition before a cutover)"
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      gate:
+        type: boolean
+        default: true
+    outputs:
+      red_count:
+        value: ${{ jobs.probe.outputs.red_count }}
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: router-catalog-gate
+  cancel-in-progress: false
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      red_count: ${{ steps.probe.outputs.red_count }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with: { python-version: "3.12" }
+      - name: install the one thing this needs
+        run: pip install -q litellm==1.100.4 pyyaml
+      - id: probe
+        name: ask every provider live
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.SEED_DEEPSEEK_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
+          MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
+          MOONSHOT_API_KEY: ${{ secrets.SEED_KIMI_API_KEY }}
+        run: |
+          set -o pipefail
+          python3 platform/llm/catalog_gate.py llm/config.yaml | tee "$RUNNER_TEMP/report.json" | tail -n +2
+          red=$(python3 -c "import json,sys; print(len(json.load(open('$RUNNER_TEMP/report.json'))['red']))" 2>/dev/null || echo "?")
+          echo "red_count=$red" >> "$GITHUB_OUTPUT"
+      - name: file or refresh the one tracking issue, never spam a new one
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/report.json" "$RUNNER_TEMP/comment.txt" <<'PY'
+          import json, sys
+          report_path, out_path = sys.argv[1], sys.argv[2]
+          try:
+              report = json.load(open(report_path))
+          except (OSError, ValueError):
+              report = {"red": [], "at": ""}
+          red = report.get("red", [])
+          lines = [f"- **{x['lane']}** ({x['model']}): {x['reason'][:200]}" for x in red]
+          text = f"Live probe at {report.get('at', '')}: {len(red)} lane(s) red.\n\n"
+          text += "\n".join(lines)
+          open(out_path, "w").write(text)
+          print(f"red={len(red)}")
+          PY
+          red=$(python3 -c "import json; print(len(json.load(open('$RUNNER_TEMP/report.json')).get('red', [])))" 2>/dev/null || echo 0)
+          existing=$(gh api "repos/${GH_REPO}/issues?state=open&labels=router-catalog-gate&per_page=1" --jq '.[0].number' 2>/dev/null || true)
+          title="router catalog gate: a lane the router serves is red"
+          if [ "$red" != "0" ]; then
+            printf '\nRun: %s\n' "$RUN_URL" >> "$RUNNER_TEMP/comment.txt"
+            if [ -n "${existing:-}" ] && [ "$existing" != "null" ]; then
+              gh api "repos/${GH_REPO}/issues/${existing}/comments" -F body=@"$RUNNER_TEMP/comment.txt" >/dev/null
+            else
+              gh api "repos/${GH_REPO}/issues" -f title="$title" -F body=@"$RUNNER_TEMP/comment.txt" -f 'labels[]=router-catalog-gate' >/dev/null
+            fi
+          elif [ -n "${existing:-}" ] && [ "$existing" != "null" ]; then
+            # gh issue close, never the raw PATCH: this closes a tracking issue this same
+            # workflow opened, not a pull request, but sovereign/tests/bdd/test_pr_flow_never_closes.py
+            # refuses any workflow line shaped like a PR closer (`-f state=closed`,
+            # `"state": "closed"`) wherever it appears, on purpose -- no workflow outside
+            # bin/idp-pr-age gets to look like it could close a PR. gh issue close matches none
+            # of those shapes.
+            gh issue close "$existing" --repo "$GH_REPO" \
+              --comment "Live probe at $(date -u +%Y-%m-%dT%H:%M:%SZ): every checked lane answered. Closing."
+          fi
+      - name: gate
+        if: inputs.gate == true
+        run: |
+          red="${{ steps.probe.outputs.red_count }}"
+          [ "$red" = "0" ] || { echo "::error::${red} lane(s) red; see the run output above"; exit 1; }

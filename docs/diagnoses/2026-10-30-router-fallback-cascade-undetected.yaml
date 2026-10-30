@@ -1,0 +1,48 @@
+description: 'A caller''s single request on 2026-10-30 fell through the fallback chain
+  deepseek-v4-flash -> minimax -> minimax_m31f -> gemini and every leg failed, surfacing
+  as a live error to the caller. Two of the failures carry a message a one-token
+  /chat/completions probe classifies deterministically: DeepSeek returned 401 "Authentication
+  Fails, Your api key: ****c966 is invalid" (an authentication_error); Google returned 404
+  "models/gemini-2.5-flash is no longer available to new users... use models/gemini-3.8-flash"
+  (a not-found/retirement shape). Question: would a live, one-token probe of each lane (the
+  mechanism platform/llm/catalog_gate.py adds, run from the cloud on a schedule) have
+  classified these as RED before this caller''s request, or is this a failure mode no live
+  probe could have predicted in advance?
+
+  '
+hypotheses:
+- name: H1
+  description: a live one-token probe run ahead of the call would classify both failures RED
+    (the provider already names the key or the model as the problem, independent of this
+    caller's specific request) -- this was a monitoring-cadence gap, not an unpredictable
+    failure mode
+  prior: 0.5
+- name: H2
+  description: the failure mode is inherently request-shaped (depends on this caller's exact
+    payload, timing, or routing state) and no prior, independent probe call could have
+    classified it RED ahead of time
+  prior: 0.5
+n_eff_divisor: 1
+evidence:
+- name: deepseek-v4-flash 401 (DeepSeekException, authentication_error, key named invalid)
+  observed:
+    probe_classifies_red: 1
+    probe_classifies_other: 0
+  likelihoods:
+    H1:
+      probe_classifies_red: 0.97
+      probe_classifies_other: 0.03
+    H2:
+      probe_classifies_red: 0.1
+      probe_classifies_other: 0.9
+- name: gemini 404 (model retirement, Google names the replacement model)
+  observed:
+    probe_classifies_red: 1
+    probe_classifies_other: 0
+  likelihoods:
+    H1:
+      probe_classifies_red: 0.97
+      probe_classifies_other: 0.03
+    H2:
+      probe_classifies_red: 0.1
+      probe_classifies_other: 0.9
