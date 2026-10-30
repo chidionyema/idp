@@ -334,6 +334,63 @@ def test_the_door_refuses_to_write_the_receipt_inside_the_tree(tmp_path):
     assert not (repo / "receipt.json").exists()
 
 
+def test_the_door_verifies_an_artifact_reached_through_a_symlink(tmp_path):
+    """A path the caller can name is a path the door must accept.
+
+    Measured 2026-10-30, on the first real invocation through the executor: the door
+    refused (exit 2) an artifact at /tmp/nsvee-door-proof/calc.py with "the artifact and
+    its tests must live inside the tree the receipt binds to (/private/tmp/nsvee-door-proof)"
+    -- it compared a RESOLVED tree with an UNRESOLVED artifact, and macOS's /tmp is a
+    symlink to /private/tmp. Every path the door touches is now resolved the same way.
+    """
+    repo = _tree(tmp_path, GOOD, GOOD_TESTS)
+    link = tmp_path / "link"
+    link.symlink_to(repo, target_is_directory=True)
+    out = tmp_path / "receipt.json"
+    proc = _run_door(
+        "--artifact",
+        str(link / "artifact.py"),
+        "--tests",
+        str(link / "test_artifact.py"),
+        "--repo",
+        str(repo),
+        "--engine-root",
+        str(REPO),
+        "--commit",
+        COMMIT,
+        "--out",
+        str(out),
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    receipt = json.loads(out.read_text())
+    assert receipt["status"] == "VERIFIED"
+    assert receipt["paths"] == ["artifact.py", "test_artifact.py"]
+
+
+def test_the_door_refuses_a_receipt_written_into_the_tree_through_a_symlink(tmp_path):
+    """The receipt is refused inside the tree it describes, however the path is spelled."""
+    repo = _tree(tmp_path, GOOD, GOOD_TESTS)
+    link = tmp_path / "link"
+    link.symlink_to(repo, target_is_directory=True)
+    proc = _run_door(
+        "--artifact",
+        str(repo / "artifact.py"),
+        "--tests",
+        str(repo / "test_artifact.py"),
+        "--repo",
+        str(repo),
+        "--engine-root",
+        str(REPO),
+        "--commit",
+        COMMIT,
+        "--out",
+        str(link / "receipt.json"),
+    )
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert "inside the tree" in proc.stderr
+    assert not (repo / "receipt.json").exists()
+
+
 def test_the_door_refuses_what_it_cannot_verify(tmp_path):
     """No artifact, no verdict: the door refuses instead of reporting a pass."""
     proc = _run_door(

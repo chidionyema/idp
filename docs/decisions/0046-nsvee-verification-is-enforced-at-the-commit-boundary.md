@@ -276,6 +276,11 @@ Five properties make it a door and not a helper:
    `platform/estate/intents` and `platform/estate/libexec` from `origin/main` into `~/.estate`
    for every runtime, so one landed intent becomes live everywhere without a second wiring
    job per harness.
+6. **One path rule.** Every path the door is given -- the tree, the artifact, the tests, the
+   receipt -- is resolved the same way before it is compared with another. The tree is
+   resolved, so an artifact that arrives through a symlink (macOS: `/tmp` is a symlink to
+   `/private/tmp`) has to be resolved too, or the door refuses a verification it should have
+   accepted. This is not a nicety: it was the door's first real refusal, measured below.
 
 **What the door is not.** It is not a replacement for the pre-commit gate or the merge gate
 (D2): it is the measurement those gates consume, and it is the one door an agent can call on
@@ -344,6 +349,31 @@ python3 platform/estate/nsvee_enforcement.py --verify-receipt receipt.json --tre
 ~/.estate/bin/estate-execute nsvee.verify artifact=path/to/artifact.py tests=path/to/tests.py repo="$PWD"
 #   exits 0 and prints status=VERIFIED with the receipt path; exits 1 on a failing artifact
 ```
+
+## The door's first real invocation (measured 2026-10-30)
+
+The door landed as `e27de193a` (#7517) and `bin/estate-runtime-sync` installed it estate-wide
+(`~/.estate/intents/nsvee.verify.yaml` and `~/.estate/libexec/nsvee-verify.py`, byte-identical
+to `origin/main`). The first call through the executor -- the one a runtime makes -- was
+**refused**:
+
+```
+[estate] intent=nsvee.verify  ticket=INTENT-20261030-041659-47c8080d
+[step 1 / verify] python3 ~/.estate/libexec/nsvee-verify.py --artifact /tmp/nsvee-door-proof/calc...
+  exit 2  (15888ms)
+  stderr: nsvee-verify: the artifact and its tests must live inside the tree the receipt binds
+          to (/private/tmp/nsvee-door-proof)
+```
+
+Root cause: the tree was resolved and the artifact was not, so on macOS -- where `/tmp` is a
+symlink to `/private/tmp` -- an artifact under `/tmp` never matched the tree it was in. The
+same rule was missing on the receipt's own path, which meant a receipt written into the tree it
+describes was possible through a symlink. Fixed in `lane/nsvee-verify-path-fix` (property 6
+above), with two regression tests that fail against the pre-fix door.
+
+The lesson is recorded here because it is the law this door lives by: **a gate is proved by the
+call the estate actually makes, not by the call the author imagined.** The unit tests passed
+before the door was ever called by a runtime; the first runtime call refused.
 
 ## References
 
