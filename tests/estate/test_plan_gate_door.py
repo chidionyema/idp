@@ -214,6 +214,41 @@ def test_a_chained_command_is_work_even_when_it_reads(contract):
     assert contract.is_read_only_command("cat AGENTS.md") is True
 
 
+def test_git_s_version_is_a_read_and_the_door_may_not_refuse_it(contract):
+    """`git --version` prints and exits. It is not work (idp#7518).
+
+    The classifier consumed `--version` as a bare global option, found no subcommand, and
+    called the whole invocation work -- so the door refused it from a session with no plan.
+    A false refusal is worse than a missing refusal.
+    """
+    for command in ("git --version", "git --help", "git -h", "git version", "git help"):
+        assert contract.is_read_only_command(command) is True, command
+    gate = door._plan_gate("git --version")
+    assert gate["ok"] is True
+    assert gate.get("reason") in (None, "read_only")
+
+
+def test_the_informational_flags_do_not_open_a_door_for_work(contract):
+    """The fix reads a version; it must not read a push."""
+    for command in (
+        "git diff --output=/tmp/x",
+        "git commit -m 'x'",
+        "git push origin main",
+        "git reset --hard HEAD",
+        "git --version push origin main",
+    ):
+        assert contract.is_read_only_command(command) is False, command
+
+
+def test_the_global_options_still_leave_the_subcommand_visible(contract):
+    for command in (
+        "git -C /tmp status --short",
+        "git -c core.pager=cat status",
+        "git --no-pager log --oneline",
+    ):
+        assert contract.is_read_only_command(command) is True, command
+
+
 def test_one_session_s_plan_does_not_cover_another_session(contract):
     """A plan belongs to the session that declared it. Two agents, two plans, two doors."""
     contract.append_plan_event("sess-under-test", "declare_plan", DECLARE)

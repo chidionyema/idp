@@ -9146,6 +9146,8 @@
           "--get-regexp",
           "--get-urlmatch",
           "--git-dir",
+          "--help",
+          "--info",
           "--list",
           "--move",
           "--namespace",
@@ -9155,9 +9157,7 @@
           "--session",
           "--set-upstream-to",
           "--super-prefix",
-          "--unset-upstream",
-          "--verbose",
-          "--work-tree"
+          "--unset-upstream"
         ],
         "outputs": [
           "stdout",

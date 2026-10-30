@@ -537,6 +537,8 @@ _GIT_READ = frozenset(
         "count-objects",
         "reflog",
         "whatchanged",
+        "help",
+        "version",
     }
 )
 
@@ -587,6 +589,12 @@ _GIT_GLOBAL_VALUE_OPTS = (
     "--super-prefix",
     "--config-env",
 )
+
+# git's informational flags: they print and exit, changing nothing. The classifier used to
+# consume them as bare global options, find no subcommand, and call the whole invocation
+# WORK -- so the door refused `git --version` from a session with no plan (idp#7518). A false
+# refusal is worse than a missing refusal: it teaches the estate that the gate is noise.
+_GIT_INFO_FLAGS = ("--version", "--help", "-h")
 
 # gh subcommands that only read.
 _GH_READ = frozenset({"view", "list", "status", "search", "auth"})
@@ -855,6 +863,9 @@ def _git_tokens(toks: list):
                 continue
         if tok.startswith("-"):
             # A bare global flag with no value, e.g. `--no-pager`, `--paginate`.
+            if tok in _GIT_INFO_FLAGS and i + 1 >= n:
+                # `git --version` alone: it prints and exits. It is not a subcommand.
+                return "--info", []
             i += 1
             continue
         break
@@ -867,6 +878,9 @@ def _git_is_read_only(sub: str, rest: list) -> bool:
     """True when this git invocation only reads."""
     if not sub:
         return False
+    if sub == "--info":
+        # `git --version`, `git --help`: they print the version or the usage and exit.
+        return True
     if sub in ("config", "remote", "branch"):
         # Conditional subcommands: their reading and mutating forms share a name.
         if sub == "config":
