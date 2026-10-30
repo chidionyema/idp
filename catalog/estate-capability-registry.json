@@ -6,7 +6,7 @@
     "intent": 110,
     "layer": 228,
     "service": 122,
-    "tool": 460,
+    "tool": 461,
     "workflow": 85
   },
   "records": [
@@ -25457,6 +25457,59 @@
       "writer": "repo",
       "path": "bin/estate-fleet",
       "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/estate-fleet-voice",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "idp#7490: the voice door of fleet comms. Speech in becomes a directive; the inbox is read aloud.",
+      "contract": {
+        "inputs": [
+          "--ack",
+          "--kind"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-fleet-voice",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-fleet",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
