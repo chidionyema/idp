@@ -70,8 +70,8 @@ is not a gate, and a gate that cannot tell is not allowed to say yes.
 | the CI review job that produces the receipt on the head SHA | `.github/workflows/` | a receipt an agent writes for itself is a note, not evidence |
 | the `laws.yaml` law carrying the policy | `platform/estate/governance/laws.yaml` | the law needs the writer, or it refuses everything |
 | the `ci-success` job carrying the gate | `.github/workflows/` | same |
-| the executor's elapsed-time receipt | `platform/executor/run.py` | the executor's own claim; it must land with the executor's own tests |
-| the command-shape fingerprint | `platform/executor/` | same |
+| the executor's elapsed-time receipt | `platform/executor/run.py` | **landed 2026-10-30** with the executor's own tests -- `docs/decisions/2026-10-30-the-executor-records-what-it-measured.md` |
+| the command-shape fingerprint | `platform/executor/` | **landed 2026-10-30** with the receipt; the shape is the executable plus the flag names, values redacted |
 | the door's use of the resolver | `mcp/plugins/estate_executor.py` | the door is the hottest code in the estate and it changes under its own claim |
 | the routing of `need:N` to `background` / `session` / `lane` | the executor and the session plane | routing is a placement decision and belongs to the placement ladder, not to a resolver |
 
