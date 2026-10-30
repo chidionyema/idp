@@ -119,6 +119,21 @@ The same window explains the failed founder turn in the affected conversation
 The fault window holds four `workspace routing discovery failed` records and 114
 `Workspace routing is unavailable` records; the post-correction log holds none of either.
 
+The conversation's own rollout file carries the transition, and it is the founder-side record that
+the open follow-up below used to be missing. The file
+`~/.codex/sessions/2026/10/29/rollout-2026-10-29T15-04-16-01a18830-a71e-7653-b7df-7b705e722c23.jsonl`
+(1,734 lines) records a sane turn ending at `2026-10-29T16:55:32.209Z`, then the first record
+written under the regressed clock at `2024-01-01T00:18:15.815Z`, then the founder's message at
+`2024-01-01T00:18:16.832Z` (real `2026-10-29T22:34:58.395910Z`): "i asshged work to previos
+sessons, any updtes". The turn then failed with `task_complete` at `2024-01-01T00:18:34.044Z`
+(real `2026-10-29T22:35:15.607910Z`), carrying `error.message` "workspace routing discovery
+failed", `last_agent_message` null and `duration_ms` 18131. The next record in the same file is
+`2026-10-29T22:49:26.182Z`: the same conversation worked normally once the clock was right.
+
+The regressed clock also reached the model. The environment context and the world state that
+the runtime injected for that turn both carry the regressed date, `current_date` `2024-01-01`,
+so the agent was told the current date was two years in the past, in the same turn that failed.
+
 Two candidate causes are ruled out. The remote thread was not absent: `thread/resume` for that
 conversation returned `errorCode=null` inside the fault window and was followed by
 `maybe_resume_success`. The expired rendezvous token was not the trigger: the
@@ -170,6 +185,8 @@ cannot be named from here.
 
 - Six Pi agent sessions and the Codex desktop profile were created under 2024-01-01. The
   sessions are transcripts of real work; their timestamps are wrong.
+- The regressed clock reached the model context as the current date for one founder turn in the
+  Codex conversation above.
 - One real estate incident was filed under 2024-01-01.
 - The Codex desktop app reported `This conversation is unavailable. Its cached transcript and
   draft remain here; input is paused.` The cause is now established and measured: the regressed
@@ -214,10 +231,10 @@ never be allowed to overrule a witness that has not.
 ## Open follow-ups
 
 - The Codex `This conversation is unavailable` condition is explained and measured above: it
-  was the regressed clock failing TLS certificate validation. Two details stay open for the
+  was the regressed clock failing TLS certificate validation. One detail stays open for the
   next recurrence: the remote host whose certificate was rejected is not named in the log
-  (`hostKind=durable` only), and the founder-side request that first surfaced the message is
-  in no transcript on this machine.
+  (`hostKind=durable` only). The founder-side request that surfaced the message has now been
+  recovered from the conversation's own rollout file and is quoted above.
 - The exact firmware or kernel constant behind the `2024-01-01T00:00:00` fallback is not
   verified; it needs administrator access or board-level evidence.
 - Whether a second clock adjustment occurred after the correction is not established; the wide
