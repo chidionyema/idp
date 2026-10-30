@@ -2,14 +2,20 @@
 
 - **Date:** 2026-10-28 (decision taken 2026-10-27; landed 2026-10-28)
 - **Claim:** idp#7298 · agent `estate-agent`
-- **Gate:** `tests/test_nsvee_estate_enforcement.py` — this ADR's contract is executable, and the
-  test fails when the code and this document drift apart
+- **Gate:** `tests/test_nsvee_estate_enforcement.py` and `tests/test_nsvee_verify_door.py` -- this
+  ADR's contract is executable, and the tests fail when the code and this document drift apart
 - **Checker:** `python3 platform/estate/nsvee_enforcement.py --check` — exits 1 today and names
   the surfaces that do not enforce the receipt yet
 - **Tickets:** idp#7263 (open — NSVEE productization), idp#7265 (merged — the productized
   engine), idp#6989 (claim rungs)
 - **Founder's ruling (2026-10-27):** NSVEE is integrated estate-wide and mandatory. JEV is
   explicitly **not** a requirement for it, and stays out of the enforcement path.
+- **Status (2026-10-30):** Phase 1 landed. Phase 2's API gap (D5) and the shared door (D8) are
+  delivered: `nsvee.verify(artifact, tests) -> VerificationReport` exists, and the intent
+  `nsvee.verify` makes it reachable by every estate runtime. The three enforcement surfaces
+  below -- pre-commit, CI verification, merge gate -- are still unwired, so the estate does not
+  yet *require* a receipt; it can now *produce* one on demand. The remaining gap is named by
+  the checker, not by prose.
 
 ## Context
 
@@ -18,6 +24,9 @@ before it lands, everywhere, for every agent. What exists is narrower, and the d
 worth stating exactly rather than rounding up.
 
 ### What NSVEE is today (measured, `nsvee/engine.py` at `205c3f196`)
+
+This section is a measurement, pinned to a commit. The API gap it describes was closed on
+2026-10-30 (D5, D8); the sections below say so where they are no longer true.
 
 Sources are named by **symbol, not by line number**: a line number rots the next time the file is
 edited, and a rotted citation is a false one. `tests/test_nsvee_estate_enforcement.py` reads every
@@ -55,11 +64,16 @@ a *different* artifact from a prompt at commit time and calling that a verificat
 committed tree would be theatre — it would prove that the model can write a passing test, not
 that the committed code passes. The estate does not grade a proxy (`AGENTS.md` §10).
 
+**Closed 2026-10-30 (D5, D8).** `nsvee.verify(artifact, tests) -> VerificationReport` now
+exists as a public, model-free entry point, and the intent `nsvee.verify` puts it behind the
+one door every estate runtime already uses. The commit boundary can therefore ask the right
+question now; what it does not yet do is ask it on every commit.
+
 ### Expectation against reality
 
 | the founder expects | what the tree measures |
 |---|---|
-| NSVEE verifies every agent artifact, estate-wide | no estate surface references NSVEE at all: `git grep -l -i nsvee origin/main` outside `nsvee/`, `docs/` and `tests/` returns nothing. pi *development* sessions have exercised the engine directly (`import nsvee`, `python3 -m nsvee` appear in 8 session transcripts under `~/.pi/agent/sessions/`), but no runtime surface — intent, MCP tool, CI job — calls it. An agent today reaches it only by hand-writing Python against the library |
+| NSVEE verifies every agent artifact, estate-wide | no estate surface references NSVEE at all: `git grep -l -i nsvee origin/main` outside `nsvee/`, `docs/` and `tests/` returns nothing. pi *development* sessions have exercised the engine directly (`import nsvee`, `python3 -m nsvee` appear in 8 session transcripts under `~/.pi/agent/sessions/`), but no runtime surface -- intent, MCP tool, CI job -- calls it. An agent today reaches it only by hand-writing Python against the library (until 2026-10-30: the `nsvee.verify` intent, D8) |
 | the verification is automatic | nothing invokes it. There is no receipt, no gate, no verdict bound to a change |
 | an agent cannot ship unverified code | the commit path runs ruff format, ruff check, tsc, shellcheck and yamllint (`.githooks/pre-commit`) and CI runs the fast gate. None of those verify semantics |
 | there is a verdict per change | there is a `PipelineReport` per *run*, unbound to any commit, tree, or artifact digest |
@@ -118,6 +132,7 @@ commit, and the merge gate reads it from the run. The contract is in
   "artifact_digest": "<64 hex sha256 of the verified artifact>",
   "verifier": "nsvee",
   "status": "VERIFIED",
+  "paths": ["path/to/artifact.py"],
   "report": {},
   "oracle": ""
 }
@@ -125,7 +140,9 @@ commit, and the merge gate reads it from the run. The contract is in
 
 `artifact_digest` is the sha256 over the changed paths (path, then the sha256 of its bytes) or
 over the whole tree, depending on what was verified. It is what makes the receipt a binding
-rather than a decoration: change a byte and the digest changes.
+rather than a decoration: change a byte and the digest changes. `paths` names the scope the
+digest covers -- `null` means the whole tree -- and the checker honours the scope the receipt
+claims, never a wider one (D8).
 
 **D4. Only `VERIFIED` is a pass. The gate fails closed.**
 
@@ -134,6 +151,7 @@ rather than a decoration: change a byte and the digest changes.
 failure. There is no "skip" and no "assume verified".
 
 **D5. NSVEE must gain a verify-only entry point before Tier B can judge arbitrary edits.**
+(delivered 2026-10-30)
 
 `nsvee.verify(artifact, tests) -> VerificationReport`: the Tier-3 machinery (`_verify` promoted
 to public) plus the oracle seam (`post_verify`), so the commit boundary can verify code it did
@@ -212,13 +230,72 @@ The markers are deliberately distinctive. The word "receipt" on its own was alre
 `ci.yml` for unrelated reasons, and a marker a file satisfies by accident reports a surface as
 enforced that enforces nothing — worse than reporting nothing.
 
+**D8. The door is an intent, so every runtime reaches it the same way.**
+
+D2 puts the *enforcement* at the commit boundary, because only that path is universal. But
+universal enforcement and universal *reachability* are two different properties, and the second
+one is what was still missing: every estate runtime -- pi, otto, the fleet page, claude, gemini,
+cursor -- already has exactly one governed way to act, an intent in `~/.estate/intents` run by
+the executor. A Python library call that each runtime has to wire up for itself is N
+integrations, and the one nobody wires up is the one that matters.
+
+So the door is:
+
+| | |
+|---|---|
+| name | `nsvee.verify` |
+| intent | `platform/estate/intents/nsvee.verify.yaml` |
+| script | `platform/estate/libexec/nsvee-verify.py` |
+| engine entry point | `nsvee.verify(artifact, tests) -> VerificationReport` |
+| receipt | `estate.nsvee.receipt/1` -- the contract in `platform/estate/nsvee_enforcement.py` |
+| exit | 0 only when the verdict is `VERIFIED`; 1 when the artifact is not verified; 2 when the door could not run |
+
+Five properties make it a door and not a helper:
+
+1. **Model-free.** The verdict comes from executing the artifact in the sandbox, not from
+   asking anything. It costs no tokens, depends on no router, and cannot be flattered by a
+   model that wants to agree. This is what makes it usable as a gate rather than an opinion,
+   and it is why it does not need JEV (D6).
+2. **Same engine, same verdicts.** The door calls the Tier-3 machinery the pipeline uses, with
+   the same confirmation runs (a `PASS` is re-run, so a flake is not mistaken for a proof), and
+   it reports the receipt's own statuses. One engine, two entry points -- not a second verifier.
+3. **Fail-closed.** A failing artifact, a broken sandbox and a receipt that cannot be written
+   are all failures. There is no "skip" and no "assume verified" (D4).
+4. **The receipt binds, and it says what it binds.** The door writes the digest of what it
+   verified, so a tampered artifact no longer matches the receipt
+   (`check_receipt_against_tree`). The receipt is written *outside* the tree it describes -- a
+   receipt inside the commit it names would change the tree it binds to -- and a request to do
+   so is refused rather than answered with a receipt that is false the moment it is written.
+   The binding is **scoped**: the receipt carries the `paths` it covers (the artifact and its
+   tests), because a whole-tree digest of the estate's own checkout costs ~60 s -- measured,
+   6,425 files, 288 MB, ~7 ms a file of open overhead -- which is more than the executor's
+   entire budget. `--whole-tree` buys the stronger binding for a caller that has the time,
+   which is what the CI surfaces will use; the receipt says which of the two it is, and the
+   checker never widens a receipt's scope on its behalf.
+5. **One integration, estate-wide.** `bin/estate-runtime-sync` stages
+   `platform/estate/intents` and `platform/estate/libexec` from `origin/main` into `~/.estate`
+   for every runtime, so one landed intent becomes live everywhere without a second wiring
+   job per harness.
+
+**What the door is not.** It is not a replacement for the pre-commit gate or the merge gate
+(D2): it is the measurement those gates consume, and it is the one door an agent can call on
+demand -- for the founder's own check, and for any runtime that wants to verify before it hands
+work over. The three surfaces below still have to be wired for the receipt to be *required*
+rather than *available*.
+
+*Falsifier:* `tests/test_nsvee_verify_door.py` -- the door runs, writes a receipt the contract
+accepts, refuses a failing artifact (exit 1) while still leaving the evidence, breaks its
+binding when the tree is tampered with, refuses to write a receipt inside the tree, and the
+intent that names it exists in the estate's catalogue.
+
 ## The gap, stated plainly
 
 | | founder's expectation | today's reality | what closes it |
 |---|---|---|---|
 | enforcement point | the commit boundary, estate-wide | no surface calls NSVEE | D1/D2 + Phase 2 |
-| verification of arbitrary edits | any change can be verified | NSVEE only verifies what it generated; `run()` always regenerates | D5 — `nsvee.verify()` |
-| proof per change | a verdict bound to the change | a `PipelineReport` per run, unbound to a commit | D3 — the receipt |
+| verification of arbitrary edits | any change can be verified | NSVEE only verifies what it generated; `run()` always regenerates | D5 -- `nsvee.verify()` -- **closed 2026-10-30** |
+| reachability | every runtime can verify | the only route was hand-written Python against the library | D8 -- the `nsvee.verify` intent -- **closed 2026-10-30** |
+| proof per change | a verdict bound to the change | a `PipelineReport` per run, unbound to a commit | D3 -- the receipt -- the door writes one on demand; the surfaces do not yet require it |
 | the gate's behaviour | refuses what is unverified | no gate exists | D4 + Phase 2 |
 | generation path | generation surfaces produce verified artifacts | generation is not routed through NSVEE | D1 Tier A — Phase 3 |
 
@@ -228,11 +305,11 @@ enforced that enforces nothing — worse than reporting nothing.
 is wired yet. *Falsifier:* `python3 platform/estate/nsvee_enforcement.py --check` exits 1 and
 names `pre-commit`, `ci-verification`, `merge-gate`.
 
-**Phase 2 — the binding.** `nsvee.verify()` (idp#7263 continues), the pre-commit gate, the CI
-job in `.github/workflows/verifier.yml` that verifies the tree and publishes the receipt, and
-the merge gate in `.github/workflows/ci.yml` that refuses a commit without one. *Falsifier:* the
-checker exits 0, and a CI run on a commit with no receipt is red — proved by running it, not
-asserted.
+**Phase 2 -- the binding.** `nsvee.verify()` (idp#7263) -- **delivered 2026-10-30**; the shared
+door `nsvee.verify` (D8) -- **delivered 2026-10-30**; the pre-commit gate, the CI job in
+`.github/workflows/verifier.yml` that verifies the tree and publishes the receipt, and the merge
+gate in `.github/workflows/ci.yml` that refuses a commit without one. *Falsifier:* the checker
+exits 0, and a CI run on a commit with no receipt is red -- proved by running it, not asserted.
 
 **Phase 3 — Tier A.** The estate's generation surfaces return only `VERIFIED` artifacts, and a
 non-`VERIFIED` result is visible as such on the surface that produced it. *Falsifier:* a
@@ -257,15 +334,24 @@ generation surface that hands back an `EXHAUSTED` artifact is a failing test.
 ## How to check this ADR right now
 
 ```bash
-python3 -m pytest tests/test_nsvee_estate_enforcement.py tests/test_jev_decide_context_contract.py -q
+python3 -m pytest tests/test_nsvee_estate_enforcement.py tests/test_nsvee_verify_door.py \
+  tests/test_jev_decide_context_contract.py -q
 python3 platform/estate/nsvee_enforcement.py --check    # exits 1 today: the named gaps
 python3 platform/estate/nsvee_enforcement.py --verify-receipt receipt.json --tree .
 #   exits 0 only if the receipt's artifact digest is the digest of this tree
+
+# the shared door, through the executor, exactly as any runtime calls it:
+~/.estate/bin/estate-execute nsvee.verify artifact=path/to/artifact.py tests=path/to/tests.py repo="$PWD"
+#   exits 0 and prints status=VERIFIED with the receipt path; exits 1 on a failing artifact
 ```
 
 ## References
 
 - `nsvee/engine.py` — the engine this ADR binds to
+- `nsvee/__init__.py` -- exports `verify` and `VerificationReport` as the package's public door
+- `platform/estate/intents/nsvee.verify.yaml`, `platform/estate/libexec/nsvee-verify.py` -- the
+  shared door (D8)
+- `tests/test_nsvee_verify_door.py` -- the proof of that door
 - `platform/estate/nsvee_enforcement.py` — the receipt schema, the validator, the checker
 - `platform/estate/intents/jev.decide.yaml`, `platform/estate/libexec/jev-decide.py` — the
   hardened JEV caller contract (D6)

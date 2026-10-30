@@ -3,8 +3,8 @@
   "generator": "bin/capability-index emit",
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
-    "intent": 111,
-    "layer": 229,
+    "intent": 112,
+    "layer": 230,
     "service": 122,
     "tool": 463,
     "workflow": 85
@@ -3573,6 +3573,60 @@
       "rung": null,
       "writer": "intents",
       "path": "platform/estate/intents/net-triage.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:intent/nsvee.verify",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "Verify an artifact with NSVEE and bind the verdict to the commit as a receipt (estate.nsvee.receipt/1). Runs the artifact against its own tests in a sandbox, re-runs a PASS to defeat flakes, and writes the receipt outside the tree it describes. Exits 0 only when the verdict is VERIFIED: a failing artifact, a broken sandbox or a receipt that cannot be written is a failure of this door, never a warning. Use it before a claim of \"verified\" reaches the founder. args: artifact: {type: string, default: \"\", description: \"Path to the artifact to verify\"} tests: {type: string, default: \"\", description: \"Comma-separated paths to the test files\"} repo: {type: string, default: \"\", description: \"Repo root that the receipt binds to (default: cwd)\"} engine_root: {type: string, default: \"\", description: \"Where the engine and the receipt contract live (default: the repo, then the runtime tree)\"} commit: {type: string, default: \"\", description: \"Commit to bind the receipt to (default: HEAD of the repo)\"} out: {type: string, default: \"\", description: \"Where to write the receipt (default: ~/.estate/receipts/nsvee/<commit>.json)\"} timeout: {type: string, default: \"20\", description: \"Seconds per sandbox run\"} confirm: {type: string, default: \"1\", description: \"Confirmation runs on a PASS (defeats flakes)\"} whole_tree: {type: string, default: \"false\", description: \"Digest the whole tree instead of the verified paths (slow: ~60s on the idp checkout)\"} tools: [] halt_on_failure: true steps: - name: verify cmd: > python3 ~/.estate/libexec/nsvee-verify.py --artifact {{artifact}} --tests {{tests}} --repo {{repo}} --engine-root {{engine_root}} --commit {{commit}} --out {{out}} --timeout {{timeout}} --confirm {{confirm}} --whole-tree {{whole_tree}}",
+      "contract": {
+        "inputs": [
+          "artifact",
+          "commit",
+          "confirm",
+          "engine_root",
+          "out",
+          "repo",
+          "tests",
+          "timeout",
+          "whole_tree"
+        ],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/nsvee.verify.yaml",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -7888,6 +7942,63 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/libexec/k8s-diag.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-libexec-nsvee-verify",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "nsvee-verify -- the one door every estate runtime uses to verify an artifact.",
+      "contract": {
+        "inputs": [
+          "--artifact",
+          "--commit",
+          "--confirm",
+          "--engine-root",
+          "--out",
+          "--print-receipt",
+          "--repo",
+          "--tests",
+          "--timeout",
+          "--whole-tree"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/libexec/nsvee-verify.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
