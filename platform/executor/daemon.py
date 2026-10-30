@@ -139,8 +139,14 @@ def live_worktree() -> str:
 
 # The socket lives under the estate's own state directory, never /tmp: a world-writable directory
 # lets another local user replace the socket and receive the agent's commands (LAW 21).
+# IDP_EXECUTOR_SOCKET is the daemon's own name for the override and wins; ESTATE_EXECUTOR_SOCKET
+# is accepted as a fallback so the estate's other tools (the runtime sync's health probe) can
+# name the same socket without the two disagreeing about which one is real.
 SOCKET_PATH = os.environ.get(
-    "IDP_EXECUTOR_SOCKET", os.path.expanduser("~/.estate/executor.sock")
+    "IDP_EXECUTOR_SOCKET",
+    os.environ.get(
+        "ESTATE_EXECUTOR_SOCKET", os.path.expanduser("~/.estate/executor.sock")
+    ),
 )
 
 # The ceiling is enforced by `run.py` itself, which supervises the job as its own parent and

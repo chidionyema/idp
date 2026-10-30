@@ -350,7 +350,15 @@ def answers(url: str, within_s: int) -> bool:
 # so a landed fix waited for a human to kickstart it. A door that serves the bytes from
 # before the fix is a door that is not enforced.
 EXECUTOR_LABEL = "ai.estate.executor"
-EXECUTOR_SOCKET = Path(os.environ.get("ESTATE_EXECUTOR_SOCKET") or STATE / "executor.sock")
+# The daemon's own name for its socket wins: platform/executor/daemon.py reads IDP_EXECUTOR_SOCKET
+# (and now ESTATE_EXECUTOR_SOCKET as a fallback). The sync used to read only
+# ESTATE_EXECUTOR_SOCKET, so with IDP_EXECUTOR_SOCKET set the sync probed a socket nobody
+# served, called a healthy executor dead, and could roll a good tree back on that lie.
+EXECUTOR_SOCKET = Path(
+    os.environ.get("IDP_EXECUTOR_SOCKET")
+    or os.environ.get("ESTATE_EXECUTOR_SOCKET")
+    or STATE / "executor.sock"
+)
 
 
 def socket_answers(path: Path, within_s: int, verb: str = "health") -> bool:
@@ -670,13 +678,75 @@ SERVICES = [
 ]
 
 
-def services_for(changed: list, force: bool = False) -> list:
-    """The services a set of changed paths demands a restart of."""
+def services_for(
+    changed: list, force: bool = False, heads: dict = None, head: str = ""
+) -> list:
+    """The services a set of changed paths demands a restart of.
+
+    `changed` is THIS run's diff. When `heads` (the revision each service last served) and
+    `head` (the revision now in the tree) are given, the decision is made against those
+    instead: the question that matters is not "did this run touch the service" but "did the
+    service's own files change since the revision it last served". Otherwise a tree that
+    moved in an EARLIER run -- by an older script, or between a move and a crash -- leaves a
+    stale daemon serving the bytes from before the fix, for ever, because every later run
+    sees no change at all.
+    """
     out = []
     for label, paths, _probe, _wait, _kind in SERVICES:
-        if force or any(p.startswith(paths) for p in changed):
+        if force:
+            out.append(label)
+            continue
+        if heads is not None and head:
+            if service_paths_changed(heads.get(label, ""), head, paths):
+                out.append(label)
+            continue
+        if any(p.startswith(paths) for p in changed):
             out.append(label)
     return out
+
+
+def service_paths_changed(served: str, head: str, paths) -> bool:
+    """True when the files a service is made of changed between two revisions."""
+    if not served or not head or served == head:
+        return False
+    try:
+        names = git("diff", "--name-only", served, head).splitlines()
+    except (subprocess.CalledProcessError, OSError):
+        return False
+    return any(n.startswith(paths) for n in names)
+
+
+def load_service_heads() -> dict:
+    """The revision each service was last restarted at, as this job recorded it."""
+    try:
+        data = json.loads(SERVICES_STATE.read_text())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_service_heads(heads: dict) -> None:
+    SERVICES_STATE.parent.mkdir(parents=True, exist_ok=True)
+    SERVICES_STATE.write_text(json.dumps(heads, indent=2, sort_keys=True) + "\n")
+
+
+def tree_last_move() -> str:
+    """The revision the tree was at before its most recent move.
+
+    The tree's reflog is the only record of which revision the running services were serving
+    when the tree moved. It is what bootstraps the per-service heads on the first run of a
+    job that tracks them: without it, a move made by an older script looks like no change at
+    all and the stale service is never restarted.
+    """
+    try:
+        log = git("reflog", "--format=%H %gs").splitlines()
+    except (subprocess.CalledProcessError, OSError):
+        return ""
+    for line in log:
+        m = re.search(r"moving from ([0-9a-f]{7,40}) to ([0-9a-f]{7,40})", line)
+        if m:
+            return m.group(1)
+    return ""
 
 
 def sync_frontend(sha: str) -> list[str]:
@@ -750,6 +820,9 @@ def sync_frontend(sha: str) -> list[str]:
 # tree on main, did the last run succeed, and was this job skipped instead of run.
 STATUS = STATE / "runtime-sync.status.json"
 SKIP_LOG = STATE / "logs/load-gate-skips.log"
+# Which revision each service was last restarted at. A service that was never restarted after a
+# tree move keeps serving the bytes from before the move; this is the record that says so.
+SERVICES_STATE = STATE / "runtime-sync.services.json"
 INTERVAL_S = 300
 # pi loads its extensions from here, not from the runtime tree: a separate installed artifact.
 PI_EXTENSIONS = HOME / ".pi/agent/extensions"
@@ -911,8 +984,17 @@ def main() -> int:
     force = sys.argv[1:] == ["--restart"]
     broke = []
     services: dict = {}
+    restarted: list = []
+    heads = load_service_heads()
+    if not heads:
+        # First run that tracks served revisions: the tree's reflog says which revision the
+        # services were serving before the last move, so a move made by an older script is
+        # still seen as the change it was.
+        seed = tree_last_move() or before
+        heads = {label: seed for label, _p, _pr, _w, _k in SERVICES}
+    due = services_for(changed, force, heads, after)
     for label, paths, probe, wait, kind in SERVICES:
-        if not (force or any(p.startswith(paths) for p in changed)):
+        if label not in due:
             continue
         if label == "ai.estate.voice-router" and not build_voice_router():
             broke.append(f"{label}: build failed, previous binary kept")
@@ -922,6 +1004,8 @@ def main() -> int:
         if service_answers(kind, probe, wait):
             notes.append(f"restarted {label}")
             services[label] = True
+            restarted.append(label)
+            heads[label] = after
         else:
             broke.append(label)
             services[label] = False
@@ -934,11 +1018,21 @@ def main() -> int:
                     build_voice_router()
                 kickstart(label)
                 services[label] = service_answers(kind, probe, wait)
+                if services[label]:
+                    heads[label] = before
         BAD.write_text(after)
         alert(f"main {after[:8]} broke {', '.join(broke)}; rolled back to {before[:8]}")
         notes.append(f"ROLLED BACK to {before[:8]}")
     elif broke:
         alert(f"runtime sync: {', '.join(broke)} did not come back")
+    # The status must say whether the door is up RIGHT NOW: a tree on main with a dead
+    # executor is not converged, and a status that only knows about restarts cannot see it.
+    health = dict(services)
+    health[EXECUTOR_LABEL] = socket_answers(EXECUTOR_SOCKET, 10)
+    try:
+        save_service_heads(heads)
+    except OSError as exc:
+        notes.append(f"service head record failed: {exc}")
     notes += sync_memory()
     try:
         notes += sync_artifact_policy()
@@ -979,7 +1073,8 @@ def main() -> int:
             "tree_head": tree_head,
             "origin_main": origin_main,
             "stale": bool(broke) or tree_head != origin_main,
-            "services": services,
+            "services": health,
+            "restarted": restarted,
             "pi_extensions": pi_state,
             "notes": notes,
             "ok": not broke,
