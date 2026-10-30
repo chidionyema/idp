@@ -1,0 +1,38 @@
+# The one door every estate runtime uses to verify an artifact (idp#7263 I-D, ADR 0046).
+# The verdict comes from executing the artifact, not from asking a model: no router, no
+# tokens, no harness in the loop. The receipt binds the verdict to the commit and the tree
+# it describes, and the door exits non-zero unless the verdict is VERIFIED -- a failing
+# artifact is a refusal, never a pass with a warning.
+name: nsvee.verify
+description: >
+  Verify an artifact with NSVEE and bind the verdict to the commit as a receipt
+  (estate.nsvee.receipt/1). Runs the artifact against its own tests in a sandbox,
+  re-runs a PASS to defeat flakes, and writes the receipt outside the tree it describes.
+  Exits 0 only when the verdict is VERIFIED: a failing artifact, a broken sandbox or a
+  receipt that cannot be written is a failure of this door, never a warning. Use it before
+  a claim of "verified" reaches the founder.
+args:
+  artifact: {type: string, default: "", description: "Path to the artifact to verify"}
+  tests: {type: string, default: "", description: "Comma-separated paths to the test files"}
+  repo: {type: string, default: "", description: "Repo root that the receipt binds to (default: cwd)"}
+  engine_root: {type: string, default: "", description: "Where the engine and the receipt contract live (default: the repo, then the runtime tree)"}
+  commit: {type: string, default: "", description: "Commit to bind the receipt to (default: HEAD of the repo)"}
+  out: {type: string, default: "", description: "Where to write the receipt (default: ~/.estate/receipts/nsvee/<commit>.json)"}
+  timeout: {type: string, default: "20", description: "Seconds per sandbox run"}
+  confirm: {type: string, default: "1", description: "Confirmation runs on a PASS (defeats flakes)"}
+  whole_tree: {type: string, default: "false", description: "Digest the whole tree instead of the verified paths (slow: ~60s on the idp checkout)"}
+tools: []
+halt_on_failure: true
+steps:
+  - name: verify
+    cmd: >
+      python3 ~/.estate/libexec/nsvee-verify.py
+      --artifact {{artifact}}
+      --tests {{tests}}
+      --repo {{repo}}
+      --engine-root {{engine_root}}
+      --commit {{commit}}
+      --out {{out}}
+      --timeout {{timeout}}
+      --confirm {{confirm}}
+      --whole-tree {{whole_tree}}

@@ -6,8 +6,9 @@ Every assertion in this file can fail, and each one fails for a reason that matt
   different system;
 - the ADR and the engine must agree on the terminal statuses, or a receipt can promise a
   verdict the engine cannot produce;
-- the ADR's named gap (no verify-only entry point) must still BE the gap, or the ADR is
-  describing a system that no longer exists;
+- the ADR's named gaps must still BE the gaps, or the ADR is describing a system that no
+  longer exists -- and a gap that HAS been closed must be marked closed, or the ADR is stale
+  in the other direction;
 - the checker must be able to fail AND to pass, or it is a report, not a gate.
 
 The engine is read as source, not imported: `nsvee/engine.py` needs pydantic, and a contract
@@ -143,23 +144,42 @@ def test_the_adr_names_the_gap_the_code_has():
 # --- the gap is real, and stays visible -----------------------------------------
 
 
-def test_nsvee_still_has_no_public_verify_only_entry_point():
-    """D5's gap. When someone adds `verify()`, this fails and the ADR has to be rewritten."""
+def test_the_verify_only_entry_point_exists_and_the_pipeline_is_untouched():
+    """D5's gap is closed -- by a module-level entry point, not by touching the pipeline.
+
+    The class still has no `verify` method: `NSVEE.run` remains the pipeline (formalize,
+    generate, verify, feed back). The gate is a separate public function, so the door does
+    not change the pipeline's contract -- it reuses the same sandbox and the same verdicts.
+    """
     public = _nsvee_public_methods()
-    assert "verify" not in public
-    assert "post_verify" in public, (
-        "the independent-oracle seam is the only verify-shaped door"
-    )
-    # The seam is a hook: the base implementation checks nothing.
+    assert "verify" not in public, "the pipeline keeps its own contract"
+    assert "post_verify" in public, "the independent-oracle seam is still the seam"
     source = ENGINE.read_text()
     assert "def post_verify(self, out):" in source
+    assert re.search(r"^def verify\(", source, re.M), (
+        "nsvee/engine.py must expose a public verify-only entry point"
+    )
+    assert "VerificationReport" in source
+
+
+def test_the_adr_names_the_shared_door():
+    """D8: a door no runtime can ask for is not a door."""
+    text = _adr_text()
+    assert "nsvee.verify" in text
+    assert "platform/estate/intents/nsvee.verify.yaml" in text
+    assert "platform/estate/libexec/nsvee-verify.py" in text
+    assert (REPO / "platform" / "estate" / "intents" / "nsvee.verify.yaml").is_file()
+    assert (REPO / "platform" / "estate" / "libexec" / "nsvee-verify.py").is_file()
 
 
 def test_the_adr_says_which_artifact_can_be_verified_today():
-    """An ADR that hides a limit is a sales pitch."""
+    """An ADR that hides a limit is a sales pitch -- and one that hides a fix is a lie."""
     text = _adr_text().lower()
     assert "only verifies what it generated" in text
     assert "nsvee.verify(" in text
+    assert "closed 2026-10-30" in text, (
+        "the ADR must mark the gap it closed as closed, and say when"
+    )
 
 
 # --- the receipt binds -----------------------------------------------------------
@@ -203,6 +223,49 @@ def test_a_receipt_must_name_every_required_field():
         with pytest.raises(enforcement.ReceiptError) as exc:
             enforcement.validate_receipt(receipt)
         assert field in str(exc.value)
+
+
+def test_a_path_scoped_receipt_binds_its_paths_and_says_so(tmp_path):
+    """A receipt names what it verified: the paths it covers, or the whole tree.
+
+    The scope is never widened silently -- a path-scoped receipt is checked against those
+    paths, and a receipt without `paths` is checked against the whole tree.
+    """
+    (tmp_path / "a.py").write_text("x = 1\n")
+    (tmp_path / "b.py").write_text("y = 2\n")
+    scoped = _receipt(
+        artifact_digest=enforcement.tree_digest(tmp_path, ["a.py"]),
+        paths=["a.py"],
+    )
+    enforcement.validate_receipt(scoped)
+    enforcement.check_receipt_against_tree(scoped, tmp_path)
+    assert enforcement.receipt_paths(scoped) == ["a.py"]
+
+    # a file the receipt never covered does not invalidate it
+    (tmp_path / "c.md").write_text("not covered\n")
+    enforcement.check_receipt_against_tree(scoped, tmp_path)
+
+    # but a covered path does
+    (tmp_path / "a.py").write_text("x = 2\n")
+    with pytest.raises(enforcement.ReceiptError) as exc:
+        enforcement.check_receipt_against_tree(scoped, tmp_path)
+    assert "does not describe this tree" in str(exc.value)
+
+
+def test_a_whole_tree_receipt_has_no_paths_and_binds_everything(tmp_path):
+    (tmp_path / "a.py").write_text("x = 1\n")
+    whole = _receipt(artifact_digest=enforcement.tree_digest(tmp_path))
+    assert enforcement.receipt_paths(whole) is None
+    enforcement.check_receipt_against_tree(whole, tmp_path)
+    (tmp_path / "elsewhere.md").write_text("x\n")
+    with pytest.raises(enforcement.ReceiptError):
+        enforcement.check_receipt_against_tree(whole, tmp_path)
+
+
+def test_a_receipt_with_a_malformed_paths_field_is_refused():
+    for bad in ["a.py", [""], [None], 7]:
+        with pytest.raises(enforcement.ReceiptError):
+            enforcement.receipt_paths(_receipt(paths=bad))
 
 
 def test_the_digest_binds_the_artifact(tmp_path):

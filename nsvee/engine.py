@@ -754,5 +754,114 @@ class NSVEE:
 
 
 # ---------------------------------------------------------------------------
+# verify-only: the entry point for an artifact NSVEE did not write
+# ---------------------------------------------------------------------------
+#
+# WHY IT IS SEPARATE FROM `run()`. `run()` is the pipeline: it formalizes a request, generates
+# an artifact, verifies what it generated and feeds failures back. Every estate agent already
+# has an artifact -- it wrote it, or a human wrote it -- so the pipeline's first two tiers are
+# not what it needs; it needs the gate. `verify()` IS the gate, with no model in it: no router,
+# no generation, no feedback loop. That is what makes it usable by every runtime at once
+# (idp#7263, I-D), and what makes it cheap and deterministic.
+#
+# IT REUSES THE SAME SANDBOX. The verdicts come from the same `runner` the pipeline uses, with
+# the same confirmation runs (a PASS is re-run, so a flake cannot be mistaken for a proof), and
+# the same statuses the receipt contract accepts. One engine, two entry points -- not a second
+# verifier.
+
+
+@dataclass
+class VerificationReport:
+    """What NSVEE can say about an artifact it did not generate.
+
+    `status` is one of the receipt statuses: VERIFIED (every run passed), EXHAUSTED (the
+    artifact failed, timed out or was killed -- the gate is FAILING), SANDBOX_DEGRADED (the
+    sandbox itself broke, which is not a verdict about the artifact). Only VERIFIED passes.
+    """
+
+    status: str
+    verdicts: List[str] = field(default_factory=list)
+    runs: int = 0
+    output: str = ""
+    error: str = ""
+    oracle: Optional[str] = None
+
+    @property
+    def ok(self) -> bool:
+        return self.status == "VERIFIED"
+
+
+def verify(
+    artifact: str,
+    tests: Optional[List[str]] = None,
+    *,
+    runner=None,
+    timeout_s: int = 30,
+    confirmation_runs: int = 1,
+    oracle=None,
+) -> VerificationReport:
+    """Verify an artifact against its tests. No model is involved.
+
+    `artifact` is the source under test, `tests` the assertion source appended to it (the same
+    shape `build_script` gives the pipeline). `runner` defaults to the engine's own runner
+    choice. `oracle`, when given, is called as `oracle(artifact, tests)` after every run
+    passed and returns a string to REFUSE the artifact (the independent-oracle seam: a check
+    against something the artifact's author did not write) or None to accept it.
+
+    The report's status is the receipt status, so a caller that binds the verdict to a commit
+    does not have to translate it.
+    """
+    runner = runner or default_runner()
+    cases = list(tests or [])
+    script = build_script(artifact, cases)
+    results = [runner.run(script, timeout_s)]
+    if results[0].verdict == Verdict.PASS:
+        for _ in range(max(0, confirmation_runs)):
+            results.append(runner.run(script, timeout_s))
+    verdicts = [r.verdict.value for r in results]
+    output = results[-1].stdout if results else ""
+    error = ""
+    for r in results:
+        if r.verdict in (Verdict.FAIL, Verdict.TIMEOUT, Verdict.OOM):
+            error = r.error_text or r.verdict.value
+            break
+    if all(r.verdict == Verdict.PASS for r in results):
+        if oracle is not None:
+            refusal = oracle(artifact, cases)
+            if refusal:
+                return VerificationReport(
+                    status="EXHAUSTED",
+                    verdicts=verdicts,
+                    runs=len(results),
+                    output=output,
+                    error=str(refusal),
+                    oracle=str(refusal),
+                )
+        return VerificationReport(
+            status="VERIFIED",
+            verdicts=verdicts,
+            runs=len(results),
+            output=output,
+        )
+    if any(r.verdict == Verdict.SANDBOX_ERROR for r in results):
+        notes = "; ".join(note for r in results for note in (r.notes or []))
+        return VerificationReport(
+            status="SANDBOX_DEGRADED",
+            verdicts=verdicts,
+            runs=len(results),
+            output=output,
+            error=notes
+            or "the sandbox failed, which is not a verdict about the artifact",
+        )
+    return VerificationReport(
+        status="EXHAUSTED",
+        verdicts=verdicts,
+        runs=len(results),
+        output=output,
+        error=error or "the artifact did not pass",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Built-in test suite (runs with: python3 nsvee_all_in_one.py)
 # ---------------------------------------------------------------------------
