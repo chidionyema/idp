@@ -85,6 +85,55 @@ system-wide witnesses, because neither is derived from `Date.now()`.
 the stored wall-clock process start time, so it agrees with the bad clock rather than
 contradicting it.
 
+### The Codex conversations became unavailable, and why
+
+The message the founder saw, `This conversation is unavailable. Its cached transcript and draft
+remain here; input is paused.`, is emitted by the native Codex CLI, not by the ChatGPT desktop
+renderer: the string is present in the native `codex` binary and absent from `app.asar`. The
+native symbols place it in the transport reconnect path
+(`codex_tui::app::reconnect::App::thread_unavailable`,
+`codex_tui::chatwidget::reconnect::ChatWidget::pause_unavailable_thread`), so it is the state a
+conversation is put into when the app-server connection for the selected thread is lost.
+
+The connection was lost because of the clock. The desktop log written during the fault window
+(`~/Library/Logs/com.openai.codex/2024/01/01/codex-desktop-...-408-t0-i1-000414-0.log`, 1,143
+lines) records the TLS handshake to the remote host failing with a certificate that was not yet
+valid:
+
+```
+2024-01-01T00:06:08.518Z error [AppServerConnection] app_server_connection.websocket_error connectionId=2 errorCode=CERT_NOT_YET_VALID hostKind=durable message="certificate is not yet valid" transport=websocket
+```
+
+That is line 83 of that log and the first of 534 lines that carry the failure (777 occurrences
+of the phrase; 43 of them name the error code). The last is the last line of the file, at bogus
+`2024-01-01T00:19:13.116Z`. Mapped through the offset measured above, the failure runs from
+real `2026-10-29T22:22:50.081910Z` to real `2026-10-29T22:35:54.679910Z`: the fault window and
+nothing outside it. A clock behind a certificate's `notBefore` makes every TLS client on the
+host reject the certificate, so this was not a Codex defect. It was the wall clock the estate
+never questioned.
+
+The same window explains the failed founder turn in the affected conversation
+(`01a18830-a71e-7653-b7df-7b705e722c23`): the app-server answered with
+`{"code":-32603,"message":"workspace routing discovery failed"}` and the turn ended at real
+`2026-10-29T22:35:15.607910Z` with `task_complete` carrying that message and no agent message.
+The fault window holds four `workspace routing discovery failed` records and 114
+`Workspace routing is unavailable` records; the post-correction log holds none of either.
+
+Two candidate causes are ruled out. The remote thread was not absent: `thread/resume` for that
+conversation returned `errorCode=null` inside the fault window and was followed by
+`maybe_resume_success`. The expired rendezvous token was not the trigger: the
+`rejectionReason=expired`, `httpStatus=401` events belong to the Local Work executor's Noise
+rendezvous, they post-date the correction, and they are a different path from the TUI's
+app-server transport.
+
+Recovery followed the correction, and the boundary is measured. The already-running desktop
+process kept its broken state for about twenty seconds: the post-correction log still carries
+the certificate failure at `2026-10-29T22:36:14.690Z`, and by `2026-10-29T22:36:17.045Z` the
+transport had advanced past TLS to `Unexpected server response: 503`. The last line that still
+carries the certificate text is at `2026-10-29T22:36:20.133Z`, propagating the earlier error
+into the renderer rather than failing a new handshake. The founder worked around the paused
+conversation by starting two new ones, at real `2026-10-29T22:36:23Z` and `22:36:49Z`.
+
 ### Power state, and one inconsistency that is still open
 
 `pmset -g log` (20,293 lines, `/tmp/pmset.log`):
@@ -123,8 +172,9 @@ cannot be named from here.
   sessions are transcripts of real work; their timestamps are wrong.
 - One real estate incident was filed under 2024-01-01.
 - The Codex desktop app reported `This conversation is unavailable. Its cached transcript and
-  draft remain here; input is paused.` The cause is not established: a bad clock and a
-  remote-thread absence are different failures and the evidence does not yet separate them.
+  draft remain here; input is paused.` The cause is now established and measured: the regressed
+  clock put the host behind the TLS certificate's `notBefore`, the app-server connection could
+  not be established, and the TUI put the conversation into its unavailable state.
 
 ## Root cause, and the law it broke
 
@@ -163,8 +213,11 @@ never be allowed to overrule a witness that has not.
 
 ## Open follow-ups
 
-- The Codex `This conversation is unavailable` condition is not yet explained; reproduce it and
-  keep the request, the response and the logs.
+- The Codex `This conversation is unavailable` condition is explained and measured above: it
+  was the regressed clock failing TLS certificate validation. Two details stay open for the
+  next recurrence: the remote host whose certificate was rejected is not named in the log
+  (`hostKind=durable` only), and the founder-side request that first surfaced the message is
+  in no transcript on this machine.
 - The exact firmware or kernel constant behind the `2024-01-01T00:00:00` fallback is not
   verified; it needs administrator access or board-level evidence.
 - Whether a second clock adjustment occurred after the correction is not established; the wide
