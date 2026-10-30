@@ -11,21 +11,45 @@
 # playbook is added here, reviewed, and named in the workflow input; nothing is typed ad hoc.
 set -uo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
-K="kubectl --request-timeout=60s"
+# idp#7354 (2026-10-29): the request timeout was a constant, so a dead cluster made every
+# kubectl call wait a full 60s. The otto-parity playbook has ~30 rows, so a dark cluster could
+# not finish inside the workflow's own job timeout -- GitHub cancelled the job and the tick
+# concluded `cancelled`, measuring NOTHING (runs #40715893797..#40792186310). The timeout is
+# now the caller's to set, and the workflow sets it to 20s.
+K="kubectl --request-timeout=${KUBECTL_REQUEST_TIMEOUT:-60s}"
 FAILED=""
 BLIND=""
+# idp#7354: a playbook that cannot finish inside its budget must CONCLUDE, not be cancelled.
+# The budget is armed by the playbook that owns it (PARITY_BUDGET_S, 0 = unlimited for every
+# other playbook) and every graded row asks it before it runs.
+BUDGET_S="${PARITY_BUDGET_S:-0}"
+_budget_start=""
+budget_arm() { [ "$BUDGET_S" -gt 0 ] && _budget_start=$(date +%s); return 0; }
+budget_left() {
+  [ -z "$_budget_start" ] && { echo 999999; return 0; }
+  local left; left=$(( BUDGET_S - ( $(date +%s) - _budget_start ) ))
+  [ "$left" -lt 0 ] && left=0
+  echo "$left"
+}
 # BLIND verdict (2026-08-31, run 33384482689): a probe that never reached the workload's node was
 # graded FAIL, and 13 "broken" rows were one dead kubelet. Cannot-measure is not measured-broken:
 # such rows read BLIND, are listed separately, and still fail the playbook -- BLIND is never green.
-blind_out() { grep -qE 'watch closed before UntilWithoutRetry timeout|error dialing backend|unable to upgrade connection' <<<"$1"; }
-step() { local name="$1"; shift; local out rc v; out=$("$@" 2>&1); rc=$?
+blind_out() { grep -qE 'watch closed before UntilWithoutRetry timeout|error dialing backend|unable to upgrade connection|connection refused|i/o timeout|no route to host|context deadline exceeded|could not connect to the server|etcdserver: request timed out' <<<"$1"; }
+step() { local name="$1"; shift; local out rc v left
+  left=$(budget_left)
+  if [ "$left" -le 0 ]; then
+    printf '%-5s %-22s rc=%-3s %s\n' "BLIND" "$name" "budget" "not run: the playbook's time budget (${BUDGET_S}s) is spent -- this row proves nothing either way"
+    BLIND="$BLIND $name"; return 1; fi
+  out=$("$@" 2>&1); rc=$?
   if [ $rc -eq 0 ]; then v=ok; elif blind_out "$out"; then v=BLIND; else v=FAIL; fi
   printf '%-5s %-22s rc=%-3s %s\n' "$v" "$name" "$rc" "$(printf %s "$out" | tail -1 | cut -c1-110)"
   case $v in
     FAIL) FAILED="$FAILED $name"; printf '%s\n' "$out" | tail -6 | sed 's/^/      | /' ;;
     BLIND) BLIND="$BLIND $name"; echo '      | unmeasured: the probe never reached the workload (node/kubelet unreachable); this row proves nothing either way' ;;
   esac; return $rc; }
-show() { local name="$1"; shift; echo "--- $name"; "$@" 2>&1 | head -60; }
+show() { local name="$1"; shift; echo "--- $name"
+  if [ "$(budget_left)" -le 0 ]; then echo "not run: the playbook's time budget (${BUDGET_S}s) is spent"; return 0; fi
+  "$@" 2>&1 | head -60; }
 # show_redacted is show for anything that prints a workload's own output: same shape, every line
 # through redact() first, so reading a log is never the thing that leaks a token (LAW 21).
 # crew#483 reuses this for the collector/agent logs and the ClickHouse count queries, which carry
@@ -609,6 +633,24 @@ PY
 # there, the memory service answers, the model lane is the estate router, and the cron lanes
 # are installed. A red step is the finding.
 pb_otto_parity() {
+  # idp#7354 (2026-10-29): this playbook used to be the one that never finished. The rows
+  # below are read from a live cluster; when the cluster is dark each one waits out kubectl's
+  # request timeout, and with ~30 rows the job hit the workflow's own timeout-minutes and
+  # GitHub CANCELLED the tick. A cancelled tick measures nothing: the SLA recorded a run that
+  # concluded `cancelled` and never learned whether Otto was up. So the playbook now (1) arms
+  # its own time budget, (2) asks the cluster once whether it is there at all, and (3) says
+  # BLIND -- unmeasured -- and exits non-zero instead of being cancelled. A dark estate is a
+  # red SLA tick that says WHY; it is never a cancelled one that says nothing.
+  budget_arm
+  local pre prc
+  pre=$(timeout "${PARITY_PREFLIGHT_S:-30}" $K get --raw /readyz 2>&1); prc=$?
+  if [ $prc -ne 0 ]; then
+    echo "BLIND cluster-unreachable  the cluster did not answer /readyz (rc=$prc): $(printf '%s' "$pre" | tail -1 | cut -c1-100)"
+    echo '      | unmeasured: every row below needs the cluster; a dark estate proves nothing about Otto either way'
+    BLIND="$BLIND cluster-unreachable"
+    return 1
+  fi
+  echo "ok    cluster-reachable  /readyz answered (rc=0)"
   otto_stack
   local ns=hermes-agent d=deploy/hermes-agent-gateway
   step gateway-ready $K rollout status "$d" -n "$ns" --timeout=60s
