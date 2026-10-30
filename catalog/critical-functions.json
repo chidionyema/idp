@@ -1,7 +1,7 @@
 {
-  "version": 1,
-  "updated_at": "2026-10-28",
-  "why": "The estate-wide critical-function spine. A function is listed here when the estate cannot work without it. The spine (platform/estate/libexec/critical-watch.py) measures each one's LIVENESS (is it running?) and, where one exists, its GOAL (is it doing its job?). A function that is alive but missing its goal is FAILING -- that is the failure the 2026-10-28 disk watcher was: alive, ticking, and freeing nothing. The registry is data, not code: adding a function is a file edit, and the detector is the one implementation that reads it.",
+  "version": 2,
+  "updated_at": "2026-10-30",
+  "why": "The estate-wide critical-function spine. A function is listed here when the estate cannot work without it. The spine (platform/estate/libexec/critical-watch.py) measures each one's LIVENESS (is it running?) and, where one exists, its GOAL (is it doing its job?). A function that is alive but missing its goal is FAILING -- that is the failure the 2026-10-28 disk watcher was: alive, ticking, and freeing nothing. The registry is data, not code: adding a function is a file edit, and the detector is the one implementation that reads it. ORDER IS PRIORITY. The spine walks the registry in order, raises the incident of the first failing function first, and wakes the agent for it first -- so the founder's own surfaces sit at the top and the fleet's first idle agent is sent at the highest-value work. WEIGHT IS THE ONE METRIC. estate_health = the weighted share of passing entries, founder-critical entries carrying weight 2 and the rest weight 1; the number is computed by `python3 platform/estate/libexec/critical-probe.py estate-health`, which reads this registry and the spine's own verdicts.",
   "probe_types": {
     "heartbeat_file": "a JSON file whose `at` field must be younger than max_age_s",
     "unix_socket": "a unix socket that must accept a connection",
@@ -13,9 +13,145 @@
   },
   "goal_types": {
     "free_space_mb": "free space on a volume must be at least min_mb",
-    "heartbeat_field_min": "a numeric field in a heartbeat JSON must be at least min"
+    "heartbeat_field_min": "a numeric field in a heartbeat JSON must be at least min",
+    "launchd_running": "a launchd label must be loaded and running",
+    "parallel_agent_capacity": "free space minus the executor reserve, divided by the measured per-agent cost, must leave min_agents",
+    "worktree_count": "the number of registered agent checkouts must be at most max",
+    "git_head_is": "a checkout's HEAD must be the same commit as ref"
   },
   "functions": [
+    {
+      "id": "memory-plane",
+      "title": "the estate's single memory plane (brief, recall, remember)",
+      "severity": "critical",
+      "weight": 2,
+      "founder_critical": true,
+      "owner": "pi",
+      "receipt": "memory-plane.json",
+      "why_it_is_critical": "every agent's brief, recall and remember go through this ONE plane; when it is unreachable the fleet loses its shared memory, and the pressure to build a second door is exactly how a second memory plane gets born. The founder: no degrading, no second door, no fact stranded.",
+      "liveness": {
+        "type": "command",
+        "argv": [
+          "/bin/bash",
+          "-c",
+          "for p in \"$HOME/.estate/libexec/critical-probe.py\" \"$HOME/.estate/runtime/idp/platform/estate/libexec/critical-probe.py\" \"$HOME/Documents/code/idp/platform/estate/libexec/critical-probe.py\"; do if [ -f \"$p\" ]; then exec /usr/bin/python3 \"$p\" \"$0\"; fi; done; echo 'critical-probe.py is not installed' >&2; exit 127",
+          "memory-plane"
+        ],
+        "timeout_s": 40,
+        "expect_rc": 0
+      },
+      "goal": {
+        "type": "heartbeat_field_min",
+        "path": "~/.estate/heartbeats/memory-plane.json",
+        "field": "healthy",
+        "min": 1
+      },
+      "remediation": {
+        "runner": "claude",
+        "repo": "/Users/roseonyema/Documents/code/idp",
+        "budget": 20,
+        "task": "The estate's single memory plane is not serving brief, recall and remember. The evidence is in ~/.estate/heartbeats/memory-plane.json (the door that was called, the error it gave, the tools it did and did not serve). Work the ONE door: platform/estate/memory/door.py -- find why it is unreachable, or why it answers without the three tools. Do NOT build a second memory door and do NOT point the fleet at a different URL: the local tier is a cache behind the same door, and the bridge (bin/estate-memory-mcp) and its local tier are owned by focus #7518, so coordinate through that issue instead of editing its paths. No fact may be stranded: if a local fallback is serving the fleet, the pending facts must replay when the door returns. Report the measurement, not the intention."
+      }
+    },
+    {
+      "id": "router-lanes",
+      "title": "the lanes the running router serves",
+      "severity": "critical",
+      "weight": 2,
+      "founder_critical": true,
+      "owner": "pi",
+      "receipt": "router-lanes.json",
+      "why_it_is_critical": "every model call the estate makes is routed by this one router; a lane the estate declares but the router does not serve is a call that has nowhere to land, which is how a fallback chain becomes a physics limit. The founder: no degrading, and every fallback chain needs a free floor.",
+      "liveness": {
+        "type": "command",
+        "argv": [
+          "/bin/bash",
+          "-c",
+          "for p in \"$HOME/.estate/libexec/critical-probe.py\" \"$HOME/.estate/runtime/idp/platform/estate/libexec/critical-probe.py\" \"$HOME/Documents/code/idp/platform/estate/libexec/critical-probe.py\"; do if [ -f \"$p\" ]; then exec /usr/bin/python3 \"$p\" \"$0\"; fi; done; echo 'critical-probe.py is not installed' >&2; exit 127",
+          "router-lanes"
+        ],
+        "timeout_s": 30,
+        "expect_rc": 0
+      },
+      "goal": {
+        "type": "heartbeat_field_min",
+        "path": "~/.estate/heartbeats/router-lanes.json",
+        "field": "healthy",
+        "min": 1
+      },
+      "remediation": {
+        "runner": "claude",
+        "repo": "/Users/roseonyema/Documents/code/idp",
+        "budget": 20,
+        "task": "The running router does not serve every lane the estate declares. The evidence is in ~/.estate/heartbeats/router-lanes.json: the dropped lane names, the live door that was called, and the declared source they came from. Find why those lanes are absent at render time (a lane whose vendor key is missing is dropped at load, not at render) and restore them from the SOURCE blocks -- platform/vendors/consoles.yaml and llm/config.base.yaml -- then re-render with bin/idp-vendor-render. llm/config.yaml is GENERATED: never edit it directly. The missing lanes are the free-tier ones, so the fix must not cost money. Report the served set you measured, not the set you intended."
+      }
+    },
+    {
+      "id": "spend-bound",
+      "title": "the estate's declared cost bound",
+      "severity": "critical",
+      "weight": 2,
+      "founder_critical": true,
+      "owner": "pi",
+      "receipt": "spend-bound.json",
+      "why_it_is_critical": "the estate's whole advantage is that it can run without being billed into a wall: every chain needs a zero-marginal-cost floor, and every model needs a bounded cost. A chain whose tail is a paid lane is a limit waiting to be hit, and an unpriced lane records $0.0000 so the ceiling never trips for it.",
+      "liveness": {
+        "type": "command",
+        "argv": [
+          "/bin/bash",
+          "-c",
+          "for p in \"$HOME/.estate/libexec/critical-probe.py\" \"$HOME/.estate/runtime/idp/platform/estate/libexec/critical-probe.py\" \"$HOME/Documents/code/idp/platform/estate/libexec/critical-probe.py\"; do if [ -f \"$p\" ]; then exec /usr/bin/python3 \"$p\" \"$0\"; fi; done; echo 'critical-probe.py is not installed' >&2; exit 127",
+          "spend-bound"
+        ],
+        "timeout_s": 30,
+        "expect_rc": 0
+      },
+      "goal": {
+        "type": "heartbeat_field_min",
+        "path": "~/.estate/heartbeats/spend-bound.json",
+        "field": "healthy",
+        "min": 1
+      },
+      "remediation": {
+        "runner": "claude",
+        "repo": "/Users/roseonyema/Documents/code/idp",
+        "budget": 20,
+        "task": "The estate's declared cost bound is broken. The evidence is in ~/.estate/heartbeats/spend-bound.json: which chain, in which router config, ends in a paid lane, which lane has no zero-cost floor, and whether the laptop and the cluster declare the same chains. Fix it in the SOURCE (platform/llm/config.base.yaml, platform/vendors/consoles.yaml) and re-render; llm/config.yaml and platform/llm/config.yaml are GENERATED -- never edit them directly. The fix must not make a chain more expensive: the floor stays free. Report the chains you measured, not the chains you intended."
+      }
+    },
+    {
+      "id": "estate-substrate",
+      "title": "the cluster substrate the estate runs on",
+      "severity": "critical",
+      "weight": 2,
+      "founder_critical": true,
+      "owner": "pi",
+      "receipt": "substrate.json",
+      "why_it_is_critical": "every workload the estate runs on the node lives on this substrate; a stale receipt means the estate has been flying on a picture of the cluster rather than on the cluster, and workloads that are not Ready are the failures nobody is told about.",
+      "liveness": {
+        "type": "command",
+        "argv": [
+          "/bin/bash",
+          "-c",
+          "for p in \"$HOME/.estate/libexec/critical-probe.py\" \"$HOME/.estate/runtime/idp/platform/estate/libexec/critical-probe.py\" \"$HOME/Documents/code/idp/platform/estate/libexec/critical-probe.py\"; do if [ -f \"$p\" ]; then exec /usr/bin/python3 \"$p\" \"$0\"; fi; done; echo 'critical-probe.py is not installed' >&2; exit 127",
+          "substrate"
+        ],
+        "timeout_s": 90,
+        "expect_rc": 0
+      },
+      "goal": {
+        "type": "heartbeat_field_min",
+        "path": "~/.estate/heartbeats/substrate.json",
+        "field": "healthy",
+        "min": 1
+      },
+      "remediation": {
+        "runner": "claude",
+        "repo": "/Users/roseonyema/Documents/code/idp",
+        "budget": 20,
+        "task": "The estate's cluster substrate is not proven healthy. The evidence is in ~/.estate/heartbeats/substrate.json -- the exact line bin/idp-cluster-state printed and its exit status. Refresh the receipt and fix what it names (nodes not Ready, pods not Ready, Flux not converged). Never hand-apply anything to the cluster: Flux converges on what lands on main. Report the receipt line you measured, not the state you intended."
+      }
+    },
     {
       "id": "disk-guardian",
       "title": "the disk reclaim guardian",
@@ -77,6 +213,38 @@
         "repo": "/Users/roseonyema/Documents/code/idp",
         "budget": 20,
         "task": "The estate's event bus (NATS) is not accepting connections on 127.0.0.1:4222. The evidence is in ~/.estate/incidents/latest.json. Check launchctl print gui/$(id -u)/ai.estate.nats and the bus logs, and bring it back."
+      }
+    }
+  ],
+  "assumptions": [
+    {
+      "id": "runtime-tree-on-main",
+      "title": "the runtime tree is running main",
+      "severity": "important",
+      "weight": 1,
+      "owner": "pi",
+      "why_it_is_critical": "the estate loads its own code from the runtime tree; when that tree is not main, the estate is running code nobody landed and every proof it produces is about the wrong binary. The founder: 'we need to know this when our underlying assumptions break'.",
+      "liveness": {
+        "type": "command",
+        "argv": [
+          "/bin/bash",
+          "-c",
+          "git -C \"$HOME/.estate/runtime/idp\" rev-parse HEAD >/dev/null"
+        ],
+        "timeout_s": 20,
+        "expect_rc": 0
+      },
+      "goal": {
+        "type": "git_head_is",
+        "repo": "~/.estate/runtime/idp",
+        "ref": "origin/main"
+      },
+      "invoke": false,
+      "remediation": {
+        "runner": "claude",
+        "repo": "/Users/roseonyema/Documents/code/idp",
+        "budget": 10,
+        "task": "The estate's runtime tree is not on main, so the code the estate runs is not the code anyone landed. The evidence is in ~/.estate/incidents/latest.json (the two commits it compared). The runtime sync owns this: find why it did not converge and let it converge. Do NOT force-checkout over a dirty tree, and do not re-land anything by hand."
       }
     }
   ]
