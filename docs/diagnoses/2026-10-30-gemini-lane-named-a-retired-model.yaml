@@ -1,0 +1,56 @@
+description: 'The estate router''s gemini lane answered HTTP 404 "model missing" for the model
+  it names, and the founder read that as a dead router lane. Question: why did the gemini lane
+  refuse its own model? The competing explanations are: (a) the provider no longer serves the
+  model id the lane names, (b) the credential cannot reach that model (access, quota or a
+  revoked key would answer 401/403, not "model missing"), (c) the request never reached the
+  provider because the router answered it from a fallback lane.
+
+  Measured 2026-10-30 with the estate credential, straight at the provider, one probe per
+  model id: gemini-2.5-flash -> 404 model missing; gemini-3.8-flash -> 503 high demand;
+  gemini-3.6-flash -> 200 with no usable content; gemini-3.5-flash -> 200 in 1.4s with a real
+  PONG completion. The lane named gemini-2.5-flash. Separately, a request for the gemini alias
+  on the live local slot answered HTTP 200 with model MiniMax-M3, which is a fallback answer
+  and not the provider''s answer to the named id.
+
+  Priors and likelihoods below were written from the mechanism each hypothesis predicts, not
+  from the counts; the counts are what was observed.
+
+  '
+hypotheses:
+- name: H1
+  description: the provider has retired the model id the lane names, so the provider answers
+    404 model missing for that id while other ids on the same credential still answer
+  prior: 0.34
+- name: H2
+  description: the credential cannot reach the Gemini models, so the lane fails on access
+    rather than on the model id
+  prior: 0.33
+- name: H3
+  description: the provider was never asked; the router answered the gemini alias from a
+    fallback lane, so the 404 belongs to the router''s own model registry
+  prior: 0.33
+evidence:
+- name: direct provider probe of the model id the lane names, gemini-2.5-flash, one credential
+  observed:
+    model_missing_404: 1
+  likelihoods:
+    H1:
+      model_missing_404: 0.97
+    H2:
+      model_missing_404: 0.15
+    H3:
+      model_missing_404: 0.01
+- name: direct provider probes of three other model ids on the same credential
+  observed:
+    provider_200: 2
+    provider_503: 1
+  likelihoods:
+    H1:
+      provider_200: 0.8
+      provider_503: 0.2
+    H2:
+      provider_200: 0.05
+      provider_503: 0.2
+    H3:
+      provider_200: 0.9
+      provider_503: 0.1

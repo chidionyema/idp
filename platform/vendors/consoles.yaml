@@ -440,8 +440,18 @@ vendors:
         \ 50k of headroom for the retry LiteLLM is allowed. With\n# `enable_pre_call_checks`\
         \ and usage-based-routing-v2 in router_settings, the router now\n# walks the\
         \ fallback chain BEFORE the call leaves the estate instead of spending a round\n\
-        # trip to be refused and then waiting out Google's retryDelay.\n- model_name:\
-        \ gemini\n  litellm_params:\n    model: gemini/gemini-2.5-flash\n    api_key:\
+        # trip to be refused and then waiting out Google's retryDelay.\n\
+        #\n# 2026-10-30: this lane names gemini-3.5-flash, not gemini-2.5-flash. Google\n\
+        # retired 2.5-flash for this account: it answers HTTP 404, \"This model\n\
+        # models/gemini-2.5-flash is no longer available to new users\".\n\
+        # gemini-3.8-flash was measured answering HTTP 503 (high demand), and\n\
+        # gemini-3.5-flash was measured answering HTTP 200 with a real completion, so\n\
+        # 3.5-flash is what this lane names now. The quota figure above was measured on\n\
+        # gemini-2.5-flash and stays as the record of that measurement; the tpm below is\n\
+        # the router's own budget for the lane and is carried over unchanged. The Google\n\
+        # bucket holds this lane and the vision lane, which now name the same model:\n\
+        # 500k + 150k = 650k of the million.\n- model_name:\
+        \ gemini\n  litellm_params:\n    model: gemini/gemini-3.5-flash\n    api_key:\
         \ os.environ/GEMINI_API_KEY\n    timeout: 300\n    tpm: 500000\n\n# The two\
         \ neutral lane names. They used to be declared on the anthropic row, which\
         \ is\n# gone, and a caller must be able to ask for a capable model or a cheap\
@@ -518,7 +528,11 @@ vendors:
         \    api_base: https://api.sambanova.ai/v1\n    api_key: os.environ/SAMBANOVA_API_KEY\n\
         \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
         \ 131072\n"
-      cluster_lanes: "\n- model_name: vision\n  litellm_params:\n    model: gemini/gemini-2.5-flash\n\
+      cluster_lanes: "\
+        \n# 2026-10-30: the vision lane names gemini-3.5-flash for the same reason the gemini\n\
+        # lane does: Google retired gemini-2.5-flash for this account (HTTP 404), so a lane\n\
+        # naming it is dead for every request, image input included.\n- model_name:\
+        \ vision\n  litellm_params:\n    model: gemini/gemini-3.5-flash\n\
         \    api_key: os.environ/GEMINI_API_KEY\n    timeout: 300\n    tpm: 150000\n\
         \n# Founder 2026-08-30, verbatim: \"we test with MiniMax see what the image\
         \ quality is like, then\n# we use Gemini for the ones that will ship to production\"\
