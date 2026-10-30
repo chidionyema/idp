@@ -30,6 +30,51 @@ const HANDBACK = existsSync(HOME_COPY) ? HOME_COPY : path.join(REPO, "platform",
 const REFUSAL_MARK = "Do not stop here"; // in handback.REMEDY: how a refusal is told from a person
 const TIMEOUT_MS = 8000;
 const PLAN_TOOL = /(?:^|_)(declare_plan|revise_plan|add_bdd|address_edgecases|address_2nd_order_effects|complete_goal)$/;
+// The door (the executor daemon) has to know which session a command came from, or it can
+// only allow-and-record what it cannot attribute. The pointer names this opencode process's
+// session; the process that serves the request (the estate-memory bridge) resolves it by
+// walking up to its parent. The plan calls themselves are published by the bridge, which
+// already answers them -- the plugin only publishes identity, never a second plan model.
+
+// Publication is the canonical Python implementation's, not this file's: plan.py publish
+// owns what a pointer, a session marker and an ordered plan call mean. The installed copy
+// is tried first (it is the landed code), then the checkout; the first that answers wins.
+const HOME_PLAN = path.join(
+  process.env.ESTATE_MEMORY_HOME ?? path.join(homedir(), ".estate", "memory"),
+  "platform",
+  "estate",
+  "memory",
+  "plan.py",
+);
+const PLAN_CANDIDATES = existsSync(HOME_PLAN) ? [HOME_PLAN, PLAN] : [PLAN, HOME_PLAN];
+
+// Exported so the estate can prove what it does (tests/estate/test_plan_gate_adapters.py):
+// a plugin's publication is only as good as the evidence that it happened.
+export function publishSession(sessionID) {
+  if (!sessionID) return Promise.resolve(false);
+  const candidates = PLAN_CANDIDATES.slice();
+  const attempt = (index) =>
+    new Promise((resolve) => {
+      if (index >= candidates.length) return resolve(false);
+      const child = execFile(
+        "python3",
+        [
+          candidates[index],
+          "publish",
+          "--session",
+          sessionID,
+          "--pid",
+          String(process.pid),
+          "--overwrite",
+        ],
+        { timeout: TIMEOUT_MS },
+        (err) => resolve(err ? attempt(index + 1) : true),
+      );
+      child.stdin?.on("error", () => {});
+      child.stdin?.end();
+    });
+  return attempt(0);
+}
 
 function brief() {
   return new Promise((resolve) => {
@@ -87,7 +132,10 @@ export const EstateMemory = async ({ client } = {}) => {
   return {
     "experimental.chat.system.transform": async (input, output) => {
       const id = input?.sessionID ?? "";
-      if (!sessions.has(id)) sessions.set(id, brief());
+      if (!sessions.has(id)) {
+        sessions.set(id, brief());
+        await publishSession(id);
+      }
       const text = await sessions.get(id);
       if (text) output.system.push(text);
       if (process.env.ESTATE_MEMORY_ENFORCE === "0") return;

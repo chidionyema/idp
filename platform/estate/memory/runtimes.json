@@ -22,27 +22,42 @@
     ]
   },
   "plan_lock": "How each runtime refuses work until a plan allows it (#6675): hook (the enforce plan hook above), plugin (the opencode hook file), extension (bin/pi-plan-lock-install). null means nothing enforces it there yet; such a runtime names its command, and the installer fails while that command is on PATH.",
+  "owner": "The issue that owns a runtime's plan lock. A runtime without a plan_lock names the issue that has to fix it, so the installer's UNLOCKED report names the truth and not one blanket number.",
+  "estate_door": "Whether work this runtime sends to the estate (its MCP bridge, or the executor daemon) is gated by the shared plan door (#7518). True means estate-routed work from this runtime is refused without a declared plan; it does NOT mean the runtime's own native tools are gated -- a runtime whose native tools are ungated still has plan_lock null and is still reported UNLOCKED.",
   "runtime_enforce": "How a runtime reaches the write-side gates (the enforce bin above) when it has no hooks of its own. pi has no hook mechanism, so it gets an extension that renders pi's session into the transcript the binary reads and turns the binary's answer into pi's two refusals: the rules stay in the binary, so one rule decides for every runtime (#7006). A list, like 'tools'.",
   "runtimes": {
     "claude-code": {
       "mcp": {"file": "$CLAUDE_CONFIG_DIR/.claude.json", "default_dir": "~/.claude", "key": "mcpServers", "shape": "stdio"},
       "hook": {"kind": "settings", "file": "$CLAUDE_CONFIG_DIR/settings.json", "event": "SessionStart"},
-      "plan_lock": "hook"
+      "plan_lock": "hook",
+      "owner": "#6675",
+      "estate_door": true
+    },
+    "codex": {
+      "command": "codex",
+      "plan_lock": null,
+      "owner": "#7518"
     },
     "cursor": {
       "mcp": {"file": "~/.cursor/mcp.json", "key": "mcpServers", "shape": "stdio"},
       "plan_lock": null,
-      "command": "cursor-agent"
+      "command": "cursor-agent",
+      "owner": "#6675",
+      "estate_door": true
     },
     "gemini": {
       "mcp": {"file": "~/.gemini/settings.json", "key": "mcpServers", "shape": "stdio"},
       "plan_lock": null,
-      "command": "gemini"
+      "command": "gemini",
+      "owner": "#6675",
+      "estate_door": true
     },
     "opencode": {
       "mcp": {"file": "~/.config/opencode/opencode.jsonc", "key": "mcp", "shape": "opencode"},
       "hook": {"kind": "link", "source": "platform/estate/memory/opencode-estate-memory.js", "dest": "~/.config/opencode/plugin/estate-memory.js"},
-      "plan_lock": "plugin"
+      "plan_lock": "plugin",
+      "owner": "#6675",
+      "estate_door": true
     },
     "pi": {
       "mcp": {"file": "~/.pi/mcp.json", "key": "mcpServers", "shape": "stdio", "reads": false},
@@ -53,7 +68,9 @@
         {"kind": "link", "source": "extensions/pi-estate-enforce", "dest": "~/.pi/agent/extensions/pi-estate-enforce"}
       ],
       "hook": {"kind": "link", "source": "platform/estate/memory/pi-estate-memory.ts", "dest": "~/.pi/agent/extensions/estate-memory.ts"},
-      "plan_lock": "extension"
+      "plan_lock": "extension",
+      "owner": "#6675",
+      "estate_door": true
     }
   }
 }

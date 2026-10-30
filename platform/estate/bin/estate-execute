@@ -33,6 +33,11 @@ _PLUGINS = Path(__file__).resolve().parents[3] / "mcp" / "plugins"
 if _PLUGINS.is_dir() and str(_PLUGINS) not in sys.path:
     sys.path.insert(0, str(_PLUGINS))
 
+# The plan contract (platform/estate/memory/plan.py), loaded once. It is the ONE plan model:
+# this script asks it one question per command and never interprets a plan itself.
+_PLAN_CONTRACT = None
+_PLAN_CONTRACT_TRIED = False
+
 # Merged is operating (docs/tickets/2026-09-27-merged-is-operating.md): the executor runs only
 # intents from the root-owned release estate-converge cut from main. ~/.estate/intents is a link
 # into it. A hand copy is refused; an unmerged intent runs only through --from, labelled.
@@ -357,6 +362,104 @@ except Exception:  # noqa: BLE001 - the door must exist; if it cannot be importe
     _DOOR_CEILING_SEC = None
 
 
+# ---- The plan gate ------------------------------------------------------
+# THE INTENT EXECUTOR IS A DOOR TOO (idp#7518). The daemon's door (mcp/plugins/estate_executor.py)
+# refuses work from a session that has declared no goal and no sub-goal. This script is the
+# OTHER door -- the one the MCP plugin `estate_mcp.py::_estate_invoke` shells out to -- and it
+# runs shell commands of its own. A gate that covers one door and not the other is a gate an
+# agent walks around by choosing the other door.
+#
+# The contract is NOT reimplemented here. `platform/estate/memory/plan.py` is the one plan
+# model; this only finds it and asks it one question. If it cannot be found, the estate keeps
+# working (a gate that cannot load must not take the estate down) and the incident is recorded.
+def _plan_contract():
+    """The one plan contract, found in the repository layout or in a staged layout."""
+    global _PLAN_CONTRACT, _PLAN_CONTRACT_TRIED
+    if _PLAN_CONTRACT_TRIED:
+        return _PLAN_CONTRACT
+    _PLAN_CONTRACT_TRIED = True
+    candidates = []
+    here = Path(__file__).resolve()
+    # repository layout: <repo>/platform/estate/bin/estate-execute -> parents[1] is platform/estate
+    candidates.append(here.parents[1] / "memory" / "plan.py")
+    # staged layout: <root>/bin/estate-execute with the contract under <root>/memory/...
+    candidates.append(here.parents[1] / "memory" / "platform" / "estate" / "memory" / "plan.py")
+    # the runtime tree
+    candidates.append(
+        Path(os.path.expanduser("~")) / ".estate" / "runtime" / "idp" / "platform" / "estate" / "memory" / "plan.py"
+    )
+    for path in candidates:
+        try:
+            if not path.exists():
+                continue
+            import importlib.util
+
+            spec = importlib.util.spec_from_file_location("estate_plan_contract", str(path))
+            if spec is None or spec.loader is None:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            _PLAN_CONTRACT = module
+            return _PLAN_CONTRACT
+        except Exception:  # noqa: BLE001 - try the next candidate
+            continue
+    return None
+
+
+def _plan_gate(command, session_id=None):
+    """The verdict on one command: (ok, reason, detail). Fails OPEN, never fails the estate."""
+    module = _plan_contract()
+    if module is None:
+        return True, "gate_unavailable", ""
+    try:
+        gate = module.door_plan_gate(command, session_id)
+    except Exception:  # noqa: BLE001 - a broken gate must not take the estate down
+        return True, "gate_error", ""
+    if not isinstance(gate, dict):
+        return True, "gate_error", ""
+    if gate.get("ok"):
+        return True, gate.get("reason", ""), gate.get("detail", "")
+    return False, gate.get("reason", "plan_not_declared"), gate.get("detail", "")
+
+
+def _plan_refusal(command, session_id, reason, detail):
+    """Record the refusal in the canonical ledger and on stderr."""
+    module = _plan_contract()
+    if module is None:
+        return
+    try:
+        module.record_refusal(command, session_id, reason=reason, detail=detail, source="intent-door")
+    except Exception:  # noqa: BLE001 - recording must never break the door
+        pass
+    try:
+        sys.stderr.write(module.refusal_log_line(command, session_id, reason) + "\n")
+        sys.stderr.flush()
+    except Exception:  # noqa: BLE001 - a broken stderr must never break the door
+        pass
+
+
+def _record_unplanned(command, session_id):
+    """Work that ran with no plan behind it, recorded in the canonical observe log."""
+    module = _plan_contract()
+    if module is None:
+        return
+    try:
+        module.record_unplanned(command, session_id or "", source="intent-door")
+    except Exception:  # noqa: BLE001 - recording must never break the door
+        pass
+
+
+def _session_identity():
+    """The session this invocation belongs to: the environment, then the runtime's pointer."""
+    module = _plan_contract()
+    if module is None:
+        return os.environ.get("ESTATE_SESSION_ID", "")
+    try:
+        return module.resolve_session_id()
+    except Exception:  # noqa: BLE001 - identity resolution must never break the door
+        return os.environ.get("ESTATE_SESSION_ID", "")
+
+
 def _intent_budget(intent):
     """The seconds this intent may spend in total, and the words for where that number came from."""
     if _DOOR_CEILING_SEC is None:
@@ -481,6 +584,23 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
                 log(f"  REFUSED: {bad_bound}")
                 rc, stdout = 2, ""
             else:
+                # THE PLAN GATE, before the command runs. A refused command is never executed.
+                _session = _session_identity()
+                gate_ok, gate_reason, gate_detail = _plan_gate(cmd, _session or None)
+                if gate_reason in ("no_session_presented", "session_unenforced"):
+                    _record_unplanned(cmd, _session)
+                if not gate_ok:
+                    _plan_refusal(cmd, _session, gate_reason, gate_detail)
+                    log(f"  REFUSED: no declared plan ({gate_reason})")
+                    if gate_detail:
+                        log(f"  {gate_detail}")
+                    rc, stdout = 2, ""
+                    log_step(conn, ticket_id, idx, cmd, rc, 0)
+                    failed += 1
+                    if on_fail == "halt":
+                        close_ticket(conn, ticket_id, "halted", f"step {idx+1} ({step_name}) refused")
+                        return "halted"
+                    continue
                 try:
                     result = subprocess.run(  # noqa: S602
                         cmd, shell=True, capture_output=True, text=True, timeout=step_timeout

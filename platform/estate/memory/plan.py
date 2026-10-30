@@ -28,6 +28,7 @@ import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 import time
 from typing import Optional
@@ -461,6 +462,10 @@ PLAN_LEDGER_DIR = os.environ.get("ESTATE_PLAN_LEDGER_DIR") or os.path.join(
 # inferring it from a missing declaration.
 PLAN_OBSERVE_FILE = "observe.jsonl"
 
+# Where the door writes every REFUSAL it makes, with the reason. A refusal the caller can see
+# but nobody can audit is a complaint, not a gate (idp#7518, acceptance I4).
+PLAN_REFUSAL_FILE = "refusals.jsonl"
+
 # Commands that only read. Everything else is work. This list is deliberately small and
 # deliberately conservative in the other direction: an unknown command is WORK, because a gate
 # that passes what it cannot classify is a gate that cannot fail (R1).
@@ -532,9 +537,55 @@ _GIT_READ = frozenset(
         "count-objects",
         "reflog",
         "whatchanged",
-        "config",
-        "remote",
     }
+)
+
+# git subcommands that have BOTH a reading form and a mutating form. They are NOT blanket
+# read-only: `git remote add`, `git config key value` and `git branch -d` are work, and a
+# classifier that calls them reads is a gate that cannot fail (R1).
+#
+# `git config` reads only in its query forms; `git config key value` WRITES the config.
+_GIT_CONFIG_READ_FLAGS = (
+    "--get",
+    "--get-all",
+    "--get-regexp",
+    "--get-urlmatch",
+    "--list",
+    "-l",
+)
+
+# `git remote` reads only in its listing/query forms; add/remove/rename/set-url/prune/update
+# all change the repo.
+_GIT_REMOTE_READ_SUBS = ("", "-v", "--verbose", "show", "get-url")
+
+# `git branch` reads only when it lists; the delete/move/copy forms change refs.
+_GIT_BRANCH_WRITE_FLAGS = (
+    "-d",
+    "-D",
+    "-m",
+    "-M",
+    "-c",
+    "-C",
+    "--delete",
+    "--move",
+    "--copy",
+    "--set-upstream-to",
+    "--unset-upstream",
+    "--edit-description",
+)
+
+# git global options that take a value, in both the separated and the `=` form. `git -C <path>
+# status` is the exact command the door used to refuse (the classifier took toks[1] as the
+# subcommand and saw `-C`), so the parser skips them before it looks for the subcommand.
+_GIT_GLOBAL_VALUE_OPTS = (
+    "-C",
+    "-c",
+    "--git-dir",
+    "--work-tree",
+    "--namespace",
+    "--exec-path",
+    "--super-prefix",
+    "--config-env",
 )
 
 # gh subcommands that only read.
@@ -618,22 +669,63 @@ def ledger_plan(session_id: str):
     return replay(ledger_calls(session_id))
 
 
+def sync_plan_calls(session_id: str, calls: list) -> int:
+    """Make the durable ledger hold the plan calls the caller has made, in order.
+
+    The caller may hold the whole plan in memory (Claude's transcript, the MCP bridge), while
+    the ledger holds what has been written so far. The ledger is only ever APPENDED to: it is
+    never rewritten, so a declaration made in another surface at the same moment is never
+    erased, and the order of the calls is preserved.
+
+    The tail is found by CONTENT, not by count: the calls the caller holds and the calls the
+    ledger holds share a prefix, and everything after that prefix is appended. Counting
+    instead would drop a call whenever the ledger holds an extra event the caller has not
+    seen (a concurrent declaration), which is exactly the case this must not lose.
+
+    Returns how many calls were appended.
+    """
+    try:
+        have = [tuple(c) for c in ledger_calls(session_id)]
+        want = [tuple(c) for c in (calls or [])]
+        shared = 0
+        # An index walk, not zip(): `strict=` is Python 3.10 and this host is 3.9.
+        for i in range(min(len(have), len(want))):
+            if have[i] != want[i]:
+                break
+            shared += 1
+        missing = want[shared:]
+        for tool, args in missing:
+            append_plan_event(session_id, tool, args or {})
+        return len(missing)
+    except Exception:  # noqa: BLE001 - a broken ledger must not take a session down
+        return 0
+
+
 def session_pointer_path(pid: int) -> str:
     """Where a runtime adapter binds its session id to the process that owns it."""
     return os.path.join(PLAN_LEDGER_DIR, "session-%d.json" % int(pid))
 
 
-def write_session_pointer(session_id: str, pid: Optional[int] = None) -> bool:
+def write_session_pointer(
+    session_id: str, pid: Optional[int] = None, overwrite: bool = True
+) -> bool:
     """Bind a session id to the process that owns the session.
 
     The door cannot ask the caller who it is, and the caller's word is exactly what a gate
     must not trust. The adapter that owns the session writes the binding; the door reads it.
+
+    `overwrite=False` is the conflict-safe form: a pointer that already names a session is
+    left alone, because the runtime that wrote it owns that session's plan. An adapter that
+    generates its own id (the MCP bridge) must not replace the owning runtime's pointer with
+    a generated one -- that would leave two ledgers behind one pointer.
     """
     if not session_id:
         return False
     try:
         os.makedirs(PLAN_LEDGER_DIR, exist_ok=True)
         path = session_pointer_path(os.getpid() if pid is None else pid)
+        if not overwrite and os.path.exists(path):
+            return False
         with open(path, "w", encoding="utf-8") as fh:
             json.dump({"session_id": session_id, "at": time.time()}, fh, sort_keys=True)
         return True
@@ -641,18 +733,59 @@ def write_session_pointer(session_id: str, pid: Optional[int] = None) -> bool:
         return False
 
 
+def publish_session(
+    session_id: str,
+    pid: Optional[int] = None,
+    calls: Optional[list] = None,
+    overwrite: bool = True,
+) -> dict:
+    """Publish one session to the estate: pointer, marker, and its ordered plan calls.
+
+    This is the ONE place publication happens. A runtime adapter (the pi extension, the
+    Claude Code hook, the MCP bridge, the opencode plugin) calls it; none of them keeps its
+    own idea of what the ledger means.
+
+    - the pointer binds the session to the process that owns it, so the door can find it;
+    - the `session_start` marker opens the ledger, which is what proves the adapter is LIVE
+      for that session (a session with no ledger is allowed and recorded, not refused);
+    - the plan calls are appended in declaration order, only the missing tail, so a
+      concurrent declaration is never erased.
+    """
+    sid = str(session_id or "").strip()
+    if not sid:
+        return {"ok": False, "reason": "no_session"}
+    out = {"ok": True, "session": sid, "pointer": False, "marker": False, "appended": 0}
+    try:
+        out["pointer"] = bool(write_session_pointer(sid, pid=pid, overwrite=overwrite))
+    except Exception:  # noqa: BLE001 - a missing pointer must not break the session
+        out["pointer"] = False
+    try:
+        if not ledger_exists(sid):
+            append_plan_event(sid, "session_start", {})
+            out["marker"] = True
+    except Exception:  # noqa: BLE001 - a missing ledger must not break the session
+        out["marker"] = False
+    try:
+        out["appended"] = int(sync_plan_calls(sid, calls or []))
+    except Exception:  # noqa: BLE001 - a broken ledger must not break the session
+        out["appended"] = 0
+    return out
+
+
 def resolve_session_id() -> str:
     """The caller's session identity, in order of trust.
 
     1. `ESTATE_SESSION_ID` in the environment -- the runtime that set it owns the session.
-    2. The pointer file the owning runtime wrote for this process (or its parent): the MCP
-       server runs underneath the runtime, so the runtime's pid is the door's parent.
+    2. A pointer file written by the runtime that owns the session, searched along this
+       process's ANCESTORS: an MCP server runs under its runtime, and the intent executor
+       runs under the MCP server, so the owner is further up the tree than the immediate
+       parent. The immediate parent and this process are searched too.
     3. Nothing. The caller is automation, the fact is recorded, and the work is let through.
     """
     sid = (os.environ.get("ESTATE_SESSION_ID") or "").strip()
     if sid:
         return sid
-    for pid in (os.getppid(), os.getpid()):
+    for pid in _ancestor_pids():
         try:
             with open(session_pointer_path(pid), encoding="utf-8") as fh:
                 data = json.load(fh)
@@ -662,6 +795,105 @@ def resolve_session_id() -> str:
         if sid:
             return sid
     return ""
+
+
+def _ancestor_pids(limit: int = 6) -> list:
+    """This process and its ancestors, nearest first.
+
+    The chain is walked with `ps`, so it costs one small subprocess per level and cannot
+    block the door. A pid that cannot be read ends the walk.
+    """
+    out = []
+    try:
+        pid = os.getpid()
+    except Exception:  # noqa: BLE001 - no pid, no chain
+        return out
+    for _ in range(limit):
+        if not pid or pid <= 1 or pid in out:
+            break
+        out.append(pid)
+        parent = _parent_pid(pid)
+        if not parent:
+            break
+        pid = parent
+    return out
+
+
+def _parent_pid(pid: int) -> int:
+    """The parent of one pid, or 0 when it cannot be read."""
+    try:
+        out = subprocess.run(  # noqa: S603 -- fixed argv (/bin/ps), never a shell string
+            ["/bin/ps", "-o", "ppid=", "-p", str(int(pid))],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return int((out.stdout or "0").strip() or 0)
+    except Exception:  # noqa: BLE001 - an unreadable chain is no chain, never a crash
+        return 0
+
+
+def _git_tokens(toks: list):
+    """The git subcommand and the tokens after it, skipping git's global options.
+
+    `git -C /path status --short` is a status. The old classifier took `toks[1]` as the
+    subcommand and saw `-C`, so the door refused read-only work that agents run constantly --
+    a false refusal is worse than a missing refusal, because it teaches the estate that the
+    gate is noise (idp#7518).
+    """
+    i = 1
+    n = len(toks)
+    while i < n:
+        tok = toks[i]
+        if tok in _GIT_GLOBAL_VALUE_OPTS:
+            i += 2
+            continue
+        if "=" in tok:
+            head = tok.split("=", 1)[0]
+            if head in _GIT_GLOBAL_VALUE_OPTS:
+                i += 1
+                continue
+        if tok.startswith("-"):
+            # A bare global flag with no value, e.g. `--no-pager`, `--paginate`.
+            i += 1
+            continue
+        break
+    if i >= n:
+        return "", []
+    return toks[i], toks[i + 1 :]
+
+
+def _git_is_read_only(sub: str, rest: list) -> bool:
+    """True when this git invocation only reads."""
+    if not sub:
+        return False
+    if sub in ("config", "remote", "branch"):
+        # Conditional subcommands: their reading and mutating forms share a name.
+        if sub == "config":
+            if not rest:
+                return False
+            return any(f in rest for f in _GIT_CONFIG_READ_FLAGS)
+        if sub == "remote":
+            args = [a for a in rest if not a.startswith("-")]
+            verb = args[0] if args else ""
+            if verb in ("show", "get-url"):
+                return True
+            return not args
+        # branch
+        if any(f in rest for f in _GIT_BRANCH_WRITE_FLAGS):
+            return False
+        if any(
+            a.startswith("-") and a not in ("-a", "-r", "-v", "-vv", "--all", "--list")
+            for a in rest
+        ):
+            return False
+        return True
+    if sub == "diff":
+        # `git diff --output=file` writes a file. It is not a read.
+        if any(a == "--output" or a.startswith("--output=") for a in rest):
+            return False
+        return True
+    return sub in _GIT_READ
 
 
 def is_read_only_command(command: str) -> bool:
@@ -678,8 +910,8 @@ def is_read_only_command(command: str) -> bool:
     if exe in _READ_ONLY_CMDS:
         return True
     if exe == "git":
-        sub = toks[1] if len(toks) > 1 else ""
-        return sub in _GIT_READ
+        sub, rest = _git_tokens(toks)
+        return _git_is_read_only(sub, rest)
     if exe == "gh":
         sub = toks[1] if len(toks) > 1 else ""
         if sub in _GH_READ:
@@ -766,6 +998,63 @@ def door_plan_gate(command: str, session_id=None) -> dict:
     return {"ok": True, "reason": "plan_active", "goal_id": active["id"]}
 
 
+def record_refusal(
+    command: str,
+    session_id: str = "",
+    reason: str = "",
+    detail: str = "",
+    source: str = "door",
+    fatal: bool = True,
+) -> bool:
+    """One line: this command was REFUSED, and why.
+
+    The socket reply proves the verdict to the caller; this proves it to the estate. Every
+    refusal carries the command, the session, `refused`, `fatal`, the reason and the time, so
+    the file can be counted without judgement and so a refusal that never reached the caller
+    is still visible (idp#7518, acceptance I4).
+    """
+    try:
+        os.makedirs(PLAN_LEDGER_DIR, exist_ok=True)
+        line = json.dumps(
+            {
+                "at": time.time(),
+                "session": session_id,
+                "source": source,
+                "command": (command or "")[:2000],
+                "refused": True,
+                "fatal": bool(fatal),
+                "reason": reason or "",
+                "detail": (detail or "")[:2000],
+            },
+            sort_keys=True,
+        )
+        with open(
+            os.path.join(PLAN_LEDGER_DIR, PLAN_REFUSAL_FILE), "a", encoding="utf-8"
+        ) as fh:
+            fh.write(line + "\n")
+        return True
+    except Exception:  # noqa: BLE001 - recording must never break the door
+        return False
+
+
+def refusal_log_line(
+    command: str, session_id: str, reason: str, fatal: bool = True
+) -> str:
+    """The one line that goes to the door's stderr, so the production log proves the refusal."""
+    return json.dumps(
+        {
+            "event": "plan_gate_refusal",
+            "at": time.time(),
+            "session": session_id or "",
+            "reason": reason or "",
+            "refused": True,
+            "fatal": bool(fatal),
+            "command": (command or "")[:2000],
+        },
+        sort_keys=True,
+    )
+
+
 def record_unplanned(command: str, session_id: str = "", source: str = "door") -> None:
     """One line: this command ran with no plan behind it. The visibility the founder asked for."""
     try:
@@ -787,7 +1076,52 @@ def record_unplanned(command: str, session_id: str = "", source: str = "door") -
         return
 
 
+def _publish_cli(argv: list) -> int:
+    """`plan.py publish --session <id> --pid <pid> [--calls '<json>']`.
+
+    The canonical publication entry point for adapters that are not Python (the opencode
+    plugin is JavaScript). The calls may come as `--calls` or on stdin, so a runtime with a
+    long plan does not have to fit it in an argv.
+    """
+    session = ""
+    pid = None
+    calls = None
+    rest = list(argv)
+    while rest:
+        arg = rest.pop(0)
+        if arg == "--session" and rest:
+            session = rest.pop(0)
+        elif arg == "--pid" and rest:
+            try:
+                pid = int(rest.pop(0))
+            except ValueError:
+                pid = None
+        elif arg == "--calls" and rest:
+            try:
+                calls = json.loads(rest.pop(0))
+            except ValueError:
+                calls = None
+        elif arg == "--overwrite":
+            continue
+    if calls is None and not sys.stdin.isatty():
+        try:
+            raw = sys.stdin.read()
+            if raw.strip():
+                calls = json.loads(raw)
+        except (ValueError, OSError):
+            calls = None
+    # A pointer that already names a session is owned by that session's runtime: it is left
+    # alone unless the caller explicitly asks to overwrite it.
+    overwrite = "--overwrite" in argv
+    print(
+        json.dumps(publish_session(session, pid=pid, calls=calls, overwrite=overwrite))
+    )
+    return 0
+
+
 def main(argv: list) -> int:
+    if argv and argv[0] == "publish":
+        return _publish_cli(argv[1:])
     if argv and argv[0] == "gate":
         # The door's verdict, one command at a time: `plan.py gate "<command>" [session-id]`.
         command = argv[1] if len(argv) > 1 else ""
