@@ -40785,7 +40785,16 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/idp-session-bootstrap",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-fleet",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
