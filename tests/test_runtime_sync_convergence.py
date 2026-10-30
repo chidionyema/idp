@@ -10,6 +10,7 @@ at all.
 
 import importlib.machinery
 import importlib.util
+import json
 import os
 import socket
 import subprocess
@@ -149,6 +150,101 @@ def test_the_executor_probe_needs_a_parsed_ok_true():
     t = serve_once(sock, b'{"ok": true}\n')
     assert mod.socket_answers(sock, 10) is True
     t.join(10)
+
+
+def test_the_sync_probes_the_socket_the_daemon_actually_serves(monkeypatch, tmp_path):
+    """The daemon's own name for the override wins.
+
+    The sync read ESTATE_EXECUTOR_SOCKET and the daemon read IDP_EXECUTOR_SOCKET. With the
+    daemon's name set, the sync probed a socket nobody served, called a healthy executor
+    dead, and could roll a good tree back on that lie.
+    """
+    one = str(tmp_path / "one.sock")
+    two = str(tmp_path / "two.sock")
+    monkeypatch.setenv("IDP_EXECUTOR_SOCKET", one)
+    monkeypatch.setenv("ESTATE_EXECUTOR_SOCKET", two)
+    mod = load_sync()
+    assert str(mod.EXECUTOR_SOCKET) == one
+
+    monkeypatch.delenv("IDP_EXECUTOR_SOCKET")
+    mod = load_sync()
+    assert str(mod.EXECUTOR_SOCKET) == two
+
+    monkeypatch.delenv("ESTATE_EXECUTOR_SOCKET")
+    mod = load_sync()
+    assert str(mod.EXECUTOR_SOCKET) == str(mod.STATE / "executor.sock")
+
+
+def _load_daemon():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "estate_executor_daemon", REPO / "platform/executor/daemon.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_the_daemon_accepts_the_estate_socket_name_too(monkeypatch, tmp_path):
+    one = str(tmp_path / "one.sock")
+    two = str(tmp_path / "two.sock")
+    monkeypatch.setenv("IDP_EXECUTOR_SOCKET", one)
+    monkeypatch.setenv("ESTATE_EXECUTOR_SOCKET", two)
+    assert _load_daemon().SOCKET_PATH == one
+
+    monkeypatch.delenv("IDP_EXECUTOR_SOCKET")
+    assert _load_daemon().SOCKET_PATH == two
+
+    monkeypatch.delenv("ESTATE_EXECUTOR_SOCKET")
+    assert _load_daemon().SOCKET_PATH.endswith("/.estate/executor.sock")
+
+
+# --- a service is restarted against the revision it last served, not against this run's diff
+
+
+def test_a_tree_that_moved_in_an_earlier_run_still_demands_its_restart(monkeypatch):
+    mod = load_sync()
+    heads = {"ai.estate.executor": "aaaa1111"}
+
+    def fake_git(*args, check=True, tree=None):
+        if args[:2] == ("diff", "--name-only"):
+            return "mcp/plugins/estate_executor.py\n"
+        return ""
+
+    monkeypatch.setattr(mod, "git", fake_git)
+    # this run's diff is empty: the tree moved in an EARLIER run, and the daemon there is
+    # still serving the bytes from before the move.
+    due = mod.services_for([], False, heads, "bbbb2222")
+    assert "ai.estate.executor" in due
+
+
+def test_a_service_whose_files_did_not_change_is_not_restarted(monkeypatch):
+    mod = load_sync()
+    heads = {"ai.estate.executor": "aaaa1111"}
+
+    def fake_git(*args, check=True, tree=None):
+        if args[:2] == ("diff", "--name-only"):
+            return "docs/readme.md\n"
+        return ""
+
+    monkeypatch.setattr(mod, "git", fake_git)
+    assert mod.services_for([], False, heads, "bbbb2222") == []
+
+
+def test_the_trees_reflog_says_which_revision_the_services_were_serving(monkeypatch):
+    mod = load_sync()
+
+    def fake_git(*args, check=True, tree=None):
+        if args[:1] == ("reflog",):
+            return (
+                "bbbb2222 HEAD@{0}: checkout: moving from aaaa1111 to bbbb2222\n"
+                "aaaa1111 HEAD@{1}: checkout: moving from 0000000 to aaaa1111\n"
+            )
+        return ""
+
+    monkeypatch.setattr(mod, "git", fake_git)
+    assert mod.tree_last_move() == "aaaa1111"
 
 
 def test_a_socket_that_does_not_say_ok_is_not_health():
@@ -356,3 +452,84 @@ def test_the_wrapper_is_copied_into_the_estate_bin(monkeypatch, tmp_path):
     mod.stage()
 
     assert (state / "bin/load-gate-and-run").exists()
+
+
+# --- the whole run: what it restarts, and what the status says --------------------------
+
+
+def _stub_run(monkeypatch, tmp_path):
+    """A runtime-sync run with everything but the decisions taken out."""
+    mod = load_sync()
+    monkeypatch.setattr(mod, "STATUS", tmp_path / "status.json")
+    monkeypatch.setattr(mod, "SERVICES_STATE", tmp_path / "services.json")
+    monkeypatch.setattr(mod, "SKIP_LOG", tmp_path / "skips.log")
+    monkeypatch.setattr(mod, "LOG", tmp_path / "sync.log")
+    monkeypatch.setattr(mod, "ensure_tree", lambda: None)
+    monkeypatch.setattr(mod, "scrub_tree", lambda: "")
+    monkeypatch.setattr(mod, "normalise_origin", lambda: "")
+    monkeypatch.setattr(mod, "link_data", lambda: None)
+    monkeypatch.setattr(mod, "stage", lambda: [])
+    monkeypatch.setattr(mod, "sync_memory", lambda: [])
+    monkeypatch.setattr(mod, "sync_artifact_policy", lambda: [])
+    monkeypatch.setattr(mod, "sync_router", lambda: [])
+    monkeypatch.setattr(mod, "sync_frontend", lambda _sha: [])
+    monkeypatch.setattr(mod, "sync_pi_extensions", lambda: ([], {}))
+    monkeypatch.setattr(mod, "alert", lambda _t: None)
+    monkeypatch.setattr(mod, "socket_answers", lambda *a, **k: True)
+    monkeypatch.setattr(mod, "service_answers", lambda *a, **k: True)
+    return mod
+
+
+def test_the_status_says_whether_the_executor_is_healthy_when_nothing_changed(
+    monkeypatch, tmp_path
+):
+    mod = _stub_run(monkeypatch, tmp_path)
+    kicks = []
+    monkeypatch.setattr(mod, "kickstart", lambda label: kicks.append(label))
+
+    def fake_git(*args, check=True, tree=None):
+        if args[:2] == ("rev-parse", "HEAD"):
+            return "bbbb2222"
+        if args[:2] == ("rev-parse", "origin/main"):
+            return "bbbb2222"
+        if args[:1] == ("diff",):
+            return ""
+        if args[:1] == ("reflog",):
+            return ""
+        return ""
+
+    monkeypatch.setattr(mod, "git", fake_git)
+
+    assert mod.main() == 0
+    status = json.loads((tmp_path / "status.json").read_text())
+    # nothing changed, so nothing was restarted -- but the status still says whether the
+    # door is up right now. A status that only knows about restarts cannot see a dead door.
+    assert status["restarted"] == []
+    assert status["services"]["ai.estate.executor"] is True
+
+
+def test_a_daemon_left_stale_by_an_earlier_run_is_restarted_even_when_nothing_changed(
+    monkeypatch, tmp_path
+):
+    mod = _stub_run(monkeypatch, tmp_path)
+    kicks = []
+    monkeypatch.setattr(mod, "kickstart", lambda label: kicks.append(label))
+
+    def fake_git(*args, check=True, tree=None):
+        if args[:2] == ("rev-parse", "HEAD"):
+            return "bbbb2222"
+        if args[:2] == ("rev-parse", "origin/main"):
+            return "bbbb2222"
+        if args[:2] == ("diff", "--name-only"):
+            # the executor's own bytes changed between the revision it served and the tree
+            return "mcp/plugins/estate_executor.py\n"
+        if args[:1] == ("reflog",):
+            return "bbbb2222 HEAD@{0}: checkout: moving from aaaa1111 to bbbb2222\n"
+        return ""
+
+    monkeypatch.setattr(mod, "git", fake_git)
+
+    assert mod.main() == 0
+    assert "ai.estate.executor" in kicks
+    heads = json.loads((tmp_path / "services.json").read_text())
+    assert heads["ai.estate.executor"] == "bbbb2222"
