@@ -33409,9 +33409,11 @@
         "inputs": [
           "--body",
           "--config",
+          "--gate",
           "--json",
           "--limit",
           "--no-file",
+          "--prove",
           "--search",
           "--service",
           "--state",

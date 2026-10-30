@@ -5,6 +5,10 @@
     bin/idp-estate-homes --json          the same board, as data
     bin/idp-estate-homes --no-file       grade only: do not touch GitHub
     bin/idp-estate-homes --service llm-router   grade one service
+    bin/idp-estate-homes --prove         no network: can a client still get an answer after the
+                                         loss of any ONE failure domain? exit 1 when not
+    bin/idp-estate-homes --gate          exit 1 when a ladder is down or one provider from
+                                         empty, 2 when it cannot be proved, else 0
 
 WHY THIS EXISTS. On 2026-10-28 the estate's router lost every model: the cloud route was
 down and the laptop route was up, and the front handed the caller the cloud's 503 anyway
@@ -21,6 +25,14 @@ failure. NOT_HERE is for a lane that lives on another machine -- a loopback lane
 THE LADDER IS CONFIGURATION, NOT CODE: platform/ladder/critical-lanes.json. Adding a home
 is a line in that file. This door knows how to ask a lane a question; it does not know
 which lanes exist.
+
+THE LADDER IS JUDGED, NOT JUST COUNTED (founder, 2026-10-30: a critical service must never be
+a single point of failure). A board that says "1 of 4 lanes answered" does not say that the
+estate is one failure from empty. Each ladder gets one state: REDUNDANT (two or more
+providers answer, so one can fail and a home still does), UNPROVEN (fewer than two answer and
+some lane could not be asked from this host, which is the runner's view of the laptop and the
+floor), SPOF (exactly one provider answers) or DOWN (none does). Two homes in one provider are
+one failure domain. UNKNOWN and NOT_HERE are never counted as answers.
 
 THE FILEING IS THE POINT. A dead lane is a ticket, not a log line: the drill opens (or
 comments on) one issue per service whose lane is down, and closes it when the lane comes
@@ -79,6 +91,17 @@ def _is_loopback(url: str) -> bool:
     return host in ("127.0.0.1", "localhost", "::1", "0.0.0.0")
 
 
+def _tunnel_refused(reason: object) -> bool:
+    """An egress proxy refused to open the tunnel: the question never reached the lane.
+
+    That is a lane that could not be asked, not a lane that is down. Measured 2026-10-30: from a
+    sandbox behind such a proxy every lane read MEASURED_FAIL ("Tunnel connection failed: 403
+    Forbidden"), the same error a working vendor gave the 2024 drill for want of a user agent.
+    A direct connect that fails (no proxy in the way) is still a failure.
+    """
+    return "Tunnel connection failed" in str(reason)
+
+
 def probe(
     url: str,
     headers: dict | None = None,
@@ -106,6 +129,8 @@ def probe(
         reason = exc.reason
         if _is_loopback(url):
             return NOT_HERE, f"not this host ({reason})"
+        if _tunnel_refused(reason):
+            return UNKNOWN, f"could not be asked: a proxy refused the tunnel ({reason})"
         if isinstance(reason, socket.timeout):
             return FAIL, f"no answer: timed out after {timeout:.0f}s"
         return FAIL, f"no answer: {reason}"
@@ -114,6 +139,8 @@ def probe(
     except OSError as exc:
         if _is_loopback(url):
             return NOT_HERE, f"not this host ({exc})"
+        if _tunnel_refused(exc):
+            return UNKNOWN, f"could not be asked: a proxy refused the tunnel ({exc})"
         return FAIL, f"no answer: {exc}"
     if expect_any:
         return OK, f"HTTP {code}"
@@ -253,6 +280,126 @@ def grade(config: dict, env: dict, timeout: float = DEFAULT_TIMEOUT, only: str =
     return results
 
 
+def ladder(rows: list) -> dict:
+    """Judge one service's ladder: can it lose a provider and still answer?
+
+    Pure. A lane counts only when it answered (MEASURED_OK). A lane nobody could ask
+    (UNKNOWN, NOT_HERE) is not an answer and not a failure, so a ladder with such a lane and
+    fewer than two answering providers is UNPROVEN, never REDUNDANT and never "fine".
+    """
+    ok = [r for r in rows if r["verdict"] == OK]
+    unasked = [r for r in rows if r["verdict"] in (UNKNOWN, NOT_HERE)]
+    providers = sorted({str(r.get("provider") or r.get("leg")) for r in ok})
+    if len(providers) >= 2:
+        state = "REDUNDANT"
+    elif unasked:
+        state = "UNPROVEN"
+    elif providers:
+        state = "SPOF"
+    else:
+        state = "DOWN"
+    return {
+        "service": rows[0]["service"] if rows else "",
+        "state": state,
+        "providers_ok": providers,
+        "down": [r["leg"] for r in rows if r["verdict"] == FAIL],
+        "unasked": [r["leg"] for r in unasked],
+    }
+
+
+def ladders(results: list) -> list:
+    """The ladder of every service that is one: a service whose lanes name a role. The
+    estate-doors list is fourteen names of one provider, not fourteen homes of one service."""
+    out = []
+    for service in dict.fromkeys(r["service"] for r in results):
+        rows = [r for r in results if r["service"] == service]
+        if any(r.get("role") for r in rows):
+            out.append(ladder(rows))
+    return out
+
+
+def prove(service: dict) -> dict | None:
+    """Is there ONE failure domain whose loss leaves a client with no home? Pure set arithmetic.
+
+    A client reaches a home only through a selector (the router front, an edge worker). Each
+    selector and each home lists the failure domains it dies with (`fate`: a provider, a host, a
+    secret store). Lose a domain D: a selector with D in its fate is gone, a home with D in its
+    fate is gone; the client still has an answer if some surviving selector reaches a surviving
+    home. A domain for which that fails is a single point of failure, and it sets a ceiling no
+    amount of hardening any one home can raise: with independent homes the chance that all are
+    down is the PRODUCT of their unavailabilities, but a domain on every path puts a floor under
+    it at that domain's own unavailability. Four homes behind one front on one host are one home.
+
+    Returns None for a service that is not a ladder. UNDECLARED (never PROVEN) when it names no
+    selectors or a leg names no fate: an unknown is not a pass. `reaches` defaults to every leg.
+    Raises ValueError for a selector that names a home that does not exist.
+    """
+    legs = service.get("legs") or []
+    if not any(leg.get("role") for leg in legs):
+        return None
+    name = service.get("service") or ""
+    selectors = service.get("selectors") or []
+    missing = [leg.get("name") for leg in legs if not leg.get("fate")]
+    if not selectors or missing or any(not sel.get("fate") for sel in selectors):
+        return {
+            "service": name,
+            "verdict": "UNDECLARED",
+            "single_points": [],
+            "domains": [],
+            "missing": missing or ["selectors"],
+        }
+    fate = {leg["name"]: set(leg["fate"]) for leg in legs}
+    for sel in selectors:
+        for home in sel.get("reaches") or []:
+            if home not in fate:
+                raise ValueError(f"{name}: selector {sel.get('name')} reaches unknown home {home}")
+    domains = sorted(set().union(*fate.values(), *(set(s["fate"]) for s in selectors)))
+
+    def survivors(lost: str) -> set:
+        alive = set()
+        for sel in selectors:
+            if lost in sel["fate"]:
+                continue
+            for home in sel.get("reaches") or list(fate):
+                if lost not in fate[home]:
+                    alive.add(home)
+        return alive
+
+    single = [d for d in domains if not survivors(d)]
+    return {
+        "service": name,
+        "verdict": "FAILS" if single else "PROVEN",
+        "single_points": single,
+        "domains": domains,
+        "selectors": [sel.get("name") for sel in selectors],
+        "missing": [],
+    }
+
+
+def render_proofs(proofs: list) -> str:
+    lines = ["Topology proof (no network): after the loss of any one failure domain, can a client "
+             "still reach a home?"]
+    for got in proofs:
+        text = f"  {got['verdict']:<10} {got['service']}"
+        if got["verdict"] == "FAILS":
+            text += f": single point(s) of failure: {', '.join(got['single_points'])}"
+        elif got["verdict"] == "UNDECLARED":
+            text += f": no fate declared for {', '.join(str(m) for m in got['missing'])}"
+        else:
+            text += f": {len(got['domains'])} domain(s) checked, none empties it"
+        lines.append(text)
+    return "\n".join(lines)
+
+
+_LADDER_WHY = {
+    "REDUNDANT": "",
+    "UNPROVEN": "fewer than two providers proven, and some lane was not asked: run the "
+    "drill where those lanes live",
+    "SPOF": "one provider answers; losing it empties the ladder (ADR 0037 R1, R2)",
+    "DOWN": "no home answers",
+}
+
+
 def render(results: list) -> str:
     """The board. One line per lane, then the count that matters."""
     lines = []
@@ -276,6 +423,18 @@ def render(results: list) -> str:
         lines.append(f"  DOWN    {row['service']} / {row['leg']}: {row['detail']}")
     for row in blind:
         lines.append(f"  UNKNOWN {row['service']} / {row['leg']}: {row['detail']}")
+    for lad in ladders(results):
+        text = (
+            f"  LADDER  {lad['service']}: {lad['state']}"
+            f"  answering: {', '.join(lad['providers_ok']) or 'none'}"
+        )
+        if lad["down"]:
+            text += f"; down: {', '.join(lad['down'])}"
+        if lad["unasked"]:
+            text += f"; not asked here: {', '.join(lad['unasked'])}"
+        lines.append(text)
+        if _LADDER_WHY[lad["state"]]:
+            lines.append(f"          {_LADDER_WHY[lad['state']]}")
     return "\n".join(lines)
 
 
@@ -284,6 +443,20 @@ def _gh(args: list) -> tuple:
         ["gh"] + args, capture_output=True, text=True, timeout=60, check=False
     )
     return proc.returncode, (proc.stdout or "").strip(), (proc.stderr or "").strip()
+
+
+def _closing_note(service: str, rows: list) -> str:
+    """Say what was asked and what answered, and name what could not be asked. It used to say
+    'every lane answered again' while a lane was UNKNOWN: a claim the drill had not measured."""
+    unasked = [r for r in rows if r["verdict"] in (UNKNOWN, NOT_HERE)]
+    asked = len(rows) - len(unasked)
+    answered = sum(1 for r in rows if r["verdict"] == OK)
+    note = f"{answered} of {asked} lane(s) of {service} that this host could ask answered at {_now()}"
+    if unasked:
+        note += "; could not be asked from this host (unproven, not OK): " + ", ".join(
+            str(r.get("leg")) for r in unasked
+        )
+    return note
 
 
 def file_issues(results: list, dry_run: bool = False) -> list:
@@ -298,7 +471,13 @@ def file_issues(results: list, dry_run: bool = False) -> list:
         rows = [r for r in results if r["service"] == service]
         down = [r for r in rows if r["verdict"] == FAIL]
         blind = [r for r in rows if r["verdict"] == UNKNOWN]
-        title_prefix = f"{ISSUE_PREFIX} {service}: a lane is down"
+        lad = next(iter(ladders(rows)), None)
+        spof = bool(lad and lad["state"] in ("SPOF", "DOWN"))
+        title_prefix = (
+            f"{ISSUE_PREFIX} {service}: a lane is down"
+            if down
+            else f"{ISSUE_PREFIX} {service}: single point of failure"
+        )
         code, out, err = _gh(
             [
                 "issue",
@@ -321,8 +500,8 @@ def file_issues(results: list, dry_run: bool = False) -> list:
         except json.JSONDecodeError:
             issues = []
         body = render(rows)
-        if down:
-            # Only a PROVEN dead lane files. An UNKNOWN lane is a question this host could
+        if down or spof:
+            # Only a PROVEN dead lane, or a ladder proven down to one failure domain, files. An UNKNOWN lane is a question this host could
             # not ask (a secret it does not carry, a name it cannot resolve); filing a ticket
             # for that would train the estate to ignore tickets.
             if issues:
@@ -357,7 +536,7 @@ def file_issues(results: list, dry_run: bool = False) -> list:
                     "comment",
                     str(issue["number"]),
                     "--body",
-                    f"every lane of {service} answered again at {_now()}\n\n{body}",
+                    _closing_note(service, rows) + f"\n\n{body}",
                 ]
             )
             if code == 0:
@@ -376,6 +555,16 @@ def main(argv: list) -> int:
     parser.add_argument("--json", action="store_true", help="print the board as data")
     parser.add_argument("--no-file", action="store_true", help="do not open or close issues")
     parser.add_argument("--service", default="", help="grade one service only")
+    parser.add_argument(
+        "--prove",
+        action="store_true",
+        help="no network: exit 1 if one failure domain can empty a ladder, 2 if undeclared",
+    )
+    parser.add_argument(
+        "--gate",
+        action="store_true",
+        help="exit 1 when a ladder is DOWN or SPOF, 2 when one is UNPROVEN, else 0",
+    )
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
     args = parser.parse_args(argv)
 
@@ -385,6 +574,21 @@ def main(argv: list) -> int:
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"BLIND  estate-homes  cannot read the ladder: {exc}", file=sys.stderr)
         return 2
+
+    if args.prove:
+        try:
+            proofs = [
+                got
+                for svc in config["services"]
+                if (not args.service or svc.get("service") == args.service)
+                and (got := prove(svc))
+            ]
+        except ValueError as exc:
+            print(f"BLIND  estate-homes  the topology is malformed: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps({"proofs": proofs}, indent=2) if args.json else render_proofs(proofs))
+        verdicts = {got["verdict"] for got in proofs}
+        return 1 if "FAILS" in verdicts else 2 if "UNDECLARED" in verdicts else 0
 
     results = grade(config, env, timeout=args.timeout, only=args.service)
     if args.json:
@@ -400,6 +604,7 @@ def main(argv: list) -> int:
                         "unknown": sum(1 for r in results if r["verdict"] == UNKNOWN),
                         "not_here": sum(1 for r in results if r["verdict"] == NOT_HERE),
                     },
+                    "ladders": ladders(results),
                 },
                 indent=2,
             )
@@ -411,6 +616,12 @@ def main(argv: list) -> int:
     if not args.no_file:
         for action in file_issues(results):
             print(f"  filed  {action}")
+    if args.gate:
+        states = {lad["state"] for lad in ladders(results)}
+        if states & {"SPOF", "DOWN"}:
+            return 1
+        if "UNPROVEN" in states:
+            return 2
     return 0
 
 
