@@ -21,16 +21,21 @@
 # is where that difference is visible rather than implied.
 #
 # Subcommands -- each one stands alone, so each one can be tested alone:
-#   select-source            print "<name>\t<created>\t<bytes>" for the newest surviving dump
-#   fetch-source FILE        download the newest surviving dump, and write its .source file
+#   select-source            print "<name>\t<created>\t<bytes>" for the best surviving dump
+#   fetch-source FILE        download the best surviving dump that really carries the estate
+#                            database, and write its .source file
+
 #   start-container NAME [CIDFILE]
 #                            start PostgreSQL in the copy image and wait until it answers
+#   check-extensions       refuse before the restore if the image lacks vector/btree_gin/pg_trgm
+#   check-extensions-container CID
+#                            the same check, against the PostgreSQL in the container
 #   restore FILE             restore FILE into the PostgreSQL named by PG* in the environment
 #   restore-container CID FILE   restore FILE inside the running container
 #   dump FILE                write a fresh pg_dumpall of that PostgreSQL to FILE
 #   dump-container CID FILE     dump inside the running container, then copy it out
 #   publish FILE             upload FILE as estate-db/estate-<stamp>.sql.gz, then the receipt
-#   run                      select-source -> restore -> dump -> publish
+#   run                      fetch-source -> restore -> dump -> publish
 #
 # Environment:
 #   BUCKET               object storage bucket                       (default estate-db-backups)
@@ -40,6 +45,8 @@
 #   OCI_OS_NAMESPACE     tenancy namespace                           (default: oci os ns get)
 #   RECEIPT_PREFIX       receipt and copy prefix                     (default estate-db)
 #   SOURCE_PREFIXES      where a dump to restore may live            (default "estate-db db")
+#   ESTATE_DB_NAME       the database the copy has to carry         (default estate)
+#   ESTATE_DB_LABEL      the estate's own dump prefix                (default estate-db)
 #   MIN_SIZE_RATIO       refuse a copy below this share of the last one (default 0.5)
 #   PGHOST PGPORT PGUSER PGPASSWORD   the PostgreSQL to restore into and dump from
 #   OCI_CLI_AUTH         passed to the oci CLI when set
@@ -52,6 +59,11 @@ PG_READY_TIMEOUT="${PG_READY_TIMEOUT:-180}"
 RECEIPT_PREFIX="${ESTATE_DB_RECEIPT_PREFIX:-estate-db}"
 RECEIPT_NAME="${RECEIPT_PREFIX}/latest.json"
 SOURCE_PREFIXES="${ESTATE_DB_SOURCE_PREFIXES:-estate-db db}"
+ESTATE_DB_NAME="${ESTATE_DB_NAME:-estate}"
+ESTATE_DB_LABEL="${ESTATE_DB_LABEL:-estate-db}"
+# How much of a candidate dump is read to recognise its header. The header is at the very top.
+VERIFY_HEADER_BYTES="${ESTATE_DB_VERIFY_HEADER_BYTES:-65536}"
+REQUIRED_EXTENSIONS="${ESTATE_DB_REQUIRED_EXTENSIONS:-vector btree_gin pg_trgm}"
 MIN_SIZE_RATIO="${ESTATE_DB_MIN_SIZE_RATIO:-0.5}"
 DUMP_MARKER="PostgreSQL database cluster dump complete"
 SCRIPT_PATH="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
@@ -86,9 +98,15 @@ sha256_of() {
 	fi
 }
 
-# The newest surviving dump, whatever prefix it lives under. The legacy dumps sit under db/ and
-# this script's own copies under estate-db/; the newest of all of them is the one to restore.
-select_source() {
+# Every surviving dump, ranked: the estate database's own dumps first, newest first within each
+# tier. The legacy dumps sit under db/ and this script's own copies under estate-db/.
+#
+# MEASURED 2026-10-30: the bucket holds another database's dump too --
+# db/2026-09-08/temporal-temporal-db-0.sql.gz -- and it is 1.5 seconds NEWER than the estate
+# cluster dump. "Newest wins" therefore restored a per-database dump that has no estate database
+# in it, and the run died on `FATAL: database "estate" does not exist`. A dump of another
+# database is not a copy of this one, so the estate's own dumps are ranked first.
+list_sources() {
 	local listing
 	listing=$(oci_cli os object list --namespace-name "$(namespace)" --bucket-name "$BUCKET" --all --output json)
 	printf '%s' "$listing" | python3 -c '
@@ -96,24 +114,65 @@ import json, sys
 
 prefixes = (sys.argv[1] or "").split()
 bucket = sys.argv[2]
+estate = sys.argv[3]
+label = sys.argv[4]
 try:
     data = json.load(sys.stdin).get("data") or []
 except ValueError as exc:
     sys.exit("the bucket listing is not JSON: %s" % exc)
-candidates = []
+rows = []
 for obj in data:
     name = obj.get("name") or ""
     if not name.endswith(".sql.gz"):
         continue
     if prefixes and not any(name.startswith(p) for p in prefixes):
         continue
-    candidates.append((obj.get("time-created") or "", name, int(obj.get("size") or 0)))
-if not candidates:
+    base = name.rsplit("/", 1)[-1]
+    tier = 0 if (estate in base or name.startswith(label)) else 1
+    rows.append((tier, obj.get("time-created") or "", name, int(obj.get("size") or 0)))
+if not rows:
     sys.exit("no surviving dump under %s in bucket %s" % ("/".join(prefixes), bucket))
-candidates.sort()
-created, name, size = candidates[-1]
-print("\t".join([name, created, str(size)]))
-' "$SOURCE_PREFIXES" "$BUCKET"
+rows.sort(key=lambda row: (row[1], row[2]), reverse=True)
+rows.sort(key=lambda row: row[0])
+for tier, created, name, size in rows:
+    print("\t".join([name, created, str(size)]))
+' "$SOURCE_PREFIXES" "$BUCKET" "$ESTATE_DB_NAME" "$ESTATE_DB_LABEL"
+}
+
+# The best surviving dump, on the list's own ranking.
+select_source() {
+	local listing
+	listing=$(list_sources)
+	printf '%s\n' "$listing" | head -1
+}
+
+# Does this dump really carry the estate database? A cluster dump says so in its first line, and
+# lists the estate database itself; a dump of one other database does neither. The reason the
+# check failed is printed, so the refusal says what is wrong with the object, not just that it
+# was refused.
+verify_source() {
+	local file="$1" head_bytes count
+	[ -f "$file" ] || { printf 'it was not downloaded\n'; return 1; }
+	gzip -t "$file" 2>/dev/null || { printf 'it does not decompress\n'; return 1; }
+	head_bytes=$(mktemp)
+	{ gzip -dc "$file" 2>/dev/null | head -c "$VERIFY_HEADER_BYTES" >"$head_bytes"; } || true
+	if ! grep -aq "PostgreSQL database cluster dump" "$head_bytes"; then
+		rm -f "$head_bytes"
+		printf 'it is not a cluster dump, so it holds no %s database\n' "$ESTATE_DB_NAME"
+		return 1
+	fi
+	rm -f "$head_bytes"
+	# MEASURED 2026-10-30: in the surviving estate cluster dump, CREATE DATABASE estate sits at
+	# byte 92964364 of 626202513 -- 89 MiB in, not in the first 64 MiB. A window would have
+	# refused the very dump it was written to accept, so the marker is looked for across the
+	# whole decompressed dump. grep -c reads the stream to its end and never exits early, so the
+	# decompressor is never killed by SIGPIPE and the count is never a partial answer.
+	count=$(gzip -dc "$file" 2>/dev/null | grep -a -c "CREATE DATABASE ${ESTATE_DB_NAME} " || true)
+	if [ "${count:-0}" -eq 0 ]; then
+		printf 'it is a cluster dump without the %s database\n' "$ESTATE_DB_NAME"
+		return 1
+	fi
+	return 0
 }
 
 # Restore a dump into the running PostgreSQL. A restore that hit a real error is not a restore:
@@ -247,15 +306,33 @@ except Exception:
 
 # The newest surviving dump, downloaded. The source it came from is written next to it, because
 # the receipt has to say where the data was as old as the data is.
+# Download the best surviving dump that really carries the estate database. The candidates are
+# tried in rank order and each one is checked before it is trusted, so a dump of another
+# database -- or a truncated object -- is skipped with its reason, not restored.
 fetch_source() {
-	local dest="$1" ns selection name created size
+	local dest="$1" ns name created size reason candidate rejected=""
 	[ -n "$dest" ] || fail "fetch-source needs a destination"
-	selection=$(select_source)
-	IFS=$'\t' read -r name created size <<<"$selection"
 	ns=$(namespace)
-	oci_cli os object get --namespace-name "$ns" --bucket-name "$BUCKET" --name "$name" --file "$dest"
-	printf '%s\n%s\n' "$name" "$created" >"${dest}.source"
-	say "fetched $name ($size bytes, created $created) to $dest"
+	candidate="${dest}.candidate"
+	while IFS=$'\t' read -r name created size; do
+		[ -n "$name" ] || continue
+		rm -f "$candidate"
+		if ! oci_cli os object get --namespace-name "$ns" --bucket-name "$BUCKET" --name "$name" \
+			--file "$candidate" >/dev/null 2>&1; then
+			rejected="${rejected}"$'\n'"  $name: it could not be downloaded"
+			continue
+		fi
+		reason=$(verify_source "$candidate") || {
+			rejected="${rejected}"$'\n'"  $name: $reason"
+			continue
+		}
+		mv "$candidate" "$dest"
+		printf '%s\n%s\n' "$name" "$created" >"${dest}.source"
+		say "fetched $name ($size bytes, created $created) to $dest"
+		return 0
+	done < <(list_sources)
+	rm -f "$candidate"
+	fail "no surviving dump carries the ${ESTATE_DB_NAME} database; rejected:${rejected}"
 }
 
 # Start PostgreSQL in the copy image, and wait until it answers.
@@ -305,6 +382,48 @@ start_container() {
 	say "PostgreSQL is ready in $name ($cid)"
 }
 
+# The extensions the surviving dump asks for. MEASURED 2026-10-30: the dump carries
+# `CREATE EXTENSION vector`, `btree_gin` and `pg_trgm`; without them the restore dies on
+# "extension ... is not available" a long way into a 626 MB restore, and the failure looks like
+# the restore's fault rather than the image's. So they are checked first, and a refusal prints
+# what the image does have.
+check_extensions() {
+	local cid="${1:-}" missing="" name found
+	for name in $REQUIRED_EXTENSIONS; do
+		found=$(ext_query "$cid" "select 1 from pg_available_extensions where name = '$name'")
+		case "$found" in
+		1) : ;;
+		*) missing="${missing} ${name}" ;;
+		esac
+	done
+	if [ -n "$missing" ]; then
+		printf 'FAIL    estate-db-backup  the image has no%s extension; the surviving dump needs them\n' \
+			"$missing" >&2
+		ext_query "$cid" "select name from pg_available_extensions order by name" >&2 || true
+		return 1
+	fi
+	say "the image has every extension the dump needs ($REQUIRED_EXTENSIONS)"
+}
+
+# The query runs where PostgreSQL runs: in the container when a container id is given, on the
+# host otherwise.
+ext_query() {
+	local cid="${1:-}" query="${2:-}"
+	if [ -n "$cid" ]; then
+		docker exec -e PGHOST="${PGHOST:-127.0.0.1}" -e PGPORT="${PGPORT:-5432}" \
+			-e PGUSER="${PGUSER:-postgres}" -e PGPASSWORD="${PGPASSWORD:-}" \
+			"$cid" psql -Atc "$query" 2>/dev/null || true
+	else
+		psql -Atc "$query" 2>/dev/null || true
+	fi
+}
+
+check_extensions_container() {
+	local cid="$1"
+	[ -n "$cid" ] || fail "check-extensions-container needs the container id"
+	check_extensions "$cid"
+}
+
 # Restore and dump run where psql and pg_dumpall live: inside the PostgreSQL container. The
 # plumbing lives here, not in the workflow, so it can be tested here.
 restore_container() {
@@ -331,17 +450,12 @@ dump_container() {
 }
 
 run_service() {
-	local tmpdir selection name created size ns
+	local tmpdir
 	tmpdir=$(mktemp -d)
-	selection=$(select_source)
-	IFS=$'\t' read -r name created size <<<"$selection"
-	say "restoring from $name (created $created, $size bytes)"
-	ns=$(namespace)
-	oci_cli os object get --namespace-name "$ns" --bucket-name "$BUCKET" --name "$name" \
-		--file "$tmpdir/source.sql.gz"
+	fetch_source "$tmpdir/source.sql.gz"
 	restore "$tmpdir/source.sql.gz"
 	dump "$tmpdir/estate.sql.gz"
-	ESTATE_DB_SOURCE_NAME="$name" ESTATE_DB_SOURCE_CREATED="$created" publish "$tmpdir/estate.sql.gz"
+	ESTATE_DB_SOURCE_FILE="$tmpdir/source.sql.gz.source" publish "$tmpdir/estate.sql.gz"
 	rm -rf "$tmpdir"
 }
 
@@ -350,12 +464,14 @@ select-source) select_source ;;
 fetch-source) fetch_source "${2:-}" ;;
 start-container) start_container "${2:-}" "${3:-}" ;;
 restore) restore "${2:-}" ;;
+check-extensions) check_extensions ;;
+check-extensions-container) check_extensions_container "${2:-}" ;;
 dump) dump "${2:-}" ;;
 restore-container) restore_container "${2:-}" "${3:-}" ;;
 dump-container) dump_container "${2:-}" "${3:-}" ;;
 publish) publish "${2:-}" ;;
 run) run_service ;;
 *)
-	fail "unknown subcommand '${1:-}'; use select-source, fetch-source, restore, dump, restore-container, dump-container, publish or run"
+	fail "unknown subcommand '${1:-}'; use select-source, fetch-source, start-container, restore, dump, restore-container, dump-container, check-extensions, check-extensions-container, publish or run"
 	;;
 esac
