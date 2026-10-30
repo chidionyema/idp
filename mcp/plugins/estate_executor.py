@@ -647,18 +647,40 @@ def _record_gate_incident(command: str) -> None:
 
 
 def _plan_ledger_write(command: str, session_id: str = "") -> None:
-    """Record a plan-tool call in the ledger, and record the work that ran without one."""
+    """Record a plan-tool call in the ledger.
+
+    This is the declaration itself: the plan IS the replay of these calls, so they are written
+    BEFORE the gate reads the ledger. A plan declared through the shell (`estate-plan
+    declare_plan ...`) becomes visible to the door in the same breath.
+    """
     module = _plan_module()
     if module is None:
         return
     try:
         call = module.shell_plan_call(command)
-        if call:
-            if session_id:
-                module.append_plan_event(session_id, call[0], call[1])
-            return
-        if not module.is_read_only_command(command):
-            module.record_unplanned(command, session_id, source="door")
+        if call and session_id:
+            module.append_plan_event(session_id, call[0], call[1])
+    except Exception:  # noqa: BLE001 - recording must never break the door
+        return
+
+
+def _record_unenforced_work(command: str, session_id: str, gate) -> None:
+    """Record work that ran with nothing behind it.
+
+    Two cases, both visible: no session presented (automation), and a session whose runtime
+    adapter has not opened a ledger yet (unenforced). The founder asked to SEE work with no
+    declaration; a refusal is only half of that, because the work that is let through with no
+    declaration behind it is the other half.
+    """
+    if not isinstance(gate, dict):
+        return
+    if gate.get("reason") not in ("no_session_presented", "session_unenforced"):
+        return
+    module = _plan_module()
+    if module is None:
+        return
+    try:
+        module.record_unplanned(command, session_id, source="door")
     except Exception:  # noqa: BLE001 - recording must never break the door
         return
 
@@ -910,6 +932,8 @@ def execute_command(
             "fatal": True,
             "reason": gate.get("reason", "plan_not_declared"),
         }
+    if gate is not None:
+        _record_unenforced_work(command, session_id, gate)
 
     # 0b. A MACHINE WITH NO FREE SPACE CANNOT RUN A JOB, SO THE DOOR REFUSES INSTEAD OF ADDING TO IT.
     #
