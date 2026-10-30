@@ -1,0 +1,167 @@
+{
+ "schema_version": 1,
+ "note": "Provisional seed contributing to idp#7344 P0. Not the 100-question set.",
+ "questions": [
+  {
+   "id": "seed-001",
+   "question": "How often does the graph drain run, and which file schedules it?",
+   "expected": "answerable",
+   "required_sources": [
+    {
+     "type": "file",
+     "id": "launchd/ai.estate.graph-drain.plist.tmpl",
+     "contains": "<integer>600</integer>"
+    },
+    {
+     "type": "file",
+     "id": "bin/estate-graph-drain",
+     "contains": "Every 10 minutes"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "fact_equals",
+     "field": "interval_seconds",
+     "value": 600
+    }
+   ]
+  },
+  {
+   "id": "seed-002",
+   "question": "Which context engine does the estate use, and at which version?",
+   "expected": "answerable",
+   "required_sources": [
+    {
+     "type": "file",
+     "id": "docs/decisions/2026-10-27-the-estate-context-broker-is-the-only-door.md",
+     "contains": "One engine: gortex v0.64.11"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "fact_equals",
+     "field": "version",
+     "value": "v0.64.11"
+    }
+   ]
+  },
+  {
+   "id": "seed-003",
+   "question": "Does gathering context require a claim, or only landing code?",
+   "expected": "answerable",
+   "required_sources": [
+    {
+     "type": "file",
+     "id": "docs/decisions/2026-10-27-the-estate-context-broker-is-the-only-door.md",
+     "contains": "is not the thing that needs a claim; landing code is."
+    }
+   ],
+   "checks": [
+    {
+     "kind": "fact_equals",
+     "field": "gathering_needs_claim",
+     "value": false
+    }
+   ]
+  },
+  {
+   "id": "seed-004",
+   "question": "Which schema-conformance rule refuses raw, unquoted <<var>> interpolation?",
+   "expected": "answerable",
+   "required_sources": [
+    {
+     "type": "file",
+     "id": "bin/schema-conformance",
+     "contains": "R3 `<<var>>` (raw, unquoted) is refused"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "fact_equals",
+     "field": "rule",
+     "value": "R3"
+    }
+   ]
+  },
+  {
+   "id": "seed-005",
+   "question": "What does the critical-watch detector call a probe that could not be measured?",
+   "expected": "answerable",
+   "required_sources": [
+    {
+     "type": "file",
+     "id": "platform/estate/libexec/critical-watch.py",
+     "contains": "BLIND is a first-class verdict"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "fact_equals",
+     "field": "verdict",
+     "value": "BLIND"
+    }
+   ]
+  },
+  {
+   "id": "seed-006",
+   "question": "Which service is the estate's single memory plane?",
+   "expected": "answerable",
+   "required_sources": [
+    {
+     "type": "file",
+     "id": "docs/decisions/0036-one-memory-plane-and-it-is-cortex.md",
+     "contains": "unified memory server"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "fact_equals",
+     "field": "plane",
+     "value": "unified-memory-server"
+    }
+   ]
+  },
+  {
+   "id": "seed-007",
+   "question": "Which scheduler runs the quantum-billing reconciliation job?",
+   "expected": "abstain",
+   "reason": "No such job exists in any scheduler, workflow or launchd template; the honest answer is that the estate has no evidence of it."
+  },
+  {
+   "id": "seed-008",
+   "question": "How many ledger spend rows did the router record in the last hour?",
+   "expected": "unmeasurable",
+   "required_sources": [
+    {
+     "type": "ledger",
+     "id": "router-spend-rows"
+    }
+   ],
+   "reason": "The ledger has no reader in the discovery substrate; a count would be invented, not measured."
+  },
+  {
+   "id": "seed-009",
+   "question": "Which agent currently holds a claim on eval/estate-context/**?",
+   "expected": "unmeasurable",
+   "required_sources": [
+    {
+     "type": "github_issue",
+     "id": "chidionyema/idp CLAIM comments"
+    }
+   ],
+   "reason": "GitHub issue and CLAIM comments have no discovery reader beyond the broker's per-path claim check."
+  },
+  {
+   "id": "seed-010",
+   "question": "What is the OKE cluster's node count right now?",
+   "expected": "unmeasurable",
+   "required_sources": [
+    {
+     "type": "cluster",
+     "id": "oke/node-pools"
+    }
+   ],
+   "reason": "The cluster API is unreachable from the laptop (#7343); the state is unmeasured, not zero."
+  }
+ ]
+}
