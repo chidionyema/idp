@@ -1,0 +1,296 @@
+{
+  "claim": "chidionyema/idp#7480",
+  "agent": "codex-lockdown-audit",
+  "updated_at": "2026-10-30T01:29:27.724544+00:00",
+  "authority": "Direct founder messages; historical quotations remain context, never new authority.",
+  "requests": [
+    {
+      "id": "FR-001",
+      "verbatim": "prev session died, looking an memeory, identity, dna, unifinatio/congurueny, unified mem, active memorymactive focus etc",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 12,
+        "timestamp": "2026-10-29T22:37:09.424Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-002",
+      "verbatim": "and chech the session transctips to get a complete puictuem,, claims etc",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 104,
+        "timestamp": "2026-10-29T22:49:14.115Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-003",
+      "verbatim": "now i need you to revisist every piece of doc related to unified memeory, active mmeoty active focus, etc and lets get a picture what what featires are borken  and ruthlessly block ci gates until they are proven operational and meeting oterprose standards and founder service leevl aggreemetns, we start to define these now if missing",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 133,
+        "timestamp": "2026-10-29T22:59:06.841Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-004",
+      "verbatim": "and this goes across the baord",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 135,
+        "timestamp": "2026-10-29T22:59:06.899Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-005",
+      "verbatim": "we are in lockdownnmode , the esate and fleet have bnen tono slopy and lost foiunders trust compeletey and enormous amouts of work need to be done to rgain it",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 139,
+        "timestamp": "2026-10-29T22:59:10.591Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-006",
+      "verbatim": "no more easy shipping , agents must be forced to fdo the right thing and alos dont bother founder becase the rues re clear",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 155,
+        "timestamp": "2026-10-29T22:59:37.353Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-007",
+      "verbatim": "the machine is the cold uncaring enforcer",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 164,
+        "timestamp": "2026-10-29T22:59:56.409Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-008",
+      "verbatim": "\\do wide reaerch online",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 175,
+        "timestamp": "2026-10-29T23:00:01.909Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-009",
+      "verbatim": "track all my requests",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 183,
+        "timestamp": "2026-10-29T23:00:10.955Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-010",
+      "verbatim": "go on",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 234,
+        "timestamp": "2026-10-29T23:08:58.705Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-011",
+      "verbatim": "goon, for the last time u cant babysit code, founder does ont work frmo laptgo so expecting em to be avaible to give mpermission via command line is nt going to work and i hate repeating myself",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 319,
+        "timestamp": "2026-10-30T00:07:00.994Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-012",
+      "verbatim": "if unified memory did what it was syppsed to od i woukd ont have to repat the same instrucgioin to 10 pls agenbts esiios indidivuakky",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 356,
+        "timestamp": "2026-10-30T00:07:33.478Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-013",
+      "verbatim": "sorry we need to start changing ohow we work and i meed immediua enforce ment ias founder right i=now i am mananging 10 paarllel sesison, when i give an insutction, response ineed s to beinstrypcied format with prrof of claim and out cone that i can link back to instruction, machine verifabel right awy so scritponi can run etc, or smoehting rearch what bleeding edge statdard is adn also several agents have looka t thsi i need this locked down and enfirced acrs s the bard tirght away and on e done you can teport back and hopeofully i can make sense of what you saud as im confuded atm",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 652,
+        "timestamp": "2026-10-30T00:34:16.866Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-014",
+      "verbatim": "and we need tho enforce right away and it acnt depend on the harness as all agabts neess this eronced estate wide",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 665,
+        "timestamp": "2026-10-30T00:34:54.222Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-015",
+      "verbatim": "right away  we need a stanbdard machanishm for anchioring our model and aherness agnstc behavir",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 669,
+        "timestamp": "2026-10-30T00:35:16.413Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-016",
+      "verbatim": "any wonce build happy for you to bypass cid cd for eimmedate enforcne ment and then  shiop thry bormak channels and statdarde a way to get emergebncy lanew active asasp withiut the cicd cermny",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 701,
+        "timestamp": "2026-10-30T00:36:40.422Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-017",
+      "verbatim": "thngs that all algebts needs to inghehtir right aeay",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 705,
+        "timestamp": "2026-10-30T00:36:54.282Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-018",
+      "verbatim": "we should be nbaelt o do this we even hvae lancgchain langfue etc",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 709,
+        "timestamp": "2026-10-30T00:37:10.571Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-019",
+      "verbatim": "we need to get smnarter about toling in esate",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 713,
+        "timestamp": "2026-10-30T00:37:18.852Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-020",
+      "verbatim": "and integraioton oend to end",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 717,
+        "timestamp": "2026-10-30T00:37:28.013Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-021",
+      "verbatim": "not just code",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 721,
+        "timestamp": "2026-10-30T00:37:32.005Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-022",
+      "verbatim": "code is chapoe and that least improtant thing",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 725,
+        "timestamp": "2026-10-30T00:37:40.925Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-023",
+      "verbatim": "we neeed to thibk like system designewrs",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 729,
+        "timestamp": "2026-10-30T00:37:48.389Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    },
+    {
+      "id": "FR-024",
+      "verbatim": "closeloops and gaps before building new thigns",
+      "source": {
+        "type": "founder_session_transcript",
+        "path": "/Users/roseonyema/.codex/sessions/2026/10/29/rollout-2026-10-29T22-36-49-01a189cf-07d0-7cf0-8719-f1a262802fdb.jsonl",
+        "line": 735,
+        "timestamp": "2026-10-30T00:38:21.124Z"
+      },
+      "status": "open",
+      "completion_requires": "Verified behavior on the real caller path; evidence and enforcement mapped in audit.md."
+    }
+  ]
+}
