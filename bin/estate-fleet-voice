@@ -11,6 +11,7 @@ Config: $FLEETVIEW_URL (default http://127.0.0.1:18790), $ESTATE_AGENT (author; 
 $ESTATE_FLEET_VOICE_PLAYER (command run with a wav path; default afplay). Needs ffmpeg.
 Exit 0 ok, 1 FAIL, 2 BLIND (FleetView or the voice engine unreachable: never silence reported as success).
 """
+import json
 import os
 import subprocess
 import sys
@@ -50,8 +51,6 @@ def ffmpeg(args, data=None):
 
 
 def hear(audio, kind):
-    import json
-
     pcm = ffmpeg(["-i", audio, "-f", "f32le", "-ac", "1", "-ar", str(ASR_RATE), "-"])
     author = os.environ.get("ESTATE_AGENT", "founder")
     q = urllib.parse.urlencode({"session_id": f"fleet-voice-{os.getpid()}", "author": author})
@@ -77,22 +76,22 @@ def play(pcm):
 
 def speak(text):
     if text:
-        play(post("/voice/say", ('{"text": %s}' % __import__("json").dumps(text)).encode(), "application/json"))
+        play(post("/voice/say", json.dumps({"text": text}).encode(), "application/json"))
         print("ok      estate-fleet-voice  spoke the text")
         return
-    r = subprocess.run([sys.executable, str(FLEET), "inbox"], capture_output=True, text=True)
-    if r.returncode:
-        sys.stdout.write(r.stdout)
-        sys.exit(r.returncode)
-    lines = [ln for ln in r.stdout.splitlines() if ln.split(" ", 1)[0] in ("directive", "broadcast", "to")]
+    # The fleet hands the messages to _say-stdin and acks only if it exits 0 (playback worked).
+    r = subprocess.run([sys.executable, str(FLEET), "inbox", "--pipe", sys.executable, str(Path(__file__).resolve()), "_say-stdin"])
+    sys.exit(r.returncode)
+
+
+def say_stdin():
+    lines = [ln.rstrip("\n") for ln in sys.stdin if ln.strip()]
     if not lines:
-        text = "You have no new messages."
-    else:
-        text = f"You have {len(lines)} new messages. " + " ".join(ln.split(" ", 3)[-1] for ln in lines)
-    play(post("/voice/say", ('{"text": %s}' % __import__("json").dumps(text)).encode(), "application/json"))
-    if lines:
-        subprocess.run([sys.executable, str(FLEET), "inbox", "--ack"], capture_output=True, check=True)
-    print(f"ok      estate-fleet-voice  read {len(lines)} message(s) aloud" + (" and acked them" if lines else ""))
+        print("ok      estate-fleet-voice  no new messages")
+        return
+    text = f"You have {len(lines)} new messages. " + " ".join(ln.split(" ", 2)[-1] for ln in lines)
+    play(post("/voice/say", json.dumps({"text": text}).encode(), "application/json"))
+    print(f"ok      estate-fleet-voice  read {len(lines)} message(s) aloud and acked them")
 
 
 def main(argv):
@@ -101,6 +100,8 @@ def main(argv):
         if kind not in ("directive", "broadcast"):
             sys.exit("FAIL    estate-fleet-voice  --kind is directive or broadcast")
         hear(argv[1], kind)
+    elif argv == ["_say-stdin"]:
+        say_stdin()
     elif argv and argv[0] == "speak":
         speak(" ".join(argv[1:]))
     else:
