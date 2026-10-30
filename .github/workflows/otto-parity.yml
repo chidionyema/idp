@@ -25,12 +25,29 @@ concurrency:
 jobs:
   parity:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # idp#7354 (2026-10-29): the job timeout was 15 minutes and the playbook needed longer than
+    # that against a dark cluster -- every kubectl call waited out a 60s request timeout -- so
+    # GitHub CANCELLED the job and the tick concluded `cancelled`, measuring nothing (runs
+    # #40715893797..#40792186310). The job timeout is now LONGER than the playbook's own wall
+    # clock (PARITY_WALL_CLOCK_S, 780s) plus the kill grace (30s), so the inner `timeout` fires
+    # first and the tick ends with a conclusion and a log -- red, but honest -- instead of being
+    # cancelled. 25 minutes = 1500s > 780 + 30 = 810s, with room for the mint step above.
+    timeout-minutes: 25
     env:
       OCI_CLI_AUTH: security_token
       OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
       OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
       OCI_REGION: ${{ vars.OCI_REGION }}
+      # How long ONE kubectl call may take. 20s, not the script's 60s default: the playbook has
+      # ~30 rows, and 60s each is how a dark estate turned this tick into a cancellation.
+      KUBECTL_REQUEST_TIMEOUT: 20s
+      # The playbook's own budget: it stops starting new rows when this is spent and grades the
+      # rest BLIND (unmeasured), so it concludes on its own before the wall clock below.
+      PARITY_BUDGET_S: 600
+      # The wall clock around the playbook. The inner `timeout` is the backstop: if the playbook
+      # has NOT concluded by then, it is killed and the tick is red with the reason, not
+      # cancelled by GitHub.
+      PARITY_WALL_CLOCK_S: 780
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -62,7 +79,15 @@ jobs:
         id: parity
         run: |
           set -uo pipefail
-          bin/idp-oke-break-glass otto-parity | tee "$RUNNER_TEMP/parity.log"; rc=${PIPESTATUS[0]}
+          timeout --signal=TERM --kill-after=30s "${PARITY_WALL_CLOCK_S}" bin/idp-oke-break-glass otto-parity | tee "$RUNNER_TEMP/parity.log"; rc=${PIPESTATUS[0]}
+          # 124 = the wall clock fired, 137 = the kill grace fired. Either way the playbook did
+          # NOT conclude, so the rows are unmeasured: say so in the log and in the summary, and
+          # end the tick red. A red tick that says "unmeasured" is a signal; a cancelled tick
+          # is silence that the SLA reads as a run.
+          if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+            echo "BLIND playbook-wall-clock  the playbook did not conclude within ${PARITY_WALL_CLOCK_S}s; the rows above are unmeasured" | tee -a "$RUNNER_TEMP/parity.log"
+            rc=1
+          fi
           { echo "## otto-parity"; echo '```'; cat "$RUNNER_TEMP/parity.log"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           { echo "red<<EOF"; grep -E '^(FAIL|BLIND) ' "$RUNNER_TEMP/parity.log" | cut -c1-140 | head -25; echo "EOF"; } >> "$GITHUB_OUTPUT"
           exit "$rc"
