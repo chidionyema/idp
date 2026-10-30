@@ -3,8 +3,8 @@
   "generator": "bin/capability-index emit",
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
-    "intent": 110,
-    "layer": 228,
+    "intent": 111,
+    "layer": 229,
     "service": 122,
     "tool": 462,
     "workflow": 85
@@ -617,6 +617,55 @@
       "rung": null,
       "writer": "intents",
       "path": "platform/estate/intents/concierge-task.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:intent/consult-gemini",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "Ask Gemini, the estate's long-term architectural consultant, a question with named repo files as context. Goes through the estate router so spend is on the ledger, falls back to the neutral default lane if Gemini refuses (and says so), and saves the answer as a dated review in docs/reviews/. args: question: { type: string, required: true, help: \"What you want reviewed or decided, in a sentence or two\" } files:    { type: string, default: \"\", help: \"Comma-separated repo files to give as context\" } model:    { type: string, default: \"gemini/gemini-3.8-flash\", help: \"Router model to ask first\" } max_bytes: { type: int, default: 400000, help: \"Context budget; anything past it is cut and named\" } tools: [] door_s: 100 halt_on_failure: true steps: - name: ask cmd: | python3 ~/.estate/libexec/consult_gemini.py question={{question}} files={{files}} model={{model}} max_bytes={{max_bytes}}",
+      "contract": {
+        "inputs": [
+          "files",
+          "max_bytes",
+          "model",
+          "question"
+        ],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/consult-gemini.yaml",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -7262,6 +7311,55 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/libexec/code-review-t3.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-libexec-consult_gemini",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "consult.gemini: ask Gemini for an architectural review of the estate, through the router.",
+      "contract": {
+        "inputs": [
+          "--brief",
+          "--show-toplevel"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/libexec/consult_gemini.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
