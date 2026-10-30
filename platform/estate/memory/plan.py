@@ -29,6 +29,8 @@ import os
 import re
 import shlex
 import sys
+import time
+from typing import Optional
 
 MIN_GOAL_CHARS = 8
 MIN_SUBGOAL_CHARS = 4
@@ -430,7 +432,340 @@ TOOL_SCHEMAS = [
 ]
 
 
+# ---------------------------------------------------------------------------------------------
+# THE DURABLE PLAN LEDGER, AND THE DOOR'S GATE (idp#7518)
+#
+# Why this exists. The plan used to live in ONE PROCESS: pi's extension kept it in memory, and
+# every other runtime rebuilt it by replaying a transcript. Nothing survived the session, nothing
+# was visible to the founder, and the estate's one door (mcp/plugins/estate_executor.py) never
+# heard about a plan at all. So an agent that reached the estate through any other runtime --
+# or through the door directly -- worked with no goals and no sub-goals, and nothing in the
+# estate could say so (the falsifier: execute_command accepted `echo plan-gate-falsifier` and
+# answered {"accepted": true, "job_id": "exec-1793332780-421"}).
+#
+# The ledger is ONE store: an append-only JSONL of the plan-tool calls a session made. The plan
+# is the replay of that ledger -- the same `replay` the hook already uses -- so there is no second
+# model of what a plan is, and a plan declared in one runtime is the same plan in another.
+#
+# The door's gate reads that ledger and refuses WORK without a plan. Reading is how a plan is
+# made, so reads are carved out; so are the plan tools themselves, the memory reads, and the
+# housekeeping a trapped agent needs to say it is trapped (R38: a gate that traps the estate
+# is a worse outage than the defect it reports).
+# ---------------------------------------------------------------------------------------------
+
+PLAN_LEDGER_DIR = os.environ.get("ESTATE_PLAN_LEDGER_DIR") or os.path.join(
+    os.path.expanduser("~"), ".estate", "plans"
+)
+
+# Where the door writes what it saw without a plan, so the founder can SEE the gap instead of
+# inferring it from a missing declaration.
+PLAN_OBSERVE_FILE = "observe.jsonl"
+
+# Commands that only read. Everything else is work. This list is deliberately small and
+# deliberately conservative in the other direction: an unknown command is WORK, because a gate
+# that passes what it cannot classify is a gate that cannot fail (R1).
+#
+# `echo`, `printf`, `seq`, `true`, `false` and `test` are NOT in it: they invent output rather
+# than observe the estate, so they are work. pi's own gate refuses them the same way (a bash
+# call is work), and the falsifier for idp#7518 was exactly `echo plan-gate-falsifier` being
+# accepted by the door.
+_READ_ONLY_CMDS = frozenset(
+    {
+        "cat",
+        "ls",
+        "head",
+        "tail",
+        "wc",
+        "grep",
+        "egrep",
+        "rg",
+        "ag",
+        "find",
+        "fd",
+        "stat",
+        "file",
+        "which",
+        "type",
+        "pwd",
+        "date",
+        "whoami",
+        "hostname",
+        "uname",
+        "env",
+        "printenv",
+        "jq",
+        "yq",
+        "tree",
+        "du",
+        "df",
+        "diff",
+        "cmp",
+        "readlink",
+        "realpath",
+        "basename",
+        "dirname",
+        "id",
+        "ps",
+        "top",
+        "lsof",
+        "open",
+    }
+)
+
+# git subcommands that only read.
+_GIT_READ = frozenset(
+    {
+        "status",
+        "log",
+        "diff",
+        "show",
+        "branch",
+        "rev-parse",
+        "rev-list",
+        "ls-files",
+        "ls-tree",
+        "ls-remote",
+        "describe",
+        "blame",
+        "shortlog",
+        "cat-file",
+        "count-objects",
+        "reflog",
+        "whatchanged",
+        "config",
+        "remote",
+    }
+)
+
+# gh subcommands that only read.
+_GH_READ = frozenset({"view", "list", "status", "search", "auth"})
+
+# A command that chains anything is not a read: `cat x; rm y` reads and writes.
+_CHAIN = re.compile(r"[|;&`]|&&|\|\||\$\(|\n")
+
+
+def ledger_path(session_id: str) -> str:
+    """Where one session's ledger lives. The id is sanitised, because it is a filename."""
+    safe = (
+        re.sub(r"[^A-Za-z0-9._-]+", "_", str(session_id or "")).strip("_")
+        or "anonymous"
+    )
+    return os.path.join(PLAN_LEDGER_DIR, safe + ".jsonl")
+
+
+def append_plan_event(session_id: str, tool: str, args: dict) -> bool:
+    """One plan-tool call, appended. Never raises: a broken ledger must not take a session down."""
+    try:
+        os.makedirs(PLAN_LEDGER_DIR, exist_ok=True)
+        line = json.dumps(
+            {"at": time.time(), "session": session_id, "tool": tool, "args": args},
+            sort_keys=True,
+        )
+        with open(ledger_path(session_id), "a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+        return True
+    except Exception:  # noqa: BLE001 - the ledger is a convenience, never a crash
+        return False
+
+
+def _ledger_record(line: str):
+    """One ledger line -> the plan-tool call it holds, or None when it is not one."""
+    try:
+        rec = json.loads(line)
+    except ValueError:
+        return None
+    if isinstance(rec, dict) and rec.get("tool") in PLAN_TOOLS:
+        return [rec["tool"], rec.get("args") or {}]
+    return None
+
+
+def ledger_calls(session_id: str) -> list:
+    """The plan-tool calls one session made, in order. A damaged line is skipped, not fatal."""
+    out = []
+    try:
+        with open(ledger_path(session_id), encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                rec = _ledger_record(line)
+                if rec:
+                    out.append(rec)
+    except FileNotFoundError:
+        return []
+    except Exception:  # noqa: BLE001 - an unreadable ledger is no plan, never a crash
+        return []
+    return out
+
+
+def ledger_plan(session_id: str):
+    """The plan one session has declared: the replay of its ledger."""
+    return replay(ledger_calls(session_id))
+
+
+def session_pointer_path(pid: int) -> str:
+    """Where a runtime adapter binds its session id to the process that owns it."""
+    return os.path.join(PLAN_LEDGER_DIR, "session-%d.json" % int(pid))
+
+
+def write_session_pointer(session_id: str, pid: Optional[int] = None) -> bool:
+    """Bind a session id to the process that owns the session.
+
+    The door cannot ask the caller who it is, and the caller's word is exactly what a gate
+    must not trust. The adapter that owns the session writes the binding; the door reads it.
+    """
+    if not session_id:
+        return False
+    try:
+        os.makedirs(PLAN_LEDGER_DIR, exist_ok=True)
+        path = session_pointer_path(os.getpid() if pid is None else pid)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"session_id": session_id, "at": time.time()}, fh, sort_keys=True)
+        return True
+    except Exception:  # noqa: BLE001 - a pointer that cannot be written must not break the agent
+        return False
+
+
+def resolve_session_id() -> str:
+    """The caller's session identity, in order of trust.
+
+    1. `ESTATE_SESSION_ID` in the environment -- the runtime that set it owns the session.
+    2. The pointer file the owning runtime wrote for this process (or its parent): the MCP
+       server runs underneath the runtime, so the runtime's pid is the door's parent.
+    3. Nothing. The caller is automation, the fact is recorded, and the work is let through.
+    """
+    sid = (os.environ.get("ESTATE_SESSION_ID") or "").strip()
+    if sid:
+        return sid
+    for pid in (os.getppid(), os.getpid()):
+        try:
+            with open(session_pointer_path(pid), encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        sid = str((data or {}).get("session_id") or "").strip()
+        if sid:
+            return sid
+    return ""
+
+
+def is_read_only_command(command: str) -> bool:
+    """True when a command only reads. A plan-tool call is not work: it IS the declaration."""
+    cmd = (command or "").strip()
+    if not cmd:
+        return False
+    if shell_plan_call(cmd):
+        return True
+    if _CHAIN.search(cmd):
+        return False
+    toks = cmd.split()
+    exe = os.path.basename(toks[0])
+    if exe in _READ_ONLY_CMDS:
+        return True
+    if exe == "git":
+        sub = toks[1] if len(toks) > 1 else ""
+        return sub in _GIT_READ
+    if exe == "gh":
+        sub = toks[1] if len(toks) > 1 else ""
+        if sub in _GH_READ:
+            return True
+        if sub == "api":
+            # `gh api` is a GET by default; a verb, a body or --input makes it a write.
+            return not re.search(
+                r"(-X|--method)[= ]?(POST|PUT|PATCH|DELETE)|--input|(^|\s)-[fF]\s", cmd
+            )
+        return False
+    return False
+
+
+def door_plan_gate(command: str, session_id=None) -> dict:
+    """The door's verdict on one command.
+
+    `{"ok": True, ...}` or `{"ok": False, "reason": <class>, "detail": <what to do>}`.
+
+    No session presented means no agent session was identified: the caller is automation (the
+    fleet collector, the reaper, the lane watcher) and is let through, but the fact is RECORDED,
+    so the founder can see work that ran without a declaration. A session that presents an id
+    and has no plan is refused: that is the case the bug is about.
+    """
+    sid = (
+        session_id
+        if session_id is not None
+        else os.environ.get("ESTATE_SESSION_ID", "")
+    )
+    if not sid:
+        return {"ok": True, "reason": "no_session_presented"}
+    if is_read_only_command(command):
+        return {"ok": True, "reason": "read_only"}
+    plan = ledger_plan(sid)
+    if not plan:
+        return {
+            "ok": False,
+            "reason": "plan_not_declared",
+            "detail": (
+                "this session has declared no goal and no sub-goal, so this command is refused. "
+                "Declare the plan first: "
+                + ESTATE_PLAN
+                + ' declare_plan \'{"goal": "<what done looks like>", "subgoals": '
+                '[{"id": "goal_1", "text": "<first step>"}]}\' -- then add_bdd for the '
+                "sub-goal you are on, and the door lets the work through."
+            ),
+        }
+    active = next((s for s in plan["subgoals"] if s["id"] not in plan["done"]), None)
+    if active is None:
+        return {
+            "ok": False,
+            "reason": "plan_complete",
+            "detail": (
+                "every sub-goal of this plan is done, so this command is refused. Call revise_plan "
+                "to declare what is next."
+            ),
+        }
+    if active["id"] not in plan["bdd"]:
+        return {
+            "ok": False,
+            "reason": "subgoal_scenario_missing",
+            "detail": (
+                active["id"]
+                + " ("
+                + active["text"]
+                + ") has no BDD scenario, so this command is refused. Pin the behaviour down "
+                'before building it: add_bdd({goal_id: "'
+                + active["id"]
+                + '", given: "<state>", when: "<action>", then: "<observable result>"}).'
+            ),
+        }
+    return {"ok": True, "reason": "plan_active", "goal_id": active["id"]}
+
+
+def record_unplanned(command: str, session_id: str = "", source: str = "door") -> None:
+    """One line: this command ran with no plan behind it. The visibility the founder asked for."""
+    try:
+        os.makedirs(PLAN_LEDGER_DIR, exist_ok=True)
+        line = json.dumps(
+            {
+                "at": time.time(),
+                "session": session_id,
+                "source": source,
+                "command": (command or "")[:2000],
+            },
+            sort_keys=True,
+        )
+        with open(
+            os.path.join(PLAN_LEDGER_DIR, PLAN_OBSERVE_FILE), "a", encoding="utf-8"
+        ) as fh:
+            fh.write(line + "\n")
+    except Exception:  # noqa: BLE001 - recording must never break the door
+        return
+
+
 def main(argv: list) -> int:
+    if argv and argv[0] == "gate":
+        # The door's verdict, one command at a time: `plan.py gate "<command>" [session-id]`.
+        command = argv[1] if len(argv) > 1 else ""
+        sid = argv[2] if len(argv) > 2 else None
+        print(json.dumps(door_plan_gate(command, sid)))
+        return 0
     if len(argv) not in (2, 3) or argv[0] != "authorize":
         print(__doc__.split("\n\n")[-1], file=sys.stderr)
         return 2
