@@ -45,6 +45,7 @@ digraph {
   "oci_vault_secret.bridge_identity" [label="oci_vault_secret\nbridge_identity"];
   "oci_identity_dynamic_group.github_actions" [label="oci_identity_dynamic_group\ngithub_actions"];
   "oci_identity_policy.github_actions_secret_create" [label="oci_identity_policy\ngithub_actions_secret_create"];
+  "oci_identity_policy.github_actions_run_command" [label="oci_identity_policy\ngithub_actions_run_command"];
   "oci_objectstorage_bucket.quad_anchors" [label="oci_objectstorage_bucket\nquad_anchors"];
   "oci_objectstorage_preauthrequest.quad_anchor_write" [label="oci_objectstorage_preauthrequest\nquad_anchor_write"];
   "random_password.quad_ledger_db" [label="random_password\nquad_ledger_db"];
