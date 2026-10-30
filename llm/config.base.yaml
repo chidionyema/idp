@@ -28,9 +28,15 @@ model_list:
   # The `vision` alias survives, repointed to the same Gemini backend the cluster's alias uses
   # (platform/llm/config.yaml:626) -- it pointed at the dead Mac gemma3:4b before, so photo
   # intake went from refused-connection to a served lane with this change.
+  # 2026-10-30: the model behind this alias moved from gemini-2.5-flash to gemini-3.5-flash,
+  # because Google retired 2.5-flash for this account -- it answers HTTP 404, "This model
+  # models/gemini-2.5-flash is no longer available to new users". gemini-3.8-flash was
+  # measured answering HTTP 503 (high demand); gemini-3.5-flash was measured answering
+  # HTTP 200 with a real completion. The 404 is the account's, not the request's, so a lane
+  # still naming 2.5-flash is dead for every request, image input included.
   - model_name: vision
     litellm_params:
-      model: gemini/gemini-2.5-flash
+      model: gemini/gemini-3.5-flash
       api_key: os.environ/GEMINI_API_KEY
       timeout: 300
       tpm: 150000

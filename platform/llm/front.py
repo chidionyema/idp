@@ -65,6 +65,18 @@ that says the model is not there is not the caller's answer: it is the target sa
 and the front already passes over a cloud whose key may not carry the model (403,
 key_model_access_denied). So the front now reads that refusal too, and asks the next target.
 
+WHY (2026-10-30, third part). The cloud leg forwarded the CALLER's own User-Agent to the
+cloud route, which sits behind Cloudflare. Cloudflare's browser-signature rules answer some
+client signatures with "403 error code: 1010" BEFORE the request ever reaches the router, and
+the front relayed that refusal as if it were the answer: a caller whose own signature the edge
+disliked lost every model while a healthy laptop slot sat unused. Measured through the live
+front on 127.0.0.1:4000 with one credential and one body: curl/8.7.1 -> 200,
+Python-urllib/3.12 -> 403 {"error code: 1010"}, estate-router-front/1.0 -> 200. So the front
+now presents ONE stable estate signature of its own to the cloud -- dropping the caller's
+header, never appending to it, because two User-Agent headers still carry the caller's
+signature -- and it recognises the edge's own refusal by its BODY and passes over the cloud
+for that request instead of relaying the edge's refusal as the answer.
+
 WHY (2026-10-29). The pass-over decided WHICH targets were tried but not IN WHAT ORDER: route()
 built healthy + [CLOUD] + sick, so a cloud already known not to answer sat AHEAD of the slots
 that had merely missed a probe. Under fleet load the slot's 3 s probe missed, the slot was marked
@@ -97,6 +109,13 @@ ACTIVE = pathlib.Path(
 SLOTS = (4001, 4002)
 # Empty turns the cloud leg off.
 CLOUD = os.environ.get("ESTATE_ROUTER_CLOUD", "https://llm.mumchimp.com")
+# The User-Agent the front presents to the cloud route, in place of the caller's own.
+# The cloud route sits behind Cloudflare, whose browser-signature rules refuse some client
+# signatures with "403 error code: 1010" before the request reaches the router at all.
+# Measured on 2026-10-30 through the live front on 127.0.0.1:4000, one credential and one
+# body: curl/8.7.1 -> 200, Python-urllib/3.12 -> 403 {"error code: 1010},
+# estate-router-front/1.0 -> 200. One stable estate signature is what the edge accepts.
+CLOUD_USER_AGENT = "estate-router-front/1.0"
 PROBE_EVERY = 2.0
 PROBE_TIMEOUT = 3.0
 DOWN_AFTER = 2
@@ -184,8 +203,8 @@ def route() -> list:
     return [CLOUD] + healthy + sick
 
 
-def mark_cloud_down() -> None:
-    """The cloud failed to answer. Pass over it for a while so the laptop answers instead.
+def mark_cloud_down(reason: str = "the cloud failed to answer") -> None:
+    """The cloud cannot answer now. Pass over it for a while so the laptop answers instead.
 
     Each failure in a row doubles the pass-over, up to CLOUD_DOWN_MAX_S: a cloud that fails
     slowly (the edge's 503 arrives after half a minute) would otherwise be paid for again on
@@ -196,7 +215,7 @@ def mark_cloud_down() -> None:
     cooldown = min(CLOUD_DOWN_S * 2 ** (CLOUD_FAILURES - 1), CLOUD_DOWN_MAX_S)
     CLOUD_DOWN_UNTIL = time.monotonic() + cooldown
     print(
-        f"front: the cloud failed to answer ({CLOUD_FAILURES} in a row); "
+        f"front: {reason} ({CLOUD_FAILURES} in a row); "
         f"the laptop answers for {cooldown:.0f}s",
         file=sys.stderr,
         flush=True,
@@ -298,23 +317,46 @@ async def connect(target):
     )
 
 
-def _rewrite(head: bytes, host_line: bytes, connection) -> bytes:
-    """The request head with one Host, one Connection policy and no Expect."""
+def _rewrite(head: bytes, host_line: bytes, connection, drop=(), add=()) -> bytes:
+    """The request head with one Host, one Connection policy and no Expect.
+
+    `drop` names headers the target must not see (the cloud leg drops the caller's
+    User-Agent); `add` names the headers the front puts there instead.
+    """
     hop = (b"host", b"connection", b"keep-alive", b"proxy-connection", b"expect")
+    gone = {name.lower() for name in drop}
     lines = [
         line
         for line in head.split(b"\r\n")[1:]
-        if line and line.split(b":", 1)[0].strip().lower() not in hop
+        if line
+        and line.split(b":", 1)[0].strip().lower() not in hop
+        and line.split(b":", 1)[0].strip().lower() not in gone
     ]
     out = [head.split(b"\r\n", 1)[0]] + lines + [host_line]
     if connection:
         out.append(connection)
+    out.extend(add)
     return b"\r\n".join(out + [b"", b""])
 
 
 def for_cloud(head: bytes, host: str) -> bytes:
-    """The request head with the cloud's Host, asking the cloud to close after its answer."""
-    return _rewrite(head, b"Host: " + host.encode(), b"Connection: close")
+    """The request head with the cloud's Host, the front's own User-Agent, and a close after
+    the answer.
+
+    The caller's User-Agent is REPLACED, not forwarded: the cloud route sits behind Cloudflare,
+    whose browser-signature rules answer some client signatures with "403 error code: 1010"
+    before the request reaches the router at all. Measured on 2026-10-30 through the live front
+    on 127.0.0.1:4000, one credential and one body: curl/8.7.1 -> 200, Python-urllib/3.12 ->
+    403 {"error code": 1010}, estate-router-front/1.0 -> 200. The caller's header is dropped
+    rather than appended to: two User-Agent headers would still carry the caller's signature.
+    """
+    return _rewrite(
+        head,
+        b"Host: " + host.encode(),
+        b"Connection: close",
+        drop=(b"user-agent",),
+        add=(b"User-Agent: " + CLOUD_USER_AGENT.encode(),),
+    )
 
 
 def for_slot(head: bytes, port: int) -> bytes:
@@ -368,6 +410,30 @@ _NOT_HERE = (
 # A chunked body can split the phrase across chunk boundaries; the chunk headers are not
 # part of the message, so they are taken out before the message is read.
 _CHUNKED = re.compile(rb"\r\n[0-9a-fA-F]+\r\n")
+
+
+# How the edge says it refused the request ITSELF, before the router behind it saw it:
+# "error code: 1010" (the browser signature the edge insists on) and "error code: 1020" (the
+# edge's own access rule). Measured on 2026-10-30 with the caller's User-Agent forwarded to
+# the cloud: HTTP 403 with the body {"error code": 1010}, while a healthy laptop slot sat
+# unused. The BODY is the evidence, not the status: an ordinary authenticated 403 from the
+# router is the caller's own business and is still relayed untouched.
+_EDGE_CODE = re.compile(rb"errorcode(1010|1020)")
+
+
+def edge_blocked(complaint: bytes) -> bool:
+    """Did the edge refuse the request itself, rather than the router answering it?
+
+    Such a refusal is neither the caller's answer nor the router's: the request never got
+    past the edge. The next target may still carry the model, so the front asks it.
+
+    The body is squeezed to its letters and digits before the match, because the edge has
+    more than one way to write it: the body measured on 2026-10-30 was {"error code": 1010},
+    while the same refusal served to a browser reads "error code: 1010". Both squeeze to
+    "errorcode1010". An ordinary router refusal does not: {"error":{"code":"invalid_api_key"}}
+    squeezes to "errorcodeinvalidapikey".
+    """
+    return bool(_EDGE_CODE.search(re.sub(rb"[^a-z0-9]+", b"", complaint.lower())))
 
 
 def model_not_here(complaint: bytes) -> bool:
@@ -622,6 +688,17 @@ async def ask_cloud(
         # The cloud's key may not carry this model, or the cloud may not have the model at all.
         # Read the refusal and look.
         complaint = await read_some(back_r, MAX_ERROR)
+        if edge_blocked(complaint):
+            # The edge refused the request itself: it never reached the router behind it, so
+            # neither the caller's request nor the cloud's key is at fault. The cloud cannot
+            # answer this request now, so it is passed over and the next target is asked the
+            # same question -- exactly as for a cloud that failed to answer. The edge's own
+            # refusal is never relayed as the answer while a healthy target is still free.
+            held.forward = None
+            await drain(held, body)
+            back_w.close()
+            mark_cloud_down("the edge refused the request (Cloudflare)")
+            return ("retry", Refusal(status, complaint, back_r, back_w))
         mark_cloud_up()  # the cloud is answering; it is the refusal that is wrong, not the cloud
         if model_not_here(complaint):
             held.forward = None

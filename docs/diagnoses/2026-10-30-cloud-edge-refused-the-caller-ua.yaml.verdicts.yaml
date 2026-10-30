@@ -1,0 +1,70 @@
+description: 'The estate cloud route (llm.mumchimp.com, behind Cloudflare) answered
+  some callers with HTTP 403 and the body {"error code": 1010} while answering other
+  callers 200, with the same body and the same bearer credential. The front forwards
+  the CALLER''s User-Agent on the cloud leg, so the competing explanations are: (a)
+  the edge''s browser signature rules refuse some client signatures before the request
+  ever reaches the router, (b) the cloud route or the credential the front presents
+  is broken for everyone, (c) the caller''s own credential is invalid.
+
+  Measured 2026-10-30 with one credential and one body, varying only the User-Agent.
+  Through the live front on 127.0.0.1:4000 (three probes): curl/8.7.1 -> 200 in 1.462981s;
+  Python-urllib/3.12 -> 403 in 0.170018s with body {"error code": 1010}; estate-router-front/1.0
+  -> 200 in 1.201350s. Straight at the cloud route (six probes, same credential and
+  body): node -> 200, claude-cli/2.0 (external, cli) -> 200, curl/8.7.1 -> 200, estate-router-front/1.0
+  -> 200, Python-urllib/3.12 -> 403 {"error code": 1010}.
+
+  Priors and likelihoods below were written from the mechanism each hypothesis predicts,
+  not from the counts; the counts are what was observed.
+
+  '
+hypotheses:
+- name: H1
+  description: the User-Agent presented to the cloud edge decides the outcome; the
+    front forwards the caller''s header, and Cloudflare''s browser signature rules
+    refuse some client signatures with error 1010 before the request reaches the router
+  prior: 0.34
+- name: H2
+  description: the cloud route or the credential the front presents is broken for
+    every caller, and the successes came from the local slots rather than from the
+    cloud
+  prior: 0.33
+- name: H3
+  description: the caller''s own credential is invalid, so the refusal is about the
+    caller rather than about the signature
+  prior: 0.33
+evidence:
+- name: three User-Agents through the live front on 127.0.0.1:4000, one credential,
+    one body
+  observed:
+    http_200: 2
+    edge_403_1010: 1
+  likelihoods:
+    H1:
+      http_200: 0.7
+      edge_403_1010: 0.3
+    H2:
+      http_200: 0.02
+      edge_403_1010: 0.3
+    H3:
+      http_200: 0.01
+      edge_403_1010: 0.02
+- name: six User-Agents straight at the cloud route, same credential, same body
+  observed:
+    http_200: 5
+    edge_403_1010: 1
+  likelihoods:
+    H1:
+      http_200: 0.85
+      edge_403_1010: 0.15
+    H2:
+      http_200: 0.02
+      edge_403_1010: 0.3
+    H3:
+      http_200: 0.01
+      edge_403_1010: 0.02
+posteriors:
+  H1: 1.0
+  H2: 0.0
+  H3: 0.0
+winner: H1
+computed_at: '2026-10-30T16:55:07Z'
