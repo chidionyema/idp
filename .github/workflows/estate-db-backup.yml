@@ -80,7 +80,13 @@ jobs:
         run: |
           platform/estate-db/backup/estate-db-backup.sh start-container estate-db-pg /tmp/estate-db-pg.cid
           echo "cid=$(cat /tmp/estate-db-pg.cid)" >>"$GITHUB_OUTPUT"
-      - name: fetch the newest surviving dump
+      - name: the extensions the surviving dump asks for
+        env:
+          PGUSER: postgres
+          PGPASSWORD: ${{ env.PG_PASSWORD }}
+        run: |
+          platform/estate-db/backup/estate-db-backup.sh check-extensions-container "${{ steps.pg.outputs.cid }}"
+      - name: fetch the dump that really carries the estate database
         run: |
           mkdir -p /tmp/backup
           platform/estate-db/backup/estate-db-backup.sh fetch-source /tmp/backup/source.sql.gz
