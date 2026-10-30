@@ -22,6 +22,13 @@ predicate set -- there is no way for the estate to be reported as healthy by omi
             = UNKNOWN      if any predicate is unknown
             = MEASURED_OK  otherwise
 
+THE SCOPE RULE. A predicate that can only be answered from a scope this host does not have --
+a cluster question asked from a laptop -- is not this host's business, and counting it made
+the laptop's verdict permanently UNKNOWN: a board that can never be green teaches the estate
+to ignore the board. So the aggregate verdict is computed over the predicates THIS host can
+measure, and the others are reported separately, by name, as out of scope. The total verdict
+over every predicate is published beside it as verdict_all, so the split hides nothing.
+
 WHAT IT WRITES.
 
     ~/.estate/results/truth/latest.json   the measurement, for a later session
@@ -44,6 +51,7 @@ import contextlib
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess  # noqa: S404 -- the command predicates are declared in the contract, not typed
 import sys
@@ -57,6 +65,10 @@ from pathlib import Path
 OK = "MEASURED_OK"
 FAIL = "MEASURED_FAIL"
 UNKNOWN = "UNKNOWN"
+
+# The git the instrument reads the running tree with, by full path: a bare "git" is a PATH
+# lookup, and the estate runs on several machines with several git installations.
+GIT = shutil.which("git") or "/usr/bin/git"
 
 PROBE_PROMPT = "Reply with exactly: PONG"
 EXPECTED_REPLY = "PONG"
@@ -100,6 +112,26 @@ def verdict_of(results: list) -> str:
     return OK
 
 
+def lane_names(entries) -> set:
+    """The lane names in a ledger entry list.
+
+    The router's ledger grew a second shape: a refused lane is a record -- {"lane": "glm",
+    "reason": "...", "verdict": "..."} -- and not a bare string, because a refusal without a
+    reason is not evidence. A set of those records raises TypeError (unhashable type:
+    'dict'), which is how one measurement took the whole board down with it. Both shapes
+    are read here, so the ledger can change shape without the instrument breaking.
+    """
+    names = set()
+    for entry in entries or []:
+        if isinstance(entry, str):
+            names.add(entry)
+        elif isinstance(entry, dict):
+            lane = entry.get("lane")
+            if isinstance(lane, str):
+                names.add(lane)
+    return names
+
+
 def counts_of(results: list) -> dict:
     out = {OK: 0, FAIL: 0, UNKNOWN: 0}
     for r in results:
@@ -128,19 +160,70 @@ def redact(text: str) -> str:
 
 
 def result(
-    predicate_id: str, verdict: str, detail: str, scope: str, seconds: float
+    predicate_id: str,
+    verdict: str,
+    detail: str,
+    scope: str,
+    seconds: float,
+    in_scope: bool = True,
 ) -> dict:
     return {
         "id": predicate_id,
         "verdict": verdict,
         "detail": redact(detail)[:400],
         "scope": scope,
+        "in_scope": in_scope,
         "duration_s": round(seconds, 3),
         "measured_at": now_iso(),
     }
 
 
 # ---------------------------------------------------------------- the kinds of predicate
+
+
+def sops_token(spec) -> str:
+    """The one credential the truth instrument may need, taken from the vault by name.
+
+    The laptop front answers a caller that presents the estate's own key. That key lives
+    encrypted, so a surface that does not inherit it (the scheduled truth job) would
+    measure a 401 and report the founder's path broken when the path is fine. The value is
+    extracted into this function's local variable and never printed, logged or written.
+
+    The spec names where the key is: the sops wrapper, the encrypted file, the JSON path
+    inside it, and the age key. Nothing here is hard-coded, so the contract stays the one
+    place the estate's credentials are described.
+    """
+    if not isinstance(spec, dict):
+        return ""
+    tool = expand(str(spec.get("tool", "")))
+    encrypted = expand(str(spec.get("file", "")))
+    if not tool.is_file() or not encrypted.is_file():
+        return ""
+    env = dict(os.environ)
+    key_env = str(spec.get("key_env", "SOPS_AGE_KEY_FILE"))
+    if not env.get(key_env):
+        key_file = expand(str(spec.get("key_file", "")))
+        if key_file.is_file():
+            env[key_env] = str(key_file)
+    try:
+        proc = subprocess.run(  # noqa: S603 -- argv is a list, never a shell string
+            [
+                str(tool),
+                "-d",
+                "--extract",
+                str(spec.get("extract", "")),
+                str(encrypted),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            env=env,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return ""
+    if proc.returncode != 0:
+        return ""
+    return (proc.stdout or "").strip()
 
 
 def eval_http(pred: dict) -> tuple:
@@ -159,7 +242,17 @@ def eval_http(pred: dict) -> tuple:
     auth_env = pred.get("auth_env")
     cred_missing = ""
     if auth_env:
-        token = os.environ.get(auth_env, "")
+        # One credential can live under more than one name: the executor carries the laptop
+        # caller key as LITELLM_API_KEY, the scheduled job exports LITELLM_LAPTOP_KEY. The
+        # first name that carries a value wins, and no name's value is ever printed.
+        names = [auth_env] if isinstance(auth_env, str) else [str(n) for n in auth_env]
+        token = ""
+        for name in names:
+            token = os.environ.get(name, "")
+            if token:
+                break
+        if not token:
+            token = sops_token(pred.get("auth_sops"))
         if token:
             scheme = pred.get("auth_scheme", "Bearer")
             headers["Authorization"] = ("%s %s" % (scheme, token)).strip()
@@ -168,7 +261,7 @@ def eval_http(pred: dict) -> tuple:
             # path still gets asked, and its ANSWER is the truth. A refusal is a failure of
             # the founder's path; a success without the credential proves the endpoint
             # answers, not that the founder's credentialed path works, so that is UNKNOWN.
-            cred_missing = auth_env
+            cred_missing = " or ".join(names)
     req = urllib.request.Request(url, data=body, headers=headers, method=method)  # noqa: S310 -- the URL is declared in the contract
     started = time.time()
     try:
@@ -234,6 +327,48 @@ def eval_http(pred: dict) -> tuple:
             elapsed,
         )
     return OK, "HTTP %d in %.2fs" % (status, elapsed), elapsed
+
+
+def eval_host_load(pred: dict) -> tuple:
+    """How loaded is this box, against the front's own refusal threshold.
+
+    The laptop front refuses traffic when the 1-minute load average passes 8 x the CPU
+    count (ESTATE_FRONT_LOAD_MAX overrides it). When that happens, the laptop route fails
+    for a reason that has nothing to do with the route -- the router is fine, the box is
+    not -- and a board that reports only "the route failed" sends the estate to fix the
+    wrong thing. This predicate names the cause.
+    """
+    started = time.time()
+    try:
+        load = os.getloadavg()[0]
+        cpus = os.cpu_count() or 1
+    except (AttributeError, OSError) as exc:
+        return (
+            UNKNOWN,
+            "the load average could not be read: %s" % exc,
+            time.time() - started,
+        )
+    threshold = float(pred.get("threshold_multiplier", 8.0)) * cpus
+    override = os.environ.get("ESTATE_FRONT_LOAD_MAX")
+    if override:
+        try:
+            threshold = float(override)
+        except ValueError:
+            pass
+    if load > threshold:
+        return (
+            FAIL,
+            "the 1-minute load average is %.1f, over the front's threshold of %.1f "
+            "(8 x %d cpu); the front refuses traffic on a saturated box"
+            % (load, threshold, cpus),
+            time.time() - started,
+        )
+    return (
+        OK,
+        "the 1-minute load average is %.1f, under the front's threshold of %.1f"
+        % (load, threshold),
+        time.time() - started,
+    )
 
 
 def eval_command(pred: dict) -> tuple:
@@ -311,7 +446,10 @@ def eval_file(pred: dict) -> tuple:
                 % path,
                 time.time() - started,
             )
-        unaccounted = sorted(set(declared) - set(served) - set(refused))
+        declared_names = lane_names(declared)
+        served_names = lane_names(served)
+        refused_names = lane_names(refused)
+        unaccounted = sorted(declared_names - served_names - refused_names)
         if unaccounted:
             return (
                 FAIL,
@@ -322,7 +460,7 @@ def eval_file(pred: dict) -> tuple:
         return (
             OK,
             "%d declared lane(s) accounted for: %d served, %d refused"
-            % (len(declared), len(served), len(refused)),
+            % (len(declared_names), len(served_names), len(refused_names)),
             time.time() - started,
         )
     if assertion == "door_present":
@@ -333,7 +471,111 @@ def eval_file(pred: dict) -> tuple:
     return FAIL, "unknown assertion %r" % assertion, time.time() - started
 
 
-EVALUATORS = {"http": eval_http, "command": eval_command, "file": eval_file}
+def _git(runtime: Path, args: list, timeout: float) -> str:
+    """One read-only git call inside the runtime mirror. Empty when it does not answer."""
+    try:
+        proc = subprocess.run(  # noqa: S603 -- argv is a list, never a shell string
+            [GIT, "-C", str(runtime)] + args,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return ""
+    if proc.returncode != 0:
+        return ""
+    return (proc.stdout or "").strip()
+
+
+def _remote_main_sha(url: str, timeout: float) -> str:
+    """The true main on the remote.
+
+    The mirror's own refs/remotes/origin/main is written by the sync and can lag the remote by
+    a whole sync interval, so comparing HEAD against it would call a stale tree current. The
+    remote is asked directly.
+    """
+    try:
+        proc = subprocess.run(  # noqa: S603 -- argv is a list, never a shell string
+            [GIT, "ls-remote", "--heads", url, "main"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return ""
+    if proc.returncode != 0:
+        return ""
+    for line in (proc.stdout or "").splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1].endswith("refs/heads/main"):
+            return parts[0]
+    return ""
+
+
+def eval_runtime_current(pred: dict) -> tuple:
+    """Is the tree the estate actually runs on main?
+
+    The runtime mirror is the estate's own copy of this repository, and the staged doors in
+    ~/.estate are copied out of it. A mirror that is behind main is a silent difference
+    between what the founder believes is deployed and what is -- the estate's own 2026-10-30
+    incident, where the live door ran a different implementation than the repository, and
+    both were green. The comparison is against the remote, so a stale local ref cannot
+    declare a stale tree current.
+    """
+    runtime = expand(pred.get("runtime_path", "~/.estate/runtime/idp"))
+    timeout = float(pred.get("timeout_s", 25))
+    started = time.time()
+    if not runtime.is_dir():
+        return (
+            FAIL,
+            "the runtime mirror %s is absent" % runtime,
+            time.time() - started,
+        )
+    head = _git(runtime, ["rev-parse", "HEAD"], timeout)
+    if not head:
+        return (
+            UNKNOWN,
+            "the runtime mirror %s has no HEAD to read" % runtime,
+            time.time() - started,
+        )
+    reference = str(pred.get("reference", "origin/main"))
+    url = _git(runtime, ["remote", "get-url", "origin"], timeout)
+    remote = _remote_main_sha(url, timeout) if url else ""
+    if remote:
+        source = "main on the remote"
+    else:
+        remote = _git(runtime, ["rev-parse", reference], timeout)
+        source = "the mirror's %s ref" % reference
+    if not remote:
+        return (
+            UNKNOWN,
+            "main could not be resolved from %s" % runtime,
+            time.time() - started,
+        )
+    if head == remote:
+        return (
+            OK,
+            "the runtime mirror is on %s (%s)" % (source, head[:12]),
+            time.time() - started,
+        )
+    behind = _git(runtime, ["rev-list", "--count", "%s..%s" % (head, remote)], timeout)
+    detail = "the runtime mirror is at %s but %s is %s" % (
+        head[:12],
+        source,
+        remote[:12],
+    )
+    if behind:
+        detail += " (%s commit(s) behind)" % behind
+    return FAIL, detail, time.time() - started
+
+
+EVALUATORS = {
+    "http": eval_http,
+    "command": eval_command,
+    "file": eval_file,
+    "host_load": eval_host_load,
+    "runtime_current": eval_runtime_current,
+}
 
 
 # ---------------------------------------------------------------- the measurement
@@ -363,6 +605,7 @@ def measure(contract: dict, scope: str, only: str = "") -> list:
                 % (want_scope, scope),
                 want_scope,
                 0.0,
+                in_scope=False,
             )
             return
         evaluator = EVALUATORS.get(pred.get("kind", ""))
@@ -399,15 +642,23 @@ def snapshot(contract: dict, results: list, scope: str) -> dict:
                 "verdict": verdict_of(subset),
                 "counts": counts_of(subset),
             }
-    verdict = verdict_of(results)
+    here = [r for r in results if r.get("in_scope", True)]
+    elsewhere = [r for r in results if not r.get("in_scope", True)]
+    verdict = verdict_of(here)
     return {
         "generated_at": now_iso(),
         "generator": "bin/idp-estate-truth",
         "contract_version": contract.get("version"),
         "host": {"hostname": socket.gethostname(), "scope": scope},
         "verdict": verdict,
+        "verdict_all": verdict_of(results),
         "ok": verdict == OK,
-        "counts": counts_of(results),
+        "counts": counts_of(here),
+        "counts_all": counts_of(results),
+        "out_of_scope": [
+            {"id": r["id"], "scope": r["scope"], "detail": r["detail"]}
+            for r in elsewhere
+        ],
         "scopes": by_scope,
         "predicates": results,
     }
@@ -416,20 +667,26 @@ def snapshot(contract: dict, results: list, scope: str) -> dict:
 def render(report: dict) -> str:
     lines = []
     for r in report["predicates"]:
+        if not r.get("in_scope", True):
+            continue
         lines.append(
             "%-8s %-26s %-8s %s" % (r["verdict"], r["id"], r["scope"], r["detail"])
         )
-    lines.append(
-        "TRUTH VERDICT: %s  (ok=%d fail=%d unknown=%d) host=%s scope=%s"
-        % (
-            report["verdict"],
-            report["counts"].get(OK, 0),
-            report["counts"].get(FAIL, 0),
-            report["counts"].get(UNKNOWN, 0),
-            report["host"]["hostname"],
-            report["host"]["scope"],
-        )
+    for r in report.get("out_of_scope", []):
+        lines.append("%-8s %-26s %-8s %s" % ("OUT", r["id"], r["scope"], r["detail"]))
+    line = "TRUTH VERDICT: %s  (ok=%d fail=%d unknown=%d) host=%s scope=%s" % (
+        report["verdict"],
+        report["counts"].get(OK, 0),
+        report["counts"].get(FAIL, 0),
+        report["counts"].get(UNKNOWN, 0),
+        report["host"]["hostname"],
+        report["host"]["scope"],
     )
+    if report.get("out_of_scope"):
+        line += "  [out of scope here: %s]" % ", ".join(
+            r["id"] for r in report["out_of_scope"]
+        )
+    lines.append(line)
     return "\n".join(lines)
 
 

@@ -1,11 +1,13 @@
 {
-  "version": 1,
-  "updated": "2026-10-29",
-  "why": "The estate had a process for ownership (claims) and a process for code (gates, CI, Greenlane) and no process for truth: nothing standing said whether the founder's own path answered. Every predicate here is a question about the founder's real path, and every one of them is answered with MEASURED_OK, MEASURED_FAIL or UNKNOWN. UNKNOWN is never OK.",
+  "version": 2,
+  "updated": "2026-10-30",
+  "why": "The estate had a process for ownership (claims, heartbeats, the collision check) and a process for code (gates, CI, Greenlane) and no process for truth: nothing standing said whether the founder's own path answered. Every predicate here is a question about the founder's real path, and every one of them is answered with MEASURED_OK, MEASURED_FAIL or UNKNOWN. UNKNOWN is never OK.",
   "rules": [
     "A predicate's verdict is about its ANSWER, never about the connect: a path that refuses the connection has been measured, and it did not work.",
     "A credential that is absent from this host does not stop the measurement. The path is asked anyway; a refusal is MEASURED_FAIL and a success without the credential is UNKNOWN (the endpoint answers, the founder's credentialed path is not proven).",
-    "The aggregate verdict is total: any MEASURED_FAIL makes it MEASURED_FAIL, any UNKNOWN makes it UNKNOWN, and only an all-OK set is MEASURED_OK. There is no path by which the estate is reported healthy by omission.",
+    "The aggregate verdict is total over the predicates THIS host can measure: any MEASURED_FAIL makes it MEASURED_FAIL, any UNKNOWN makes it UNKNOWN, and only an all-OK set is MEASURED_OK. There is no path by which the estate is reported healthy by omission.",
+    "A predicate this host cannot measure at all -- a cluster question asked from a laptop -- is reported separately, by name, as out of scope, and it does not count against the verdict here. A board that can never be green teaches the estate to ignore the board. The total verdict over every predicate is published beside the host verdict as verdict_all, so the split hides nothing.",
+    "The router's lane ledger carries two shapes: a bare lane name and a refusal record such as {'lane': 'glm', 'reason': '...', 'verdict': '...'}. Both are read. One unhashable dict must not be able to take the whole board down.",
     "No predicate may print a credential, a prompt body or a response body. The probe prompt is the fixed string 'Reply with exactly: PONG' and the expected token is PONG."
   ],
   "predicates": [
@@ -18,13 +20,17 @@
       "url": "https://llm.mumchimp.com/v1/chat/completions",
       "auth_env": "LITELLM_CLOUD_PROBE_KEY",
       "auth_scheme": "Bearer",
+      "headers": {
+        "User-Agent": "estate-router-front/1.0"
+      },
       "body": {
         "model": "default",
-        "messages": [{ "role": "user", "content": "Reply with exactly: PONG" }]
+        "messages": [{ "role": "user", "content": "Reply with exactly: PONG" }],
+        "max_tokens": 64
       },
       "expect_status": 200,
       "expect_contains": "PONG",
-      "timeout_s": 45,
+      "timeout_s": 25,
       "subjects": [
         "platform/llm/front.py",
         "platform/llm/litellm.yaml",
@@ -39,15 +45,23 @@
       "scope": "laptop",
       "method": "POST",
       "url": "http://127.0.0.1:4000/v1/chat/completions",
-      "auth_env": "LITELLM_LAPTOP_KEY",
+      "auth_env": ["LITELLM_API_KEY", "LITELLM_LAPTOP_KEY"],
       "auth_scheme": "Bearer",
+      "auth_sops": {
+        "tool": "~/.estate/litellm-local/sops",
+        "file": "~/.estate/litellm-local/caller/LITELLM_LAPTOP_KEY.yaml",
+        "extract": "[\"LITELLM_API_KEY\"]",
+        "key_env": "SOPS_AGE_KEY_FILE",
+        "key_file": "~/.config/prospector/age-key.txt"
+      },
       "body": {
-        "model": "claude-haiku-4-5-20251001",
-        "messages": [{ "role": "user", "content": "Reply with exactly: PONG" }]
+        "model": "default",
+        "messages": [{ "role": "user", "content": "Reply with exactly: PONG" }],
+        "max_tokens": 64
       },
       "expect_status": 200,
       "expect_contains": "PONG",
-      "timeout_s": 85,
+      "timeout_s": 30,
       "subjects": [
         "platform/llm/front.py",
         "bin/litellm-local"
@@ -69,11 +83,31 @@
       "summary": "the memory door the Mac bridge reads carries a door, so the founder's recall path exists",
       "kind": "file",
       "scope": "laptop",
-      "path": "~/.estate/memory/runtimes.json",
+      "path": "~/.estate/memory/platform/estate/memory/runtimes.json",
       "assert": "door_present",
       "subjects": [
         "platform/estate/memory/**"
       ]
+    },
+    {
+      "id": "runtime.current",
+      "summary": "the tree the estate actually runs on is main, so the live doors and the repository agree",
+      "kind": "runtime_current",
+      "scope": "laptop",
+      "runtime_path": "~/.estate/runtime/idp",
+      "reference": "origin/main",
+      "timeout_s": 25,
+      "subjects": [
+        "bin/estate-runtime-sync"
+      ]
+    },
+    {
+      "id": "host.load",
+      "summary": "this box is not saturated, so the front is not refusing traffic for lack of headroom",
+      "kind": "host_load",
+      "scope": "laptop",
+      "threshold_multiplier": 8.0,
+      "subjects": []
     },
     {
       "id": "estate-db.rows",
@@ -100,9 +134,20 @@
   ],
   "paths": {
     "bin/idp-estate-truth": ["router.lanes.accounted"],
-    "platform/estate/libexec/estate-truth.py": ["router.lanes.accounted"],
-    "platform/estate/intents/estate-truth.yaml": ["router.lanes.accounted"],
-    "catalog/truth-contract.json": ["router.lanes.accounted"],
+    "platform/estate/libexec/estate-truth.py": [
+      "router.lanes.accounted",
+      "router.laptop.completion",
+      "memory.recall",
+      "runtime.current"
+    ],
+    "platform/estate/intents/estate-truth.yaml": ["router.laptop.completion", "memory.recall"],
+    "catalog/truth-contract.json": [
+      "router.lanes.accounted",
+      "router.laptop.completion",
+      "memory.recall",
+      "runtime.current"
+    ],
+    "tests/test_estate_truth.py": ["router.lanes.accounted", "runtime.current"],
     "bin/litellm-local": ["router.laptop.completion", "router.lanes.accounted"],
     "platform/llm/front.py": ["router.cloud.completion", "router.laptop.completion"]
   }
