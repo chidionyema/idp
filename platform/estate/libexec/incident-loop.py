@@ -396,8 +396,10 @@ def run_gh(args: list[str], timeout: int = 45) -> tuple[int, str, str]:
     """gh, read-only. Every gh call here is a GET."""
     argv = ["gh", *args]  # noqa: S607 -- gh is on PATH; the estate's own CLI
     try:
+        env = dict(os.environ)
+        env["GH_REPO"] = str(load_policy()["dispatch"]["repo"])
         proc = subprocess.run(  # noqa: S603 -- fixed argv, no shell
-            argv, capture_output=True, text=True, timeout=timeout
+            argv, capture_output=True, text=True, timeout=timeout, env=env
         )
     except subprocess.TimeoutExpired:
         return 124, "", "timeout"
@@ -1184,10 +1186,43 @@ def tick(policy: dict, repo: str, dry_run: bool = False) -> dict:
         if not row["ticket"]:
             number = raise_ticket(conn, policy, row)
             summary["notes"].append(f"ticket #{number} for {row['id']}")
+            row = get_incident(conn, row["id"])
         if row["state"] == "open" and not row["dispatch_leg"]:
             leg, ref = dispatch_incident(conn, policy, row)
             summary["dispatched"] += 1
             summary["notes"].append(f"{row['id']} -> {leg} {ref}")
+    # A cap on NEW incidents must never freeze an existing P0. Retry unfinished rows
+    # on every tick, highest score first, with a bounded recovery budget.
+    recovery_budget = max(1, int(policy["sense"].get("recover_per_tick", 1)))
+    recovered = 0
+    for row in list_incidents(conn, state="open", limit=1000):
+        if recovered >= recovery_budget:
+            break
+        if row["ticket"] and row["dispatch_leg"]:
+            continue
+        if dry_run:
+            summary["notes"].append(f"would recover unfinished {row['id']}")
+            recovered += 1
+            continue
+        try:
+            # A stale CI failure may already have gone green. Verify before raising a ticket.
+            if verify_incident(conn, policy, row):
+                summary["verified"] += 1
+                summary["notes"].append(f"recovered {row['id']} by verification")
+                recovered += 1
+                continue
+            if not row["ticket"]:
+                number = raise_ticket(conn, policy, row)
+                summary["notes"].append(f"recovered ticket #{number} for {row['id']}")
+                row = get_incident(conn, row["id"])
+            if not row["dispatch_leg"]:
+                leg, ref = dispatch_incident(conn, policy, row)
+                summary["dispatched"] += 1
+                summary["notes"].append(f"recovered {row['id']} -> {leg} {ref}")
+            recovered += 1
+        except LoopError as exc:
+            summary["notes"].append(f"recovery blocked for {row['id']}: {exc}")
+            break
     for state in ("open", "dispatched"):
         checked = 0
         budget = int(policy["sense"].get("verify_per_tick", 5))
@@ -1397,6 +1432,7 @@ def main(argv: list[str] | None = None) -> int:
         }
         row = record_incident(conn, incident, policy)
         number = raise_ticket(conn, policy, row)
+        row = get_incident(conn, row["id"])
         leg, ref = dispatch_incident(conn, policy, row)
         print(
             f"incident {row['id']} label {row['label']} ticket #{number} -> {leg} {ref}"

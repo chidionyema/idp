@@ -117,3 +117,15 @@ Two things the drill taught the runbook, both measured:
 - It is not a second queue. The worker leg pushes onto `platform/queue/dispatcher.py`'s table.
 - It does not merge anything. The Greenlane merges the fix, as it merges everything else.
 - It is not a monitoring dashboard. It is a loop: it opens, dispatches, verifies and learns.
+
+## Saturation recovery (2026-10-30, #7581)
+
+The five-minute watcher was running, but the ledger held 50 open incidents and every
+new tick said `opened 0, dispatched 0, verified 0`. Most rows had no ticket or dispatch.
+The cap applies to new rows; each tick must also re-drive a bounded, highest-score
+unfinished row. It first checks whether the original error is already resolved, then
+links/raises its ticket and dispatches with the refreshed ticket row. A P0 report
+uses the existing incident policy's 15-minute SLA. The watcher supplies GitHub's
+repository context explicitly, because launchd does not start inside a Git checkout.
+A queued worker is still pending until a worker actually claims and runs it; the
+incident remains open until real verification.
