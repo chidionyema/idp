@@ -195,9 +195,17 @@ def main(argv: list[str] | None = None) -> int:
         Path(args.engine_root).expanduser().resolve() if args.engine_root else None
     )
 
+    # Every path is resolved the SAME way. The repo root is resolved, so an artifact that
+    # arrives through a symlink (macOS: /tmp is a symlink to /private/tmp) has to be
+    # resolved too -- otherwise the artifact looks like it lives outside the tree the
+    # receipt binds to, and the door refuses a verification it should have accepted.
+    # Measured 2026-10-30: the first real invocation through the executor refused with
+    # "the artifact and its tests must live inside the tree the receipt binds to
+    # (/private/tmp/nsvee-door-proof)" for an artifact at /tmp/nsvee-door-proof/calc.py.
     artifact_path = Path(args.artifact).expanduser()
     if not artifact_path.is_absolute():
-        artifact_path = (Path.cwd() / artifact_path).resolve()
+        artifact_path = Path.cwd() / artifact_path
+    artifact_path = artifact_path.resolve()
     if not artifact_path.is_file():
         return _fail(f"no such artifact: {artifact_path}")
 
@@ -208,7 +216,8 @@ def main(argv: list[str] | None = None) -> int:
             continue
         candidate = Path(raw).expanduser()
         if not candidate.is_absolute():
-            candidate = (Path.cwd() / candidate).resolve()
+            candidate = Path.cwd() / candidate
+        candidate = candidate.resolve()
         if not candidate.is_file():
             return _fail(f"no such test file: {candidate}")
         test_paths.append(candidate)
@@ -291,7 +300,10 @@ def main(argv: list[str] | None = None) -> int:
 
     out = Path(args.out).expanduser() if args.out else RECEIPTS / f"{commit}.json"
     if not out.is_absolute():
-        out = (Path.cwd() / out).resolve()
+        out = Path.cwd() / out
+    # Resolved for the same reason as the artifact: a receipt written through a symlink
+    # into the tree it describes is still inside that tree.
+    out = out.resolve()
     try:
         out.relative_to(repo)
     except ValueError:
