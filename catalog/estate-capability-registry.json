@@ -4,7 +4,7 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 112,
-    "layer": 230,
+    "layer": 231,
     "service": 121,
     "tool": 464,
     "workflow": 85
@@ -13742,6 +13742,70 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/observability/recorder/recorder.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-oci-recovery-run-command",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Transport a host script into OCI Run Command, inside the 4096-character limit.",
+      "contract": {
+        "inputs": [
+          "--chunk-size",
+          "--command-id",
+          "--compartment",
+          "--content",
+          "--display-name",
+          "--instance-id",
+          "--lifecycle-state",
+          "--mode",
+          "--poll-seconds",
+          "--query",
+          "--raw-output",
+          "--run-id",
+          "--script",
+          "--target",
+          "--timeout",
+          "--timeout-in-seconds",
+          "--wait-timeout"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/oci/recovery/run-command.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
