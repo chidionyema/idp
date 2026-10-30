@@ -24,6 +24,21 @@ laptop slot up, new connections go to CLOUD. With the cloud unreachable too, the
 still tried, so an OKE outage never costs the laptop anything. Connections already open stay
 where they started; a caller whose router starves mid-request gets its answer on its own retry.
 
+WHY (2026-10-30). The front decided on the answer but had no total budget: it could hold one
+caller's request for the cloud's ANSWER_TIMEOUT plus each laptop slot's own lane timeout (600 s
+each) -- 22 minutes. Claude Code's patience is 364 s, so on 2026-10-30 three sessions gave up
+at once with "Request timed out" while the front went on holding their requests, and the answers
+that finally came belonged to callers who had already left. (21 timeout events in the founder's
+own seven sessions on 2026-10-28..30; 25 across ten sessions once the four subagent transcripts
+the CLI spawned are counted. The machine-readable audit, produced by bin/estate-session-audit, is
+docs/audits/2026-10-30-claude-code-session-stalls/.) The front now has ONE budget per
+request (ANSWER_BUDGET, 240 s, below the client's patience): every target it may be asked of
+shares that budget, and when the budget is spent the caller is told so at once (504) instead of
+waiting for an answer it cannot use. A box too loaded to answer inside any budget is refused at
+once (503) rather than joined to a queue it cannot serve -- the load reached 701 on 4 CPUs that
+day. A laptop slot that did not answer inside the budget is passed over for a while, so the twin
+answers the next caller instead of the front spending its whole budget on a dead slot.
+
 WHY (2026-10-28). The OKE router was not answering authenticated requests when this was measured
 on 2026-10-28: it took the connection, then stalled until the edge's 60 s proxy timeout answered
 504, and on some requests answered 503 with the edge's own "Starting up" page. The front decided
@@ -37,6 +52,18 @@ failure. A caller-side failure (4xx) is the caller's own business and is relayed
 cloud stays the first target (the founder's 2026-10-26 ruling: the cloud is the default route,
 the laptop is the fallback), and a cloud that just failed is passed over for CLOUD_DOWN_S seconds
 so one outage costs one request the wait and not every request.
+
+WHY (2026-10-30, second half). The cloud is the default route and the laptop is the fallback,
+but the cloud does not carry every lane the laptop has: the founder's Claude Code subscription is
+his own account, not a key, so the cloud has no claude lane (docs/diagnoses/
+2026-10-22-claude-code-403-cloud-has-no-claude-lane.yaml) and must not grow one. So the cloud
+answers a Claude Code request with a refusal that NAMES THE MODEL -- measured on the recovery
+router on 2026-10-30: HTTP 400 "Invalid model name passed in model=claude-sonnet-4-5. Call
+`/v1/models` to view available models for your key." The front relayed that refusal as if it
+were the answer, so Claude Code failed at once on a cloud that was perfectly healthy. A refusal
+that says the model is not there is not the caller's answer: it is the target saying "not mine",
+and the front already passes over a cloud whose key may not carry the model (403,
+key_model_access_denied). So the front now reads that refusal too, and asks the next target.
 
 WHY (2026-10-29). The pass-over decided WHICH targets were tried but not IN WHAT ORDER: route()
 built healthy + [CLOUD] + sick, so a cloud already known not to answer sat AHEAD of the slots
@@ -56,6 +83,7 @@ from __future__ import annotations
 import asyncio
 import os
 import pathlib
+import re
 import ssl
 import sys
 import time
@@ -86,6 +114,39 @@ CLOUD_DOWN_S = 60.0
 CLOUD_DOWN_MAX_S = 600.0
 # How long the front waits for the rest of a caller's body before it gives up on a replay.
 DRAIN_TIMEOUT = 30.0
+# The most the front may spend on ONE caller's request, from the first byte to the answer.
+#
+# WHY (2026-10-30). The front had no total budget. It tried the cloud for up to ANSWER_TIMEOUT
+# and then each laptop slot for as long as that slot's own lane timeout (600 s), so one request
+# could hold the front for 120 + 600 + 600 s -- 22 minutes. Claude Code's patience is 364 s.
+# Measured over the transcripts of 2026-10-28..30 by bin/estate-session-audit (the audit:
+# docs/audits/2026-10-30-claude-code-session-stalls/): 21 "Request timed out" events in the
+# founder's own seven sessions, and the gap from the request that went out to the timeout that
+# came back lands in a 361.3-374.4 s band on all 21, so the caller had already gone when the
+# front finally answered. The answers that can be paired with the request that produced them
+# (n=1,284): p50 7.9 s, p90 31.5 s, p95 69.6 s, p99 260.1 s. (The transcripts hold 6,949
+# assistant messages; the rest have no request of their own to pair with, the older Claude Code
+# versions not recording one, so their latency is not measurable and is not counted.) So 240 s is
+# 3.4x the p95 of the work and 124 s below the patience. 14 answers (1.1%) were slower than the
+# budget, and all 14 were inside the patience: they would have reached the client, and the front
+# spent its whole budget on them anyway. The slow tail is the front's own cloud-first wait: the
+# cloud leg burns up to ANSWER_TIMEOUT before the laptop is asked.
+ANSWER_BUDGET = float(os.environ.get("ESTATE_FRONT_ANSWER_BUDGET", "240"))
+# The client's patience, written down so a gate can hold this budget to it.
+CLIENT_PATIENCE = 364.0
+# The load above which the front refuses new work instead of joining a queue it cannot serve.
+# On 2026-10-30 the host's load reached 701 on 4 CPUs: no budget could have been answered then,
+# and holding the request only made the box worse.
+LOAD_MAX = float(os.environ.get("ESTATE_FRONT_LOAD_MAX", "0")) or 8.0 * (
+    os.cpu_count() or 4
+)
+# How long a laptop slot that did not answer inside the budget is passed over. Consecutive
+# failures double it, like the cloud's pass-over: a slot that is slow under load answers again
+# later, and until then the twin answers instead.
+SLOT_DOWN_S = 60.0
+SLOT_DOWN_MAX_S = 600.0
+SLOT_DOWN_UNTIL: dict = {}
+SLOT_FAILURES: dict = {}
 
 DOWN: set = set()  # slots that missed DOWN_AFTER probes in a row
 CLOUD_DOWN_UNTIL = 0.0  # monotonic time until which the cloud is passed over
@@ -109,11 +170,12 @@ def route() -> list:
     cloud is down, and the cloud is still in the route so a laptop with no slot at all still
     reaches it."""
     slots = backends()
-    healthy = [p for p in slots if p not in DOWN]
-    sick = [p for p in slots if p in DOWN]
+    now = time.monotonic()
+    healthy = [p for p in slots if p not in DOWN and SLOT_DOWN_UNTIL.get(p, 0) <= now]
+    sick = [p for p in slots if p not in healthy]
     if not CLOUD:
         return healthy + sick
-    if time.monotonic() < CLOUD_DOWN_UNTIL:
+    if now < CLOUD_DOWN_UNTIL:
         # A cloud that just failed is tried last, behind even the slots that missed probes: a
         # slot that is slow under load still answers; a cloud in cooldown is known not to. Put
         # ahead of the sick slots, it took every request when the fleet's load slowed the slot's
@@ -146,6 +208,27 @@ def mark_cloud_up() -> None:
     global CLOUD_DOWN_UNTIL, CLOUD_FAILURES
     CLOUD_DOWN_UNTIL = 0.0
     CLOUD_FAILURES = 0
+
+
+def mark_slot_down(port: int) -> None:
+    """A laptop slot did not answer inside the budget. Pass over it for a while, so the twin
+    answers the next caller instead of the front spending its whole budget on a dead slot."""
+    failures = SLOT_FAILURES.get(port, 0) + 1
+    SLOT_FAILURES[port] = failures
+    cooldown = min(SLOT_DOWN_S * 2 ** (failures - 1), SLOT_DOWN_MAX_S)
+    SLOT_DOWN_UNTIL[port] = time.monotonic() + cooldown
+    print(
+        f"front: slot {port} did not answer inside the budget ({failures} in a row); "
+        f"it is passed over for {cooldown:.0f}s",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
+def mark_slot_up(port: int) -> None:
+    """A laptop slot answered. The pass-over is forgotten."""
+    SLOT_FAILURES.pop(port, None)
+    SLOT_DOWN_UNTIL.pop(port, None)
 
 
 async def answers(port: int) -> bool:
@@ -271,6 +354,77 @@ def status_code(line: bytes) -> int:
     return 0
 
 
+# How a target says it does not carry the caller's model. LiteLLM's shapes, measured on the
+# recovery router on 2026-10-30: HTTP 400 with "Invalid model name passed in model=<name>. Call
+# `/v1/models` to view available models for your key.", and, when the caller's key may not use
+# the model, HTTP 403 with "key_model_access_denied".
+_NOT_HERE = (
+    b"invalid model name passed in model=",
+    b"key_model_access_denied",
+    b"model not found",
+    b"no such model",
+    b"not found for model",
+)
+# A chunked body can split the phrase across chunk boundaries; the chunk headers are not
+# part of the message, so they are taken out before the message is read.
+_CHUNKED = re.compile(rb"\r\n[0-9a-fA-F]+\r\n")
+
+
+def model_not_here(complaint: bytes) -> bool:
+    """Does this refusal say the target does not carry the caller's model?
+
+    Such a refusal is the target saying "not mine", not the caller's answer: the next target
+    may have the model. Anything else is the caller's own business and is relayed untouched.
+    """
+    low = complaint.lower()
+    if any(marker in low for marker in _NOT_HERE):
+        return True
+    flat = _CHUNKED.sub(b"", low)
+    return any(marker in flat for marker in _NOT_HERE)
+
+
+def remaining(deadline: float) -> float:
+    """How much of the answer budget is left."""
+    return max(0.0, deadline - time.monotonic())
+
+
+def saturated() -> tuple:
+    """Is the box too loaded to answer? (True, load) when it is, (False, load) when it is not."""
+    try:
+        load = os.getloadavg()[0]
+    except OSError:
+        return (False, 0.0)
+    return (load > LOAD_MAX, load)
+
+
+async def refuse(client_w, status: bytes, extra: bytes = b"") -> None:
+    """Tell the caller, at once, that the front cannot answer -- so the caller may retry.
+
+    A refusal is an answer: the caller gets a status inside its own patience instead of waiting
+    for an answer that arrives after it has already given up.
+    """
+    head = status + b"\r\n"
+    if extra:
+        head += extra + b"\r\n"
+    head += b"Content-Length: 0\r\n\r\n"
+    try:
+        client_w.write(head)
+        await client_w.drain()
+    except (ConnectionError, OSError):
+        pass
+
+
+class Counter:
+    """How many bytes of an answer have already reached the caller.
+
+    A front that has started an answer cannot replace it with a status line: the caller is
+    holding half a response, and a second status line would corrupt it.
+    """
+
+    def __init__(self) -> None:
+        self.n = 0
+
+
 class Held:
     """The request the front is holding while it asks a target: its head, and a copy of the
     body made while the body is forwarded. The copy is what lets the front ask the next
@@ -381,9 +535,9 @@ async def drain(held: Held, body) -> None:
         held.complete = False
 
 
-async def read_head(reader):
+async def read_head(reader, timeout: float = 300.0):
     try:
-        return await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 300)
+        return await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout)
     except (
         asyncio.IncompleteReadError,
         asyncio.LimitOverrunError,
@@ -393,10 +547,12 @@ async def read_head(reader):
         return None
 
 
-async def pipe(src, dst) -> None:
+async def pipe(src, dst, counter: Counter = None) -> None:
     try:
         while data := await src.read(CHUNK):
             dst.write(data)
+            if counter is not None:
+                counter.n += len(data)
             await dst.drain()
         if dst.can_write_eof():
             dst.write_eof()  # half-close: the other direction may still be streaming
@@ -404,7 +560,9 @@ async def pipe(src, dst) -> None:
         pass
 
 
-async def ask_cloud(client_r, client_w, target: str, held: Held):
+async def ask_cloud(
+    client_r, client_w, target: str, held: Held, deadline: float, sent: Counter
+):
     """Ask the cloud for the request.
 
     Returns ('ok', None) when the answer is on its way to the caller, and ('retry', refusal)
@@ -427,23 +585,29 @@ async def ask_cloud(client_r, client_w, target: str, held: Held):
         mark_cloud_down()
         return ("retry", Refusal(b"", b"", None, back_w))
     body = asyncio.create_task(read_body(held, client_r))
+    left = remaining(deadline)
     try:
-        status = await asyncio.wait_for(back_r.readline(), ANSWER_TIMEOUT)
+        status = await asyncio.wait_for(back_r.readline(), min(ANSWER_TIMEOUT, left))
     except (asyncio.TimeoutError, OSError):
         held.forward = None
         await drain(held, body)
         back_w.close()
-        mark_cloud_down()
+        if left > 0:
+            mark_cloud_down()  # the cloud had time and did not answer
         return ("retry", Refusal(b"", b"", None, back_w))
     # A 1xx is not the answer; read on to the one that is.
     while status_code(status) // 100 == 1:
+        left = remaining(deadline)
         try:
-            status = await asyncio.wait_for(back_r.readline(), ANSWER_TIMEOUT)
+            status = await asyncio.wait_for(
+                back_r.readline(), min(ANSWER_TIMEOUT, left)
+            )
         except (asyncio.TimeoutError, OSError):
             held.forward = None
             await drain(held, body)
             back_w.close()
-            mark_cloud_down()
+            if left > 0:
+                mark_cloud_down()  # the cloud had time and did not answer
             return ("retry", Refusal(b"", b"", None, back_w))
     code = status_code(status)
     if code >= 500:
@@ -454,32 +618,41 @@ async def ask_cloud(client_r, client_w, target: str, held: Held):
         back_w.close()
         mark_cloud_down()
         return ("retry", Refusal(status, complaint, back_r, back_w))
-    if code == 403:
-        # The cloud's key may not carry this model. Read the refusal and look.
+    if code in (400, 403, 404):
+        # The cloud's key may not carry this model, or the cloud may not have the model at all.
+        # Read the refusal and look.
         complaint = await read_some(back_r, MAX_ERROR)
         mark_cloud_up()  # the cloud is answering; it is the refusal that is wrong, not the cloud
-        if b"key_model_access_denied" in complaint:
+        if model_not_here(complaint):
             held.forward = None
             await drain(held, body)
             back_w.close()
             return ("retry", Refusal(status, complaint, back_r, back_w))
         client_w.write(status + complaint)
+        sent.n += len(status + complaint)
         await client_w.drain()
-        await pipe(back_r, client_w)
+        await pipe(back_r, client_w, sent)
         body.cancel()
         back_w.close()
         return ("ok", None)
     mark_cloud_up()  # the cloud answered: it is the default route again
     client_w.write(status)
+    sent.n += len(status)
     await client_w.drain()
-    await pipe(back_r, client_w)
+    await pipe(back_r, client_w, sent)
     body.cancel()
     back_w.close()
     return ("ok", None)
 
 
-async def ask_again(client_r, client_w, target, held: Held) -> bool:
-    """Ask another target the same question, from the copy of the request in hand."""
+async def ask_again(
+    client_r, client_w, target, held: Held, deadline: float, sent: Counter
+) -> bool:
+    """Ask another target the same question, from the copy of the request in hand.
+
+    True means the caller has been dealt with: the answer is on its way, or half of it already
+    reached the caller. False means the caller still needs an answer.
+    """
     if not held.replayable():
         return False
     try:
@@ -499,7 +672,11 @@ async def ask_again(client_r, client_w, target, held: Held) -> bool:
         return False
     up = asyncio.create_task(pipe(client_r, back_w))
     try:
-        await pipe(back_r, client_w)
+        await asyncio.wait_for(pipe(back_r, client_w, sent), remaining(deadline))
+    except asyncio.TimeoutError:
+        # The target did not answer inside the budget. If nothing reached the caller yet, the
+        # caller still needs an answer and the front may try the next target.
+        return sent.n > 0
     finally:
         up.cancel()
         for w in (back_w, client_w):
@@ -508,10 +685,25 @@ async def ask_again(client_r, client_w, target, held: Held) -> bool:
 
 
 async def handle(client_r, client_w) -> None:
+    # One budget for the whole request, every target it may be asked of.
+    deadline = time.monotonic() + ANSWER_BUDGET
+    over, load = saturated()
+    if over:
+        # The box cannot answer inside any budget. Say so at once, so the caller may retry
+        # instead of waiting for an answer that is never coming.
+        print(
+            f"front: the box is saturated (load {load:.1f} > {LOAD_MAX:.1f}); refusing",
+            file=sys.stderr,
+            flush=True,
+        )
+        await refuse(client_w, b"HTTP/1.1 503 Service Unavailable", b"Retry-After: 30")
+        client_w.close()
+        return
+    sent = Counter()
     targets = route()
     for index, target in enumerate(targets):
         if isinstance(target, str):
-            head = await read_head(client_r)
+            head = await read_head(client_r, min(300.0, remaining(deadline)))
             if head is None:
                 client_w.close()
                 return
@@ -519,16 +711,27 @@ async def handle(client_r, client_w) -> None:
             if expects_continue(head):
                 client_w.write(b"HTTP/1.1 100 Continue\r\n\r\n")
                 await client_w.drain()
-            verdict, refusal = await ask_cloud(client_r, client_w, target, held)
+            verdict, refusal = await ask_cloud(
+                client_r, client_w, target, held, deadline, sent
+            )
             if verdict == "ok":
                 return
             for nxt in targets[index + 1 :]:
-                if await ask_again(client_r, client_w, nxt, held):
+                if remaining(deadline) <= 0:
+                    break
+                if await ask_again(client_r, client_w, nxt, held, deadline, sent):
                     if refusal is not None and refusal.sock is not None:
                         refusal.sock.close()  # the cloud's half-answer is not needed now
                     return
             # Nothing else could answer: the caller gets the cloud's own complaint.
-            if refusal is not None and refusal.status:
+            if sent.n:
+                client_w.close()  # half an answer is already with the caller
+                return
+            if remaining(deadline) <= 0:
+                await refuse(
+                    client_w, b"HTTP/1.1 504 Gateway Timeout", b"Retry-After: 10"
+                )
+            elif refusal is not None and refusal.status:
                 client_w.write(refusal.status + refusal.body)
                 await client_w.drain()
                 if refusal.rest is not None:
@@ -547,7 +750,18 @@ async def handle(client_r, client_w) -> None:
         try:
             # The router closing its side ends the exchange (a finished response, or a draining
             # router closing an idle keep-alive); the client then reconnects through the front.
-            await pipe(back_r, client_w)
+            await asyncio.wait_for(pipe(back_r, client_w, sent), remaining(deadline))
+            if sent.n:
+                mark_slot_up(target)
+        except asyncio.TimeoutError:
+            # The slot did not answer inside the budget. Its body was forwarded byte for byte,
+            # so the request cannot be asked of another target: the caller is told, at once,
+            # that the front could not answer in time, and may retry.
+            mark_slot_down(target)
+            if not sent.n:
+                await refuse(
+                    client_w, b"HTTP/1.1 504 Gateway Timeout", b"Retry-After: 10"
+                )
         finally:
             up.cancel()
             for w in (back_w, client_w):

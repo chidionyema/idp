@@ -1,0 +1,550 @@
+#!/usr/bin/env python3
+"""bin/estate-session-audit -- what actually happened in the founder's Claude Code sessions.
+
+WHY (2026-10-30). The founder reported Claude Code sessions that gave up with "Request timed
+out". A report is not a measurement: nobody could say how many sessions stalled, when, how long
+the client waited before it gave up, or how long a healthy answer really took. This tool reads
+the transcripts the Claude Code harness writes on this host and answers those questions with
+numbers, so the same question can be asked again tomorrow and get the same answer.
+
+WHAT IT MEASURES, AND WHAT IT REFUSES TO MEASURE.
+
+  * A TIMEOUT EVENT is an assistant entry whose message content is exactly "Request timed out".
+    The phrase inside a longer message is somebody QUOTING the error, not the error, and is not
+    counted. This matters: the estate's own notes quote the phrase.
+
+  * THE CLIENT'S PATIENCE is measured from the api-request entry that went out to the timeout
+    entry that came back: how long the client actually waited for one request. The gap from the
+    previous transcript entry is reported next to it, because the two differ when the transcript
+    order is not the wall clock.
+
+  * AN ANSWER'S LATENCY is reported twice, and the two are not the same number. `attempt_s` is
+    the gap from the LAST api-request before the answer: the attempt that worked. `caller_wait_s`
+    is the gap from the FIRST api-request of that round: what the caller actually waited,
+    retries included. The gap between them is the retries, and the retry count is reported too.
+    Neither number is reported without the other, because a distribution that hides the retries
+    is a distribution of the wrong thing.
+
+  * A session is MAIN when it has entries of its own, a SUBAGENT when every entry is a
+    sidechain, and MIXED when it has both (a main session that spawned subagents). A
+    sidechain stall is a subagent's stall, not the founder's.
+
+  * A session's SURFACE is where it ran: the Claude Desktop keeps its transcripts under the
+    scratch workspace, the CLI keeps them under the working directory. They are counted apart,
+    because the founder reported CLI stalls and the Desktop session was a different thing.
+
+  * NOTHING OF THE CONVERSATION IS COPIED. No prompt, no answer, no path outside the harness
+    root, no credential. Only counts, times and labels. The transcripts are the founder's.
+
+EXIT. 0 when the audit was written, 1 when the harness root could not be read.
+
+    estate-session-audit --out docs/audits/2026-10-30-claude-code-session-stalls
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime
+import hashlib
+import json
+import os
+import pathlib
+import sys
+
+SCHEMA = "estate.session-audit/1"
+TIMEOUT_TEXT = "Request timed out"
+# The budget the front now spends on one caller's request (platform/llm/front.py).
+ANSWER_BUDGET_S = 240.0
+# The patience measured on this host: the client gave up at 364 s.
+CLIENT_PATIENCE_S = 364.0
+
+
+# ---------------------------------------------------------------- the transcripts
+
+
+def read_entries(path: pathlib.Path) -> list:
+    """The entries of one transcript, in the order the harness wrote them."""
+    entries = []
+    with path.open(errors="replace") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue  # a half-written line is not an entry
+    return entries
+
+
+def text_of(entry: dict) -> str:
+    """The text of an entry's message, whatever shape the harness gave it."""
+    message = entry.get("message")
+    if not isinstance(message, dict):
+        return ""
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and isinstance(block.get("text"), str):
+                parts.append(block["text"])
+        return "\n".join(parts)
+    return ""
+
+
+def is_timeout(entry: dict) -> bool:
+    """Is this entry the client giving up?
+
+    The whole content must be the error. A message that quotes the phrase is somebody talking
+    about the error, and counting it would turn the estate's own notes into evidence.
+    """
+    if entry.get("type") != "assistant":
+        return False
+    return text_of(entry).strip() == TIMEOUT_TEXT
+
+
+def is_tool_result(entry: dict) -> bool:
+    """Is this a tool's result recorded as a user entry?"""
+    if entry.get("type") != "user":
+        return False
+    message = entry.get("message")
+    if not isinstance(message, dict):
+        return False
+    content = message.get("content")
+    if not isinstance(content, list):
+        return False
+    return any(
+        isinstance(block, dict) and block.get("type") == "tool_result"
+        for block in content
+    )
+
+
+def when(entry: dict):
+    """The entry's timestamp, as a datetime, or None."""
+    stamp = entry.get("timestamp")
+    if not stamp:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+# ---------------------------------------------------------------- one transcript
+
+
+def audit_transcript(path: pathlib.Path, root: pathlib.Path) -> dict:
+    """Everything measurable about one transcript.
+
+    A ROUND is one logical request: the api-request entries that went out for it (the first one
+    and the retries) and the assistant entry that answered it, or the timeout that ended it. The
+    round is what the caller experienced; the transcript's own entry order is not always the
+    wall clock, so a gap that comes out negative is reported as unknown rather than as a number.
+    """
+    entries = read_entries(path)
+    relative = path.relative_to(root).as_posix()
+    project = relative.split("/")[0]
+    project = project.replace("-Users-roseonyema", "~")
+
+    timeouts = []
+    answers = []
+    assistant_messages = 0
+    requests = 0
+    sidechains = 0
+    own = 0
+    first_at = None
+    last_at = None
+    version = None
+    cwd = None
+    round_first = None  # the first api-request of the round in hand
+    round_last = None  # the last api-request of the round in hand
+    round_count = 0  # how many attempts the round took
+
+    for entry in entries:
+        stamp = when(entry)
+        if stamp is not None:
+            if first_at is None:
+                first_at = stamp
+            last_at = stamp
+        version = version or entry.get("version")
+        cwd = cwd or entry.get("cwd")
+        if entry.get("isSidechain"):
+            sidechains += 1
+        else:
+            own += 1
+        if entry.get("type") == "api-request":
+            requests += 1
+            if round_first is None:
+                round_first = stamp
+            round_last = stamp
+            round_count += 1
+            continue
+        if entry.get("type") == "user" and is_tool_result(entry):
+            # A tool's result ends the round: the next request is a new one.
+            round_first = round_last = None
+            round_count = 0
+            continue
+        if entry.get("type") != "assistant" or stamp is None:
+            continue
+        if is_timeout(entry):
+            timeouts.append(
+                {
+                    "at": stamp.isoformat().replace("+00:00", "Z"),
+                    "patience_s": _gap(stamp, round_last),
+                    "caller_wait_s": _gap(stamp, round_first),
+                    "attempts": round_count,
+                }
+            )
+        else:
+            assistant_messages += 1
+            answers.append(
+                {
+                    "at": stamp.isoformat().replace("+00:00", "Z"),
+                    "attempt_s": _gap(stamp, round_last),
+                    "caller_wait_s": _gap(stamp, round_first),
+                    "attempts": round_count,
+                }
+            )
+        round_first = round_last = None
+        round_count = 0
+
+    if own and not sidechains:
+        kind = "main"
+    elif sidechains and not own:
+        kind = "subagent"
+    else:
+        kind = "mixed"
+    surface = "desktop" if "Library-Application-Support-Claude" in relative else "cli"
+    last_assistant = None
+    for entry in reversed(entries):
+        if entry.get("type") == "assistant":
+            last_assistant = entry
+            break
+    closed = (
+        "stalled"
+        if last_assistant is not None and is_timeout(last_assistant)
+        else "clean"
+    )
+
+    return {
+        "session_id": path.stem,
+        "project": project,
+        "surface": surface,
+        "kind": kind,
+        "closed": closed,
+        "version": version,
+        "cwd_basename": pathlib.Path(cwd).name if cwd else None,
+        "entries": len(entries),
+        "api_requests": requests,
+        "assistant_messages": assistant_messages,
+        "answers": len(answers),
+        "first_at": first_at.isoformat().replace("+00:00", "Z") if first_at else None,
+        "last_at": last_at.isoformat().replace("+00:00", "Z") if last_at else None,
+        "timeout_events": timeouts,
+        "answer_latencies": answers,
+    }
+
+
+def _gap(later, earlier):
+    """Seconds between two timestamps, or None when one of them is unknown.
+
+    A negative gap means the transcript's order is not the wall clock's. That is a fact about
+    the data, not a measurement, so it is reported as unknown and counted, never as a number.
+    """
+    if later is None or earlier is None:
+        return None
+    seconds = (later - earlier).total_seconds()
+    if seconds < 0:
+        return None
+    return round(seconds, 3)
+
+
+# ---------------------------------------------------------------- the numbers
+
+
+def percentiles(values: list) -> dict:
+    """The distribution of a list of seconds: n, min, p50, p90, p95, p99, max."""
+    if not values:
+        return {"n": 0}
+    ordered = sorted(values)
+    return {
+        "n": len(ordered),
+        "min": round(ordered[0], 3),
+        "p50": round(_percentile(ordered, 0.50), 3),
+        "p90": round(_percentile(ordered, 0.90), 3),
+        "p95": round(_percentile(ordered, 0.95), 3),
+        "p99": round(_percentile(ordered, 0.99), 3),
+        "max": round(ordered[-1], 3),
+    }
+
+
+def _percentile(ordered: list, fraction: float) -> float:
+    """The nearest-rank percentile: the smallest value at or above the fraction."""
+    index = int(round(fraction * (len(ordered) - 1)))
+    return ordered[max(0, min(index, len(ordered) - 1))]
+
+
+def summarise(sessions: list) -> dict:
+    """The estate-wide numbers, over the sessions measured."""
+    patience = []
+    timeout_wait = []
+    attempts = []
+    waits = []
+    retries = []
+    for session in sessions:
+        for event in session["timeout_events"]:
+            value = event.get("patience_s")
+            if value is not None:
+                patience.append(value)
+            value = event.get("caller_wait_s")
+            if value is not None:
+                timeout_wait.append(value)
+        for answer in session["answer_latencies"]:
+            if answer.get("attempt_s") is not None:
+                attempts.append(answer["attempt_s"])
+            if answer.get("caller_wait_s") is not None:
+                waits.append(answer["caller_wait_s"])
+            if answer.get("attempts"):
+                retries.append(answer["attempts"] - 1)
+
+    over_budget = [v for v in attempts if v > ANSWER_BUDGET_S]
+
+    by_surface = {}
+    by_kind = {}
+    for session in sessions:
+        for bucket, key in (
+            (by_surface, session["surface"]),
+            (by_kind, session["kind"]),
+        ):
+            entry = bucket.setdefault(
+                key, {"sessions": 0, "timeout_events": 0, "stalled": 0}
+            )
+            entry["sessions"] += 1
+            entry["timeout_events"] += len(session["timeout_events"])
+            entry["stalled"] += 1 if session["closed"] == "stalled" else 0
+
+    # The founder's own sessions, apart from the subagents they spawned: the cut that answers
+    # "how often did HIS session give up", without the sidechains folded in.
+    main = [s for s in sessions if s["kind"] == "main"]
+    main_only = {
+        "sessions": len(main),
+        "sessions_with_timeouts": sum(1 for s in main if s["timeout_events"]),
+        "sessions_ended_in_stall": sum(1 for s in main if s["closed"] == "stalled"),
+        "timeout_events": sum(len(s["timeout_events"]) for s in main),
+        "timeout_events_measured": sum(
+            1
+            for s in main
+            for e in s["timeout_events"]
+            if e.get("patience_s") is not None
+        ),
+    }
+
+    return {
+        "transcripts": len(sessions),
+        "sessions_with_timeouts": sum(1 for s in sessions if s["timeout_events"]),
+        "sessions_ended_in_stall": sum(1 for s in sessions if s["closed"] == "stalled"),
+        "timeout_events": sum(len(s["timeout_events"]) for s in sessions),
+        "timeout_events_measured": sum(
+            1
+            for s in sessions
+            for e in s["timeout_events"]
+            if e.get("patience_s") is not None
+        ),
+        "assistant_messages": sum(s["assistant_messages"] for s in sessions),
+        "answers": len(attempts),
+        "main_sessions_only": main_only,
+        "client_patience_s": percentiles(patience),
+        "timeout_caller_wait_s": percentiles(timeout_wait),
+        "answer_attempt_s": percentiles(attempts),
+        "answer_caller_wait_s": percentiles(waits),
+        "retries_per_answer": percentiles(retries),
+        "answers_over_budget": {
+            "budget_s": ANSWER_BUDGET_S,
+            "n": len(over_budget),
+            "share": round(len(over_budget) / len(attempts), 5) if attempts else 0.0,
+            "within_client_patience": sum(
+                1 for v in over_budget if v <= CLIENT_PATIENCE_S
+            ),
+            "beyond_client_patience": sum(
+                1 for v in over_budget if v > CLIENT_PATIENCE_S
+            ),
+        },
+        "by_surface": by_surface,
+        "by_kind": by_kind,
+    }
+
+
+# ---------------------------------------------------------------- the report
+
+
+def render_markdown(audit: dict) -> str:
+    """The human half of the audit, generated from the same numbers as the JSON."""
+    m = audit["measurement"]
+    patience = m["client_patience_s"]
+    attempt = m["answer_attempt_s"]
+    wait = m["answer_caller_wait_s"]
+    retries = m["retries_per_answer"]
+    over = m["answers_over_budget"]
+    main = m["main_sessions_only"]
+    lines = [
+        "# The founder's stalled Claude Code sessions (2026-10-30)",
+        "",
+        "Generated by `bin/estate-session-audit`. Re-run it and the numbers move with the",
+        "transcripts; nothing here was typed by hand.",
+        "",
+        "## What the transcripts say",
+        "",
+        f"- {m['transcripts']} transcripts measured: "
+        f"{m['by_surface'].get('cli', {}).get('sessions', 0)} on the CLI and "
+        f"{m['by_surface'].get('desktop', {}).get('sessions', 0)} on the Claude Desktop.",
+        f'- {m["timeout_events"]} timeout events ("Request timed out") in '
+        f"{m['sessions_with_timeouts']} sessions; {m['sessions_ended_in_stall']} of those "
+        f"sessions ENDED on a timeout, so the founder's last turn in them got no answer at all.",
+        f"- {main['timeout_events']} of those timeout events are in the founder's OWN "
+        f"{main['sessions_with_timeouts']} main sessions; the rest are in the subagent "
+        f"transcripts the CLI spawned, which are the CLI's stalls, not the founder's.",
+        f"- The client's patience, measured from the request that went out to the timeout that "
+        f"came back: p50 {patience.get('p50')} s, min {patience.get('min')} s, "
+        f"max {patience.get('max')} s over the n={patience.get('n')} timeouts whose request the "
+        f"transcript records. The band is tight: the client gives up at the same place every "
+        f"time.",
+        f"- A healthy answer: the attempt that worked took p50 {attempt.get('p50')} s, "
+        f"p90 {attempt.get('p90')} s, p95 {attempt.get('p95')} s, p99 {attempt.get('p99')} s "
+        f"(n={attempt.get('n')}). The caller waited, retries included: p50 {wait.get('p50')} s, "
+        f"p95 {wait.get('p95')} s, p99 {wait.get('p99')} s; the retries per answer: "
+        f"p50 {retries.get('p50')}, p95 {retries.get('p95')}, max {retries.get('max')}.",
+        f"- {over['n']} answers ({over['share'] * 100:.1f}%) took longer than the front's "
+        f"{over['budget_s']:.0f} s budget. {over['within_client_patience']} of them were still "
+        f"inside the client's {CLIENT_PATIENCE_S:.0f} s patience, so they would have reached "
+        f"the client if the front had answered them; {over['beyond_client_patience']} were "
+        f"already beyond it and were wasted in the baseline too.",
+        "",
+        "## Where the stalls were",
+        "",
+        "| surface | sessions | timeout events | ended in a stall |",
+        "|---|---|---|---|",
+    ]
+    for surface, entry in sorted(m["by_surface"].items()):
+        lines.append(
+            f"| {surface} | {entry['sessions']} | {entry['timeout_events']} | {entry['stalled']} |"
+        )
+    lines += [
+        "",
+        "| kind | sessions | timeout events | ended in a stall |",
+        "|---|---|---|---|",
+    ]
+    for kind, entry in sorted(m["by_kind"].items()):
+        lines.append(
+            f"| {kind} | {entry['sessions']} | {entry['timeout_events']} | {entry['stalled']} |"
+        )
+    lines += [
+        "",
+        "## The sessions that stalled",
+        "",
+        "| session | surface | kind | closed | timeout events | first | last |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for session in audit["sessions"]:
+        if not session["timeout_events"]:
+            continue
+        lines.append(
+            "| `{session}` | {surface} | {kind} | {closed} | {events} | {first} | {last} |".format(
+                session=session["session_id"],
+                surface=session["surface"],
+                kind=session["kind"],
+                closed=session["closed"],
+                events=len(session["timeout_events"]),
+                first=session["first_at"],
+                last=session["last_at"],
+            )
+        )
+    lines += [
+        "",
+        "## How to read this",
+        "",
+        "- A timeout event is an assistant entry whose content is exactly "
+        "`Request timed out`. The phrase inside a longer message is a quotation and is not counted.",
+        "- `attempt_s` is the attempt that worked; `caller_wait_s` is what the caller waited,",
+        "  retries included. The gap between them is the retries, and the retry count is reported",
+        "  too. The front's cloud-first wait sits inside the attempt: the front asks the cloud",
+        "  first and only then the laptop, and the cloud that answers 400 (it does not carry the",
+        "  founder's Claude model) cost the caller the whole wait.",
+        "- No prompt, no answer and no credential from any transcript is in this directory.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--root",
+        default=os.path.expanduser("~/.estate/harness/cc/projects"),
+        help="the harness root that holds the transcripts",
+    )
+    parser.add_argument(
+        "--out", help="the directory to write sessions.json and README.md into"
+    )
+    args = parser.parse_args(argv)
+
+    root = pathlib.Path(args.root).expanduser()
+    if not root.is_dir():
+        print(f"estate-session-audit: {root} is not a directory", file=sys.stderr)
+        return 1
+
+    sessions = []
+    for path in sorted(root.rglob("*.jsonl")):
+        try:
+            sessions.append(audit_transcript(path, root))
+        except (OSError, ValueError) as exc:
+            print(
+                f"estate-session-audit: {path.name} could not be read: {exc}",
+                file=sys.stderr,
+            )
+
+    audit = {
+        "schema": SCHEMA,
+        "generated_at": datetime.datetime.now(datetime.timezone.utc)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z"),
+        "root": str(root),
+        "definitions": {
+            "timeout_event": "an assistant entry whose message content is exactly "
+            f"'{TIMEOUT_TEXT}'",
+            "client_patience_s": "the gap from the last api-request of the round to the timeout "
+            "that ended it: how long the client waited for that request",
+            "attempt_s": "the gap from the last api-request before an answer to that answer",
+            "caller_wait_s": "the gap from the FIRST api-request of the round to the answer: "
+            "what the caller waited, retries included",
+            "attempts": "how many api-requests the round took: one attempt, plus retries",
+            "kind": "main (has entries of its own), subagent (every entry is a sidechain), "
+            "mixed (both)",
+            "surface": "desktop (the Claude Desktop scratch workspace) or cli",
+            "closed": "stalled (the last assistant entry is a timeout) or clean",
+            "answer_budget_s": ANSWER_BUDGET_S,
+            "client_patience_limit_s": CLIENT_PATIENCE_S,
+        },
+        "measurement": summarise(sessions),
+        "sessions": sessions,
+    }
+
+    if args.out:
+        out = pathlib.Path(args.out)
+        out.mkdir(parents=True, exist_ok=True)
+        json_path = out / "sessions.json"
+        json_path.write_text(json.dumps(audit, indent=2, sort_keys=True) + "\n")
+        (out / "README.md").write_text(render_markdown(audit))
+        digest = hashlib.sha256(json_path.read_bytes()).hexdigest()
+        print(f"wrote {json_path}")
+        print(f"wrote {out / 'README.md'}")
+        print(f"sha256 {json_path} {digest}")
+    else:
+        json.dump(audit, sys.stdout, indent=2, sort_keys=True)
+        print()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
