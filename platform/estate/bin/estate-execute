@@ -38,6 +38,12 @@ if _PLUGINS.is_dir() and str(_PLUGINS) not in sys.path:
 _PLAN_CONTRACT = None
 _PLAN_CONTRACT_TRIED = False
 
+# The session this invocation belongs to, when the caller states it explicitly (`--session <id>`).
+# Explicit beats the environment beats the runtime's pointer file: the caller that knows which
+# session it is speaking for must not have to be inferred (idp#7576). Empty means "not stated",
+# and the resolver falls through to the environment and the pointer.
+EXPLICIT_SESSION = ""
+
 # Merged is operating (docs/tickets/2026-09-27-merged-is-operating.md): the executor runs only
 # intents from the root-owned release estate-converge cut from main. ~/.estate/intents is a link
 # into it. A hand copy is refused; an unmerged intent runs only through --from, labelled.
@@ -450,7 +456,14 @@ def _record_unplanned(command, session_id):
 
 
 def _session_identity():
-    """The session this invocation belongs to: the environment, then the runtime's pointer."""
+    """The session this invocation belongs to.
+
+    Order: the caller's explicit statement, then the environment, then the runtime's pointer
+    file. Explicit identity is authoritative -- the caller that knows which session it speaks
+    for must not be second-guessed by a stale pointer left behind by another runtime.
+    """
+    if EXPLICIT_SESSION:
+        return EXPLICIT_SESSION
     module = _plan_contract()
     if module is None:
         return os.environ.get("ESTATE_SESSION_ID", "")
@@ -458,6 +471,17 @@ def _session_identity():
         return module.resolve_session_id()
     except Exception:  # noqa: BLE001 - identity resolution must never break the door
         return os.environ.get("ESTATE_SESSION_ID", "")
+
+
+def _record_intent(intent_name, session_id):
+    """Write down that this intent ran, and which session ran it (or that nobody did)."""
+    module = _plan_contract()
+    if module is None:
+        return
+    try:
+        module.record_intent(intent_name, session_id or "", source="intent-door")
+    except Exception:  # noqa: BLE001 - recording must never break the door
+        pass
 
 
 def _intent_budget(intent):
@@ -728,8 +752,10 @@ def cmd_run(intent_name, raw_args):
     conn = init_db()
     args = resolve_args(intent, raw_args)
     ticket_id = open_ticket(conn, intent_name, label or "direct")
-    log(f"[estate] intent={intent_name}  ticket={ticket_id}")
-    policy_decide(conn, ticket_id, intent_name, os.environ.get("ESTATE_SESSION_ID", ""))
+    session = _session_identity()
+    log(f"[estate] intent={intent_name}  ticket={ticket_id}  session={session or 'anonymous'}")
+    policy_decide(conn, ticket_id, intent_name, session or "")
+    _record_intent(intent_name, session)
 
     STEP_OUTPUTS.clear()
     status = run_steps(conn, ticket_id, intent, args)
@@ -755,8 +781,11 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
     args = resolve_args(intent, raw_args)
     harness_label = f"{harness_name}+{label}" if label else harness_name
     ticket_id = open_ticket(conn, intent_name, harness_label, goal)
-    log(f"[estate] intent={intent_name}  ticket={ticket_id}  harness={harness_name}")
-    policy_decide(conn, ticket_id, intent_name, os.environ.get("ESTATE_SESSION_ID", ""))
+    session = _session_identity()
+    log(f"[estate] intent={intent_name}  ticket={ticket_id}  harness={harness_name}  "
+        f"session={session or 'anonymous'}")
+    policy_decide(conn, ticket_id, intent_name, session or "")
+    _record_intent(intent_name, session)
 
     # --- Build session HOME with allowlisted tools + runtime deps -------
     tools = intent.get("tools", [])
@@ -919,6 +948,12 @@ if __name__ == "__main__":
             i += 1
         elif arg.startswith("--goal="):
             goal = arg.split("=", 1)[1]
+            i += 1
+        elif arg == "--session" and i + 1 < len(sys.argv):
+            EXPLICIT_SESSION = sys.argv[i + 1]
+            i += 2
+        elif arg.startswith("--session="):
+            EXPLICIT_SESSION = arg.split("=", 1)[1]
             i += 1
         elif harness_name is None and intent_name is None:
             # First positional: could be harness or intent
