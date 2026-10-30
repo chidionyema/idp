@@ -69,11 +69,13 @@ def load_executor_module():
 
 CLEAN = """\
 name: clean
+description: Reads the most recent commits of one repository so a caller can see what changed lately.
 args:
   repo: { type: string, required: true, help: "owner/name" }
-  count: { type: int, default: 1 }
+  count: { type: int, default: 1, description: "how many commits to read" }
 steps:
-  - cmd: >
+  - name: read commits
+    cmd: >
       gh api "repos/{{repo}}/commits?per_page={{count}}"
 """
 
@@ -179,8 +181,15 @@ def test_the_summary_is_machine_readable(tmp_path):
 # defect, exit 1) and ratchet (fails only on a NEW violation). Both modes are tested here, because
 # a ratchet nobody proved can fail is the same decoration as a gate that cannot.
 
-KNOWN = "name: known\nargs:\n  repo: { type: string }\nsteps:\n  - cmd: >\n      gh api {{repo}}\n"
-WORSE = 'name: worse\nargs:\n  other: { help: "no type" }\nsteps:\n  - cmd: >\n      gh api {{other}}\n'
+WELL = "description: " + "x" * 70 + "\n"
+KNOWN = (
+    "name: known\n" + WELL + "args:\n  repo: { type: string, help: r }\n"
+    "steps:\n  - name: s\n    cmd: >\n      gh api {{repo}}\n"
+)
+WORSE = (
+    "name: worse\n" + WELL + 'args:\n  other: { help: "no type" }\n'
+    "steps:\n  - name: s\n    cmd: >\n      gh api {{other}}\n"
+)
 
 
 def test_the_ratchet_refuses_a_new_violation(tmp_path):
@@ -522,3 +531,47 @@ def test_the_scripts_are_executable(script):
     """Both are invoked by path from docs and CI; a missing +x is a door that cannot be opened."""
     assert script.exists()
     assert script.stat().st_mode & 0o111
+
+
+# R5-R8: each rule is proved to fire on its own, and the clean fixture is proved to pass them all.
+# Every fixture below is CLEAN with exactly one thing broken, so a red result names one rule.
+
+
+def _violations(tmp_path, body):
+    write_intent(tmp_path, "probe", body)
+    r = run([sys.executable, str(GATE), "intents", "--root", str(tmp_path), "--json"])
+    assert r.returncode in (0, 1), r.stdout + r.stderr
+    return r.returncode, json.loads(r.stdout)["keys"]
+
+
+@pytest.mark.parametrize(
+    "rule,body",
+    [
+        ("R5", CLEAN.replace(', description: "how many commits to read"', "")),
+        ("R5", CLEAN.replace(', help: "owner/name"', "")),
+        (
+            "R6",
+            CLEAN.replace(
+                "Reads the most recent commits of one repository so a caller can see what changed lately.",
+                "Reads commits.",
+            ),
+        ),
+        ("R7", CLEAN.replace("gh api", "cd /Users/someone/code && gh api")),
+        ("R7", CLEAN.replace("gh api", "cd ~/Documents/code/idp && gh api")),
+        ("R8", CLEAN.replace("  - name: read commits\n    cmd:", "  - cmd:")),
+    ],
+)
+def test_each_new_rule_fires_on_its_own_defect(tmp_path, rule, body):
+    rc, keys = _violations(tmp_path, body)
+    assert rc == 1, keys
+    assert [k.split(":")[0] for k in keys] == [rule], keys
+
+
+def test_the_clean_fixture_passes_every_new_rule(tmp_path):
+    rc, keys = _violations(tmp_path, CLEAN)
+    assert (rc, keys) == (0, [])
+
+
+def test_an_arg_described_by_either_key_satisfies_r5(tmp_path):
+    """`help:` and `description:` are both in use across the intents; either one counts."""
+    assert _violations(tmp_path, CLEAN)[1] == []

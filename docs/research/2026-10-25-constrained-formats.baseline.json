@@ -1,30 +1,114 @@
 {
-  "generated_at": "2026-10-25T21:17Z",
+  "generated_at": "2026-10-30T01:58Z",
   "why": "The violation set this ratchet is judged against. Regenerating it is a deliberate act (--write-baseline) that must be argued in the pull request: it retires every violation listed here from the gate's sight.",
   "summary": {
     "root": "platform/estate/intents",
-    "intents": 98,
-    "intents_with_args": 87,
-    "args_declared": 267,
-    "args_typed": 235,
-    "args_required": 2,
+    "intents": 110,
+    "intents_with_args": 98,
+    "args_declared": 337,
+    "args_typed": 305,
+    "args_required": 7,
     "intents_with_undeclared_interpolation": 0,
     "intents_with_raw_interpolation": 5,
     "parse_errors": 0,
-    "violations": 76
+    "violations": 329
   },
   "violations": [
     {
+      "key": "R6:audit:-",
+      "text": "audit: R6 description is under 60 characters (or absent); discovery indexes it"
+    },
+    {
       "key": "R4:build-image:image",
       "text": "build-image: R4 arg 'image' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R7:build-image:~/Documents",
+      "text": "build-image: R7 a step embeds '~/Documents'; pass the location as an arg or read it from the environment"
+    },
+    {
+      "key": "R8:build-image:0",
+      "text": "build-image: R8 step 0 has no name:; receipts and from: cannot address it"
+    },
+    {
+      "key": "R5:bus-ensure:port",
+      "text": "bus-ensure: R5 arg 'port' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:ci.errors:repo",
+      "text": "ci.errors: R5 arg 'repo' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R8:ci.errors:0",
+      "text": "ci.errors: R8 step 0 has no name:; receipts and from: cannot address it"
     },
     {
       "key": "R4:ci.run:branch",
       "text": "ci.run: R4 arg 'branch' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
     },
     {
+      "key": "R8:ci.run:0",
+      "text": "ci.run: R8 step 0 has no name:; receipts and from: cannot address it"
+    },
+    {
+      "key": "R5:ci.status:pr",
+      "text": "ci.status: R5 arg 'pr' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:ci.status:sha",
+      "text": "ci.status: R5 arg 'sha' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:ci.status:repo",
+      "text": "ci.status: R5 arg 'repo' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:cluster-control-plane:kubeconfig",
+      "text": "cluster-control-plane: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:cluster-events:since",
+      "text": "cluster-events: R5 arg 'since' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:cluster-events:namespace",
+      "text": "cluster-events: R5 arg 'namespace' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:cluster-events:kubeconfig",
+      "text": "cluster-events: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:cluster-health:namespace",
+      "text": "cluster-health: R5 arg 'namespace' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:cluster-health:since",
+      "text": "cluster-health: R5 arg 'since' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:cluster-storage:kubeconfig",
+      "text": "cluster-storage: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R6:cluster-storage:-",
+      "text": "cluster-storage: R6 description is under 60 characters (or absent); discovery indexes it"
+    },
+    {
       "key": "R4:concierge-task:goal",
       "text": "concierge-task: R4 arg 'goal' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R5:concierge-task:max_steps",
+      "text": "concierge-task: R5 arg 'max_steps' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R6:cost-today:-",
+      "text": "cost-today: R6 description is under 60 characters (or absent); discovery indexes it"
+    },
+    {
+      "key": "R8:cost-today:0",
+      "text": "cost-today: R8 step 0 has no name:; receipts and from: cannot address it"
     },
     {
       "key": "R1:crystallize:dry_run",
@@ -47,8 +131,72 @@
       "text": "crystallize: R4 arg 'description' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
     },
     {
+      "key": "R5:crystallize:topic",
+      "text": "crystallize: R5 arg 'topic' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:crystallize:command",
+      "text": "crystallize: R5 arg 'command' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:crystallize:description",
+      "text": "crystallize: R5 arg 'description' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:crystallize:dry_run",
+      "text": "crystallize: R5 arg 'dry_run' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:crystallize:force",
+      "text": "crystallize: R5 arg 'force' has no description: or help:; a caller has nothing to go on"
+    },
+    {
       "key": "R4:delegate-build:slug",
       "text": "delegate-build: R4 arg 'slug' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R5:delegate-build:verb",
+      "text": "delegate-build: R5 arg 'verb' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:delegate-build:spec",
+      "text": "delegate-build: R5 arg 'spec' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:delegate-build:slug",
+      "text": "delegate-build: R5 arg 'slug' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:delegate-build:repo",
+      "text": "delegate-build: R5 arg 'repo' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:delegate-build:planner",
+      "text": "delegate-build: R5 arg 'planner' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:delegate-build:builder",
+      "text": "delegate-build: R5 arg 'builder' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:delegate-build:reasoning",
+      "text": "delegate-build: R5 arg 'reasoning' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:delegate-build:risk",
+      "text": "delegate-build: R5 arg 'risk' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:delegate-build:parallel",
+      "text": "delegate-build: R5 arg 'parallel' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:delegate-build:max_turns",
+      "text": "delegate-build: R5 arg 'max_turns' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:delegate-build:attempts",
+      "text": "delegate-build: R5 arg 'attempts' has no description: or help:; a caller has nothing to go on"
     },
     {
       "key": "R1:disk-cleanup:apply",
@@ -63,6 +211,22 @@
       "text": "disk-cleanup: R1 arg 'worktrees' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
     },
     {
+      "key": "R5:disk-cleanup:apply",
+      "text": "disk-cleanup: R5 arg 'apply' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:disk-cleanup:trash",
+      "text": "disk-cleanup: R5 arg 'trash' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:disk-cleanup:only_below_mb",
+      "text": "disk-cleanup: R5 arg 'only_below_mb' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:disk-cleanup:worktrees",
+      "text": "disk-cleanup: R5 arg 'worktrees' has no description: or help:; a caller has nothing to go on"
+    },
+    {
       "key": "R1:disk-free:worktrees",
       "text": "disk-free: R1 arg 'worktrees' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
     },
@@ -75,8 +239,28 @@
       "text": "estate-inventory: R1 arg 'json' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
     },
     {
+      "key": "R5:estate-inventory:json",
+      "text": "estate-inventory: R5 arg 'json' has no description: or help:; a caller has nothing to go on"
+    },
+    {
       "key": "R3:estate-snapshot:repo",
       "text": "estate-snapshot: R3 interpolates <<repo>> raw; estate-execute quotes {{...}} and only <<...>> bypasses it"
+    },
+    {
+      "key": "R5:estate-snapshot:repo",
+      "text": "estate-snapshot: R5 arg 'repo' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:estate.progress:hours",
+      "text": "estate.progress: R5 arg 'hours' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:estate.progress:fresh",
+      "text": "estate.progress: R5 arg 'fresh' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R8:explore:0",
+      "text": "explore: R8 step 0 has no name:; receipts and from: cannot address it"
     },
     {
       "key": "R3:fleet-regression:repo",
@@ -85,6 +269,66 @@
     {
       "key": "R3:fleet-regression:url",
       "text": "fleet-regression: R3 interpolates <<url>> raw; estate-execute quotes {{...}} and only <<...>> bypasses it"
+    },
+    {
+      "key": "R5:fleet-regression:repo",
+      "text": "fleet-regression: R5 arg 'repo' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:fleet-regression:url",
+      "text": "fleet-regression: R5 arg 'url' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:flux-deploy:branch",
+      "text": "flux-deploy: R5 arg 'branch' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:flux-deploy:message",
+      "text": "flux-deploy: R5 arg 'message' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:flux-deploy:files",
+      "text": "flux-deploy: R5 arg 'files' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R7:flux-deploy:~/Documents",
+      "text": "flux-deploy: R7 a step embeds '~/Documents'; pass the location as an arg or read it from the environment"
+    },
+    {
+      "key": "R5:flux-doctor:kubeconfig",
+      "text": "flux-doctor: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:flux-helmreleases:namespace",
+      "text": "flux-helmreleases: R5 arg 'namespace' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:flux-helmreleases:kubeconfig",
+      "text": "flux-helmreleases: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R6:flux-helmreleases:-",
+      "text": "flux-helmreleases: R6 description is under 60 characters (or absent); discovery indexes it"
+    },
+    {
+      "key": "R5:flux-kick:name",
+      "text": "flux-kick: R5 arg 'name' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:flux-kick:kubeconfig",
+      "text": "flux-kick: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R7:flux-kick:~/Documents",
+      "text": "flux-kick: R7 a step embeds '~/Documents'; pass the location as an arg or read it from the environment"
+    },
+    {
+      "key": "R5:flux-kustomizations:namespace",
+      "text": "flux-kustomizations: R5 arg 'namespace' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:flux-kustomizations:kubeconfig",
+      "text": "flux-kustomizations: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
     },
     {
       "key": "R1:flux-reconcile:with_source",
@@ -103,12 +347,48 @@
       "text": "flux-reconcile: R4 arg 'name' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
     },
     {
+      "key": "R5:flux-reconcile:name",
+      "text": "flux-reconcile: R5 arg 'name' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:flux-reconcile:namespace",
+      "text": "flux-reconcile: R5 arg 'namespace' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:flux-reconcile:with_source",
+      "text": "flux-reconcile: R5 arg 'with_source' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:flux-reconcile:kubeconfig",
+      "text": "flux-reconcile: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R6:flux-reconcile:-",
+      "text": "flux-reconcile: R6 description is under 60 characters (or absent); discovery indexes it"
+    },
+    {
+      "key": "R5:flux-status:kubeconfig",
+      "text": "flux-status: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R6:flux-status:-",
+      "text": "flux-status: R6 description is under 60 characters (or absent); discovery indexes it"
+    },
+    {
       "key": "R4:flux-suspend:kind",
       "text": "flux-suspend: R4 arg 'kind' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
     },
     {
       "key": "R4:flux-suspend:name",
       "text": "flux-suspend: R4 arg 'name' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R6:flux-suspend:-",
+      "text": "flux-suspend: R6 description is under 60 characters (or absent); discovery indexes it"
+    },
+    {
+      "key": "R8:flux-suspend:0",
+      "text": "flux-suspend: R8 step 0 has no name:; receipts and from: cannot address it"
     },
     {
       "key": "R1:friction-report:window_hours",
@@ -119,6 +399,14 @@
       "text": "friction-report: R1 arg 'top' has type 'number'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
     },
     {
+      "key": "R5:friction-report:window_hours",
+      "text": "friction-report: R5 arg 'window_hours' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:friction-report:top",
+      "text": "friction-report: R5 arg 'top' has no description: or help:; a caller has nothing to go on"
+    },
+    {
       "key": "R4:gh-api:path",
       "text": "gh-api: R4 arg 'path' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
     },
@@ -127,12 +415,52 @@
       "text": "gh-check-runs: R4 arg 'sha' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
     },
     {
+      "key": "R5:gh-check-runs:repo",
+      "text": "gh-check-runs: R5 arg 'repo' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R6:gh-check-runs:-",
+      "text": "gh-check-runs: R6 description is under 60 characters (or absent); discovery indexes it"
+    },
+    {
+      "key": "R5:git-log:branch",
+      "text": "git-log: R5 arg 'branch' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:git-log:count",
+      "text": "git-log: R5 arg 'count' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:git-log:since",
+      "text": "git-log: R5 arg 'since' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:git-log:path",
+      "text": "git-log: R5 arg 'path' has no description: or help:; a caller has nothing to go on"
+    },
+    {
       "key": "R1:git-sync:dry_run",
       "text": "git-sync: R1 arg 'dry_run' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
     },
     {
+      "key": "R5:git-sync:remote",
+      "text": "git-sync: R5 arg 'remote' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:git-sync:dry_run",
+      "text": "git-sync: R5 arg 'dry_run' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R6:git-sync:-",
+      "text": "git-sync: R6 description is under 60 characters (or absent); discovery indexes it"
+    },
+    {
       "key": "R4:git.branch:name",
       "text": "git.branch: R4 arg 'name' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R8:git.branch:0",
+      "text": "git.branch: R8 step 0 has no name:; receipts and from: cannot address it"
     },
     {
       "key": "R4:git.commit-staged:message_file",
@@ -151,12 +479,124 @@
       "text": "git.commit: R4 arg 'message' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
     },
     {
+      "key": "R8:git.commit:0",
+      "text": "git.commit: R8 step 0 has no name:; receipts and from: cannot address it"
+    },
+    {
+      "key": "R6:halt:-",
+      "text": "halt: R6 description is under 60 characters (or absent); discovery indexes it"
+    },
+    {
+      "key": "R8:halt:0",
+      "text": "halt: R8 step 0 has no name:; receipts and from: cannot address it"
+    },
+    {
+      "key": "R5:harv:verb",
+      "text": "harv: R5 arg 'verb' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:harv:limit",
+      "text": "harv: R5 arg 'limit' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:harv:skip",
+      "text": "harv: R5 arg 'skip' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:harv:only",
+      "text": "harv: R5 arg 'only' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:harv:filter",
+      "text": "harv: R5 arg 'filter' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:harv:name",
+      "text": "harv: R5 arg 'name' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:harv:text",
+      "text": "harv: R5 arg 'text' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:harv:hex",
+      "text": "harv: R5 arg 'hex' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:harv:out",
+      "text": "harv: R5 arg 'out' has no description: or help:; a caller has nothing to go on"
+    },
+    {
       "key": "R1:hypotheses.race:eps",
       "text": "hypotheses.race: R1 arg 'eps' has type 'float'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
     },
     {
+      "key": "R5:hypotheses.race:file",
+      "text": "hypotheses.race: R5 arg 'file' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:hypotheses.race:parallel",
+      "text": "hypotheses.race: R5 arg 'parallel' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:hypotheses.race:timeout",
+      "text": "hypotheses.race: R5 arg 'timeout' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:hypotheses.race:eps",
+      "text": "hypotheses.race: R5 arg 'eps' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:incident-loop:action",
+      "text": "incident-loop: R5 arg 'action' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:incident-loop:repo",
+      "text": "incident-loop: R5 arg 'repo' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:incident-loop:incident",
+      "text": "incident-loop: R5 arg 'incident' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:incident-loop:severity",
+      "text": "incident-loop: R5 arg 'severity' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:incident-loop:blast",
+      "text": "incident-loop: R5 arg 'blast' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:incident-loop:title",
+      "text": "incident-loop: R5 arg 'title' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:incident-loop:url",
+      "text": "incident-loop: R5 arg 'url' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:incident-loop:state",
+      "text": "incident-loop: R5 arg 'state' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:incident-loop:lane",
+      "text": "incident-loop: R5 arg 'lane' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:incident-loop:worktree",
+      "text": "incident-loop: R5 arg 'worktree' has no description: or help:; a caller has nothing to go on"
+    },
+    {
       "key": "R3:jev-setup:repo",
       "text": "jev-setup: R3 interpolates <<repo>> raw; estate-execute quotes {{...}} and only <<...>> bypasses it"
+    },
+    {
+      "key": "R5:jev-setup:repo",
+      "text": "jev-setup: R5 arg 'repo' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R7:jev-setup:~/Documents",
+      "text": "jev-setup: R7 a step embeds '~/Documents'; pass the location as an arg or read it from the environment"
     },
     {
       "key": "R1:k8s-apply:dry_run",
@@ -175,6 +615,30 @@
       "text": "k8s-apply: R4 arg 'manifest' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
     },
     {
+      "key": "R5:k8s-apply:manifest",
+      "text": "k8s-apply: R5 arg 'manifest' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-apply:namespace",
+      "text": "k8s-apply: R5 arg 'namespace' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-apply:dry_run",
+      "text": "k8s-apply: R5 arg 'dry_run' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-apply:server",
+      "text": "k8s-apply: R5 arg 'server' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-apply:validate",
+      "text": "k8s-apply: R5 arg 'validate' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-apply:kubeconfig",
+      "text": "k8s-apply: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
+    },
+    {
       "key": "R1:k8s-delete:dry_run",
       "text": "k8s-delete: R1 arg 'dry_run' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
     },
@@ -187,6 +651,14 @@
       "text": "k8s-delete: R4 arg 'name' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
     },
     {
+      "key": "R5:k8s-delete:dry_run",
+      "text": "k8s-delete: R5 arg 'dry_run' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-delete:kubeconfig",
+      "text": "k8s-delete: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
+    },
+    {
       "key": "R4:k8s-describe:resource",
       "text": "k8s-describe: R4 arg 'resource' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
     },
@@ -195,8 +667,40 @@
       "text": "k8s-describe: R4 arg 'name' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
     },
     {
+      "key": "R5:k8s-describe:resource",
+      "text": "k8s-describe: R5 arg 'resource' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-describe:name",
+      "text": "k8s-describe: R5 arg 'name' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-describe:namespace",
+      "text": "k8s-describe: R5 arg 'namespace' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-describe:kubeconfig",
+      "text": "k8s-describe: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R6:k8s-describe:-",
+      "text": "k8s-describe: R6 description is under 60 characters (or absent); discovery indexes it"
+    },
+    {
       "key": "R1:k8s-diag:verbose",
       "text": "k8s-diag: R1 arg 'verbose' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R8:k8s-diag:0",
+      "text": "k8s-diag: R8 step 0 has no name:; receipts and from: cannot address it"
+    },
+    {
+      "key": "R5:k8s-externalsecrets:namespace",
+      "text": "k8s-externalsecrets: R5 arg 'namespace' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-externalsecrets:kubeconfig",
+      "text": "k8s-externalsecrets: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
     },
     {
       "key": "R1:k8s-logs:previous",
@@ -207,8 +711,80 @@
       "text": "k8s-logs: R4 arg 'pod' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
     },
     {
+      "key": "R5:k8s-logs:pod",
+      "text": "k8s-logs: R5 arg 'pod' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-logs:namespace",
+      "text": "k8s-logs: R5 arg 'namespace' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-logs:container",
+      "text": "k8s-logs: R5 arg 'container' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-logs:lines",
+      "text": "k8s-logs: R5 arg 'lines' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-logs:since",
+      "text": "k8s-logs: R5 arg 'since' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-logs:previous",
+      "text": "k8s-logs: R5 arg 'previous' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-logs:kubeconfig",
+      "text": "k8s-logs: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
+    },
+    {
       "key": "R1:k8s-pods:all_ns",
       "text": "k8s-pods: R1 arg 'all_ns' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R5:k8s-pods:namespace",
+      "text": "k8s-pods: R5 arg 'namespace' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-pods:label",
+      "text": "k8s-pods: R5 arg 'label' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-pods:status",
+      "text": "k8s-pods: R5 arg 'status' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-pods:all_ns",
+      "text": "k8s-pods: R5 arg 'all_ns' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-pods:output",
+      "text": "k8s-pods: R5 arg 'output' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s-pods:kubeconfig",
+      "text": "k8s-pods: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s.debug:namespace",
+      "text": "k8s.debug: R5 arg 'namespace' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s.debug:focus",
+      "text": "k8s.debug: R5 arg 'focus' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s.debug:depth",
+      "text": "k8s.debug: R5 arg 'depth' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s.debug:since",
+      "text": "k8s.debug: R5 arg 'since' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:k8s.debug:log_lines",
+      "text": "k8s.debug: R5 arg 'log_lines' has no description: or help:; a caller has nothing to go on"
     },
     {
       "key": "R1:kubectl-apply:server",
@@ -223,12 +799,56 @@
       "text": "kubectl-apply: R4 arg 'manifest' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
     },
     {
+      "key": "R5:kubectl-apply:namespace",
+      "text": "kubectl-apply: R5 arg 'namespace' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:kubectl-apply:server",
+      "text": "kubectl-apply: R5 arg 'server' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:kubectl-apply:validate",
+      "text": "kubectl-apply: R5 arg 'validate' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:kubectl-apply:kubeconfig",
+      "text": "kubectl-apply: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
+    },
+    {
       "key": "R1:kubectl-list:all_ns",
       "text": "kubectl-list: R1 arg 'all_ns' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
     },
     {
       "key": "R4:kubectl-list:resource",
       "text": "kubectl-list: R4 arg 'resource' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R5:kubectl-list:resource",
+      "text": "kubectl-list: R5 arg 'resource' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:kubectl-list:namespace",
+      "text": "kubectl-list: R5 arg 'namespace' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:kubectl-list:all_ns",
+      "text": "kubectl-list: R5 arg 'all_ns' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:kubectl-list:label",
+      "text": "kubectl-list: R5 arg 'label' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:kubectl-list:field",
+      "text": "kubectl-list: R5 arg 'field' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:kubectl-list:output",
+      "text": "kubectl-list: R5 arg 'output' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:kubectl-list:kubeconfig",
+      "text": "kubectl-list: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
     },
     {
       "key": "R1:kubectl-logs:previous",
@@ -239,28 +859,252 @@
       "text": "kubectl-logs: R4 arg 'pod' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
     },
     {
+      "key": "R5:kubectl-logs:pod",
+      "text": "kubectl-logs: R5 arg 'pod' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:kubectl-logs:namespace",
+      "text": "kubectl-logs: R5 arg 'namespace' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:kubectl-logs:container",
+      "text": "kubectl-logs: R5 arg 'container' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:kubectl-logs:lines",
+      "text": "kubectl-logs: R5 arg 'lines' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:kubectl-logs:since",
+      "text": "kubectl-logs: R5 arg 'since' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:kubectl-logs:previous",
+      "text": "kubectl-logs: R5 arg 'previous' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:kubectl-logs:kubeconfig",
+      "text": "kubectl-logs: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
+    },
+    {
       "key": "R4:kubectl:resource",
       "text": "kubectl: R4 arg 'resource' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R5:kubectl:resource",
+      "text": "kubectl: R5 arg 'resource' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:kubectl:name",
+      "text": "kubectl: R5 arg 'name' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:kubectl:namespace",
+      "text": "kubectl: R5 arg 'namespace' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:kubectl:output",
+      "text": "kubectl: R5 arg 'output' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:kubectl:extra",
+      "text": "kubectl: R5 arg 'extra' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:kubectl:kubeconfig",
+      "text": "kubectl: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:lane-submit:cwd",
+      "text": "lane-submit: R5 arg 'cwd' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R7:lane:~/Documents",
+      "text": "lane: R7 a step embeds '~/Documents'; pass the location as an arg or read it from the environment"
+    },
+    {
+      "key": "R6:ledger-verify:-",
+      "text": "ledger-verify: R6 description is under 60 characters (or absent); discovery indexes it"
+    },
+    {
+      "key": "R8:ledger-verify:0",
+      "text": "ledger-verify: R8 step 0 has no name:; receipts and from: cannot address it"
+    },
+    {
+      "key": "R8:ledger-verify:1",
+      "text": "ledger-verify: R8 step 1 has no name:; receipts and from: cannot address it"
+    },
+    {
+      "key": "R5:litellm-alias:action",
+      "text": "litellm-alias: R5 arg 'action' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:litellm-alias:alias",
+      "text": "litellm-alias: R5 arg 'alias' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:litellm-alias:target",
+      "text": "litellm-alias: R5 arg 'target' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:litellm-alias:kubeconfig",
+      "text": "litellm-alias: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:litellm-test:model",
+      "text": "litellm-test: R5 arg 'model' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:map.greenlane-live:root",
+      "text": "map.greenlane-live: R5 arg 'root' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:map.greenlane-live:ref",
+      "text": "map.greenlane-live: R5 arg 'ref' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R7:map.greenlane-live:/home/",
+      "text": "map.greenlane-live: R7 a step embeds '/home/'; pass the location as an arg or read it from the environment"
+    },
+    {
+      "key": "R5:net-flannel-unmasq:node",
+      "text": "net-flannel-unmasq: R5 arg 'node' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:net-forensics:node",
+      "text": "net-forensics: R5 arg 'node' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:net-forensics:probe",
+      "text": "net-forensics: R5 arg 'probe' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:net-gnp-orphan-remove:name",
+      "text": "net-gnp-orphan-remove: R5 arg 'name' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:net-gnp-orphan-remove:setlabel",
+      "text": "net-gnp-orphan-remove: R5 arg 'setlabel' has no description: or help:; a caller has nothing to go on"
     },
     {
       "key": "R4:net-gnp-restore:snapshot",
       "text": "net-gnp-restore: R4 arg 'snapshot' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
     },
     {
+      "key": "R5:net-gnp-restore:snapshot",
+      "text": "net-gnp-restore: R5 arg 'snapshot' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:net-triage:spec",
+      "text": "net-triage: R5 arg 'spec' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R8:oci-kubeconfig-refresh:0",
+      "text": "oci-kubeconfig-refresh: R8 step 0 has no name:; receipts and from: cannot address it"
+    },
+    {
+      "key": "R5:oci-reclaim:apply",
+      "text": "oci-reclaim: R5 arg 'apply' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:oci-reclaim:keep_oldest",
+      "text": "oci-reclaim: R5 arg 'keep_oldest' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:oci-reclaim:older_than_hours",
+      "text": "oci-reclaim: R5 arg 'older_than_hours' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:oci-reclaim:compartment_id",
+      "text": "oci-reclaim: R5 arg 'compartment_id' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:oci-reclaim:what",
+      "text": "oci-reclaim: R5 arg 'what' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:oci-reclaim:node_id",
+      "text": "oci-reclaim: R5 arg 'node_id' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R8:policy-status:0",
+      "text": "policy-status: R8 step 0 has no name:; receipts and from: cannot address it"
+    },
+    {
+      "key": "R5:pr-list:state",
+      "text": "pr-list: R5 arg 'state' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:pr-list:repo",
+      "text": "pr-list: R5 arg 'repo' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:pr-list:limit",
+      "text": "pr-list: R5 arg 'limit' has no description: or help:; a caller has nothing to go on"
+    },
+    {
       "key": "R1:pr-merge:dry_run",
       "text": "pr-merge: R1 arg 'dry_run' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R5:pr-merge:pr",
+      "text": "pr-merge: R5 arg 'pr' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:pr-merge:dry_run",
+      "text": "pr-merge: R5 arg 'dry_run' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:pr-merge:repo",
+      "text": "pr-merge: R5 arg 'repo' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:pr-ready:pr",
+      "text": "pr-ready: R5 arg 'pr' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:pr-ready:repo",
+      "text": "pr-ready: R5 arg 'repo' has no description: or help:; a caller has nothing to go on"
     },
     {
       "key": "R1:router-doctor:heal",
       "text": "router-doctor: R1 arg 'heal' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
     },
     {
+      "key": "R5:router-lane-health:minutes",
+      "text": "router-lane-health: R5 arg 'minutes' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:router-lane-health:lane",
+      "text": "router-lane-health: R5 arg 'lane' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R6:router-status:-",
+      "text": "router-status: R6 description is under 60 characters (or absent); discovery indexes it"
+    },
+    {
+      "key": "R8:router-status:0",
+      "text": "router-status: R8 step 0 has no name:; receipts and from: cannot address it"
+    },
+    {
       "key": "R1:scheduler-venv:apply",
       "text": "scheduler-venv: R1 arg 'apply' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
     },
     {
+      "key": "R5:scheduler-venv:apply",
+      "text": "scheduler-venv: R5 arg 'apply' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R7:secrets-discovery:~/Documents",
+      "text": "secrets-discovery: R7 a step embeds '~/Documents'; pass the location as an arg or read it from the environment"
+    },
+    {
       "key": "R4:shell.parse:file",
       "text": "shell.parse: R4 arg 'file' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R8:shell.parse:0",
+      "text": "shell.parse: R8 step 0 has no name:; receipts and from: cannot address it"
     },
     {
       "key": "R4:shell.suggest:file",
@@ -275,6 +1119,10 @@
       "text": "shell.suggest: R4 arg 'fixed_file' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
     },
     {
+      "key": "R8:shell.suggest:0",
+      "text": "shell.suggest: R8 step 0 has no name:; receipts and from: cannot address it"
+    },
+    {
       "key": "R4:shell.verify:file",
       "text": "shell.verify: R4 arg 'file' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
     },
@@ -283,16 +1131,104 @@
       "text": "shell.verify: R4 arg 'patch' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
     },
     {
+      "key": "R8:shell.verify:0",
+      "text": "shell.verify: R8 step 0 has no name:; receipts and from: cannot address it"
+    },
+    {
       "key": "R1:silence-audit:json",
       "text": "silence-audit: R1 arg 'json' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R5:silence-audit:json",
+      "text": "silence-audit: R5 arg 'json' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:silence-audit:repo",
+      "text": "silence-audit: R5 arg 'repo' has no description: or help:; a caller has nothing to go on"
     },
     {
       "key": "R1:site-onboard:force",
       "text": "site-onboard: R1 arg 'force' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
     },
     {
+      "key": "R5:site-onboard:mode",
+      "text": "site-onboard: R5 arg 'mode' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:site-onboard:name",
+      "text": "site-onboard: R5 arg 'name' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:site-onboard:kind",
+      "text": "site-onboard: R5 arg 'kind' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:site-onboard:port",
+      "text": "site-onboard: R5 arg 'port' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:site-onboard:replicas",
+      "text": "site-onboard: R5 arg 'replicas' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:site-onboard:tier",
+      "text": "site-onboard: R5 arg 'tier' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:site-onboard:health_path",
+      "text": "site-onboard: R5 arg 'health_path' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:site-onboard:runtime",
+      "text": "site-onboard: R5 arg 'runtime' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:site-onboard:force",
+      "text": "site-onboard: R5 arg 'force' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:snapshot:namespace",
+      "text": "snapshot: R5 arg 'namespace' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R6:snapshot:-",
+      "text": "snapshot: R6 description is under 60 characters (or absent); discovery indexes it"
+    },
+    {
+      "key": "R5:spire-entries:kubeconfig",
+      "text": "spire-entries: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R8:spire-proof-run:0",
+      "text": "spire-proof-run: R8 step 0 has no name:; receipts and from: cannot address it"
+    },
+    {
+      "key": "R5:telegram-agent.doctor:agent",
+      "text": "telegram-agent.doctor: R5 arg 'agent' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:telegram-agent.doctor:heal",
+      "text": "telegram-agent.doctor: R5 arg 'heal' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:telegram-agent.doctor:json",
+      "text": "telegram-agent.doctor: R5 arg 'json' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R8:token-proof:0",
+      "text": "token-proof: R8 step 0 has no name:; receipts and from: cannot address it"
+    },
+    {
+      "key": "R8:token-proof:1",
+      "text": "token-proof: R8 step 1 has no name:; receipts and from: cannot address it"
+    },
+    {
       "key": "R4:ui.scaffold:name",
       "text": "ui.scaffold: R4 arg 'name' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
+    },
+    {
+      "key": "R5:ui.scaffold:cwd",
+      "text": "ui.scaffold: R5 arg 'cwd' has no description: or help:; a caller has nothing to go on"
     },
     {
       "key": "R1:vault-rotate:dry_run",
@@ -303,6 +1239,30 @@
       "text": "vault-rotate: R4 arg 'name' has no default and is not required: true; nobody decided about this argument, and a caller who omits it is handed ''"
     },
     {
+      "key": "R5:vault-rotate:name",
+      "text": "vault-rotate: R5 arg 'name' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:vault-rotate:namespace",
+      "text": "vault-rotate: R5 arg 'namespace' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:vault-rotate:dry_run",
+      "text": "vault-rotate: R5 arg 'dry_run' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:vault-rotate:kubeconfig",
+      "text": "vault-rotate: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:vault-status:namespace",
+      "text": "vault-status: R5 arg 'namespace' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:vault-status:kubeconfig",
+      "text": "vault-status: R5 arg 'kubeconfig' has no description: or help:; a caller has nothing to go on"
+    },
+    {
       "key": "R3:voice-bench-compose:models",
       "text": "voice-bench-compose: R3 interpolates <<models>> raw; estate-execute quotes {{...}} and only <<...>> bypasses it"
     },
@@ -311,12 +1271,64 @@
       "text": "voice-bench-compose: R3 interpolates <<repo>> raw; estate-execute quotes {{...}} and only <<...>> bypasses it"
     },
     {
+      "key": "R5:voice-bench-compose:repo",
+      "text": "voice-bench-compose: R5 arg 'repo' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:voice-bench-compose:silences",
+      "text": "voice-bench-compose: R5 arg 'silences' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:voice-bench-compose:runs",
+      "text": "voice-bench-compose: R5 arg 'runs' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:voice-bench-compose:models",
+      "text": "voice-bench-compose: R5 arg 'models' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:voice-doctor:scope",
+      "text": "voice-doctor: R5 arg 'scope' has no description: or help:; a caller has nothing to go on"
+    },
+    {
       "key": "R3:voice-router-test:repo",
       "text": "voice-router-test: R3 interpolates <<repo>> raw; estate-execute quotes {{...}} and only <<...>> bypasses it"
     },
     {
+      "key": "R5:voice-router-test:repo",
+      "text": "voice-router-test: R5 arg 'repo' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:voice-turns:url",
+      "text": "voice-turns: R5 arg 'url' has no description: or help:; a caller has nothing to go on"
+    },
+    {
       "key": "R1:work-audit:all",
       "text": "work-audit: R1 arg 'all' has type 'bool'; resolve_args coerces ['int', 'string'] only, so this value arrives as a string"
+    },
+    {
+      "key": "R5:work-audit:days",
+      "text": "work-audit: R5 arg 'days' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:work-audit:github",
+      "text": "work-audit: R5 arg 'github' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:work-audit:all",
+      "text": "work-audit: R5 arg 'all' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:work.discover:days",
+      "text": "work.discover: R5 arg 'days' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:work.discover:repos",
+      "text": "work.discover: R5 arg 'repos' has no description: or help:; a caller has nothing to go on"
+    },
+    {
+      "key": "R5:work.discover:limit",
+      "text": "work.discover: R5 arg 'limit' has no description: or help:; a caller has nothing to go on"
     }
   ]
 }
