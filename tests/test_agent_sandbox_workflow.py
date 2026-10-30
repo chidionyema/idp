@@ -276,6 +276,22 @@ def test_failed_gemini_preserves_its_private_transcript(tmp_path):
     assert (out / "transcript.jsonl").read_text() == "{}\n"
 
 
+@pytest.mark.parametrize(
+    "category", ["RESOURCE_EXHAUSTED", "PERMISSION_DENIED", "NOT_FOUND"]
+)
+def test_google_failure_reports_only_the_allowlisted_category(tmp_path, category):
+    private_detail = "private-provider-diagnostic-sentinel"
+    body = (
+        FAKE["pi"]
+        + f'echo \'{{"error":{{"status":"{category}","message":"{private_detail}"}}}}\'\nexit 1\n'
+    )
+    result, out = _agent_step(tmp_path, "gemini", body)
+    assert result.returncode == 1
+    assert category in result.stdout
+    assert private_detail not in result.stdout + result.stderr
+    assert private_detail in (out / "stdout").read_text()
+
+
 def test_private_evidence_is_sealed_and_uploaded_after_agent_failure():
     assert _step("agent", "Encrypt what leaves").get("if") == "always()"
     upload = next(

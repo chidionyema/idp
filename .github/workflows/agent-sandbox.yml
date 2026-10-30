@@ -140,7 +140,9 @@ jobs:
             # A rejected key reads: 401 {"type":"error","error":{"type":"authentication_error",...
             status=$(grep -oE '^[0-9]{3} ' "$out/stdout" | head -1 || true)
             kind=$(grep -oE '"type":"[a-z_]+_error"' "$out/stdout" | head -1 | cut -d'"' -f4 || true)
-            echo "::error::the harness failed (exit $rc); provider said: ${status:-no status}${kind:-}"
+            # Google's status is a fixed enum. Never echo its private message or full response.
+            google_status=$(grep -oE '"status"[[:space:]]*:[[:space:]]*"(INVALID_ARGUMENT|FAILED_PRECONDITION|UNAUTHENTICATED|PERMISSION_DENIED|NOT_FOUND|RESOURCE_EXHAUSTED|INTERNAL|UNAVAILABLE|DEADLINE_EXCEEDED)"' "$out/stdout" | head -1 | cut -d'"' -f4 || true)
+            echo "::error::the harness failed (exit $rc); provider said: ${status:-no status}${kind:-}${google_status:+ $google_status}"
             exit "$rc"
           fi
           # The patch is everything the agent changed against the commit it started from,
