@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 
 sys.path.insert(
     0,
@@ -43,12 +44,108 @@ class Bridge:
     def __init__(self):
         self.secret = None
         self.plan = None
+        # THIS SESSION'S IDENTITY. The bridge is one process per runtime session, so it is the
+        # natural place to bind a session to a ledger: the plan it holds is that session's plan
+        # and the door reads the same ledger. The id comes from the environment first (the
+        # runtime that set it owns the session), then the pointer the owning runtime wrote for
+        # its process; failing both, this bridge generates one, because a session that has no
+        # identity cannot be held to a plan at all.
+        self.session_id = self._resolve_session()
+        # The ordered plan calls this bridge has served. They are the bridge's own copy of
+        # the plan, and they are what is MIGRATED when a later pointer turns out to own the
+        # session (see _adopt_parent_session).
+        self.calls: list = []
+
+    def _resolve_session(self) -> str:
+        sid = (os.environ.get("ESTATE_SESSION_ID") or "").strip()
+        if sid:
+            return sid
+        for pid in (os.getppid(), os.getpid()):
+            try:
+                with open(plan.session_pointer_path(pid), encoding="utf-8") as fh:
+                    data = json.load(fh)
+            except (OSError, ValueError):
+                continue
+            sid = str((data or {}).get("session_id") or "").strip()
+            if sid:
+                return sid
+        return "mcp-%d-%d" % (os.getpid(), int(time.time()))
+
+    def _parent_session(self) -> str:
+        """The session id the OWNING runtime bound to its own process, if it has."""
+        try:
+            with open(plan.session_pointer_path(os.getppid()), encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError):
+            return ""
+        return str((data or {}).get("session_id") or "").strip()
+
+    def _adopt_parent_session(self) -> None:
+        """Adopt the owning runtime's session id when it appears AFTER this bridge started.
+
+        The bridge generates its own id when no runtime pointer exists yet. Claude Code's
+        hook writes its real session id later, when the first tool call happens. If the
+        bridge kept its generated id, the door would read a ledger nobody declares into --
+        the session would look unplanned forever. So the later pointer WINS, and the calls
+        the bridge already served are migrated into the adopted ledger, in order.
+        """
+        sid = self._parent_session()
+        if not sid or sid == self.session_id:
+            return
+        self.session_id = sid
+        try:
+            plan.sync_plan_calls(sid, self.calls)
+        except Exception:  # noqa: BLE001 - a broken ledger must not break the session
+            pass
+        try:
+            plan.write_session_pointer(sid)
+        except Exception:  # noqa: BLE001 - a missing pointer must not break the session
+            pass
+
+    def _publish(self) -> None:
+        """Make this session visible to the door: a pointer for the process, a ledger for the plan.
+
+        The ledger is opened even when no plan is declared: its EXISTENCE is what tells the door
+        that this runtime's adapter is live, and a live adapter with no plan is refused. A
+        session whose adapter never ran has no ledger, and is allowed and recorded instead.
+
+        Publication itself lives in plan.py (`publish_session`), so there is ONE definition of
+        what a pointer, a marker and an ordered plan call mean -- here and in every adapter.
+        """
+        # A pointer that appeared since startup owns the session: adopt its id first, so the
+        # pointer this bridge writes names the session the door will read.
+        self._adopt_parent_session()
+        try:
+            # Two pointers: this bridge's own pid, and the pid of the runtime that owns it.
+            # The door may be reached from a sibling of the bridge (the intent executor is
+            # another child of the runtime), and it resolves identity by walking the process
+            # tree -- so the runtime's pid is the pointer that answers it.
+            plan.publish_session(self.session_id, pid=os.getpid(), overwrite=True)
+            parent = os.getppid()
+            # The runtime's pointer is NOT overwritten: Claude Code's own hook writes that
+            # pointer under Claude's session id, and the hook's ledger is the transcript's
+            # plan. Last writer wins would put two ledgers behind one pointer, and the door
+            # would read whichever survived.
+            plan.publish_session(self.session_id, pid=parent, overwrite=False)
+        except Exception:  # noqa: BLE001 - a missing pointer must not break the session
+            pass
 
     def plan_call(self, mid, name: str, args) -> dict:
         r = plan.apply(self.plan, name, args)
         if not r["ok"]:
             return refuse(mid, f"Refused: {r['reason']}")
         self.plan = r["plan"]
+        # The durable ledger is the plan's home. The in-memory plan above is the same plan
+        # (plan.apply is the only interpreter); this writes it where the door can read it, in
+        # declaration order, so the very next command is authorised by what was just declared.
+        self.calls.append([name, args or {}])
+        try:
+            # A pointer that appeared since startup owns the session: adopt it BEFORE the
+            # event is written, so the event lands in the ledger the door will read.
+            self._adopt_parent_session()
+            plan.append_plan_event(self.session_id, name, args or {})
+        except Exception:  # noqa: BLE001 - a broken ledger must not break the declaration
+            pass
         return ok(mid, {"content": [{"type": "text", "text": r["message"]}]})
 
     def key(self) -> str:
@@ -175,6 +272,7 @@ def refuse(mid, why: str) -> dict:
 
 def main() -> int:
     bridge = Bridge()
+    bridge._publish()
     for line in sys.stdin:
         if not line.strip():
             continue

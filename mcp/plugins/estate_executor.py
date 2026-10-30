@@ -664,6 +664,31 @@ def _plan_ledger_write(command: str, session_id: str = "") -> None:
         return
 
 
+def _record_refusal(
+    command: str, session_id: str, reason: str, detail: str = ""
+) -> None:
+    """Write the refusal down: the canonical ledger AND the door's stderr.
+
+    Two proofs, deliberately. The JSONL file is the estate's own audit -- countable, durable,
+    machine-readable. The stderr line is what the production daemon log shows, so a refusal
+    that happened is visible to the founder without reading a file.
+    """
+    module = _plan_module()
+    if module is None:
+        return
+    try:
+        module.record_refusal(
+            command, session_id, reason=reason, detail=detail, source="door"
+        )
+    except Exception:  # noqa: BLE001, S110 - recording must never break the door
+        pass
+    try:
+        sys.stderr.write(module.refusal_log_line(command, session_id, reason) + "\n")
+        sys.stderr.flush()
+    except Exception:  # noqa: BLE001, S110 - a broken stderr must never break the door
+        pass
+
+
 def _record_unenforced_work(command: str, session_id: str, gate) -> None:
     """Record work that ran with nothing behind it.
 
@@ -919,18 +944,21 @@ def execute_command(
     _plan_ledger_write(command, session_id)
     gate = _plan_gate(command, session_id)
     if gate is not None and not gate.get("ok"):
+        reason = gate.get("reason", "plan_not_declared")
+        detail = gate.get("detail") or "this session has declared no plan"
         record_friction(
             "refuse-plan",
             command,
-            detail=gate.get("reason", ""),
-            reason=gate.get("reason"),
+            detail=reason,
+            reason=reason,
         )
+        _record_refusal(command, session_id, reason, detail)
         return {
             "accepted": False,
-            "error": gate.get("detail") or "this session has declared no plan",
+            "error": detail,
             "refused": True,
             "fatal": True,
-            "reason": gate.get("reason", "plan_not_declared"),
+            "reason": reason,
         }
     if gate is not None:
         _record_unenforced_work(command, session_id, gate)

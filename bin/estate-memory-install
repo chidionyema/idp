@@ -351,11 +351,20 @@ def main(argv: list[str]) -> int:
                 apply()
                 print(f"wrote    {name:<12} {what} {where}")
     for name in args.runtime or sorted(MANIFEST["runtimes"]):
-        found = unlocked(MANIFEST["runtimes"][name])
+        rt = MANIFEST["runtimes"][name]
+        found = unlocked(rt)
         if found:
             refused += 1
+            # The owner is the issue that has to fix THIS runtime, not one blanket number.
+            owner = rt.get("owner") or "#6675"
+            door = (
+                " estate-routed work is gated at the door (#7518),"
+                if rt.get("estate_door")
+                else ""
+            )
             print(
-                f"UNLOCKED {name:<12} {found} is installed and nothing holds it to a plan (#6675)"
+                f"UNLOCKED {name:<12} {found} is installed and nothing holds it to a plan"
+                f" ({owner});{door} its native tools are not gated"
             )
     behind = commits_behind_main() if args.check and drift else 0
     if behind:
