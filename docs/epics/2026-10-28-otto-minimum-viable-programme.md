@@ -264,3 +264,112 @@ is a notification. The seam's wave 6 depends on the door's wave 0, which has lan
 **What the amendment does not do.** It reopens no finding above; it claims no wave done except
 wave 0, which has its own receipt; it touches no `AGENTS.md`, no lane value, no vault, and no
 cluster by hand.
+
+---
+
+## Addendum -- 2026-10-30: the substrate moved under the programme
+
+**Issue:** chidionyema/idp#7387 (recovery), #7393 (replacement)
+**Measured:** 2026-10-30T03:20Z, from the laptop, against OCI, GitHub and the edge itself.
+
+This addendum records a fact that changed the estate's ground while this programme was in
+flight, states what it does to the waves, and restates the verdict. **It re-opens no finding
+above and claims no wave done.** Its only new claim is that the receipt surface of this
+programme has moved: what was provable on 2026-10-28 is not provable today, and the honest
+answer for anything that needs the cluster is `BLIND`.
+
+### 1. What was measured
+
+| command | result |
+|---|---|
+| `oci ce cluster list --compartment-id ocid1.compartment.oc1..aaaaaaaaynd3mq5nhnccywzbmwfdevpkmvyzwcsxm7kyevei5s72ikyge5oq --all` | one cluster, `estate`, `lifecycle-state: DELETED` |
+| `oci ce cluster get --cluster-id ocid1.cluster.oc1.uk-london-1.aaaaaaaak3vxjechxim2cnrxowiec4jjvagtcbpenob2oj5ftcrq7jwqsjxq` | `NotAuthorizedOrNotFound` -- "Authorization failed or requested resource not found" (the cluster is gone from the tenancy's API) |
+| `oci lb load-balancer list --compartment-id ... --all` | one load balancer, `ACTIVE`, public IP `193.123.184.22` -- the edge exists and has nothing behind it |
+| `curl -sS https://mcp.mumchimp.com/` | `curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading` |
+| `curl -sS https://llm.mumchimp.com/` | the same TLS EOF |
+| `curl -o /dev/null -w '%{http_code}' https://api.github.com/` | `200` -- the control: the laptop's internet is fine, so this is the estate and not the network |
+| `kubectl` against `141.147.80.229:6443` | no answer (the control plane went with the cluster) |
+
+The tenancy has no live cluster to create a replacement in (`oci ce cluster list` returns the
+deleted one and nothing else), and the OKE entitlement is gone -- #7393's body records it: "tenancy
+container-engine limits are 0 (cluster, enhanced, node). OKE cannot be recreated", with the plan
+of one A1 VM carrying k3s. #7387 carries the recovery, and its comment of 2026-10-30T02:17Z
+records the measured capacity refusal: four governed applies asked AD-1 for a
+`VM.Standard.A1.Flex` host and OCI refused every one with `Error: 500-InternalError, Out of
+host capacity.` (`LaunchInstance`) while AD-1's own quota reported standard-a1-core-count
+available=2 -- quota headroom is not capacity. The router and tunnel are therefore moving to the
+one Always Free host OCI can create (AD-2 `VM.Standard.E2.1.Micro`), and the three CSI volumes
+stay exactly where they are: detached and untouched in AD-1.
+
+**The honest limit on this addendum:** the estate's own memory (`brief`/`recall`) and every
+in-cluster truth are unreachable while the substrate is gone, so every receipt above is from
+OCI, GitHub and `curl` on the laptop. Nothing here was read out of the estate's own store.
+
+### 2. What it changes
+
+**RC4 gets sharper, not softer.** RC4 said Otto's control plane was blind. Today the cluster
+itself is `DELETED` and the edge load balancer has no serving backend, so RC4 is not a
+condition -- it is the estate's state. This is not Otto's failure; it is the substrate's, and it
+is tracked in #7387 and #7393 with its own recovery receipts. It matters here for one reason:
+**every in-cluster receipt in this programme is now BLIND by construction.** Waves 1 and 2 and
+seam wave 4 all end in a measurement that needs the cluster. A programme whose DoD cannot be
+measured is a programme that reports nothing, which is exactly the failure RC3 describes about
+the tick.
+
+**The doctor's contract earns its keep.** The doctor exits `3` (blind) when it cannot read a
+link, and the intent in front of it exits `0` whenever it answered. On 2026-10-28 that looked
+like a nuance; on 2026-10-30 it is the design: the estate is dark, and the door still says
+which link it cannot read, in a machine-readable line, instead of dying or claiming health.
+Wave 0 is the only wave that is fully provable while the substrate is gone, and it is provable
+because it was pinned by tests that need no cluster, no network and no executor.
+
+**The tick's missing bound was never about the cluster.** The reason the SLA measured nothing
+for two days was the job's own `timeout-minutes: 15` cancelling the run before the playbook
+concluded -- a guessed bound, in the estate's own words (decision 0043). The cluster being dark
+made the playbook slow; the *bound* is what turned a slow playbook into silence. That fix is
+substrate-independent: it lives in the workflow and in the playbook's own budget, and it
+converts "cancelled" (silence the SLA reads as a run) into "BLIND, unmeasured" (a red tick with
+a reason). On a dark estate that distinction is the whole product.
+
+### 3. The waves, restated for the estate as it is on 2026-10-30
+
+| wave | needs the cluster? | provable on 2026-10-30? | state |
+|---|---|---|---|
+| Door 0 -- the one doctor door | no (tests drive it with a fake probe) | **yes** | landed (#7361, #7380, #7386) |
+| Door 1 -- the scheduled plane asks the doctor | no for the bound, the budget and the BLIND grade; yes for the doctor's live rows | **partly** | the tick's bound lands on `lane/otto-parity-tick-recovery`; the doctor's rows still wait on the doctor's verdict being readable |
+| Door 2 -- the answer floor becomes a gate | no (it grades a claim) | **yes** | open |
+| Seam 1 -- route through the estate, keep the lifeboat | no (manifests and the router config) | **yes** | open |
+| Seam 2 -- execute ADR 0036 | partly (the manifests are in the tree; the Job's runtime is in the cluster) | **partly** | open |
+| Seam 3 -- the secretless shell | no (the conformance gate reads the manifests) | **yes** | open |
+| Seam 4 -- one verification plane | yes (the doctor walks live links) | **no** | open |
+| Seam 5 -- the human-in-the-loop plane | partly (the door is in the runtime; the escalation reaches Telegram) | **partly** | open (#7388) |
+| Seam 6 -- more surfaces | no (a binding and a registry row) | **yes** | open |
+
+The waves keep their numbers and their order from the table above; only their provability
+changes. Nothing in the ordering rule is revised: the seam waves 1-3 are still independent of
+the door and still land first, the door's wave 1 still depends on the seam's wave 4, and the
+seam's wave 6 still waits on the door's wave 0.
+
+### 4. The verdict, restated
+
+**Otto is still worth investing in -- as the estate's front door -- and the condition on that
+investment has changed shape.**
+
+Before: *invest conditionally on the health floor*. Now: **the first cash and the first
+attention go to the substrate (#7387, #7393), not to Otto features.** A door with nothing
+behind it cannot be proved, and Otto's failure mode for three months was precisely that it
+could not be proved. Building surfaces while the substrate is dark would repeat the mistake
+this programme exists to end: work that no receipt can confirm.
+
+The order therefore holds, and one rule is added to it: **every wave lands with a receipt that
+does not need the cluster, until the cluster is back.** That is a discipline, not a delay -- it
+is what keeps the programme from re-entering the state RC3 and RC4 describe, where the estate
+was working and could not see itself.
+
+### 5. What this addendum is not
+
+- It is not a diagnosis of the deletion. That is the estate's incident, owned by #7387 and
+  #7393, with its own receipts and its own recovery path.
+- It does not re-open any finding above, and it does not soften RC1, RC2, RC3 or RC5.
+- It claims no wave done except wave 0, which has its own receipt (#7361, #7380, #7386).
+- It changes no manifest, no cluster and no vault by hand.

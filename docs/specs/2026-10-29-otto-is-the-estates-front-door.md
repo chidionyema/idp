@@ -60,7 +60,7 @@ document now completes.
 | # | The wish | Receipt | Where it lives today | Status |
 |---|---|---|---|---|
 | B1 | "the showcase has to actually wow and impress … need to see, visualise and interact" (2026-09-05) | `otto-answering-floor.md:7-8` | portal `/ask`, SSE reply address, session registry in `otto_gateway` | **partly** — the seam exists; the page is the open part |
-| B2 | "a new surface is one binding + one registry entry, no gateway rework" | `otto-answering-floor.md:23` (`otto/ingress/plugins.py:232-235`) | the plugin enum + per-surface binding classes | **met** — the best thing Otto built |
+| B2 | "a new surface is one binding + one registry entry, no gateway rework" | `otto-answering-floor.md:23` (`hermes-v2/otto/ingress/plugins.py:237-242` -- the application code lives in the `hermes-v2` repository, not in this one) | the plugin enum + per-surface binding classes | **met** -- the best thing Otto built |
 | B3 | a surface per channel: Telegram (live), HTTP, portal, Slack, email, voice, QR/camera | `otto-answering-floor.md:77-87` | Telegram + HTTP + (planned) portal/media/voice | **partly** |
 | B4 | voice first, "voice ON by default", local STT, router as fallback | `docs/decisions/0022-the-founder-override-is-voice-first-and-nothing-is-deleted.md` | `voice-asr`/`voice-tts` lanes on the estate router; one voice owner | **met** (ADR 0039) |
 | B5 | the edge voice loop (offline ASR/intent/TTS) is the *target*; today it is server-side and utterance-batched | `docs/decisions/0033-edge-compute-for-the-voice-loop-is-the-target-not-the-state.md` | not built | **open, correctly named** |
@@ -92,7 +92,7 @@ document now completes.
 | # | The wish | Receipt | Where it lives today | Status |
 |---|---|---|---|---|
 | E1 | a stuck agent escalates to the founder on the `otto numum` Telegram channel with the blocker named | chidionyema/idp#7388 (2026-10-29) | not built | **open** |
-| E2 | a structured decision: Otto asks, the founder answers with a comment, the build continues | chidionyema/idp#7384, #7340 (2026-10-29) | not built | **open** |
+| E2 | a structured decision: Otto asks, the founder answers with a comment, the build continues | chidionyema/idp#7340 (closed 2026-10-28, landed) -- PR #7384 -> `1cd65e8b1`: `sovereign/otto/decision.py`, `bin/founder-decision`, `platform/estate/intents/founder.decision.yaml` | **built** -- measured message id 2056, decision id `dec-306c912e`, expiry fail-closed, the webhook restored | **met** |
 | E3 | approvals and applies reachable from anywhere the founder is | chidionyema/idp#7388 | not built | **open** |
 
 ### F. The estate's law (the constraints the wishes have to live inside)
