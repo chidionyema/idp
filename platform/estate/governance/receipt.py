@@ -25,9 +25,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 TAIL = 400
 
@@ -119,16 +120,83 @@ def save(receipt: Dict[str, Any], path: str) -> str:
     return path
 
 
+# A receipt is a machine-printed shape, not a word. The founder's relayed directive
+# (2026-10-30, estate-fleet broadcast seq=2): "no receipt keyword or self-typed success is
+# proof". So the check looks for the four labels the machine prints -- the command, the exit
+# status, the line it printed and the sha256 of its output -- and nothing else. The word
+# "receipt" in prose, a path to a receipt file, or a sentence saying it worked are refused.
+_CMD_RE = re.compile(r"(?m)^\s*\$\s+(\S.*?)\s*$")
+_EXIT_RE = re.compile(r"(?m)^\s*exit(?:\s+code|\s+status)?\s*[:=]\s*(-?\d+)\s*$")
+_LINE_RE = re.compile(r"(?m)^\s*line\s*[:=]\s*(\S.*?)\s*$")
+_SHA256_RE = re.compile(r"(?m)^\s*sha256\s*[:=]\s*([0-9a-fA-F]{64})\s*$")
+
+
+def _json_receipts(text: str) -> List[Dict[str, Any]]:
+    """Every JSON object in the text that is a receipt in its own right."""
+    found: List[Dict[str, Any]] = []
+    for start, char in enumerate(text):
+        if char != "{":
+            continue
+        depth = 0
+        for end in range(start, len(text)):
+            if text[end] == "{":
+                depth += 1
+            elif text[end] == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        obj = json.loads(text[start : end + 1])
+                    except ValueError:
+                        break
+                    if isinstance(obj, dict):
+                        found.append(obj)
+                    break
+    return found
+
+
+def _is_json_receipt(obj: Dict[str, Any]) -> bool:
+    digest = obj.get("sha256")
+    if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", digest):
+        return False
+    if not isinstance(obj.get("exit"), int):
+        return False
+    if not isinstance(obj.get("command"), list) or not obj["command"]:
+        return False
+    if not isinstance(obj.get("line"), str):
+        return False
+    return True
+
+
+def receipt_reason(text: str) -> Tuple[bool, str]:
+    """Is this report carrying machine-generated proof, and if not, what is missing?
+
+    Accepts the machine's own block (a `$` command line, an exit status, the line it printed
+    and the sha256 of its output) or a receipt object embedded as JSON. Anything else --
+    narration, the bare word "receipt", a path to a receipt file -- is refused, and the
+    refusal names what is missing so the author can fix it instead of guessing.
+    """
+    if not text or not text.strip():
+        return False, "the report is empty"
+    for obj in _json_receipts(text):
+        if _is_json_receipt(obj):
+            return True, "receipt object found"
+    missing = []
+    if not _CMD_RE.search(text):
+        missing.append("the command line ($ ...)")
+    if not _EXIT_RE.search(text):
+        missing.append("the exit status (exit: N)")
+    if not _LINE_RE.search(text):
+        missing.append("the line it printed (line: ...)")
+    if not _SHA256_RE.search(text):
+        missing.append("the sha256 of its output (sha256: <64 hex>)")
+    if missing:
+        return False, "not machine-generated proof: missing " + ", ".join(missing)
+    return True, "machine-generated receipt found"
+
+
 def has_receipt(text: str) -> bool:
     """Does this report carry machine-generated proof?
 
-    The markers are the ones the estate already prints: an exit status, a hash, or a receipt
-    file path. A report with none of them is narration and is refused."""
-    if not text:
-        return False
-    lowered = text.lower()
-    if "sha256" in lowered or "receipt" in lowered:
-        return True
-    if "exit:" in lowered or "exit code" in lowered or "exit status" in lowered:
-        return True
-    return False
+    The answer is a strict shape check, never a keyword search: a keyword is exactly what an
+    agent writes when it wants to look like it proved something."""
+    return receipt_reason(text)[0]
