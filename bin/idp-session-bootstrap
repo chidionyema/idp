@@ -31,6 +31,12 @@ if [ "${1:-}" = --check ]; then
     exit 1
 fi
 
+# Founder directives and peer messages (estate-fleet, #7481): print and ack the durable inbox so
+# an instruction given once reaches every session. Never fatal: a dead bus must not block start.
+if [ -x "$(dirname "$0")/estate-fleet" ]; then
+    ESTATE_AGENT=${ESTATE_AGENT:-claude-code} timeout 45 "$(dirname "$0")/estate-fleet" inbox --ack 2>&1 | tail -n 40 || true
+fi
+
 # Guards already present — nothing to do
 if [ -f "$SCRIPTS_DIR/hook-run.py" ]; then
     exit 0
