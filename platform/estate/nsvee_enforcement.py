@@ -174,6 +174,26 @@ def validate_receipt(receipt: Any, *, commit: str | None = None) -> dict:
     return receipt
 
 
+def receipt_paths(receipt: Any) -> list[str] | None:
+    """The paths a receipt binds, or None when it binds the whole tree.
+
+    A receipt names what it verified. `paths` is that list, relative to the tree; a receipt
+    without it binds the whole tree. Both are bindings -- the difference is the scope: a
+    path-scoped receipt is invalidated by a change to the paths it covers, and a whole-tree
+    receipt by a change anywhere.
+    """
+    if not isinstance(receipt, dict):
+        raise ReceiptError(f"a receipt is an object, not {type(receipt).__name__}")
+    paths = receipt.get("paths")
+    if paths is None:
+        return None
+    if not isinstance(paths, list) or not all(
+        isinstance(p, str) and p.strip() for p in paths
+    ):
+        raise ReceiptError("paths must be a list of non-empty relative paths")
+    return paths
+
+
 def check_receipt_against_tree(receipt: Any, tree: Path) -> str:
     """Bind a receipt to the tree it claims to describe.
 
@@ -181,9 +201,17 @@ def check_receipt_against_tree(receipt: Any, tree: Path) -> str:
     digest inside the receipt must be the digest of the tree at the named commit. A receipt that
     is well formed but describes an older tree is worse than no receipt, because it looks like a
     proof.
+
+    A receipt that names `paths` is checked against those paths; a receipt without them is
+    checked against the whole tree. The scope is the receipt's own claim, and it is never
+    widened: a path-scoped receipt is not accepted as a whole-tree proof.
     """
     validate_receipt(receipt)
-    actual = tree_digest(tree)
+    paths = receipt_paths(receipt)
+    try:
+        actual = tree_digest(tree, paths)
+    except (OSError, ValueError) as exc:
+        raise ReceiptError(f"cannot digest the tree this receipt names: {exc}") from exc
     if receipt["artifact_digest"] != actual:
         raise ReceiptError(
             "the receipt does not describe this tree: "
