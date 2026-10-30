@@ -304,6 +304,89 @@ def test_a_denied_provider_loses_its_lanes_in_the_rendered_config(tmp_path):
     )
 
 
+def _render_with_denial(tmp_path, provider):
+    """Render both configs with one provider denied, through the real renderer."""
+    tree = tmp_path / "tree"
+    (tree / "bin").mkdir(parents=True)
+    (tree / "platform/vendors").mkdir(parents=True)
+    (tree / "llm").mkdir(parents=True)
+    (tree / "platform/llm").mkdir(parents=True)
+    shutil.copy(REPO / "bin/idp-vendor-render", tree / "bin/idp-vendor-render")
+    shutil.copy(
+        REPO / "platform/vendors/consoles.yaml", tree / "platform/vendors/consoles.yaml"
+    )
+    for base in ("llm/config.base.yaml", "platform/llm/config.base.yaml"):
+        shutil.copy(REPO / base, tree / base)
+    (tree / "platform/vendors/renewals.yaml").write_text(
+        yaml.safe_dump({"renewals": {provider: {"status": "denied", "violations": 3}}})
+    )
+    proc = subprocess.run(
+        [sys.executable, str(tree / "bin/idp-vendor-render")],
+        capture_output=True,
+        text=True,
+        cwd=str(tree),
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    return tree
+
+
+def test_a_denied_provider_loses_every_lane_that_spends_it(tmp_path):
+    """A denial that leaves the provider's spend alive is not a denial.
+
+    MiniMax rows are declared inside other vendors' blocks (the `default`, `fast` and
+    `voice` pools), so removing only the MiniMax block still pays the MiniMax account.
+    """
+    tree = _render_with_denial(tmp_path, "minimax")
+    for rel in ("llm/config.yaml", "platform/llm/config.yaml"):
+        config = yaml.safe_load((tree / rel).read_text())
+        for model in config["model_list"]:
+            params = model.get("litellm_params") or {}
+            api_base = str(params.get("api_base") or "")
+            api_key = str(params.get("api_key") or "")
+            assert "api.minimax.io" not in api_base, (
+                f"{rel}: a lane still spends MiniMax"
+            )
+            assert "MINIMAX_API_KEY" not in api_key, (
+                f"{rel}: a lane still holds the MiniMax key"
+            )
+            assert not str(model.get("model_name", "")).startswith("minimax"), (
+                f"{rel}: a denied provider still has a lane"
+            )
+        served = {m["model_name"] for m in config["model_list"]}
+        assert "default" in served, f"{rel}: the denial emptied a shared pool"
+        assert not [g for g in denial_groups(config) if g.startswith("minimax")], (
+            f"{rel}: a fallback chain still names a denied group"
+        )
+
+
+def denial_groups(config):
+    """The model groups the router's fallback chains name."""
+    groups = set()
+    for row in config["router_settings"]["fallbacks"]:
+        for src, chain in row.items():
+            groups.add(src)
+            groups.update(chain)
+    return groups
+
+
+def test_a_denied_provider_loses_its_pass_through_endpoint(tmp_path):
+    """The image pass-through spends the account directly, so it goes with the denial."""
+    tree = _render_with_denial(tmp_path, "minimax")
+    text = (tree / "platform/llm/config.yaml").read_text()
+    assert "- path: /minimax/image" not in text, (
+        "the denied provider still has a pass-through endpoint"
+    )
+    assert (
+        "api.minimax.io/v1/image_generation"
+        not in text.split("pass_through_endpoints")[-1]
+    ), "the denied provider still has a live pass-through target"
+    config = yaml.safe_load(text)
+    assert (
+        "pass_through_endpoints" not in config or not config["pass_through_endpoints"]
+    ), "the denied provider still has a pass-through endpoint"
+
+
 def test_every_served_minimax_group_has_its_own_fallback_chain():
     """LiteLLM matches fallbacks by group name: no chain for the group, no fallback."""
     config = yaml.safe_load((REPO / "llm/config.yaml").read_text())
