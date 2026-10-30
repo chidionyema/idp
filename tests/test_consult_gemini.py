@@ -120,3 +120,20 @@ def test_default_asks_a_named_gemini_model_not_the_pinned_lane():
         yaml.safe_load(INTENT.read_text())["args"]["model"]["default"]
         == cg.DEFAULT_MODEL
     )
+
+
+def test_the_fallback_gets_what_the_door_has_left_not_a_fresh_timeout():
+    # One door bounds the invocation: a Gemini ask that burns its whole timeout must leave the
+    # fallback a bounded, positive budget that still fits inside the 100s door.
+    seen = []
+
+    def post(url, key, payload, timeout):
+        seen.append((payload["model"], timeout))
+        if payload["model"] == cg.DEFAULT_MODEL:
+            raise cg.ConsultError("429 free-tier quota")
+        return reply("default", "answer")
+
+    cg.consult("q", [], cg.DEFAULT_MODEL, 1000, 70, "k", post=post)
+    assert [m for m, _ in seen] == [cg.DEFAULT_MODEL, "default"]
+    assert 15 <= seen[1][1] <= cg.FALLBACK_RESERVE_S + 70
+    assert 70 + seen[1][1] - 70 <= 100
