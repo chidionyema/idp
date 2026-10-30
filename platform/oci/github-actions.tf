@@ -27,3 +27,31 @@ resource "oci_identity_policy" "github_actions_secret_create" {
     "Allow dynamic-group ${oci_identity_dynamic_group.github_actions.name} to manage secret-family in compartment id ${var.compartment_ocid} where target.secret.name != 'verdict-hmac-key'",
   ]
 }
+
+# The CI principal needs the CALLER side of the OCI Run Command door (#7387).
+#
+# MEASURED 2026-10-29: .github/workflows/recovery-data.yml opens that door with
+# `oci instance-agent command create`, and the create came back 404 NotAuthorizedOrNotFound --
+# the request never reached the recovery host, so the copy never started. The group held exactly
+# one permission: `manage secret-family` (the policy above). Run Command needs two grants, and
+# they are not the same permission:
+#
+#   caller   : manage instance-agent-command-family         -- create and track the command
+#   instance : use instance-agent-command-execution-family  -- poll and execute it
+#
+# The instance-side grant is declared in platform/oci/recovery-host.tf, scoped to the recovery
+# instance. This is the missing caller-side half, and it is deliberately declared apart from the
+# recovery host so that applying it touches no instance, no volume and no cluster.
+#
+# Scoped to the compartment, which is the form OCI documents for the caller. The group matches
+# every GitHub Actions principal in the tenancy, so narrowing this to the recovery instance is the
+# next tightening -- once the condition key is proven to be accepted for this family.
+resource "oci_identity_policy" "github_actions_run_command" {
+  provider       = oci.home
+  compartment_id = var.compartment_ocid
+  name           = "estate-github-actions-run-command"
+  description    = "GitHub Actions may open the OCI Run Command door (#7387)"
+  statements = [
+    "Allow dynamic-group ${oci_identity_dynamic_group.github_actions.name} to manage instance-agent-command-family in compartment id ${var.compartment_ocid}",
+  ]
+}
