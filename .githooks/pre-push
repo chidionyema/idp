@@ -144,6 +144,7 @@ while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
       *.py) echo python ;;
       *.sh|*.bash) echo shell ;;
       *.ts) echo typescript ;;
+      *.js|*.mjs|*.cjs) echo javascript ;;
       *) echo unknown ;;
     esac
   }
@@ -164,6 +165,41 @@ while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
         echo "pre-push REFUSED: syntax error in $f" >&2
         exit 1
       fi
+      continue
+    fi
+    # JavaScript (the estate's own plugins, e.g. platform/estate/memory/opencode-estate-memory.js):
+    # node parses it, so the check is real and can fail -- measured: `node --check` on
+    # `function x( {` exits 1. It was not allowed into the "unknown" bucket, because that bucket
+    # accepts a file only when bash -n or py_compile can read it, and neither can read
+    # JavaScript -- which is how the gate came to refuse the estate's own OpenCode plugin
+    # ("readable as neither shell nor Python", measured 2026-10-30 on
+    # lane/plan-gate-session-identity). No node is a REFUSAL, never a silent pass.
+    if [ "$kind" = "javascript" ]; then
+      if ! command -v node >/dev/null 2>&1; then
+        echo "pre-push REFUSED: $f is JavaScript and node is not installed, so it cannot be parsed" >&2
+        exit 1
+      fi
+      # node's `--check` on a .js file is not a reliable verdict on a module: measured
+      # 2026-10-30 on node v22.15.1, `export function broken( {` exits 0 as a .js file and
+      # exits 1 as a .mjs file -- the same bytes, a different answer. So the file is checked
+      # the way it will be loaded: a file that declares a module is checked AS a module.
+      # That also removes the old-node false refusal (a node that cannot detect module
+      # syntax reports a valid ESM file as a syntax error).
+      js_tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/idp-prepush-js.XXXXXX")"
+      cp "$f" "$js_tmp_dir/check.mjs"
+      js_module=0
+      if grep -qE '^[[:space:]]*(export|import)[[:space:]{*]' "$f"; then js_module=1; fi
+      if [ "$js_module" = 1 ]; then
+        js_target="$js_tmp_dir/check.mjs"
+      else
+        js_target="$f"
+      fi
+      if ! node --check "$js_target" >&2; then
+        rm -rf "$js_tmp_dir"
+        echo "pre-push REFUSED: JavaScript syntax error in $f" >&2
+        exit 1
+      fi
+      rm -rf "$js_tmp_dir"
       continue
     fi
     # TypeScript (the pi extensions under extensions/): node parses it with its own type
