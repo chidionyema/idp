@@ -13,6 +13,13 @@
 # other way in, so the repair runs through the same Run Command door, on the same workflow, with
 # its own script. The CI principal needed the Run Command permission for this door to work at all
 # (platform/oci/recovery-host.tf); before that grant the create returned NotAuthorizedOrNotFound.
+#
+# WHY the transport helper (2026-10-30, #7525). OCI refuses a Run Command body above 4096
+# characters ("content.source.text size must be between 1 and 4096"), and host-repair.sh is
+# 10231 bytes -- gzip+base64 of it is still 4749. The script is therefore transported in
+# chunks by platform/oci/recovery/run-command.py, which appends them in order, decodes them on
+# the host, runs the script as root and reports its exit code. The workflow no longer builds a
+# Run Command body itself: one place builds it, and that place is tested.
 name: recovery-data
 on:
   workflow_dispatch:
@@ -45,24 +52,20 @@ jobs:
           domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
           oci_region: ${{ vars.OCI_REGION }}
-      - name: data-volumes.sh ${{ inputs.mode }} on the recovery host
+      - name: ${{ inputs.mode }} on the recovery host
         env:
           OCI_CLI_AUTH: security_token
           COMP: ${{ vars.OCI_COMPARTMENT_OCID }}
           MODE: ${{ inputs.mode }}
         run: |
           set -euo pipefail
-          id=$(oci compute instance list -c "$COMP" --display-name estate-recovery --lifecycle-state RUNNING --query 'data[0].id' --raw-output)
-          [ -n "$id" ] && [ "$id" != null ] || { echo "BLIND   recovery-data  no RUNNING estate-recovery instance"; exit 2; }
           script=platform/oci/recovery/data-volumes.sh
           [ "$MODE" = repair ] && script=platform/oci/recovery/host-repair.sh
-          content=$(SCRIPT="$script" MODE="$MODE" python3 -c 'import json,os; s=open(os.environ["SCRIPT"]).read(); print(json.dumps({"source":{"sourceType":"TEXT","text":"cat > /var/tmp/host-script.sh <<'"'"'EOF'"'"'\n"+s+"\nEOF\nbash /var/tmp/host-script.sh "+os.environ["MODE"]+"\n"},"output":{"outputType":"TEXT"}}))')
-          cmd=$(oci instance-agent command create -c "$COMP" --display-name "recovery-data-$MODE-$GITHUB_RUN_ID" \
-            --timeout-in-seconds 6000 --target "{\"instanceId\":\"$id\"}" --content "$content" --query data.id --raw-output)
-          st=PENDING
-          for i in $(seq 1 200); do
-            st=$(oci instance-agent command-execution get --command-id "$cmd" --instance-id "$id" --query 'data."lifecycle-state"' --raw-output 2>/dev/null || echo PENDING)
-            case "$st" in SUCCEEDED|FAILED|TIMED_OUT|CANCELED) break;; esac; sleep 30
-          done
-          oci instance-agent command-execution get --command-id "$cmd" --instance-id "$id" --query 'data.content.text' --raw-output
-          echo "state: $st"; [ "$st" = SUCCEEDED ]
+          # The host script is larger than OCI's 4096-character Run Command limit, so the
+          # transport is chunked by the repository-owned helper, not inlined here (#7525).
+          python3 platform/oci/recovery/run-command.py \
+            --script "$script" \
+            --mode "$MODE" \
+            --compartment "$COMP" \
+            --display-name estate-recovery \
+            --run-id "$GITHUB_RUN_ID"

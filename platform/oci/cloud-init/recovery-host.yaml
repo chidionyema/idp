@@ -135,4 +135,13 @@ runcmd:
   - [bash, -c, "[ -f /swapfile ] || { fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && echo '/swapfile none swap sw 0 0' >> /etc/fstab; }"]
   - [bash, -c, "dnf install -y podman python39-oci-cli || dnf install -y podman python3-oci-cli"]
   - [systemctl, daemon-reload]
-  - [systemctl, enable, --now, estate-router.service, estate-tunnel.service, estate-router-refresh.timer]
+  # Each unit is enabled ON ITS OWN (2026-10-30, #7525). One combined
+  # `systemctl enable --now a b c` aborts on the first unit that fails to start -- the router
+  # could not stay up at boot -- so the timer was never enabled and cloud-final.service failed
+  # with "Main process exited, code=exited, status=1/FAILURE". Measured on the live host
+  # afterwards: estate-router-refresh.timer active=inactive enabled=static. Each enable is now
+  # independent and tolerant, so one temporarily unavailable unit cannot abort the rest or fail
+  # the cloud-final module.
+  - [bash, -c, "systemctl enable --now estate-router.service || echo 'state estate-router.service not enabled'"]
+  - [bash, -c, "systemctl enable --now estate-tunnel.service || echo 'state estate-tunnel.service not enabled'"]
+  - [bash, -c, "systemctl enable --now estate-router-refresh.timer || echo 'state estate-router-refresh.timer not enabled'"]
