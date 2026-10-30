@@ -6,7 +6,7 @@
     "intent": 110,
     "layer": 228,
     "service": 122,
-    "tool": 459,
+    "tool": 460,
     "workflow": 85
   },
   "records": [
@@ -25408,6 +25408,55 @@
           "edge": "invokes"
         }
       ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/estate-fleet",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "idp#7481: real-time fleet messaging with a durable, acknowledged inbox.",
+      "contract": {
+        "inputs": [
+          "--ack",
+          "--desc",
+          "--type"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-fleet",
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",

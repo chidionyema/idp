@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""idp#7481: real-time fleet messaging with a durable, acknowledged inbox.
+
+Root cause being fixed: a founder directive had no durable home. It lived in chat or an issue
+comment and an agent saw it only if it happened to poll, so the founder had to repeat it.
+Here a message is stored in JetStream (stream ESTATE_FLEET, file storage) and each agent has a
+durable consumer: a message stays pending, and is redelivered, until that agent acks it.
+
+    estate-fleet send <agent> <text>     one agent          subject estate.fleet.to.<agent>
+    estate-fleet broadcast <text>        every agent        subject estate.fleet.broadcast
+    estate-fleet directive <text>        every agent + growmos DECISION (survives the bus)
+    estate-fleet inbox [--ack]           print my pending messages; --ack acknowledges them
+    estate-fleet watch                   live push of new messages
+Identity: $ESTATE_AGENT. Bus: $ESTATE_NATS_URL (default nats://127.0.0.1:4222).
+Exit 0 ok, 1 FAIL, 2 BLIND (bus unreachable: never reported as an empty inbox).
+"""
+import asyncio
+import json
+import os
+import subprocess
+import sys
+import time
+
+STREAM = "ESTATE_FLEET"
+URL = os.environ.get("ESTATE_NATS_URL", "nats://127.0.0.1:4222")
+ACK_WAIT = float(os.environ.get("ESTATE_FLEET_ACK_WAIT", "60"))
+
+
+def me():
+    a = os.environ.get("ESTATE_AGENT", "")
+    if not a:
+        sys.exit("FAIL    estate-fleet  no agent identity: set ESTATE_AGENT")
+    return a
+
+
+async def connect():
+    import nats
+    from nats.js.api import RetentionPolicy, StorageType
+
+    try:
+        nc = await nats.connect(URL, connect_timeout=3, max_reconnect_attempts=1)
+    except Exception as e:  # unreachable bus is BLIND, never an empty inbox
+        print(f"BLIND   estate-fleet  cannot reach {URL}: {type(e).__name__}")
+        sys.exit(2)
+    js = nc.jetstream()
+    try:
+        await js.add_stream(name=STREAM, subjects=["estate.fleet.>"], storage=StorageType.FILE,
+                            retention=RetentionPolicy.LIMITS)
+    except Exception:
+        await js.stream_info(STREAM)  # already exists: fine
+    return nc, js
+
+
+async def publish(subject, text, kind):
+    nc, js = await connect()
+    body = json.dumps({"from": me(), "kind": kind, "text": text, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+    ack = await js.publish(subject, body.encode())
+    await nc.close()
+    print(f"ok      estate-fleet  {kind} stored seq={ack.seq} on {subject}")
+
+
+def subjects(agent):
+    return {"broadcast": "estate.fleet.broadcast", "directive": "estate.fleet.directive",
+            "to": f"estate.fleet.to.{agent}"}
+
+
+async def inbox(ack):
+    from nats.js.api import ConsumerConfig
+
+    agent = me()
+    nc, js = await connect()
+    n = 0
+    for kind, subj in subjects(agent).items():
+        sub = await js.pull_subscribe(subj, durable=f"{agent}-{kind}", stream=STREAM,
+                                      config=ConsumerConfig(ack_wait=ACK_WAIT))
+        try:
+            msgs = await sub.fetch(100, timeout=1)
+        except Exception:
+            msgs = []
+        for m in msgs:
+            d = json.loads(m.data)
+            print(f"{d['kind']:<9} seq={m.metadata.sequence.stream} from={d['from']} {d['text']}")
+            n += 1
+            if ack:
+                await m.ack()
+    await nc.close()
+    print(f"ok      estate-fleet  {n} pending message(s) for {agent}" + ("" if ack else " (not acked: will be redelivered)"))
+
+
+async def watch():
+    agent = me()
+    nc, js = await connect()
+    for subj in subjects(agent).values():
+        async def cb(m):
+            d = json.loads(m.data)
+            print(f"{d['kind']} from={d['from']} {d['text']}", flush=True)
+        await nc.subscribe(subj, cb=cb)
+    await asyncio.sleep(10**9)
+
+
+def main(argv):
+    if not argv:
+        sys.exit(__doc__)
+    c, rest = argv[0], argv[1:]
+    if c == "send" and len(rest) >= 2:
+        asyncio.run(publish(f"estate.fleet.to.{rest[0]}", " ".join(rest[1:]), "to"))
+    elif c == "broadcast" and rest:
+        asyncio.run(publish("estate.fleet.broadcast", " ".join(rest), "broadcast"))
+    elif c == "directive" and rest:
+        text = " ".join(rest)
+        asyncio.run(publish("estate.fleet.directive", text, "directive"))
+        if not os.environ.get("ESTATE_FLEET_NO_MEMORY"):
+            subprocess.run(["growmos", "remember", f"directive-{int(time.time())}", "--type", "DECISION", "--desc", f"Founder directive via estate-fleet: {text}"], check=False)
+    elif c == "inbox":
+        asyncio.run(inbox("--ack" in rest))
+    elif c == "watch":
+        asyncio.run(watch())
+    else:
+        sys.exit(__doc__)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
