@@ -38,12 +38,74 @@ HOME = Path.home()
 # and carries the committed library at /app/intents instead (estate-mcp.Dockerfile); before that,
 # production estate_list answered "# 0 intents available" (measured 2026-10-01 in the pod).
 INTENTS = Path(os.environ.get("ESTATE_INTENTS_DIR") or HOME / ".estate" / "intents")
+
 # The executor's own ledger: how often each intent has run, so the search ranks the intents
 # agents actually reuse above the one-offs (1822 runs, 387 of 537 intents run exactly once,
 # measured 2026-09-30).
 ESTATE_DB = HOME / ".estate" / "estate.db"
 MAX_MATCHES = 12
 log = logging.getLogger(__name__)
+
+# The plan contract, loaded only to RESOLVE A SESSION (who is calling). The gate itself lives in
+# the intent executor, which reads the same durable ledger -- this plugin does not second-guess
+# the door, it only tells the door which session the call belongs to (idp#7576).
+_PLAN_CONTRACT = None
+_PLAN_CONTRACT_TRIED = False
+
+
+def _plan_contract():
+    """The plan module, from the checkout this plugin lives in, or from the installed runtime."""
+    global _PLAN_CONTRACT, _PLAN_CONTRACT_TRIED
+    if _PLAN_CONTRACT_TRIED:
+        return _PLAN_CONTRACT
+    _PLAN_CONTRACT_TRIED = True
+    root = Path(__file__).resolve().parents[2]
+    estate = HOME / ".estate"
+    candidates = [
+        root / "platform" / "estate" / "memory" / "plan.py",
+        estate / "runtime" / "idp" / "platform" / "estate" / "memory" / "plan.py",
+        estate / "memory" / "platform" / "estate" / "memory" / "plan.py",
+    ]
+    for path in candidates:
+        try:
+            if not path.exists():
+                continue
+            spec = importlib.util.spec_from_file_location(
+                "estate_plan_contract", str(path)
+            )
+            if spec is None or spec.loader is None:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            _PLAN_CONTRACT = module
+            return _PLAN_CONTRACT
+        except Exception as exc:  # noqa: BLE001 - try the next candidate
+            log.warning("plan contract %s failed to load: %s", path, exc)
+    return None
+
+
+def _resolve_caller_session(explicit: str = "") -> tuple:
+    """Who is calling, in order of trust: the stated session, the environment, the pointer file.
+
+    Returns (session_id, source). An empty session means ANONYMOUS AUTOMATION: standing estate
+    policy lets it through, and the door records it as such. What must never happen is a
+    planless LIVE session reaching work through this path while the gate thinks it is anonymous
+    -- that blind spot is exactly what idp#7576 records.
+    """
+    stated = (explicit or "").strip()
+    if stated:
+        return stated, "argument"
+    module = _plan_contract()
+    if module is not None:
+        try:
+            sid = (module.resolve_session_id() or "").strip()
+            if sid:
+                return sid, "environment-or-pointer"
+        except Exception as exc:  # noqa: BLE001 - identity must never break the door
+            log.warning("session identity resolution failed: %s", exc)
+    return "", "anonymous"
+
+
 _ALLOWED = re.compile(r"^[a-z][a-z0-9.-]*$")
 _REGISTRY = None
 
@@ -279,6 +341,21 @@ def _estate_invoke(args):
     if d is None:
         return "ERROR: unknown intent: {}".format(name)
     cmd = [sys.executable, str(HOME / ".estate" / "bin" / "estate-execute"), name]
+    # The session this call belongs to. Explicit beats environment beats pointer; the child is
+    # told through BOTH the environment and an explicit flag, so the identity survives a child
+    # that scrubs one of them (idp#7576).
+    session, session_source = _resolve_caller_session(args.get("session_id") or "")
+    log.debug(
+        "estate_invoke intent=%s session=%s source=%s",
+        name,
+        session or "anonymous",
+        session_source,
+    )
+    if session:
+        cmd.extend(["--session", session])
+    child_env = dict(os.environ)
+    if session:
+        child_env["ESTATE_SESSION_ID"] = session
     for k, v in (args.get("args") or {}).items():
         if not re.match(r"^[a-z_][a-z0-9_]*$", str(k)):
             return "ERROR: invalid arg name: {}".format(k)
@@ -291,6 +368,7 @@ def _estate_invoke(args):
             text=True,
             timeout=timeout,
             cwd=str(idp_root),
+            env=child_env,
             check=False,
         )
         out = r.stdout.strip()
@@ -477,6 +555,13 @@ TOOL_DEFS = [
             "properties": {
                 "intent": {"type": "string", "description": "Intent name"},
                 "args": {"type": "object", "description": "Intent args", "default": {}},
+                "session_id": {
+                    "type": "string",
+                    "description": (
+                        "The estate session this call belongs to. Optional: when it is absent the "
+                        "door resolves it from the environment and the runtime's pointer file."
+                    ),
+                },
                 "timeout": {
                     "type": "integer",
                     "description": "Max seconds (default 55s)",
