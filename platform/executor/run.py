@@ -41,6 +41,13 @@ import sys
 import time
 from pathlib import Path
 
+try:  # loaded as a package (tests) and as a script (the door); both must find the receipt writer
+    from .receipts import write_receipt
+except (
+    ImportError
+):  # pragma: no cover - script mode: the script's own directory is sys.path[0]
+    from receipts import write_receipt
+
 RUNS = Path(os.environ.get("ESTATE_RUNS") or os.path.expanduser("~/.estate/runs"))
 
 USAGE = (
@@ -103,6 +110,7 @@ def supervise(name: str, ceiling: int, argv: list[str], cwd: str | None) -> int:
         # The ONE place the exit file is written, so no return path can skip it.
         exitf.write_text(str(code))
 
+    started = time.monotonic()
     try:
         with log.open("ab") as sink:
             child = subprocess.Popen(  # noqa: S603 -- argv is a LIST, never a shell string
@@ -116,6 +124,7 @@ def supervise(name: str, ceiling: int, argv: list[str], cwd: str | None) -> int:
     except OSError as exc:
         print(f"run: could not start the command: {exc}", file=sys.stderr)
         _record(127)
+        _write_receipt(name, argv, started, 127, False, ceiling, cwd)
         return 127
 
     # The pid file names the COMMAND, not this supervisor: that is the handle a person kills, and
@@ -149,7 +158,37 @@ def supervise(name: str, ceiling: int, argv: list[str], cwd: str | None) -> int:
             )
         code = CEILING_EXIT
     _record(code)
+    _write_receipt(name, argv, started, code, code == CEILING_EXIT, ceiling, cwd)
     return 0
+
+
+def _write_receipt(
+    name: str,
+    argv: list[str],
+    started: float,
+    code: int,
+    killed_at_ceiling: bool,
+    ceiling: int,
+    cwd: str | None,
+) -> None:
+    """Record what this job MEASURED, so a bound can be learned instead of guessed.
+
+    A receipt that cannot be written must never fail the job: the work happened, and losing the
+    evidence is a smaller harm than losing the work. The failure is printed, not swallowed.
+    """
+    try:
+        write_receipt(
+            RUNS,
+            name,
+            argv=list(argv),
+            elapsed_sec=time.monotonic() - started,
+            exit_code=code,
+            killed_at_ceiling=killed_at_ceiling,
+            ceiling_sec=ceiling,
+            repo=cwd or os.getcwd(),
+        )
+    except OSError as exc:
+        print(f"run: could not write the receipt for {name}: {exc}", file=sys.stderr)
 
 
 def _signal_group(pid: int, sig: int) -> None:
