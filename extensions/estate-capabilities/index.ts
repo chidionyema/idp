@@ -42,6 +42,7 @@ import path from "node:path";
 const HOME = homedir();
 const SOCKET = process.env.IDP_EXECUTOR_SOCKET ?? path.join(HOME, ".estate", "executor.sock");
 const RUNS = process.env.ESTATE_RUNS ?? path.join(HOME, ".estate", "runs");
+const PLAN_DIR = process.env.ESTATE_PLAN_LEDGER_DIR ?? path.join(HOME, ".estate", "plans");
 
 import { createConnection } from "node:net";
 
@@ -57,6 +58,33 @@ import { createConnection } from "node:net";
  */
 function quoteSh(value: string): string {
   return "'" + value.replace(/'/g, `'"'"'`).replace(/[\x00-\x1f\x7f]/g, " ") + "'";
+}
+
+/**
+ * This session's identity, so the door can tell an agent session from automation.
+ *
+ * WHY THE REQUEST CARRIES IT. The executor daemon is a long-lived process. It cannot see the
+ * environment or the pointer files of the agent that opened a socket connection to it, so a
+ * door that tried to resolve the caller inside the daemon would resolve NOTHING and every
+ * agent call would look like automation (idp#7518). The identity therefore travels WITH the
+ * request, in the one field the daemon already forwards to the door.
+ *
+ * The two sources are the environment the plan-lock extension sets for this session, and the
+ * pointer file that extension writes for this process. Either is enough; neither is trusted
+ * blindly -- the door decides what to do with it.
+ */
+function sessionId(): string | undefined {
+  const fromEnv = (process.env.ESTATE_SESSION_ID ?? "").trim();
+  if (fromEnv) return fromEnv;
+  try {
+    const pointer = path.join(PLAN_DIR, `session-${process.pid}.json`);
+    if (!existsSync(pointer)) return undefined;
+    const data = JSON.parse(readFileSync(pointer, "utf8"));
+    const sid = typeof data?.session_id === "string" ? data.session_id.trim() : "";
+    return sid || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The one door. Nothing in this file spawns a process directly. */
@@ -79,7 +107,12 @@ function askDaemon(request: unknown): Promise<any> {
     };
     sock.setTimeout(10_000, () => fail(new Error(`the executor daemon did not answer within 10s`)));
     sock.on("error", (e) => fail(new Error(`cannot reach the executor daemon: ${e.message}`)));
-    sock.on("connect", () => sock.write(JSON.stringify(request) + "\n"));
+    sock.on("connect", () => {
+      const payload = { ...(request as Record<string, unknown>) };
+      const sid = sessionId();
+      if (sid) payload.session_id = sid;
+      sock.write(JSON.stringify(payload) + "\n");
+    });
     sock.on("data", (chunk) => {
       raw += chunk.toString();
       const nl = raw.indexOf("\n");

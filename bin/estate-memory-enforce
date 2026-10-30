@@ -326,6 +326,29 @@ def pre(data: dict) -> int:
     return 0
 
 
+def publish_session(data: dict, calls: list) -> None:
+    """Bind this session to the door: a pointer for the process, a ledger for the plan.
+
+    Claude Code's hook knows the session id and the whole plan (the transcript holds every
+    plan-tool call, in order). The door cannot see either: it is a separate process, in a
+    different runtime. So the hook publishes what it knows -- the pointer that names this
+    session, and the plan calls as durable ledger events -- and the door reads them.
+
+    The ledger is only ever APPENDED to: the missing tail of the plan is added, never a
+    rewrite, so a declaration made in another surface at the same moment is never erased.
+    """
+    sid = str(data.get("session_id") or "").strip()
+    if not sid:
+        return
+    try:
+        # The hook runs as a child of the Claude process; the pointer names the OWNER, not
+        # the hook, so the door can find it by walking the process tree. Publication itself
+        # is plan.py's: one definition of a pointer, a marker and an ordered plan call.
+        plan.publish_session(sid, pid=os.getppid(), calls=calls, overwrite=True)
+    except Exception:  # noqa: BLE001 - a missing pointer must not break the session
+        pass
+
+
 def plan_gate(data: dict) -> int:
     tool = data.get("tool_name", "")
     sid = data.get("session_id", "")
@@ -336,6 +359,14 @@ def plan_gate(data: dict) -> int:
     if text is None:
         record("plan", "unknown", "transcript unreadable", session=sid, tool=tool)
         return 0
+    calls = plan.transcript_calls(text)
+    # The current tool call may not be in the transcript yet -- it is the call being
+    # authorised. If it is a plan-tool call, it is part of the plan and must be in the ledger
+    # before the door reads it.
+    current = plan.as_plan_call(tool, data.get("tool_input"))
+    if current:
+        calls = list(calls) + [current]
+    publish_session(data, calls)
     # Passes are not ledgered: this runs on every tool call, and a refusal is what gets watched.
     verdict = plan.authorize(
         tool, plan.replay(plan.transcript_calls(text)), data.get("tool_input")

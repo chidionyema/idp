@@ -9133,7 +9133,32 @@
       "kind": "layer",
       "summary": "The plan contract for every agent runtime that is not pi (idp#6675).",
       "contract": {
-        "inputs": [],
+        "inputs": [
+          "--all",
+          "--calls",
+          "--config-env",
+          "--copy",
+          "--delete",
+          "--edit-description",
+          "--exec-path",
+          "--get",
+          "--get-all",
+          "--get-regexp",
+          "--get-urlmatch",
+          "--git-dir",
+          "--list",
+          "--move",
+          "--namespace",
+          "--output",
+          "--overwrite",
+          "--pid",
+          "--session",
+          "--set-upstream-to",
+          "--super-prefix",
+          "--unset-upstream",
+          "--verbose",
+          "--work-tree"
+        ],
         "outputs": [
           "stdout",
           "exit code"
