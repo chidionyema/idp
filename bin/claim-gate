@@ -32,6 +32,10 @@ agent claims, nobody else holds those files.
 Writing one of these is mechanical, so it is a command: bin/claim-open makes all of it true and
 then runs this gate. An agent should not have to rediscover the contract by being refused.
 
+The founder's freeze (2026-10-29) is checked here as well: a path the founder has approved is
+frozen, and no claim -- not even a live one -- can land a change to it. "We kick the door and
+take the keys away": the change is refused at merge time as well as at edit time.
+
 Three exemptions, none of which trusts a git author name (anyone can type one):
   - a change whose every added and removed line carries a Flux `$imagepolicy` marker: it can only
     move image tags, the image-automation controller's job (it commits as the same
@@ -183,6 +187,30 @@ def truth_problems(
                     "change lands on it. Name it in the commit message: `Proof: %s`"
                     % (pid, pred.get("detail", "")[:120], pid)
                 )
+    return problems
+
+
+def frozen_problems(files: list[str]) -> list[str]:
+    """The founder-approved paths this change touches. A claim is not an approval."""
+    gov_root = os.path.join(
+        os.path.dirname(os.path.realpath(__file__)), "..", "platform", "estate"
+    )
+    if gov_root not in sys.path:
+        sys.path.insert(0, gov_root)
+    try:
+        from governance import freeze  # type: ignore
+    except ImportError:
+        return []
+    problems = []
+    for path in files:
+        frozen, entry = freeze.is_frozen(path)
+        if frozen:
+            problems.append(
+                f"{path} is frozen by founder approval "
+                f"({entry.get('approval', 'unknown')}): no agent may change founder-approved "
+                "work. The keys are taken away until the founder approves a new change "
+                f"(bin/estate-freeze --release '{entry.get('pattern')}' --approval '<approval>')"
+            )
     return problems
 
 
@@ -476,6 +504,10 @@ def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> lis
         problems.append(
             f"{len(outside)} file(s) outside every claim's paths: {', '.join(outside[:10])}"
         )
+    # The founder's freeze: a founder-approved path is frozen, and no claim -- not even a live
+    # one -- can land a change to it. The keys are taken away at merge time as well as at edit
+    # time, so a session that bypassed the write gate still cannot land the change.
+    problems += frozen_problems(files)
     # The truth obligation runs after the claim check, so the message a change's author reads
     # is about the claim first and about the evidence second: the claim says who owns the
     # files, the evidence says whether the thing those files carry works.

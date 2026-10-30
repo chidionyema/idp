@@ -143,6 +143,7 @@ while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
     case "$1" in
       *.py) echo python ;;
       *.sh|*.bash) echo shell ;;
+      *.ts) echo typescript ;;
       *) echo unknown ;;
     esac
   }
@@ -165,9 +166,29 @@ while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
       fi
       continue
     fi
+    # TypeScript (the pi extensions under extensions/): node parses it with its own type
+    # stripping, so the check is real and can fail -- measured: `node --experimental-strip-types
+    # --check` on a broken file exits 1. It is not allowed into the "unknown" bucket, because
+    # that bucket accepts a file only when bash -n or py_compile can read it, and neither can
+    # read TypeScript -- which is how the gate came to refuse the estate's own pi adapters.
+    # No node, or a node too old to strip types, is a REFUSAL, never a silent pass.
+    if [ "$kind" = "typescript" ]; then
+      if ! command -v node >/dev/null 2>&1; then
+        echo "pre-push REFUSED: $f is TypeScript and node is not installed, so it cannot be parsed" >&2
+        exit 1
+      fi
+      if ! node --experimental-strip-types --check "$f" >&2; then
+        echo "pre-push REFUSED: TypeScript syntax error in $f" >&2
+        exit 1
+      fi
+      continue
+    fi
     # Declarative config is neither language and has no parser here (HCL is refused by bash -n
     # and py_compile alike: a new platform/oci/*.tf could never be pushed). CI validates these.
-    case "$f" in *.tf|*.tfvars|*.hcl|*.json|*.md|*.txt) continue ;; esac
+    # YAML is declarative too, and bin/idp-ci rung 1c.2 lints every *.yml/*.yaml in the diff
+    # against .yamllint (a missing yamllint is a FAIL, never a skip). Without it here, no agent
+    # could ever change .github/workflows/*.yml -- the gate refused the estate's own work.
+    case "$f" in *.tf|*.tfvars|*.hcl|*.json|*.md|*.txt|*.yml|*.yaml) continue ;; esac
     # Unknown: no shebang, not a known extension. Accept it when EITHER parser reads it --
     # a file with no shebang is still one of the two languages, and refusing it would be the
     # same defect in the other direction.
