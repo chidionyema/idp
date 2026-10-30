@@ -6,8 +6,8 @@
 # Cloudflare's network cannot find a healthy cloudflared instance to receive the traffic". The
 # tunnel, the DNS record, the vault entry and the config bundle were all proven good from the
 # outside; the missing thing was a cloudflared connector on the host. The host has no SSH door,
-# so this runs through OCI Run Command, which executes as root (cloud-init writes the NOPASSWD
-# sudoers file for exactly this reason).
+# so this runs through OCI Run Command, which executes as `ocarun` (uid 988) -- so the script
+# elevates itself with the passwordless sudo rule cloud-init writes for exactly this reason.
 #
 # WHAT IT DOES. It prints what the host is actually doing, repairs the three ways the tunnel can
 # fail to start, and proves the connector is up. It is idempotent: running it twice changes
@@ -28,13 +28,25 @@ ok() { printf 'ok      host-repair  %s\n' "$*"; }
 bad() { printf 'FAIL    host-repair  %s\n' "$*" >&2; }
 blind() { printf 'BLIND   host-repair  %s\n' "$*" >&2; exit 2; }
 
+# ---------------------------------------------------------------- elevate
+
+# OCI Run Command executes this script as `ocarun` (uid 988), NOT as root -- measured on
+# 2026-10-30. Everything below needs root: podman, systemctl, mounting a volume, and the
+# instance-principal OCI calls. The host's cloud-init writes
+# /etc/sudoers.d/101-oracle-cloud-agent-run-command (`ocarun ALL=(ALL) NOPASSWD:ALL`) for
+# exactly this case, so the script elevates itself and carries on as root. Before this, the
+# script refused to run and the door was dead (#7525).
+if [ "$(id -u)" != "0" ]; then
+  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+    printf 'state  host-repair  not root; re-executing as root through sudo -n\n'
+    exec sudo -n bash "$0" "$@"
+  fi
+  blind "not root: Run Command must execute as root and no passwordless sudo is available"
+fi
+
 # ---------------------------------------------------------------- diagnose
 
 say "== host-repair: diagnose =="
-
-if [ "$(id -u)" != "0" ]; then
-  blind "not root: Run Command must execute as root"
-fi
 
 # cloud-init: did the boot steps finish? A host still installing podman has no tunnel.
 if [ -f /var/lib/cloud/instance/boot-finished ]; then
@@ -191,6 +203,23 @@ fi
 # there NOW. The refresh unit restarts only the router, so the tunnel is restarted here too.
 systemctl restart estate-router.service 2>/dev/null || true
 systemctl restart estate-tunnel.service 2>/dev/null || true
+
+# Repair 4: the refresh timer must be ENABLED, not merely present. Measured on 2026-10-30: the
+# live host carried estate-router-refresh.timer as `active=inactive enabled=static` -- the unit
+# file existed, but nothing scheduled it, so the router would never refresh itself from the
+# vault again. cloud-init's combined `systemctl enable --now` for three units aborted on the
+# first failure and never reached the timer; the cloud-init source is fixed for future boots,
+# and this line repairs the live host now.
+if systemctl cat estate-router-refresh.timer >/dev/null 2>&1; then
+  if systemctl enable --now estate-router-refresh.timer >/dev/null 2>&1; then
+    ok "estate-router-refresh.timer is enabled"
+  else
+    bad "estate-router-refresh.timer could not be enabled"
+  fi
+  say "state  estate-router-refresh.timer  active=$(systemctl is-active estate-router-refresh.timer 2>/dev/null || echo unknown) enabled=$(systemctl is-enabled estate-router-refresh.timer 2>/dev/null || echo unknown)"
+else
+  say "state  estate-router-refresh.timer  unit: absent"
+fi
 
 # Give the connector a bounded moment to register with Cloudflare.
 for _ in $(seq 1 12); do

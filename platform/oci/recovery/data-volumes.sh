@@ -10,6 +10,23 @@
 # read-only here: nothing in this script can write to them.
 set -euo pipefail
 MODE="${1:-identify}"
+
+# OCI Run Command executes this script as `ocarun` (uid 988), NOT as root -- measured on
+# 2026-10-30. The instance-principal OCI calls and the mounts both need root, and the OCI CLI
+# refuses instance-principal auth without it ("This command has to be run with superuser
+# privileges"). The host's cloud-init writes
+# /etc/sudoers.d/101-oracle-cloud-agent-run-command (`ocarun ALL=(ALL) NOPASSWD:ALL`), so the
+# script elevates itself FIRST and only then exports the instance-principal auth, so the root
+# re-exec performs the authentication (#7525).
+if [ "$(id -u)" != "0" ]; then
+  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+    printf 'state  data-volumes  not root; re-executing as root through sudo -n\n'
+    exec sudo -n bash "$0" "$@"
+  fi
+  printf 'BLIND   data-volumes  Run Command must execute as root and no passwordless sudo is available\n' >&2
+  exit 2
+fi
+
 export OCI_CLI_AUTH=instance_principal SUPPRESS_LABEL_WARNING=True
 NS="$(oci os ns get --query data --raw-output)"
 BUCKET="${RECOVERY_BUCKET:-estate-router-recovery}"
