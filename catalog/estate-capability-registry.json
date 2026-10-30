@@ -25469,6 +25469,7 @@
         "inputs": [
           "--ack",
           "--desc",
+          "--pipe",
           "--type"
         ],
         "outputs": [
@@ -25516,8 +25517,8 @@
       "summary": "idp#7490: the voice door of fleet comms. Speech in becomes a directive; the inbox is read aloud.",
       "contract": {
         "inputs": [
-          "--ack",
-          "--kind"
+          "--kind",
+          "--pipe"
         ],
         "outputs": [
           "stdout",

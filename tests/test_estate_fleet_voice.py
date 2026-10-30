@@ -71,7 +71,7 @@ def fleetview():
     srv.shutdown()
 
 
-def run(exe, url, agent, *args, fv="http://127.0.0.1:1", player="true"):
+def run(exe, url, agent, *args, fv="http://127.0.0.1:1", player="true", wait="1"):
     env = {
         **os.environ,
         "ESTATE_NATS_URL": url,
@@ -79,7 +79,7 @@ def run(exe, url, agent, *args, fv="http://127.0.0.1:1", player="true"):
         "FLEETVIEW_URL": fv,
         "ESTATE_FLEET_VOICE_PLAYER": player,
         "ESTATE_FLEET_NO_MEMORY": "1",
-        "ESTATE_FLEET_ACK_WAIT": "1",
+        "ESTATE_FLEET_ACK_WAIT": wait,
     }
     return subprocess.run(
         [str(ROOT / "bin" / exe), *args],
@@ -121,3 +121,16 @@ def test_spoken_inbox_acks_only_after_playback(bus, fleetview):
 def test_voice_engine_down_is_blind_not_silence(bus):
     r = run("estate-fleet-voice", bus, "agent-x", "speak", "hello")
     assert r.returncode == 2 and "BLIND" in r.stdout
+
+
+def test_ack_is_atomic_at_the_production_ack_wait(bus, fleetview):
+    """Regression: read-then-ack acked nothing while ack_wait (60s) ran, so messages replayed."""
+    fv, _ = fleetview
+    run("estate-fleet", bus, "founder", "send", "agent-y", "once only", wait="60")
+    ok = run("estate-fleet-voice", bus, "agent-y", "speak", fv=fv, wait="60")
+    assert ok.returncode == 0, ok.stdout + ok.stderr
+    assert "0 pending" in run("estate-fleet", bus, "agent-y", "inbox", wait="60").stdout
+    assert (
+        "applied"
+        in run("estate-fleet", bus, "founder", "status", "1", wait="60").stdout
+    )
