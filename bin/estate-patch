@@ -1,0 +1,310 @@
+#!/usr/bin/env python3
+"""
+bin/estate-patch: Anchored Search/Replace patch applier with mandatory
+cryptographic read-receipt verification and pre-commit AST/syntax gates.
+
+Standard library only, mirrors bin/estate-read's secret handling exactly:
+ESTATE_RECEIPT_KEY from the vault in production, a non-secret dev fallback
+otherwise (see bin/estate-read's docstring).
+"""
+
+import argparse
+import ast
+import hashlib
+import hmac
+import json
+import os
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+DEV_FALLBACK_KEY = (
+    "estate-dev-local-hmac-key-NOT-A-SECRET-set-ESTATE_RECEIPT_KEY-from-the-vault"
+)
+
+
+def _estate_db_path() -> Path:
+    base = Path(os.environ.get("ESTATE_HOME", Path.home() / ".estate"))
+    base.mkdir(parents=True, exist_ok=True)
+    return base / "estate.db"
+
+
+def _receipt_secret() -> bytes:
+    key = os.environ.get("ESTATE_RECEIPT_KEY", DEV_FALLBACK_KEY)
+    return key.encode("utf-8")
+
+
+def _verify_read_receipt(
+    receipt_token: str, expected_rel_path: str, current_sha256: str
+) -> tuple[bool, str]:
+    parts = receipt_token.strip().split(":")
+    if len(parts) != 4:
+        return (
+            False,
+            "Malformed READ_RECEIPT token (expected path:sha256:timestamp:hmac).",
+        )
+    r_path, r_sha256, r_ts_str, r_sig = parts
+    if r_path != expected_rel_path:
+        return (
+            False,
+            f"Receipt path mismatch: receipt is for '{r_path}', target is '{expected_rel_path}'.",
+        )
+    if r_sha256 != current_sha256:
+        return (
+            False,
+            f"STALE_FILE_STATE: File '{expected_rel_path}' changed since read "
+            f"(receipt sha={r_sha256[:10]}, disk sha={current_sha256[:10]}). Re-run bin/estate-read.",
+        )
+    try:
+        issued_at = int(r_ts_str)
+    except ValueError:
+        return False, "Invalid receipt timestamp."
+
+    payload = f"READ:{r_path}:{r_sha256}:{issued_at}".encode("utf-8")
+    expected_sig = hmac.new(_receipt_secret(), payload, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(r_sig, expected_sig):
+        return False, "FORGED_READ_RECEIPT: HMAC signature verification failed."
+    return True, "OK"
+
+
+def _parse_search_replace_blocks(patch_text: str) -> list[tuple[str, str]]:
+    """
+    Parses blocks formatted as:
+    <<<< SEARCH
+    ...exact lines...
+    ====
+    ...replacement lines...
+    >>>>
+    """
+    blocks = []
+    in_search = False
+    in_replace = False
+    search_buf: list[str] = []
+    replace_buf: list[str] = []
+
+    for line in patch_text.splitlines(keepends=True):
+        stripped = line.rstrip("\r\n")
+        if stripped == "<<<< SEARCH":
+            if in_search or in_replace:
+                raise ValueError("Nested or unclosed <<<< SEARCH marker.")
+            in_search = True
+            search_buf = []
+        elif stripped == "====" and in_search:
+            in_search = False
+            in_replace = True
+            replace_buf = []
+        elif stripped == ">>>>" and in_replace:
+            in_replace = False
+            blocks.append(("".join(search_buf), "".join(replace_buf)))
+        elif in_search:
+            search_buf.append(line)
+        elif in_replace:
+            replace_buf.append(line)
+
+    if in_search or in_replace:
+        raise ValueError("Unclosed SEARCH/REPLACE block (missing '====' or '>>>>').")
+    if not blocks:
+        raise ValueError(
+            "No valid <<<< SEARCH ... ==== ... >>>> blocks found in patch input."
+        )
+    return blocks
+
+
+def _validate_syntax(rel_path: str, content: str) -> tuple[bool, str]:
+    suffix = Path(rel_path).suffix.lower()
+    if suffix == ".py":
+        try:
+            ast.parse(content, filename=rel_path)
+            return True, "Python AST valid"
+        except SyntaxError as exc:
+            return False, f"Python AST SyntaxError at line {exc.lineno}: {exc.msg}"
+    if suffix == ".json":
+        try:
+            json.loads(content)
+            return True, "JSON valid"
+        except Exception as exc:
+            return False, f"JSON syntax error: {exc}"
+    if suffix in {".sh", ".bash"} or rel_path.startswith("bin/"):
+        first_line = content.splitlines()[0] if content else ""
+        if "python" in first_line:
+            try:
+                ast.parse(content, filename=rel_path)
+                return True, "Python script AST valid"
+            except SyntaxError as exc:
+                return False, f"Python AST SyntaxError at line {exc.lineno}: {exc.msg}"
+        with tempfile.NamedTemporaryFile("w", suffix=".sh", delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+        try:
+            proc = subprocess.run(
+                ["bash", "-n", tmp_path], capture_output=True, text=True
+            )
+            if proc.returncode != 0:
+                return False, f"bash -n syntax check failed: {proc.stderr.strip()}"
+            return True, "Bash syntax valid"
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+    return True, "Syntax check passed"
+
+
+def _record_patch_receipt(rel_path: str, old_sha: str, new_sha: str) -> str:
+    ts = int(time.time())
+    payload = f"PATCH:{rel_path}:{old_sha}:{new_sha}:{ts}".encode("utf-8")
+    sig = hmac.new(_receipt_secret(), payload, hashlib.sha256).hexdigest()
+    with sqlite3.connect(_estate_db_path()) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS patch_receipts (
+                patch_id TEXT PRIMARY KEY,
+                rel_path TEXT NOT NULL,
+                old_sha256 TEXT NOT NULL,
+                new_sha256 TEXT NOT NULL,
+                applied_at INTEGER NOT NULL,
+                hmac_sig TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO patch_receipts VALUES (?, ?, ?, ?, ?, ?)",
+            (sig[:16], rel_path, old_sha, new_sha, ts, sig),
+        )
+        conn.commit()
+    return f"{rel_path}:{new_sha}:{ts}:{sig}"
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Estate receipt-gated patch tool.")
+    parser.add_argument("path", help="Repository-relative file path")
+    parser.add_argument("--receipt", help="READ_RECEIPT token from bin/estate-read")
+    parser.add_argument(
+        "--create",
+        action="store_true",
+        help="Create a brand-new file (fails if file exists)",
+    )
+    args = parser.parse_args()
+
+    repo_root = Path.cwd().resolve()
+    target = (repo_root / args.path).resolve()
+    try:
+        rel_path = target.relative_to(repo_root).as_posix()
+    except ValueError:
+        sys.stderr.write(
+            "ERROR [ESTATE-PATCH-OUTSIDE-REPO]: Target escapes repository root.\n"
+        )
+        return 2
+
+    patch_input = sys.stdin.read()
+    if not patch_input.strip():
+        sys.stderr.write(
+            "ERROR [ESTATE-PATCH-EMPTY]: Provide patch payload on stdin.\n"
+        )
+        return 3
+
+    if args.create:
+        if target.exists():
+            sys.stderr.write(
+                f"ERROR [ESTATE-PATCH-EXISTS]: '{rel_path}' already exists. "
+                "Full-file overwrites are banned; read with bin/estate-read and patch.\n"
+            )
+            return 4
+        ok, msg = _validate_syntax(rel_path, patch_input)
+        if not ok:
+            sys.stderr.write(f"ERROR [ESTATE-PATCH-AST-REJECTED]: {msg}\n")
+            return 5
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(patch_input, encoding="utf-8")
+        new_sha = hashlib.sha256(target.read_bytes()).hexdigest()
+        receipt = _record_patch_receipt(rel_path, "0" * 64, new_sha)
+        print(
+            json.dumps(
+                {"status": "CREATED", "file": rel_path, "PATCH_RECEIPT": receipt}
+            )
+        )
+        return 0
+
+    if not target.is_file():
+        sys.stderr.write(
+            f"ERROR [ESTATE-PATCH-NOT-FOUND]: '{rel_path}' does not exist.\n"
+        )
+        return 6
+
+    if not args.receipt:
+        sys.stderr.write(
+            "ERROR [ESTATE-PATCH-NO-RECEIPT]: Missing --receipt. "
+            "You must read the target window via bin/estate-read before patching.\n"
+        )
+        return 7
+
+    raw_bytes = target.read_bytes()
+    old_sha = hashlib.sha256(raw_bytes).hexdigest()
+    valid_receipt, reason = _verify_read_receipt(args.receipt, rel_path, old_sha)
+    if not valid_receipt:
+        sys.stderr.write(f"ERROR [ESTATE-PATCH-RECEIPT-INVALID]: {reason}\n")
+        return 8
+
+    try:
+        blocks = _parse_search_replace_blocks(patch_input)
+    except ValueError as exc:
+        sys.stderr.write(f"ERROR [ESTATE-PATCH-FORMAT]: {exc}\n")
+        return 9
+
+    updated_text = raw_bytes.decode("utf-8")
+    for idx, (search_str, replace_str) in enumerate(blocks, start=1):
+        non_empty_lines = [ln for ln in search_str.splitlines() if ln.strip()]
+        if len(non_empty_lines) < 2 and len(updated_text.splitlines()) > 2:
+            sys.stderr.write(
+                f"ERROR [ESTATE-PATCH-WEAK-ANCHOR]: Block {idx} SEARCH section must include at least "
+                "2 non-empty context lines to prevent blind edits.\n"
+            )
+            return 10
+        occurrences = updated_text.count(search_str)
+        if occurrences == 0:
+            sys.stderr.write(
+                f"ERROR [ESTATE-PATCH-ANCHOR-NOT-FOUND]: Block {idx} SEARCH block did not match "
+                f"verbatim content in '{rel_path}'.\n"
+            )
+            return 11
+        if occurrences > 1:
+            sys.stderr.write(
+                f"ERROR [ESTATE-PATCH-AMBIGUOUS-ANCHOR]: Block {idx} SEARCH matched {occurrences} "
+                "locations. Expand surrounding context lines to make the anchor unique.\n"
+            )
+            return 12
+        updated_text = updated_text.replace(search_str, replace_str, 1)
+
+    ok, msg = _validate_syntax(rel_path, updated_text)
+    if not ok:
+        sys.stderr.write(
+            f"ERROR [ESTATE-PATCH-AST-REJECTED]: Patch broke syntax -- {msg}\n"
+        )
+        return 13
+
+    with tempfile.NamedTemporaryFile(
+        "w", dir=target.parent, delete=False, encoding="utf-8"
+    ) as tmp:
+        tmp.write(updated_text)
+        tmp_path = Path(tmp.name)
+    tmp_path.chmod(target.stat().st_mode)
+    tmp_path.replace(target)
+
+    new_sha = hashlib.sha256(target.read_bytes()).hexdigest()
+    patch_receipt = _record_patch_receipt(rel_path, old_sha, new_sha)
+    print(
+        json.dumps(
+            {
+                "status": "PATCHED",
+                "file": rel_path,
+                "blocks_applied": len(blocks),
+                "validation": msg,
+                "PATCH_RECEIPT": patch_receipt,
+            }
+        )
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

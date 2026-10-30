@@ -33,6 +33,19 @@ _PLUGINS = Path(__file__).resolve().parents[3] / "mcp" / "plugins"
 if _PLUGINS.is_dir() and str(_PLUGINS) not in sys.path:
     sys.path.insert(0, str(_PLUGINS))
 
+# The read/write boundary (platform/estate/harness/fs_guard.py): one more check before
+# dispatch, alongside the plan gate below, so a raw cat/sed -i/>> cannot route around
+# bin/estate-read and bin/estate-patch inside the same command string.
+_HARNESS = Path(__file__).resolve().parent.parent / "harness"
+if _HARNESS.is_dir() and str(_HARNESS) not in sys.path:
+    sys.path.insert(0, str(_HARNESS))
+try:
+    from fs_guard import check_command_allowed
+except ImportError:
+
+    def check_command_allowed(cmd):  # fail open, never closed, on an import problem
+        return True, "OK"
+
 # The plan contract (platform/estate/memory/plan.py), loaded once. It is the ONE plan model:
 # this script asks it one question per command and never interprets a plan itself.
 _PLAN_CONTRACT = None
@@ -623,6 +636,16 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
                     failed += 1
                     if on_fail == "halt":
                         close_ticket(conn, ticket_id, "halted", f"step {idx+1} ({step_name}) refused")
+                        return "halted"
+                    continue
+                fs_ok, fs_reason = check_command_allowed(cmd)
+                if not fs_ok:
+                    log(f"  REFUSED: {fs_reason}")
+                    rc, stdout = 2, ""
+                    log_step(conn, ticket_id, idx, cmd, rc, 0)
+                    failed += 1
+                    if on_fail == "halt":
+                        close_ticket(conn, ticket_id, "halted", f"step {idx+1} ({step_name}) refused: {fs_reason}")
                         return "halted"
                     continue
                 try:
