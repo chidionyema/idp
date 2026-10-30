@@ -6,7 +6,7 @@
     "intent": 112,
     "layer": 235,
     "service": 121,
-    "tool": 464,
+    "tool": 465,
     "workflow": 85
   },
   "records": [
@@ -27311,6 +27311,54 @@
           "edge": "invokes"
         }
       ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/estate-session-audit",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "bin/estate-session-audit -- what actually happened in the founder's Claude Code sessions.",
+      "contract": {
+        "inputs": [
+          "--out",
+          "--root"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-session-audit",
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",

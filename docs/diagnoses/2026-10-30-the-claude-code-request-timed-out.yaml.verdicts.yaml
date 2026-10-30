@@ -1,0 +1,153 @@
+description: 'The founder''s Claude Code sessions on 2026-10-28..30 gave up with "Request
+  timed out" (25 events in 10 sessions across 134 transcripts; 21 of them in the founder''s
+  own seven main sessions). The client waited a tight 361.287-374.443 s (p50 364.132
+  s, n=21) and then gave up. Question: why did the caller hear nothing for longer
+  than it could bear? (H1) The front holds one request across every leg it may try
+  -- the cloud first (ANSWER_TIMEOUT=120 s per target) and then each laptop slot --
+  with NO total budget, so on a slow leg the caller''s request is held past the client''s
+  patience and the answer arrives (or never arrives) to a caller that has gone. (H2)
+  The vendors themselves were slow or down, so no front-side budget could have saved
+  those calls. (H3) The client was at fault: it delayed or dropped the request. (H4)
+  The requests never reached the front at all (an ingress fault upstream of it). The
+  fix under test gives one request ONE budget (ANSWER_BUDGET, 240 s) that every leg
+  shares, and refuses the caller at once when the budget is spent.
+
+  '
+hypotheses:
+- name: H1
+  description: the front has no total budget per request, so it holds the caller's
+    request across every leg it may try and the hold can exceed the client's patience
+  prior: 0.25
+- name: H2
+  description: the vendors were slow or down, so no budget on the front could have
+    saved those calls
+  prior: 0.25
+- name: H3
+  description: the client (Claude Code) was at fault -- it delayed or dropped the
+    request
+  prior: 0.25
+- name: H4
+  description: the requests never reached the front, so an ingress fault upstream
+    of it explains the silence
+  prior: 0.25
+evidence:
+- name: the front's own per-request hold (the deployed front's constants) against
+    the client's measured patience (p50 364.132 s, n=21)
+  observed:
+    hold_can_exceed_patience: 1
+    hold_cannot_exceed_patience: 0
+  likelihoods:
+    H1:
+      hold_can_exceed_patience: 0.97
+      hold_cannot_exceed_patience: 0.03
+    H2:
+      hold_can_exceed_patience: 0.6
+      hold_cannot_exceed_patience: 0.4
+    H3:
+      hold_can_exceed_patience: 0.4
+      hold_cannot_exceed_patience: 0.6
+    H4:
+      hold_can_exceed_patience: 0.3
+      hold_cannot_exceed_patience: 0.7
+- name: the answers that did arrive, each paired with the request that produced it
+    (the audit's n=1,284)
+  observed:
+    answered_within_patience: 1284
+    answered_beyond_patience: 0
+  likelihoods:
+    H1:
+      answered_within_patience: 0.85
+      answered_beyond_patience: 0.15
+    H2:
+      answered_within_patience: 0.35
+      answered_beyond_patience: 0.65
+    H3:
+      answered_within_patience: 0.55
+      answered_beyond_patience: 0.45
+    H4:
+      answered_within_patience: 0.55
+      answered_beyond_patience: 0.45
+- name: the estate's own load gate on this host across the three days (it refuses
+    work while the load is above 12; the host's load peaked at 1018)
+  observed:
+    refused: 5845
+    allowed: 34
+  likelihoods:
+    H1:
+      refused: 0.8
+      allowed: 0.2
+    H2:
+      refused: 0.75
+      allowed: 0.25
+    H3:
+      refused: 0.35
+      allowed: 0.65
+    H4:
+      refused: 0.25
+      allowed: 0.75
+- name: 'the cloud''s own answer to a Claude Code request (the recovery router, measured
+    2026-10-30): HTTP 400 naming the model, in 1.21 s'
+  observed:
+    answered_fast: 1
+    no_answer: 0
+  likelihoods:
+    H1:
+      answered_fast: 0.8
+      no_answer: 0.2
+    H2:
+      answered_fast: 0.25
+      no_answer: 0.75
+    H3:
+      answered_fast: 0.65
+      no_answer: 0.35
+    H4:
+      answered_fast: 0.55
+      no_answer: 0.45
+- name: 'the front''s own access log: the Claude Code requests that reached it and
+    what came back'
+  observed:
+    served_200: 822
+    refused_400: 16
+    unauthorised_401: 5
+  likelihoods:
+    H1:
+      served_200: 0.9
+      refused_400: 0.08
+      unauthorised_401: 0.02
+    H2:
+      served_200: 0.9
+      refused_400: 0.08
+      unauthorised_401: 0.02
+    H3:
+      served_200: 0.9
+      refused_400: 0.08
+      unauthorised_401: 0.02
+    H4:
+      served_200: 0.1
+      refused_400: 0.8
+      unauthorised_401: 0.1
+- name: 'the client''s give-up interval: the gap from the request that went out to
+    the timeout that came back (all 21 land in one band)'
+  observed:
+    in_the_band: 21
+    scattered: 0
+  likelihoods:
+    H1:
+      in_the_band: 0.85
+      scattered: 0.15
+    H2:
+      in_the_band: 0.65
+      scattered: 0.35
+    H3:
+      in_the_band: 0.35
+      scattered: 0.65
+    H4:
+      in_the_band: 0.25
+      scattered: 0.75
+posteriors:
+  H1: 1.0
+  H2: 0.0
+  H3: 0.0
+  H4: 0.0
+winner: H1
+computed_at: '2026-10-30T09:30:12Z'
