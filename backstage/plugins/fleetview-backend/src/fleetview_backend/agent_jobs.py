@@ -48,13 +48,13 @@ from typing import Any
 from fleetview_backend import redact
 
 WORKFLOW = "agent-sandbox.yml"
-HARNESSES = ("pi", "claude-code")
+HARNESSES = ("pi", "claude-code", "gemini")
 MAX_TASK_CHARS = 4000
 MAX_ACTIVE = 3
 DUPLICATE_WINDOW_S = 120.0
 LIST_TTL_S = 5.0
 HTTP_TIMEOUT_S = 10.0
-STAGES = ("agent", "firewall", "open-pr")
+STAGES = ("agent", "firewall", "submit-lane")
 _TITLE = re.compile(r"^agent \((?P<harness>[a-z-]+)\): (?P<task>.*)$", re.S)
 
 _LOCK = threading.Lock()
@@ -342,19 +342,51 @@ def _failure_reason(job: dict) -> str:
 def _pr_of(run_id: int, harness: str | None) -> dict | None:
     owner = repo().split("/")[0]
     for h in [harness] if harness else list(HARNESSES):
-        status, body = _gh(
-            "GET", f"/repos/{repo()}/pulls?state=all&head={owner}:agent/{h}-{run_id}"
-        )
-        if status in (403, 404):
-            return {"number": None, "url": None, "state": "unknown"}
-        for pr in body or []:
-            state = "merged" if pr.get("merged_at") else str(pr.get("state"))
-            return {
-                "number": pr.get("number"),
-                "url": pr.get("html_url"),
-                "state": state,
-            }
+        # Retain historical jobs; new sandbox runs submit lane/agent-* to Greenlane.
+        for prefix in ("agent/", "lane/agent-"):
+            status, body = _gh(
+                "GET",
+                f"/repos/{repo()}/pulls?state=all&head={owner}:{prefix}{h}-{run_id}",
+            )
+            if status in (403, 404):
+                return {"number": None, "url": None, "state": "unknown"}
+            for pr in body or []:
+                state = "merged" if pr.get("merged_at") else str(pr.get("state"))
+                return {
+                    "number": pr.get("number"),
+                    "url": pr.get("html_url"),
+                    "state": state,
+                }
     return None
+
+
+def _lane_of(run_id: int, harness: str | None) -> dict | None:
+    if harness not in HARNESSES:
+        return None
+    status, body = _gh(
+        "GET", f"/repos/{repo()}/git/ref/heads/lane/agent-{harness}-{run_id}"
+    )
+    if status == 404:
+        return None
+    if status == 403:
+        return {"state": "pending", "description": "Fleet may not read the lane."}
+    sha = (body or {}).get("object", {}).get("sha")
+    if not sha:
+        raise JobRefused(502, "GitHub returned a lane without its commit.")
+    status, body = _gh("GET", f"/repos/{repo()}/commits/{sha}/status")
+    if status in (403, 404):
+        return {
+            "state": "pending",
+            "description": "Fleet may not read the lane verdict.",
+        }
+    return next(
+        (
+            s
+            for s in (body or {}).get("statuses", [])
+            if s.get("context") == "greenlane"
+        ),
+        {"state": "pending", "description": "The lane has not been judged yet."},
+    )
 
 
 def job_from_run(run: dict, detail: bool = True) -> dict:
@@ -380,9 +412,10 @@ def job_from_run(run: dict, detail: bool = True) -> dict:
         return _FINAL[run_id]
     if run.get("status") != "completed":
         jobs = {j.get("name"): j for j in _jobs_of(run_id)}
-        # The stage is the first of agent -> firewall -> open-pr that has not finished. Until the
+        stages = ("agent", "firewall", "open-pr") if "open-pr" in jobs else STAGES
+        # The stage is the first of agent -> firewall -> submit-lane that has not finished. Until the
         # agent job exists at all, the run is queued for a runner.
-        for i, name in enumerate(STAGES):
+        for i, name in enumerate(stages):
             j = jobs.get(name)
             if j is not None and j.get("status") == "completed":
                 continue
@@ -390,18 +423,32 @@ def job_from_run(run: dict, detail: bool = True) -> dict:
                 job["stage"] = name
             break
         else:
-            job["stage"] = STAGES[-1]
+            job["stage"] = stages[-1]
         return job
     conclusion = run.get("conclusion")
     if conclusion == "success":
         pr = _pr_of(run_id, job["harness"])
         job["pr"] = pr
         if pr is None:
-            job.update(
-                stage="done",
-                state="failed",
-                reason="The run passed but no PR was found.",
-            )
+            lane = _lane_of(run_id, job["harness"])
+            if lane is None:
+                job.update(
+                    stage="done",
+                    state="failed",
+                    reason="The run passed but no PR or lane was found.",
+                )
+            else:
+                verdict = lane.get("state")
+                job.update(
+                    stage="merged" if verdict == "success" else "greenlane",
+                    state="done"
+                    if verdict == "success"
+                    else "failed"
+                    if verdict in ("failure", "error")
+                    else "running",
+                    reason=redact.redact(str(lane.get("description") or ""))[0][:300]
+                    or None,
+                )
         elif pr["state"] == "merged":
             job.update(stage="merged", state="done")
         elif pr["state"] == "closed":
@@ -425,7 +472,7 @@ def job_from_run(run: dict, detail: bool = True) -> dict:
         failed = next(
             (
                 jobs[n]
-                for n in STAGES
+                for n in (*STAGES, "open-pr")
                 if n in jobs and jobs[n].get("conclusion") == "failure"
             ),
             None,
@@ -438,7 +485,7 @@ def job_from_run(run: dict, detail: bool = True) -> dict:
             job.update(
                 stage=failed.get("name"), state="failed", reason=_failure_reason(failed)
             )
-    if job["state"] != "running":
+    if job["state"] != "running" and job["stage"] != "greenlane":
         _FINAL[run_id] = job
     return job
 

@@ -71,6 +71,8 @@ class FakeGitHub:
         self.jobs: dict[int, list[dict]] = {}
         self.pulls: dict[str, list[dict]] = {}
         self.annotations: dict[int, list[dict]] = {}
+        self.refs: dict[str, str] = {}
+        self.statuses: dict[str, list[dict]] = {}
         self.dispatch = "200"  # "200" | "204" | "204-late"
         self.fail: dict[
             str, tuple[int, dict, dict]
@@ -129,6 +131,20 @@ class FakeGitHub:
                     return self._send(200, fake.annotations.get(int(m.group(1)), []))
                 if method == "GET" and p == f"/repos/{REPO}/pulls":
                     return self._send(200, fake.pulls.get(q["head"][0], []))
+                prefix = f"/repos/{REPO}/git/ref/heads/"
+                if (
+                    method == "GET"
+                    and p.startswith(prefix)
+                    and p[len(prefix) :] in fake.refs
+                ):
+                    return self._send(
+                        200, {"object": {"sha": fake.refs[p[len(prefix) :]]}}
+                    )
+                m = re.fullmatch(rf"/repos/{REPO}/commits/([^/]+)/status", p)
+                if method == "GET" and m:
+                    return self._send(
+                        200, {"statuses": fake.statuses.get(m.group(1), [])}
+                    )
                 return self._send(404, {"message": "Not Found"})
 
             def do_GET(self):
@@ -230,6 +246,75 @@ def test_the_task_is_trimmed_and_the_harness_defaults_to_pi(gh):
     (post,) = gh.calls("POST", r"/dispatches$")
     assert post["body"]["inputs"] == {"harness": "pi", "task": "tidy the docs index"}
     assert job["task"] == "tidy the docs index"
+
+
+def test_gemini_can_be_dispatched_from_the_founder_surface(gh):
+    job, status = aj.submit("document the Gemini lane", "gemini")
+    assert status == 201 and job["harness"] == "gemini"
+    assert gh.calls("POST", r"/dispatches$")[0]["body"]["inputs"]["harness"] == "gemini"
+
+
+@pytest.mark.parametrize(
+    "state,expected",
+    [("pending", "running"), ("failure", "failed"), ("success", "done")],
+)
+def test_a_submitted_lane_is_followed_until_the_greenlane_decides(gh, state, expected):
+    run = gh.add_run(
+        "agent (gemini): real lane", status="completed", conclusion="success"
+    )
+    gh.refs[f"lane/agent-gemini-{run['id']}"] = "abc123"
+    gh.statuses["abc123"] = [
+        {
+            "context": "greenlane",
+            "state": state,
+            "description": "lane verdict",
+            "target_url": "https://github.com/x/actions/runs/42",
+        }
+    ]
+    job = _one(gh)
+    assert job["state"] == expected
+    assert job["stage"] == ("merged" if state == "success" else "greenlane")
+    if state == "failure":
+        assert job["reason"] == "lane verdict"
+
+
+def test_the_greenlane_created_pr_is_found_on_the_actual_lane_head(gh):
+    run = gh.add_run(
+        "agent (gemini): publish", status="completed", conclusion="success"
+    )
+    gh.pulls[f"chidionyema:lane/agent-gemini-{run['id']}"] = [
+        {
+            "number": 7600,
+            "html_url": "https://github.com/x/pull/7600",
+            "state": "closed",
+            "merged_at": _iso(),
+        }
+    ]
+    assert _one(gh)["state"] == "done"
+
+
+def test_a_lane_without_a_verdict_stays_running_and_a_refusal_can_recover(gh):
+    run = gh.add_run("agent (gemini): retry", status="completed", conclusion="success")
+    gh.refs[f"lane/agent-gemini-{run['id']}"] = "abc123"
+    assert _one(gh)["state"] == "running"
+    for verdict, expected in [("failure", "failed"), ("success", "done")]:
+        gh.statuses["abc123"] = [{"context": "greenlane", "state": verdict}]
+        aj._LIST_CACHE["at"] = 0.0
+        assert _one(gh)["state"] == expected
+
+
+def test_submission_failure_names_the_current_workflow_stage(gh):
+    run = gh.add_run(
+        "agent (gemini): refused", status="completed", conclusion="failure"
+    )
+    gh.jobs[run["id"]] = [
+        _job(
+            "submit-lane",
+            conclusion="failure",
+            steps=[{"name": "Apply the patch", "conclusion": "failure"}],
+        )
+    ]
+    assert _one(gh)["stage"] == "submit-lane"
 
 
 def test_an_api_that_answers_204_still_names_the_run_it_started(gh):
@@ -524,7 +609,7 @@ def test_a_run_no_runner_has_picked_up_is_queued(gh):
         ),
         (
             [("agent", "completed", "success"), ("firewall", "completed", "success")],
-            "open-pr",
+            "submit-lane",
         ),
         (
             [
@@ -609,7 +694,10 @@ def test_an_open_pr_is_asked_about_again_until_it_ends(gh):
 
 def test_waiting_on_a_pr_costs_one_github_call_per_poll_not_two(gh):
     # The portal token's hourly budget is shared; a passed run needs its PR, never its jobs.
-    gh.add_run("agent (pi): cheap", status="completed", conclusion="success")
+    run = gh.add_run("agent (pi): cheap", status="completed", conclusion="success")
+    gh.pulls[f"chidionyema:agent/pi-{run['id']}"] = [
+        {"number": 1, "html_url": "u", "state": "open", "merged_at": None}
+    ]
     _one(gh)
     assert gh.calls("GET", r"/jobs$") == []
     assert len(gh.calls("GET", r"/pulls")) == 1
@@ -783,7 +871,12 @@ def test_the_harnesses_offered_are_exactly_the_workflows_options():
     on = wf.get("on") or wf.get(True)
     inputs = on["workflow_dispatch"]["inputs"]
     assert sorted(inputs["harness"]["options"]) == sorted(aj.HARNESSES)
-    assert set(inputs) == {"harness", "task"}
+    assert {"harness", "task"} <= set(inputs)
+    assert all(
+        not spec.get("required")
+        for name, spec in inputs.items()
+        if name not in {"harness", "task"}
+    )
 
 
 # ── what the page sends ───────────────────────────────────────────────────────────────────
@@ -872,7 +965,9 @@ def test_a_yes_after_the_window_sends_nothing(voice, monkeypatch):
     vi.handle("give an agent a job fix the typo", "s1")
     real = time.monotonic
     monkeypatch.setattr(vi.time, "monotonic", lambda: real() + vi.PENDING_TTL_S + 1)
-    assert vi.handle("yes", "s1") is None
+    result = vi.handle("yes", "s1")
+    assert result["status"] == "expired"
+    assert "expired" in result["text"]
     assert voice.calls("POST", r"/dispatches$") == []
 
 
