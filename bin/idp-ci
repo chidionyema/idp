@@ -473,6 +473,28 @@ else
   fi
 fi
 
+# 1c.4 read/write boundary: bin/estate-read (windowed, receipt-issuing) and bin/estate-patch
+#      (receipt-gated, AST-checked) are the two doors an agent uses to look at and change estate
+#      code; platform/estate/harness/fs_guard.py is the heuristic filter wired into
+#      platform/estate/bin/estate-execute right before its subprocess.run, so a command cannot
+#      route around those doors with a raw `cat`/`sed -i`/`>>` in the same string. Proven by
+#      tests/test_read_write_boundary.py: a must-fail set (stale-doc read, patch with no receipt,
+#      forged/mismatched receipt, broken-AST patch, replayed stale receipt, guard bypass) and a
+#      must-pass set (a clean windowed read -> anchored patch, the guard's own allow-list).
+if ! touched bin/estate-read bin/estate-patch platform/estate/harness/fs_guard.py \
+      platform/estate/bin/estate-execute tests/test_read_write_boundary.py; then
+  say "ok    rwgate   no read/write boundary file changed against ${IDP_CI_BASE:-main}"
+else
+  rw=$("$MPY" -m pytest -q -p no:cacheprovider "$IDP/tests/test_read_write_boundary.py" 2>&1); rw_rc=$?
+  if [ "$rw_rc" -eq 0 ]; then
+    say "ok    rwgate   $(printf '%s' "$rw" | grep -oE '[0-9]+ passed' | head -1) -- the must-fail/must-pass contract holds"
+  else
+    say "FAIL  rwgate   tests/test_read_write_boundary.py (rc=$rw_rc)"
+    printf '%s\n' "$rw" | tail -20 | sed 's/^/      /'
+    fail=1
+  fi
+fi
+
 # 1d. ruff, the same rule set (pyproject [tool.ruff.lint]) the bdd job runs after the suites.
 #     In the fast gate it runs first, so an undefined name is red in under a minute.
 if [ "$FAST" = 1 ]; then
