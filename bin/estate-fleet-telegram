@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""Law 0 door of fleet comms: the inbox delivered to the founder's phone, not the laptop speaker.
+
+    estate-fleet-telegram deliver     send my pending inbox to the home channel; ack ONLY if Telegram accepted it
+    estate-fleet-telegram send TEXT   send TEXT to the home channel
+
+Same two variables as bin/estate-founder and platform/jit/broker/telegram.py:
+$TELEGRAM_BOT_TOKEN, $TELEGRAM_HOME_CHANNEL. $TELEGRAM_API_BASE overrides https://api.telegram.org (tests).
+Exit 0 ok, 1 FAIL (Telegram refused), 2 BLIND (no credentials or Telegram unreachable): never silence as success.
+"""
+
+import json
+import os
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+FLEET = Path(__file__).resolve().parent / "estate-fleet"
+
+
+def tg_send(text):
+    token, chat = (
+        os.environ.get("TELEGRAM_BOT_TOKEN"),
+        os.environ.get("TELEGRAM_HOME_CHANNEL"),
+    )
+    if not token or not chat:
+        print(
+            "BLIND   estate-fleet-telegram  TELEGRAM_BOT_TOKEN / TELEGRAM_HOME_CHANNEL not set"
+        )
+        sys.exit(2)
+    base = os.environ.get("TELEGRAM_API_BASE", "https://api.telegram.org").rstrip("/")
+    req = urllib.request.Request(  # noqa: S310 -- base is an https literal; only tests override it
+        f"{base}/bot{token}/sendMessage",
+        data=json.dumps({"chat_id": chat, "text": text[:4000]}).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:  # noqa: S310 -- see Request above
+            ok = json.load(r).get("ok")
+    except urllib.error.HTTPError as e:
+        sys.exit(f"FAIL    estate-fleet-telegram  Telegram answered {e.code}")
+    except Exception as e:
+        print(
+            f"BLIND   estate-fleet-telegram  cannot reach Telegram: {type(e).__name__}"
+        )
+        sys.exit(2)
+    if not ok:
+        sys.exit("FAIL    estate-fleet-telegram  Telegram did not accept the message")
+
+
+def relay():
+    text = sys.stdin.read().strip()
+    if text:
+        tg_send("Fleet inbox\n" + text)
+        print(
+            f"ok      estate-fleet-telegram  delivered {len(text.splitlines())} message(s) to the phone and acked them"
+        )
+    else:
+        print("ok      estate-fleet-telegram  no new messages")
+
+
+def main(argv):
+    if argv == ["_relay"]:
+        relay()
+    elif argv == ["deliver"]:
+        if not (
+            os.environ.get("TELEGRAM_BOT_TOKEN")
+            and os.environ.get("TELEGRAM_HOME_CHANNEL")
+        ):
+            print(
+                "BLIND   estate-fleet-telegram  TELEGRAM_BOT_TOKEN / TELEGRAM_HOME_CHANNEL not set"
+            )
+            sys.exit(2)
+        sys.exit(
+            subprocess.run(  # noqa: S603 -- fixed argv, no input
+                [
+                    sys.executable,
+                    str(FLEET),
+                    "inbox",
+                    "--pipe",
+                    sys.executable,
+                    str(Path(__file__).resolve()),
+                    "_relay",
+                ]
+            ).returncode
+        )
+    elif argv and argv[0] == "send" and len(argv) > 1:
+        tg_send(" ".join(argv[1:]))
+        print("ok      estate-fleet-telegram  sent")
+    else:
+        sys.exit(__doc__)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

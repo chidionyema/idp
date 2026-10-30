@@ -6,7 +6,7 @@
     "intent": 111,
     "layer": 229,
     "service": 122,
-    "tool": 462,
+    "tool": 463,
     "workflow": 85
   },
   "records": [
@@ -25601,6 +25601,62 @@
       "writer": "repo",
       "path": "bin/estate-fleet",
       "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/estate-fleet-telegram",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "Law 0 door of fleet comms: the inbox delivered to the founder's phone, not the laptop speaker.",
+      "contract": {
+        "inputs": [
+          "--pipe"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-fleet-telegram",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-fleet",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-founder",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
