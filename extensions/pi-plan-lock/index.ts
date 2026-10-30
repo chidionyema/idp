@@ -130,6 +130,25 @@ export default function (pi: ExtensionAPI) {
       // the in-process gate still refuses work without a declaration, and the door records the
       // work it could not attribute.
     }
+    // The session's own ledger. Its EXISTENCE is how the estate's door knows this session's
+    // adapter is live: a session with a ledger and no plan is refused at the door; a session
+    // without one (an adapter that is not installed yet) is allowed and recorded, because a
+    // fence a correct machine cannot satisfy is an outage, not a gate.
+    try {
+      mkdirSync(LEDGER_DIR, { recursive: true });
+      appendFileSync(
+        path.join(LEDGER_DIR, `${sessionId}.jsonl`),
+        `${JSON.stringify({
+          at: Date.now() / 1000,
+          session: sessionId,
+          tool: "session_start",
+          args: {},
+        })}\n`,
+      );
+    } catch {
+      // The ledger is the door's view of this session. Without it the door cannot enforce
+      // here; the in-process gate still refuses undeclared work.
+    }
   });
 
   const ledgerAppend = (tool: string, args: unknown) => {
