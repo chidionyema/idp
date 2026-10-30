@@ -1,0 +1,123 @@
+# The founder surfaces and the critical services: the machine-readable inventory.
+#
+# WHAT THIS FILE IS FOR (2026-10-30).
+#
+# The estate has one gate for the paths only the founder may change: `bin/idp-ci-guarded-paths`,
+# which refuses a change to `.githooks/`, `bin/idp-auth`, `bin/idp-guarded-paths`,
+# `bin/idp-ci-guarded-paths` and the kyverno/otel policy without a founder signature. That list
+# is deliberately tiny -- seven entries -- because a founder signature is an expensive authority to
+# spend on every edit.
+#
+# Everything ELSE that can hurt the founder has no gate at all. The Fleet surface, the voice
+# engine, the executor door, the merge lane, the router and the deployment manifests can all be
+# changed by any agent that holds a claim, and the only review is the one an agent remembers to
+# run. That is the gap this inventory names.
+#
+# WHY IT IS A FILE AND NOT A PARAGRAPH. A paragraph cannot be diffed, so it cannot be gated, and
+# a gate that reads its own list from the tree it is judging can be weakened in the same diff it
+# weakens. This file is read from the BASE ref (origin/main) by the gate, never from the
+# workspace under judgement -- the same rule `bin/diff-intake` uses for
+# `policy/agent-diff-forbidden.txt`.
+#
+# HOW TO READ IT.
+#   kind: founder_surface  -- the founder touches it directly; a change here changes what the
+#                            founder sees, says to, or is asked to decide.
+#   kind: critical_service -- the estate's machinery; a change here can break every other agent
+#                            as well as the founder.
+#   paths: glob patterns. `dir/**` matches everything under `dir`. A pattern with no wildcard
+#          matches that exact path only. A pattern naming a directory matches the directory and
+#          everything under it.
+#
+# WHAT IS DELIBERATELY NOT HERE: anything an agent changes every day. This list is a critical
+# set, not a wish list. A path earns its place here only if it can take the founder's surfaces
+# down, or the founder's authority down, on its own.
+version: 1
+
+surfaces:
+  - id: fleet-surface
+    kind: founder_surface
+    reason: >-
+      /fleet is the founder's primary work surface: claims, runs, proofs and decisions are read
+      there. A change here changes what the founder believes is true.
+    paths:
+      - backstage/packages/app/src/modules/room/**
+      - backstage/packages/app/public/face/**
+      - backstage/plugins/fleetview-backend/**
+
+  - id: voice-surface
+    kind: founder_surface
+    reason: >-
+      Voice is the estate's primary interface: the founder speaks to it and hears it back. The
+      canonical engine is useEstateVoice, and the chrome extension and the SDK are the far end
+      of the same surface.
+    paths:
+      - packages/voice/**
+      - packages/sdk-py/fleetview_voice/**
+      - packages/chrome-extension/**
+      - factory/surfaces/voice.py
+
+  - id: founder-decision-door
+    kind: founder_surface
+    reason: >-
+      The founder decision door is the estate's one authority channel. A change here is a change
+      to what "the founder said yes" means, so it is the highest-value target in this repository.
+    paths:
+      - sovereign/otto/**
+      - bin/founder-decision
+
+  - id: executor-door
+    kind: critical_service
+    reason: >-
+      The executor is the only door every agent's work passes through. It is also the door that
+      holds the plan gate, the refusals and the friction ledger, so a change here changes what
+      the estate is willing to do.
+    paths:
+      - mcp/plugins/**
+      - platform/executor/**
+
+  - id: merge-lane
+    kind: critical_service
+    reason: >-
+      Greenlane is the only path to main. A change here can land anything, including itself.
+    paths:
+      - greenlane/**
+      - .github/workflows/**
+
+  - id: governance
+    kind: critical_service
+    reason: >-
+      The laws, the registry, the spec ledger and the policy files are what make the estate's
+      rules rules rather than suggestions. Note that `.githooks/` and the founder-signature
+      tooling are already guarded by a founder signature; they appear here as well because the
+      REVIEW requirement is different from the SIGNATURE requirement and both apply.
+    paths:
+      - platform/estate/governance/**
+      - platform/estate/intents/**
+      - policy/**
+      - .githooks/**
+      - bin/idp-auth
+      - bin/idp-guarded-paths
+      - bin/idp-ci-guarded-paths
+      - bin/claim-gate
+      - docs/keys/**
+
+  - id: routing
+    kind: critical_service
+    reason: >-
+      The router decides which model answers, and the cloud route is the default while the
+      laptop route is the fallback. A change here can move the estate's spend and its
+      behaviour at once.
+    paths:
+      - llm/**
+      - litellm-local/**
+
+  - id: deployment
+    kind: critical_service
+    reason: >-
+      Cluster manifests, the Helm charts and the scheduler decide what runs in production. Flux
+      converges on them, so a bad one lands without a human in the loop.
+    paths:
+      - deploy/**
+      - clusters/**
+      - scheduler/**
+      - installer/**
