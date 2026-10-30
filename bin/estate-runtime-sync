@@ -23,10 +23,26 @@ EACH RUN
      from what it runs -> copy them in, restart it, and keep them only if the router comes back AND
      voice's /readyz is at least as ready as before; otherwise put the previous bytes back. Its
      launcher and keys are never touched.
+  4c. the executor daemon -- the agent's command door -- is restarted when its bytes change (the
+     daemon, the plugin it imports, the plan module, the intent executor, the pi adapters) and is
+     then asked, on its own UNIX socket, whether it came back. It was never restarted here before
+     2026-10-30, so a landed fix waited for a human to kickstart it.
+  4d. the installed pi extensions are refreshed from main's bytes, file by file, and only for an
+     extension the host already has. Drift that is NOT acted on -- an extension on main that is not
+     installed here, an installed extension that is not on main -- is reported, because installing
+     a new extension changes what pi does and is the founder's call.
   5. a restarted service that does not come back -> check out the previous commit, restart again,
      and alert (~/.estate/alerts/inbox.jsonl + a notification). Main never takes /fleet down; that
      commit is remembered in ~/.estate/runtime-sync.bad and not tried again until main moves on.
+  6. the state of the convergence is written to ~/.estate/runtime-sync.status.json and can be asked
+     for with `bin/estate-runtime-sync --status`: is the tree on main, did the last run succeed,
+     and was this job skipped instead of run.
 One line per run in ~/.estate/runtime-sync.log.
+
+THE GIT CALLS ARE ISOLATED from the founder's global and system config (GIT_CONFIG_GLOBAL and
+GIT_CONFIG_SYSTEM point at /dev/null). The global config rewrites ssh GitHub URLs to https, so a
+sync that inherited it fetched over a transport it was not written for, invisibly. The founder's
+config is never edited; the sync's own calls simply do not read it.
 """
 
 import filecmp
@@ -34,6 +50,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -44,7 +61,46 @@ from pathlib import Path
 HOME = Path.home()
 STATE = HOME / ".estate"
 TREE = Path(os.environ.get("ESTATE_RUNTIME_TREE") or STATE / "runtime/idp")
-REMOTE = os.environ.get("ESTATE_RUNTIME_REMOTE", "git@github.com:chidionyema/idp.git")
+# THE REMOTE IS NORMALISED, ALWAYS. The founder's global git config rewrites ssh GitHub
+# URLs to https (url.https://github.com/.insteadof, measured 2026-10-30), so a sync that
+# inherits it fetches over a different transport than the one it was written for, with a
+# credential it may not have -- and the rewrite is invisible in the sync's own output. The
+# ssh form names the port explicitly (ssh://git@github.com:443/...): the founder's
+# ~/.ssh/config already points github.com at ssh.github.com:443, and :22 is not open.
+SSH_REMOTE = "ssh://git@github.com:443/chidionyema/idp.git"
+
+
+def normalise_remote(url: str) -> str:
+    """The canonical ssh form of a GitHub remote. An https remote is left alone."""
+    m = re.match(r"^git@github\.com:(?P<p>.+)$", url)
+    if m:
+        return f"ssh://git@github.com:443/{m.group('p')}"
+    m = re.match(r"^ssh://git@github\.com/(?P<p>.+)$", url)
+    if m:
+        return f"ssh://git@github.com:443/{m.group('p')}"
+    return url
+
+
+REMOTE = normalise_remote(os.environ.get("ESTATE_RUNTIME_REMOTE") or SSH_REMOTE)
+# Git isolation: the sync's own git calls never read the founder's global or system config.
+# The rewrite above lives in the global config, so this is what keeps it from applying.
+GIT_ISOLATION = {
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_SYSTEM": "/dev/null",
+    "GIT_CONFIG_NOSYSTEM": "1",
+}
+
+
+def git_env(extra=None) -> dict:
+    """The environment every git call of this script runs in: isolated from the founder's
+    config, no prompts, ssh that cannot hang on a password."""
+    env = dict(os.environ)
+    env.update(GIT_ISOLATION)
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env.setdefault("GIT_SSH_COMMAND", "ssh -o BatchMode=yes -o ConnectTimeout=20")
+    if extra:
+        env.update(extra)
+    return env
 # The live board's data; the tree links to it, never copies it.
 DATA = HOME / "Documents/code/idp/catalog"
 LOG, INBOX = STATE / "runtime-sync.log", STATE / "alerts/inbox.jsonl"
@@ -74,6 +130,13 @@ LAUNCHERS = [
     "voice-router-launchd",
     "voice-watch",
     "estate-runtime-sync",
+    # The launchd wrapper that runs a gated job only if the machine can take it. It was
+    # hand-installed by the fleet conversion, so the estate could not see what it did:
+    # a skip became exit 0, launchd reported success, and the job had not run at all
+    # (measured 2026-10-30: 83 runs reported green, every one of them skipped). The
+    # wrapper is in the repository now, so the sync stages it and the skip it records
+    # names the command it refused.
+    "load-gate-and-run",
     "fleetview-frontend-launchd",
     # The progress writer is a command the surfaces call, not a daemon: it lives in ~/.estate/bin
     # so `estate-progress` and the estate.progress intent find the SAME bytes main carries,
@@ -122,11 +185,7 @@ BACKEND_PATHS = (
 
 
 def git(*args: str, check: bool = True, tree: Path = TREE) -> str:
-    env = dict(
-        os.environ,
-        GIT_TERMINAL_PROMPT="0",
-        GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=20",
-    )
+    env = git_env({"GIT_SSH_COMMAND": "ssh -o BatchMode=yes -o ConnectTimeout=20"})
     r = subprocess.run(
         ["git", "-C", str(tree), *args],
         capture_output=True,
@@ -171,10 +230,31 @@ def ensure_tree() -> None:
         ],
         check=True,
         timeout=600,
-        env=dict(os.environ, GIT_SSH_COMMAND="ssh -o BatchMode=yes"),
+        env=git_env({"GIT_SSH_COMMAND": "ssh -o BatchMode=yes"}),
     )
     git("sparse-checkout", "set", "--no-cone", *SPARSE)
     git("checkout", "-q", "--detach", "origin/main")
+
+
+def normalise_origin(tree: Path = TREE) -> str:
+    """Point the tree's origin at the canonical remote, whatever it was cloned as.
+
+    The tree was cloned with `git@github.com:...`, which the founder's global config
+    rewrote to https; the stored origin therefore named a transport the sync does not
+    intend to use. The remote is corrected here, in the tree, without touching the
+    founder's config.
+    """
+    try:
+        current = git("remote", "get-url", "origin", tree=tree)
+    except RuntimeError:
+        current = ""
+    if current == REMOTE:
+        return ""
+    if current:
+        git("remote", "set-url", "origin", REMOTE, tree=tree)
+    else:
+        git("remote", "add", "origin", REMOTE, tree=tree)
+    return f"origin {(current or '(unset)')} -> {REMOTE}"
 
 
 def link_data() -> None:
@@ -233,6 +313,9 @@ def stage() -> list[str]:
             (STATE / "bin" / name).exists()
             and filecmp.cmp(f, STATE / "bin" / name, False)
         ):
+            # the destination may not exist yet: a sync must not crash on a missing
+            # ~/.estate/bin, it must fill it
+            (STATE / "bin").mkdir(parents=True, exist_ok=True)
             shutil.copy2(f, STATE / "bin" / name)
             (STATE / "bin" / name).chmod(0o755)
             notes.append(f"bin/{name}")
@@ -258,6 +341,53 @@ def answers(url: str, within_s: int) -> bool:
             pass
         time.sleep(2)
     return False
+
+
+# THE EXECUTOR IS A SERVICE TOO. platform/executor/daemon.py serves ~/.estate/executor.sock
+# and every governed command an agent runs goes through it. It runs from the runtime tree,
+# so a change to the tree's daemon, plugin, plan module or intent executor is only live
+# once the daemon is restarted -- and the sync did not restart it at all until 2026-10-30,
+# so a landed fix waited for a human to kickstart it. A door that serves the bytes from
+# before the fix is a door that is not enforced.
+EXECUTOR_LABEL = "ai.estate.executor"
+EXECUTOR_SOCKET = Path(os.environ.get("ESTATE_EXECUTOR_SOCKET") or STATE / "executor.sock")
+
+
+def socket_answers(path: Path, within_s: int, verb: str = "health") -> bool:
+    """Ask the executor daemon, on its own UNIX socket, whether it is alive.
+
+    The daemon answers one newline-delimited JSON request; `{"verb": "health"}` replies
+    with {"ok": true, ...}. It is not an HTTP service and there is no HTTP health endpoint,
+    so the probe is the socket itself. Anything that is not a parsed {"ok": true} is not
+    an answer: a half-written reply is not health.
+    """
+    end = time.time() + within_s
+    while time.time() < end:
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                s.settimeout(10)
+                s.connect(str(path))
+                s.sendall((json.dumps({"verb": verb}) + "\n").encode())
+                buf = b""
+                while b"\n" not in buf:
+                    chunk = s.recv(65536)
+                    if not chunk:
+                        break
+                    buf += chunk
+            reply = json.loads(buf.decode("utf-8", "replace").strip().splitlines()[0])
+            if reply.get("ok") is True:
+                return True
+        except (OSError, ValueError, IndexError):
+            pass
+        time.sleep(2)
+    return False
+
+
+def service_answers(kind: str, probe: str, wait: int) -> bool:
+    """One probe, two kinds: an HTTP endpoint, or the executor's UNIX socket."""
+    if kind == "unix":
+        return socket_answers(Path(probe), wait)
+    return answers(probe, wait)
 
 
 # The laptop router (com.estate.litellm-local). Only its modules follow main: the live launcher is the
@@ -502,7 +632,7 @@ def alert(text: str) -> None:
 
 
 SERVICES = [
-    # (label, what changes it, probe, seconds to come back)
+    # (label, what changes it, probe, seconds to come back, how to probe it)
     (
         "ai.estate.voice-router",
         # its launcher too: it is what fetches missing speech models, and only runs on a restart
@@ -511,6 +641,7 @@ SERVICES = [
         # a start may first fetch 210 MB of speech models (bin/voice-router-launchd): at 90 s the
         # first such start was judged broken and rolled back while the download was still running
         600,
+        "http",
     ),
     (
         "ai.estate.fleetview-backend",
@@ -518,8 +649,34 @@ SERVICES = [
         (*BACKEND_PATHS, "bin/fleetview-launchd"),
         "http://127.0.0.1:18790/healthz",
         90,
+        "http",
+    ),
+    (
+        EXECUTOR_LABEL,
+        # the daemon's own code, the plugin it imports, the plan module it gates on, the
+        # intent executor it runs, and the pi adapters that call it
+        (
+            "platform/executor/",
+            "mcp/plugins/",
+            "platform/estate/bin/",
+            "platform/estate/memory/",
+            "extensions/",
+            "bin/estate-memory-",
+        ),
+        str(EXECUTOR_SOCKET),
+        90,
+        "unix",
     ),
 ]
+
+
+def services_for(changed: list, force: bool = False) -> list:
+    """The services a set of changed paths demands a restart of."""
+    out = []
+    for label, paths, _probe, _wait, _kind in SERVICES:
+        if force or any(p.startswith(paths) for p in changed):
+            out.append(label)
+    return out
 
 
 def sync_frontend(sha: str) -> list[str]:
@@ -539,9 +696,11 @@ def sync_frontend(sha: str) -> list[str]:
             ],
             check=True,
             timeout=900,
+            env=git_env({"GIT_SSH_COMMAND": "ssh -o BatchMode=yes"}),
         )
         git("sparse-checkout", "set", "--no-cone", "/backstage/", tree=FRONTEND)
         git("checkout", "-q", "--detach", sha, tree=FRONTEND)
+    normalise_origin(FRONTEND)
     was = git("rev-parse", "HEAD", tree=FRONTEND)
     if was == sha and not fresh:
         return []
@@ -584,12 +743,158 @@ def sync_frontend(sha: str) -> list[str]:
     return [f"frontend ROLLED BACK to {was[:8]}"]
 
 
+# WHAT ANYBODY ASKS: `bin/estate-runtime-sync --status`. A convergence job that cannot say
+# whether it converged is a job that is silently stuck: launchd reported "last exit code = 0"
+# for 83 runs while the load gate had skipped every one of them (measured 2026-10-30) and the
+# tree sat on an old commit. The status answers the three questions the log could not: is the
+# tree on main, did the last run succeed, and was this job skipped instead of run.
+STATUS = STATE / "runtime-sync.status.json"
+SKIP_LOG = STATE / "logs/load-gate-skips.log"
+INTERVAL_S = 300
+# pi loads its extensions from here, not from the runtime tree: a separate installed artifact.
+PI_EXTENSIONS = HOME / ".pi/agent/extensions"
+
+
+def iso(ts: float) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
+
+
+def skipped_since(marker: str, command: str) -> list:
+    """The skips the load gate recorded against `command` since `marker` (an ISO timestamp).
+
+    The gate logs the skip against ITSELF, not against the command it refused, so a skipped
+    job could not be named and a starved job looked exactly like a healthy one. The
+    repository-managed wrapper (bin/load-gate-and-run) records the command it refused; this
+    reads what it wrote.
+    """
+    if not SKIP_LOG.exists():
+        return []
+    out = []
+    try:
+        lines = SKIP_LOG.read_text(errors="replace").splitlines()
+    except OSError:
+        return []
+    for line in lines:
+        if " skip " not in line or command not in line:
+            continue
+        if marker and line.split(" ", 1)[0] <= marker:
+            continue
+        out.append(line)
+    return out
+
+
+def previous_status() -> dict:
+    try:
+        data = json.loads(STATUS.read_text())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def write_status(payload: dict) -> None:
+    STATUS.parent.mkdir(parents=True, exist_ok=True)
+    STATUS.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+
+def read_status() -> dict:
+    """The convergence state, read live. A status reader that raises is a status reader nobody
+    reads, so every failure here is a value, not an exception."""
+    data = previous_status()
+    last_success = data.get("last_success") or 0
+    try:
+        last_success = float(last_success)
+    except (TypeError, ValueError):
+        last_success = 0.0
+    marker = iso(last_success) if last_success else ""
+    skips = skipped_since(marker, "estate-runtime-sync")
+    now = time.time()
+    tree_head = data.get("tree_head") or ""
+    origin_main = data.get("origin_main") or ""
+    stale = bool(tree_head and origin_main and tree_head != origin_main)
+    starved = bool(last_success) and (now - last_success) > 2 * INTERVAL_S
+    return {
+        "last_run": data.get("last_run"),
+        "last_success": last_success or None,
+        "last_success_iso": marker,
+        "last_line": data.get("last_line", ""),
+        "tree_head": tree_head,
+        "origin_main": origin_main,
+        "stale": stale,
+        "starved": starved,
+        "never_ran": not last_success,
+        "skipped_since_last_success": len(skips),
+        "last_skip": skips[-1] if skips else "",
+        "services": data.get("services", {}),
+        "pi_extensions": data.get("pi_extensions", {}),
+        "notes": data.get("notes", []),
+        "ok": bool(data.get("ok")),
+        "converged": bool(
+            data.get("ok") and not stale and not starved and not skips and tree_head
+        ),
+    }
+
+
+def sync_pi_extensions() -> tuple:
+    """Refresh the installed pi extensions from main's bytes.
+
+    A pi extension is a SEPARATE installed artifact from the runtime tree: the tree carries
+    main's bytes, but pi loads the copy under ~/.pi/agent/extensions. A fix that lands in
+    main and reaches the tree has still not reached pi (measured 2026-10-30: the installed
+    estate-capabilities adapter was a month old and sent no session identity, so the plan
+    gate had nothing to enforce at the door).
+
+    Only an extension the host ALREADY has is refreshed, file by file, and only when the
+    bytes differ. Nothing is installed that the host did not ask for -- installing a new
+    extension changes what pi does, and that is the founder's call -- and nothing is
+    deleted: drift is REPORTED, not acted on.
+    """
+    src_root = TREE / "extensions"
+    if not src_root.is_dir() or not PI_EXTENSIONS.is_dir():
+        return [], {}
+    changed = []
+    for ext in sorted(p for p in src_root.iterdir() if p.is_dir()):
+        dst = PI_EXTENSIONS / ext.name
+        if not dst.is_dir():
+            continue
+        for f in sorted(ext.rglob("*")):
+            if not f.is_file():
+                continue
+            rel = f.relative_to(ext)
+            target = dst / rel
+            if target.exists() and filecmp.cmp(f, target, False):
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(f, target)
+            changed.append(f"{ext.name}/{rel}")
+    on_main = sorted(p.name for p in src_root.iterdir() if p.is_dir())
+    installed = sorted(p.name for p in PI_EXTENSIONS.iterdir() if p.is_dir())
+    not_installed = [n for n in on_main if n not in installed]
+    not_on_main = [n for n in installed if n not in on_main]
+    notes = []
+    if changed:
+        shown = ", ".join(changed[:6]) + ("..." if len(changed) > 6 else "")
+        notes.append(f"pi extensions +{len(changed)} ({shown})")
+    if not_installed:
+        notes.append(f"pi extensions on main, not installed here: {', '.join(not_installed)}")
+    if not_on_main:
+        notes.append(f"pi extensions installed, not on main: {', '.join(not_on_main)}")
+    return notes, {
+        "refreshed": changed,
+        "on_main": on_main,
+        "installed": installed,
+        "on_main_not_installed": not_installed,
+        "installed_not_on_main": not_on_main,
+    }
+
+
 def main() -> int:
     ensure_tree()
     scrubbed = scrub_tree()
+    origin_note = normalise_origin()
     before = git("rev-parse", "HEAD")
     git("fetch", "-q", "origin", "main")
-    after = git("rev-parse", "origin/main")
+    origin_main = git("rev-parse", "origin/main")
+    after = origin_main
     if BAD.exists() and BAD.read_text().strip() == after:
         after = before
     changed = (
@@ -601,28 +906,34 @@ def main() -> int:
         git("checkout", "-q", "--force", "--detach", after)
     link_data()
     notes = ([scrubbed] if scrubbed else []) + stage()
+    if origin_note:
+        notes.append(origin_note)
     force = sys.argv[1:] == ["--restart"]
     broke = []
-    for label, paths, probe, wait in SERVICES:
+    services: dict = {}
+    for label, paths, probe, wait, kind in SERVICES:
         if not (force or any(p.startswith(paths) for p in changed)):
             continue
         if label == "ai.estate.voice-router" and not build_voice_router():
             broke.append(f"{label}: build failed, previous binary kept")
+            services[label] = False
             continue
         kickstart(label)
-        if answers(probe, wait):
+        if service_answers(kind, probe, wait):
             notes.append(f"restarted {label}")
+            services[label] = True
         else:
             broke.append(label)
+            services[label] = False
     if broke and after != before:
         git("checkout", "-q", "--detach", before)
         stage()
-        for label, _, probe, wait in SERVICES:
+        for label, _, probe, wait, kind in SERVICES:
             if label in broke:
                 if label == "ai.estate.voice-router":
                     build_voice_router()
                 kickstart(label)
-                answers(probe, wait)
+                services[label] = service_answers(kind, probe, wait)
         BAD.write_text(after)
         alert(f"main {after[:8]} broke {', '.join(broke)}; rolled back to {before[:8]}")
         notes.append(f"ROLLED BACK to {before[:8]}")
@@ -647,15 +958,42 @@ def main() -> int:
         IndexError,
     ) as exc:
         notes.append(f"frontend sync failed: {exc}")
+    try:
+        pi_notes, pi_state = sync_pi_extensions()
+        notes += pi_notes
+    except OSError as exc:
+        pi_notes, pi_state = [], {}
+        notes.append(f"pi extension refresh failed: {exc}")
     stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     line = f"{stamp} {before[:8]}->{after[:8]} changed={len(changed)} {'; '.join(notes) or 'nothing to do'}"
     with LOG.open("a") as f:
         f.write(line + ("; BROKE " + ", ".join(broke) if broke else "") + "\n")
+    now = time.time()
+    previous = previous_status()
+    tree_head = git("rev-parse", "HEAD")
+    write_status(
+        {
+            "last_run": now,
+            "last_success": now if not broke else previous.get("last_success", 0),
+            "last_line": line,
+            "tree_head": tree_head,
+            "origin_main": origin_main,
+            "stale": bool(broke) or tree_head != origin_main,
+            "services": services,
+            "pi_extensions": pi_state,
+            "notes": notes,
+            "ok": not broke,
+        }
+    )
     print(line)
     return 1 if broke else 0
 
 
 if __name__ == "__main__":
+    if "--status" in sys.argv[1:]:
+        state = read_status()
+        print(json.dumps(state, indent=2, sort_keys=True))
+        raise SystemExit(0 if state.get("converged") else 1)
     crashed = STATE / "runtime-sync.crash"
     try:
         code = main()
@@ -666,6 +1004,16 @@ if __name__ == "__main__":
         if not crashed.exists() or crashed.read_text() != why:
             crashed.write_text(why)
             alert(why)
+        previous = previous_status()
+        write_status(
+            {
+                "last_run": time.time(),
+                "last_success": previous.get("last_success", 0),
+                "ok": False,
+                "error": why,
+                "notes": [why],
+            }
+        )
         raise
     crashed.unlink(missing_ok=True)
     raise SystemExit(code)

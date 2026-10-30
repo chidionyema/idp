@@ -1,0 +1,43 @@
+#!/bin/sh
+# Launchd wrapper: run the command only if ~/.estate/bin/load-gate allows.
+#
+# WHY THIS FILE IS IN THE REPOSITORY (2026-10-30). The fleet conversion installed this
+# wrapper by hand, so the estate could not see what it did. The consequence was a silent
+# starvation: the load gate skipped the runtime sync on every tick (measured 2026-10-30
+# 13:11:56Z, load=492.74 against a max of 12), the wrapper turned the skip into exit 0, and
+# launchd reported "last exit code = 0" for a job that had not run at all -- 83 runs, every
+# one of them skipped. The runtime tree stayed on an old commit and nobody could tell,
+# because the gate recorded the skip against ITSELF, not against the command it refused.
+#
+# WHAT IT DOES NOW.
+#   * a skip is recorded WITH THE COMMAND, in ~/.estate/logs/load-gate-skips.log, so a
+#     starved job can be named. `bin/estate-runtime-sync --status` reads that log and says
+#     how many times this job was skipped since it last ran.
+#   * a MISSING gate runs the command (fail open: a missing gate must never disable the
+#     fleet). The hand-installed wrapper exited 0 without running anything, which silently
+#     disabled every gated job on the machine.
+#   * a skip still exits 0, so launchd keeps its cadence instead of retrying a skipped job
+#     every few seconds. The skip is not hidden by that exit code: it is on disk, and the
+#     status says so.
+GATE="$HOME/.estate/bin/load-gate"
+SKIPLOG="$HOME/.estate/logs/load-gate-skips.log"
+
+stamp() { date -u +%FT%TZ; }
+
+record() {
+    mkdir -p "$(dirname "$SKIPLOG")" 2>/dev/null || return 0
+    printf '%s %s %s\n' "$(stamp)" "$1" "$*" >>"$SKIPLOG" 2>/dev/null || true
+}
+
+if [ ! -x "$GATE" ]; then
+    record no-gate "$@"
+    exec "$@"
+fi
+
+"$GATE"
+rc=$?
+if [ "$rc" != "0" ]; then
+    record skip "$@"
+    exit 0
+fi
+exec "$@"
