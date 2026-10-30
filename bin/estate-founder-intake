@@ -61,7 +61,7 @@ def main(argv: list[str]) -> int:
             print(json.dumps({"repeat": hit}, indent=2, default=str))
         else:
             if hit:
-                print(f"REPEAT  similarity={hit.get('similarity'):.2f}  {hit.get('text','')[:120]}")
+                print(f"REPEAT  similarity={hit['score']:.2f}  {hit['earlier'].get('text','')[:120]}")
             else:
                 print("no repeat found")
         return 0 if not hit else 2
