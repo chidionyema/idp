@@ -26,19 +26,30 @@ description: >
   estate's card post a line message too, and the founder gets exactly ONE message per
   decision. With `bus` false the door's own message and the founder's comment are the record.
 
-  TO READ A DECISION BACK: pass `--decision-id` with no `--question`.
+  TO READ A DECISION BACK: pass `decision_id` (the id the ask returned) and no question.
+
+  WHY THE ARGUMENTS LOOK LIKE THIS (2026-10-30, issue #7537). The executor substitutes every
+  argument into the step as a SHELL-QUOTED value, and an unset argument is substituted as the two
+  characters `''`. So `[ -n "{{decision_id}}" ]` is TRUE for an unset argument -- it is the two
+  characters inside the quotes, not an empty string. The previous template guarded its read-back
+  branch with exactly that test, so EVERY ask was swallowed by the read-back branch and the door
+  answered `no decision ''`; the ask path was unreachable and the door had never asked anything.
+  Every argument that is branched on therefore carries an explicit sentinel default (`-`) and an
+  absolute path default, and no branch tests for emptiness. A question that is absent is REFUSED
+  loudly, never asked as an empty question.
 args:
-  question:    {type: string, default: "", description: "The decision, in one sentence."}
+  question:    {type: string, default: "-", description: "The decision, in one sentence. '-' is absent and is refused."}
   options:     {type: string, default: "", description: "Up to 5 options, \"key: label, key2: label2\"."}
   context:     {type: string, default: "", description: "Up to 5 links (issue / PR / lane), comma separated."}
   deadline_min: {type: string, default: "60", description: "Minutes the founder has before the decision expires."}
   requester:   {type: string, default: "", description: "Who is asking, e.g. \"pi @ idp\"."}
-  decision_id: {type: string, default: "", description: "Read this decision back instead of asking a new one."}
+  decision_id: {type: string, default: "-", description: "Read this decision back instead of asking a new one. '-' means ask."}
   wait:        {type: string, default: "0", description: "Seconds to wait for the founder's answer (0 = return the id at once)."}
   take_webhook: {type: string, default: "false", description: "true: hold the bot's updates while this decision is live (only when the estate's own reader is unreachable)."}
   bus: {type: string, default: "false", description: "true: also open a bus session for the decision (the estate's card then posts a line message as well)."}
-  repo:        {type: string, default: "~/Documents/code/idp", description: "Repo holding bin/founder-decision."}
-  state:       {type: string, default: "", description: "Path of the decision state file (default ~/.estate/sovereign/decisions.json)."}
+  repo:        {type: string, default: "/Users/roseonyema/Documents/code/idp", description: "Repo the sovereign bus session runs in (absolute: a tilde is not expanded inside the quoted substitution)."}
+  tool_repo:   {type: string, default: "/Users/roseonyema/.estate/runtime/idp", description: "Checkout that carries bin/founder-decision; the estate runtime is always on main."}
+  state:       {type: string, default: "/Users/roseonyema/.estate/sovereign/decisions.json", description: "Path of the decision state file."}
 # One Bot API call plus a bounded wait: the wait is the caller's choice and the executor's
 # own ceiling bounds it. Silence inside that window is `expired`, never a yes.
 door_s: 95
@@ -47,14 +58,23 @@ steps:
   - name: decision
     cmd: |
       set -euo pipefail
-      if [ -n "{{decision_id}}" ]; then
-        python3 {{repo}}/bin/founder-decision --repo {{repo}} show --decision-id "{{decision_id}}"
+      TOOL="{{tool_repo}}/bin/founder-decision"
+      if [ ! -f "$TOOL" ]; then
+        echo "founder.decision: no bin/founder-decision at $TOOL" >&2
+        exit 2
+      fi
+      if [ "{{decision_id}}" != "-" ]; then
+        python3 "$TOOL" --repo "{{repo}}" show --decision-id "{{decision_id}}"
         exit 0
+      fi
+      if [ "{{question}}" = "-" ]; then
+        echo "founder.decision: question is required; refusing to ask an empty question" >&2
+        exit 2
       fi
       args=(ask --question "{{question}}" --options "{{options}}" --context "{{context}}")
       args+=(--deadline-min "{{deadline_min}}" --requester "{{requester}}")
-      if [ "{{wait}}" != "0" ] && [ -n "{{wait}}" ]; then args+=(--wait "{{wait}}"); fi
+      if [ "{{wait}}" != "0" ]; then args+=(--wait "{{wait}}"); fi
       if [ "{{take_webhook}}" = "true" ]; then args+=(--take-webhook); fi
       if [ "{{bus}}" = "true" ]; then args+=(--bus); fi
-      if [ -n "{{state}}" ]; then args+=(--state "{{state}}"); fi
-      python3 {{repo}}/bin/founder-decision --repo {{repo}} "${args[@]}"
+      args+=(--state "{{state}}")
+      python3 "$TOOL" --repo "{{repo}}" "${args[@]}"
