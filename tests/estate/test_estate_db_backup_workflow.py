@@ -26,7 +26,10 @@ What each test is for:
   * a copy that collapsed against the previous receipt is refused;
   * a failed copy upload writes NO receipt -- a receipt without a copy is a lie;
   * the receipt says how old the data is, so a fresh stamp cannot pass for fresh data;
-  * the workflow is thin, governed, and runs the script rather than reimplementing it.
+  * the workflow is thin, governed, and runs the script rather than reimplementing it;
+  * PostgreSQL is started explicitly, because the copy image has no entrypoint of its own and the
+    first governed run died on exactly that ("Failed to initialize container ...");
+  * a container that never answers fails with the container's own logs, not with a bare timeout.
 
 These fail against a script that uploads the receipt first, publishes a truncated dump, ignores
 the previous receipt's size, or writes the receipt after a failed upload.
@@ -106,6 +109,42 @@ if args[:3] == ["os", "object", "put"]:
     sys.exit(0)
 
 sys.stderr.write("fake oci: unsupported call %r\\n" % (args,))
+sys.exit(2)
+'''
+
+
+FAKE_DOCKER = '''#!/usr/bin/env python3
+"""A fake `docker`: records what it was asked to do, and answers like a container that (or does
+not) start."""
+import os, sys
+
+args = sys.argv[1:]
+mode = os.environ.get("FAKE_DOCKER_MODE", "ok")
+log = os.environ.get("FAKE_DOCKER_LOG")
+if log:
+    with open(log, "a") as fh:
+        fh.write(" ".join(args) + "\\n")
+
+cmd = args[0] if args else ""
+if cmd == "run":
+    print("cafecafecafe")
+    sys.exit(0)
+if cmd == "rm":
+    sys.exit(0)
+if cmd == "inspect":
+    print("true")
+    sys.exit(0)
+if cmd == "ps":
+    print("cafecafecafe")
+    sys.exit(0)
+if cmd == "logs":
+    sys.stdout.write("fake container log line\\n")
+    sys.exit(0)
+if cmd == "exec":
+    if "pg_isready" in args:
+        sys.exit(0 if mode == "ok" else 1)
+    sys.exit(0)
+sys.stderr.write("fake docker: unsupported call %r\\n" % (args,))
 sys.exit(2)
 '''
 
@@ -290,6 +329,66 @@ def test_a_failed_copy_upload_writes_no_receipt(tmp_path: Path) -> None:
     assert not (tmp_path / "bucket" / "estate-db" / "latest.json").exists()
 
 
+def _run_docker(
+    tmp_path: Path,
+    args: list[str],
+    *,
+    mode: str = "ok",
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess:
+    binary = tmp_path / "docker"
+    binary.write_text(FAKE_DOCKER)
+    binary.chmod(0o755)
+    log = tmp_path / "docker.log"
+    full_env = dict(os.environ)
+    full_env.update(
+        {
+            "PATH": f"{tmp_path}:{full_env['PATH']}",
+            "FAKE_DOCKER_MODE": mode,
+            "FAKE_DOCKER_LOG": str(log),
+        }
+    )
+    full_env.update(env or {})
+    return subprocess.run(
+        ["bash", str(SCRIPT), *args],
+        capture_output=True,
+        text=True,
+        env=full_env,
+        timeout=120,
+    )
+
+
+def test_the_container_is_started_explicitly_because_the_image_has_no_entrypoint(
+    tmp_path: Path,
+) -> None:
+    """MEASURED 2026-10-30: the copy image's config is Entrypoint null, Cmd ["bash"], User
+    postgres -- it is built for the CloudNativePG operator. A service container is given no
+    command, so it ran bash, read EOF and exited: the first governed run never started a
+    PostgreSQL. The startup is ours, and it is initdb then postgres."""
+    cidfile = tmp_path / "pg.cid"
+    result = _run_docker(tmp_path, ["start-container", "estate-db-pg", str(cidfile)])
+    assert result.returncode == 0, result.stderr + result.stdout
+    log = (tmp_path / "docker.log").read_text()
+    assert "run -d --name estate-db-pg" in log, log
+    assert "postgres-partman:18.1-postgres-partman" in log, log
+    assert "initdb -D" in log, log
+    assert "exec postgres -D" in log, log
+    assert cidfile.read_text().strip() == "cafecafecafe"
+    assert "cid=cafecafecafe" in result.stdout, result.stdout
+
+
+def test_a_container_that_never_answers_fails_with_its_own_logs(tmp_path: Path) -> None:
+    result = _run_docker(
+        tmp_path,
+        ["start-container", "estate-db-pg"],
+        mode="broken",
+        env={"PG_READY_TIMEOUT": "2"},
+    )
+    assert result.returncode != 0
+    assert "did not become ready" in (result.stderr + result.stdout)
+    assert "fake container log line" in (result.stderr + result.stdout)
+
+
 def test_the_workflow_is_thin_governed_and_orders_the_steps() -> None:
     workflow = yaml.safe_load(WORKFLOW.read_text())
     job = workflow["jobs"]["backup"]
@@ -297,8 +396,8 @@ def test_the_workflow_is_thin_governed_and_orders_the_steps() -> None:
     uses = [step.get("uses", "") for step in steps]
     assert any("oci-token-exchange-action" in use for use in uses), uses
     assert workflow["permissions"]["id-token"] == "write"
-    assert job["services"]["postgres"]["image"].startswith(
-        "ghcr.io/chidionyema/postgres-partman:18.1-postgres-partman"
+    assert "services" not in job, (
+        "the copy image has no entrypoint, so a service container starts bash and exits"
     )
     names = [step.get("name", "") for step in steps]
     ordered = [
@@ -313,6 +412,8 @@ def test_the_workflow_is_thin_governed_and_orders_the_steps() -> None:
         "publish the copy, then the receipt",
         "the receipt, graded from the backend",
     ], ordered
+    start = next(step for step in steps if "start-container" in step.get("run", ""))
+    assert start["name"].startswith("start PostgreSQL"), start["name"]
     for step in steps:
         run = step.get("run", "")
         if "estate-db-backup.sh" in run:
@@ -323,7 +424,14 @@ def test_the_workflow_is_thin_governed_and_orders_the_steps() -> None:
 
 def test_the_script_owns_the_copy_contract() -> None:
     script = SCRIPT.read_text()
-    for stage in ("select-source", "fetch-source", "restore", "dump", "publish"):
+    for stage in (
+        "select-source",
+        "fetch-source",
+        "start-container",
+        "restore",
+        "dump",
+        "publish",
+    ):
         assert f"\n{stage})" in script, stage
     assert DUMP_MARKER in script
     assert "estate-db/latest.json" in script

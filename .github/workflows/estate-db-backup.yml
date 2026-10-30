@@ -29,6 +29,14 @@
 # and it needs the vector, btree_gin and pg_trgm extensions. This is the estate's own image
 # (platform/estate-db/postgres-partman/Dockerfile): the CNPG 18.1 standard image plus pg_partman,
 # with every extension the dump asks for already in it.
+#
+# WHY POSTGRESQL IS STARTED BY THE SCRIPT AND NOT BY THE RUNNER. MEASURED 2026-10-30: that image
+# has no entrypoint of its own (its config is Entrypoint null, Cmd ["bash"], User postgres) --
+# it is built for the CloudNativePG operator, which supplies the command. A GitHub Actions service
+# container supplies none, so the first run died with "Failed to initialize container
+# ghcr.io/chidionyema/postgres-partman:18.1-postgres-partman" and no PostgreSQL ever started. The
+# copy script therefore starts PostgreSQL itself, explicitly, in that same image (initdb, then
+# postgres), and waits until it answers -- and prints the container's own logs if it does not.
 name: estate-db-backup
 on:
   schedule:
@@ -49,20 +57,6 @@ jobs:
       PG_PASSWORD: estate-backup-ci
       OCI_CLI_AUTH: security_token
       OCI_PROFILE: DEFAULT
-    services:
-      postgres:
-        image: ghcr.io/chidionyema/postgres-partman:18.1-postgres-partman
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: ${{ env.PG_PASSWORD }}
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -81,9 +75,11 @@ jobs:
           oci_region: ${{ vars.OCI_REGION }}
       - name: the tenancy namespace
         run: echo "OCI_OS_NAMESPACE=$(oci os ns get --query data --raw-output)" >>"$GITHUB_ENV"
-      - name: the PostgreSQL container
+      - name: start PostgreSQL in the copy image
         id: pg
-        run: echo "cid=$(docker ps -q --filter ancestor=$PG_IMAGE | head -1)" >>"$GITHUB_OUTPUT"
+        run: |
+          platform/estate-db/backup/estate-db-backup.sh start-container estate-db-pg /tmp/estate-db-pg.cid
+          echo "cid=$(cat /tmp/estate-db-pg.cid)" >>"$GITHUB_OUTPUT"
       - name: fetch the newest surviving dump
         run: |
           mkdir -p /tmp/backup
