@@ -15,6 +15,10 @@ These tests are the two halves of the fix:
   * the door LETS THROUGH the work that makes a plan (reads, the plan tools, memory reads and
     housekeeping), so the estate cannot deadlock behind its own gate (R38).
 
+And the third half, the one that keeps the fence satisfiable: a session whose runtime adapter
+is not installed has no ledger, so the door ALLOWS that work and RECORDS it instead of
+refusing. A gate that refuses a correct machine is an outage, not a gate.
+
 Everything here runs offline: no daemon, no network, no mutation outside a temporary directory.
 """
 
@@ -50,6 +54,10 @@ def contract(tmp_path, monkeypatch):
     assert module is not None, "the door could not load the plan contract"
     monkeypatch.setattr(module, "PLAN_LEDGER_DIR", str(tmp_path / "plans"))
     monkeypatch.setenv("ESTATE_SESSION_ID", "sess-under-test")
+    # The session's adapter is LIVE for this session: it opened the ledger when the session
+    # started. The ledger's existence is what tells the door this session can be enforced
+    # against -- a session whose adapter is not installed has no ledger and is not trapped.
+    module.append_plan_event("sess-under-test", "session_start", {})
     return module
 
 
@@ -123,11 +131,39 @@ def test_automation_that_presents_no_session_is_let_through(contract, monkeypatc
 
 def test_work_that_ran_without_a_plan_is_recorded(contract, monkeypatch):
     monkeypatch.delenv("ESTATE_SESSION_ID", raising=False)
-    door._plan_ledger_write("curl -s https://example.invalid | tee /tmp/x")
+    door._record_unenforced_work(
+        "curl -s https://example.invalid | tee /tmp/x",
+        "",
+        {"ok": True, "reason": "no_session_presented"},
+    )
     observe = Path(contract.PLAN_LEDGER_DIR) / contract.PLAN_OBSERVE_FILE
     lines = [json.loads(x) for x in observe.read_text().splitlines() if x.strip()]
     assert lines, "the work that ran without a plan must be visible"
     assert "example.invalid" in lines[-1]["command"]
+
+
+def test_a_session_whose_adapter_is_not_live_is_allowed_and_recorded(contract):
+    """The fence must be one a correct machine can satisfy.
+
+    A session that presents an id but has NO ledger is a session whose runtime adapter is not
+    installed yet. Refusing it would trap a compliant agent whose plan was declared before the
+    adapter landed -- an outage, not a gate. So the work is allowed and RECORDED, and the
+    founder can see exactly how many sessions are still unenforced.
+    """
+    gate = door._plan_gate("git push origin lane/x", "adapter-not-live")
+    assert gate["ok"] is True
+    assert gate["reason"] == "session_unenforced"
+    door._record_unenforced_work("git push origin lane/x", "adapter-not-live", gate)
+    observe = Path(contract.PLAN_LEDGER_DIR) / contract.PLAN_OBSERVE_FILE
+    lines = [json.loads(x) for x in observe.read_text().splitlines() if x.strip()]
+    assert lines[-1]["session"] == "adapter-not-live"
+
+
+def test_the_session_marker_is_not_a_plan(contract):
+    """The ledger opens with a marker, not a declaration. A marker is not a plan."""
+    assert contract.ledger_plan("sess-under-test") is None
+    assert contract.ledger_exists("sess-under-test") is True
+    assert contract.ledger_exists("never-seen") is False
 
 
 def test_the_ledger_is_one_shape_for_every_runtime(contract):
@@ -183,6 +219,7 @@ def test_one_session_s_plan_does_not_cover_another_session(contract):
     contract.append_plan_event("sess-under-test", "declare_plan", DECLARE)
     contract.append_plan_event("sess-under-test", "add_bdd", BDD)
     assert door._plan_gate("git push origin lane/x", "sess-under-test")["ok"] is True
+    contract.append_plan_event("other-session", "session_start", {})
     other = door._plan_gate("git push origin lane/x", "other-session")
     assert other["ok"] is False
     assert other["reason"] == "plan_not_declared"

@@ -579,6 +579,21 @@ def _ledger_record(line: str):
     return None
 
 
+def ledger_exists(session_id: str) -> bool:
+    """True when this session has a ledger at all.
+
+    The ledger's existence is the evidence that the session's runtime adapter is LIVE for it:
+    the adapter opens the ledger when the session starts, whether or not a plan is declared.
+    That distinction is what keeps a fence a correct machine can satisfy: a session whose
+    adapter has not been installed yet has no ledger, so the door cannot tell a compliant
+    agent from an unplanned one -- that work is ALLOWED and RECORDED instead of refused.
+    """
+    try:
+        return os.path.exists(ledger_path(session_id))
+    except Exception:  # noqa: BLE001 - an unreadable path is no ledger, never a crash
+        return False
+
+
 def ledger_calls(session_id: str) -> list:
     """The plan-tool calls one session made, in order. A damaged line is skipped, not fatal."""
     out = []
@@ -699,6 +714,19 @@ def door_plan_gate(command: str, session_id=None) -> dict:
         return {"ok": True, "reason": "read_only"}
     plan = ledger_plan(sid)
     if not plan:
+        if not ledger_exists(sid):
+            # The adapter for this session has not opened a ledger, so the door cannot tell a
+            # compliant agent from an unplanned one. Refusing here would trap a correct agent
+            # whose runtime adapter is not installed yet -- a fence a correct machine cannot
+            # satisfy is an outage, not a gate. The work is let through and RECORDED.
+            return {
+                "ok": True,
+                "reason": "session_unenforced",
+                "detail": (
+                    "this session presented an id but has no plan ledger, so its runtime "
+                    "adapter is not live for it yet. The work is allowed and recorded."
+                ),
+            }
         return {
             "ok": False,
             "reason": "plan_not_declared",
