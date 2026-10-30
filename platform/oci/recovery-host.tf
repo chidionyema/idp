@@ -9,28 +9,49 @@
 #
 # WHAT RUNS. LiteLLM directly under podman + systemd (no Kubernetes), started from a config bundle
 # and a vault entry that .github/workflows/router-recovery.yml publishes, reachable only through a
-# Cloudflare Tunnel (outbound; no inbound port). The volumes are attached READ-ONLY: nothing may
-# write to the only copy of the estate's data before it has been copied off this provider.
+# Cloudflare Tunnel (outbound; no inbound port). The volumes are attached READ-ONLY when the host
+# can reach them: nothing may write to the only copy of the estate's data before it has been copied
+# off this provider.
 
 locals {
-  # Always Free shapes only (R14). The host must sit in the AD that HOLDS the surviving volumes:
-  # an OCI block volume cannot attach across availability domains, so oci_core_volume_attachment.surviving
-  # is for_each-empty whenever recovery_ad != volumes_ad -- measured 2026-10-30: zero attachments
-  # existed, and the volumes could not be copied off this provider at all.
-  # AD-1's live shape inventory (measured 2026-10-30T00:17:05Z) offers BM.Standard.A1.160 and
-  # VM.Standard.A1.Flex ONLY: VM.Standard.E2.1.Micro is not offered in AD-1, so the shape that can
-  # carry the volumes in their own AD is an A1.Flex. The router measured ~275 MB RSS; 1 OCPU / 6 GB
-  # is ample, and A1.Flex resizes in place when capacity allows more.
-  # A1.Flex capacity was refused "Out of host capacity" in both ADs on earlier attempts (apply runs
-  # 40844922528 .. 40851920814). If the governed apply is refused again, the volumes stay detached
-  # and safe and reverting these two lines restores the AD-2 E2.1.Micro host.
-  recovery_shape = "VM.Standard.A1.Flex"
+  # Always Free shapes only (R14). TWO placements are possible on this tenancy and which one is
+  # live depends on a fact OCI will not publish in advance: whether the region has A1 host
+  # capacity today. Both placements below are measured, not assumed.
+  #
+  #   AD-1 HOLDS THE DATA. All three surviving csi-* volumes report availability-domain
+  #   lPOl:UK-LONDON-1-AD-1 (measured 2026-10-30). A block volume only attaches inside its own AD,
+  #   so only an AD-1 host can carry them. AD-1's shape inventory (measured 2026-10-30T00:17:05Z)
+  #   offers BM.Standard.A1.160 (paid -- forbidden by R14) and VM.Standard.A1.Flex ONLY:
+  #   VM.Standard.E2.1.Micro is not offered in AD-1 and AD-1's E2.1.Micro service limit is 0.
+  #
+  #   AD-2 CARRIES THE ROUTER. AD-2 offers VM.Standard.E2.1.Micro (service limit 2, measured) and
+  #   the router is stateless -- it needs no volume. An AD-2 host restores the ROUTER and the
+  #   TUNNEL and leaves the data where it is: detached, untouched and safe.
+  #
+  # WHY AD-2 IS THE LIVE PLACEMENT (measured 2026-10-30). Four governed applies asked AD-1 for an
+  # A1.Flex host and OCI refused every one with the same line:
+  #     Error: 500-InternalError, Out of host capacity.        (operation LaunchInstance)
+  #   runs 40983597207, 40985289787, 40988200652 (01:52:13Z), 40989327811 (02:03:50Z).
+  #   Quota headroom is NOT capacity: AD-1 reports standard-a1-core-count available=2 while every
+  #   launch is refused. The AD-1 data route is blocked by physics, not by configuration.
+  #
+  # WHY ONLY ONE HOST EVER (measured). The Always Free block-storage allowance for the region is
+  # 200 GB (total-storage-gb=200, total-free-storage-gb-regional=200). The three csi-* volumes are
+  # 150 GB of it, so exactly ONE 50 GB boot volume fits: 150 + 50 = 200. A second host is refused
+  # with LimitExceeded. There is therefore one slot, and it is either the AD-1 host that carries
+  # the data or the AD-2 host that carries the router -- never both at once.
+  #
+  # THE FLIP. When AD-1 A1.Flex capacity returns, these three lines are reverted to
+  # recovery_shape = "VM.Standard.A1.Flex" and recovery_ad = "lPOl:UK-LONDON-1-AD-1" -- the
+  # configuration that landed in #7488. The guard below then attaches the three volumes READ-ONLY
+  # and the data route opens. The AD-2 host is destroyed FIRST (its 50 GB boot volume is the slot),
+  # never create_before_destroy.
+  recovery_shape = "VM.Standard.E2.1.Micro"
   # The volumes' own AD (measured 2026-10-30: all three csi-* volumes report
-  # availability-domain lPOl:UK-LONDON-1-AD-1). The host follows them, not the other way round:
-  # the router is stateless and can run anywhere, but the DATA can only be read where it lives.
-  # AD-2 remains the fallback AD if AD-1 refuses the launch for capacity.
+  # availability-domain lPOl:UK-LONDON-1-AD-1). The DATA stays where it lives; the host follows it
+  # only when the AD can actually be placed.
   volumes_ad  = "lPOl:UK-LONDON-1-AD-1"
-  recovery_ad = "lPOl:UK-LONDON-1-AD-1"
+  recovery_ad = "lPOl:UK-LONDON-1-AD-2"
   # The volumes the dead cluster's CSI driver created (tagged role=persistent_volume). Read as data,
   # never managed: tofu must never be able to destroy them.
   surviving_volumes = {
@@ -85,8 +106,11 @@ resource "oci_core_instance" "recovery" {
   shape               = local.recovery_shape
 
   # 1 OCPU / 6 GB, not the 2 / 12 the AD offers: AD-1 answered "Out of host capacity" for 2 / 12
-  # (apply run 40844922528 and retries), and small A1 shapes are placed far more often. The router
-  # and the tunnel need under 2 GB; A1.Flex resizes in place when capacity returns.
+  # (apply run 40844922528 and retries) AND for 1 / 6 (runs 40983597207 .. 40989327811), and small
+  # A1 shapes are placed far more often. The router and the tunnel need under 2 GB; A1.Flex resizes
+  # in place when capacity returns. On VM.Standard.E2.1.Micro the block is empty (the shape is
+  # fixed at 1 OCPU / 8 GB) and the host's 2 GB swap file -- cloud-init, "a 1 GB shape needs room
+  # to breathe" -- lives on the 50 GB boot volume.
   dynamic "shape_config" {
     for_each = endswith(local.recovery_shape, ".Flex") ? [1] : []
     content {
