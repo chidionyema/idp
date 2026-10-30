@@ -122,7 +122,7 @@ def test_the_deck_reaches_a_required_argument_through_the_yes_it_asks_for(estate
 
     ran_it = vi.handle("yes", "s1")
     assert ran_it["status"] == "ok"
-    assert ran(estate) == [["pr-status", "--pr=42"]]
+    assert ran(estate) == [["pr-status", "--session", "voice:s1", "--pr=42"]]
 
 
 def test_an_undeclared_argument_is_refused_before_anything_runs(estate):
@@ -150,4 +150,4 @@ def test_the_audit_records_the_argument_names_and_never_the_values(estate):
 def test_an_utterance_alone_still_runs_an_arg_free_intent(estate):
     answer = vi.handle("check ci status", "s4")
     assert answer["status"] == "ok"
-    assert ran(estate) == [["ci-status"]]
+    assert ran(estate) == [["ci-status", "--session", "voice:s4"]]

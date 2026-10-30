@@ -507,16 +507,46 @@ def arg_value(value: object) -> str | None:
     return None
 
 
+VOICE_SESSION_PREFIX = "voice:"
+
+
+def estate_session_id(session_id: str) -> str:
+    """The estate session a spoken turn belongs to, namespaced.
+
+    A voice session is not a plan session. It has no ledger, and it must never look like one:
+    the door refuses a session that has a ledger and has declared no plan, so a voice id that
+    collided with an agent's plan-session name would refuse a founder's spoken command. The
+    namespace keeps the two apart (idp#7579 R1). Empty in, empty out: a caller with no session
+    stays identity-less automation, which the door allows and records.
+    """
+    sid = (session_id or "").strip()
+    if not sid:
+        return ""
+    if sid.startswith(VOICE_SESSION_PREFIX):
+        return sid
+    return VOICE_SESSION_PREFIX + sid
+
+
 def build_argv(
-    exe: str, intent: str, args: dict | None, directory: str | Path | None = None
+    exe: str,
+    intent: str,
+    args: dict | None,
+    directory: str | Path | None = None,
+    session: str = "",
 ) -> list[str]:
     """argv for one intent: `[exe, intent, --k=v ...]`, only for arguments the intent declares.
+
+    The session, when the caller stated one, rides as `--session <id>`: the door treats an
+    explicit session as authoritative, so the run is attributable even if the child's environment
+    is scrubbed.
 
     Raises ValueError for an undeclared argument or a non-scalar value. The caller reports that as
     an intent error, so a bad argument is a spoken refusal, never a partially-run command.
     """
     declared = intent_args(intent, directory)
     argv = [exe, intent]
+    if session:
+        argv.extend(["--session", session])
     for key in sorted(args or {}):
         if key not in declared:
             raise ValueError(f"{_spoken(intent)} takes no {key}")
@@ -531,16 +561,25 @@ def execute(
     intent: str,
     args: dict | None = None,
     directory: str | Path | None = None,
+    session_id: str = "",
 ) -> tuple[str, str, int | None, int]:
     exe = executor()
     if exe is None:
         return ("error", "Intents run on the laptop only.", None, 0)
+    session = estate_session_id(session_id)
     try:
         # argv list, no shell; intent is a name from the committed catalog, never words from
         # speech, and each argument is one argv word only if the intent declares it.
-        argv = build_argv(exe, intent, args, directory)
+        argv = build_argv(exe, intent, args, directory, session)
     except ValueError as exc:
         return ("error", str(exc)[:160], 2, 0)
+    env = None
+    if session:
+        # The session travels twice: as the explicit `--session` flag (authoritative at the door)
+        # and in the environment (so a child that re-execs keeps the identity). The door prefers
+        # the explicit flag, so the two cannot disagree.
+        env = dict(os.environ)
+        env["ESTATE_SESSION_ID"] = session
     t0 = time.monotonic()
     try:
         proc = subprocess.run(  # noqa: S603
@@ -550,6 +589,7 @@ def execute(
             timeout=EXEC_TIMEOUT_S,
             check=False,
             stdin=subprocess.DEVNULL,
+            env=env,
         )
     except subprocess.TimeoutExpired:
         dur = int((time.monotonic() - t0) * 1000)
@@ -634,7 +674,7 @@ def handle(text: str, session_id: str, args: dict | None = None) -> dict | None:
         if name == CONCIERGE and norm in YES:
             return _send_concierge(session_id, text, pend_task)
         if norm in YES:
-            status, msg, rc, dur = execute(name, pend_args)
+            status, msg, rc, dur = execute(name, pend_args, session_id=session_id)
             _audit(session_id, text, name, status, rc, dur, pend_args)
             return result(name, status, msg)
         if norm in NO:
@@ -691,6 +731,6 @@ def handle(text: str, session_id: str, args: dict | None = None) -> dict | None:
             name, "pending_confirmation", f"Run {name}{with_what}? Say yes to confirm."
         )
 
-    status, msg, rc, dur = execute(name, args)
+    status, msg, rc, dur = execute(name, args, session_id=session_id)
     _audit(session_id, text, name, status, rc, dur, args)
     return result(name, status, msg)
