@@ -132,6 +132,8 @@ jobs:
             echo "::error::the harness left no transcript; nothing can be graded. It said: $(head -1 "$out/stdout" | cut -c1-200)"
             exit 1
           fi
+          # Preserve failed runs too: their private transcript is the diagnostic evidence.
+          cp "$transcript" "$out/transcript.jsonl"
           if [ "$rc" -ne 0 ]; then
             # A harness that failed did no work worth grading: stop here with the reason. Only the
             # provider's HTTP status and error type reach this public log, never the agent's words.
@@ -141,7 +143,6 @@ jobs:
             echo "::error::the harness failed (exit $rc); provider said: ${status:-no status}${kind:-}"
             exit "$rc"
           fi
-          cp "$transcript" "$out/transcript.jsonl"
           # The patch is everything the agent changed against the commit it started from,
           # committed or not, tracked or new.
           git add -A
@@ -149,15 +150,22 @@ jobs:
           echo "patch: $(git diff --cached --stat "$(cat "$out/base")" | tail -1)"
 
       - name: Encrypt what leaves the job
+        if: always()
         env:
           RECIPIENT: ${{ vars.AGENT_TRANSCRIPT_AGE_RECIPIENT }}
         run: |
           set -euo pipefail
           [ -n "$RECIPIENT" ] || { echo "::error::AGENT_TRANSCRIPT_AGE_RECIPIENT is not set"; exit 1; }
           out="$RUNNER_TEMP/out"; mkdir -p "$RUNNER_TEMP/sealed"
-          tar -C "$out" -cf - base patch transcript.jsonl stdout | age -r "$RECIPIENT" -o "$RUNNER_TEMP/sealed/work.tar.age"
+          files=()
+          for name in base patch transcript.jsonl stdout; do
+            if [ -f "$out/$name" ]; then files+=("$name"); fi
+          done
+          [ "${#files[@]}" -gt 0 ] || { echo "::error::the job left no evidence to seal"; exit 1; }
+          tar -C "$out" -cf - "${files[@]}" | age -r "$RECIPIENT" -o "$RUNNER_TEMP/sealed/work.tar.age"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
         with:
           name: agent-work
           path: ${{ runner.temp }}/sealed/work.tar.age
