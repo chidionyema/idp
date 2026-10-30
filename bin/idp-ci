@@ -495,6 +495,25 @@ else
   fi
 fi
 
+# 1c.5 language: the founder's ruling (2026-10-30) made mechanical -- Rust over Python for new
+#      estate capability code, unless the reason is compelling and written down. bin/language-gate
+#      refuses a *new* Python file (anywhere, tests/ exempt -- a test mirrors the language already
+#      chosen at the implementation file) with no `Language-Exception: <path> -- <reason>` trailer
+#      in the commit range. Grandfathers everything already in the tree: it only inspects files
+#      git itself calls Added in this diff, so the ~460 existing .py files under bin/ and
+#      platform/ are untouched. Proven by tests/test_language_gate.py against the real script.
+lg=$("$MPY" "$IDP/bin/language-gate" "${IDP_CI_BASE:-origin/main}" HEAD 2>&1); lg_rc=$?
+lgp=$("$MPY" -m pytest -q -p no:cacheprovider "$IDP/tests/test_language_gate.py" 2>&1); lgp_rc=$?
+if [ "$lg_rc" -eq 0 ] && [ "$lgp_rc" -eq 0 ]; then
+  say "ok    language $(printf '%s' "$lg" | sed -n 's/^ok *//p') -- $(printf '%s' "$lgp" | grep -oE '[0-9]+ passed' | head -1) on the gate's own proof"
+else
+  [ "$lg_rc" -eq 2 ] && say "FAIL  language BLIND: could not read the commit range" \
+    || say "FAIL  language $(printf '%s' "$lg" | tail -1)"
+  printf '%s\n' "$lg" | tail -8 | sed 's/^/      /'
+  [ "$lgp_rc" -eq 0 ] || printf '%s\n' "$lgp" | tail -15 | sed 's/^/      /'
+  fail=1
+fi
+
 # 1d. ruff, the same rule set (pyproject [tool.ruff.lint]) the bdd job runs after the suites.
 #     In the fast gate it runs first, so an undefined name is red in under a minute.
 if [ "$FAST" = 1 ]; then
