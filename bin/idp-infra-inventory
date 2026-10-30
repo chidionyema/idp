@@ -1,0 +1,787 @@
+#!/usr/bin/env python3
+"""Inventory the estate's declared infrastructure and grade it against the node budget.
+
+The cluster the estate used to run on is gone (docs/incidents/2026-10-29-the-cluster-lost-its-
+control-plane.md): OKE's entitlement went with it (cluster-count=0, #7393) and the replacement is
+ONE Ampere A1 VM running k3s. That is the whole Always Free Ampere allowance (4 OCPU / 24 GB), and
+k3s's local-path provisioner keeps every PVC on that one disk, so the old four-slot CSI limit is
+gone. What is left is a node budget in requests, and nobody had the list of what the estate asks
+for, so nobody could say what fitted.
+
+This is that list, measured from git: the manifests are the estate's own declaration of what it
+runs, so the number here is the number the platform would schedule.
+
+WHAT IT READS
+  applied paths   every Flux Kustomization in the repo whose source is this repo's own
+                  GitRepository (a row that reads another repository's path is not ours)
+  workloads       kustomize build of each applied path: Deployment, StatefulSet, DaemonSet,
+                  CronJob, Job, HelmRelease, PersistentVolumeClaim
+  the budget      platform/infra-budget.yaml -- the node budget, the admission list and the
+                  decision for every declared-but-unapplied platform directory
+
+WHAT IT DOES NOT DO
+  It does not ask the cluster. The cluster is the thing being rebuilt; a live read would grade a
+  machine that no longer exists. It also does not decide anything: it measures, and the budget
+  file decides. A HelmRelease that declares no requests has UNKNOWN capacity, never zero.
+
+VERDICTS
+  APPLIED       the workload is on a Flux path and would be reconciled by Flux
+  DECLARED      the manifest exists in git but no Flux path reaches it -- it runs nowhere
+  UNLISTED      APPLIED but absent from the admission list -- new infrastructure without a
+                justification, which is what this tool exists to refuse
+  UNJUSTIFIED   on the admission list with no justification
+  OVERBUDGET    the totals exceed the node budget
+  UNDECIDED     a declared-only platform directory with no cut/reserved decision
+
+EXIT
+  0  measured, within budget, every applied workload is justified, every orphan is decided
+  1  over budget, unlisted, unjustified, undecided, or a blind read of an applied path
+  2  nothing could be read at all; never a green answer
+
+Usage: bin/idp-infra-inventory [--out DIR] [--gate] [--no-gate] [--json PATH]
+"""
+from __future__ import annotations
+
+import argparse
+import concurrent.futures
+import datetime
+import json
+import os
+import pathlib
+import subprocess
+import sys
+
+try:
+    import yaml
+    LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+except ImportError:  # pragma: no cover - yaml is present in every estate runtime
+    LOADER = None
+
+# Directories whose kustomizations are not estate infrastructure.
+NOT_PLATFORM = (
+    "tests/",
+    "features/",
+    "fixtures/",
+    "demos/",
+    "backstage/templates/",
+    "backstage/app/",
+    "backstage/plugins/",
+    "web/",
+    "packages/",
+    "rescued_patches2/",
+    "cluster/",
+    "forge/",
+)
+
+
+def repo_root() -> pathlib.Path:
+    """The repository this tool grades. IDP_ROOT wins, so it works from any checkout."""
+    env = os.environ.get("IDP_ROOT")
+    if env:
+        return pathlib.Path(env).resolve()
+    out = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True
+    )
+    if out.returncode == 0 and out.stdout.strip():
+        return pathlib.Path(out.stdout.strip())
+    return pathlib.Path(__file__).resolve().parent.parent
+
+
+ROOT = repo_root()
+BUDGET_FILE = "platform/infra-budget.yaml"
+KINDS = (
+    "Deployment",
+    "StatefulSet",
+    "DaemonSet",
+    "CronJob",
+    "Job",
+    "HelmRelease",
+    "PersistentVolumeClaim",
+)
+POD_KINDS = ("Deployment", "StatefulSet", "DaemonSet", "CronJob", "Job")
+UNITS = {
+    "Ki": 1 / 1024,
+    "Mi": 1,
+    "Gi": 1024,
+    "Ti": 1048576,
+    "K": 1000 / 1048576,
+    "M": 1e6 / 1048576,
+    "G": 1e9 / 1048576,
+}
+
+
+def cpu_m(value) -> int:
+    if value is None:
+        return 0
+    value = str(value)
+    return int(value[:-1]) if value.endswith("m") else int(float(value) * 1000)
+
+
+def mem_mi(value) -> int:
+    if value is None:
+        return 0
+    value = str(value)
+    for suffix, factor in UNITS.items():
+        if value.endswith(suffix):
+            return int(float(value[: -len(suffix)]) * factor)
+    return int(float(value) / 1048576)
+
+
+def load_all(text):
+    return [d for d in yaml.load_all(text, Loader=LOADER) if isinstance(d, dict)]
+
+
+def git_files(pattern: str):
+    out = subprocess.run(
+        ["git", "ls-files", "-z", pattern],
+        capture_output=True,
+        text=True,
+        cwd=str(ROOT),
+    )
+    return [p for p in out.stdout.split("\0") if p]
+
+
+def estate_flux_rows():
+    """Every Flux Kustomization that reads THIS repository.
+
+    A row whose sourceRef names another GitRepository (the gateway-api CRDs live in their own
+    repo) is not our declaration of state and is not ours to grade.
+    """
+    rows = {}
+    for name in git_files("*.yaml"):
+        if name.startswith(("tests/", "features/")) or "node_modules" in name:
+            continue
+        try:
+            docs = load_all((ROOT / name).read_text())
+        except Exception:  # noqa: BLE001 - an unreadable file is blind for that file only
+            continue
+        for doc in docs:
+            if doc.get("kind") != "Kustomization":
+                continue
+            if not str(doc.get("apiVersion", "")).startswith(
+                "kustomize.toolkit.fluxcd.io"
+            ):
+                continue
+            spec = doc.get("spec") or {}
+            source = spec.get("sourceRef") or {}
+            if source.get("kind") not in (None, "GitRepository"):
+                continue
+            if source.get("name") not in (None, "flux-system"):
+                continue
+            path = spec.get("path")
+            if path:
+                rows.setdefault(path.lstrip("./"), set()).add(name)
+    return {p: sorted(f) for p, f in rows.items()}
+
+
+def kustomize(path: str):
+    """Build one path. Returns (docs, error)."""
+    try:
+        out = subprocess.run(
+            ["kustomize", "build", str(ROOT / path)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except FileNotFoundError:
+        return None, "kustomize is not installed: the declared state cannot be read"
+    except subprocess.TimeoutExpired:
+        return None, "kustomize build timed out"
+    if out.returncode != 0:
+        err = (out.stderr.strip().splitlines() or ["build failed"])[-1]
+        return None, err
+    try:
+        return load_all(out.stdout), None
+    except Exception as exc:  # noqa: BLE001
+        return None, f"the rendered output is not YAML: {exc}"
+
+
+def pod_spec(doc):
+    spec = doc.get("spec") or {}
+    kind = doc.get("kind")
+    if kind in ("Deployment", "StatefulSet", "DaemonSet"):
+        return (spec.get("template") or {}).get("spec") or {}
+    if kind in ("CronJob", "Job"):
+        template = (
+            (spec.get("jobTemplate") or {}).get("spec", {}) if kind == "CronJob" else spec
+        )
+        return (template.get("template") or {}).get("spec") or {}
+    return {}
+
+
+def row_for(doc, source):
+    kind = doc.get("kind")
+    meta = doc.get("metadata") or {}
+    spec = doc.get("spec") or {}
+    pod = pod_spec(doc)
+    replicas = None
+    if kind in ("Deployment", "StatefulSet"):
+        replicas = spec.get("replicas")
+    elif kind in ("CronJob", "Job"):
+        replicas = 1
+    elif kind == "DaemonSet":
+        replicas = 1  # one node
+    images, cpu, mem, declared = [], 0, 0, False
+    for container in pod.get("containers") or []:
+        if container.get("image"):
+            images.append(container["image"])
+        requests = (container.get("resources") or {}).get("requests") or {}
+        if requests.get("cpu") or requests.get("memory"):
+            declared = True
+        cpu += cpu_m(requests.get("cpu"))
+        mem += mem_mi(requests.get("memory"))
+    storage = None
+    if kind == "PersistentVolumeClaim":
+        storage = mem_mi(
+            ((spec.get("resources") or {}).get("requests") or {}).get("storage")
+        )
+    if kind in ("Deployment", "StatefulSet", "DaemonSet"):
+        workload_class = "resident"
+    elif kind == "CronJob":
+        workload_class = "scheduled"
+    elif kind == "Job":
+        workload_class = "one-shot"
+    elif kind == "HelmRelease":
+        workload_class = "chart"
+    else:
+        workload_class = "storage"
+    return {
+        "source": source,
+        "kind": kind,
+        "class": workload_class,
+        "namespace": meta.get("namespace") or "default",
+        "name": meta.get("name"),
+        "replicas": replicas,
+        "images": images,
+        "cpu_m": cpu,
+        "mem_mi": mem,
+        "requests_declared": declared if kind in POD_KINDS else None,
+        # A chart declares no pod template in git: its pods are rendered by the chart at apply
+        # time. No requests here means UNKNOWN consumption, never zero (AGENTS.md 6: one of each
+        # layer, and a missing measurement is not a measurement).
+        "capacity_unknown": kind in POD_KINDS + ("HelmRelease",) and not declared,
+        "storage_mi": storage,
+        "storage_class": (
+            spec.get("storageClassName") if kind == "PersistentVolumeClaim" else None
+        ),
+    }
+
+
+def workload_key(row) -> str:
+    return f"{row['namespace']}/{row['kind'].lower()}/{row['name']}"
+
+
+def inventory():
+    applied = estate_flux_rows()
+    rows, blind = [], []
+    # The render is the slow part of this tool: one `kustomize build` per applied path. They
+    # are independent, so they go in parallel; the estate's execution ceiling is 100 seconds
+    # and a serial render of 60 paths does not fit in it.
+    paths = sorted(applied)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        rendered = list(pool.map(lambda p: (p, kustomize(p)), paths))
+    for path, (docs, err) in rendered:
+        if err:
+            blind.append({"source": path, "error": err, "files": applied[path]})
+            continue
+        for doc in docs:
+            if doc.get("kind") in KINDS:
+                row = row_for(doc, path)
+                row["applied"] = True
+                rows.append(row)
+    declared_dirs = sorted(
+        {
+            os.path.dirname(p)
+            for p in git_files(":(glob)**/kustomization.yaml")
+            if not p.startswith(NOT_PLATFORM)
+        }
+    )
+    applied_dirs = set(applied)
+    # A directory inside an applied tree is applied through it: clusters/oke/flux-system is
+    # rendered by the clusters/oke Kustomization, not by a row of its own. Calling it an
+    # orphan would ask the budget to decide about something Flux already applies.
+    def covered(path):
+        return any(path.startswith(p + "/") for p in applied_dirs)
+
+    declared_only = [
+        d
+        for d in declared_dirs
+        if d
+        and d not in applied_dirs
+        and not d.startswith("platform/oci/")
+        and not covered(d)
+    ]
+    return {
+        "rows": rows,
+        "blind": blind,
+        "applied_paths": sorted(applied),
+        "declared_only": declared_only,
+    }
+
+
+def load_budget():
+    path = ROOT / BUDGET_FILE
+    if not path.exists():
+        return None, f"{BUDGET_FILE} is missing: there is no budget, so nothing can be admitted"
+    try:
+        data = load_all(path.read_text())
+    except Exception as exc:  # noqa: BLE001
+        return None, f"{BUDGET_FILE} cannot be read: {exc}"
+    if not data:
+        return None, f"{BUDGET_FILE} is empty: there is no budget, so nothing can be admitted"
+    return data[0], None
+
+
+def demand(row) -> tuple[int, int]:
+    """Replica-weighted demand: a Deployment with two replicas asks for twice the request."""
+    reps = row.get("replicas")
+    reps = 1 if reps is None else max(int(reps), 0)
+    return row["cpu_m"] * reps, row["mem_mi"] * reps
+
+
+def grade(inv, budget, budget_err):
+    rows = inv["rows"]
+    problems = []
+    totals = {
+        "workloads": len(rows),
+        "cpu_m": 0,
+        "mem_mi": 0,
+        "cpu_m_demand": 0,
+        "mem_mi_demand": 0,
+        "resident_cpu_m": 0,
+        "resident_mem_mi": 0,
+        "scheduled_cpu_m": 0,
+        "scheduled_mem_mi": 0,
+        "one_shot_cpu_m": 0,
+        "one_shot_mem_mi": 0,
+        "unknown_capacity": 0,
+        "pvcs": 0,
+        "pvc_storage_mi": 0,
+        "deployments": 0,
+        "admitted_cpu_m": 0,
+        "admitted_mem_mi": 0,
+        "admitted_one_shot_cpu_m": 0,
+        "admitted_one_shot_mem_mi": 0,
+        "refused_cpu_m": 0,
+        "refused_mem_mi": 0,
+        "refused_one_shot_cpu_m": 0,
+        "refused_one_shot_mem_mi": 0,
+        # The budgeted demand: what the node must hold, with the chart reserves standing in
+        # for the capacity the charts do not declare. It is the measured demand plus reserves.
+        "cpu_m_budgeted": 0,
+        "mem_mi_budgeted": 0,
+        "budgeted_one_shot_cpu_m": 0,
+        "budgeted_one_shot_mem_mi": 0,
+        "oversubscribed_by_m": 0,
+    }
+    for r in rows:
+        cpu, mem = demand(r)
+        totals["cpu_m"] += r["cpu_m"]
+        totals["mem_mi"] += r["mem_mi"]
+        totals["cpu_m_demand"] += cpu
+        totals["mem_mi_demand"] += mem
+        if r["class"] == "resident":
+            totals["resident_cpu_m"] += cpu
+            totals["resident_mem_mi"] += mem
+        elif r["class"] == "scheduled":
+            totals["scheduled_cpu_m"] += cpu
+            totals["scheduled_mem_mi"] += mem
+        elif r["class"] == "one-shot":
+            totals["one_shot_cpu_m"] += cpu
+            totals["one_shot_mem_mi"] += mem
+        if r["capacity_unknown"]:
+            totals["unknown_capacity"] += 1
+        if r["kind"] == "PersistentVolumeClaim":
+            totals["pvcs"] += 1
+            totals["pvc_storage_mi"] += r["storage_mi"] or 0
+        if r["kind"] == "Deployment":
+            totals["deployments"] += 1
+
+    admitted, reserves, refused = {}, {}, {}
+    if budget is None:
+        problems.append(budget_err)
+    else:
+        b = budget.get("budget") or {}
+        for entry in budget.get("admission") or []:
+            key = entry.get("workload")
+            if key:
+                admitted[key] = entry
+        for entry in budget.get("reserves") or []:
+            key = entry.get("workload")
+            if key:
+                reserves[key] = entry
+        for entry in budget.get("refused") or []:
+            key = entry.get("workload")
+            if key:
+                refused[key] = entry
+        for r in rows:
+            key = workload_key(r)
+            if r["kind"] == "PersistentVolumeClaim":
+                continue
+            measured_cpu, measured_mem = demand(r)
+            if r["capacity_unknown"]:
+                reserve = reserves.get(key)
+                if reserve is None:
+                    problems.append(
+                        f"{key} declares no resource requests and has no reserve in "
+                        f"{BUDGET_FILE}: unknown capacity is not zero capacity"
+                    )
+                else:
+                    measured_cpu = cpu_m(reserve.get("cpu"))
+                    measured_mem = mem_mi(reserve.get("memory"))
+            refusal = refused.get(key)
+            if refusal is not None:
+                # REFUSED: applied, and deliberately not admitted to the node. It is a decision,
+                # not a gap: it names where the capacity goes instead. It still consumes node
+                # capacity until it moves, so it is counted and reported, never hidden.
+                if not (refusal.get("reason") or "").strip():
+                    problems.append(f"{key} is refused with no reason")
+                if not (refusal.get("destination") or "").strip():
+                    problems.append(
+                        f"{key} is refused with no destination: refusing capacity without saying "
+                        f"where it goes is not a decision"
+                    )
+                if refusal.get("cpu") is not None and cpu_m(refusal.get("cpu")) != measured_cpu:
+                    problems.append(
+                        f"{key} is refused at {refusal.get('cpu')} but asks for {measured_cpu}m: "
+                        f"the budget has drifted from the manifests"
+                    )
+                if (
+                    refusal.get("memory") is not None
+                    and mem_mi(refusal.get("memory")) != measured_mem
+                ):
+                    problems.append(
+                        f"{key} is refused at {refusal.get('memory')} but asks for "
+                        f"{measured_mem}Mi: the budget has drifted from the manifests"
+                    )
+                totals["refused_cpu_m"] += measured_cpu
+                totals["refused_mem_mi"] += measured_mem
+                totals["cpu_m_budgeted"] += measured_cpu
+                totals["mem_mi_budgeted"] += measured_mem
+                if r["class"] == "one-shot":
+                    totals["refused_one_shot_cpu_m"] += measured_cpu
+                    totals["refused_one_shot_mem_mi"] += measured_mem
+                    totals["budgeted_one_shot_cpu_m"] += measured_cpu
+                    totals["budgeted_one_shot_mem_mi"] += measured_mem
+                continue
+            entry = admitted.get(key)
+            if entry is None:
+                problems.append(
+                    f"{key} is applied but neither admitted nor refused in {BUDGET_FILE}: new "
+                    f"infrastructure needs a justification, or a refusal with a destination"
+                )
+                totals["cpu_m_budgeted"] += measured_cpu
+                totals["mem_mi_budgeted"] += measured_mem
+                if r["class"] == "one-shot":
+                    totals["budgeted_one_shot_cpu_m"] += measured_cpu
+                    totals["budgeted_one_shot_mem_mi"] += measured_mem
+                continue
+            if not (entry.get("justification") or "").strip():
+                problems.append(f"{key} is on the admission list with no justification")
+            if not (entry.get("rung") or "").strip():
+                problems.append(f"{key} is on the admission list with no ladder rung")
+            if entry.get("cpu") is not None and cpu_m(entry.get("cpu")) != measured_cpu:
+                problems.append(
+                    f"{key} is admitted at {entry.get('cpu')} but asks for {measured_cpu}m: the "
+                    f"admission list has drifted from the manifests"
+                )
+            if entry.get("memory") is not None and mem_mi(entry.get("memory")) != measured_mem:
+                problems.append(
+                    f"{key} is admitted at {entry.get('memory')} but asks for {measured_mem}Mi: "
+                    f"the admission list has drifted from the manifests"
+                )
+            totals["admitted_cpu_m"] += measured_cpu
+            totals["admitted_mem_mi"] += measured_mem
+            totals["cpu_m_budgeted"] += measured_cpu
+            totals["mem_mi_budgeted"] += measured_mem
+            if r["class"] == "one-shot":
+                totals["admitted_one_shot_cpu_m"] += measured_cpu
+                totals["admitted_one_shot_mem_mi"] += measured_mem
+                totals["budgeted_one_shot_cpu_m"] += measured_cpu
+                totals["budgeted_one_shot_mem_mi"] += measured_mem
+        for key in admitted:
+            if not any(workload_key(r) == key for r in rows):
+                problems.append(
+                    f"{BUDGET_FILE} admits {key}, which is not applied: delete the entry or "
+                    f"apply the workload"
+                )
+        for key in refused:
+            if not any(workload_key(r) == key for r in rows):
+                problems.append(
+                    f"{BUDGET_FILE} refuses {key}, which is not applied: delete the entry"
+                )
+        for key in reserves:
+            if not any(workload_key(r) == key for r in rows):
+                problems.append(f"{BUDGET_FILE} reserves {key}, which is not applied")
+        cpu_budget = b.get("node_cpu_requests_m")
+        mem_budget = b.get("node_memory_requests_mi")
+        # A Job's request is a burst, not a standing claim on the node: the estate's one-shot
+        # copy Jobs run one at a time, on demand. They are reported separately and excluded
+        # from the concurrent budget, which is the number the node must hold at once.
+        concurrent_cpu = totals["cpu_m_budgeted"] - totals["budgeted_one_shot_cpu_m"]
+        concurrent_mem = totals["mem_mi_budgeted"] - totals["budgeted_one_shot_mem_mi"]
+        admitted_concurrent_cpu = (
+            totals["admitted_cpu_m"] - totals["admitted_one_shot_cpu_m"]
+        )
+        admitted_concurrent_mem = (
+            totals["admitted_mem_mi"] - totals["admitted_one_shot_mem_mi"]
+        )
+        totals["concurrent_cpu_m"] = concurrent_cpu
+        totals["concurrent_mem_mi"] = concurrent_mem
+        totals["admitted_concurrent_cpu_m"] = admitted_concurrent_cpu
+        totals["admitted_concurrent_mem_mi"] = admitted_concurrent_mem
+        if cpu_budget is not None and admitted_concurrent_cpu > int(cpu_budget):
+            problems.append(
+                f"the admitted set holds {admitted_concurrent_cpu}m of concurrent CPU and the node "
+                f"has {int(cpu_budget)}m: the admission list does not fit the node"
+            )
+        if mem_budget is not None and admitted_concurrent_mem > int(mem_budget):
+            problems.append(
+                f"the admitted set holds {admitted_concurrent_mem}Mi of concurrent memory and the "
+                f"node has {int(mem_budget)}Mi: the admission list does not fit the node"
+            )
+        # The applied surface is larger than one node. The refusal list has to cover the whole
+        # shortfall, or the estate is quietly oversubscribed and the budget is a wish.
+        if cpu_budget is not None:
+            refused_concurrent = totals["refused_cpu_m"] - totals["refused_one_shot_cpu_m"]
+            shortfall = concurrent_cpu - int(cpu_budget)
+            totals["oversubscribed_by_m"] = max(0, shortfall)
+            if shortfall > 0 and refused_concurrent < shortfall:
+                problems.append(
+                    f"the applied surface asks for {concurrent_cpu}m of concurrent CPU and the node "
+                    f"has {int(cpu_budget)}m: the refusal list covers {refused_concurrent}m of the "
+                    f"{shortfall}m shortfall"
+                )
+        storage_budget = b.get("node_disk_gb")
+        if storage_budget is not None:
+            used_gb = totals["pvc_storage_mi"] / 1024
+            if used_gb > float(storage_budget):
+                problems.append(
+                    f"PVC storage {used_gb:.1f}GB exceeds the node disk budget "
+                    f"{storage_budget}GB"
+                )
+        decided = {
+            d.get("path") for d in (budget.get("orphans") or []) if d.get("path")
+        }
+        for path in inv["declared_only"]:
+            if path not in decided:
+                problems.append(
+                    f"{path} is declared but never applied and has no decision in "
+                    f"{BUDGET_FILE}: cut it or reserve it with a reason"
+                )
+        for d in budget.get("orphans") or []:
+            path = d.get("path")
+            if path and path not in inv["declared_only"]:
+                problems.append(
+                    f"{BUDGET_FILE} decides {path}, which is not a declared-only path any more: "
+                    f"the decision has drifted from the tree"
+                )
+            if path and not (d.get("reason") or "").strip():
+                problems.append(f"{path} is decided in {BUDGET_FILE} with no reason")
+            if path and d.get("decision") not in ("cut", "reserved"):
+                problems.append(
+                    f"{path} is decided as {d.get('decision')!r}; the decision must be cut or "
+                    f"reserved"
+                )
+    for blind in inv["blind"]:
+        problems.append(
+            f"BLIND {blind['source']}: {blind['error']} -- an applied path that cannot be read "
+            f"is never a green answer"
+        )
+    return totals, problems
+
+
+def duplicate_images(rows):
+    by_image = {}
+    for r in rows:
+        for image in r["images"]:
+            by_image.setdefault(image, []).append(workload_key(r))
+    return {img: sorted(names) for img, names in by_image.items() if len(names) > 1}
+
+
+def markdown(report):
+    t = report["totals"]
+    lines = [
+        "# Estate infrastructure inventory",
+        "",
+        f"Measured from git by `bin/idp-infra-inventory` on {report['measured_at']}.",
+        "The live control plane is unreachable (incident 2026-10-29), so the manifests are the",
+        "declaration of record.",
+        "",
+        "## Totals",
+        "",
+        f"- applied workloads: {t['workloads']}",
+        f"- CPU requests as declared: {t['cpu_m']}m",
+        f"- CPU demand (replica weighted): {t['cpu_m_demand']}m",
+        f"- memory requests as declared: {t['mem_mi']}Mi",
+        f"- memory demand (replica weighted): {t['mem_mi_demand']}Mi",
+        f"- persistent volume claims: {t['pvcs']} ({t['pvc_storage_mi'] / 1024:.1f}GB)",
+        f"- workloads with unknown capacity: {t['unknown_capacity']}",
+        "",
+        "| workload | source | replicas | cpu | memory | verdict |",
+        "|---|---|---|---|---|---|",
+    ]
+    for r in report["rows"]:
+        lines.append(
+            f"| {workload_key(r)} | {r['source']} | {r['replicas']} | {r['cpu_m']}m | "
+            f"{r['mem_mi']}Mi | {report['verdicts'].get(workload_key(r), 'APPLIED')} |"
+        )
+    if report.get("declared_only"):
+        lines += ["", "## Declared but never applied", ""]
+        lines.append("| path | decision | reason |")
+        lines.append("|---|---|---|")
+        orphans = {
+            o.get("path"): o for o in ((report.get("budget") or {}).get("orphans") or [])
+        }
+        for path in report["declared_only"]:
+            o = orphans.get(path) or {}
+            lines.append(
+                f"| {path} | {o.get('decision', 'UNDECIDED')} | {o.get('reason', '')} |"
+            )
+    if report.get("budget"):
+        b = report["budget"].get("budget") or {}
+        lines += ["", "## Node budget", ""]
+        lines.append(f"- node CPU requests: {b.get('node_cpu_requests_m')}m")
+        lines.append(f"- node memory requests: {b.get('node_memory_requests_mi')}Mi")
+        lines.append(f"- node disk: {b.get('node_disk_gb')}GB")
+        lines.append(f"- PVC storage ceiling: {b.get('pvc_storage_gb')}GB")
+        lines.append(f"- admitted, concurrent: {t.get('admitted_concurrent_cpu_m')}m / "
+                     f"{t.get('admitted_concurrent_mem_mi')}Mi")
+        lines.append(f"- refused, concurrent: {t.get('refused_cpu_m', 0) - t.get('refused_one_shot_cpu_m', 0)}m")
+        lines.append(f"- the applied surface oversubscribes the node by {t.get('oversubscribed_by_m')}m")
+        lines.append(f"- one-shot burst, outside the concurrent budget: "
+                     f"{t.get('budgeted_one_shot_cpu_m')}m / {t.get('budgeted_one_shot_mem_mi')}Mi")
+    if report.get("admission"):
+        lines += ["", "## Admitted to the node", "", "| workload | cpu | memory | rung | justification |", "|---|---|---|---|---|"]
+        for e in report["admission"]:
+            lines.append(
+                f"| {e.get('workload')} | {e.get('cpu')} | {e.get('memory')} | "
+                f"{e.get('rung')} | {e.get('justification')} |"
+            )
+    if report.get("refused"):
+        lines += ["", "## Refused: moved off the node", "", "| workload | cpu | memory | destination | reason |", "|---|---|---|---|---|"]
+        for e in report["refused"]:
+            lines.append(
+                f"| {e.get('workload')} | {e.get('cpu')} | {e.get('memory')} | "
+                f"{e.get('destination')} | {e.get('reason')} |"
+            )
+    if report.get("reserves"):
+        lines += ["", "## Chart capacity reserves", "", "| chart | cpu | memory | basis |", "|---|---|---|---|"]
+        for e in report["reserves"]:
+            lines.append(
+                f"| {e.get('workload')} | {e.get('cpu')} | {e.get('memory')} | {e.get('basis')} |"
+            )
+    if report.get("duplicate_images"):
+        lines += ["", "## One image, several workloads", ""]
+        for image, names in sorted(report["duplicate_images"].items()):
+            lines.append(f"- `{image}`: {', '.join(names)}")
+    if report.get("problems"):
+        lines += ["", "## Findings", ""]
+        for problem in report["problems"]:
+            lines.append(f"- {problem}")
+    return "\n".join(lines) + "\n"
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--out", help="write inventory.json and inventory.md into this directory")
+    ap.add_argument("--json", help="write the machine-readable inventory to this path")
+    ap.add_argument("--gate", action="store_true", default=True,
+                    help="exit 1 on any finding (the default)")
+    ap.add_argument("--no-gate", action="store_true", help="report only, never exit 1")
+    args = ap.parse_args(argv)
+
+    inv = inventory()
+    budget, budget_err = load_budget()
+    totals, problems = grade(inv, budget, budget_err)
+    rows = inv["rows"]
+    admitted = {
+        e.get("workload")
+        for e in ((budget or {}).get("admission") or [])
+        if e.get("workload")
+    }
+    verdicts = {}
+    refused = {
+        e.get("workload")
+        for e in ((budget or {}).get("refused") or [])
+        if e.get("workload")
+    }
+    for r in rows:
+        key = workload_key(r)
+        if key in refused:
+            verdicts[key] = "REFUSED"
+        elif budget is None:
+            verdicts[key] = "APPLIED"
+        elif key in admitted:
+            verdicts[key] = "ADMITTED"
+        elif r["capacity_unknown"]:
+            verdicts[key] = "UNKNOWN"
+        else:
+            verdicts[key] = "UNLISTED"
+
+    report = {
+        "measured_at": datetime.datetime.now(datetime.timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        ),
+        "totals": totals,
+        "rows": sorted(rows, key=workload_key),
+        "verdicts": verdicts,
+        "applied_paths": inv["applied_paths"],
+        "declared_only": inv["declared_only"],
+        "duplicate_images": duplicate_images(rows),
+        "blind": inv["blind"],
+        "problems": problems,
+        "budget": budget,
+        "admission": (budget or {}).get("admission") or [],
+        "refused": (budget or {}).get("refused") or [],
+        "reserves": (budget or {}).get("reserves") or [],
+    }
+
+    if args.out:
+        out = pathlib.Path(args.out)
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "inventory.json").write_text(
+            json.dumps(report, indent=1, sort_keys=True) + "\n"
+        )
+        (out / "inventory.md").write_text(markdown(report))
+    if args.json:
+        pathlib.Path(args.json).write_text(
+            json.dumps(report, indent=1, sort_keys=True) + "\n"
+        )
+
+    print(
+        f"applied workloads: {totals['workloads']} "
+        f"(cpu {totals['cpu_m_demand']}m of demand, memory {totals['mem_mi_demand']}Mi, "
+        f"pvcs {totals['pvcs']}, unknown capacity {totals['unknown_capacity']})"
+    )
+    if budget:
+        b = budget.get("budget") or {}
+        print(
+            f"node budget:        cpu {b.get('node_cpu_requests_m')}m, "
+            f"memory {b.get('node_memory_requests_mi')}Mi, disk {b.get('node_disk_gb')}GB"
+        )
+    print(f"declared-only paths: {len(inv['declared_only'])}")
+    for path in inv["declared_only"]:
+        print(f"    {path}")
+    for image, names in sorted(report["duplicate_images"].items()):
+        print(f"duplicate image: {image}: {', '.join(names)}")
+    for blind in inv["blind"]:
+        print(f"BLIND {blind['source']}: {blind['error']}")
+    for problem in problems:
+        print(f"FAIL {problem}")
+    # Exit codes are a contract: 0 the estate fits and is fully decided, 1 a policy failure the
+    # estate can fix, 2 blind -- something could not be read, so nobody can say the estate fits.
+    if inv["blind"] or not rows:
+        for blind in inv["blind"]:
+            print(f"BLIND {blind['source']}: {blind['error']}")
+        if not rows:
+            print("BLIND no applied workload could be read: the inventory is blind, not empty")
+        return 2
+    if problems:
+        return 1 if (args.gate and not args.no_gate) else 0
+    print("ok  the declared infrastructure fits the node budget and every workload is justified")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

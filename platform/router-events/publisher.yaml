@@ -30,7 +30,7 @@ spec:
   # was right: two listeners are two separate database sessions, and a duplicate is deduplicated
   # downstream while a node event that reschedules ONE pod is a silent gap in the feed. A gap is
   # not recoverable. A duplicate is.
-  replicas: 2
+  replicas: 1  # ADR 0048: one node, one replica -- a second replica lands on the same A1 VM, so it buys no availability.
   selector:
     matchLabels: { app.kubernetes.io/name: router-event-publisher }
   template:

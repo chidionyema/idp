@@ -5,8 +5,8 @@
   "counts": {
     "intent": 112,
     "layer": 230,
-    "service": 122,
-    "tool": 463,
+    "service": 121,
+    "tool": 464,
     "workflow": 85
   },
   "records": [
@@ -19895,52 +19895,6 @@
       ]
     },
     {
-      "id": "cap:service/kube-system/cluster-autoscaler",
-      "schema_version": 1,
-      "kind": "service",
-      "summary": "Deployment cluster-autoscaler in namespace kube-system",
-      "contract": {
-        "inputs": [
-          "kubernetes API"
-        ],
-        "outputs": [
-          "pods"
-        ],
-        "errors": [
-          "image pull, admission, probe failures"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "batch"
-      },
-      "owner": "@chidionyema",
-      "plane": "cluster",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:platform,clusters"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "cluster",
-      "path": "platform/oci/autoscaler/cluster-autoscaler.yaml",
-      "depends_on": [],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ]
-    },
-    {
       "id": "cap:service/kube-system/flannel-migration",
       "schema_version": 1,
       "kind": "service",
@@ -35397,6 +35351,57 @@
           "edge": "invokes"
         }
       ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/idp-infra-inventory",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "Inventory the estate's declared infrastructure and grade it against the node budget.",
+      "contract": {
+        "inputs": [
+          "--gate",
+          "--json",
+          "--no-gate",
+          "--out",
+          "--show-toplevel"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/idp-infra-inventory",
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",
