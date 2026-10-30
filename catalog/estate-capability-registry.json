@@ -6,7 +6,7 @@
     "intent": 113,
     "layer": 238,
     "service": 121,
-    "tool": 468,
+    "tool": 469,
     "workflow": 87
   },
   "records": [
@@ -31417,6 +31417,10 @@
           "edge": "invokes"
         },
         {
+          "id": "cap:tool/language-gate",
+          "edge": "invokes"
+        },
+        {
           "id": "cap:tool/litellm-local",
           "edge": "invokes"
         },
@@ -45134,6 +45138,72 @@
       "depends_on": [
         {
           "id": "cap:tool/langfuse-up",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/language-gate",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "bin/language-gate -- the founder's ruling (2026-10-30) made mechanical: Rust over Python",
+      "contract": {
+        "inputs": [
+          "--name-only",
+          "--no-tags",
+          "--reverse"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/language-gate",
+      "depends_on": [
+        {
+          "id": "cap:tool/claim-gate",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-patch",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-read",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/schema-conformance",
           "edge": "invokes"
         }
       ],
