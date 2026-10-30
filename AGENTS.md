@@ -551,6 +551,26 @@ the estate's waking into the same kind of trigger: an event starts the work, and
 called to decide only what the event cannot settle. An action the spine wakes is `machine`
 until it needs a judgement.
 
+**The estate's health is ONE number, and the founder's concerns are weighted into it.** The
+critical-function registry (`catalog/critical-functions.json`) lists what the estate cannot work
+without -- the founder's own surfaces first, because the registry's order is the priority order
+the estate walks. The critical-function spine measures each one every 60 seconds and raises a
+structured incident for the first failing entry: the head of that queue is where an idle agent
+belongs (ADR 0049). The metric is `estate_health`, the weighted share of passing entries read
+off the spine's own verdicts (founder-critical entries carry weight 2):
+
+```bash
+python3 platform/estate/libexec/critical-probe.py estate-health
+```
+
+The registry is judged, not wished for: `tests/test_critical_functions_registry.py` (a rung in
+`bin/idp-ci`) refuses an entry the spine cannot measure, an entry with no structured remedy, a
+founder-critical entry out of order or without its weight, and a registry that omits a function
+the estate cannot work without. What these rules MEAN -- the founder's judgement, the incidents
+it came from, the situations it applies to -- is written down once, for the fleet, in
+[docs/training/2026-10-30-founder-judgement.md](docs/training/2026-10-30-founder-judgement.md).
+Read it before you act on a judgement call.
+
 ## 13. The estate's state right now
 
 The founder asked for the work to be visible in one place instead of re-derived by whoever picks
@@ -564,7 +584,7 @@ could not be measured says so, never PASS.
 | the estate memory door | DOWN | writes answer `written=false ... UNWITNESSED`, reads answer HTTP 500; the upstream (`unified-memory.estate.internal`) is in-cluster and the cluster is not up |
 | the cluster | BLOCKED on the node half | CI run `40684052518`, job `122801786864` fails at `bin/idp-oke-rebuild --apply` with `nodes-per-node-pool limit has been exceeded`; that half is owned by idp#7318 |
 | the laptop volume | RECLAIMED, continuously | the resident guardian (`ai.estate.disk-watch`) takes one bounded incremental step per cycle and prints a RESULT line with free space before and after; the old watcher freed 0M |
-| the critical-function spine | BUILT | `catalog/critical-functions.json` + `platform/estate/libexec/critical-watch.py`: a dead critical function raises a structured incident, alerts, and invokes an agent with the incident attached |
+| the critical-function spine | EXTENDED; the estate's metric is now ONE number | `catalog/critical-functions.json` (7 functions + 1 assumption, founder-critical first) + `platform/estate/libexec/critical-watch.py` + `platform/estate/libexec/critical-probe.py`: the metric is `estate_health` (ADR 0049), judged by `tests/test_critical_functions_registry.py`. Measured 2026-10-30: memory-plane DOWN (the door's TLS handshake fails), router-lanes DEGRADED (4 declared lanes not served), spend-bound ok, estate-substrate RED (the cluster-state receipt is 4160 min old) |
 
 The live surfaces are the estate graph (`growmos context` — every row above is a node there),
 `crew/STATE.md` (the generated snapshot; regenerate it, never trust it), and `/fleet` (the live

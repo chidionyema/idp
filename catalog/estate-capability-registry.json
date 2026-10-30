@@ -4,7 +4,7 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 112,
-    "layer": 232,
+    "layer": 233,
     "service": 121,
     "tool": 464,
     "workflow": 85
@@ -7464,6 +7464,61 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/libexec/consult_gemini.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-libexec-critical-probe",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "critical-probe.py -- the estate's critical-function probes: one door each, one heartbeat each.",
+      "contract": {
+        "inputs": [
+          "--dry-run",
+          "--json",
+          "--self-test"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-memory-door",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/libexec/critical-probe.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
