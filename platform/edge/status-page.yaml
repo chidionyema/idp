@@ -51,7 +51,7 @@ metadata:
     app.kubernetes.io/name: status-page
     availability.idp/tier: founder-facing
 spec:
-  replicas: 2
+  replicas: 1  # ADR 0048: one node, one replica -- a second replica lands on the same A1 VM, so it buys no availability.
   # require-availability: a hostname-pinned pair can only roll by freeing a node first.
   strategy:
     type: RollingUpdate

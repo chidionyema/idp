@@ -1,0 +1,751 @@
+# The estate's one-node admission list (ADR 0048, 2026-10-30).
+#
+# Machine-generated from the measured inventory plus the authored decisions; regenerate with
+# `bin/idp-infra-inventory` and keep the numbers here in step with the manifests.
+#
+# Every applied workload is either admitted (with a justification and a ladder rung) or
+# refused (with a reason and the place its capacity goes instead). Every declared-only
+# directory is either cut or reserved, with a reason. A workload that is missing from this
+# file fails the gate: new infrastructure needs a justification.
+#
+# The chart reserves are envelopes, not measurements: a HelmRelease declares no pod template
+# in git, so each reserve states its basis and its uncertainty.
+budget:
+  basis: OCI Always Free allows 4 OCPU and 24GB of Ampere A1 capacity in total, so one full VM is the
+    whole allowance; 90% of the CPU and 87.5% of the memory are left for requests, the rest for the kubelet
+    and the node's own agents
+  node_cpu_requests_m: 3600
+  node_disk_gb: 200
+  node_memory_requests_mi: 21504
+  node_shape: 'one OCI Always Free Ampere A1 VM: 4 OCPU, 24GB RAM, one 200GB boot volume, k3s with local-path
+    for persistent volumes'
+  one_shot_jobs: 'a Job''s request is a burst, not a standing claim: the estate''s one-shot jobs are excluded
+    from the concurrent budget and reported separately'
+  pvc_storage_gb: 120
+admission:
+- workload: cert-manager/helmrelease/cert-manager
+  cpu: 100m
+  memory: 384Mi
+  justification: the cert-manager service the estate runs; its measured request (100m/384Mi) fits the
+    one-node budget and it has no free-tier home
+  rung: '7'
+- workload: edge/deployment/status-page
+  cpu: 10m
+  memory: 16Mi
+  justification: 'the edge the founder reaches: ingress, certificates, DNS and the status page; its measured
+    request (10m/16Mi) fits the one-node budget and it has no free-tier home'
+  rung: '7'
+- workload: edge/helmrelease/external-dns
+  cpu: 50m
+  memory: 128Mi
+  justification: 'the edge the founder reaches: ingress, certificates, DNS and the status page; its measured
+    request (50m/128Mi) fits the one-node budget and it has no free-tier home'
+  rung: '7'
+- workload: edge/helmrelease/traefik
+  cpu: 100m
+  memory: 256Mi
+  justification: 'the edge the founder reaches: ingress, certificates, DNS and the status page; its measured
+    request (100m/256Mi) fits the one-node budget and it has no free-tier home'
+  rung: '7'
+- workload: efda-system/deployment/efda-controller
+  cpu: 50m
+  memory: 128Mi
+  justification: the effect-based detection agent, its executor and its checkpoints; its measured request
+    (50m/128Mi) fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: efda-system/deployment/efda-executor
+  cpu: 50m
+  memory: 128Mi
+  justification: the effect-based detection agent, its executor and its checkpoints; its measured request
+    (50m/128Mi) fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: efda-system/statefulset/efda-checkpoints
+  cpu: 50m
+  memory: 128Mi
+  justification: the effect-based detection agent, its executor and its checkpoints; its measured request
+    (50m/128Mi) fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: epistemic-fabric/deployment/epistemic-ingest-cicd
+  cpu: 20m
+  memory: 48Mi
+  justification: the ingest workers that turn the estate's events into memory; its measured request (20m/48Mi)
+    fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: epistemic-fabric/deployment/epistemic-ingest-github
+  cpu: 0m
+  memory: 0Mi
+  justification: the ingest workers that turn the estate's events into memory; its measured request (0m/0Mi)
+    fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: epistemic-fabric/deployment/epistemic-ingest-incidents
+  cpu: 20m
+  memory: 48Mi
+  justification: the ingest workers that turn the estate's events into memory; its measured request (20m/48Mi)
+    fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: epistemic-fabric/deployment/epistemic-ingest-slack
+  cpu: 0m
+  memory: 0Mi
+  justification: the ingest workers that turn the estate's events into memory; its measured request (0m/0Mi)
+    fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: estate-bridge/deployment/estate-bridge
+  cpu: 10m
+  memory: 64Mi
+  justification: the bridge between the estate's surfaces and the human vault; its measured request (10m/64Mi)
+    fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: estate-db/cronjob/catalog-schema
+  cpu: 10m
+  memory: 64Mi
+  justification: the catalogue schema migration, on a schedule; its measured request (10m/64Mi) fits the
+    one-node budget and it has no free-tier home
+  rung: '7'
+- workload: estate-db/cronjob/estate-db-backup
+  cpu: 50m
+  memory: 128Mi
+  justification: the nightly backup of the estate's own database; its measured request (50m/128Mi) fits
+    the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: estate-db/helmrelease/cloudnative-pg
+  cpu: 400m
+  memory: 2048Mi
+  justification: the estate's own database and its backups; its measured request (400m/2048Mi) fits the
+    one-node budget and it has no free-tier home
+  rung: '7'
+- workload: event-bus/helmrelease/nats
+  cpu: 100m
+  memory: 512Mi
+  justification: the JetStream bus every agent state change travels over; its measured request (100m/512Mi)
+    fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: external-secrets/helmrelease/external-secrets
+  cpu: 50m
+  memory: 256Mi
+  justification: the bridge that puts vault values into pods without a secret in git; its measured request
+    (50m/256Mi) fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: flux-system/deployment/helm-controller
+  cpu: 100m
+  memory: 64Mi
+  justification: the Flux controllers that reconcile the estate's declared state; the estate cannot converge
+    without them; its measured request (100m/64Mi) fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: flux-system/deployment/image-automation-controller
+  cpu: 100m
+  memory: 64Mi
+  justification: the Flux controllers that reconcile the estate's declared state; the estate cannot converge
+    without them; its measured request (100m/64Mi) fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: flux-system/deployment/image-reflector-controller
+  cpu: 100m
+  memory: 64Mi
+  justification: the Flux controllers that reconcile the estate's declared state; the estate cannot converge
+    without them; its measured request (100m/64Mi) fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: flux-system/deployment/kustomize-controller
+  cpu: 100m
+  memory: 64Mi
+  justification: the Flux controllers that reconcile the estate's declared state; the estate cannot converge
+    without them; its measured request (100m/64Mi) fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: flux-system/deployment/notification-controller
+  cpu: 100m
+  memory: 64Mi
+  justification: the Flux controllers that reconcile the estate's declared state; the estate cannot converge
+    without them; its measured request (100m/64Mi) fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: flux-system/deployment/source-controller
+  cpu: 50m
+  memory: 64Mi
+  justification: the Flux controllers that reconcile the estate's declared state; the estate cannot converge
+    without them; its measured request (50m/64Mi) fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: flux-system/helmrelease/vendor-bridge
+  cpu: 50m
+  memory: 128Mi
+  justification: the Flux controllers that reconcile the estate's declared state; the estate cannot converge
+    without them; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: hermes-agent/deployment/hermes-agent-gateway
+  cpu: 100m
+  memory: 352Mi
+  justification: the agent gateway the founder's clients reach; its measured request (100m/352Mi) fits
+    the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: identity/cronjob/front-door-heartbeat
+  cpu: 50m
+  memory: 128Mi
+  justification: the front door's own liveness beat; its measured request (50m/128Mi) fits the one-node
+    budget and it has no free-tier home
+  rung: '7'
+- workload: identity/helmrelease/oauth2-proxy
+  cpu: 50m
+  memory: 128Mi
+  justification: the front door every agent call comes through; its measured request (50m/128Mi) fits
+    the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: jit/deployment/jit-broker
+  cpu: 50m
+  memory: 128Mi
+  justification: the just-in-time ledger the estate's agents write to; its measured request (50m/128Mi)
+    fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: kube-system/daemonset/pod-no-masq
+  cpu: 5m
+  memory: 16Mi
+  justification: the node's own flannel datapath; its measured request (5m/16Mi) fits the one-node budget
+    and it has no free-tier home
+  rung: '7'
+- workload: llm/cronjob/router-backup
+  cpu: 50m
+  memory: 128Mi
+  justification: the router's configuration backup; its measured request (50m/128Mi) fits the one-node
+    budget and it has no free-tier home
+  rung: '7'
+- workload: llm/cronjob/spend-velocity-check
+  cpu: 50m
+  memory: 64Mi
+  justification: the check that keeps the estate off paid lanes; its measured request (50m/64Mi) fits
+    the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: llm/deployment/litellm
+  cpu: 50m
+  memory: 512Mi
+  justification: 'the fallback router: the cloud route is the default, this lane answers when the cloud
+    is unreachable; its measured request (50m/512Mi) fits the one-node budget and it has no free-tier
+    home'
+  rung: '7'
+- workload: llm/deployment/litellm-cache
+  cpu: 25m
+  memory: 64Mi
+  justification: the router's answer cache, which is what keeps the estate off paid lanes; its measured
+    request (25m/64Mi) fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: llm/deployment/router-event-publisher
+  cpu: 20m
+  memory: 64Mi
+  justification: 'the router lane: the cloud route is the default and this is the fallback; its measured
+    request (20m/64Mi) fits the one-node budget and it has no free-tier home'
+  rung: '7'
+- workload: llm/deployment/zeroedge
+  cpu: 20m
+  memory: 64Mi
+  justification: 'the router lane: the cloud route is the default and this is the fallback; its measured
+    request (20m/64Mi) fits the one-node budget and it has no free-tier home'
+  rung: '7'
+- workload: local-path-storage/deployment/local-path-provisioner
+  cpu: 10m
+  memory: 32Mi
+  justification: the provisioner for the node's own persistent volumes; its measured request (10m/32Mi)
+    fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: mcp/deployment/agentgateway
+  cpu: 50m
+  memory: 256Mi
+  justification: the MCP surface the agents call, including the estate context broker; its measured request
+    (50m/256Mi) fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: mcp/deployment/estate-context-broker
+  cpu: 75m
+  memory: 320Mi
+  justification: 'the context broker: the one place an agent''s context is read from, and the reason this
+    ADR exists; its measured request (75m/320Mi) fits the one-node budget and it has no free-tier home'
+  rung: '7'
+- workload: mcp/deployment/estate-mcp
+  cpu: 30m
+  memory: 96Mi
+  justification: the MCP surface the agents call, including the estate context broker; its measured request
+    (30m/96Mi) fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: mcp/deployment/github-mcp
+  cpu: 20m
+  memory: 32Mi
+  justification: the MCP surface the agents call, including the estate context broker; its measured request
+    (20m/32Mi) fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: meridian/deployment/meridian
+  cpu: 60m
+  memory: 160Mi
+  justification: the meridian service that times the estate's own calls; its measured request (60m/160Mi)
+    fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: metrics-server/helmrelease/metrics-server
+  cpu: 50m
+  memory: 128Mi
+  justification: the metrics-server service the estate runs; its measured request (50m/128Mi) fits the
+    one-node budget and it has no free-tier home
+  rung: '7'
+- workload: observability/deployment/aei
+  cpu: 50m
+  memory: 128Mi
+  justification: the audit record of what the estate did; its measured request (50m/128Mi) fits the one-node
+    budget and it has no free-tier home
+  rung: '7'
+- workload: otto-gateway/cronjob/otto-answer-probe
+  cpu: 0m
+  memory: 64Mi
+  justification: the probe that proves the gateway still answers; its measured request (0m/64Mi) fits
+    the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: otto-gateway/cronjob/otto-registration-reconciler
+  cpu: 0m
+  memory: 64Mi
+  justification: the reconciler that keeps the gateway's registration honest; its measured request (0m/64Mi)
+    fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: otto-gateway/deployment/otto-gateway
+  cpu: 150m
+  memory: 640Mi
+  justification: the gateway that answers the founder, at one replica because the second replica would
+    sit on the same A1 VM; its measured request (150m/640Mi) fits the one-node budget and it has no free-tier
+    home
+  rung: '7'
+- workload: otto-gateway/job/otto-memory-store-8
+  cpu: 50m
+  memory: 128Mi
+  justification: a one-shot seeding job for the memory store; a burst, not a standing claim; its measured
+    request (50m/128Mi) fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: otto-golden/deployment/otto-golden
+  cpu: 25m
+  memory: 128Mi
+  justification: the golden-set evaluator that grades the estate's answers; its measured request (25m/128Mi)
+    fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: quad/cronjob/quad-ledger-anchor
+  cpu: 20m
+  memory: 32Mi
+  justification: the ledger's periodic anchor; its measured request (20m/32Mi) fits the one-node budget
+    and it has no free-tier home
+  rung: '7'
+- workload: quad/cronjob/quad-ledger-verify
+  cpu: 20m
+  memory: 32Mi
+  justification: the ledger's periodic verification; its measured request (20m/32Mi) fits the one-node
+    budget and it has no free-tier home
+  rung: '7'
+- workload: quad/deployment/quad-ledger
+  cpu: 20m
+  memory: 32Mi
+  justification: the quad ledger and its anchors; its measured request (20m/32Mi) fits the one-node budget
+    and it has no free-tier home
+  rung: '7'
+- workload: reloader/helmrelease/reloader
+  cpu: 25m
+  memory: 64Mi
+  justification: the reloader service the estate runs; its measured request (25m/64Mi) fits the one-node
+    budget and it has no free-tier home
+  rung: '7'
+- workload: research/cronjob/exa-credit-probe
+  cpu: 0m
+  memory: 64Mi
+  justification: the probe that keeps the search lane's credit honest; its measured request (0m/64Mi)
+    fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: spine/deployment/spine-bridge
+  cpu: 20m
+  memory: 64Mi
+  justification: the generic spine that carries work between the estate's planes; its measured request
+    (20m/64Mi) fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: spine/deployment/spine-worker
+  cpu: 20m
+  memory: 64Mi
+  justification: the generic spine that carries work between the estate's planes; its measured request
+    (20m/64Mi) fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: tailscale/helmrelease/tailscale-operator
+  cpu: 50m
+  memory: 128Mi
+  justification: the tailscale service the estate runs; its measured request (50m/128Mi) fits the one-node
+    budget and it has no free-tier home
+  rung: '7'
+- workload: temporal/deployment/sovereign-worker
+  cpu: 50m
+  memory: 128Mi
+  justification: the sovereign worker the estate's long work runs on; its measured request (50m/128Mi)
+    fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: temporal/helmrelease/temporal
+  cpu: 350m
+  memory: 1536Mi
+  justification: the sovereign worker the estate's long work runs on; its measured request (350m/1536Mi)
+    fits the one-node budget and it has no free-tier home
+  rung: '7'
+- workload: unified-memory/cronjob/unified-memory-consolidate
+  cpu: 20m
+  memory: 64Mi
+  justification: the memory layer's consolidation; its measured request (20m/64Mi) fits the one-node budget
+    and it has no free-tier home
+  rung: '7'
+- workload: unified-memory/deployment/unified-memory-server
+  cpu: 50m
+  memory: 128Mi
+  justification: the estate's one memory layer; its measured request (50m/128Mi) fits the one-node budget
+    and it has no free-tier home
+  rung: '7'
+- workload: voice-router/deployment/voice-router
+  cpu: 100m
+  memory: 512Mi
+  justification: the voice surface the founder speaks to; its measured request (100m/512Mi) fits the one-node
+    budget and it has no free-tier home
+  rung: '7'
+- workload: voice-router/deployment/voice-router-director
+  cpu: 10m
+  memory: 64Mi
+  justification: 'the voice-first surface: the founder speaks and the estate answers; its measured request
+    (10m/64Mi) fits the one-node budget and it has no free-tier home'
+  rung: '7'
+reserves:
+- workload: cert-manager/helmrelease/cert-manager
+  cpu: 100m
+  memory: 384Mi
+  basis: three controllers (cert-manager, cainjector, webhook) at 30m/128Mi each; the chart's own defaults
+    declare no requests, so this is a forecast, not a measurement
+- workload: edge/helmrelease/external-dns
+  cpu: 50m
+  memory: 128Mi
+  basis: one deployment, the chart's default request ceiling for a single-replica DNS watcher; forecast,
+    the chart declares no requests
+- workload: edge/helmrelease/traefik
+  cpu: 100m
+  memory: 256Mi
+  basis: one ingress controller at the estate's own edge request (see platform/edge/status-page.yaml);
+    forecast, the chart declares no requests
+- workload: estate-db/helmrelease/cloudnative-pg
+  cpu: 400m
+  memory: 2048Mi
+  basis: the operator (50m) plus one Postgres instance (350m/1.5Gi), which is what the estate's database
+    actually costs; forecast, the chart declares no requests
+- workload: event-bus/helmrelease/nats
+  cpu: 100m
+  memory: 512Mi
+  basis: one JetStream server with the file store the estate's bus needs; forecast, the chart declares
+    no requests
+- workload: external-secrets/helmrelease/external-secrets
+  cpu: 50m
+  memory: 256Mi
+  basis: three controllers (webhook, cert-controller, controller) sharing 50m/256Mi; forecast, the chart
+    declares no requests
+- workload: flux-system/helmrelease/vendor-bridge
+  cpu: 50m
+  memory: 128Mi
+  basis: one bridge pod from the human-vault chart; forecast, the chart declares no requests
+- workload: hindsight/helmrelease/hindsight
+  cpu: 200m
+  memory: 768Mi
+  basis: the chart's own published single-replica envelope; forecast, the chart declares no requests
+- workload: identity/helmrelease/oauth2-proxy
+  cpu: 50m
+  memory: 128Mi
+  basis: one proxy replica in front of the identity front door; forecast, the chart declares no requests
+- workload: kyverno/helmrelease/kyverno
+  cpu: 250m
+  memory: 1024Mi
+  basis: the chart's published single-replica envelope for admission, background and reports; forecast,
+    the chart declares no requests
+- workload: metrics-server/helmrelease/metrics-server
+  cpu: 50m
+  memory: 128Mi
+  basis: one metrics-server replica; forecast, the chart declares no requests
+- workload: monitoring/helmrelease/blackbox
+  cpu: 100m
+  memory: 256Mi
+  basis: one prober replica; forecast, the chart declares no requests
+- workload: monitoring/helmrelease/kube-prometheus-stack
+  cpu: 600m
+  memory: 2560Mi
+  basis: Prometheus plus the operator, the chart's lean profile without the alertmanager and without the
+    long-term store; forecast, the chart declares no requests
+- workload: reloader/helmrelease/reloader
+  cpu: 25m
+  memory: 64Mi
+  basis: one reloader replica; forecast, the chart declares no requests
+- workload: tailscale/helmrelease/tailscale-operator
+  cpu: 50m
+  memory: 128Mi
+  basis: one operator replica; forecast, the chart declares no requests
+- workload: temporal/helmrelease/temporal
+  cpu: 350m
+  memory: 1536Mi
+  basis: server, worker and UI on one node, the profile the estate's sovereign bus runs; forecast, the
+    chart declares no requests
+refused:
+- workload: agent-workforce/cronjob/agent-workforce
+  cpu: 225m
+  memory: 768Mi
+  reason: a 225m batch on a schedule whose output is a repository artefact
+  destination: a GitHub Actions schedule workflow
+  rung: '2'
+- workload: backstage/deployment/catalogue
+  cpu: 275m
+  memory: 576Mi
+  reason: the developer portal is not the founder's surface (/fleet is), and 275m of always-on capacity
+    is the wrong spend on a one-node estate
+  destination: the laptop developer portal
+  rung: '5'
+- workload: backstage/job/estate-db-copy-backstage-r2
+  cpu: 50m
+  memory: 128Mi
+  reason: a one-shot copy of a per-application database for a product that is not admitted to this node;
+    the copy follows the product
+  destination: the product's own deployment path (GitHub Actions), with the product
+  rung: '2'
+- workload: dagster/job/estate-db-copy-dagster-r3
+  cpu: 50m
+  memory: 128Mi
+  reason: a one-shot copy of a per-application database for a product that is not admitted to this node;
+    the copy follows the product
+  destination: the product's own deployment path (GitHub Actions), with the product
+  rung: '2'
+- workload: guacamole/job/estate-db-copy-guacamole-r2
+  cpu: 50m
+  memory: 128Mi
+  reason: a one-shot copy of a per-application database for a product that is not admitted to this node;
+    the copy follows the product
+  destination: the product's own deployment path (GitHub Actions), with the product
+  rung: '2'
+- workload: healthchecks/job/estate-db-copy-healthchecks-r2
+  cpu: 50m
+  memory: 128Mi
+  reason: a one-shot copy of a per-application database for a product that is not admitted to this node;
+    the copy follows the product
+  destination: the product's own deployment path (GitHub Actions), with the product
+  rung: '2'
+- workload: hindsight/helmrelease/hindsight
+  cpu: 200m
+  memory: 768Mi
+  reason: a second memory layer; the estate's memory is the unified-memory server plus the estate context
+    broker, and one of each layer is the rule
+  destination: 'cut: merged into the estate''s one memory layer, no new home'
+  rung: '1'
+- workload: hindsight/job/estate-db-copy-hindsight-r5
+  cpu: 50m
+  memory: 128Mi
+  reason: a one-shot copy of a per-application database for a product that is not admitted to this node;
+    the copy follows the product
+  destination: the product's own deployment path (GitHub Actions), with the product
+  rung: '2'
+- workload: kyverno/helmrelease/kyverno
+  cpu: 250m
+  memory: 1024Mi
+  reason: admission control needs 250m and 1Gi on a node that cannot spare it, and the estate already
+    refuses bad changes deterministically at write, commit and push
+  destination: the laptop admission gate and the git pre-push hook (bin/idp-ci)
+  rung: '5'
+- workload: llm/deployment/ollama
+  cpu: 150m
+  memory: 768Mi
+  reason: a local model lane on the node is a third copy of the floor the cloud router already holds;
+    the cloud route is the default and this node is the fallback of the fallback
+  destination: the cloud router's free ollama floor lane (llm.mumchimp.com)
+  rung: '1'
+- workload: llm/job/estate-db-copy-litellm-r2
+  cpu: 50m
+  memory: 128Mi
+  reason: a one-shot copy of a per-application database for a product that is not admitted to this node;
+    the copy follows the product
+  destination: the product's own deployment path (GitHub Actions), with the product
+  rung: '2'
+- workload: monitoring/helmrelease/blackbox
+  cpu: 100m
+  memory: 256Mi
+  reason: the blackbox prober answers the same questions from the free telemetry tier
+  destination: Grafana Cloud free (OTLP ingest)
+  rung: '3'
+- workload: monitoring/helmrelease/kube-prometheus-stack
+  cpu: 600m
+  memory: 2560Mi
+  reason: Prometheus on one node costs 600m and 2.5Gi to keep a dashboard that the free tier holds for
+    nothing; the estate's telemetry is exactly rung 3
+  destination: Grafana Cloud free (OTLP ingest)
+  rung: '3'
+- workload: observability/job/estate-db-copy-langfuse-r2
+  cpu: 50m
+  memory: 128Mi
+  reason: a one-shot copy of a per-application database for a product that is not admitted to this node;
+    the copy follows the product
+  destination: the product's own deployment path (GitHub Actions), with the product
+  rung: '2'
+- workload: observability/job/estate-db-copy-superset-r2
+  cpu: 50m
+  memory: 128Mi
+  reason: a one-shot copy of a per-application database for a product that is not admitted to this node;
+    the copy follows the product
+  destination: the product's own deployment path (GitHub Actions), with the product
+  rung: '2'
+- workload: otto-gateway/job/estate-db-copy-otto-gateway-r3
+  cpu: 50m
+  memory: 128Mi
+  reason: a one-shot copy of a per-application database for a product that is not admitted to this node;
+    the copy follows the product
+  destination: the product's own deployment path (GitHub Actions), with the product
+  rung: '2'
+- workload: research/cronjob/research-engine
+  cpu: 200m
+  memory: 512Mi
+  reason: a 200m batch that wakes on a schedule and holds nothing between runs
+  destination: a GitHub Actions schedule workflow
+  rung: '2'
+- workload: searxng/deployment/searxng
+  cpu: 50m
+  memory: 192Mi
+  reason: a 50m always-on pod for search the exa-backed lane in the router already answers
+  destination: 'cut: the exa-backed search lane in the router'
+  rung: '1'
+- workload: temporal/job/estate-db-copy-temporal-r3
+  cpu: 50m
+  memory: 128Mi
+  reason: a one-shot copy of a per-application database for a product that is not admitted to this node;
+    the copy follows the product
+  destination: the product's own deployment path (GitHub Actions), with the product
+  rung: '2'
+orphans:
+- path: backstage/founder
+  decision: reserved
+  reason: the founder's catalogue, rendered by bin/catalog-gen and read by /fleet
+- path: backstage/org
+  decision: reserved
+  reason: the organisation catalogue, rendered by bin/catalog-gen
+- path: backstage/platform
+  decision: reserved
+  reason: the platform catalogue, rendered by bin/catalog-platform
+- path: platform/acg
+  decision: cut
+  reason: a second context and graph layer; the estate's memory is the estate context broker and growmos,
+    and one of each layer is the rule
+- path: platform/alerts
+  decision: reserved
+  reason: the alert rules for the estate's own services
+- path: platform/alerts-github
+  decision: reserved
+  reason: the GitHub delivery path for those alerts
+- path: platform/alerts-secret
+  decision: reserved
+  reason: the secret the alert delivery path reads
+- path: platform/backstage/base
+  decision: reserved
+  reason: the Backstage base the laptop developer portal builds from
+- path: platform/backstage/namespace/base
+  decision: reserved
+  reason: the Backstage namespace base
+- path: platform/backstage/overlays/local
+  decision: reserved
+  reason: the laptop overlay of the developer portal
+- path: platform/calico
+  decision: cut
+  reason: the dead OKE cluster's CNI; the one node runs flannel
+- path: platform/calico/raw
+  decision: cut
+  reason: the raw Calico manifests for the dead OKE cluster
+- path: platform/commerce/app
+  decision: cut
+  reason: a product never admitted to a node; its data path is estate-db
+- path: platform/commerce/data
+  decision: cut
+  reason: a product never admitted to a node; its data path is estate-db
+- path: platform/compiled/agent-foundry-hf
+  decision: cut
+  reason: a compiled artefact directory, not a workload
+- path: platform/crossplane
+  decision: cut
+  reason: a cloud provisioning layer the estate never enabled; the ladder places workloads on free tiers
+    first
+- path: platform/crossplane/capabilities/storage
+  decision: cut
+  reason: unused under the crossplane layer
+- path: platform/crossplane/providerconfig
+  decision: cut
+  reason: unused under the crossplane layer
+- path: platform/crossplane/providers
+  decision: cut
+  reason: unused under the crossplane layer
+- path: platform/dagster
+  decision: cut
+  reason: a second orchestrator; the estate has the sovereign bus
+- path: platform/features
+  decision: reserved
+  reason: the feature register bin/idp-features reads and CI checks
+- path: platform/flux-webhook
+  decision: reserved
+  reason: the webhook receiver Flux calls when the node returns
+- path: platform/guacamole
+  decision: cut
+  reason: a product never admitted to a node and with no user
+- path: platform/gvisor-runtime
+  decision: reserved
+  reason: the runtime cell the demo sandbox needs; bin/catalog-platform names it
+- path: platform/healing
+  decision: cut
+  reason: self-healing runbooks for a cluster with no spare capacity; the estate's healing runs in the
+    laptop agent
+- path: platform/healing/analyzer
+  decision: cut
+  reason: the analyser behind the healing layer
+- path: platform/healing/k8sgpt
+  decision: cut
+  reason: the k8sgpt analyser behind the healing layer
+- path: platform/healthchecks
+  decision: cut
+  reason: a product never admitted; the edge status page answers the same question
+- path: platform/idp_agent
+  decision: reserved
+  reason: the agent's own pod template, used by the laptop harness
+- path: platform/nodesoftware-operator
+  decision: cut
+  reason: an OKE add-on, and OKE is gone
+- path: platform/notify
+  decision: reserved
+  reason: the notification layer
+- path: platform/observability
+  decision: cut
+  reason: the telemetry collector duplicates the free tier the estate now uses
+- path: platform/observability-collector
+  decision: cut
+  reason: the collector behind the observability layer
+- path: platform/prospector
+  decision: cut
+  reason: the dead prospector experiment; the edge issuer is applied from platform/edge
+- path: platform/rbac
+  decision: reserved
+  reason: the RBAC floor every workload is bound to
+- path: platform/rbac-identity
+  decision: reserved
+  reason: the identity roles the RBAC floor binds
+- path: platform/sandbox/launch
+  decision: reserved
+  reason: 'the demo sandbox (ADR 0025): a GitHub Actions lane, never a node workload'
+- path: platform/sandbox/vcluster
+  decision: reserved
+  reason: the demo sandbox's virtual cluster (ADR 0025), with its expiry reaper; demo only, never admitted
+    to the node
+- path: platform/scheduling
+  decision: reserved
+  reason: the scheduling knobs and the one-scheduler policy
+- path: platform/science
+  decision: cut
+  reason: an experiment with no consumer
+- path: platform/spire
+  decision: reserved
+  reason: 'the SPIFFE trust layer: the estate''s intents, libexec, trust code and key broker still name
+    it, so it is cut in the follow-on sweep with those references, not in this one'
+- path: platform/staging
+  decision: cut
+  reason: staging environments for a cluster that no longer exists
+- path: platform/staging/canary
+  decision: cut
+  reason: staging environments for a cluster that no longer exists
+- path: platform/state
+  decision: reserved
+  reason: the cluster state ledger
+- path: platform/trivy
+  decision: reserved
+  reason: the node-side image scanner; the estate scans images in the build pipeline, so this stays in
+    git for a second cluster and takes no capacity
+- path: platform/verification
+  decision: reserved
+  reason: the verification layer
+- path: platform/via-negativa
+  decision: cut
+  reason: a product layer never admitted to a node

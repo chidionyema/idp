@@ -16,7 +16,7 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
-  replicas: 2   # crew#539: the second hop behind mcp.${ESTATE_ZONE}
+  replicas: 1   # ADR 0048: one node, one replica -- crew#539's second hop had a second node to land on; the single A1 VM does not.
   selector:
     matchLabels: { app.kubernetes.io/name: github-mcp }
   template:

@@ -28,7 +28,7 @@ spec:
   # and a single replica restarting makes every call in that window pay the shim's 2s timeout.
   # DoNotSchedule rather than ScheduleAnyway -- a best-effort spread collapses onto one node
   # exactly when the cluster is tight, which is the moment the spread was for.
-  replicas: 2
+  replicas: 1  # ADR 0048: one node, one replica -- a second replica lands on the same A1 VM, so it buys no availability.
   selector:
     matchLabels: { app.kubernetes.io/name: zeroedge }
   template:

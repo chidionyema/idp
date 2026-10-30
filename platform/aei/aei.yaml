@@ -34,7 +34,7 @@ metadata:
     app.kubernetes.io/part-of: idp
     estate.io/component: observability
 spec:
-  replicas: 2
+  replicas: 1  # ADR 0048: one node, one replica -- a second replica lands on the same A1 VM, so it buys no availability.
   selector:
     matchLabels:
       app.kubernetes.io/name: aei

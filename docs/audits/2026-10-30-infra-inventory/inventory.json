@@ -1,0 +1,3418 @@
+{
+ "admission": [
+  {
+   "cpu": "100m",
+   "justification": "the cert-manager service the estate runs; its measured request (100m/384Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "384Mi",
+   "rung": "7",
+   "workload": "cert-manager/helmrelease/cert-manager"
+  },
+  {
+   "cpu": "10m",
+   "justification": "the edge the founder reaches: ingress, certificates, DNS and the status page; its measured request (10m/16Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "16Mi",
+   "rung": "7",
+   "workload": "edge/deployment/status-page"
+  },
+  {
+   "cpu": "50m",
+   "justification": "the edge the founder reaches: ingress, certificates, DNS and the status page; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "128Mi",
+   "rung": "7",
+   "workload": "edge/helmrelease/external-dns"
+  },
+  {
+   "cpu": "100m",
+   "justification": "the edge the founder reaches: ingress, certificates, DNS and the status page; its measured request (100m/256Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "256Mi",
+   "rung": "7",
+   "workload": "edge/helmrelease/traefik"
+  },
+  {
+   "cpu": "50m",
+   "justification": "the effect-based detection agent, its executor and its checkpoints; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "128Mi",
+   "rung": "7",
+   "workload": "efda-system/deployment/efda-controller"
+  },
+  {
+   "cpu": "50m",
+   "justification": "the effect-based detection agent, its executor and its checkpoints; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "128Mi",
+   "rung": "7",
+   "workload": "efda-system/deployment/efda-executor"
+  },
+  {
+   "cpu": "50m",
+   "justification": "the effect-based detection agent, its executor and its checkpoints; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "128Mi",
+   "rung": "7",
+   "workload": "efda-system/statefulset/efda-checkpoints"
+  },
+  {
+   "cpu": "20m",
+   "justification": "the ingest workers that turn the estate's events into memory; its measured request (20m/48Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "48Mi",
+   "rung": "7",
+   "workload": "epistemic-fabric/deployment/epistemic-ingest-cicd"
+  },
+  {
+   "cpu": "0m",
+   "justification": "the ingest workers that turn the estate's events into memory; its measured request (0m/0Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "0Mi",
+   "rung": "7",
+   "workload": "epistemic-fabric/deployment/epistemic-ingest-github"
+  },
+  {
+   "cpu": "20m",
+   "justification": "the ingest workers that turn the estate's events into memory; its measured request (20m/48Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "48Mi",
+   "rung": "7",
+   "workload": "epistemic-fabric/deployment/epistemic-ingest-incidents"
+  },
+  {
+   "cpu": "0m",
+   "justification": "the ingest workers that turn the estate's events into memory; its measured request (0m/0Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "0Mi",
+   "rung": "7",
+   "workload": "epistemic-fabric/deployment/epistemic-ingest-slack"
+  },
+  {
+   "cpu": "10m",
+   "justification": "the bridge between the estate's surfaces and the human vault; its measured request (10m/64Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "64Mi",
+   "rung": "7",
+   "workload": "estate-bridge/deployment/estate-bridge"
+  },
+  {
+   "cpu": "10m",
+   "justification": "the catalogue schema migration, on a schedule; its measured request (10m/64Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "64Mi",
+   "rung": "7",
+   "workload": "estate-db/cronjob/catalog-schema"
+  },
+  {
+   "cpu": "50m",
+   "justification": "the nightly backup of the estate's own database; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "128Mi",
+   "rung": "7",
+   "workload": "estate-db/cronjob/estate-db-backup"
+  },
+  {
+   "cpu": "400m",
+   "justification": "the estate's own database and its backups; its measured request (400m/2048Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "2048Mi",
+   "rung": "7",
+   "workload": "estate-db/helmrelease/cloudnative-pg"
+  },
+  {
+   "cpu": "100m",
+   "justification": "the JetStream bus every agent state change travels over; its measured request (100m/512Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "512Mi",
+   "rung": "7",
+   "workload": "event-bus/helmrelease/nats"
+  },
+  {
+   "cpu": "50m",
+   "justification": "the bridge that puts vault values into pods without a secret in git; its measured request (50m/256Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "256Mi",
+   "rung": "7",
+   "workload": "external-secrets/helmrelease/external-secrets"
+  },
+  {
+   "cpu": "100m",
+   "justification": "the Flux controllers that reconcile the estate's declared state; the estate cannot converge without them; its measured request (100m/64Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "64Mi",
+   "rung": "7",
+   "workload": "flux-system/deployment/helm-controller"
+  },
+  {
+   "cpu": "100m",
+   "justification": "the Flux controllers that reconcile the estate's declared state; the estate cannot converge without them; its measured request (100m/64Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "64Mi",
+   "rung": "7",
+   "workload": "flux-system/deployment/image-automation-controller"
+  },
+  {
+   "cpu": "100m",
+   "justification": "the Flux controllers that reconcile the estate's declared state; the estate cannot converge without them; its measured request (100m/64Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "64Mi",
+   "rung": "7",
+   "workload": "flux-system/deployment/image-reflector-controller"
+  },
+  {
+   "cpu": "100m",
+   "justification": "the Flux controllers that reconcile the estate's declared state; the estate cannot converge without them; its measured request (100m/64Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "64Mi",
+   "rung": "7",
+   "workload": "flux-system/deployment/kustomize-controller"
+  },
+  {
+   "cpu": "100m",
+   "justification": "the Flux controllers that reconcile the estate's declared state; the estate cannot converge without them; its measured request (100m/64Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "64Mi",
+   "rung": "7",
+   "workload": "flux-system/deployment/notification-controller"
+  },
+  {
+   "cpu": "50m",
+   "justification": "the Flux controllers that reconcile the estate's declared state; the estate cannot converge without them; its measured request (50m/64Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "64Mi",
+   "rung": "7",
+   "workload": "flux-system/deployment/source-controller"
+  },
+  {
+   "cpu": "50m",
+   "justification": "the Flux controllers that reconcile the estate's declared state; the estate cannot converge without them; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "128Mi",
+   "rung": "7",
+   "workload": "flux-system/helmrelease/vendor-bridge"
+  },
+  {
+   "cpu": "100m",
+   "justification": "the agent gateway the founder's clients reach; its measured request (100m/352Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "352Mi",
+   "rung": "7",
+   "workload": "hermes-agent/deployment/hermes-agent-gateway"
+  },
+  {
+   "cpu": "50m",
+   "justification": "the front door's own liveness beat; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "128Mi",
+   "rung": "7",
+   "workload": "identity/cronjob/front-door-heartbeat"
+  },
+  {
+   "cpu": "50m",
+   "justification": "the front door every agent call comes through; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "128Mi",
+   "rung": "7",
+   "workload": "identity/helmrelease/oauth2-proxy"
+  },
+  {
+   "cpu": "50m",
+   "justification": "the just-in-time ledger the estate's agents write to; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "128Mi",
+   "rung": "7",
+   "workload": "jit/deployment/jit-broker"
+  },
+  {
+   "cpu": "5m",
+   "justification": "the node's own flannel datapath; its measured request (5m/16Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "16Mi",
+   "rung": "7",
+   "workload": "kube-system/daemonset/pod-no-masq"
+  },
+  {
+   "cpu": "50m",
+   "justification": "the router's configuration backup; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "128Mi",
+   "rung": "7",
+   "workload": "llm/cronjob/router-backup"
+  },
+  {
+   "cpu": "50m",
+   "justification": "the check that keeps the estate off paid lanes; its measured request (50m/64Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "64Mi",
+   "rung": "7",
+   "workload": "llm/cronjob/spend-velocity-check"
+  },
+  {
+   "cpu": "50m",
+   "justification": "the fallback router: the cloud route is the default, this lane answers when the cloud is unreachable; its measured request (50m/512Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "512Mi",
+   "rung": "7",
+   "workload": "llm/deployment/litellm"
+  },
+  {
+   "cpu": "25m",
+   "justification": "the router's answer cache, which is what keeps the estate off paid lanes; its measured request (25m/64Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "64Mi",
+   "rung": "7",
+   "workload": "llm/deployment/litellm-cache"
+  },
+  {
+   "cpu": "20m",
+   "justification": "the router lane: the cloud route is the default and this is the fallback; its measured request (20m/64Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "64Mi",
+   "rung": "7",
+   "workload": "llm/deployment/router-event-publisher"
+  },
+  {
+   "cpu": "20m",
+   "justification": "the router lane: the cloud route is the default and this is the fallback; its measured request (20m/64Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "64Mi",
+   "rung": "7",
+   "workload": "llm/deployment/zeroedge"
+  },
+  {
+   "cpu": "10m",
+   "justification": "the provisioner for the node's own persistent volumes; its measured request (10m/32Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "32Mi",
+   "rung": "7",
+   "workload": "local-path-storage/deployment/local-path-provisioner"
+  },
+  {
+   "cpu": "50m",
+   "justification": "the MCP surface the agents call, including the estate context broker; its measured request (50m/256Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "256Mi",
+   "rung": "7",
+   "workload": "mcp/deployment/agentgateway"
+  },
+  {
+   "cpu": "75m",
+   "justification": "the context broker: the one place an agent's context is read from, and the reason this ADR exists; its measured request (75m/320Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "320Mi",
+   "rung": "7",
+   "workload": "mcp/deployment/estate-context-broker"
+  },
+  {
+   "cpu": "30m",
+   "justification": "the MCP surface the agents call, including the estate context broker; its measured request (30m/96Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "96Mi",
+   "rung": "7",
+   "workload": "mcp/deployment/estate-mcp"
+  },
+  {
+   "cpu": "20m",
+   "justification": "the MCP surface the agents call, including the estate context broker; its measured request (20m/32Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "32Mi",
+   "rung": "7",
+   "workload": "mcp/deployment/github-mcp"
+  },
+  {
+   "cpu": "60m",
+   "justification": "the meridian service that times the estate's own calls; its measured request (60m/160Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "160Mi",
+   "rung": "7",
+   "workload": "meridian/deployment/meridian"
+  },
+  {
+   "cpu": "50m",
+   "justification": "the metrics-server service the estate runs; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "128Mi",
+   "rung": "7",
+   "workload": "metrics-server/helmrelease/metrics-server"
+  },
+  {
+   "cpu": "50m",
+   "justification": "the audit record of what the estate did; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "128Mi",
+   "rung": "7",
+   "workload": "observability/deployment/aei"
+  },
+  {
+   "cpu": "0m",
+   "justification": "the probe that proves the gateway still answers; its measured request (0m/64Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "64Mi",
+   "rung": "7",
+   "workload": "otto-gateway/cronjob/otto-answer-probe"
+  },
+  {
+   "cpu": "0m",
+   "justification": "the reconciler that keeps the gateway's registration honest; its measured request (0m/64Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "64Mi",
+   "rung": "7",
+   "workload": "otto-gateway/cronjob/otto-registration-reconciler"
+  },
+  {
+   "cpu": "150m",
+   "justification": "the gateway that answers the founder, at one replica because the second replica would sit on the same A1 VM; its measured request (150m/640Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "640Mi",
+   "rung": "7",
+   "workload": "otto-gateway/deployment/otto-gateway"
+  },
+  {
+   "cpu": "50m",
+   "justification": "a one-shot seeding job for the memory store; a burst, not a standing claim; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "128Mi",
+   "rung": "7",
+   "workload": "otto-gateway/job/otto-memory-store-8"
+  },
+  {
+   "cpu": "25m",
+   "justification": "the golden-set evaluator that grades the estate's answers; its measured request (25m/128Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "128Mi",
+   "rung": "7",
+   "workload": "otto-golden/deployment/otto-golden"
+  },
+  {
+   "cpu": "20m",
+   "justification": "the ledger's periodic anchor; its measured request (20m/32Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "32Mi",
+   "rung": "7",
+   "workload": "quad/cronjob/quad-ledger-anchor"
+  },
+  {
+   "cpu": "20m",
+   "justification": "the ledger's periodic verification; its measured request (20m/32Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "32Mi",
+   "rung": "7",
+   "workload": "quad/cronjob/quad-ledger-verify"
+  },
+  {
+   "cpu": "20m",
+   "justification": "the quad ledger and its anchors; its measured request (20m/32Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "32Mi",
+   "rung": "7",
+   "workload": "quad/deployment/quad-ledger"
+  },
+  {
+   "cpu": "25m",
+   "justification": "the reloader service the estate runs; its measured request (25m/64Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "64Mi",
+   "rung": "7",
+   "workload": "reloader/helmrelease/reloader"
+  },
+  {
+   "cpu": "0m",
+   "justification": "the probe that keeps the search lane's credit honest; its measured request (0m/64Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "64Mi",
+   "rung": "7",
+   "workload": "research/cronjob/exa-credit-probe"
+  },
+  {
+   "cpu": "20m",
+   "justification": "the generic spine that carries work between the estate's planes; its measured request (20m/64Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "64Mi",
+   "rung": "7",
+   "workload": "spine/deployment/spine-bridge"
+  },
+  {
+   "cpu": "20m",
+   "justification": "the generic spine that carries work between the estate's planes; its measured request (20m/64Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "64Mi",
+   "rung": "7",
+   "workload": "spine/deployment/spine-worker"
+  },
+  {
+   "cpu": "50m",
+   "justification": "the tailscale service the estate runs; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "128Mi",
+   "rung": "7",
+   "workload": "tailscale/helmrelease/tailscale-operator"
+  },
+  {
+   "cpu": "50m",
+   "justification": "the sovereign worker the estate's long work runs on; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "128Mi",
+   "rung": "7",
+   "workload": "temporal/deployment/sovereign-worker"
+  },
+  {
+   "cpu": "350m",
+   "justification": "the sovereign worker the estate's long work runs on; its measured request (350m/1536Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "1536Mi",
+   "rung": "7",
+   "workload": "temporal/helmrelease/temporal"
+  },
+  {
+   "cpu": "20m",
+   "justification": "the memory layer's consolidation; its measured request (20m/64Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "64Mi",
+   "rung": "7",
+   "workload": "unified-memory/cronjob/unified-memory-consolidate"
+  },
+  {
+   "cpu": "50m",
+   "justification": "the estate's one memory layer; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "128Mi",
+   "rung": "7",
+   "workload": "unified-memory/deployment/unified-memory-server"
+  },
+  {
+   "cpu": "100m",
+   "justification": "the voice surface the founder speaks to; its measured request (100m/512Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "512Mi",
+   "rung": "7",
+   "workload": "voice-router/deployment/voice-router"
+  },
+  {
+   "cpu": "10m",
+   "justification": "the voice-first surface: the founder speaks and the estate answers; its measured request (10m/64Mi) fits the one-node budget and it has no free-tier home",
+   "memory": "64Mi",
+   "rung": "7",
+   "workload": "voice-router/deployment/voice-router-director"
+  }
+ ],
+ "applied_paths": [
+  "clusters/oke",
+  "platform/aei",
+  "platform/agent-workforce",
+  "platform/backstage/namespace/overlays/oke",
+  "platform/backstage/overlays/oke",
+  "platform/bridge",
+  "platform/catalog",
+  "platform/concierge",
+  "platform/dns",
+  "platform/edge",
+  "platform/efda",
+  "platform/epistemic-fabric",
+  "platform/estate-db/backup",
+  "platform/estate-db/cluster",
+  "platform/estate-db/migrate",
+  "platform/estate-db/operator",
+  "platform/event-bus",
+  "platform/flannel",
+  "platform/github-app-creds",
+  "platform/hermes-agent",
+  "platform/hindsight",
+  "platform/human-vault",
+  "platform/human-vault-bridge",
+  "platform/identity",
+  "platform/image-automation",
+  "platform/jit",
+  "platform/kyverno",
+  "platform/llm",
+  "platform/local-path",
+  "platform/mcp",
+  "platform/meridian",
+  "platform/metrics-server",
+  "platform/monitoring",
+  "platform/monitoring/rules",
+  "platform/ns-fences",
+  "platform/otto-gateway",
+  "platform/otto-golden",
+  "platform/otto-golden-secret",
+  "platform/priority-classes",
+  "platform/quad/ledger",
+  "platform/quad/ledger-exception",
+  "platform/rbac-floor",
+  "platform/reloader",
+  "platform/research-engine",
+  "platform/router-events",
+  "platform/searxng",
+  "platform/secret-store",
+  "platform/secrets",
+  "platform/spine",
+  "platform/spine/events",
+  "platform/tailscale",
+  "platform/temporal",
+  "platform/unified-memory-server",
+  "platform/voice-router/deploy"
+ ],
+ "blind": [],
+ "budget": {
+  "admission": [
+   {
+    "cpu": "100m",
+    "justification": "the cert-manager service the estate runs; its measured request (100m/384Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "384Mi",
+    "rung": "7",
+    "workload": "cert-manager/helmrelease/cert-manager"
+   },
+   {
+    "cpu": "10m",
+    "justification": "the edge the founder reaches: ingress, certificates, DNS and the status page; its measured request (10m/16Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "16Mi",
+    "rung": "7",
+    "workload": "edge/deployment/status-page"
+   },
+   {
+    "cpu": "50m",
+    "justification": "the edge the founder reaches: ingress, certificates, DNS and the status page; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "128Mi",
+    "rung": "7",
+    "workload": "edge/helmrelease/external-dns"
+   },
+   {
+    "cpu": "100m",
+    "justification": "the edge the founder reaches: ingress, certificates, DNS and the status page; its measured request (100m/256Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "256Mi",
+    "rung": "7",
+    "workload": "edge/helmrelease/traefik"
+   },
+   {
+    "cpu": "50m",
+    "justification": "the effect-based detection agent, its executor and its checkpoints; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "128Mi",
+    "rung": "7",
+    "workload": "efda-system/deployment/efda-controller"
+   },
+   {
+    "cpu": "50m",
+    "justification": "the effect-based detection agent, its executor and its checkpoints; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "128Mi",
+    "rung": "7",
+    "workload": "efda-system/deployment/efda-executor"
+   },
+   {
+    "cpu": "50m",
+    "justification": "the effect-based detection agent, its executor and its checkpoints; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "128Mi",
+    "rung": "7",
+    "workload": "efda-system/statefulset/efda-checkpoints"
+   },
+   {
+    "cpu": "20m",
+    "justification": "the ingest workers that turn the estate's events into memory; its measured request (20m/48Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "48Mi",
+    "rung": "7",
+    "workload": "epistemic-fabric/deployment/epistemic-ingest-cicd"
+   },
+   {
+    "cpu": "0m",
+    "justification": "the ingest workers that turn the estate's events into memory; its measured request (0m/0Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "0Mi",
+    "rung": "7",
+    "workload": "epistemic-fabric/deployment/epistemic-ingest-github"
+   },
+   {
+    "cpu": "20m",
+    "justification": "the ingest workers that turn the estate's events into memory; its measured request (20m/48Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "48Mi",
+    "rung": "7",
+    "workload": "epistemic-fabric/deployment/epistemic-ingest-incidents"
+   },
+   {
+    "cpu": "0m",
+    "justification": "the ingest workers that turn the estate's events into memory; its measured request (0m/0Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "0Mi",
+    "rung": "7",
+    "workload": "epistemic-fabric/deployment/epistemic-ingest-slack"
+   },
+   {
+    "cpu": "10m",
+    "justification": "the bridge between the estate's surfaces and the human vault; its measured request (10m/64Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "64Mi",
+    "rung": "7",
+    "workload": "estate-bridge/deployment/estate-bridge"
+   },
+   {
+    "cpu": "10m",
+    "justification": "the catalogue schema migration, on a schedule; its measured request (10m/64Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "64Mi",
+    "rung": "7",
+    "workload": "estate-db/cronjob/catalog-schema"
+   },
+   {
+    "cpu": "50m",
+    "justification": "the nightly backup of the estate's own database; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "128Mi",
+    "rung": "7",
+    "workload": "estate-db/cronjob/estate-db-backup"
+   },
+   {
+    "cpu": "400m",
+    "justification": "the estate's own database and its backups; its measured request (400m/2048Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "2048Mi",
+    "rung": "7",
+    "workload": "estate-db/helmrelease/cloudnative-pg"
+   },
+   {
+    "cpu": "100m",
+    "justification": "the JetStream bus every agent state change travels over; its measured request (100m/512Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "512Mi",
+    "rung": "7",
+    "workload": "event-bus/helmrelease/nats"
+   },
+   {
+    "cpu": "50m",
+    "justification": "the bridge that puts vault values into pods without a secret in git; its measured request (50m/256Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "256Mi",
+    "rung": "7",
+    "workload": "external-secrets/helmrelease/external-secrets"
+   },
+   {
+    "cpu": "100m",
+    "justification": "the Flux controllers that reconcile the estate's declared state; the estate cannot converge without them; its measured request (100m/64Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "64Mi",
+    "rung": "7",
+    "workload": "flux-system/deployment/helm-controller"
+   },
+   {
+    "cpu": "100m",
+    "justification": "the Flux controllers that reconcile the estate's declared state; the estate cannot converge without them; its measured request (100m/64Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "64Mi",
+    "rung": "7",
+    "workload": "flux-system/deployment/image-automation-controller"
+   },
+   {
+    "cpu": "100m",
+    "justification": "the Flux controllers that reconcile the estate's declared state; the estate cannot converge without them; its measured request (100m/64Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "64Mi",
+    "rung": "7",
+    "workload": "flux-system/deployment/image-reflector-controller"
+   },
+   {
+    "cpu": "100m",
+    "justification": "the Flux controllers that reconcile the estate's declared state; the estate cannot converge without them; its measured request (100m/64Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "64Mi",
+    "rung": "7",
+    "workload": "flux-system/deployment/kustomize-controller"
+   },
+   {
+    "cpu": "100m",
+    "justification": "the Flux controllers that reconcile the estate's declared state; the estate cannot converge without them; its measured request (100m/64Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "64Mi",
+    "rung": "7",
+    "workload": "flux-system/deployment/notification-controller"
+   },
+   {
+    "cpu": "50m",
+    "justification": "the Flux controllers that reconcile the estate's declared state; the estate cannot converge without them; its measured request (50m/64Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "64Mi",
+    "rung": "7",
+    "workload": "flux-system/deployment/source-controller"
+   },
+   {
+    "cpu": "50m",
+    "justification": "the Flux controllers that reconcile the estate's declared state; the estate cannot converge without them; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "128Mi",
+    "rung": "7",
+    "workload": "flux-system/helmrelease/vendor-bridge"
+   },
+   {
+    "cpu": "100m",
+    "justification": "the agent gateway the founder's clients reach; its measured request (100m/352Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "352Mi",
+    "rung": "7",
+    "workload": "hermes-agent/deployment/hermes-agent-gateway"
+   },
+   {
+    "cpu": "50m",
+    "justification": "the front door's own liveness beat; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "128Mi",
+    "rung": "7",
+    "workload": "identity/cronjob/front-door-heartbeat"
+   },
+   {
+    "cpu": "50m",
+    "justification": "the front door every agent call comes through; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "128Mi",
+    "rung": "7",
+    "workload": "identity/helmrelease/oauth2-proxy"
+   },
+   {
+    "cpu": "50m",
+    "justification": "the just-in-time ledger the estate's agents write to; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "128Mi",
+    "rung": "7",
+    "workload": "jit/deployment/jit-broker"
+   },
+   {
+    "cpu": "5m",
+    "justification": "the node's own flannel datapath; its measured request (5m/16Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "16Mi",
+    "rung": "7",
+    "workload": "kube-system/daemonset/pod-no-masq"
+   },
+   {
+    "cpu": "50m",
+    "justification": "the router's configuration backup; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "128Mi",
+    "rung": "7",
+    "workload": "llm/cronjob/router-backup"
+   },
+   {
+    "cpu": "50m",
+    "justification": "the check that keeps the estate off paid lanes; its measured request (50m/64Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "64Mi",
+    "rung": "7",
+    "workload": "llm/cronjob/spend-velocity-check"
+   },
+   {
+    "cpu": "50m",
+    "justification": "the fallback router: the cloud route is the default, this lane answers when the cloud is unreachable; its measured request (50m/512Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "512Mi",
+    "rung": "7",
+    "workload": "llm/deployment/litellm"
+   },
+   {
+    "cpu": "25m",
+    "justification": "the router's answer cache, which is what keeps the estate off paid lanes; its measured request (25m/64Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "64Mi",
+    "rung": "7",
+    "workload": "llm/deployment/litellm-cache"
+   },
+   {
+    "cpu": "20m",
+    "justification": "the router lane: the cloud route is the default and this is the fallback; its measured request (20m/64Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "64Mi",
+    "rung": "7",
+    "workload": "llm/deployment/router-event-publisher"
+   },
+   {
+    "cpu": "20m",
+    "justification": "the router lane: the cloud route is the default and this is the fallback; its measured request (20m/64Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "64Mi",
+    "rung": "7",
+    "workload": "llm/deployment/zeroedge"
+   },
+   {
+    "cpu": "10m",
+    "justification": "the provisioner for the node's own persistent volumes; its measured request (10m/32Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "32Mi",
+    "rung": "7",
+    "workload": "local-path-storage/deployment/local-path-provisioner"
+   },
+   {
+    "cpu": "50m",
+    "justification": "the MCP surface the agents call, including the estate context broker; its measured request (50m/256Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "256Mi",
+    "rung": "7",
+    "workload": "mcp/deployment/agentgateway"
+   },
+   {
+    "cpu": "75m",
+    "justification": "the context broker: the one place an agent's context is read from, and the reason this ADR exists; its measured request (75m/320Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "320Mi",
+    "rung": "7",
+    "workload": "mcp/deployment/estate-context-broker"
+   },
+   {
+    "cpu": "30m",
+    "justification": "the MCP surface the agents call, including the estate context broker; its measured request (30m/96Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "96Mi",
+    "rung": "7",
+    "workload": "mcp/deployment/estate-mcp"
+   },
+   {
+    "cpu": "20m",
+    "justification": "the MCP surface the agents call, including the estate context broker; its measured request (20m/32Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "32Mi",
+    "rung": "7",
+    "workload": "mcp/deployment/github-mcp"
+   },
+   {
+    "cpu": "60m",
+    "justification": "the meridian service that times the estate's own calls; its measured request (60m/160Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "160Mi",
+    "rung": "7",
+    "workload": "meridian/deployment/meridian"
+   },
+   {
+    "cpu": "50m",
+    "justification": "the metrics-server service the estate runs; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "128Mi",
+    "rung": "7",
+    "workload": "metrics-server/helmrelease/metrics-server"
+   },
+   {
+    "cpu": "50m",
+    "justification": "the audit record of what the estate did; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "128Mi",
+    "rung": "7",
+    "workload": "observability/deployment/aei"
+   },
+   {
+    "cpu": "0m",
+    "justification": "the probe that proves the gateway still answers; its measured request (0m/64Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "64Mi",
+    "rung": "7",
+    "workload": "otto-gateway/cronjob/otto-answer-probe"
+   },
+   {
+    "cpu": "0m",
+    "justification": "the reconciler that keeps the gateway's registration honest; its measured request (0m/64Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "64Mi",
+    "rung": "7",
+    "workload": "otto-gateway/cronjob/otto-registration-reconciler"
+   },
+   {
+    "cpu": "150m",
+    "justification": "the gateway that answers the founder, at one replica because the second replica would sit on the same A1 VM; its measured request (150m/640Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "640Mi",
+    "rung": "7",
+    "workload": "otto-gateway/deployment/otto-gateway"
+   },
+   {
+    "cpu": "50m",
+    "justification": "a one-shot seeding job for the memory store; a burst, not a standing claim; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "128Mi",
+    "rung": "7",
+    "workload": "otto-gateway/job/otto-memory-store-8"
+   },
+   {
+    "cpu": "25m",
+    "justification": "the golden-set evaluator that grades the estate's answers; its measured request (25m/128Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "128Mi",
+    "rung": "7",
+    "workload": "otto-golden/deployment/otto-golden"
+   },
+   {
+    "cpu": "20m",
+    "justification": "the ledger's periodic anchor; its measured request (20m/32Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "32Mi",
+    "rung": "7",
+    "workload": "quad/cronjob/quad-ledger-anchor"
+   },
+   {
+    "cpu": "20m",
+    "justification": "the ledger's periodic verification; its measured request (20m/32Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "32Mi",
+    "rung": "7",
+    "workload": "quad/cronjob/quad-ledger-verify"
+   },
+   {
+    "cpu": "20m",
+    "justification": "the quad ledger and its anchors; its measured request (20m/32Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "32Mi",
+    "rung": "7",
+    "workload": "quad/deployment/quad-ledger"
+   },
+   {
+    "cpu": "25m",
+    "justification": "the reloader service the estate runs; its measured request (25m/64Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "64Mi",
+    "rung": "7",
+    "workload": "reloader/helmrelease/reloader"
+   },
+   {
+    "cpu": "0m",
+    "justification": "the probe that keeps the search lane's credit honest; its measured request (0m/64Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "64Mi",
+    "rung": "7",
+    "workload": "research/cronjob/exa-credit-probe"
+   },
+   {
+    "cpu": "20m",
+    "justification": "the generic spine that carries work between the estate's planes; its measured request (20m/64Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "64Mi",
+    "rung": "7",
+    "workload": "spine/deployment/spine-bridge"
+   },
+   {
+    "cpu": "20m",
+    "justification": "the generic spine that carries work between the estate's planes; its measured request (20m/64Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "64Mi",
+    "rung": "7",
+    "workload": "spine/deployment/spine-worker"
+   },
+   {
+    "cpu": "50m",
+    "justification": "the tailscale service the estate runs; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "128Mi",
+    "rung": "7",
+    "workload": "tailscale/helmrelease/tailscale-operator"
+   },
+   {
+    "cpu": "50m",
+    "justification": "the sovereign worker the estate's long work runs on; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "128Mi",
+    "rung": "7",
+    "workload": "temporal/deployment/sovereign-worker"
+   },
+   {
+    "cpu": "350m",
+    "justification": "the sovereign worker the estate's long work runs on; its measured request (350m/1536Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "1536Mi",
+    "rung": "7",
+    "workload": "temporal/helmrelease/temporal"
+   },
+   {
+    "cpu": "20m",
+    "justification": "the memory layer's consolidation; its measured request (20m/64Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "64Mi",
+    "rung": "7",
+    "workload": "unified-memory/cronjob/unified-memory-consolidate"
+   },
+   {
+    "cpu": "50m",
+    "justification": "the estate's one memory layer; its measured request (50m/128Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "128Mi",
+    "rung": "7",
+    "workload": "unified-memory/deployment/unified-memory-server"
+   },
+   {
+    "cpu": "100m",
+    "justification": "the voice surface the founder speaks to; its measured request (100m/512Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "512Mi",
+    "rung": "7",
+    "workload": "voice-router/deployment/voice-router"
+   },
+   {
+    "cpu": "10m",
+    "justification": "the voice-first surface: the founder speaks and the estate answers; its measured request (10m/64Mi) fits the one-node budget and it has no free-tier home",
+    "memory": "64Mi",
+    "rung": "7",
+    "workload": "voice-router/deployment/voice-router-director"
+   }
+  ],
+  "budget": {
+   "basis": "OCI Always Free allows 4 OCPU and 24GB of Ampere A1 capacity in total, so one full VM is the whole allowance; 90% of the CPU and 87.5% of the memory are left for requests, the rest for the kubelet and the node's own agents",
+   "node_cpu_requests_m": 3600,
+   "node_disk_gb": 200,
+   "node_memory_requests_mi": 21504,
+   "node_shape": "one OCI Always Free Ampere A1 VM: 4 OCPU, 24GB RAM, one 200GB boot volume, k3s with local-path for persistent volumes",
+   "one_shot_jobs": "a Job's request is a burst, not a standing claim: the estate's one-shot jobs are excluded from the concurrent budget and reported separately",
+   "pvc_storage_gb": 120
+  },
+  "orphans": [
+   {
+    "decision": "reserved",
+    "path": "backstage/founder",
+    "reason": "the founder's catalogue, rendered by bin/catalog-gen and read by /fleet"
+   },
+   {
+    "decision": "reserved",
+    "path": "backstage/org",
+    "reason": "the organisation catalogue, rendered by bin/catalog-gen"
+   },
+   {
+    "decision": "reserved",
+    "path": "backstage/platform",
+    "reason": "the platform catalogue, rendered by bin/catalog-platform"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/acg",
+    "reason": "a second context and graph layer; the estate's memory is the estate context broker and growmos, and one of each layer is the rule"
+   },
+   {
+    "decision": "reserved",
+    "path": "platform/alerts",
+    "reason": "the alert rules for the estate's own services"
+   },
+   {
+    "decision": "reserved",
+    "path": "platform/alerts-github",
+    "reason": "the GitHub delivery path for those alerts"
+   },
+   {
+    "decision": "reserved",
+    "path": "platform/alerts-secret",
+    "reason": "the secret the alert delivery path reads"
+   },
+   {
+    "decision": "reserved",
+    "path": "platform/backstage/base",
+    "reason": "the Backstage base the laptop developer portal builds from"
+   },
+   {
+    "decision": "reserved",
+    "path": "platform/backstage/namespace/base",
+    "reason": "the Backstage namespace base"
+   },
+   {
+    "decision": "reserved",
+    "path": "platform/backstage/overlays/local",
+    "reason": "the laptop overlay of the developer portal"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/calico",
+    "reason": "the dead OKE cluster's CNI; the one node runs flannel"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/calico/raw",
+    "reason": "the raw Calico manifests for the dead OKE cluster"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/commerce/app",
+    "reason": "a product never admitted to a node; its data path is estate-db"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/commerce/data",
+    "reason": "a product never admitted to a node; its data path is estate-db"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/compiled/agent-foundry-hf",
+    "reason": "a compiled artefact directory, not a workload"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/crossplane",
+    "reason": "a cloud provisioning layer the estate never enabled; the ladder places workloads on free tiers first"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/crossplane/capabilities/storage",
+    "reason": "unused under the crossplane layer"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/crossplane/providerconfig",
+    "reason": "unused under the crossplane layer"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/crossplane/providers",
+    "reason": "unused under the crossplane layer"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/dagster",
+    "reason": "a second orchestrator; the estate has the sovereign bus"
+   },
+   {
+    "decision": "reserved",
+    "path": "platform/features",
+    "reason": "the feature register bin/idp-features reads and CI checks"
+   },
+   {
+    "decision": "reserved",
+    "path": "platform/flux-webhook",
+    "reason": "the webhook receiver Flux calls when the node returns"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/guacamole",
+    "reason": "a product never admitted to a node and with no user"
+   },
+   {
+    "decision": "reserved",
+    "path": "platform/gvisor-runtime",
+    "reason": "the runtime cell the demo sandbox needs; bin/catalog-platform names it"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/healing",
+    "reason": "self-healing runbooks for a cluster with no spare capacity; the estate's healing runs in the laptop agent"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/healing/analyzer",
+    "reason": "the analyser behind the healing layer"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/healing/k8sgpt",
+    "reason": "the k8sgpt analyser behind the healing layer"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/healthchecks",
+    "reason": "a product never admitted; the edge status page answers the same question"
+   },
+   {
+    "decision": "reserved",
+    "path": "platform/idp_agent",
+    "reason": "the agent's own pod template, used by the laptop harness"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/nodesoftware-operator",
+    "reason": "an OKE add-on, and OKE is gone"
+   },
+   {
+    "decision": "reserved",
+    "path": "platform/notify",
+    "reason": "the notification layer"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/observability",
+    "reason": "the telemetry collector duplicates the free tier the estate now uses"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/observability-collector",
+    "reason": "the collector behind the observability layer"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/prospector",
+    "reason": "the dead prospector experiment; the edge issuer is applied from platform/edge"
+   },
+   {
+    "decision": "reserved",
+    "path": "platform/rbac",
+    "reason": "the RBAC floor every workload is bound to"
+   },
+   {
+    "decision": "reserved",
+    "path": "platform/rbac-identity",
+    "reason": "the identity roles the RBAC floor binds"
+   },
+   {
+    "decision": "reserved",
+    "path": "platform/sandbox/launch",
+    "reason": "the demo sandbox (ADR 0025): a GitHub Actions lane, never a node workload"
+   },
+   {
+    "decision": "reserved",
+    "path": "platform/sandbox/vcluster",
+    "reason": "the demo sandbox's virtual cluster (ADR 0025), with its expiry reaper; demo only, never admitted to the node"
+   },
+   {
+    "decision": "reserved",
+    "path": "platform/scheduling",
+    "reason": "the scheduling knobs and the one-scheduler policy"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/science",
+    "reason": "an experiment with no consumer"
+   },
+   {
+    "decision": "reserved",
+    "path": "platform/spire",
+    "reason": "the SPIFFE trust layer: the estate's intents, libexec, trust code and key broker still name it, so it is cut in the follow-on sweep with those references, not in this one"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/staging",
+    "reason": "staging environments for a cluster that no longer exists"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/staging/canary",
+    "reason": "staging environments for a cluster that no longer exists"
+   },
+   {
+    "decision": "reserved",
+    "path": "platform/state",
+    "reason": "the cluster state ledger"
+   },
+   {
+    "decision": "reserved",
+    "path": "platform/trivy",
+    "reason": "the node-side image scanner; the estate scans images in the build pipeline, so this stays in git for a second cluster and takes no capacity"
+   },
+   {
+    "decision": "reserved",
+    "path": "platform/verification",
+    "reason": "the verification layer"
+   },
+   {
+    "decision": "cut",
+    "path": "platform/via-negativa",
+    "reason": "a product layer never admitted to a node"
+   }
+  ],
+  "refused": [
+   {
+    "cpu": "225m",
+    "destination": "a GitHub Actions schedule workflow",
+    "memory": "768Mi",
+    "reason": "a 225m batch on a schedule whose output is a repository artefact",
+    "rung": "2",
+    "workload": "agent-workforce/cronjob/agent-workforce"
+   },
+   {
+    "cpu": "275m",
+    "destination": "the laptop developer portal",
+    "memory": "576Mi",
+    "reason": "the developer portal is not the founder's surface (/fleet is), and 275m of always-on capacity is the wrong spend on a one-node estate",
+    "rung": "5",
+    "workload": "backstage/deployment/catalogue"
+   },
+   {
+    "cpu": "50m",
+    "destination": "the product's own deployment path (GitHub Actions), with the product",
+    "memory": "128Mi",
+    "reason": "a one-shot copy of a per-application database for a product that is not admitted to this node; the copy follows the product",
+    "rung": "2",
+    "workload": "backstage/job/estate-db-copy-backstage-r2"
+   },
+   {
+    "cpu": "50m",
+    "destination": "the product's own deployment path (GitHub Actions), with the product",
+    "memory": "128Mi",
+    "reason": "a one-shot copy of a per-application database for a product that is not admitted to this node; the copy follows the product",
+    "rung": "2",
+    "workload": "dagster/job/estate-db-copy-dagster-r3"
+   },
+   {
+    "cpu": "50m",
+    "destination": "the product's own deployment path (GitHub Actions), with the product",
+    "memory": "128Mi",
+    "reason": "a one-shot copy of a per-application database for a product that is not admitted to this node; the copy follows the product",
+    "rung": "2",
+    "workload": "guacamole/job/estate-db-copy-guacamole-r2"
+   },
+   {
+    "cpu": "50m",
+    "destination": "the product's own deployment path (GitHub Actions), with the product",
+    "memory": "128Mi",
+    "reason": "a one-shot copy of a per-application database for a product that is not admitted to this node; the copy follows the product",
+    "rung": "2",
+    "workload": "healthchecks/job/estate-db-copy-healthchecks-r2"
+   },
+   {
+    "cpu": "200m",
+    "destination": "cut: merged into the estate's one memory layer, no new home",
+    "memory": "768Mi",
+    "reason": "a second memory layer; the estate's memory is the unified-memory server plus the estate context broker, and one of each layer is the rule",
+    "rung": "1",
+    "workload": "hindsight/helmrelease/hindsight"
+   },
+   {
+    "cpu": "50m",
+    "destination": "the product's own deployment path (GitHub Actions), with the product",
+    "memory": "128Mi",
+    "reason": "a one-shot copy of a per-application database for a product that is not admitted to this node; the copy follows the product",
+    "rung": "2",
+    "workload": "hindsight/job/estate-db-copy-hindsight-r5"
+   },
+   {
+    "cpu": "250m",
+    "destination": "the laptop admission gate and the git pre-push hook (bin/idp-ci)",
+    "memory": "1024Mi",
+    "reason": "admission control needs 250m and 1Gi on a node that cannot spare it, and the estate already refuses bad changes deterministically at write, commit and push",
+    "rung": "5",
+    "workload": "kyverno/helmrelease/kyverno"
+   },
+   {
+    "cpu": "150m",
+    "destination": "the cloud router's free ollama floor lane (llm.mumchimp.com)",
+    "memory": "768Mi",
+    "reason": "a local model lane on the node is a third copy of the floor the cloud router already holds; the cloud route is the default and this node is the fallback of the fallback",
+    "rung": "1",
+    "workload": "llm/deployment/ollama"
+   },
+   {
+    "cpu": "50m",
+    "destination": "the product's own deployment path (GitHub Actions), with the product",
+    "memory": "128Mi",
+    "reason": "a one-shot copy of a per-application database for a product that is not admitted to this node; the copy follows the product",
+    "rung": "2",
+    "workload": "llm/job/estate-db-copy-litellm-r2"
+   },
+   {
+    "cpu": "100m",
+    "destination": "Grafana Cloud free (OTLP ingest)",
+    "memory": "256Mi",
+    "reason": "the blackbox prober answers the same questions from the free telemetry tier",
+    "rung": "3",
+    "workload": "monitoring/helmrelease/blackbox"
+   },
+   {
+    "cpu": "600m",
+    "destination": "Grafana Cloud free (OTLP ingest)",
+    "memory": "2560Mi",
+    "reason": "Prometheus on one node costs 600m and 2.5Gi to keep a dashboard that the free tier holds for nothing; the estate's telemetry is exactly rung 3",
+    "rung": "3",
+    "workload": "monitoring/helmrelease/kube-prometheus-stack"
+   },
+   {
+    "cpu": "50m",
+    "destination": "the product's own deployment path (GitHub Actions), with the product",
+    "memory": "128Mi",
+    "reason": "a one-shot copy of a per-application database for a product that is not admitted to this node; the copy follows the product",
+    "rung": "2",
+    "workload": "observability/job/estate-db-copy-langfuse-r2"
+   },
+   {
+    "cpu": "50m",
+    "destination": "the product's own deployment path (GitHub Actions), with the product",
+    "memory": "128Mi",
+    "reason": "a one-shot copy of a per-application database for a product that is not admitted to this node; the copy follows the product",
+    "rung": "2",
+    "workload": "observability/job/estate-db-copy-superset-r2"
+   },
+   {
+    "cpu": "50m",
+    "destination": "the product's own deployment path (GitHub Actions), with the product",
+    "memory": "128Mi",
+    "reason": "a one-shot copy of a per-application database for a product that is not admitted to this node; the copy follows the product",
+    "rung": "2",
+    "workload": "otto-gateway/job/estate-db-copy-otto-gateway-r3"
+   },
+   {
+    "cpu": "200m",
+    "destination": "a GitHub Actions schedule workflow",
+    "memory": "512Mi",
+    "reason": "a 200m batch that wakes on a schedule and holds nothing between runs",
+    "rung": "2",
+    "workload": "research/cronjob/research-engine"
+   },
+   {
+    "cpu": "50m",
+    "destination": "cut: the exa-backed search lane in the router",
+    "memory": "192Mi",
+    "reason": "a 50m always-on pod for search the exa-backed lane in the router already answers",
+    "rung": "1",
+    "workload": "searxng/deployment/searxng"
+   },
+   {
+    "cpu": "50m",
+    "destination": "the product's own deployment path (GitHub Actions), with the product",
+    "memory": "128Mi",
+    "reason": "a one-shot copy of a per-application database for a product that is not admitted to this node; the copy follows the product",
+    "rung": "2",
+    "workload": "temporal/job/estate-db-copy-temporal-r3"
+   }
+  ],
+  "reserves": [
+   {
+    "basis": "three controllers (cert-manager, cainjector, webhook) at 30m/128Mi each; the chart's own defaults declare no requests, so this is a forecast, not a measurement",
+    "cpu": "100m",
+    "memory": "384Mi",
+    "workload": "cert-manager/helmrelease/cert-manager"
+   },
+   {
+    "basis": "one deployment, the chart's default request ceiling for a single-replica DNS watcher; forecast, the chart declares no requests",
+    "cpu": "50m",
+    "memory": "128Mi",
+    "workload": "edge/helmrelease/external-dns"
+   },
+   {
+    "basis": "one ingress controller at the estate's own edge request (see platform/edge/status-page.yaml); forecast, the chart declares no requests",
+    "cpu": "100m",
+    "memory": "256Mi",
+    "workload": "edge/helmrelease/traefik"
+   },
+   {
+    "basis": "the operator (50m) plus one Postgres instance (350m/1.5Gi), which is what the estate's database actually costs; forecast, the chart declares no requests",
+    "cpu": "400m",
+    "memory": "2048Mi",
+    "workload": "estate-db/helmrelease/cloudnative-pg"
+   },
+   {
+    "basis": "one JetStream server with the file store the estate's bus needs; forecast, the chart declares no requests",
+    "cpu": "100m",
+    "memory": "512Mi",
+    "workload": "event-bus/helmrelease/nats"
+   },
+   {
+    "basis": "three controllers (webhook, cert-controller, controller) sharing 50m/256Mi; forecast, the chart declares no requests",
+    "cpu": "50m",
+    "memory": "256Mi",
+    "workload": "external-secrets/helmrelease/external-secrets"
+   },
+   {
+    "basis": "one bridge pod from the human-vault chart; forecast, the chart declares no requests",
+    "cpu": "50m",
+    "memory": "128Mi",
+    "workload": "flux-system/helmrelease/vendor-bridge"
+   },
+   {
+    "basis": "the chart's own published single-replica envelope; forecast, the chart declares no requests",
+    "cpu": "200m",
+    "memory": "768Mi",
+    "workload": "hindsight/helmrelease/hindsight"
+   },
+   {
+    "basis": "one proxy replica in front of the identity front door; forecast, the chart declares no requests",
+    "cpu": "50m",
+    "memory": "128Mi",
+    "workload": "identity/helmrelease/oauth2-proxy"
+   },
+   {
+    "basis": "the chart's published single-replica envelope for admission, background and reports; forecast, the chart declares no requests",
+    "cpu": "250m",
+    "memory": "1024Mi",
+    "workload": "kyverno/helmrelease/kyverno"
+   },
+   {
+    "basis": "one metrics-server replica; forecast, the chart declares no requests",
+    "cpu": "50m",
+    "memory": "128Mi",
+    "workload": "metrics-server/helmrelease/metrics-server"
+   },
+   {
+    "basis": "one prober replica; forecast, the chart declares no requests",
+    "cpu": "100m",
+    "memory": "256Mi",
+    "workload": "monitoring/helmrelease/blackbox"
+   },
+   {
+    "basis": "Prometheus plus the operator, the chart's lean profile without the alertmanager and without the long-term store; forecast, the chart declares no requests",
+    "cpu": "600m",
+    "memory": "2560Mi",
+    "workload": "monitoring/helmrelease/kube-prometheus-stack"
+   },
+   {
+    "basis": "one reloader replica; forecast, the chart declares no requests",
+    "cpu": "25m",
+    "memory": "64Mi",
+    "workload": "reloader/helmrelease/reloader"
+   },
+   {
+    "basis": "one operator replica; forecast, the chart declares no requests",
+    "cpu": "50m",
+    "memory": "128Mi",
+    "workload": "tailscale/helmrelease/tailscale-operator"
+   },
+   {
+    "basis": "server, worker and UI on one node, the profile the estate's sovereign bus runs; forecast, the chart declares no requests",
+    "cpu": "350m",
+    "memory": "1536Mi",
+    "workload": "temporal/helmrelease/temporal"
+   }
+  ]
+ },
+ "declared_only": [
+  "backstage/founder",
+  "backstage/org",
+  "backstage/platform",
+  "platform/acg",
+  "platform/alerts",
+  "platform/alerts-github",
+  "platform/alerts-secret",
+  "platform/backstage/base",
+  "platform/backstage/namespace/base",
+  "platform/backstage/overlays/local",
+  "platform/calico",
+  "platform/calico/raw",
+  "platform/commerce/app",
+  "platform/commerce/data",
+  "platform/compiled/agent-foundry-hf",
+  "platform/crossplane",
+  "platform/crossplane/capabilities/storage",
+  "platform/crossplane/providerconfig",
+  "platform/crossplane/providers",
+  "platform/dagster",
+  "platform/features",
+  "platform/flux-webhook",
+  "platform/guacamole",
+  "platform/gvisor-runtime",
+  "platform/healing",
+  "platform/healing/analyzer",
+  "platform/healing/k8sgpt",
+  "platform/healthchecks",
+  "platform/idp_agent",
+  "platform/nodesoftware-operator",
+  "platform/notify",
+  "platform/observability",
+  "platform/observability-collector",
+  "platform/prospector",
+  "platform/rbac",
+  "platform/rbac-identity",
+  "platform/sandbox/launch",
+  "platform/sandbox/vcluster",
+  "platform/scheduling",
+  "platform/science",
+  "platform/spire",
+  "platform/staging",
+  "platform/staging/canary",
+  "platform/state",
+  "platform/trivy",
+  "platform/verification",
+  "platform/via-negativa"
+ ],
+ "duplicate_images": {
+  "docker.io/library/python:3.11-slim": [
+   "otto-gateway/cronjob/otto-answer-probe",
+   "otto-gateway/cronjob/otto-registration-reconciler",
+   "research/cronjob/exa-credit-probe"
+  ],
+  "docker.io/library/redis:7.4-alpine": [
+   "efda-system/statefulset/efda-checkpoints",
+   "llm/deployment/litellm-cache"
+  ],
+  "ghcr.io/chidionyema/efda:main-14976-9063f99d33ba5f9ff7079a8c2633434b7e0c483a": [
+   "efda-system/deployment/efda-controller",
+   "efda-system/deployment/efda-executor"
+  ],
+  "ghcr.io/chidionyema/epistemic-ingest:main-14961-7919fa308dbb319ed0541d5ac251cc9f7a18709d": [
+   "epistemic-fabric/deployment/epistemic-ingest-cicd",
+   "epistemic-fabric/deployment/epistemic-ingest-github",
+   "epistemic-fabric/deployment/epistemic-ingest-incidents",
+   "epistemic-fabric/deployment/epistemic-ingest-slack"
+  ],
+  "ghcr.io/chidionyema/hermes-agent:main-111-d1fb6f455a5947c96c9adaaa32889c91541ddcec": [
+   "hermes-agent/deployment/hermes-agent-gateway",
+   "otto-gateway/deployment/otto-gateway",
+   "otto-gateway/job/otto-memory-store-8",
+   "otto-golden/deployment/otto-golden"
+  ],
+  "ghcr.io/chidionyema/quad-ledger:main-14823-f1a6f263c1a9df6f0a041050d7aecd4544b880ed": [
+   "quad/cronjob/quad-ledger-anchor",
+   "quad/cronjob/quad-ledger-verify",
+   "quad/deployment/quad-ledger"
+  ],
+  "ghcr.io/chidionyema/spine:main-14976-9063f99d33ba5f9ff7079a8c2633434b7e0c483a": [
+   "spine/deployment/spine-bridge",
+   "spine/deployment/spine-worker"
+  ],
+  "ghcr.io/chidionyema/unified-memory-server:main-14961-7919fa308dbb319ed0541d5ac251cc9f7a18709d": [
+   "unified-memory/cronjob/unified-memory-consolidate",
+   "unified-memory/deployment/unified-memory-server"
+  ],
+  "ghcr.io/chidionyema/voice-router:main-14961-7919fa308dbb319ed0541d5ac251cc9f7a18709d": [
+   "voice-router/deployment/voice-router",
+   "voice-router/deployment/voice-router-director"
+  ],
+  "ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm": [
+   "backstage/job/estate-db-copy-backstage-r2",
+   "dagster/job/estate-db-copy-dagster-r3",
+   "guacamole/job/estate-db-copy-guacamole-r2",
+   "healthchecks/job/estate-db-copy-healthchecks-r2",
+   "hindsight/job/estate-db-copy-hindsight-r5",
+   "llm/job/estate-db-copy-litellm-r2",
+   "observability/job/estate-db-copy-langfuse-r2",
+   "observability/job/estate-db-copy-superset-r2",
+   "otto-gateway/job/estate-db-copy-otto-gateway-r3",
+   "temporal/job/estate-db-copy-temporal-r3"
+  ],
+  "ghcr.io/oracle/oci-cli:20260826": [
+   "estate-db/cronjob/estate-db-backup",
+   "identity/cronjob/front-door-heartbeat",
+   "llm/cronjob/router-backup"
+  ],
+  "ghcr.io/tailscale/tailscale:v1.102.3": [
+   "hermes-agent/deployment/hermes-agent-gateway",
+   "otto-gateway/deployment/otto-gateway"
+  ]
+ },
+ "measured_at": "2026-10-30T06:07:33Z",
+ "problems": [],
+ "refused": [
+  {
+   "cpu": "225m",
+   "destination": "a GitHub Actions schedule workflow",
+   "memory": "768Mi",
+   "reason": "a 225m batch on a schedule whose output is a repository artefact",
+   "rung": "2",
+   "workload": "agent-workforce/cronjob/agent-workforce"
+  },
+  {
+   "cpu": "275m",
+   "destination": "the laptop developer portal",
+   "memory": "576Mi",
+   "reason": "the developer portal is not the founder's surface (/fleet is), and 275m of always-on capacity is the wrong spend on a one-node estate",
+   "rung": "5",
+   "workload": "backstage/deployment/catalogue"
+  },
+  {
+   "cpu": "50m",
+   "destination": "the product's own deployment path (GitHub Actions), with the product",
+   "memory": "128Mi",
+   "reason": "a one-shot copy of a per-application database for a product that is not admitted to this node; the copy follows the product",
+   "rung": "2",
+   "workload": "backstage/job/estate-db-copy-backstage-r2"
+  },
+  {
+   "cpu": "50m",
+   "destination": "the product's own deployment path (GitHub Actions), with the product",
+   "memory": "128Mi",
+   "reason": "a one-shot copy of a per-application database for a product that is not admitted to this node; the copy follows the product",
+   "rung": "2",
+   "workload": "dagster/job/estate-db-copy-dagster-r3"
+  },
+  {
+   "cpu": "50m",
+   "destination": "the product's own deployment path (GitHub Actions), with the product",
+   "memory": "128Mi",
+   "reason": "a one-shot copy of a per-application database for a product that is not admitted to this node; the copy follows the product",
+   "rung": "2",
+   "workload": "guacamole/job/estate-db-copy-guacamole-r2"
+  },
+  {
+   "cpu": "50m",
+   "destination": "the product's own deployment path (GitHub Actions), with the product",
+   "memory": "128Mi",
+   "reason": "a one-shot copy of a per-application database for a product that is not admitted to this node; the copy follows the product",
+   "rung": "2",
+   "workload": "healthchecks/job/estate-db-copy-healthchecks-r2"
+  },
+  {
+   "cpu": "200m",
+   "destination": "cut: merged into the estate's one memory layer, no new home",
+   "memory": "768Mi",
+   "reason": "a second memory layer; the estate's memory is the unified-memory server plus the estate context broker, and one of each layer is the rule",
+   "rung": "1",
+   "workload": "hindsight/helmrelease/hindsight"
+  },
+  {
+   "cpu": "50m",
+   "destination": "the product's own deployment path (GitHub Actions), with the product",
+   "memory": "128Mi",
+   "reason": "a one-shot copy of a per-application database for a product that is not admitted to this node; the copy follows the product",
+   "rung": "2",
+   "workload": "hindsight/job/estate-db-copy-hindsight-r5"
+  },
+  {
+   "cpu": "250m",
+   "destination": "the laptop admission gate and the git pre-push hook (bin/idp-ci)",
+   "memory": "1024Mi",
+   "reason": "admission control needs 250m and 1Gi on a node that cannot spare it, and the estate already refuses bad changes deterministically at write, commit and push",
+   "rung": "5",
+   "workload": "kyverno/helmrelease/kyverno"
+  },
+  {
+   "cpu": "150m",
+   "destination": "the cloud router's free ollama floor lane (llm.mumchimp.com)",
+   "memory": "768Mi",
+   "reason": "a local model lane on the node is a third copy of the floor the cloud router already holds; the cloud route is the default and this node is the fallback of the fallback",
+   "rung": "1",
+   "workload": "llm/deployment/ollama"
+  },
+  {
+   "cpu": "50m",
+   "destination": "the product's own deployment path (GitHub Actions), with the product",
+   "memory": "128Mi",
+   "reason": "a one-shot copy of a per-application database for a product that is not admitted to this node; the copy follows the product",
+   "rung": "2",
+   "workload": "llm/job/estate-db-copy-litellm-r2"
+  },
+  {
+   "cpu": "100m",
+   "destination": "Grafana Cloud free (OTLP ingest)",
+   "memory": "256Mi",
+   "reason": "the blackbox prober answers the same questions from the free telemetry tier",
+   "rung": "3",
+   "workload": "monitoring/helmrelease/blackbox"
+  },
+  {
+   "cpu": "600m",
+   "destination": "Grafana Cloud free (OTLP ingest)",
+   "memory": "2560Mi",
+   "reason": "Prometheus on one node costs 600m and 2.5Gi to keep a dashboard that the free tier holds for nothing; the estate's telemetry is exactly rung 3",
+   "rung": "3",
+   "workload": "monitoring/helmrelease/kube-prometheus-stack"
+  },
+  {
+   "cpu": "50m",
+   "destination": "the product's own deployment path (GitHub Actions), with the product",
+   "memory": "128Mi",
+   "reason": "a one-shot copy of a per-application database for a product that is not admitted to this node; the copy follows the product",
+   "rung": "2",
+   "workload": "observability/job/estate-db-copy-langfuse-r2"
+  },
+  {
+   "cpu": "50m",
+   "destination": "the product's own deployment path (GitHub Actions), with the product",
+   "memory": "128Mi",
+   "reason": "a one-shot copy of a per-application database for a product that is not admitted to this node; the copy follows the product",
+   "rung": "2",
+   "workload": "observability/job/estate-db-copy-superset-r2"
+  },
+  {
+   "cpu": "50m",
+   "destination": "the product's own deployment path (GitHub Actions), with the product",
+   "memory": "128Mi",
+   "reason": "a one-shot copy of a per-application database for a product that is not admitted to this node; the copy follows the product",
+   "rung": "2",
+   "workload": "otto-gateway/job/estate-db-copy-otto-gateway-r3"
+  },
+  {
+   "cpu": "200m",
+   "destination": "a GitHub Actions schedule workflow",
+   "memory": "512Mi",
+   "reason": "a 200m batch that wakes on a schedule and holds nothing between runs",
+   "rung": "2",
+   "workload": "research/cronjob/research-engine"
+  },
+  {
+   "cpu": "50m",
+   "destination": "cut: the exa-backed search lane in the router",
+   "memory": "192Mi",
+   "reason": "a 50m always-on pod for search the exa-backed lane in the router already answers",
+   "rung": "1",
+   "workload": "searxng/deployment/searxng"
+  },
+  {
+   "cpu": "50m",
+   "destination": "the product's own deployment path (GitHub Actions), with the product",
+   "memory": "128Mi",
+   "reason": "a one-shot copy of a per-application database for a product that is not admitted to this node; the copy follows the product",
+   "rung": "2",
+   "workload": "temporal/job/estate-db-copy-temporal-r3"
+  }
+ ],
+ "reserves": [
+  {
+   "basis": "three controllers (cert-manager, cainjector, webhook) at 30m/128Mi each; the chart's own defaults declare no requests, so this is a forecast, not a measurement",
+   "cpu": "100m",
+   "memory": "384Mi",
+   "workload": "cert-manager/helmrelease/cert-manager"
+  },
+  {
+   "basis": "one deployment, the chart's default request ceiling for a single-replica DNS watcher; forecast, the chart declares no requests",
+   "cpu": "50m",
+   "memory": "128Mi",
+   "workload": "edge/helmrelease/external-dns"
+  },
+  {
+   "basis": "one ingress controller at the estate's own edge request (see platform/edge/status-page.yaml); forecast, the chart declares no requests",
+   "cpu": "100m",
+   "memory": "256Mi",
+   "workload": "edge/helmrelease/traefik"
+  },
+  {
+   "basis": "the operator (50m) plus one Postgres instance (350m/1.5Gi), which is what the estate's database actually costs; forecast, the chart declares no requests",
+   "cpu": "400m",
+   "memory": "2048Mi",
+   "workload": "estate-db/helmrelease/cloudnative-pg"
+  },
+  {
+   "basis": "one JetStream server with the file store the estate's bus needs; forecast, the chart declares no requests",
+   "cpu": "100m",
+   "memory": "512Mi",
+   "workload": "event-bus/helmrelease/nats"
+  },
+  {
+   "basis": "three controllers (webhook, cert-controller, controller) sharing 50m/256Mi; forecast, the chart declares no requests",
+   "cpu": "50m",
+   "memory": "256Mi",
+   "workload": "external-secrets/helmrelease/external-secrets"
+  },
+  {
+   "basis": "one bridge pod from the human-vault chart; forecast, the chart declares no requests",
+   "cpu": "50m",
+   "memory": "128Mi",
+   "workload": "flux-system/helmrelease/vendor-bridge"
+  },
+  {
+   "basis": "the chart's own published single-replica envelope; forecast, the chart declares no requests",
+   "cpu": "200m",
+   "memory": "768Mi",
+   "workload": "hindsight/helmrelease/hindsight"
+  },
+  {
+   "basis": "one proxy replica in front of the identity front door; forecast, the chart declares no requests",
+   "cpu": "50m",
+   "memory": "128Mi",
+   "workload": "identity/helmrelease/oauth2-proxy"
+  },
+  {
+   "basis": "the chart's published single-replica envelope for admission, background and reports; forecast, the chart declares no requests",
+   "cpu": "250m",
+   "memory": "1024Mi",
+   "workload": "kyverno/helmrelease/kyverno"
+  },
+  {
+   "basis": "one metrics-server replica; forecast, the chart declares no requests",
+   "cpu": "50m",
+   "memory": "128Mi",
+   "workload": "metrics-server/helmrelease/metrics-server"
+  },
+  {
+   "basis": "one prober replica; forecast, the chart declares no requests",
+   "cpu": "100m",
+   "memory": "256Mi",
+   "workload": "monitoring/helmrelease/blackbox"
+  },
+  {
+   "basis": "Prometheus plus the operator, the chart's lean profile without the alertmanager and without the long-term store; forecast, the chart declares no requests",
+   "cpu": "600m",
+   "memory": "2560Mi",
+   "workload": "monitoring/helmrelease/kube-prometheus-stack"
+  },
+  {
+   "basis": "one reloader replica; forecast, the chart declares no requests",
+   "cpu": "25m",
+   "memory": "64Mi",
+   "workload": "reloader/helmrelease/reloader"
+  },
+  {
+   "basis": "one operator replica; forecast, the chart declares no requests",
+   "cpu": "50m",
+   "memory": "128Mi",
+   "workload": "tailscale/helmrelease/tailscale-operator"
+  },
+  {
+   "basis": "server, worker and UI on one node, the profile the estate's sovereign bus runs; forecast, the chart declares no requests",
+   "cpu": "350m",
+   "memory": "1536Mi",
+   "workload": "temporal/helmrelease/temporal"
+  }
+ ],
+ "rows": [
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "scheduled",
+   "cpu_m": 225,
+   "images": [
+    "ghcr.io/chidionyema/agent-workforce:main"
+   ],
+   "kind": "CronJob",
+   "mem_mi": 768,
+   "name": "agent-workforce",
+   "namespace": "agent-workforce",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/agent-workforce",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "storage",
+   "cpu_m": 0,
+   "images": [],
+   "kind": "PersistentVolumeClaim",
+   "mem_mi": 0,
+   "name": "agent-workforce-memory",
+   "namespace": "agent-workforce",
+   "replicas": null,
+   "requests_declared": null,
+   "source": "platform/agent-workforce",
+   "storage_class": "local-path",
+   "storage_mi": 5120
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 275,
+   "images": [
+    "ghcr.io/chidionyema/backstage:main-14962-8dd3a2c94d2cb7794fcf545837ea9ee0c30b9a2e",
+    "ghcr.io/chidionyema/fleetview-backend:main-14980-51226d876f397a74853960f555d3326591f70539"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 576,
+   "name": "catalogue",
+   "namespace": "backstage",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/backstage/overlays/oke",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "one-shot",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm"
+   ],
+   "kind": "Job",
+   "mem_mi": 128,
+   "name": "estate-db-copy-backstage-r2",
+   "namespace": "backstage",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/estate-db/migrate",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": true,
+   "class": "chart",
+   "cpu_m": 0,
+   "images": [],
+   "kind": "HelmRelease",
+   "mem_mi": 0,
+   "name": "cert-manager",
+   "namespace": "cert-manager",
+   "replicas": null,
+   "requests_declared": null,
+   "source": "platform/edge",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "one-shot",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm"
+   ],
+   "kind": "Job",
+   "mem_mi": 128,
+   "name": "estate-db-copy-dagster-r3",
+   "namespace": "dagster",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/estate-db/migrate",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 10,
+   "images": [
+    "docker.io/nginxinc/nginx-unprivileged:1.27-alpine"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 16,
+   "name": "status-page",
+   "namespace": "edge",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/edge",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": true,
+   "class": "chart",
+   "cpu_m": 0,
+   "images": [],
+   "kind": "HelmRelease",
+   "mem_mi": 0,
+   "name": "external-dns",
+   "namespace": "edge",
+   "replicas": null,
+   "requests_declared": null,
+   "source": "platform/dns",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": true,
+   "class": "chart",
+   "cpu_m": 0,
+   "images": [],
+   "kind": "HelmRelease",
+   "mem_mi": 0,
+   "name": "traefik",
+   "namespace": "edge",
+   "replicas": null,
+   "requests_declared": null,
+   "source": "platform/edge",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/chidionyema/efda:main-14976-9063f99d33ba5f9ff7079a8c2633434b7e0c483a"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 128,
+   "name": "efda-controller",
+   "namespace": "efda-system",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/efda",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/chidionyema/efda:main-14976-9063f99d33ba5f9ff7079a8c2633434b7e0c483a"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 128,
+   "name": "efda-executor",
+   "namespace": "efda-system",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/efda",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 50,
+   "images": [
+    "docker.io/library/redis:7.4-alpine"
+   ],
+   "kind": "StatefulSet",
+   "mem_mi": 128,
+   "name": "efda-checkpoints",
+   "namespace": "efda-system",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/efda",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 20,
+   "images": [
+    "ghcr.io/chidionyema/epistemic-ingest:main-14961-7919fa308dbb319ed0541d5ac251cc9f7a18709d"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 48,
+   "name": "epistemic-ingest-cicd",
+   "namespace": "epistemic-fabric",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/epistemic-fabric",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 20,
+   "images": [
+    "ghcr.io/chidionyema/epistemic-ingest:main-14961-7919fa308dbb319ed0541d5ac251cc9f7a18709d"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 48,
+   "name": "epistemic-ingest-github",
+   "namespace": "epistemic-fabric",
+   "replicas": 0,
+   "requests_declared": true,
+   "source": "platform/epistemic-fabric",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 20,
+   "images": [
+    "ghcr.io/chidionyema/epistemic-ingest:main-14961-7919fa308dbb319ed0541d5ac251cc9f7a18709d"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 48,
+   "name": "epistemic-ingest-incidents",
+   "namespace": "epistemic-fabric",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/epistemic-fabric",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 20,
+   "images": [
+    "ghcr.io/chidionyema/epistemic-ingest:main-14961-7919fa308dbb319ed0541d5ac251cc9f7a18709d"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 48,
+   "name": "epistemic-ingest-slack",
+   "namespace": "epistemic-fabric",
+   "replicas": 0,
+   "requests_declared": true,
+   "source": "platform/epistemic-fabric",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 10,
+   "images": [
+    "registry.k8s.io/kubectl:v1.35.0"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 64,
+   "name": "estate-bridge",
+   "namespace": "estate-bridge",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/bridge",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "scheduled",
+   "cpu_m": 10,
+   "images": [
+    "ghcr.io/chidionyema/postgres-partman:18.1-postgres-partman"
+   ],
+   "kind": "CronJob",
+   "mem_mi": 64,
+   "name": "catalog-schema",
+   "namespace": "estate-db",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/catalog",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "scheduled",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/oracle/oci-cli:20260826"
+   ],
+   "kind": "CronJob",
+   "mem_mi": 128,
+   "name": "estate-db-backup",
+   "namespace": "estate-db",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/estate-db/backup",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": true,
+   "class": "chart",
+   "cpu_m": 0,
+   "images": [],
+   "kind": "HelmRelease",
+   "mem_mi": 0,
+   "name": "cloudnative-pg",
+   "namespace": "estate-db",
+   "replicas": null,
+   "requests_declared": null,
+   "source": "platform/estate-db/operator",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": true,
+   "class": "chart",
+   "cpu_m": 0,
+   "images": [],
+   "kind": "HelmRelease",
+   "mem_mi": 0,
+   "name": "nats",
+   "namespace": "event-bus",
+   "replicas": null,
+   "requests_declared": null,
+   "source": "platform/event-bus",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": true,
+   "class": "chart",
+   "cpu_m": 0,
+   "images": [],
+   "kind": "HelmRelease",
+   "mem_mi": 0,
+   "name": "external-secrets",
+   "namespace": "external-secrets",
+   "replicas": null,
+   "requests_declared": null,
+   "source": "platform/secrets",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 100,
+   "images": [
+    "ghcr.io/fluxcd/helm-controller:v1.6.3"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 64,
+   "name": "helm-controller",
+   "namespace": "flux-system",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "clusters/oke",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 100,
+   "images": [
+    "ghcr.io/fluxcd/image-automation-controller:v1.2.4"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 64,
+   "name": "image-automation-controller",
+   "namespace": "flux-system",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "clusters/oke",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 100,
+   "images": [
+    "ghcr.io/fluxcd/image-reflector-controller:v1.2.4"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 64,
+   "name": "image-reflector-controller",
+   "namespace": "flux-system",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "clusters/oke",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 100,
+   "images": [
+    "ghcr.io/fluxcd/kustomize-controller:v1.9.4"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 64,
+   "name": "kustomize-controller",
+   "namespace": "flux-system",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "clusters/oke",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 100,
+   "images": [
+    "ghcr.io/fluxcd/notification-controller:v1.9.3"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 64,
+   "name": "notification-controller",
+   "namespace": "flux-system",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "clusters/oke",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/fluxcd/source-controller:v1.9.4"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 64,
+   "name": "source-controller",
+   "namespace": "flux-system",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "clusters/oke",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": true,
+   "class": "chart",
+   "cpu_m": 0,
+   "images": [],
+   "kind": "HelmRelease",
+   "mem_mi": 0,
+   "name": "vendor-bridge",
+   "namespace": "flux-system",
+   "replicas": null,
+   "requests_declared": null,
+   "source": "platform/human-vault-bridge",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "one-shot",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm"
+   ],
+   "kind": "Job",
+   "mem_mi": 128,
+   "name": "estate-db-copy-guacamole-r2",
+   "namespace": "guacamole",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/estate-db/migrate",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "one-shot",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm"
+   ],
+   "kind": "Job",
+   "mem_mi": 128,
+   "name": "estate-db-copy-healthchecks-r2",
+   "namespace": "healthchecks",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/estate-db/migrate",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 100,
+   "images": [
+    "ghcr.io/chidionyema/hermes-agent:main-111-d1fb6f455a5947c96c9adaaa32889c91541ddcec",
+    "ghcr.io/tailscale/tailscale:v1.102.3"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 352,
+   "name": "hermes-agent-gateway",
+   "namespace": "hermes-agent",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/hermes-agent",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "storage",
+   "cpu_m": 0,
+   "images": [],
+   "kind": "PersistentVolumeClaim",
+   "mem_mi": 0,
+   "name": "hermes-agent-data",
+   "namespace": "hermes-agent",
+   "replicas": null,
+   "requests_declared": null,
+   "source": "platform/hermes-agent",
+   "storage_class": null,
+   "storage_mi": 5120
+  },
+  {
+   "applied": true,
+   "capacity_unknown": true,
+   "class": "chart",
+   "cpu_m": 0,
+   "images": [],
+   "kind": "HelmRelease",
+   "mem_mi": 0,
+   "name": "hindsight",
+   "namespace": "hindsight",
+   "replicas": null,
+   "requests_declared": null,
+   "source": "platform/hindsight",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "one-shot",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm"
+   ],
+   "kind": "Job",
+   "mem_mi": 128,
+   "name": "estate-db-copy-hindsight-r5",
+   "namespace": "hindsight",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/estate-db/migrate",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "scheduled",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/oracle/oci-cli:20260826"
+   ],
+   "kind": "CronJob",
+   "mem_mi": 128,
+   "name": "front-door-heartbeat",
+   "namespace": "identity",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/identity",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": true,
+   "class": "chart",
+   "cpu_m": 0,
+   "images": [],
+   "kind": "HelmRelease",
+   "mem_mi": 0,
+   "name": "oauth2-proxy",
+   "namespace": "identity",
+   "replicas": null,
+   "requests_declared": null,
+   "source": "platform/identity",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/chidionyema/jit:main-14961-7919fa308dbb319ed0541d5ac251cc9f7a18709d"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 128,
+   "name": "jit-broker",
+   "namespace": "jit",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/jit",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "storage",
+   "cpu_m": 0,
+   "images": [],
+   "kind": "PersistentVolumeClaim",
+   "mem_mi": 0,
+   "name": "jit-ledger",
+   "namespace": "jit",
+   "replicas": null,
+   "requests_declared": null,
+   "source": "platform/jit",
+   "storage_class": null,
+   "storage_mi": 1024
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 5,
+   "images": [
+    "quay.io/calico/node:v3.32.2"
+   ],
+   "kind": "DaemonSet",
+   "mem_mi": 16,
+   "name": "pod-no-masq",
+   "namespace": "kube-system",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/flannel",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": true,
+   "class": "chart",
+   "cpu_m": 0,
+   "images": [],
+   "kind": "HelmRelease",
+   "mem_mi": 0,
+   "name": "kyverno",
+   "namespace": "kyverno",
+   "replicas": null,
+   "requests_declared": null,
+   "source": "platform/kyverno",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "scheduled",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/oracle/oci-cli:20260826"
+   ],
+   "kind": "CronJob",
+   "mem_mi": 128,
+   "name": "router-backup",
+   "namespace": "llm",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/router-events",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "scheduled",
+   "cpu_m": 50,
+   "images": [
+    "docker.io/library/postgres:17.6-alpine"
+   ],
+   "kind": "CronJob",
+   "mem_mi": 64,
+   "name": "spend-velocity-check",
+   "namespace": "llm",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/llm",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/berriai/litellm-database:v1.98.0"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 512,
+   "name": "litellm",
+   "namespace": "llm",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/llm",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 25,
+   "images": [
+    "docker.io/library/redis:7.4-alpine"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 64,
+   "name": "litellm-cache",
+   "namespace": "llm",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/llm",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 150,
+   "images": [
+    "docker.io/ollama/ollama:0.3.14"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 768,
+   "name": "ollama",
+   "namespace": "llm",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/llm",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 20,
+   "images": [
+    "ghcr.io/chidionyema/router-events:main-14961-7919fa308dbb319ed0541d5ac251cc9f7a18709d"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 64,
+   "name": "router-event-publisher",
+   "namespace": "llm",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/router-events",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 20,
+   "images": [
+    "ghcr.io/chidionyema/zeroedge:main-5-8fc1d21bb1c94e288bb51d44b877e86626d164e4"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 64,
+   "name": "zeroedge",
+   "namespace": "llm",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/llm",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "one-shot",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm"
+   ],
+   "kind": "Job",
+   "mem_mi": 128,
+   "name": "estate-db-copy-litellm-r2",
+   "namespace": "llm",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/estate-db/migrate",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 10,
+   "images": [
+    "docker.io/rancher/local-path-provisioner:v0.0.31"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 32,
+   "name": "local-path-provisioner",
+   "namespace": "local-path-storage",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/local-path",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/agentgateway/agentgateway:v1.4.1"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 256,
+   "name": "agentgateway",
+   "namespace": "mcp",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/mcp",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 75,
+   "images": [
+    "ghcr.io/chidionyema/gortex-engine:main-0-0000000000000000000000000000000000000000",
+    "ghcr.io/chidionyema/estate-context-broker:main-0-0000000000000000000000000000000000000000"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 320,
+   "name": "estate-context-broker",
+   "namespace": "mcp",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/mcp",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 30,
+   "images": [
+    "ghcr.io/chidionyema/estate-mcp:main-14980-51226d876f397a74853960f555d3326591f70539",
+    "ghcr.io/fluxcd/flux-cli:v2.9.4"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 96,
+   "name": "estate-mcp",
+   "namespace": "mcp",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/mcp",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 20,
+   "images": [
+    "ghcr.io/github/github-mcp-server:v1.10.1"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 32,
+   "name": "github-mcp",
+   "namespace": "mcp",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/mcp",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "storage",
+   "cpu_m": 0,
+   "images": [],
+   "kind": "PersistentVolumeClaim",
+   "mem_mi": 0,
+   "name": "estate-context-index",
+   "namespace": "mcp",
+   "replicas": null,
+   "requests_declared": null,
+   "source": "platform/mcp",
+   "storage_class": "local-path",
+   "storage_mi": 2048
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 60,
+   "images": [
+    "ghcr.io/chidionyema/meridian:main-14961-7919fa308dbb319ed0541d5ac251cc9f7a18709d"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 160,
+   "name": "meridian",
+   "namespace": "meridian",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/meridian",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": true,
+   "class": "chart",
+   "cpu_m": 0,
+   "images": [],
+   "kind": "HelmRelease",
+   "mem_mi": 0,
+   "name": "metrics-server",
+   "namespace": "metrics-server",
+   "replicas": null,
+   "requests_declared": null,
+   "source": "platform/metrics-server",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": true,
+   "class": "chart",
+   "cpu_m": 0,
+   "images": [],
+   "kind": "HelmRelease",
+   "mem_mi": 0,
+   "name": "blackbox",
+   "namespace": "monitoring",
+   "replicas": null,
+   "requests_declared": null,
+   "source": "platform/monitoring",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": true,
+   "class": "chart",
+   "cpu_m": 0,
+   "images": [],
+   "kind": "HelmRelease",
+   "mem_mi": 0,
+   "name": "kube-prometheus-stack",
+   "namespace": "monitoring",
+   "replicas": null,
+   "requests_declared": null,
+   "source": "platform/monitoring",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/chidionyema/aei:main-14989-868f775a48145500b27c832914c5680af127087f"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 128,
+   "name": "aei",
+   "namespace": "observability",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/aei",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "one-shot",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm"
+   ],
+   "kind": "Job",
+   "mem_mi": 128,
+   "name": "estate-db-copy-langfuse-r2",
+   "namespace": "observability",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/estate-db/migrate",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "one-shot",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm"
+   ],
+   "kind": "Job",
+   "mem_mi": 128,
+   "name": "estate-db-copy-superset-r2",
+   "namespace": "observability",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/estate-db/migrate",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "scheduled",
+   "cpu_m": 0,
+   "images": [
+    "docker.io/library/python:3.11-slim"
+   ],
+   "kind": "CronJob",
+   "mem_mi": 64,
+   "name": "otto-answer-probe",
+   "namespace": "otto-gateway",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/otto-gateway",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "scheduled",
+   "cpu_m": 0,
+   "images": [
+    "docker.io/library/python:3.11-slim"
+   ],
+   "kind": "CronJob",
+   "mem_mi": 64,
+   "name": "otto-registration-reconciler",
+   "namespace": "otto-gateway",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/otto-gateway",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 150,
+   "images": [
+    "ghcr.io/chidionyema/hermes-agent:main-111-d1fb6f455a5947c96c9adaaa32889c91541ddcec",
+    "ghcr.io/berriai/litellm:v1.98.0",
+    "ghcr.io/tailscale/tailscale:v1.102.3"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 640,
+   "name": "otto-gateway",
+   "namespace": "otto-gateway",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/otto-gateway",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "one-shot",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm"
+   ],
+   "kind": "Job",
+   "mem_mi": 128,
+   "name": "estate-db-copy-otto-gateway-r3",
+   "namespace": "otto-gateway",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/estate-db/migrate",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "one-shot",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/chidionyema/hermes-agent:main-111-d1fb6f455a5947c96c9adaaa32889c91541ddcec"
+   ],
+   "kind": "Job",
+   "mem_mi": 128,
+   "name": "otto-memory-store-8",
+   "namespace": "otto-gateway",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/otto-gateway",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 25,
+   "images": [
+    "ghcr.io/chidionyema/hermes-agent:main-111-d1fb6f455a5947c96c9adaaa32889c91541ddcec"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 128,
+   "name": "otto-golden",
+   "namespace": "otto-golden",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/otto-golden",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "scheduled",
+   "cpu_m": 20,
+   "images": [
+    "ghcr.io/chidionyema/quad-ledger:main-14823-f1a6f263c1a9df6f0a041050d7aecd4544b880ed"
+   ],
+   "kind": "CronJob",
+   "mem_mi": 32,
+   "name": "quad-ledger-anchor",
+   "namespace": "quad",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/quad/ledger",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "scheduled",
+   "cpu_m": 20,
+   "images": [
+    "ghcr.io/chidionyema/quad-ledger:main-14823-f1a6f263c1a9df6f0a041050d7aecd4544b880ed"
+   ],
+   "kind": "CronJob",
+   "mem_mi": 32,
+   "name": "quad-ledger-verify",
+   "namespace": "quad",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/quad/ledger",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 20,
+   "images": [
+    "ghcr.io/chidionyema/quad-ledger:main-14823-f1a6f263c1a9df6f0a041050d7aecd4544b880ed"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 32,
+   "name": "quad-ledger",
+   "namespace": "quad",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/quad/ledger",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": true,
+   "class": "chart",
+   "cpu_m": 0,
+   "images": [],
+   "kind": "HelmRelease",
+   "mem_mi": 0,
+   "name": "reloader",
+   "namespace": "reloader",
+   "replicas": null,
+   "requests_declared": null,
+   "source": "platform/reloader",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "scheduled",
+   "cpu_m": 0,
+   "images": [
+    "docker.io/library/python:3.11-slim"
+   ],
+   "kind": "CronJob",
+   "mem_mi": 64,
+   "name": "exa-credit-probe",
+   "namespace": "research",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/research-engine",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "scheduled",
+   "cpu_m": 200,
+   "images": [
+    "ghcr.io/chidionyema/research-engine:sha-ecdd4b22ff053cf4c6549d9af65cc4f2841911a6"
+   ],
+   "kind": "CronJob",
+   "mem_mi": 512,
+   "name": "research-engine",
+   "namespace": "research",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/research-engine",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 50,
+   "images": [
+    "docker.io/searxng/searxng:2026.9.4-15b0c8ef3"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 192,
+   "name": "searxng",
+   "namespace": "searxng",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/searxng",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 20,
+   "images": [
+    "ghcr.io/chidionyema/spine:main-14976-9063f99d33ba5f9ff7079a8c2633434b7e0c483a"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 64,
+   "name": "spine-bridge",
+   "namespace": "spine",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/spine",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 20,
+   "images": [
+    "ghcr.io/chidionyema/spine:main-14976-9063f99d33ba5f9ff7079a8c2633434b7e0c483a"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 64,
+   "name": "spine-worker",
+   "namespace": "spine",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/spine",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": true,
+   "class": "chart",
+   "cpu_m": 0,
+   "images": [],
+   "kind": "HelmRelease",
+   "mem_mi": 0,
+   "name": "tailscale-operator",
+   "namespace": "tailscale",
+   "replicas": null,
+   "requests_declared": null,
+   "source": "platform/tailscale",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/chidionyema/sovereign-worker:main-14981-1b5772253474f3070fb00bb7f9b7626c1e22b0f9"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 128,
+   "name": "sovereign-worker",
+   "namespace": "temporal",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/temporal",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": true,
+   "class": "chart",
+   "cpu_m": 0,
+   "images": [],
+   "kind": "HelmRelease",
+   "mem_mi": 0,
+   "name": "temporal",
+   "namespace": "temporal",
+   "replicas": null,
+   "requests_declared": null,
+   "source": "platform/temporal",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "one-shot",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm"
+   ],
+   "kind": "Job",
+   "mem_mi": 128,
+   "name": "estate-db-copy-temporal-r3",
+   "namespace": "temporal",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/estate-db/migrate",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "scheduled",
+   "cpu_m": 20,
+   "images": [
+    "ghcr.io/chidionyema/unified-memory-server:main-14961-7919fa308dbb319ed0541d5ac251cc9f7a18709d"
+   ],
+   "kind": "CronJob",
+   "mem_mi": 64,
+   "name": "unified-memory-consolidate",
+   "namespace": "unified-memory",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/unified-memory-server",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 50,
+   "images": [
+    "ghcr.io/chidionyema/unified-memory-server:main-14961-7919fa308dbb319ed0541d5ac251cc9f7a18709d"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 128,
+   "name": "unified-memory-server",
+   "namespace": "unified-memory",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/unified-memory-server",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 100,
+   "images": [
+    "ghcr.io/chidionyema/voice-router:main-14961-7919fa308dbb319ed0541d5ac251cc9f7a18709d"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 512,
+   "name": "voice-router",
+   "namespace": "voice-router",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/voice-router/deploy",
+   "storage_class": null,
+   "storage_mi": null
+  },
+  {
+   "applied": true,
+   "capacity_unknown": false,
+   "class": "resident",
+   "cpu_m": 10,
+   "images": [
+    "ghcr.io/chidionyema/voice-router:main-14961-7919fa308dbb319ed0541d5ac251cc9f7a18709d"
+   ],
+   "kind": "Deployment",
+   "mem_mi": 64,
+   "name": "voice-router-director",
+   "namespace": "voice-router",
+   "replicas": 1,
+   "requests_declared": true,
+   "source": "platform/voice-router/deploy",
+   "storage_class": null,
+   "storage_mi": null
+  }
+ ],
+ "totals": {
+  "admitted_concurrent_cpu_m": 3415,
+  "admitted_concurrent_mem_mi": 11456,
+  "admitted_cpu_m": 3465,
+  "admitted_mem_mi": 11584,
+  "admitted_one_shot_cpu_m": 50,
+  "admitted_one_shot_mem_mi": 128,
+  "budgeted_one_shot_cpu_m": 550,
+  "budgeted_one_shot_mem_mi": 1408,
+  "concurrent_cpu_m": 5465,
+  "concurrent_mem_mi": 18880,
+  "cpu_m": 3530,
+  "cpu_m_budgeted": 6015,
+  "cpu_m_demand": 3490,
+  "deployments": 39,
+  "mem_mi": 10080,
+  "mem_mi_budgeted": 20288,
+  "mem_mi_demand": 9984,
+  "one_shot_cpu_m": 550,
+  "one_shot_mem_mi": 1408,
+  "oversubscribed_by_m": 1865,
+  "pvc_storage_mi": 13312,
+  "pvcs": 4,
+  "refused_cpu_m": 2550,
+  "refused_mem_mi": 8704,
+  "refused_one_shot_cpu_m": 500,
+  "refused_one_shot_mem_mi": 1280,
+  "resident_cpu_m": 2245,
+  "resident_mem_mi": 6464,
+  "scheduled_cpu_m": 695,
+  "scheduled_mem_mi": 2112,
+  "unknown_capacity": 16,
+  "workloads": 85
+ },
+ "verdicts": {
+  "agent-workforce/cronjob/agent-workforce": "REFUSED",
+  "agent-workforce/persistentvolumeclaim/agent-workforce-memory": "UNLISTED",
+  "backstage/deployment/catalogue": "REFUSED",
+  "backstage/job/estate-db-copy-backstage-r2": "REFUSED",
+  "cert-manager/helmrelease/cert-manager": "ADMITTED",
+  "dagster/job/estate-db-copy-dagster-r3": "REFUSED",
+  "edge/deployment/status-page": "ADMITTED",
+  "edge/helmrelease/external-dns": "ADMITTED",
+  "edge/helmrelease/traefik": "ADMITTED",
+  "efda-system/deployment/efda-controller": "ADMITTED",
+  "efda-system/deployment/efda-executor": "ADMITTED",
+  "efda-system/statefulset/efda-checkpoints": "ADMITTED",
+  "epistemic-fabric/deployment/epistemic-ingest-cicd": "ADMITTED",
+  "epistemic-fabric/deployment/epistemic-ingest-github": "ADMITTED",
+  "epistemic-fabric/deployment/epistemic-ingest-incidents": "ADMITTED",
+  "epistemic-fabric/deployment/epistemic-ingest-slack": "ADMITTED",
+  "estate-bridge/deployment/estate-bridge": "ADMITTED",
+  "estate-db/cronjob/catalog-schema": "ADMITTED",
+  "estate-db/cronjob/estate-db-backup": "ADMITTED",
+  "estate-db/helmrelease/cloudnative-pg": "ADMITTED",
+  "event-bus/helmrelease/nats": "ADMITTED",
+  "external-secrets/helmrelease/external-secrets": "ADMITTED",
+  "flux-system/deployment/helm-controller": "ADMITTED",
+  "flux-system/deployment/image-automation-controller": "ADMITTED",
+  "flux-system/deployment/image-reflector-controller": "ADMITTED",
+  "flux-system/deployment/kustomize-controller": "ADMITTED",
+  "flux-system/deployment/notification-controller": "ADMITTED",
+  "flux-system/deployment/source-controller": "ADMITTED",
+  "flux-system/helmrelease/vendor-bridge": "ADMITTED",
+  "guacamole/job/estate-db-copy-guacamole-r2": "REFUSED",
+  "healthchecks/job/estate-db-copy-healthchecks-r2": "REFUSED",
+  "hermes-agent/deployment/hermes-agent-gateway": "ADMITTED",
+  "hermes-agent/persistentvolumeclaim/hermes-agent-data": "UNLISTED",
+  "hindsight/helmrelease/hindsight": "REFUSED",
+  "hindsight/job/estate-db-copy-hindsight-r5": "REFUSED",
+  "identity/cronjob/front-door-heartbeat": "ADMITTED",
+  "identity/helmrelease/oauth2-proxy": "ADMITTED",
+  "jit/deployment/jit-broker": "ADMITTED",
+  "jit/persistentvolumeclaim/jit-ledger": "UNLISTED",
+  "kube-system/daemonset/pod-no-masq": "ADMITTED",
+  "kyverno/helmrelease/kyverno": "REFUSED",
+  "llm/cronjob/router-backup": "ADMITTED",
+  "llm/cronjob/spend-velocity-check": "ADMITTED",
+  "llm/deployment/litellm": "ADMITTED",
+  "llm/deployment/litellm-cache": "ADMITTED",
+  "llm/deployment/ollama": "REFUSED",
+  "llm/deployment/router-event-publisher": "ADMITTED",
+  "llm/deployment/zeroedge": "ADMITTED",
+  "llm/job/estate-db-copy-litellm-r2": "REFUSED",
+  "local-path-storage/deployment/local-path-provisioner": "ADMITTED",
+  "mcp/deployment/agentgateway": "ADMITTED",
+  "mcp/deployment/estate-context-broker": "ADMITTED",
+  "mcp/deployment/estate-mcp": "ADMITTED",
+  "mcp/deployment/github-mcp": "ADMITTED",
+  "mcp/persistentvolumeclaim/estate-context-index": "UNLISTED",
+  "meridian/deployment/meridian": "ADMITTED",
+  "metrics-server/helmrelease/metrics-server": "ADMITTED",
+  "monitoring/helmrelease/blackbox": "REFUSED",
+  "monitoring/helmrelease/kube-prometheus-stack": "REFUSED",
+  "observability/deployment/aei": "ADMITTED",
+  "observability/job/estate-db-copy-langfuse-r2": "REFUSED",
+  "observability/job/estate-db-copy-superset-r2": "REFUSED",
+  "otto-gateway/cronjob/otto-answer-probe": "ADMITTED",
+  "otto-gateway/cronjob/otto-registration-reconciler": "ADMITTED",
+  "otto-gateway/deployment/otto-gateway": "ADMITTED",
+  "otto-gateway/job/estate-db-copy-otto-gateway-r3": "REFUSED",
+  "otto-gateway/job/otto-memory-store-8": "ADMITTED",
+  "otto-golden/deployment/otto-golden": "ADMITTED",
+  "quad/cronjob/quad-ledger-anchor": "ADMITTED",
+  "quad/cronjob/quad-ledger-verify": "ADMITTED",
+  "quad/deployment/quad-ledger": "ADMITTED",
+  "reloader/helmrelease/reloader": "ADMITTED",
+  "research/cronjob/exa-credit-probe": "ADMITTED",
+  "research/cronjob/research-engine": "REFUSED",
+  "searxng/deployment/searxng": "REFUSED",
+  "spine/deployment/spine-bridge": "ADMITTED",
+  "spine/deployment/spine-worker": "ADMITTED",
+  "tailscale/helmrelease/tailscale-operator": "ADMITTED",
+  "temporal/deployment/sovereign-worker": "ADMITTED",
+  "temporal/helmrelease/temporal": "ADMITTED",
+  "temporal/job/estate-db-copy-temporal-r3": "REFUSED",
+  "unified-memory/cronjob/unified-memory-consolidate": "ADMITTED",
+  "unified-memory/deployment/unified-memory-server": "ADMITTED",
+  "voice-router/deployment/voice-router": "ADMITTED",
+  "voice-router/deployment/voice-router-director": "ADMITTED"
+ }
+}

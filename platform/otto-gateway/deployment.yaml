@@ -33,7 +33,7 @@ metadata:
 spec:
   # Two, because this is a routed surface and a drain may never take the last door
   # (crew#539 availability).
-  replicas: 2
+  replicas: 1  # ADR 0048: one node, one replica -- a second replica lands on the same A1 VM, so it buys no availability.
   selector:
     matchLabels: { app: otto-gateway }
   template:
