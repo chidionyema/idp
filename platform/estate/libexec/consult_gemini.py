@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """consult.gemini: ask Gemini for an architectural review of the estate, through the router.
 
-Usage (via the intent): consult_gemini.py question=<text> [files=a,b] [model=gemini/gemini-3.8-flash]
+Usage (via the intent): consult_gemini.py question=<text> [files=a,b] [model=gemini/gemini-3.5-flash]
                         [max_bytes=400000] [timeout=70]
 
 One door. The call goes to the estate router (llm.mumchimp.com), never to Google direct, so
@@ -27,7 +27,7 @@ from pathlib import Path
 ROUTER = os.environ.get("ESTATE_ROUTER_URL", "https://llm.mumchimp.com")
 # The router's `gemini` lane is pinned to gemini-2.5-flash, which Google now 404s for new users
 # (measured 2026-10-30), so it silently falls back to MiniMax. Ask for the live model by name.
-DEFAULT_MODEL = "gemini/gemini-3.8-flash"
+DEFAULT_MODEL = "gemini/gemini-3.5-flash"
 FALLBACK_MODEL = "default"
 FALLBACK_RESERVE_S = 25  # time held back for the fallback inside the 100s door
 DEFAULT_MAX_BYTES = 400_000
