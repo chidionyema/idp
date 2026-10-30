@@ -1,0 +1,109 @@
+description: 'The `Generate and commit DAG artifacts` check is red on every pull request
+  the Greenlane rebases (#7484, #7485, #7492) while the DAG itself generates cleanly.
+  Question: is the fault (H1) the guard step that decides whether the DAG needs regenerating
+  -- it diffs `github.event.before` against the tip, and the Greenlane force-pushes
+  a rebased commit so that "before" is an unreachable commit that was never fetched,
+  so git dies with "fatal: bad object" and exits 128 before the generator runs --
+  or (H2) the DAG generator itself fails in the GitHub runner environment, or (H3)
+  the guard''s exclusion pathspec (`:!platform/oci/github-actions.tf`) matches every
+  path, so the guard wrongly declines every push. The fix under test routes the diff
+  through bin/estate-dag-changed, which answers the same question against the nearest
+  base it can prove and never refuses.
+
+  '
+hypotheses:
+- name: H1
+  description: 'the guard step diffed against `github.event.before`, which the Greenlane''s
+    force-push made unreachable and unfetched, so git answered "fatal: bad object"
+    and exited 128 before the generator ran'
+  prior: 0.3333333333
+- name: H2
+  description: the DAG generator itself failed in the GitHub runner environment, whatever
+    the guard decided
+  prior: 0.3333333333
+- name: H3
+  description: the guard's exclusion pathspec matched every path, so it declined every
+    push and the workflow's own generator never had a chance to fail
+  prior: 0.3333333333
+evidence:
+- name: the failing job's step conclusions (PR
+  observed:
+    guard_step_failed: 1
+    generator_step_failed: 0
+    generator_step_skipped: 1
+  likelihoods:
+    H1:
+      guard_step_failed: 0.99
+      generator_step_failed: 0.01
+      generator_step_skipped: 0.98
+    H2:
+      guard_step_failed: 0.1
+      generator_step_failed: 0.9
+      generator_step_skipped: 0.05
+    H3:
+      guard_step_failed: 0.2
+      generator_step_failed: 0.2
+      generator_step_skipped: 0.8
+- name: the guard step's own log line
+  observed:
+    bad_object_exit_128: 1
+    other_failure: 0
+  likelihoods:
+    H1:
+      bad_object_exit_128: 0.99
+      other_failure: 0.01
+    H2:
+      bad_object_exit_128: 0.05
+      other_failure: 0.95
+    H3:
+      bad_object_exit_128: 0.05
+      other_failure: 0.95
+- name: the commit GitHub reported as `before` against the commit the job checked
+    out (a Greenlane rebased lane head)
+  observed:
+    before_unreachable: 1
+    before_reachable: 0
+  likelihoods:
+    H1:
+      before_unreachable: 0.97
+      before_reachable: 0.03
+    H2:
+      before_unreachable: 0.5
+      before_reachable: 0.5
+    H3:
+      before_unreachable: 0.5
+      before_reachable: 0.5
+- name: a local run of bin/estate-dag-gen in a pristine checkout of the same tree
+  observed:
+    generator_ok: 1
+    generator_failed: 0
+  likelihoods:
+    H1:
+      generator_ok: 0.9
+      generator_failed: 0.1
+    H2:
+      generator_ok: 0.2
+      generator_failed: 0.8
+    H3:
+      generator_ok: 0.85
+      generator_failed: 0.15
+- name: the same check across the three lane pull requests the Greenlane rebased (#7484,
+  observed:
+    lane_prs_failing: 3
+    lane_prs_passing: 0
+  likelihoods:
+    H1:
+      lane_prs_failing: 0.95
+      lane_prs_passing: 0.05
+    H2:
+      lane_prs_failing: 0.4
+      lane_prs_passing: 0.6
+    H3:
+      lane_prs_failing: 0.3
+      lane_prs_passing: 0.7
+posteriors:
+  H1: 0.9998701001
+  H2: 2.2253e-06
+  H3: 0.0001276747
+winner: H1
+computed_at: '2026-10-30T01:32:32Z'

@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# Which files changed between two commits, when the base may not be in this checkout.
+#
+# WHY THIS EXISTS (measured 2026-10-30, PR #7492, job 123834033723):
+#
+#   BEFORE="6e30a21f49b3ac86219bd8d751911a603313840e"
+#   changed="$(git diff --name-only "$BEFORE" "$GITHUB_SHA" -- ...
+#   fatal: bad object 6e30a21f49b3ac86219bd8d751911a603313840e
+#   ##[error]Process completed with exit code 128.
+#
+# The Greenlane force-pushes a rebased commit onto every lane branch, so the
+# commit GitHub reports as `before` is unreachable and is never fetched into the
+# checkout. The guard that decides whether the DAG needs regenerating therefore
+# died with exit 128 on every lane PR (#7484, #7485, #7492), saying nothing about
+# the DAG and adding a red check that hides the red checks that matter.
+#
+# THE CONTRACT: this script never refuses. It prints the changed paths (one per
+# line) and exits 0. When the base cannot be found it says so on stderr and
+# falls back to the nearest base it can PROVE (the merge base with origin/main,
+# else HEAD~1, else HEAD). When even the diff cannot be computed it prints one
+# line saying so, which reads as "changed" - so the caller generates the DAG
+# instead of skipping it. The dangerous direction is skipping work that was
+# needed; the harmless direction is doing work that was not.
+#
+# USAGE:
+#   bin/estate-dag-changed [--base SHA] [--head SHA] [--] <pathspec>...
+set -uo pipefail
+
+base=""
+head=""
+paths=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --base)
+      base="${2:-}"
+      shift 2 || true
+      ;;
+    --head)
+      head="${2:-}"
+      shift 2 || true
+      ;;
+    --)
+      shift || true
+      paths=("$@")
+      break
+      ;;
+    *)
+      paths+=("$1")
+      shift || true
+      ;;
+  esac
+done
+
+head="${head:-HEAD}"
+if ! git rev-parse --verify --quiet "${head}^{commit}" >/dev/null 2>&1; then
+  echo "estate-dag-changed: head ${head} is not a commit here; using HEAD" >&2
+  head="HEAD"
+fi
+
+# The base, or the nearest base that can be proven. A missing base is a FACT to
+# report, not a failure: the caller asked what changed, and the honest answer
+# is "against this base instead".
+resolve_base() {
+  local want="$1" got
+  if [ -n "$want" ] && git rev-parse --verify --quiet "${want}^{commit}" >/dev/null 2>&1; then
+    printf '%s\n' "$want"
+    return 0
+  fi
+  if [ -n "$want" ]; then
+    # The commit may simply not have been fetched yet.
+    git fetch --no-tags --quiet origin "$want" >/dev/null 2>&1 || true
+    if git rev-parse --verify --quiet "${want}^{commit}" >/dev/null 2>&1; then
+      printf '%s\n' "$want"
+      return 0
+    fi
+    echo "estate-dag-changed: base ${want} is not in this checkout" >&2
+  fi
+  got="$(git merge-base HEAD origin/main 2>/dev/null || true)"
+  if [ -n "$got" ]; then
+    echo "estate-dag-changed: using merge base ${got} instead" >&2
+    printf '%s\n' "$got"
+    return 0
+  fi
+  got="$(git rev-parse --verify --quiet HEAD~1 2>/dev/null || true)"
+  if [ -n "$got" ]; then
+    echo "estate-dag-changed: using HEAD~1 (${got}) instead" >&2
+    printf '%s\n' "$got"
+    return 0
+  fi
+  echo "estate-dag-changed: no base and no parent; using HEAD" >&2
+  printf '%s\n' "HEAD"
+}
+
+resolved="$(resolve_base "$base")"
+
+if [ "${#paths[@]}" -eq 0 ]; then
+  if out="$(git diff --name-only "$resolved" "$head" 2>/dev/null)"; then
+    [ -n "$out" ] && printf '%s\n' "$out"
+    exit 0
+  fi
+else
+  if out="$(git diff --name-only "$resolved" "$head" -- "${paths[@]}" 2>/dev/null)"; then
+    [ -n "$out" ] && printf '%s\n' "$out"
+    exit 0
+  fi
+fi
+# The diff could not be computed. Say so on stdout as well as stderr: stdout is
+# what the caller reads, and an empty answer there reads as "nothing changed",
+# which would SKIP work that may be needed. One changed line is the safe answer.
+echo "estate-dag-changed: the diff could not be computed; treating this as changed"
+echo "estate-dag-changed: the diff could not be computed; treating this as changed" >&2
+exit 0

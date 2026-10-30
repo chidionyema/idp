@@ -10,6 +10,7 @@ durable consumer: a message stays pending, and is redelivered, until that agent 
     estate-fleet broadcast <text>        every agent        subject estate.fleet.broadcast
     estate-fleet directive <text>        every agent + growmos DECISION (survives the bus)
     estate-fleet inbox [--ack]           print my pending messages; --ack acknowledges them
+    estate-fleet inbox --pipe CMD...     feed messages to CMD on stdin; ack ONLY if CMD exits 0
     estate-fleet watch                   live push of new messages
     estate-fleet refuse <seq> <reason>   record that I will not apply message <seq>
     estate-fleet status <seq>            who has acked (applied) or refused message <seq>
@@ -109,12 +110,13 @@ async def status(seq):
     print(f"ok      estate-fleet  seq={seq}: {len(rows)} agent(s) on record")
 
 
-async def inbox(ack):
+async def inbox(ack, pipe=None):
     from nats.js.api import ConsumerConfig
 
     agent = me()
     nc, js = await connect()
     n = 0
+    held = []
     for kind, subj in subjects(agent).items():
         sub = await js.pull_subscribe(subj, durable=f"{agent}-{kind}", stream=STREAM,
                                       config=ConsumerConfig(ack_wait=ACK_WAIT))
@@ -126,9 +128,22 @@ async def inbox(ack):
             d = json.loads(m.data)
             print(f"{d['kind']:<9} seq={m.metadata.sequence.stream} from={d['from']} {d['text']}")
             n += 1
-            if ack:
+            if pipe:
+                held.append((m, d))
+            elif ack:
                 await record_ack(js, m.metadata.sequence.stream, agent, "applied", "")
                 await m.ack()
+    if pipe and held:
+        # A fetched message is invisible to a second inbox call until ack_wait expires, so a
+        # separate "read, then ack" can ack nothing and redeliver forever. Ack only on success.
+        text = "".join(f"{d['kind']} from={d['from']} {d['text']}\n" for _, d in held)
+        rc = subprocess.run(pipe, input=text, text=True).returncode
+        if rc:
+            await nc.close()
+            sys.exit(f"FAIL    estate-fleet  {pipe[0]} exited {rc}: {n} message(s) left un-acked")
+        for m, _ in held:
+            await record_ack(js, m.metadata.sequence.stream, agent, "applied", "")
+            await m.ack()
     await nc.close()
     print(f"ok      estate-fleet  {n} pending message(s) for {agent}" + ("" if ack else " (not acked: will be redelivered)"))
 
@@ -159,6 +174,8 @@ def main(argv):
         asyncio.run(publish("estate.fleet.directive", text, "directive"))
         if not os.environ.get("ESTATE_FLEET_NO_MEMORY"):
             subprocess.run(["growmos", "remember", f"directive-{int(time.time())}", "--type", "DECISION", "--desc", f"Founder directive via estate-fleet: {text}"], check=False)
+    elif c == "inbox" and "--pipe" in rest:
+        asyncio.run(inbox(False, rest[rest.index("--pipe") + 1 :] or sys.exit("FAIL    estate-fleet  --pipe needs a command")))
     elif c == "inbox":
         asyncio.run(inbox("--ack" in rest))
     elif c == "refuse" and len(rest) >= 2 and rest[0].isdigit():

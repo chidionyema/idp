@@ -6,7 +6,7 @@
     "intent": 110,
     "layer": 228,
     "service": 122,
-    "tool": 461,
+    "tool": 462,
     "workflow": 85
   },
   "records": [
@@ -24802,6 +24802,51 @@
       ]
     },
     {
+      "id": "cap:tool/estate-dag-changed",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env bash",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-dag-changed",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
       "id": "cap:tool/estate-dag-gen",
       "schema_version": 1,
       "kind": "tool",
@@ -25424,6 +25469,7 @@
         "inputs": [
           "--ack",
           "--desc",
+          "--pipe",
           "--type"
         ],
         "outputs": [
@@ -25471,8 +25517,8 @@
       "summary": "idp#7490: the voice door of fleet comms. Speech in becomes a directive; the inbox is read aloud.",
       "contract": {
         "inputs": [
-          "--ack",
-          "--kind"
+          "--kind",
+          "--pipe"
         ],
         "outputs": [
           "stdout",
