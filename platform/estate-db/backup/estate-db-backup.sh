@@ -22,13 +22,21 @@
 #
 # Subcommands -- each one stands alone, so each one can be tested alone:
 #   select-source            print "<name>\t<created>\t<bytes>" for the newest surviving dump
+#   fetch-source FILE        download the newest surviving dump, and write its .source file
+#   start-container NAME [CIDFILE]
+#                            start PostgreSQL in the copy image and wait until it answers
 #   restore FILE             restore FILE into the PostgreSQL named by PG* in the environment
+#   restore-container CID FILE   restore FILE inside the running container
 #   dump FILE                write a fresh pg_dumpall of that PostgreSQL to FILE
+#   dump-container CID FILE     dump inside the running container, then copy it out
 #   publish FILE             upload FILE as estate-db/estate-<stamp>.sql.gz, then the receipt
 #   run                      select-source -> restore -> dump -> publish
 #
 # Environment:
 #   BUCKET               object storage bucket                       (default estate-db-backups)
+#   PG_IMAGE             the PostgreSQL image to run                   (default the estate's 18.1 image)
+#   PG_DATA_DIR          where initdb writes inside the container      (default /tmp/estate-pgdata)
+#   PG_READY_TIMEOUT     seconds to wait for PostgreSQL to answer      (default 180)
 #   OCI_OS_NAMESPACE     tenancy namespace                           (default: oci os ns get)
 #   RECEIPT_PREFIX       receipt and copy prefix                     (default estate-db)
 #   SOURCE_PREFIXES      where a dump to restore may live            (default "estate-db db")
@@ -38,6 +46,9 @@
 set -euo pipefail
 
 BUCKET="${ESTATE_DB_BACKUP_BUCKET:-estate-db-backups}"
+PG_IMAGE="${PG_IMAGE:-ghcr.io/chidionyema/postgres-partman:18.1-postgres-partman}"
+PG_DATA_DIR="${PG_DATA_DIR:-/tmp/estate-pgdata}"
+PG_READY_TIMEOUT="${PG_READY_TIMEOUT:-180}"
 RECEIPT_PREFIX="${ESTATE_DB_RECEIPT_PREFIX:-estate-db}"
 RECEIPT_NAME="${RECEIPT_PREFIX}/latest.json"
 SOURCE_PREFIXES="${ESTATE_DB_SOURCE_PREFIXES:-estate-db db}"
@@ -247,6 +258,53 @@ fetch_source() {
 	say "fetched $name ($size bytes, created $created) to $dest"
 }
 
+# Start PostgreSQL in the copy image, and wait until it answers.
+#
+# MEASURED 2026-10-30: the estate's own image (ghcr.io/chidionyema/postgres-partman:18.1-postgres-partman)
+# carries no entrypoint of its own -- its config is Entrypoint null, Cmd ["bash"], User postgres --
+# because it is built to be run by the CloudNativePG operator, which supplies the command. A
+# GitHub Actions service container is given no such command, so the container started, ran bash,
+# read EOF and exited: "Failed to initialize container ... One or more containers failed to start."
+#
+# So PostgreSQL is started here, explicitly, inside the same image: initdb, then postgres, in the
+# container's own data directory. The image's extensions (vector, btree_gin, pg_trgm) and its
+# 18.1 client are the ones the dump needs; only the startup is ours.
+start_container() {
+	local name="${1:-}" cidfile="${2:-}" cid ready=0 waited=0
+	[ -n "$name" ] || fail "start-container needs a container name"
+	docker rm -f "$name" >/dev/null 2>&1 || true
+	docker run -d --name "$name" -e PGDATA="$PG_DATA_DIR" "$PG_IMAGE" bash -c '
+		set -e
+		initdb -D "$PGDATA" -U postgres --auth-local=trust --auth-host=trust --encoding=UTF8 --locale=C
+		exec postgres -D "$PGDATA" -c listen_addresses=127.0.0.1 -c fsync=off -c full_page_writes=off -c max_wal_size=8GB -c shared_buffers=512MB
+	' >/dev/null
+	while [ "$waited" -lt "$PG_READY_TIMEOUT" ]; do
+		if docker exec "$name" pg_isready -U postgres -q >/dev/null 2>&1; then
+			ready=1
+			break
+		fi
+		if ! docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null | grep -q true; then
+			break
+		fi
+		waited=$((waited + 2))
+		sleep 2
+	done
+	if [ "$ready" -ne 1 ]; then
+		printf 'FAIL    estate-db-backup  the PostgreSQL container %s did not become ready in %ss\n' \
+			"$name" "$PG_READY_TIMEOUT" >&2
+		{ docker logs "$name" || true; } >&2
+		{ docker exec "$name" bash -c 'ls /usr/lib/postgresql/18/bin 2>&1 | head -20; ls -ld /tmp 2>&1' || true; } >&2
+		exit 1
+	fi
+	cid=$(docker ps -q --filter "name=^/${name}$" | head -1)
+	[ -n "$cid" ] || fail "the PostgreSQL container $name has no id"
+	if [ -n "$cidfile" ]; then
+		printf '%s\n' "$cid" >"$cidfile"
+	fi
+	printf 'cid=%s\n' "$cid"
+	say "PostgreSQL is ready in $name ($cid)"
+}
+
 # Restore and dump run where psql and pg_dumpall live: inside the PostgreSQL container. The
 # plumbing lives here, not in the workflow, so it can be tested here.
 restore_container() {
@@ -290,6 +348,7 @@ run_service() {
 case "${1:-}" in
 select-source) select_source ;;
 fetch-source) fetch_source "${2:-}" ;;
+start-container) start_container "${2:-}" "${3:-}" ;;
 restore) restore "${2:-}" ;;
 dump) dump "${2:-}" ;;
 restore-container) restore_container "${2:-}" "${3:-}" ;;
