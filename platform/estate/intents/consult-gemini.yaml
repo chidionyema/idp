@@ -7,7 +7,7 @@ description: >
 args:
   question: { type: string, required: true, help: "What you want reviewed or decided, in a sentence or two" }
   files:    { type: string, default: "", help: "Comma-separated repo files to give as context" }
-  model:    { type: string, default: "gemini/gemini-3.8-flash", help: "Router model to ask first" }
+  model:    { type: string, default: "gemini/gemini-3.5-flash", help: "Router model to ask first" }
   max_bytes: { type: int, default: 400000, help: "Context budget; anything past it is cut and named" }
 tools: []
 door_s: 100
