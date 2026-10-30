@@ -66,7 +66,7 @@ def test_no_input_is_ever_interpolated_into_a_script():
 def test_the_firewall_is_mains_code_not_the_patched_tree():
     assert all(
         s["with"]["ref"] == "main"
-        for j in ("firewall", "open-pr")
+        for j in ("firewall", "submit-lane")
         for s in _steps(j)
         if s.get("uses", "").startswith("actions/checkout@")
     )
@@ -75,12 +75,25 @@ def test_the_firewall_is_mains_code_not_the_patched_tree():
 
 
 def test_nothing_is_published_until_the_firewall_passes():
-    assert "firewall" in JOBS["open-pr"]["needs"]
+    assert "firewall" in JOBS["submit-lane"]["needs"]
 
 
-def test_the_pr_is_opened_by_the_app_so_required_checks_run():
-    push = _step("open-pr", "Push a branch")
-    assert push["env"]["GH_TOKEN"] == "${{ steps.app.outputs.token }}"  # noqa: S105 -- an expression, not a value
+def test_the_work_lands_through_the_greenlane_not_a_pull_request():
+    """AGENTS.md section 2: an agent pushes lane/<name> and the Greenlane lands it."""
+    text = _text("submit-lane")
+    assert "gh pr create" not in text
+    commit = _step("submit-lane", "Commit through the estate's own hooks")["run"]
+    assert 'branch="lane/agent-${HARNESS}-${GITHUB_RUN_ID}"' in commit
+    assert (
+        "core.hooksPath .githooks" in commit
+    )  # the stamp comes from the estate's hook
+    # the App's checkout pushes, so the push is the App's and the lander's push trigger fires
+    checkout = next(
+        s
+        for s in _steps("submit-lane")
+        if s.get("uses", "").startswith("actions/checkout@")
+    )
+    assert checkout["with"]["token"] == "${{ steps.app.outputs.token }}"  # noqa: S105
 
 
 def test_every_action_is_pinned_to_a_commit():
@@ -126,7 +139,7 @@ def _patch(r: Path, change) -> str:
 
 def _refusal_step(r: Path, patch: str, tmp_path: Path) -> subprocess.CompletedProcess:
     """Run the step's own shell after its decrypt lines, with the patch already in place."""
-    run = _step("open-pr", "Apply the patch")["run"]
+    run = _step("submit-lane", "Apply the patch")["run"]
     tail = run[run.index('[ -s "$work/patch" ]') :]
     work = tmp_path / "work"
     work.mkdir(exist_ok=True)
@@ -203,6 +216,7 @@ def _agent_step(
         "TASK": "append there",
         "CLAUDE_CODE_OAUTH_TOKEN": "x",
         "MINIMAX_API_KEY": "x",
+        "GEMINI_API_KEY": "x",
     }
     run = _step("agent", "Run the agent")["run"]
     p = subprocess.run(
@@ -216,7 +230,7 @@ def _agent_step(
     return p, temp / "out"
 
 
-@pytest.mark.parametrize("harness", ["pi", "claude-code"])
+@pytest.mark.parametrize("harness", ["pi", "claude-code", "gemini"])
 def test_the_agent_step_hands_on_a_transcript_and_the_patch(tmp_path, harness):
     p, out = _agent_step(tmp_path, harness, None)
     assert p.returncode == 0, p.stdout + p.stderr
@@ -239,3 +253,113 @@ def test_a_harness_that_fails_stops_the_run_with_the_providers_reason(tmp_path):
     assert p.returncode == 1, p.stdout + p.stderr
     assert "401 authentication_error" in p.stdout
     assert "login fail" not in p.stdout
+
+
+def test_gemini_runs_in_pi_on_googles_api_with_its_own_key(tmp_path):
+    """Gemini is a model, pi is a harness: the estate's transcript format, Google's provider."""
+    body = 'echo "$@" > "$HOME/args"\n' + FAKE["pi"]
+    p, _ = _agent_step(tmp_path, "gemini", body)
+    assert p.returncode == 0, p.stdout + p.stderr
+    args = (tmp_path / "home" / "args").read_text()
+    assert "--provider google" in args and "--model gemini-3.5-flash" in args
+    run = _step("agent", "Run the agent")
+    assert run["env"]["GEMINI_API_KEY"] == "${{ secrets.SEED_GEMINI_API_KEY }}"  # noqa: S105
+
+
+# The claim and the commit, run for real: a fake `gh`, a bare origin, the estate's own hooks.
+_GH = """#!/bin/bash
+echo "$@" >> "$GH_LOG"
+case "$1 $2" in
+  "issue create") echo "https://github.com/o/r/issues/77" ;;
+esac
+"""
+
+
+def _claim_gate_regex():
+    src = (ROOT / "bin/claim-gate").read_text()
+    start = src.index("CLAIM = re.compile(")
+    ns: dict = {"re": re}
+    exec(src[start : src.index(")\n", start) + 2], ns)  # noqa: S102 -- the gate's own regex
+    return ns["CLAIM"]
+
+
+def _submit(tmp_path: Path, issue: str):
+    r = _repo(tmp_path)
+    bare = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+    subprocess.run(
+        ["git", "-C", str(r), "remote", "add", "origin", str(bare)], check=True
+    )
+    (r / ".githooks").mkdir()
+    for hook in (
+        "commit-msg",
+    ):  # the stamp; pre-commit's linters are installed in the job
+        (r / ".githooks" / hook).write_text((ROOT / ".githooks" / hook).read_text())
+        (r / ".githooks" / hook).chmod(0o755)
+    subprocess.run(["git", "-C", str(r), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(r), "commit", "-qm", "hooks"], check=True)
+    (r / "app.py").write_text("x = 2\n")
+    (r / "app.py").rename(r / "lib.py")
+    subprocess.run(["git", "-C", str(r), "add", "-A"], check=True)
+    bin_ = tmp_path / "bin"
+    bin_.mkdir()
+    (bin_ / "gh").write_text(_GH)
+    (bin_ / "gh").chmod(0o755)
+    out = tmp_path / "gh_output"
+    env = {
+        "PATH": f"{bin_}:/usr/bin:/bin",
+        "HOME": str(tmp_path),
+        "GH_LOG": str(tmp_path / "gh.log"),
+        "GITHUB_OUTPUT": str(out),
+        "GITHUB_RUN_ID": "4242",
+        "RUNNER_TEMP": str(tmp_path),
+        "HARNESS": "gemini",
+        "TASK": "fix the router\nsecond line",
+        "ISSUE": issue,
+        "RUN_URL": "https://example/run",
+    }
+    claim = _step("submit-lane", "Claim the work")["run"]
+    p1 = subprocess.run(
+        ["bash", "-c", claim], cwd=r, env=env, capture_output=True, text=True
+    )
+    assert p1.returncode == 0, p1.stdout + p1.stderr
+    for line in out.read_text().splitlines():
+        k, v = line.split("=", 1)
+        env[k.upper()] = v
+    commit = _step("submit-lane", "Commit through the estate's own hooks")["run"]
+    p2 = subprocess.run(
+        ["bash", "-c", commit], cwd=r, env=env, capture_output=True, text=True
+    )
+    return p2, r, bare, (tmp_path / "gh.log").read_text()
+
+
+@pytest.mark.parametrize("issue", ["", "31"])
+def test_the_lane_carries_a_claim_the_gate_accepts_and_the_hooks_stamp(tmp_path, issue):
+    p, r, bare, gh = _submit(tmp_path, issue)
+    assert p.returncode == 0, p.stdout + p.stderr
+    num = issue or "77"
+    assert ("issue create" in gh) is (not issue)
+    claim = next(ln for ln in gh.splitlines() if "CLAIM agent=" in ln)
+    m = _claim_gate_regex().search(claim[claim.index("CLAIM") :])
+    assert m and m["agent"] == "gemini"
+    assert set(m["paths"].split(",")) == {
+        "app.py",
+        "lib.py",
+    }  # both sides of the rename
+    msg = subprocess.run(
+        [
+            "git",
+            "--git-dir",
+            str(bare),
+            "log",
+            "-1",
+            "--format=%B",
+            "lane/agent-gemini-4242",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert f"Claim: #{num}" in msg and "Agent: gemini" in msg
+    assert "X-Idp-Signed: " in msg
+    assert msg.splitlines()[0] == "agent-sandbox (gemini): fix the router"
