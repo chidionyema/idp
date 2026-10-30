@@ -4,7 +4,7 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 110,
-    "layer": 216,
+    "layer": 217,
     "service": 122,
     "tool": 450,
     "workflow": 85
@@ -6226,6 +6226,55 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/context/server.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-harness-render",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Render the one estate workflow (AGENTS.md) into what each harness loads, and check for drift.",
+      "contract": {
+        "inputs": [
+          "--home",
+          "--source"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/harness/render.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
