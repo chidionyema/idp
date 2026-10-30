@@ -6,10 +6,19 @@
     {
       "service": "llm-router",
       "what_breaks": "every agent that talks to a model, the founder's voice loop, and every surface that streams",
+      "selectors": [
+        {
+          "name": "laptop front :4000",
+          "fate": ["host:laptop"],
+          "reaches": ["cloud (OKE LiteLLM)", "laptop front"],
+          "note": "every local agent's base URL (bin/litellm-status). platform/llm/front.py dials the cloud and its own slots only: not the lifeboat, not the floor."
+        }
+      ],
       "legs": [
         {
           "name": "cloud (OKE LiteLLM)",
           "provider": "oracle-oke",
+          "fate": ["provider:oracle-oke"],
           "role": "default",
           "url": "https://llm.{zone}/health/liveliness",
           "expect": [200]
@@ -17,6 +26,7 @@
         {
           "name": "lifeboat (Cloudflare edge)",
           "provider": "cloudflare",
+          "fate": ["provider:cloudflare"],
           "role": "cross-provider",
           "url": "https://lifeboat-llm.{zone}/health",
           "expect": [200]
@@ -24,6 +34,7 @@
         {
           "name": "groq free tier",
           "provider": "groq",
+          "fate": ["provider:groq"],
           "role": "floor",
           "url": "https://api.groq.com/openai/v1/models",
           "secret": "GROQ_API_KEY",
@@ -33,6 +44,7 @@
         {
           "name": "laptop front",
           "provider": "laptop",
+          "fate": ["host:laptop"],
           "role": "in-house fallback",
           "url": "http://127.0.0.1:4000/health/liveliness",
           "expect": [200]
