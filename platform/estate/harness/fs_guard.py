@@ -8,9 +8,32 @@ shell, and it is a heuristic text filter -- not a sandbox -- so it is one layer,
 only layer: bin/estate-read and bin/estate-patch are the real doors (receipt-gated,
 AST-checked); this module exists so an agent cannot simply route around them with a raw
 shell redirect in the same command string.
+
+Found live (not in a unit test) on the first real round trip through estate-execute:
+a legitimate `bin/estate-patch` invocation piping a SEARCH/REPLACE payload whose
+*replacement text* contained `if used >= limit:` was refused as a RAW_WRITE_REDIRECT, because
+the original pattern scanned the whole command string for a bare `>` with no notion of
+quoting -- a `>` inside a single-quoted printf payload has no shell effect at all, but the
+regex could not tell the difference between that and a real redirect. Any patch touching a
+comparison operator or a heredoc-looking string inside its own payload would have hit this.
+_strip_quoted removes quoted spans before the redirect/cat/tail patterns run, since a
+character that cannot reach the shell is not a redirect this layer needs to refuse.
 """
 
 import re
+
+_SINGLE_QUOTED = re.compile(r"'[^']*'")
+_DOUBLE_QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"')
+
+
+def _strip_quoted(cmd: str) -> str:
+    """The command with the contents of every quoted span removed, so a shell metacharacter
+    that only appears inside quotes (and therefore never reaches the shell as an operator)
+    cannot trip a pattern meant to catch one that does."""
+    cmd = _SINGLE_QUOTED.sub("''", cmd)
+    cmd = _DOUBLE_QUOTED.sub('""', cmd)
+    return cmd
+
 
 FORBIDDEN_PATTERNS = [
     (
@@ -52,7 +75,8 @@ def check_command_allowed(cmd: str) -> tuple[bool, str]:
     stripped = cmd.strip()
     if any(stripped.startswith(prefix) for prefix in ALLOWED_PREFIXES):
         return True, "OK"
+    scan_target = _strip_quoted(stripped)
     for pattern, reason in FORBIDDEN_PATTERNS:
-        if pattern.search(stripped):
+        if pattern.search(scan_target):
             return False, reason
     return True, "OK"
