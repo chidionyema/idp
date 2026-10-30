@@ -80,6 +80,18 @@ LAUNCHERS = [
     # whichever checkout happens to be on a branch on this laptop (2026-10-29: the intent's
     # default root was a work branch and the writer was nowhere on the host).
     "estate-progress",
+    # The founder's governance launchers (2026-10-29). They live in ~/.estate/bin so every
+    # runtime -- pi, Claude Code, Codex -- calls the SAME bytes main carries: the policy is
+    # shared, the adapters are thin.
+    "estate-law-gate",
+    "estate-spec-status",
+    "estate-supervisor",
+    "estate-freeze",
+    "estate-founder-intake",
+    "estate-state-page",
+    "estate-provider-renewal",
+    "estate-receipt",
+    "estate-executor-permission",
 ]
 
 

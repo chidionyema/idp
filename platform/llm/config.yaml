@@ -810,6 +810,15 @@ router_settings:
     # a cross-vendor hop. A dead key fails both rows in one refusable call, which
     # the breaker then cools as one group -- the 2026-09-04 lesson above still holds.
     - minimax: [minimax_m31f, gemini, groq]
+    # The other two MiniMax lanes are separate model groups, so the `minimax` chain says
+    # nothing about them. Measured 2026-10-29 on the live router: a call to `minimax_m27`
+    # retried twice and then answered HTTP 500 -- "No fallback model group found for
+    # original model_group=minimax_m27" -- because LiteLLM matches fallbacks by group
+    # name, and only `minimax` had one. `minimax_json` (the structured-output lane) had
+    # the same hole and the same 500 waiting behind it. One chain per served group.
+    - minimax_m31f: [minimax, gemini, groq]
+    - minimax_json: [minimax, gemini, groq]
+    - minimax_m27: [minimax, gemini, groq]
 
     # Gemini stopped heading any chain on 2026-09-08. Measured over the two hours to
     # 10:45Z on both live router pods (24,955 log lines): gemini/gemini-2.5-flash
@@ -862,6 +871,14 @@ router_settings:
 
     # Same floor, entered at Cerebras: never back to groq, so the graph has no cycle.
     - cerebras: [sambanova, nvidia, openrouter]
+
+    # The `nvidia` chat lane had NO chain of its own: LiteLLM matches fallbacks by group
+    # name, so a request for model_group=nvidia found nothing and answered
+    # "No fallback model group found for original model_group=nvidia" -- the same 500 that
+    # `minimax_m27` gave on 2026-10-29. One hop, to the last free rung that speaks chat.
+    # Not to groq: groq already reaches nvidia through its own chain, and a cycle in the
+    # fallback graph is how a lane ends up calling itself until the caller times out.
+    - nvidia: [openrouter]
 
     - sambanova: [nvidia, openrouter]
 

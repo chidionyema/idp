@@ -25,6 +25,15 @@ duplicated change days later. AGENTS.md says enforcement is in the hooks, which 
         (`remember`, or `growmos remember|journal`), refuse to stop and say what to write.
         A later session cannot use what this one did not record.
 
+  lockdown  Refuse any durable edit while this session is under lockdown. A session that
+                   repeated a violation class was terminated and relaunched with a
+                   plug-the-hole-first instruction; it stays locked until its proof exits zero,
+                   so there is no way to cheat the fix by writing first and proving later.
+  frozen    Refuse any durable edit to founder-approved work. The founder's rule (2026-10-29):
+                   "prevent any agent from being able to change a git once approved by a
+                   founder and the work done - we kick the door and take the keys away". A claim
+                   is not an approval; only a new founder approval releases a frozen path.
+
 Both fail OPEN on anything that is not a clear violation: no transcript, no gh, a slow ledger or an
 unreadable claim lets the call through and the ledger says why. A hook may refuse an agent; it may
 not take a session down. ESTATE_MEMORY_ENFORCE=0 opts out and the opt-out is ledgered too.
@@ -57,6 +66,20 @@ import focus  # noqa: E402
 import door  # noqa: E402
 import handback  # noqa: E402
 import plan  # noqa: E402
+
+# The founder's governance: frozen paths and session lockdown. Harness-agnostic on purpose --
+# this hook is what pi and Claude Code both go through, so the rule is the same everywhere.
+_GOV_ROOT = os.path.join(
+    os.path.dirname(os.path.realpath(__file__)), "..", "platform", "estate"
+)
+if _GOV_ROOT not in sys.path:
+    sys.path.insert(0, _GOV_ROOT)
+try:
+    from governance import freeze as _freeze  # noqa: E402
+    from governance import ledger as _ledger  # noqa: E402
+except ImportError:  # the estate tree is not deployed here: the rule cannot be decided
+    _freeze = None  # type: ignore
+    _ledger = None  # type: ignore
 
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 BRIEFED = re.compile(
@@ -203,6 +226,35 @@ def focus_verdict(path: str, rows, agent: str):
     )
 
 
+def governance_verdict(path: str, sid: str):
+    """(verdict, reason): may this session touch this path at all?
+
+    False means refuse. The two rules are the founder's own: founder-approved work is frozen
+    (the keys are taken away), and a session under lockdown cannot write until its proof is
+    green. Both are read from the shared governance state, so every runtime sees the same
+    answer.
+    """
+    if _freeze is None or _ledger is None:
+        return True, "governance state unavailable: nothing to decide"
+    root = git_root_if_idp(path)
+    if root is None:
+        return True, "not in the idp checkout"
+    rel = os.path.relpath(path, root)
+    frozen, entry = _freeze.is_frozen(rel)
+    if frozen:
+        return False, _freeze.refusal(rel)
+    if sid and _ledger.is_locked(sid):
+        state = _ledger.get_session_state(sid)
+        return False, (
+            f"this session is under lockdown for {state.get('violation_class', 'a law')} "
+            f"(locked {state.get('locked_at', '?')}). No writes, no pushes: plug the hole "
+            f"first and prove it with {state.get('proof', 'the named proof command')}. "
+            "A relaunched session that writes before proving is cheating, and the merge gate "
+            "will refuse it too."
+        )
+    return True, "not frozen, session not locked"
+
+
 def deny_pre(reason: str) -> None:
     print(
         json.dumps(
@@ -245,6 +297,11 @@ def pre(data: dict) -> int:
         )
         record("pre", "refuse", "not briefed", session=sid, tool=tool, path=path)
         deny_pre(reason)
+        return 0
+    verdict, why = governance_verdict(path, sid)
+    if verdict is False:
+        record("pre", "refuse", why, session=sid, tool=tool, path=path)
+        deny_pre(f"Refused by the founder's governance. {why}")
         return 0
     agent = os.environ.get("ESTATE_AGENT", "")
     rows = focus.live_focus()

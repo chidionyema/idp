@@ -1,0 +1,125 @@
+#!/usr/bin/env python3
+"""estate-supervisor -- one warning per violation class, then the keys are taken away.
+
+    estate-supervisor --class write-without-claim --session <sid> [--provider minimax]
+                       [--detail "..."] [--pid 1234] [--cwd /path] [--model x]
+
+What it does, in the founder's order (2026-10-29):
+
+    first violation of a class   warn, and the class is written down
+    second violation of a class  terminate the session, lock it (no write, no shell, no
+                                 push), and relaunch it with the instruction to plug the hole
+                                 first and prove it
+
+Exit 0 on a warning, 3 when the session was terminated and locked, 1 on a bad call.
+HARNESS AGNOSTIC: it kills a pid and relaunches `pi --print`; the same call works for any
+runtime that passes its own pid.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+
+
+def _governance_path() -> str:
+    """Where the governance package lives: this checkout, or the estate's runtime tree."""
+
+    repo_root = os.path.dirname(HERE)
+    for cand in (
+        os.environ.get("ESTATE_GOVERNANCE_TREE", ""),
+        os.path.join(repo_root, "platform", "estate"),
+        os.path.join(repo_root, "runtime", "idp", "platform", "estate"),
+        os.path.expanduser("~/.estate/runtime/idp/platform/estate"),
+    ):
+        if cand and os.path.isfile(os.path.join(cand, "governance", "registry.py")):
+            return cand
+    raise SystemExit("estate: the governance package was not found (set ESTATE_GOVERNANCE_TREE)")
+
+
+sys.path.insert(0, _governance_path())
+
+from governance import ledger, supervisor  # noqa: E402
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--class", dest="cls", default="")
+    ap.add_argument("--session", required=True)
+    ap.add_argument("--status", action="store_true", help="report the session's lock state and exit")
+    ap.add_argument("--provider", default="")
+    ap.add_argument("--detail", default="")
+    ap.add_argument("--pid", type=int, default=None)
+    ap.add_argument("--cwd", default=os.getcwd())
+    ap.add_argument("--model", default="")
+    ap.add_argument("--source", default="")
+    ap.add_argument("--no-relaunch", action="store_true")
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args(argv[1:])
+
+    if args.status:
+        state = ledger.get_session_state(args.session)
+        locked = ledger.is_locked(args.session)
+        out = {
+            "session": args.session,
+            "locked": locked,
+            "status": state.get("status", "unknown"),
+            "proof": state.get("proof", ""),
+            "class": state.get("violation_class") or state.get("class", ""),
+            "instruction": state.get("instruction", ""),
+        }
+        if args.json:
+            print(json.dumps(out, indent=2, default=str))
+        else:
+            print(
+                f"session: {out['session']}  locked: {out['locked']}  "
+                f"status: {out['status']}  proof: {out['proof'] or '-'}"
+            )
+        return 3 if out["locked"] else 0
+
+    if not args.cls:
+        print("estate-supervisor: --class is required (or --status)", file=sys.stderr)
+        return 1
+
+    verdict = supervisor.grade(
+        cls=args.cls,
+        session=args.session,
+        provider=args.provider,
+        detail=args.detail,
+        source=args.source,
+        pid=args.pid,
+        cwd=args.cwd,
+        model=args.model,
+    )
+
+    if args.json:
+        print(json.dumps(verdict, indent=2, default=str))
+    else:
+        print(
+            f"class: {args.cls}  session: {args.session}  "
+            f"count: {int(verdict.get('prior', 0)) + 1}"
+        )
+        print(f"action: {verdict.get('decision')}")
+        print(f"proof: {verdict.get('proof')}")
+        print(f"message: {verdict.get('message', '')}")
+        if verdict.get("locked"):
+            print("locked: yes (no write, no shell, no push until the proof is green)")
+        if verdict.get("instruction"):
+            print("--- relaunch instruction ---")
+            print(verdict["instruction"])
+        if verdict.get("relaunch"):
+            print(
+                "relaunched: "
+                + json.dumps(verdict["relaunch"].get("command", []), default=str)
+            )
+
+    state = ledger.get_session_state(args.session)
+    return 3 if state.get("locked") else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

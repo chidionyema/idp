@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""estate-law-gate -- the founder's laws, decided by machines, and the hunt for what is missing.
+
+    estate-law-gate                 every law, one verdict, one falsifier
+    estate-law-gate --falsify       only the falsifiers: can each gate be proven to fail?
+    estate-law-gate --audit         the flaw hunt: prose-only laws, unfalsified gates, advisory CI
+    estate-law-gate --cosmetic      refuse a diff that carries no behaviour
+    estate-law-gate --proof-required  refuse a change with no proof attached
+    estate-law-gate --spec-trace    refuse a change to a component with no spec behind it
+    estate-law-gate --self-test     the gate testing itself: every law has a check and a falsifier
+    estate-law-gate --json          the verdicts as JSON
+
+Exit 0 when the estate holds, 1 when a law is broken or a gate cannot fail.
+
+HARNESS AGNOSTIC. This is a command, not a hook: CI, a pre-push gate, a laptop and the fleet
+all call the same thing and get the same verdict.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+
+
+def _governance_path() -> str:
+    """Where the governance package lives: this checkout, or the estate's runtime tree."""
+
+    repo_root = os.path.dirname(HERE)
+    for cand in (
+        os.environ.get("ESTATE_GOVERNANCE_TREE", ""),
+        os.path.join(repo_root, "platform", "estate"),
+        os.path.join(repo_root, "runtime", "idp", "platform", "estate"),
+        os.path.expanduser("~/.estate/runtime/idp/platform/estate"),
+    ):
+        if cand and os.path.isfile(os.path.join(cand, "governance", "registry.py")):
+            return cand
+    raise SystemExit("estate: the governance package was not found (set ESTATE_GOVERNANCE_TREE)")
+
+
+sys.path.insert(0, _governance_path())
+ROOT = os.path.abspath(os.path.join(os.path.dirname(_governance_path()), ".."))
+
+from governance import checks, registry  # noqa: E402
+
+
+def _print_audit(audit: dict) -> None:
+    print("flaws to hunt")
+    prose = audit.get("prose_only_laws") or []
+    print(f"  prose-only laws (stated by the estate, decided by no check): {len(prose)}")
+    for row in prose[:20]:
+        print(f"    {row['id']}: {row['where']}")
+    unfalsified = audit.get("unfalsified_gates") or []
+    print(f"  gates with no falsifier (cannot be proven to fail): {len(unfalsified)}")
+    for row in unfalsified:
+        print(f"    {row['id']}")
+    advisory = audit.get("advisory_gates") or []
+    print(f"  advisory CI gates (continue-on-error): {len(advisory)}")
+    for row in advisory:
+        print(f"    {row['workflow']} {row.get('job', '')}: {row['state']}")
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--falsify", action="store_true")
+    ap.add_argument("--audit", action="store_true")
+    ap.add_argument("--cosmetic", action="store_true")
+    ap.add_argument("--proof-required", action="store_true")
+    ap.add_argument("--spec-trace", action="store_true")
+    ap.add_argument("--self-test", action="store_true")
+    ap.add_argument("--base", default="origin/main")
+    ap.add_argument("--head", default="HEAD")
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args(argv[1:])
+
+    root = ROOT
+    results = []
+    failed = False
+
+    if args.cosmetic or args.proof_required or args.spec_trace:
+        spec = {"base": args.base, "head": args.head}
+        if args.cosmetic:
+            spec["type"] = "diff_cosmetic"
+        elif args.proof_required:
+            spec["type"] = "diff_proof_required"
+        else:
+            spec["type"] = "diff_spec_trace"
+            spec["components"] = registry.component_map()
+        ok, detail = checks.run_check(root, spec)
+        if not ok:
+            failed = True
+        if args.json:
+            print(json.dumps({"check": spec["type"], "ok": ok, "detail": detail}, indent=2))
+        else:
+            print(f"{'ok  ' if ok else 'FAIL'}  {spec['type']}  {detail}")
+        return 1 if failed else 0
+
+    report = registry.evaluate_all(root)
+    results = report["results"]
+
+    if args.audit:
+        if args.json:
+            print(json.dumps(report["audit"], indent=2))
+        else:
+            _print_audit(report["audit"])
+        # The audit is the hunt every session inherits: it reports what is missing.
+        # It does not block on its own -- a prose law in a document is a fact to report,
+        # not a gate. The blocking part is the law list above.
+        return 1 if failed else 0
+
+    if args.falsify:
+        for row in results:
+            if row["falsifier"] == "fail":
+                failed = True
+                print(f"FAIL  {row['id']}  {row['falsifier_detail']}")
+            elif row["falsifier"] == "pass":
+                print(f"ok    {row['id']}  {row['falsifier_detail']}")
+            else:
+                print(f"skip  {row['id']}  no falsifier declared")
+        return 1 if failed else 0
+
+    if args.self_test:
+        problems = []
+        for law in registry.laws():
+            if not law.get("check"):
+                problems.append(f"{law.get('id')}: no check")
+            if not law.get("falsifier") and law.get("falsify", True):
+                problems.append(f"{law.get('id')}: no falsifier")
+        for row in results:
+            if row["falsifier"] == "fail":
+                problems.append(f"{row['id']}: falsifier did not fail")
+        if args.json:
+            print(json.dumps({"problems": problems}, indent=2))
+        else:
+            for p in problems:
+                print(f"FAIL  self-test  {p}")
+            if not problems:
+                print(f"ok    self-test  {len(results)} law(s), every gate can fail")
+        return 1 if problems else 0
+
+    for row in results:
+        if row["verdict"] == "fail":
+            failed = True
+        line = f"{row['verdict'].upper():5} {row['id']:9} {row['detail']}"
+        if row.get("falsifier") == "fail":
+            line += f" | FALSIFIER: {row['falsifier_detail']}"
+        print(line)
+    if args.json:
+        print(json.dumps(report, indent=2, default=str))
+    else:
+        _print_audit(report["audit"])
+        print(
+            f"{'FAIL' if failed else 'ok'}  law-gate  "
+            f"{len(results)} law(s), {len(report['failing'])} failing"
+        )
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

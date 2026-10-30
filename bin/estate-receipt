@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""estate-receipt -- machine-generated proof for every report to the founder.
+
+    estate-receipt -- python3 bin/estate-law-gate
+    estate-receipt --json -- python3 bin/estate-law-gate
+    estate-receipt --save -- python3 bin/estate-law-gate
+    estate-receipt --verify ~/.estate/state/receipts/<sha256>.json
+    estate-receipt --has-receipt --file /path/to/report.md
+    estate-receipt --self-test
+
+The founder's rule (2026-10-29): "every report to me must carry machine generated proof, and a
+report without proof is blocked". So the currency of a report is a receipt: the command, the
+exit status, the line it printed, and the sha256 of the output, re-runnable by anyone.
+
+Exit 0 when the command passed, the same status as the command when it failed, 2 on a bad call.
+HARNESS AGNOSTIC: it runs a command and prints a receipt; no runtime is named here.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+
+
+def _governance_path() -> str:
+    """Where the governance package lives: this checkout, or the estate's runtime tree."""
+
+    repo_root = os.path.dirname(HERE)
+    for cand in (
+        os.environ.get("ESTATE_GOVERNANCE_TREE", ""),
+        os.path.join(repo_root, "platform", "estate"),
+        os.path.join(repo_root, "runtime", "idp", "platform", "estate"),
+        os.path.expanduser("~/.estate/runtime/idp/platform/estate"),
+    ):
+        if cand and os.path.isfile(os.path.join(cand, "governance", "registry.py")):
+            return cand
+    raise SystemExit("estate: the governance package was not found (set ESTATE_GOVERNANCE_TREE)")
+
+
+sys.path.insert(0, _governance_path())
+
+from governance import receipt  # noqa: E402
+
+
+def _self_test() -> int:
+    """The gate this launcher owes the founder: it must be able to fail."""
+    good = receipt.run_receipt(["true"], cwd=os.getcwd())
+    bad = receipt.run_receipt(["false"], cwd=os.getcwd())
+    checks = [
+        good["exit"] == 0,
+        bad["exit"] != 0,
+        len(good["sha256"]) == 64,
+        bool(good["line"]) or good["exit"] == 0,
+        receipt.verify(good)["ok"],
+        receipt.has_receipt(receipt.format_receipt(good)),
+        not receipt.has_receipt("it is all fine, trust me"),
+    ]
+    for name, ok in zip(
+        (
+            "a passing command exits 0",
+            "a failing command keeps its status",
+            "the receipt carries a sha256",
+            "the receipt carries the line it printed",
+            "the receipt re-verifies",
+            "a formatted receipt is recognised",
+            "narration is not a receipt",
+        ),
+        checks,
+    ):
+        print(f"{'ok  ' if ok else 'FAIL'}  receipt  {name}")
+    return 0 if all(checks) else 1
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--save", action="store_true")
+    ap.add_argument("--verify", default="")
+    ap.add_argument("--has-receipt", action="store_true")
+    ap.add_argument(
+        "--stdin",
+        action="store_true",
+        help="read the report from stdin (the default when stdin is not a terminal)",
+    )
+    ap.add_argument("--file", default="")
+    ap.add_argument("--self-test", action="store_true")
+    ap.add_argument("--cwd", default=os.getcwd())
+    ap.add_argument("command", nargs=argparse.REMAINDER)
+    args = ap.parse_args(argv[1:])
+
+    if args.self_test:
+        return _self_test()
+
+    if args.verify:
+        path = args.verify
+        try:
+            with open(path) as f:
+                stored = json.load(f)
+        except (OSError, ValueError) as exc:
+            print(f"estate-receipt: no receipt at {path} ({exc})", file=sys.stderr)
+            return 2
+        result = receipt.verify(stored)
+        if args.json:
+            print(json.dumps(result, indent=2, default=str))
+        else:
+            print(
+                f"{'ok  ' if result['ok'] else 'FAIL'}  receipt  {path}: "
+                f"exit {stored.get('exit')} sha256 {stored.get('sha256')}"
+            )
+        return 0 if result["ok"] else 1
+
+    if args.has_receipt:
+        text = ""
+        if args.file:
+            try:
+                with open(args.file) as f:
+                    text = f.read()
+            except OSError as exc:
+                print(f"estate-receipt: no report at {args.file} ({exc})", file=sys.stderr)
+                return 2
+        elif args.stdin or not sys.stdin.isatty():
+            text = sys.stdin.read()
+        ok = receipt.has_receipt(text)
+        print(f"{'ok  ' if ok else 'FAIL'}  receipt  the report carries machine-generated proof")
+        return 0 if ok else 1
+
+    command = [c for c in args.command if c != "--"]
+    if not command:
+        print("estate-receipt: no command to run", file=sys.stderr)
+        return 2
+
+    got = receipt.run_receipt(command, cwd=args.cwd)
+    if args.save:
+        path = receipt.save(got, os.path.join(receipt.ledger.state_home(), "receipts", got["sha256"] + ".json"))
+        got["path"] = path
+    if args.json:
+        print(json.dumps(got, indent=2, default=str))
+    else:
+        print(receipt.format_receipt(got))
+    return int(got["exit"])
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

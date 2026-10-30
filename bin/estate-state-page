@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""estate-state-page -- one page that says what the estate's infra actually is, right now.
+
+    estate-state-page              compute, publish, print
+    estate-state-page --telegram   also deliver it to the founder's home channel
+    estate-state-page --json       the facts, machine-readable
+
+Every fact on the page is measured at the moment it is computed: the law gate's own verdict,
+each spec's proof, the provider renewal state, the live claims, the open violations and the
+locked sessions. Nothing on the page is remembered.
+
+The page is written to ~/.estate/state/state-page.md, published into unified memory (so every
+session can recall it) and appended to the alert feed. bin/estate-brief carries it into every
+session start, in every runtime.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+
+
+def _governance_path() -> str:
+    """Where the governance package lives: this checkout, or the estate's runtime tree."""
+
+    repo_root = os.path.dirname(HERE)
+    for cand in (
+        os.environ.get("ESTATE_GOVERNANCE_TREE", ""),
+        os.path.join(repo_root, "platform", "estate"),
+        os.path.join(repo_root, "runtime", "idp", "platform", "estate"),
+        os.path.expanduser("~/.estate/runtime/idp/platform/estate"),
+    ):
+        if cand and os.path.isfile(os.path.join(cand, "governance", "registry.py")):
+            return cand
+    raise SystemExit("estate: the governance package was not found (set ESTATE_GOVERNANCE_TREE)")
+
+
+sys.path.insert(0, _governance_path())
+ROOT = os.path.abspath(os.path.join(os.path.dirname(_governance_path()), ".."))
+
+from governance import state_page  # noqa: E402
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--telegram", action="store_true")
+    ap.add_argument("--no-publish", action="store_true")
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args(argv[1:])
+
+    facts = state_page.compute(ROOT)
+    if not args.no_publish:
+        state_page.publish(facts, ROOT)
+    if args.telegram:
+        facts["telegram"] = state_page.telegram(state_page.render(facts))
+    if args.json:
+        print(json.dumps(facts, indent=2, default=str))
+    else:
+        print(state_page.render(facts))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

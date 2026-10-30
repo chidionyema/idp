@@ -1,0 +1,22 @@
+# Provider renewals: the committed record of who the estate still pays for.
+#
+# A model provider whose sessions keep breaking the estate's laws loses its renewal, and a
+# provider without a renewal has no lanes: bin/idp-vendor-render drops its models from the
+# rendered router configuration, which is what the estate routes through.
+#
+#   renewals:
+#     <provider>:
+#       status: granted | denied
+#       violations: <count>
+#       threshold: <count at which the renewal is denied>
+#       evidence: [<iso ts>, ...]
+#       decided_at: <iso ts>
+#
+# The threshold is 2 violations of any class from one provider: one is noise, two is a
+# pattern. The live copy the local router reads is ~/.estate/state/provider-renewals.json.
+# The record is written by bin/estate-provider-renewal; it is never edited by hand, so a
+# verdict always carries the evidence that produced it.
+#
+# It starts empty on purpose: no provider has violated the estate's laws yet, and a record
+# that claims otherwise before the evidence exists is a lie with a machine-readable shape.
+renewals: {}

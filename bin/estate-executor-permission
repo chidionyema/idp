@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""estate-executor-permission -- may this session use the direct executor right now?
+
+    estate-executor-permission --session <sid> [--claim 7474] [--json]
+
+The founder's order (2026-10-29): once the governance enforcement is active and proven, the
+fleet may use the direct executor again. "Once" and "proven" are measured, never assumed:
+
+    1. the law gate is green (every registered law passes, falsifier run)
+    2. the session is not locked
+    3. the session holds a live claim
+
+Exit 0 when the permission is granted, 1 when it is refused, 2 on a bad call. The decision is
+written as an artifact, so the executor door reads a fact and a session cannot widen its own
+permission.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+
+
+def _governance_path() -> str:
+    """Where the governance package lives: this checkout, or the estate's runtime tree."""
+
+    repo_root = os.path.dirname(HERE)
+    for cand in (
+        os.environ.get("ESTATE_GOVERNANCE_TREE", ""),
+        os.path.join(repo_root, "platform", "estate"),
+        os.path.join(repo_root, "runtime", "idp", "platform", "estate"),
+        os.path.expanduser("~/.estate/runtime/idp/platform/estate"),
+    ):
+        if cand and os.path.isfile(os.path.join(cand, "governance", "registry.py")):
+            return cand
+    raise SystemExit("estate: the governance package was not found (set ESTATE_GOVERNANCE_TREE)")
+
+
+sys.path.insert(0, _governance_path())
+
+from governance import executor_permission as perm  # noqa: E402
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--session", required=True)
+    ap.add_argument("--claim", default="")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--explain", action="store_true")
+    args = ap.parse_args(argv[1:])
+
+    decision = perm.evaluate(args.session, claim=args.claim)
+    path = perm.write(decision)
+    decision["artifact"] = path
+
+    if args.json:
+        print(json.dumps(decision, indent=2, default=str))
+    else:
+        print(f"session: {decision['session']}  granted: {decision['granted']}")
+        print(
+            f"laws: {decision['laws']}  locked: {decision['locked']}  "
+            f"claims: {decision['claims']}"
+        )
+        for reason in decision["reasons"]:
+            print(f"refused: {reason}")
+        print(f"artifact: {path}")
+    return 0 if decision["granted"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

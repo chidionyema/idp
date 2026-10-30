@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+"""estate-provider-renewal -- bind the governance to the model provider.
+
+    estate-provider-renewal --status      what the renewal state is now
+    estate-provider-renewal --apply       evaluate the ledger, write the state, report the lanes
+    estate-provider-renewal --threshold 2 violations before a provider loses its subscription
+
+The rule (founder, 2026-10-29): repeated policy violations from one provider's sessions end
+that provider's estate subscription. The count comes from the violation ledger, the verdict
+is written to platform/vendors/renewals.yaml (committed, so the renderer sees it) and to
+~/.estate/state/provider-renewals.json (runtime), and bin/idp-vendor-render drops a denied
+provider's lanes from the rendered router config.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+
+
+def _governance_path() -> str:
+    """Where the governance package lives: this checkout, or the estate's runtime tree."""
+
+    repo_root = os.path.dirname(HERE)
+    for cand in (
+        os.environ.get("ESTATE_GOVERNANCE_TREE", ""),
+        os.path.join(repo_root, "platform", "estate"),
+        os.path.join(repo_root, "runtime", "idp", "platform", "estate"),
+        os.path.expanduser("~/.estate/runtime/idp/platform/estate"),
+    ):
+        if cand and os.path.isfile(os.path.join(cand, "governance", "registry.py")):
+            return cand
+    raise SystemExit("estate: the governance package was not found (set ESTATE_GOVERNANCE_TREE)")
+
+
+sys.path.insert(0, _governance_path())
+
+from governance import provider_renewal  # noqa: E402
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--status", action="store_true")
+    ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--threshold", type=int, default=2)
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args(argv[1:])
+
+    if args.apply:
+        report = provider_renewal.apply()
+    else:
+        report = provider_renewal.evaluate(threshold=args.threshold)
+
+    if args.json:
+        print(json.dumps(report, indent=2, default=str))
+    else:
+        print(f"threshold: {report.get('threshold')}")
+        for row in report.get("providers", []):
+            verdict = "DENIED" if row.get("denied") else "ok"
+            print(f"  {verdict:6} {row.get('provider','')}  violations={row.get('violations')}")
+        denied = provider_renewal.denied_providers()
+        print(f"denied providers: {', '.join(denied) if denied else 'none'}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
