@@ -81,3 +81,35 @@ def test_send_rejects_flag_as_agent():
     )
     assert r.returncode != 0
     assert "nothing was sent" in r.stderr
+
+
+def test_ack_ledger_says_who_applied_and_who_refused(bus):
+    out = run(bus, "founder", "directive", "ship it").stdout
+    seq = out.split("seq=")[1].split()[0]
+    run(bus, "agent-a", "inbox", "--ack")
+    assert run(bus, "agent-b", "refuse", seq, "claimed by pi").returncode == 0
+    st = run(bus, "founder", "status", seq).stdout
+    assert f"applied  seq={seq} by=agent-a" in st
+    assert f"refused  seq={seq} by=agent-b" in st and "claimed by pi" in st
+    assert "2 agent(s) on record" in st
+
+
+def test_envelope_carries_id_channel_and_reply_to(bus, monkeypatch):
+    monkeypatch.setenv("ESTATE_FLEET_CHANNEL", "voice")
+    monkeypatch.setenv("ESTATE_FLEET_REPLY_TO", "abc123")
+    run(bus, "founder", "send", "codex", "hello")
+    import json
+
+    env = {**os.environ, "ESTATE_NATS_URL": bus}
+    code = (
+        "import asyncio,nats,json\n"
+        "async def m():\n"
+        " nc=await nats.connect('" + bus + "')\n js=nc.jetstream()\n"
+        " s=await js.get_msg('ESTATE_FLEET',seq=1)\n print(s.data.decode())\n"
+        "asyncio.run(m())"
+    )
+    out = subprocess.run(
+        ["python3", "-c", code], capture_output=True, text=True, env=env
+    ).stdout
+    d = json.loads(out)
+    assert d["channel"] == "voice" and d["reply_to"] == "abc123" and len(d["id"]) == 32

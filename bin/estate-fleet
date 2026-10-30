@@ -11,6 +11,11 @@ durable consumer: a message stays pending, and is redelivered, until that agent 
     estate-fleet directive <text>        every agent + growmos DECISION (survives the bus)
     estate-fleet inbox [--ack]           print my pending messages; --ack acknowledges them
     estate-fleet watch                   live push of new messages
+    estate-fleet refuse <seq> <reason>   record that I will not apply message <seq>
+    estate-fleet status <seq>            who has acked (applied) or refused message <seq>
+Envelope: {id, from, kind, text, at, channel, reply_to}. $ESTATE_FLEET_CHANNEL names the door
+(console, voice, telegram, face, mcp; default console); $ESTATE_FLEET_REPLY_TO threads a reply.
+Acks are records on estate.fleet.ack.<seq>.<agent>, so "who applied this" survives restarts.
 Identity: $ESTATE_AGENT. Bus: $ESTATE_NATS_URL (default nats://127.0.0.1:4222).
 Exit 0 ok, 1 FAIL, 2 BLIND (bus unreachable: never reported as an empty inbox).
 """
@@ -20,6 +25,7 @@ import os
 import subprocess
 import sys
 import time
+import uuid
 
 STREAM = "ESTATE_FLEET"
 URL = os.environ.get("ESTATE_NATS_URL", "nats://127.0.0.1:4222")
@@ -53,7 +59,12 @@ async def connect():
 
 async def publish(subject, text, kind):
     nc, js = await connect()
-    body = json.dumps({"from": me(), "kind": kind, "text": text, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+    body = json.dumps({
+        "id": uuid.uuid4().hex, "from": me(), "kind": kind, "text": text,
+        "channel": os.environ.get("ESTATE_FLEET_CHANNEL", "console"),
+        "reply_to": os.environ.get("ESTATE_FLEET_REPLY_TO") or None,
+        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    })
     ack = await js.publish(subject, body.encode())
     await nc.close()
     print(f"ok      estate-fleet  {kind} stored seq={ack.seq} on {subject}")
@@ -62,6 +73,40 @@ async def publish(subject, text, kind):
 def subjects(agent):
     return {"broadcast": "estate.fleet.broadcast", "directive": "estate.fleet.directive",
             "to": f"estate.fleet.to.{agent}"}
+
+
+async def record_ack(js, seq, agent, outcome, note):
+    body = json.dumps({"seq": seq, "by": agent, "outcome": outcome, "note": note,
+                       "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+    await js.publish(f"estate.fleet.ack.{seq}.{agent}", body.encode())
+
+
+async def refuse(seq, reason):
+    nc, js = await connect()
+    await record_ack(js, int(seq), me(), "refused", reason)
+    await nc.close()
+    print(f"ok      estate-fleet  refusal of seq={seq} recorded for {me()}")
+
+
+async def status(seq):
+    nc, js = await connect()
+    rows = {}
+    try:
+        sub = await js.pull_subscribe(f"estate.fleet.ack.{int(seq)}.*", stream=STREAM)
+        while True:
+            try:
+                msgs = await sub.fetch(100, timeout=1)
+            except Exception:
+                break
+            for m in msgs:
+                d = json.loads(m.data)
+                rows[d["by"]] = d  # latest record per agent wins
+                await m.ack()
+    finally:
+        await nc.close()
+    for by, d in sorted(rows.items()):
+        print(f"{d['outcome']:<8} seq={seq} by={by} at={d['at']} {d['note']}".rstrip())
+    print(f"ok      estate-fleet  seq={seq}: {len(rows)} agent(s) on record")
 
 
 async def inbox(ack):
@@ -82,6 +127,7 @@ async def inbox(ack):
             print(f"{d['kind']:<9} seq={m.metadata.sequence.stream} from={d['from']} {d['text']}")
             n += 1
             if ack:
+                await record_ack(js, m.metadata.sequence.stream, agent, "applied", "")
                 await m.ack()
     await nc.close()
     print(f"ok      estate-fleet  {n} pending message(s) for {agent}" + ("" if ack else " (not acked: will be redelivered)"))
@@ -115,6 +161,10 @@ def main(argv):
             subprocess.run(["growmos", "remember", f"directive-{int(time.time())}", "--type", "DECISION", "--desc", f"Founder directive via estate-fleet: {text}"], check=False)
     elif c == "inbox":
         asyncio.run(inbox("--ack" in rest))
+    elif c == "refuse" and len(rest) >= 2 and rest[0].isdigit():
+        asyncio.run(refuse(rest[0], " ".join(rest[1:])))
+    elif c == "status" and len(rest) == 1 and rest[0].isdigit():
+        asyncio.run(status(rest[0]))
     elif c == "watch":
         asyncio.run(watch())
     else:
