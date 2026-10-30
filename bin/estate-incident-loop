@@ -14,6 +14,14 @@
 #   bin/estate-incident-loop tick     # one pass of the whole loop
 #   bin/estate-incident-loop sense    # what the sensors see right now
 #   bin/estate-incident-loop list     # the ledger
+#   bin/estate-incident-loop clock    # can the host wall clock be trusted? (0 ok, 1 untrusted, 2 blind)
+#
+# WHY THE CLOCK IS HERE. On 2026-10-30 the host clock read 2024-01-01 for about twenty minutes.
+# Every timestamp written in that window -- session ids, incident ids, ledger rows, ticket ages
+# -- was wrong, and nothing detected it. The clock guard (platform/estate/libexec/clock-guard.py)
+# judges the wall clock against the kernel's own clock (the boot record plus CLOCK_MONOTONIC, with
+# the persisted sample and the estate's incident ledger as fallbacks), so the loop now refuses to
+# stamp a regressed time, and a backward jump is sensed as an incident like any other error.
 #
 # WHERE THE CODE COMES FROM. This file is staged into ~/.estate/bin by estate-runtime-sync, so
 # the copy under ~/.estate/bin cannot find the tree by walking up from itself. The tree is
