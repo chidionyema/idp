@@ -38,6 +38,7 @@ FAILs. A spine that cannot fail is not a spine.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import socket
@@ -48,6 +49,20 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+
+
+def _load_clock_guard():
+    """Load the sibling clock-guard module by path (the runtime mirror keeps them side by side)."""
+    path = Path(__file__).resolve().parent / "clock-guard.py"
+    spec = importlib.util.spec_from_file_location("clock_guard", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load clock-guard.py next to {__file__}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+clock_guard = _load_clock_guard()
 
 STATE = Path(os.environ.get("ESTATE_STATE_DIR", str(Path.home() / ".estate")))
 INCIDENTS = STATE / "incidents"
@@ -69,7 +84,18 @@ PASS, FAIL, BLIND = "PASS", "FAIL", "BLIND"
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    """An ISO stamp the estate can trust.
+
+    The host clock is not trusted by default: on 2026-10-30 it read 2024-01-01 for about twenty
+    minutes, and this file's incident ids and detected_at stamps carried that date into the
+    estate's incident ledger. clock-guard compares the wall clock against CLOCK_MONOTONIC and,
+    when the wall clock is untrustworthy, this returns the projection instead."""
+    return clock_guard.stamp()
+
+
+def wall_now() -> datetime:
+    """The estate's trusted wall clock, as a datetime (see clock-guard)."""
+    return datetime.fromtimestamp(clock_guard.trusted_epoch(), tz=timezone.utc)
 
 
 def expand(path: str) -> Path:
@@ -146,7 +172,7 @@ def probe_liveness(spec: dict) -> tuple[str, str, dict]:
                 when = datetime.fromisoformat(str(at).replace("Z", "+00:00"))
             except ValueError:
                 return BLIND, f"the heartbeat 'at' ({at}) is not a timestamp", ev
-            age = (datetime.now(timezone.utc) - when).total_seconds()
+            age = (wall_now() - when).total_seconds()
             ev["age_s"] = int(age)
             if age > max_age:
                 return FAIL, f"the heartbeat is {int(age)}s old (max {max_age}s)", ev
@@ -385,7 +411,7 @@ def probe_goal(spec: dict | None) -> tuple[str | None, str, dict]:
 
             def _rev(refname: str) -> str:
                 p = subprocess.run(  # noqa: S603 -- constant binary, argv built here
-                    ["git", "-C", str(repo), "rev-parse", refname],
+                    ["git", "-C", str(repo), "rev-parse", refname],  # noqa: S607 -- git from PATH
                     capture_output=True,
                     text=True,
                     timeout=20,
@@ -565,7 +591,7 @@ def raise_incident(fn: dict, result: dict, state: dict, dry_run: bool) -> dict |
         return None
 
     incident = {
-        "id": f"{fid}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}",
+        "id": f"{fid}-{clock_guard.stamp().replace('-', '').replace(':', '')}",
         "function": fid,
         "title": result["title"],
         "severity": result["severity"],

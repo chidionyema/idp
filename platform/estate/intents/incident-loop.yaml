@@ -8,7 +8,8 @@ description: >
   estate master epic: "an error results in a ticket being raised, prioritised, assigned and
   depending on capacity an agent is automatically launched". Actions: tick (one pass of the whole
   loop - this is what the laptop watcher runs), sense (what the sensors see right now), list, show,
-  report (raise one by hand), verify, drill (the sealed-failure drill), policy.
+  report (raise one by hand), verify, drill (the sealed-failure drill), policy, clock (can the
+  host wall clock be trusted? 0 yes, 1 the clock is untrustworthy, 2 no verdict was possible).
 args:
   action: { type: string, default: "tick" }
   repo: { type: string, default: "" }
