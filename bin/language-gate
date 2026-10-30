@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+"""bin/language-gate -- the founder's ruling (2026-10-30) made mechanical: Rust over Python
+for new estate capability code, unless the reason is compelling, and that reason is written
+down, not assumed.
+
+WHY THIS EXISTS. bin/estate-read and bin/estate-patch (idp#7585) shipped as stdlib Python
+hours before this gate -- a receipt-signing, AST-validating security boundary, exactly the
+class of tool where a memory-safe, statically-typed, single-binary artifact beats an
+interpreted script, and exactly the class of default the founder is naming as the habit to
+break. "Zero external dependencies" was the stated reason; it argues for Rust as much as
+Python (a compiled binary needs no interpreter on the host either), and nobody wrote that
+argument down before shipping. A verbal mandate did not stop the habit; this gate is the
+difference between a rule and a sentence (AGENTS.md section 3: "narrating instead of
+proving ... is ... an agent producing words where a measurement belongs").
+
+WHAT IT CHECKS. Every Python file ADDED (not modified -- the ratchet grandfathers the ~460
+Python files already in bin/ and platform/, the same shape as bin/schema-conformance's
+baseline) in the commit range names its own compelling reason, via a commit-message trailer.
+"Python file" is judged by content, not name: this estate's own bin/ convention is an
+extensionless script with a `#!/usr/bin/env python3` shebang (bin/estate-read,
+bin/estate-patch, this very script), so a `*.py`-only filter would miss most of what it
+exists to catch.
+
+    Language-Exception: <path> -- <reason>
+
+one line per new Python file. No trailer naming that exact path -> the gate refuses, and
+says so by path, not by a blanket "write it in Rust": the point is a documented decision,
+not a language the gate cannot actually judge is right for the job.
+
+SCOPE. New files only, anywhere in the tree. A modified existing .py file is not a new
+default being chosen, so it is not judged here (py-strict and ruff already grade the diff
+of those). tests/*.py are exempt: a test mirrors the language of the thing it tests, so the
+choice was already made (and judged) at the implementation file, not the test.
+
+Exit 0: no new Python file without a trailer. Exit 1: at least one. Exit 2: could not read
+the range (git failure) -- BLIND, not clean, same as every other ratchet in this estate.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+TRAILER_RE = re.compile(r"^Language-Exception:\s*(\S+)\s*--\s*\S.*$", re.MULTILINE)
+
+
+def _is_python(head: str, path: str) -> bool:
+    if path.endswith(".py"):
+        return True
+    shown = subprocess.run(
+        ["git", "show", f"{head}:{path}"], capture_output=True, text=True, check=False
+    )
+    if shown.returncode != 0:
+        return False
+    first_line = shown.stdout.splitlines()[0] if shown.stdout else ""
+    return first_line.startswith("#!") and "python" in first_line
+
+
+def _added_python_files(base: str, head: str) -> list[str]:
+    out = subprocess.run(
+        ["git", "diff", "--diff-filter=A", "--name-only", f"{base}...{head}"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=Path.cwd(),
+    )
+    added = [p for p in out.stdout.splitlines() if p]
+    return [
+        p
+        for p in added
+        if not p.startswith("tests/") and "/tests/" not in p and _is_python(head, p)
+    ]
+
+
+HEAD_TRAILER = re.compile(r"^Greenlane-Head:\s*([0-9a-f]{7,40})\s*$", re.MULTILINE)
+
+
+def _git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], capture_output=True, text=True, check=check)
+
+
+def _lane_messages(base: str, lane_head: str, squash_msg: str) -> str:
+    """The commit messages of the lane a Greenlane queue commit came from.
+
+    Found live, 2026-10-30 (queue/b4693, run 41113337234): the Greenlane lands a lane as one
+    squashed commit whose message keeps only the subject, `Greenlane-Head: <lane head>` and its
+    signature -- every Language-Exception trailer is dropped, so this gate refused the very commit
+    that introduced it. Same resolution bin/claim-gate's lane_text uses for its Claim:/Agent:
+    trailers: read the lane head's own messages, fetching it by sha when no ref still holds it;
+    failing that, judge the squash message as it is (no trailer -> refused, never assumed)."""
+    if _git("cat-file", "-e", f"{lane_head}^{{commit}}", check=False).returncode != 0:
+        _git("fetch", "-q", "--no-tags", "origin", lane_head, check=False)
+    if _git("cat-file", "-e", f"{lane_head}^{{commit}}", check=False).returncode == 0:
+        return _git("log", "--format=%B", f"{base}..{lane_head}").stdout
+    return squash_msg
+
+
+def _commit_messages(base: str, head: str) -> str:
+    commits = [
+        c for c in _git("rev-list", "--reverse", f"{base}..{head}").stdout.split() if c
+    ]
+    parts = []
+    for c in commits:
+        msg = _git("log", "-1", "--format=%B", c).stdout
+        lane = HEAD_TRAILER.search(msg)
+        parts.append(_lane_messages(base, lane.group(1), msg) if lane else msg)
+    return "\n".join(parts)
+
+
+def _exempted_paths(messages: str) -> set[str]:
+    return {m.group(1) for m in TRAILER_RE.finditer(messages)}
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("base", nargs="?", default="origin/main")
+    ap.add_argument("head", nargs="?", default="HEAD")
+    args = ap.parse_args(argv)
+
+    try:
+        added = _added_python_files(args.base, args.head)
+        messages = _commit_messages(args.base, args.head)
+    except subprocess.CalledProcessError as exc:
+        print(
+            f"BLIND language-gate: could not read {args.base}..{args.head}: {exc}",
+            file=sys.stderr,
+        )
+        return 2
+
+    exempted = _exempted_paths(messages)
+    unjustified = [p for p in added if p not in exempted]
+
+    if not unjustified:
+        if added:
+            print(
+                f"ok    language-gate: {len(added)} new Python file(s), each with a Language-Exception"
+            )
+        else:
+            print("ok    language-gate: no new Python file in this range")
+        return 0
+
+    print(
+        f"FAIL  language-gate: {len(unjustified)} new Python file(s) with no documented reason",
+        file=sys.stderr,
+    )
+    for p in unjustified:
+        print(f"      {p}", file=sys.stderr)
+    print(
+        "      Either write it in Rust, or add one commit-message trailer per file:\n"
+        "      Language-Exception: <path> -- <the compelling reason>",
+        file=sys.stderr,
+    )
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
