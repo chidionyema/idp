@@ -57,6 +57,24 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+
+def _load_clock_guard():
+    """Load the sibling clock-guard module by path.
+
+    The estate runtime mirror keeps libexec/incident-loop.py and libexec/clock-guard.py side by
+    side, and the mirror is not always importable as a package, so the sibling is loaded by
+    path rather than by name."""
+    path = Path(__file__).resolve().parent / "clock-guard.py"
+    spec = importlib.util.spec_from_file_location("clock_guard", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load clock-guard.py next to {__file__}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+clock_guard = _load_clock_guard()
+
 IDP = Path(__file__).resolve().parents[3]
 ESTATE_HOME = Path(os.environ.get("ESTATE_HOME", Path.home() / ".estate"))
 LEDGER = ESTATE_HOME / "state" / "incidents.db"
@@ -198,8 +216,20 @@ def open_ledger(path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+def wall_now() -> datetime:
+    """The estate's trusted wall clock.
+
+    The host clock is not trusted by default: on 2026-10-30 it read 2024-01-01 for about twenty
+    minutes and every timestamp the estate wrote in that window was wrong. clock-guard judges the
+    wall clock against the kernel's own clock (the boot record plus CLOCK_MONOTONIC, with the
+    persisted sample and the estate's incident ledger as fallbacks) and, when they disagree, this
+    returns the projection instead of the regressed clock.
+    """
+    return datetime.fromtimestamp(clock_guard.trusted_epoch(), tz=timezone.utc)
+
+
 def now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return wall_now().strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def parse_iso(value: str) -> datetime:
@@ -440,7 +470,7 @@ def sense_ci(repo: str, policy: dict) -> list[dict]:
 
 
 def _since(hours: int) -> str:
-    stamp = datetime.now(timezone.utc) - timedelta(hours=hours)
+    stamp = wall_now() - timedelta(hours=hours)
     return stamp.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
@@ -451,7 +481,7 @@ def sense_doors(policy: dict) -> list[dict]:
         return []
     window = int(policy["sense"]["window_hours"])
     kinds = set(policy["sense"].get("door_kinds", []))
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=window)
+    cutoff = wall_now() - timedelta(hours=window)
     grouped: dict[tuple[str, str], dict] = {}
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -968,7 +998,7 @@ def door_resolved(policy: dict, row: sqlite3.Row) -> tuple[bool, str]:
     path = ESTATE_HOME / "friction" / "events.jsonl"
     if not path.exists():
         return False, ""
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=quiet)
+    cutoff = wall_now() - timedelta(minutes=quiet)
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError:
@@ -1085,6 +1115,37 @@ def tick(policy: dict, repo: str, dry_run: bool = False) -> dict:
     conn = open_ledger()
     summary = {"sensed": 0, "opened": 0, "dispatched": 0, "verified": 0, "notes": []}
     sensed: list[dict] = []
+    # The clock is judged first: a tick that runs while the wall clock lies writes wrong
+    # timestamps into every incident it senses. The verdict is stored, so the next tick can
+    # compare against it, and an untrustworthy clock is itself an incident.
+    clock = clock_guard.commit()
+    summary["clock"] = clock["state"]
+    if clock["state"] in (clock_guard.BACKWARD, clock_guard.FORWARD):
+        summary["notes"].append(
+            f"the host wall clock is {clock['state']}: {clock['reason']}"
+        )
+        sensed.append(
+            {
+                "id": fingerprint("clock", repo, f"clock-{clock['state']}"),
+                "source": "clock",
+                "repo": repo,
+                "severity": "major",
+                "blast": "main",
+                "title": (
+                    f"the host wall clock is untrustworthy ({clock['state']}): "
+                    f"{clock['reason']}"
+                ),
+                "url": "",
+                "detail": {
+                    "verdict": clock["state"],
+                    "wall_delta_s": clock["wall_delta_s"],
+                    "monotonic_delta_s": clock["monotonic_delta_s"],
+                    "skew_s": clock["skew_s"],
+                    "projected_epoch": clock["projected_epoch"],
+                    "reason": clock["reason"],
+                },
+            }
+        )
     try:
         sensed.extend(sense_ci(repo, policy))
         sensed.extend(sense_doors(policy))
@@ -1260,7 +1321,7 @@ def main(argv: list[str] | None = None) -> int:
         "action",
         nargs="?",
         default="tick",
-        help="tick | sense | list | show | report | verify | drill | policy",
+        help="tick | sense | list | show | report | verify | drill | policy | clock",
     )
     parser.add_argument("--repo", default="")
     parser.add_argument("--incident", default="")
@@ -1360,6 +1421,19 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(drill_fix(args.worktree), indent=2))
             return 0
         print(json.dumps(drill_status(), indent=2))
+        return 0
+
+    if args.action == "clock":
+        verdict = clock_guard.commit()
+        if args.json:
+            print(json.dumps(verdict, indent=2))
+        else:
+            print(f"{verdict['state']:<8} {verdict['reason']}")
+            print(f"wall {verdict['wall']:.0f}  trusted {verdict['trusted']}")
+        if verdict["state"] == clock_guard.BLIND:
+            return 2
+        if verdict["state"] in (clock_guard.BACKWARD, clock_guard.FORWARD):
+            return 1
         return 0
 
     if args.action == "tick":
