@@ -574,6 +574,107 @@ def _refusal(reason: str, *, detail: str = "", **extra) -> dict:
 
 
 # ---------------------------------------------------------------------------------------------
+# THE PLAN GATE (idp#7518)
+#
+# THE DEFECT, MEASURED. The door accepted work from a session that had declared no goal and
+# no sub-goal: `execute_command("echo plan-gate-falsifier", ...)` answered
+# {"accepted": true, "job_id": "exec-1793332780-421"}. The plan existed in ONE runtime's memory
+# (pi's extension) and in every other runtime's transcript replay -- and the estate's one door
+# heard about neither. So the rule "no agent works without goals and sub-goals" held only where
+# the runtime remembered to enforce it, and the founder saw no declarations at all.
+#
+# THE FIX IS AT THE DOOR, NOT IN ANOTHER PROMPT. A gate that lives in a runtime is bypassed by
+# the next runtime. This one reads the durable plan ledger (platform/estate/memory/plan.py), so
+# a plan declared anywhere -- pi's extension, a Claude Code hook, the shell door, the opencode
+# plugin -- is the same plan here.
+#
+# WHAT IS CARVED OUT, and why (R38 -- a gate that traps the estate is a worse outage than the
+# defect it reports): reading is how a plan is made; a plan-tool call IS the declaration; the
+# memory reads and housekeeping a trapped agent needs are never blocked; and a caller that
+# presents no session id is automation, which is let through and RECORDED, so the work that ran
+# without a declaration is visible instead of inferred.
+# ---------------------------------------------------------------------------------------------
+
+_PLAN_MODULE = None
+_PLAN_MODULE_LOADED = False
+
+
+def _plan_module():
+    """The plan contract, loaded from the repo the door lives in. None when it cannot load."""
+    global _PLAN_MODULE, _PLAN_MODULE_LOADED
+    if _PLAN_MODULE_LOADED:
+        return _PLAN_MODULE
+    _PLAN_MODULE_LOADED = True
+    try:
+        import importlib.util
+
+        root = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+        path = os.path.join(root, "platform", "estate", "memory", "plan.py")
+        spec = importlib.util.spec_from_file_location("estate_plan_contract", path)
+        if spec is None or spec.loader is None:
+            return None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _PLAN_MODULE = module
+    except Exception:  # noqa: BLE001 - a gate that cannot load must not take the estate down
+        _PLAN_MODULE = None
+    return _PLAN_MODULE
+
+
+def _plan_gate(command: str, session_id: str = ""):
+    """The door's verdict on one command, or None when the contract could not be loaded."""
+    module = _plan_module()
+    if module is None:
+        return None
+    try:
+        return module.door_plan_gate(command, session_id or None)
+    except Exception:  # noqa: BLE001 - fail open, but the fact is recorded
+        _record_gate_incident(command)
+        return None
+
+
+def _record_gate_incident(command: str) -> None:
+    """The gate itself broke. The estate keeps working; the break is written down."""
+    module = _plan_module()
+    if module is None:
+        return
+    try:
+        module.record_unplanned(command, source="door-gate-error")
+    except Exception:  # noqa: BLE001 - recording an incident must never raise
+        return
+
+
+def _plan_ledger_write(command: str, session_id: str = "") -> None:
+    """Record a plan-tool call in the ledger, and record the work that ran without one."""
+    module = _plan_module()
+    if module is None:
+        return
+    try:
+        call = module.shell_plan_call(command)
+        if call:
+            if session_id:
+                module.append_plan_event(session_id, call[0], call[1])
+            return
+        if not module.is_read_only_command(command):
+            module.record_unplanned(command, session_id, source="door")
+    except Exception:  # noqa: BLE001 - recording must never break the door
+        return
+
+
+def _resolve_session_id(module=None) -> str:
+    """The session this call belongs to: the environment, then the runtime's pointer file."""
+    module = module or _plan_module()
+    if module is None:
+        return os.environ.get("ESTATE_SESSION_ID", "")
+    try:
+        return module.resolve_session_id()
+    except Exception:  # noqa: BLE001 - identity resolution must never break the door
+        return os.environ.get("ESTATE_SESSION_ID", "")
+
+
+# ---------------------------------------------------------------------------------------------
 # THE FRICTION LEDGER
 #
 # Why this exists: the 24h census (docs/diagnoses/2026-10-23-agent-process-friction.yaml) measured
@@ -735,6 +836,7 @@ def execute_command(
     ceiling_sec: int = CEILING_SEC,
     executor: Optional[Executor] = None,
     mutates_live_worktree: bool = False,
+    session_id: Optional[str] = None,
 ) -> dict:
     """The one door. Accept a command, bound it, hand it to the detached executor.
 
@@ -785,6 +887,29 @@ def execute_command(
 
     if not isinstance(command, str) or not command.strip():
         return _refusal("empty command")
+
+    # 0c. THE PLAN GATE (idp#7518). A session that has declared no goal and no sub-goal does
+    #     not get work done through this door. The plan is read from the durable ledger, so it
+    #     is the same plan every runtime sees; the refusal names the one command that declares it.
+    #     The session identity travels with the request: the caller may present one (the daemon
+    #     relays it), and the door resolves one from the environment or the runtime's pointer file.
+    session_id = session_id or _resolve_session_id()
+    _plan_ledger_write(command, session_id)
+    gate = _plan_gate(command, session_id)
+    if gate is not None and not gate.get("ok"):
+        record_friction(
+            "refuse-plan",
+            command,
+            detail=gate.get("reason", ""),
+            reason=gate.get("reason"),
+        )
+        return {
+            "accepted": False,
+            "error": gate.get("detail") or "this session has declared no plan",
+            "refused": True,
+            "fatal": True,
+            "reason": gate.get("reason", "plan_not_declared"),
+        }
 
     # 0b. A MACHINE WITH NO FREE SPACE CANNOT RUN A JOB, SO THE DOOR REFUSES INSTEAD OF ADDING TO IT.
     #
@@ -1075,6 +1200,10 @@ def register_mcp_tools(
                 "cwd": cwd,
                 "ceiling_sec": ceiling_sec,
                 "mutates_live_worktree": mutates_live_worktree,
+                # The session this work belongs to, so the door can hold that session to the plan
+                # it declared. One daemon serves every session; the identity travels with the
+                # request (idp#7518).
+                "session_id": _resolve_session_id(),
             }
         )
         if result.get("unread"):

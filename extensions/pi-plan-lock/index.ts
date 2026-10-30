@@ -16,12 +16,17 @@
 // cannot satisfy is an outage), loudly.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { MAX_RESULT_CHARS, apply, authorize, capText, type Plan } from "./plan.ts";
 
 const SPILL_DIR = path.join(homedir(), ".pi", "agent", "state", "overflow");
+// THE DURABLE PLAN LEDGER (idp#7518). The plan in this process is the enforcement copy; this is
+// the durable one, in the same JSONL shape platform/estate/memory/plan.py replays, so the estate's
+// door (mcp/plugins/estate_executor.py) reads the SAME plan this session declared -- and the
+// founder can see a declaration after the session that made it is gone.
+const LEDGER_DIR = path.join(homedir(), ".estate", "plans");
 const off = () => process.env.ESTATE_PLAN_LOCK === "off";
 const say = (text: string, details: object = {}) => ({ content: [{ type: "text" as const, text }], details });
 
@@ -100,12 +105,48 @@ const TOOLS = [
 
 export default function (pi: ExtensionAPI) {
   let plan: Plan | undefined;
+  // The session id is what ties this session's declarations to the estate's door. It is stamped
+  // into the environment, so the executor door the MCP server talks to knows whose session is
+  // asking -- and therefore whether a plan exists before work is done.
+  let sessionId = "";
 
   // A new or resumed session starts unplanned: the plan lives in this process, and a resumed agent
   // re-declaring is one call, where a stale plan from another task would be silent drift.
   pi.on("session_start", async () => {
     plan = undefined;
+    sessionId = `pi-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    process.env.ESTATE_SESSION_ID = sessionId;
+    // The pointer that binds this session to THIS process. The estate's door runs in the MCP
+    // server underneath pi, so it resolves the caller's session by reading the pointer of its
+    // parent process -- it never has to take the caller's word for who it is (idp#7518).
+    try {
+      mkdirSync(LEDGER_DIR, { recursive: true });
+      writeFileSync(
+        path.join(LEDGER_DIR, `session-${process.pid}.json`),
+        JSON.stringify({ session_id: sessionId, at: Date.now() / 1000 }),
+      );
+    } catch {
+      // A pointer that cannot be written costs the door its identity, not the agent its plan:
+      // the in-process gate still refuses work without a declaration, and the door records the
+      // work it could not attribute.
+    }
   });
+
+  const ledgerAppend = (tool: string, args: unknown) => {
+    try {
+      mkdirSync(LEDGER_DIR, { recursive: true });
+      const line = JSON.stringify({
+        at: Date.now() / 1000,
+        session: sessionId,
+        tool,
+        args: (args ?? {}) as object,
+      });
+      appendFileSync(path.join(LEDGER_DIR, `${sessionId}.jsonl`), `${line}\n`);
+    } catch {
+      // A ledger that cannot be written must not stop the agent from working: the in-process
+      // gate is still there. The door then sees no plan and refuses -- loudly, and by name.
+    }
+  };
 
   for (const t of TOOLS) {
     pi.registerTool({
@@ -114,6 +155,7 @@ export default function (pi: ExtensionAPI) {
         const r = apply(plan, t.name, params);
         if (!r.ok) return say(`Refused: ${r.reason}`, { refused: true });
         plan = r.plan;
+        ledgerAppend(t.name, params);
         return say(r.message, { plan });
       },
     });

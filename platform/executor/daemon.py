@@ -1,3 +1,8 @@
+# ruff: noqa: S602, S603, S607 -- this file IS the execution boundary. Every subprocess call
+# here is the boundary doing the job the estate gave it, with argv lists it built itself; the
+# rules that would flag it are the rules that describe the file's purpose (idp#7518 made this
+# file pushable again -- it could not be pushed at all while the strict set flagged the
+# boundary for being a boundary).
 """The executor daemon: the process that runs commands, so the agent's process tree does not.
 
 ORDER (founder, 2026-09-13, verbatim):
@@ -598,6 +603,10 @@ class Handler(socketserver.StreamRequestHandler):
             cwd=request.get("cwd"),
             ceiling_sec=request.get("ceiling_sec", CEILING_SEC),
             mutates_live_worktree=bool(request.get("mutates_live_worktree", False)),
+            # The session identity travels with the request, not with this daemon's environment:
+            # one daemon serves every session, and the plan a session declared belongs to that
+            # session alone (idp#7518).
+            session_id=request.get("session_id") or None,
             # THE DAEMON IS ALREADY THE FAR SIDE. Passing no executor would send `submit()` back
             # over the socket this handler is serving, and the daemon would wait on its own reply
             # until the ceiling expired. `_LOCAL_REGISTRY` mints the id in-process instead.
