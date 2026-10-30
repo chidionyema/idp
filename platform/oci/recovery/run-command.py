@@ -59,6 +59,7 @@ PAYLOAD_PATH = "/var/tmp/estate-payload.b64"  # noqa: S108
 PAYLOAD_BIN = "/var/tmp/estate-payload.bin"  # noqa: S108
 SCRIPT_PATH = "/var/tmp/host-script.sh"  # noqa: S108
 REPORT_PATH = "/var/tmp/estate-report.txt"  # noqa: S108
+REPORT_B64_PATH = "/var/tmp/estate-report.b64"  # noqa: S108
 
 # The instance agent truncates captured output near 1024 characters; slices are read under that.
 SLICE_BYTES = 900
@@ -66,6 +67,7 @@ MAX_SLICES = 24
 
 EXIT_MARKER = re.compile(r"^exit=(\d+)$", re.MULTILINE)
 REPORT_BYTES_MARKER = re.compile(r"^report_bytes=(\d+)$", re.MULTILINE)
+REPORT_B64_BYTES_MARKER = re.compile(r"^report_b64_bytes=(\d+)$", re.MULTILINE)
 MODE_RE = re.compile(r"^[a-z][a-z0-9-]*$")
 
 
@@ -126,6 +128,13 @@ def final_command(mode: str) -> str:
             "rc=$?",
             'echo "exit=$rc"',
             f"echo \"report_bytes=$(wc -c < {REPORT_PATH} | tr -d ' ')\"",
+            # The report travels compressed: raw text would need one Run Command per 900
+            # bytes, and every one of those waits for the instance agent's poll. gzip+base64
+            # of a 15675-byte report is a few kilobytes, so the door costs a handful of
+            # commands instead of eighteen. The helper decodes it locally and prints the
+            # same readable bytes.
+            f"gzip -c < {REPORT_PATH} | base64 | tr -d '\\n' > {REPORT_B64_PATH} 2>/dev/null",
+            f"echo \"report_b64_bytes=$(wc -c < {REPORT_B64_PATH} | tr -d ' ')\"",
             "exit 0",
         ]
     )
@@ -139,15 +148,15 @@ SLICE_RE = re.compile(
 
 
 def slice_command(offset: int, size: int = SLICE_BYTES) -> str:
-    """The shell that reads one bounded slice of the report.
+    """The shell that reads one bounded slice of the compressed report.
 
     The slice is wrapped in explicit markers: the instance agent adds its own trailing newline,
     so the exact bytes of the slice cannot be guessed from the captured text alone.
     """
     if offset == 0:
-        body = f"head -c {size} {REPORT_PATH}"
+        body = f"head -c {size} {REPORT_B64_PATH}"
     else:
-        body = f"tail -c +{offset + 1} {REPORT_PATH} | head -c {size}"
+        body = f"tail -c +{offset + 1} {REPORT_B64_PATH} | head -c {size}"
     # The markers carry no newline of their own: the bytes between them are exactly the
     # bytes of the slice, so the report is reassembled byte for byte.
     return f"printf '{SLICE_OPEN}'; {body}; printf '{SLICE_CLOSE}'"
@@ -162,6 +171,24 @@ def parse_slice(text: str) -> str:
 def reassemble(chunks: list[str]) -> str:
     """The payload the chunks carry, in order."""
     return "".join(chunks)
+
+
+def encode_report(report: bytes) -> str:
+    """gzip + base64 the host's report, exactly as the host does before slicing it."""
+    buffer = io.BytesIO()
+    with gzip.GzipFile(fileobj=buffer, mode="wb", compresslevel=9, mtime=0) as handle:
+        handle.write(report)
+    return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
+def decode_report(payload: str) -> bytes:
+    """The host's report bytes, from the base64 of its gzip.
+
+    The bytes are the host's bytes: the compression happens on the host and is undone here,
+    so the founder reads the report the script printed, not a base64 wall.
+    """
+    raw = base64.b64decode(payload.strip())
+    return gzip.decompress(raw)
 
 
 # ---------------------------------------------------------------- OCI plumbing
@@ -357,11 +384,22 @@ def transport(args: argparse.Namespace) -> int:
     exit_code = int(match.group(1))
     bytes_match = REPORT_BYTES_MARKER.search(final_output)
     report_bytes = int(bytes_match.group(1)) if bytes_match else 0
-    say(f"ok      run-command  host exit={exit_code} report_bytes={report_bytes}")
+    b64_match = REPORT_B64_BYTES_MARKER.search(final_output)
+    report_b64_bytes = int(b64_match.group(1)) if b64_match else 0
+    say(
+        f"ok      run-command  host exit={exit_code} report_bytes={report_bytes} "
+        f"report_b64_bytes={report_b64_bytes}"
+    )
 
     report = ""
     if report_bytes > 0:
-        slices = min(MAX_SLICES, (report_bytes + SLICE_BYTES - 1) // SLICE_BYTES)
+        if report_b64_bytes <= 0:
+            raise TransportError(
+                "the host printed no compressed report: gzip or base64 failed on the host"
+            )
+        # The slices carry the COMPRESSED report, so the count follows the compressed size.
+        slices = min(MAX_SLICES, (report_b64_bytes + SLICE_BYTES - 1) // SLICE_BYTES)
+        payload = ""
         for index in range(slices):
             slice_id = create_command(
                 args.compartment,
@@ -383,7 +421,23 @@ def transport(args: argparse.Namespace) -> int:
                 raise TransportError(
                     f"report slice {index} came back without its markers: {captured[:120]!r}"
                 )
-            report += piece
+            payload += piece
+        if len(payload) < report_b64_bytes:
+            raise TransportError(
+                f"the report came back short: {len(payload)} of {report_b64_bytes} bytes"
+            )
+        try:
+            report_bytes_decoded = decode_report(payload)
+        except (ValueError, OSError) as exc:
+            raise TransportError(
+                f"the compressed report did not decode: {exc}"
+            ) from exc
+        if len(report_bytes_decoded) != report_bytes:
+            raise TransportError(
+                f"the decoded report is {len(report_bytes_decoded)} bytes, "
+                f"the host said {report_bytes}"
+            )
+        report = report_bytes_decoded.decode("utf-8", "replace")
 
     say("---- host report ----")
     say(report.rstrip("\n"))
