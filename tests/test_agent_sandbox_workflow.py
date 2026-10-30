@@ -266,6 +266,27 @@ def test_gemini_runs_in_pi_on_googles_api_with_its_own_key(tmp_path):
     assert run["env"]["GEMINI_API_KEY"] == "${{ secrets.SEED_GEMINI_API_KEY }}"  # noqa: S105
 
 
+def test_failed_gemini_preserves_its_private_transcript(tmp_path):
+    private_detail = "private-provider-diagnostic-sentinel"
+    body = FAKE["pi"] + f'echo "{private_detail}"\nexit 1\n'
+    result, out = _agent_step(tmp_path, "gemini", body)
+    assert result.returncode == 1
+    assert private_detail not in result.stdout + result.stderr
+    assert private_detail in (out / "stdout").read_text()
+    assert (out / "transcript.jsonl").read_text() == "{}\n"
+
+
+def test_private_evidence_is_sealed_and_uploaded_after_agent_failure():
+    assert _step("agent", "Encrypt what leaves").get("if") == "always()"
+    upload = next(
+        step
+        for step in _steps("agent")
+        if step.get("uses", "").startswith("actions/upload-artifact@")
+    )
+    assert upload.get("if") == "always()"
+    assert upload["with"]["path"] == "${{ runner.temp }}/sealed/work.tar.age"
+
+
 # The claim and the commit, run for real: a fake `gh`, a bare origin, the estate's own hooks.
 _GH = """#!/bin/bash
 echo "$@" >> "$GH_LOG"
