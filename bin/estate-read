@@ -1,0 +1,225 @@
+#!/usr/bin/env python3
+"""
+bin/estate-read: Brokered, windowed file reader with live git provenance
+and cryptographic read receipts. Blocks raw reads of stale markdown laws.
+
+Standard library only (hashlib, hmac, sqlite3) -- no estate dependency beyond
+git and Python 3, so it runs identically on the founder's machine, in CI, and
+inside estate-execute.
+
+Secret: ESTATE_RECEIPT_KEY must come from the vault (AGENTS.md section 4,
+estate-secrets / the Bitwarden bridge), never pasted into this file. The
+literal fallback below is NOT a secret -- it is a dev-only placeholder so a
+developer running this outside the vaulted environment gets a working (if
+unsigned-for-real) receipt instead of a crash; a receipt minted with it will
+never match one minted with the real key, so it cannot forge a receipt
+against a production estate.db.
+"""
+
+import argparse
+import ast
+import hashlib
+import hmac
+import json
+import os
+import sqlite3
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+BLOCKED_RAW_MARKDOWN = {
+    "AGENTS.md": "Stale static prose blocked. Query active rules via bin/estate-brief or the memory ledger.",
+    "docs/NEXT.md": "Stale planning file blocked. Use bin/estate-progress or bin/estate-work-status.",
+    "docs/FOUNDER.md": "Raw doc read blocked. Query live founder declarations via bin/estate-founder.",
+}
+MAX_WINDOW_LINES = 200
+DEV_FALLBACK_KEY = (
+    "estate-dev-local-hmac-key-NOT-A-SECRET-set-ESTATE_RECEIPT_KEY-from-the-vault"
+)
+
+
+def _estate_db_path() -> Path:
+    base = Path(os.environ.get("ESTATE_HOME", Path.home() / ".estate"))
+    base.mkdir(parents=True, exist_ok=True)
+    return base / "estate.db"
+
+
+def _receipt_secret() -> bytes:
+    key = os.environ.get("ESTATE_RECEIPT_KEY", DEV_FALLBACK_KEY)
+    return key.encode("utf-8")
+
+
+def _init_db(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS read_receipts (
+            receipt_id TEXT PRIMARY KEY,
+            rel_path TEXT NOT NULL,
+            file_sha256 TEXT NOT NULL,
+            start_line INTEGER NOT NULL,
+            end_line INTEGER NOT NULL,
+            issued_at INTEGER NOT NULL,
+            hmac_sig TEXT NOT NULL
+        )
+        """
+    )
+    conn.commit()
+
+
+def _git_provenance(repo_root: Path, rel_path: str) -> dict:
+    try:
+        log_out = subprocess.check_output(
+            ["git", "log", "-1", "--format=%H|%ct|%ci|%an|%s", "--", rel_path],
+            cwd=repo_root,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        if log_out:
+            sha, epoch, iso_date, author, subj = log_out.split("|", 4)
+            age_hours = round((time.time() - int(epoch)) / 3600, 1)
+        else:
+            sha, iso_date, author, subj, age_hours = (
+                "UNTRACKED",
+                "N/A",
+                "N/A",
+                "Uncommitted file",
+                0.0,
+            )
+
+        dirty = bool(
+            subprocess.check_output(
+                ["git", "status", "--porcelain", "--", rel_path],
+                cwd=repo_root,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            ).strip()
+        )
+        return {
+            "last_commit_sha": sha[:12],
+            "last_modified": iso_date,
+            "age_hours": age_hours,
+            "author": author,
+            "subject": subj,
+            "working_tree_dirty": dirty,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def _resolve_python_symbol(source: str, symbol: str) -> tuple[int, int]:
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            and node.name == symbol
+        ):
+            start = node.lineno
+            end = getattr(node, "end_lineno", start + 50)
+            return start, end
+    raise ValueError(f"Symbol '{symbol}' not found in AST.")
+
+
+def compute_read_hmac(rel_path: str, file_sha256: str, issued_at: int) -> str:
+    payload = f"READ:{rel_path}:{file_sha256}:{issued_at}".encode("utf-8")
+    return hmac.new(_receipt_secret(), payload, hashlib.sha256).hexdigest()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Estate brokered code reader.")
+    parser.add_argument("path", help="Repository-relative file path")
+    parser.add_argument(
+        "--lines", default="1:120", help="Line window START:END (max 200 lines)"
+    )
+    parser.add_argument("--symbol", help="Python function or class name to read")
+    args = parser.parse_args()
+
+    repo_root = Path.cwd().resolve()
+    target = (repo_root / args.path).resolve()
+    try:
+        rel_path = target.relative_to(repo_root).as_posix()
+    except ValueError:
+        sys.stderr.write(
+            "ERROR [ESTATE-READ-OUTSIDE-REPO]: Target path escapes repository root.\n"
+        )
+        return 2
+
+    if rel_path in BLOCKED_RAW_MARKDOWN:
+        sys.stderr.write(
+            f"ERROR [ESTATE-READ-STALE-DOC-BLOCKED]: {rel_path} -- {BLOCKED_RAW_MARKDOWN[rel_path]}\n"
+        )
+        return 3
+
+    if not target.is_file():
+        sys.stderr.write(
+            f"ERROR [ESTATE-READ-NOT-FOUND]: File '{rel_path}' does not exist.\n"
+        )
+        return 4
+
+    raw_bytes = target.read_bytes()
+    file_sha256 = hashlib.sha256(raw_bytes).hexdigest()
+    lines = raw_bytes.decode("utf-8", errors="replace").splitlines()
+    total_lines = len(lines)
+
+    if args.symbol:
+        try:
+            start_line, end_line = _resolve_python_symbol(
+                raw_bytes.decode("utf-8"), args.symbol
+            )
+        except Exception as exc:
+            sys.stderr.write(f"ERROR [ESTATE-READ-SYMBOL]: {exc}\n")
+            return 5
+    else:
+        try:
+            s_str, e_str = args.lines.split(":", 1)
+            start_line, end_line = (
+                max(1, int(s_str)),
+                min(max(1, total_lines), int(e_str)),
+            )
+        except ValueError:
+            sys.stderr.write(
+                "ERROR [ESTATE-READ-RANGE]: --lines must be START:END (e.g. 1:120).\n"
+            )
+            return 6
+
+    if (end_line - start_line + 1) > MAX_WINDOW_LINES:
+        sys.stderr.write(
+            f"ERROR [ESTATE-READ-WINDOW-EXCEEDED]: Requested {end_line - start_line + 1} lines; "
+            f"max allowed window is {MAX_WINDOW_LINES} lines.\n"
+        )
+        return 7
+
+    issued_at = int(time.time())
+    sig = compute_read_hmac(rel_path, file_sha256, issued_at)
+    receipt_token = f"{rel_path}:{file_sha256}:{issued_at}:{sig}"
+
+    with sqlite3.connect(_estate_db_path()) as conn:
+        _init_db(conn)
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO read_receipts
+            (receipt_id, rel_path, file_sha256, start_line, end_line, issued_at, hmac_sig)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (sig[:16], rel_path, file_sha256, start_line, end_line, issued_at, sig),
+        )
+        conn.commit()
+
+    prov = _git_provenance(repo_root, rel_path)
+    header = {
+        "file": rel_path,
+        "file_sha256": file_sha256,
+        "window": f"{start_line}:{end_line} of {total_lines}",
+        "provenance": prov,
+        "READ_RECEIPT": receipt_token,
+    }
+    print("# === ESTATE LIVE READ HEADER ===")
+    print("# " + json.dumps(header, sort_keys=True))
+    print("# ===============================")
+    for idx in range(start_line - 1, min(end_line, total_lines)):
+        print(f"{idx + 1:4d} | {lines[idx]}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

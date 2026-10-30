@@ -4,9 +4,9 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 113,
-    "layer": 237,
+    "layer": 238,
     "service": 121,
-    "tool": 466,
+    "tool": 468,
     "workflow": 87
   },
   "records": [
@@ -7019,6 +7019,52 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/governance/supervisor.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-harness-fs_guard",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "platform/estate/harness/fs_guard.py",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/harness/fs_guard.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -26824,6 +26870,63 @@
       ]
     },
     {
+      "id": "cap:tool/estate-patch",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "bin/estate-patch: Anchored Search/Replace patch applier with mandatory",
+      "contract": {
+        "inputs": [
+          "--create",
+          "--receipt"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-patch",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-read",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
       "id": "cap:tool/estate-plan",
       "schema_version": 1,
       "kind": "tool",
@@ -27019,6 +27122,76 @@
       "depends_on": [
         {
           "id": "cap:tool/idp-vendor-render",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/estate-read",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "bin/estate-read: Brokered, windowed file reader with live git provenance",
+      "contract": {
+        "inputs": [
+          "--lines",
+          "--porcelain",
+          "--symbol"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-read",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-brief",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-founder",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-progress",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-work-status",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
           "edge": "invokes"
         }
       ],
@@ -31117,6 +31290,14 @@
         },
         {
           "id": "cap:tool/estate-face-vendor",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-patch",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-read",
           "edge": "invokes"
         },
         {
