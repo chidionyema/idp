@@ -7,7 +7,7 @@
 - **Checker:** `python3 platform/estate/nsvee_enforcement.py --check` — exits 1 today and names
   the surfaces that do not enforce the receipt yet
 - **Tickets:** idp#7263 (open — NSVEE productization), idp#7265 (merged — the productized
-  engine), idp#6989 (claim rungs)
+  engine), idp#6989 (claim rungs), idp#7523 (open -- Phase 2, the enforcement wiring)
 - **Founder's ruling (2026-10-27):** NSVEE is integrated estate-wide and mandatory. JEV is
   explicitly **not** a requirement for it, and stays out of the enforcement path.
 - **Status (2026-10-30):** Phase 1 landed. Phase 2's API gap (D5) and the shared door (D8) are
@@ -313,7 +313,8 @@ is wired yet. *Falsifier:* `python3 platform/estate/nsvee_enforcement.py --check
 names `pre-commit`, `ci-verification`, `merge-gate`.
 
 **Phase 2 -- the binding.** `nsvee.verify()` (idp#7263) -- **delivered 2026-10-30**; the shared
-door `nsvee.verify` (D8) -- **delivered 2026-10-30**; the pre-commit gate, the CI job in
+door `nsvee.verify` (D8) -- **delivered 2026-10-30**; the remaining wiring is claimed as
+idp#7523; the pre-commit gate, the CI job in
 `.github/workflows/verifier.yml` that verifies the tree and publishes the receipt, and the merge
 gate in `.github/workflows/ci.yml` that refuses a commit without one. *Falsifier:* the checker
 exits 0, and a CI run on a commit with no receipt is red -- proved by running it, not asserted.
