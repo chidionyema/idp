@@ -441,8 +441,14 @@ install() {
     unload "$LEGACY_LABEL"; rm -f "$AGENTS/$LEGACY_LABEL.plist"
     launchctl bootstrap "gui/$(id -u)" "$AGENTS/$FRONT_LABEL.plist"
   else
+    local front_was_loaded=false
+    if loaded "$FRONT_LABEL"; then front_was_loaded=true; fi
     loaded "$FRONT_LABEL" || launchctl bootstrap "gui/$(id -u)" "$AGENTS/$FRONT_LABEL.plist"
     swap || exit 1
+    # The staged front.py has to BE the running front. launchd keeps the old process alive
+    # across a stage, so a front that is never restarted keeps the old behaviour: the change
+    # looks deployed and is not.
+    if [ "$front_was_loaded" = true ]; then restart_front; fi
   fi
   for _ in $(seq 1 30); do live && { echo "ok    litellm-local live on 127.0.0.1:$FRONT_PORT -> slot $(cat "$ACTIVE") (staged at $STAGE)"; return 0; }; sleep 1; done
   echo "FAIL  front not answering on :$FRONT_PORT; last log lines:"; tail -20 "$LOG"; exit 1
@@ -472,6 +478,16 @@ swap() {
 
 front() { exec "$VENV/bin/python" "$HERE/front.py"; }
 
+# restart_front: make the staged front.py the RUNNING front.
+#
+# The front retries the bind, so the gap is the time it takes to release :4000 and bind it
+# again. Kept as its own function so a test can call it and see the kickstart it makes
+# (tests/test_litellm_local_restarts_the_front.py).
+restart_front() {
+  launchctl kickstart -k "gui/$(id -u)/$FRONT_LABEL"
+  echo "ok    litellm-local restarted the front on :$FRONT_PORT; the staged front.py is the running one"
+}
+
 uninstall() {
   for l in "$FRONT_LABEL" "$(slot_label 4001)" "$(slot_label 4002)" "$LEGACY_LABEL"; do
     unload "$l"; rm -f "$AGENTS/$l.plist"
@@ -489,12 +505,16 @@ status() {
   return 0
 }
 
-case "${1:-run}" in
-  run) run ;;
-  install) install ;;
-  swap) swap ;;
-  front) front ;;
-  uninstall) uninstall ;;
-  status) status ;;
-  *) echo "usage: $0 [run|install|swap|front|uninstall|status]"; exit 2 ;;
-esac
+# Run as a script by launchd, sourced by a test that calls one function: the dispatch below
+# runs only when this file IS the program, so sourcing it has no side effect.
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+  case "${1:-run}" in
+    run) run ;;
+    install) install ;;
+    swap) swap ;;
+    front) front ;;
+    uninstall) uninstall ;;
+    status) status ;;
+    *) echo "usage: $0 [run|install|swap|front|uninstall|status]"; exit 2 ;;
+  esac
+fi

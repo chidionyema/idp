@@ -25,8 +25,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROUTER = os.environ.get("ESTATE_ROUTER_URL", "https://llm.mumchimp.com")
-# The router's `gemini` lane is pinned to gemini-2.5-flash, which Google now 404s for new users
-# (measured 2026-10-30), so it silently falls back to MiniMax. Ask for the live model by name.
+# The router's `gemini` lane named gemini-2.5-flash, which Google 404s for new users
+# (measured 2026-10-30), so it silently fell back to MiniMax. The lane now names
+# gemini-3.5-flash (2026-10-30), so the alias and this name ask for the same model. The name
+# is kept explicit here because a fallback that answers with MiniMax looks like a working
+# Gemini lane and is not one.
 DEFAULT_MODEL = "gemini/gemini-3.5-flash"
 FALLBACK_MODEL = "default"
 FALLBACK_RESERVE_S = 25  # time held back for the fallback inside the 100s door
