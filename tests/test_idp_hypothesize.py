@@ -189,6 +189,30 @@ def test_max_probes_caps_the_probe_set(tmp_path):
     assert m["probes_selected"] == 3
 
 
+def test_the_catch_all_survives_the_probe_budget(tmp_path):
+    """A capped spec stays MECE: the catch-all is never traded for budget."""
+    res, spec, _ = _generate(tmp_path, ["--max-probes", "3"])
+    assert res.returncode == 0, res.stderr
+    ids = [h["id"] for h in spec["hypotheses"]]
+    assert "H_unmodeled" in ids, f"the catch-all was dropped by the budget: {ids}"
+    assert len(ids) == 3
+
+
+def test_a_probe_budget_without_room_for_a_layer_is_a_usage_error(tmp_path):
+    res, spec, _ = _generate(tmp_path, ["--max-probes", "1"])
+    assert res.returncode == 2, res.stderr
+    assert spec is None
+
+
+def test_an_unknown_prior_layer_is_a_config_error(tmp_path):
+    bad = tmp_path / "priors.json"
+    bad.write_text(json.dumps({"H_caller": 0.5, "H_checkout": 0.5}))
+    res, spec, _ = _generate(tmp_path, ["--prior-file", str(bad)])
+    assert res.returncode == 2, res.stderr
+    assert "unknown prior layer" in res.stderr
+    assert spec is None
+
+
 def test_an_error_without_structure_still_yields_the_chain(tmp_path):
     res, spec, metrics = _generate(tmp_path, error="something went wrong")
     assert res.returncode == 0, res.stderr
