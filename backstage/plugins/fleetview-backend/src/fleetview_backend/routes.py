@@ -61,6 +61,7 @@ from fleetview_backend import (
     ledger_tail,
     memory,
     notes,
+    progress,
     sessions,
     signals,
     trace,
@@ -84,6 +85,7 @@ __all__ = [
     "DEVICE_STATUS_PATH",
     "RESEARCH_PATH",
     "ESTATE_PATH",
+    "PROGRESS_PATH",
     "device_status_envelope",
     "DEVICE_AUTHORIZE_PATH",
     "device_authorize_envelope",
@@ -97,6 +99,7 @@ __all__ = [
     "graph_envelope",
     "memory_envelope",
     "greenlane_envelope",
+    "progress_envelope",
     "claims_envelope",
     "research_envelope",
     "estate_envelope",
@@ -126,6 +129,8 @@ BLAST_RADIUS_PATH = "/blast-radius"
 GRAPH_PATH = "/graph"
 MEMORY_PATH = "/memory"
 GREENLANE_PATH = "/greenlane"
+# The estate's own progress report: one writer, every surface reads it here.
+PROGRESS_PATH = "/progress"
 CLAIMS_PATH = "/claims"
 RESEARCH_PATH = "/research"
 ESTATE_PATH = "/estate"
@@ -354,6 +359,13 @@ def greenlane_envelope() -> tuple[dict[str, Any], int]:
     return greenlane.greenlane_status(), 200
 
 
+def progress_envelope() -> tuple[dict[str, Any], int]:
+    # The estate's own progress report (routes.progress_envelope -> fleetview_backend/progress.py):
+    # one writer's measurement of the delivery chain, served to /fleet. Unreadable is
+    # `available: false` with its reason, never an empty board.
+    return progress.progress_snapshot(), 200
+
+
 def claims_envelope() -> tuple[dict[str, Any], int]:
     # The live agent claims as measured now -- who, what, which paths, and heartbeat age
     # (AGENTS.md section 5). Unreadable is `available: false` with its reason; an empty list
@@ -389,6 +401,9 @@ def estate_envelope() -> tuple[dict[str, Any], int]:
     body: dict[str, Any] = {
         "generated_at": _now(),
         "green": _soft(greenlane.greenlane_status_nowait),
+        # The estate's own progress: the delivery chain, measured by its one writer, read here
+        # without waiting on a measurement (progress.progress_snapshot_nowait).
+        "progress": _soft(progress.progress_snapshot_nowait),
         "burn": _soft(spend.spend_total),
         "research": _soft(research_feed.research_claims),
         # Who holds what, and how much is left -- the founder's question of 2026-10-23 answered

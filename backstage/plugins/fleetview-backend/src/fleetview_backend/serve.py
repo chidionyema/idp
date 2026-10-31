@@ -426,6 +426,14 @@ def build_app() -> FastAPI:
         body, status = routes.greenlane_envelope()
         return JSONResponse(content=body, status_code=status)
 
+    @app.get(routes.PROGRESS_PATH)
+    def progress():
+        # The estate's progress report: one writer's measurement of the delivery chain, served
+        # from the report it published. A cold cache is a background refresh, never a blocked
+        # request (fleetview_backend/progress.py).
+        body, status = routes.progress_envelope()
+        return JSONResponse(content=body, status_code=status)
+
     @app.get(routes.CLAIMS_PATH)
     def claims():
         # The live agent claims (routes.claims_envelope, fleetview_backend/claims.py): who holds
