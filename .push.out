@@ -1,0 +1,32 @@
+ok    Layer 0 (no-claude): clean
+ok    claim-gate  no other live agent holds these files
+🛡️  idp-fast-gate: running IDP_CI_FAST=1 IDP_CI_BASE=7a9a6d3dc929 bin/idp-ci ...
+ok    facts    estate.jsonl: 0/0 active facts re-executed (10 retired). verdict: PASS  (7s)
+ok    facts    facts.jsonl: 11/11 active facts re-executed (36 retired). verdict: PASS
+ok    budget   ceiling 100s · 0 broken budget(s) · 0 new inner bound(s) · 0 ratcheted · 0 in baseline · checkout + ~/.estate/intents  (11s)
+ok    yamllint 1 file(s) against .yamllint
+ok: PR #7440 carries a BDD-PROOF block
+ok    schema   no intent, gate or baseline change against 7a9a6d3dc929e71f5e79ab630aa690417a86dcea  (3s)
+ok    ruff     pyproject rule set
+ok    tsc      backstage untouched since 7a9a6d3dc929e71f5e79ab630aa690417a86dcea
+ok    ruff-fmt 1 file(s) in the diff against 7a9a6d3dc929e71f5e79ab630aa690417a86dcea
+ok    py-strict  diff base..HEAD
+skip  diagnosis-gate  no router config/code touched
+timing   27s total; slowest rungs:
+         11s  ok    budget   ceiling 100s · 0 broken budget(s) · 0 new inner bound(s) · 0 ratcheted · 0 
+         7s  ok    facts    estate.jsonl: 0/0 active facts re-executed (10 retired). verdict: PASS
+         3s  ok    schema   no intent, gate or baseline change against 7a9a6d3dc929e71f5e79ab630aa69041
+ok    fast-gate: ruff
+✅ idp-fast-gate: green
+jev   idp-pr-risk-gate: no condition could be scored (layer unreachable); tier=high is advisory only
+jev   idp-pr-risk-gate: push allowed -- a blind check is not evidence of risk
+remote: 
+remote: Create a pull request for 'lane/context-index-login' on GitHub by visiting:        
+remote:      https://github.com/chidionyema/idp/pull/new/lane/context-index-login        
+remote: 
+remote: GitHub found 109 vulnerabilities on chidionyema/idp's default branch (13 critical, 34 high, 49 moderate, 13 low). To find out more, visit:        
+remote:      https://github.com/chidionyema/idp/security/dependabot        
+remote: 
+To https://github.com/chidionyema/idp.git
+ * [new branch]          HEAD -> lane/context-index-login
+push rc=0

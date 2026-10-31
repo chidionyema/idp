@@ -1,0 +1,29 @@
+ok    Layer 0 (no-claude): clean
+ok    claim-gate  no other live agent holds these files
+🛡️  idp-fast-gate: running IDP_CI_FAST=1 IDP_CI_BASE=fe73cc03b147 bin/idp-ci ...
+ok    facts    estate.jsonl: 0/0 active facts re-executed (10 retired). verdict: PASS  (31s)
+ok    facts    facts.jsonl: 11/11 active facts re-executed (36 retired). verdict: PASS  (6s)
+ok    budget   ceiling 100s · 0 broken budget(s) · 0 new inner bound(s) · 0 ratcheted · 0 in baseline · checkout + ~/.estate/intents  (53s)
+ok    yamllint 1 file(s) against .yamllint  (6s)
+ok: PR #7437 carries a BDD-PROOF block
+ok    schema   no intent, gate or baseline change against fe73cc03b1474d536c9ef4814866630f4d4d9f7d  (5s)
+ok    ruff     pyproject rule set  (7s)
+ok    tsc      backstage untouched since fe73cc03b1474d536c9ef4814866630f4d4d9f7d
+ok    ruff-fmt 1 file(s) in the diff against fe73cc03b1474d536c9ef4814866630f4d4d9f7d
+ok    py-strict  diff base..HEAD  (10s)
+skip  diagnosis-gate  no router config/code touched
+timing   122s total; slowest rungs:
+         53s  ok    budget   ceiling 100s · 0 broken budget(s) · 0 new inner bound(s) · 0 ratcheted · 0 
+         31s  ok    facts    estate.jsonl: 0/0 active facts re-executed (10 retired). verdict: PASS
+         10s  ok    py-strict  diff base..HEAD
+         7s  ok    ruff     pyproject rule set
+         6s  ok    yamllint 1 file(s) against .yamllint
+ok    fast-gate: ruff
+✅ idp-fast-gate: green
+jev   idp-pr-risk-gate: no condition could be scored (layer unreachable); tier=high is advisory only
+jev   idp-pr-risk-gate: push allowed -- a blind check is not evidence of risk
+
+real	2m50.147s
+user	0m7.810s
+sys	0m3.820s
+rc=0
