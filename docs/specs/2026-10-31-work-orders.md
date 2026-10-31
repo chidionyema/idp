@@ -84,3 +84,23 @@ reading of the ritual tradition from general knowledge, unverified against any s
 The closing is the one stage the first reading lacked, and it is the one the estate keeps failing at (claims left
 held, decisions never graded). It feeds the decision record in the decision protocol and the Admiralty grades in
 the memory plane. Not built.
+
+## Angels and legion (founder, 2026-10-31)
+
+The same pipeline read as two classes of worker. Authority follows the trust boundary (AGENTS.md section 0, gate 7):
+what comes from a high-authority source may be acted on; what comes from a low-authority one may not cross it.
+
+| Class | Who | Does | May not |
+|---|---|---|---|
+| Angels (few, high authority) | the founder; the coordinators that decide (Argon, Gemini, Kimi, the strongest lane); a model or a person doing discovery and design | the upper stages: intent, discovery, spec, options, decision; they issue and sign work orders | execute, push a lane, or touch main |
+| Legion (many, low authority, bound) | `work-order run` instances, one per order, on free runners; the always-on MiniMax tick | the last stage only: verify the seal, apply, check, push the lane | decide, widen scope, issue an order, or run an order that is unsealed or unlanded |
+
+Rules that make the split hold:
+- An order is the seal. A legion runner acts on its digest, paths and checks and nothing else; an order that fails
+  verification is refused, never improvised (the tests prove it).
+- A legion runner's output is low authority until the Greenlane and CI have judged it. A runner's failure report
+  goes back up to an angel, who issues a new order. It never escalates itself past its seal.
+- Angels do not run orders, and a legion never writes one. That separation is what lets the cheap tier scale
+  to many runners at no model cost while the expensive tier stays few. Not yet enforced by a gate; the signing
+  of orders by an issuer is proposed, not built.
+- Contractor note: I am an angel-class producer of orders for this estate, not a runner and not part of the fleet.
