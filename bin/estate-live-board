@@ -1,0 +1,187 @@
+#!/usr/bin/env python3
+"""estate-live-board: the founder's real-time view of work in flight, from GitHub alone.
+
+A short-term, cloud-only answer to "where is everything right now": it reads the repository through the
+GitHub REST API (no Mac, no cluster, no secret printed) and answers four questions with measured values.
+
+  claims     who has declared work, on which paths, and is the heartbeat live (under 2 hours) or lapsed
+  lanes      every lane/* and staged/* branch, its age, and the Greenlane's verdict on its head
+  runs       what the CI and agent workflows did in the last hour, by workflow and result
+  landed     what reached main in the last 24 hours, by hour and by agent
+
+  estate-live-board [--repo OWNER/REPO] [--json]        print a text board (or the JSON the page is built from)
+
+Reads only. A call that fails is reported as unavailable with its reason, never as zero (J4). It is not the
+streaming surface: it is the cloud-readable view the /fleet page does not need a laptop for, refreshed each run.
+"""
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+import sys
+from datetime import datetime, timedelta, timezone
+
+LIVE_H = 2.0
+
+
+def now():
+    return datetime.now(timezone.utc)
+
+
+def parse_ts(s):
+    return datetime.strptime(s.replace("Z", "+0000"), "%Y-%m-%dT%H:%M:%S%z")
+
+
+def parse_claim(body):
+    """CLAIM agent=<name> paths=<glob,glob> heartbeat=<UTC ISO>; None if the comment is not one."""
+    m = re.match(r"\s*CLAIM\s+(.*)", body or "")
+    if not m:
+        return None
+    kv = dict(re.findall(r"(\w+)=(\S+)", m.group(1)))
+    if "agent" not in kv or "heartbeat" not in kv:
+        return None
+    try:
+        hb = parse_ts(kv["heartbeat"] if kv["heartbeat"].endswith("Z") else kv["heartbeat"] + "Z")
+    except ValueError:
+        return dict(agent=kv["agent"], paths=kv.get("paths", ""), heartbeat=None, age_h=None, live=False, why="unparseable heartbeat")
+    return dict(agent=kv["agent"], paths=kv.get("paths", ""), heartbeat=kv["heartbeat"], hb=hb)
+
+
+def claims_from(comments, t):
+    """Latest claim comment per (issue, agent). A claim is live when its heartbeat is under LIVE_H old."""
+    latest = {}
+    for c in comments:
+        p = parse_claim(c.get("body"))
+        if not p or p.get("heartbeat") is None:
+            continue
+        key = (c.get("issue_url", ""), p["agent"])
+        if key not in latest or p["hb"] > latest[key][0]["hb"]:
+            latest[key] = (p, c)
+    out = []
+    for (iss, agent), (p, c) in latest.items():
+        age = (t - p["hb"]).total_seconds() / 3600
+        out.append(dict(agent=agent, issue=iss.rsplit("/", 1)[-1], paths=p["paths"], heartbeat=p["heartbeat"], age_h=round(age, 2), live=age < LIVE_H))
+    out.sort(key=lambda x: x["age_h"])
+    return out
+
+
+def landed_by_hour(commits, t, hours=24):
+    buckets = [0] * hours
+    agents = {}
+    for c in commits:
+        ts = parse_ts(c["commit"]["committer"]["date"])
+        h = int((t - ts).total_seconds() // 3600)
+        if 0 <= h < hours:
+            buckets[hours - 1 - h] += 1
+        m = re.search(r"^Agent:\s*(\S+)", c["commit"]["message"], re.M)
+        agents[m.group(1) if m else "(no Agent trailer)"] = agents.get(m.group(1) if m else "(no Agent trailer)", 0) + 1
+    return buckets, agents
+
+
+def runs_last_hour(runs, t):
+    out = {}
+    for r in runs:
+        if (t - parse_ts(r["created_at"])).total_seconds() > 3600:
+            continue
+        k = r["name"]
+        d = out.setdefault(k, dict(total=0, success=0, failure=0, running=0, other=0))
+        d["total"] += 1
+        c = r.get("conclusion")
+        if r["status"] != "completed":
+            d["running"] += 1
+        elif c == "success":
+            d["success"] += 1
+        elif c == "failure":
+            d["failure"] += 1
+        else:
+            d["other"] += 1
+    return out
+
+
+def gh(path, repo):
+    r = subprocess.run(["gh", "api", "repos/%s/%s" % (repo, path)], capture_output=True, text=True)
+    if r.returncode:
+        raise RuntimeError("gh api %s: %s" % (path, (r.stderr or r.stdout).strip()[:160]))
+    return json.loads(r.stdout)
+
+
+def collect(repo="chidionyema/idp"):
+    t = now()
+    board = dict(at=t.strftime("%Y-%m-%dT%H:%M:%SZ"), repo=repo)
+
+    def part(name, fn):
+        try:
+            board[name] = dict(available=True, **fn())
+        except (RuntimeError, ValueError, KeyError) as e:
+            board[name] = dict(available=False, error=str(e))
+
+    def claims():
+        since = (t - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        cs = gh("issues/comments?since=%s&per_page=100&sort=updated&direction=desc" % since, repo)
+        cl = claims_from(cs, t)
+        return dict(claims=cl, live=sum(1 for c in cl if c["live"]), lapsed=sum(1 for c in cl if not c["live"]), window="24h of comments")
+
+    def lanes():
+        bs = gh("branches?per_page=100", repo)
+        rows = []
+        for b in bs:
+            n = b["name"]
+            if not n.startswith(("lane/", "staged/", "agent-trunk")):
+                continue
+            sha = b["commit"]["sha"]
+            c = gh("commits/%s" % sha, repo)
+            st = gh("commits/%s/status" % sha, repo)
+            gl = next((s["state"] for s in st.get("statuses", []) if s["context"] == "greenlane"), None)
+            when = c["commit"]["committer"]["date"]
+            rows.append(dict(branch=n, head=sha[:8], age_h=round((t - parse_ts(when)).total_seconds() / 3600, 1), greenlane=gl, subject=c["commit"]["message"].splitlines()[0][:90]))
+        rows.sort(key=lambda r: r["age_h"])
+        return dict(lanes=rows)
+
+    def runs():
+        rs = gh("actions/runs?per_page=100", repo)["workflow_runs"]
+        return dict(by_workflow=runs_last_hour(rs, t))
+
+    def landed():
+        since = (t - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        cs = gh("commits?sha=main&since=%s&per_page=100" % since, repo)
+        by_hour, agents = landed_by_hour(cs, t)
+        return dict(total=len(cs), by_hour=by_hour, by_agent=agents)
+
+    for n, f in (("claims", claims), ("lanes", lanes), ("runs", runs), ("landed", landed)):
+        part(n, f)
+    return board
+
+
+def text(b):
+    L = ["ESTATE LIVE BOARD  %s  %s" % (b["repo"], b["at"])]
+    c = b["claims"]
+    L.append("CLAIMS: " + ("%d live, %d lapsed (%s)" % (c["live"], c["lapsed"], c["window"]) if c["available"] else "unavailable: " + c["error"]))
+    if c["available"]:
+        L += ["  %-6s %-22s #%-6s heartbeat %.1fh ago  %s" % ("LIVE" if x["live"] else "LAPSED", x["agent"], x["issue"], x["age_h"], x["paths"][:50]) for x in c["claims"][:12]]
+    l = b["lanes"]
+    L.append("LANES: " + ("%d branches" % len(l["lanes"]) if l["available"] else "unavailable: " + l["error"]))
+    if l["available"]:
+        L += ["  %-38s %5.1fh  greenlane=%-8s %s" % (x["branch"][:38], x["age_h"], x["greenlane"], x["subject"][:40]) for x in l["lanes"][:15]]
+    r = b["runs"]
+    L.append("RUNS last hour: " + ("" if r["available"] else "unavailable: " + r["error"]))
+    if r["available"]:
+        L += ["  %-34s total %-3d ok %-3d fail %-3d running %d" % (k[:34], v["total"], v["success"], v["failure"], v["running"]) for k, v in sorted(r["by_workflow"].items(), key=lambda kv: -kv[1]["total"])[:10]]
+    d = b["landed"]
+    L.append("LANDED on main, 24h: " + ("%d  by hour %s" % (d["total"], d["by_hour"]) if d["available"] else "unavailable: " + d["error"]))
+    if d["available"]:
+        L += ["  %-24s %d" % (k, v) for k, v in sorted(d["by_agent"].items(), key=lambda kv: -kv[1])[:8]]
+    return "\n".join(L)
+
+
+def main(argv):
+    repo = "chidionyema/idp"
+    if "--repo" in argv:
+        repo = argv[argv.index("--repo") + 1]
+    b = collect(repo)
+    print(json.dumps(b, indent=2) if "--json" in argv else text(b))
+    return 0 if all(b[k]["available"] for k in ("claims", "lanes", "runs", "landed")) else 3
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
