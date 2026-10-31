@@ -1,0 +1,18 @@
+name: forensic-selftest
+description: >-
+  Prove the forensic replay engine against the real runtimes: the installed Pi edit engine, and the
+  upstream Cline editor and apply-patch executors fetched at test time from a pinned upstream
+  commit (never vendored). Every case runs on both sides and the bytes are compared, so a drift
+  between the reconstruction and the runtime is a failure, not a comment.
+  Exit 0 = every suite that could run matched. Exit 1 = a suite ran and found a defect. Exit 3 = a
+  suite could not run (no node, no network, upstream moved): pending, never reported as a pass.
+class: read
+args:
+  verbose: {type: int, default: 0, description: "1 = print every case, not just the tally; 0 = the tally only"}
+door_s: 95
+steps:
+  - name: selftest
+    cmd: |
+      VERB=""
+      case "{{verbose}}" in true|True|TRUE|1|yes|Yes) VERB="--verbose" ;; esac
+      python3 ~/.estate/libexec/forensic-selftest.py $VERB
