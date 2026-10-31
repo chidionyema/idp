@@ -34,6 +34,10 @@ def front(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "SLOTS", (a, b))
     monkeypatch.setattr(mod, "ACTIVE", tmp_path / "active")
     monkeypatch.setattr(mod, "LISTEN", ("127.0.0.1", f))
+    # The cloud leg is off here: this file grades the laptop path (bytes relayed unchanged),
+    # and a unit test must not reach the internet to do it. The cloud leg has its own file,
+    # tests/test_router_front_fails_over_to_the_cloud.py.
+    monkeypatch.setattr(mod, "CLOUD", "")
     return mod
 
 

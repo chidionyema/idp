@@ -1,0 +1,193 @@
+#!/usr/bin/env python3
+"""worktree-lease -- keep the disk cleanup away from a worktree an agent is working in.
+
+WHY. 2026-10-24: the governed disk-cleanup intent removed a live agent's worktree
+(~/.estate/worktrees/deps-zod-mlflow) while that agent was working in it, and the executor door
+then failed every job with a floor error. The cleaner was right about everything it could see --
+the worktree was not locked, no process kept its cwd inside it, its git dir had been idle for
+hours -- and wrong about the only thing that mattered: it was somebody's. Nothing the cleaner
+measured said so.
+
+A lease is the missing word. It is a small file in ~/.estate/worktree-leases/ naming the
+worktree, the agent, and the time until which the lease holds. bin/claim-open writes one when a
+claim is opened, so claiming a worktree and leasing it are the same act; the agent renews it
+while it works; the cleanup reads it and keeps every leased worktree, whatever else it measures.
+
+    bin/worktree-lease add            # lease the worktree you are standing in (24h)
+    bin/worktree-lease renew          # extend it (24h from now)
+    bin/worktree-lease release        # give it back when the work is done
+    bin/worktree-lease status         # who holds this worktree, and until when
+    bin/worktree-lease list           # every lease on this machine
+
+The lease is a claim on a directory, not on a repository: it names the absolute path of the
+worktree's top level, which is what the cleanup iterates over. A lease with an unreadable expiry
+is still honoured -- a lease that cannot be read is a lease nobody may guess about, and the safe
+direction is to keep the worktree.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import os
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+
+DEFAULT_HOURS = 24.0
+
+
+def lease_dir() -> str:
+    """Where the leases live. The cleanup reads the same place, through the same env var."""
+    explicit = os.environ.get("DISK_CLEANUP_LEASE_DIR", "").strip()
+    if explicit:
+        return os.path.abspath(os.path.expanduser(explicit))
+    return os.path.join(os.path.expanduser("~"), ".estate", "worktree-leases")
+
+
+def toplevel(path: str) -> str:
+    """The top level of the worktree `path` is in, as git sees it."""
+    p = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+        ["git", "-C", path, "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+    )
+    root = p.stdout.strip()
+    if p.returncode != 0 or not root:
+        sys.exit(f"FAIL    worktree-lease  {path} is not inside a git worktree")
+    return os.path.realpath(root)
+
+
+def lease_file(worktree: str) -> str:
+    """One file per worktree: its name says which, its contents say who and until when."""
+    digest = hashlib.sha256(worktree.encode()).hexdigest()[:8]
+    return os.path.join(lease_dir(), f"{os.path.basename(worktree)}-{digest}.lease")
+
+
+def read(path: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                out[k.strip()] = v.strip()
+    except OSError:
+        return {}
+    return out
+
+
+def live(rec: dict[str, str], now: float | None = None) -> bool:
+    """Is this lease still holding? An expiry that cannot be read holds: fail safe."""
+    now = time.time() if now is None else now
+    raw = rec.get("until_epoch", "")
+    try:
+        return float(raw) > now
+    except (TypeError, ValueError):
+        return bool(raw) or bool(rec.get("until"))
+
+
+def write_lease(worktree: str, agent: str, hours: float) -> str:
+    until = time.time() + hours * 3600
+    stamp = datetime.fromtimestamp(until, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    os.makedirs(lease_dir(), exist_ok=True)
+    path = lease_file(worktree)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(f"agent={agent}\n")
+        fh.write(f"path={worktree}\n")
+        fh.write(f"worktree={worktree}\n")
+        fh.write(f"until={stamp}\n")
+        fh.write(f"until_epoch={int(until)}\n")
+    return path
+
+
+def cmd_add(a: argparse.Namespace) -> int:
+    worktree = toplevel(os.path.abspath(a.path or "."))
+    path = write_lease(worktree, a.agent, a.hours)
+    until = read(path).get("until", "?")
+    print(f"ok      worktree-lease  leased {worktree} for {a.agent} until {until}")
+    return 0
+
+
+def cmd_renew(a: argparse.Namespace) -> int:
+    worktree = toplevel(os.path.abspath(a.path or "."))
+    path = lease_file(worktree)
+    if not os.path.exists(path):
+        return cmd_add(a)
+    agent = read(path).get("agent") or a.agent
+    path = write_lease(worktree, agent, a.hours)
+    until = read(path).get("until", "?")
+    print(f"ok      worktree-lease  renewed {worktree} for {agent} until {until}")
+    return 0
+
+
+def cmd_release(a: argparse.Namespace) -> int:
+    worktree = toplevel(os.path.abspath(a.path or "."))
+    path = lease_file(worktree)
+    if os.path.exists(path):
+        os.remove(path)
+        print(f"ok      worktree-lease  released {worktree}")
+    else:
+        print(f"ok      worktree-lease  no lease on {worktree}")
+    return 0
+
+
+def cmd_status(a: argparse.Namespace) -> int:
+    worktree = toplevel(os.path.abspath(a.path or "."))
+    path = lease_file(worktree)
+    if not os.path.exists(path):
+        print(f"none    worktree-lease  {worktree} is not leased")
+        return 0
+    rec = read(path)
+    state = "live" if live(rec) else "expired"
+    print(
+        f"{state:7s} worktree-lease  {worktree}  agent={rec.get('agent', '?')} "
+        f"until={rec.get('until', '?')}"
+    )
+    return 0
+
+
+def cmd_list(a: argparse.Namespace) -> int:  # noqa: ARG001 -- one shape for every sub-command
+    d = lease_dir()
+    if not os.path.isdir(d):
+        print("none    worktree-lease  no leases on this machine")
+        return 0
+    now = time.time()
+    for name in sorted(os.listdir(d)):
+        if not name.endswith(".lease"):
+            continue
+        rec = read(os.path.join(d, name))
+        state = "live" if live(rec, now) else "expired"
+        print(
+            f"{state:7s} worktree-lease  {rec.get('worktree', '?')}  "
+            f"agent={rec.get('agent', '?')} until={rec.get('until', '?')}"
+        )
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(prog="worktree-lease", description=__doc__.split("\n")[0])
+    ap.add_argument("action", choices=["add", "renew", "release", "status", "list"],
+                    nargs="?", default="add")
+    ap.add_argument("--agent", default=os.environ.get("ESTATE_AGENT", ""),
+                    help="who holds the lease; default: $ESTATE_AGENT")
+    ap.add_argument("--hours", type=float, default=DEFAULT_HOURS,
+                    help=f"how long the lease holds, in hours (default {DEFAULT_HOURS})")
+    ap.add_argument("--path", default="", help="the worktree to lease; default: this directory")
+    a = ap.parse_args()
+    if a.action != "list" and not a.agent:
+        sys.exit("FAIL    worktree-lease  no agent identity: pass --agent <name> or set ESTATE_AGENT")
+    return {
+        "add": cmd_add,
+        "renew": cmd_renew,
+        "release": cmd_release,
+        "status": cmd_status,
+        "list": cmd_list,
+    }[a.action](a)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
