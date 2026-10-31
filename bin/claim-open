@@ -216,6 +216,25 @@ def note_claim(num: int) -> None:
         print(f"warn    claim-open  focus note not written ({e}): the hook sees it next poll")
 
 
+def brief_for_claim(num: int, agent: str, paths: list[str]) -> None:
+    """Machine-side memory injection (memory one plane): write .estate/claim-brief.md in this tree.
+
+    Best effort by design: any failure here is reported on stderr and never changes the claim's
+    outcome. ESTATE_MEMORY_BRIEF=off opts out.
+    """
+    tool = os.path.join(IDP, "bin", "estate-memory-claim-brief")
+    if os.environ.get("ESTATE_MEMORY_BRIEF", "on") == "off" or not os.path.exists(tool):
+        return
+    try:
+        subprocess.run(  # noqa: S603 -- fixed argv; tool is a path in this repo
+            [tool, "--issue", str(num), "--agent", agent, "--paths", ",".join(paths),
+             "--worktree", REPO],
+            timeout=20, check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"WARN    claim-open  claim brief not written: {exc}", file=sys.stderr)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(prog="claim-open", description=__doc__.split("\n")[0])
     ap.add_argument("--issue", type=int, help="claim an existing issue")
@@ -253,6 +272,7 @@ def main() -> int:
         if files:
             stamp_trailers(num, a.agent)
         note_claim(num)
+        brief_for_claim(num, a.agent, paths)
 
     repo_slug = repo()
     env = {**os.environ, "GITHUB_REPOSITORY": repo_slug}
