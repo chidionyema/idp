@@ -78,7 +78,7 @@ the memory plane (Admiralty-style source and content grades); no second store.
 
 ## What is built and what is not
 
-Built and tested (17 tests): `catalog/decision-protocol.json` (19 laws, 12 methods), `bin/decision-frame`,
+Built and tested (17 tests): `catalog/decision-protocol.json` (20 laws, 12 methods), `bin/decision-frame`,
 `tests/test_decision_frame.py`. Not built: the record writer, the outcome grader, the claim-open and
 lane-submit hook that calls the tool, the Stop-hook check that a decision-bearing turn carries a frame, the
 learned methods. Not operating: nothing here has been used by an agent on a real decision, so nothing is
