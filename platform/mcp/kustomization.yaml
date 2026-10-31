@@ -9,6 +9,10 @@ resources:
   - availability.yaml
   - github-mcp.yaml
   - estate-mcp.yaml
+  # idp#7579: the pod's credential for the laptop's programmatic intent door. Listed explicitly
+  # because this kustomization enumerates its resources: a file that is not named here is not
+  # applied, and the pod would silently fall back to having no door.
+  - intent-secret.yaml
   - httproute.yaml
   - edge-manners.yaml
   # The context broker and its private engine. One pod, two containers, one Service: the

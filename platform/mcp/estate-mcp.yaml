@@ -107,10 +107,18 @@ spec:
             # proposal's manifest references against the real catalogue graph. Its own default
             # is the repository's `backstage/` tree, which is not what this image carries.
             - { name: ESTATE_BLAST_CATALOG_DIR, value: /data }
+            # idp#7579 R2: the pod has no executor and no plan ledger, so its intent path IS the
+            # laptop's door -- the one that owns the gate, the ledger and the audit. The laptop
+            # is reachable over the existing cross-namespace Service
+            # (platform/backstage/overlays/oke/fleetview-mac-egress.yaml), so no new Service and
+            # no second gate are needed here. The credential is a mounted FILE, not an env var.
+            - { name: ESTATE_LAPTOP_INTENT_URL, value: "http://fleetview-mac.backstage.svc.cluster.local:18790/intent/execute" }
+            - { name: ESTATE_LAPTOP_INTENT_TOKEN_FILE, value: /run/secrets/intent-door/token }
           volumeMounts:
             - { name: data, mountPath: /data, readOnly: true }
             - { name: tmp, mountPath: /tmp }   # crew#458: python tempfile needs one under readOnlyRootFilesystem
             - { name: unified-memory, mountPath: /run/secrets/unified-memory, readOnly: true }
+            - { name: intent-door, mountPath: /run/secrets/intent-door, readOnly: true }
           resources:
             requests: { cpu: 20m, memory: 64Mi }
             limits: { cpu: 300m, memory: 256Mi }
@@ -181,6 +189,11 @@ spec:
         # "no surface token", never a server that cannot start.
         - name: unified-memory
           secret: { secretName: unified-memory-surface, optional: true }
+        # idp#7579: the laptop's intent-door token, mounted as a file. Optional for the same
+        # reason as the memory token: a vault that has not synced yet must not keep the pod from
+        # starting.
+        - name: intent-door
+          secret: { secretName: fleetview-intent, optional: true }
 ---
 apiVersion: v1
 kind: Service

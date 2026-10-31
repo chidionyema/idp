@@ -15,8 +15,11 @@ Run:
 from __future__ import annotations
 
 import asyncio
+import hmac
+import json
 import logging
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -37,6 +40,79 @@ from fleetview_backend import (
     nats_adapter,
     routes,
 )
+
+# THE PROGRAMMATIC INTENT DOOR (idp#7579 R2).
+#
+# The estate-mcp pod ships the intent LIBRARY but no executor and no plan ledger, so a
+# programmatic intent run there had no gate at all -- the production intent path was not the
+# governed door. The laptop owns the gate, the ledger and the audit, so the pod asks the
+# laptop, over ONE authenticated, intent-scoped route. This credential is NOT the mac-door
+# token (that one runs arbitrary commands) and NOT the voice key (that one is a router key):
+# it buys exactly one thing, which is running a COMMITTED intent through the laptop's own door.
+INTENT_TOKEN_ENV = "FLEETVIEW_INTENT_TOKEN"  # noqa: S105 -- an env var NAME, not a secret
+INTENT_TOKEN_FILE_ENV = "FLEETVIEW_INTENT_TOKEN_FILE"  # noqa: S105 -- a path, not a secret
+# The launchd-safe mirror of the encrypted secret. A launchd job cannot read the vault under
+# ~/Documents (macOS TCC) and does not have `sops` on its PATH, so the encrypted copy is
+# mirrored under ~/.estate/secrets and decrypted with the PINNED sops binary.
+INTENT_SECRET_MIRROR = "~/.estate/secrets/dev/fleetview-intent.yaml"  # noqa: S105 -- a path
+SOPS_BIN = "~/.cache/estate-tools/sops"
+AGE_KEY_FILE = "~/.config/prospector/age-key.txt"
+_INTENT_TOKEN_CACHE = ""
+
+
+def _decrypt_secret(path: Path) -> str:
+    """One leaf (`token`) out of an encrypted secret file, or "".
+
+    Never the whole document, never a log line: the value is a credential, and the only thing
+    that needs it is the comparison below.
+    """
+    sops = os.path.expanduser(os.environ.get("SOPS") or SOPS_BIN)
+    key = os.path.expanduser(os.environ.get("SOPS_AGE_KEY_FILE") or AGE_KEY_FILE)
+    try:
+        proc = subprocess.run(  # noqa: S603
+            [sops, "--decrypt", "--output-type", "json", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+            env={**os.environ, "SOPS_AGE_KEY_FILE": key},
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if proc.returncode != 0:
+        return ""
+    try:
+        doc = json.loads(proc.stdout)
+    except ValueError:
+        return ""
+    token = doc.get("token") if isinstance(doc, dict) else None
+    return token.strip() if isinstance(token, str) else ""
+
+
+def intent_token() -> str:
+    """The laptop's credential for the programmatic intent door.
+
+    Order: the environment, then a token FILE, then the launchd-safe encrypted mirror. An
+    absent credential means the door is CLOSED -- never open, never a default.
+    """
+    global _INTENT_TOKEN_CACHE
+    token = (os.environ.get(INTENT_TOKEN_ENV) or "").strip()
+    if token:
+        return token
+    path = (os.environ.get(INTENT_TOKEN_FILE_ENV) or "").strip()
+    if path:
+        try:
+            token = Path(path).read_text().strip()
+        except OSError:
+            token = ""
+        if token:
+            return token
+    if _INTENT_TOKEN_CACHE:
+        return _INTENT_TOKEN_CACHE
+    token = _decrypt_secret(Path(os.path.expanduser(INTENT_SECRET_MIRROR)))
+    if token:
+        _INTENT_TOKEN_CACHE = token
+    return token
 
 
 class _ClosingStream(StreamingResponse):
@@ -844,6 +920,60 @@ def build_app() -> FastAPI:
         if result is None:
             return Response(status_code=204)
         return JSONResponse(content=result)
+
+    @app.post("/intent/execute")
+    async def intent_execute(request: Request):
+        """ONE committed intent, run by the laptop's governed door, for a programmatic caller.
+
+        The pod ships the intent library but no executor and no plan ledger (idp#7579), so its
+        intent path is THIS route: the laptop owns the gate, the ledger and the audit, and the
+        pod never grows a second gate. The credential is intent-scoped and compared with
+        hmac.compare_digest; an UNCONFIGURED token means the door is CLOSED, never open.
+
+        400 for a request that names no committed intent, an undeclared argument or a
+        non-scalar value. A governed REFUSAL is not a bad request: it is 200 with ok=false, the
+        door's stderr and its exit code, so the caller sees the refusal and the refusal is in
+        the laptop's durable ledger.
+        """
+        from fleetview_backend import voice_intents as vi
+
+        expected = intent_token()
+        presented = ""
+        header = request.headers.get("authorization") or ""
+        if header.lower().startswith("bearer "):
+            presented = header[len("bearer ") :].strip()
+        if (
+            not expected
+            or not presented
+            or not hmac.compare_digest(expected.encode(), presented.encode())
+        ):
+            raise HTTPException(status_code=401, detail="bad or missing intent token")
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            raise HTTPException(status_code=400, detail="body must be a JSON object")
+        intent = str(body.get("intent") or "").strip()
+        if not intent:
+            raise HTTPException(status_code=400, detail="intent name required")
+        raw_args = body.get("args")
+        if raw_args is None:
+            args: dict = {}
+        elif isinstance(raw_args, dict):
+            args = raw_args
+        else:
+            raise HTTPException(status_code=400, detail="args must be an object")
+        session_id = str(body.get("session_id") or "")
+        # The door may run a subprocess for up to its own ceiling: off the event loop.
+        loop = asyncio.get_running_loop()
+        try:
+            outcome = await loop.run_in_executor(
+                None, vi.execute_programmatic, intent, args, session_id, None
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return JSONResponse(content=outcome)
 
     @app.get(routes.DELIVERY_PATH)
     def delivery_get():

@@ -95,5 +95,25 @@ spec=importlib.util.spec_from_file_location('estate_mcp','/app/plugins/estate_mc
 n=len(m._load_intents()); assert n >= 50, 'only %d intents in /app/intents' % n; \
 hit=m._estate_list({'query': 'ci status'}); assert '## intent ci.status' in hit, hit[:300]; \
 print('estate-mcp intent library:', n, 'intents, search finds ci.status')"
+# THE BUILD FAILS IF THE POD CANNOT REACH THE GOVERNED DOOR (idp#7579 P1).
+#
+# The pod ships the intent LIBRARY and no executor and no plan ledger, so its intent path is
+# only honest if it REACHES the laptop's door. This proves, in the image that ships:
+#   1. the forwarding helper exists and names the two configuration keys;
+#   2. the image carries NO local executor and NO plan ledger -- a second gate in the pod would
+#      be a second truth about the same work, and the gate stays laptop-owned;
+#   3. with no door configured the plugin REFUSES in plain words: it can never answer "ok" for
+#      work it never ran.
+RUN cd /tmp && python -c "import importlib.util,os,sys; \
+spec=importlib.util.spec_from_file_location('estate_mcp','/app/plugins/estate_mcp.py'); m=importlib.util.module_from_spec(spec); \
+sys.modules['estate_mcp']=m; spec.loader.exec_module(m); \
+assert hasattr(m,'_invoke_remote'), 'no laptop forwarding helper in the plugin'; \
+assert m.LAPTOP_INTENT_URL_ENV and m.LAPTOP_INTENT_TOKEN_FILE_ENV, 'forwarding keys missing'; \
+assert not os.path.exists('/app/platform/estate/bin/estate-execute'), 'the pod must not ship an executor'; \
+assert not os.path.exists('/app/platform/estate/memory/plan.py'), 'the pod must not ship a plan ledger'; \
+os.environ.pop('ESTATE_LAPTOP_INTENT_URL',None); os.environ.pop('ESTATE_LAPTOP_INTENT_TOKEN_FILE',None); \
+out=m._estate_invoke({'intent':'ci.status'}); \
+assert 'no local executor' in out, out; \
+print('estate-mcp reaches the laptop door, and says so when it cannot')"
 USER datasette
 EXPOSE 8001
