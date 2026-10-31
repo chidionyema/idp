@@ -3,8 +3,8 @@
   "generator": "bin/capability-index emit",
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
-    "intent": 114,
-    "layer": 246,
+    "intent": 118,
+    "layer": 250,
     "service": 121,
     "tool": 470,
     "workflow": 88
@@ -1725,6 +1725,199 @@
       "rung": null,
       "writer": "intents",
       "path": "platform/estate/intents/flux-suspend.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:intent/forensic-extract",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "Rebuild what the agents actually wrote, from the Pi and Cline transcripts, by replaying each runtime's own edit semantics in chronological order: the installed Pi edit engine and the pinned upstream Cline executors are the oracles, not a re-implementation of them. The corpus is ~780 MiB and the replay is minutes of work, so this door starts the extraction DETACHED and returns its pid, its log and its completion marker; <out>/EXTRACTED is written only when every artifact (manifest, recovered tree, sessions, command ledger, stream summary, parse-error report) is on disk. The transcripts are never modified: the door writes only inside <out> and one pointer file under ~/.estate/state. Exit 0 = the door ran; the verdict line says \"the extraction completed\" or \"the extraction is still running\" -- the executor scores a step by its exit code and has no pending state, so a still-running extraction is reported in the output, not by exiting 3 (which the executor records as broken). The machine-checkable state is the marker file: <out>/EXTRACTED. Exit 4 = the extraction died before the marker. class: read args: out: {type: string, default: \"\", description: \"output directory; default $HOME/claude-forensics/forensic-<today>\"} wait_s: {type: int, default: 45, description: \"seconds to wait for the completion marker before returning\"} limit_sessions: {type: int, default: 0, description: \"replay only this many sessions per harness; 0 = all of them\"} # 95, not 100: the launch and the verdict around the wait need a few seconds, and a door that # declares exactly the ceiling spends its last second being killed. door_s: 95 halt_on_failure: false steps: # 2026-10-31: every write in this door is made by the extractor itself. The estate's fs_guard # bans shell redirects (`> file`), so `echo \"$OUT\" > pointer` would be REFUSED at run time -- # which is exactly what happens to the estate's own disk-free intent. The extractor takes the # log path, the pid path and the pointer path as arguments and writes them in Python. - name: launch on_fail: continue cmd: | OUT={{out}} if [ -z \"$OUT\" ]; then OUT=\"$HOME/claude-forensics/forensic-$(date +%Y%m%d)\"; fi mkdir -p \"$OUT\" || exit 4 mkdir -p \"$HOME/.estate/state\" || exit 4 if [ -f \"$OUT/EXTRACTED\" ]; then echo \"the extraction is already complete: $OUT\" python3 ~/.estate/libexec/forensic_extract.py --out \"$OUT\" --pointer \"$HOME/.estate/state/forensic-extract.out\" --pointer-only exit 0 fi # A second call must not start a second replay over the same corpus: if the pid file names # a live process, that run owns this directory. OLD=$(sed -n 1p \"$OUT/extract.pid\" 2>/dev/null) if [ -n \"$OLD\" ] && kill -0 \"$OLD\" 2>/dev/null; then echo \"an extraction is already running for this directory (pid $OLD)\" echo \"the completion marker is $OUT/EXTRACTED\" exit 0 fi LOG=\"$OUT/extract.log\" nohup python3 ~/.estate/libexec/forensic_extract.py --out \"$OUT\" --log \"$LOG\" --pid-file \"$OUT/extract.pid\" --pointer \"$HOME/.estate/state/forensic-extract.out\" --limit-sessions {{limit_sessions}} & PID=$! echo \"launched pid=$PID out=$OUT log=$LOG\" echo \"the completion marker is $OUT/EXTRACTED\" - name: wait on_fail: continue cmd: | OUT={{out}} if [ -z \"$OUT\" ]; then if [ -f \"$HOME/.estate/state/forensic-extract.out\" ]; then OUT=$(sed -n 1p \"$HOME/.estate/state/forensic-extract.out\"); fi fi if [ -z \"$OUT\" ]; then OUT=\"$HOME/claude-forensics/forensic-$(date +%Y%m%d)\"; fi WAIT={{wait_s}} if [ \"$WAIT\" -gt 60 ]; then WAIT=60; fi if [ \"$WAIT\" -lt 0 ]; then WAIT=0; fi DEADLINE=$(( $(date +%s) + WAIT )) while [ ! -f \"$OUT/EXTRACTED\" ]; do PID=$(sed -n 1p \"$OUT/extract.pid\" 2>/dev/null) if [ -n \"$PID\" ] && ! kill -0 \"$PID\" 2>/dev/null; then echo \"verdict: the extraction died before writing its marker (pid $PID)\" python3 -c 'import sys;print(open(sys.argv[1]).read()[-4000:])' \"$OUT/extract.log\" exit 4 fi if [ \"$(date +%s)\" -ge \"$DEADLINE\" ]; then break; fi sleep 3 done if [ -f \"$OUT/EXTRACTED\" ]; then echo \"verdict: the extraction completed\" python3 -c 'import sys;print(open(sys.argv[1]).read())' \"$OUT/EXTRACTED\" exit 0 fi PID=$(sed -n 1p \"$OUT/extract.pid\" 2>/dev/null) echo \"verdict: the extraction is still running (pid $PID)\" echo \"log: $OUT/extract.log\" echo \"when it lands: forensic-verify-disk --forensic $OUT\" # The executor scores a step by its exit code and has no pending state, so \"still running\" # is reported here and exits 0. Exiting 3 would be recorded as a broken door (measured # 2026-10-31: status=broken for a healthy, running extraction). exit 0",
+      "contract": {
+        "inputs": [
+          "limit_sessions",
+          "out",
+          "wait_s"
+        ],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/forensic-extract.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:intent/forensic-restore-missing",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "Restore the files the forensic reconstruction recovered and that are missing from the disk -- and only those. A path that already exists is never touched, nothing is overwritten, nothing is deleted: the door writes a file only where there is no file. Opt-in by nature: verification is read-only and this is the one door that writes, so without apply=1 it only reports the plan. Three classes are held back from an in-place restore unless they are asked for by name, because writing them back would publish stale content into a live surface: the estate's own ~/.estate/{intents,bin,libexec}, the volatile temp filesystem, and the worktree directories the estate's tooling manages. Every restorable file is copied into a quarantine tree, where it is recovered and inspectable without being live. Publishing files back to their original paths is NOT the default: of the files that would be published, most sit inside live repositories, and a transcript does not record whether a file was deleted on purpose afterwards. Pass in_place=1 to publish, and only the paths that do not exist yet are ever written. Every flag is an integer: 1 = yes, 0 = no. The executor coerces an int arg with int(float(value)), so a word like \"true\" arrives as 0 -- these flags are read as numbers. Exit 0 = the plan ran (or the restore ran). Exit 4 = there is no manifest to restore from. class: mutate args: forensic: {type: string, default: \"\", description: \"forensic directory; default the last extraction\"} apply: {type: int, default: 0, description: \"1 = recover the missing recoverable files into the quarantine tree (add in_place=1 to publish them back); 0 = report the plan only\"} quarantine: {type: string, default: \"\", description: \"directory the recovered content is copied into; default ~/.estate/state/forensic-quarantine/<run>\"} in_place: {type: int, default: 0, description: \"1 = also publish recovered files back to their original paths (default 0: recover into the quarantine, publish nothing)\"} include_live: {type: int, default: 0, description: \"1 = allow restoring into ~/.estate/{intents,bin,libexec}\"} include_volatile: {type: int, default: 0, description: \"1 = allow restoring into /tmp and /private/tmp\"} include_worktrees: {type: int, default: 0, description: \"1 = allow restoring into estate/idp worktree directories\"} locations: {type: string, default: \"\", description: \"comma-separated location classes eligible for an in-place restore (default: every class not held back)\"} door_s: 95 steps: # 2026-10-31: the flags are assembled with `set --` (POSIX, no arrays) so that an empty # argument stays empty: quoting a default into a shell variable and expanding it unquoted # would hand the script a literal two-character '' and it would create a directory named ''. - name: restore cmd: | OUT=$(sed -n 1p \"$HOME/.estate/state/forensic-extract.out\") if [ -z \"$OUT\" ]; then OUT={{forensic}}; fi if [ -z \"$OUT\" ]; then OUT=$(ls -dt \"$HOME\"/claude-forensics/forensic-*/ 2>/dev/null | sed -n 1p) fi if [ -z \"$OUT\" ] || [ ! -f \"$OUT/manifest.json\" ]; then echo \"verdict: no forensic manifest to restore from; run forensic-extract first\" exit 4 fi APPLY=0 case \"{{apply}}\" in true|True|TRUE|1|yes|Yes) APPLY=1 ;; esac # The flags are echoed first, on every path, so a caller can see what the door actually # read: an int arg is coerced by the executor before the shell sees it, and a word like # \"true\" arrives as 0. echo \"flags: apply=$APPLY in_place={{in_place}} include_live={{include_live}} include_volatile={{include_volatile}} include_worktrees={{include_worktrees}}\" set -- --forensic \"$OUT\" if [ -n {{locations}} ]; then set -- \"$@\" --only-locations {{locations}}; fi Q={{quarantine}} if [ -z \"$Q\" ]; then Q=\"$HOME/.estate/state/forensic-quarantine/$(basename \"${OUT%/}\")-$(date -u +%Y%m%dT%H%M%SZ)\" fi if [ \"$APPLY\" -eq 0 ]; then echo \"verdict: dry run -- pass apply=1 to recover the missing files\" echo \"recovered content would land in: $Q\" python3 ~/.estate/libexec/forensic_verify.py \"$@\" --quarantine \"$Q\" --plan echo \"report: $OUT/verify.md\" exit 0 fi set -- \"$@\" --quarantine \"$Q\" case \"{{in_place}}\" in true|True|TRUE|1|yes|Yes) set -- \"$@\" --in-place ;; esac case \"{{include_live}}\" in true|True|TRUE|1|yes|Yes) set -- \"$@\" --include-live ;; esac case \"{{include_volatile}}\" in true|True|TRUE|1|yes|Yes) set -- \"$@\" --include-volatile ;; esac case \"{{include_worktrees}}\" in true|True|TRUE|1|yes|Yes) set -- \"$@\" --include-worktrees ;; esac python3 ~/.estate/libexec/forensic_verify.py \"$@\" --restore-missing echo \"report: $OUT/verify.md\" echo \"quarantine: $Q",
+      "contract": {
+        "inputs": [
+          "apply",
+          "forensic",
+          "in_place",
+          "include_live",
+          "include_volatile",
+          "include_worktrees",
+          "locations",
+          "quarantine"
+        ],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/forensic-restore-missing.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:intent/forensic-selftest",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "Prove the forensic replay engine against the real runtimes: the installed Pi edit engine, and the upstream Cline editor and apply-patch executors fetched at test time from a pinned upstream commit (never vendored). Every case runs on both sides and the bytes are compared, so a drift between the reconstruction and the runtime is a failure, not a comment. Exit 0 = every suite that could run matched. Exit 1 = a suite ran and found a defect. Exit 3 = a suite could not run (no node, no network, upstream moved): pending, never reported as a pass. class: read args: verbose: {type: int, default: 0, description: \"1 = print every case, not just the tally; 0 = the tally only\"} door_s: 95 steps: - name: selftest cmd: | VERB=\"\" case \"{{verbose}}\" in true|True|TRUE|1|yes|Yes) VERB=\"--verbose\" ;; esac python3 ~/.estate/libexec/forensic-selftest.py $VERB",
+      "contract": {
+        "inputs": [
+          "verbose"
+        ],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/forensic-selftest.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:intent/forensic-verify-disk",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "Compare the forensic manifest with what is actually on disk, one file at a time, and write verify.md and verify.json into the forensic directory: SAFE-COMMITTED | ON-DISK-UNCOMMITTED | ON-DISK-DIFFERS | MISSING-RESTORABLE | MISSING-PARTIAL | MISSING-UNRECOVERABLE. Read-only: it reads the manifest and the disk, and writes nothing outside the forensic directory. It is the falsifier for the extraction -- the reconstruction is only worth what the disk says about it. Exit 0 = the comparison ran. Exit 4 = there is no manifest to compare against (run forensic-extract first). class: read args: forensic: {type: string, default: \"\", description: \"forensic directory; default the last extraction\"} door_s: 95 steps: - name: verify cmd: | OUT=$(sed -n 1p \"$HOME/.estate/state/forensic-extract.out\") if [ -z \"$OUT\" ]; then OUT={{forensic}}; fi if [ -z \"$OUT\" ]; then OUT=$(ls -dt \"$HOME\"/claude-forensics/forensic-*/ 2>/dev/null | sed -n 1p) fi if [ -z \"$OUT\" ] || [ ! -f \"$OUT/manifest.json\" ]; then echo \"verdict: no forensic manifest to compare against; run forensic-extract first\" exit 4 fi python3 ~/.estate/libexec/forensic_verify.py --forensic \"$OUT\" echo \"report: $OUT/verify.md",
+      "contract": {
+        "inputs": [
+          "forensic"
+        ],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/forensic-verify-disk.yaml",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -8127,6 +8320,228 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/libexec/estate-truth.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-libexec-forensic-selftest",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "forensic-selftest.py - prove the forensic replay engines against the REAL runtimes.",
+      "contract": {
+        "inputs": [
+          "--experimental-transform-types",
+          "--json",
+          "--verbose"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-libexec-forensic_replay",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/libexec/forensic-selftest.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-libexec-forensic_extract",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "forensic_extract.py - faithful replay of agent transcripts (Pi + Cline) into a classified work ledger.",
+      "contract": {
+        "inputs": [
+          "--all",
+          "--cline",
+          "--limit-sessions",
+          "--log",
+          "--no-git",
+          "--out",
+          "--pi",
+          "--pid-file",
+          "--pointer",
+          "--pointer-only"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-libexec-forensic_replay",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/libexec/forensic_extract.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-libexec-forensic_replay",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "forensic_replay.py - faithful replay of Pi and Cline file-mutation semantics.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/libexec/forensic_replay.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-libexec-forensic_verify",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "forensic_verify.py - compare the forensic manifest with what is actually on disk, per file.",
+      "contract": {
+        "inputs": [
+          "--forensic",
+          "--in-place",
+          "--include-live",
+          "--include-volatile",
+          "--include-worktrees",
+          "--jobs",
+          "--only-locations",
+          "--plan",
+          "--porcelain",
+          "--quarantine",
+          "--restore-missing",
+          "--show-toplevel"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/libexec/forensic_verify.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
