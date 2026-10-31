@@ -3,8 +3,8 @@
   "generator": "bin/capability-index emit",
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
-    "intent": 109,
-    "layer": 216,
+    "intent": 110,
+    "layer": 217,
     "service": 121,
     "tool": 447,
     "workflow": 84
@@ -3520,6 +3520,59 @@
       "rung": null,
       "writer": "intents",
       "path": "platform/estate/intents/oci-kubeconfig-refresh.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:intent/oci-nsg-rules",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "Read and write an OCI network security group's rules with a signed REST call. The estate's OCI CLI is 3.90.3 and cannot write NSG rules at all: there is no `oci network security-rule` command and no `--security-group-rules` option on `oci network nsg update`. The endpoint NSG the OKE cluster's API server sits behind (`cp-tiafzl`) has NO rules in either direction, which is why 141.147.80.229:6443 answers TCP_CLOSED, why kubectl cannot reach the cluster, and why the estate's memory door (the unified memory server, which lives in that cluster) and the cloud router both sit dead behind it. This door signs one request the way OCI asks for -- Signature version=1 over the canonical request, RSA-SHA256 with the profile's own key from ~/.oci/config -- and prints the server's own answer. The signature conventions are tried in the order OCI's SDK and CLI use them, so a 401 names the convention the account refuses rather than guessing again. The private key is read from the profile's key_file and is never printed, and no secret value ever appears in the output. `probe` is read-only and prints which convention authenticates; `show` prints the rules; `apply` replaces the whole rule set with the JSON file given and prints what the server now holds. The rules JSON uses OCI's own camelCase shape: [{\"direction\":\"INGRESS\",\"protocol\":\"6\",\"source\":\"0.0.0.0/0\", \"tcpOptions\":{\"destinationPortRange\":{\"max\":6443,\"min\":6443}}}] class: mutate args: action: {type: string, default: \"show\", description: \"probe | show | cluster | raw-cluster | raw-get | run-command | entitlement | sdk-facts | create-nsg | attach | port-check | diagnose | storage | volumes-raw | reclaim-volumes | set-rules | set-list-rules | delete-nsg\"} keep: {type: string, default: \"3\", description: \"how many of the oldest csi volumes to keep\"} nsg: {type: string, default: \"ocid1.networksecuritygroup.oc1.uk-london-1.aaaaaaaaii3pthmob5wnz3gjufri564cfdp47jytvnrjwkxbhinh3gqtu7oa\", description: \"the nsg's ocid\"} rules: {type: string, default: \"\", description: \"path to the rules JSON\"} pool: {type: string, default: \"ocid1.nodepool.oc1.uk-london-1.aaaaaaaawsykhagdekeqlo7fwpzrsfdrzijay7dzllnwux3nxnul34spge3q\", description: \"the node pool's ocid\"} host: {type: string, default: \"141.147.80.229\", description: \"host for port-check\"} port: {type: string, default: \"6443\", description: \"port for port-check\"} path: {type: string, default: \"\", description: \"an OCI API path for raw-get, e.g. /20160918/volumes; for run-command, the path of the script to run on the instance\"} halt_on_failure: false steps: - name: run cmd: > ~/.local/share/uv/tools/oci-cli/bin/python3 ~/.estate/libexec/oci-nsg.py {{action}} {{keep}} {{nsg}} {{rules}} {{pool}} {{host}} {{port}} {{path}}",
+      "contract": {
+        "inputs": [
+          "action",
+          "host",
+          "keep",
+          "nsg",
+          "path",
+          "pool",
+          "port",
+          "rules"
+        ],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/oci-nsg-rules.yaml",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -7101,6 +7154,52 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/libexec/k8s-diag.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-libexec-oci-nsg",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Open the OKE cluster's API endpoint, and read and write network security group rules.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/libexec/oci-nsg.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -42836,7 +42935,7 @@
       "id": "cap:tool/litellm-local",
       "schema_version": 1,
       "kind": "tool",
-      "summary": "!/usr/bin/env bash",
+      "summary": "LiteLLM's provider names, read out of LiteLLM's OWN source, without importing LiteLLM.",
       "contract": {
         "inputs": [],
         "outputs": [

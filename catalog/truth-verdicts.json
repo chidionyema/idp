@@ -1,11 +1,11 @@
 {
   "contract_version": 1,
   "counts": {
-    "MEASURED_FAIL": 4,
-    "MEASURED_OK": 0,
+    "MEASURED_FAIL": 3,
+    "MEASURED_OK": 1,
     "UNKNOWN": 1
   },
-  "generated_at": "2026-10-29T08:58:36Z",
+  "generated_at": "2026-10-29T16:04:57Z",
   "generator": "bin/idp-estate-truth",
   "host": {
     "hostname": "Roses-MBP",
@@ -15,33 +15,33 @@
   "predicates": [
     {
       "detail": "no answer: <urlopen error EOF occurred in violation of protocol (_ssl.c:1129)> (no LITELLM_CLOUD_PROBE_KEY on this host)",
-      "duration_s": 0.456,
+      "duration_s": 1.032,
       "id": "router.cloud.completion",
-      "measured_at": "2026-10-29T08:57:11Z",
+      "measured_at": "2026-10-29T16:03:32Z",
       "scope": "any",
       "verdict": "MEASURED_FAIL"
     },
     {
       "detail": "no answer: timed out (no LITELLM_LAPTOP_KEY on this host)",
-      "duration_s": 85.019,
+      "duration_s": 85.088,
       "id": "router.laptop.completion",
-      "measured_at": "2026-10-29T08:58:36Z",
+      "measured_at": "2026-10-29T16:04:57Z",
       "scope": "laptop",
       "verdict": "MEASURED_FAIL"
     },
     {
-      "detail": "/Users/roseonyema/.estate/router-state/lanes.json does not account for its declared lanes (declared/served/refused missing)",
-      "duration_s": 0.002,
+      "detail": "22 declared lane(s) accounted for: 18 served, 4 refused",
+      "duration_s": 0.007,
       "id": "router.lanes.accounted",
-      "measured_at": "2026-10-29T08:57:11Z",
+      "measured_at": "2026-10-29T16:03:32Z",
       "scope": "laptop",
-      "verdict": "MEASURED_FAIL"
+      "verdict": "MEASURED_OK"
     },
     {
       "detail": "/Users/roseonyema/.estate/memory/runtimes.json is absent",
-      "duration_s": 0.0,
+      "duration_s": 0.003,
       "id": "memory.recall",
-      "measured_at": "2026-10-29T08:57:11Z",
+      "measured_at": "2026-10-29T16:03:32Z",
       "scope": "laptop",
       "verdict": "MEASURED_FAIL"
     },
@@ -49,7 +49,7 @@
       "detail": "measurable only from the cluster scope; this host is laptop",
       "duration_s": 0.0,
       "id": "estate-db.rows",
-      "measured_at": "2026-10-29T08:57:11Z",
+      "measured_at": "2026-10-29T16:03:32Z",
       "scope": "cluster",
       "verdict": "UNKNOWN"
     }
@@ -73,8 +73,8 @@
     },
     "laptop": {
       "counts": {
-        "MEASURED_FAIL": 3,
-        "MEASURED_OK": 0,
+        "MEASURED_FAIL": 2,
+        "MEASURED_OK": 1,
         "UNKNOWN": 0
       },
       "verdict": "MEASURED_FAIL"
