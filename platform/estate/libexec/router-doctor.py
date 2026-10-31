@@ -13,32 +13,80 @@ Why each check exists (2026-09-28, >24h outage): LiteLLM dropped the Max OAuth b
 claude-* call got "401 x-api-key header is required"; the stopgaps left behind were a token pinned
 in ~/.claude/settings.json (revoked on the next rotation), a token file on disk and a byte
 forwarder on :4001 that bypassed LiteLLM and the efficiency gateway. Each is a check below.
+
+WHY (2026-10-31). This doctor was four wrong answers about the same machine, and each one acted:
+
+  1. It asked the FRONT (:4000) whether the ROUTER was alive. The front answers 503 when the
+     box is loaded -- measured: load 115.93 on 4 CPUs, the router at 0.1-0.5% CPU answering
+     /health/liveliness in milliseconds, and the front refusing every caller in ~1 ms. The
+     doctor read the front's refusal as a dead router and restarted the slot: 121 restarts in
+     a day, each cutting every live session. The slot is now asked directly, and a slot that
+     is LISTENING is never restarted.
+  2. It compared the estate's declared lanes with the STAGED runtime config
+     (~/.estate/litellm-local/config.runtime.yaml, 9 lanes from September) while the router
+     ran ~/.estate/router-state/config.runtime.yaml (29 lanes from October). It read a
+     September shadow as truth, decided 21 lanes were dropped, and reinstalled the router
+     every 120 s tick. The truth is the LIVE config, and the render publishes a manifest that
+     says exactly what is served and why anything was refused.
+  3. It read the Keychain service "Claude Code-credentials" and the settings file
+     ~/.claude/settings.json. This machine runs Claude Code with CLAUDE_CONFIG_DIR=
+     /Users/roseonyema/.estate/harness/cc, so the live service is
+     "Claude Code-credentials-9e3a8f0a" (= sha256(config_dir)[:8]) and the live settings file
+     is <config_dir>/settings.json. The doctor read a service and a file that do not exist,
+     and reported "no Claude Code login".
+  4. It had no actuator budget. A failed check healed, healed again, and healed again, every
+     120 s, forever. Now: at most ONE destructive heal per 15 minutes, persisted before the
+     action, and after that the doctor escalates (ESCALATED_NO_OP) instead of acting.
+
+Every path, the Keychain service and the active slot now come from ONE immutable reading of
+this machine (estate_core.EstateContext), so a machine that moves makes the doctor move with
+it instead of silently disagreeing with it.
 """
 
+import importlib.util
 import json
 import os
 import pathlib
 import re
 import shutil
 import socket
-import subprocess
 import sys
 import time
-import urllib.error
-import urllib.request
 
-HOME = pathlib.Path.home()
-PORT = 4000
-BASE = "http://127.0.0.1:%d" % PORT
+_HERE = pathlib.Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
+try:
+    from estate_core import EstateContext
+except ImportError:  # pragma: no cover - a staged copy that lost its neighbour
+    _spec = importlib.util.spec_from_file_location(
+        "estate_core", _HERE / "estate_core.py"
+    )
+    _module = importlib.util.module_from_spec(_spec)
+    sys.modules["estate_core"] = _module
+    _spec.loader.exec_module(_module)
+    EstateContext = _module.EstateContext
+
+CTX = EstateContext.from_env()
+
+HOME = CTX.home
+PORT = CTX.front_port
+BASE = CTX.front_base()
 LABEL = "com.estate.litellm-local"
 FRONT_LABEL = "com.estate.litellm-front"
 # Since 2026-10-02 :4000 is the front (platform/llm/front.py) and the router runs in slot 4001
 # or 4002, named here; deploys switch slots with no gap. No file: the single router on :4000.
-ACTIVE = HOME / ".estate/router-state/active"
-STAGE = HOME / ".estate/litellm-local"
-LOG = HOME / "Library/Logs/litellm-local.log"
-SETTINGS = HOME / ".claude/settings.json"
-ALERTS = HOME / ".estate/alerts/inbox.jsonl"
+ACTIVE = CTX.active_file
+STAGE = CTX.stage
+LOG = CTX.log_path
+SETTINGS = CTX.claude_settings
+ALERTS = CTX.alerts_path
+# The config the RUNNING router reads, and the typed truth the render published about it.
+RUNTIME_CONFIG = CTX.runtime_config
+MANIFEST = CTX.manifest_path
+# The actuator budget: one destructive heal per window, then escalation.
+HEAL_STATE = CTX.heal_state_path
 # The marker of the OAuth-forwarding patch in anthropic_beta_passthrough.py (PR #4789).
 OAUTH_PATCH = "_pre.clean_headers = clean_headers"
 # Install sources, most trusted first: the main runtime clone, then the shared checkout.
@@ -47,13 +95,27 @@ PROBE_MODEL = "claude-haiku-4-5"
 # Founder, 2026-09-28: the Claude Code model is opusplan (Opus plans, Sonnet executes) and "must
 # never be changed again". A /model switch or a hand edit is reverted within one watch tick.
 REQUIRED_MODEL = "opusplan"
+# One destructive heal per this many seconds. After that the doctor ESCALATES: it reports the
+# exact fix and changes nothing. (2026-10-31: 121 restarts of a healthy router in one day.)
+HEAL_BUDGET_SEC = 900
+# The heals that change the machine. A heal that only refreshes a credential is not one of
+# them: it costs a model call, not a session.
+DESTRUCTIVE_HEALS = frozenset(
+    (
+        "launchd",
+        "liveliness",
+        "front",
+        "oauth-patch",
+        "lanes",
+        "settings",
+        "bypass",
+    )
+)
 
 MODE = (sys.argv[1] if len(sys.argv) > 1 else "heal").lower()
 HEAL = MODE not in ("diagnose", "false", "0", "no")
 WATCH = MODE == "watch"
-LAST = (
-    HOME / ".estate/router-doctor.last"
-)  # the latest run, overwritten: bounded by design
+LAST = CTX.last_state_path  # the latest run, overwritten: bounded by design
 T0 = time.time()
 OUT = []
 
@@ -63,7 +125,7 @@ class Fix(Exception):
 
 
 def say(tag, name, detail=""):
-    line = "%-7s %-18s %s" % (tag, name, detail)
+    line = "%-15s %-18s %s" % (tag, name, detail)
     OUT.append(line)
     if not WATCH:
         print(line, flush=True)
@@ -89,39 +151,71 @@ def alert(level, msg):
 
 
 def sh(argv, timeout=60, **kw):
-    try:
-        r = subprocess.run(  # noqa: S603 -- fixed argv built in this file, no shell
-            argv,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            stdin=subprocess.DEVNULL,
-            **kw,
-        )
-        return r.returncode, (r.stdout + r.stderr).strip()
-    except subprocess.TimeoutExpired:
-        return 124, "timeout after %ss" % timeout
+    """Run a fixed argv, bounded. Never a shell."""
+    return CTX.run(argv, timeout=timeout, **kw)
 
 
-def http(path, body=None, headers=None, timeout=5):
-    # BASE is the fixed http://127.0.0.1 router, never a caller-supplied URL.
-    req = urllib.request.Request(  # noqa: S310
-        BASE + path,
-        data=json.dumps(body).encode() if body else None,
-        headers=headers or {},
-        method="POST" if body else "GET",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310
-            return r.status, r.read().decode(errors="replace")
-    except urllib.error.HTTPError as e:
-        return e.code, e.read().decode(errors="replace")
-    except Exception as e:  # refused, timeout, reset
-        return 0, str(e)
+def http(path, body=None, headers=None, timeout=5, base=None):
+    """One bounded HTTP call. (code, body). 0 means the call itself failed.
+
+    `base` is one of this machine's own bases (the front or a router slot), never a
+    caller-supplied URL.
+    """
+    return CTX.http(path, base=base, body=body, headers=headers, timeout=timeout)
 
 
 def uid():
     return os.getuid()
+
+
+# ---- the slots -------------------------------------------------------------------------------
+
+
+def active_slot():
+    """The slot the front is sending connections to, or the default slot.
+
+    Read through the context so there is ONE reading of the active file: the front, the
+    doctor and the tests must not disagree about which slot is serving.
+    """
+    return CTX.port_of(ACTIVE) or CTX.default_slot()
+
+
+def slot_base(port=None):
+    """The base URL of the router slot that is serving."""
+    return CTX.slot_base(port if port is not None else active_slot())
+
+
+def slot_label(port=None):
+    """The launchd label of the router slot."""
+    return "%s-%d" % (LABEL, int(port if port is not None else active_slot()))
+
+
+# ---- the actuator budget ----------------------------------------------------------------------
+
+
+def heal_budget_state():
+    return CTX.read_json(HEAL_STATE, {}) or {}
+
+
+def heal_budget_left():
+    """How long until another destructive heal is allowed."""
+    last = heal_budget_state().get("last") or {}
+    at = float(last.get("at") or 0)
+    return HEAL_BUDGET_SEC - (time.time() - at)
+
+
+def spend_heal_budget(name):
+    """Record the intent to act, BEFORE acting.
+
+    Persisted first, so a doctor that dies mid-heal cannot be mistaken for one that has not
+    healed yet: the next tick sees the budget spent and escalates instead of acting again.
+    """
+    state = heal_budget_state()
+    state["last"] = {"at": time.time(), "name": name}
+    CTX.write_json(HEAL_STATE, state)
+
+
+# ---- the checks --------------------------------------------------------------------------------
 
 
 def install_source():
@@ -147,22 +241,40 @@ def reinstall():
 
 
 def wait_live(secs=45):
+    """Wait for the SLOT that is serving to answer. The front is not the router."""
     end = time.time() + secs
     while time.time() < end:
-        if http("/health/liveliness", timeout=2)[0] == 200:
+        if http("/health/liveliness", timeout=2, base=slot_base())[0] == 200:
             return True
         time.sleep(1)
     return False
 
 
 def keychain_token():
-    rc, out = sh(
-        ["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
-        timeout=10,
+    """The Max OAuth credential, from whichever service this machine actually uses.
+
+    The service name is derived from CLAUDE_CONFIG_DIR (sha256(config_dir)[:8], measured), and
+    the plain name stays as a fallback for the default ~/.claude directory. The credential is
+    never printed.
+    """
+    for service in CTX.keychain_services:
+        rc, out = sh(
+            ["security", "find-generic-password", "-s", service, "-w"],
+            timeout=10,
+        )
+        if rc != 0 or not out:
+            continue
+        try:
+            payload = json.loads(out)
+        except ValueError:
+            continue
+        oauth = payload.get("claudeAiOauth")
+        if oauth:
+            return oauth
+    raise Fix(
+        "no Claude Code login in the keychain (tried %s) -- run: claude  then  /login"
+        % ", ".join(CTX.keychain_services)
     )
-    if rc != 0 or not out:
-        raise Fix("no Claude Code login in the keychain -- run: claude  then  /login")
-    return json.loads(out).get("claudeAiOauth", {})
 
 
 # ---- checks: each returns (ok, detail); heal_<name> returns what it did ------------------------
@@ -171,7 +283,7 @@ def keychain_token():
 def router_labels():
     """The launchd agents that serve :4000: front + active slot, or the single router."""
     try:
-        return [FRONT_LABEL, "%s-%d" % (LABEL, int(ACTIVE.read_text().strip()))]
+        return [FRONT_LABEL, slot_label(int(ACTIVE.read_text().strip()))]
     except (OSError, ValueError):
         return [LABEL]
 
@@ -196,19 +308,27 @@ def heal_launchd():
     return reinstall()
 
 
-def listening():
-    """True when something accepts TCP on the router port -- alive, however slow it answers."""
+def listening(port=None):
+    """True when something accepts TCP on the port -- alive, however slow it answers."""
     try:
-        socket.create_connection(("127.0.0.1", PORT), timeout=5).close()
+        socket.create_connection(
+            ("127.0.0.1", int(port if port is not None else active_slot())), timeout=5
+        ).close()
         return True
     except OSError:
         return False
 
 
 def check_live():
-    code, body = http("/health/liveliness", timeout=3)
+    """Is the SLOT that is serving answering?
+
+    The front is not the router. Measured 2026-10-31: the front was refusing every caller
+    with a 503 in ~1 ms while the router answered /health/liveliness in milliseconds, and the
+    doctor read that refusal as a dead router and restarted the slot 121 times in a day.
+    """
+    code, body = http("/health/liveliness", timeout=3, base=slot_base())
     if code == 200:
-        return True, "HTTP 200 "
+        return True, "HTTP 200 on slot %d" % active_slot()
     # A slow answer under laptop load is not a dead router: restarting it cuts every live
     # session (29 of 35 restarts on 2026-09-28 were this). Only a refused port is healed.
     if code == 0 and listening():
@@ -217,13 +337,45 @@ def check_live():
 
 
 def heal_live():
+    """Never restart a slot that is answering. That is the invariant that stops the loop."""
+    port = active_slot()
+    if listening():
+        return "not restarted: slot %d is listening" % port
     sh(
-        ["launchctl", "kickstart", "-k", "gui/%d/%s" % (uid(), router_labels()[-1])],
+        ["launchctl", "kickstart", "-k", "gui/%d/%s" % (uid(), slot_label(port))],
         timeout=15,
     )
     if wait_live():
         return "kickstarted"
     return reinstall()
+
+
+def check_front():
+    """The front's caller-facing path: the port every agent on this machine calls.
+
+    The front and the slot are different machines' worth of behaviour: a front that answers
+    503 while the slot is healthy is a front fault, and the fix is a front restart -- not a
+    router swap, which would cut every live session.
+    """
+    code, body = http("/health/liveliness", timeout=3, base=BASE)
+    if code == 200:
+        return True, "HTTP 200 on the front"
+    slot_ok, slot_detail = check_live()
+    if slot_ok and code == 503:
+        return (
+            False,
+            "the front refuses (HTTP 503) while the slot is healthy (%s)" % slot_detail,
+        )
+    return False, "HTTP %s %s" % (code, body[:80])
+
+
+def heal_front():
+    """Restart the front only. The router keeps serving the sessions it is serving."""
+    sh(
+        ["launchctl", "kickstart", "-k", "gui/%d/%s" % (uid(), FRONT_LABEL)],
+        timeout=15,
+    )
+    return "front restarted (%s)" % FRONT_LABEL
 
 
 def check_patch():
@@ -237,6 +389,11 @@ def heal_patch():
     return reinstall()
 
 
+def served_lanes(text):
+    """The lanes a rendered config serves."""
+    return set(re.findall(r"model_name:\s*(\S+)", text))
+
+
 def dropped_lanes(source: str, runtime: str) -> list:
     """Lanes the source config declares that the rendered runtime config does not serve (#7352)."""
     want = re.findall(r"model_name:\s*(\S+)", source)
@@ -245,32 +402,118 @@ def dropped_lanes(source: str, runtime: str) -> list:
 
 
 def check_lanes():
-    cfg = STAGE / "config.runtime.yaml"
-    if not cfg.exists():
-        return False, "no config.runtime.yaml"
-    text = cfg.read_text()
+    """Are the lanes the estate declared actually served by the LIVE router config?
+
+    The truth is ~/.estate/router-state/config.runtime.yaml -- the config the running router
+    reads. The staged copy is a shadow (measured 2026-10-31: nine lanes from September against
+    the router's twenty-nine), and reading the shadow as truth is what made the doctor
+    reinstall the router every 120 s for a whole day.
+    """
+    if not RUNTIME_CONFIG.exists():
+        return False, "no runtime config at %s" % RUNTIME_CONFIG
+    text = RUNTIME_CONFIG.read_text()
     missing = [
         n
         for n in ("claude-*", "efficiency_gateway", "anthropic_beta_passthrough")
         if n not in text
     ]
-    src = STAGE / "config.yaml"
-    dropped = dropped_lanes(src.read_text(), text) if src.exists() else []
-    if missing or dropped:
-        return False, "missing: %s; dropped (key absent at render): %s" % (
-            missing,
-            dropped,
+    if missing:
+        return False, "missing: %s" % (missing,)
+    if not MANIFEST.exists():
+        # No manifest yet (a router rendered before this change): fall back to the declared
+        # source, and say so, rather than pretending the truth is known.
+        src = STAGE / "config.yaml"
+        dropped = dropped_lanes(src.read_text(), text) if src.exists() else []
+        if dropped:
+            return False, "dropped (key absent at render): %s" % (dropped,)
+        return (
+            True,
+            "claude-* lane + efficiency gateway (no manifest: source comparison only)",
         )
-    return True, "claude-* lane + efficiency gateway + every declared lane served"
+    manifest = CTX.read_json(MANIFEST) or {}
+    expected = set(manifest.get("expected_served") or [])
+    live = served_lanes(text)
+    absent = sorted(expected - live)
+    if absent:
+        return False, "declared served but absent from the live config: %s" % (absent,)
+    return True, "%d lanes served, as the manifest declares" % len(live)
 
 
 def heal_lanes():
     return reinstall()
 
 
+def check_manifest():
+    """The typed truth the render published: declared, served, refused, chained.
+
+    Fail-closed on a refusal without a reason and on a fallback that points at a lane nobody
+    serves: either one is a claim the runtime does not keep.
+    """
+    if not MANIFEST.exists():
+        return False, "no manifest at %s (the render has not published one)" % MANIFEST
+    manifest = CTX.read_json(MANIFEST)
+    if not isinstance(manifest, dict):
+        return False, "manifest unreadable at %s" % MANIFEST
+    declared = set(manifest.get("declared") or [])
+    expected = set(manifest.get("expected_served") or [])
+    refused = manifest.get("refused_with_reason") or []
+    fallbacks = manifest.get("fallbacks") or {}
+    bad = []
+    if not declared:
+        bad.append("declared is empty")
+    if not expected:
+        bad.append("expected_served is empty")
+    for entry in refused:
+        if not isinstance(entry, dict):
+            bad.append("refusal is not a record: %r" % (entry,))
+            continue
+        if not str(entry.get("reason") or "").strip():
+            bad.append("refused lane %r has no reason" % entry.get("lane"))
+    for source, chain in fallbacks.items():
+        for target in chain or []:
+            if target not in expected:
+                bad.append("fallback %s -> %s is not served" % (source, target))
+    # The other direction: a lane the live config serves that nobody declared. That is a
+    # lane nobody knows the cost of, and it is how a shadow config becomes truth.
+    if RUNTIME_CONFIG.exists():
+        live = served_lanes(RUNTIME_CONFIG.read_text())
+        extra = sorted(live - declared)
+        if extra:
+            bad.append("live but undeclared: %s" % (extra,))
+    if bad:
+        return False, "; ".join(bad)
+    return True, "%d declared, %d served, %d refused with a reason" % (
+        len(declared),
+        len(expected),
+        len(refused),
+    )
+
+
+def heal_manifest():
+    """A manifest mismatch is REPORTED, never acted on.
+
+    A reinstall is how the doctor spent a day restarting a healthy router (121 times): the
+    truth it compared against was wrong, and the machine paid for the comparison. A mismatch
+    between the published manifest and the live config is a visible failure with an exact
+    fix; it is not an actuator command.
+    """
+    raise Fix(
+        "the published manifest does not match the live runtime -- re-render with "
+        "bin/litellm-local install (nothing was changed)"
+    )
+
+
 def check_settings():
+    """The harness settings, read from the file this machine actually uses.
+
+    The base URL is ADVISORY: the founder's decision (2026-10-29) is that Claude Code runs
+    direct on his own Max login, so the doctor reports the routing and never rewrites it.
+    A pinned token and a changed model are still failures.
+    """
     try:
         d = json.loads(SETTINGS.read_text())
+    except FileNotFoundError:
+        return False, "no settings file at %s" % SETTINGS
     except (OSError, ValueError) as e:
         return False, "unreadable: %s" % e
     env = d.get("env", {})
@@ -279,27 +522,38 @@ def check_settings():
         bad.append("model=%r, must be %s" % (d.get("model"), REQUIRED_MODEL))
     if "ANTHROPIC_MODEL" in env:
         bad.append("ANTHROPIC_MODEL=%r overrides the model" % env["ANTHROPIC_MODEL"])
-    if env.get("ANTHROPIC_BASE_URL") != BASE:
-        bad.append("ANTHROPIC_BASE_URL=%r" % env.get("ANTHROPIC_BASE_URL"))
     for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
         if k in env:
             bad.append("%s pinned (dies on token rotation)" % k)
-    return not bad, "; ".join(
-        bad
-    ) or "base_url=router, model=%s, no pinned token" % REQUIRED_MODEL
+    advice = []
+    base = env.get("ANTHROPIC_BASE_URL")
+    if base != BASE:
+        advice.append(
+            "ANTHROPIC_BASE_URL=%r (advisory: Claude Code may route direct)" % base
+        )
+    detail = (
+        "; ".join(bad)
+        or "; ".join(advice)
+        or "model=%s, no pinned token" % REQUIRED_MODEL
+    )
+    return not bad, detail
 
 
 def heal_settings():
-    # One backup, overwritten: a revert every tick must not pile up files.
+    """Rewrite the harness settings: destructive, backed up, and reported.
+
+    The base URL is NOT restored: the doctor must not undo the founder's routing decision.
+    """
+    if not SETTINGS.exists():
+        raise Fix("no settings file at %s -- restore it, then rerun" % SETTINGS)
     shutil.copy2(SETTINGS, str(SETTINGS) + ".bak-router-doctor")
     d = json.loads(SETTINGS.read_text())
     d["model"] = REQUIRED_MODEL
     env = d.setdefault("env", {})
     env.pop("ANTHROPIC_MODEL", None)
-    env["ANTHROPIC_BASE_URL"] = BASE
     env.pop("ANTHROPIC_API_KEY", None)
     env.pop("ANTHROPIC_AUTH_TOKEN", None)
-    SETTINGS.write_text(json.dumps(d, indent=2) + "\n")
+    CTX.write_text(SETTINGS, json.dumps(d, indent=2) + "\n")
     return "settings.json rewritten (backup kept); running sessions keep old env until restarted"
 
 
@@ -405,10 +659,12 @@ E2E_CAUSES = [
 
 
 def check_e2e():
+    """A real Claude call, through the slot that is serving."""
     token = keychain_token().get("accessToken", "")
     code, body = http(
         "/v1/messages",
         timeout=30,
+        base=slot_base(),
         body={
             "model": PROBE_MODEL,
             "max_tokens": 1,
@@ -460,6 +716,13 @@ CHECKS = [
         % LOG,
     ),
     (
+        "front",
+        check_front,
+        heal_front,
+        "the front refuses while the router is healthy -- run: launchctl kickstart -k "
+        "gui/%d/%s" % (uid(), FRONT_LABEL),
+    ),
+    (
         "oauth-patch",
         check_patch,
         heal_patch,
@@ -473,11 +736,17 @@ CHECKS = [
         "bin/idp-vendor-render in a clean worktree of main, then rerun",
     ),
     (
+        "manifest",
+        check_manifest,
+        heal_manifest,
+        "the published manifest does not match the runtime -- re-render with "
+        "bin/litellm-local install, then rerun (reported, never acted on)",
+    ),
+    (
         "settings",
         check_settings,
         heal_settings,
-        "fix ~/.claude/settings.json env: ANTHROPIC_BASE_URL=%s, no ANTHROPIC_API_KEY"
-        % BASE,
+        "fix %s: model=%s, no ANTHROPIC_API_KEY" % (SETTINGS, REQUIRED_MODEL),
     ),
     (
         "bypass",
@@ -508,6 +777,25 @@ def main():
                     say("warn", name, fix)
                     continue
                 raise Fix("heal mode clears this on its own; if it cannot: " + fix)
+            if name in DESTRUCTIVE_HEALS:
+                left = heal_budget_left()
+                if left > 0:
+                    say(
+                        "ESCALATED_NO_OP",
+                        name,
+                        "a destructive heal ran %.0fs ago; the budget allows one per %ds. "
+                        "The exact fix is below and nothing was changed."
+                        % (
+                            HEAL_BUDGET_SEC - left,
+                            HEAL_BUDGET_SEC,
+                        ),
+                    )
+                    raise Fix(
+                        "escalated (no action taken): a destructive heal ran %.0fs ago and the "
+                        "budget allows one per %ds. Fix it by hand: %s"
+                        % (HEAL_BUDGET_SEC - left, HEAL_BUDGET_SEC, fix)
+                    )
+                spend_heal_budget(name)
             did = heal()
             ok, detail = check()
             if ok:

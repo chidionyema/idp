@@ -10,6 +10,11 @@
   </array>
   <key>EnvironmentVariables</key><dict>
     <key>PATH</key><string>${PATH}</string>
+    <!-- The harness this estate runs reads its settings from here (measured 2026-10-31:
+         $HOME/.estate/harness/cc, and sha256 of that path is the Keychain service suffix).
+         launchd inherits no CLAUDE_CONFIG_DIR, so without this the doctor read a settings
+         file that is not the harness's and reported the estate as unconfigured. -->
+    <key>CLAUDE_CONFIG_DIR</key><string>${HOME}/.estate/harness/cc</string>
   </dict>
   <key>StartInterval</key><integer>120</integer>
   <key>RunAtLoad</key><true/>

@@ -93,20 +93,56 @@ The laptop leg stays bytes only: no parsing, no buffering, exactly as before.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import os
 import pathlib
 import re
+import socket
 import ssl
 import sys
 import time
 from urllib.parse import urlsplit
 
-LISTEN = ("127.0.0.1", int(os.environ.get("ESTATE_ROUTER_FRONT_PORT", "4000")))
-ACTIVE = pathlib.Path(
-    os.environ.get("ESTATE_ROUTER_ACTIVE")
-    or pathlib.Path.home() / ".estate/router-state/active"
+
+def _context():
+    """The ONE reading of this machine, when the shared module is beside us.
+
+    The front is installed standalone (platform/llm/front.py -> ~/.estate/litellm-local/front.py),
+    so the shared module travels beside it in the stage (bin/litellm-local install copies it).
+    When it is not there -- an older stage, or the repo layout -- the front keeps its own
+    defaults rather than refusing to serve: the front must never be the reason a machine has
+    no router.
+    """
+    here = pathlib.Path(__file__).resolve().parent
+    for candidate in (here, here.parent / "estate" / "libexec"):
+        if (candidate / "estate_core.py").is_file():
+            if str(candidate) not in sys.path:
+                sys.path.insert(0, str(candidate))
+            break
+    try:
+        from estate_core import EstateContext
+    except Exception:  # pragma: no cover - a stage without the shared module
+        return None
+    try:
+        return EstateContext.from_env()
+    except Exception:  # pragma: no cover - a broken environment
+        return None
+
+
+CTX = _context()
+LISTEN = (
+    "127.0.0.1",
+    CTX.front_port if CTX else int(os.environ.get("ESTATE_ROUTER_FRONT_PORT", "4000")),
 )
-SLOTS = (4001, 4002)
+ACTIVE = (
+    CTX.active_file
+    if CTX
+    else pathlib.Path(
+        os.environ.get("ESTATE_ROUTER_ACTIVE")
+        or pathlib.Path.home() / ".estate/router-state/active"
+    )
+)
+SLOTS = tuple(CTX.slot_ports) if CTX and CTX.slot_ports else (4001, 4002)
 # Empty turns the cloud leg off.
 CLOUD = os.environ.get("ESTATE_ROUTER_CLOUD", "https://llm.mumchimp.com")
 # The User-Agent the front presents to the cloud route, in place of the caller's own.
@@ -133,6 +169,16 @@ CLOUD_DOWN_S = 60.0
 CLOUD_DOWN_MAX_S = 600.0
 # How long the front waits for the rest of a caller's body before it gives up on a replay.
 DRAIN_TIMEOUT = 30.0
+# How long the front waits for the ACTIVE slot to answer when the box is loaded.
+#
+# WHY (2026-10-31). The load average is not a verdict about the ROUTER. Measured on this
+# machine: load 115.93 on 4 CPUs, the router at 0.1-0.5% CPU answering /health/liveliness in
+# milliseconds, and the front refusing EVERY caller in about 1 ms with a 503. The guard
+# measured the box and refused on the box's behalf, so a healthy router served nobody. The
+# load still means something -- a box that cannot answer cannot be served -- but the router
+# is the thing that answers, so the router is what is probed. Short on purpose: the refusal
+# must stay inside a caller's patience (the saturated-and-dead falsifier allows one second).
+SAT_PROBE_TIMEOUT = float(os.environ.get("ESTATE_FRONT_SAT_PROBE_TIMEOUT", "0.5"))
 # The most the front may spend on ONE caller's request, from the first byte to the answer.
 #
 # WHY (2026-10-30). The front had no total budget. It tried the cloud for up to ANSWER_TIMEOUT
@@ -170,6 +216,9 @@ SLOT_FAILURES: dict = {}
 DOWN: set = set()  # slots that missed DOWN_AFTER probes in a row
 CLOUD_DOWN_UNTIL = 0.0  # monotonic time until which the cloud is passed over
 CLOUD_FAILURES = 0  # how many times the cloud has failed in a row
+CLOUD_HAIRPIN = (
+    False  # the cloud origin resolves to THIS machine: routing through it loops
+)
 
 
 def backends() -> list:
@@ -179,6 +228,36 @@ def backends() -> list:
     except (OSError, ValueError):
         active = SLOTS[0]
     return [active] + [p for p in SLOTS if p != active]
+
+
+def cloud_is_hairpin() -> bool:
+    """Does the cloud origin resolve to THIS machine?
+
+    A cloud origin that fronts the same machine is a loop: the front asks the cloud, the cloud
+    asks the front, and every caller waits for a circle instead of an answer. Measured 2026-10-31
+    on the laptop: the cloud origin resolved to a loopback address, so the cloud leg was a
+    detour to the machine it was already on. Resolved ONCE at startup and cached, so no
+    request pays for DNS.
+    """
+    if not CLOUD:
+        return False
+    host = urlsplit(CLOUD).hostname
+    if not host:
+        return False
+    if host in ("localhost", "127.0.0.1", "::1"):
+        return True
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return False
+    for info in infos:
+        try:
+            addr = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            continue
+        if addr.is_loopback or addr.is_unspecified:
+            return True
+    return False
 
 
 def route() -> list:
@@ -192,7 +271,7 @@ def route() -> list:
     now = time.monotonic()
     healthy = [p for p in slots if p not in DOWN and SLOT_DOWN_UNTIL.get(p, 0) <= now]
     sick = [p for p in slots if p not in healthy]
-    if not CLOUD:
+    if not CLOUD or CLOUD_HAIRPIN:
         return healthy + sick
     if now < CLOUD_DOWN_UNTIL:
         # A cloud that just failed is tried last, behind even the slots that missed probes: a
@@ -250,22 +329,52 @@ def mark_slot_up(port: int) -> None:
     SLOT_DOWN_UNTIL.pop(port, None)
 
 
-async def answers(port: int) -> bool:
+async def answers(
+    port: int, timeout: float = PROBE_TIMEOUT, require_200: bool = True
+) -> bool:
+    """Is the slot answering? A bounded liveliness probe, never the whole budget.
+
+    `require_200` is the watcher's question ("is this slot healthy?") and the saturation
+    probe's question is different ("can this box answer AT ALL?"). A slot that answers
+    anything inside the bound is alive: what it answers is the router's business, and the
+    front's business is to forward it.
+    """
     try:
         r, w = await asyncio.wait_for(
-            asyncio.open_connection("127.0.0.1", port), PROBE_TIMEOUT
+            asyncio.open_connection("127.0.0.1", port), timeout
         )
     except (OSError, asyncio.TimeoutError):
         return False
     try:
         w.write(b"GET /health/liveliness HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n")
         await w.drain()
-        status = await asyncio.wait_for(r.readline(), PROBE_TIMEOUT)
-        return b" 200 " in status
+        status = await asyncio.wait_for(r.readline(), timeout)
+        if require_200:
+            return b" 200 " in status
+        return bool(status.strip())
     except (OSError, asyncio.TimeoutError):
         return False
     finally:
         w.close()
+
+
+async def probe_active_slot() -> bool:
+    """Is the slot that is SERVING answering right now?
+
+    The slot the front sends connections to is the one that matters: a healthy twin while the
+    active slot is starved is not an answer for the caller. The probe is bounded (a caller
+    waiting for a refusal must not wait longer than the refusal takes), and it is the only
+    thing that decides whether a loaded box is served or refused.
+
+    Measured 2026-10-31 on the laptop: load 115.93 (later 828.0) on 4 CPUs, the router at
+    0.1-0.5% CPU answering /health/liveliness in milliseconds -- and the front refusing every
+    caller in about 1 ms with a 503. The load average was the false negative; the router's
+    own answer is the truth.
+    """
+    slots = backends()
+    if not slots:
+        return False
+    return await answers(slots[0], timeout=SAT_PROBE_TIMEOUT, require_200=False)
 
 
 async def watch() -> None:
@@ -766,16 +875,30 @@ async def handle(client_r, client_w) -> None:
     deadline = time.monotonic() + ANSWER_BUDGET
     over, load = saturated()
     if over:
-        # The box cannot answer inside any budget. Say so at once, so the caller may retry
-        # instead of waiting for an answer that is never coming.
+        # The load average is not a verdict about the router (measured 2026-10-31: load 115.93
+        # on 4 CPUs, the router at 0.1-0.5% CPU answering /health/liveliness in milliseconds,
+        # and this front refusing EVERY caller in about 1 ms). So a loaded box is PROBED, not
+        # refused: if the slot that is serving answers, the caller is served; if it does not,
+        # the caller is told at once, exactly as before.
+        alive = await probe_active_slot()
+        if not alive:
+            print(
+                f"front: the box is saturated (load {load:.1f} > {LOAD_MAX:.1f}) and the "
+                f"active slot does not answer; refusing",
+                file=sys.stderr,
+                flush=True,
+            )
+            await refuse(
+                client_w, b"HTTP/1.1 503 Service Unavailable", b"Retry-After: 30"
+            )
+            client_w.close()
+            return
         print(
-            f"front: the box is saturated (load {load:.1f} > {LOAD_MAX:.1f}); refusing",
+            f"front: the box is loaded (load {load:.1f} > {LOAD_MAX:.1f}) but the active slot "
+            f"answers; serving",
             file=sys.stderr,
             flush=True,
         )
-        await refuse(client_w, b"HTTP/1.1 503 Service Unavailable", b"Retry-After: 30")
-        client_w.close()
-        return
     sent = Counter()
     targets = route()
     for index, target in enumerate(targets):
@@ -849,6 +972,16 @@ async def handle(client_r, client_w) -> None:
 
 
 async def main() -> None:
+    global CLOUD_HAIRPIN
+    # Resolved once, at startup: a cloud origin that fronts this machine is never routed
+    # through, and no request pays for the lookup.
+    CLOUD_HAIRPIN = cloud_is_hairpin()
+    if CLOUD_HAIRPIN:
+        print(
+            f"front: the cloud origin {CLOUD} resolves to this machine; the cloud leg is off",
+            file=sys.stderr,
+            flush=True,
+        )
     # The previous owner of :4000 may still be releasing it during the one-time move to the front.
     for _ in range(60):
         try:

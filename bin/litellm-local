@@ -297,6 +297,16 @@ for var in sorted(os.environ):
             params["api_base"] = bases[p]
         kept.append({"model_name": f"{p}/*", "litellm_params": params})
 cfg["model_list"] = kept
+# The chains the estate DECLARED, captured BEFORE the pruning: the pruning decides what this
+# machine can serve, the manifest records what the estate asked for. Without this capture the
+# manifest can only describe the outcome, and a chain that was erased becomes invisible.
+declared_chains = {}
+for _entry in (cfg.get("router_settings", {}) or {}).get("fallbacks", []) or []:
+    for _src, _tgts in _entry.items():
+        _have = declared_chains.setdefault(_src, [])
+        for _t in (_tgts or []):
+            if _t not in _have:
+                _have.append(_t)
 # A fallback chain that names a lane this machine does not serve is a silent substitution: the
 # caller asks for deepseek and is answered by another vendor. Keep only chains between served lanes,
 # so a dead lane fails loudly with its own name.
@@ -330,13 +340,85 @@ if not otel_up:
         c for c in cfg["litellm_settings"].get("callbacks", []) if c != "otel"]
 # The router's own account of what it serves, readable without a log.
 import json, time
-json.dump({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "served": sorted(served),
-           "declared": sorted(set(declared)),
-           "refused": [r for r in refused if r["lane"] not in served],
-           "providers": dict(sorted(providers.items())),
-           "bases": {p: b for p, b in bases.items() if p in providers},
-           "fallbacks": chains, "otel": otel_up},
-          open(os.path.join(os.path.dirname(sys.argv[2]), "lanes.json"), "w"), indent=1)
+
+def _write_atomic(path, text):
+    # Atomic: a half-written config is a router that boots with half the estate's lanes.
+    tmp = path + ".tmp"
+    with open(tmp, "w") as _f:
+        _f.write(text)
+        _f.flush()
+        os.fsync(_f.fileno())
+    os.replace(tmp, path)
+
+def _fail(problems):
+    for _p in problems:
+        sys.stderr.write("FAIL  manifest validation: " + _p + "\n")
+    sys.stderr.flush()
+    # Nothing was written: the validation runs BEFORE any output, so the machine keeps the
+    # last good router instead of a config nobody can trust.
+    if __name__ == "__main__":
+        os._exit(1)
+    raise SystemExit(1)
+
+_state_dir = os.path.dirname(os.path.abspath(sys.argv[2]))
+_manifest_path = os.path.join(_state_dir, "manifest.json")
+_lanes_path = os.path.join(_state_dir, "lanes.json")
+
+_effective = {}
+for _entry in chains:
+    for _src, _tgts in _entry.items():
+        _effective[_src] = list(_tgts)
+_still_refused = [r for r in refused if r["lane"] not in served]
+_refusals = [{"lane": r["lane"], "reason": r["reason"],
+              "verdict": r.get("verdict", "MEASURED_FAIL")} for r in _still_refused]
+# A declared chain whose every target this machine cannot serve is a lost fallback. It is
+# visible (the manifest names it, with the reason) instead of silent.
+for _src, _targets in sorted(declared_chains.items()):
+    if _src in served and not _effective.get(_src):
+        _refusals.append({"lane": _src,
+                          "reason": ("declared fallback chain [%s] has no served target on "
+                                     "this machine" % ", ".join(_targets)),
+                          "verdict": "CHAIN_ERASED"})
+_manifest = {
+    "schema": "estate.router-manifest.v1",
+    "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    "declared": sorted(set(declared) | served),
+    "expected_served": sorted(served),
+    "refused_with_reason": _refusals,
+    "fallbacks": dict(sorted(_effective.items())),
+}
+# VALIDATE BEFORE ANY OUTPUT IS WRITTEN. A manifest that lies is worse than no manifest:
+# the doctor reads it as truth.
+_problems = []
+for _r in _manifest["refused_with_reason"]:
+    if not str(_r.get("reason") or "").strip():
+        _problems.append("refused lane %r has no reason" % _r.get("lane"))
+for _src, _tgts in _manifest["fallbacks"].items():
+    if _src not in served:
+        _problems.append("fallback source %s is not served" % _src)
+    for _t in _tgts:
+        if _t not in served:
+            _problems.append("fallback %s -> %s is not served" % (_src, _t))
+# A served target that the pruning dropped is an ERASED fallback: the caller asked for a
+# chain and the machine silently gave it none.
+for _src, _targets in declared_chains.items():
+    if _src not in served:
+        continue
+    for _t in _targets:
+        if _t in served and _t not in _manifest["fallbacks"].get(_src, []):
+            _problems.append("served fallback %s -> %s was erased" % (_src, _t))
+if _problems:
+    _fail(_problems)
+# Publish in order: the manifest (the typed truth), then lanes.json (the ledger the
+# catalog reads), then the runtime config the router actually boots.
+_write_atomic(_manifest_path, json.dumps(_manifest, indent=1, sort_keys=True) + "\n")
+_write_atomic(_lanes_path, json.dumps(
+    {"at": _manifest["at"], "served": sorted(served),
+     "declared": _manifest["declared"],
+     "refused": _manifest["refused_with_reason"],
+     "providers": dict(sorted(providers.items())),
+     "bases": {p: b for p, b in bases.items() if p in providers},
+     "fallbacks": chains, "otel": otel_up}, indent=1))
 # Laptop only: who may call this router (platform/llm/local_caller_auth.py). It runs before every
 # other callback, so a refused request costs nothing.
 cfg.setdefault("general_settings", {})["custom_auth"] = "local_caller_auth.user_api_key_auth"
@@ -357,7 +439,7 @@ if "active_memory.proxy_handler_instance" not in ls["callbacks"]:
 # Every model is told to drive the work to done, not hand it back (platform/llm/no_handback.py).
 if "no_handback.proxy_handler_instance" not in ls["callbacks"]:
     ls["callbacks"].append("no_handback.proxy_handler_instance")
-yaml.safe_dump(cfg, open(sys.argv[2], "w"), sort_keys=False)
+_write_atomic(sys.argv[2], yaml.safe_dump(cfg, sort_keys=False))
 print(f"lanes  serving {len(kept)}: {sorted({m['model_name'] for m in kept})}")
 _still_refused = [r for r in refused if r["lane"] not in served]
 print(f"lanes  refused {len(_still_refused)}: " + "; ".join(
@@ -431,6 +513,9 @@ install() {
   local sops; sops="$(command -v sops || echo "$HOME/.cache/estate-tools/sops")"
   [ -x "$sops" ] && cp "$sops" "$STAGE/sops"
   cp "$idp/platform/llm/front.py" "$STAGE/front.py"
+  # estate_core.py is the ONE reading of this machine (paths, env, active slot, keychain).
+  # The front is installed standalone, so the module travels beside it.
+  cp "$idp/platform/estate/libexec/estate_core.py" "$STAGE/estate_core.py"
   mkdir -p "$ROUTER_STATE"
   plist "$FRONT_LABEL" front
   if loaded "$LEGACY_LABEL"; then

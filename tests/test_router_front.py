@@ -38,6 +38,12 @@ def front(tmp_path, monkeypatch):
     # real cloud; the cloud is graded in test_router_front_fails_over_to_the_cloud.py and
     # test_router_front_falls_back_to_the_laptop_when_the_cloud_fails.py.
     monkeypatch.setattr(mod, "CLOUD", "")
+    # The load of the machine running the test is NOT the thing under test. The front reads
+    # os.getloadavg() to decide whether to probe the slot; on a busy laptop (measured 2026-10-31:
+    # load 828 on 4 CPUs) an unpinned load turns every front test into a refusal test, and the
+    # result depends on the machine, not on the code. Pin it; the saturation path is graded
+    # explicitly in tests/test_router_front_answers_inside_its_budget.py.
+    monkeypatch.setattr(mod.os, "getloadavg", lambda: (0.1, 0.1, 0.1))
     return mod
 
 

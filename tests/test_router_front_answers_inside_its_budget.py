@@ -64,6 +64,11 @@ def front(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "PROBE_EVERY", 0.05)
     monkeypatch.setattr(mod, "PROBE_TIMEOUT", 0.2)
     monkeypatch.setattr(mod, "CLOUD_DOWN_UNTIL", 0.0)
+    # The machine's load is not the thing under test: on a busy laptop (measured 2026-10-31:
+    # load 828 on 4 CPUs) the front's load guard would turn every budget test into a
+    # saturation test and the verdict would depend on the machine, not on the code. The
+    # saturation path states its own load explicitly, below.
+    monkeypatch.setattr(mod.os, "getloadavg", lambda: (0.1, 0.1, 0.1))
     (tmp_path / "active").write_text(f"{a}\n")
     return mod
 
