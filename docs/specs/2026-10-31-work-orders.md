@@ -259,3 +259,44 @@ landing, integration and operating as above.
 fall into voids, a dial from 2D to 9D) treats packets as simulated until a feed exists. Dimensions 4 to 9 are visual
 channels, not spatial axes. Not built: the `/fleet` and face front-end components that draw it (the published page is a
 standalone prototype of the same payload), and any live packets.
+
+## After the push: who wakes what, and who does the thinking (2026-10-31, founder's correction)
+
+**The gap, stated plainly.** A push to a private repo moves nothing. Work reaches `operating` only if some actor is woken by
+it, so the first question for any lane is "what wakes?" and the answer today is nobody. That is the `ordered` to `staged`
+and `staged` to `sealed` void in the abyss list, and it is the gap this section closes on paper. It is not built.
+
+**Division of labour, as the founder set it.**
+
+| role | does | does not |
+|---|---|---|
+| Consultant (outside the fleet) | the thinking up front: research, full spec, diffs or patches, a sealed work order | run the estate, hold a credential, land anything |
+| MiniMax (chief executor, the Lead Engineer lane) | the intelligence gathering and the build: collect the context the order needs, check the preconditions, apply the patch, run the checks, push `lane/<name>` | re-decide the spec |
+| DeepSeek and GLM (z.ai) | the heavy reasoning with reasoning tokens: review of the order before it runs, and the independent grade of the outcome after, so the executor never grades itself | build, or hold the lane |
+| Kimi, Codex | lesser use for now, on the founder's performance judgement (ADR 0038); a judgement, not a measurement | |
+
+The grading rule is the one already in the flow model: the lane that built the work is never the lane that grades it. Putting
+DeepSeek or GLM on the grading edge honours that and uses the strongest reasoners where reasoning pays.
+
+**The wake, using what exists.** The estate already has the pieces and none should be duplicated (AGENTS.md section 6):
+
+- `bin/diff-intake` already takes an agent's diff, refuses anything in `policy/agent-diff-forbidden.txt` (read from main) and
+  pushes `lane/diff/<name>`. It is the intake for diffs made in an untrusted agent workspace. `bin/work-order` is the
+  intake for a consultant's sealed patch with a named issuer and checks. They overlap on "patch to lane". I built
+  `work-order` without finding `diff-intake` first; that is a duplicate-layer finding. Resolution: keep `work-order`'s
+  order.json, patch hash and argv checks, and have its push step go through `diff-intake`'s refusal list and `lane/diff/`
+  naming for anything the executor itself authors. Not yet done.
+- The wake is the 15-minute schedule plus the `workflow_run` chain already specified in `2026-10-31-always-on-chief-executor.md`,
+  reading a queue of work orders in the private repo. It needs a workflow file, which this container cannot commit
+  (no yamllint). A scheduled cloud task is the no-YAML alternative and uses the founder's existing plan; it has not been created.
+- `spine/` with its NATS bridge stays the event engine. `branch.pushed` and `promotion.requested` are the two events to wire to it.
+
+**The intelligence-gathering lane is not set up properly.** What it must do before any order runs, so the executor is
+never working from a guess: read the order, fetch the files and claims it touches, check for overlapping live claims, read
+the memory brief, and write a context bundle next to the order that DeepSeek or GLM reviews. None of that exists as a
+program. The nearest parts are `bin/claim-open` (overlap), `bin/estate-brief` (memory) and `bin/estate-live-board` (state). A
+gatherer that composes them and emits a bundle with hashes is the next build, and it is MiniMax's lane to run, not mine.
+
+**Not decided, and the founder's to rule on:** whether the private repo's queue or a GitHub issue per order is the single
+record (AGENTS.md says the issue is the claim of record, which argues for the issue); and the order DeepSeek and GLM are
+used in for review versus grade.
