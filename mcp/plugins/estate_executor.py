@@ -597,6 +597,10 @@ def _refusal(reason: str, *, detail: str = "", **extra) -> dict:
 
 _PLAN_MODULE = None
 _PLAN_MODULE_LOADED = False
+# The special-forces binding: the bounded-unit machine, bound to the plan contract above. Loaded
+# the same way, so the door's verdict comes from the repo the door lives in and not from a copy.
+_UNIT_MODULE = None
+_UNIT_MODULE_LOADED = False
 
 
 def _plan_module():
@@ -630,6 +634,53 @@ def _plan_gate(command: str, session_id: str = ""):
         return None
     try:
         return module.door_plan_gate(command, session_id or None)
+    except Exception:  # noqa: BLE001 - fail open, but the fact is recorded
+        _record_gate_incident(command)
+        return None
+
+
+def _unit_module():
+    """The special-forces binding, loaded from the repo the door lives in.
+
+    None when it cannot load: then the door has no unit to enforce, which is the pre-unit
+    behaviour -- it does not become a reason to refuse work that was never bounded.
+    """
+    global _UNIT_MODULE, _UNIT_MODULE_LOADED
+    if _UNIT_MODULE_LOADED:
+        return _UNIT_MODULE
+    _UNIT_MODULE_LOADED = True
+    try:
+        import importlib.util
+
+        root = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+        path = os.path.join(root, "platform", "estate", "special_forces", "unit.py")
+        spec = importlib.util.spec_from_file_location(
+            "estate_special_forces_unit", path
+        )
+        if spec is None or spec.loader is None:
+            return None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _UNIT_MODULE = module
+    except Exception:  # noqa: BLE001 - a gate that cannot load must not take the estate down
+        _UNIT_MODULE = None
+    return _UNIT_MODULE
+
+
+def _unit_gate(command: str, session_id: str = ""):
+    """The bounded unit's verdict on one command, or None when there is nothing to judge.
+
+    A session running a special-forces unit may only write inside the boundary of the stage it
+    is in. The refusal is the machine's own exit code (3: write denied), so the harness that
+    reads it sees the same number the machine would print.
+    """
+    module = _unit_module()
+    if module is None:
+        return None
+    try:
+        return module.gate(session_id or "", command)
     except Exception:  # noqa: BLE001 - fail open, but the fact is recorded
         _record_gate_incident(command)
         return None
@@ -962,6 +1013,33 @@ def execute_command(
         }
     if gate is not None:
         _record_unenforced_work(command, session_id, gate)
+
+    # 0d. THE BOUNDED-UNIT GATE (special forces). A session running a unit may only write inside
+    #     the boundary of the stage it is in, and it may only reach that stage once the plan
+    #     ledger has recorded the contract stage it carries. The unit is what turns the plan
+    #     contract from a sequence of declarations into a bounded piece of work with a write
+    #     boundary, a token budget and an artefact the machine accepts or rejects.
+    ugate = _unit_gate(command, session_id)
+    if ugate is not None and not ugate.get("ok"):
+        reason = ugate.get("reason", "write_denied")
+        detail = (
+            ugate.get("detail") or "this command writes outside the unit's boundary"
+        )
+        record_friction(
+            "refuse-unit",
+            command,
+            detail=reason,
+            reason=reason,
+        )
+        _record_refusal(command, session_id, reason, detail)
+        return {
+            "accepted": False,
+            "error": detail,
+            "refused": True,
+            "fatal": True,
+            "reason": reason,
+            "exit_code": ugate.get("exit_code", 3),
+        }
 
     # 0b. A MACHINE WITH NO FREE SPACE CANNOT RUN A JOB, SO THE DOOR REFUSES INSTEAD OF ADDING TO IT.
     #

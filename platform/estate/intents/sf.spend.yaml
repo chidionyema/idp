@@ -1,0 +1,15 @@
+name: sf.spend
+description: >-
+  Spend tokens against the running unit's budget. The machine holds the budget and refuses the
+  spend that would overrun it, so the loop has a brake that is not the agent's own discipline.
+  Exit codes: 0 spent, 1 refused (budget), 2 refused, 3 write denied.
+class: mutate
+args:
+  tokens: {type: int, default: 0, description: "tokens to spend against the stage budget"}
+  unit: {type: string, default: "", description: "the unit (default: this session's running unit)"}
+  session: {type: string, default: "", description: "the session (default: this runtime's own session)"}
+door_s: 60
+steps:
+  - name: spend
+    cmd: |
+      ~/.estate/bin/estate-sf --session "{{session}}" spend --tokens {{tokens}} --unit "{{unit}}"

@@ -1,0 +1,17 @@
+name: sf.submit
+description: >-
+  Hand this stage's artefact to the machine. The machine decides whether the artefact is accepted:
+  it is not the agent's own judgement, and it is not a self-report. A stage whose estate contract
+  stage the ledger has not recorded is refused first (exit 1, retryable) with the exact
+  estate-plan command that would record it. Exit codes: 0 accepted, 1 rejected/retryable,
+  2 refused, 3 write denied.
+class: mutate
+args:
+  artifact: {type: string, default: "", description: "the artefact path for this stage"}
+  unit: {type: string, default: "", description: "the unit (default: this session's running unit)"}
+  session: {type: string, default: "", description: "the session (default: this runtime's own session)"}
+door_s: 60
+steps:
+  - name: submit
+    cmd: |
+      ~/.estate/bin/estate-sf --session "{{session}}" submit --artifact "{{artifact}}" --unit "{{unit}}"

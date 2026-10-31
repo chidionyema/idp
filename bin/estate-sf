@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""estate-sf -- special forces, bound to the estate's one plan contract.
+
+    estate-sf start        --claim ID --unit U --protocol NAME [--prove-cmd CMD] [--goal-id G]
+    estate-sf check-write  --path REL_PATH
+    estate-sf submit       --artifact PATH
+    estate-sf spend        --tokens N
+    estate-sf status
+
+Harness-agnostic on purpose: any runtime, any vendor, one command. The session is the one the
+door knows (ESTATE_SESSION_ID, the runtime's pointer file, or --session). The unit it runs is
+bound to the session's plan ledger, so a stage whose estate contract stage the ledger has not
+recorded is refused with the command that would record it.
+
+Exit codes are the machine's: 0 ok | 1 retryable (the artefact was rejected) | 2 refused |
+3 write denied.
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+# The command runs from three places: a repo checkout (bin/estate-sf beside platform/), the staged
+# runtime tree (~/.estate/bin/estate-sf beside ~/.estate/special_forces/), and the runtime clone
+# the sync keeps at ~/.estate/runtime/idp. One search, all three layouts, so the same bytes work
+# wherever the founder's runtime happens to live.
+CANDIDATE_ROOTS = [
+    os.path.dirname(HERE),
+    os.path.join(os.path.expanduser("~"), ".estate"),
+    os.path.join(os.path.expanduser("~"), ".estate", "runtime", "idp"),
+    os.path.join(os.path.expanduser("~"), "Documents", "code", "idp"),
+]
+
+
+def _find(rel_repo: str, rel_flat: str) -> str:
+    for root in CANDIDATE_ROOTS:
+        for rel in (rel_repo, rel_flat):
+            path = os.path.join(root, rel)
+            if os.path.exists(path):
+                return path
+    return os.path.join(CANDIDATE_ROOTS[0], rel_repo)
+
+
+UNIT_MODULE = _find(
+    "platform/estate/special_forces/unit.py", "special_forces/unit.py"
+)
+PLAN_MODULE = _find("platform/estate/memory/plan.py", "memory/plan.py")
+
+
+def _load(path: str, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _session(args) -> str:
+    if getattr(args, "session", ""):
+        return args.session
+    env = os.environ.get("ESTATE_SESSION_ID", "")
+    if env:
+        return env
+    try:
+        plan = _load(PLAN_MODULE, "estate_plan_contract")
+        return plan.resolve_session_id()
+    except Exception:  # noqa: BLE001 - no session is a refusal, not a crash
+        return ""
+
+
+def main(argv=None) -> int:
+    p = argparse.ArgumentParser(prog="estate-sf", description=__doc__)
+    p.add_argument("--session", default="", help="the session the unit belongs to")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    s = sub.add_parser("start", help="start a bounded unit for this session")
+    s.add_argument("--claim", required=True)
+    s.add_argument("--unit", required=True)
+    s.add_argument("--protocol", required=True)
+    s.add_argument("--prove-cmd", default="")
+    s.add_argument("--goal-id", default="")
+
+    s = sub.add_parser("check-write", help="may this session write this path now?")
+    s.add_argument("--path", required=True)
+    s.add_argument("--unit", default="")
+
+    s = sub.add_parser("submit", help="hand this stage's artefact to the machine")
+    s.add_argument("--artifact", required=True)
+    s.add_argument("--unit", default="")
+
+    s = sub.add_parser("spend", help="spend tokens against this stage's budget")
+    s.add_argument("--tokens", type=int, required=True)
+    s.add_argument("--unit", default="")
+
+    s = sub.add_parser("status", help="what stage is this session's unit in?")
+    s.add_argument("--unit", default="")
+
+    args = p.parse_args(argv)
+    unit = _load(UNIT_MODULE, "estate_special_forces_unit")
+    session = _session(args)
+    if not session:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "exit": 2,
+                    "error": "no session could be resolved; pass --session",
+                }
+            )
+        )
+        return 2
+
+    if args.cmd == "start":
+        result = unit.start(
+            session,
+            args.claim,
+            args.unit,
+            args.protocol,
+            prove_cmd=args.prove_cmd,
+            goal_id=args.goal_id,
+        )
+    elif args.cmd == "check-write":
+        result = unit.check_write(session, args.path, args.unit)
+    elif args.cmd == "submit":
+        result = unit.submit(session, args.artifact, args.unit)
+    elif args.cmd == "spend":
+        result = unit.spend(session, args.tokens, args.unit)
+    else:
+        result = unit.status(session, args.unit)
+
+    print(json.dumps(result, indent=1, sort_keys=True))
+    return int(result.get("exit", 0))
+
+
+if __name__ == "__main__":
+    sys.exit(main())

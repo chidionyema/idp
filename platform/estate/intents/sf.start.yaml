@@ -1,0 +1,26 @@
+name: sf.start
+description: >-
+  Start a special-forces bounded unit for this session. The unit is the founder's machine
+  (platform/estate/special_forces) bound to the estate's ONE plan contract: a unit may only
+  start for a session whose plan is already declared in the ledger, and every stage of the
+  protocol names the estate contract stage it carries (declare_plan, add_bdd, address_edgecases,
+  address_2nd_order_effects, complete_goal). A stage whose contract stage the ledger has not
+  recorded is refused, with the exact command that would record it -- so the unit cannot be used
+  to smuggle a second, looser idea of what an agent must prove.
+  Protocols: estate_plan (the contract itself, one stage per contract stage), recon (map_edges ->
+  address_edgecases, second_order -> address_2nd_order_effects, write_bdd -> add_bdd) and ops
+  (plan -> declare_plan, wire -> implement, prove -> complete_goal).
+  Exit codes are the machine's: 0 ok, 1 retryable, 2 refused, 3 write denied.
+class: mutate
+args:
+  claim: {type: string, default: "", description: "the claim this unit serves (e.g. sf-unit/idp#7692)"}
+  unit: {type: string, default: "", description: "the unit's name"}
+  protocol: {type: string, default: "estate_plan", description: "protocol name (estate_plan, recon, ops) or a path"}
+  prove_cmd: {type: string, default: "", description: "the command that proves the unit (required by ops)"}
+  goal_id: {type: string, default: "", description: "the plan sub-goal this unit carries (default: the first not done)"}
+  session: {type: string, default: "", description: "the session (default: this runtime's own session)"}
+door_s: 60
+steps:
+  - name: start
+    cmd: |
+      ~/.estate/bin/estate-sf --session "{{session}}" start --claim "{{claim}}" --unit "{{unit}}" --protocol "{{protocol}}" --prove-cmd "{{prove_cmd}}" --goal-id "{{goal_id}}"

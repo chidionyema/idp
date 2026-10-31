@@ -22,17 +22,47 @@ import json
 import os
 import sys
 
-sys.path.insert(
-    0,
-    os.path.join(
-        os.path.dirname(os.path.realpath(__file__)),
-        "..",
-        "platform",
-        "estate",
-        "memory",
-    ),
-)
-import plan  # noqa: E402
+
+def _plan_module():
+    """The estate's plan contract, wherever this command was installed from.
+
+    The same command runs from a repository checkout (bin/estate-plan beside platform/), from the
+    memory installer's staged copy (~/.estate/memory/bin/estate-plan beside
+    ~/.estate/memory/platform/estate/memory/), and from ~/.estate/bin, which keeps the launchers
+    flat. One search, every layout, so a runtime always has a door it can comply through.
+    """
+    import importlib.util
+
+    here = os.path.dirname(os.path.realpath(__file__))
+    home = os.path.expanduser("~")
+    roots = [
+        os.path.dirname(here),
+        os.path.join(home, ".estate", "memory"),
+        os.path.join(home, ".estate"),
+        os.path.join(home, ".estate", "runtime", "idp"),
+        os.path.join(home, "Documents", "code", "idp"),
+    ]
+    rels = (
+        os.path.join("platform", "estate", "memory", "plan.py"),
+        os.path.join("memory", "plan.py"),
+        os.path.join("memory", "platform", "estate", "memory", "plan.py"),
+    )
+    for root in roots:
+        for rel in rels:
+            path = os.path.join(root, rel)
+            if os.path.exists(path):
+                spec = importlib.util.spec_from_file_location("estate_plan_contract", path)
+                if spec is None or spec.loader is None:
+                    continue
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                return module
+    raise SystemExit(
+        "estate-plan: the estate plan contract (platform/estate/memory/plan.py) was not found"
+    )
+
+
+plan = _plan_module()
 
 
 def _usage() -> None:

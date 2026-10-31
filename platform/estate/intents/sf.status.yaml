@@ -1,0 +1,13 @@
+name: sf.status
+description: >-
+  What stage is this session's unit in, how much of the budget is spent, what may be written now?
+  One call, answered by the machine, so a harness never has to infer its own state.
+class: read
+args:
+  unit: {type: string, default: "", description: "the unit (default: this session's running unit)"}
+  session: {type: string, default: "", description: "the session (default: this runtime's own session)"}
+door_s: 60
+steps:
+  - name: status
+    cmd: |
+      ~/.estate/bin/estate-sf --session "{{session}}" status --unit "{{unit}}"

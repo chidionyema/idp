@@ -1,0 +1,16 @@
+name: sf.check-write
+description: >-
+  May this session write this path right now? The unit's write boundary for the stage it is in.
+  The machine answers with the machine's own exit codes: 0 allowed, 3 write denied (and the
+  reason names the stage and the allowed paths). A harness that asks before writing never has to
+  discover the boundary by being refused.
+class: read
+args:
+  path: {type: string, default: "", description: "the path, relative to the working directory"}
+  unit: {type: string, default: "", description: "the unit (default: this session's running unit)"}
+  session: {type: string, default: "", description: "the session (default: this runtime's own session)"}
+door_s: 60
+steps:
+  - name: check
+    cmd: |
+      ~/.estate/bin/estate-sf --session "{{session}}" check-write --path "{{path}}" --unit "{{unit}}"

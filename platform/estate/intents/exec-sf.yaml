@@ -1,0 +1,19 @@
+name: exec-sf
+description: >
+  Run one agent's own script through the door, with no shared file. The shared exec-local intent
+  writes its payload to ONE file (/tmp/estate-cmd.sh) that every agent on this machine
+  overwrites, so a payload written there is replaced between the write and the run (measured
+  2026-10-31: three consecutive attempts to run a special-forces payload through exec-local ran
+  another agent's script instead, and one run held the door for the full 100 s). This intent
+  takes the script's PATH as data and runs that file: each agent names its own script, so no two
+  agents share a file and no agent can run another's payload by accident. The path is quoted and
+  checked; it is never interpolated into a shell fragment.
+args:
+  path: {type: string, default: "", description: "the script to run; a path (data), not a shell fragment"}
+steps:
+  - name: run
+    cmd: |
+      p="{{path}}";
+      if [ -z "$p" ]; then echo "REFUSED exec-sf: pass the path of the script to run"; exit 2; fi;
+      if [ ! -f "$p" ]; then echo "REFUSED exec-sf: no such script: $p"; exit 2; fi;
+      bash "$p"

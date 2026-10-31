@@ -1,0 +1,22 @@
+{
+  "name": "estate_plan",
+  "version": 1,
+  "max_retries_per_stage": 2,
+  "stages": [
+    {"name": "declare_plan", "budget_tokens": 10000, "validator": "json_nonempty",
+     "contract_stage": "declare_plan", "estate_ledger": true,
+     "writes": ["work/{claim}/**"]},
+    {"name": "add_bdd", "budget_tokens": 15000, "validator": "json_nonempty",
+     "contract_stage": "add_bdd", "estate_ledger": true,
+     "writes": ["work/{claim}/**"]},
+    {"name": "address_edgecases", "budget_tokens": 15000, "validator": "json_nonempty",
+     "contract_stage": "address_edgecases", "estate_ledger": true,
+     "writes": ["work/{claim}/**"]},
+    {"name": "address_2nd_order_effects", "budget_tokens": 15000, "validator": "json_nonempty",
+     "contract_stage": "address_2nd_order_effects", "estate_ledger": true,
+     "writes": ["work/{claim}/**"]},
+    {"name": "complete_goal", "budget_tokens": 10000, "validator": "json_nonempty",
+     "contract_stage": "complete_goal", "estate_ledger": true,
+     "writes": ["work/{claim}/**"]}
+  ]
+}

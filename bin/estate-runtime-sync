@@ -155,6 +155,12 @@ LAUNCHERS = [
     "estate-provider-renewal",
     "estate-receipt",
     "estate-executor-permission",
+    # The plan contract's shell door and the bounded-unit door. They are commands a runtime
+    # calls, not daemons: they live in ~/.estate/bin so Claude Code, Codex and Cline reach the
+    # SAME bytes main carries. Without them here, a runtime that has no bridge has no way to
+    # comply, and the lock cannot be universal.
+    "estate-plan",
+    "estate-sf",
 ]
 
 
@@ -271,12 +277,12 @@ def stage() -> list[str]:
     if (Path("/usr/local/estate/releases/current")).exists():
         return ["staging left to estate-converge"]
     notes = []
-    for sub in ("intents", "libexec", "skills"):
+    for sub in ("intents", "libexec", "skills", "special_forces"):
         src, dst = TREE / "platform/estate" / sub, STATE / sub
         dst.mkdir(parents=True, exist_ok=True)
-        if sub == "skills":
-            # A tree, not a file list: the skill packs. Copied only when a file differs, so
-            # an unchanged pack is not rewritten under a running agent.
+        if sub in ("skills", "special_forces"):
+            # A tree, not a file list: the skill packs and the bounded-unit module. Copied only
+            # when a file differs, so an unchanged file is not rewritten under a running agent.
             changed = []
             for f in sorted(src.rglob("*")):
                 if not f.is_file() or f.name == ".DS_Store":
@@ -288,7 +294,7 @@ def stage() -> list[str]:
                     shutil.copy2(f, target)
                     changed.append(str(rel))
             if changed:
-                notes.append(f"skills +{len(changed)} files")
+                notes.append(f"{sub} +{len(changed)} files")
             continue
         changed = []
         for f in sorted(src.iterdir()):
@@ -668,6 +674,9 @@ SERVICES = [
             "mcp/plugins/",
             "platform/estate/bin/",
             "platform/estate/memory/",
+            # The bounded-unit binding the door loads: a change to it changes what the door
+            # refuses, so the daemon must be restarted to serve the new verdict.
+            "platform/estate/special_forces/",
             "extensions/",
             "bin/estate-memory-",
         ),
