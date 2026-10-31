@@ -231,7 +231,7 @@ RC1 said Otto was asked to be an agent and told to dispatch. The deeper cause is
 §3.1: **every founder wish was answered locally, inside Otto, and no global constraint was
 applied to the parts as a set.** Two decisions were written and never executed:
 
-- **ADR 0036** (2026-10-02) — `otto_facts`, hindsight and the `otto-memory-store` Job are
+- **ADR 0050** (2026-10-02) — `otto_facts`, hindsight and the `otto-memory-store` Job are
   deleted, writes move to `remember`. Measured 2026-10-29: the Job is still in the tree, the
   deployment still points at hindsight, and `hermes-v2/otto/memory/` still ships `fast_recall.py`.
 - **`docs/specs/otto-door-hands-and-senses.md:200-203`** — a model-driven shell never runs in
@@ -250,7 +250,7 @@ name a layer the estate owns.
 | Door | 1 — the scheduled plane asks the doctor | the tick's rows come from the doctor; the tick stops self-cancelling (#7354) | open |
 | Door | 2 — the answer floor becomes a gate | a delivery claim is refused when the answer link is FAIL | open |
 | Seam (the spec) | 1 — route through the estate, keep the lifeboat | the default route is the estate's cloud router; the lifeboat is last and accounted | open |
-| Seam | 2 — execute ADR 0036 | `remember` is Otto's only memory; the manifests name no other one | open |
+| Seam | 2 — execute ADR 0050 | `remember` is Otto's only memory; the manifests name no other one | open |
 | Seam | 3 — the secretless shell | no shell in the secret-holding container; estate actions go through intents | open |
 | Seam | 4 — one verification plane | the doctor owns the verdict; the probe and the tick are inputs | open |
 | Seam | 5 — the human-in-the-loop plane | a blocked agent reaches the founder by voice or Telegram with the blocker named (#7388) | open |
@@ -339,7 +339,7 @@ a reason). On a dark estate that distinction is the whole product.
 | Door 1 -- the scheduled plane asks the doctor | no for the bound, the budget and the BLIND grade; yes for the doctor's live rows | **partly** | the tick's bound lands on `lane/otto-parity-tick-recovery`; the doctor's rows still wait on the doctor's verdict being readable |
 | Door 2 -- the answer floor becomes a gate | no (it grades a claim) | **yes** | open |
 | Seam 1 -- route through the estate, keep the lifeboat | no (manifests and the router config) | **yes** | open |
-| Seam 2 -- execute ADR 0036 | partly (the manifests are in the tree; the Job's runtime is in the cluster) | **partly** | open |
+| Seam 2 -- execute ADR 0050 | partly (the manifests are in the tree; the Job's runtime is in the cluster) | **partly** | open |
 | Seam 3 -- the secretless shell | no (the conformance gate reads the manifests) | **yes** | open |
 | Seam 4 -- one verification plane | yes (the doctor walks live links) | **no** | open |
 | Seam 5 -- the human-in-the-loop plane | partly (the door is in the runtime; the escalation reaches Telegram) | **partly** | open (#7388) |

@@ -31,12 +31,12 @@
   "docs/reports"
  ],
  "documents": {
-  "docs/decisions/0036-one-memory-plane-and-it-is-cortex.md": "KEEP-AMEND",
+  "docs/decisions/0050-one-memory-plane-and-it-is-cortex.md": "KEEP-AMEND",
   "docs/decisions/2026-09-07-the-checkpoint-lives-on-the-issue-not-in-a-vendor-file.md": "KEEP",
   "docs/specs/2026-10-02-memory-plane-cortex-adoption.md": "KEEP-AMEND",
   "docs/specs/2026-10-19-active-memory-and-focus-vs-muse.md": "KEEP",
   "docs/specs/hosted-session-memory.md": "ARCHIVE",
-  "docs/specs/2026-09-15-fleetview-triage-and-focus.md": "REVIEW",
+  "docs/specs/2026-09-15-fleetview-triage-and-focus.md": "NOT-MEMORY",
   "docs/reports/2026-10-02-memory-inventory-measured.md": "ARCHIVE",
   "docs/reports/2026-10-02-memory-layer-correction-measured.md": "ARCHIVE",
   "docs/specs/2026-10-31-memory-one-plane.md": "KEEP",
@@ -169,7 +169,7 @@
    "name": "Pi and opencode session-start brief extensions",
    "layer": "inject",
    "verdict": "KEEP",
-   "why": "Injects a brief; no enforcement and no record that it ran.",
+   "why": "Injects a brief; no enforcement. Live probe: bin/estate-brief (which both extensions run) rewrites focus-register.json each time it reads the claim ledger. That proves a brief ran on this machine in the last day, not that pi or opencode ran it (the file is shared with the other runtimes); no per-runtime record exists yet.",
    "probes": [
     {
      "t": "file",
@@ -180,7 +180,13 @@
      "path": "platform/estate/memory/opencode-estate-memory.js"
     }
    ],
-   "live": [],
+   "live": [
+    {
+     "t": "log_recent",
+     "path": "~/.estate/memory/focus-register.json",
+     "max_age_h": 24
+    }
+   ],
    "owns": [
     "platform/estate/memory/pi-estate-memory.ts",
     "platform/estate/memory/opencode-estate-memory.js"
@@ -191,14 +197,20 @@
    "name": "Router Active Memory + Active Focus block on every model call",
    "layer": "inject",
    "verdict": "KEEP",
-   "why": "Founder 2026-10-20: all models and harnesses must use memory without per-runtime adapters. Dies with the router.",
+   "why": "Founder 2026-10-20: all models and harnesses must use memory without per-runtime adapters. Dies with the router. Live probe: the launchd log bin/litellm-local writes, where active_memory.py logs 'injected' or 'skipped' per call. It proves the router is alive and logging, not that a block was injected (only mtime is read).",
    "probes": [
     {
      "t": "file",
      "path": "platform/llm/active_memory.py"
     }
    ],
-   "live": [],
+   "live": [
+    {
+     "t": "log_recent",
+     "path": "~/Library/Logs/litellm-local.log",
+     "max_age_h": 24
+    }
+   ],
    "owns": [
     "platform/llm/active_memory.py"
    ]
@@ -252,7 +264,7 @@
    "name": "Session checkpoint on the issue",
    "layer": "continuity",
    "verdict": "KEEP",
-   "why": "ADR 2026-09-07: continuity lives on the issue, not in a vendor file.",
+   "why": "ADR 2026-09-07: continuity lives on the issue, not in a vendor file. NO live probe yet and none is invented: bin/estate-checkpoint writes only a GitHub issue comment and a hashed stamp in the OS temp dir (no fixed local path). Needs a probe that reads the issue comment; none of the existing probe types does. KEEP_WITHOUT_LIVE_PROBE stays red until then.",
    "probes": [
     {
      "t": "file",
@@ -348,7 +360,7 @@
   },
   {
    "id": "cortex",
-   "name": "Cortex retrieval engine (ADR 0036)",
+   "name": "Cortex retrieval engine (ADR 0050)",
    "layer": "engine",
    "verdict": "HOLD",
    "why": "Manifests exist; no Dockerfile and no vendored source, so it cannot be built. Frozen until the cross-surface canary is green and a replay benchmark shows it helps.",
@@ -380,10 +392,10 @@
   },
   {
    "id": "dead-launchers",
-   "name": "bin/memory-mcp, memory-a2m, memory-dream (launch a .memory stack that is not there)",
+   "name": "bin/memory-mcp, memory-a2m, memory-dream (deleted 2026-10-31; launched a .memory stack that was never there)",
    "layer": "legacy",
    "verdict": "RETIRE",
-   "why": "Each execs into ../.memory/.venv; the .memory directory does not exist.",
+   "why": "Deleted 2026-10-31: each execed into ../.memory/.venv, which does not exist. rg found no caller that executed them (every hit was the live estate-memory-mcp or a prose mention), so nothing was repointed. The absent probes keep the deletion honest.",
    "probes": [
     {
      "t": "absent",
@@ -399,18 +411,14 @@
     }
    ],
    "live": [],
-   "owns": [
-    "bin/memory-mcp",
-    "bin/memory-a2m",
-    "bin/memory-dream"
-   ]
+   "owns": []
   },
   {
    "id": "curation-worker",
-   "name": "curation_worker.py",
+   "name": "curation_worker.py (deleted 2026-10-31)",
    "layer": "legacy",
    "verdict": "RETIRE",
-   "why": "Spec 2026-10-19: never deployed; its UPDATE resets updated_at.",
+   "why": "Deleted 2026-10-31: never deployed (spec 2026-10-19); its UPDATE reset updated_at. No code imported or ran it; consolidation.py only named it in a comment, now reworded. The absent probe keeps the deletion honest.",
    "probes": [
     {
      "t": "absent",
@@ -425,7 +433,7 @@
    "name": "otto/memory fast_recall, otto_facts, otto-memory-store Job",
    "layer": "legacy",
    "verdict": "RETIRE",
-   "why": "ADR 0036: deleted in favour of the door. Write-only on 2026-10-02.",
+   "why": "ADR 0050: deleted in favour of the door. Write-only on 2026-10-02.",
    "probes": [],
    "blind_reason": "lives in the otto repo/cluster; this checkout cannot see it",
    "live": [],
@@ -436,7 +444,7 @@
    "name": "Hindsight API",
    "layer": "legacy",
    "verdict": "RETIRE",
-   "why": "Zero requests in 24h on 2026-10-02; ADR 0036 retires it.",
+   "why": "Zero requests in 24h on 2026-10-02; ADR 0050 retires it.",
    "probes": [],
    "blind_reason": "a cluster namespace; cannot be checked from the repo",
    "live": [],
@@ -458,7 +466,7 @@
    "name": "claude-mem (2026-09-05 spec)",
    "layer": "legacy",
    "verdict": "DECIDE",
-   "why": "Spec says hosted-only; ADR 0036 supersedes it in part. No evidence it was ever installed.",
+   "why": "Spec says hosted-only; ADR 0050 supersedes it in part. No evidence it was ever installed.",
    "probes": [],
    "live": [],
    "owns": []

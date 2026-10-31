@@ -1,7 +1,7 @@
 """
 Active Runtime Harness — Python port of DefaultActiveAgentHarness.
 
-Ported from TypeScript (platform/active-runtime/src/). ADR 0036: one memory plane,
+Ported from TypeScript (platform/active-runtime/src/). ADR 0050: one memory plane,
 no Convex, Postgres tables via this module.
 
 Four harness tables (schema.sql §11):

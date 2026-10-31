@@ -96,7 +96,7 @@ The spec's section 3.6 lists them; this is the same table with the owner attache
 | # | the architecture today | the founder's later ruling | owner | status |
 |---|---|---|---|---|
 | 1 | the door's default route is a pod-local lifeboat; the estate router is a rung | cloud router is the default (2026-10-26) | #7445 | OWNED |
-| 2 | Otto keeps its own memory planes (`deployment.yaml:269,291`, `memory-store-job.yaml`) | one memory plane (ADR 0036, 2026-10-02) | #6162, #6163, #6165, #6229 -- all four still open, 27 days later | OWNED, stale |
+| 2 | Otto keeps its own memory planes (`deployment.yaml:269,291`, `memory-store-job.yaml`) | one memory plane (ADR 0050, 2026-10-02) | #6162, #6163, #6165, #6229 -- all four still open, 27 days later | OWNED, stale |
 | 3 | `terminal` runs beside the bot token, the DB password and the GitHub token (`deployment.yaml:356`) | a model-driven shell never runs in that process | #7446 | OWNED |
 | 4 | a private verification plane (probe, reconciler, parity tick) | one verification layer; the estate has a doctor family | #7354, #7447 | OWNED |
 | 5 | the answer path assumes the cluster's router and cluster services (`deployment.yaml:291`) | no door assumes a laptop; the cloud is the default route | #7445, #7448 | OWNED |
@@ -112,7 +112,7 @@ These are the rows that need a decision, not another document.
    work; no ticket holds it.
 3. **B5 -- the edge voice loop.** ADR 0033 names the target; no ticket, no wave, no owner. It is
    the only wish whose *architecture* has never been started.
-4. **Contradiction 2 -- the memory planes.** ADR 0036 is 27 days stale and the four tickets that
+4. **Contradiction 2 -- the memory planes.** ADR 0050 is 27 days stale and the four tickets that
    execute it are all open. This is not a new wish; it is a decision that was written and never
    executed, which is the more expensive kind of gap.
 

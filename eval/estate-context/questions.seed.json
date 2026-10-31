@@ -109,7 +109,7 @@
    "required_sources": [
     {
      "type": "file",
-     "id": "docs/decisions/0036-one-memory-plane-and-it-is-cortex.md",
+     "id": "docs/decisions/0050-one-memory-plane-and-it-is-cortex.md",
      "contains": "unified memory server"
     }
    ],

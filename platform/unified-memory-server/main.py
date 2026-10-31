@@ -1000,7 +1000,7 @@ async def memory_digest(
 
 # ---------------------------------------------------------------------
 # Active Runtime Harness Endpoints
-# ADR 0036: one memory plane. The harness writes facts through the existing
+# ADR 0050: one memory plane. The harness writes facts through the existing
 # memory_save path (no duplication), and this server owns the four harness
 # tables. Future work integrates buildActiveContextBrief into /memories/brief
 # and consolidateTurnCandidates into do_remember in estate_memory.py.

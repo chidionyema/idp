@@ -13,7 +13,7 @@ the same looseness it criticises, so every tenet below names its **measurement**
 
 [context broker decision](../decisions/2026-10-27-the-estate-context-broker-is-the-only-door.md) |
 [compiler and gateway](../decisions/2026-10-26-one-context-compiler-and-one-execution-gateway.md) |
-[one memory plane](../decisions/0036-one-memory-plane-and-it-is-cortex.md) |
+[one memory plane](../decisions/0050-one-memory-plane-and-it-is-cortex.md) |
 [context plane reference](../reference/estate-context-plane.md) |
 [agent surface map](../reference/estate-agent-surface-map.md) |
 [constrained formats research](../research/2026-10-25-constrained-formats-research.md) |
