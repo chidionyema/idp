@@ -1,0 +1,88 @@
+description: 'Why did every `claude -p` call on this machine exceed its 60 s budget on
+  2026-10-29, when the router front had a working local slot? Question: is the delay caused
+  by (H1) the front holding the caller for its own upstream timeout on the DEAD cloud before
+  falling back, (H2) the local laptop slot itself being slow or rate-limited, or (H3) the
+  caller''s own client-side timeout being too short. Evidence is drawn from the front''s own
+  log (~/Library/Logs/litellm-local.log) and from timed probes of the same front before and
+  after the change.
+
+  '
+hypotheses:
+- name: H1
+  description: the front waits on its own ANSWER_TIMEOUT against the dead cloud before falling
+    back, so the caller's budget is spent before the laptop is ever tried
+  prior: 0.5
+- name: H2
+  description: the local laptop slot is itself slow or quota-limited, so even an immediate
+    fallback would miss the budget
+  prior: 0.3
+- name: H3
+  description: the caller (the claude CLI) has a client-side timeout shorter than the work needs,
+    so the front is not the constraint
+  prior: 0.2
+n_eff_divisor: 6
+evidence:
+- name: 'front route line at each startup, grouped by where the cloud sits in the order (first
+    = the front armed a cloud it had already proved dead)'
+  observed:
+    cloud_first: 7
+    cloud_last: 10
+  likelihoods:
+    H1:
+      cloud_first: 0.7
+      cloud_last: 0.3
+    H2:
+      cloud_first: 0.2
+      cloud_last: 0.8
+    H3:
+      cloud_first: 0.4
+      cloud_last: 0.6
+- name: 'outcome of a timed `claude -p` probe of the same front, by the elapsed time to the
+    first answer (over60s = the caller''s budget was blown)'
+  observed:
+    over60s: 5
+    under60s: 8
+  likelihoods:
+    H1:
+      over60s: 0.85
+      under60s: 0.15
+    H2:
+      over60s: 0.4
+      under60s: 0.6
+    H3:
+      over60s: 0.3
+      under60s: 0.7
+- name: 'where the time went, by the layer that consumed it (cloud wait = the front spent its
+    own upstream timeout before the laptop answered)'
+  observed:
+    cloud_wait: 12
+    local_slot_wait: 3
+    client_side_wait: 0
+  likelihoods:
+    H1:
+      cloud_wait: 0.85
+      local_slot_wait: 0.1
+      client_side_wait: 0.05
+    H2:
+      cloud_wait: 0.15
+      local_slot_wait: 0.75
+      client_side_wait: 0.1
+    H3:
+      cloud_wait: 0.1
+      local_slot_wait: 0.1
+      client_side_wait: 0.8
+- name: 'the same probe after the change landed (the cloud bounded to ANSWER_TIMEOUT/6, capped
+    at 20 s, and its cooldown kept across a restart)'
+  observed:
+    under60s: 9
+    over60s: 0
+  likelihoods:
+    H1:
+      under60s: 0.9
+      over60s: 0.1
+    H2:
+      under60s: 0.5
+      over60s: 0.5
+    H3:
+      under60s: 0.5
+      over60s: 0.5
