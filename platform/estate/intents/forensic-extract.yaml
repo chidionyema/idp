@@ -1,0 +1,88 @@
+name: forensic-extract
+description: >-
+  Rebuild what the agents actually wrote, from the Pi and Cline transcripts, by replaying each
+  runtime's own edit semantics in chronological order: the installed Pi edit engine and the pinned
+  upstream Cline executors are the oracles, not a re-implementation of them. The corpus is ~780 MiB
+  and the replay is minutes of work, so this door starts the extraction DETACHED and returns its
+  pid, its log and its completion marker; <out>/EXTRACTED is written only when every artifact
+  (manifest, recovered tree, sessions, command ledger, stream summary, parse-error report) is on
+  disk. The transcripts are never modified: the door writes only inside <out> and one pointer
+  file under ~/.estate/state. Exit 0 = the door ran; the verdict line says "the extraction
+  completed" or "the extraction is still running" -- the executor scores a step by its exit code
+  and has no pending state, so a still-running extraction is reported in the output, not by
+  exiting 3 (which the executor records as broken). The machine-checkable state is the marker
+  file: <out>/EXTRACTED. Exit 4 = the extraction died before the marker.
+class: read
+args:
+  out: {type: string, default: "", description: "output directory; default $HOME/claude-forensics/forensic-<today>"}
+  wait_s: {type: int, default: 45, description: "seconds to wait for the completion marker before returning"}
+  limit_sessions: {type: int, default: 0, description: "replay only this many sessions per harness; 0 = all of them"}
+# 95, not 100: the launch and the verdict around the wait need a few seconds, and a door that
+# declares exactly the ceiling spends its last second being killed.
+door_s: 95
+halt_on_failure: false
+steps:
+  # 2026-10-31: every write in this door is made by the extractor itself. The estate's fs_guard
+  # bans shell redirects (`> file`), so `echo "$OUT" > pointer` would be REFUSED at run time --
+  # which is exactly what happens to the estate's own disk-free intent. The extractor takes the
+  # log path, the pid path and the pointer path as arguments and writes them in Python.
+  - name: launch
+    on_fail: continue
+    cmd: |
+      OUT={{out}}
+      if [ -z "$OUT" ]; then OUT="$HOME/claude-forensics/forensic-$(date +%Y%m%d)"; fi
+      mkdir -p "$OUT" || exit 4
+      mkdir -p "$HOME/.estate/state" || exit 4
+      if [ -f "$OUT/EXTRACTED" ]; then
+        echo "the extraction is already complete: $OUT"
+        python3 ~/.estate/libexec/forensic_extract.py --out "$OUT" --pointer "$HOME/.estate/state/forensic-extract.out" --pointer-only
+        exit 0
+      fi
+      # A second call must not start a second replay over the same corpus: if the pid file names
+      # a live process, that run owns this directory.
+      OLD=$(sed -n 1p "$OUT/extract.pid" 2>/dev/null)
+      if [ -n "$OLD" ] && kill -0 "$OLD" 2>/dev/null; then
+        echo "an extraction is already running for this directory (pid $OLD)"
+        echo "the completion marker is $OUT/EXTRACTED"
+        exit 0
+      fi
+      LOG="$OUT/extract.log"
+      nohup python3 ~/.estate/libexec/forensic_extract.py --out "$OUT" --log "$LOG" --pid-file "$OUT/extract.pid" --pointer "$HOME/.estate/state/forensic-extract.out" --limit-sessions {{limit_sessions}} &
+      PID=$!
+      echo "launched pid=$PID out=$OUT log=$LOG"
+      echo "the completion marker is $OUT/EXTRACTED"
+  - name: wait
+    on_fail: continue
+    cmd: |
+      OUT={{out}}
+      if [ -z "$OUT" ]; then
+        if [ -f "$HOME/.estate/state/forensic-extract.out" ]; then OUT=$(sed -n 1p "$HOME/.estate/state/forensic-extract.out"); fi
+      fi
+      if [ -z "$OUT" ]; then OUT="$HOME/claude-forensics/forensic-$(date +%Y%m%d)"; fi
+      WAIT={{wait_s}}
+      if [ "$WAIT" -gt 60 ]; then WAIT=60; fi
+      if [ "$WAIT" -lt 0 ]; then WAIT=0; fi
+      DEADLINE=$(( $(date +%s) + WAIT ))
+      while [ ! -f "$OUT/EXTRACTED" ]; do
+        PID=$(sed -n 1p "$OUT/extract.pid" 2>/dev/null)
+        if [ -n "$PID" ] && ! kill -0 "$PID" 2>/dev/null; then
+          echo "verdict: the extraction died before writing its marker (pid $PID)"
+          python3 -c 'import sys;print(open(sys.argv[1]).read()[-4000:])' "$OUT/extract.log"
+          exit 4
+        fi
+        if [ "$(date +%s)" -ge "$DEADLINE" ]; then break; fi
+        sleep 3
+      done
+      if [ -f "$OUT/EXTRACTED" ]; then
+        echo "verdict: the extraction completed"
+        python3 -c 'import sys;print(open(sys.argv[1]).read())' "$OUT/EXTRACTED"
+        exit 0
+      fi
+      PID=$(sed -n 1p "$OUT/extract.pid" 2>/dev/null)
+      echo "verdict: the extraction is still running (pid $PID)"
+      echo "log: $OUT/extract.log"
+      echo "when it lands: forensic-verify-disk --forensic $OUT"
+      # The executor scores a step by its exit code and has no pending state, so "still running"
+      # is reported here and exits 0. Exiting 3 would be recorded as a broken door (measured
+      # 2026-10-31: status=broken for a healthy, running extraction).
+      exit 0

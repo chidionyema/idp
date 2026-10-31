@@ -1,0 +1,70 @@
+name: forensic-restore-missing
+description: >-
+  Restore the files the forensic reconstruction recovered and that are missing from the disk --
+  and only those. A path that already exists is never touched, nothing is overwritten, nothing is
+  deleted: the door writes a file only where there is no file. Opt-in by nature: verification is
+  read-only and this is the one door that writes, so without apply=1 it only reports the plan.
+  Three classes are held back from an in-place restore unless they are asked for by name, because
+  writing them back would publish stale content into a live surface: the estate's own
+  ~/.estate/{intents,bin,libexec}, the volatile temp filesystem, and the worktree directories the
+  estate's tooling manages. Every restorable file is copied into a quarantine tree, where it is
+  recovered and inspectable without being live. Publishing files back to their original paths is
+  NOT the default: of the files that would be published, most sit inside live repositories, and a
+  transcript does not record whether a file was deleted on purpose afterwards. Pass in_place=1
+  to publish, and only the paths that do not exist yet are ever written.
+  Every flag is an integer: 1 = yes, 0 = no. The executor coerces an int arg with
+  int(float(value)), so a word like "true" arrives as 0 -- these flags are read as numbers.
+  Exit 0 = the plan ran (or the restore ran). Exit 4 = there is no manifest to restore from.
+class: mutate
+args:
+  forensic: {type: string, default: "", description: "forensic directory; default the last extraction"}
+  apply: {type: int, default: 0, description: "1 = recover the missing recoverable files into the quarantine tree (add in_place=1 to publish them back); 0 = report the plan only"}
+  quarantine: {type: string, default: "", description: "directory the recovered content is copied into; default ~/.estate/state/forensic-quarantine/<run>"}
+  in_place: {type: int, default: 0, description: "1 = also publish recovered files back to their original paths (default 0: recover into the quarantine, publish nothing)"}
+  include_live: {type: int, default: 0, description: "1 = allow restoring into ~/.estate/{intents,bin,libexec}"}
+  include_volatile: {type: int, default: 0, description: "1 = allow restoring into /tmp and /private/tmp"}
+  include_worktrees: {type: int, default: 0, description: "1 = allow restoring into estate/idp worktree directories"}
+  locations: {type: string, default: "", description: "comma-separated location classes eligible for an in-place restore (default: every class not held back)"}
+door_s: 95
+steps:
+  # 2026-10-31: the flags are assembled with `set --` (POSIX, no arrays) so that an empty
+  # argument stays empty: quoting a default into a shell variable and expanding it unquoted
+  # would hand the script a literal two-character '' and it would create a directory named ''.
+  - name: restore
+    cmd: |
+      OUT=$(sed -n 1p "$HOME/.estate/state/forensic-extract.out")
+      if [ -z "$OUT" ]; then OUT={{forensic}}; fi
+      if [ -z "$OUT" ]; then
+        OUT=$(ls -dt "$HOME"/claude-forensics/forensic-*/ 2>/dev/null | sed -n 1p)
+      fi
+      if [ -z "$OUT" ] || [ ! -f "$OUT/manifest.json" ]; then
+        echo "verdict: no forensic manifest to restore from; run forensic-extract first"
+        exit 4
+      fi
+      APPLY=0
+      case "{{apply}}" in true|True|TRUE|1|yes|Yes) APPLY=1 ;; esac
+      # The flags are echoed first, on every path, so a caller can see what the door actually
+      # read: an int arg is coerced by the executor before the shell sees it, and a word like
+      # "true" arrives as 0.
+      echo "flags: apply=$APPLY in_place={{in_place}} include_live={{include_live}} include_volatile={{include_volatile}} include_worktrees={{include_worktrees}}"
+      set -- --forensic "$OUT"
+      if [ -n {{locations}} ]; then set -- "$@" --only-locations {{locations}}; fi
+      Q={{quarantine}}
+      if [ -z "$Q" ]; then
+        Q="$HOME/.estate/state/forensic-quarantine/$(basename "${OUT%/}")-$(date -u +%Y%m%dT%H%M%SZ)"
+      fi
+      if [ "$APPLY" -eq 0 ]; then
+        echo "verdict: dry run -- pass apply=1 to recover the missing files"
+        echo "recovered content would land in: $Q"
+        python3 ~/.estate/libexec/forensic_verify.py "$@" --quarantine "$Q" --plan
+        echo "report: $OUT/verify.md"
+        exit 0
+      fi
+      set -- "$@" --quarantine "$Q"
+      case "{{in_place}}" in true|True|TRUE|1|yes|Yes) set -- "$@" --in-place ;; esac
+      case "{{include_live}}" in true|True|TRUE|1|yes|Yes) set -- "$@" --include-live ;; esac
+      case "{{include_volatile}}" in true|True|TRUE|1|yes|Yes) set -- "$@" --include-volatile ;; esac
+      case "{{include_worktrees}}" in true|True|TRUE|1|yes|Yes) set -- "$@" --include-worktrees ;; esac
+      python3 ~/.estate/libexec/forensic_verify.py "$@" --restore-missing
+      echo "report: $OUT/verify.md"
+      echo "quarantine: $Q"
