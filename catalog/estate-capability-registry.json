@@ -3,10 +3,10 @@
   "generator": "bin/capability-index emit",
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
-    "intent": 113,
-    "layer": 239,
+    "intent": 114,
+    "layer": 246,
     "service": 121,
-    "tool": 469,
+    "tool": 470,
     "workflow": 87
   },
   "records": [
@@ -3732,6 +3732,53 @@
       ]
     },
     {
+      "id": "cap:intent/plan.links",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "What every declared plan is linked to: the instruction (intent) the work goes through, the founder prompt that started it, and the protocol that prompt is bound to. One line per session. Refuses (exit 4) when a link is present and WRONG -- an instruction that resolves to no known intent, a founder prompt id that resolves to no record, a prompt bound to no protocol; with strict, a MISSING link refuses too. class: read args: session: {type: string, default: \"\", description: \"one session id; empty means every session\"} strict: {type: string, default: \"false\", description: \"true also refuses a link that is missing\"} door_s: 30 halt_on_failure: true steps: - name: plan-links cmd: | set -uo pipefail ROOT=\"\" for r in \"$HOME/.estate/runtime/idp\" \"$HOME/Documents/code/idp\"; do if [ -x \"$r/bin/estate-plan-links\" ]; then ROOT=\"$r\"; break; fi done if [ -z \"$ROOT\" ]; then echo \"estate-plan-links: no runtime copy found\" >&2; exit 5; fi ARGS=() if [ -n {{session}} ]; then ARGS+=(--session {{session}}); fi case \"{{strict}}\" in [Tt]rue|1|yes|YES) ARGS+=(--strict);; esac exec \"$ROOT/bin/estate-plan-links\" \"${ARGS[@]}",
+      "contract": {
+        "inputs": [
+          "session",
+          "strict"
+        ],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/plan.links.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
       "id": "cap:intent/policy-status",
       "schema_version": 1,
       "kind": "intent",
@@ -4019,7 +4066,7 @@
       "id": "cap:intent/repo-export",
       "schema_version": 1,
       "kind": "intent",
-      "summary": "Pack a path of this repo into ONE file sized for another model's context window (repomix), so the founder can hand the estate's own code to Gemini, Argon, or any other model directly -- without copying file by file or pasting a stale snapshot. First-class because that handoff is now how the estate gets reviewed from outside itself: a capability reached by one command (`estate_invoke repo-export`), not a laptop-only script someone has to remember exists. Defaults to the whole repo, XML output (repomix's own recommended format for LLM context), and tree-sitter compression on -- signatures and structure kept, implementation bodies stripped -- so more of the repo fits the same token budget. repomix prints its own file count and tokenizer-measured token count on success; that line is the budget check, not a guess made here. Reads the filesystem and writes one output file; touches nothing else the estate owns, so this is a read, not a mutation. repomix itself is pinned (no silent upgrade onto a tool-poisoning release) and fetched through npx the one time per version it is not already cached. class: read args: path: type: string default: \".\" help: \"Directory or file glob to pack, relative to the repo root\" output: type: string default: \"/tmp/repo-export/pack.xml\" help: \"Where to write the packed file\" format: type: string default: \"xml\" help: \"xml | markdown | plain\" compress: type: string default: \"true\" help: \"true|false -- tree-sitter compression: keep signatures, strip bodies, so more repo fits the same token budget\" include: type: string default: \"\" help: \"Comma-separated glob to include (e.g. platform/llm/**,docs/diagnoses/**); empty packs everything not gitignored\" ignore: type: string default: \"\" help: \"Comma-separated glob to additionally exclude, on top of .gitignore\" tools: [npx] door_s: 100 halt_on_failure: true steps: - name: pack cmd: | set -euo pipefail mkdir -p \"$(dirname {{output}})\" REPOMIX_ARGS=(--style {{format}}) if [ \"{{compress}}\" = \"true\" ]; then REPOMIX_ARGS+=(--compress) fi if [ -n \"{{include}}\" ]; then REPOMIX_ARGS+=(--include \"{{include}}\") fi if [ -n \"{{ignore}}\" ]; then REPOMIX_ARGS+=(--ignore \"{{ignore}}\") fi npx -y repomix@1.18.1 {{path}} \"${REPOMIX_ARGS[@]}\" --output {{output}} - name: verdict cmd: | set -euo pipefail if [ ! -s {{output}} ]; then echo \"verdict: pack produced no file at {{output}}\" exit 1 fi bytes=$(wc -c < {{output}} | tr -d ' ') echo \"verdict: packed ${bytes} bytes to {{output}} -- hand this one file to the other model's context window",
+      "summary": "Pack a path of this repo into ONE file sized for another model's context window (repomix), so the founder can hand the estate's own code to Gemini, Argon, or any other model directly -- without copying file by file or pasting a stale snapshot. First-class because that handoff is now how the estate gets reviewed from outside itself: a capability reached by one command (`estate_invoke repo-export`), not a laptop-only script someone has to remember exists. Defaults to the whole repo, XML output (repomix's own recommended format for LLM context), and tree-sitter compression on -- signatures and structure kept, implementation bodies stripped -- so more of the repo fits the same token budget. repomix prints its own file count and tokenizer-measured token count on success; that line is the budget check, not a guess made here. Reads the filesystem and writes one output file; touches nothing else the estate owns, so this is a read, not a mutation. repomix itself is pinned (no silent upgrade onto a tool-poisoning release) and fetched through npx the one time per version it is not already cached. class: read args: path: type: string default: \".\" help: \"Directory or file glob to pack, relative to the repo root\" output: type: string default: \"/tmp/repo-export/pack.xml\" help: \"Where to write the packed file\" format: type: string default: \"xml\" help: \"xml | markdown | plain\" compress: type: string default: \"true\" help: \"true|false -- tree-sitter compression: keep signatures, strip bodies, so more repo fits the same token budget\" include: type: string default: \"\" help: \"Comma-separated glob to include (e.g. platform/llm/**,docs/diagnoses/**); empty packs everything not gitignored\" ignore: type: string default: \"\" help: \"Comma-separated glob to additionally exclude, on top of .gitignore\" tools: [npx] door_s: 100 halt_on_failure: true steps: - name: pack cmd: | set -euo pipefail mkdir -p \"$(dirname {{output}})\" REPOMIX_ARGS=(--style {{format}}) if [ \"{{compress}}\" = \"true\" ]; then REPOMIX_ARGS+=(--compress) fi if [ -n {{include}} ]; then REPOMIX_ARGS+=(--include {{include}}) fi if [ -n {{ignore}} ]; then REPOMIX_ARGS+=(--ignore {{ignore}}) fi npx -y repomix@1.18.1 {{path}} \"${REPOMIX_ARGS[@]}\" --output {{output}} - name: verdict cmd: | set -euo pipefail if [ ! -s {{output}} ]; then echo \"verdict: pack produced no file at {{output}}\" exit 1 fi bytes=$(wc -c < {{output}} | tr -d ' ') echo \"verdict: packed ${bytes} bytes to {{output}} -- hand this one file to the other model's context window",
       "contract": {
         "inputs": [],
         "outputs": [
@@ -6459,6 +6506,10 @@
           {
             "id": "cap:layer/platform-estate-governance-registry",
             "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-protocolkit-protocolkit-registry",
+            "edge": "imports"
           }
         ]
       },
@@ -6634,6 +6685,57 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/governance/ledger.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-governance-plan_links",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "The links the founder asks for, derived from the estate's own ledgers.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-governance-founder_intake",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/governance/plan_links.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -6985,6 +7087,10 @@
           },
           {
             "id": "cap:layer/platform-estate-memory-focus",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-protocolkit-protocolkit-registry",
             "edge": "imports"
           }
         ]
@@ -9443,6 +9549,326 @@
       ]
     },
     {
+      "id": "cap:layer/platform-estate-protocolkit-protocolkit-gates",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Stage validators. Each returns a list of violation strings (empty = pass).",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-protocolkit-protocolkit-model",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/protocolkit/protocolkit/gates.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-protocolkit-protocolkit-genesis",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Founder-prompt rule: every founder prompt must bind to exactly one protocol.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-governance-registry",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-protocolkit-protocolkit-model",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-protocolkit-protocolkit-registry",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/protocolkit/protocolkit/genesis.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-protocolkit-protocolkit-model",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Typed artifacts exchanged between pipeline stages.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/protocolkit/protocolkit/model.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-protocolkit-protocolkit-registry",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "The protocol typology. Each protocol is an ordered, closed list of stages.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-protocolkit-protocolkit-gates",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-protocolkit-protocolkit-model",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/protocolkit/protocolkit/registry.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-protocolkit-protocolkit-runtime",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "The enforcement runtime.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-governance-registry",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-protocolkit-protocolkit-gates",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-protocolkit-protocolkit-model",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-protocolkit-protocolkit-registry",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/protocolkit/protocolkit/runtime.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:layer/platform-estate-protocolkit-test_protocolkit",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "ruff: noqa",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/protocolkit/test_protocolkit.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
       "id": "cap:layer/platform-eval-comparison_policy",
       "schema_version": 1,
       "kind": "layer",
@@ -11142,6 +11568,10 @@
         "cost_class": "cheap",
         "latency_class": "interactive",
         "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-protocolkit-protocolkit-gates",
+            "edge": "imports"
+          },
           {
             "id": "cap:layer/platform-eval-judge_worker",
             "edge": "imports"
@@ -27020,6 +27450,56 @@
           "edge": "invokes"
         }
       ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/estate-plan-links",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "bin/estate-plan-links -- what every declared plan is linked to.",
+      "contract": {
+        "inputs": [
+          "--help",
+          "--json",
+          "--session",
+          "--strict"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-plan-links",
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",

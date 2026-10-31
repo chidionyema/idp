@@ -36,6 +36,13 @@ from typing import Optional
 MIN_GOAL_CHARS = 8
 MIN_SUBGOAL_CHARS = 4
 
+# The plan's two links to the estate: the INSTRUCTION (the intent the work goes through) and the
+# PROMPT (the founder prompt that started it). The shape is checked here, in both copies of the
+# contract, so the two cannot drift; whether the names RESOLVE is checked by the governance
+# layer (platform/estate/governance/plan_links.py), which is where the ledgers live.
+INSTRUCTION_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{1,63}$")
+PROMPT_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{3,120}$")
+
 PLAN_TOOLS = (
     "declare_plan",
     "revise_plan",
@@ -144,7 +151,23 @@ def validate_plan(args) -> dict:
             )
         seen.add(sid)
         subgoals.append({"id": sid, "text": text})
-    return {"ok": True, "goal": goal, "subgoals": subgoals}
+    instruction = _s(a.get("instruction"))
+    prompt = _s(a.get("prompt"))
+    if "instruction" in a and not instruction:
+        return _refuse("instruction must name the intent this plan serves")
+    if "prompt" in a and not prompt:
+        return _refuse("prompt must name the founder prompt this plan answers")
+    if instruction and not INSTRUCTION_RE.match(instruction):
+        return _refuse(f'instruction "{instruction}" is not an intent name')
+    if prompt and not PROMPT_ID_RE.match(prompt):
+        return _refuse(f'prompt "{prompt}" is not a founder prompt id')
+    return {
+        "ok": True,
+        "goal": goal,
+        "subgoals": subgoals,
+        "instruction": instruction,
+        "prompt": prompt,
+    }
 
 
 def apply(plan: dict | None, tool: str, args) -> dict:
@@ -168,6 +191,9 @@ def apply(plan: dict | None, tool: str, args) -> dict:
             "bdd": keep(old.get("bdd")),
             "edgecases": keep(old.get("edgecases")),
             "effects": keep(old.get("effects")),
+            # A revision keeps the links it does not restate: the work is still the same work.
+            "instruction": v["instruction"] or old.get("instruction", ""),
+            "prompt": v["prompt"] or old.get("prompt", ""),
         }
         first = next(
             (s for s in nxt["subgoals"] if s["id"] not in nxt["done"]),
@@ -179,6 +205,13 @@ def apply(plan: dict | None, tool: str, args) -> dict:
         )
         if first["id"] not in nxt["bdd"]:
             msg += f"\nNext: add_bdd for {first['id']} before any work on it."
+        links = []
+        if nxt["instruction"]:
+            links.append(f"instruction {nxt['instruction']}")
+        if nxt["prompt"]:
+            links.append(f"founder prompt {nxt['prompt']}")
+        if links:
+            msg += "\nLinked to " + " and ".join(links) + "."
         return {"ok": True, "plan": nxt, "message": msg}
     if name not in PLAN_TOOLS:
         return _refuse(f"{tool} is not a plan tool")

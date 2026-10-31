@@ -282,12 +282,33 @@ def publish(record: Dict[str, Any]) -> Dict[str, Any]:
     return {"ok": True, "result": result}
 
 
+def bind_protocol(text: str, analysis: Dict[str, Any] | None = None) -> str:
+    """The ONE protocol a founder prompt binds to (the protocol kit's genesis rule).
+
+    Rule-based and deterministic, like the rest of this module: a prompt that wants something
+    done, proved or forbidden is an execution; a prompt that asks a question is a grounded
+    inquiry; anything else is a synthesis. Never None -- an unbound prompt is the one state the
+    kit forbids, and the plan links read this binding to say which protocol a plan answered to.
+    """
+    a = analysis if analysis is not None else analyse(text)
+    if a.get("objectives") or a.get("proof_demands") or a.get("prohibitions"):
+        return "execution"
+    if "?" in (text or ""):
+        return "grounded_inquiry"
+    return "deep_synthesis"
+
+
 def intake(
-    text: str, session: str = "", publish_to_memory: bool = True
+    text: str,
+    session: str = "",
+    publish_to_memory: bool = True,
+    source: str = "chat",
 ) -> Dict[str, Any]:
     """Analyse, detect the repeat, store. Returns the full record."""
     record = analyse(text)
     record["session"] = session
+    record["source"] = source
+    record["protocol_binding"] = bind_protocol(text, record)
     record["ts"] = ledger.now()
     repeat = find_repeat(text)
     record["repeat_of"] = repeat["earlier"].get("id") if repeat else None

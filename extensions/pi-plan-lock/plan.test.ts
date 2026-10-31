@@ -100,6 +100,25 @@ test("revise_plan keeps what was recorded for the sub-goals it keeps and drops t
   assert.equal(revised!.bdd.b, undefined);
 });
 
+test("a plan carries its instruction and its founder prompt, and a revision keeps them", () => {
+  const r = apply(undefined, "declare_plan", { ...good, instruction: "lane-submit", prompt: "prompt-20261030T101500Z-abc123" });
+  assert.equal(r.ok, true);
+  assert.equal((r as any).plan.instruction, "lane-submit");
+  assert.equal((r as any).plan.prompt, "prompt-20261030T101500Z-abc123");
+  assert.match((r as any).message, /lane-submit/);
+  const revised = apply((r as any).plan, "revise_plan", good);
+  assert.equal((revised as any).plan.instruction, "lane-submit");
+  assert.equal((revised as any).plan.prompt, "prompt-20261030T101500Z-abc123");
+});
+
+test("a link that is present and wrong is refused", () => {
+  for (const bad of [{ instruction: "" }, { instruction: "not an intent" }, { prompt: "" }, { prompt: "no such id" }]) {
+    const r = apply(undefined, "declare_plan", { ...good, ...bad });
+    assert.equal(r.ok, false, JSON.stringify(bad));
+    assert.ok((r as any).reason, JSON.stringify(bad));
+  }
+});
+
 test("apply never mutates the plan it is given", () => {
   const plan = run(["declare_plan", good]);
   const before = JSON.stringify(plan);
