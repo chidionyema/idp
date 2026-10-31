@@ -31,7 +31,7 @@
   "docs/reports"
  ],
  "documents": {
-  "docs/decisions/0036-one-memory-plane-and-it-is-cortex.md": "KEEP-AMEND",
+  "docs/decisions/0050-one-memory-plane-and-it-is-cortex.md": "KEEP-AMEND",
   "docs/decisions/2026-09-07-the-checkpoint-lives-on-the-issue-not-in-a-vendor-file.md": "KEEP",
   "docs/specs/2026-10-02-memory-plane-cortex-adoption.md": "KEEP-AMEND",
   "docs/specs/2026-10-19-active-memory-and-focus-vs-muse.md": "KEEP",
@@ -348,7 +348,7 @@
   },
   {
    "id": "cortex",
-   "name": "Cortex retrieval engine (ADR 0036)",
+   "name": "Cortex retrieval engine (ADR 0050)",
    "layer": "engine",
    "verdict": "HOLD",
    "why": "Manifests exist; no Dockerfile and no vendored source, so it cannot be built. Frozen until the cross-surface canary is green and a replay benchmark shows it helps.",
@@ -425,7 +425,7 @@
    "name": "otto/memory fast_recall, otto_facts, otto-memory-store Job",
    "layer": "legacy",
    "verdict": "RETIRE",
-   "why": "ADR 0036: deleted in favour of the door. Write-only on 2026-10-02.",
+   "why": "ADR 0050: deleted in favour of the door. Write-only on 2026-10-02.",
    "probes": [],
    "blind_reason": "lives in the otto repo/cluster; this checkout cannot see it",
    "live": [],
@@ -436,7 +436,7 @@
    "name": "Hindsight API",
    "layer": "legacy",
    "verdict": "RETIRE",
-   "why": "Zero requests in 24h on 2026-10-02; ADR 0036 retires it.",
+   "why": "Zero requests in 24h on 2026-10-02; ADR 0050 retires it.",
    "probes": [],
    "blind_reason": "a cluster namespace; cannot be checked from the repo",
    "live": [],
@@ -458,7 +458,7 @@
    "name": "claude-mem (2026-09-05 spec)",
    "layer": "legacy",
    "verdict": "DECIDE",
-   "why": "Spec says hosted-only; ADR 0036 supersedes it in part. No evidence it was ever installed.",
+   "why": "Spec says hosted-only; ADR 0050 supersedes it in part. No evidence it was ever installed.",
    "probes": [],
    "live": [],
    "owns": []

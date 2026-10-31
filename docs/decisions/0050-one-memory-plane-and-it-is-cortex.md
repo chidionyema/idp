@@ -1,4 +1,4 @@
-# 0036 — One memory plane: the unified memory server, with Cortex as its retrieval engine
+# 0050 — One memory plane: the unified memory server, with Cortex as its retrieval engine
 
 Date: 2026-10-02 (revised the same day, after measurement)
 Status: accepted (founder: *"we are adopting crate and using every feature available that is

@@ -89,7 +89,7 @@ if [ "$CHECK" = 1 ]; then
 
   # 5. The decision is recorded, so the next agent finds it instead of re-deciding -- and
   #    re-measuring what was already measured.
-  [ -f "$IDP/docs/decisions/0036-one-memory-plane-and-it-is-cortex.md" ] \
+  [ -f "$IDP/docs/decisions/0050-one-memory-plane-and-it-is-cortex.md" ] \
     || bad "decision 0036 is missing"
 
   # 6. A memory write earns its rung (2026-10-23, docs/research/2026-10-23-claims-carry-their-

@@ -114,7 +114,7 @@ router and home 1 is it; the manifest does the opposite.
 
 ### Step 5 — `remember` is the door's only memory (wave 2)
 
-ADR 0036 deleted `otto_facts`, hindsight and the `otto-memory-store` Job on 2026-10-02. The
+ADR 0050 deleted `otto_facts`, hindsight and the `otto-memory-store` Job on 2026-10-02. The
 Job is still in the tree (`platform/otto-gateway/memory-store-job.yaml`), the deployment still
 points at hindsight (`platform/otto-gateway/deployment.yaml:269`), and a NetworkPolicy still
 opens the road to the hindsight namespace

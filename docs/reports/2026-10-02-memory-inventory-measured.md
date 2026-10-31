@@ -6,7 +6,7 @@ Nothing here is copied from a document. Where a number appears, the command that
 appears with it.
 
 Companion documents:
-- Decision: `docs/decisions/0036-one-memory-plane-and-it-is-cortex.md`
+- Decision: `docs/decisions/0050-one-memory-plane-and-it-is-cortex.md`
 - Design: `docs/specs/2026-10-02-memory-plane-cortex-adoption.md`
 - Gate: `bin/memory-gate`
 - The `otto/memory` failure itself, measured in full:

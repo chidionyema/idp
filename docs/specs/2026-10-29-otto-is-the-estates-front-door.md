@@ -120,7 +120,7 @@ Each of Otto's components exists because it answered one wish above. This is the
 | **Three homes + loopback litellm sidecar + 7 vendor keys** | `three-homes.yaml`, `three-homes-secrets.yaml`, `deployment.yaml:398-459` | A1–A6 | never be silent, without a human | **the estate router demoted to a rung; a turn usually escapes the estate's budget and ledger** (§3.3) |
 | **Otto's own lane values** | `router-lanes.yaml` | A5, D2 | lane names, one ConfigMap | drift fixed once, and the fix is a model |
 | **`OTTO_TOOLSETS` incl. `terminal`, `code_execution`** | `deployment.yaml:338-356` | C2 | hands, unattended | **the shell runs where the secrets are** (C3) |
-| **Own memory: `otto_facts`, hindsight, `otto-memory-store` Job, own embeddings** | `deployment.yaml:269-311`, `platform/otto-gateway/memory-store-job.yaml`, `hermes-v2/otto/memory/` | C1, C4 | "every iota" of capability | **ADR 0036 already decided this is deleted — and it still runs** (§3.4) |
+| **Own memory: `otto_facts`, hindsight, `otto-memory-store` Job, own embeddings** | `deployment.yaml:269-311`, `platform/otto-gateway/memory-store-job.yaml`, `hermes-v2/otto/memory/` | C1, C4 | "every iota" of capability | **ADR 0050 already decided this is deleted — and it still runs** (§3.4) |
 | Own verification plane: answer-probe, registration reconciler, parity tick | `answer-probe.yaml`, `registration-reconciler.yaml`, `.github/workflows/otto-parity.yml` | D1, D2 | the enterprise bar | **a second verification layer; the tick measures nothing today** |
 
 ---
@@ -192,7 +192,7 @@ asked for precisely that). Two *routers* is not, and is not what the founder ask
 
 ### 3.4 The decision that was written and never executed
 
-`docs/decisions/0036-one-memory-plane-and-it-is-cortex.md` (2026-10-02, founder-accepted)
+`docs/decisions/0050-one-memory-plane-and-it-is-cortex.md` (2026-10-02, founder-accepted)
 already ruled:
 
 > "`otto/memory/fast_recall.py` and `otto_facts` — **deleted**; its writes move to `remember`.
@@ -206,7 +206,7 @@ Measured on the tree today:
 - `deployment.yaml:291` — Otto's embedding path calls the **cluster** router, so it dies with the cluster.
 
 Twenty-seven days after the decision, the manifests did not move. That is the whole lesson of
-this section: **a decision that is only a document does not move a manifest.** ADR 0036 is
+this section: **a decision that is only a document does not move a manifest.** ADR 0050 is
 correct and needs enforcement, not restatement (§8).
 
 ### 3.5 The contradiction with the founder's own security standard
@@ -226,7 +226,7 @@ hands.
 | # | The architecture today | The founder's later ruling | Where |
 |---|---|---|---|
 | 1 | Otto's default route is a pod-local lifeboat; the estate router is a rung and usually not used | cloud router is the default; laptop is the fallback (2026-10-26) | `deployment.yaml:327`, `three-homes.yaml:66-82` vs AGENTS.md §7a |
-| 2 | Otto keeps its own memory planes | one memory plane; `otto_facts`/hindsight/store-Job deleted (2026-10-02) | `deployment.yaml:269,291`, `memory-store-job.yaml` vs ADR 0036 |
+| 2 | Otto keeps its own memory planes | one memory plane; `otto_facts`/hindsight/store-Job deleted (2026-10-02) | `deployment.yaml:269,291`, `memory-store-job.yaml` vs ADR 0050 |
 | 3 | `terminal` runs beside the bot token, DB password and GitHub token | a model-driven shell never runs in that process | `deployment.yaml:356` vs `otto-door-hands-and-senses.md:200-203` |
 | 4 | a private verification plane (probe, reconciler, parity tick) | one verification layer; the estate has a doctor family | `answer-probe.yaml`, `otto-parity.yml` |
 | 5 | the answer path assumes the cluster's router and cluster services | no door assumes a laptop, and the cloud is the default route | `deployment.yaml:291`, ADR 0033's honesty rule; and the estate's own Otto SLA proves the founder's **laptop** and **hindsight** (`docs/explanation/otto-on-the-mac.md`: the playbook is `gateway-ready`, `no-restart-loop`, `key-usable`, `key-direct`, `tailnet-up`, `mac-run-hostname`, `hindsight-answers`, `cron-lanes-installed`) |
@@ -268,7 +268,7 @@ The seam is the mechanism, and it works: a new surface is one binding and one re
 the gateway does not change (`otto-answering-floor.md:23`). What did not work was trying to
 future-proof the *layers under the seam* — each layer got its own copy "so it could be made
 future-proof later", and a copy is not a hedge, it is a migration waiting to happen. Measured:
-ADR 0036 (2026-10-02) decided Otto's memory planes were deleted; twenty-seven days later the
+ADR 0050 (2026-10-02) decided Otto's memory planes were deleted; twenty-seven days later the
 manifests still point at hindsight. A surface costs one file. A layer costs a migration, and the
 migration is what did not happen.
 So the wish survives, with one amendment: **future-proofing belongs at the seam and nowhere
@@ -316,7 +316,7 @@ without a boundary is a liability with a nice name.
 | Human-in-the-loop (escalation, approval, structured decisions) | **Otto** (the estate's front door for a human) | the claim/approval records the estate already keeps | a blocked agent reaches a human by voice or Telegram, with the blocker named (#7388, #7384) |
 | Identity | **the estate** | OIDC at the edge, channel-binding registry as the auth class | trust the gateway's header and nothing else |
 | Model routing | **the estate** | the cloud router (`https://llm.${ESTATE_ZONE}`), with Otto's lifeboat as the last rung | name lanes, never vendors; never bypass the ledger on the default path |
-| Memory | **the estate** | `remember`/`recall` on the one MCP door (ADR 0036) | keep the thread; do not keep a second fact store |
+| Memory | **the estate** | `remember`/`recall` on the one MCP door (ADR 0050) | keep the thread; do not keep a second fact store |
 | Execution boundary | **the estate** | intents + `estate-execute` + the claim gate | estate-affecting actions go through the door; the founder's approval is the gate |
 | Verification | **the estate** | the doctor family (`telegram-agent.doctor` and its siblings) | be probed by it, not by a private plane |
 | Secrets | **the estate** | the vault; workload identity | never hold a vendor key the estate already holds |
@@ -364,7 +364,7 @@ that Otto may reach over the tailnet — never a home, never a dependency, never
 founder must be sitting at.
 
 **Memory.** `remember`/`recall` on the one MCP door; `otto_facts`, `hindsight`, the
-`otto-memory-store` Job and Otto's own embedding path are deleted (ADR 0036 — decided, not
+`otto-memory-store` Job and Otto's own embedding path are deleted (ADR 0050 — decided, not
 executed). The thread stays in Otto: a thread is a *surface* concept, a fact is not.
 
 **Execution.** Two kinds of action, two doors, and no third:
@@ -409,7 +409,7 @@ answers a structured decision, the answer is a record, not a message that evapor
 | `otto-router-lanes` ConfigMap | **KEEP, extend** | the model for every shared value (lanes, toolsets, memory URLs) |
 | Lifeboat sidecar | **KEEP as last rung** | A2 asked for it; it is the availability floor |
 | `LITELLM_BASE_URL=127.0.0.1:4010` as the *default* | **MOVE** | → the cloud router as default, lifeboat last (§5 Routing) |
-| `otto_facts`, `otto/memory/fast_recall.py`, hindsight URL, `otto-memory-store` Job, Otto's embedding path | **DELETE** | ADR 0036 (decided 2026-10-02, never executed) |
+| `otto_facts`, `otto/memory/fast_recall.py`, hindsight URL, `otto-memory-store` Job, Otto's embedding path | **DELETE** | ADR 0050 (decided 2026-10-02, never executed) |
 | `terminal`/`code_execution` in the secret-holding container | **MOVE** | → the secretless `otto-sandbox` Job (`otto-door-hands-and-senses.md:200-203`) |
 | Estate-affecting tools inside Otto | **MOVE** | → the estate's intents (the pod already holds `ESTATE_MCP_KEY`) |
 | The answer probe, reconciler, parity tick as a *verdict* | **MOVE** | → the doctor family owns the verdict; the probe is an input |
@@ -431,11 +431,11 @@ by the lifeboat appears as an accounted event; the lanes Otto names are the lane
 router serves. *Falsifier:* if the cloud router's outage took Otto silent, the lifeboat must be
 re-promoted — and that is measured, not argued.
 
-**Wave 2 — Execute ADR 0036.** Delete the memory planes; write through `remember`.
+**Wave 2 — Execute ADR 0050.** Delete the memory planes; write through `remember`.
 This wave is not new work: the estate already ordered it in idp#6162 ("import Hindsight, then
 retire it"), idp#6163 ("delete the duplicate memory layers"), idp#6229 ("wire unified estate
 memory into Otto numun, fleetview voice and agent-workforce") and idp#6165 (the epic) — all
-still open, while ADR 0036 has sat unimplemented since 2026-10-02. Wave 2 is those tickets,
+still open, while ADR 0050 has sat unimplemented since 2026-10-02. Wave 2 is those tickets,
 finished.
 *Proof:* `rg hindsight|otto_facts|otto-memory-store` finds nothing in the manifests; a fact
 written by Otto is recalled by the estate's `recall`; `bin/memory-gate --check` is green.
@@ -473,7 +473,7 @@ door.
 
 ## 8. Enforcement — so the decision stops being a document
 
-ADR 0036 is correct and twenty-seven days stale. The reason is structural: **a document cannot
+ADR 0050 is correct and twenty-seven days stale. The reason is structural: **a document cannot
 move a manifest.** Five gates, all in the estate's existing shape:
 
 1. **Manifest conformance (new).** A gate that reads `platform/otto-gateway/*.yaml` and fails
@@ -484,7 +484,7 @@ move a manifest.** Five gates, all in the estate's existing shape:
 2. **One shared value, one place (the `router-lanes.yaml` model).** Every value both the door
    and a probe read comes from one ConfigMap. The lane drift happened twice before that file
    existed; the fix is a pattern, not a one-off.
-3. **`bin/memory-gate`** (exists, ADR 0036) — fails when the memory plane is unreachable, when
+3. **`bin/memory-gate`** (exists, ADR 0050) — fails when the memory plane is unreachable, when
    a written probe fact is not recalled, or when an empty store reports healthy.
 4. **`telegram-agent.doctor`** (exists) — the estate's one verdict for every Telegram agent.
 5. **The claim gate** — a change that adds a private layer to Otto must claim those paths
@@ -530,7 +530,7 @@ Each of these is a measurement to take, not an argument to have.
 | The toolsets, including `terminal` and `code_execution` | `deployment.yaml:338-356` |
 | The lifeboat sidecar image and its no-database shape | `deployment.yaml:398-459` |
 | The estate's one router is the cloud router | AGENTS.md §7a; `packages/aei/src/aei/estate.py:36` |
-| One memory plane; `otto_facts`/hindsight/store-Job deleted | `docs/decisions/0036-one-memory-plane-and-it-is-cortex.md` |
+| One memory plane; `otto_facts`/hindsight/store-Job deleted | `docs/decisions/0050-one-memory-plane-and-it-is-cortex.md` |
 | The secretless shell standard | `docs/specs/otto-door-hands-and-senses.md:200-203` |
 | Hands without asking | `docs/decisions/0024-otto-runs-every-tool-and-asks-only-for-the-unundoable.md` |
 | Voice first; one mouth; edge voice as the target | `docs/decisions/0022-*.md`, `0033-*.md`, `0039-*.md` |

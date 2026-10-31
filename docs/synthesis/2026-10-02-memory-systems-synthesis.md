@@ -9,7 +9,7 @@ Companion documents, in reading order:
 1. **This file** — the whole picture, and what to do.
 2. `docs/reports/2026-10-02-memory-inventory-measured.md` — the per-system evidence table.
 3. `docs/reports/2026-10-02-memory-layer-correction-measured.md` — the `otto/memory` failure in full.
-4. `docs/decisions/0036-one-memory-plane-and-it-is-cortex.md` — what was decided, and what the
+4. `docs/decisions/0050-one-memory-plane-and-it-is-cortex.md` — what was decided, and what the
    measurement overturned.
 5. `docs/specs/2026-10-02-memory-plane-cortex-adoption.md` — the design.
 6. `bin/memory-gate` — the thing that stops this being silent again.

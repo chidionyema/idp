@@ -7,7 +7,7 @@ borrows the estate's one router, one memory, one executor, one verifier, one ide
 secret store. A decision that is only a document does not move a manifest, and three decisions
 in this tree had exactly that fate until this gate existed:
 
-  ADR 0036 (2026-10-02) deleted `otto_facts`, hindsight and the `otto-memory-store` Job. The
+  ADR 0050 (2026-10-02) deleted `otto_facts`, hindsight and the `otto-memory-store` Job. The
   Job is still in the tree, the deployment still points at hindsight, and a NetworkPolicy still
   opens the road to the hindsight namespace.
   AGENTS.md 7a makes the estate's cloud router the default route and the laptop the fallback.
@@ -70,7 +70,7 @@ DEFAULT_REL_DIRS = (
 )
 DEFAULT_DIRS = tuple(IDP / rel for rel in DEFAULT_REL_DIRS)
 
-# The planes ADR 0036 retired on 2026-10-02. The estate's one memory plane is cortex, reached
+# The planes ADR 0050 retired on 2026-10-02. The estate's one memory plane is cortex, reached
 # through the estate's own MCP door; a manifest that still names one of these names a second
 # memory plane, and the next cluster bootstrapped from this tree would build it again.
 RETIRED_PLANES = ("hindsight", "otto-memory-store", "otto_facts")
@@ -122,49 +122,49 @@ BASELINE = (
         "R1",
         "platform/otto-gateway/deployment.yaml",
         "OTTO_MEMORY_HINDSIGHT_URL",
-        "wave 2 -- ADR 0036: remember is the door's only memory",
+        "wave 2 -- ADR 0050: remember is the door's only memory",
     ),
     (
         "R1",
         "platform/otto-gateway/memory-store-job.yaml",
         "OTTO_MEMORY_HINDSIGHT_URL",
-        "wave 2 -- ADR 0036: the retired memory store Job is still in the tree",
+        "wave 2 -- ADR 0050: the retired memory store Job is still in the tree",
     ),
     (
         "R1",
         "platform/otto-gateway/memory-store-job.yaml",
         "app.kubernetes.io/name:otto-memory-store",
-        "wave 2 -- ADR 0036: the retired memory store Job is still in the tree",
+        "wave 2 -- ADR 0050: the retired memory store Job is still in the tree",
     ),
     (
         "R1",
         "platform/otto-gateway/memory-store-job.yaml",
         "name:otto-memory-store-8",
-        "wave 2 -- ADR 0036: the retired memory store Job is still in the tree",
+        "wave 2 -- ADR 0050: the retired memory store Job is still in the tree",
     ),
     (
         "R1",
         "platform/otto-gateway/network-policy.yaml",
         "kubernetes.io/metadata.name:hindsight",
-        "wave 2 -- ADR 0036: the road to the retired plane is still open",
+        "wave 2 -- ADR 0050: the road to the retired plane is still open",
     ),
     (
         "R1",
         "platform/otto-golden/deployment.yaml",
         "OTTO_MEMORY_HINDSIGHT_URL",
-        "wave 2 -- ADR 0036: the second Otto names the retired plane too",
+        "wave 2 -- ADR 0050: the second Otto names the retired plane too",
     ),
     (
         "R1",
         "platform/otto-golden/network-policy.yaml",
         "kubernetes.io/metadata.name:hindsight",
-        "wave 2 -- ADR 0036: the road to the retired plane is still open here too",
+        "wave 2 -- ADR 0050: the road to the retired plane is still open here too",
     ),
     (
         "R1",
         "platform/hermes-agent/gateway.yaml",
         "HINDSIGHT_API_URL",
-        "wave 2 -- ADR 0036: the gateway still answers from the retired plane",
+        "wave 2 -- ADR 0050: the gateway still answers from the retired plane",
     ),
     (
         "R2",

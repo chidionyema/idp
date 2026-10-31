@@ -259,7 +259,7 @@ GRANT USAGE ON SEQUENCE memory_versions_version_id_seq TO memory_app;
 GRANT SELECT, INSERT, UPDATE ON rate_limits TO memory_app;
 GRANT EXECUTE ON FUNCTION fn_hit_rate_limit(TEXT, BIGINT, INT) TO memory_app;
 
--- 11. Active Runtime Harness Tables (ADR 0036 — one memory plane, Python port of DefaultActiveAgentHarness)
+-- 11. Active Runtime Harness Tables (ADR 0050 — one memory plane, Python port of DefaultActiveAgentHarness)
 -- Four tables, all with tenant_id and the same RLS as memories.
 -- identity and RLS pattern mirrors sections 2 and 4 exactly.
 
