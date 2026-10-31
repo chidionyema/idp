@@ -305,11 +305,36 @@ def resolve_args(intent, raw_args):
 # ---- Interpolation ------------------------------------------------------
 def interpolate(cmd, args):
     """{{var}} → shell-quoted (safe path), <<var>> → raw (already quoted)."""
+    return interpolate_parts(cmd, args)[0]
+
+
+def interpolate_parts(cmd, args):
+    """Returns (cmd, agent_raw).
+
+    `agent_raw` is the agent-supplied text that reached the shell UNQUOTED: the values
+    that arrived through a raw <<var>> slot. It is the only agent-controlled content the
+    read/write boundary can judge.
+
+    Why the distinction (measured 2026-10-31, estate-wide): the guard used to be applied
+    to the whole command of every step, so it judged the estate's OWN step text as if an
+    agent had typed it. 103 of the 451 installed intent steps matched a banned pattern and
+    the estate's canonical doors refused THEMSELVES at runtime -- pr-list (its own
+    redirect to a temp file), agent-invoke (its own payload write) and lane-submit (its
+    own push log), each with "REFUSED: RAW_WRITE_REDIRECT_BANNED". The boundary exists so
+    an agent cannot route around bin/estate-read / bin/estate-patch with a raw redirect
+    (AGENTS.md section 7); the estate's own doors are not an agent, and their text is
+    estate-authored code that reaches the shell through a claim and a lane. So the guard
+    now judges `agent_raw`: {{var}} is shlex-quoted and cannot be an operator, and <<var>>
+    is judged because it is injected raw."""
+    raw_parts = []
     for name, val in args.items():
         quoted = shlex.quote(str(val))
+        raw = str(val)
+        if ("<<" + name + ">>") in cmd:
+            raw_parts.append(raw)
         cmd = cmd.replace("{{" + name + "}}", quoted)
-        cmd = cmd.replace("<<" + name + ">>", str(val))
-    return cmd
+        cmd = cmd.replace("<<" + name + ">>", raw)
+    return cmd, "\n".join(raw_parts)
 
 # ---- Composition helpers --------------------------------------------------
 def _resolve_from(prev_name, prev_output):
@@ -590,7 +615,7 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
         # ---- PRIMITIVE: `cmd:` field runs shell ---------------------------
         elif "cmd" in step:
             cmd_tmpl = step["cmd"]
-            cmd = interpolate(cmd_tmpl, args)
+            cmd, agent_raw = interpolate_parts(cmd_tmpl, args)
             log(f"[step {idx+1} / {step_name}] {cmd[:80]}{'...' if len(cmd) > 80 else ''}")
 
             t0 = datetime.now(timezone.utc)
@@ -638,7 +663,12 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
                         close_ticket(conn, ticket_id, "halted", f"step {idx+1} ({step_name}) refused")
                         return "halted"
                     continue
-                fs_ok, fs_reason = check_command_allowed(cmd)
+                # The read/write boundary judges the AGENT's content, not the estate's own step
+                # text: `cmd` is the estate's authored command (through a claim and a lane),
+                # and `agent_raw` is the only agent-supplied text that reaches the shell
+                # unquoted. Judging the whole command refused the estate's own doors
+                # (measured: pr-list, agent-invoke and lane-submit all refused themselves).
+                fs_ok, fs_reason = check_command_allowed(agent_raw)
                 if not fs_ok:
                     log(f"  REFUSED: {fs_reason}")
                     rc, stdout = 2, ""

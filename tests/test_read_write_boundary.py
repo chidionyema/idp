@@ -18,6 +18,8 @@ same pattern against a different door). Each test is a reason to distrust the bo
   * the one thing this exists to let through          -> test_windowed_read_then_anchored_patch_succeeds
   * a receipt reused after the file it named changed  -> test_stale_receipt_is_refused_after_the_file_moved
   * the kernel guard a command can still slip past    -> test_fs_guard_blocks_raw_redirects_and_allows_the_doors
+  * the estate's own doors judged as if an agent typed them -> test_an_estate_authored_redirect_in_an_intent_step_is_not_refused
+  * an agent smuggling a redirect through a raw slot  -> test_an_agent_cannot_smuggle_a_redirect_through_a_raw_slot
 """
 
 from __future__ import annotations
@@ -62,6 +64,29 @@ def _env(tmp_path: Path) -> dict:
     env = dict(os.environ)
     env["ESTATE_HOME"] = str(tmp_path / ".estate")
     env["ESTATE_RECEIPT_KEY"] = "test-secret-key"
+    return env
+
+
+def _executor_env(tmp_path: Path) -> dict:
+    """The environment for a real estate-execute run.
+
+    HOME is isolated because the executor's ticket ledger is Path.home() / ".estate" /
+    "estate.db" -- it does not honor ESTATE_HOME -- and writing real ticket state into the
+    real home races every other parallel run. But on a laptop PyYAML lives in the USER
+    site-packages, which is under HOME, so isolating HOME takes `import yaml` with it: the
+    executor then dies before it runs a step. The interpreter's own user site-packages go
+    on PYTHONPATH so the isolation costs the test nothing.
+    """
+    import os
+    import site
+
+    env = _env(tmp_path)
+    env["HOME"] = str(tmp_path)
+    user_site = site.getusersitepackages()
+    if isinstance(user_site, str) and user_site:
+        env["PYTHONPATH"] = os.pathsep.join(
+            [p for p in (env.get("PYTHONPATH", ""), user_site) if p]
+        )
     return env
 
 
@@ -272,6 +297,88 @@ def test_fs_guard_does_not_false_positive_on_quoted_operators(tmp_path):
         assert not allowed, f"expected {cmd!r} to still be blocked"
 
 
+def test_an_estate_authored_redirect_in_an_intent_step_is_not_refused(tmp_path):
+    """The class fix, first half: the estate's own step text is estate-authored code -- it
+    reaches the shell through a claim and a lane -- so the agent-facing heuristic must not
+    judge it. Measured 2026-10-31: 103 of the 451 installed intent steps matched a banned
+    pattern and the estate's canonical doors refused THEMSELVES; pr-list, agent-invoke and
+    lane-submit each died with "REFUSED: RAW_WRITE_REDIRECT_BANNED" on their own redirect.
+
+    This test is the falsifier for that class: a step whose own text writes a file runs.
+    """
+    _sandbox(tmp_path)
+    intents_dir = tmp_path / "platform" / "estate" / "intents"
+    intents_dir.mkdir(parents=True)
+    (intents_dir / "_write.yaml").write_text(
+        "name: _write\n"
+        "description: test fixture\n"
+        "halt_on_failure: true\n"
+        "steps:\n"
+        "  - name: write\n"
+        "    cmd: |\n"
+        "      printf 'written by the estate' > \"$HOME/estate-write-proof.txt\"\n"
+    )
+    env = _executor_env(tmp_path)
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "platform" / "estate" / "bin" / "estate-execute"),
+            "--from",
+            str(tmp_path),
+            "_write",
+        ],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    out = result.stdout + result.stderr
+    assert "REFUSED" not in out, out
+    assert (tmp_path / "estate-write-proof.txt").read_text() == "written by the estate"
+
+
+def test_an_agent_cannot_smuggle_a_redirect_through_a_raw_slot(tmp_path):
+    """The class fix, second half: the guard must still judge the AGENT's own content.
+    A <<var>> slot is injected raw, so an agent's value can reach the shell as an
+    operator; that value is exactly what the boundary refuses."""
+    _sandbox(tmp_path)
+    intents_dir = tmp_path / "platform" / "estate" / "intents"
+    intents_dir.mkdir(parents=True)
+    (intents_dir / "_raw.yaml").write_text(
+        "name: _raw\n"
+        "description: test fixture\n"
+        "halt_on_failure: true\n"
+        "args:\n"
+        "  payload:\n"
+        "    help: a raw payload\n"
+        "    default: nothing\n"
+        "steps:\n"
+        "  - name: write\n"
+        "    cmd: |\n"
+        "      printf '%s\\n' <<payload>>\n"
+    )
+    env = _executor_env(tmp_path)
+    smuggled = tmp_path / "guard-pwned"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "platform" / "estate" / "bin" / "estate-execute"),
+            "--from",
+            str(tmp_path),
+            "_raw",
+            f"payload=x > {smuggled}",
+        ],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    out = result.stdout + result.stderr
+    assert "REFUSED" in out, out
+    assert "RAW_WRITE_REDIRECT_BANNED" in out, out
+    assert not smuggled.exists()
+
+
 def test_a_real_patch_round_trips_through_the_live_executor(tmp_path):
     """End-to-end through the actual dispatch path (platform/estate/bin/estate-execute),
     not just the two CLI tools in isolation: a read, then a patch whose replacement text
@@ -299,13 +406,7 @@ def test_a_real_patch_round_trips_through_the_live_executor(tmp_path):
         (intents_dir / "_proof.yaml").read_text().replace("{receipt}", receipt)
     )
     estate_execute = ROOT / "platform" / "estate" / "bin" / "estate-execute"
-    env = _env(tmp_path)
-    # estate-execute's own ticket ledger is always Path.home() / ".estate" / "estate.db" --
-    # it does not honor ESTATE_HOME (that env var belongs to bin/estate-read and
-    # bin/estate-patch, not the executor). Without isolating HOME too, this test would write
-    # real ticket state into the actual home directory and race with every other parallel
-    # test/run that touches it -- the likely cause of a flake seen once while shipping this fix.
-    env["HOME"] = str(tmp_path)
+    env = _executor_env(tmp_path)
     result = subprocess.run(
         [sys.executable, str(estate_execute), "--from", str(tmp_path), "_proof"],
         cwd=tmp_path,
