@@ -1,0 +1,77 @@
+name: estate-issueops
+# A GitHub issue is the claim of record (AGENTS.md s5). The founder opens or labels an issue from the GitHub mobile app;
+# this hands it to the estate on the Mac (the self-hosted runner) and posts the governance state back to the issue.
+# SECURITY: issue text is DATA. It reaches the runner only through a file, never interpolated into a shell line, and only
+# the founder's own account can start a run. No pull request is raised and main is not pushed (AGENTS.md s2): the agent
+# lands work through lane-submit like any other.
+# The work runs through the estate's own execution door (estate-execute agent-invoke): the session plane first, the local
+# claude lane when the session door is down, and the verdict names the lane it used.
+on:
+  issues:
+    types: [labeled]
+permissions:
+  issues: write
+  contents: read
+concurrency:
+  group: estate-issueops-${{ github.event.issue.number }}
+  cancel-in-progress: false
+jobs:
+  run:
+    # Two locks: the label must be `estate-run` AND the person who applied it must be the founder.
+    if: github.event.label.name == 'estate-run' && github.actor == vars.ESTATE_FOUNDER_LOGIN
+    runs-on: [self-hosted, estate]
+    timeout-minutes: 60
+    steps:
+      - name: Refuse unless the issue itself was authored by the founder
+        env:
+          AUTHOR: ${{ github.event.issue.user.login }}
+          FOUNDER: ${{ vars.ESTATE_FOUNDER_LOGIN }}
+        run: |
+          [ -n "$FOUNDER" ] && [ "$AUTHOR" = "$FOUNDER" ] || { echo "issue author is not the founder: refusing"; exit 1; }
+      - uses: actions/checkout@v4
+      - name: Write the issue as data
+        env:
+          TITLE: ${{ github.event.issue.title }}
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/issue"
+          printf '%s\n\n%s\n' "$TITLE" "$BODY" > "$RUNNER_TEMP/issue/task.txt"
+      - name: Run the task on the estate (the executor door)
+        id: start
+        env:
+          ISSUE: ${{ github.event.issue.number }}
+          ESTATE_BUDGET: "on"
+          ESTATE_GOAL_ID: issue-${{ github.event.issue.number }}
+          SESSION_BUDGET: ${{ vars.ESTATE_SESSION_BUDGET || '20' }}
+          SESSION_RUNNER: ${{ vars.ESTATE_RUNNER_NAME || 'claude' }}
+        run: |
+          set +e
+          "$HOME/.estate/bin/estate-execute" agent-invoke \
+            task="$(cat "$RUNNER_TEMP/issue/task.txt")" \
+            repo="$GITHUB_WORKSPACE" \
+            budget="$SESSION_BUDGET" \
+            runner="$SESSION_RUNNER" \
+            > "$RUNNER_TEMP/issue/agent.out" 2> "$RUNNER_TEMP/issue/agent.err"
+          echo "rc=$?" >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/issue/agent.out"
+          tail -c 2000 "$RUNNER_TEMP/issue/agent.err" || true
+      - name: Report governance state on the issue (private; no public mirror)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          RC: ${{ steps.start.outputs.rc }}
+          ESTATE_GOAL_ID: issue-${{ github.event.issue.number }}
+        run: |
+          {
+            echo "estate-issueops: agent-invoke exit ${RC:-unknown}"
+            echo '```yaml'
+            python3 "$HOME/.estate/gates/protocol_gate.py" governance --goal "$ESTATE_GOAL_ID" 2>&1 || true
+            python3 "$HOME/.estate/gates/protocol_gate.py" status 2>&1 | tail -5 || true
+            echo '```'
+            echo '```text'
+            tail -c 3000 "$RUNNER_TEMP/issue/agent.out" 2>/dev/null || true
+            tail -c 3000 "$RUNNER_TEMP/issue/agent.err" 2>/dev/null | sed 's/^/    /' || true
+            echo '```'
+          } > "$RUNNER_TEMP/issue/comment.md"
+          gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/issue/comment.md"
