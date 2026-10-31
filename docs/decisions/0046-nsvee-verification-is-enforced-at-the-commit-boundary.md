@@ -14,8 +14,10 @@
   delivered: `nsvee.verify(artifact, tests) -> VerificationReport` exists, and the intent
   `nsvee.verify` makes it reachable by every estate runtime. The three enforcement surfaces
   below -- pre-commit, CI verification, merge gate -- are still unwired, so the estate does not
-  yet *require* a receipt; it can now *produce* one on demand. The remaining gap is named by
-  the checker, not by prose.
+  yet *require* a receipt; it can now *produce* one on demand. The door was then called by a
+  runtime, refused a verification it should have accepted, and the defect was fixed and landed
+  (`8b81c92c8`, #7521); the door is proved operational below. The remaining gap is named by the
+  checker, not by prose.
 
 ## Context
 
@@ -368,12 +370,76 @@ to `origin/main`). The first call through the executor -- the one a runtime make
 Root cause: the tree was resolved and the artifact was not, so on macOS -- where `/tmp` is a
 symlink to `/private/tmp` -- an artifact under `/tmp` never matched the tree it was in. The
 same rule was missing on the receipt's own path, which meant a receipt written into the tree it
-describes was possible through a symlink. Fixed in `lane/nsvee-verify-path-fix` (property 6
-above), with two regression tests that fail against the pre-fix door.
+describes was possible through a symlink. Fixed by `8b81c92c8` (#7521), which is property 6
+above, with two regression tests that fail against the pre-fix door.
 
 The lesson is recorded here because it is the law this door lives by: **a gate is proved by the
 call the estate actually makes, not by the call the author imagined.** The unit tests passed
 before the door was ever called by a runtime; the first runtime call refused.
+
+## The door, operationally (measured 2026-10-30)
+
+The fix landed as `8b81c92c8` (#7521); `bin/estate-runtime-sync` installed it, and the installed
+copies are byte-identical to `origin/main`:
+
+```
+e96bd40ac637771bb05d8e8ddab09b1db1b39a5a4a032b42e5bfe3bed74e88e3  ~/.estate/libexec/nsvee-verify.py
+c9a880bf6425f3f32155e60255dc8120985f30066178f6164ea68ae153dbd27b  ~/.estate/intents/nsvee.verify.yaml
+```
+
+The door was then called the way any runtime calls it -- through the executor, on a real git
+repository with a real commit.
+
+**A passing artifact** (`/tmp/nsvee-door-proof`, commit `109eaa3e6f0fa9cc0909d4b79172a36623fddf8e`):
+
+```
+estate_invoke nsvee.verify artifact=/tmp/nsvee-door-proof/calc.py \
+  repo=/tmp/nsvee-door-proof tests=/tmp/nsvee-door-proof/test_calc.py
+nsvee-verify: status=VERIFIED verdicts=PASS,PASS commit=109eaa3e6f0fa9cc0909d4b79172a36623fddf8e \
+  digest=d3d124dacbd0 receipt=~/.estate/receipts/nsvee/109eaa3e6f0fa9cc0909d4b79172a36623fddf8e.json
+```
+
+exit 0. The receipt binds the tree's own HEAD commit, names the two paths it covers, and lives
+outside the tree. Bound back to that tree by the checker:
+
+```
+python3 platform/estate/nsvee_enforcement.py --verify-receipt \
+  ~/.estate/receipts/nsvee/109eaa3e6f0fa9cc0909d4b79172a36623fddf8e.json \
+  --tree /private/tmp/nsvee-door-proof
+nsvee-enforcement: receipt ok commit=109eaa3e6f0fa9cc0909d4b79172a36623fddf8e digest=d3d124dacbd0
+```
+
+exit 0. One byte appended to the artifact and the same receipt is refused -- the binding is
+real, not a decoration:
+
+```
+nsvee-enforcement: receipt refused: the receipt does not describe this tree: receipt says
+d3d124dacbd05a2a4f3043f8c842669107ce9f757dfed82e870c16e5f766d39a, this tree is
+50e1d0813ed441dd9c629bfd03386aa444890597532feb39415725bbc8b2aae2
+```
+
+exit 1.
+
+**A failing artifact** (`/tmp/nsvee-door-proof-fail`, commit
+`2f5a8dbd61da14e60b07b923a74d9f9e94db5757`, `add()` deliberately broken):
+
+```
+nsvee-verify: status=EXHAUSTED verdicts=FAIL commit=2f5a8dbd61da14e60b07b923a74d9f9e94db5757 \
+  digest=6c879bf799c7 receipt=~/.estate/receipts/nsvee/2f5a8dbd61da14e60b07b923a74d9f9e94db5757.json
+  exit 1  (10239ms)
+  stderr: nsvee-verify: REFUSED /private/tmp/nsvee-door-proof-fail/calc.py: AssertionError
+```
+
+exit 1, and the evidence is left behind: the receipt exists, and the checker refuses it
+because a receipt binds only a `VERIFIED` artifact --
+
+```
+nsvee-enforcement: receipt refused: status EXHAUSTED is not a pass: a receipt binds only a
+VERIFIED artifact
+```
+
+exit 1. The door fails closed in both directions: it does not claim a failing artifact is
+verified, and it does not throw away the evidence of why.
 
 ## References
 
