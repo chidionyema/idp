@@ -29389,7 +29389,6 @@
       },
       "consumers": [
         "cap:tool/claim-open",
-        "cap:tool/estate-plan",
         "cap:tool/estate-surface-map"
       ],
       "cost": {
@@ -29672,9 +29671,11 @@
       "id": "cap:tool/estate-plan",
       "schema_version": 1,
       "kind": "tool",
-      "summary": "Make a plan-tool call through the shell (idp#6675).",
+      "summary": "Declare and maintain a session's plan through the shell (idp#6675).",
       "contract": {
-        "inputs": [],
+        "inputs": [
+          "--session"
+        ],
         "outputs": [
           "stdout",
           "exit code"
@@ -29707,12 +29708,7 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/estate-plan",
-      "depends_on": [
-        {
-          "id": "cap:tool/estate-memory-enforce",
-          "edge": "invokes"
-        }
-      ],
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",
@@ -49037,8 +49033,11 @@
           "--expect-landed",
           "--is-ancestor",
           "--json",
+          "--name-only",
           "--no-tags",
-          "--repo"
+          "--quiet",
+          "--repo",
+          "--verify"
         ],
         "outputs": [
           "stdout",
