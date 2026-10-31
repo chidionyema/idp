@@ -21,8 +21,9 @@
 # is where that difference is visible rather than implied.
 #
 # Subcommands -- each one stands alone, so each one can be tested alone:
-#   select-source            print "<name>\t<created>\t<bytes>" for the newest surviving dump
-#   fetch-source FILE        download the newest surviving dump, and write its .source file
+#   select-source            print "<name>\t<created>\t<bytes>" for the best surviving dump
+#   fetch-source FILE        download the best surviving dump that really carries the estate
+#                            database, and write its .source file
 #   start-container NAME [CIDFILE]
 #                            start PostgreSQL in the copy image and wait until it answers
 #   restore FILE             restore FILE into the PostgreSQL named by PG* in the environment
@@ -40,6 +41,8 @@
 #   OCI_OS_NAMESPACE     tenancy namespace                           (default: oci os ns get)
 #   RECEIPT_PREFIX       receipt and copy prefix                     (default estate-db)
 #   SOURCE_PREFIXES      where a dump to restore may live            (default "estate-db db")
+#   ESTATE_DB_NAME       the database the copy has to carry         (default estate)
+#   ESTATE_DB_LABEL      the estate's own dump prefix                (default estate-db)
 #   MIN_SIZE_RATIO       refuse a copy below this share of the last one (default 0.5)
 #   PGHOST PGPORT PGUSER PGPASSWORD   the PostgreSQL to restore into and dump from
 #   OCI_CLI_AUTH         passed to the oci CLI when set
@@ -52,6 +55,12 @@ PG_READY_TIMEOUT="${PG_READY_TIMEOUT:-180}"
 RECEIPT_PREFIX="${ESTATE_DB_RECEIPT_PREFIX:-estate-db}"
 RECEIPT_NAME="${RECEIPT_PREFIX}/latest.json"
 SOURCE_PREFIXES="${ESTATE_DB_SOURCE_PREFIXES:-estate-db db}"
+ESTATE_DB_NAME="${ESTATE_DB_NAME:-estate}"
+ESTATE_DB_LABEL="${ESTATE_DB_LABEL:-estate-db}"
+# How much of a candidate dump is read when it is checked for the estate database. A cluster
+# dump lists its databases early (the surviving one has CREATE DATABASE estate at line 61562 of
+# about 626 MB of SQL), so this window sees it without decompressing the whole thing.
+VERIFY_WINDOW_BYTES="${ESTATE_DB_VERIFY_WINDOW_BYTES:-67108864}"
 MIN_SIZE_RATIO="${ESTATE_DB_MIN_SIZE_RATIO:-0.5}"
 DUMP_MARKER="PostgreSQL database cluster dump complete"
 SCRIPT_PATH="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
@@ -86,9 +95,15 @@ sha256_of() {
 	fi
 }
 
-# The newest surviving dump, whatever prefix it lives under. The legacy dumps sit under db/ and
-# this script's own copies under estate-db/; the newest of all of them is the one to restore.
-select_source() {
+# Every surviving dump, ranked: the estate database's own dumps first, newest first within each
+# tier. The legacy dumps sit under db/ and this script's own copies under estate-db/.
+#
+# MEASURED 2026-10-30: the bucket holds another database's dump too --
+# db/2026-09-08/temporal-temporal-db-0.sql.gz -- and it is 1.5 seconds NEWER than the estate
+# cluster dump. "Newest wins" therefore restored a per-database dump that has no estate database
+# in it, and the run died on `FATAL: database "estate" does not exist`. A dump of another
+# database is not a copy of this one, so the estate's own dumps are ranked first.
+list_sources() {
 	local listing
 	listing=$(oci_cli os object list --namespace-name "$(namespace)" --bucket-name "$BUCKET" --all --output json)
 	printf '%s' "$listing" | python3 -c '
@@ -96,24 +111,60 @@ import json, sys
 
 prefixes = (sys.argv[1] or "").split()
 bucket = sys.argv[2]
+estate = sys.argv[3]
+label = sys.argv[4]
 try:
     data = json.load(sys.stdin).get("data") or []
 except ValueError as exc:
     sys.exit("the bucket listing is not JSON: %s" % exc)
-candidates = []
+rows = []
 for obj in data:
     name = obj.get("name") or ""
     if not name.endswith(".sql.gz"):
         continue
     if prefixes and not any(name.startswith(p) for p in prefixes):
         continue
-    candidates.append((obj.get("time-created") or "", name, int(obj.get("size") or 0)))
-if not candidates:
+    base = name.rsplit("/", 1)[-1]
+    tier = 0 if (estate in base or name.startswith(label)) else 1
+    rows.append((tier, obj.get("time-created") or "", name, int(obj.get("size") or 0)))
+if not rows:
     sys.exit("no surviving dump under %s in bucket %s" % ("/".join(prefixes), bucket))
-candidates.sort()
-created, name, size = candidates[-1]
-print("\t".join([name, created, str(size)]))
-' "$SOURCE_PREFIXES" "$BUCKET"
+rows.sort(key=lambda row: (row[1], row[2]), reverse=True)
+rows.sort(key=lambda row: row[0])
+for tier, created, name, size in rows:
+    print("\t".join([name, created, str(size)]))
+' "$SOURCE_PREFIXES" "$BUCKET" "$ESTATE_DB_NAME" "$ESTATE_DB_LABEL"
+}
+
+# The best surviving dump, on the list's own ranking.
+select_source() {
+	local listing
+	listing=$(list_sources)
+	printf '%s\n' "$listing" | head -1
+}
+
+# Does this dump really carry the estate database? A cluster dump says so in its first line, and
+# lists the estate database itself; a dump of one other database does neither. The reason the
+# check failed is printed, so the refusal says what is wrong with the object, not just that it
+# was refused.
+verify_source() {
+	local file="$1" window
+	[ -f "$file" ] || { printf 'it was not downloaded\n'; return 1; }
+	gzip -t "$file" 2>/dev/null || { printf 'it does not decompress\n'; return 1; }
+	window=$(mktemp)
+	{ gzip -dc "$file" 2>/dev/null | head -c "$VERIFY_WINDOW_BYTES" >"$window"; } || true
+	if ! grep -aq "PostgreSQL database cluster dump" "$window"; then
+		rm -f "$window"
+		printf 'it is not a cluster dump, so it holds no %s database\n' "$ESTATE_DB_NAME"
+		return 1
+	fi
+	if ! grep -aq "CREATE DATABASE ${ESTATE_DB_NAME} " "$window"; then
+		rm -f "$window"
+		printf 'it is a cluster dump without the %s database\n' "$ESTATE_DB_NAME"
+		return 1
+	fi
+	rm -f "$window"
+	return 0
 }
 
 # Restore a dump into the running PostgreSQL. A restore that hit a real error is not a restore:
@@ -247,15 +298,33 @@ except Exception:
 
 # The newest surviving dump, downloaded. The source it came from is written next to it, because
 # the receipt has to say where the data was as old as the data is.
+# Download the best surviving dump that really carries the estate database. The candidates are
+# tried in rank order and each one is checked before it is trusted, so a dump of another
+# database -- or a truncated object -- is skipped with its reason, not restored.
 fetch_source() {
-	local dest="$1" ns selection name created size
+	local dest="$1" ns name created size reason candidate rejected=""
 	[ -n "$dest" ] || fail "fetch-source needs a destination"
-	selection=$(select_source)
-	IFS=$'\t' read -r name created size <<<"$selection"
 	ns=$(namespace)
-	oci_cli os object get --namespace-name "$ns" --bucket-name "$BUCKET" --name "$name" --file "$dest"
-	printf '%s\n%s\n' "$name" "$created" >"${dest}.source"
-	say "fetched $name ($size bytes, created $created) to $dest"
+	candidate="${dest}.candidate"
+	while IFS=$'\t' read -r name created size; do
+		[ -n "$name" ] || continue
+		rm -f "$candidate"
+		if ! oci_cli os object get --namespace-name "$ns" --bucket-name "$BUCKET" --name "$name" \
+			--file "$candidate" >/dev/null 2>&1; then
+			rejected="${rejected}"$'\n'"  $name: it could not be downloaded"
+			continue
+		fi
+		reason=$(verify_source "$candidate") || {
+			rejected="${rejected}"$'\n'"  $name: $reason"
+			continue
+		}
+		mv "$candidate" "$dest"
+		printf '%s\n%s\n' "$name" "$created" >"${dest}.source"
+		say "fetched $name ($size bytes, created $created) to $dest"
+		return 0
+	done < <(list_sources)
+	rm -f "$candidate"
+	fail "no surviving dump carries the ${ESTATE_DB_NAME} database; rejected:${rejected}"
 }
 
 # Start PostgreSQL in the copy image, and wait until it answers.
@@ -331,17 +400,12 @@ dump_container() {
 }
 
 run_service() {
-	local tmpdir selection name created size ns
+	local tmpdir
 	tmpdir=$(mktemp -d)
-	selection=$(select_source)
-	IFS=$'\t' read -r name created size <<<"$selection"
-	say "restoring from $name (created $created, $size bytes)"
-	ns=$(namespace)
-	oci_cli os object get --namespace-name "$ns" --bucket-name "$BUCKET" --name "$name" \
-		--file "$tmpdir/source.sql.gz"
+	fetch_source "$tmpdir/source.sql.gz"
 	restore "$tmpdir/source.sql.gz"
 	dump "$tmpdir/estate.sql.gz"
-	ESTATE_DB_SOURCE_NAME="$name" ESTATE_DB_SOURCE_CREATED="$created" publish "$tmpdir/estate.sql.gz"
+	ESTATE_DB_SOURCE_FILE="$tmpdir/source.sql.gz.source" publish "$tmpdir/estate.sql.gz"
 	rm -rf "$tmpdir"
 }
 
