@@ -135,7 +135,20 @@ backend:
     # Content-Security-Policy directives follow the Helmet format: https://helmetjs.github.io/#reference
     # Default Helmet Content-Security-Policy values can be removed by setting the key to false
   cors:
-    origin: http://localhost:3100
+    # Every origin the estate actually serves, and each one is a real Origin a browser sends.
+    # `@backstage/backend-defaults` readCorsOptions() matches the request Origin against this
+    # list with case-insensitive minimatch (nocase, noglobstar), so:
+    #   - the IPv6 loopback's brackets must be escaped ('\[::1\]' is a literal bracket, not a
+    #     character class) and YAML single quotes are what keep that backslash;
+    #   - the tailnet pattern is pinned to the port the estate serves the frontend on.
+    # One origin was missing here on 2026-10-30 and the founder's own URL rendered the guest
+    # wall because of it (idp#7662): the page returned 200, the app came up empty, and the
+    # refusal was invisible from the outside.
+    origin:
+      - http://localhost:3100
+      - http://127.0.0.1:3100
+      - 'http://\[::1\]:3100'
+      - http://*.tail3f2ff4.ts.net:8443
     methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
     credentials: true
   # This is for local development only, it is not recommended to use this in production
