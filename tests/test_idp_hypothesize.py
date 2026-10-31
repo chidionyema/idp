@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import resource
 import shutil
 import subprocess
 import sys
@@ -66,10 +67,19 @@ def _generate(tmp_path, extra=None, error=ERROR_TEXT):
 
 
 def test_help_exits_zero_and_is_fast():
+    # The script's own cost is CPU; wall clock measures the machine, not the script.
+    # A loaded laptop once made --help look 9.2s slow at 0.21s CPU, and the old
+    # wall-clock bound failed the suite on that. The ceiling below is the estate's
+    # own (LAW 43/45: a bare --help must exit 0 within 60s).
+    before = resource.getrusage(resource.RUSAGE_CHILDREN)
     t0 = time.time()
     res = _run(["--help"])
+    wall = time.time() - t0
+    after = resource.getrusage(resource.RUSAGE_CHILDREN)
+    cpu = (after.ru_utime - before.ru_utime) + (after.ru_stime - before.ru_stime)
     assert res.returncode == 0, res.stderr
-    assert time.time() - t0 < 5, "--help must be fast (bin/idp-ci checks this)"
+    assert cpu < 2.0, f"--help must cost almost no CPU, took {cpu:.2f}s"
+    assert wall < 60, f"--help must exit within 60s (LAW 43/45), took {wall:.1f}s"
 
 
 def test_the_emitted_spec_is_what_the_race_runner_reads(tmp_path):
@@ -211,6 +221,31 @@ def test_an_unknown_prior_layer_is_a_config_error(tmp_path):
     assert res.returncode == 2, res.stderr
     assert "unknown prior layer" in res.stderr
     assert spec is None
+
+
+def test_the_seed_reaches_the_collapse_simulation(tmp_path):
+    """--seed was parsed and then ignored: the simulation always ran on seed 7."""
+    res, spec, metrics = _generate(tmp_path, ["--seed", "123"])
+    assert res.returncode == 0, res.stderr
+    m = json.loads(metrics.read_text())
+    assert m["seed"] == 123, "the seed must be recorded in the metrics"
+    assert spec["meta"]["seed"] == 123, "the seed must be recorded in the spec"
+
+    res2, _, metrics2 = _generate(tmp_path / "same", ["--seed", "123"])
+    assert res2.returncode == 0, res2.stderr
+    m2 = json.loads(metrics2.read_text())
+    assert (m2["sim_map_accuracy"], m2["sim_collapse_prob"]) == (
+        m["sim_map_accuracy"],
+        m["sim_collapse_prob"],
+    ), "the same seed must reproduce the simulation exactly"
+
+    res3, _, metrics3 = _generate(tmp_path / "other", ["--seed", "124"])
+    assert res3.returncode == 0, res3.stderr
+    m3 = json.loads(metrics3.read_text())
+    assert (m3["sim_map_accuracy"], m3["sim_collapse_prob"]) != (
+        m["sim_map_accuracy"],
+        m["sim_collapse_prob"],
+    ), "a different seed must move the simulation"
 
 
 def test_an_error_without_structure_still_yields_the_chain(tmp_path):
