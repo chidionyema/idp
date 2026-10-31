@@ -2,11 +2,11 @@
   "reports": [
     {
       "file": "docs/reports/first-time-success.md",
-      "generated_at": "2026-10-30T08:45:16Z",
+      "generated_at": "2026-10-31T08:31:19Z",
       "id": "first-time-success",
       "schedule_minutes": 1440,
-      "source": "GitHub pull requests and workflow runs since 2026-10-16, read through gh api",
-      "summary": "pull requests green on the first push 46/100 (46%); runs on main first-attempt 1039/1193 (87%)",
+      "source": "GitHub pull requests and workflow runs since 2026-10-17, read through gh api",
+      "summary": "pull requests green on the first push 56/100 (56%); runs on main first-attempt 1037/1222 (85%)",
       "title": "Delivery: right first time"
     },
     {
@@ -28,5 +28,5 @@
       "title": "Forge compute spend (Modal + free lanes)"
     }
   ],
-  "updated_at": "2026-10-30T08:47:54Z"
+  "updated_at": "2026-10-31T08:34:14Z"
 }
