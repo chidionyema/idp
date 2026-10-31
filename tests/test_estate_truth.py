@@ -76,10 +76,12 @@ def test_counts_name_every_verdict():
 class _Handler(BaseHTTPRequestHandler):
     status = 200
     payload = b'{"choices": [{"message": {"content": "PONG"}}]}'
+    last_headers = {}
 
     def do_POST(self):  # noqa: N802 -- the http.server API
         length = int(self.headers.get("Content-Length") or 0)
         self.rfile.read(length)
+        _Handler.last_headers = {k.lower(): v for k, v in self.headers.items()}
         self.send_response(self.status)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
@@ -221,6 +223,48 @@ def test_the_old_flat_lane_list_is_a_failure(tmp_path):
     assert "declared" in detail
 
 
+def test_a_refusal_record_is_read_as_a_lane(tmp_path):
+    """The ledger's refusal records are dicts, and one unhashable dict once took the whole
+    board down: TypeError: unhashable type: 'dict'. A refusal record names its lane."""
+    lanes = tmp_path / "lanes.json"
+    lanes.write_text(
+        json.dumps(
+            {
+                "declared": ["default", "glm", "voice"],
+                "served": ["default"],
+                "refused": [
+                    {"lane": "glm", "reason": "no credential", "verdict": "refused"},
+                    {"lane": "voice", "reason": "not installed", "verdict": "refused"},
+                ],
+            }
+        )
+    )
+    verdict, detail, _ = truth.eval_file(
+        {"path": str(lanes), "assert": "declared_accounted"}
+    )
+    assert verdict == OK
+    assert "accounted" in detail
+
+
+def test_a_refusal_record_without_a_lane_is_not_counted(tmp_path):
+    """A record that names no lane cannot account for one."""
+    lanes = tmp_path / "lanes.json"
+    lanes.write_text(
+        json.dumps(
+            {
+                "declared": ["default", "glm"],
+                "served": ["default"],
+                "refused": [{"reason": "no credential", "verdict": "refused"}],
+            }
+        )
+    )
+    verdict, detail, _ = truth.eval_file(
+        {"path": str(lanes), "assert": "declared_accounted"}
+    )
+    assert verdict == FAIL
+    assert "glm" in detail
+
+
 def test_a_missing_state_file_is_a_failure(tmp_path):
     verdict, detail, _ = truth.eval_file(
         {"path": str(tmp_path / "absent.json"), "assert": "exists"}
@@ -291,6 +335,96 @@ def test_the_aggregate_never_reports_ok_while_something_is_unknown():
     assert report["ok"] is False
 
 
+def test_a_question_from_another_scope_is_reported_but_not_counted():
+    """A laptop cannot answer a cluster question. That is not a failure of the laptop, and a
+    board that can never be green teaches the estate to ignore the board. The question is
+    still published, by name, and the total verdict still covers it."""
+    contract = {
+        "predicates": [
+            {
+                "id": "here",
+                "kind": "file",
+                "scope": "laptop",
+                "path": "/nonexistent",
+                "assert": "exists",
+            },
+            {
+                "id": "cluster.only",
+                "kind": "file",
+                "scope": "cluster",
+                "path": "/nonexistent",
+                "assert": "exists",
+            },
+        ]
+    }
+    results = truth.measure(contract, scope="laptop")
+    report = truth.snapshot(contract, results, "laptop")
+    assert report["verdict"] == FAIL  # the laptop question failed on its own merits
+    assert [r["id"] for r in report["out_of_scope"]] == ["cluster.only"]
+    assert report["counts"]["UNKNOWN"] == 0
+    assert report["counts_all"]["UNKNOWN"] == 1
+    assert report["verdict_all"] == FAIL  # nothing is hidden by the split
+
+
+# ---------------------------------------------------------------- the running tree
+
+
+def test_a_runtime_mirror_behind_main_is_a_failure(monkeypatch, tmp_path):
+    """The estate's live doors run from the runtime mirror. A mirror that is behind main runs
+    the code the estate already fixed."""
+    monkeypatch.setattr(truth, "_git", lambda *a, **k: "aaaaaaa1111")
+    monkeypatch.setattr(truth, "_remote_main_sha", lambda *a, **k: "bbbbbbb2222")
+    verdict, detail, _ = truth.eval_runtime_current({"runtime_path": str(tmp_path)})
+    assert verdict == FAIL
+    assert "aaaaaaa" in detail and "bbbbbbb" in detail
+
+
+def test_a_runtime_mirror_on_main_is_ok(monkeypatch, tmp_path):
+    monkeypatch.setattr(truth, "_git", lambda *a, **k: "aaaaaaa1111")
+    monkeypatch.setattr(truth, "_remote_main_sha", lambda *a, **k: "aaaaaaa1111")
+    verdict, detail, _ = truth.eval_runtime_current({"runtime_path": str(tmp_path)})
+    assert verdict == OK
+
+
+def test_an_absent_runtime_mirror_is_a_failure(monkeypatch, tmp_path):
+    monkeypatch.setattr(truth, "_git", lambda *a, **k: "")
+    verdict, detail, _ = truth.eval_runtime_current(
+        {"runtime_path": str(tmp_path / "absent")}
+    )
+    assert verdict == FAIL
+    assert "absent" in detail
+
+
+def test_an_unreadable_runtime_mirror_is_unknown(monkeypatch, tmp_path):
+    monkeypatch.setattr(truth, "_git", lambda *a, **k: "")
+    verdict, detail, _ = truth.eval_runtime_current(
+        {"runtime_path": str(tmp_path / "here")}
+    )
+    assert verdict in (FAIL, UNKNOWN)
+
+
+# ---------------------------------------------------------------- the box under the router
+
+
+def test_a_saturated_box_is_a_failure_and_names_the_threshold(monkeypatch):
+    """The front refuses traffic when the load average passes 8 x the CPU count. The board
+    must name that cause, or the estate goes to fix the router when the box is the problem."""
+    monkeypatch.setattr(truth.os, "getloadavg", lambda: (171.5, 160.0, 150.0))
+    monkeypatch.setattr(truth.os, "cpu_count", lambda: 4)
+    monkeypatch.delenv("ESTATE_FRONT_LOAD_MAX", raising=False)
+    verdict, detail, _ = truth.eval_host_load({})
+    assert verdict == FAIL
+    assert "32.0" in detail
+
+
+def test_a_box_with_headroom_is_ok(monkeypatch):
+    monkeypatch.setattr(truth.os, "getloadavg", lambda: (1.5, 1.0, 0.9))
+    monkeypatch.setattr(truth.os, "cpu_count", lambda: 4)
+    monkeypatch.delenv("ESTATE_FRONT_LOAD_MAX", raising=False)
+    verdict, detail, _ = truth.eval_host_load({})
+    assert verdict == OK
+
+
 # ---------------------------------------------------------------- the contract itself
 
 
@@ -316,6 +450,73 @@ def test_the_contract_does_not_ask_for_a_secret_to_be_printed():
     for pred in doc["predicates"]:
         auth = pred.get("auth_env")
         if auth:
-            assert auth.isupper(), auth
+            names = [auth] if isinstance(auth, str) else list(auth)
+            for name in names:
+                assert name.isupper(), name
         for value in (pred.get("body") or {}).values():
             assert "sk-" not in str(value)
+
+
+def test_the_memory_manifest_is_the_canonical_one():
+    """The truth instrument used to read a path the estate does not own, so the founder's
+    recall path measured as absent while it was present under its canonical name."""
+    doc = json.loads(CONTRACT.read_text())
+    pred = next(p for p in doc["predicates"] if p["id"] == "memory.recall")
+    assert pred["path"] == "~/.estate/memory/platform/estate/memory/runtimes.json"
+
+
+def test_the_laptop_probe_asks_the_default_lane():
+    """The laptop lane is served as 'default'. Asking for a model the front may not carry
+    measured a refusal that looked like a broken router."""
+    doc = json.loads(CONTRACT.read_text())
+    pred = next(p for p in doc["predicates"] if p["id"] == "router.laptop.completion")
+    assert pred["body"]["model"] == "default"
+    assert pred["body"]["max_tokens"] == 64
+
+
+def test_the_cloud_probe_carries_the_estate_user_agent():
+    """The cloud edge refused the caller's own User-Agent with 1010. The probe must present
+    the estate's own identity, exactly as the front does."""
+    doc = json.loads(CONTRACT.read_text())
+    pred = next(p for p in doc["predicates"] if p["id"] == "router.cloud.completion")
+    assert pred["headers"]["User-Agent"] == "estate-router-front/1.0"
+
+
+def test_the_probe_carries_the_declared_user_agent(server):
+    url = server(200)
+    truth.eval_http(
+        {
+            "url": url,
+            "method": "POST",
+            "headers": {"User-Agent": "estate-router-front/1.0"},
+            "body": {"model": "default"},
+            "expect_status": 200,
+            "timeout_s": 10,
+        }
+    )
+    assert _Handler.last_headers.get("user-agent") == "estate-router-front/1.0"
+
+
+def test_the_contract_measures_the_running_tree_and_the_box():
+    doc = json.loads(CONTRACT.read_text())
+    ids = [p["id"] for p in doc["predicates"]]
+    assert "runtime.current" in ids
+    assert "host.load" in ids
+
+
+def test_the_contract_maps_only_the_predicates_a_change_repairs():
+    """A path maps to the questions it answers. Mapping a question this host cannot measure
+    -- a cluster question, or the cloud route while the cloud edge is down -- would make
+    every truth change unlandable for a reason that is not about the change."""
+    doc = json.loads(CONTRACT.read_text())
+    truth_paths = {
+        "platform/estate/libexec/estate-truth.py",
+        "catalog/truth-contract.json",
+        "platform/estate/intents/estate-truth.yaml",
+        "tests/test_estate_truth.py",
+        "bin/idp-estate-truth",
+    }
+    for path in truth_paths:
+        for pid in doc["paths"].get(path, []):
+            assert pid != "estate-db.rows", path
+            assert pid != "router.cloud.completion", path
