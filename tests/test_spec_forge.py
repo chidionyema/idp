@@ -124,3 +124,19 @@ def test_from_edge_seeds_a_valid_spec_from_the_flow_model():
     s = sf.from_edge("vision", "intent")
     assert s and sf.validate(s) == []
     assert sf.from_edge("nope", "nada") is None
+
+
+def test_lint_names_missing_boundary_classes_and_unknown_tags():
+    s = dict(
+        SEED,
+        scenarios=[
+            dict(SEED["scenarios"][0], boundary="empty"),
+            dict(SEED["scenarios"][0], boundary="nonsense"),
+        ],
+    )
+    cov, miss, unk = sf.boundary_gaps(s)
+    assert cov == ["empty"] and "tamper" in miss and unk == ["nonsense"]
+    full = dict(
+        SEED, scenarios=[dict(SEED["scenarios"][0], boundary=b) for b in sf.BOUNDARIES]
+    )
+    assert sf.boundary_gaps(full)[1:] == ([], [])

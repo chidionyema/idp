@@ -4,6 +4,7 @@
   spec-forge plan SEED.json [--root DIR]    print what would be written and a digest of it (writes nothing)
   spec-forge write SEED.json [--root DIR]   write the three files; refuses to overwrite a file whose content differs
   spec-forge from-edge FROM TO              print a seed built from an edge of catalog/intent-flow.json
+  spec-forge lint SEED.json                 boundary review: which boundary classes the scenarios cover (exit 4 if any is missing)
 
 Seed: {"slug","title","date","why","area","scenarios":[{"name","given":[],"when":[],"then":[]}],"proof":"command"}.
 Same seed, same bytes: no clock, no model, no randomness. Outputs:
@@ -49,6 +50,15 @@ def validate(s):
         if c.get("given") and not all(isinstance(x, str) and x.strip() for x in c["given"]):
             e.append("scenario %d has an empty given" % i)
     return e
+
+
+BOUNDARIES = ("empty", "limit", "off-by-one", "duplicate", "unauthorised", "timeout", "tamper", "partial-failure")
+
+
+def boundary_gaps(s):
+    """A scenario may carry "boundary": one of BOUNDARIES. Returns (covered, missing, unknown_tags). Deterministic."""
+    tags = [c.get("boundary") for c in s.get("scenarios", []) if c.get("boundary")]
+    return sorted(set(t for t in tags if t in BOUNDARIES)), [b for b in BOUNDARIES if b not in tags], [t for t in tags if t not in BOUNDARIES]
 
 
 def steps(kw, items):
@@ -136,6 +146,13 @@ def main(argv):
             return 1
         print(json.dumps(s, indent=2))
         return 0
+    if len(argv) >= 3 and argv[1] == "lint":
+        cov, miss, unk = boundary_gaps(json.loads(Path(argv[2]).read_text()))
+        print("covered: %s" % (", ".join(cov) or "none"))
+        print("MISSING: %s" % (", ".join(miss) or "none"))
+        if unk:
+            print("UNKNOWN TAG: %s" % ", ".join(unk))
+        return 4 if (miss or unk) else 0
     if len(argv) >= 3 and argv[1] in ("plan", "write"):
         root = Path(argv[argv.index("--root") + 1]) if "--root" in argv else HERE
         s = json.loads(Path(argv[2]).read_text())
