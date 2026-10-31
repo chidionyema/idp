@@ -64,6 +64,7 @@ KEY_PATH = Path(
     )
 )
 SNAPSHOT_PATH = IDP / "catalog" / "estate-capability-registry.json"
+BASELINE_PATH = IDP / "catalog" / "estate-completeness-baseline.json"
 
 # The live half's freshness bound. The reconcile row (`com.estate.registry-reconcile`,
 # scheduler/schedule.yml) ticks every 15 minutes on the estate's one scheduler, so a
@@ -471,6 +472,459 @@ def make_record(
         "metrics": list(metrics),
         "blind": list(blind),
     }
+
+
+# --------------------------------------------------------------------------------------
+# the nine questions -- the completeness requirement, in the estate's ONE store
+#
+# WHY HERE AND NOT IN A SECOND CATALOGUE (2026-10-31). The artifact downloaded from
+# ~/Downloads/catalog-gate-v0 asked for nine answered questions per catalogue entry and
+# refused to let an unknown hide. It aimed that at a Backstage catalogue the estate
+# generates from a machine-local inventory (catalog/catalog-info.yaml is gitignored, so
+# nothing can be enforced on it at the merge point) and it was written before this
+# registry existed. The estate already answers the questions here, for 1029 capabilities,
+# in a committed witness a gate can judge -- so the requirement lands HERE, and the
+# lesser second catalogue does not land at all (law 6: one of each layer).
+#
+# A question is answered by a VALUE, or by an explicit unknown the record names in its
+# `blind` list. Never by silence: a record with neither is a HOLE, and the gate refuses
+# the estate for it. The floor is a committed baseline (catalog/estate-completeness-
+# baseline.json): coverage may only improve, and re-baselining is an explicit act.
+
+COMPLETENESS_QUESTIONS = (
+    "owner",
+    "description",
+    "status",
+    "last_verified",
+    "dependencies",
+    "interfaces",
+    "known_issues",
+    "mirrors",
+    "metrics",
+)
+
+# the question -> the name in the record's `blind` list that declares it unknown
+COMPLETENESS_BLINK = {
+    "owner": "owner",
+    "description": "description",
+    "status": "health",
+    "last_verified": "proof",
+    "dependencies": "dependencies",
+    "interfaces": "interfaces",
+    "known_issues": "known_issues",
+    "mirrors": "mirrors",
+    "metrics": "metrics",
+}
+
+# a list question whose empty list IS the answer ("none known", "not mirrored")
+COMPLETENESS_EXPLICIT_NONE = ("known_issues", "mirrors")
+
+# the kinds whose dependency edges the emitter derives from the tree, so an empty
+# edge list is a measured "none" rather than an undeclared unknown
+COMPLETENESS_DERIVED_EDGES = ("tool", "layer")
+
+
+def _declared_status(record):
+    """`declared` is the registry's own word for "named, not observed"."""
+    return (record.get("health") or {}).get("state") == "declared"
+
+
+def _dependency_edges(record):
+    """The capabilities this one depends on, wherever the emitter put the edges."""
+    edges = list(record.get("depends_on") or [])
+    edges.extend((record.get("contract") or {}).get("depends_on") or [])
+    out = []
+    for edge in edges:
+        target = edge.get("id") if isinstance(edge, dict) else edge
+        if target and target not in out:
+            out.append(target)
+    return out
+
+
+def _contract_answers(record):
+    contract = record.get("contract") or {}
+    return contract.get("inputs") or contract.get("outputs") or contract.get("errors")
+
+
+def _is_list_field(record, field):
+    return isinstance(record.get(field), list)
+
+
+# the question -> does this record answer it with a value?
+def _answered_owner(record):
+    return bool(str(record.get("owner") or "").strip())
+
+
+def _answered_description(record):
+    return bool(str(record.get("summary") or "").strip())
+
+
+def _answered_status(record):
+    return bool((record.get("health") or {}).get("state"))
+
+
+def _answered_last_verified(record):
+    return bool((record.get("proof") or {}).get("proven_at"))
+
+
+def _answered_dependencies(record):
+    return bool(_dependency_edges(record))
+
+
+def _answered_interfaces(record):
+    return bool(_contract_answers(record))
+
+
+def _answered_known_issues(record):
+    return _is_list_field(record, "known_issues")
+
+
+def _answered_mirrors(record):
+    return _is_list_field(record, "mirrors")
+
+
+def _answered_metrics(record):
+    return _is_list_field(record, "metrics") and bool(record.get("metrics"))
+
+
+COMPLETENESS_ANSWERED = {
+    "owner": _answered_owner,
+    "description": _answered_description,
+    "status": _answered_status,
+    "last_verified": _answered_last_verified,
+    "dependencies": _answered_dependencies,
+    "interfaces": _answered_interfaces,
+    "known_issues": _answered_known_issues,
+    "mirrors": _answered_mirrors,
+    "metrics": _answered_metrics,
+}
+
+
+def _valued_status(record):
+    """`declared` is honest, but it is not an observed status: it is not a value."""
+    return (record.get("health") or {}).get("state") in (
+        "operating",
+        "degraded",
+        "frozen",
+    )
+
+
+COMPLETENESS_VALUED = {
+    "owner": _answered_owner,
+    "description": _answered_description,
+    "status": _valued_status,
+    "last_verified": _answered_last_verified,
+    "dependencies": _answered_dependencies,
+    "interfaces": _answered_interfaces,
+    "known_issues": lambda r: bool(r.get("known_issues")),
+    "mirrors": lambda r: bool(r.get("mirrors")),
+    "metrics": lambda r: bool(r.get("metrics")),
+}
+
+
+def completeness_answer(record, question):
+    """How one record answers one question: a value, an explicit unknown, or a hole.
+
+    The order is the argument: a real value first, then a DECLARED unknown (the estate
+    says it does not know), then a measured negative ("no known issue"), then a hole
+    (silence). A declared unknown beats a measured negative, because a record that says
+    "I cannot see this" must not also claim "there is nothing there".
+    """
+    blind = set(record.get("blind") or [])
+    if COMPLETENESS_VALUED[question](record):
+        return "value"
+    if COMPLETENESS_BLINK[question] in blind:
+        return "unknown"
+    if question in COMPLETENESS_EXPLICIT_NONE and COMPLETENESS_ANSWERED[question](
+        record
+    ):
+        return "none"
+    if question == "status" and _declared_status(record):
+        return "unknown"
+    if question == "dependencies" and not _dependency_edges(record):
+        if record.get("kind") in COMPLETENESS_DERIVED_EDGES:
+            return "none"
+    if COMPLETENESS_ANSWERED[question](record):
+        return "value"
+    return "hole"
+
+
+def completeness_coverage(records):
+    """How many records answer each of the nine questions, and which ones do not."""
+    coverage = {}
+    holes = {}
+    for question in COMPLETENESS_QUESTIONS:
+        counts = Counter()
+        missing = []
+        for record in records:
+            answer = completeness_answer(record, question)
+            counts[answer] += 1
+            if answer == "hole":
+                missing.append(record.get("id"))
+        coverage[question] = {
+            "valued": counts["value"],
+            "unknown": counts["unknown"],
+            "none": counts["none"],
+            "holes": counts["hole"],
+            # measured: the estate MEASURED this question for this record -- a value or a
+            # measured negative ("no known issue", "no mirror"). An explicit unknown is
+            # honest but is not a measurement, so it is not in this number.
+            "measured": counts["value"] + counts["none"],
+            # answered: not a hole -- measured, or declared blind.
+            "answered": counts["value"] + counts["unknown"] + counts["none"],
+            "total": len(records),
+        }
+        holes[question] = missing
+    return {"questions": coverage, "holes": holes, "total": len(records)}
+
+
+def completeness_baseline(coverage):
+    """The floor the estate must not fall below, as a machine-generated file."""
+    return {
+        "version": 1,
+        "generator": "bin/capability-index completeness --write-baseline",
+        "source": "catalog/estate-capability-registry.json",
+        "total": coverage["total"],
+        "questions": {
+            question: {
+                "valued": coverage["questions"][question]["valued"],
+                "none": coverage["questions"][question]["none"],
+                "unknown": coverage["questions"][question]["unknown"],
+                "measured": coverage["questions"][question]["measured"],
+                "total": coverage["questions"][question]["total"],
+            }
+            for question in COMPLETENESS_QUESTIONS
+        },
+    }
+
+
+def completeness_regressions(coverage, baseline):
+    """Measured coverage may only improve. A question below its floor is a refusal.
+
+    The comparison is on the RATIO (measured / total), cross-multiplied so the arithmetic
+    is exact: deleting a capability does not lower the floor, and adding one that
+    answers less does. "Measured" is a value or a measured negative -- an explicit
+    unknown is honest but is not a measurement, so it does not count toward the floor.
+    The floor is the committed baseline; re-baselining is explicit.
+    """
+    problems = []
+    if not baseline:
+        return [
+            "no completeness baseline: run bin/capability-index completeness --write-baseline"
+        ]
+    if not coverage.get("total"):
+        return [
+            "the catalogue is empty: {} record(s) answered the nine questions, the floor "
+            "was {}".format(coverage.get("total", 0), baseline.get("total"))
+        ]
+    floors = (baseline or {}).get("questions") or {}
+    for question in COMPLETENESS_QUESTIONS:
+        floor = floors.get(question)
+        if not floor:
+            continue
+        now = coverage["questions"][question]
+        floor_measured = int(floor.get("measured", 0))
+        floor_total = int(floor.get("total", 0))
+        if floor_total <= 0:
+            continue
+        if now["measured"] * floor_total < floor_measured * now["total"]:
+            problems.append(
+                "{}: measured coverage fell from {}/{} to {}/{} (coverage may only "
+                "improve)".format(
+                    question, floor_measured, floor_total, now["measured"], now["total"]
+                )
+            )
+    return problems
+
+
+def completeness_holes(coverage, limit=10):
+    """Every record that leaves a question in silence. A hole is a refusal."""
+    problems = []
+    for question in COMPLETENESS_QUESTIONS:
+        missing = coverage["holes"].get(question) or []
+        if not missing:
+            continue
+        problems.append(
+            "{}: {} record(s) answer nothing and declare no unknown: {}".format(
+                question, len(missing), ", ".join(str(m) for m in missing[:limit])
+            )
+        )
+    return problems
+
+
+# --------------------------------------------------------------------------------------
+# the answers only the tree can give: a capability's own issues, its mirrors, its consumers
+
+_ISSUE_MARKER = re.compile(
+    r"^\s*(?:#+|//+|\*+|--+|;+)\s*"
+    # the separator class is written with an escape so this file stays ASCII: the
+    # pre-push gate refuses non-ASCII bytes on added lines, and a source file that
+    # cannot be pushed is not a source file.
+    r"(?P<tag>KNOWN[- ]ISSUE|FIXME|TODO|XXX|HACK)\b\s*[:\-\u2013]?\s*(?P<text>.*)$",
+    re.IGNORECASE,
+)
+_MAX_KNOWN_ISSUES = 10
+# the directories that are never a capability's own file, and are never walked into
+_SKIP_DIRS = {
+    "__pycache__",
+    "node_modules",
+    ".git",
+    "target",
+    "vendor",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+}
+_MAX_MIRRORS = 10
+
+# a name every project uses is not a mirror of anything
+_GENERIC_NAMES = {
+    "main.go",
+    "main.py",
+    "main.rs",
+    "main.ts",
+    "main.js",
+    "__init__.py",
+    "__main__.py",
+    "index.ts",
+    "index.tsx",
+    "index.js",
+    "makefile",
+    "dockerfile",
+    "readme.md",
+    "license",
+    "conftest.py",
+    "package.json",
+    "package-lock.json",
+    "go.mod",
+    "go.sum",
+    "requirements.txt",
+    ".gitignore",
+    ".dockerignore",
+}
+
+
+def _is_generic_name(name: str) -> bool:
+    return name.lower() in _GENERIC_NAMES
+
+
+def known_issues_for(path: Path, rel: str):
+    """The faults a capability declares about itself, in its own file.
+
+    Nothing is inferred here. A capability with no marker has no known issue, and the
+    empty list says exactly that -- which is a different statement from the one the
+    registry used to make, because the registry used to say nothing at all.
+    """
+    if path is None or not path.is_file():
+        return []
+    text = read_text(path)
+    out = []
+    for number, line in enumerate(text.splitlines(), 1):
+        match = _ISSUE_MARKER.match(line)
+        if not match:
+            continue
+        summary = (match.group("text") or "").strip()[:200]
+        out.append(
+            {
+                "id": "{}:{}".format(rel, number),
+                "summary": summary or match.group("tag").upper(),
+            }
+        )
+        if len(out) >= _MAX_KNOWN_ISSUES:
+            break
+    return out
+
+
+def _basename_index(ctx: Context):
+    """Every file of the estate's own tree, by stem: where a capability's name lives.
+
+    The index is by STEM (the name without its extension), because a capability is named
+    by what it is, not by the extension of the file it happens to live in: platform/jit/
+    jit-broker.yaml and bin/jit-broker are the same name in two places.
+    """
+
+    def build():
+        index = {}
+        for root in ("bin", "platform", "mcp", ".github", "clusters"):
+            base = ctx.idp / root
+            if not base.is_dir():
+                continue
+            # os.walk, not rglob: the prune happens on the way DOWN, so a vendored
+            # tree (node_modules, target) is never walked into. rglob would descend
+            # into it and filter afterwards, and the estate's tree has one.
+            for dirpath, dirnames, filenames in os.walk(base):
+                dirnames[:] = sorted(
+                    d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")
+                )
+                for name in sorted(filenames):
+                    if name.startswith("."):
+                        continue
+                    path = Path(dirpath) / name
+                    rel = path.relative_to(ctx.idp).as_posix()
+                    index.setdefault(path.stem, []).append(rel)
+        return index
+
+    return ctx.cached("stems", build)
+
+
+def enrich_completeness(ctx: Context, records):
+    """Give every record the three answers only the tree can give.
+
+    known_issues: the faults the capability's own file declares.
+    mirrors: the other places the same capability NAME is declared -- a second copy of
+              one capability is a stitch (law 6), and the catalogue must be able to say so.
+    consumers:    the inverse of the dependency edges, so "who uses this" is answerable
+                  (R-62: an unconsumed capability is a candidate for deletion).
+    """
+    index = _basename_index(ctx)
+    # one read per file, per context: the census and the snapshot judge the same tree.
+    markers = ctx.cached("known_issues_map", lambda: {})
+    for record in records:
+        rel = record.get("path") or ""
+        full = (ctx.idp / rel) if rel else None
+        if rel not in markers:
+            markers[rel] = known_issues_for(full, rel)
+        record["known_issues"] = list(markers[rel])
+        if not rel or not (full and full.is_file()):
+            # nothing was measured: say so instead of claiming there is nothing wrong
+            if "known_issues" not in (record.get("blind") or []):
+                record["blind"] = list(record.get("blind") or []) + ["known_issues"]
+        mirrors = []
+        names = []
+        record_name = (record.get("id") or "").rsplit("/", 1)[-1]
+        if record_name:
+            names.append(record_name)
+        for name in names:
+            if _is_generic_name(name):
+                continue
+            for other in index.get(name, []):
+                if other != rel and other not in mirrors:
+                    mirrors.append(other)
+        record["mirrors"] = sorted(mirrors)[:_MAX_MIRRORS]
+        # a record whose edges were never derived says so, instead of claiming none
+        if (
+            not _dependency_edges(record)
+            and record.get("kind") not in ("tool", "layer")
+            and "dependencies" not in (record.get("blind") or [])
+        ):
+            record["blind"] = list(record.get("blind") or []) + ["dependencies"]
+    by_id = {record.get("id"): record for record in records}
+    for record in records:
+        record["consumers"] = []
+    for record in records:
+        for target in _dependency_edges(record):
+            other = by_id.get(target)
+            if other is None or other is record:
+                continue
+            if record.get("id") not in other["consumers"]:
+                other["consumers"].append(record.get("id"))
+    for record in records:
+        record["consumers"] = sorted(c for c in record["consumers"] if c)
+    return records
 
 
 def state_from_proof(record, when=None):
@@ -1265,6 +1719,7 @@ def census(ctx: Context, live: bool = True):
     issues["duplicate_ids"] = sorted(
         set(repo_issues["duplicate_ids"]) | set(issues["duplicate_ids"])
     )
+    enrich_completeness(ctx, list(merged.values()))
     return merged, issues
 
 
@@ -2498,6 +2953,7 @@ def snapshot(ctx: Context) -> dict:
     repo, _issues = repo_records(ctx)
     records.extend(repo.values())
     records.sort(key=lambda r: r["id"])
+    enrich_completeness(ctx, records)
     counts = Counter(r["kind"] for r in records)
     return {
         "schema_version": SCHEMA_VERSION,
@@ -2508,8 +2964,28 @@ def snapshot(ctx: Context) -> dict:
     }
 
 
+# A user's home directory, on any machine: /Users/<name> on macOS, /home/<name> on Linux.
+# The witness must be the same bytes on every machine, and an absolute home path is the
+# one piece of machine state a source file can carry into it (2026-10-31: the intent
+# founder.decision shipped defaults like "/Users/roseonyema/Documents/code/idp", and the
+# snapshot carried the founder's name onto every other machine). The rule is deliberately
+# machine-independent: the same text is folded to the same "~" whoever generates it.
+# The lookbehind keeps it off a URL path ("example.com/home/x" is not a home), and the
+# trailing class stops it at a separator, so "packages/app/src/modules/home/" -- a
+# directory that happens to be called home -- is left alone.
+HOME_PATH_RE = re.compile(r"(?<![A-Za-z0-9._-])/(?:Users|home)/[^/\s\"'\\]+")
+
+
+def machine_independent(text: str) -> str:
+    """Fold any user's home directory to '~' so the witness carries no machine state."""
+    return HOME_PATH_RE.sub("~", text)
+
+
 def snapshot_text(snap: dict) -> str:
-    return json.dumps(snap, indent=2, sort_keys=False, default=str) + "\n"
+    return (
+        machine_independent(json.dumps(snap, indent=2, sort_keys=False, default=str))
+        + "\n"
+    )
 
 
 def snapshot_drift(ctx: Context, committed_path: Path = SNAPSHOT_PATH):
@@ -2917,6 +3393,14 @@ def main(argv=None) -> int:
     )
     p_dec.add_argument("--json", action="store_true")
 
+    p_complete = sub.add_parser(
+        "completeness",
+        help="the nine questions every capability must answer, and the committed floor",
+    )
+    p_complete.add_argument("--json", action="store_true")
+    p_complete.add_argument("--write-baseline", action="store_true")
+    p_complete.add_argument("--out", default=str(BASELINE_PATH))
+
     args = parser.parse_args(argv)
     ctx = Context(
         idp=Path(args.idp) if args.idp else None,
@@ -3032,6 +3516,51 @@ def main(argv=None) -> int:
             return 0
         print(text, end="")
         return 0
+
+    if args.cmd == "completeness":
+        snap = snapshot(ctx)
+        records = snap["records"]
+        coverage = completeness_coverage(records)
+        baseline = None
+        if BASELINE_PATH.exists():
+            try:
+                baseline = json.loads(BASELINE_PATH.read_text())
+            except ValueError:
+                baseline = None
+        if args.write_baseline:
+            out = Path(args.out)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(completeness_baseline(coverage), indent=2) + "\n")
+            print("completeness baseline written: {}".format(out))
+            return 0
+        payload = {
+            "questions": coverage["questions"],
+            "holes": {q: len(v) for q, v in coverage["holes"].items()},
+            "total": coverage["total"],
+            "regressions": completeness_regressions(coverage, baseline),
+            "hole_problems": completeness_holes(coverage),
+            "baseline": str(BASELINE_PATH),
+        }
+        if args.json:
+            print(json.dumps(payload, indent=2))
+        else:
+            for question in COMPLETENESS_QUESTIONS:
+                row = coverage["questions"][question]
+                print(
+                    "{:<14} valued {:>5}  measured {:>5}  unknown {:>4}  none {:>4}  "
+                    "holes {:>4}  of {:>5}".format(
+                        question,
+                        row["valued"],
+                        row["measured"],
+                        row["unknown"],
+                        row["none"],
+                        row["holes"],
+                        row["total"],
+                    )
+                )
+            for problem in payload["regressions"] + payload["hole_problems"]:
+                print("PROBLEM  {}".format(problem), file=sys.stderr)
+        return 0 if not payload["regressions"] and not payload["hole_problems"] else 1
 
     if args.cmd == "status":
         records, source = load_records(ctx)
