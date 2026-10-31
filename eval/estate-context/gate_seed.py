@@ -44,7 +44,7 @@ from pathlib import Path
 SCHEMA_VERSION = 1
 EXPECTED = {"answerable", "abstain", "unmeasurable"}
 DISPOSITIONS = {"answer", "abstain", "unmeasurable"}
-SOURCE_TYPES_WITH_READER = {"file"}
+SOURCE_TYPES_WITH_READER = {"file", "github_comment"}
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 SEED = HERE / "questions.seed.json"
@@ -54,6 +54,42 @@ PASS, FAIL, BLIND = "PASS", "FAIL", "BLIND"
 
 def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _default_gh(ref: str) -> list[str]:
+    """Bodies of a GitHub issue and its comments, in order. ref is owner/repo#n. Raises OSError when unreachable."""
+    import json
+    import subprocess
+
+    repo, _, num = ref.partition("#")
+    if not repo or not num.isdigit():
+        raise OSError(f"bad github ref {ref!r}")
+    out: list[str] = []
+    for path in (
+        f"repos/{repo}/issues/{num}",
+        f"repos/{repo}/issues/{num}/comments?per_page=100",
+    ):
+        r = subprocess.run(["gh", "api", path], capture_output=True, text=True)  # noqa: S603,S607 fixed argv, read-only
+        if r.returncode:
+            raise OSError((r.stderr or r.stdout).strip()[:120])
+        d = json.loads(r.stdout)
+        out += [x.get("body") or "" for x in (d if isinstance(d, list) else [d])]
+    return out
+
+
+GH = _default_gh
+
+
+def github_evidence(ref: str, contains: str) -> tuple[str | None, str]:
+    """(sha256 of the first body that holds the evidence string, "") or (None, why). Unreachable is a reason, never a pass."""
+    try:
+        bodies = GH(ref)
+    except OSError as e:
+        return None, f"{ref}: github unreachable ({e})"
+    for b in bodies:
+        if contains in b:
+            return hashlib.sha256(b.encode()).hexdigest(), ""
+    return None, f"{ref}: no longer contains the evidence string"
 
 
 def _resolve_file(root: Path, rel: str) -> Path | None:
@@ -118,9 +154,9 @@ def validate_set(doc: object) -> list[str]:
                     f"{where}: source type {s['type']!r} has no reader here; "
                     "label the question `unmeasurable`, do not pretend it is answerable"
                 )
-            if s["type"] == "file" and not s.get("contains"):
+            if s["type"] in ("file", "github_comment") and not s.get("contains"):
                 errs.append(
-                    f"{where}: file source {s['id']} needs `contains`, the evidence string"
+                    f"{where}: {s['type']} source {s['id']} needs `contains`, the evidence string"
                 )
         for j, c in enumerate(q.get("checks", [])):
             if (
@@ -141,6 +177,11 @@ def resolve_sources(q: dict, root: Path) -> list[str]:
     for s in q.get("required_sources", []):
         if s["type"] not in SOURCE_TYPES_WITH_READER:
             broken.append(f"no reader for source type {s['type']}")
+            continue
+        if s["type"] == "github_comment":
+            sha, why = github_evidence(s["id"], s["contains"])
+            if sha is None:
+                broken.append(why)
             continue
         p = _resolve_file(root, s["id"])
         if p is None:
@@ -189,6 +230,27 @@ def grade_one(q: dict, answer: object, root: Path = REPO) -> dict:
                 out["failed"].append("citation: not an object")
                 continue
             cid, sha = c.get("id"), c.get("sha256")
+            if c.get("type") == "github_comment":
+                want = next(
+                    (
+                        x
+                        for x in q["required_sources"]
+                        if x["type"] == "github_comment" and x["id"] == cid
+                    ),
+                    None,
+                )
+                real = github_evidence(cid, want["contains"])[0] if want else None
+                if real is None:
+                    out["failed"].append(
+                        f"citation: {cid!r} does not resolve (invented or unreadable)"
+                    )
+                elif sha != real:
+                    out["failed"].append(
+                        f"citation: {cid} sha256 does not match the comment"
+                    )
+                else:
+                    cited[cid] = sha
+                continue
             p = _resolve_file(root, cid) if c.get("type") == "file" else None
             if p is None:
                 out["failed"].append(

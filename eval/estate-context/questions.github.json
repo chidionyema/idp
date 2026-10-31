@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "note": "Questions whose evidence is in GitHub issues and comments. Graded with --set eval/estate-context/questions.github.json. These need the network: unreachable is BLIND, never a pass. Kept apart from questions.seed.json so that seed stays hermetic.",
+  "questions": [
+    {
+      "id": "gh-001",
+      "question": "Can the recovered Rust router serve traffic?",
+      "expected": "answerable",
+      "required_sources": [
+        {
+          "type": "github_comment",
+          "id": "chidionyema/idp#7649",
+          "contains": "The recovered Rust router cannot serve traffic"
+        }
+      ]
+    },
+    {
+      "id": "gh-002",
+      "question": "What counts as done for letting Gemini push to the Greenlane?",
+      "expected": "answerable",
+      "required_sources": [
+        {
+          "type": "github_comment",
+          "id": "chidionyema/idp#7561",
+          "contains": "Done = a Gemini run dispatched on agent-sandbox lands on main through the Greenlane"
+        }
+      ]
+    }
+  ]
+}
