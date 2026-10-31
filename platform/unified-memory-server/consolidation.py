@@ -10,7 +10,7 @@ deleted only when the same run next read its own scratchpad, so a run that never
 rows forever; preference-recurrence counters were never aged out.
 
 What this deliberately does NOT do, and why:
-  - It does not promote or quarantine memories (curation_worker.py's job, never deployed). Under
+  - It does not promote or quarantine memories (the retired curation_worker.py's job; it was never deployed and is deleted). Under
     the default scores (rho = tau = 1, harm 0) the promotion gate passes every fact, and an UPDATE
     of `memories` fires fn_bump_memory_version, which resets updated_at -- it would make every old
     fact look new to ranking.py. That needs its own decision, not a side effect of a sweep.
