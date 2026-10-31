@@ -1,3 +1,0 @@
-{"Names": "langfuse-web", "ID": "abc", "Labels": "com.docker.compose.project=langfuse,com.docker.compose.project.config_files=$IDP/observability/langfuse.yml", "Ports": ""}
-{"Names": "k3d-estate-server-0", "ID": "abc", "Labels": "", "Ports": ""}
-{"Names": "prospector-edge", "ID": "abc", "Labels": "com.docker.compose.project=compose,com.docker.compose.project.config_files=$CODE/prospector-main/deploy/compose/docker-compose.yml", "Ports": ""}

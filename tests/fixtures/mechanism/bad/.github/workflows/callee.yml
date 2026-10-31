@@ -1,8 +1,0 @@
-name: callee
-on:
-  workflow_call:
-jobs:
-  work:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo ok

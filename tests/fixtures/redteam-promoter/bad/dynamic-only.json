@@ -1,6 +1,0 @@
-{
-  "id": "rt-dyn",
-  "attack_class": "prompt_injection",
-  "tool_target": "",
-  "content": "1234-5678-90ab-cdef-1234-5678-90ab"
-}

@@ -1,8 +1,0 @@
-# crew#483 class: a shell expansion Flux strict envsubst reads as an unset variable
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: probe
-data:
-  probe.sh: |
-    out=$(curl -s https://door.${ESTATE_ZONE}/); code=${out%% *}; loc=${out#* }

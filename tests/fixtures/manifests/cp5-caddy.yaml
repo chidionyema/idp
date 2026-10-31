@@ -1,7 +1,0 @@
-action: up
-name: cp5-caddy
-image: caddy:2.10-alpine
-ports: [{host: 38080, container: 80}]
-health: {url: "http://127.0.0.1:38080/", timeout_s: 30}
-limits: {memory: 128m, cpus: 0.5}
-caps: [NET_BIND_SERVICE]
