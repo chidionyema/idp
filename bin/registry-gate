@@ -57,6 +57,10 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 IDP = HERE.parent
 DEFAULT_SNAPSHOT = IDP / "catalog" / "estate-capability-registry.json"
+# the floor the nine completeness questions may not fall below (catalog-gate-v0, integrated
+# into this store on 2026-10-31). It is committed, machine-generated, and re-baselined only
+# by an explicit act: bin/capability-index completeness --write-baseline.
+COMPLETENESS_BASELINE = IDP / "catalog" / "estate-completeness-baseline.json"
 
 # the live half is reconciled every 15 minutes by the estate's one scheduler; a
 # heartbeat older than an hour means that cycle has stopped, and the live half is
@@ -410,6 +414,103 @@ def i6_falsifiers(door, tmp: Path, failures: list) -> dict:
     return facts
 
 
+def check_completeness(door, snapshot_path: Path, baseline_path: Path):
+    """The nine questions, judged on the committed witness -- the merge-point truth.
+
+    Two refusals, and they are different: a record that leaves a question in silence is a
+    HOLE (it has no value and declares no unknown), and coverage below the committed floor
+    is a REGRESSION (the estate answered less than it used to). The floor is a ratio,
+    cross-multiplied, so deleting a capability does not lower it and adding one that
+    answers less does.
+    """
+    problems = []
+    facts = {"baseline": str(baseline_path)}
+    if not snapshot_path.exists():
+        return (
+            ["completeness: no committed snapshot at {}".format(snapshot_path)],
+            facts,
+        )
+    try:
+        payload = json.loads(snapshot_path.read_text())
+    except ValueError as exc:
+        return (
+            ["completeness: the committed snapshot is not JSON: {}".format(exc)],
+            facts,
+        )
+    records = payload.get("records") or []
+    coverage = door.completeness_coverage(records)
+    facts["records"] = len(records)
+    facts["questions"] = coverage["questions"]
+    facts["holes"] = {q: len(v) for q, v in coverage["holes"].items()}
+    baseline = None
+    if baseline_path.exists():
+        try:
+            baseline = json.loads(baseline_path.read_text())
+        except ValueError as exc:
+            problems.append("completeness: the baseline is not JSON: {}".format(exc))
+    else:
+        problems.append(
+            "completeness: no committed baseline at {} -- run bin/capability-index "
+            "completeness --write-baseline".format(baseline_path)
+        )
+    problems.extend(
+        "completeness: {}".format(p) for p in door.completeness_holes(coverage)
+    )
+    problems.extend(
+        "completeness: {}".format(p)
+        for p in door.completeness_regressions(coverage, baseline)
+    )
+    return problems, facts
+
+
+def completeness_falsifiers(door):
+    """The completeness gate must be able to fail. Two cases: a hole, and a regression."""
+    failures = []
+    facts = {}
+    good = {
+        "id": "cap:tool/completeness-falsifier",
+        "kind": "tool",
+        "owner": "estate-runtime",
+        "summary": "the completeness falsifier",
+        "health": {"state": "operating"},
+        "proof": {"proven_at": "2026-10-31T00:00:00+00:00"},
+        "contract": {
+            "inputs": ["x"],
+            "outputs": ["y"],
+            "errors": [],
+            "depends_on": [],
+        },
+        "depends_on": [],
+        "known_issues": [],
+        "mirrors": [],
+        "metrics": [{"name": "falsifier"}],
+        "blind": [],
+    }
+    coverage = door.completeness_coverage([good])
+    baseline = door.completeness_baseline(coverage)
+    # the hole: a record that answers nothing and declares no unknown
+    holed = dict(good)
+    holed.pop("known_issues")
+    hole_coverage = door.completeness_coverage([holed])
+    holes = door.completeness_holes(hole_coverage)
+    facts["hole"] = holes
+    if not holes:
+        failures.append(
+            "completeness: a record with no answer and no declared unknown was not refused"
+        )
+    # the regression: a floor above what the tree can now answer
+    strict = json.loads(json.dumps(baseline))
+    strict["questions"]["known_issues"]["measured"] = 1
+    strict["questions"]["known_issues"]["total"] = 1
+    regressions = door.completeness_regressions(hole_coverage, strict)
+    facts["regression"] = regressions
+    if not regressions:
+        failures.append(
+            "completeness: coverage below the committed floor was not refused"
+        )
+    return failures, facts
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="registry-gate",
@@ -632,6 +733,16 @@ def main(argv=None) -> int:
         for violation in decisions["violations"]
     )
 
+    # 8. the nine completeness questions, judged on the committed witness. The witness is
+    # the merge-point truth: the drift check above has already proved it equals a fresh
+    # generation of the tree, so a hole here is a hole in the tree, not in a stale file.
+    completeness_problems, facts["completeness"] = check_completeness(
+        door, Path(args.snapshot), COMPLETENESS_BASELINE
+    )
+    failures.extend(completeness_problems)
+    hole_falsifier_failures, facts["falsifiers"]["C-1"] = completeness_falsifiers(door)
+    failures.extend(hole_falsifier_failures)
+
     ok = not failures
     payload = {"ok": ok, "failures": failures, **facts}
     if args.json:
@@ -723,6 +834,19 @@ def main(argv=None) -> int:
             else "",
         )
     )
+    completeness = facts.get("completeness") or {}
+    if completeness.get("questions"):
+        valued = sum(row.get("valued", 0) for row in completeness["questions"].values())
+        measured = sum(
+            row.get("measured", 0) for row in completeness["questions"].values()
+        )
+        holes = sum(completeness.get("holes", {}).values())
+        print(
+            "completeness: {} record(s), {} measured answer(s) ({} with a value) across "
+            "the nine questions, {} hole(s)".format(
+                completeness.get("records", 0), measured, valued, holes
+            )
+        )
     for finding in facts["decisions"]["findings"]:
         print("note    registry-gate  I-6 finding: {}".format(finding.get("detail")))
     if ok:

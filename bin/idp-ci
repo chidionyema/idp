@@ -1500,15 +1500,19 @@ else say "FAIL  apiversion a manifest names a retired group/version, or the gate
 #      ~/.estate, so the live coverage is BLIND and the gate says so -- and it fails on a
 #      snapshot that names a capability the repository no longer has, which is a stale
 #      claim about the estate. The fix is one command, and the gate prints it.
+#      The gate also judges the nine completeness questions against the committed floor
+#      (catalog/estate-completeness-baseline.json): a record that is silent about a
+#      question is a hole, and coverage below the floor is a regression. Both are refusals.
 if ! touched bin/capability-index bin/registry-gate \
-      catalog/estate-capability-registry.json tests/test_capability_registry.py \
+      catalog/estate-capability-registry.json catalog/estate-completeness-baseline.json \
+      tests/test_capability_registry.py tests/test_registry_completeness.py \
       platform/ clusters/ platform/estate/intents/ ; then
   say "ok    registry no registry input changed against ${IDP_CI_BASE:-main}"
 else
   reg_out=$("$MPY" "$IDP/bin/registry-gate" 2>&1); reg_rc=$?
   if [ "$reg_rc" -eq 0 ]; then
     say "ok    registry $(printf '%s' "$reg_out" | grep -E '^drift:' | sed 's/^drift: //')"
-    printf '%s\n' "$reg_out" | grep -E '^(records|invariants|coverage|freshness):' | sed 's/^/      /'
+    printf '%s\n' "$reg_out" | grep -E '^(records|invariants|coverage|freshness|completeness):' | sed 's/^/      /'
   else
     say "FAIL  registry the Estate Capability Registry is not true (rc=$reg_rc)"
     printf '%s\n' "$reg_out" | tail -20 | sed 's/^/      /'
