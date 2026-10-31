@@ -1,6 +1,0 @@
-docs/demo/sb.md
-docs/onboarding/sb.md
-sovereign/cli.py
-sovereign/config.py
-sovereign/sidecar/dualread.py
-sovereign/sidecar/test_consensus.py

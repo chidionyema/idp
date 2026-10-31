@@ -1,5 +1,0 @@
-# The Reloader install row: one file, one chart, no values file to drift (values are inline).
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  - reloader.yaml

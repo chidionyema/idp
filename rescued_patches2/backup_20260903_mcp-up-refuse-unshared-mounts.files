@@ -1,8 +1,0 @@
-bin/idp-ci
-bin/langfuse-up
-bin/litellm-up
-bin/mcp-up
-bin/vm-shared-path
-docs/demo/vm-shared-path.md
-docs/onboarding/vm-shared-path.md
-mkdocs.yml

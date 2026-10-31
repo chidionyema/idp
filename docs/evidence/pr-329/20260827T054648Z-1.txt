@@ -1,9 +1,0 @@
-== pytest
-2 passed in 0.36s
-== kustomize
-   1 kind: ConfigMap
-   1 kind: CronJob
-   2 kind: HelmRelease
-   1 kind: HelmRepository
-   1 kind: Namespace
-   1 kind: PolicyException

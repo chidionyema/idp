@@ -1,2 +1,0 @@
-bin/idp-oci-whoami
-tests/test_incident_crew345_oci_session_refresh_before_founder_login.py

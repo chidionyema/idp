@@ -1,5 +1,0 @@
-.github/workflows/drift-drill.yml
-bin/idp-drift-drill
-drills/catalogue.yaml
-tests/test_crew581_the_drift_drill_measures_the_window_it_claims.py
-tests/test_crew581_the_root_of_trust_is_not_yet_what_the_architecture_claims.py

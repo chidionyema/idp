@@ -1,8 +1,0 @@
-AGENTS.md
-docs/specs/2026-09-11-which-model-to-host.md
-platform/edge-runtime/deploy/RESIDENT-BRAIN.md
-platform/edge-runtime/deploy/edge-runtime.yaml
-platform/edge-runtime/deploy/pull-secret.yaml
-platform/edge-runtime/deploy/resident-brain.yaml
-platform/hermes-agent/gateway.yaml
-platform/robusta/robusta.yaml

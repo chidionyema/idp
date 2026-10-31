@@ -1,7 +1,0 @@
-# A recorded `lsof -nP -iTCP -sTCP:LISTEN` table taken from this laptop at
-# 2026-08-24T20:52Z, while the Kubernetes API server created earlier that hour
-# was still published on every interface. bin/bind-audit must refuse this.
-COMMAND     PID        USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
-rapportd    447 chidionyema    8u  IPv4 0xf851651730a61fef      0t0  TCP *:49248 (LISTEN)
-ssh       76583 chidionyema   21u  IPv4 0xf851651730a61fef      0t0  TCP *:53145 (LISTEN)
-node      45258 chidionyema   32u  IPv6 0xf851651730a61fef      0t0  TCP *:7107 (LISTEN)

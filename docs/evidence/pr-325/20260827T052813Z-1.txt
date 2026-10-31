@@ -1,8 +1,0 @@
-# by-hand runs before the fix (2026-08-27 06:3xZ)
-ai.hermes.runaway-reaper exit 2: can't open file '~/.hermes/scripts/launchd_receipt.py'
-com.prospector-control.receipt-bridge exit 2: same file
-com.prospector-control.failover-watch exit 1: 'laptop is DOWN (state=None), 336/5 polls agree; automatic failover is disarmed' (Fly side)
-com.estate.costsentinel exit 1: '[sentinel] WARN delivered: False' (a finding, not a crash)
-ai.estate.sovereign-self-check exit 1: action=digest, reason alert_volume 60>50 (a finding)
-# skip reasons last 10 min: circuit open on those 5 jobs (15 ticks) + 31 empty sensor results
-# after: 9 passed (3 crew#85 incident tests), defs loads 41 jobs, ruff clean
