@@ -137,6 +137,35 @@ describe('AgentJobs', () => {
     expect(b.posted()[0].harness).toBe('pi');
   });
 
+  it('offers Gemini and sends it through the same founder job path', async () => {
+    const b = backend(
+      [board([])],
+      [reply(201, job({ run_id: 5, harness: 'gemini' }))],
+    );
+    render(<AgentJobs call={b.call} />);
+    await openPanel();
+    type('document the Gemini lane');
+    fireEvent.change(screen.getByLabelText('Harness'), {
+      target: { value: 'gemini' },
+    });
+    fireEvent.click(send());
+    await screen.findByRole('status');
+    expect(b.posted()[0].harness).toBe('gemini');
+  });
+
+  it('shows the actual lane submission and Greenlane judging stages', async () => {
+    const b = backend([
+      board([job({ harness: 'gemini', stage: 'greenlane' })]),
+    ]);
+    render(<AgentJobs call={b.call} />);
+    await openPanel();
+    const stages = await screen.findByTestId('agent-job-stages');
+    expect(stages.querySelector('[data-stage="submit-lane"]')).toBeTruthy();
+    expect(
+      stages.querySelector('[data-stage="greenlane"][aria-current="step"]'),
+    ).toBeTruthy();
+  });
+
   it('will not send an empty or whitespace task', async () => {
     const b = backend([board([])]);
     render(<AgentJobs call={b.call} />);

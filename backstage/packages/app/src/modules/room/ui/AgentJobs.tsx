@@ -1,5 +1,5 @@
 /**
- * Agent jobs: give an agent a task from Fleet, then watch it go agent -> firewall -> PR -> merged.
+ * Agent jobs: follow agent -> firewall -> lane submission -> Greenlane -> merged.
  *
  * The backend (fleetview_backend/agent_jobs.py) dispatches .github/workflows/agent-sandbox.yml and
  * reads its runs back; GitHub is the only ledger, so a job started anywhere shows up here. This
@@ -30,12 +30,13 @@ export type Job = {
 };
 
 export const MAX_TASK_CHARS = 4000; // agent_jobs.MAX_TASK_CHARS
-export const HARNESSES = ['pi', 'claude-code'] as const; // agent_jobs.HARNESSES
+export const HARNESSES = ['pi', 'claude-code', 'gemini'] as const; // agent_jobs.HARNESSES
 export const PIPELINE = [
   'queued',
   'agent',
   'firewall',
-  'open-pr',
+  'submit-lane',
+  'greenlane',
   'pr',
   'merged',
 ] as const;
