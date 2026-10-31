@@ -1,0 +1,12 @@
+{
+  "policy": "rust-only-k3s-spine",
+  "denial_message": "ADMISSION DENIED: Services targeting the k3s spine must be written in Rust.",
+  "allow": [
+    {
+      "image": "bad-python-service",
+      "reason": "Fixture: a legacy Python image, grandfathered for the falsifier test.",
+      "owner": "idp-platform",
+      "expires": "2026-12-31"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+name: rust-only.admission
+description: >
+  Admit or refuse an image for the Rust-only k3s spine (founder, 2026-10-31).
+  One rule engine, shared by bin/build-image, the build workflow and every agent:
+  platform/estate/libexec/rust-only-admission.py.
+  Exit 0 = admitted, 2 = usage error, 4 = refused with
+  "ADMISSION DENIED: Services targeting the k3s spine must be written in Rust."
+  With no context and no dockerfile, the whole repository's image inventory is judged.
+args:
+  repo:      { type: string, default: "/Users/roseonyema/Documents/code/idp", help: "Repository root that owns the allowlist" }
+  context:   { type: string, default: "", help: "Build context of the image, e.g. platform/jit" }
+  dockerfile: { type: string, default: "", help: "Dockerfile of the image, e.g. platform/jit/Dockerfile" }
+  image:     { type: string, default: "", help: "Image name, e.g. jit" }
+tools: [bash]
+models: []
+halt_on_failure: true
+max_turns: 3
+steps:
+  - name: admission
+    cmd: |
+      set -u
+      engine=""
+      for candidate in "$HOME/.estate/libexec/rust-only-admission.py" \
+                       "/Users/roseonyema/Documents/code/idp/platform/estate/libexec/rust-only-admission.py"; do
+        if [ -f "$candidate" ]; then engine="$candidate"; break; fi
+      done
+      if [ -z "$engine" ]; then
+        echo "rust-only.admission: the rule engine is not installed" >&2
+        exit 2
+      fi
+      set -- --repo-root {{repo}}
+      if [ -n "{{context}}" ]; then set -- "$@" --context {{context}}; fi
+      if [ -n "{{dockerfile}}" ]; then set -- "$@" --dockerfile {{dockerfile}}; fi
+      if [ -n "{{image}}" ]; then set -- "$@" --image {{image}}; fi
+      python3 "$engine" "$@"
+    on_fail: halt

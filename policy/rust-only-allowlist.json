@@ -1,0 +1,119 @@
+{
+  "policy": "rust-only-k3s-spine",
+  "ruling": "founder, 2026-10-31: the Oracle k3s spine is Rust-only. A production service that targets the spine is written in Rust; a service containing Python is rejected at the admission gate.",
+  "denial_message": "ADMISSION DENIED: Services targeting the k3s spine must be written in Rust.",
+  "readme": [
+    "Every entry below is a LEGACY Python image that already runs on, or ships toward, the spine",
+    "on the day the ruling landed. Each one is grandfathered so the gate does not break the estate",
+    "today. Grandfathering is not permission to grow: an entry names the image, its owner, the",
+    "reason it still exists, and the date by which it must be ported to Rust or removed from the",
+    "spine. Nothing is added here silently -- a new entry is a recorded decision with a reason.",
+    "Images built in other repositories need their own policy/rust-only-allowlist.json before",
+    "that repository's gate lands; the shared engine (platform/estate/libexec/rust-only-admission.py)",
+    "reads the allowlist of the repository it is asked about."
+  ],
+  "allow": [
+    {
+      "image": "aei",
+      "reason": "Legacy Python service in service before the 2026-10-31 Rust-only ruling; grandfathered, not extended.",
+      "owner": "idp-platform",
+      "expires": "2026-12-31"
+    },
+    {
+      "image": "aevum",
+      "reason": "Legacy Python service in service before the 2026-10-31 Rust-only ruling; grandfathered, not extended.",
+      "owner": "idp-platform",
+      "expires": "2026-12-31"
+    },
+    {
+      "image": "backstage",
+      "reason": "Legacy Python service in service before the 2026-10-31 Rust-only ruling; grandfathered, not extended.",
+      "owner": "idp-platform",
+      "expires": "2026-12-31"
+    },
+    {
+      "image": "rca_worker",
+      "reason": "Legacy Python worker in service before the 2026-10-31 Rust-only ruling; grandfathered, not extended.",
+      "owner": "idp-platform",
+      "expires": "2026-12-31"
+    },
+    {
+      "image": "efda",
+      "reason": "Legacy Python service in service before the 2026-10-31 Rust-only ruling; grandfathered, not extended.",
+      "owner": "idp-platform",
+      "expires": "2026-12-31"
+    },
+    {
+      "image": "estate-context-broker",
+      "reason": "Legacy Python service in service before the 2026-10-31 Rust-only ruling; grandfathered, not extended.",
+      "owner": "idp-platform",
+      "expires": "2026-12-31"
+    },
+    {
+      "image": "estate-mcp",
+      "reason": "Legacy Python service in service before the 2026-10-31 Rust-only ruling; grandfathered, not extended.",
+      "owner": "idp-platform",
+      "expires": "2026-12-31"
+    },
+    {
+      "image": "estate-scheduler",
+      "reason": "Legacy Python service in service before the 2026-10-31 Rust-only ruling; grandfathered, not extended.",
+      "owner": "idp-platform",
+      "expires": "2026-12-31"
+    },
+    {
+      "image": "factory",
+      "reason": "Legacy Python service in service before the 2026-10-31 Rust-only ruling; grandfathered, not extended.",
+      "owner": "idp-platform",
+      "expires": "2026-12-31"
+    },
+    {
+      "image": "fleetview-backend",
+      "reason": "Legacy Python service in service before the 2026-10-31 Rust-only ruling; grandfathered, not extended.",
+      "owner": "idp-platform",
+      "expires": "2026-12-31"
+    },
+    {
+      "image": "jit",
+      "reason": "Legacy Python service in service before the 2026-10-31 Rust-only ruling; grandfathered, not extended.",
+      "owner": "idp-platform",
+      "expires": "2026-12-31"
+    },
+    {
+      "image": "router-events",
+      "reason": "Legacy Python service in service before the 2026-10-31 Rust-only ruling; grandfathered, not extended.",
+      "owner": "idp-platform",
+      "expires": "2026-12-31"
+    },
+    {
+      "image": "unified-memory-server",
+      "reason": "Legacy Python service in service before the 2026-10-31 Rust-only ruling; grandfathered, not extended.",
+      "owner": "idp-platform",
+      "expires": "2026-12-31"
+    },
+    {
+      "image": "redteam_promoter",
+      "reason": "Legacy Python service in service before the 2026-10-31 Rust-only ruling; grandfathered, not extended.",
+      "owner": "idp-platform",
+      "expires": "2026-12-31"
+    },
+    {
+      "image": "sovereign-worker",
+      "reason": "Legacy Python service in service before the 2026-10-31 Rust-only ruling; grandfathered, not extended.",
+      "owner": "idp-platform",
+      "expires": "2026-12-31"
+    },
+    {
+      "image": "spine",
+      "reason": "Legacy Python service in service before the 2026-10-31 Rust-only ruling; grandfathered, not extended.",
+      "owner": "idp-platform",
+      "expires": "2026-12-31"
+    },
+    {
+      "image": "warden",
+      "reason": "Legacy Python service in service before the 2026-10-31 Rust-only ruling; grandfathered, not extended.",
+      "owner": "idp-platform",
+      "expires": "2026-12-31"
+    }
+  ]
+}

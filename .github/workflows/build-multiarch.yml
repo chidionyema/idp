@@ -135,6 +135,17 @@ jobs:
             fi
             echo "zone=$zone"
           } >> "$GITHUB_OUTPUT"
+      - id: rust-only
+        name: rust-only admission (k3s spine is Rust-only)
+        run: |
+          # The founder's ruling (2026-10-31): the k3s spine is Rust-only. An image that
+          # carries Python is refused here, before a byte is built, with the exact message
+          # the ruling names. The exit code is the verdict: 4 refuses this image only.
+          python3 platform/estate/libexec/rust-only-admission.py \
+            --repo-root . \
+            --context '${{ matrix.dockerfile.context }}' \
+            --dockerfile '${{ matrix.dockerfile.dockerfile }}' \
+            --image '${{ matrix.dockerfile.name }}'
       - id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
