@@ -296,6 +296,17 @@ def known(name: str, directory: str | Path | None = None) -> bool:
     return intent_path(name, directory) is not None
 
 
+def intent_stem(name: str, directory: str | Path | None = None) -> str | None:
+    """The committed FILE STEM for an intent name: the name the executor must be asked for.
+
+    `ci.status` lives in `ci.status.yaml`, so the door takes that file's stem -- not a guess
+    about dots and dashes. One resolver, so the catalogue and the door can never disagree about
+    which file an intent is.
+    """
+    path = intent_path(name, directory)
+    return path.stem if path is not None else None
+
+
 def intent_args(name: str, directory: str | Path | None = None) -> dict[str, dict]:
     """The arguments this intent declares, exactly as its YAML declares them.
 
@@ -605,6 +616,117 @@ def execute(
         f"{_spoken(intent)} failed. {last}" if last else f"{_spoken(intent)} failed."
     )[:160]
     return ("error", text, proc.returncode, dur)
+
+
+def build_programmatic_argv(
+    exe: str,
+    intent: str,
+    args: dict | None = None,
+    directory: str | Path | None = None,
+    session: str = "",
+) -> list[str]:
+    """argv for one intent run by a caller that is NOT speaking: `[exe, <stem>, k=v ...]`.
+
+    The name the door is asked for is the intent's COMMITTED FILE STEM, not the name the caller
+    happened to type: `ci.status` is committed as `ci.status.yaml`, and the door's direct mode
+    looks a file up by that exact stem. One resolver (`intent_stem`) for the catalogue and the
+    door, so they can never disagree about which file an intent is.
+
+    Arguments ride as `k=v` -- the door's own argument form, where the key IS the declared
+    argument name -- and not as `--k=v`, which the door would read as a literal key named `--k`.
+
+    The session, when the caller stated one, rides as `--session <id>`: the door treats an
+    explicit session as authoritative, so the run stays attributable even if the child's
+    environment is scrubbed.
+
+    Raises ValueError for an intent that is not committed, an undeclared argument or a
+    non-scalar value: the request is refused before anything runs.
+    """
+    stem = intent_stem(intent, directory)
+    if stem is None:
+        raise ValueError(f"{_spoken(intent)} is not a committed intent")
+    declared = intent_args(intent, directory)
+    argv = [exe, stem]
+    if session:
+        argv.extend(["--session", session])
+    for key in sorted(args or {}):
+        if key not in declared:
+            raise ValueError(f"{_spoken(intent)} takes no {key}")
+        value = arg_value(args[key])
+        if value is None:
+            raise ValueError(f"{key} has to be a single value")
+        argv.append(f"{key}={value}")
+    return argv
+
+
+def execute_programmatic(
+    intent: str,
+    args: dict | None = None,
+    session_id: str = "",
+    directory: str | Path | None = None,
+) -> dict:
+    """Run one committed intent for a PROGRAMMATIC caller, through the governed door.
+
+    The same door the spoken path uses -- `estate-execute` on the laptop -- so the gate, the
+    ledger and the audit stay laptop-owned (idp#7579 R2). The pod has no executor and no
+    ledger of its own, and a second gate in the pod would be a second truth about the same
+    work.
+
+    The session the caller stated is passed through UNCHANGED, as `--session` and as
+    `ESTATE_SESSION_ID`: a programmatic session is not a voice session and is never namespaced
+    as one (`estate_session_id` is deliberately NOT used here). With no session stated, the
+    inherited one is REMOVED from the child's environment, so a run is attributed to the
+    session that asked for it rather than to whatever the shell happened to carry.
+
+    The result is the door's own: `ok`, `stdout`, `stderr`, `exit_code`. A governed REFUSAL is
+    `ok: false` with the door's exit code and stderr -- the refusal is a fact to report, not
+    an exception to swallow.
+    """
+    exe = executor()
+    if exe is None:
+        return {
+            "ok": False,
+            "stdout": "",
+            "stderr": "No estate executor on this host.",
+            "exit_code": 127,
+        }
+    session = (session_id or "").strip()
+    argv = build_programmatic_argv(exe, intent, args, directory, session)
+    env = dict(os.environ)
+    if session:
+        env["ESTATE_SESSION_ID"] = session
+    else:
+        env.pop("ESTATE_SESSION_ID", None)
+    try:
+        proc = subprocess.run(  # noqa: S603
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=EXEC_TIMEOUT_S,
+            check=False,
+            stdin=subprocess.DEVNULL,
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "ok": False,
+            "stdout": "",
+            "stderr": f"{_spoken(intent)} timed out.",
+            "exit_code": 124,
+        }
+    except OSError as exc:
+        return {
+            "ok": False,
+            "stdout": "",
+            "stderr": f"{_spoken(intent)} could not start: {exc}",
+            "exit_code": 127,
+        }
+    return {
+        "ok": proc.returncode == 0,
+        "stdout": proc.stdout,
+        "stderr": proc.stderr,
+        "exit_code": proc.returncode,
+    }
 
 
 def _audit(session_id, utterance, intent, status, rc, duration_ms, args=None) -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.machinery
 import importlib.util
 import inspect
+import json
 import logging
 import math
 import os
@@ -11,6 +12,8 @@ import sqlite3
 import subprocess
 import sys
 import typing
+import urllib.error
+import urllib.request
 import yaml
 from pathlib import Path
 
@@ -45,6 +48,85 @@ INTENTS = Path(os.environ.get("ESTATE_INTENTS_DIR") or HOME / ".estate" / "inten
 ESTATE_DB = HOME / ".estate" / "estate.db"
 MAX_MATCHES = 12
 log = logging.getLogger(__name__)
+
+# THE POD'S PATH TO THE GOVERNED DOOR (idp#7579 R2).
+#
+# The estate-mcp image ships the intent LIBRARY and no executor: `~/.estate/bin/estate-execute`
+# and the plan ledger are absent from it, so the production `estate_invoke` had no gate at all
+# -- the production intent path was not the governed door. The laptop owns the gate, the
+# ledger and the audit, so a pod WITHOUT a local executor asks the laptop over ONE
+# authenticated, intent-scoped route. A pod WITH a local executor keeps using it: that is the
+# laptop's own path and it must not change.
+LAPTOP_INTENT_URL_ENV = "ESTATE_LAPTOP_INTENT_URL"
+LAPTOP_INTENT_TOKEN_FILE_ENV = "ESTATE_LAPTOP_INTENT_TOKEN_FILE"  # noqa: S105 -- a path
+LAPTOP_INTENT_TOKEN_ENV = "ESTATE_LAPTOP_INTENT_TOKEN"  # noqa: S105 -- an env var NAME
+
+
+def _local_executor() -> Path:
+    """This host's own door, if it has one. The pod does not; the laptop does."""
+    return HOME / ".estate" / "bin" / "estate-execute"
+
+
+def _remote_intent_token() -> str:
+    """The credential for the laptop's intent door: a mounted file first, then the environment.
+
+    A file is preferred because a token in an environment variable is a token in every crash
+    dump and every `/proc` of the pod.
+    """
+    path = (os.environ.get(LAPTOP_INTENT_TOKEN_FILE_ENV) or "").strip()
+    if path:
+        try:
+            token = Path(path).read_text().strip()
+        except OSError:
+            token = ""
+        if token:
+            return token
+    return (os.environ.get(LAPTOP_INTENT_TOKEN_ENV) or "").strip()
+
+
+def _invoke_remote(name, arg_items, session, timeout):
+    """Run one intent on the laptop's governed door, from a host that has no door of its own."""
+    url = (os.environ.get(LAPTOP_INTENT_URL_ENV) or "").strip()
+    token = _remote_intent_token()
+    if not url or not token:
+        return (
+            "ERROR: this gateway has no local executor and no laptop intent door. Set {} and "
+            "{}.".format(LAPTOP_INTENT_URL_ENV, LAPTOP_INTENT_TOKEN_FILE_ENV)
+        )
+    payload = json.dumps(
+        {"intent": name, "args": dict(arg_items), "session_id": session or ""}
+    )
+    request = urllib.request.Request(  # noqa: S310 -- operator-supplied door URL only
+        url,
+        data=payload.encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + token,
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+            body = json.loads(response.read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:400]
+        return "ERROR (HTTP {}): {}".format(exc.code, detail)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return "ERROR: the laptop intent door did not answer: {}".format(exc)
+    if not isinstance(body, dict):
+        return (
+            "ERROR: the laptop intent door answered with something that is not a result"
+        )
+    out = str(body.get("stdout") or "").strip()
+    err = str(body.get("stderr") or "").strip()
+    try:
+        code = int(body.get("exit_code") or 0)
+    except (TypeError, ValueError):
+        code = 1
+    if body.get("ok") and code == 0:
+        return out if out else "ok"
+    return "ERROR (exit {}):\n{}\n{}".format(code, out, err)
+
 
 # The plan contract, loaded only to RESOLVE A SESSION (who is calling). The gate itself lives in
 # the intent executor, which reads the same durable ledger -- this plugin does not second-guess
@@ -340,7 +422,6 @@ def _estate_invoke(args):
     d = _load_intent(name)
     if d is None:
         return "ERROR: unknown intent: {}".format(name)
-    cmd = [sys.executable, str(HOME / ".estate" / "bin" / "estate-execute"), name]
     # The session this call belongs to. Explicit beats environment beats pointer; the child is
     # told through BOTH the environment and an explicit flag, so the identity survives a child
     # that scrubs one of them (idp#7576).
@@ -351,14 +432,24 @@ def _estate_invoke(args):
         session or "anonymous",
         session_source,
     )
+    arg_items = []
+    for k, v in (args.get("args") or {}).items():
+        if not re.match(r"^[a-z_][a-z0-9_]*$", str(k)):
+            return "ERROR: invalid arg name: {}".format(k)
+        arg_items.append((str(k), v))
+    exe = _local_executor()
+    if not exe.exists():
+        # No executor on this host (the estate-mcp pod): the door is on the laptop, and the
+        # session travels there UNCHANGED -- a programmatic session is not a voice session and
+        # is never namespaced as one (idp#7579 R2).
+        return _invoke_remote(name, arg_items, session, timeout)
+    cmd = [sys.executable, str(exe), name]
     if session:
         cmd.extend(["--session", session])
     child_env = dict(os.environ)
     if session:
         child_env["ESTATE_SESSION_ID"] = session
-    for k, v in (args.get("args") or {}).items():
-        if not re.match(r"^[a-z_][a-z0-9_]*$", str(k)):
-            return "ERROR: invalid arg name: {}".format(k)
+    for k, v in arg_items:
         cmd.append("{}={}".format(k, v))
     idp_root = HOME / "Documents" / "code" / "idp"
     try:
