@@ -1,6 +1,0 @@
-bin/db-gen
-bin/idp-down
-bin/idp-status
-bin/idp-switch
-bin/idp-up
-bin/idp-verify

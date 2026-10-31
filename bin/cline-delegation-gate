@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""cline-delegation-gate -- the founder's Pi-first rule, enforced inside Cline.
+
+Founder, 2026-10-31: cheap headless Pi does reconnaissance and bounded implementation;
+the parent session plans, integrates, reviews and proves. Other live Cline sessions need
+this NOW, so it is a hook, not a paragraph in a rule file.
+
+CONTRACT (measured from the installed runtime, node_modules/cline/bin/.cline):
+  * hooks are discovered per run from ~/.cline/hooks (and <ws>/.clinerules/hooks);
+  * the file NAME selects the event: PreToolUse.sh, UserPromptSubmit.sh, ...;
+  * the event arrives as JSON on stdin;
+  * stdout may carry {"cancel": true, "errorMessage": "..."} to REFUSE the tool, and
+    {"context": "..."} to append steering text to the running session.
+
+RULES -- deterministic, each able to fail:
+  R1  a pi launch must be headless and bounded (--print, --mode json, a --session file);
+  R2  a pi launch must not bypass the estate router (no --api-key, provider must be estate);
+  R3  only one headless pi may be in flight at a time (a second is a refused stampede);
+  R4  the parent may read the same source file twice, never three times (stop re-exploring);
+  R5  no raw source dumps: cat/head/tail of a source file is refused with the bounded door.
+
+USAGE
+  cline-delegation-gate pretooluse                  # stdin = PreToolUse event
+  cline-delegation-gate userpromptsubmit            # stdin = prompt; emits the directive
+  cline-delegation-gate pretooluse --event FILE     # same, from a file (tests, receipts)
+
+Exit 0 always: a non-zero hook is a broken hook, not a refusal. The refusal is the JSON
+on stdout, which the runtime reads and acts on.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+STATE = Path(os.environ.get("ESTATE_CLINE_GATE_STATE",
+                            Path.home() / ".estate" / "cline-delegation"))
+READ_LIMIT = 2          # a parent may look twice; the third look is re-exploration
+CHEAP_ALIASES = ("minimax", "minimax_m27", "minimax_m31f", "groq", "cheap", "fast", "default")
+FRONTIER = re.compile(r"opus|sonnet|gpt-5|gpt-6|o1-|o3-|gemini-ultra", re.I)
+SOURCE_SUFFIXES = (".py", ".ts", ".tsx", ".js", ".jsx", ".md", ".css", ".yaml", ".yml",
+                   ".json", ".go", ".sh")
+TOOL_KINDS = ("bash", "execute", "terminal", "shell", "run", "commands", "run_commands",
+              "runcommand")
+
+DIRECTIVE = (
+    "FOUNDER RULE (enforced by cline-delegation-gate, not advice): use cheap headless Pi "
+    "(estate/minimax_m27, the configured default) for reconnaissance and bounded implementation; "
+    "you plan, integrate, review and prove. Send compact task packets and accept compact results "
+    "-- no source dumps, no repeated exploration, one Pi worker at a time. A pi launch must be "
+    "`pi --print --mode json --session <file> @<task.md>` through the estate router (no --api-key). "
+    "If the cheap lane fails (HTTP 503, timeout), checkpoint and report the route failure; never "
+    "retry in a loop and never fall back to frontier exploration to 'get it done'."
+)
+
+
+def _state_file() -> Path:
+    STATE.mkdir(parents=True, exist_ok=True)
+    return STATE / "reads.json"
+
+
+def _load_reads() -> dict:
+    try:
+        return json.loads(_state_file().read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_reads(reads: dict) -> None:
+    try:
+        _state_file().write_text(json.dumps(reads))
+    except OSError:
+        pass
+
+
+def _result(cancel: bool = False, message: str = "", context: str = "") -> dict:
+    out: dict = {}
+    if cancel:
+        out["cancel"] = True
+        out["errorMessage"] = message or "refused by cline-delegation-gate"
+    if context:
+        out["context"] = context
+    return out
+
+
+def _event(raw: str) -> dict:
+    try:
+        data = json.loads(raw or "{}")
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}

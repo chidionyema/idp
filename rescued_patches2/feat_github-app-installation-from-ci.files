@@ -1,6 +1,0 @@
-.github/workflows/oke-check.yml
-bin/idp-github-app
-bin/idp-iam-policy-drift
-bin/idp-vault-put
-tests/test_incident_crew267_bin_reads_compartment_from_env.py
-tests/test_incident_iam_policy_drift_unnamed.py

@@ -1,5 +1,0 @@
-.github/workflows/oke-check.yml
-bin/idp-set-root
-docs/reference/policy/credential-lifecycle.md
-platform/vendors/consoles.yaml
-tests/test_incident_crew66_vendor_roots_are_named_secrets.py
