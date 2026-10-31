@@ -19,7 +19,7 @@ in the same change (AGENTS.md section 6). Acceptance: `features/gates/chief-exec
 
 | Gap | Change (extends the existing thing) |
 |---|---|
-| Not always on: agent-sandbox is dispatch-only | A `schedule` trigger on the same workflow, every 15 minutes (placement ladder rung 2, GitHub Actions schedule, ADR 0034; no node, no laptop). "Always on" is the schedule plus the dead-man below, not a process. |
+| Not always on: agent-sandbox is dispatch-only | A `schedule` trigger on the same workflow, every 15 minutes (placement ladder rung 2, GitHub Actions schedule, ADR 0034; no node, no laptop). "Always on" is the schedule plus the dead-man below, not a process. 24/7 (founder, 2026-10-31) means no gap longer than the 30-minute dead-man bound: GitHub may delay or skip scheduled runs, so a second trigger (a `workflow_run` on the Greenlane's completion) chains the next tick, and a missed schedule is detected, not assumed away. |
 | No queue | Task source, in order: (1) the head incident of `estate_health`; (2) open issues carrying the claim label for pi with no live heartbeat. One task per tick, one claim per agent (AGENTS.md section 5). Empty queue: print `idle`, exit 0. |
 | `staged/*` has no triage | A promotion step in the trusted job: a `staged/<name>` branch whose head has the commit trailers and whose paths fit a claim is pushed as `lane/<name>`. Otherwise it is left and its reason recorded on the claim issue. |
 | No approval gate | Founder-surface or critical-service paths (the forced-review inventory) wait for one founder-door message with a one-tap answer; on timeout the status quo stands, never approval. Everything else lands on green via the Greenlane. Wiring the review gate is its own change with its own receipt (ADR 2026-10-30). |
