@@ -131,6 +131,13 @@ class Bridge:
             pass
 
     def plan_call(self, mid, name: str, args) -> dict:
+        # The plan's two links come from the estate's own ledgers, and the estate judges them
+        # before the plan is accepted: a link that resolves to nothing refuses, a link that is
+        # merely missing is a gap the plan-link door reports. The args the bridge applies AND
+        # records are the enriched ones, so the ledger and the live plan agree.
+        args, decision = plan.enrich_plan_args(self.session_id, name, args or {})
+        if not decision["ok"]:
+            return refuse(mid, f"Refused: {decision['reason']}")
         r = plan.apply(self.plan, name, args)
         if not r["ok"]:
             return refuse(mid, f"Refused: {r['reason']}")

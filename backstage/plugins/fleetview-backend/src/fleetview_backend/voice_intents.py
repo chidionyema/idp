@@ -33,6 +33,7 @@ READ_ONLY = frozenset(
         "friction-report",
         "git-log",
         "lane",
+        "plan.links",
         "router-status",
         "voice-turns",
         "ledger-verify",

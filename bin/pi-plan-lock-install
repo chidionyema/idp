@@ -19,7 +19,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent.parent
 SOURCE = HERE / "extensions" / "pi-plan-lock"
-FILES = ["index.ts", "plan.ts"]
+FILES = ["index.ts", "plan.ts", "derive.ts"]
 
 
 def copy(source: Path, dest: Path) -> None:

@@ -527,6 +527,14 @@ def build_app() -> FastAPI:
         body, status = routes.estate_envelope()
         return JSONResponse(content=body, status_code=status)
 
+    @app.get(routes.PLAN_LINKS_PATH)
+    def plan_links():
+        # The live plan-link state (routes.plan_links_envelope): the same numbers the voice
+        # speaks, so the page and the voice cannot describe two different estates. Sync handler,
+        # like the reads above it.
+        body, status = routes.plan_links_envelope()
+        return JSONResponse(content=body, status_code=status)
+
     @app.get(routes.HARV_PATH)
     def harv():
         body, status = routes.harv_envelope()

@@ -839,6 +839,9 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
     os.environ["ESTATE_HARNESS"] = harness_name
     os.environ["ESTATE_TICKET"] = ticket_id
     os.environ["ESTATE_GOAL"] = goal or ""
+    # The tree this executor came from: an intent that runs a door of this estate resolves it
+    # next to the code that owns the intent, so the door and the intent cannot drift apart.
+    os.environ["ESTATE_REPO_ROOT"] = str(Path(__file__).resolve().parents[3])
     # Propagate k8s.debug args as env vars so the helper script can read them
     for _k8s_key, _k8s_val in [
         ("K8S_DEBUG_NS", args.get("namespace", "")),

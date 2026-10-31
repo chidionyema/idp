@@ -44,6 +44,45 @@ def test_plan_rules_hold():
     assert re.search(r"# pass [1-9]", r.stdout), "node ran no tests: " + r.stdout[-500:]
 
 
+@pytest.mark.skipif(not _node_ok(), reason="node >= 22.6 is not installed")
+def test_derivation_rules_hold():
+    """The derivation rule (instruction and prompt, from the ledgers) holds in TypeScript too."""
+    r = subprocess.run(
+        [
+            "node",
+            "--experimental-strip-types",
+            "--no-warnings",
+            "--test",
+            str(EXT / "derive.test.ts"),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    assert r.returncode == 0, r.stdout[-3000:] + r.stderr[-1500:]
+    assert re.search(r"# pass [1-9]", r.stdout), "node ran no tests: " + r.stdout[-500:]
+
+
+@pytest.mark.skipif(not _node_ok(), reason="node >= 22.6 is not installed")
+def test_the_link_rule_holds():
+    """The link rule (a link the estate can disprove refuses; a missing one refuses only under
+    strict) holds in TypeScript too, against the same cases.json the python copy replays."""
+    r = subprocess.run(
+        [
+            "node",
+            "--experimental-strip-types",
+            "--no-warnings",
+            "--test",
+            str(EXT / "links.test.ts"),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    assert r.returncode == 0, r.stdout[-3000:] + r.stderr[-1500:]
+    assert re.search(r"# pass [1-9]", r.stdout), "node ran no tests: " + r.stdout[-500:]
+
+
 def test_the_extension_wires_every_rule_it_tests():
     """The pure rules are only a gate if index.ts actually calls them."""
     src = (EXT / "index.ts").read_text()
@@ -54,6 +93,8 @@ def test_the_extension_wires_every_rule_it_tests():
         "capText(",
         "apply(",
         "registerTool",
+        "deriveLinks(",
+        "linkDecision(",
     ):
         assert needle in src, (
             f"index.ts never uses {needle}: the rule exists and nothing enforces it"

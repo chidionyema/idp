@@ -9,21 +9,30 @@
     bin/estate-plan-links --json          the same, machine-readable
     bin/estate-plan-links --session ID    one session
     bin/estate-plan-links --strict        a missing link refuses too
+    bin/estate-plan-links --summary       one line, for a voice answer
+    bin/estate-plan-links --publish       publish the live state on the estate bus
 
-EXIT.  0 nothing is wrong.  4 a link is present and WRONG (unknown instruction, unresolvable
-founder prompt, a prompt bound to no protocol); with --strict, a MISSING link refuses too.
-2 usage.
+EXIT.  0 nothing is wrong (and, with --publish, the state was published or had not changed).
+4 a link is present and WRONG (unknown instruction, unresolvable founder prompt, a prompt bound
+to no protocol); with --strict, a MISSING link refuses too; with --publish, the state could not
+be published. 2 usage.
 
 The links are derived from the estate's own ledgers -- ~/.estate/plans/<session>.jsonl for the
 plan, ~/.estate/plans/intents.jsonl for the instruction, ~/.estate/state/prompts.jsonl for the
 founder prompt -- so the table cannot be a story an agent told about itself.
+
+The publisher is here and nowhere else: one implementation of the numbers, one bus writer
+(bin/estate-fleet), and a publication only when the state has actually CHANGED.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import subprocess
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)
@@ -34,9 +43,82 @@ if ESTATE_PKG not in sys.path:
 from governance import plan_links  # noqa: E402
 
 
+def _publish_state_path() -> str:
+    """Where the last published fingerprint lives: the estate's own state directory."""
+    return os.path.join(plan_links.estate_home(), "state", "plan-links-publish.json")
+
+
+def _fingerprint(state: dict) -> str:
+    """What "changed" means: the counts the summary line is made of."""
+    payload = json.dumps(
+        {
+            "sessions": state.get("sessions", 0),
+            "violations": state.get("violations", 0),
+            "gaps": state.get("gaps", 0),
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def publish(state: dict) -> tuple:
+    """Publish the live state on the estate bus -- once per CHANGE, never per poll.
+
+    The bus writer is bin/estate-fleet and only bin/estate-fleet: a second writer would be a
+    second bus layer. A bus that cannot be reached is reported as a reason, never as an empty
+    board and never as a traceback. Returns (published, line).
+    """
+    fp = _fingerprint(state)
+    last = ""
+    try:
+        with open(_publish_state_path(), encoding="utf-8") as fh:
+            last = str(json.load(fh).get("fingerprint") or "")
+    except (OSError, ValueError):
+        last = ""
+    if last == fp:
+        return False, "unchanged: " + state.get("summary", "")
+
+    fleet = os.environ.get("ESTATE_FLEET_BIN") or os.path.join(
+        REPO_ROOT, "bin", "estate-fleet"
+    )
+    env = dict(os.environ)
+    env["ESTATE_AGENT"] = env.get("ESTATE_FLEET_PUBLISHER") or "estate-plan-links"
+    env["ESTATE_FLEET_CHANNEL"] = "telegram"
+    try:
+        proc = subprocess.run(
+            [sys.executable, fleet, "send", "founder", str(state.get("summary", ""))],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env,
+        )
+    except Exception as exc:  # noqa: BLE001 - a bus that cannot be reached is a fact, not a crash
+        return False, f"publish failed: {type(exc).__name__}: {exc}"
+    if proc.returncode != 0:
+        detail = (proc.stdout or "").strip() or (proc.stderr or "").strip()
+        detail = detail.splitlines()[-1] if detail else ""
+        return False, f"publish failed (exit {proc.returncode}): {detail}"
+    try:
+        os.makedirs(os.path.dirname(_publish_state_path()), exist_ok=True)
+        with open(_publish_state_path(), "w", encoding="utf-8") as fh:
+            json.dump(
+                {
+                    "fingerprint": fp,
+                    "summary": state.get("summary", ""),
+                    "at": time.time(),
+                },
+                fh,
+            )
+    except OSError:
+        pass
+    return True, "published: " + str(state.get("summary", ""))
+
+
 def main(argv: list[str]) -> int:
     as_json = False
     strict = False
+    summary = False
+    do_publish = False
     session = ""
     i = 0
     while i < len(argv):
@@ -45,6 +127,10 @@ def main(argv: list[str]) -> int:
             as_json = True
         elif arg == "--strict":
             strict = True
+        elif arg == "--summary":
+            summary = True
+        elif arg == "--publish":
+            do_publish = True
         elif arg == "--session":
             i += 1
             if i >= len(argv):
@@ -63,8 +149,31 @@ def main(argv: list[str]) -> int:
 
     result = plan_links.audit(session or None)
 
+    if do_publish:
+        # --publish is its own mode: it publishes and it REPORTS, one line, and nothing else.
+        # The table belongs to the table mode -- a caller that reads stdout as the state gets
+        # the state, not a table with a line on top of it.
+        live = plan_links.state(session or None)
+        published, line = publish(live)
+        if as_json:
+            print(
+                json.dumps(
+                    {"published": published, "line": line, "state": live},
+                    indent=2,
+                    default=str,
+                )
+            )
+        else:
+            print(line)
+        # A publication that could not be made is a red state, not a green one: the founder
+        # would otherwise be looking at a board that stopped moving and calling it live.
+        return 0 if published or line.startswith("unchanged") else 4
+
     if as_json:
-        print(json.dumps(result, indent=2, default=str))
+        state = plan_links.state(session or None)
+        print(json.dumps(state, indent=2, default=str))
+    elif summary:
+        print(plan_links.summary_line(result["sessions"], len(result["violations"]), len(result["gaps"])))
     else:
         rows = result["rows"]
         if not rows:
