@@ -65,9 +65,24 @@ interface DelegateStep {
   readonly last_check_rc: number | null;
 }
 
+interface DelegateProgress {
+  readonly state: string | null;
+  readonly harness: string | null;
+  readonly route: string | null;
+  readonly identity: string | null;
+  readonly last_verified_milestone: string | null;
+  readonly tokens_since_milestone: number | null;
+  readonly elapsed_since_milestone_s: number | null;
+  readonly attempts: number | null;
+  readonly blocker: string | null;
+  readonly next_recovery: string | null;
+  readonly updated_at: string | null;
+}
+
 interface DelegateRun {
   readonly slug: string;
   readonly steps: readonly DelegateStep[];
+  readonly progress?: DelegateProgress;
 }
 
 interface DeliveryPayload {
@@ -354,6 +369,29 @@ export default function Delivery({
                             }`}
                           />
                         ))}
+                        {d.progress && d.progress.state ? (
+                          <span
+                            className="text-white/50 truncate"
+                            title={
+                              `state ${d.progress.state}` +
+                              (d.progress.route ? `, route ${d.progress.route}` : '') +
+                              (d.progress.identity ? `, identity ${d.progress.identity}` : '') +
+                              (d.progress.last_verified_milestone
+                                ? `, milestone ${d.progress.last_verified_milestone}`
+                                : ', no verified milestone') +
+                              (d.progress.tokens_since_milestone !== null
+                                ? `, ${d.progress.tokens_since_milestone} tokens since it`
+                                : '') +
+                              (d.progress.blocker ? `, blocker ${d.progress.blocker}` : '')
+                            }
+                          >
+                            {d.progress.state}
+                            {d.progress.last_verified_milestone
+                              ? ` @ ${d.progress.last_verified_milestone}`
+                              : ''}
+                            {d.progress.blocker ? ` — ${d.progress.blocker}` : ''}
+                          </span>
+                        ) : null}
                       </div>
                     ))}
                   </div>

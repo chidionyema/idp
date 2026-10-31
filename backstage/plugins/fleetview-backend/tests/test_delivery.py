@@ -380,3 +380,73 @@ def test_malformed_plist_drops_itself_not_the_board(tmp_path):
     )
     jobs = delivery.jobs(agents, "")
     assert [j["label"] for j in jobs] == ["ai.estate.good"]
+
+
+def test_delegate_progress_is_read_from_the_dispatchers_state(tmp_path):
+    """Fleet shows the progress the dispatcher measured: a verified milestone, the spend since
+    it, the blocker and the next recovery. A heartbeat or a tool call is not progress."""
+    home = tmp_path / "home"
+    home.mkdir()
+    delegate_dir = home / ".estate" / "delegate" / "demo-1"
+    delegate_dir.mkdir(parents=True)
+    (delegate_dir / "results.json").write_text(
+        json.dumps({"demo-1": {"done": False, "attempts": 2, "empirical": []}})
+    )
+    (delegate_dir / "state.json").write_text(
+        json.dumps(
+            {
+                "slug": "demo-1",
+                "state": "failed",
+                "harness": "pi",
+                "provider": "estate",
+                "model": "minimax_m27",
+                "identity": "pi-delegate-intent",
+                "last_verified_milestone": "artifact",
+                "tokens_since_milestone": 12000,
+                "elapsed_since_milestone_s": 42,
+                "attempt_count": 2,
+                "blocker": "needs-supervisor: the same failure repeated",
+                "next_recovery": "needs-supervisor",
+                "updated_at": "2026-10-27T13:00:00Z",
+            }
+        )
+    )
+
+    result = d.delivery(
+        home=home,
+        now=NOW,
+        prefix=tmp_path / "prefix",
+        daemon_plist=tmp_path / "no-such.plist",
+        agents_dir=tmp_path / "agents",
+        launchctl_text="",
+    )
+
+    delegate = result["delegate"]
+    assert len(delegate) == 1
+    progress = delegate[0]["progress"]
+    assert progress["state"] == "failed"
+    assert progress["route"] == "estate/minimax_m27"
+    assert progress["identity"] == "pi-delegate-intent"
+    assert progress["last_verified_milestone"] == "artifact"
+    assert progress["tokens_since_milestone"] == 12000
+    assert progress["blocker"].startswith("needs-supervisor")
+    assert progress["next_recovery"] == "needs-supervisor"
+
+
+def test_delegate_without_state_has_no_progress(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    delegate_dir = home / ".estate" / "delegate" / "builder-1"
+    delegate_dir.mkdir(parents=True)
+    (delegate_dir / "results.json").write_text(json.dumps({"s1": {"done": True}}))
+
+    result = d.delivery(
+        home=home,
+        now=NOW,
+        prefix=tmp_path / "prefix",
+        daemon_plist=tmp_path / "no-such.plist",
+        agents_dir=tmp_path / "agents",
+        launchctl_text="",
+    )
+
+    assert result["delegate"][0]["progress"] == {}

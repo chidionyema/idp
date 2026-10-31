@@ -1,5 +1,5 @@
 name: delegate-build
-description: Artifact policy routes work; a test decides. verb=plan|dispatch|status spec=<md> slug=<name> repo= planner=auto builder=auto reasoning=standard risk=standard parallel=3 max_turns=30 attempts=3. Ordinary planning is mid-tier; deep/high-risk work is frontier; two gated failures trigger frontier re-planning. Explicit model names are manual overrides.
+description: Artifact policy routes work; a test decides. verb=plan|dispatch|status|launch|cancel spec=<md> slug=<name> repo= planner=auto builder=auto reasoning=standard risk=standard parallel=3 max_turns=30 attempts=3. Ordinary planning is mid-tier; deep/high-risk work is frontier; two gated failures trigger frontier re-planning. Explicit model names are manual overrides. verb=launch is the generic routed path: task=<task.json> names the task, worktree, identity, done-check, milestones, budget and strategies; harness=pi (default) routes through the estate router, harness=claude keeps the old path. verb=cancel stops only this launch's own child.
 # WHY: 2026-09-27 builders went out on Opus with a spec and no plan, explored on their own and
 # burned tokens. Every step here names its files and a done-check; builders open nothing else;
 # done means the check exits 0. Model calls are `claude -p` children, so they go through the
@@ -17,9 +17,14 @@ args:
   parallel:  {type: int, default: 3}
   max_turns: {type: int, default: 30}
   attempts:  {type: int, default: 3}
+  task:     {type: string, default: ""}
+  harness:  {type: string, default: ""}
+  provider: {type: string, default: ""}
+  model:    {type: string, default: ""}
+  agent:    {type: string, default: ""}
 steps:
     # Step bound removed 2026-10-25: time is declared once, as this intent's budget
     # (docs/decisions/0043-the-bound-lives-at-the-door.md). A number here could only be a
     # guess about someone else's work, and where it fired it invented a failure.
   - name: run
-    cmd: python3 ~/.estate/libexec/delegate-build.py {{verb}} spec={{spec}} slug={{slug}} repo={{repo}} planner={{planner}} builder={{builder}} reasoning={{reasoning}} risk={{risk}} parallel={{parallel}} max_turns={{max_turns}} attempts={{attempts}}
+    cmd: python3 ~/.estate/libexec/delegate-build.py {{verb}} spec={{spec}} slug={{slug}} repo={{repo}} planner={{planner}} builder={{builder}} reasoning={{reasoning}} risk={{risk}} parallel={{parallel}} max_turns={{max_turns}} attempts={{attempts}} task={{task}} harness={{harness}} provider={{provider}} model={{model}} agent={{agent}}

@@ -123,6 +123,40 @@ def _load_unmerged_runs(home: Path) -> list[dict[str, Any]]:
     ]
 
 
+def _load_delegate_progress(entry: Path) -> dict[str, Any]:
+    """The observed progress of one delegation, read from the state the dispatcher wrote.
+
+    The results file carries the per-step evidence; the state file carries what the
+    dispatcher measured about the run: the last verified milestone, the spend since that
+    milestone, the blocker and the next recovery. Progress is a verified milestone, never a
+    heartbeat or a tool call.
+    """
+    state_path = entry.parent / "state.json"
+    try:
+        data = json.loads(state_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {
+        "state": data.get("state"),
+        "harness": data.get("harness"),
+        "route": (
+            f"{data.get('provider')}/{data.get('model')}"
+            if data.get("provider")
+            else None
+        ),
+        "identity": data.get("identity"),
+        "last_verified_milestone": data.get("last_verified_milestone"),
+        "tokens_since_milestone": _as_int(data.get("tokens_since_milestone")),
+        "elapsed_since_milestone_s": _as_int(data.get("elapsed_since_milestone_s")),
+        "attempts": _as_int(data.get("attempt_count")),
+        "blocker": data.get("blocker"),
+        "next_recovery": data.get("next_recovery"),
+        "updated_at": data.get("updated_at"),
+    }
+
+
 def _load_delegate(home: Path) -> list[dict[str, Any]]:
     base = home / ".estate" / "delegate"
     try:
@@ -165,7 +199,13 @@ def _load_delegate(home: Path) -> list[dict[str, Any]]:
                     "last_check_rc": last_check_rc,
                 }
             )
-        results.append({"slug": slug, "steps": steps_out})
+        results.append(
+            {
+                "slug": slug,
+                "steps": steps_out,
+                "progress": _load_delegate_progress(entry),
+            }
+        )
     return results
 
 

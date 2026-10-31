@@ -38,14 +38,18 @@ step's files) and the next attempt gets the original instructions plus the raw c
   status    slug=<name>
 """
 
+import hashlib
 import importlib.util
 import json
 import os
 import re
+import selectors
+import signal
 import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 
 HOME = Path.home()
@@ -167,6 +171,28 @@ Dispatcher-recorded failures:
 
 def kv(argv):
     return dict(a.split("=", 1) for a in argv if "=" in a)
+
+
+def empirical_block(attempt, check, rc, out, rewound=True):
+    """The [EMPIRICAL_STATE] block: what reality said, never what the model said.
+
+    A failed attempt is rewound out of the tree (only the step's files) and the next attempt
+    gets the original instructions plus the raw check output, never the failed attempt's words.
+    The generic launch path below uses the same block: the done-check is reality there too.
+    """
+    removed = (
+        "Its changes were removed from the tree."
+        if rewound
+        else "Its changes were left in the worktree for the next attempt to build on."
+    )
+    return f"""
+
+[EMPIRICAL_STATE] written by the dispatcher from the done-check, not by a model
+Attempt {attempt} was rejected: `{check}` exited {rc}. {removed}
+Output:
+{out}
+[/EMPIRICAL_STATE]
+The previous attempt's reasoning was deleted on purpose. Form a new hypothesis from the instructions and this output alone."""
 
 
 def artifact_policy(repo):
@@ -614,14 +640,7 @@ def cmd_dispatch(a):
             )
             if attempt > 1:
                 n = attempt - 1
-                prompt += f"""
-
-[EMPIRICAL_STATE] written by the dispatcher from the done-check, not by a model
-Attempt {n} was rejected: `{s["done_check"]}` exited {rc}. Its changes were removed from the tree.
-Output:
-{out}
-[/EMPIRICAL_STATE]
-The previous attempt's reasoning was deleted on purpose. Form a new hypothesis from the instructions and this output alone."""
+                prompt += empirical_block(n, s["done_check"], rc, out)
             text, usage, _ = claude(
                 prompt, step_builder, tree, turns, "Read,Edit,Write,Bash"
             )
@@ -723,6 +742,18 @@ def last_rc(res):
 
 def cmd_status(a):
     d = ROOT / a["slug"]
+    if (d / "state.json").exists():
+        state = json.loads((d / "state.json").read_text())
+        print(
+            f"{state.get('slug')} {state.get('state')} "
+            f"harness={state.get('harness')} "
+            f"route={state.get('provider')}/{state.get('model')} "
+            f"milestone={state.get('last_verified_milestone')} "
+            f"attempts={state.get('attempt_count')} "
+            f"tokens_since_milestone={state.get('tokens_since_milestone')} "
+            f"blocker={state.get('blocker')}"
+        )
+        return 0
     plan = json.loads((d / "plan.json").read_text())
     results = (
         json.loads((d / "results.json").read_text())
@@ -738,8 +769,935 @@ def cmd_status(a):
     return 0
 
 
+# =============================================================================
+# GENERIC ROUTED DELEGATION -- one boundary, any harness, measured progress
+# =============================================================================
+#
+# WHY. The plan/dispatch verbs above are Claude-specific: every model call is a `claude -p`
+# child and the caller cannot choose the harness. The founder asked for delegation that is
+# model/harness independent and prefers routed headless Pi. This section is that path, and it
+# reuses what is already here instead of building a second supervisor:
+#
+#   * the done-check is reality (the empirical interface above): a launch succeeds when the
+#     independent check passes, never when the model says it is done;
+#   * the [EMPIRICAL_STATE] rebuild-from-evidence retry (empirical_block above): the next
+#     attempt sees what reality said, never the failed attempt's words;
+#   * one state directory (ROOT/<slug>), which the existing Fleet reader already reads.
+#
+# WHAT IS NEW, and why it belongs here:
+#   * a task packet: the caller supplies the task, the worktree, the identity, the route and
+#     the bounds. The common path names no vendor.
+#   * a harness adapter: pi first (routed through the estate router), claude is the same
+#     contract. An unsupported harness is refused, never silently substituted.
+#   * preflight before the first model call: the child identity must match a live claim, the
+#     worktree must exist and be a git root, the route must exist, the output must be writable.
+#     A missing worktree or an identity mismatch is a refusal, not a long exploration.
+#   * progress that is measured, not narrated: milestones are declared against the actual
+#     deliverable and verified by this dispatcher. Heartbeats and tool calls are liveness.
+#   * a bounded lifecycle: wall time, tokens and steps, and only this launch's own process
+#     group is ever terminated.
+#
+# DECISION (extend, not add a second supervisor). The generic path lives in this file. A new
+# module would have been a rival delegation boundary carrying its own copy of the done-check
+# and its own state; the estate has one of each layer (AGENTS.md section 6). The plan and
+# dispatch verbs are unchanged.
+
+DELEGATE_STATES = ("queued", "running", "succeeded", "failed", "cancelled")
+
+# A retry of these changes nothing: the same input would fail the same way (context overflow,
+# missing permission, wrong identity, unsupported tool schema).
+TERMINAL_FAILURES = ("context_overflow", "permission", "identity", "schema")
+
+PACKET_REQUIRED = (
+    "task_id",
+    "spec",
+    "worktree",
+    "identity",
+    "claim_issue",
+    "done_check",
+)
+
+DEFAULT_BUDGET = {
+    "max_wall_s": 75,
+    "max_tokens": 200000,
+    "max_attempts": 2,
+    "max_steps": 32,
+}
+
+CLAIM_COMMENT = re.compile(
+    r"^CLAIM\s+agent=(?P<agent>\S+)\s+paths=(?P<paths>\S+)\s+heartbeat=(?P<heartbeat>\S+)"
+)
+CLAIM_MAX_AGE_S = 2 * 3600
+LOG_MAX_BYTES = 2_000_000
+
+PI_MODELS = Path(
+    os.environ.get("ESTATE_PI_MODELS", str(HOME / ".pi" / "agent" / "models.json"))
+)
+PI_BIN = os.environ.get("ESTATE_PI_BIN", "pi")
+
+
+def _now():
+    return datetime.now(timezone.utc)
+
+
+def _iso(moment=None):
+    return (moment or _now()).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = Path(str(path) + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2, sort_keys=True, default=str))
+    tmp.replace(path)
+
+
+def _claims_for(issue, cwd):
+    """The live CLAIM comments on an issue.
+
+    gh is the source of truth. ESTATE_DELEGATE_CLAIM_FILE points at a local mirror of the same
+    records (the shape bin/claim-open writes) for a launcher that runs where gh is not
+    available: a test, or a delegated child on a host without a session.
+    """
+    mirror = os.environ.get("ESTATE_DELEGATE_CLAIM_FILE")
+    if mirror:
+        data = json.loads(Path(mirror).read_text())
+        return [
+            r for r in data.get("claims", []) if int(r.get("issue", -1)) == int(issue)
+        ], None
+    p = subprocess.run(
+        [
+            "gh",
+            "issue",
+            "view",
+            str(issue),
+            "--json",
+            "state,comments",
+            "--jq",
+            '{"state":.state,"comments":[.comments[].body]}',
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(cwd),
+        timeout=60,
+    )
+    if p.returncode != 0:
+        return [], f"the issue {issue} could not be read: {p.stderr.strip()[:200]}"
+    data = json.loads(p.stdout or "{}")
+    if data.get("state") != "OPEN":
+        return [], f"issue {issue} is {data.get('state')}, not OPEN"
+    records = []
+    for body in data.get("comments", []):
+        m = CLAIM_COMMENT.search(body or "")
+        if not m:
+            continue
+        records.append(
+            {
+                "issue": int(issue),
+                "agent": m.group("agent"),
+                "paths": [p for p in m.group("paths").split(",") if p],
+                "heartbeat": m.group("heartbeat"),
+            }
+        )
+    return records, None
+
+
+def _heartbeat_age_s(record):
+    raw = str(record.get("heartbeat", "")).replace("Z", "+00:00")
+    try:
+        when = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return (_now() - when).total_seconds()
+
+
+def route_for(packet):
+    """Validate the model route without ever reading or printing a credential.
+
+    The pi catalogue is ~/.pi/agent/models.json: the provider must exist, must carry a baseUrl
+    (a route) and must offer the model id. A model the provider does not carry is refused --
+    the route is never swapped silently.
+    """
+    harness = packet.get("harness", "pi")
+    provider = packet.get("provider", "estate")
+    model = packet.get("model", "minimax_m27")
+    if harness == "claude":
+        if not model:
+            return None, "the claude harness needs a model name"
+        return {"provider": "claude", "model": model, "base_url": None}, None
+    if harness != "pi":
+        return None, f"harness {harness!r} is not supported (pi, claude)"
+    if not PI_MODELS.is_file():
+        return None, f"no pi model catalogue at {PI_MODELS}"
+    try:
+        data = json.loads(PI_MODELS.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return None, f"the pi model catalogue at {PI_MODELS} cannot be read: {exc}"
+    prov = (data.get("providers") or {}).get(provider)
+    if prov is None:
+        return None, f"the pi provider {provider!r} is not configured"
+    base = prov.get("baseUrl")
+    if not base:
+        return None, f"the pi provider {provider!r} carries no route (baseUrl)"
+    ids = {m.get("id") for m in (prov.get("models") or []) if isinstance(m, dict)}
+    if model not in ids:
+        return None, (
+            f"the model {model!r} is not on the {provider!r} route ({len(ids)} models are); "
+            "the route is never swapped silently"
+        )
+    return {"provider": provider, "model": model, "base_url": base}, None
+
+
+def preflight(packet, caller_identity, cwd, outdir):
+    """Everything that must be true BEFORE the first model call.
+
+    Each refusal is explicit and names what was missing. Nothing here talks to a model, so a
+    refused preflight costs nothing.
+    """
+    errors = []
+    identity = packet.get("identity")
+    if not caller_identity:
+        errors.append(
+            "the launcher has no ESTATE_AGENT identity; it cannot bind a child"
+        )
+    elif caller_identity != identity:
+        errors.append(
+            f"identity mismatch: the launcher is {caller_identity!r}, "
+            f"the task names {identity!r}"
+        )
+    issue = packet.get("claim_issue")
+    records, problem = _claims_for(issue, cwd)
+    if problem:
+        errors.append(problem)
+    else:
+        mine = [r for r in records if r.get("agent") == identity]
+        if not mine:
+            errors.append(f"no CLAIM by {identity!r} on issue {issue}")
+        else:
+            age = _heartbeat_age_s(mine[-1])
+            if age is None:
+                errors.append(
+                    f"the CLAIM on issue {issue} carries no readable heartbeat"
+                )
+            elif age > CLAIM_MAX_AGE_S:
+                errors.append(
+                    f"the CLAIM on issue {issue} is stale ({int(age)}s old); refresh it first"
+                )
+    worktree = Path(os.path.expanduser(str(packet.get("worktree", ""))))
+    if not str(worktree):
+        errors.append("the task names no worktree")
+    elif not worktree.exists():
+        errors.append(f"the worktree {worktree} does not exist")
+    elif not worktree.is_dir():
+        errors.append(f"the worktree {worktree} is not a directory")
+    else:
+        top = subprocess.run(
+            ["git", "-C", str(worktree), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if top.returncode != 0:
+            errors.append(f"the worktree {worktree} is not a git checkout")
+        elif Path(top.stdout.strip()).resolve() != worktree.resolve():
+            errors.append(
+                f"the worktree {worktree} sits inside a checkout rooted at "
+                f"{top.stdout.strip()}"
+            )
+    route, route_error = route_for(packet)
+    if route_error:
+        errors.append(route_error)
+    try:
+        outdir.mkdir(parents=True, exist_ok=True)
+        probe = outdir / ".writable"
+        probe.write_text("ok")
+        probe.unlink()
+    except OSError as exc:
+        errors.append(f"the output directory {outdir} is not writable: {exc}")
+    return errors, route
+
+
+def _run_check(command, worktree, timeout=600):
+    """Run the caller's check. Shell on purpose: the check is a command from a reviewed task
+    packet, exactly like the done-check of a plan step."""
+    if not command:
+        return None, "no check"
+    try:
+        r = subprocess.run(  # noqa: S602 -- the check is a shell command from the task packet, by design
+            command,
+            shell=True,
+            cwd=str(worktree),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return 124, f"the check did not finish within {timeout}s"
+    return r.returncode, (r.stdout + r.stderr)[-3000:]
+
+
+def evaluate_milestones(packet, worktree):
+    """Check the declared checkpoints against the actual deliverable.
+
+    A milestone is a predicate the dispatcher runs, not a claim the worker makes: a file that
+    must exist, a command that must exit 0.
+    """
+    results = {}
+    for milestone in packet.get("milestones") or []:
+        kind = milestone.get("kind")
+        if kind == "file":
+            target = Path(worktree) / str(milestone.get("path", ""))
+            ok = target.exists()
+            detail = f"file {milestone.get('path')} {'exists' if ok else 'is absent'}"
+        elif kind == "command":
+            rc, _out = _run_check(str(milestone.get("cmd", "")), worktree)
+            ok = rc == 0
+            detail = f"command exited {rc}"
+        else:
+            ok, detail = False, f"unknown milestone kind {kind!r}"
+        results[str(milestone.get("id"))] = {"verified": ok, "detail": detail}
+    return results
+
+
+def classify_failure(rc, out):
+    """What kind of failure this is. Some kinds cannot be retried at all."""
+    text = (out or "").lower()
+    if "context" in text and (
+        "overflow" in text or "too long" in text or "exceeds" in text
+    ):
+        return "context_overflow"
+    if "permission" in text or "not allowed" in text or "eacces" in text:
+        return "permission"
+    if "schema" in text or "unknown tool" in text:
+        return "schema"
+    if "identity" in text and "claim" in text:
+        return "identity"
+    return "check_failed"
+
+
+def failure_signature(out):
+    """A normalized signature of a failure: the same shape of failure, the same signature."""
+    text = re.sub(r"/[^\s]+", "<path>", out or "")
+    text = re.sub(r"[0-9a-f]{7,40}", "<hash>", text)
+    text = re.sub(r"\d+", "<n>", text)
+    text = re.sub(r"\s+", " ", text).strip().lower()
+    digest = hashlib.sha256(text[:400].encode("utf-8")).hexdigest()[:16]
+    return f"{digest}:{text[:160]}"
+
+
+class Harness:
+    """One harness, one contract. The common path names no vendor."""
+
+    name = "base"
+
+    def argv(self, packet, prompt_file, run_id, session_dir):
+        raise NotImplementedError
+
+    def event(self, obj):
+        """Map one JSONL event from the child to the common shape."""
+        return {}
+
+
+class PiHarness(Harness):
+    """Headless Pi, routed through the estate router (provider/model), never a vendor key.
+
+    The session id carries the run id, so the launcher can prove a pid is its own child before
+    it ever signals a process group.
+    """
+
+    name = "pi"
+
+    def argv(self, packet, prompt_file, run_id, session_dir):
+        return [
+            PI_BIN,
+            "--offline",
+            "--provider",
+            str(packet.get("provider", "estate")),
+            "--model",
+            str(packet.get("model", "minimax_m27")),
+            "--mode",
+            "json",
+            "--print",
+            "--no-skills",
+            "--no-prompt-templates",
+            "--session-dir",
+            str(session_dir),
+            "--session-id",
+            run_id,
+            "@" + str(prompt_file),
+        ]
+
+    def event(self, obj):
+        kind = obj.get("type")
+        if kind == "tool_execution_start":
+            return {"step": True, "tool": obj.get("toolName")}
+        if kind in ("message_end", "message", "assistant"):
+            message = (
+                obj.get("message") if isinstance(obj.get("message"), dict) else obj
+            )
+            if not isinstance(message, dict):
+                return {}
+            usage = message.get("usage") or {}
+            tokens = usage.get("totalTokens")
+            if tokens is None:
+                tokens = usage.get("total_tokens")
+            text = "".join(
+                c.get("text", "")
+                for c in (message.get("content") or [])
+                if isinstance(c, dict) and c.get("type") == "text"
+            )
+            return {"tokens": tokens, "text": text}
+        return {}
+
+
+class ClaudeHarness(Harness):
+    """The existing claude -p child on the same contract (the generic path only)."""
+
+    name = "claude"
+
+    def argv(self, packet, prompt_file, run_id, session_dir):
+        return [
+            "claude",
+            "-p",
+            "@" + str(prompt_file),
+            "--model",
+            str(packet.get("model", "claude-sonnet-5")),
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--max-turns",
+            str(packet.get("max_turns", 30)),
+            "--permission-mode",
+            "acceptEdits",
+            "--allowedTools",
+            "Read,Edit,Write,Bash",
+        ]
+
+    def event(self, obj):
+        kind = obj.get("type")
+        if kind == "assistant":
+            text = "".join(
+                c.get("text", "")
+                for c in (obj.get("message") or {}).get("content", [])
+                if isinstance(c, dict) and c.get("type") == "text"
+            )
+            return {"text": text}
+        if kind == "result":
+            usage = obj.get("usage") or {}
+            tokens = None
+            if usage:
+                tokens = (usage.get("input_tokens") or 0) + (
+                    usage.get("output_tokens") or 0
+                )
+            return {"tokens": tokens, "text": obj.get("result", "")}
+        return {}
+
+
+HARNESSES = {"pi": PiHarness, "claude": ClaudeHarness}
+
+
+def _terminate_group(proc, grace=5.0):
+    """Stop the process group this launcher started. Nobody else's."""
+    try:
+        pgid = os.getpgid(proc.pid)
+    except OSError:
+        return
+    for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, grace)):
+        try:
+            os.killpg(pgid, sig)
+        except OSError:
+            return
+        try:
+            proc.wait(timeout=wait)
+            return
+        except subprocess.TimeoutExpired:
+            continue
+
+
+def run_child(harness, packet, prompt_file, run_id, session_dir, budget, log_path):
+    """Run one bounded child.
+
+    Bounds: wall time, tokens and steps. The child is started in its own session, so the only
+    processes this launcher can terminate are the ones it started. Unknown token usage stays
+    unknown (None), never zero: an unknown spend is not a free spend.
+    """
+    argv = harness.argv(packet, prompt_file, run_id, session_dir)
+    env = child_env()
+    env["ESTATE_AGENT"] = str(packet.get("identity", ""))
+    env["ESTATE_DELEGATE_RUN_ID"] = run_id
+    proc = subprocess.Popen(  # noqa: S603 -- fixed argv (the harness), no shell
+        argv,
+        cwd=str(packet["worktree"]),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        env=env,
+        start_new_session=True,
+        bufsize=0,
+    )
+    deadline = time.monotonic() + float(budget.get("max_wall_s", 90))
+    tokens, steps, texts = 0, 0, []
+    tokens_known = False
+    terminated = None
+    written = 0
+    buf = b""
+    selector = selectors.DefaultSelector()
+    assert proc.stdout is not None
+    selector.register(proc.stdout, selectors.EVENT_READ)
+    log = open(log_path, "a", encoding="utf-8")
+    try:
+        while True:
+            if proc.poll() is not None and not selector.get_map():
+                break
+            if time.monotonic() > deadline:
+                terminated = "wall_clock"
+                break
+            if tokens_known and tokens > int(budget.get("max_tokens", 0)):
+                terminated = "tokens"
+                break
+            if steps > int(budget.get("max_steps", 0)):
+                terminated = "steps"
+                break
+            for key, _ in selector.select(timeout=0.5):
+                chunk = os.read(key.fd, 65536)
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    continue
+                buf += chunk
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    text = line.decode("utf-8", "replace").strip()
+                    if not text:
+                        continue
+                    if written < LOG_MAX_BYTES:
+                        log.write(text + "\n")
+                        written += len(text)
+                    try:
+                        obj = json.loads(text)
+                    except json.JSONDecodeError:
+                        continue
+                    event = harness.event(obj)
+                    if event.get("step"):
+                        steps += 1
+                    usage = event.get("tokens")
+                    if usage is not None:
+                        tokens += int(usage)
+                        tokens_known = True
+                    if event.get("text"):
+                        texts.append(str(event["text"]))
+    finally:
+        log.close()
+        selector.close()
+    if terminated:
+        _terminate_group(proc)
+    else:
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            _terminate_group(proc)
+    return {
+        "pid": proc.pid,
+        "exit_code": proc.returncode,
+        "tokens": tokens if tokens_known else None,
+        "steps": steps,
+        "terminated": terminated,
+        "texts": texts,
+        "argv": argv,
+    }
+
+
+def _command_line(pid):
+    p = subprocess.run(
+        ["ps", "-p", str(pid), "-o", "command="],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if p.returncode != 0:
+        return None
+    return p.stdout.strip()
+
+
+def owns_child(pid, run_id):
+    """Prove a pid is this launcher's child before it is ever signalled.
+
+    The run id is in the child's argv (the pi session id), so a pid that does not carry it is
+    somebody else's process and is left alone.
+    """
+    command = _command_line(pid)
+    if not command:
+        return False
+    return run_id in command
+
+
+LAUNCH_PROMPT = """You are a delegated worker. Do exactly the task below and nothing else.
+
+Work only inside the directory you were started in. Do not search the repository, do not
+refactor, do not touch anything else. Never print secrets. The dispatcher's check decides
+whether you are done, not your own say-so.
+
+The task:
+---
+{spec}
+---"""
+
+
+def build_prompt(packet, attempt, previous):
+    spec = Path(os.path.expanduser(str(packet["spec"]))).read_text()
+    parts = [LAUNCH_PROMPT.format(spec=spec)]
+    if packet.get("prompt"):
+        parts.append(str(packet["prompt"]))
+    if attempt > 1 and previous:
+        parts.append(
+            empirical_block(
+                previous["attempt"],
+                packet["done_check"],
+                previous.get("check_rc"),
+                previous.get("check_output", ""),
+                rewound=False,
+            )
+        )
+        parts.append(
+            "This attempt uses a different strategy from the last one: "
+            f"{packet['strategies'][attempt - 1]!r}. "
+            "Name the checkpoint you expect to reach before you start."
+        )
+    return "\n\n".join(parts)
+
+
+def _budget_of(packet):
+    budget = dict(DEFAULT_BUDGET)
+    budget.update(packet.get("budget") or {})
+    return budget
+
+
+def cmd_launch(a):
+    slug = str(a.get("slug") or "")
+    if not slug:
+        print("launch needs a slug (the task identity)", file=sys.stderr)
+        return 1
+    d = ROOT / slug
+    packet_path = os.path.expanduser(str(a.get("task") or (d / "task.json")))
+    try:
+        packet = json.loads(Path(packet_path).read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"cannot read the task packet {packet_path}: {exc}", file=sys.stderr)
+        return 1
+    missing = [f for f in PACKET_REQUIRED if not packet.get(f)]
+    if missing:
+        print("INVALID task packet: missing " + ", ".join(missing), file=sys.stderr)
+        return 1
+    # The CLI may narrow the packet. It may never take another agent's identity: the preflight
+    # below refuses any identity that is not the launcher's own.
+    for key, arg in (
+        ("harness", "harness"),
+        ("provider", "provider"),
+        ("model", "model"),
+        ("identity", "agent"),
+        ("worktree", "worktree"),
+    ):
+        if a.get(arg):
+            packet[key] = (
+                os.path.expanduser(str(a[arg])) if key == "worktree" else str(a[arg])
+            )
+    if a.get("done_check"):
+        packet["done_check"] = str(a["done_check"])
+    packet["worktree"] = os.path.expanduser(str(packet["worktree"]))
+    # The launcher's identity: ESTATE_AGENT when the caller set it, otherwise the name the
+    # governed intent call carried. If both are present and disagree, that is a refusal, not
+    # a preference: the child identity must be one identity.
+    env_identity = os.environ.get("ESTATE_AGENT", "")
+    arg_identity = str(a.get("agent") or "")
+    if env_identity and arg_identity and env_identity != arg_identity:
+        print(
+            f"IDENTITY CONFLICT: the launcher runs as {env_identity!r} but the intent names "
+            f"{arg_identity!r}; the child identity must be one identity",
+            file=sys.stderr,
+        )
+        return 1
+    caller = env_identity or arg_identity
+    errors, route = preflight(packet, caller, d, d)
+    budget = _budget_of(packet)
+    state = {
+        "task_id": packet["task_id"],
+        "slug": slug,
+        "state": "queued",
+        "harness": packet.get("harness", "pi"),
+        "provider": packet.get("provider", "estate"),
+        "model": packet.get("model", "minimax_m27"),
+        "identity": packet.get("identity"),
+        "worktree": packet["worktree"],
+        "done_check": packet.get("done_check"),
+        "claim_issue": packet.get("claim_issue"),
+        "route": route or {},
+        "preflight": {"errors": errors},
+        "attempts": [],
+        "attempt_count": 0,
+        "milestones": {},
+        "last_verified_milestone": None,
+        "tokens_since_milestone": None,
+        "elapsed_since_milestone_s": None,
+        "failure_signatures": [],
+        "blocker": None,
+        "next_recovery": None,
+        "budget": budget,
+        "evidence": {
+            "task": str(packet_path),
+            "events": [],
+            "results": str(d / "results.json"),
+        },
+        "started_at": _iso(),
+        "updated_at": _iso(),
+    }
+    if errors:
+        state["state"] = "failed"
+        state["blocker"] = "preflight: " + "; ".join(errors)
+        state["next_recovery"] = "fix what preflight named, then launch again"
+        _write_json(d / "state.json", state)
+        print(f"preflight refused: {state['blocker']}", file=sys.stderr)
+        return 1
+    harness_cls = HARNESSES.get(str(packet.get("harness", "pi")))
+    if harness_cls is None:
+        state["state"] = "failed"
+        state["blocker"] = f"harness {packet.get('harness')!r} is not supported"
+        _write_json(d / "state.json", state)
+        print(f"preflight refused: {state['blocker']}", file=sys.stderr)
+        return 1
+    harness = harness_cls()
+    run_id = f"delegate-{slug}-{int(time.time())}"
+    session_dir = d / "sessions"
+    session_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(d / "task.json", packet)
+    strategies = [str(s) for s in (packet.get("strategies") or [])]
+    state["state"] = "running"
+    state["run_id"] = run_id
+    _write_json(d / "state.json", state)
+    started = time.monotonic()
+    total_tokens = 0
+    tokens_known = False
+    signatures = []
+    records = []
+    blocker = None
+    succeeded = False
+    last_text = ""
+    attempt = 0
+    while attempt < int(budget["max_attempts"]):
+        attempt += 1
+        strategy = strategies[attempt - 1] if attempt - 1 < len(strategies) else None
+        if attempt > 1:
+            previous_strategy = strategies[attempt - 2]
+            if strategy is None:
+                blocker = (
+                    "needs-supervisor: no permitted changed strategy remains; "
+                    "the task may not be retried unchanged"
+                )
+                state["next_recovery"] = "needs-supervisor"
+                break
+            if strategy == previous_strategy:
+                blocker = (
+                    f"needs-supervisor: the strategy did not change ({strategy!r}); "
+                    "an identical retry is refused"
+                )
+                state["next_recovery"] = "needs-supervisor"
+                break
+        remaining_wall = float(budget["max_wall_s"]) - (time.monotonic() - started)
+        if remaining_wall <= 0:
+            blocker = f"budget: the wall-clock bound ({budget['max_wall_s']}s) is spent"
+            break
+        remaining_tokens = int(budget["max_tokens"]) - (
+            total_tokens if tokens_known else 0
+        )
+        if tokens_known and remaining_tokens <= 0:
+            blocker = f"budget: the token bound ({budget['max_tokens']}) is spent"
+            break
+        prompt_file = d / f"prompt-{attempt}.md"
+        prompt_file.write_text(
+            build_prompt(packet, attempt, records[-1] if records else None)
+        )
+        child_budget = {
+            "max_wall_s": remaining_wall,
+            "max_tokens": remaining_tokens,
+            "max_steps": int(budget["max_steps"]),
+        }
+        log_path = d / f"events-{attempt}.jsonl"
+        child = run_child(
+            harness,
+            packet,
+            prompt_file,
+            f"{run_id}-{attempt}",
+            session_dir,
+            child_budget,
+            log_path,
+        )
+        state["pid"] = child["pid"]
+        state["run_id"] = f"{run_id}-{attempt}"
+        if child["tokens"] is not None:
+            total_tokens += child["tokens"]
+            tokens_known = True
+        last_text = child["texts"][-1] if child["texts"] else ""
+        rc, out = _run_check(str(packet["done_check"]), packet["worktree"])
+        milestones = evaluate_milestones(packet, packet["worktree"])
+        record = {
+            "attempt": attempt,
+            "strategy": strategy,
+            "exit_code": child["exit_code"],
+            "terminated": child["terminated"],
+            "tokens": child["tokens"],
+            "steps": child["steps"],
+            "elapsed_s": round(time.monotonic() - started, 1),
+            "check_rc": rc,
+            "check_output": out,
+            "milestones": milestones,
+            "events": str(log_path),
+            "said": last_text[-300:],
+        }
+        records.append(record)
+        state["attempts"] = records
+        state["attempt_count"] = attempt
+        state["milestones"] = milestones
+        state["tokens_since_milestone"] = total_tokens if tokens_known else None
+        state["elapsed_since_milestone_s"] = round(time.monotonic() - started, 1)
+        state["evidence"]["events"].append(str(log_path))
+        # A milestone that turns green is progress. A file touched, a tool call or a heartbeat
+        # is liveness, and liveness is not progress.
+        for milestone_id, milestone in milestones.items():
+            if milestone.get("verified") and milestone_id != state.get(
+                "last_verified_milestone"
+            ):
+                state["last_verified_milestone"] = milestone_id
+                state["tokens_since_milestone"] = 0 if tokens_known else None
+                state["elapsed_since_milestone_s"] = 0.0
+        _write_json(d / "state.json", state)
+        if rc == 0:
+            succeeded = True
+            break
+        signature = failure_signature(out)
+        category = classify_failure(rc, out)
+        record["failure_category"] = category
+        record["failure_signature"] = signature
+        repeated = signature in signatures
+        if not repeated:
+            signatures.append(signature)
+        state["failure_signatures"] = signatures
+        if category in TERMINAL_FAILURES:
+            blocker = f"{category}: the same input would fail the same way; no retry"
+            state["next_recovery"] = "needs-supervisor"
+            break
+        if repeated:
+            blocker = (
+                f"needs-supervisor: the same failure repeated ({signature}); "
+                "a changed strategy is required"
+            )
+            state["next_recovery"] = "needs-supervisor"
+            break
+        state["next_recovery"] = (
+            f"retry with a changed strategy ({strategies[attempt]!r})"
+            if attempt < len(strategies)
+            else "no permitted changed strategy remains"
+        )
+        _write_json(d / "state.json", state)
+    if succeeded:
+        state["state"] = "succeeded"
+        state["blocker"] = None
+        state["next_recovery"] = None
+    else:
+        state["state"] = "failed"
+        state["blocker"] = blocker or "the task did not reach its done-check"
+    state["finished_at"] = _iso()
+    state["updated_at"] = _iso()
+    state["elapsed_s"] = round(time.monotonic() - started, 1)
+    state["tokens"] = total_tokens if tokens_known else None
+    _write_json(d / "state.json", state)
+    results = {
+        str(packet["task_id"]): {
+            "done": succeeded,
+            "attempts": len(records),
+            "empirical": [
+                {
+                    "attempt": r["attempt"],
+                    "check_rc": r["check_rc"],
+                    "check_output": r["check_output"],
+                }
+                for r in records
+            ],
+            "scratchpad": {
+                "said": last_text[-300:],
+                "note": "the worker's own words; unverified, never used as evidence",
+            },
+            "usage": [
+                {
+                    "tokens": r["tokens"],
+                    "steps": r["steps"],
+                    "elapsed_s": r["elapsed_s"],
+                    "strategy": r["strategy"],
+                }
+                for r in records
+            ],
+        }
+    }
+    _write_json(d / "results.json", results)
+    print(
+        f"launch {slug}: {state['state']} attempts={len(records)} "
+        f"milestone={state.get('last_verified_milestone')} "
+        f"tokens={state.get('tokens')} blocker={state.get('blocker')}"
+    )
+    print(f"state: {d / 'state.json'}")
+    return 0 if succeeded else 1
+
+
+def cmd_cancel(a):
+    """Stop this delegation's own child. Nobody else's process is ever signalled."""
+    slug = str(a.get("slug") or "")
+    d = ROOT / slug
+    state_path = d / "state.json"
+    if not state_path.exists():
+        print(f"no delegation state for {slug}", file=sys.stderr)
+        return 1
+    state = json.loads(state_path.read_text())
+    if state.get("state") != "running":
+        print(f"{slug} is {state.get('state')}; nothing to cancel")
+        return 1
+    pid = state.get("pid")
+    run_id = state.get("run_id") or ""
+    if not pid:
+        print(f"{slug} holds no pid", file=sys.stderr)
+        return 1
+    if not owns_child(int(pid), run_id):
+        print(
+            f"refusing to cancel: pid {pid} does not carry the run id, so it is not this "
+            "delegation's child; only owned children are stopped",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        pgid = os.getpgid(int(pid))
+    except OSError:
+        pgid = int(pid)
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(pgid, sig)
+        except OSError:
+            break
+        time.sleep(1)
+        if not _command_line(pid):
+            break
+    state["state"] = "cancelled"
+    state["blocker"] = "cancelled by the caller"
+    state["finished_at"] = _iso()
+    state["updated_at"] = _iso()
+    _write_json(state_path, state)
+    print(f"cancelled {slug} (pid {pid})")
+    return 0
+
+
 if __name__ == "__main__":
     verb, args = sys.argv[1], kv(sys.argv[2:])
     sys.exit(
-        {"plan": cmd_plan, "dispatch": cmd_dispatch, "status": cmd_status}[verb](args)
+        {
+            "plan": cmd_plan,
+            "dispatch": cmd_dispatch,
+            "status": cmd_status,
+            "launch": cmd_launch,
+            "cancel": cmd_cancel,
+        }[verb](args)
     )
