@@ -29,6 +29,7 @@ KUBECONFORM_VER="0.8.0"
 SOPS_VER="3.13.3"
 TEMPORAL_VER="1.9.1"
 YAMLLINT_VER="1.37.1"   # pip, not a release binary; .github/workflows/ci.yml and fast-gate.yml pin the same
+REPOMIX_VER="1.18.1"    # npm, pinned: repo-export packs the estate's code with it (platform/estate/intents/repo-export.yaml)
 
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"
@@ -188,6 +189,30 @@ else
     ln -sf "$TOOLS_DIR/yamllint-venv/bin/yamllint" "$TOOLS_DIR/yamllint"
     _ok "yamllint $YAMLLINT_VER installed"
   else _fail "yamllint install failed (python3 -m venv + pip install yamllint==$YAMLLINT_VER)"; fi
+fi
+
+# repomix -- the packer behind the repo-export intent. It is pinned because an unpinned
+# `npx repomix` can pull a new release onto a review pack unnoticed, and 1.18.1 is the latest
+# published version. Installed with npm into its own prefix under TOOLS_DIR (so the tree is
+# disposable) with a shim beside the other binaries. The npm registry is the only network step
+# here; when npm is missing the install is a warning, not a failure -- the rest of the toolset
+# still installs, and repo-export names the missing tool itself.
+_REPO_ROOT="$TOOLS_DIR/repomix"
+if [ -x "$_REPO_ROOT/node_modules/.bin/repomix" ] \
+   && [ "$(cat "$_REPO_ROOT/.idp-stamp" 2>/dev/null)" = "$REPOMIX_VER" ]; then
+  _ok "repomix $REPOMIX_VER"
+elif ! command -v npm >/dev/null 2>&1; then
+  printf 'WARN  deps    npm not found -- repomix %s not installed (repo-export needs it)\n' "$REPOMIX_VER"
+  printf '      install node (which brings npm), then: bin/idp-install-deps\n'
+else
+  _inst "repomix $REPOMIX_VER"
+  if npm install --silent --no-audit --no-fund --prefix "$_REPO_ROOT" "repomix@$REPOMIX_VER" >/dev/null 2>&1 \
+     && [ -x "$_REPO_ROOT/node_modules/.bin/repomix" ]; then
+    mkdir -p "$TOOLS_DIR/bin"
+    ln -sf "$_REPO_ROOT/node_modules/.bin/repomix" "$TOOLS_DIR/bin/repomix"
+    printf '%s' "$REPOMIX_VER" > "$_REPO_ROOT/.idp-stamp"
+    _ok "repomix $REPOMIX_VER installed"
+  else _fail "repomix install failed (npm install --prefix $_REPO_ROOT repomix@$REPOMIX_VER)"; fi
 fi
 
 # python 3.12 -- the interpreter ci.yml's offline-gate runs bin/idp-ci on, with the same pip lines.
