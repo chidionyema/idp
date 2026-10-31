@@ -1,0 +1,603 @@
+{
+ "_": "The ONE register of estate memory. The audit reads this; nothing about memory is true unless a probe here says so. verdicts: KEEP (must reach 'operating'), HOLD (frozen, not adopted), RETIRE (code must be gone), DECIDE (founder). Refresh verified_at only by re-running the audit on a fresh clone of main, never by editing.",
+ "verified_at": "2026-10-31",
+ "max_age_days": 7,
+ "runtime_manifest": "platform/estate/memory/runtimes.json",
+ "required_runtimes": [
+  "claude-code",
+  "cline",
+  "codex",
+  "cursor",
+  "gemini",
+  "opencode",
+  "pi"
+ ],
+ "runtimes_covered_by_machine_capture": [],
+ "scan_code": [
+  "bin/*memory*",
+  "bin/estate-brief",
+  "bin/estate-graph-drain",
+  "bin/estate-checkpoint",
+  "platform/estate/memory/*",
+  "platform/cortex/*",
+  "platform/unified-memory-server/*",
+  "mcp/plugins/*memory*",
+  "platform/llm/graph_capture.py",
+  "platform/llm/active_memory.py"
+ ],
+ "scan_docs": [
+  "docs/specs",
+  "docs/decisions",
+  "docs/reports"
+ ],
+ "documents": {
+  "docs/decisions/0036-one-memory-plane-and-it-is-cortex.md": "KEEP-AMEND",
+  "docs/decisions/2026-09-07-the-checkpoint-lives-on-the-issue-not-in-a-vendor-file.md": "KEEP",
+  "docs/specs/2026-10-02-memory-plane-cortex-adoption.md": "KEEP-AMEND",
+  "docs/specs/2026-10-19-active-memory-and-focus-vs-muse.md": "KEEP",
+  "docs/specs/hosted-session-memory.md": "ARCHIVE",
+  "docs/specs/2026-09-15-fleetview-triage-and-focus.md": "REVIEW",
+  "docs/reports/2026-10-02-memory-inventory-measured.md": "ARCHIVE",
+  "docs/reports/2026-10-02-memory-layer-correction-measured.md": "ARCHIVE",
+  "docs/specs/2026-10-31-memory-one-plane.md": "KEEP",
+  "docs/decisions/2026-10-26-a-memory-write-earns-its-rung-and-the-gate-asks-the-door-on-the-wire.md": "KEEP"
+ },
+ "lanes": [
+  {
+   "id": "door",
+   "name": "Memory door: remember / recall / brief over the one MCP door",
+   "layer": "door",
+   "verdict": "KEEP",
+   "why": "ADR 0006. The interface every agent already has. Unreachable since 2026-10-29 (OKE control plane removed).",
+   "probes": [
+    {
+     "t": "file",
+     "path": "mcp/plugins/estate_memory.py"
+    },
+    {
+     "t": "file",
+     "path": "platform/estate/memory/door.py"
+    },
+    {
+     "t": "file",
+     "path": "bin/estate-memory-mcp"
+    },
+    {
+     "t": "file",
+     "path": "bin/memory-gate"
+    },
+    {
+     "t": "file",
+     "path": "platform/estate/memory/runtimes.json"
+    }
+   ],
+   "live": [
+    {
+     "t": "door",
+     "url": "https://mcp.mumchimp.com/estate/mcp"
+    },
+    {
+     "t": "canary",
+     "path": "~/.estate/memory/canary-result.json",
+     "max_age_h": 24
+    }
+   ],
+   "owns": [
+    "mcp/plugins/estate_memory.py",
+    "platform/estate/memory/door.py",
+    "platform/estate/memory/runtimes.json",
+    "bin/estate-memory-mcp",
+    "bin/memory-gate",
+    "bin/memory-forward-launchd",
+    "bin/memory-door-schema"
+   ]
+  },
+  {
+   "id": "store",
+   "name": "Unified memory server (Postgres, harness, ranking, consolidation)",
+   "layer": "store",
+   "verdict": "KEEP",
+   "why": "The only store with guards, bi-temporal facts, ranking and a door. Needs a home (k3s or PAYG): founder decision.",
+   "probes": [
+    {
+     "t": "all_exist",
+     "paths": [
+      "platform/unified-memory-server/main.py",
+      "platform/unified-memory-server/harness.py",
+      "platform/unified-memory-server/ranking.py",
+      "platform/unified-memory-server/consolidation.py",
+      "platform/unified-memory-server/schema.sql",
+      "platform/unified-memory-server/Dockerfile",
+      "platform/unified-memory-server/oke-unified-memory.yaml"
+     ]
+    }
+   ],
+   "live": [
+    {
+     "t": "door",
+     "url": "https://mcp.mumchimp.com/estate/mcp"
+    }
+   ],
+   "owns": [
+    "platform/unified-memory-server/*"
+   ]
+  },
+  {
+   "id": "runtime-hooks",
+   "name": "Claude Code hooks: session brief, refuse unbriefed edit, refuse stop without write-back",
+   "layer": "enforce",
+   "verdict": "KEEP",
+   "why": "The only enforcement; Claude Code only. Rule must move to lane-submit so it is harness-independent.",
+   "probes": [
+    {
+     "t": "file",
+     "path": "bin/estate-brief"
+    },
+    {
+     "t": "file",
+     "path": "bin/estate-memory-enforce"
+    },
+    {
+     "t": "file",
+     "path": "bin/estate-memory-install"
+    },
+    {
+     "t": "file",
+     "path": "platform/estate/memory/focus.py"
+    }
+   ],
+   "live": [
+    {
+     "t": "ledger_recent",
+     "path": "~/.estate/memory/enforce-ledger.jsonl",
+     "max_age_h": 24,
+     "min_lines": 1
+    }
+   ],
+   "owns": [
+    "bin/estate-brief",
+    "bin/estate-memory-enforce",
+    "bin/estate-memory-install",
+    "platform/estate/memory/focus.py",
+    "platform/estate/memory/handback.py",
+    "platform/estate/memory/plan.py",
+    "platform/estate/memory/test_handback.py"
+   ]
+  },
+  {
+   "id": "pi-opencode-injection",
+   "name": "Pi and opencode session-start brief extensions",
+   "layer": "inject",
+   "verdict": "KEEP",
+   "why": "Injects a brief; no enforcement and no record that it ran.",
+   "probes": [
+    {
+     "t": "file",
+     "path": "platform/estate/memory/pi-estate-memory.ts"
+    },
+    {
+     "t": "file",
+     "path": "platform/estate/memory/opencode-estate-memory.js"
+    }
+   ],
+   "live": [],
+   "owns": [
+    "platform/estate/memory/pi-estate-memory.ts",
+    "platform/estate/memory/opencode-estate-memory.js"
+   ]
+  },
+  {
+   "id": "router-inject",
+   "name": "Router Active Memory + Active Focus block on every model call",
+   "layer": "inject",
+   "verdict": "KEEP",
+   "why": "Founder 2026-10-20: all models and harnesses must use memory without per-runtime adapters. Dies with the router.",
+   "probes": [
+    {
+     "t": "file",
+     "path": "platform/llm/active_memory.py"
+    }
+   ],
+   "live": [],
+   "owns": [
+    "platform/llm/active_memory.py"
+   ]
+  },
+  {
+   "id": "router-capture",
+   "name": "Router graph capture -> spool -> growmos drain",
+   "layer": "capture",
+   "verdict": "KEEP",
+   "why": "Agents are not asked; every exchange lands in the graph. Dies with the router.",
+   "probes": [
+    {
+     "t": "file",
+     "path": "platform/llm/graph_capture.py"
+    },
+    {
+     "t": "file",
+     "path": "bin/estate-graph-drain"
+    }
+   ],
+   "live": [
+    {
+     "t": "log_recent",
+     "path": "~/.estate/graph-drain.log",
+     "max_age_h": 1
+    }
+   ],
+   "owns": [
+    "platform/llm/graph_capture.py",
+    "bin/estate-graph-drain"
+   ]
+  },
+  {
+   "id": "growmos-graph",
+   "name": "growmos estate-graph (what agents actually write to)",
+   "layer": "store",
+   "verdict": "KEEP",
+   "why": "The only memory that ran continuously 09-23 to 10-31. Lexical only, no vectors.",
+   "probes": [],
+   "live": [
+    {
+     "t": "dir_recent",
+     "path": "~/Documents/code/estate-graph",
+     "max_age_h": 48
+    }
+   ],
+   "owns": []
+  },
+  {
+   "id": "checkpoint",
+   "name": "Session checkpoint on the issue",
+   "layer": "continuity",
+   "verdict": "KEEP",
+   "why": "ADR 2026-09-07: continuity lives on the issue, not in a vendor file.",
+   "probes": [
+    {
+     "t": "file",
+     "path": "bin/estate-checkpoint"
+    }
+   ],
+   "live": [],
+   "owns": [
+    "bin/estate-checkpoint"
+   ]
+  },
+  {
+   "id": "machine-capture",
+   "name": "Capture + claim-brief at claim-open and lane-submit (router-independent)",
+   "layer": "capture",
+   "verdict": "KEEP",
+   "why": "NEW. The path every harness already must take, so memory no longer depends on the router or on a hook.",
+   "probes": [
+    {
+     "t": "file",
+     "path": "bin/estate-memory-capture"
+    },
+    {
+     "t": "file",
+     "path": "bin/estate-memory-claim-brief"
+    }
+   ],
+   "live": [
+    {
+     "t": "dir_recent",
+     "path": "~/.estate/memory/captures",
+     "max_age_h": 24
+    }
+   ],
+   "owns": [
+    "bin/estate-memory-capture",
+    "bin/estate-memory-claim-brief"
+   ]
+  },
+  {
+   "id": "canary",
+   "name": "Cross-surface canary: a fact written on surface A is briefed on surface B",
+   "layer": "proof",
+   "verdict": "KEEP",
+   "why": "NEW. The proof the founder asked for before anything more is built.",
+   "probes": [
+    {
+     "t": "file",
+     "path": "bin/estate-memory-canary"
+    }
+   ],
+   "live": [
+    {
+     "t": "canary",
+     "path": "~/.estate/memory/canary-result.json",
+     "max_age_h": 24
+    }
+   ],
+   "owns": [
+    "bin/estate-memory-canary"
+   ]
+  },
+  {
+   "id": "audit",
+   "name": "This audit, run on a schedule, alerting on red",
+   "layer": "proof",
+   "verdict": "KEEP",
+   "why": "NEW. Recurring, machine-run; the answer to 'is memory in use' without anyone digging.",
+   "probes": [
+    {
+     "t": "file",
+     "path": "bin/estate-memory-audit"
+    },
+    {
+     "t": "file",
+     "path": "catalog/memory-register.json"
+    },
+    {
+     "t": "file",
+     "path": ".github/workflows/memory-audit.yml"
+    }
+   ],
+   "live": [
+    {
+     "t": "log_recent",
+     "path": "~/.estate/memory/audit/memory-audit.json",
+     "max_age_h": 8
+    }
+   ],
+   "owns": [
+    "bin/estate-memory-audit"
+   ]
+  },
+  {
+   "id": "cortex",
+   "name": "Cortex retrieval engine (ADR 0036)",
+   "layer": "engine",
+   "verdict": "HOLD",
+   "why": "Manifests exist; no Dockerfile and no vendored source, so it cannot be built. Frozen until the cross-surface canary is green and a replay benchmark shows it helps.",
+   "probes": [
+    {
+     "t": "file",
+     "path": "platform/cortex/cortex.toml"
+    },
+    {
+     "t": "file",
+     "path": "platform/cortex/statefulset.yaml"
+    },
+    {
+     "t": "file",
+     "path": "platform/cortex/manifests.yaml"
+    },
+    {
+     "t": "all_exist",
+     "paths": [
+      "platform/cortex/Dockerfile",
+      "vendor/cortex"
+     ]
+    }
+   ],
+   "live": [],
+   "owns": [
+    "platform/cortex/*"
+   ]
+  },
+  {
+   "id": "dead-launchers",
+   "name": "bin/memory-mcp, memory-a2m, memory-dream (launch a .memory stack that is not there)",
+   "layer": "legacy",
+   "verdict": "RETIRE",
+   "why": "Each execs into ../.memory/.venv; the .memory directory does not exist.",
+   "probes": [
+    {
+     "t": "absent",
+     "path": "bin/memory-mcp"
+    },
+    {
+     "t": "absent",
+     "path": "bin/memory-a2m"
+    },
+    {
+     "t": "absent",
+     "path": "bin/memory-dream"
+    }
+   ],
+   "live": [],
+   "owns": [
+    "bin/memory-mcp",
+    "bin/memory-a2m",
+    "bin/memory-dream"
+   ]
+  },
+  {
+   "id": "curation-worker",
+   "name": "curation_worker.py",
+   "layer": "legacy",
+   "verdict": "RETIRE",
+   "why": "Spec 2026-10-19: never deployed; its UPDATE resets updated_at.",
+   "probes": [
+    {
+     "t": "absent",
+     "path": "platform/unified-memory-server/curation_worker.py"
+    }
+   ],
+   "live": [],
+   "owns": []
+  },
+  {
+   "id": "otto-legacy",
+   "name": "otto/memory fast_recall, otto_facts, otto-memory-store Job",
+   "layer": "legacy",
+   "verdict": "RETIRE",
+   "why": "ADR 0036: deleted in favour of the door. Write-only on 2026-10-02.",
+   "probes": [],
+   "blind_reason": "lives in the otto repo/cluster; this checkout cannot see it",
+   "live": [],
+   "owns": []
+  },
+  {
+   "id": "hindsight",
+   "name": "Hindsight API",
+   "layer": "legacy",
+   "verdict": "RETIRE",
+   "why": "Zero requests in 24h on 2026-10-02; ADR 0036 retires it.",
+   "probes": [],
+   "blind_reason": "a cluster namespace; cannot be checked from the repo",
+   "live": [],
+   "owns": []
+  },
+  {
+   "id": "hermes-plugins",
+   "name": "Nine memory plugins in the hermes-agent image",
+   "layer": "legacy",
+   "verdict": "RETIRE",
+   "why": "No evidence any is enabled.",
+   "probes": [],
+   "blind_reason": "lives in the hermes-agent image build",
+   "live": [],
+   "owns": []
+  },
+  {
+   "id": "claude-mem",
+   "name": "claude-mem (2026-09-05 spec)",
+   "layer": "legacy",
+   "verdict": "DECIDE",
+   "why": "Spec says hosted-only; ADR 0036 supersedes it in part. No evidence it was ever installed.",
+   "probes": [],
+   "live": [],
+   "owns": []
+  }
+ ],
+ "where_we_are": {
+  "as_of": "2026-10-31",
+  "summary": [
+   "Memory is one plane with 18 registered lanes (see table). None is proven operating by a live probe today.",
+   "The memory door and store have been unreachable since 2026-10-29 (OKE control plane removed). No new home is chosen yet.",
+   "Only Claude Code has enforcement. Cline and Codex have no memory path. Cursor and Gemini have the MCP tool and nothing injects it.",
+   "What agents actually write to today: the growmos graph and the router capture spool.",
+   "Cortex is HOLD: manifests only, no Dockerfile or vendored source, so it cannot be built.",
+   "Machine capture at claim-open and lane-submit, the cross-surface canary and the scheduled audit are specified (ticket 42), not built.",
+   "Open: the founder ballot D1 to D11 (docs/specs/2026-10-31-memory-one-plane.md)."
+  ]
+ },
+ "founder_surfaces": [
+  {
+   "id": "fleet",
+   "title": "/fleet: the founder sees memory captured, delivered and used",
+   "needs": [
+    "router-capture",
+    "growmos-graph",
+    "audit"
+   ],
+   "probes": [
+    {
+     "t": "file",
+     "path": "backstage/plugins/fleetview-backend/src/fleetview_backend/memory.py"
+    },
+    {
+     "t": "file",
+     "path": "backstage/plugins/fleetview-backend/src/fleetview_backend/routes.py"
+    }
+   ],
+   "live": [
+    {
+     "t": "canary_surface",
+     "path": "~/.estate/memory/canary/canary-result.json",
+     "surface": "fleet",
+     "max_age_h": 24
+    }
+   ]
+  },
+  {
+   "id": "voice-face",
+   "title": "voice and face answer with recalled memory",
+   "needs": [
+    "router-inject",
+    "door"
+   ],
+   "probes": [
+    {
+     "t": "file",
+     "path": "platform/llm/active_memory.py"
+    },
+    {
+     "t": "file",
+     "path": "backstage/plugins/fleetview-backend/src/fleetview_backend/voice.py"
+    }
+   ],
+   "live": [
+    {
+     "t": "canary_surface",
+     "path": "~/.estate/memory/canary/canary-result.json",
+     "surface": "voice-face",
+     "max_age_h": 24
+    }
+   ]
+  },
+  {
+   "id": "telegram",
+   "title": "Telegram: the founder is alerted when memory breaks and can ask",
+   "needs": [
+    "audit"
+   ],
+   "probes": [
+    {
+     "t": "file",
+     "path": "factory/surfaces/telegram.py"
+    }
+   ],
+   "live": [
+    {
+     "t": "canary_surface",
+     "path": "~/.estate/memory/canary/canary-result.json",
+     "surface": "telegram",
+     "max_age_h": 24
+    }
+   ]
+  },
+  {
+   "id": "founder-claude-code",
+   "title": "the founder's own Claude Code session starts briefed",
+   "needs": [
+    "runtime-hooks",
+    "door"
+   ],
+   "probes": [
+    {
+     "t": "file",
+     "path": "bin/estate-brief"
+    },
+    {
+     "t": "file",
+     "path": "bin/estate-memory-enforce"
+    }
+   ],
+   "live": [
+    {
+     "t": "canary_surface",
+     "path": "~/.estate/memory/canary/canary-result.json",
+     "surface": "founder-claude-code",
+     "max_age_h": 24
+    }
+   ]
+  },
+  {
+   "id": "founder-ask",
+   "title": "the founder asks 'what do you know about X' and gets cited facts",
+   "needs": [
+    "door",
+    "store"
+   ],
+   "probes": [
+    {
+     "t": "file",
+     "path": "mcp/plugins/estate_memory.py"
+    }
+   ],
+   "live": [
+    {
+     "t": "canary_surface",
+     "path": "~/.estate/memory/canary/canary-result.json",
+     "surface": "founder-ask",
+     "max_age_h": 24
+    }
+   ]
+  }
+ ]
+}

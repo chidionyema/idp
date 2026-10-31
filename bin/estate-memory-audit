@@ -1,0 +1,644 @@
+#!/usr/bin/env python3
+"""Memory audit: the machine says what memory exists, what runs, and what is blind. Nobody digs.
+
+Reads ONE register (memory-register.json): every memory lane the estate has, each with a verdict
+(KEEP / HOLD / RETIRE / DECIDE), static probes (does the code exist, does a launcher point at
+something real) and live probes (did it do work recently, does the door answer, did a fact written
+on one surface come back on another). Then it computes status. Nothing is taken from a document.
+
+  memory_audit.py audit --root REPO --register memory-register.json
+                        [--home ~] [--no-net] [--out DIR] [--now ISO8601]
+
+Status per lane:
+  operating  static ok AND every live probe ok            (the only green)
+  built      static ok, no live probe exists              (NEVER green: built is not operating)
+  blind      a live probe could not run here              (NEVER green)
+  down       a live probe ran and failed
+  broken     a static probe failed (missing code, dangling launcher)
+  retire-pending  a RETIRE lane whose code is still present
+  retired    a RETIRE lane with all code gone
+
+Findings (each one is red): a KEEP lane not operating; a KEEP lane with no live probe; a required
+runtime with no memory path; a memory file no lane owns; a memory document nobody classified;
+a duplicated decision number; a stale register; an empty register.
+
+Exit: 0 every KEEP lane operating and no findings | 1 findings | 2 error.
+Events (JSONL, same shape as special-forces) go to OUT/events.jsonl so telegram_alert.py can tail it.
+Python 3.9 compatible (macOS system python), standard library only.
+"""
+
+from __future__ import annotations
+
+import argparse
+import fnmatch
+import json
+import os
+import re
+import socket
+import ssl
+import sys
+import time
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+
+VERDICTS = ("KEEP", "HOLD", "RETIRE", "DECIDE")
+DOC_STATES = ("KEEP", "KEEP-AMEND", "ARCHIVE", "NOT-MEMORY", "REVIEW")
+MEMORY_NAME = re.compile(
+    r"memory|cortex|focus|recall|hindsight|growmos|checkpoint", re.I
+)
+LAUNCH_TARGET = re.compile(r'\$\(dirname "\$0"\)/(\.\./[^"\s]+)')
+
+
+# ---------------------------------------------------------------- helpers
+def now_utc(s=None):
+    if s:
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    return datetime.now(timezone.utc)
+
+
+def expand(p, home):
+    if p.startswith("~/"):
+        return os.path.join(home, p[2:]) if home else None
+    return p
+
+
+def age_hours(path, now):
+    return (now.timestamp() - os.path.getmtime(path)) / 3600.0
+
+
+def newest_in(path):
+    best = None
+    for dp, _dn, fn in os.walk(path):
+        for f in fn:
+            m = os.path.getmtime(os.path.join(dp, f))
+            best = m if best is None or m > best else best
+    return best
+
+
+# ---------------------------------------------------------------- probes
+def static_probe(p, root):
+    t = p["t"]
+    if t == "file":
+        ok = os.path.exists(os.path.join(root, p["path"]))
+        return ("ok", "") if ok else ("fail", "missing " + p["path"])
+    if t == "all_exist":
+        miss = [x for x in p["paths"] if not os.path.exists(os.path.join(root, x))]
+        return ("ok", "") if not miss else ("fail", "missing " + ", ".join(miss))
+    if t == "absent":
+        here = os.path.exists(os.path.join(root, p["path"]))
+        return ("ok", "") if not here else ("fail", "still present " + p["path"])
+    if t == "contains":
+        fp = os.path.join(root, p["path"])
+        if not os.path.exists(fp):
+            return "fail", "missing " + p["path"]
+        txt = open(fp, errors="replace").read()
+        return (
+            ("ok", "")
+            if p["text"] in txt
+            else ("fail", "%s lacks %r" % (p["path"], p["text"]))
+        )
+    if t == "launcher_target":
+        fp = os.path.join(root, p["path"])
+        if not os.path.exists(fp):
+            return "fail", "missing " + p["path"]
+        txt = open(fp, errors="replace").read()
+        miss = []
+        for rel in LAUNCH_TARGET.findall(txt):
+            tgt = os.path.normpath(os.path.join(root, os.path.dirname(p["path"]), rel))
+            if not os.path.exists(tgt):
+                miss.append(os.path.relpath(tgt, root))
+        return (
+            ("ok", "")
+            if not miss
+            else ("fail", "launcher points at nothing: " + ", ".join(sorted(set(miss))))
+        )
+    return "fail", "unknown probe type " + t
+
+
+def live_probe(p, home, required, now, net):
+    t = p["t"]
+    if t in ("ledger_recent", "log_recent", "dir_recent", "canary"):
+        if not home or not os.path.isdir(home):
+            return "blind", "no home to read"
+        fp = expand(p["path"], home)
+        if not os.path.exists(fp):
+            return "fail", "absent " + p["path"]
+        if t == "dir_recent":
+            m = newest_in(fp)
+            if m is None:
+                return "fail", "empty " + p["path"]
+            age = (now.timestamp() - m) / 3600.0
+        else:
+            age = age_hours(fp, now)
+        if age > p.get("max_age_h", 24):
+            return "fail", "%s is %.1fh old (limit %sh)" % (
+                p["path"],
+                age,
+                p.get("max_age_h", 24),
+            )
+        if t == "ledger_recent":
+            n = sum(1 for _ in open(fp, errors="replace"))
+            if n < p.get("min_lines", 1):
+                return "fail", "%s has %d lines (need %d)" % (
+                    p["path"],
+                    n,
+                    p.get("min_lines", 1),
+                )
+        if t == "canary":
+            try:
+                pairs = json.load(open(fp)).get("pairs", {})
+            except (ValueError, OSError):
+                return "fail", "canary result unreadable"
+            want = ["%s->%s" % (a, b) for a in required for b in required if a != b]
+            bad = [w for w in want if pairs.get(w) is not True]
+            if bad:
+                return "fail", "cross-surface pairs not proven: %d of %d (e.g. %s)" % (
+                    len(bad),
+                    len(want),
+                    bad[0],
+                )
+        return "ok", ""
+    if t == "canary_surface":
+        # The canary plants a fact and records, per founder surface, whether the founder could see it there.
+        if not home or not os.path.isdir(home):
+            return "blind", "no home to read"
+        fp = expand(p["path"], home)
+        if not os.path.exists(fp):
+            return "fail", "absent " + p["path"]
+        age = age_hours(fp, now)
+        if age > p.get("max_age_h", 24):
+            return "fail", "%s is %.1fh old (limit %sh)" % (
+                p["path"],
+                age,
+                p.get("max_age_h", 24),
+            )
+        try:
+            seen = json.load(open(fp)).get("surfaces", {})
+        except (ValueError, OSError):
+            return "fail", "canary result unreadable"
+        if seen.get(p["surface"]) is not True:
+            return "fail", "the canary fact was not seen on the %s surface" % p[
+                "surface"
+            ]
+        return "ok", ""
+    if t == "door":
+        if not net:
+            return "blind", "network probe disabled"
+        try:
+            req = urllib.request.Request(p["url"], method="GET")
+            urllib.request.urlopen(req, timeout=p.get("timeout_s", 5))
+            return "ok", ""
+        except urllib.error.HTTPError:
+            return "ok", ""  # the door answered; auth/method errors still mean it is up
+        except ssl.SSLError as e:
+            return "fail", "tls: %s" % e
+        except (socket.timeout, TimeoutError):
+            return "fail", "timeout"
+        except urllib.error.URLError as e:
+            return "fail", "unreachable: %s" % (e.reason,)
+        except OSError as e:
+            return "fail", "unreachable: %s" % e
+    return "fail", "unknown probe type " + t
+
+
+# ---------------------------------------------------------------- audit
+def lane_result(lane, root, home, required, now, net):
+    s_res = [static_probe(p, root) for p in lane.get("probes", [])]
+    l_res = [live_probe(p, home, required, now, net) for p in lane.get("live", [])]
+    detail = [d for st, d in s_res + l_res if st != "ok" and d]
+    verdict = lane["verdict"]
+    s_fail = any(st == "fail" for st, _ in s_res)
+    if verdict == "RETIRE":
+        if lane.get("blind_reason") and not lane.get("probes"):
+            status = "blind"
+            detail = [lane["blind_reason"]]
+        else:
+            status = "retire-pending" if s_fail else "retired"
+    elif s_fail:
+        status = "broken"
+    elif not lane.get("probes") and not lane.get("live"):
+        status = (
+            "unknown"  # nothing can be measured about it: not green, not even 'built'
+        )
+    elif not lane.get("live"):
+        status = "built"
+    elif any(st == "fail" for st, _ in l_res):
+        status = "down"
+    elif any(st == "blind" for st, _ in l_res):
+        status = "blind"
+    else:
+        status = "operating"
+    return {
+        "id": lane["id"],
+        "name": lane["name"],
+        "layer": lane["layer"],
+        "verdict": verdict,
+        "status": status,
+        "detail": detail,
+    }
+
+
+def surface_result(sf, lanes_by_id, root, home, required, now, net):
+    """A founder surface is covered only when its own code exists, every lane it depends on is
+    operating, and the canary fact was seen on it. Anything less is not covered."""
+    base = lane_result(
+        {
+            "id": sf["id"],
+            "name": sf.get("title", sf["id"]),
+            "layer": "founder-surface",
+            "verdict": "KEEP",
+            "probes": sf.get("probes", []),
+            "live": sf.get("live", []),
+        },
+        root,
+        home,
+        required,
+        now,
+        net,
+    )
+    status, detail = base["status"], list(base["detail"])
+    short = [
+        (n, lanes_by_id.get(n, {}).get("status", "missing"))
+        for n in sf.get("needs", [])
+    ]
+    short = [(n, st) for n, st in short if st != "operating"]
+    if short and status not in ("broken",):
+        status = "uncovered"
+        detail = ["needs %s (%s)" % (n, st) for n, st in short] + detail
+    if not sf.get("live") and status == "built":
+        detail.append(
+            "no live probe: a surface with no way to see the canary can never be covered"
+        )
+    return {
+        "id": sf["id"],
+        "title": sf.get("title", sf["id"]),
+        "status": status,
+        "detail": detail,
+    }
+
+
+def code_files(root, patterns):
+    seen = set()
+    for pat in patterns:
+        base = pat.split("*")[0].rsplit("/", 1)[0]
+        top = os.path.join(root, base)
+        if not os.path.isdir(top):
+            continue
+        for dp, dn, fn in os.walk(top):
+            dn[:] = [d for d in dn if d not in ("__pycache__", "tests", ".git")]
+            for f in fn:
+                rel = os.path.relpath(os.path.join(dp, f), root)
+                if fnmatch.fnmatch(rel, pat):
+                    seen.add(rel)
+    return sorted(seen)
+
+
+def audit(root, reg, home, now, net):
+    findings, lanes = [], []
+    if not reg.get("lanes"):
+        findings.append(
+            (
+                "EMPTY_REGISTER",
+                "register has no lanes: an empty universe is red, not green",
+            )
+        )
+    required = reg.get("required_runtimes", [])
+    ids = [ln["id"] for ln in reg.get("lanes", [])]
+    for d in sorted({i for i in ids if ids.count(i) > 1}):
+        findings.append(("DUPLICATE_LANE", d))
+    for ln in reg.get("lanes", []):
+        if ln.get("verdict") not in VERDICTS and not str(
+            ln.get("verdict", "")
+        ).startswith("MERGE:"):
+            findings.append(
+                ("BAD_VERDICT", "%s: %r" % (ln.get("id"), ln.get("verdict")))
+            )
+            continue
+        r = lane_result(ln, root, home, required, now, net)
+        lanes.append(r)
+        if ln["verdict"] == "KEEP":
+            if r["status"] != "operating":
+                findings.append(
+                    (
+                        "LANE_NOT_OPERATING",
+                        "%s is %s%s"
+                        % (
+                            r["id"],
+                            r["status"],
+                            ": " + "; ".join(r["detail"]) if r["detail"] else "",
+                        ),
+                    )
+                )
+            if not ln.get("live"):
+                findings.append(
+                    (
+                        "KEEP_WITHOUT_LIVE_PROBE",
+                        "%s has no live probe, so it can only ever be 'built'"
+                        % r["id"],
+                    )
+                )
+        elif ln["verdict"] == "RETIRE" and r["status"] == "retire-pending":
+            findings.append(
+                ("RETIRE_PENDING", "%s: %s" % (r["id"], "; ".join(r["detail"])))
+            )
+        elif ln["verdict"] == "RETIRE" and r["status"] == "blind":
+            findings.append(
+                ("RETIRE_UNVERIFIABLE", "%s: %s" % (r["id"], "; ".join(r["detail"])))
+            )
+        elif ln["verdict"] == "DECIDE":
+            findings.append(("DECISION_OPEN", "%s needs a founder verdict" % r["id"]))
+    # founder surfaces: nothing is operational until every one of them is covered
+    surfaces = []
+    sfs = reg.get("founder_surfaces", [])
+    if not sfs:
+        findings.append(
+            (
+                "FOUNDER_SURFACES_NONE",
+                "the register declares no founder surfaces: coverage cannot be shown, so nothing is operational",
+            )
+        )
+    by_id = {r["id"]: r for r in lanes}
+    for sf in sfs:
+        r = surface_result(sf, by_id, root, home, required, now, net)
+        surfaces.append(r)
+        if r["status"] != "operating":
+            findings.append(
+                (
+                    "FOUNDER_SURFACE_NOT_COVERED",
+                    "%s is %s%s"
+                    % (
+                        r["id"],
+                        r["status"],
+                        ": " + "; ".join(r["detail"]) if r["detail"] else "",
+                    ),
+                )
+            )
+    # runtime coverage: every required runtime needs a memory path
+    mf = os.path.join(
+        root, reg.get("runtime_manifest", "platform/estate/memory/runtimes.json")
+    )
+    have = {}
+    if os.path.exists(mf):
+        have = json.load(open(mf)).get("runtimes", {})
+    via_capture = set(reg.get("runtimes_covered_by_machine_capture", []))
+    gaps = [r for r in required if r not in have and r not in via_capture]
+    unhooked = [
+        r
+        for r in required
+        if r in have and "hook" not in have[r] and r not in via_capture
+    ]
+    if gaps:
+        findings.append(("RUNTIME_GAP", "no memory path at all: " + ", ".join(gaps)))
+    if unhooked:
+        findings.append(
+            (
+                "RUNTIME_NO_INJECTION",
+                "tool only, nothing injects it (agent must remember to call): "
+                + ", ".join(unhooked),
+            )
+        )
+    # code nobody owns
+    owned = [g for ln in reg.get("lanes", []) for g in ln.get("owns", [])]
+    for rel in code_files(root, reg.get("scan_code", [])):
+        if not any(fnmatch.fnmatch(rel, g) for g in owned):
+            findings.append(("UNOWNED_CODE", rel))
+    # documents nobody classified; duplicated decision numbers
+    docs = reg.get("documents", {})
+    for d in reg.get("scan_docs", []):
+        top = os.path.join(root, d)
+        if not os.path.isdir(top):
+            continue
+        nums = {}
+        for f in sorted(os.listdir(top)):
+            rel = "%s/%s" % (d, f)
+            m = re.match(r"^(\d{4})-(?!\d{2}-\d{2})", f)
+            if m and f.endswith(".md"):
+                nums.setdefault(m.group(1), []).append(f)
+            if f.endswith(".md") and MEMORY_NAME.search(f):
+                st = docs.get(rel)
+                if st is None:
+                    findings.append(("UNREGISTERED_DOC", rel))
+                elif st.split(":")[0] == "REVIEW":
+                    findings.append(("DOC_UNREVIEWED", rel))
+        if d.endswith("decisions"):
+            for n, fs in sorted(nums.items()):
+                if len(fs) > 1 and any(MEMORY_NAME.search(x) for x in fs):
+                    findings.append(
+                        ("ADR_NUMBER_DUPLICATE", "%s: %s" % (n, ", ".join(fs)))
+                    )
+    # staleness of the register itself
+    try:
+        age = (
+            now - datetime.fromisoformat(reg["verified_at"] + "T00:00:00+00:00")
+        ).days
+        if age > reg.get("max_age_days", 7):
+            findings.append(
+                (
+                    "REGISTER_STALE",
+                    "verified_at %s is %d days old" % (reg["verified_at"], age),
+                )
+            )
+    except (KeyError, ValueError):
+        findings.append(("REGISTER_STALE", "verified_at missing or unreadable"))
+    return {
+        "generated": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "root": root,
+        "home": home or "",
+        "net_probes": bool(net),
+        "lanes": lanes,
+        "founder_surfaces": surfaces,
+        "founder_coverage": {
+            "covered": sum(1 for x in surfaces if x["status"] == "operating"),
+            "total": len(surfaces),
+        },
+        "operational": not findings,
+        "findings": [{"code": c, "detail": d} for c, d in findings],
+        "where_we_are": reg.get("where_we_are"),
+        "verified_at": reg.get("verified_at", ""),
+    }
+
+
+def render_md(rep):
+    out = ["# Memory audit  %s" % rep["generated"], ""]
+    counts = {}
+    for ln in rep["lanes"]:
+        counts[ln["status"]] = counts.get(ln["status"], 0) + 1
+    out.append(
+        "lanes: "
+        + ", ".join("%s %d" % (k, v) for k, v in sorted(counts.items()))
+        + "   findings: %d" % len(rep["findings"])
+    )
+    out += ["", "| lane | layer | verdict | status |", "|---|---|---|---|"]
+    for ln in rep["lanes"]:
+        out.append(
+            "| %s | %s | %s | %s |"
+            % (ln["id"], ln["layer"], ln["verdict"], ln["status"])
+        )
+    fc = rep.get("founder_coverage", {"covered": 0, "total": 0})
+    out += [
+        "",
+        "## Founder surfaces",
+        "",
+        "Covered %d of %d. Nothing is operational until this is %d of %d."
+        % (fc["covered"], fc["total"], fc["total"], fc["total"]),
+        "",
+        "| surface | status |",
+        "|---|---|",
+    ]
+    for sf in rep.get("founder_surfaces", []):
+        out.append("| %s | %s |" % (sf["id"], sf["status"]))
+    out += [
+        "",
+        "Memory is operational: %s" % ("YES" if rep.get("operational") else "NO"),
+        "",
+        "## Findings",
+        "",
+    ]
+    for f in rep["findings"]:
+        out.append("- **%s** %s" % (f["code"], f["detail"]))
+    return "\n".join(out) + "\n"
+
+
+def render_status(rep):
+    """docs/memory/STATUS.md: the file AGENTS.md points at. Generated, never hand-edited, expires on its own."""
+    out = [
+        "# Memory status: as of %s UTC" % rep["generated"],
+        "",
+        "Generated by bin/estate-memory-audit. Do not edit. If this file is older than 8 hours, or missing,",
+        "memory status is UNKNOWN: do not say memory works, say the status is unknown.",
+        "",
+    ]
+    w = rep.get("where_we_are")
+    if w:
+        out.append(
+            "## Where we are (narrative as of %s, held in catalog/memory-register.json)"
+            % w.get("as_of", "?")
+        )
+        out.append("")
+        out += ["- " + x for x in w.get("summary", [])]
+        out.append("")
+    out.append(render_md(rep).split("\n", 1)[1].lstrip("\n"))
+    return "\n".join(out)
+
+
+def write_outputs(rep, out_dir, now):
+    os.makedirs(out_dir, exist_ok=True)
+    open(os.path.join(out_dir, "STATUS.md"), "w").write(render_status(rep))
+    json.dump(rep, open(os.path.join(out_dir, "memory-audit.json"), "w"), indent=1)
+    open(os.path.join(out_dir, "memory-audit.md"), "w").write(render_md(rep))
+    ts = int(now.timestamp())
+    with open(os.path.join(out_dir, "events.jsonl"), "a") as ev:
+        for f in rep["findings"]:
+            if f["code"] in (
+                "LANE_NOT_OPERATING",
+                "FOUNDER_SURFACE_NOT_COVERED",
+                "RUNTIME_GAP",
+                "RUNTIME_NO_INJECTION",
+                "REGISTER_STALE",
+                "EMPTY_REGISTER",
+            ):
+                ev.write(
+                    json.dumps(
+                        {
+                            "ts": ts,
+                            "unit": "memory-audit",
+                            "claim": "memory",
+                            "stage": f["code"],
+                            "event": "fail",
+                            "tokens": 0,
+                            "budget": 0,
+                            "reason": f["detail"][:300],
+                        }
+                    )
+                    + "\n"
+                )
+        ev.write(
+            json.dumps(
+                {
+                    "ts": ts,
+                    "unit": "memory-audit",
+                    "claim": "memory",
+                    "stage": "audit",
+                    "event": "done",
+                    "tokens": 0,
+                    "budget": 0,
+                    "reason": "%d findings" % len(rep["findings"]),
+                }
+            )
+            + "\n"
+        )
+
+
+def write_heartbeat(rep, path, now):
+    """The record the estate_health metric reads (catalog/critical-functions.json, entry memory-use).
+    healthy is 1 only when the audit has zero findings AND every founder surface is covered."""
+    fc = rep["founder_coverage"]
+    hb = {
+        "at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "healthy": 1
+        if rep["operational"] and fc["total"] and fc["covered"] == fc["total"]
+        else 0,
+        "founder_covered": fc["covered"],
+        "founder_total": fc["total"],
+        "lanes_operating": sum(1 for x in rep["lanes"] if x["status"] == "operating"),
+        "lanes": len(rep["lanes"]),
+        "findings": len(rep["findings"]),
+    }
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    json.dump(hb, open(path, "w"), indent=1)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    sp = ap.add_subparsers(dest="c", required=True)
+    a = sp.add_parser("audit")
+    a.add_argument("--root", required=True)
+    a.add_argument("--register", required=True)
+    a.add_argument("--home")
+    a.add_argument("--no-net", action="store_true")
+    a.add_argument(
+        "--blind-ok",
+        action="store_true",
+        help="CI mode: blind lanes do not fail the exit code",
+    )
+    a.add_argument("--out")
+    a.add_argument(
+        "--heartbeat",
+        help="write the estate_health heartbeat here (Mac live runs only)",
+    )
+    a.add_argument("--now")
+    args = ap.parse_args()
+    try:
+        reg = json.load(open(args.register))
+        now = now_utc(args.now)
+        rep = audit(
+            args.root,
+            reg,
+            os.path.expanduser(args.home) if args.home else None,
+            now,
+            not args.no_net,
+        )
+    except (OSError, ValueError, KeyError) as e:
+        print("error: %s: %s" % (type(e).__name__, e), file=sys.stderr)
+        return 2
+    if args.out:
+        write_outputs(rep, args.out, now)
+    if args.heartbeat:
+        write_heartbeat(rep, os.path.expanduser(args.heartbeat), now)
+    sys.stdout.write(render_md(rep))
+    reds = rep["findings"]
+    if args.blind_ok:  # CI cannot see ~/.estate or the door: blind is reported, but only the Mac may call it green
+        reds = [
+            f
+            for f in reds
+            if not (
+                f["code"] in ("LANE_NOT_OPERATING", "FOUNDER_SURFACE_NOT_COVERED")
+                and " is blind" in f["detail"]
+            )
+        ]
+    return 1 if reds else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

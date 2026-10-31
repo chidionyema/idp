@@ -54,6 +54,33 @@
       }
     },
     {
+      "id": "memory-use",
+      "title": "memory is used on every founder surface, not just alive",
+      "severity": "critical",
+      "weight": 2,
+      "founder_critical": true,
+      "owner": "pi",
+      "receipt": "memory-audit.json",
+      "why_it_is_critical": "memory-plane proves the door answers; this proves memory is captured, delivered and seen by the founder on every founder surface (/fleet, voice and face, Telegram, the founder's own Claude Code, the founder's ask). 2026-10-20: 5 recalls against 20,166 health probes; #6227 closed Operational and found dead three days later. Alive is not used.",
+      "liveness": {
+        "type": "heartbeat_file",
+        "path": "~/.estate/heartbeats/memory-audit.json",
+        "max_age_s": 28800
+      },
+      "goal": {
+        "type": "heartbeat_field_min",
+        "path": "~/.estate/heartbeats/memory-audit.json",
+        "field": "healthy",
+        "min": 1
+      },
+      "remediation": {
+        "runner": "claude",
+        "repo": "/Users/roseonyema/Documents/code/idp",
+        "budget": 20,
+        "task": "The memory audit says memory is not operational on every founder surface. Read ~/.estate/memory/audit/memory-audit.md: it names the lane or founder surface that is not operating and why. Fix the first one named, in the order of the register (catalog/memory-register.json). Do NOT add a lane or a second door; do NOT edit the register to make a red lane disappear; a lane leaves the list only by being operating or by being deleted. If the heartbeat is old, the launchd job ai.estate.memory-audit is not running: check it first. Report the audit output, not the intention."
+      }
+    },
+    {
       "id": "router-lanes",
       "title": "the lanes the running router serves",
       "severity": "critical",
