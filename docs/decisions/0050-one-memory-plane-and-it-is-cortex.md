@@ -1,5 +1,11 @@
 # 0050 — One memory plane: the unified memory server, with Cortex as its retrieval engine
 
+> **AMENDMENT 2026-10-31: Cortex is ON HOLD.** There is no Dockerfile and no vendored source for it
+> in this repository, so it cannot be built. The plain unified memory store behind the one door is
+> the memory plane today. Unfreeze Cortex only when the canary is green AND a replay benchmark shows
+> it beats the plain store. Everything below is the original text, unchanged; where it says Cortex
+> is adopted or the record, read it as intent, not as a running system.
+
 Date: 2026-10-02 (revised the same day, after measurement)
 Status: accepted (founder: *"we are adopting crate and using every feature available that is
 useful"*)

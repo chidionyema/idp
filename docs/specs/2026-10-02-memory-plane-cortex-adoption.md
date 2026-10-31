@@ -1,5 +1,11 @@
 # The Memory Plane: Cortex as the retrieval engine behind the one door
 
+> **AMENDMENT 2026-10-31: Cortex is ON HOLD.** There is no Dockerfile and no vendored source for it
+> in this repository, so it cannot be built. The plain unified memory store behind the one door is
+> the memory plane today. Unfreeze Cortex only when the canary is green AND a replay benchmark shows
+> it beats the plain store. Everything below is the original text, unchanged; where it says Cortex
+> is adopted or the record, read it as intent, not as a running system.
+
 Date: 2026-10-02 (revised the same day, after measurement)
 Status: **adopted** (founder decision, 2026-10-02). Supersedes the "decline" verdict in
 `2026-10-02-cortex-crate-deep-dive-and-rust-crate-plan.md`.
