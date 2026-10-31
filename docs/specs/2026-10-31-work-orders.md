@@ -65,3 +65,22 @@ decide. A packet that arrives at the bottom unfinished is a defect in an upper l
 This is the protocolkit's ordered-stage idea (a closed list of typed stages, no skipping) with the estate's own
 names. A packet is stamped with the highest level it has passed; the runner accepts only one stamped Yesod.
 The stamp is proposed, not built.
+
+## The second reading: the Solomonic rite (founder, 2026-10-31: "we need both")
+
+Same ten stages, grouped as a rite. This is a second set of labels over the one stage list, not a second
+pipeline (AGENTS.md section 6): the stages above are the data, and a reading names them. The rite names are my
+reading of the ritual tradition from general knowledge, unverified against any source.
+
+| Rite | Stages it covers | What it demands |
+|---|---|---|
+| Intent (the stated purpose) | Keter | one sentence, with its source |
+| Preparation (clear the ground, study) | Chokhmah, Binah, Chesed | evidence gathered, spec written, options weighed |
+| The circle (set the limits) | Gevurah, Tiferet | the laws that bind, the decision, the decider named |
+| The seal (bind it) | Netzach, Hod, Yesod | claim open, patch frozen by digest, checks declared, dry-run passes |
+| The working | Malkuth | the runner executes; nothing is decided |
+| The closing (release) | after Malkuth | NEW, missing above: record the outcome, grade it from outside the executor, release the claim, journal. A working with no closing leaves a held claim and an ungraded decision. |
+
+The closing is the one stage the first reading lacked, and it is the one the estate keeps failing at (claims left
+held, decisions never graded). It feeds the decision record in the decision protocol and the Admiralty grades in
+the memory plane. Not built.
