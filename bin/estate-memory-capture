@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+"""Record what a lane did, by the machine, at lane-submit (memory one plane, section 3).
+
+    estate-memory-capture --claim 123 --agent NAME --runtime claude-code \
+        --paths a,b --gate claim-gate=pass --outcome submitted [--text FILE|-]
+
+Writes one JSON record to $ESTATE_MEMORY_HOME/captures (default ~/.estate/memory/captures): the
+claim, paths, gate results, outcome, and who/what ran it. The agent never calls this; lane-submit
+does (see "call site" below). Rules, each with a test in tests/test_memory_capture.py:
+
+  scrub    token-shaped strings become [REDACTED:kind] before anything is written.
+  no-loop  any <estate-memory>...</estate-memory> block, any claim-brief block, and any line of the
+           claim-brief file are dropped from free text, so delivered memory is never recaptured as
+           a new fact (@edge-no-recapture-loop).
+  refuse   if the record cannot be written and read back, exit 3 with the reason and emit an alert
+           event; silence is never an outcome (@edge-capture-refuses-silence).
+
+Every captured fact is born "unverified" (@edge-unverified-label): trust clears only when an outcome
+or a passing probe corroborates it, which is not this tool's call to make.
+
+Call site (one line, in a lane-submit step before the push; ESTATE_MEMORY_CAPTURE=required makes a
+refusal block the submit, anything else only reports it, so this tool can never break landing work):
+
+    bin/estate-memory-capture --claim "$issue" --outcome submitted || [ "${ESTATE_MEMORY_CAPTURE:-}" != required ]
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+BRIEF_OPEN, BRIEF_CLOSE = "<!-- estate-claim-brief -->", "<!-- /estate-claim-brief -->"
+BLOCKS = [
+    re.compile(r"<estate-memory>.*?</estate-memory>", re.S | re.I),
+    re.compile(re.escape(BRIEF_OPEN) + r".*?" + re.escape(BRIEF_CLOSE), re.S),
+]
+# (kind, pattern). Order matters: specific shapes before the generic ones.
+SECRETS = [
+    (
+        "private-key",
+        re.compile(
+            r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)",
+            re.S,
+        ),
+    ),
+    (
+        "github",
+        re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})"),
+    ),
+    ("api-key", re.compile(r"\b(?:sk|pk|rk)-[A-Za-z0-9_-]{16,}")),
+    ("aws", re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b")),
+    ("slack", re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}")),
+    (
+        "jwt",
+        re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"),
+    ),
+    ("bearer", re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}")),
+    (
+        "assignment",
+        re.compile(
+            r"(?i)\b([A-Za-z0-9_]*(?:secret|token|passw(?:or)?d|api[_-]?key|credential)[A-Za-z0-9_]*)"
+            r"(\s*[=:]\s*)(['\"]?)[^\s'\"]{8,}"
+        ),
+    ),
+    (
+        "long-token",
+        re.compile(
+            r"\b(?=[A-Za-z0-9+/_-]*\d)(?=[A-Za-z0-9+/_-]*[A-Za-z])[A-Za-z0-9+/_-]{40,}={0,2}"
+        ),
+    ),
+]
+
+
+def scrub(text: str) -> str:
+    for kind, pat in SECRETS:
+        if kind == "assignment":
+            text = pat.sub(
+                lambda m: f"{m.group(1)}{m.group(2)}{m.group(3)}[REDACTED:{kind}]", text
+            )
+        else:
+            text = pat.sub(f"[REDACTED:{kind}]", text)
+    return text
+
+
+def scrub_all(obj):
+    if isinstance(obj, str):
+        return scrub(obj)
+    if isinstance(obj, list):
+        return [scrub_all(v) for v in obj]
+    if isinstance(obj, dict):
+        return {scrub(str(k)): scrub_all(v) for k, v in obj.items()}
+    return obj
+
+
+def strip_delivered(text: str, brief_file: str = "") -> str:
+    """Remove memory that was injected into the exchange, so it is not captured as new."""
+    for pat in BLOCKS:
+        text = pat.sub("", text)
+    try:
+        with open(brief_file, encoding="utf-8") as fh:
+            lines = {ln.strip() for ln in fh if len(ln.strip()) >= 12}
+    except (OSError, TypeError):
+        lines = set()
+    if lines:
+        text = "\n".join(ln for ln in text.split("\n") if ln.strip() not in lines)
+    return text
+
+
+def home() -> str:
+    return os.path.expanduser(
+        os.environ.get("ESTATE_MEMORY_HOME") or "~/.estate/memory"
+    )
+
+
+def alert(reason: str) -> None:
+    """Best effort: an alert event the audit tails. Never raises."""
+    try:
+        os.makedirs(home(), exist_ok=True)
+        with open(os.path.join(home(), "events.jsonl"), "a") as ev:
+            ev.write(
+                json.dumps(
+                    {
+                        "ts": int(time.time()),
+                        "lane": "machine-capture",
+                        "state": "down",
+                        "reason": reason,
+                    }
+                )
+                + "\n"
+            )
+    except OSError:
+        pass
+
+
+def git_paths(base: str) -> list[str]:
+    try:
+        out = subprocess.run(  # noqa: S603 - fixed argv
+            ["git", "diff", "--name-only", f"{base}...HEAD"],  # noqa: S607
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return [p for p in out.stdout.split("\n") if p] if out.returncode == 0 else []
+
+
+def build(a, text: str) -> dict:
+    gates = {}
+    for g in a.gate:
+        name, _, res = g.partition("=")
+        gates[name.strip()] = res.strip() or "unknown"
+    paths = [p for p in a.paths.split(",") if p] or git_paths(a.base)
+    return {
+        "kind": "lane-capture",
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "claim": a.claim,
+        "agent": a.agent,
+        "runtime": a.runtime,
+        "paths": paths,
+        "gates": gates,
+        "outcome": a.outcome,
+        "text": text,
+        "trust": "unverified",
+        "source": "machine-capture",
+    }
+
+
+def write(rec: dict, directory: str) -> str:
+    os.makedirs(directory, exist_ok=True)
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", f"{rec['claim']}-{rec['agent']}")[:80]
+    name = f"{rec['ts'].replace(':', '')}-{safe}-{os.getpid()}.json"
+    path = os.path.join(directory, name)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(rec, fh, indent=1)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
+    with open(
+        path, encoding="utf-8"
+    ) as fh:  # read back: a record we cannot read is not a record
+        if json.load(fh).get("claim") != rec["claim"]:
+            raise OSError("record read back differs from the record written")
+    return path
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(
+        prog="estate-memory-capture", description=__doc__.split("\n")[0]
+    )
+    ap.add_argument("--claim", required=True, help="issue number or claim id")
+    ap.add_argument("--agent", default=os.environ.get("ESTATE_AGENT", ""))
+    ap.add_argument("--runtime", default=os.environ.get("ESTATE_RUNTIME", "unknown"))
+    ap.add_argument(
+        "--paths", default="", help="comma-separated; default: git diff against --base"
+    )
+    ap.add_argument("--base", default="origin/main")
+    ap.add_argument(
+        "--gate", action="append", default=[], help="name=result, repeatable"
+    )
+    ap.add_argument("--outcome", default="submitted")
+    ap.add_argument(
+        "--text", default="", help="free text file ('-' for stdin) to capture, scrubbed"
+    )
+    ap.add_argument("--brief-file", default=".estate/claim-brief.md")
+    ap.add_argument(
+        "--dir",
+        default="",
+        help="capture directory (default $ESTATE_MEMORY_HOME/captures)",
+    )
+    a = ap.parse_args(argv)
+    directory = a.dir or os.path.join(home(), "captures")
+    if not a.agent:
+        a.agent = "unknown"  # unattributed is still recorded, and says so
+    try:
+        text = ""
+        if a.text:
+            text = (
+                sys.stdin.read()
+                if a.text == "-"
+                else open(a.text, encoding="utf-8", errors="replace").read()
+            )
+        rec = scrub_all(build(a, strip_delivered(text, a.brief_file)))
+        path = write(rec, directory)
+    except (OSError, ValueError) as exc:
+        reason = f"cannot write capture to {directory}: {type(exc).__name__}: {exc}"
+        alert(reason)
+        sys.stderr.write(f"REFUSE  estate-memory-capture  {reason}\n")
+        return 3
+    print(f"      estate-memory-capture  wrote {path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
