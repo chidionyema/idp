@@ -7982,6 +7982,9 @@
       "contract": {
         "inputs": [
           "--contract",
+          "--count",
+          "--extract",
+          "--heads",
           "--json",
           "--predicate",
           "--results",
