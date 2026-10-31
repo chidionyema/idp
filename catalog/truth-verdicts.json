@@ -1,47 +1,81 @@
 {
-  "contract_version": 1,
+  "contract_version": 2,
   "counts": {
-    "MEASURED_FAIL": 4,
-    "MEASURED_OK": 0,
+    "MEASURED_FAIL": 3,
+    "MEASURED_OK": 3,
+    "UNKNOWN": 0
+  },
+  "counts_all": {
+    "MEASURED_FAIL": 3,
+    "MEASURED_OK": 3,
     "UNKNOWN": 1
   },
-  "generated_at": "2026-10-29T08:58:36Z",
+  "generated_at": "2026-10-31T01:44:06Z",
   "generator": "bin/idp-estate-truth",
   "host": {
     "hostname": "Roses-MBP",
     "scope": "laptop"
   },
   "ok": false,
+  "out_of_scope": [
+    {
+      "detail": "measurable only from the cluster scope; this host is laptop",
+      "id": "estate-db.rows",
+      "scope": "cluster"
+    }
+  ],
   "predicates": [
     {
-      "detail": "no answer: <urlopen error EOF occurred in violation of protocol (_ssl.c:1129)> (no LITELLM_CLOUD_PROBE_KEY on this host)",
-      "duration_s": 0.456,
+      "detail": "HTTP 530 (expected 200): error code: 1033\n (no LITELLM_CLOUD_PROBE_KEY on this host)",
+      "duration_s": 0.345,
       "id": "router.cloud.completion",
-      "measured_at": "2026-10-29T08:57:11Z",
+      "in_scope": true,
+      "measured_at": "2026-10-31T01:44:04Z",
       "scope": "any",
       "verdict": "MEASURED_FAIL"
     },
     {
-      "detail": "no answer: timed out (no LITELLM_LAPTOP_KEY on this host)",
-      "duration_s": 85.019,
+      "detail": "HTTP 503 (expected 200): ",
+      "duration_s": 0.049,
       "id": "router.laptop.completion",
-      "measured_at": "2026-10-29T08:58:36Z",
+      "in_scope": true,
+      "measured_at": "2026-10-31T01:44:04Z",
       "scope": "laptop",
       "verdict": "MEASURED_FAIL"
     },
     {
-      "detail": "/Users/roseonyema/.estate/router-state/lanes.json does not account for its declared lanes (declared/served/refused missing)",
-      "duration_s": 0.002,
+      "detail": "22 declared lane(s) accounted for: 25 served, 4 refused",
+      "duration_s": 0.001,
       "id": "router.lanes.accounted",
-      "measured_at": "2026-10-29T08:57:11Z",
+      "in_scope": true,
+      "measured_at": "2026-10-31T01:44:04Z",
       "scope": "laptop",
-      "verdict": "MEASURED_FAIL"
+      "verdict": "MEASURED_OK"
     },
     {
-      "detail": "/Users/roseonyema/.estate/memory/runtimes.json is absent",
-      "duration_s": 0.0,
+      "detail": "the door is at https://mcp.mumchimp.com/estate/mcp",
+      "duration_s": 0.003,
       "id": "memory.recall",
-      "measured_at": "2026-10-29T08:57:11Z",
+      "in_scope": true,
+      "measured_at": "2026-10-31T01:44:04Z",
+      "scope": "laptop",
+      "verdict": "MEASURED_OK"
+    },
+    {
+      "detail": "the runtime mirror is on main on the remote (4c56830e5d6f)",
+      "duration_s": 1.769,
+      "id": "runtime.current",
+      "in_scope": true,
+      "measured_at": "2026-10-31T01:44:06Z",
+      "scope": "laptop",
+      "verdict": "MEASURED_OK"
+    },
+    {
+      "detail": "the 1-minute load average is 37.0, over the front's threshold of 32.0 (8 x 4 cpu); the front refuses traffic on a saturated box",
+      "duration_s": 0.0,
+      "id": "host.load",
+      "in_scope": true,
+      "measured_at": "2026-10-31T01:44:04Z",
       "scope": "laptop",
       "verdict": "MEASURED_FAIL"
     },
@@ -49,7 +83,8 @@
       "detail": "measurable only from the cluster scope; this host is laptop",
       "duration_s": 0.0,
       "id": "estate-db.rows",
-      "measured_at": "2026-10-29T08:57:11Z",
+      "in_scope": false,
+      "measured_at": "2026-10-31T01:44:04Z",
       "scope": "cluster",
       "verdict": "UNKNOWN"
     }
@@ -73,12 +108,13 @@
     },
     "laptop": {
       "counts": {
-        "MEASURED_FAIL": 3,
-        "MEASURED_OK": 0,
+        "MEASURED_FAIL": 2,
+        "MEASURED_OK": 3,
         "UNKNOWN": 0
       },
       "verdict": "MEASURED_FAIL"
     }
   },
-  "verdict": "MEASURED_FAIL"
+  "verdict": "MEASURED_FAIL",
+  "verdict_all": "MEASURED_FAIL"
 }
