@@ -78,7 +78,7 @@
     },
     {
      "t": "canary",
-     "path": "~/.estate/memory/canary-result.json",
+     "path": "~/.estate/memory/canary/canary-result.json",
      "max_age_h": 24
     }
    ],
@@ -319,7 +319,7 @@
    "live": [
     {
      "t": "canary",
-     "path": "~/.estate/memory/canary-result.json",
+     "path": "~/.estate/memory/canary/canary-result.json",
      "max_age_h": 24
     }
    ],
