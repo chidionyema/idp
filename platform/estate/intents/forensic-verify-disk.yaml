@@ -1,0 +1,27 @@
+name: forensic-verify-disk
+description: >-
+  Compare the forensic manifest with what is actually on disk, one file at a time, and write
+  verify.md and verify.json into the forensic directory: SAFE-COMMITTED | ON-DISK-UNCOMMITTED |
+  ON-DISK-DIFFERS | MISSING-RESTORABLE | MISSING-PARTIAL | MISSING-UNRECOVERABLE. Read-only: it
+  reads the manifest and the disk, and writes nothing outside the forensic directory. It is the
+  falsifier for the extraction -- the reconstruction is only worth what the disk says about it.
+  Exit 0 = the comparison ran. Exit 4 = there is no manifest to compare against (run
+  forensic-extract first).
+class: read
+args:
+  forensic: {type: string, default: "", description: "forensic directory; default the last extraction"}
+door_s: 95
+steps:
+  - name: verify
+    cmd: |
+      OUT=$(sed -n 1p "$HOME/.estate/state/forensic-extract.out")
+      if [ -z "$OUT" ]; then OUT={{forensic}}; fi
+      if [ -z "$OUT" ]; then
+        OUT=$(ls -dt "$HOME"/claude-forensics/forensic-*/ 2>/dev/null | sed -n 1p)
+      fi
+      if [ -z "$OUT" ] || [ ! -f "$OUT/manifest.json" ]; then
+        echo "verdict: no forensic manifest to compare against; run forensic-extract first"
+        exit 4
+      fi
+      python3 ~/.estate/libexec/forensic_verify.py --forensic "$OUT"
+      echo "report: $OUT/verify.md"
