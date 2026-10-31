@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""estate-landed-digest: what landed on main, as a Telegram-sized digest.
+
+Founder, 2026-10-31: "all work that has landed in main past 2 weeks I need tracking in Telegram".
+
+    bin/estate-landed-digest --days 14              print the digest (dry run, the default)
+    bin/estate-landed-digest --days 1 --send        post it to the estate's Telegram bot
+
+Reads `git log` of the ref (default origin/main). Noise commits (image bumps, registry
+regenerations, merges) are counted but not listed. Sending uses the env var NAMES the estate
+already has (SEED_HERMES_TELEGRAM_BOT_TOKEN, SEED_HERMES_TELEGRAM_HOME_CHANNEL; ping.yml reads the
+same two). A missing variable is a refusal with its name, never a silent skip, and the exit code
+is non-zero so a scheduled run goes red. The token is never printed.
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.parse
+import urllib.request
+
+NOISE = re.compile(
+    r"image update|chore\(registry\)|regenerate the capability witness|^Merge ", re.I
+)
+LIMIT = 3800  # Telegram caps a message at 4096 characters
+
+
+def landed(ref, days, repo):
+    out = subprocess.run(
+        [
+            "git",
+            "-C",
+            repo,
+            "log",
+            ref,
+            "--since=%d days ago" % days,
+            "--no-merges",
+            "--format=%ad|%h|%an|%s",
+            "--date=short",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    rows = []
+    for ln in out.splitlines():
+        d, h, a, s = ln.split("|", 3)
+        rows.append({"date": d, "sha": h, "author": a, "subject": s})
+    return rows
+
+
+def digest(rows, days, ref):
+    by_day = {}
+    for r in rows:
+        by_day.setdefault(r["date"], []).append(r)
+    total = len(rows)
+    noise = sum(1 for r in rows if NOISE.search(r["subject"]))
+    head = (
+        "Landed on %s, last %d days: %d commits (%d listed, %d image/registry noise)"
+        % (ref, days, total, total - noise, noise)
+    )
+    blocks = [head]
+    for day in sorted(by_day, reverse=True):
+        items = [r for r in by_day[day] if not NOISE.search(r["subject"])]
+        lines = ["%s  %d landed" % (day, len(by_day[day]))]
+        lines += ["- %s %s" % (r["sha"], r["subject"][:110]) for r in items]
+        blocks.append("\n".join(lines))
+    return blocks
+
+
+def chunks(blocks, limit=LIMIT):
+    msgs, cur = [], ""
+    for b in blocks:
+        while len(b) > limit:  # a single day too long: split on lines
+            cut = b.rfind("\n", 0, limit)
+            cut = cut if cut > 0 else limit
+            part, b = b[:cut], b[cut:].lstrip("\n")
+            if cur:
+                msgs.append(cur)
+                cur = ""
+            msgs.append(part)
+        if len(cur) + len(b) + 2 > limit and cur:
+            msgs.append(cur)
+            cur = ""
+        cur = (cur + "\n\n" + b) if cur else b
+    if cur:
+        msgs.append(cur)
+    return msgs
+
+
+def send(msgs, env=os.environ):
+    tok, chat = (
+        env.get("SEED_HERMES_TELEGRAM_BOT_TOKEN"),
+        env.get("SEED_HERMES_TELEGRAM_HOME_CHANNEL"),
+    )
+    missing = [
+        n
+        for n, v in (
+            ("SEED_HERMES_TELEGRAM_BOT_TOKEN", tok),
+            ("SEED_HERMES_TELEGRAM_HOME_CHANNEL", chat),
+        )
+        if not v
+    ]
+    if missing:
+        print("REFUSE: not sent, missing env: " + ", ".join(missing), file=sys.stderr)
+        return 2
+    for m in msgs:
+        data = urllib.parse.urlencode({"chat_id": chat, "text": m}).encode()
+        req = urllib.request.Request(
+            "https://api.telegram.org/bot%s/sendMessage" % tok, data=data
+        )
+        try:
+            body = json.load(urllib.request.urlopen(req, timeout=20))
+        except Exception as e:  # never echo the URL: it holds the token
+            print(
+                "REFUSE: telegram send failed: %s" % type(e).__name__, file=sys.stderr
+            )
+            return 3
+        if not body.get("ok"):
+            print("REFUSE: telegram said not ok", file=sys.stderr)
+            return 3
+    return 0
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--days", type=int, default=14)
+    ap.add_argument("--ref", default="origin/main")
+    ap.add_argument("--repo", default=".")
+    ap.add_argument("--send", action="store_true")
+    a = ap.parse_args(argv)
+    msgs = chunks(digest(landed(a.ref, a.days, a.repo), a.days, a.ref))
+    if a.send:
+        return send(msgs)
+    print("\n\n----- next message -----\n\n".join(msgs))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
