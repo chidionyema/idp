@@ -184,6 +184,9 @@ spec:
           kubernetes.io/metadata.name: edge
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: efda-system
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: epistemic-fabric
     - namespaceSelector:
         matchLabels:
@@ -287,6 +290,9 @@ spec:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: searxng
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: spine
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: spire-mgmt

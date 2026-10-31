@@ -49,7 +49,22 @@ class KubeClient:
 
     # -- plumbing --------------------------------------------------------
     def run(self, args, stdin=None):
-        command = ["kubectl", "--request-timeout=%ds" % self.timeout]
+        # NO --request-timeout, and that is a measured decision, not a preference.
+        #
+        # Measured 2026-10-27 inside the running controller, with the projected
+        # token present and KUBERNETES_SERVICE_HOST=10.96.0.1: `kubectl get ns`
+        # reached the API server, while the same call WITH --request-timeout --
+        # the flag before the subcommand AND the same flag after it -- answered
+        # `Get "http://localhost:8080/api?timeout=30s": dial tcp [::1]:8080:
+        # connect: connection refused`. One flag loses the in-cluster config and
+        # falls back to the laptop's default server, so the controller reads
+        # nothing and the pod crash-loops.
+        #
+        # The bound stays, one level down, where it cannot be lost:
+        # subprocess.run(timeout=...) kills the child. That is a stronger
+        # guarantee than kubectl's own request timeout, which only bounds the
+        # HTTP request and lets the process linger.
+        command = ["kubectl"]
         if self.kubeconfig:
             command = ["env", f"KUBECONFIG={self.kubeconfig}"] + command
         command += list(args)

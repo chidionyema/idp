@@ -28,6 +28,12 @@ spec:
     metadata:
       labels: { app.kubernetes.io/name: spine-worker }
     spec:
+      # The spine's own service account, which carries the flux-reader Role
+      # (platform/spine/rbac.yaml). Measured 2026-10-27: both spine pods ran as `default`, so
+      # the observer's activity -- the one that reads the reconciled object's own status from
+      # the API server -- had no RoleBinding behind it and every read would have been
+      # Forbidden. The Role existed; the pod was not using it.
+      serviceAccountName: spine
       # The pod's service account token: the activity reads Flux objects with it.
       automountServiceAccountToken: true
       # GHCR answers 401 to an anonymous manifest request, so the package needs the

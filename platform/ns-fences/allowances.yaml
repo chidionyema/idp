@@ -378,7 +378,11 @@ flows:
     # Object Storage as the node.
     egress_internet: [443]
     egress_metadata: true
-    ingress_from: [edge, monitoring]
+    # spine: the observer asserts through the Aevum server's API in this namespace
+    # (platform/spine/worker.yaml, AEVUM_URL=http://aevum.observability.svc:8000). The LAW 50
+    # grant already admits every emitter at the collector; this row names the spine's own use of
+    # it, so the flow is visible in the file that says what the estate talks to.
+    ingress_from: [edge, monitoring, spine]
   observability-agent:
     egress: [observability]
   metrics-server:
@@ -506,7 +510,11 @@ flows:
     # quad: quad-ledger's consume container subscribes on nats.event-bus:4222 (platform/quad/
     # ledger/ledger.yaml); without it consume timed out on 10.96.1.13:4222 and crash-looped once
     # estate-db let it through (2026-10-13).
-    ingress_from: [otto-gateway, commerce, llm, epistemic-fabric, voice-router, backstage, quad]
+    # spine: the event spine's bridge is the one component that knows both NATS and Temporal
+    # (platform/spine/bridge.yaml, NATS_URL=nats://nats.event-bus.svc:4222). It is a client of
+    # this bus, exactly like the rows above, and the flow is declared on both sides: without this
+    # half the bridge's own connection is refused at the fence and the spine never becomes ready.
+    ingress_from: [otto-gateway, commerce, llm, epistemic-fabric, voice-router, backstage, quad, spine]
   epistemic-fabric:
     # idp#3448 CP1: four ingestion connectors. Each publishes to the NATS bus (event-bus) and
     # polls or verifies a webhook against an external vendor API (GitHub, Slack) over the public
@@ -550,6 +558,11 @@ flows:
     # 2026-09-06: estate-db-copy-temporal-r2 timed out on estate-rw from this namespace once Calico
     # enforced the fence; estate-db named temporal on its ingress side, this side named nothing.
     egress: [estate-db]
+    # spine: the observer's worker serves the spine's own task queue and dials the frontend to
+    # poll it (platform/spine/worker.yaml, TEMPORAL_ADDRESS=temporal-frontend.temporal.svc:7233).
+    # This namespace admitted nobody before; the spine's worker timed out reaching the frontend
+    # and the observer never ran a workflow. Declared on both sides.
+    ingress_from: [spine]
     # kini-state writes its receipt to Object Storage as the node, over the public endpoint,
     # proving who it is against the instance-metadata service first.
     egress_internet: [443]
@@ -780,3 +793,34 @@ flows:
     # egress_internet is intentionally absent: internet-origin datasets arrive through the
     # research namespace, not here.
     egress: [llm, estate-db, observability]
+  spine:
+    # The event spine (platform/spine/bridge.yaml, platform/spine/worker.yaml). Two pods, one
+    # component each, and both halves of both flows are declared here.
+    #
+    # event-bus: the bridge connects to NATS (NATS_URL=nats://nats.event-bus.svc:4222) and
+    # creates the estate's stream before it writes its ready file. Measured 2026-10-27: the
+    # bridge's connection timed out and the pod sat at 0/1, because this namespace was
+    # declared in git, present on the cluster, and fenced by NOTHING -- the generator had
+    # deferred it as "not on the cluster" while live-namespaces.txt did not name it. The
+    # namespace is fenced now, and this row is the hole the bridge's connection comes through.
+    # temporal: the same pod signals Temporal (TEMPORAL_ADDRESS=temporal-frontend.temporal.svc:7233),
+    # and the worker polls the same frontend for its task queue. Both sides declare it.
+    # observability: the worker asserts through the Aevum server's API in that namespace
+    # (AEVUM_URL=http://aevum.observability.svc:8000). The LAW 50 grant covers the egress
+    # automatically; the row names it so the flow is readable.
+    # The API server needs no line: the generator gives every namespace allow-apiserver-egress,
+    # and the observer's activity reads the reconciled object's own status through it.
+    egress: [event-bus, temporal, observability]
+    # Nothing dials the spine. It is a client of three namespaces, never a server.
+    ingress_from: []
+  efda-system:
+    # The coverage layer (platform/efda/): the controller, the executor and the checkpoint sink.
+    #
+    # The controller talks to the API server and to its own sink. The API server needs no row
+    # (allow-apiserver-egress is given to every namespace by the generator) and the sink is
+    # efda-checkpoints in THIS namespace (platform/efda/namespace.yaml), which the same-namespace
+    # hole already carries. So this namespace declares no cross-namespace flow at all, and the
+    # fence says exactly that: it may reach the control plane, its own pods, DNS and the
+    # collector, and nothing else.
+    egress: []
+    ingress_from: []

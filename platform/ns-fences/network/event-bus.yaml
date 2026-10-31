@@ -124,4 +124,7 @@ spec:
           kubernetes.io/metadata.name: quad
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: spine
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: voice-router

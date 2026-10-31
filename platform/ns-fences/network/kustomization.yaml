@@ -13,6 +13,7 @@ resources:
 - dagster.yaml
 - demo-sandbox.yaml
 - edge.yaml
+- efda-system.yaml
 - epistemic-fabric.yaml
 - estate-db.yaml
 - event-bus.yaml
@@ -44,6 +45,7 @@ resources:
 - robusta.yaml
 - scheduling.yaml
 - searxng.yaml
+- spine.yaml
 - spire-mgmt.yaml
 - staging.yaml
 - tailscale.yaml

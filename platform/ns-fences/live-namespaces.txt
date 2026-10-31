@@ -9,6 +9,7 @@ dagster
 default
 demo-sandbox
 edge
+efda-system
 epistemic-fabric
 estate-db
 event-bus
@@ -49,6 +50,7 @@ searxng
 spire-mgmt
 spire-server
 spire-system
+spine
 staging
 tailscale
 temporal

@@ -27,6 +27,11 @@ spec:
     metadata:
       labels: { app.kubernetes.io/name: spine-bridge }
     spec:
+      # The spine's own service account (platform/spine/rbac.yaml), not the namespace's default.
+      # The bridge holds no token -- automountServiceAccountToken is false below -- but a pod
+      # running as `default` in a namespace that has its own account is a manifest that says
+      # something the estate does not mean.
+      serviceAccountName: spine
       # The bridge talks to NATS and Temporal and reads nothing in the cluster, so it does
       # not need the pod's service account token.
       automountServiceAccountToken: false
