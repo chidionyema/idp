@@ -1,0 +1,150 @@
+# The founder's specs, with the proof that decides each one.
+#
+# A spec is done when its proof exits zero and not before. bin/estate-spec-status --all prints
+# every spec with its acceptance criteria, its proof and the proof's exit status, so "is it
+# done" is a measurement and not a recollection.
+#
+# component: the path the spec governs. source_spec: where the behaviour was specified, so a
+# change to the component can be traced back to the spec it must still honour.
+
+specs:
+  - id: SPEC-founder-freeze
+    title: founder-approved work is immutable to agents
+    component: platform/estate/governance/freeze.py
+    source_spec: founder, 2026-10-29 (kick the door, take the keys away)
+    acceptance:
+      - "the write gate refuses a frozen path"
+      - "the merge gate refuses a frozen path"
+      - "only a new founder approval releases it"
+    proof:
+      check:
+        type: grep_present
+        path: bin/estate-memory-enforce
+        pattern: "freeze\\.is_frozen"
+
+  - id: SPEC-lockdown
+    title: a locked session has no write path
+    component: platform/estate/governance/ledger.py
+    source_spec: founder, 2026-10-29 (no write, no shell, no push while locked)
+    acceptance:
+      - "the write gate refuses every durable edit while the session is locked"
+      - "the lock is released only by a green proof"
+    proof:
+      check:
+        type: grep_present
+        path: bin/estate-memory-enforce
+        pattern: "is_locked"
+
+  - id: SPEC-supervisor
+    title: one warning per violation class, then terminate and relaunch
+    component: platform/estate/governance/supervisor.py
+    source_spec: founder, 2026-10-29 (warn once, then kill and relaunch with the fix first)
+    acceptance:
+      - "the first violation of a class warns"
+      - "the second terminates the session, locks it and relaunches it"
+      - "the relaunch instruction names the hole to plug and the proof to run"
+    proof:
+      check:
+        type: file_exists
+        path: platform/estate/governance/supervisor.py
+
+  - id: SPEC-prompt-intake
+    title: every founder prompt is analysed into retrievable context
+    component: platform/estate/governance/founder_intake.py
+    source_spec: founder, 2026-10-29 (never make the founder repeat himself)
+    acceptance:
+      - "a prompt is classified into objective, constraint, prohibition, proof demand, correction"
+      - "a repeat is detected and reported"
+      - "the record is retrievable from unified memory"
+    proof:
+      check:
+        type: file_exists
+        path: platform/estate/governance/founder_intake.py
+
+  - id: SPEC-receipts
+    title: every report to the founder carries a machine-generated receipt
+    component: platform/estate/governance/receipt.py
+    source_spec: founder, 2026-10-29 (no unverifiable claims)
+    acceptance:
+      - "a receipt carries the command, its exit status, the printed line and a sha256"
+      - "a receipt can be re-verified by re-running the command"
+    proof:
+      check:
+        type: file_exists
+        path: platform/estate/governance/receipt.py
+
+  - id: SPEC-law-gate
+    title: the laws are gated, and every gate can be proven to fail
+    component: platform/estate/governance/registry.py
+    source_spec: founder, 2026-10-29 ("my laws need to be gated")
+    acceptance:
+      - "every registered law has an executable check"
+      - "every registered law has a falsifier that must fail"
+      - "prose-only laws are reported"
+    proof:
+      check:
+        type: file_exists
+        path: bin/estate-law-gate
+
+  - id: SPEC-spec-status
+    title: a spec is done only when its proof exits zero
+    component: bin/estate-spec-status
+    source_spec: founder, 2026-10-29 (acceptance criteria and proof decide)
+    acceptance:
+      - "every spec reports done or open with the proof's exit status"
+    proof:
+      check:
+        type: file_exists
+        path: bin/estate-spec-status
+
+  - id: SPEC-provider-renewal
+    title: repeated violations by a provider end its estate subscription
+    component: platform/estate/governance/provider_renewal.py
+    source_spec: founder, 2026-10-29 (bind governance to the model provider)
+    acceptance:
+      - "two violations of any class from one provider deny its renewal"
+      - "the rendered router config drops a denied provider's lanes"
+    proof:
+      check:
+        type: file_exists
+        path: platform/vendors/renewals.yaml
+
+  - id: SPEC-router-fallback
+    title: every model group the router serves has a fallback chain
+    component: llm/config.yaml
+    source_spec: founder, 2026-10-29 (minimax_m27 had no fallback and the call 500ed)
+    acceptance:
+      - "no served model group lacks a fallback"
+      - "the rendered config is the config the router reads"
+    proof:
+      check:
+        type: router_fallbacks
+        file: llm/config.yaml
+        except: [voice-*, narrate, ollama*, claude-*, embed*, image, vision, glm, openrouter]
+
+  - id: SPEC-state-page
+    title: one infra-state page, published to every session
+    component: platform/estate/governance/state_page.py
+    source_spec: founder, 2026-10-29 (broadcast the state of infra to everyone)
+    acceptance:
+      - "the page is computed from live measurements, not remembered"
+      - "every session's brief carries it"
+      - "an alert reaches the sessions that are already running"
+    proof:
+      check:
+        type: grep_present
+        path: bin/estate-brief
+        pattern: "estate-state"
+
+  - id: SPEC-law-gate-ci
+    title: the law gate is a required CI job
+    component: .github/workflows/ci.yml
+    source_spec: founder, 2026-10-29 ("CI is too loose")
+    acceptance:
+      - "the job runs on pull_request and merge_group"
+      - "it is not on continue-on-error"
+    proof:
+      check:
+        type: grep_present
+        path: .github/workflows/ci.yml
+        pattern: "estate-law-gate"

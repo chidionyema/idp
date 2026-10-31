@@ -410,10 +410,23 @@ export default function estateCapabilities(pi: ExtensionAPI) {
     name: "estate_execute",
     label: "Estate Execute",
     description:
-      "Run a command through the estate executor daemon. The daemon applies the 100s ceiling and records the job.",
+      "Run a command through the estate executor daemon. The daemon applies the 100s ceiling and records the job. " +
+      "Before composing a command, check whether a door already answers the question -- these replaced " +
+      "58% of measured process work (census 2026-10-23, docs/diagnoses/2026-10-23-agent-process-friction.yaml): " +
+      "'where is my branch / has my lane landed?' -> `bin/lane-where <branch>` (exit 0 landed, 3 pending, " +
+      "4 red, 2 blind); 'how is the lane overall?' -> estate_invoke lane; 'why did CI fail?' -> " +
+      "estate_invoke ci.status (sha=); 'what is my run costing / what am I doing?' -> bin/estate-work-status.",
     promptSnippet: "Run a command through the estate executor",
     promptGuidelines: [
       "Use estate_execute to run any command through the governed door. The ceiling is 100s; the daemon enforces it.",
+      "NEVER poll. No `for i in ...; do sleep ...; done`, no `sleep N` to wait for CI, no `gh run watch`, no repeated " +
+        "`gh api .../status`: a loop costs a turn, a model call and a transcript line each time round, and the answer " +
+        "is one call away. Ask once with `bin/lane-where <branch>`, then act on the verdict.",
+      "A door returns an exit code that IS the verdict (0 ok / 3 pending or not-yet / 4 red / 5 gone / 2 BLIND). " +
+        "Read the code, do not re-read and narrate the output.",
+      "Work that cannot finish inside 100s is not a longer command: hand it to the lane (`estate_invoke lane-submit`) " +
+        "or the session plane (`estate_session_start`), which converge on their own.",
+      "A refusal from the door names the replacement command. Run that, not a variation of what was refused.",
     ],
     parameters: Type.Object({
       command: Type.String({ description: "The command to run." }),

@@ -1,0 +1,207 @@
+# The founder's laws, gated.
+#
+# A law here is not a sentence: it is a machine decision plus a falsifier. The falsifier is a
+# known-bad fixture the check MUST reject. A law whose check passes and whose falsifier also
+# passes is reported UNENFORCED and blocks -- a gate that cannot fail is not a gate
+# (AGENTS.md section 9, R2).
+#
+# ids are LAW-<n>. The estate's own documents state laws as "LAW <n>" (docs/FOUNDER.md,
+# docs/NEXT.md, docs/decisions, docs/specs). Every one of those numbers that has no entry here
+# is reported by bin/estate-law-gate --audit as a prose-only law: stated, never decided.
+
+laws:
+  - id: LAW-001
+    law: >-
+      No agent may change founder-approved work without a new founder approval: we kick the
+      door and take the keys away.
+    source: founder, 2026-10-29
+    severity: block
+    check:
+      type: grep_present
+      path: bin/estate-memory-enforce
+      pattern: "freeze\\.is_frozen"
+    falsifier:
+      files:
+        bin/estate-memory-enforce: "print('no governance here')\n"
+      check:
+        type: grep_present
+        path: bin/estate-memory-enforce
+        pattern: "freeze\\.is_frozen"
+
+  - id: LAW-002
+    law: >-
+      A claim is not an approval: the merge gate refuses a change to founder-approved work too,
+      so a frozen path cannot be landed by a different door.
+    source: founder, 2026-10-29
+    severity: block
+    check:
+      type: grep_present
+      path: bin/claim-gate
+      pattern: "frozen_problems"
+    falsifier:
+      files:
+        bin/claim-gate: "print('no freeze here')\n"
+      check:
+        type: grep_present
+        path: bin/claim-gate
+        pattern: "frozen_problems"
+
+  - id: LAW-003
+    law: >-
+      A session under lockdown has no write path at all: no file, no shell, no push. It stays
+      locked until its proof is green, so the fix cannot be faked by writing first.
+    source: founder, 2026-10-29
+    severity: block
+    check:
+      type: grep_present
+      path: bin/estate-memory-enforce
+      pattern: "is_locked"
+    falsifier:
+      files:
+        bin/estate-memory-enforce: "print('no lockdown here')\n"
+      check:
+        type: grep_present
+        path: bin/estate-memory-enforce
+        pattern: "is_locked"
+
+  - id: LAW-004
+    law: >-
+      Every law carries a falsifier and the runner proves it fails. A gate that cannot fail is
+      not a gate.
+    source: AGENTS.md section 9, R2
+    severity: block
+    check:
+      type: grep_present
+      path: platform/estate/governance/registry.py
+      pattern: "def run_falsifier"
+    falsifier:
+      files:
+        platform/estate/governance/registry.py: "def no_falsifier_here():\n    return True\n"
+      check:
+        type: grep_present
+        path: platform/estate/governance/registry.py
+        pattern: "def run_falsifier"
+
+  - id: LAW-005
+    law: >-
+      CI must not treat a required gate as advisory. The jobs the merge queue gates on carry
+      no continue-on-error.
+    source: founder, 2026-10-29 ("CI is too loose"); AGENTS.md section 9, R1
+    severity: block
+    check:
+      type: workflow_strict
+      workflow: .github/workflows/ci.yml
+      jobs: [ci-success, claim-gate, fast-gate, verifier, bdd-suites, offline-gate, security-scan]
+    falsifier:
+      files:
+        .github/workflows/ci.yml: |
+          name: ci
+          on: [pull_request]
+          jobs:
+            ci-success:
+              runs-on: ubuntu-24.04
+              continue-on-error: true
+              steps:
+                - run: echo hi
+      check:
+        type: workflow_strict
+        workflow: .github/workflows/ci.yml
+        jobs: [ci-success]
+
+  - id: LAW-006
+    law: >-
+      The law gate is a required CI job, not advice: it is in the workflow the merge queue
+      reads, and it is not on continue-on-error.
+    source: founder, 2026-10-29
+    severity: block
+    check:
+      type: grep_present
+      path: .github/workflows/ci.yml
+      pattern: "estate-law-gate"
+    falsifier:
+      files:
+        .github/workflows/ci.yml: |
+          name: ci
+          on: [pull_request]
+          jobs:
+            other:
+              runs-on: ubuntu-24.04
+              steps:
+                - run: echo hi
+      check:
+        type: grep_present
+        path: .github/workflows/ci.yml
+        pattern: "estate-law-gate"
+
+  - id: LAW-007
+    law: >-
+      Every session, in every runtime, starts from the same page: the estate's infra state.
+      The founder never has to repeat himself and no session works on a stale picture.
+    source: founder, 2026-10-29
+    severity: block
+    check:
+      type: grep_present
+      path: bin/estate-brief
+      pattern: "estate-state"
+    falsifier:
+      files:
+        bin/estate-brief: "print('no state page here')\n"
+      check:
+        type: grep_present
+        path: bin/estate-brief
+        pattern: "estate-state"
+
+  - id: LAW-008
+    law: >-
+      A model provider whose sessions keep breaking the laws loses its lanes: the rendered
+      router config drops its models, so the estate stops paying for it.
+    source: founder, 2026-10-29
+    severity: block
+    check:
+      type: grep_present
+      path: bin/idp-vendor-render
+      pattern: "denied_providers"
+    falsifier:
+      files:
+        bin/idp-vendor-render: "print('no renewal gate here')\n"
+      check:
+        type: grep_present
+        path: bin/idp-vendor-render
+        pattern: "denied_providers"
+
+  - id: LAW-009
+    law: >-
+      Every model group the router serves has a fallback chain. A group with none turns one
+      vendor's bad minute into an HTTP 500 for the caller.
+    source: founder, 2026-10-29 (minimax_m27 fell back to nothing and 500ed)
+    severity: block
+    check:
+      type: router_fallbacks
+      file: llm/config.yaml
+      except: [voice-*, narrate, ollama*, claude-*, embed*, image, vision, glm, openrouter]
+    falsifier:
+      files:
+        llm/config.yaml: |
+          model_list:
+            - model_name: minimax_m27
+              litellm_params:
+                model: openai/MiniMax-M2.7
+          router_settings:
+            fallbacks:
+              - deepseek: [gemini, groq]
+      check:
+        type: router_fallbacks
+        file: llm/config.yaml
+        except: [voice-*, narrate, ollama*, claude-*, embed*, image, vision, glm, openrouter]
+
+  - id: LAW-010
+    law: >-
+      No cosmetic or behaviour-free change is let in: a diff with no behaviour in it is
+      refused, and a change with no proof attached is refused.
+    source: founder, 2026-10-29 ("any tiny flow where cosmetic or technical we not letting in")
+    severity: warn
+    check:
+      type: diff_cosmetic
+      base: origin/main
+      head: HEAD
+    falsify: false

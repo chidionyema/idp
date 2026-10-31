@@ -61,6 +61,44 @@ except ImportError:  # pragma: no cover - datasette-less CI venv
 # caller sends can exceed the door.
 CEILING_SEC = 100
 
+# THE RAISED CEILING. 100s is the default, not a wall. A job that has earned more time says so in
+# its own declaration -- `long_run: true`, a `long_run_reason`, a `door_s` inside the long bound --
+# and the door grants it: audited, bounded, and with nobody asked. The founder, 2026-10-28: the
+# ceiling has been a recurring blocker across sessions and must not be a thing a person has to
+# unblock. The grant is the declaration; the bound is 600s; an exception nobody can explain is an
+# exception nobody can review.
+LONG_CEILING_SEC = 600
+
+
+def granted_ceiling_sec(command: str) -> int:
+    """The ceiling this command's own intent has earned, or 0 when it has earned none.
+
+    An intent earns more than the default by declaring `long_run: true`, a `long_run_reason` and a
+    `door_s` inside the long bound. The declaration is the permission -- nothing here asks a person,
+    and nothing here can exceed 600s. A command that names no intent, an intent that declares no
+    long run, a missing reason and an over-long door all earn exactly nothing.
+    """
+    m = re.search(r"estate-execute\s+([A-Za-z0-9._-]+)", command or "")
+    if not m:
+        return 0
+    import yaml
+
+    directory = os.environ.get("ESTATE_INTENT_DIR") or os.path.expanduser("~/.estate/intents")
+    path = os.path.join(directory, "%s.yaml" % m.group(1))
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            intent = yaml.safe_load(fh) or {}
+    except Exception:  # noqa: BLE001 - an unreadable intent earns nothing
+        return 0
+    if not isinstance(intent, dict) or not intent.get("long_run"):
+        return 0
+    reason = str(intent.get("long_run_reason") or "").strip()
+    declared = intent.get("door_s")
+    if not reason or not isinstance(declared, int) or declared > LONG_CEILING_SEC:
+        return 0
+    return declared
+
+
 # A floor under the ceiling for the one case where a caller asks for less: a command bounded to
 # zero seconds never runs, which would be a guard that refuses correct work (R38).
 MIN_CEILING_SEC = 1
@@ -79,6 +117,72 @@ _NEVER = (
     re.compile(r"\bwatch\b"),
     re.compile(r"\bgh\s+run\s+watch\b"),
 )
+
+# STEERING, NOT A BLUNT NO. Measured 2026-10-23 over 24h of live transcripts (bin/process-census,
+# job exec-1792784032-4447): 1,277 tool calls were agents asking "has my branch landed yet?" in
+# 418 different commands, 108 of them hand-written `for i in ...; do sleep; done` loops -- and the
+# door that answers it (`bin/lane-where`) did not exist, while `bin/idp-greenlane status` (lane-wide)
+# did and was used 16 times against 1,277 polls. So a plain refusal is not the fix: it would be a
+# guard that rejects correct intent (R38) and leaves the agent to guess again. Each pattern here
+# names the door, and the refusal returns it in `detail` so the caller's next call is the right one
+# rather than a variation of the wrong one. The `_NEVER` patterns below stay blunt because there is
+# no door to name: a command with no return path has no replacement, only a different shape.
+_STEER = (
+    (
+        re.compile(r"gh\s+api\s+[^;|&]*/commits/[^;|&]*/status"),
+        "bin/lane-where <branch> -- one observation, exit 0 landed / 3 pending / 4 red / 2 blind; "
+        "do not poll the status API, the lane converges on its own (AGENTS.md section 2)",
+    ),
+    (
+        re.compile(r"gh\s+api\s+[^;|&]*/check-runs"),
+        "estate_invoke ci.status sha=<sha> (all check runs, failures with URLs), or bin/lane-where <branch> "
+        "for the head verdict",
+    ),
+    (
+        re.compile(r"\bgh\s+run\s+(view|list)\b"),
+        "estate_invoke ci.status sha=<sha> -- it returns the failures with their URLs; `gh run view` "
+        "costs a call per run and is what the census measured 261 times in 24h",
+    ),
+    (
+        re.compile(r"\bgh\s+pr\s+checks\b"),
+        "bin/lane-where <branch>",
+    ),
+    (
+        # A shell loop that waits. The first version of this pattern was `\b(?:for|while)\b[^;|&]*\bsleep\b`,
+        # which failed on the real shape that motivated it (measured live 2026-10-23):
+        #   for i in $(seq 1 40); do if git log -1 --format=%s | grep -q x; then break; fi; sleep 2; done
+        # `[^;|&]*` cannot cross the `;` before `do`, so the loop that was the whole point went
+        # through while the cheaper `gh api` polls were caught. `.*` crosses anything but a newline.
+        re.compile(r"\b(?:for|while)\b.*\bsleep\b"),
+        "remove the loop: ask once (`bin/lane-where <branch>`, estate_invoke lane) and act on the verdict. "
+        "A polling loop is the fourth rung no agent is allowed to invent -- measured 145 calls / 108 forms in 24h",
+    ),
+    (
+        re.compile(r"\buntil\b.*\b(?:grep|test|\[)\b"),
+        "remove the wait loop and ask the door once: bin/lane-where <branch>",
+    ),
+    (
+        re.compile(r"api\.github\.com/[^\s;|&]*(?:/status|/check-runs|/commits/[^/\s]+/status)"),
+        "bin/lane-where <branch> (or estate_invoke ci.status sha=<sha>) -- one observation, the lane "
+        "converges on its own; do not poll the GitHub API",
+    ),
+)
+
+
+def _steer_for(command: str) -> Optional[dict]:
+    """The door that answers this command, when the command is a shape a door already owns.
+
+    Returns the refusal body with the replacement in `detail`, or None. Deliberately placed BEFORE
+    the ceiling and `_NEVER` checks: an agent that composed a poll loop should be told which door
+    answers the question, not merely that its command was too long.
+    """
+    for pattern, replacement in _STEER:
+        if pattern.search(command):
+            return _refusal(
+                "this shape already has a door: do not compose it, run the door",
+                detail=replacement,
+            )
+    return None
 
 
 def explicit_ceiling_sec(command: str) -> Optional[int]:
@@ -356,6 +460,9 @@ def execute_command(
         return _refusal("empty command")
 
     # 1. A command with no return path is refused at the door, whatever ceiling is on it.
+    steer = _steer_for(command)
+    if steer:
+        return steer
     for pattern in _NEVER:
         if pattern.search(command):
             return _refusal(
@@ -381,7 +488,8 @@ def execute_command(
         return _refusal(
             f"ceiling_sec must be a whole number of seconds, got {ceiling_sec!r}"
         )
-    effective = max(MIN_CEILING_SEC, min(requested, CEILING_SEC))
+    granted = granted_ceiling_sec(command)
+    effective = max(MIN_CEILING_SEC, granted if granted else min(requested, CEILING_SEC))
 
     # 4. A relative cwd becomes absolute here, at the boundary, so the executor never resolves a
     #    path against whatever directory it happens to have been started in.
@@ -755,6 +863,9 @@ def _refusals_for(
     if not isinstance(command, str) or not command.strip():
         reasons.append(_refusal("empty command"))
         return reasons
+    steer = _steer_for(command)
+    if steer:
+        reasons.append(steer)
     for pattern in _NEVER:
         if pattern.search(command):
             reasons.append(

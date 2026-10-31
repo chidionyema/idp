@@ -1,0 +1,398 @@
+{
+  "harvested_at": "2026-10-23T18:30Z",
+  "method": "arXiv API export endpoint (https://export.arxiv.org/api/query), 28 query strings, per_page=50, results filtered to records whose title/abstract mention an agent, director, camera, storyboard or interface. Each record is stored with its id, title, published date and first sentence only. No record here was written by hand.",
+  "verification": "Every id below resolves at https://arxiv.org/abs/<id-without-version>. The first_sentence field is the first sentence of that record's abstract as returned by the API on the harvest date; re-running the harvest may return a later version of the same id.",
+  "queries": [
+    "all:\"cinematic agent\"",
+    "all:\"film agent\" AND all:\"multi-agent\"",
+    "all:\"movie generation\" AND all:\"agent\"",
+    "all:\"mixed-initiative\" AND all:\"locus of control\"",
+    "all:\"barge-in\" AND all:speech",
+    "all:\"end-of-turn detection\"",
+    "all:\"full-duplex\" AND all:speech",
+    "all:\"voice agent\" AND all:latency",
+    "all:\"situation awareness\" AND all:\"human-agent\"",
+    "all:\"telemetry\" AND all:\"LLM agent\"",
+    "all:\"observability\" AND all:\"multi-agent\" AND all:fault",
+    "all:\"silent failure\" AND all:agent",
+    "all:previsualization AND all:agent",
+    "all:\"shot grammar\"",
+    "all:\"cognitive ergonomics\" AND all:collaboration"
+  ],
+  "counts": {
+    "harvested_records": 149,
+    "curated_records": 41,
+    "missing": []
+  },
+  "records": [
+    {
+      "id": "2503.07314v1",
+      "title": "Automated Movie Generation via Multi-Agent CoT Planning",
+      "published": "2025-03-10",
+      "theme": "cinematic-planning",
+      "why_it_is_here": "long-form film needs a planning stage above the shots; that stage is a director, not a renderer",
+      "first_sentence": "Existing long-form video generation frameworks lack automated planning, requiring manual input for storylines, scenes, cinematography, and character interactions, resulting in high costs and inefficiencies",
+      "url": "https://arxiv.org/abs/2503.07314"
+    },
+    {
+      "id": "2501.12909v1",
+      "title": "FilmAgent: A Multi-Agent Framework for End-to-End Film Automation in Virtual 3D Spaces",
+      "published": "2025-01-22",
+      "theme": "cinematic-planning",
+      "why_it_is_here": "multi-agent film automation splits script / cinematography / actor placement - the same split the estate's stage needs",
+      "first_sentence": "Virtual film production requires intricate decision-making processes, including scriptwriting, virtual cinematography, and precise actor positioning and actions",
+      "url": "https://arxiv.org/abs/2501.12909"
+    },
+    {
+      "id": "2502.08639v1",
+      "title": "CineMaster: A 3D-Aware and Controllable Framework for Cinematic Text-to-Video Generation",
+      "published": "2025-02-12",
+      "theme": "cinematic-control",
+      "why_it_is_here": "3D-aware controllable camera: camera is a control surface with parameters, not a prompt",
+      "first_sentence": "In this work, we present CineMaster, a novel framework for 3D-aware and controllable text-to-video generation",
+      "url": "https://arxiv.org/abs/2502.08639"
+    },
+    {
+      "id": "2604.09195v1",
+      "title": "Camera Artist: A Multi-Agent Framework for Cinematic Language Storytelling Video Generation",
+      "published": "2026-04-10",
+      "theme": "cinematic-control",
+      "why_it_is_here": "cinematic language as explicit vocabulary; the estate needs a shot grammar with named moves",
+      "first_sentence": "We propose Camera Artist, a multi-agent framework that models a real-world filmmaking workflow to generate narrative videos with explicit cinematic language",
+      "url": "https://arxiv.org/abs/2604.09195"
+    },
+    {
+      "id": "2609.07720v1",
+      "title": "Better Call CineCrew: Consistent Ultra-Long Narrative-to-Film Generation",
+      "published": "2026-09-07",
+      "theme": "cinematic-control",
+      "why_it_is_here": "shot-level controllability and cross-clip consistency are the hard part of long takes",
+      "first_sentence": "Long-form narrative-to-film generation requires shot-level controllability and cross-clip consistency in both visual identity and character behavior-requirements that remain difficult to satisfy with current prompt-based workflows",
+      "url": "https://arxiv.org/abs/2609.07720"
+    },
+    {
+      "id": "2505.15145v1",
+      "title": "CineTechBench: A Benchmark for Cinematographic Technique Understanding and Generation",
+      "published": "2025-05-21",
+      "theme": "cinematic-bench",
+      "why_it_is_here": "a benchmark for cinematographic technique: the estate's shot grammar needs to be gradeable, not vibes",
+      "first_sentence": "Cinematography is a cornerstone of film production and appreciation, shaping mood, emotion, and narrative through visual elements such as camera movement, shot composition, and lighting",
+      "url": "https://arxiv.org/abs/2505.15145"
+    },
+    {
+      "id": "2506.21356v2",
+      "title": "ShotBench: Expert-Level Cinematic Understanding in Vision-Language Models",
+      "published": "2025-06-26",
+      "theme": "cinematic-bench",
+      "why_it_is_here": "expert-level cinematic understanding in VLMs: what a machine can actually read off a frame",
+      "first_sentence": "Cinematography, the fundamental visual language of film, is essential for conveying narrative, emotion, and aesthetic quality",
+      "url": "https://arxiv.org/abs/2506.21356"
+    },
+    {
+      "id": "2609.28813v1",
+      "title": "CinematicVQA: Benchmarking Film-Grammar Reasoning in Large Vision-Language Models",
+      "published": "2026-09-23",
+      "theme": "cinematic-bench",
+      "why_it_is_here": "film-grammar reasoning: framing, lighting and camera operation are the vocabulary the estate will argue with",
+      "first_sentence": "Cinematography, the craft of visual storytelling through framing, lighting, and camera operation, fundamentally shapes how audiences perceive and emotionally engage with video content",
+      "url": "https://arxiv.org/abs/2609.28813"
+    },
+    {
+      "id": "2412.12223v2",
+      "title": "Can video generation replace cinematographers? Research on the cinematic language of generated video",
+      "published": "2024-12-16",
+      "theme": "cinematic-moat",
+      "why_it_is_here": "asks directly whether video generation replaces cinematographers - the moat question for the founder",
+      "first_sentence": "Recent advancements in text-to-video (T2V) generation have leveraged diffusion models to enhance visual coherence in videos synthesized from textual descriptions",
+      "url": "https://arxiv.org/abs/2412.12223"
+    },
+    {
+      "id": "2610.12455v2",
+      "title": "Hybrid Cinematography: Previsualizing and Managing Hallucination Risk in Generative Video Reshooting",
+      "published": "2026-10-08",
+      "theme": "cinematic-truth",
+      "why_it_is_here": "a committed camera move cannot be reshot for free: hallucination risk when the world changes under the shot",
+      "first_sentence": "On a film set, the camera move is committed during a take",
+      "url": "https://arxiv.org/abs/2610.12455"
+    },
+    {
+      "id": "2412.02259v3",
+      "title": "VideoGen-of-Thought: Step-by-step generating multi-shot video with minimal manual intervention",
+      "published": "2024-12-03",
+      "theme": "cinematic-planning",
+      "why_it_is_here": "multi-shot coherence is the failure mode of short-clip generation",
+      "first_sentence": "Current video generation models excel at short clips but fail to produce cohesive multi-shot narratives due to disjointed visual dynamics and fractured storylines",
+      "url": "https://arxiv.org/abs/2412.02259"
+    },
+    {
+      "id": "2608.12314v1",
+      "title": "StateFlow: Building, Evolving, and Accessing 3D World States for Previsualization",
+      "published": "2026-08-12",
+      "theme": "digital-twin",
+      "why_it_is_here": "a 3D world state that can be built, evolved and accessed: the estate's event spine is such a state",
+      "first_sentence": "Previsualization is an intermediate layer between ideas and production in film, games, architecture, and urban design",
+      "url": "https://arxiv.org/abs/2608.12314"
+    },
+    {
+      "id": "2603.14790v2",
+      "title": "Mind-of-Director: Multi-modal Agent-Driven Film Previsualization via Collaborative Decision-Making",
+      "published": "2026-03-16",
+      "theme": "director-role",
+      "why_it_is_here": "a director as a coordinating decision-maker over a previz team - the estate's director is exactly this shape",
+      "first_sentence": "We present Mind-of-Director, a multi-modal agent-driven framework for film previz that models the collaborative decision-making process of a film production team",
+      "url": "https://arxiv.org/abs/2603.14790"
+    },
+    {
+      "id": "2511.17906v1",
+      "title": "AnimAgents: Coordinating Multi-Stage Animation Pre-Production with Human-Multi-Agent Collaboration",
+      "published": "2025-11-22",
+      "theme": "director-role",
+      "why_it_is_here": "multi-stage pre-production with human collaboration: stage gates, not one big generation",
+      "first_sentence": "Animation pre-production lays the foundation of an animated film by transforming initial concepts into a coherent blueprint across interdependent stages such as ideation, scripting, design, and storyboarding",
+      "url": "https://arxiv.org/abs/2511.17906"
+    },
+    {
+      "id": "2607.14309v1",
+      "title": "Traccia: An OpenTelemetry-Based Governance Platform for AI Systems",
+      "published": "2026-07-15",
+      "theme": "telemetry",
+      "why_it_is_here": "OpenTelemetry for AI systems: state-delta evidence as a first-class artefact",
+      "first_sentence": "The rapid development of Large Language Models (LLMs) and Artificial Intelligent (AI) powered autonomous agents has fundamentally changed the existing forms of software governance",
+      "url": "https://arxiv.org/abs/2607.14309"
+    },
+    {
+      "id": "2107.00690v2",
+      "title": "Trust, Shared Understanding and Locus of Control in Mixed-Initiative Robotic Systems",
+      "published": "2021-07-01",
+      "theme": "mixed-initiative",
+      "why_it_is_here": "trust, shared understanding and locus of control move together; a film the founder cannot steer destroys all three",
+      "first_sentence": "This paper investigates how trust, shared understanding between a human operator and a robot, and the Locus of Control (LoC) personality trait, evolve and affect Human-Robot Interaction (HRI) in mixed-initiative robotic systems",
+      "url": "https://arxiv.org/abs/2107.00690"
+    },
+    {
+      "id": "2211.14095v1",
+      "title": "A Hierarchical Variable Autonomy Mixed-Initiative Framework for Human-Robot Teaming in Mobile Robotics",
+      "published": "2022-11-25",
+      "theme": "mixed-initiative",
+      "why_it_is_here": "variable autonomy: control authority must be transferable, and the transfer must be explicit",
+      "first_sentence": "This paper presents a Mixed-Initiative (MI) framework for addressing the problem of control authority transfer between a remote human operator and an AI agent when cooperatively controlling a mobile robot",
+      "url": "https://arxiv.org/abs/2211.14095"
+    },
+    {
+      "id": "2301.08038v2",
+      "title": "A Unified Architecture for Dynamic Role Allocation and Collaborative Task Planning in Mixed Human-Robot Teams",
+      "published": "2023-01-19",
+      "theme": "mixed-initiative",
+      "why_it_is_here": "dynamic role allocation in mixed human-robot teams: the cast list changes as work changes",
+      "first_sentence": "The growing deployment of human-robot collaborative processes in several industrial applications, such as handling, welding, and assembly, unfolds the pursuit of systems which are able to manage large heterogeneous teams and, at the same time, monitor the execution of complex tasks",
+      "url": "https://arxiv.org/abs/2301.08038"
+    },
+    {
+      "id": "2509.13444v2",
+      "title": "DuetUI: A Bidirectional Context Loop for Human-Agent Co-Generation of Task-Oriented Interfaces",
+      "published": "2025-09-16",
+      "theme": "mixed-initiative",
+      "why_it_is_here": "a bidirectional context loop for human-agent co-generation, with dynamic user override - override is the feature",
+      "first_sentence": "Large Language Models are reshaping task automation, yet remain limited in complex, multi-step real-world tasks that require aligning with vague user intent and enabling dynamic user override",
+      "url": "https://arxiv.org/abs/2509.13444"
+    },
+    {
+      "id": "2106.02077v1",
+      "title": "Eliciting Spoken Interruptions to Inform Proactive Speech Agent Design",
+      "published": "2021-06-03",
+      "theme": "interruption",
+      "why_it_is_here": "spoken interruptions must be elicited deliberately; unprompted speech is the interrupt mechanism",
+      "first_sentence": "Current speech agent interactions are typically user-initiated, limiting the interactions they can deliver",
+      "url": "https://arxiv.org/abs/2106.02077"
+    },
+    {
+      "id": "2501.09355v1",
+      "title": "YETI (YET to Intervene) Proactive Interventions by Multimodal AI Agents in Augmented Reality Tasks",
+      "published": "2025-01-16",
+      "theme": "interruption",
+      "why_it_is_here": "proactive intervention: when an agent should speak up, and when it should stay quiet",
+      "first_sentence": "Multimodal AI Agents are AI models that have the capability of interactively and cooperatively assisting human users to solve day-to-day tasks",
+      "url": "https://arxiv.org/abs/2501.09355"
+    },
+    {
+      "id": "2603.02070v3",
+      "title": "Exploring Plan Space through Conversation: An Agentic Framework for LLM-Mediated Explanations in Planning",
+      "published": "2026-03-02",
+      "theme": "explanation",
+      "why_it_is_here": "plan space explored through conversation: the founder's question changes the plan, not just the description",
+      "first_sentence": "When automating plan generation for a real-world sequential decision problem, the goal is often not to replace the human planner, but to facilitate an iterative reasoning and elicitation process, where the human's role is to guide the AI planner according to their preferences and expertise",
+      "url": "https://arxiv.org/abs/2603.02070"
+    },
+    {
+      "id": "2106.01503v1",
+      "title": "Towards an Explanation Space to Align Humans and Explainable-AI Teamwork",
+      "published": "2021-06-02",
+      "theme": "explanation",
+      "why_it_is_here": "an explanation space, so an agent's reasoning is navigable rather than narrated",
+      "first_sentence": "Providing meaningful and actionable explanations to end-users is a fundamental prerequisite for implementing explainable intelligent systems in the real world",
+      "url": "https://arxiv.org/abs/2106.01503"
+    },
+    {
+      "id": "2508.04721v1",
+      "title": "Toward Low-Latency End-to-End Voice Agents for Telecommunications Using Streaming ASR, Quantized LLMs, and Real-Time TTS",
+      "published": "2025-08-05",
+      "theme": "voice-latency",
+      "why_it_is_here": "streaming ASR + quantised LLM + realtime TTS: the voice latency budget is a pipeline, not a model",
+      "first_sentence": "We introduce a low-latency telecom AI voice agent pipeline for real-time, interactive telecommunications use, enabling advanced voice AI for call center automation, intelligent IVR (Interactive Voice Response), and AI-driven customer support",
+      "url": "https://arxiv.org/abs/2508.04721"
+    },
+    {
+      "id": "2610.26233v1",
+      "title": "Heartbeat Thinking: Speculative Reasoning and Tool Execution While Listening in Realtime Voice Agents",
+      "published": "2026-10-19",
+      "theme": "voice-latency",
+      "why_it_is_here": "think while listening: tools run during speech, not after it",
+      "first_sentence": "Tool-using voice agents often leave users waiting after speech ends, even when actionable information arrives earlier in the request",
+      "url": "https://arxiv.org/abs/2610.26233"
+    },
+    {
+      "id": "2510.16156v1",
+      "title": "AsyncVoice Agent: Real-Time Explanation for LLM Planning and Reasoning",
+      "published": "2025-10-17",
+      "theme": "voice-latency",
+      "why_it_is_here": "async voice agent: explain the reasoning while it is still happening",
+      "first_sentence": "Effective human-AI collaboration on complex reasoning tasks requires that users understand and interact with the model's process, not just receive an output",
+      "url": "https://arxiv.org/abs/2510.16156"
+    },
+    {
+      "id": "2609.11066v1",
+      "title": "Less can be More: What Aspects of Speech Drive End-of-Turn Detection",
+      "published": "2026-09-10",
+      "theme": "voice-latency",
+      "why_it_is_here": "what actually drives end-of-turn detection: the cut latency depends on this, not on the TTS",
+      "first_sentence": "In conversational AI, detecting when a speaker has finished talking is crucial for natural turn taking",
+      "url": "https://arxiv.org/abs/2609.11066"
+    },
+    {
+      "id": "2505.15670v4",
+      "title": "SALM-Duplex: Efficient and Direct Duplex Modeling for Speech-to-Speech Language Model",
+      "published": "2025-05-21",
+      "theme": "duplex",
+      "why_it_is_here": "turn-based speech models cannot barge in; the estate's voice is already duplex",
+      "first_sentence": "Spoken dialogue is an intuitive form of human-computer interaction, yet current speech language models often remain constrained to turn-based exchanges, lacking real-time adaptability such as user barge-in",
+      "url": "https://arxiv.org/abs/2505.15670"
+    },
+    {
+      "id": "2205.15060v4",
+      "title": "Duplex Conversation: Towards Human-like Interaction in Spoken Dialogue Systems",
+      "published": "2022-05-30",
+      "theme": "duplex",
+      "why_it_is_here": "duplex conversation: listen and speak at once, on one channel",
+      "first_sentence": "In this paper, we present Duplex Conversation, a multi-turn, multimodal spoken dialogue system that enables telephone-based agents to interact with customers like a human",
+      "url": "https://arxiv.org/abs/2205.15060"
+    },
+    {
+      "id": "2609.21967v2",
+      "title": "NemotronLabs VoiceChat: An Open Full-duplex Speech-to-Speech Model with Tool Calling Capabilities",
+      "published": "2026-09-18",
+      "theme": "duplex",
+      "why_it_is_here": "full-duplex speech-to-speech with native tool calling: one channel carries both talk and action",
+      "first_sentence": "We introduce NemotronLabs VoiceChat, an open full-duplex speech-to-speech model with native tool-calling capabilities",
+      "url": "https://arxiv.org/abs/2609.21967"
+    },
+    {
+      "id": "2608.16178v1",
+      "title": "Agent-Native Telemetry: Verifiable State-Delta Evidence for Autonomous Operations",
+      "published": "2026-08-17",
+      "theme": "telemetry",
+      "why_it_is_here": "agent-native telemetry as verifiable state-delta evidence: the narration's source id",
+      "first_sentence": "Operational telemetry is predominantly engineered for human reading: systems repeatedly serialize verbose prose, static keys, and redundant context across billions of log lines",
+      "url": "https://arxiv.org/abs/2608.16178"
+    },
+    {
+      "id": "2606.14589v1",
+      "title": "When Errors Become Narratives: A Longitudinal Taxonomy of Silent Failures in a Production LLM Agent Runtime",
+      "published": "2026-06-12",
+      "theme": "truth",
+      "why_it_is_here": "a taxonomy of silent failures: when errors become narratives, the film is the worst place to invent",
+      "first_sentence": "LLM agent systems increasingly run as long-lived autonomous runtimes: scheduling jobs, calling tools, maintaining memory, and pushing results to humans",
+      "url": "https://arxiv.org/abs/2606.14589"
+    },
+    {
+      "id": "2608.24271v1",
+      "title": "Observability and Fault Injection for LLM-Based Multi-Agent Systems in Software Engineering",
+      "published": "2026-08-25",
+      "theme": "truth",
+      "why_it_is_here": "observability and fault injection for multi-agent systems: prove the surface sees failures",
+      "first_sentence": "Large Language Model-based multi-agent systems are increasingly explored for software engineering tasks, but they remain difficult to inspect, debug, and evaluate under controlled failures",
+      "url": "https://arxiv.org/abs/2608.24271"
+    },
+    {
+      "id": "2606.05872v3",
+      "title": "Entropy-Based Observability for AI Agent Behavior",
+      "published": "2026-06-04",
+      "theme": "telemetry",
+      "why_it_is_here": "entropy-based observability: outcome metrics hide the structure of behaviour",
+      "first_sentence": "AI agents are typically instrumented through outcome-oriented indicators such as task success, reward, latency, and cost.Although these indicators are operationally important, they provide limited visibility into the internal structure of agent behavior such as the degree of exploration, the rigidit",
+      "url": "https://arxiv.org/abs/2606.05872"
+    },
+    {
+      "id": "2603.27355v2",
+      "title": "LLM Readiness Harness: Evaluation, Observability, and CI Gates for LLM/RAG Applications",
+      "published": "2026-03-28",
+      "theme": "telemetry",
+      "why_it_is_here": "an LLM readiness harness turns evaluation into a deployment decision - the gate shape the estate already uses",
+      "first_sentence": "We present a readiness harness for LLM and RAG applications that turns evaluation into a deployment decision workflow",
+      "url": "https://arxiv.org/abs/2603.27355"
+    },
+    {
+      "id": "2601.18827v2",
+      "title": "Automated structural testing of LLM-based agents: methods, framework, and case studies",
+      "published": "2026-01-25",
+      "theme": "truth",
+      "why_it_is_here": "structural testing of LLM agents: the gate that can fail",
+      "first_sentence": "LLM-based agents are rapidly being adopted across diverse domains",
+      "url": "https://arxiv.org/abs/2601.18827"
+    },
+    {
+      "id": "2406.01364v1",
+      "title": "BELLS: A Framework Towards Future Proof Benchmarks for the Evaluation of LLM Safeguards",
+      "published": "2024-06-03",
+      "theme": "truth",
+      "why_it_is_here": "safeguards must be evaluated on traces, not only on outputs",
+      "first_sentence": "Input-output safeguards are used to detect anomalies in the traces produced by Large Language Models (LLMs) systems",
+      "url": "https://arxiv.org/abs/2406.01364"
+    },
+    {
+      "id": "2503.14810v3",
+      "title": "A Study on Human-Swarm Interaction: A Framework for Assessing Situation Awareness and Task Performance",
+      "published": "2025-03-19",
+      "theme": "situation-awareness",
+      "why_it_is_here": "a framework for assessing situation awareness in dynamic human-swarm interaction - the founder is the swarm's one human",
+      "first_sentence": "This paper introduces a framework for human swarm interaction studies that measures situation awareness in dynamic environments",
+      "url": "https://arxiv.org/abs/2503.14810"
+    },
+    {
+      "id": "2207.03779v1",
+      "title": "Pick the Right Co-Worker: Online Assessment of Cognitive Ergonomics in Human-Robot Collaborative Assembly",
+      "published": "2022-07-08",
+      "theme": "cognitive-ergonomics",
+      "why_it_is_here": "cognitive ergonomics of collaboration: a richer display can raise the operator's cognitive load",
+      "first_sentence": "Human-robot collaborative assembly systems enhance the efficiency and productivity of the workplace but may increase the workers' cognitive demand",
+      "url": "https://arxiv.org/abs/2207.03779"
+    },
+    {
+      "id": "2605.16197v1",
+      "title": "Position: AI as Part of Self -- Extending the Mind Requires Cognitive Co-Regulation",
+      "published": "2026-05-15",
+      "theme": "cognitive-ergonomics",
+      "why_it_is_here": "safety as co-regulation of a human-AI cognitive system: the film and the founder are one system",
+      "first_sentence": "This position paper argues that safety and alignment cannot be achieved by constraining an external system: they must emerge from the co-regulatory design of the human--AI cognitive system as a whole (\"AI as Part of Self\")",
+      "url": "https://arxiv.org/abs/2605.16197"
+    },
+    {
+      "id": "2509.19152v2",
+      "title": "A Scoping Review of Mixed Initiative Visual Analytics in the Automation Renaissance",
+      "published": "2025-09-23",
+      "theme": "mixed-initiative",
+      "why_it_is_here": "mixed-initiative visual analytics: the operator's view is a design problem with known failure modes",
+      "first_sentence": "Artificial agents are increasingly integrated into data analysis workflows, carrying out tasks that were primarily done by humans",
+      "url": "https://arxiv.org/abs/2509.19152"
+    }
+  ]
+}

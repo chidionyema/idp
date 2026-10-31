@@ -16,7 +16,10 @@
     "SPEC",
     "DEFECT",
     "SYSTEM",
-    "GOTCHA"
+    "GOTCHA",
+    "PRINCIPLE",
+    "INCIDENT",
+    "PROJECT"
   ],
   "history": [
     {
@@ -43,6 +46,21 @@
       "note": "added type GOTCHA via remember",
       "ts": "2026-09-26T18:26:40Z",
       "version": 5
+    },
+    {
+      "note": "added type PRINCIPLE via remember",
+      "ts": "2026-10-29T01:07:14Z",
+      "version": 6
+    },
+    {
+      "note": "added type INCIDENT via remember",
+      "ts": "2026-10-29T08:19:01Z",
+      "version": 7
+    },
+    {
+      "note": "added type PROJECT via remember",
+      "ts": "2026-10-30T00:01:58Z",
+      "version": 8
     }
   ],
   "predicate_hints": [
@@ -60,5 +78,5 @@
     "introduced in",
     "fixes"
   ],
-  "version": 5
+  "version": 8
 }
