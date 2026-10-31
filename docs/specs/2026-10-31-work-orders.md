@@ -43,3 +43,25 @@ Not built: that trust rule, the scheduled workflow that scans for orders, and th
    --push` over orders found on main, one per tick, as the estate App.
 2. One real order: this branch's work, packaged with `work-order make` and run by that job.
 3. Proof: the Greenlane's verdict on the pushed lane's head.
+
+## The descent (founder's image, 2026-10-31: the Tree of Life)
+
+Intent enters at the top and is refined at every level until, at the bottom, the executor has nothing left to
+decide. A packet that arrives at the bottom unfinished is a defect in an upper level, never the executor's to fix.
+
+| Level (Tree of Life) | What happens here | Estate piece | Gate to descend |
+|---|---|---|---|
+| Keter (crown) | the founder's intent, in a sentence | founder door, one message | intent recorded with its source |
+| Chokhmah (wisdom) | discovery: what is true now | `growmos query`, probes, `rg` | evidence measured this run (J4) |
+| Binah (understanding) | structure: the spec and the BDD | `docs/specs/`, `features/` | feature file exists and fails first |
+| Chesed (expansion) | options considered | method selector, hypothesis race | at least two, with baseline delta |
+| Gevurah (restraint) | the laws that bind and refuse | `catalog/decision-protocol.json`, spend ceiling | no REFUSE; cost under the ceiling |
+| Tiferet (balance) | the decision, with its decider named | `bin/decision-frame` | PROCEED, with machine/model/judgment named |
+| Netzach (endurance) | the queue and the heartbeat that keep it moving | scheduled tick, dead-man | claim open, heartbeat live |
+| Hod (form) | the exact patch, frozen | `work-order make` | digest recorded, paths declared |
+| Yesod (foundation) | binding to the base and the proof | base commit, claim trailers, checks | dry-run of the same order passes |
+| Malkuth (kingdom) | execution only | `work-order run --apply --push`, then the Greenlane | none: no thinking left to do |
+
+This is the protocolkit's ordered-stage idea (a closed list of typed stages, no skipping) with the estate's own
+names. A packet is stamped with the highest level it has passed; the runner accepts only one stamped Yesod.
+The stamp is proposed, not built.
