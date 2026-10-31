@@ -20,6 +20,37 @@ from pathlib import Path
 
 SUITE_NICE = 10
 
+# 2026-10-31: the suite inherited the repository it was told to use. In a linked worktree,
+# git exports GIT_DIR to the pre-push hook, and every `git init` a test makes inherits it:
+# git then re-initialises THAT directory as a bare repository, writes `core.bare = true`
+# into it, and never creates the repository the test asked for. Measured in /tmp/gitdirtest:
+# `core.bare` went false -> true, the temporary directory stayed empty, and the following
+# `git commit --allow-empty` exited 128 with "not a git repository". That is how the shared
+# repository was corrupted and how the pre-push language gate failed.
+# These are the variables git honours when it is told where the repository is. They are
+# removed here, at the earliest layer every test passes through, so that every `git init` a
+# test makes creates the repository it meant to create. GIT_CONFIG_GLOBAL is untouched: it
+# names a configuration, not a location, and the suite sets it on purpose just below.
+GIT_REPOSITORY_LOCATION_VARS = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_COMMON_DIR",
+    "GIT_PREFIX",
+)
+
+
+def _sanitize_git_repository_environment() -> list[str]:
+    """Remove the inherited repository-location variables. Returns the names removed."""
+    removed = [name for name in GIT_REPOSITORY_LOCATION_VARS if name in os.environ]
+    for name in removed:
+        os.environ.pop(name, None)
+    return removed
+
+
+REMOVED_GIT_LOCATION_VARS = _sanitize_git_repository_environment()
+
 if os.getpriority(os.PRIO_PROCESS, 0) < SUITE_NICE:
     os.nice(SUITE_NICE - os.getpriority(os.PRIO_PROCESS, 0))
 
