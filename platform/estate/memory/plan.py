@@ -291,13 +291,22 @@ def apply(plan: dict | None, tool: str, args) -> dict:
     return {"ok": True, "plan": nxt, "message": msg}
 
 
-def replay(calls) -> dict | None:
+def replay(calls, session_id=None) -> dict | None:
     """The plan a sequence of [tool, args] calls leaves. A refused call changes nothing, exactly as
-    it changed nothing when it was made."""
+    it changed nothing when it was made.
+
+    With a session id, the links are derived and judged exactly as the live path judged them,
+    so a plan the live path refused is not rebuilt here out of the raw transcript.
+    """
     plan = None
     for tool, args in calls:
         call = as_plan_call(tool, args)
         if call:
+            if session_id:
+                args, decision = enrich_plan_args(session_id, call[0], call[1])
+                if not decision.get("ok"):
+                    continue
+                call = (call[0], args)
             r = apply(plan, *call)
             if r["ok"]:
                 plan = r["plan"]
@@ -690,9 +699,188 @@ def ledger_path(session_id: str) -> str:
     return os.path.join(PLAN_LEDGER_DIR, safe + ".jsonl")
 
 
+def _governance():
+    """The governance module, loaded from THIS repository's path.
+
+    The twins stay apart on purpose: extensions/pi-plan-lock cannot import Python, so the rule
+    lives twice and the cases live once (extensions/pi-plan-lock/cases.json).
+    """
+    pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if pkg not in sys.path:
+        sys.path.insert(0, pkg)
+    from governance import plan_links  # noqa: PLC0415 - late import keeps the twins apart
+
+    return plan_links
+
+
+def _derive_links(session_id: str) -> dict:
+    """The links the estate can derive for this session, from its own ledgers.
+
+    A plan's two links are not the agent's to type: the instruction is what the intent door
+    recorded under this session, and the founder prompt is what the prompt ledger recorded
+    under it. A door that cannot read them leaves the link empty and the plan-link door
+    reports the gap -- it never invents one.
+    """
+    try:
+        return _governance().derive_links(session_id)
+    except Exception:  # noqa: BLE001 - a missing link is a gap, never a crash
+        return {}
+
+
+# The estate's own switch: while it is off, a plan the estate cannot link is a GAP the
+# plan-link door reports and the observe log records; under it, that plan refuses.
+LINK_STRICT_ENV = "ESTATE_PLAN_LINK_STRICT"
+
+
+def link_decision(
+    stated: dict, derived: dict, unresolvable: list, strict: bool
+) -> dict:
+    """The rule for a plan's two links, in both copies of the contract.
+
+    extensions/pi-plan-lock/cases.json holds the cases both copies must agree on, so neither
+    can drift alone.
+
+    A link the estate can DISPROVE refuses: it is present and wrong, and a gate that cannot
+    fail is not a gate. A link that is merely ABSENT refuses only under strict, because the
+    estate is mid-rollout and a missing link is a gap the door reports, not a lie.
+    """
+    for problem in unresolvable or []:
+        return _refuse(str(problem))
+    instruction = str(
+        (stated or {}).get("instruction") or (derived or {}).get("instruction") or ""
+    ).strip()
+    prompt = str(
+        (stated or {}).get("prompt") or (derived or {}).get("prompt") or ""
+    ).strip()
+    if not strict:
+        return {"ok": True, "instruction": instruction, "prompt": prompt}
+    missing = []
+    if not instruction:
+        missing.append("the instruction it serves")
+    if not prompt:
+        missing.append("the founder prompt that started it")
+    if missing:
+        return _refuse(
+            "a plan must be linked to "
+            + " and ".join(missing)
+            + ", and the estate can derive neither: name the intent this work goes through, and "
+            "record the founder's prompt with bin/estate-founder-intake --session <this session>."
+        )
+    return {"ok": True, "instruction": instruction, "prompt": prompt}
+
+
+def unresolvable_links(stated: dict) -> list:
+    """The links the estate can DISPROVE: a stated link that resolves to nothing.
+
+    An empty ledger means the estate cannot disprove anything, so it disproves nothing: a
+    gate that refuses on what it cannot see is an outage, not a gate.
+    """
+    problems: list = []
+    instruction = str((stated or {}).get("instruction") or "").strip()
+    prompt = str((stated or {}).get("prompt") or "").strip()
+    try:
+        plan_links = _governance()
+    except Exception:  # noqa: BLE001 - no governance module, no judgement
+        return problems
+    if instruction:
+        try:
+            known = plan_links.known_intents()
+        except Exception:  # noqa: BLE001
+            known = {}
+        if known and instruction not in known:
+            problems.append(f"instruction '{instruction}' resolves to no known intent")
+    if prompt:
+        try:
+            records = plan_links.prompt_records()
+            resolved = plan_links.prompt_by_id(prompt)
+        except Exception:  # noqa: BLE001
+            return problems
+        if records and resolved is None:
+            problems.append(f"prompt '{prompt}' resolves to no founder prompt")
+    return problems
+
+
+def _link_strict() -> bool:
+    return str(os.environ.get(LINK_STRICT_ENV, "")).strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _observe_link_gap(
+    session_id: str, tool: str, instruction: str, prompt: str
+) -> None:
+    """The rollout measurement: every plan the estate could not link.
+
+    One line per declaration, so the founder can count what strict WOULD refuse before strict
+    is switched on. Observation never breaks the agent.
+    """
+    try:
+        home = os.environ.get("ESTATE_HOME") or os.path.expanduser("~/.estate")
+        logs = os.path.join(home, "logs")
+        os.makedirs(logs, exist_ok=True)
+        with open(
+            os.path.join(logs, "plan-link-observe.log"), "a", encoding="utf-8"
+        ) as fh:
+            fh.write(
+                json.dumps(
+                    {
+                        "at": time.time(),
+                        "session": session_id,
+                        "tool": tool,
+                        "instruction": instruction,
+                        "prompt": prompt,
+                    },
+                    sort_keys=True,
+                )
+                + "\n"
+            )
+    except Exception:  # noqa: BLE001 - observation is never the agent's problem
+        return
+
+
+def enrich_plan_args(session_id: str, tool: str, args, observe: bool = True) -> tuple:
+    """The plan's links, filled from the estate's ledgers, and the rule that judges them.
+
+    Returns (args, decision). The args are the ones the caller must apply AND record: a plan
+    whose links the estate can derive is recorded with them, so the ledger and the live plan
+    agree. An explicit link is never overwritten.
+    """
+    stated = dict(args or {}) if isinstance(args, dict) else {}
+    if tool not in ("declare_plan", "revise_plan"):
+        return stated, {"ok": True}
+    derived = _derive_links(session_id) or {}
+    decision = link_decision(
+        stated, derived, unresolvable_links(stated), _link_strict()
+    )
+    enriched = dict(stated)
+    for field in ("instruction", "prompt"):
+        if not enriched.get(field) and derived.get(field):
+            enriched[field] = derived[field]
+    if (
+        observe
+        and decision.get("ok")
+        and not (enriched.get("instruction") and enriched.get("prompt"))
+    ):
+        _observe_link_gap(
+            session_id,
+            tool,
+            str(enriched.get("instruction") or ""),
+            str(enriched.get("prompt") or ""),
+        )
+    return enriched, decision
+
+
 def append_plan_event(session_id: str, tool: str, args: dict) -> bool:
     """One plan-tool call, appended. Never raises: a broken ledger must not take a session down."""
     try:
+        if tool in ("declare_plan", "revise_plan") and isinstance(args, dict):
+            # The ledger records the links the estate can derive, so the door reads one truth.
+            # The decision is NOT taken here: the ledger is written by callers that were
+            # refused too, and a refused call must change nothing.
+            args, _ = enrich_plan_args(session_id, tool, args, observe=False)
         os.makedirs(PLAN_LEDGER_DIR, exist_ok=True)
         line = json.dumps(
             {"at": time.time(), "session": session_id, "tool": tool, "args": args},
@@ -752,7 +940,7 @@ def ledger_calls(session_id: str) -> list:
 
 def ledger_plan(session_id: str):
     """The plan one session has declared: the replay of its ledger."""
-    return replay(ledger_calls(session_id))
+    return replay(ledger_calls(session_id), session_id)
 
 
 def sync_plan_calls(session_id: str, calls: list) -> int:

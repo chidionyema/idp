@@ -66,5 +66,100 @@
     {"name": "a plan whose founder prompt id is not an id is refused", "calls": [
       ["declare_plan", {"goal": "ship the feature", "subgoals": [{"id": "g1", "text": "first step"}], "prompt": "no such id"}]
     ], "tool": "Edit", "expect": false, "reason": "declare_plan"}
+  ],
+  "linkRules": [
+    {
+      "name": "a plan that names both links is accepted",
+      "stated": {"instruction": "lane-submit", "prompt": "prompt-0001"},
+      "derived": {"instruction": "", "prompt": ""},
+      "unresolvable": [],
+      "strict": false,
+      "expect": true
+    },
+    {
+      "name": "a plan with no link and none to derive is accepted while the estate observes",
+      "stated": {},
+      "derived": {},
+      "unresolvable": [],
+      "strict": false,
+      "expect": true
+    },
+    {
+      "name": "the same plan is refused under strict",
+      "stated": {},
+      "derived": {},
+      "unresolvable": [],
+      "strict": true,
+      "expect": false,
+      "reason": "the instruction it serves"
+    },
+    {
+      "name": "strict refuses a plan with only one link",
+      "stated": {"instruction": "lane-submit"},
+      "derived": {},
+      "unresolvable": [],
+      "strict": true,
+      "expect": false,
+      "reason": "the founder prompt that started it"
+    },
+    {
+      "name": "a derived link fills a missing one, so strict is satisfied",
+      "stated": {},
+      "derived": {"instruction": "lane-submit", "prompt": "prompt-0002"},
+      "unresolvable": [],
+      "strict": true,
+      "expect": true
+    },
+    {
+      "name": "a link the estate can disprove is refused even while the estate observes",
+      "stated": {"instruction": "no-such-intent"},
+      "derived": {},
+      "unresolvable": ["instruction 'no-such-intent' resolves to no known intent"],
+      "strict": false,
+      "expect": false,
+      "reason": "resolves to no known intent"
+    }
+  ],
+  "derivations": [
+    {
+      "name": "the instruction is the last new intent of the session, the prompt is its newest",
+      "session": "s1",
+      "intents": [
+        {"session": "s1", "intent": "lane-submit"},
+        {"session": "s1", "intent": "pr.list"},
+        {"session": "s2", "intent": "other-intent"},
+        {"session": "s1", "intent": "lane-submit"}
+      ],
+      "prompts": [
+        {"session": "s1", "id": "prompt-0001"},
+        {"session": "s1", "id": "prompt-0002"},
+        {"session": "s2", "id": "prompt-9999"}
+      ],
+      "instruction": "pr.list",
+      "prompt": "prompt-0002"
+    },
+    {
+      "name": "a session with nothing of its own derives nothing",
+      "session": "s9",
+      "intents": [
+        {"session": "s1", "intent": "lane-submit"}
+      ],
+      "prompts": [
+        {"session": "s1", "id": "prompt-0001"}
+      ],
+      "instruction": "",
+      "prompt": ""
+    },
+    {
+      "name": "a session whose intents repeat derives the one distinct name",
+      "session": "s3",
+      "intents": [
+        {"session": "s3", "intent": "ci.status"},
+        {"session": "s3", "intent": "ci.status"}
+      ],
+      "prompts": [],
+      "instruction": "ci.status",
+      "prompt": ""
+    }
   ]
 }

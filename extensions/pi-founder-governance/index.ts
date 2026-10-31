@@ -184,7 +184,17 @@ export default function (pi: ExtensionAPI) {
       const prompt = String(event?.prompt ?? "");
       if (!prompt.trim()) return undefined;
       const { out } = await run(
-        [path.join(BIN, "estate-founder-intake"), "--stdin", "--session", sessionId(ctx), "--json"],
+        [
+          path.join(BIN, "estate-founder-intake"),
+          "--stdin",
+          "--session",
+          sessionId(ctx),
+          // Where the prompt came from is part of the record: a pi prompt is not a chat
+          // prompt, and the plan-link reader tells them apart.
+          "--source",
+          "pi",
+          "--json",
+        ],
         prompt,
       );
       const record = JSON.parse(out.slice(out.indexOf("{")));

@@ -16,10 +16,11 @@
 // cannot satisfy is an outage), loudly.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { mkdirSync, writeFileSync, appendFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, appendFileSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { MAX_RESULT_CHARS, apply, authorize, capText, type Plan } from "./plan.ts";
+import { MAX_RESULT_CHARS, apply, authorize, capText, linkDecision, type Plan } from "./plan.ts";
+import { deriveLinks, type DerivedLinks } from "./derive.ts";
 
 const SPILL_DIR = path.join(homedir(), ".pi", "agent", "state", "overflow");
 // THE DURABLE PLAN LEDGER (idp#7518). The plan in this process is the enforcement copy; this is
@@ -27,6 +28,119 @@ const SPILL_DIR = path.join(homedir(), ".pi", "agent", "state", "overflow");
 // door (mcp/plugins/estate_executor.py) reads the SAME plan this session declared -- and the
 // founder can see a declaration after the session that made it is gone.
 const LEDGER_DIR = path.join(homedir(), ".estate", "plans");
+
+// The estate's own ledgers, read on demand and never cached: the intent door's record of what
+// this session went through, and the prompt ledger's record of the words that started it. A
+// stale copy of the estate's memory is worse than a slow read.
+const readJsonl = (file: string): Array<Record<string, unknown>> => {
+  try {
+    return readFileSync(file, "utf8")
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .map((line) => {
+        try {
+          return JSON.parse(line) as Record<string, unknown>;
+        } catch {
+          return null;
+        }
+      })
+      .filter((row): row is Record<string, unknown> => row !== null);
+  } catch {
+    return [];
+  }
+};
+
+const readLedgers = () => {
+  const home = process.env.ESTATE_HOME || path.join(homedir(), ".estate");
+  return {
+    intents: readJsonl(path.join(LEDGER_DIR, "intents.jsonl")),
+    prompts: readJsonl(path.join(home, "state", "prompts.jsonl")),
+  };
+};
+
+// The intents the estate knows: the installed intent files, by file name and by the name inside
+// them. An empty set means the estate cannot judge resolvability at all, so it judges nothing.
+const knownIntents = (): Set<string> => {
+  const out = new Set<string>();
+  const home = process.env.ESTATE_HOME || path.join(homedir(), ".estate");
+  for (const dir of [path.join(home, "intents")]) {
+    let files: string[] = [];
+    try {
+      files = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const fn of files) {
+      if (!/\.ya?ml$/.test(fn)) continue;
+      out.add(fn.replace(/\.ya?ml$/, ""));
+      try {
+        for (const line of readFileSync(path.join(dir, fn), "utf8").split("\n")) {
+          const m = /^name:\s*([A-Za-z0-9._-]{2,64})\s*$/.exec(line);
+          if (m) {
+            out.add(m[1]);
+            break;
+          }
+        }
+      } catch {
+        // a file that cannot be read is a name the estate cannot know
+      }
+    }
+  }
+  return out;
+};
+
+// The links the estate can DISPROVE: a link the agent states that resolves to nothing. An empty
+// ledger means the estate cannot disprove anything, so it disproves nothing.
+const unresolvableLinks = (
+  stated: Record<string, unknown>,
+  prompts: Array<Record<string, unknown>>,
+): string[] => {
+  const problems: string[] = [];
+  const instruction = typeof stated.instruction === "string" ? stated.instruction.trim() : "";
+  const prompt = typeof stated.prompt === "string" ? stated.prompt.trim() : "";
+  if (instruction) {
+    const known = knownIntents();
+    if (known.size > 0 && !known.has(instruction)) {
+      problems.push(`instruction '${instruction}' resolves to no known intent`);
+    }
+  }
+  if (prompt) {
+    const ids = new Set<string>();
+    for (const rec of prompts) {
+      const id = typeof rec.id === "string" ? rec.id : "";
+      const fp = typeof rec.fingerprint === "string" ? rec.fingerprint : "";
+      if (id) ids.add(id);
+      if (fp) ids.add(fp);
+    }
+    if (ids.size > 0 && !ids.has(prompt)) {
+      problems.push(`prompt '${prompt}' resolves to no founder prompt`);
+    }
+  }
+  return problems;
+};
+
+// Strict is the estate's own switch: while it is off, a missing link is a GAP the plan-link door
+// reports and this log records; under it, a plan that cannot be linked refuses.
+const strictLinks = () => {
+  const v = (process.env.ESTATE_PLAN_LINK_STRICT || "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+};
+
+// The rollout measurement: every plan the estate could not link, so the founder can count what
+// strict would refuse before strict is switched on. Observation never breaks the agent.
+const observeLinkGap = (session: string, tool: string, instruction: string, prompt: string) => {
+  try {
+    const home = process.env.ESTATE_HOME || path.join(homedir(), ".estate");
+    const dir = path.join(home, "logs");
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(
+      path.join(dir, "plan-link-observe.log"),
+      `${JSON.stringify({ at: new Date().toISOString(), session, tool, instruction, prompt })}\n`,
+    );
+  } catch {
+    // observation is not the agent's problem
+  }
+};
 const off = () => process.env.ESTATE_PLAN_LOCK === "off";
 const say = (text: string, details: object = {}) => ({ content: [{ type: "text" as const, text }], details });
 
@@ -39,6 +153,18 @@ const planShape = Type.Object({
       text: Type.String({ description: "One verifiable step." }),
     }),
     { description: "At least one. Each needs add_bdd before work starts on it." },
+  ),
+  instruction: Type.Optional(
+    Type.String({
+      description:
+        "The intent this work goes through, e.g. lane-submit. DERIVED from the estate's ledgers when omitted: the last intent this session ran.",
+    }),
+  ),
+  prompt: Type.Optional(
+    Type.String({
+      description:
+        "The founder prompt that started this work. DERIVED from the estate's prompt ledger when omitted: the newest prompt under this session.",
+    }),
   ),
 });
 const items = (what: string) =>
@@ -167,14 +293,51 @@ export default function (pi: ExtensionAPI) {
     }
   };
 
+  // A plan's two links are not the agent's to type: they are DERIVED from the estate's own
+  // ledgers -- the last intent this session went through, and the newest founder prompt under
+  // this session. The same rule as platform/estate/governance/plan_links.py::derive_links, and
+  // the cases both copies agree on live in extensions/pi-plan-lock/cases.json. A link the agent
+  // states explicitly is never overwritten.
+  const withDerivedLinks = (tool: string, params: unknown) => {
+    const raw = { ...((params ?? {}) as Record<string, unknown>) };
+    if (tool !== "declare_plan" && tool !== "revise_plan") {
+      return { args: raw, decision: { ok: true as const } };
+    }
+    let links: DerivedLinks | undefined;
+    let ledgers: { intents: Array<Record<string, unknown>>; prompts: Array<Record<string, unknown>> } = {
+      intents: [],
+      prompts: [],
+    };
+    try {
+      ledgers = readLedgers();
+      links = deriveLinks(sessionId, ledgers);
+    } catch {
+      links = undefined;
+    }
+    const derived = links ?? { instruction: "", prompt: "" };
+    const decision = linkDecision(raw, derived, unresolvableLinks(raw, ledgers.prompts), strictLinks());
+    const args = { ...raw };
+    if (!args.instruction && derived.instruction) args.instruction = derived.instruction;
+    if (!args.prompt && derived.prompt) args.prompt = derived.prompt;
+    if (decision.ok && !(args.instruction && args.prompt)) {
+      observeLinkGap(sessionId, tool, String(args.instruction ?? ""), String(args.prompt ?? ""));
+    }
+    return { args, decision };
+  };
+
   for (const t of TOOLS) {
     pi.registerTool({
       ...t,
       async execute(_id: string, params: unknown) {
-        const r = apply(plan, t.name, params);
+        const prepared = withDerivedLinks(t.name, params);
+        if (!prepared.decision.ok) {
+          return say(`Refused: ${prepared.decision.reason}`, { refused: true });
+        }
+        const args = prepared.args;
+        const r = apply(plan, t.name, args);
         if (!r.ok) return say(`Refused: ${r.reason}`, { refused: true });
         plan = r.plan;
-        ledgerAppend(t.name, params);
+        ledgerAppend(t.name, args);
         return say(r.message, { plan });
       },
     });

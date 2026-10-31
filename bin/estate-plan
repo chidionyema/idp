@@ -45,6 +45,11 @@ def main(argv: list) -> int:
         print("estate-plan: the arguments must be a JSON object", file=sys.stderr)
         return 2
     if argv[0] in ("declare_plan", "revise_plan"):
+        session = plan.resolve_session_id()
+        args, decision = plan.enrich_plan_args(session, argv[0], args)
+        if not decision["ok"]:
+            print(f"estate-plan: {decision['reason']}", file=sys.stderr)
+            return 1
         r = plan.apply(None, argv[0], args)
         if not r["ok"]:
             print(f"estate-plan: {r['reason']}", file=sys.stderr)

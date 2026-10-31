@@ -61,6 +61,7 @@ from fleetview_backend import (
     ledger_tail,
     memory,
     notes,
+    plan_links,
     sessions,
     signals,
     trace,
@@ -84,6 +85,7 @@ __all__ = [
     "DEVICE_STATUS_PATH",
     "RESEARCH_PATH",
     "ESTATE_PATH",
+    "PLAN_LINKS_PATH",
     "device_status_envelope",
     "DEVICE_AUTHORIZE_PATH",
     "device_authorize_envelope",
@@ -109,6 +111,7 @@ __all__ = [
     "reject_mutation",
     "trace_envelope",
     "ledger_tail_envelope",
+    "plan_links_envelope",
 ]
 
 
@@ -138,8 +141,20 @@ MUTATIONS_REJECT_PATH = "/mutations/reject"
 TRACE_PATH = "/trace"
 LEDGER_PATH = "/ledger"
 DEVICE_STATUS_PATH = "/device-status"
+PLAN_LINKS_PATH = "/plan-links"
 DEVICE_AUTHORIZE_PATH = "/device-authorize"
 DELIVERY_PATH = "/delivery"
+
+
+def plan_links_envelope() -> tuple[dict[str, Any], int]:
+    """`GET /plan-links`: the live plan-link state -- the same numbers the voice speaks.
+
+    A read that cannot produce an answer says so (503, with the reason), rather than returning
+    an empty board: an empty board and a broken board are different facts, and the founder must
+    be able to tell them apart.
+    """
+    state = plan_links.plan_link_state()
+    return state, 200 if state.get("available") else 503
 
 
 def _now() -> str:
@@ -395,6 +410,10 @@ def estate_envelope() -> tuple[dict[str, Any], int]:
         # on the strip rather than by asking an agent. One reader (claims.claims_snapshot), the
         # same one /claims serves, so the strip and the claims panel cannot disagree.
         "claims": _soft(lambda: claims.claims_glance(claims.claims_snapshot())),
+        # The plan links: how many plans are linked to their instruction and to the founder
+        # prompt that started them. The same canonical reader /plan-links serves, so the
+        # strip, the endpoint and the voice cannot disagree about the numbers.
+        "plan_links": _soft(plan_links.plan_link_state),
     }
     return body, 200
 

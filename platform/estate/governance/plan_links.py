@@ -33,6 +33,7 @@ import json
 import os
 import re
 import sys
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 REPO_ROOT = os.path.dirname(
@@ -361,4 +362,74 @@ def audit(session: Optional[str] = None) -> Dict[str, Any]:
         "gaps": gaps,
         "prompt_audit": prompts,
         "sessions": len(rows),
+    }
+
+
+# --- the links the estate can DERIVE ------------------------------------------------------------
+
+
+def derive_links(session: str) -> Dict[str, str]:
+    """The two links this session's own ledgers already hold.
+
+    The instruction is the last NEW intent the intent door recorded under the session -- the
+    door the work goes through. The founder prompt is the newest prompt the intake recorded
+    under the same session -- the words that started it. Both are read from the estate's own
+    ledgers, never from the agent's claim about itself, and both stay EMPTY when the estate
+    cannot prove them: an empty link is a gap the door reports, not a value invented here.
+
+    THE RULE, IN ONE PLACE. extensions/pi-plan-lock/derive.ts is the same rule in TypeScript,
+    because pi's extension cannot import Python; cases.json holds the cases both copies must
+    agree on, so neither can drift alone.
+    """
+    instruction = ""
+    for name in session_intents(session):
+        instruction = name
+    prompt = prompt_for_session(session)
+    return {
+        "instruction": instruction,
+        "prompt": str(prompt.get("id") or "") if prompt else "",
+    }
+
+
+def summary_line(sessions: int, violations: int, gaps: int) -> str:
+    """One line: the numbers, in the order a founder reads them. This is what the voice says
+    and what the founder is told on Telegram -- one string, from one place."""
+    return f"plan links: {sessions} sessions, {violations} violations, {gaps} gaps"
+
+
+def state(session: Optional[str] = None) -> Dict[str, Any]:
+    """The live plan-link state: the counts, the one line, and the rows behind them.
+
+    ONE implementation of these numbers, read by the Fleet page, by the voice and by the
+    publisher, so the founder and the voice cannot describe two different estates.
+    """
+    a = audit(session)
+    violations = len(a["violations"])
+    gaps = len(a["gaps"])
+    rows: List[Dict[str, Any]] = []
+    for r in a["rows"]:
+        observed = r["observed_instructions"]
+        rows.append(
+            {
+                "session": r["session"],
+                "goal": r["goal"],
+                "instruction": r["declared_instruction"]
+                or (observed[-1] if observed else ""),
+                "prompt": r["prompt_id"],
+                "protocol": r["protocol"],
+                "linked": bool(r["prompt_id"])
+                and bool(r["declared_instruction"] or observed),
+            }
+        )
+    linked = sum(1 for r in rows if r["linked"])
+    return {
+        "available": True,
+        "sessions": a["sessions"],
+        "linked": linked,
+        "unlinked": a["sessions"] - linked,
+        "violations": violations,
+        "gaps": gaps,
+        "summary": summary_line(a["sessions"], violations, gaps),
+        "rows": rows,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
     }

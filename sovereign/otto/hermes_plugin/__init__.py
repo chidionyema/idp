@@ -28,6 +28,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -221,6 +222,95 @@ def _send_line(event, line: str) -> bool:
         return False
 
 
+def _founder_session(event) -> str:
+    """The session a founder Telegram message belongs to: the chat, and nothing else."""
+    cid = _chat_id(event)
+    return f"tg-{cid}" if cid else "tg-unknown"
+
+
+def _stamp_founder_prompt(event, text: str) -> Optional[str]:
+    """Record the founder's own words in the canonical prompt ledger, with the protocol they bind to.
+
+    THE ONE CANONICAL DOOR: bin/estate-founder-intake. It analyses the prompt, binds exactly one
+    protocol by the kit's genesis rule and appends to the prompt ledger the plan-link door
+    reads. Two fail-opens, both deliberate: the ledger is written with --no-publish (a memory
+    door that is slow must not delay the founder's message) and every error is swallowed -- a
+    founder's message is never blocked by the estate's bookkeeping.
+    """
+    door = _IDP_ROOT / "bin" / "estate-founder-intake"
+    if not door.exists():
+        return None
+    try:
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(door),
+                "--stdin",
+                "--session",
+                _founder_session(event),
+                "--source",
+                "telegram",
+                "--no-publish",
+                "--json",
+            ],
+            input=text,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        data = json.loads(proc.stdout or "{}")
+    except ValueError:
+        return None
+    pid = str(data.get("id") or "")
+    return pid or None
+
+
+def _publish_plan_link_state() -> Optional[str]:
+    """Publish the live plan-link state on the estate bus, once per change.
+
+    The publisher is bin/estate-plan-links --publish: one implementation of the numbers and one
+    bus writer (bin/estate-fleet). The plugin only asks.
+    """
+    door = _IDP_ROOT / "bin" / "estate-plan-links"
+    if not door.exists():
+        return None
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(door), "--publish"],
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    return (proc.stdout or "").strip() or None
+
+
+def _publish_in_background(event) -> None:
+    """Publish the live state and tell the founder when it moved -- in the background.
+
+    A slow bus must never delay the founder's message, so this runs in its own thread; the one
+    line the founder reads on Telegram is sent only when the state actually CHANGED.
+    """
+
+    def run() -> None:
+        line = _publish_plan_link_state()
+        if line and line.startswith("published:"):
+            _send_line(event, line.split(": ", 1)[-1])
+
+    try:
+        threading.Thread(target=run, daemon=True).start()
+    except Exception:
+        pass
+
+
 def _decision_answer(text: str) -> Optional[dict]:
     """A founder comment that quotes a live decision id IS that decision's answer.
 
@@ -257,6 +347,13 @@ def on_pre_gateway_dispatch(event=None, **_kw) -> Optional[dict]:
             line = f"[ok] DECISION | {record.get('decision_id')} {option}"
             _send_line(event, line)
             return {"action": "skip", "reason": line}
+    # The founder's own words enter the canonical prompt ledger, with the protocol they bind
+    # to. Stamped AFTER the decision door (a decision answer is not a new task) and BEFORE the
+    # media door (a photo's caption is still the founder's words). The state is published in the
+    # background, so a slow bus never delays the message.
+    if caption:
+        _stamp_founder_prompt(event, caption)
+        _publish_in_background(event)
     media = list(getattr(event, "media_urls", None) or [])
     caption = str(getattr(event, "text", "") or "").strip()
     if not media or not caption:

@@ -51,6 +51,11 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--stdin", action="store_true")
     ap.add_argument("--repeat", default="")
     ap.add_argument("--session", default="")
+    ap.add_argument(
+        "--source",
+        default="chat",
+        help="where the prompt came from (chat, telegram, pi, ...): recorded with the prompt",
+    )
     ap.add_argument("--no-publish", action="store_true")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv[1:])
@@ -76,7 +81,10 @@ def main(argv: list[str]) -> int:
         ap.error("no prompt given (--text, --file or --stdin)")
 
     record = founder_intake.intake(
-        text, session=args.session, publish_to_memory=not args.no_publish
+        text,
+        session=args.session,
+        publish_to_memory=not args.no_publish,
+        source=args.source,
     )
     if args.json:
         print(json.dumps(record, indent=2, default=str))

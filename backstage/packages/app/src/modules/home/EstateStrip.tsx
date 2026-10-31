@@ -42,6 +42,16 @@ export type EstateEnvelope = {
       time_left?: string;
     } | null;
   };
+  plan_links?: {
+    available?: boolean;
+    error?: string;
+    sessions?: number;
+    linked?: number;
+    unlinked?: number;
+    violations?: number;
+    gaps?: number;
+    summary?: string;
+  };
 };
 
 export type LoadedEstate =
@@ -122,7 +132,7 @@ export function EstateStrip() {
     );
   }
 
-  const { green, burn, research, claims } = loaded.body;
+  const { green, burn, research, claims, plan_links: planLinks } = loaded.body;
 
   // GREEN: the lane's own verdict. Unreadable is unavailable with a reason, never green.
   // A main object the source did not supply is 'unknown', not RED -- RED is a measured fact.
@@ -196,12 +206,28 @@ export function EstateStrip() {
     );
   }
 
+  // PLAN LINKS: how many plans are linked to the instruction they serve and to the founder
+  // prompt that started them. The chip IS the canonical summary line, so the strip, the
+  // endpoint and the voice cannot describe two different estates. A reader that did not
+  // answer says so, with its reason.
+  let planLinksChip = (
+    <Chip title={planLinks?.error ?? 'the plan-link reader did not answer'}>
+      Plan links: unavailable
+    </Chip>
+  );
+  if (planLinks?.available) {
+    planLinksChip = (
+      <Chip title={planLinks.summary ?? ''}>{planLinks.summary ?? 'Plan links: unknown'}</Chip>
+    );
+  }
+
   return (
     <div data-testid="estate-strip" data-state="ready">
       {greenChip}
       {burnChip}
       {researchChip}
       {claimsChip}
+      {planLinksChip}
     </div>
   );
 }

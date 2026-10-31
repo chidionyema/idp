@@ -26,6 +26,13 @@ HOME    = Path.home()
 DB      = HOME / ".estate" / "estate.db"
 INTENTS = HOME / ".estate" / "intents"
 
+# The tree this executor came from. An intent that runs a door of this estate resolves that
+# door next to the code that owns the intent, so the two cannot drift apart: the door and the
+# intent are always one tree. (A caller may point it elsewhere; the executor's own tree is the
+# default.)
+ESTATE_REPO_ROOT = str(Path(__file__).resolve().parents[3])
+os.environ.setdefault("ESTATE_REPO_ROOT", ESTATE_REPO_ROOT)
+
 # The door's module lives beside the repo (mcp/plugins), and this script lives in
 # platform/estate/bin. Put it on the path HERE, once, so `CEILING_SEC` is imported from the one
 # place that defines it rather than restated here as a second number.

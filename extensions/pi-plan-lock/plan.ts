@@ -110,6 +110,39 @@ export function validatePlan(input: unknown): Checked<{ goal: string; subgoals: 
   return { ok: true, goal, subgoals, instruction, prompt };
 }
 
+/** The rule for a plan's two links, in both copies of the contract (cases.json holds the cases
+ *  both copies must agree on).
+ *
+ *  A link the estate can DISPROVE refuses: it is present and wrong, and a gate that cannot fail
+ *  is not a gate. A link that is merely ABSENT refuses only under strict, because the estate is
+ *  mid-rollout and a missing link is a gap the door reports, not a lie. The same two classes
+ *  platform/estate/governance/plan_links.py separates, for the same reason. */
+export function linkDecision(
+  stated: { instruction?: unknown; prompt?: unknown } | undefined,
+  derived: { instruction?: unknown; prompt?: unknown } | undefined,
+  unresolvable: string[] | undefined,
+  strict: boolean,
+): Checked<{ instruction: string; prompt: string }> {
+  for (const problem of unresolvable ?? []) {
+    return refuse(String(problem));
+  }
+  const instruction = str(stated?.instruction) || str(derived?.instruction);
+  const prompt = str(stated?.prompt) || str(derived?.prompt);
+  if (!strict) return { ok: true, instruction, prompt };
+  const missing: string[] = [];
+  if (!instruction) missing.push("the instruction it serves");
+  if (!prompt) missing.push("the founder prompt that started it");
+  if (missing.length) {
+    return refuse(
+      "a plan must be linked to " +
+        missing.join(" and ") +
+        ", and the estate can derive neither: name the intent this work goes through, and record " +
+        "the founder's prompt with bin/estate-founder-intake --session <this session>.",
+    );
+  }
+  return { ok: true, instruction, prompt };
+}
+
 /** One plan-tool call against the current plan: the next plan and what to tell the agent, or why
  *  it is refused. Never mutates `plan`. */
 export function apply(plan: Plan | undefined, tool: string, args: unknown): Checked<{ plan: Plan; message: string }> {
