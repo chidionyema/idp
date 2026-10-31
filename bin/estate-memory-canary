@@ -1,0 +1,567 @@
+#!/usr/bin/env python3
+"""Cross-surface memory canary: plant a marked fact on one path, look for it on every other.
+
+    bin/estate-memory-canary                       run, write ~/.estate/memory/canary/canary-result.json
+    bin/estate-memory-canary --out PATH --keep     choose the result file / keep the planted spool files
+
+Every runtime and every founder surface has a small WRITER and a small READER behind one registry.
+A writer plants a fact carrying a unique marker; a reader returns the text that surface would show
+the agent or the founder. A pair "A->B" is true only when the fact planted via A is read back via B
+with the marker intact. A writer or reader that cannot be reached raises Unreachable(reason): the
+pair or surface is then null (unproven), never true and never silently skipped. Only a reader that
+answered without the marker makes a pair false.
+
+The poison canary plants a deliberately false fact on a shared path and fails the run if any reader
+serves it as current; it must be labelled unverified or be absent.
+
+Result file (read by bin/estate-memory-audit): generated, pairs, surfaces, poison, unproven,
+unproven_reasons, summary. Exit 0 only if every pair and surface is true and the poison is clean;
+1 if anything was disproven; 2 if nothing was disproven but something is unproven.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shlex
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+import uuid
+from datetime import datetime, timezone
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+ROOT = os.path.dirname(HERE)
+DEFAULT_OUT = "~/.estate/memory/canary/canary-result.json"
+SURFACES = ["fleet", "voice-face", "telegram", "founder-claude-code", "founder-ask"]
+FALLBACK_RUNTIMES = [
+    "claude-code",
+    "cline",
+    "codex",
+    "cursor",
+    "gemini",
+    "opencode",
+    "pi",
+]
+
+
+class Unreachable(Exception):
+    """This writer or reader cannot be exercised here; the reason is recorded, the result is null."""
+
+
+class Adapter(object):
+    """One surface's way in (writer) and way out (reader). Either may raise Unreachable."""
+
+    def __init__(self, name, writer, reader, text=True):
+        self.name = name
+        self.text = text  # False: the reader reports counts, not text, so it cannot judge poison
+        self.writer = writer  # (ctx, marker, fact) -> None
+        self.reader = reader  # (ctx, marker) -> str, the text this surface serves
+
+
+class Ctx(object):
+    """What adapters share: where things are, and what to clean up afterwards."""
+
+    def __init__(self, env=None, shared_path="platform/estate/memory/door.py"):
+        self.env = dict(os.environ if env is None else env)
+        self.shared_path = shared_path
+        self.cleanup = []
+        self.made_dirs = []
+        self.baseline = {}
+
+
+def now_iso():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# ---------------------------------------------------------------- real: spool writer ------------
+
+
+def spool_dir(ctx):
+    return os.path.expanduser(
+        ctx.env.get("ESTATE_GRAPH_SPOOL") or "~/.estate/graph-spool"
+    )
+
+
+def spool_write(ctx, marker, fact, who="canary"):
+    """Append the fact as an exchange in the router's spool format (## heading, text below)."""
+    d = spool_dir(ctx)
+    if not os.path.isdir(d):
+        ctx.made_dirs.append(d)
+    try:
+        os.makedirs(d, exist_ok=True)
+        path = os.path.join(d, "canary-%s.md" % marker)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(
+                "## canary exchange via %s\n\nuser: remember on %s\n\nassistant: %s\n"
+                % (who, ctx.shared_path, fact)
+            )
+    except OSError as exc:
+        raise Unreachable("spool not writable at %s: %s" % (d, exc))
+    ctx.cleanup.append(path)
+
+
+def runtime_writer(runtime):
+    """A fact captured by runtime A: the machine capture is runtime-agnostic, so it lands in the
+    spool attributed to A. A per-runtime launch command (ESTATE_CANARY_WRITE_<RT>) may replace it."""
+
+    def write(ctx, marker, fact):
+        cmd = ctx.env.get("ESTATE_CANARY_WRITE_" + env_key(runtime))
+        if cmd:
+            run_cmd(
+                shlex.split(cmd),
+                ctx,
+                extra={"CANARY_MARKER": marker, "CANARY_FACT": fact},
+            )
+            return
+        spool_write(ctx, marker, fact, who=runtime)
+
+    return write
+
+
+def env_key(name):
+    return name.upper().replace("-", "_")
+
+
+def run_cmd(argv, ctx, extra=None, timeout=30):
+    env = dict(ctx.env)
+    env.update(extra or {})
+    try:
+        r = subprocess.run(  # noqa: S603 - argv built by this tool or from the operator's own env
+            argv, capture_output=True, text=True, timeout=timeout, env=env
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise Unreachable("%s did not run: %s" % (argv[0], exc))
+    return r
+
+
+# ---------------------------------------------------------------- real: claim-brief reader ------
+
+
+def claim_brief_path(ctx):
+    return ctx.env.get("ESTATE_CANARY_CLAIM_BRIEF") or os.path.join(
+        HERE, "estate-memory-claim-brief"
+    )
+
+
+def claim_brief_reader(runtime):
+    """The claim brief delivered to B, via bin/estate-memory-claim-brief (written by another agent)."""
+
+    def read(ctx, marker):
+        path = claim_brief_path(ctx)
+        if not os.path.isfile(path):
+            raise Unreachable("claim-brief absent at %s" % path)
+        tmpl = ctx.env.get(
+            "ESTATE_CANARY_CLAIM_BRIEF_ARGS", "--runtime {runtime} --paths {path}"
+        )
+        args = shlex.split(tmpl.format(runtime=runtime, path=ctx.shared_path))
+        r = run_cmd(
+            [sys.executable, path] + args,
+            ctx,
+            extra={"ESTATE_GRAPH_SPOOL": spool_dir(ctx)},
+        )
+        if r.returncode != 0:
+            raise Unreachable(
+                "claim-brief exited %d: %s" % (r.returncode, r.stderr.strip()[:160])
+            )
+        return r.stdout
+
+    return read
+
+
+# ---------------------------------------------------------------- real: door ------------------
+
+
+def _door():
+    sys.path.insert(0, os.path.join(ROOT, "platform", "estate", "memory"))
+    try:
+        import door  # noqa: PLC0415
+
+        return door
+    finally:
+        sys.path.pop(0)
+
+
+def door_call(ctx, tool, args):
+    try:
+        door = _door()
+        secret = door.key()
+    except Exception as exc:
+        raise Unreachable("door client unavailable: %s" % type(exc).__name__)
+    if not secret:
+        raise Unreachable("no MCP_GATEWAY_KEY: door unreachable")
+    try:
+        return door.call(tool, args, secret, timeout=10)
+    except Exception as exc:  # network, TLS, 4xx, tool error: all mean 'cannot test'
+        raise Unreachable("door %s failed: %s" % (tool, type(exc).__name__))
+
+
+def door_write(ctx, marker, fact):
+    door_call(
+        ctx,
+        "remember",
+        {
+            "content": fact,
+            "subject": "estate-memory-canary",
+            "kind": "canary",
+            "tags": ["canary", marker],
+            "source": "estate-memory-canary",
+        },
+    )
+
+
+def door_recall(ctx, marker):
+    out = door_call(ctx, "recall", {"query": marker, "limit": 5})
+    return json.dumps(out)
+
+
+def door_brief(ctx, marker):
+    out = door_call(ctx, "brief", {"task": marker, "limit": 8})
+    return json.dumps(out)
+
+
+# ---------------------------------------------------------------- real: FleetView /memory ------
+
+
+def fleet_get(ctx):
+    base = ctx.env.get("ESTATE_CANARY_FLEET_URL") or "http://127.0.0.1:8080"
+    url = base.rstrip("/") + "/memory"
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:  # noqa: S310 - operator-set base URL
+            return resp.read().decode("utf-8", "replace")
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise Unreachable("FleetView %s unreachable: %s" % (url, type(exc).__name__))
+
+
+def exchanges_waiting(body):
+    try:
+        return int(json.loads(body)["spool"]["exchanges_waiting"])
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def fleet_before(ctx):
+    """Called before planting: the spool count the route shows now."""
+    ctx.baseline["fleet"] = exchanges_waiting(fleet_get(ctx))
+
+
+def fleet_read(ctx, marker):
+    """The route reports counts, not text. The marker in the body proves it; otherwise the spool
+    exchange count must have grown past the pre-plant baseline (marked with 'count-delta')."""
+    body = fleet_get(ctx)
+    if marker in body:
+        return body
+    before = ctx.baseline.get("fleet")
+    after = exchanges_waiting(body)
+    if before is None or after is None:
+        raise Unreachable("/memory gave no spool count to compare")
+    return body + ("\n%s count-delta" % marker if after > before else "")
+
+
+# ---------------------------------------------------------------- real: founder Claude Code ----
+
+
+def brief_read(ctx, marker):
+    """bin/estate-brief --task <marker>: what a founder Claude Code session starts with."""
+    r = run_cmd(
+        [sys.executable, os.path.join(HERE, "estate-brief"), "--task", marker],
+        ctx,
+        timeout=60,
+    )
+    if r.returncode != 0 or (not r.stdout.strip() and r.stderr.strip()):
+        raise Unreachable("estate-brief gave nothing: %s" % r.stderr.strip()[:160])
+    return r.stdout
+
+
+def stub(reason):
+    def raiser(*a, **k):
+        raise Unreachable(reason)
+
+    return raiser
+
+
+def build_registry(runtimes):
+    reg = {"runtimes": {}, "surfaces": {}}
+    for rt in runtimes:
+        reg["runtimes"][rt] = Adapter(rt, runtime_writer(rt), claim_brief_reader(rt))
+    reg["surfaces"]["fleet"] = Adapter(
+        "fleet", spool_write_surface, fleet_read, text=False
+    )
+    reg["surfaces"]["voice-face"] = Adapter(
+        "voice-face",
+        spool_write_surface,
+        stub(
+            "stub: voice/face answers only from a running voice server; none reachable from a checkout"
+        ),
+    )
+    reg["surfaces"]["telegram"] = Adapter(
+        "telegram",
+        spool_write_surface,
+        stub(
+            "stub: a Telegram reply needs a live bot chat; no read-back path from a checkout"
+        ),
+    )
+    reg["surfaces"]["founder-claude-code"] = Adapter(
+        "founder-claude-code", door_write, brief_read
+    )
+    reg["surfaces"]["founder-ask"] = Adapter("founder-ask", door_write, door_recall)
+    return reg
+
+
+def spool_write_surface(ctx, marker, fact):
+    spool_write(ctx, marker, fact, who="founder-surface")
+
+
+# ---------------------------------------------------------------- the run ----------------------
+
+
+def served_as_current(text, marker):
+    """True if a line carrying the marker is not labelled unverified (nor under an unverified header)."""
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if marker not in line:
+            continue
+        window = " ".join(lines[max(0, i - 2) : i + 1]).lower()
+        if "unverified" not in window:
+            return True
+    return False
+
+
+def attempt(fn, *args):
+    """(value, None) or (None, reason): Unreachable is the only thing that means 'cannot test'."""
+    try:
+        return fn(*args), None
+    except Unreachable as exc:
+        return None, str(exc)
+    except Exception as exc:  # an adapter bug is also 'cannot test', never a pass
+        return None, "adapter error: %s: %s" % (type(exc).__name__, str(exc)[:120])
+
+
+def run_canary(registry, ctx, runtimes=None, surfaces=None, run_id=None):
+    runtimes = list(runtimes if runtimes is not None else registry["runtimes"])
+    surfaces = list(surfaces if surfaces is not None else SURFACES)
+    run_id = run_id or uuid.uuid4().hex[:10]
+    reasons = []
+    pairs, surf_res, readers_ok = {}, {}, 0
+
+    def marker_for(name):
+        return "ESTATE-CANARY-%s-%s" % (run_id, name.upper().replace("-", ""))
+
+    adapters = lambda kind, n: registry[kind].get(n)  # noqa: E731
+
+    for sname in surfaces:  # baselines before anything is planted
+        if sname == "fleet" and adapters("surfaces", "fleet"):
+            attempt(fleet_before, ctx)
+
+    reads = {}  # (kind, name) -> (callable-result cache by marker) built lazily
+    for a in runtimes:
+        wa = adapters("runtimes", a)
+        marker = marker_for(a)
+        fact = "canary fact %s: planted via %s on %s" % (marker, a, ctx.shared_path)
+        _, werr = (
+            attempt(wa.writer, ctx, marker, fact)
+            if wa
+            else (None, "no adapter for runtime")
+        )
+        for b in runtimes:
+            if a == b:
+                continue
+            key = "%s->%s" % (a, b)
+            rb = adapters("runtimes", b)
+            if werr or not rb:
+                pairs[key] = None
+                reasons.append(
+                    {
+                        "id": key,
+                        "reason": "write via %s: %s" % (a, werr or "no adapter"),
+                    }
+                )
+                continue
+            text, rerr = attempt(rb.reader, ctx, marker)
+            if rerr:
+                pairs[key] = None
+                reasons.append({"id": key, "reason": "read via %s: %s" % (b, rerr)})
+            else:
+                readers_ok += 1
+                pairs[key] = marker in text
+
+    for s in surfaces:
+        ad = adapters("surfaces", s)
+        if not ad:
+            surf_res[s] = None
+            reasons.append({"id": "surface:" + s, "reason": "no adapter registered"})
+            continue
+        marker = marker_for(s)
+        fact = "canary fact %s: planted for surface %s on %s" % (
+            marker,
+            s,
+            ctx.shared_path,
+        )
+        _, werr = attempt(ad.writer, ctx, marker, fact)
+        if werr:
+            surf_res[s] = None
+            reasons.append({"id": "surface:" + s, "reason": "write: " + werr})
+            continue
+        text, rerr = attempt(ad.reader, ctx, marker)
+        if rerr:
+            surf_res[s] = None
+            reasons.append({"id": "surface:" + s, "reason": "read: " + rerr})
+        else:
+            surf_res[s] = marker in text
+
+    poison = run_poison(registry, ctx, runtimes, surfaces, run_id, reasons)
+    unproven = sum(
+        1 for v in list(pairs.values()) + list(surf_res.values()) if v is None
+    )
+    if poison["ok"] is None:
+        unproven += 1
+    false = [k for k, v in list(pairs.items()) + list(surf_res.items()) if v is False]
+    clean = not false and poison["ok"] is True and unproven == 0
+    return {
+        "generated": now_iso(),
+        "run_id": run_id,
+        "pairs": pairs,
+        "surfaces": surf_res,
+        "poison": poison,
+        "unproven": unproven,
+        "unproven_reasons": reasons,
+        "summary": "%d of %d pairs proven, %d of %d surfaces proven, poison %s, %d unproven, %d disproven"
+        % (
+            sum(1 for v in pairs.values() if v is True),
+            len(pairs),
+            sum(1 for v in surf_res.values() if v is True),
+            len(surf_res),
+            {True: "clean", False: "SERVED AS CURRENT", None: "unproven"}[poison["ok"]],
+            unproven,
+            len(false) + (1 if poison["ok"] is False else 0),
+        ),
+        "all_proven": clean,
+    }
+
+
+def run_poison(registry, ctx, runtimes, surfaces, run_id, reasons):
+    """Plant a false fact on the shared path; every reachable reader must show it unverified or not at all."""
+    marker = "ESTATE-POISON-%s" % run_id
+    fact = (
+        "FALSE canary claim %s: %s was deleted and is no longer used (this is untrue)"
+        % (marker, ctx.shared_path)
+    )
+    out = {
+        "marker": marker,
+        "ok": None,
+        "served_as_current": None,
+        "readers_checked": 0,
+    }
+    writer = None
+    for ad in list(registry["runtimes"].values())[:1] + list(
+        registry["surfaces"].values()
+    ):
+        _, err = attempt(ad.writer, ctx, marker, fact)
+        if not err:
+            writer = ad.name
+            break
+    if not writer:
+        out["reason"] = "poison could not be planted on any path"
+        reasons.append({"id": "poison", "reason": out["reason"]})
+        return out
+    out["planted_via"] = writer
+    seen_current, labelled, absent = [], 0, 0
+    for kind, names in (("runtimes", runtimes), ("surfaces", surfaces)):
+        for n in names:
+            ad = registry[kind].get(n)
+            if not ad or not ad.text:
+                continue
+            text, err = attempt(ad.reader, ctx, marker)
+            if err:
+                continue
+            out["readers_checked"] += 1
+            if marker not in text:
+                absent += 1
+            elif served_as_current(text, marker):
+                seen_current.append(n)
+            else:
+                labelled += 1
+    out["labelled_unverified"] = labelled
+    out["absent"] = absent
+    if seen_current:
+        out["ok"], out["served_as_current"] = False, seen_current
+        out["reason"] = "false fact served as current on: " + ", ".join(seen_current)
+    elif out["readers_checked"] == 0:
+        out["reason"] = "no reader could be reached to check the poison"
+        reasons.append({"id": "poison", "reason": out["reason"]})
+    else:
+        out["ok"], out["served_as_current"] = True, []
+    return out
+
+
+def cleanup(ctx):
+    for path in ctx.cleanup:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    for d in ctx.made_dirs:
+        try:
+            os.rmdir(d)
+        except OSError:
+            pass
+
+
+def write_result(result, out):
+    out = os.path.expanduser(out)
+    os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(out) or ".", suffix=".tmp")
+    with os.fdopen(fd, "w") as f:
+        json.dump(result, f, indent=2, sort_keys=True)
+        f.write("\n")
+    os.replace(tmp, out)
+    return out
+
+
+def required_runtimes():
+    try:
+        with open(os.path.join(ROOT, "catalog", "memory-register.json")) as f:
+            return json.load(f).get("required_runtimes") or FALLBACK_RUNTIMES
+    except (OSError, ValueError):
+        return FALLBACK_RUNTIMES
+
+
+def exit_code(result):
+    if result["poison"]["ok"] is False or any(
+        v is False
+        for v in list(result["pairs"].values()) + list(result["surfaces"].values())
+    ):
+        return 1
+    return 0 if result["all_proven"] else 2
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument(
+        "--out", default=os.environ.get("ESTATE_CANARY_RESULT", DEFAULT_OUT)
+    )
+    ap.add_argument(
+        "--keep", action="store_true", help="leave the planted spool files in place"
+    )
+    a = ap.parse_args(argv)
+    runtimes = required_runtimes()
+    ctx = Ctx()
+    try:
+        result = run_canary(build_registry(runtimes), ctx, runtimes)
+    finally:
+        if not a.keep:
+            cleanup(ctx)
+    path = write_result(result, a.out)
+    print(result["summary"])
+    for r in result["unproven_reasons"][:12]:
+        print("  unproven %s: %s" % (r["id"], r["reason"]))
+    print("wrote " + path)
+    return exit_code(result)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
