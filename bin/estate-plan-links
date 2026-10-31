@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+"""bin/estate-plan-links -- what every declared plan is linked to.
+
+    plan            <-  instruction  (the intent the work goes through)
+    plan            <-  founder prompt (the words that started it)
+    founder prompt  <-  protocol      (exactly one, by the protocol kit's genesis rule)
+
+    bin/estate-plan-links                 the table
+    bin/estate-plan-links --json          the same, machine-readable
+    bin/estate-plan-links --session ID    one session
+    bin/estate-plan-links --strict        a missing link refuses too
+
+EXIT.  0 nothing is wrong.  4 a link is present and WRONG (unknown instruction, unresolvable
+founder prompt, a prompt bound to no protocol); with --strict, a MISSING link refuses too.
+2 usage.
+
+The links are derived from the estate's own ledgers -- ~/.estate/plans/<session>.jsonl for the
+plan, ~/.estate/plans/intents.jsonl for the instruction, ~/.estate/state/prompts.jsonl for the
+founder prompt -- so the table cannot be a story an agent told about itself.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(HERE)
+ESTATE_PKG = os.path.join(REPO_ROOT, "platform", "estate")
+if ESTATE_PKG not in sys.path:
+    sys.path.insert(0, ESTATE_PKG)
+
+from governance import plan_links  # noqa: E402
+
+
+def main(argv: list[str]) -> int:
+    as_json = False
+    strict = False
+    session = ""
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg in ("--json", "-j"):
+            as_json = True
+        elif arg == "--strict":
+            strict = True
+        elif arg == "--session":
+            i += 1
+            if i >= len(argv):
+                sys.stderr.write("--session needs a session id\n")
+                return 2
+            session = argv[i]
+        elif arg.startswith("--session="):
+            session = arg.split("=", 1)[1]
+        elif arg in ("-h", "--help"):
+            sys.stdout.write(__doc__ or "")
+            return 0
+        else:
+            sys.stderr.write(f"unknown argument: {arg}\n")
+            return 2
+        i += 1
+
+    result = plan_links.audit(session or None)
+
+    if as_json:
+        print(json.dumps(result, indent=2, default=str))
+    else:
+        rows = result["rows"]
+        if not rows:
+            print("no session has declared a plan")
+        for row in rows:
+            instruction = row["declared_instruction"] or (
+                ",".join(row["observed_instructions"]) or "-"
+            )
+            print(
+                f"{row['session']}  protocol={row['protocol'] or '-'}  "
+                f"instruction={instruction}  prompt={row['prompt_id'] or '-'}  "
+                f"goal={row['goal'][:70]}"
+            )
+        if result["gaps"]:
+            print(
+                f"\ngaps ({len(result['gaps'])}): a link that is absent, not yet wrong"
+            )
+            for g in result["gaps"]:
+                print(f"  gap       {g}")
+        if result["violations"]:
+            print(
+                f"\nviolations ({len(result['violations'])}): a link that is present and wrong"
+            )
+            for v in result["violations"]:
+                print(f"  violation {v}")
+
+    violations = result["violations"]
+    gaps = result["gaps"] if strict else []
+    if violations or gaps:
+        return 4
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

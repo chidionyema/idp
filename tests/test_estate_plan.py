@@ -58,6 +58,38 @@ def test_apply_never_mutates_the_plan_it_is_given():
     assert json.dumps(p, sort_keys=True) == before
 
 
+def test_a_plan_carries_its_instruction_and_its_founder_prompt():
+    r = plan.apply(
+        None,
+        "declare_plan",
+        dict(
+            GOAL,
+            instruction="lane-submit",
+            prompt="prompt-20261030T101500Z-abc123",
+        ),
+    )
+    assert r["ok"] is True
+    assert r["plan"]["instruction"] == "lane-submit"
+    assert r["plan"]["prompt"] == "prompt-20261030T101500Z-abc123"
+    assert "lane-submit" in r["message"]
+    # A revision keeps the links it does not restate: the work is still the same work.
+    again = plan.apply(r["plan"], "revise_plan", GOAL)
+    assert again["plan"]["instruction"] == "lane-submit"
+    assert again["plan"]["prompt"] == "prompt-20261030T101500Z-abc123"
+
+
+def test_a_link_that_is_present_and_wrong_is_refused():
+    for bad in (
+        {"instruction": ""},
+        {"instruction": "not an intent"},
+        {"prompt": ""},
+        {"prompt": "no such id"},
+    ):
+        r = plan.apply(None, "declare_plan", dict(GOAL, **bad))
+        assert r["ok"] is False, bad
+        assert r["reason"], bad
+
+
 def test_the_cli_fails_open_on_garbage():
     r = subprocess.run(
         [

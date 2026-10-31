@@ -27,11 +27,22 @@ export type Plan = {
   bdd: Record<string, Bdd>;
   edgecases: Record<string, string[]>;
   effects: Record<string, string[]>;
+  // The plan's two links to the estate: the INSTRUCTION (the intent the work goes through) and
+  // the PROMPT (the founder prompt that started it). The shape is checked here, in both copies
+  // of the contract; whether the names RESOLVE is checked by the governance layer
+  // (platform/estate/governance/plan_links.py), which is where the ledgers live.
+  instruction?: string;
+  prompt?: string;
 };
 export type Checked<T> = ({ ok: true } & T) | { ok: false; reason: string };
 
 export const MIN_GOAL_CHARS = 8;
 export const MIN_SUBGOAL_CHARS = 4;
+
+// An intent name and a founder prompt id. The same two shapes the Python copy checks, so a plan
+// accepted by one copy is accepted by the other.
+const INSTRUCTION_RE = /^[a-z0-9][a-z0-9._-]{1,63}$/;
+const PROMPT_ID_RE = /^[A-Za-z0-9._:-]{3,120}$/;
 
 export const PLAN_TOOLS = [
   "declare_plan",
@@ -65,8 +76,8 @@ export function bare(name: string): string {
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 const refuse = (reason: string) => ({ ok: false as const, reason });
 
-export function validatePlan(input: unknown): Checked<{ goal: string; subgoals: Subgoal[] }> {
-  const i = (input ?? {}) as { goal?: unknown; subgoals?: unknown };
+export function validatePlan(input: unknown): Checked<{ goal: string; subgoals: Subgoal[]; instruction: string; prompt: string }> {
+  const i = (input ?? {}) as { goal?: unknown; subgoals?: unknown; instruction?: unknown; prompt?: unknown };
   const goal = str(i.goal);
   if (goal.length < MIN_GOAL_CHARS) return refuse(`goal must be a sentence of at least ${MIN_GOAL_CHARS} characters`);
   if (!Array.isArray(i.subgoals) || i.subgoals.length === 0) {
@@ -82,7 +93,21 @@ export function validatePlan(input: unknown): Checked<{ goal: string; subgoals: 
     seen.add(id);
     subgoals.push({ id, text });
   }
-  return { ok: true, goal, subgoals };
+  const instruction = str(i.instruction);
+  const prompt = str(i.prompt);
+  if ("instruction" in i && !instruction) {
+    return refuse("instruction must name the intent this plan serves");
+  }
+  if ("prompt" in i && !prompt) {
+    return refuse("prompt must name the founder prompt this plan answers");
+  }
+  if (instruction && !INSTRUCTION_RE.test(instruction)) {
+    return refuse(`instruction "${instruction}" is not an intent name`);
+  }
+  if (prompt && !PROMPT_ID_RE.test(prompt)) {
+    return refuse(`prompt "${prompt}" is not a founder prompt id`);
+  }
+  return { ok: true, goal, subgoals, instruction, prompt };
 }
 
 /** One plan-tool call against the current plan: the next plan and what to tell the agent, or why
@@ -105,15 +130,23 @@ export function apply(plan: Plan | undefined, tool: string, args: unknown): Chec
       bdd: keep(plan?.bdd),
       edgecases: keep(plan?.edgecases),
       effects: keep(plan?.effects),
+      // A revision keeps the links it does not restate: the work is still the same work.
+      instruction: v.instruction || plan?.instruction || "",
+      prompt: v.prompt || plan?.prompt || "",
     };
     const first = next.subgoals.find((s) => !next.done.includes(s.id)) ?? next.subgoals[0];
+    const links = [
+      next.instruction ? `instruction ${next.instruction}` : "",
+      next.prompt ? `founder prompt ${next.prompt}` : "",
+    ].filter(Boolean);
     return {
       ok: true,
       plan: next,
       message:
         `Plan ${name === "declare_plan" ? "declared" : "revised"}: ${next.goal}\n` +
         next.subgoals.map((s) => `  ${s.id}: ${s.text}`).join("\n") +
-        (next.bdd[first.id] ? "" : `\nNext: add_bdd for ${first.id} before any work on it.`),
+        (next.bdd[first.id] ? "" : `\nNext: add_bdd for ${first.id} before any work on it.`) +
+        (links.length ? `\nLinked to ${links.join(" and ")}.` : ""),
     };
   }
   if (!(PLAN_TOOLS as readonly string[]).includes(name)) return refuse(`${tool} is not a plan tool`);

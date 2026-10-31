@@ -1,0 +1,26 @@
+name: plan.links
+description: >-
+  What every declared plan is linked to: the instruction (intent) the work goes through, the
+  founder prompt that started it, and the protocol that prompt is bound to. One line per
+  session. Refuses (exit 4) when a link is present and WRONG -- an instruction that resolves to
+  no known intent, a founder prompt id that resolves to no record, a prompt bound to no
+  protocol; with strict, a MISSING link refuses too.
+class: read
+args:
+  session: {type: string, default: "", description: "one session id; empty means every session"}
+  strict: {type: string, default: "false", description: "true also refuses a link that is missing"}
+door_s: 30
+halt_on_failure: true
+steps:
+  - name: plan-links
+    cmd: |
+      set -uo pipefail
+      ROOT=""
+      for r in "$HOME/.estate/runtime/idp" "$HOME/Documents/code/idp"; do
+        if [ -x "$r/bin/estate-plan-links" ]; then ROOT="$r"; break; fi
+      done
+      if [ -z "$ROOT" ]; then echo "estate-plan-links: no runtime copy found" >&2; exit 5; fi
+      ARGS=()
+      if [ -n {{session}} ]; then ARGS+=(--session {{session}}); fi
+      case "{{strict}}" in [Tt]rue|1|yes|YES) ARGS+=(--strict);; esac
+      exec "$ROOT/bin/estate-plan-links" "${ARGS[@]}"
