@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "generator": "bin/capability-index completeness --write-baseline",
+  "source": "catalog/estate-capability-registry.json",
+  "total": 1029,
+  "questions": {
+    "owner": {
+      "valued": 1029,
+      "none": 0,
+      "unknown": 0,
+      "measured": 1029,
+      "total": 1029
+    },
+    "description": {
+      "valued": 1029,
+      "none": 0,
+      "unknown": 0,
+      "measured": 1029,
+      "total": 1029
+    },
+    "status": {
+      "valued": 0,
+      "none": 0,
+      "unknown": 1029,
+      "measured": 0,
+      "total": 1029
+    },
+    "last_verified": {
+      "valued": 0,
+      "none": 0,
+      "unknown": 1029,
+      "measured": 0,
+      "total": 1029
+    },
+    "dependencies": {
+      "valued": 366,
+      "none": 342,
+      "unknown": 321,
+      "measured": 708,
+      "total": 1029
+    },
+    "interfaces": {
+      "valued": 1029,
+      "none": 0,
+      "unknown": 0,
+      "measured": 1029,
+      "total": 1029
+    },
+    "known_issues": {
+      "valued": 1,
+      "none": 1028,
+      "unknown": 0,
+      "measured": 1029,
+      "total": 1029
+    },
+    "mirrors": {
+      "valued": 64,
+      "none": 965,
+      "unknown": 0,
+      "measured": 1029,
+      "total": 1029
+    },
+    "metrics": {
+      "valued": 0,
+      "none": 0,
+      "unknown": 1029,
+      "measured": 0,
+      "total": 1029
+    }
+  }
+}
