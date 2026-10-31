@@ -9,6 +9,18 @@ only layer: bin/estate-read and bin/estate-patch are the real doors (receipt-gat
 AST-checked); this module exists so an agent cannot simply route around them with a raw
 shell redirect in the same command string.
 
+WHAT THIS IS APPLIED TO (measured and changed 2026-10-31). The executor applies it to the
+agent-supplied content only: the values that reach the shell through a raw <<var>> slot.
+An intent's own step text is estate-authored code that reaches the shell through a claim
+and a lane, and it was being judged as if an agent had typed it: 103 of the 451 installed
+intent steps matched a banned pattern and the estate's canonical doors refused THEMSELVES
+-- pr-list (its own redirect to a temp file), agent-invoke (its own payload write) and
+lane-submit (its own push log) each failed with "REFUSED: RAW_WRITE_REDIRECT_BANNED". The
+boundary's job is to stop an AGENT routing around bin/estate-read / bin/estate-patch, not
+to stop the estate from running its own doors. The patterns and this API are unchanged;
+where the executor applies them changed (platform/estate/bin/estate-execute,
+interpolate_parts).
+
 Found live (not in a unit test) on the first real round trip through estate-execute:
 a legitimate `bin/estate-patch` invocation piping a SEARCH/REPLACE payload whose
 *replacement text* contained `if used >= limit:` was refused as a RAW_WRITE_REDIRECT, because
