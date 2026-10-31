@@ -38,6 +38,9 @@ def front(tmp_path, monkeypatch):
     # real cloud; the cloud is graded in test_router_front_fails_over_to_the_cloud.py and
     # test_router_front_falls_back_to_the_laptop_when_the_cloud_fails.py.
     monkeypatch.setattr(mod, "CLOUD", "")
+    # Routing tests pin the load low: the front sheds or spills on the host's REAL load average,
+    # and on a saturated machine (658 on 4 CPUs, measured 2026-10-31) every test here met a refusal.
+    monkeypatch.setattr(mod.os, "getloadavg", lambda: (0.0, 0.0, 0.0))
     return mod
 
 

@@ -61,6 +61,9 @@ def front(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "MAX_BODY", 4096)
     monkeypatch.setattr(mod, "CLOUD_DOWN_UNTIL", 0.0)
     (tmp_path / "active").write_text(f"{slot_port}\n")
+    # Routing tests pin the load low: the front sheds or spills on the host's REAL load average,
+    # and on a saturated machine (658 on 4 CPUs, measured 2026-10-31) every test here met a refusal.
+    monkeypatch.setattr(mod.os, "getloadavg", lambda: (0.0, 0.0, 0.0))
     mod.slot_port = slot_port
     mod.cloud_port = cloud_port
     return mod

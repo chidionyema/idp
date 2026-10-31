@@ -64,6 +64,11 @@ def front(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "PROBE_EVERY", 0.05)
     monkeypatch.setattr(mod, "PROBE_TIMEOUT", 0.2)
     monkeypatch.setattr(mod, "CLOUD_DOWN_UNTIL", 0.0)
+    # The front reads the host's real load average, so on a loaded machine every test below
+    # met a "saturated" box and was refused or spilled. Measured 2026-10-31: load 658 on 4 CPUs,
+    # 19 of 41 front tests failed with no code change. A test of routing pins the load low;
+    # the tests that grade saturation set it high themselves, after this fixture.
+    monkeypatch.setattr(mod.os, "getloadavg", lambda: (0.0, 0.0, 0.0))
     (tmp_path / "active").write_text(f"{a}\n")
     return mod
 

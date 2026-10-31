@@ -44,6 +44,9 @@ def front(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "PROBE_TIMEOUT", 0.2)
     monkeypatch.setattr(mod, "CLOUD_DOWN_UNTIL", 0.0)
     (tmp_path / "active").write_text(f"{a}\n")
+    # Routing tests pin the load low: the front sheds or spills on the host's REAL load average,
+    # and on a saturated machine (658 on 4 CPUs, measured 2026-10-31) every test here met a refusal.
+    monkeypatch.setattr(mod.os, "getloadavg", lambda: (0.0, 0.0, 0.0))
     return mod
 
 
