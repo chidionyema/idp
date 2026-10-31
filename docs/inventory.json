@@ -13,7 +13,7 @@
    "DRIFTED": 0,
    "GHOST": 0,
    "MANAGED": 0,
-   "ORPHAN": 36,
+   "ORPHAN": 39,
    "UNKNOWN": false,
    "read": "yes"
   },
@@ -58,7 +58,7 @@
    "read": "UNKNOWN"
   }
  },
- "generated_at": "2026-09-25T07:56:22Z",
+ "generated_at": "2026-10-30T08:44:35Z",
  "rows": [
   {
    "declared_in": "",
@@ -136,6 +136,15 @@
    "declared_in": "",
    "id": "b921dfc71c8938f0ec39a404e66fc7c5",
    "name": "a-mcp.mumchimp.com TXT",
+   "plane": "cloudflare",
+   "type": "dns_record",
+   "verdict": "ORPHAN",
+   "why": "live, in no repository"
+  },
+  {
+   "declared_in": "",
+   "id": "b56fc0051b7dac6919616fdeec9871d4",
+   "name": "a-meridian.mumchimp.com TXT",
    "plane": "cloudflare",
    "type": "dns_record",
    "verdict": "ORPHAN",
@@ -260,6 +269,15 @@
   },
   {
    "declared_in": "",
+   "id": "ea2adbce6455fb4aff3c284ccef999c6",
+   "name": "llm-recovery.mumchimp.com CNAME",
+   "plane": "cloudflare",
+   "type": "dns_record",
+   "verdict": "ORPHAN",
+   "why": "live, in no repository"
+  },
+  {
+   "declared_in": "",
    "id": "52c1ac1774e1799b137453641cee6382",
    "name": "llm.mumchimp.com A",
    "plane": "cloudflare",
@@ -287,6 +305,15 @@
   },
   {
    "declared_in": "",
+   "id": "bd6f4f4f1d73e477a308b4c1096ca365",
+   "name": "meridian.mumchimp.com A",
+   "plane": "cloudflare",
+   "type": "dns_record",
+   "verdict": "ORPHAN",
+   "why": "live, in no repository"
+  },
+  {
+   "declared_in": "",
    "id": "937f1f507fe1b087134e2e24603dd9f2",
    "name": "metabase.mumchimp.com A",
    "plane": "cloudflare",
@@ -305,8 +332,8 @@
   },
   {
    "declared_in": "",
-   "id": "15071099f084b9160e8b04fcdcbe8f11",
-   "name": "mumchimp.com MX",
+   "id": "cfb1ef3d38eedbba5e578cb0200c66ce",
+   "name": "mumchimp.com A",
    "plane": "cloudflare",
    "type": "dns_record",
    "verdict": "ORPHAN",
@@ -323,8 +350,8 @@
   },
   {
    "declared_in": "",
-   "id": "cfb1ef3d38eedbba5e578cb0200c66ce",
-   "name": "mumchimp.com A",
+   "id": "15071099f084b9160e8b04fcdcbe8f11",
+   "name": "mumchimp.com MX",
    "plane": "cloudflare",
    "type": "dns_record",
    "verdict": "ORPHAN",

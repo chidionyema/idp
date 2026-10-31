@@ -374,6 +374,99 @@
   "ticket": null
  },
  {
+  "feature": "features/efda/l1_checkpoint.feature",
+  "title": "L1 Checkpoint Layer",
+  "scenarios": [
+   "A checkpoint is written on the periodic tick",
+   "A checkpoint is written on SIGTERM",
+   "A SIGKILL leaves a partial artifact and the last checkpoint",
+   "An unreachable sink falls back to the local WAL"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "9063f99d3",
+  "pr": 7289,
+  "ticket": null
+ },
+ {
+  "feature": "features/efda/l2_evidence.feature",
+  "title": "L2 Evidence Layer",
+  "scenarios": [
+   "The wrapper captures an agent failure",
+   "The artifact address is deterministic",
+   "A controller cannot declare a failure without an artifact reference",
+   "The read-first contract is enforced on a relaunch"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "9063f99d3",
+  "pr": 7289,
+  "ticket": null
+ },
+ {
+  "feature": "features/efda/l3_registry.feature",
+  "title": "Component Registry",
+  "scenarios": [
+   "An unregistered workload is registered and covered",
+   "The coverage report is published",
+   "The registry snapshot is published for the gate",
+   "A component that left the cluster is an orphan"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "9063f99d3",
+  "pr": 7289,
+  "ticket": null
+ },
+ {
+  "feature": "features/efda/l4_factory.feature",
+  "title": "Pack Factory",
+  "scenarios": [
+   "A baseline pack is generated for a new class",
+   "Synthesis turns observations into a candidate",
+   "A low-precision signature is not promoted",
+   "A mutating diagnostic question is rejected",
+   "A signature that ignores its budget is rejected"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "9063f99d3",
+  "pr": 7289,
+  "ticket": null
+ },
+ {
+  "feature": "features/efda/l5_reasoning.feature",
+  "title": "Reasoning Layer",
+  "scenarios": [
+   "The artifact produces a report with a named cause",
+   "A thin artifact falls back to a human",
+   "An uncorroborated hypothesis is not propagated",
+   "A tampered artifact is refused",
+   "A pack that costs too much does not starve the layer"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "9063f99d3",
+  "pr": 7289,
+  "ticket": null
+ },
+ {
+  "feature": "features/efda/l6_remediation.feature",
+  "title": "Remediation",
+  "scenarios": [
+   "A baseline signature may only report",
+   "A tier T1 action without a safety proof is refused",
+   "An action the allowlist does not name is refused",
+   "A tier T1 action below the confidence gate is refused",
+   "An allowed action is applied and recorded"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "9063f99d3",
+  "pr": 7289,
+  "ticket": null
+ },
+ {
   "feature": "features/estate-rebuild/rebuild-and-gates.feature",
   "title": "The estate can be torn down and rebuilt from the phone, and no past error can recur",
   "scenarios": [
@@ -1007,6 +1100,24 @@
   "added_in": "2f0123f81",
   "pr": 70,
   "ticket": "crew#213"
+ },
+ {
+  "feature": "features/spine/spine.feature",
+  "title": "The event spine",
+  "scenarios": [
+   "A reconcile event travels on a subject the estate's grammar accepts",
+   "The same event twice signals once",
+   "An event with no identity is not silently dropped",
+   "A signal that cannot be delivered is retried, not lost",
+   "A reconciliation that failed is not a verified receipt",
+   "An object that is gone is routed to a human",
+   "A reconciliation that succeeded leaves a receipt"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "9063f99d3",
+  "pr": 7289,
+  "ticket": null
  },
  {
   "feature": "features/gates/deterministic-verifier.feature",
@@ -1808,6 +1919,71 @@
   "ticket": "crew#345"
  },
  {
+  "feature": "features/assurance/aee.feature",
+  "title": "The AEE \u2014 a work graph that cannot lose work quietly",
+  "scenarios": [
+   "A node is not accepted without a passing verification",
+   "A failed verification does not accept a node",
+   "Evidence for another node does not accept this one",
+   "A node is not completed while its parent is unaccepted",
+   "A node with passing evidence and accepted parents is accepted",
+   "A dependency loop is refused",
+   "A path outside the objective's scope is refused",
+   "A second agent may not mutate a graph it does not own",
+   "Cancelling a node releases its reservation and blocks its dependents",
+   "A retry keeps the earlier attempt on the record",
+   "The same graph state has the same address",
+   "A receipt with a known cost names the ledger row it derives from"
+  ],
+  "bound_by": [
+   "packages/aee/tests/test_aee_bdd.py"
+  ],
+  "status": "BOUND",
+  "added_in": "3246a8ac3",
+  "pr": 7358,
+  "ticket": null
+ },
+ {
+  "feature": "features/assurance/aei.feature",
+  "title": "AEI \u2014 observed execution evidence",
+  "scenarios": [
+   "Every execution carries the canonical identifiers",
+   "Telemetry cannot silently accept unclassified data",
+   "Retries are idempotent but immutable",
+   "A failed collector cannot stop an agent",
+   "Missing metrics remain unknown",
+   "The observability contract is required",
+   "Run comparison requires verified outcomes",
+   "Trace evidence survives restart",
+   "A router call is observed, never summarised",
+   "The estate adapter never blocks the work it observes"
+  ],
+  "bound_by": [
+   "tests/test_aei_features.py"
+  ],
+  "status": "BOUND",
+  "added_in": "868f775a4",
+  "pr": 7328,
+  "ticket": null
+ },
+ {
+  "feature": "features/assurance/economic-allocation.feature",
+  "title": "The estate's allocation policy",
+  "scenarios": [
+   "The same request is allocated the same way every time",
+   "A deterministic lane is chosen over a model lane",
+   "A learned policy proposes and the deterministic policy decides",
+   "A node no lane can take is refused with the reason"
+  ],
+  "bound_by": [
+   "packages/aee/tests/test_allocation_bdd.py"
+  ],
+  "status": "BOUND",
+  "added_in": "1cd089673",
+  "pr": 7415,
+  "ticket": null
+ },
+ {
   "feature": "features/assurance/estate-next.feature",
   "title": "What is planned, what is blocking, when (crew#403 CP6)",
   "scenarios": [
@@ -1822,6 +1998,81 @@
   "added_in": "a5d2421a7",
   "pr": 402,
   "ticket": "crew#403"
+ },
+ {
+  "feature": "features/assurance/execution-economics-at-scale.feature",
+  "title": "The estate's concurrency envelope",
+  "scenarios": [
+   "Independent work runs together and dependent work waits",
+   "Code that overlaps is refused the same slot",
+   "Cancellation gives the hold back and stops the spend",
+   "The budget ceiling stops the work and says why",
+   "A restart resumes the same work under the same key"
+  ],
+  "bound_by": [
+   "tests/test_aee_scale_features.py"
+  ],
+  "status": "BOUND",
+  "added_in": "d1f469516",
+  "pr": 7455,
+  "ticket": null
+ },
+ {
+  "feature": "features/assurance/execution-substrate.feature",
+  "title": "The estate's execution substrate",
+  "scenarios": [
+   "A task that is running is not re-queued by the sweep",
+   "A claim that cannot get a workspace gives the task back",
+   "The work in a worktree survives the task that made it"
+  ],
+  "bound_by": [
+   "tests/test_queue_dispatcher.py"
+  ],
+  "status": "BOUND",
+  "added_in": "8f0f2f45a",
+  "pr": 7405,
+  "ticket": null
+ },
+ {
+  "feature": "features/assurance/independent-verification.feature",
+  "title": "Independent verification",
+  "scenarios": [
+   "A verified pipeline becomes a passing receipt",
+   "A degraded sandbox is inconclusive, never a failure of the work",
+   "The agent that did the work cannot sign its own objective acceptance",
+   "An independent verifier signs the objective acceptance"
+  ],
+  "bound_by": [
+   "packages/aee/tests/test_verification_bdd.py"
+  ],
+  "status": "BOUND",
+  "added_in": "26f2785bd",
+  "pr": 7438,
+  "ticket": null
+ },
+ {
+  "feature": "features/assurance/method-selector.feature",
+  "title": "The adaptive problem-solving method selector",
+  "scenarios": [
+   "A reproducible regression with history selects bisect, and Bayesian updating is not chosen by default",
+   "A formal invariant without a model is refused for missing prerequisite evidence",
+   "A high-risk production context needs explicit authorization for an experimental action",
+   "An authorized experimental method is recommended, and only as a recommendation",
+   "An exhausted budget schedules no method",
+   "Contradictory observations force reassessment",
+   "Missing evidence yields abstention, never an invented prerequisite",
+   "Stale evidence yields abstention, never a stale recommendation",
+   "An unavailable dependency is reported and the safe path is taken",
+   "The same request replays to the same fingerprint and the same trace id",
+   "A malformed request is rejected rather than guessed"
+  ],
+  "bound_by": [
+   "packages/method_selector/tests/test_method_selector_features.py"
+  ],
+  "status": "BOUND",
+  "added_in": "c3ae5051d",
+  "pr": 7346,
+  "ticket": null
  },
  {
   "feature": "features/assurance/trace-matrix.feature",
@@ -1854,6 +2105,26 @@
   "ticket": null
  },
  {
+  "feature": "features/estate-progress/estate-progress.feature",
+  "title": "The estate's progress report",
+  "scenarios": [
+   "A chain that landed something is progressing",
+   "A source that cannot be read is blind and never zero",
+   "A third of the batches in conflict is slipping",
+   "Nothing landed while a lane sits old is stuck",
+   "Progress is a delta against the previous report",
+   "The spoken answer carries the verdict and the blindness",
+   "Every surface renders the same signal set"
+  ],
+  "bound_by": [
+   "tests/test_estate_progress.py"
+  ],
+  "status": "BOUND",
+  "added_in": "2214d9713",
+  "pr": 7454,
+  "ticket": null
+ },
+ {
   "feature": "features/fleetview/cp1_contract.feature",
   "title": "CP1 the session contract",
   "scenarios": [
@@ -1883,6 +2154,28 @@
   "status": "BOUND",
   "added_in": "7bce6f5c8",
   "pr": 2619,
+  "ticket": null
+ },
+ {
+  "feature": "features/founder-decision/founder-decision.feature",
+  "title": "The founder-decision door",
+  "scenarios": [
+   "One decision is one message",
+   "An option key is the answer",
+   "An unparsable comment is never coerced",
+   "Silence expires the decision",
+   "Asking twice sends one message",
+   "The delivery path needs no model",
+   "A chat message is not captured while two decisions are live",
+   "An exact option key answers the only live decision",
+   "A late answer is still an answer"
+  ],
+  "bound_by": [
+   "tests/test_founder_decision_door.py"
+  ],
+  "status": "BOUND",
+  "added_in": "1cd65e8b1",
+  "pr": 7384,
   "ticket": null
  },
  {
@@ -2082,6 +2375,22 @@
   "ticket": "crew#286"
  },
  {
+  "feature": "features/gates/launchd-off-documents.feature",
+  "title": "launchd jobs run from the runtime tree, never from ~/Documents",
+  "scenarios": [
+   "The installer points jobs at ~/.estate/runtime/idp",
+   "The installer refuses a tree launchd cannot read",
+   "Jobs the cluster owns are never loaded on the Mac"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_gate_launchd_off_documents.py"
+  ],
+  "status": "BOUND",
+  "added_in": "fbc7f44f9",
+  "pr": 6028,
+  "ticket": null
+ },
+ {
   "feature": "features/gates/llm-admission.feature",
   "title": "The LiteLLM router is admitted by the cluster's policies before it is merged",
   "scenarios": [
@@ -2224,6 +2533,30 @@
   "added_in": "464007c44",
   "pr": 163,
   "ticket": "crew#269"
+ },
+ {
+  "feature": "features/media-department/m1_contract.feature",
+  "title": "The department contract refuses the moves a department may not make",
+  "scenarios": [
+   "A complete record on a legal transition is admitted",
+   "A record with no source reference is refused",
+   "Research cannot jump straight to shipping",
+   "A proposal cannot approve itself without the authorization door",
+   "Spend beyond the objective's cap is refused",
+   "A record derived from an old revision is refused",
+   "The same action on the same input is admitted once",
+   "A writer outside its granted role is refused",
+   "An evaluator cannot certify its own prototype",
+   "Operating needs an independent observation, not a generated assertion",
+   "The shipped media config grants nobody yet"
+  ],
+  "bound_by": [
+   "tests/test_media_department_contract.py"
+  ],
+  "status": "BOUND",
+  "added_in": "2e9e946f6",
+  "pr": 7401,
+  "ticket": null
  },
  {
   "feature": "features/pr_flow_never_closes.feature",
