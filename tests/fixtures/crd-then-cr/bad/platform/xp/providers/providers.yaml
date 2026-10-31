@@ -1,6 +1,0 @@
-apiVersion: pkg.crossplane.io/v1
-kind: Provider
-metadata:
-  name: example-provider-family-oci
-spec:
-  package: ghcr.io/example/provider-family-oci:v1.3.0

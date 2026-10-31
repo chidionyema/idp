@@ -1,9 +1,0 @@
-{
-  "capability": "storage",
-  "name": "assets",
-  "purpose": "fixture that MUST be refused: it speaks vocabulary that does not exist",
-  "size_gb": 5,
-  "provider": "aws",
-  "dns_zone": "example.com",
-  "region": "eu-west-2"
-}

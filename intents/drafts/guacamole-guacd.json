@@ -1,8 +1,0 @@
-{
-  "capability": "workload",
-  "component": "guacd",
-  "name": "guacd",
-  "port": 4822,
-  "purpose": "hydrated from the live tree; was guacamole/guacd",
-  "replicas": 2
-}
