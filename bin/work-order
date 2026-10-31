@@ -58,7 +58,7 @@ def make(args):
     order = dict(schema=SCHEMA, id=args.id, claim=args.claim, agent=args.agent,
                  base=git("rev-parse", args.base).stdout.strip(), paths=patch_paths(patch),
                  patch_sha256=sha(patch.encode()), checks=[c.split() for c in args.check],
-                 lane="lane/%s" % args.id, message=args.message or ("work order %s" % args.id))
+                 lane="lane/%s" % args.id, issuer=args.issuer or args.agent, message=args.message or ("work order %s" % args.id))
     (out / "order.json").write_text(json.dumps(order, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(out)
     return 0
@@ -80,7 +80,7 @@ def verify(order, patch_text, repo):
     for c in order.get("checks", []):
         if not (isinstance(c, list) and c and all(isinstance(x, str) for x in c) and c[0].startswith(ALLOWED_ARGV0)):
             why.append("check not an allowed argv: %r" % (c,))
-    for k in ("claim", "agent", "lane", "base"):
+    for k in ("claim", "agent", "lane", "base", "issuer"):
         if not order.get(k):
             why.append("missing %s" % k)
     r = git("apply", "--check", "-", cwd=repo, inp=patch_text, check=False)
@@ -132,7 +132,7 @@ def main(argv):
     m = sub.add_parser("make")
     m.add_argument("--id", required=True); m.add_argument("--claim", required=True); m.add_argument("--agent", required=True)
     m.add_argument("--base", required=True); m.add_argument("--head", required=True)
-    m.add_argument("--check", action="append", default=[]); m.add_argument("--out"); m.add_argument("--message")
+    m.add_argument("--issuer", default=None); m.add_argument("--check", action="append", default=[]); m.add_argument("--out"); m.add_argument("--message")
     r = sub.add_parser("run")
     r.add_argument("order_dir"); r.add_argument("--apply", action="store_true"); r.add_argument("--push", action="store_true")
     r.add_argument("--repo", default=".")

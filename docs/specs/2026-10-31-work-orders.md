@@ -104,3 +104,48 @@ Rules that make the split hold:
   to many runners at no model cost while the expensive tier stays few. Not yet enforced by a gate; the signing
   of orders by an issuer is proposed, not built.
 - Contractor note: I am an angel-class producer of orders for this estate, not a runner and not part of the fleet.
+
+## The flow as a machine, with feedback and the chain of command
+
+`catalog/intent-flow.json` is the whole flow as a state machine (vision, intent, discovery, spec, options, decided,
+queued, ordered, sealed, running, lane, landed, operating, closed, done, plus escalated, held, refused, abandoned).
+`bin/intent-flow check` judges it and `bin/intent-flow path vision done` prints the route with each gate and decider.
+`tests/test_intent_flow.py` (15 tests) proves it can fail: unreachable or dead-end states, a legion edge decided by a
+model or person, a missing failure path, a role cycle or second root, a legion that commands, and done reachable
+without the operating proof. My first draft let an escalation jump straight to a lane; the checker's shortest-path test
+found it, and escalation now returns to `decided`.
+
+### Done means operating, and the loop closes there
+
+Merged is not done. `landed` goes to `operating` only on a real production measurement, then `closed` (outcome graded
+by a collector that is not the executor, claim released, journal written), then `done` only when the estate_health
+entry for the capability is green. A red measurement after landing goes back to `ordered` as a corrective order.
+
+### Error correction, by cause and by level
+
+Every failure edge back to `ordered` carries cause classes (seal-digest-mismatch, patch-conflict, check-failed,
+lane-red, law-refused, production-red). Each cause has a correction at one of three levels: correct the order,
+correct the process, correct the decider. Three rules:
+1. A failure is classified before it is retried; "unknown" is never retried blindly.
+2. A reissue budget (3) per cause class; when it is spent, `running` goes to `escalated`.
+3. Two failures of one cause class inside 14 days means the process is wrong, not the order: add the gate, test or
+   probe that catches the class, in the same claim (J2 root cause).
+
+### The chain of command (a tree, one parent per role)
+
+founder, then the final angel (Argon), then coordinator angels (Gemini, Kimi, Claude as coordinator), then issuer
+angels (whoever built the order), then legion runners. The roles are classes; the names are the coordinators named in
+this engagement. Failure goes UP one rung at a time: a runner reports to the issuer that sealed its order and to nobody
+else. Correction comes DOWN: to a runner as a new sealed order, never advice; to an angel as a brief at claim-open.
+
+| Rung | Corrects | Escalates to | After |
+|---|---|---|---|
+| Legion runner | nothing | its issuer | the first failure, with a cause class |
+| Issuer angel | the order | coordinator angel | the reissue budget for one cause class |
+| Coordinator angel | the process | final angel | a repeated cause, or two issuers failing one class |
+| Final angel | the decider | founder | value-tradeoff, irreversible, novel, or a decider contradicted by graded outcomes |
+
+`work-order make` now records the `issuer` (defaults to the agent) so a failure has someone to go to.
+
+Not built: the writer that records a lesson per failure, the 14-day repeat detector, the signing of orders by an issuer,
+and any gate that makes an agent follow the chain. This is a model with a judge, not a running system.

@@ -1,0 +1,383 @@
+{
+  "schema_version": 1,
+  "what": "How intent flows from the founder's vision to done, as a state machine. States are the stages of docs/specs/2026-10-31-work-orders.md; each edge names its gate, its decider (machine/model/judgment) and the class that acts (angel or legion). Judged by bin/intent-flow check and tests/test_intent_flow.py. Done means operational (AGENTS.md section 3), never merged.",
+  "start": "vision",
+  "done": "done",
+  "states": {
+    "vision": {
+      "level": "Keter",
+      "class": "angel"
+    },
+    "intent": {
+      "level": "Keter",
+      "class": "angel"
+    },
+    "discovery": {
+      "level": "Chokhmah",
+      "class": "angel"
+    },
+    "spec": {
+      "level": "Binah",
+      "class": "angel"
+    },
+    "options": {
+      "level": "Chesed",
+      "class": "angel"
+    },
+    "decided": {
+      "level": "Tiferet",
+      "class": "angel"
+    },
+    "queued": {
+      "level": "Netzach",
+      "class": "angel"
+    },
+    "ordered": {
+      "level": "Hod",
+      "class": "angel"
+    },
+    "sealed": {
+      "level": "Yesod",
+      "class": "angel"
+    },
+    "running": {
+      "level": "Malkuth",
+      "class": "legion"
+    },
+    "lane": {
+      "level": "Malkuth",
+      "class": "legion"
+    },
+    "landed": {
+      "level": "Malkuth",
+      "class": "machine"
+    },
+    "operating": {
+      "level": "closing",
+      "class": "machine"
+    },
+    "closed": {
+      "level": "closing",
+      "class": "machine"
+    },
+    "done": {
+      "level": "done",
+      "class": "machine",
+      "terminal": true
+    },
+    "escalated": {
+      "level": "judgment",
+      "class": "founder"
+    },
+    "refused": {
+      "level": "law",
+      "class": "machine",
+      "terminal": true
+    },
+    "abandoned": {
+      "level": "founder",
+      "class": "founder",
+      "terminal": true
+    },
+    "held": {
+      "level": "Malkuth",
+      "class": "machine"
+    }
+  },
+  "edges": [
+    {
+      "from": "vision",
+      "to": "intent",
+      "gate": "one sentence with its source",
+      "decider": "judgment"
+    },
+    {
+      "from": "intent",
+      "to": "discovery",
+      "gate": "intent recorded; no duplicate layer exists (growmos query, rg)",
+      "decider": "machine"
+    },
+    {
+      "from": "discovery",
+      "to": "spec",
+      "gate": "evidence measured this run; unknowns named",
+      "decider": "machine"
+    },
+    {
+      "from": "spec",
+      "to": "options",
+      "gate": "BDD feature exists and fails first",
+      "decider": "machine"
+    },
+    {
+      "from": "options",
+      "to": "decided",
+      "gate": "bin/decision-frame returns PROCEED",
+      "decider": "model"
+    },
+    {
+      "from": "options",
+      "to": "escalated",
+      "gate": "decision-frame returns ESCALATE",
+      "decider": "machine"
+    },
+    {
+      "from": "options",
+      "to": "refused",
+      "gate": "decision-frame returns REFUSE (a law, or over the spend ceiling)",
+      "decider": "machine"
+    },
+    {
+      "from": "decided",
+      "to": "queued",
+      "gate": "claim open, paths free of overlap",
+      "decider": "machine"
+    },
+    {
+      "from": "queued",
+      "to": "ordered",
+      "gate": "patch built against a named base",
+      "decider": "model"
+    },
+    {
+      "from": "ordered",
+      "to": "sealed",
+      "gate": "digest recorded, paths declared, dry-run passes",
+      "decider": "machine"
+    },
+    {
+      "from": "sealed",
+      "to": "running",
+      "gate": "order landed or author's claim; runner verifies the seal",
+      "decider": "machine"
+    },
+    {
+      "from": "running",
+      "to": "lane",
+      "gate": "checks pass; commit through hooks; lane pushed",
+      "decider": "machine"
+    },
+    {
+      "from": "running",
+      "to": "ordered",
+      "gate": "seal, apply or check failed: back to an angel to issue a new order",
+      "decider": "machine"
+    },
+    {
+      "from": "lane",
+      "to": "landed",
+      "gate": "Greenlane proves green on top of main",
+      "decider": "machine"
+    },
+    {
+      "from": "lane",
+      "to": "ordered",
+      "gate": "Greenlane red or conflicting: reason read from the head status, reissue",
+      "decider": "machine"
+    },
+    {
+      "from": "landed",
+      "to": "operating",
+      "gate": "a real production measurement on the founder's surface",
+      "decider": "machine"
+    },
+    {
+      "from": "operating",
+      "to": "closed",
+      "gate": "outcome graded by a collector that is not the executor; claim released; journal written",
+      "decider": "machine"
+    },
+    {
+      "from": "closed",
+      "to": "done",
+      "gate": "estate_health entry for the capability is green",
+      "decider": "machine"
+    },
+    {
+      "from": "escalated",
+      "to": "decided",
+      "gate": "founder answers the one decision message; the answer is recorded as the decision",
+      "decider": "judgment"
+    },
+    {
+      "from": "lane",
+      "to": "held",
+      "gate": "founder-surface path: the lane waits for the founder door",
+      "decider": "machine"
+    },
+    {
+      "from": "held",
+      "to": "lane",
+      "gate": "founder approves the held lane",
+      "decider": "judgment"
+    },
+    {
+      "from": "held",
+      "to": "abandoned",
+      "gate": "founder declines; timeout leaves status quo, never approves",
+      "decider": "judgment"
+    },
+    {
+      "from": "running",
+      "to": "escalated",
+      "gate": "reissue budget spent: the same order class failed too many times",
+      "decider": "machine"
+    },
+    {
+      "from": "operating",
+      "to": "ordered",
+      "gate": "landed but the production measurement is red: reissue a corrective order",
+      "decider": "machine"
+    }
+  ],
+  "feedback": {
+    "what": "Error correction built into the flow. Every failure edge carries a cause class; each class has a correction at the right level, a record, and an escalation when the correction does not hold.",
+    "reissue_budget": 3,
+    "levels": [
+      "correct the order",
+      "correct the process",
+      "correct the decider"
+    ],
+    "causes": {
+      "seal-digest-mismatch": {
+        "level": "correct the order",
+        "correction": "rebuild the order from the source commit; never edit the patch",
+        "record": "lesson"
+      },
+      "patch-conflict": {
+        "level": "correct the order",
+        "correction": "rebase the work onto current main and rebuild the order",
+        "record": "lesson"
+      },
+      "check-failed": {
+        "level": "correct the order",
+        "correction": "angel reads the failing check output, fixes the work, reissues",
+        "record": "lesson"
+      },
+      "lane-red": {
+        "level": "correct the order",
+        "correction": "read the greenlane commit status on the lane head, fix, reissue",
+        "record": "lesson"
+      },
+      "law-refused": {
+        "level": "correct the process",
+        "correction": "fix the plan so it does not need the forbidden step; never route around the door",
+        "record": "lesson"
+      },
+      "production-red": {
+        "level": "correct the order",
+        "correction": "issue a corrective order against the measured failure",
+        "record": "lesson"
+      },
+      "repeated-cause": {
+        "level": "correct the process",
+        "correction": "two failures of one cause class in 14 days: add the gate, test or probe that catches the class (J2), in the same claim",
+        "record": "decision-record"
+      },
+      "wrong-decision": {
+        "level": "correct the decider",
+        "correction": "a graded outcome contradicts a decision: feed it to the decision record; the confidence floor is revisited only after enough graded outcomes",
+        "record": "decision-record"
+      },
+      "unknown": {
+        "level": "correct the process",
+        "correction": "classify before retrying; an unclassified failure is not retried blindly",
+        "record": "lesson"
+      }
+    },
+    "edge_causes": {
+      "running->ordered": [
+        "seal-digest-mismatch",
+        "patch-conflict",
+        "check-failed"
+      ],
+      "lane->ordered": [
+        "lane-red",
+        "law-refused"
+      ],
+      "operating->ordered": [
+        "production-red"
+      ]
+    }
+  },
+  "chain": {
+    "what": "The tree of command. Each role has one parent. A failure goes UP one rung at a time, to the issuer that sealed the order; a correction comes back DOWN as a new order (to legion) or a brief (to angels). Roles are classes, not names; the names in 'examples' are the coordinators the founder has named in this engagement.",
+    "roles": {
+      "founder": {
+        "class": "founder",
+        "parent": null,
+        "examples": [
+          "founder"
+        ]
+      },
+      "final-angel": {
+        "class": "angel",
+        "parent": "founder",
+        "examples": [
+          "Argon"
+        ]
+      },
+      "coordinator-angel": {
+        "class": "angel",
+        "parent": "final-angel",
+        "examples": [
+          "Gemini",
+          "Kimi",
+          "Claude (coordinator)"
+        ]
+      },
+      "issuer-angel": {
+        "class": "angel",
+        "parent": "coordinator-angel",
+        "examples": [
+          "the model or person that built the order"
+        ]
+      },
+      "legion-runner": {
+        "class": "legion",
+        "parent": "issuer-angel",
+        "examples": [
+          "work-order run instance",
+          "the always-on MiniMax tick"
+        ]
+      }
+    },
+    "routing": {
+      "legion-runner": {
+        "reports_to": "issuer-angel",
+        "may": [
+          "verify",
+          "apply",
+          "check",
+          "push lane",
+          "report failure with cause class"
+        ],
+        "may_not": [
+          "decide",
+          "widen scope",
+          "issue an order",
+          "escalate past its issuer"
+        ]
+      },
+      "issuer-angel": {
+        "corrects": "correct the order",
+        "escalates_to": "coordinator-angel",
+        "after": "reissue_budget failures of one cause class"
+      },
+      "coordinator-angel": {
+        "corrects": "correct the process",
+        "escalates_to": "final-angel",
+        "after": "a repeated cause or two issuers failing the same class"
+      },
+      "final-angel": {
+        "corrects": "correct the decider",
+        "escalates_to": "founder",
+        "after": "value-tradeoff, irreversible, novel, or a decider contradicted by graded outcomes"
+      }
+    },
+    "downward": {
+      "to_legion": "a new sealed order, never advice",
+      "to_angels": "a brief carrying the lesson at claim-open"
+    }
+  }
+}

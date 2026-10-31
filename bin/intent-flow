@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""intent-flow: judge the vision-to-done state machine in catalog/intent-flow.json.
+
+  intent-flow check          exit 0 if the machine is sound, 2 and the reasons if not
+  intent-flow path FROM TO   shortest path of states, one gate per hop
+"""
+from __future__ import annotations
+
+import json
+import sys
+from collections import deque
+from pathlib import Path
+
+CAT = Path(__file__).resolve().parents[1] / "catalog" / "intent-flow.json"
+
+
+def load(path=CAT):
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def problems(m):
+    s, e = m["states"], m["edges"]
+    out = []
+    for x in e:
+        for k in ("from", "to"):
+            if x[k] not in s:
+                out.append("edge names unknown state %r" % x[k])
+        if x.get("decider") not in ("machine", "model", "judgment") or not x.get("gate"):
+            out.append("edge %s->%s needs a gate and a decider" % (x["from"], x["to"]))
+    if out:
+        return out
+    adj = {k: [] for k in s}
+    for x in e:
+        adj[x["from"]].append(x["to"])
+    seen, q = {m["start"]}, deque([m["start"]])
+    while q:
+        for n in adj[q.popleft()]:
+            if n not in seen:
+                seen.add(n)
+                q.append(n)
+    out += ["unreachable from start: %s" % k for k in s if k not in seen]
+    for k, v in s.items():
+        if not v.get("terminal") and not adj[k]:
+            out.append("dead end (not terminal): %s" % k)
+    # done only through the operating proof, never straight from merge
+    into_done = [x["from"] for x in e if x["to"] == m["done"]]
+    if into_done != ["closed"] or [x["from"] for x in e if x["to"] == "closed"] != ["operating"]:
+        out.append("done must be reachable only via operating then closed")
+    if any(x["from"] == "landed" and x["to"] in ("closed", m["done"]) for x in e):
+        out.append("landed must not skip the operating proof")
+    # a legion state never decides: every edge out of a legion state is machine-decided
+    for x in e:
+        if s[x["from"]]["class"] == "legion" and x["decider"] != "machine":
+            out.append("legion edge %s->%s must be machine-decided" % (x["from"], x["to"]))
+    # every non-terminal state before landing has a failure or escalation path back or out
+    for k in ("running", "lane"):
+        if not any(x["from"] == k and x["to"] in ("ordered", "escalated") for x in e):
+            out.append("%s has no failure path" % k)
+    fb = m.get("feedback", {})
+    causes = fb.get("causes", {})
+    if not fb.get("reissue_budget"):
+        out.append("feedback needs a reissue_budget")
+    for ek, cs in fb.get("edge_causes", {}).items():
+        a, b = ek.split("->")
+        if not any(x["from"] == a and x["to"] == b for x in e):
+            out.append("feedback names an edge that does not exist: %s" % ek)
+        for c in cs:
+            if c not in causes:
+                out.append("cause %r on %s has no correction" % (c, ek))
+    for x in e:
+        if x["to"] == "ordered" and x["from"] != "queued" and "%s->ordered" % x["from"] not in fb.get("edge_causes", {}):
+            out.append("failure edge %s->ordered has no cause classes" % x["from"])
+    for c, v in causes.items():
+        if not (v.get("level") in fb.get("levels", []) and v.get("correction") and v.get("record")):
+            out.append("cause %r needs a level, a correction and a record" % c)
+    if not any(x["from"] == "running" and x["to"] == "escalated" for x in e):
+        out.append("a spent reissue budget must escalate")
+    ch = m.get("chain", {})
+    roles = ch.get("roles", {})
+    roots = [k for k, v in roles.items() if v.get("parent") is None]
+    if roots != ["founder"]:
+        out.append("the chain must have exactly one root, the founder")
+    for k, v in roles.items():
+        seen_up, cur = set(), k
+        while cur is not None and cur not in seen_up:
+            seen_up.add(cur)
+            cur = roles.get(cur, {}).get("parent") if cur in roles else None
+        if cur is not None or "founder" not in seen_up:
+            out.append("role %s does not reach the founder without a cycle" % k)
+    for k, v in ch.get("routing", {}).items():
+        if k not in roles:
+            out.append("routing names unknown role %s" % k)
+        tgt = v.get("reports_to") or v.get("escalates_to")
+        if tgt and roles.get(k, {}).get("parent") != tgt:
+            out.append("%s reports to %s, which is not its parent" % (k, tgt))
+    lr = ch.get("routing", {}).get("legion-runner", {})
+    if "decide" not in lr.get("may_not", []) or "issue an order" not in lr.get("may_not", []):
+        out.append("legion must be forbidden to decide and to issue orders")
+    if any(r["class"] == "legion" and any(c["parent"] == k for c in roles.values()) for k, r in roles.items()):
+        out.append("a legion role must be a leaf: it commands nobody")
+    return out
+
+
+def path(m, a, b):
+    adj = {}
+    for x in m["edges"]:
+        adj.setdefault(x["from"], []).append(x)
+    prev, q = {a: None}, deque([a])
+    while q:
+        c = q.popleft()
+        if c == b:
+            break
+        for x in adj.get(c, []):
+            if x["to"] not in prev:
+                prev[x["to"]] = x
+                q.append(x["to"])
+    if b not in prev:
+        return None
+    hops, c = [], b
+    while prev[c]:
+        hops.append(prev[c]); c = prev[c]["from"]
+    return hops[::-1]
+
+
+def main(argv):
+    m = load()
+    if len(argv) >= 2 and argv[1] == "check":
+        p = problems(m)
+        print(json.dumps({"sound": not p, "problems": p}, indent=2))
+        return 2 if p else 0
+    if len(argv) == 4 and argv[1] == "path":
+        h = path(m, argv[2], argv[3])
+        if h is None:
+            print("no path"); return 2
+        for x in h:
+            print("%-10s -> %-10s [%s] %s" % (x["from"], x["to"], x["decider"], x["gate"]))
+        return 0
+    sys.stderr.write(__doc__)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
