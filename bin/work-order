@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""work-order: do the thinking once, let a zero-cost runner do the doing.
+
+A work order is a finished piece of work: the exact patch, the claim it lands under, the base it was
+made against, and the checks that prove it. A runner needs no model and no discovery: it verifies the
+order, applies the patch, runs the checks and pushes the lane. A model is only for an order that fails,
+and then only on a free lane. Spec: docs/specs/2026-10-31-work-orders.md.
+
+  work-order make  --id ID --claim OWNER/REPO#N --agent NAME --base REV --head REV [--check "argv..."]... [--out DIR]
+  work-order run   ORDER_DIR [--apply] [--push]      (default: dry run, nothing changes)
+
+Refusals (exit 2): digest mismatch, patch does not apply to this checkout, path outside the declared
+paths, a path under .github/ or .githooks/, a check that is not an allowed argv. Exit 3: a check failed.
+Runs no shell, holds no credential; the push uses whatever git auth the runner already has.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+FORBIDDEN = (".github/", ".githooks/")
+ALLOWED_ARGV0 = ("python3", "pytest", "bin/", "./bin/")
+SCHEMA = 1
+
+
+def git(*a, cwd=None, inp=None, check=True):
+    r = subprocess.run(["git", *a], cwd=cwd, input=inp, capture_output=True, text=True)
+    if check and r.returncode:
+        raise RuntimeError("git %s: %s" % (" ".join(a), r.stderr.strip()))
+    return r
+
+
+def sha(b: bytes) -> str:
+    return hashlib.sha256(b).hexdigest()
+
+
+def patch_paths(patch: str):
+    out = set()
+    for ln in patch.splitlines():
+        if ln.startswith("diff --git "):
+            a, b = ln[len("diff --git "):].split(" b/", 1)
+            out.update({a[2:] if a.startswith("a/") else a, b})
+    return sorted(out)
+
+
+def make(args):
+    patch = git("diff", "--binary", args.base, args.head).stdout
+    if not patch:
+        sys.stderr.write("work-order: empty patch\n")
+        return 1
+    out = Path(args.out or "work-orders/%s" % args.id)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "change.patch").write_text(patch, encoding="utf-8")
+    order = dict(schema=SCHEMA, id=args.id, claim=args.claim, agent=args.agent,
+                 base=git("rev-parse", args.base).stdout.strip(), paths=patch_paths(patch),
+                 patch_sha256=sha(patch.encode()), checks=[c.split() for c in args.check],
+                 lane="lane/%s" % args.id, message=args.message or ("work order %s" % args.id))
+    (out / "order.json").write_text(json.dumps(order, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(out)
+    return 0
+
+
+def verify(order, patch_text, repo):
+    why = []
+    if order.get("schema") != SCHEMA:
+        why.append("unknown schema")
+    if sha(patch_text.encode()) != order.get("patch_sha256"):
+        why.append("patch digest does not match the order")
+    paths = patch_paths(patch_text)
+    extra = [p for p in paths if p not in order.get("paths", [])]
+    if extra:
+        why.append("paths outside the order: %s" % extra)
+    bad = [p for p in paths if p.startswith(FORBIDDEN)]
+    if bad:
+        why.append("forbidden paths: %s" % bad)
+    for c in order.get("checks", []):
+        if not (isinstance(c, list) and c and all(isinstance(x, str) for x in c) and c[0].startswith(ALLOWED_ARGV0)):
+            why.append("check not an allowed argv: %r" % (c,))
+    for k in ("claim", "agent", "lane", "base"):
+        if not order.get(k):
+            why.append("missing %s" % k)
+    r = git("apply", "--check", "-", cwd=repo, inp=patch_text, check=False)
+    if r.returncode:
+        why.append("patch does not apply to this checkout: %s" % r.stderr.strip()[:200])
+    return why
+
+
+def run(args):
+    d = Path(args.order_dir)
+    repo = Path(args.repo).resolve()
+    order = json.loads((d / "order.json").read_text(encoding="utf-8"))
+    patch = (d / "change.patch").read_text(encoding="utf-8")
+    why = verify(order, patch, repo)
+    if why:
+        print(json.dumps({"id": order.get("id"), "result": "REFUSED", "why": why}, indent=2))
+        return 2
+    if not args.apply:
+        print(json.dumps({"id": order["id"], "result": "DRY_RUN_OK", "paths": order["paths"], "checks": order["checks"]}, indent=2))
+        return 0
+    git("apply", "-", cwd=repo, inp=patch)
+    for c in order["checks"]:
+        r = subprocess.run(c, cwd=repo)
+        if r.returncode:
+            git("checkout", "--", ".", cwd=repo)
+            git("clean", "-fdq", cwd=repo)
+            print(json.dumps({"id": order["id"], "result": "CHECK_FAILED", "check": c, "exit": r.returncode}))
+            return 3
+    git("checkout", "-B", order["lane"], cwd=repo)
+    git("add", "-A", cwd=repo)
+    hooks = ["-c", "core.hooksPath=.githooks"] if (repo / ".githooks").is_dir() else []
+    msg = "%s\n\nClaim: %s\nAgent: %s\n" % (order["message"], order["claim"], order["agent"])
+    r = subprocess.run(["git", *hooks, "commit", "-q", "-m", msg], cwd=repo, capture_output=True, text=True)
+    if r.returncode:
+        print(json.dumps({"id": order["id"], "result": "COMMIT_REFUSED", "why": (r.stdout + r.stderr).strip()[-400:]}))
+        return 3
+    head = git("rev-parse", "HEAD", cwd=repo).stdout.strip()
+    pushed = False
+    if args.push:
+        git("push", "origin", "%s:refs/heads/%s" % (order["lane"], order["lane"]), cwd=repo)
+        pushed = True
+    print(json.dumps({"id": order["id"], "result": "DONE", "lane": order["lane"], "head": head, "pushed": pushed}))
+    return 0
+
+
+def main(argv):
+    p = argparse.ArgumentParser(prog="work-order")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    m = sub.add_parser("make")
+    m.add_argument("--id", required=True); m.add_argument("--claim", required=True); m.add_argument("--agent", required=True)
+    m.add_argument("--base", required=True); m.add_argument("--head", required=True)
+    m.add_argument("--check", action="append", default=[]); m.add_argument("--out"); m.add_argument("--message")
+    r = sub.add_parser("run")
+    r.add_argument("order_dir"); r.add_argument("--apply", action="store_true"); r.add_argument("--push", action="store_true")
+    r.add_argument("--repo", default=".")
+    a = p.parse_args(argv[1:])
+    try:
+        return make(a) if a.cmd == "make" else run(a)
+    except (RuntimeError, OSError, ValueError) as e:
+        sys.stderr.write("work-order: %s\n" % e)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
