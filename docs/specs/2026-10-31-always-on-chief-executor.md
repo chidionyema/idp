@@ -40,3 +40,10 @@ Whether a lane lands: machine (Greenlane). Whether a founder-surface lane lands:
   Nothing in this document has been dispatched. Proof will be: one scheduled tick that opens a claim and a lane, and the
   Greenlane's verdict on that lane's head.
 - M2.7 reads 204,800 tokens (router config); the task packet must fit, which the queue must enforce.
+
+## Spend ceiling (founder, 2026-10-31)
+
+A paid infrastructure lane for redundancy off the Mac is capped at $25 a month in total unless a compelling
+reason is written beside the measured cost. One small server (about EUR 5.5 to 6 a month, one third-party
+source, not Hetzner's own page) fits with room to spare. Free-tier rungs come first (ADR 0034). The estate
+contract of $0 to $150 a month still applies above this.
