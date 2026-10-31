@@ -65,7 +65,12 @@ def classify(cs, spec):
     for f in files:
         d = yaml.safe_load(open(f)) or {}
         projects[d.get("name") or os.path.basename(os.path.dirname(f))] = f
-    foreign = [expand(x["config_prefix"]) for x in spec.get("foreign", [])]
+    # Both sides of this comparison are resolved the same way. The container's config path is
+    # compared after os.path.realpath(); the foreign prefix was only expanded, so a checkout
+    # reached through a symlink (on this laptop /tmp is a symlink to /private/tmp, and every
+    # agent's worktree lives under /tmp) read as two different directories and a legitimate
+    # foreign project was called rogue -- which --fix would then remove.
+    foreign = [os.path.realpath(expand(x["config_prefix"])) for x in spec.get("foreign", [])]
     prefixes = [x["prefix"] for x in spec.get("name_prefixes", [])]
     findings = []
     for c in cs:
@@ -84,7 +89,7 @@ def classify(cs, spec):
                 continue
             findings.append(("config-path", c, f"runs from {c['config']} not {projects[c['project']]}"))
             continue
-        if cfgs and all(cf.startswith(IDP + os.sep) for cf in cfgs):
+        if cfgs and all(cf.startswith(os.path.realpath(IDP) + os.sep) for cf in cfgs):
             findings.append(("stale", c, f"compose file {c['config']} is not in the manifest"))
             continue
         findings.append(("rogue", c, "no compose file, foreign prefix or name prefix owns it"))
