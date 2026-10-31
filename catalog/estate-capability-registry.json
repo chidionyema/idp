@@ -49033,8 +49033,11 @@
           "--expect-landed",
           "--is-ancestor",
           "--json",
+          "--name-only",
           "--no-tags",
-          "--repo"
+          "--quiet",
+          "--repo",
+          "--verify"
         ],
         "outputs": [
           "stdout",

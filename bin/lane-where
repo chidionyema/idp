@@ -23,6 +23,8 @@ is PENDING, in one call instead of twelve.
 READS (nothing else, nothing written):
   git ls-remote   the branch on origin and main's current sha
   git merge-base --is-ancestor   is the branch head already an ancestor of origin/main
+  git cherry      does main already hold every commit of the lane under another sha (patch-id)
+  git diff/rev-parse             does main hold the lane's own content, path by path
   gh api commits/<sha>/status    the `greenlane` commit status the lane puts on the head
   gh api commits/<sha>/pulls     the pull request the lane raised, if it raised one
 
@@ -58,6 +60,46 @@ def run(argv: list[str], timeout: float = 30.0) -> tuple[int, str]:
         return p.returncode, (p.stdout or "") + (p.stderr or "")
     except (OSError, subprocess.TimeoutExpired) as exc:
         return 127, f"{type(exc).__name__}: {exc}"
+
+
+def landed_by_content(head: str) -> tuple[bool, str | None]:
+    """Is the lane's work in main -- judged by CONTENT, never by a subject line?
+
+    Two content proofs, in order:
+
+      1. git's own patch-id equivalence (`git cherry`): every commit of the lane already exists
+         in main under a different sha. That is the shape a squash landing of ONE commit takes.
+      2. the lane's own content, path by path: for every path the lane changed, main holds the
+         same blob the lane left behind. That is the shape a squash landing of SEVERAL commits
+         takes, where no single commit's patch-id survives the squash.
+
+    WHY NOT THE SUBJECT. Measured 2026-10-31: two different commits -- one landed, one not --
+    carried the same subject, "chore(registry): regenerate the capability witness". The old
+    fallback matched the subject and answered LANDED for a lane whose work was not in main at
+    all: a false "landed" is the expensive answer, because it tells an agent to stop working on
+    something that never landed. The subject is still recorded in the receipt as a hint, and it
+    is never a verdict.
+    """
+    rc, out = run(["git", "cherry", "origin/main", head])
+    if rc == 0 and not [l for l in out.splitlines() if l.startswith("+")]:
+        return True, "patch-id: every commit of the lane is already in main under another sha"
+
+    rc, mb = run(["git", "merge-base", head, "origin/main"])
+    base = mb.strip()
+    if rc != 0 or not base:
+        return False, None
+    rc, paths = run(["git", "diff", "--name-only", base, head])
+    if rc != 0:
+        return False, None
+    names = [p for p in paths.splitlines() if p.strip()]
+    for path in names:
+        # --verify --quiet prints nothing and fails when the path is absent in that tree, so an
+        # absent path on both sides compares equal and a missing path on one side does not.
+        lane = run(["git", "rev-parse", "--verify", "--quiet", f"{head}:{path}"])[1].strip()
+        main = run(["git", "rev-parse", "--verify", "--quiet", f"origin/main:{path}"])[1].strip()
+        if lane != main:
+            return False, None
+    return True, f"content: main holds the lane's version of all {len(names)} path(s) it changed"
 
 
 def gh_json(path: str) -> dict | list | None:
@@ -115,37 +157,53 @@ def main() -> int:
     # `git fetch` of just these two refs keeps the ancestry cheap; the objects are usually present.
     run(["git", "fetch", "-q", "--no-tags", "origin", f"refs/heads/{branch}:refs/remotes/origin/{branch}",
          "refs/heads/main:refs/remotes/origin/main"])
-    rc, _ = run(["git", "merge-base", "--is-ancestor", head, f"origin/main"])
-    landed = head == main_sha or rc == 0
-    # SQUASH-LANDING MAKES ANCESTRY LIE. The greenlane lands a lane by squash, so the lane's head
-    # commit is never an ancestor of main even though its content is -- measured 2026-10-24: this
-    # door answered "NOT in main" for a change that had landed minutes earlier as #7039, which is
-    # precisely the answer that makes an agent redo work and raise a second, conflicting PR. The
-    # subject line survives a squash (it becomes the squash commit's subject), so the second test is
-    # the subject shared by the lane head and some commit on main.
-    if not landed:
-        subject = run(["git", "log", "-1", "--format=%s", head])[1].strip()
-        if subject:
-            seen = run(["git", "log", "origin/main", "-F", f"--grep={subject}",
-                        "--format=%h", "-1"])[1].strip()
-            if seen:
-                landed = True
-                receipt["landed_by"] = f"subject match at {seen} (squash-landed; head is not an ancestor)"
-    receipt["landed"] = landed
-    receipt.setdefault("landed_by", "ancestry" if landed else None)
-
+    # The engine's own record of the landing, read BEFORE the verdict: the `greenlane` status it
+    # puts on the lane head says "landed in bNNNN" in words, and it is the only signal that names
+    # the batch that landed the lane.
     status = gh_json(f"repos/{a.repo}/commits/{head}/status")
     st_state, st_url, st_ctx = "absent", None, None
     failing = []
+    greenlane_landed = None
     if isinstance(status, dict):
         st_state = status.get("state") or "absent"
         for s in status.get("statuses") or []:
+            if s.get("context") == "greenlane" and s.get("state") == "success":
+                desc = (s.get("description") or "").strip()
+                if desc.startswith("landed in"):
+                    greenlane_landed = desc
             if s.get("state") in ("failure", "error"):
                 failing.append({"context": s.get("context"), "url": s.get("target_url"),
                                 "description": s.get("description")})
         if failing:
             st_ctx, st_url = failing[0]["context"], failing[0]["url"]
     receipt.update(status=st_state, status_url=st_url, status_context=st_ctx, failing=failing)
+
+    rc, _ = run(["git", "merge-base", "--is-ancestor", head, f"origin/main"])
+    landed = head == main_sha or rc == 0
+    landed_by = "ancestry" if landed else None
+    # SQUASH-LANDING MAKES ANCESTRY LIE. The greenlane lands a lane by squash, so the lane's head
+    # commit is never an ancestor of main even though its content is -- measured 2026-10-24: this
+    # door answered "NOT in main" for a change that had landed minutes earlier as #7039, which is
+    # precisely the answer that makes an agent redo work and raise a second, conflicting PR.
+    # So a squash landing is recognised -- by the engine's own record, then by content -- and a
+    # subject line is never a proof (see landed_by_content for the measurement).
+    if not landed and greenlane_landed:
+        landed = True
+        landed_by = f"the greenlane landed it: {greenlane_landed}"
+    if not landed:
+        landed, content_by = landed_by_content(head)
+        landed_by = content_by
+    if not landed:
+        subject = run(["git", "log", "-1", "--format=%s", head])[1].strip()
+        if subject:
+            seen = run(["git", "log", "origin/main", "-F", f"--grep={subject}",
+                        "--format=%h", "-1"])[1].strip()
+            if seen:
+                # A hint, never a verdict: the same subject has been carried by a landed commit
+                # and by one that never landed.
+                receipt["subject_seen_at"] = seen
+    receipt["landed"] = landed
+    receipt["landed_by"] = landed_by
 
     prs = gh_json(f"repos/{a.repo}/commits/{head}/pulls")
     pr = None
@@ -165,7 +223,7 @@ def main() -> int:
         print(json.dumps(receipt, indent=1))
         return 1 if (a.expect_landed and not landed) else code
     if landed:
-        print(f"LANDED  lane-where  {branch}  {head[:12]} is in main ({main_sha[:12]})")
+        print(f"LANDED  lane-where  {branch}  {head[:12]} is in main ({main_sha[:12]}) -- {landed_by}")
         if pr:
             print(f"        pull request #{pr['number']} {pr['state']} merged {pr['merged'] or '(not merged)'}")
     elif verdict == "RED":
