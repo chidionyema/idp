@@ -349,3 +349,73 @@ def test_qa_and_integration_failures_have_cause_classes_and_corrections():
     }
     assert ec["integrated->ordered"] == ["integration-failed"]
     assert all(c in M["feedback"]["causes"] for cs in ec.values() for c in cs)
+
+
+def test_abyss_finds_the_known_voids_and_ranks_nearest_first():
+    r = f.abyss(M)
+    assert r["verdict"] == "ABYSS" and r["count"] > 0
+    depths = [v["depth"] for v in r["voids"]]
+    assert depths == sorted(depths)
+    assert any(v["edge"] == "ordered->staged" for v in r["voids"])
+
+
+def test_removing_a_mechanism_creates_a_void_and_a_missing_file_does_too():
+    m = copy.deepcopy(M)
+    for x in m["edges"]:
+        if (x["from"], x["to"]) == ("queued", "ordered"):
+            x["mechanism"] = []
+    assert any(
+        v["edge"] == "queued->ordered" and v["kind"] == "no-mechanism"
+        for v in f.abyss(m)["voids"]
+    )
+    m2 = copy.deepcopy(M)
+    for x in m2["edges"]:
+        if (x["from"], x["to"]) == ("queued", "ordered"):
+            x["mechanism"] = ["bin/not-a-file"]
+    assert any("does not exist" in v["why"] for v in f.abyss(m2)["voids"])
+
+
+def test_a_judgment_with_no_register_entry_is_a_black_box():
+    m = copy.deepcopy(M)
+    for x in m["edges"]:
+        if (x["from"], x["to"]) == ("held", "lane"):
+            x["register_id"] = "dec:invented"
+    assert any(v["kind"] == "black-box" for v in f.abyss(m)["voids"])
+
+
+def test_a_cycle_with_no_exit_is_an_open_loop_and_a_clean_model_has_no_abyss():
+    m = {
+        "start": "a",
+        "done": "z",
+        "states": {"a": {}, "b": {}, "z": {}},
+        "edges": [
+            {
+                "from": "a",
+                "to": "b",
+                "decider": "machine",
+                "gate": "g",
+                "mechanism": ["bin/intent-flow"],
+                "event": "e1",
+            },
+            {
+                "from": "b",
+                "to": "a",
+                "decider": "machine",
+                "gate": "g",
+                "mechanism": ["bin/intent-flow"],
+                "event": "e2",
+            },
+        ],
+    }
+    assert any(v["kind"] == "open-loop" for v in f.abyss(m)["voids"])
+    m["edges"].append(
+        {
+            "from": "b",
+            "to": "z",
+            "decider": "machine",
+            "gate": "g",
+            "mechanism": ["bin/intent-flow"],
+            "event": "e3",
+        }
+    )
+    assert f.abyss(m)["verdict"] == "NO_ABYSS"

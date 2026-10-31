@@ -3,6 +3,7 @@
 
   intent-flow check          exit 0 if the machine is sound, 2 and the reasons if not
   intent-flow path FROM TO   shortest path of states, one gate per hop
+  intent-flow abyss          list every void between vision and done; exit 5 while any exist, 0 when none
   intent-flow outcome FILE --id=ID --result=landed|operating|failed|breach --graded-by=WHO
   intent-flow report FILE    outcome by choice: per layer and picked/chosen, BLIND until enough graded
   intent-flow drift FILE     compare older vs newer sessions: STABLE, CHANGED or BLIND (too few to say)
@@ -191,6 +192,75 @@ def path(m, a, b):
     return hops[::-1]
 
 
+def abyss(m, root=None):
+    """Find the voids, algorithmically: everything between the founder's vision and done that no mechanism backs.
+
+    A void is one of: an edge with no existing mechanism (nothing detects its event or takes the step); a
+    mechanism declared but incomplete (a known gap); a judgment edge with no entry in the decision register
+    (a black box); an edge that must emit evidence with no collector among its mechanisms; a cycle among the
+    states with no exit to escalation. Ranked by distance from the vision (earlier voids block more of the
+    flow). Zero voids is the goal; a void is never hidden by rewording."""
+    root = root or CAT.parent.parent
+    s, e = m["states"], m["edges"]
+    dist = {m["start"]: 0}
+    q = deque([m["start"]])
+    adj = {}
+    for x in e:
+        adj.setdefault(x["from"], []).append(x["to"])
+    while q:
+        c = q.popleft()
+        for n in adj.get(c, []):
+            if n not in dist:
+                dist[n] = dist[c] + 1
+                q.append(n)
+    try:
+        reg = {d["id"] for d in json.loads((root / "policy" / "agent-decisions.json").read_text(encoding="utf-8"))["decisions"]}
+    except (OSError, ValueError, KeyError):
+        reg = set()
+    voids = []
+
+    def add(kind, x, why):
+        voids.append(dict(kind=kind, edge="%s->%s" % (x["from"], x["to"]), event=x.get("event"), depth=dist.get(x["from"], 99), why=why))
+
+    for x in e:
+        mech = x.get("mechanism")
+        if x["decider"] == "judgment":
+            if x.get("register_id") not in reg:
+                add("black-box", x, "judgment with no decision-register entry: %s" % x.get("register_id"))
+            continue
+        if not mech:
+            add("no-mechanism", x, "nothing detects %r or takes this step" % x.get("event"))
+        else:
+            for pth in mech:
+                if not (root / pth).exists():
+                    add("no-mechanism", x, "declared mechanism %s does not exist" % pth)
+        for g in x.get("known_gaps", []):
+            add("incomplete", x, g)
+        if x.get("evidence") and not mech:
+            add("no-collector", x, "evidence %r has no collector" % x["evidence"])
+    # a cycle with no way out to escalation is an open loop
+    escal = {"escalated", "abandoned", "refused", m["done"]}
+    nodes = list(s)
+    reach = {n: set() for n in nodes}
+    for n in nodes:
+        stack, seen = list(adj.get(n, [])), set()
+        while stack:
+            c = stack.pop()
+            if c in seen:
+                continue
+            seen.add(c)
+            stack.extend(adj.get(c, []))
+        reach[n] = seen
+    for n in nodes:
+        if n in reach[n] and not (reach[n] & escal):
+            voids.append(dict(kind="open-loop", edge=n, event=None, depth=dist.get(n, 99), why="a cycle through %s with no exit to escalation or done" % n))
+    voids.sort(key=lambda v: (v["depth"], v["kind"], v["edge"]))
+    by = {}
+    for v in voids:
+        by[v["kind"]] = by.get(v["kind"], 0) + 1
+    return dict(voids=voids, count=len(voids), by_kind=by, edges=len(e), edges_with_mechanism=sum(1 for x in e if x.get("mechanism")), verdict="ABYSS" if voids else "NO_ABYSS")
+
+
 def pick(m, sig, choose=None):
     """One primary layer for a session: by rule from the signals, or an explicit choice that must be allowed."""
     sel = m["dna"]["selection"]
@@ -329,6 +399,10 @@ def main(argv):
             r["then_check_in_order"] = [x for x in m["dna"]["order_of_application"] if x != r["layer"]]
         print(json.dumps(r, indent=2))
         return 0 if r["layer"] else 2
+    if len(argv) >= 2 and argv[1] == "abyss":
+        r = abyss(m)
+        print(json.dumps(r, indent=2))
+        return 0 if not r["voids"] else 5
     if len(argv) >= 3 and argv[1] == "report":
         rows = [json.loads(ln) for ln in Path(argv[2]).read_text(encoding="utf-8").splitlines() if ln.strip()]
         print(json.dumps(report(rows), indent=2))

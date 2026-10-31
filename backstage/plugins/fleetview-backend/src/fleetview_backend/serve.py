@@ -492,6 +492,11 @@ def build_app() -> FastAPI:
         body, status = routes.graph_envelope()
         return JSONResponse(content=body, status_code=status)
 
+    @app.get(routes.TOPOLOGY_PATH)
+    def topology():
+        body, status = routes.topology_envelope()
+        return JSONResponse(content=body, status_code=status)
+
     @app.get(routes.MEMORY_PATH)
     def memory():
         body, status = routes.memory_envelope()

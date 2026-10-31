@@ -110,6 +110,10 @@
         "tests/behavioral",
         "catalog/critical-functions.json"
       ]
+    },
+    "staged": {
+      "level": "Hod",
+      "class": "angel"
     }
   },
   "edges": [
@@ -117,177 +121,323 @@
       "from": "vision",
       "to": "intent",
       "gate": "one sentence with its source",
-      "decider": "judgment"
+      "decider": "judgment",
+      "event": "founder.said",
+      "register_id": "dec:what-the-estate-becomes"
     },
     {
       "from": "intent",
       "to": "discovery",
       "gate": "intent recorded; no duplicate layer exists (growmos query, rg)",
-      "decider": "machine"
+      "decider": "machine",
+      "event": "intent.recorded",
+      "mechanism": [
+        "bin/capability-index"
+      ]
     },
     {
       "from": "discovery",
       "to": "spec",
       "gate": "evidence measured this run; unknowns named",
-      "decider": "machine"
+      "decider": "machine",
+      "event": "evidence.measured",
+      "mechanism": [],
+      "known_gaps": [
+        "no machine check that discovery evidence was measured this run before a spec starts"
+      ]
     },
     {
       "from": "spec",
       "to": "options",
       "gate": "BDD feature exists and fails first",
-      "decider": "machine"
+      "decider": "machine",
+      "event": "spec.written",
+      "mechanism": [],
+      "known_gaps": [
+        "no machine check that a BDD feature exists and fails first"
+      ]
     },
     {
       "from": "options",
       "to": "decided",
       "gate": "bin/decision-frame returns PROCEED",
-      "decider": "model"
+      "decider": "model",
+      "event": "decision.proceed",
+      "mechanism": [
+        "bin/decision-frame"
+      ]
     },
     {
       "from": "options",
       "to": "escalated",
       "gate": "decision-frame returns ESCALATE",
-      "decider": "machine"
+      "decider": "machine",
+      "event": "decision.escalate",
+      "mechanism": [
+        "bin/decision-frame"
+      ]
     },
     {
       "from": "options",
       "to": "refused",
       "gate": "decision-frame returns REFUSE (a law, or over the spend ceiling)",
-      "decider": "machine"
+      "decider": "machine",
+      "event": "decision.refuse",
+      "mechanism": [
+        "bin/decision-frame"
+      ]
     },
     {
       "from": "decided",
       "to": "queued",
       "gate": "claim open, paths free of overlap",
-      "decider": "machine"
+      "decider": "machine",
+      "event": "claim.opened",
+      "mechanism": [
+        "bin/claim-open",
+        "bin/claim-gate"
+      ]
     },
     {
       "from": "queued",
       "to": "ordered",
       "gate": "patch built against a named base",
-      "decider": "model"
-    },
-    {
-      "from": "ordered",
-      "to": "sealed",
-      "gate": "digest recorded, paths declared, dry-run passes",
-      "decider": "machine"
+      "decider": "model",
+      "event": "order.built",
+      "mechanism": [
+        "bin/work-order"
+      ]
     },
     {
       "from": "sealed",
       "to": "running",
       "gate": "order landed or author's claim; runner verifies the seal",
-      "decider": "machine"
+      "decider": "machine",
+      "event": "order.accepted",
+      "mechanism": [
+        "bin/work-order"
+      ],
+      "known_gaps": [
+        "the rule that only reviewed or landed orders run is not built"
+      ]
     },
     {
       "from": "running",
       "to": "lane",
       "gate": "checks pass; commit through hooks; lane pushed",
-      "decider": "machine"
+      "decider": "machine",
+      "event": "lane.pushed",
+      "mechanism": [
+        "bin/work-order"
+      ]
     },
     {
       "from": "running",
       "to": "ordered",
       "gate": "seal, apply or check failed: back to an angel to issue a new order",
-      "decider": "machine"
+      "decider": "machine",
+      "event": "run.failed",
+      "mechanism": [
+        "bin/work-order"
+      ]
     },
     {
       "from": "lane",
       "to": "ordered",
       "gate": "Greenlane red or conflicting: reason read from the head status, reissue",
-      "decider": "machine"
+      "decider": "machine",
+      "event": "lane.red",
+      "mechanism": [
+        "greenlane/engine.py"
+      ]
     },
     {
       "from": "operating",
       "to": "closed",
       "gate": "outcome graded by a collector that is not the executor; claim released; journal written",
       "decider": "machine",
-      "evidence": "grade: outcome, grader (not the executor), claim released"
+      "evidence": "grade: outcome, grader (not the executor), claim released",
+      "event": "outcome.graded",
+      "mechanism": [
+        "bin/intent-flow"
+      ],
+      "known_gaps": [
+        "the outside grader that writes outcomes is not built"
+      ]
     },
     {
       "from": "closed",
       "to": "done",
       "gate": "estate_health entry for the capability is green",
       "decider": "machine",
-      "evidence": "estate_health verdict for the capability"
+      "evidence": "estate_health verdict for the capability",
+      "event": "health.green",
+      "mechanism": [
+        "platform/estate/libexec/critical-probe.py"
+      ]
     },
     {
       "from": "escalated",
       "to": "decided",
       "gate": "founder answers the one decision message; the answer is recorded as the decision",
-      "decider": "judgment"
+      "decider": "judgment",
+      "event": "founder.answered",
+      "register_id": "dec:irreversible-or-outward-facing"
     },
     {
       "from": "lane",
       "to": "held",
       "gate": "founder-surface path: the lane waits for the founder door",
-      "decider": "machine"
+      "decider": "machine",
+      "event": "founder-surface.touched",
+      "mechanism": [
+        "platform/estate/governance/review_gate.py"
+      ],
+      "known_gaps": [
+        "the forced-review gate is landed as a core and not wired (ADR 2026-10-30)"
+      ]
     },
     {
       "from": "held",
       "to": "lane",
       "gate": "founder approves the held lane",
-      "decider": "judgment"
+      "decider": "judgment",
+      "event": "founder.approved",
+      "register_id": "dec:irreversible-or-outward-facing"
     },
     {
       "from": "held",
       "to": "abandoned",
       "gate": "founder declines; timeout leaves status quo, never approves",
-      "decider": "judgment"
+      "decider": "judgment",
+      "event": "founder.declined",
+      "register_id": "dec:irreversible-or-outward-facing"
     },
     {
       "from": "running",
       "to": "escalated",
       "gate": "reissue budget spent: the same order class failed too many times",
-      "decider": "machine"
+      "decider": "machine",
+      "event": "budget.spent",
+      "mechanism": [],
+      "known_gaps": [
+        "the reissue budget counter is not built"
+      ]
     },
     {
       "from": "operating",
       "to": "ordered",
       "gate": "landed but the production measurement is red: reissue a corrective order",
-      "decider": "machine"
+      "decider": "machine",
+      "event": "production.red",
+      "mechanism": [
+        "platform/estate/libexec/critical-probe.py"
+      ]
     },
     {
       "from": "lane",
       "to": "verified",
       "gate": "every claim re-checked against evidence by a verifier that is neither the issuer nor the runner; evals not regressed; an independent judge has seen the diff and the evidence",
       "decider": "machine",
-      "evidence": "verification-record: claim, evidence span, verifier, judge verdict"
+      "evidence": "verification-record: claim, evidence span, verifier, judge verdict",
+      "event": "verification.completed",
+      "mechanism": [
+        "nsvee/engine.py"
+      ],
+      "known_gaps": [
+        "no generic claim re-check runner over the proofset",
+        "no judge harness"
+      ]
     },
     {
       "from": "verified",
       "to": "landed",
       "gate": "Greenlane proves green on top of main",
       "decider": "machine",
-      "evidence": "greenlane-head status on the landed commit"
+      "evidence": "greenlane-head status on the landed commit",
+      "event": "lane.landed",
+      "mechanism": [
+        "greenlane/engine.py"
+      ]
     },
     {
       "from": "landed",
       "to": "integrated",
       "gate": "wired into its real caller path on the deployed system: the integration probe and the behavioural tests pass against what is running, not against the diff",
       "decider": "machine",
-      "evidence": "integration-record: caller, probe output, deployed commit"
+      "evidence": "integration-record: caller, probe output, deployed commit",
+      "event": "integration.probed",
+      "mechanism": [
+        "platform/estate/libexec/critical-probe.py"
+      ],
+      "known_gaps": [
+        "no integration probe per capability; only the registered critical functions have probes"
+      ]
     },
     {
       "from": "integrated",
       "to": "operating",
       "gate": "a real production measurement on the founder's surface",
       "decider": "machine",
-      "evidence": "measurement: surface, value, time, collector"
+      "evidence": "measurement: surface, value, time, collector",
+      "event": "measurement.taken",
+      "mechanism": [
+        "platform/estate/libexec/critical-probe.py"
+      ]
     },
     {
       "from": "verified",
       "to": "ordered",
       "gate": "a claim could not be verified, an eval regressed, or the judge rejected: reissue",
       "decider": "machine",
-      "evidence": "verification-record with the failing claim"
+      "evidence": "verification-record with the failing claim",
+      "event": "verification.failed",
+      "mechanism": [
+        "nsvee/engine.py"
+      ]
     },
     {
       "from": "integrated",
       "to": "ordered",
       "gate": "landed but not wired into its caller: reissue an integration order",
       "decider": "machine",
-      "evidence": "integration-record with the failing probe"
+      "evidence": "integration-record with the failing probe",
+      "event": "integration.failed",
+      "mechanism": [
+        "platform/estate/libexec/critical-probe.py"
+      ]
+    },
+    {
+      "from": "ordered",
+      "to": "staged",
+      "gate": "the work is pushed to a private staging ref, nothing else touched",
+      "decider": "machine",
+      "event": "branch.pushed",
+      "mechanism": [],
+      "known_gaps": [
+        "no event is emitted when a staged ref is pushed; nothing listens to pushes outside lane/**"
+      ]
+    },
+    {
+      "from": "staged",
+      "to": "sealed",
+      "gate": "promotion: packaged as a sealed order against an open claim; trailers present; paths fit the claim",
+      "decider": "machine",
+      "event": "promotion.requested",
+      "mechanism": [],
+      "known_gaps": [
+        "promotion from a staged ref to a sealed order is a manual step; the claim/trailer/paths check exists in claim-gate only for lane pushes"
+      ]
+    },
+    {
+      "from": "ordered",
+      "to": "sealed",
+      "gate": "digest recorded, paths declared, dry-run passes",
+      "decider": "machine",
+      "event": "order.sealed",
+      "mechanism": [
+        "bin/work-order"
+      ]
     }
   ],
   "feedback": {
@@ -638,5 +788,9 @@
       ],
       "one_primary": "a session has one primary layer; the other three still apply as checks in order_of_application"
     }
+  },
+  "events": {
+    "what": "Every edge names the event that moves it and the mechanism that detects the event and takes the step. The abyss algorithm (bin/intent-flow abyss) treats a missing mechanism, an unbuilt part of one, an evidence record with no collector, a judgment with no register entry, and a failure loop with no exit as a void, and ranks them nearest-the-founder first. Only the Flux reconcile event flows through the spine today (spine/workflow.py signal flux.reconciled); the rest are named here so they can be wired to the same bus (NATS to Temporal, ADR 0044) instead of a second engine.",
+    "engine": "spine/ (Temporal workflow woken by NATS events through the bridge); this file is the specification the workflow should be generated or conformance-checked from, not an engine"
   }
 }

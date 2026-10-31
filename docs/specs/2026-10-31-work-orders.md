@@ -230,3 +230,32 @@ the evidence it emits, and the checker refuses one that does not: a transition w
 Not built: the verifier that re-checks claims generically (the estate's `idp-verify` checks the catalogue only, so this
 needs a claim-verification runner over the protocolkit proofset), the integration probe per capability, and the judge
 harness. Those are the next work orders; the model now says where each belongs and refuses delivery without them.
+
+## Are we reinventing the wheel? Events, the engine, and the abyss
+
+The estate already has an event-driven stateful engine: `spine/` is a Temporal workflow woken by NATS events through a
+bridge (`spine/workflow.py`, `platform/spine/`), and human-in-the-loop is a signal the workflow waits on. So the right
+shape is: **`catalog/intent-flow.json` is the specification; Temporal is the engine; neither is a second engine.** What the
+file adds that the engine does not have is the checked model (states, gates, deciders, evidence, ranks, chain of command)
+and a judge for it. Only one signal flows through the spine today (`flux.reconciled`); every other event on the edges is
+named but not wired, and wiring them to the same bus is the work, not a new workflow engine. Open-source alternatives I
+know of (XState, Argo Workflows, GitHub environment approvals, BPMN engines) were not evaluated this run; they would
+replace Temporal, not sit beside it, so that is a decision for the engine's owner, not part of this change.
+
+Every edge now names the **event** that moves it and the **mechanism** (an existing file) that detects the event and
+takes the step. `bin/intent-flow abyss` finds the voids algorithmically and ranks them nearest the vision first:
+no-mechanism, incomplete (a declared gap), black-box (a judgment with no decision-register entry), no-collector for
+evidence, and open-loop (a cycle with no exit to escalation or done). Exit 5 while any exist, 0 when none: the goal is a
+model with zero voids, reached by building the mechanisms, never by rewording the gaps. At this commit it reports 16 voids
+in 30 transitions (21 have a mechanism). The one the founder asked about is on the first lines of the list: a push to a
+staging ref emits no event, and promotion from `staged` to a sealed order is manual.
+
+**After a push to staging, what happens next** (the modelled path): `ordered` to `staged` (event `branch.pushed`,
+void: nothing listens), `staged` to `sealed` (event `promotion.requested`, void: manual), then the lane push, QA,
+landing, integration and operating as above.
+
+**One snapshot for /fleet and the face.** `fleetview_backend/topology.py` serves `/topology`: the model, the voids, and a
+`live` part that says no live feed is wired. The page that draws it (stars for states, black holes for voids, packets that
+fall into voids, a dial from 2D to 9D) treats packets as simulated until a feed exists. Dimensions 4 to 9 are visual
+channels, not spatial axes. Not built: the `/fleet` and face front-end components that draw it (the published page is a
+standalone prototype of the same payload), and any live packets.

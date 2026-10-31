@@ -63,6 +63,7 @@ from fleetview_backend import (
     notes,
     sessions,
     signals,
+    topology,
     trace,
 )
 
@@ -75,6 +76,8 @@ __all__ = [
     "BLAST_RADIUS_PATH",
     "GRAPH_PATH",
     "MEMORY_PATH",
+    "TOPOLOGY_PATH",
+    "topology_envelope",
     "CHECK_RECEIPTS_PATH",
     "MUTATIONS_PATH",
     "MUTATIONS_APPROVE_PATH",
@@ -125,6 +128,7 @@ WORK_PATH = "/work"
 BLAST_RADIUS_PATH = "/blast-radius"
 GRAPH_PATH = "/graph"
 MEMORY_PATH = "/memory"
+TOPOLOGY_PATH = "/topology"
 GREENLANE_PATH = "/greenlane"
 CLAIMS_PATH = "/claims"
 RESEARCH_PATH = "/research"
@@ -342,6 +346,11 @@ def graph_envelope() -> tuple[dict[str, Any], int]:
     except graph.GraphUnavailable as exc:
         return {"error": str(exc)}, 503
     return result, 200
+
+
+def topology_envelope() -> tuple[dict[str, Any], int]:
+    body = topology.topology_snapshot()
+    return body, 200 if body.get("available") else 503
 
 
 def memory_envelope() -> tuple[dict[str, Any], int]:
