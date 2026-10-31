@@ -1,0 +1,9 @@
+name: fleet-monitor
+description: Gate an agent's report to the founder for void language ("not proven", "want me to", "can't find"); a hit raises an alarm on the fleet inbox and the founder's phone.
+args:
+  agent: {type: string, default: "unknown"}
+  report: {type: string, default: "/dev/stdin"}
+halt_on_failure: true
+steps:
+  - name: gate
+    cmd: python3 bin/estate-fleet-monitor check --alert --agent <<agent>> < <<report>>
