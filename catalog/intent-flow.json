@@ -379,5 +379,89 @@
       "to_legion": "a new sealed order, never advice",
       "to_angels": "a brief carrying the lesson at claim-open"
     }
+  },
+  "ranks": {
+    "what": "The legion's ranking, in the Goetic manner: rank fixes authority and reach, never the other way round. Authority is rigid and declared here; coordination is distributed through claims (no central dispatcher). Rank is earned from graded outcomes, so promotion and demotion are rules over evidence. The numeric parameters are PROPOSED and unmeasured; they are placeholders to be set from the first graded runs.",
+    "order": [
+      "shadow",
+      "knight",
+      "marquis",
+      "duke"
+    ],
+    "commanded_by": "issuer-angel",
+    "ranks": {
+      "shadow": {
+        "may": "dry-run only; produces a lane that is never landed and is graded against what an angel would have done",
+        "paths": [],
+        "push_lane": false,
+        "concurrency": "unbounded (costs no authority)",
+        "enters": "every new runner, model or harness starts here"
+      },
+      "knight": {
+        "may": "push a lane for low-blast paths",
+        "paths": [
+          "docs/**",
+          "tests/**",
+          "features/**"
+        ],
+        "push_lane": true,
+        "concurrency": 8
+      },
+      "marquis": {
+        "may": "push a lane for code and catalog paths with declared checks",
+        "paths": [
+          "docs/**",
+          "tests/**",
+          "features/**",
+          "bin/**",
+          "catalog/**",
+          "packages/**"
+        ],
+        "push_lane": true,
+        "concurrency": 4
+      },
+      "duke": {
+        "may": "push a lane that touches a critical service or founder surface; the lane is HELD for the founder door",
+        "paths": [
+          "platform/**",
+          "backstage/**",
+          "greenlane/**",
+          "sovereign/**"
+        ],
+        "push_lane": true,
+        "concurrency": 1,
+        "always_held": true
+      }
+    },
+    "forbidden_to_every_rank": [
+      ".github/**",
+      ".githooks/**",
+      "AGENTS.md",
+      "main"
+    ],
+    "promotion": {
+      "rule": "promoted one rank when the last N orders at the current rank each landed, reached operating, and none breached its seal; N is proposed (10) and unmeasured",
+      "evidence": "graded by a collector that is not the runner; the runner never writes its own grade",
+      "never": "a rank is never granted by a runner or an issuer to itself, and never by a model's say-so"
+    },
+    "demotion": {
+      "rule": "demoted to shadow on any seal breach (applied something other than the sealed patch, wrote outside declared paths, or reported a result the evidence contradicts); one rank on a red lane after landing",
+      "shadow_return": "re-entry needs the same promotion evidence as a new runner"
+    },
+    "coordination": {
+      "style": "distributed, by claim: a runner takes the next order its rank allows by opening a claim with a heartbeat; a lapsed heartbeat releases it. There is no central scheduler to fail.",
+      "rigid": [
+        "authority and reach (the rank table)",
+        "the seal",
+        "forbidden paths",
+        "the founder door for held lanes"
+      ],
+      "distributed": [
+        "which runner takes which order",
+        "queue order",
+        "retry after a lapsed claim",
+        "grading"
+      ]
+    }
   }
 }

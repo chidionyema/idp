@@ -98,6 +98,34 @@ def problems(m):
         out.append("legion must be forbidden to decide and to issue orders")
     if any(r["class"] == "legion" and any(c["parent"] == k for c in roles.values()) for k, r in roles.items()):
         out.append("a legion role must be a leaf: it commands nobody")
+    rk = m.get("ranks", {})
+    order = rk.get("order", [])
+    rdef = rk.get("ranks", {})
+    if order and sorted(order) != sorted(rdef):
+        out.append("rank order and rank table disagree")
+    forbidden = rk.get("forbidden_to_every_rank", [])
+    prev = set()
+    for name in order:
+        paths = set(rdef.get(name, {}).get("paths", []))
+        if name != "shadow" and not rdef[name].get("push_lane"):
+            out.append("rank %s must be able to push a lane" % name)
+        if name == "shadow" and (paths or rdef[name].get("push_lane")):
+            out.append("shadow must have no paths and no push")
+        for f in forbidden:
+            if f in paths:
+                out.append("rank %s is granted forbidden path %s" % (name, f))
+        if rdef.get(name, {}).get("always_held") is not True and name == order[-1]:
+            out.append("the top legion rank must be always_held (founder door)")
+        if not (prev <= paths) and name != "duke":
+            out.append("rank %s must include the paths of the rank below" % name)
+        prev = paths if name != "duke" else prev
+    if rk:
+        if rk.get("commanded_by") not in roles:
+            out.append("ranks are commanded by an unknown role")
+        if "never" not in rk.get("promotion", {}) or "grade" not in rk.get("promotion", {}).get("evidence", ""):
+            out.append("promotion must forbid self-grading and name an outside grader")
+        if "shadow" not in rk.get("demotion", {}).get("rule", ""):
+            out.append("a seal breach must demote to shadow")
     return out
 
 

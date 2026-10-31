@@ -113,3 +113,34 @@ def test_a_legion_that_commands_is_caught():
     m = copy.deepcopy(M)
     m["chain"]["roles"]["extra"] = {"class": "legion", "parent": "legion-runner"}
     assert any("must be a leaf" in p for p in f.problems(m))
+
+
+def test_rank_table_is_sound_and_shadow_cannot_push():
+    assert f.problems(M) == []
+    r = M["ranks"]["ranks"]
+    assert r["shadow"]["push_lane"] is False and r["shadow"]["paths"] == []
+    assert r["duke"]["always_held"] is True
+
+
+def test_no_rank_may_be_granted_a_forbidden_path():
+    m = copy.deepcopy(M)
+    m["ranks"]["ranks"]["marquis"]["paths"].append(".github/**")
+    assert any("forbidden path" in p for p in f.problems(m))
+
+
+def test_higher_rank_includes_lower_reach_and_top_rank_is_held():
+    m = copy.deepcopy(M)
+    m["ranks"]["ranks"]["marquis"]["paths"] = ["bin/**"]
+    assert any("must include the paths" in p for p in f.problems(m))
+    m2 = copy.deepcopy(M)
+    m2["ranks"]["ranks"]["duke"]["always_held"] = False
+    assert any("always_held" in p for p in f.problems(m2))
+
+
+def test_promotion_cannot_be_self_graded_and_breach_demotes_to_shadow():
+    m = copy.deepcopy(M)
+    m["ranks"]["promotion"]["evidence"] = "the runner reports it"
+    assert any("self-grading" in p for p in f.problems(m))
+    m2 = copy.deepcopy(M)
+    m2["ranks"]["demotion"]["rule"] = "a warning"
+    assert any("demote to shadow" in p for p in f.problems(m2))

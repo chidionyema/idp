@@ -149,3 +149,36 @@ else. Correction comes DOWN: to a runner as a new sealed order, never advice; to
 
 Not built: the writer that records a lesson per failure, the 14-day repeat detector, the signing of orders by an issuer,
 and any gate that makes an agent follow the chain. This is a model with a judge, not a running system.
+
+## The real legion: ranked, rigid in authority, distributed in coordination
+
+Question (founder, 2026-10-31): the Goetic, rank-based legion, rigid or coordinated and distributed?
+Answer: both, split by what can safely be distributed. `catalog/intent-flow.json`, block `ranks`; judged by
+`bin/intent-flow check`.
+
+**Rigid (declared once, in data, never negotiated):** a rank's authority and reach; the seal; the forbidden paths
+(`.github/`, `.githooks/`, AGENTS.md, main); the founder door for held lanes. A rank is a ceiling on blast radius,
+not a title.
+
+**Distributed (no central dispatcher, nothing to fail as one):** which runner takes which order (a claim with a
+heartbeat, as the estate already does); queue order; retry after a lapsed claim; grading. This is the existing claim
+mechanism (AGENTS.md section 5) used as the coordination layer, so no second scheduler is built.
+
+| Rank | May | Paths | Concurrency (proposed) |
+|---|---|---|---|
+| shadow | dry-run only; lane never landed, graded against what an angel would have done | none | unbounded, it holds no authority |
+| knight | push a lane, low blast | docs, tests, features | 8 |
+| marquis | push a lane, code and catalogs, with declared checks | adds bin, catalog, packages | 4 |
+| duke | push a lane for a critical service or founder surface; always HELD for the founder door | platform, backstage, greenlane, sovereign | 1 |
+
+Kings are the coordinator angels above the legion; they command ranks, they do not run orders.
+
+**Shadow is the entrance.** Every new runner, model or harness starts in shadow (the estate already uses shadow mode for
+the method selector). It earns a rank from graded outcomes: promoted one rank when its last N orders each landed, reached
+operating and breached no seal; demoted straight to shadow on any seal breach. The grader is never the runner, and no
+rank is ever granted by the runner, its issuer or a model's say-so. N=10 and the concurrency numbers are placeholders,
+unmeasured, to be set from the first graded runs. The checker proves the table cannot grant a forbidden path, that a
+higher rank includes the lower's reach, that shadow cannot push, that the top legion rank is always held, and that
+promotion cannot be self-graded.
+
+Not built: the grader, the rank ledger, and the claim-time check that refuses an order above the runner's rank.
