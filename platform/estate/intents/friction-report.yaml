@@ -1,4 +1,5 @@
 name: friction-report
+class: read
 description: What the agent doors refused, ranked by (kind, shape) -- read from the ledger the door wrote, never re-derived. The same numbers the /fleet friction tile shows, so the founder can ask for them by voice.
 args:
   window_hours: {type: number, default: 24}

@@ -1,4 +1,5 @@
 name: ci.errors
+class: read
 description: >
   Get every failing job, step, and error line from a GitHub Actions run.
   Use this instead of poking gh api / gh run view by hand.

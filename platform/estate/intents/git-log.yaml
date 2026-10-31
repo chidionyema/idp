@@ -1,4 +1,5 @@
 name: git-log
+class: read
 description: Recent commits on a branch or range, optionally since a date and under a path.
 args:
   branch:  {type: string, default: "HEAD"}

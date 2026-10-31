@@ -8,7 +8,8 @@ every argument has a default. Now the arguments are a schema: `intent_args()` re
 intent YAML, `input_schema()` renders them as an MCP-shaped JSON Schema for the Face and for any
 speech brain that wants to fill them, and `execute()` turns supplied values into `--k=v` argv. The
 allow-list did not move: only an argument the intent itself declares can be passed, values must be
-scalars, the name must be a committed intent, and the READ_ONLY/confirmation rule is unchanged.
+scalars, the name must be a committed intent, and the confirmation rule is unchanged: an intent
+whose own YAML declares `class: read` runs on the first utterance, everything else asks first.
 """
 
 from __future__ import annotations
@@ -25,19 +26,12 @@ from pathlib import Path
 
 import yaml
 
-READ_ONLY = frozenset(
-    {
-        "ci-status",
-        "ci.errors",
-        "cost-today",
-        "friction-report",
-        "git-log",
-        "lane",
-        "router-status",
-        "voice-turns",
-        "ledger-verify",
-    }
-)
+# The confirmation ladder is intent data: an intent whose own YAML declares
+# `class: read` runs on the first utterance; every other class -- and an
+# undeclared class, which reads as "mutate" -- asks first. (Face audit
+# 2026-10-22 §8.5: this ladder was a hardcoded frozenset; the data now
+# decides, so a new read intent never needs a code change.)
+READ_CLASS = "read"
 YES = frozenset({"yes", "confirm", "do it"})
 NO = frozenset({"no", "cancel"})
 PENDING_TTL_S = 60.0
@@ -151,7 +145,7 @@ def _agent_job(session_id: str, text: str, task: str, now: float) -> dict:
             AGENT_JOB, "error", "Say the job too: give an agent a job, then what to do."
         )
     try:
-        task, _h = agent_jobs.validate(task, "pi")
+        task, _h = agent_jobs.validate(task, agent_name())
     except agent_jobs.JobRefused as exc:
         _audit(
             session_id,
@@ -178,7 +172,7 @@ def _send_agent_job(session_id: str, text: str, task: str) -> dict:
 
     t0 = time.monotonic()
     try:
-        job, _status = agent_jobs.submit(task, "pi", by=f"voice:{session_id}")
+        job, _status = agent_jobs.submit(task, agent_name(), by=f"voice:{session_id}")
     except agent_jobs.JobRefused as exc:
         _audit(
             session_id,
@@ -343,6 +337,30 @@ def input_schema(name: str, directory: str | Path | None = None) -> dict:
     return {"type": "object", "properties": props, "required": required}
 
 
+def agent_name() -> str:
+    """The runner a voice-submitted agent job targets: config, not a hardcoded
+    name (Face audit 2026-10-22 §8.6). Validated against agent_jobs.HARNESSES
+    at submit time; the default keeps today's routing."""
+    return os.environ.get("FLEETVIEW_VOICE_AGENT", "pi")
+
+
+def intent_class(name: str, directory: str | Path | None = None) -> str:
+    """The intent's own `class` field, which drives the confirmation ladder.
+    An undeclared or unreadable class reads as "mutate", so an unclassified
+    intent always asks before it runs."""
+    resolved = Path(directory) if directory is not None else default_dir()
+    for stem in (name, name.replace(".", "-")):
+        path = resolved / f"{stem}.yaml"
+        if path.is_file():
+            try:
+                doc = yaml.safe_load(path.read_text())
+            except (OSError, yaml.YAMLError):
+                return "mutate"
+            value = doc.get("class") if isinstance(doc, dict) else None
+            return str(value).strip() if value else "mutate"
+    return "mutate"
+
+
 def description(name: str, directory: str | Path | None = None) -> str:
     """The intent's own `description`, one line, for the voice operator to speak."""
     desc = intent_doc(name, directory).get("description")
@@ -365,7 +383,7 @@ def catalogue(directory: str | Path | None = None) -> list[dict]:
         {
             "name": name,
             "description": description(name, directory),
-            "read_only": name in READ_ONLY,
+            "read_only": intent_class(name) == READ_CLASS,
             "args": intent_args(name, directory),
             "inputSchema": input_schema(name, directory),
         }
@@ -842,7 +860,7 @@ def handle(text: str, session_id: str, args: dict | None = None) -> dict | None:
     if url:
         return _on_laptop(url, text, session_id, name, now, args)
 
-    if name not in READ_ONLY:
+    if intent_class(name) != READ_CLASS:
         with _LOCK:
             _PENDING[session_id] = (name, now, args or None)
         _audit(session_id, text, name, "pending_confirmation", None, 0, args)

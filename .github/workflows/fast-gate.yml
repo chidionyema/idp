@@ -50,6 +50,16 @@ jobs:
         # rungs grade the WHOLE repo, so one pre-existing drift anywhere fails every lane
         # regardless of its own diff (2026-10-25: two files landed green on main, then a
         # formatting-verdict change made them stale and the whole migration queue went red).
+        env:
+          # The bdd rung needs to READ a pull request. It does that from the event payload
+          # (GITHUB_EVENT_PATH), which needs no token and no scope -- so no `permissions:` block
+          # is declared here on purpose. This workflow is CALLED by ci.yml and portal-app.yml,
+          # and a called workflow that asks for a scope its caller did not grant fails the
+          # caller at startup (measured 2026-10-25: one `pull-requests: read` line turned both
+          # `ci` and `portal-app` into `startup_failure`, so `fast-gate / fast-gate`, `bdd` and
+          # `ci-success` never ran and a green PR sat blocked forever). The token stays for the
+          # local/gh path, where the caller has one anyway.
+          GH_TOKEN: ${{ github.token }}
         run: IDP_CI_FAST=1 IDP_CI_BASE=$(git merge-base origin/main HEAD) bin/idp-ci
       - name: python-strict (estate standard, one copy)
         if: steps.actor.outputs.bot != '1'

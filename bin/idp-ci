@@ -416,26 +416,43 @@ else say "FAIL  yamllint is not installed -- run bin/idp-install-deps"; fail=1; 
 # and its live gate manufactured work -- it refused rules whose only grader was a job the founder
 # had just deleted, which is a table defending itself rather than the estate.
 
-# The bdd-proof gate, named here on purpose. It is a rule in rules.yaml like the rest, but its
-# live case -- reading the most recent pull request on this repository and refusing one that
-# carries no BDD-PROOF block -- needs a line in this file that says the gate's name, so
-# bin/idp-rules can check that the claim in rules.yaml is still true (pointer_is_stale). The
-# registry above runs it; this line is what makes that fact checkable rather than asserted.
+# THE PROOF IS FED, NOT FETCHED (2026-10-25). Two defects lived in the two lines below, and both
+# were measured on this lane rather than guessed:
 #
-# THE `|| true` IS LOAD-BEARING AND MUST NOT BE REMOVED UNTIL live_pr() CHANGES (measured
-# 2026-09-13, the reason this comment is here rather than a second silent exception). The gate's
-# live_pr() runs `gh pr list --state all --limit 1` with no reference to the branch under test,
-# so on this repository it grades THE NEWEST PULL REQUEST ANY SESSION OPENED, not this run's.
-# Called during CI for branch feat/async-dispatch it answered about PR #3398 flux/image-updates
-# -- another session's work. Making this line fail the run would therefore fail a correct branch
-# for a foreign pull request's missing proof block, which is precisely the guard-that-refuses-
-# correct-work defect (R38). The suppression stays until live_pr() takes the PR under test
-# (GitHub exposes it as the pull_request payload; see bin/idp-bdd-proof-gate, input named in
-# its own docstring as "a pull request as JSON on stdin"). The BLIND that made this line look
-# broken was itself only a symptom of the missing token: with GH_TOKEN set the gate reads a pull
-# request and returns a real verdict, so the line is no longer blind -- it is simply aimed at the
-# wrong pull request, which no change to this file can fix.
-python3 "$IDP/bin/idp-bdd-proof-gate" --live || true
+#   1. `--live` called `gh pr list` with no reference to the branch under test, so during CI it
+#      graded THE NEWEST PULL REQUEST ANY SESSION OPENED. This lane was refused with "PR #7170
+#      carries no BDD-PROOF block" -- #7170 is another agent's memory lane, untouched by this
+#      push. The `|| true` that used to guard this line is what made that defect invisible.
+#   2. The rung needed a token to read the PR at all. With GH_TOKEN missing it printed
+#      "BLIND, cannot read a pull request" (run 40238894550) -- a gate that cannot fire. Adding
+#      the token, and with it `permissions: pull-requests: read`, to fast-gate.yml was the wrong
+#      shape: ci.yml and portal-app.yml CALL this workflow, and a called workflow that asks for
+#      a scope its caller did not grant fails the caller at `startup_failure` -- so `fast-gate /
+#      fast-gate`, `bdd`, `ci-success` and `portal-app` never ran and a green PR sat blocked.
+#
+# So the rung fetches nothing itself; it asks the gate to grade the pull request this run is
+# for, and the gate knows the one thing that matters here (measured 2026-10-25, run 40245349600
+# attempt 2, on this very PR): GITHUB_EVENT_PATH IS A SNAPSHOT. On a re-run GitHub replays the
+# payload it froze when the run was created, body and all, so the rung below -- which dumped that
+# body to a temp file and graded it -- refused this pull request with `the proof names ced59a268,
+# but the pull request's head is b9a59de20889` after the body had already been corrected to name
+# b9a59de2. The proof was right and the gate convicted a photograph of it. So the payload now
+# supplies only what is frozen and correct (which PR this is, and the head commit this run
+# graded); the body is read live from `gh pr view` when gh can read it, and the gate names which
+# source it read. A job with no token still grades the payload's body rather than going BLIND.
+#
+# Exit 1 means THIS pull request was refused, and that is a failure. Exit 2 means BLIND (no PR
+# readable at all): named, not silently green, never a refusal of correct work (R38). Exit 3
+# means the event carries no pull request (a push to main grades itself), so it is skipped by
+# name. The gate owns all four answers; this file only reports them.
+_bdd_rc=0
+python3 "$IDP/bin/idp-bdd-proof-gate" --live || _bdd_rc=$?
+case "$_bdd_rc" in
+  0) say "ok    bdd-proof the pull request under test carries a BDD-PROOF block on its head" ;;
+  2) say "skip  bdd-proof BLIND -- no pull request readable on this host (named, not silently green)" ;;
+  3) say "skip  bdd-proof this event carries no pull request (a push to main is graded by CI)" ;;
+  *) say "FAIL  bdd-proof the pull request under test carries no BDD-PROOF block, or names another head"; fail=1 ;;
+esac
 
 # 1c.3 schema, every intent's args block against the door that runs it (bin/schema-conformance).
 #      The estate's agent door (platform/estate/bin/estate-execute, resolve_args) accepts any
@@ -460,7 +477,13 @@ else
          --baseline "$IDP/docs/research/2026-10-25-constrained-formats.baseline.json" 2>&1); sc_rc=$?
   # No $XD here: this rung sits before xdist's arguments are defined, and `XD` under `set -u`
   # refused the run on 2026-10-25 (line 406: XD: unbound variable) instead of running the proof.
-  sp=$("$MPY" -m pytest -q -p no:cacheprovider "$IDP/tests/test_schema_conformance.py" 2>&1); sp_rc=$?
+  # `-o addopts=`: pyproject's addopts carries `-n auto`, and the fast-gate job installs pytest
+  # WITHOUT xdist, so this proof died in CI with `unrecognized arguments: -n ...` and took the
+  # rung red (run 40238894550, PR #7167) on a laptop that was green in 26 s. Grading the
+  # environment's addopts is not what this rung measures; missing xdist is serial, never a skip --
+  # the same rule the suites below follow (line ~1058). Proved green both ways: 28 passed with
+  # xdist installed, and 28 passed under `-o addopts=`.
+  sp=$("$MPY" -m pytest -q -o addopts= -p no:cacheprovider "$IDP/tests/test_schema_conformance.py" 2>&1); sp_rc=$?
   if [ "$sc_rc" -eq 0 ] && [ "$sp_rc" -eq 0 ]; then
     say "ok    schema   $(printf '%s' "$sc" | grep -E '^ratchet' | sed 's/^ratchet *//') -- $(printf '%s' "$sp" | grep -oE '[0-9]+ passed' | head -1) on the gate's own proof"
   else
