@@ -52,10 +52,10 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import math
 import os
-import random
 import re
 import shlex
 import subprocess
@@ -187,9 +187,9 @@ def info_gain(ids, prior_map, noise) -> float:
     return ig
 
 
-def greedy_select(hyps, noise, max_probes):
+def greedy_select(hyps, noise, max_probes, prior_map=None):
     """Greedy max marginal IG per token. The fallback for large hypothesis sets."""
-    prior_map = {h.id: h.prior for h in hyps}
+    prior_map = prior_map or {h.id: h.prior for h in hyps}
     S, cur = [], 0.0
     while len(S) < min(max_probes, len(hyps)):
         best, best_score = None, 1e-12
@@ -207,9 +207,9 @@ def greedy_select(hyps, noise, max_probes):
     return S
 
 
-def exact_select(hyps, noise, max_probes):
+def exact_select(hyps, noise, max_probes, prior_map=None):
     """The true optimum by enumerating every subset (2^N, exact for N <= 10)."""
-    prior_map = {h.id: h.prior for h in hyps}
+    prior_map = prior_map or {h.id: h.prior for h in hyps}
     ids = [h.id for h in hyps]
     k = min(max_probes, len(ids))
     best, best_ig = [], -1.0
@@ -223,15 +223,48 @@ def exact_select(hyps, noise, max_probes):
     return best
 
 
-def select_probes(hyps, noise, max_probes):
+def select_probes(hyps, noise, max_probes, prior_map=None):
     if len(hyps) <= EXACT_SELECT_MAX_N:
-        return exact_select(hyps, noise, max_probes), "exact"
-    return greedy_select(hyps, noise, max_probes), "greedy"
+        return exact_select(hyps, noise, max_probes, prior_map), "exact"
+    return greedy_select(hyps, noise, max_probes, prior_map), "greedy"
+
+
+class _Lcg:
+    """Deterministic linear congruential generator.
+
+    The simulation needs a reproducible stream, not entropy: the estate python
+    standard (ruff S311) refuses the `random` module for that, and a fixed
+    stream is what makes the collapse numbers reproducible across machines.
+    """
+
+    def __init__(self, seed: int):
+        self.state = (seed * 2654435761 + 1013904223) % (2**31)
+
+    def next(self) -> int:
+        self.state = (1103515245 * self.state + 12345) % (2**31)
+        return self.state
+
+    def random(self) -> float:
+        return self.next() / (2**31)
+
+    def randint(self, low: int, high: int) -> int:
+        return low + self.next() % (high - low + 1)
+
+    def choices(self, population, weights=None):
+        total = float(sum(weights)) if weights else float(len(population))
+        x = self.random() * total
+        ws = weights or [1] * len(population)
+        acc = 0.0
+        for i, item in enumerate(population):
+            acc += ws[i]
+            if x < acc:
+                return [item]
+        return [population[-1]]
 
 
 def simulate_collapse(hyps, noise, seed=7, n=3000):
     """Posterior quality of the selected probe set. Deterministic under seed."""
-    rng = random.Random(seed)
+    rng = _Lcg(seed)
     ids = [h.id for h in hyps]
     pri = [h.prior for h in hyps]
     a, b = noise["alpha"], noise["beta"]
@@ -443,7 +476,14 @@ def _origin(url):
 
 
 def _is_local(host):
-    return (host or "") in ("127.0.0.1", "localhost", "::1", "0.0.0.0")
+    h = (host or "").strip()
+    if h in ("127.0.0.1", "localhost", "::1"):
+        return True
+    try:
+        ip = ipaddress.ip_address(h)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_unspecified
 
 
 def synthesize(
@@ -547,7 +587,21 @@ def synthesize(
     for h in hyps:
         h.prior = prior_map[h.id]
 
-    selected_ids, method = select_probes(hyps, noise, max_probes)
+    # The catch-all is the model's completeness guarantee, so it is never
+    # traded away for probe budget: a capped spec stays MECE. The remaining
+    # budget goes to the specific layers, scored against the full prior map.
+    catch = [h for h in hyps if h.layer == "catch_all"]
+    budget = max_probes - len(catch)
+    if budget < 1:
+        log("no probe budget left for a specific layer", "error")
+        return None, Metrics(
+            error_parse=ctx,
+            parse_confidence=parse_conf,
+            degraded_roots=degraded,
+            elapsed_ms=round((time.time() - t0) * 1e3, 1),
+        )
+    selected_ids, method = select_probes(specific, noise, budget, prior_map)
+    selected_ids = list(selected_ids) + [h.id for h in catch]
     sel = [h for h in hyps if h.id in selected_ids]
     ig = info_gain(selected_ids, prior_map, noise)
     acc, col = simulate_collapse(sel, noise)
@@ -571,7 +625,7 @@ def synthesize(
         sim_map_accuracy=round(acc, 4),
         sim_collapse_prob=round(col, 4),
         sim_recommendation=rec,
-        catch_all_present=any(h.layer == "catch_all" for h in hyps),
+        catch_all_present=any(h.layer == "catch_all" for h in sel),
         catch_all_prior=round(prior_map.get("H_unmodeled", 0.0), 4),
         degraded_roots=degraded,
         elapsed_ms=round((time.time() - t0) * 1e3, 1),
@@ -635,6 +689,15 @@ def load_priors(path):
         t = json.load(f)
     if any(not (0 < float(v) <= 1) for v in t.values()):
         raise ValueError("prior out of range")
+    unknown = sorted(set(t) - set(LAYER_PRIORS_DEFAULT))
+    if unknown:
+        raise ValueError(
+            "unknown prior layer(s): "
+            + ", ".join(unknown)
+            + " (known: "
+            + ", ".join(LAYER_ORDER)
+            + ")"
+        )
     return {k: float(v) for k, v in t.items()}
 
 
@@ -653,7 +716,7 @@ def dump_spec(spec, fmt):
         try:
             import yaml
         except ImportError:
-            raise ValueError("PyYAML is not installed; use --format json")
+            raise ValueError("PyYAML is not installed; use --format json") from None
         return yaml.safe_dump(spec, sort_keys=False)
     return json.dumps(spec, indent=2) + "\n"
 
@@ -667,7 +730,7 @@ def selftest(root: str) -> int:
     noise = dict(DEFAULT_NOISE)
 
     # 1. exact selection is the true optimum: brute force must agree with it.
-    rng = random.Random(11)
+    rng = _Lcg(11)
     disagreements = 0
     for _ in range(10):
         n = rng.randint(4, 7)
@@ -702,7 +765,7 @@ def selftest(root: str) -> int:
     # 2. greedy vs exact agreement at N=8 (the claim the header used to assert).
     agree = 0
     trials = 100
-    rng = random.Random(5)
+    rng = _Lcg(5)
     for _ in range(trials):
         priors = normalize({f"H{i}": rng.random() + 0.01 for i in range(8)})
         hyps = [
@@ -761,8 +824,8 @@ def selftest(root: str) -> int:
     else:
         for h in spec["hypotheses"]:
             try:
-                r = subprocess.run(
-                    ["bash", "-c", h["probe"]],
+                r = subprocess.run(  # noqa: S603 -- shell is the probe language; the probe string is built here and quoted with shlex.quote
+                    ["/bin/bash", "-c", h["probe"]],
                     capture_output=True,
                     text=True,
                     timeout=30,
@@ -781,12 +844,17 @@ def selftest(root: str) -> int:
     try:
         raw = json.dumps(spec)
         parsed = json.loads(raw)
-        assert isinstance(parsed["hypotheses"], list) and parsed["hypotheses"]
-        for h in parsed["hypotheses"]:
-            assert (
-                isinstance(h["falsified_if"], dict) and "exit_code" in h["falsified_if"]
-            )
-        print("selftest: emitted spec parses as the race runner expects: ok")
+        hyps = parsed["hypotheses"]
+        if not isinstance(hyps, list) or not hyps:
+            failures.append("emitted spec carries no hypotheses")
+        for h in hyps:
+            fi = h.get("falsified_if")
+            if not isinstance(fi, dict) or "exit_code" not in fi:
+                failures.append(
+                    f"hypothesis {h.get('id')} has a malformed falsified_if: {fi!r}"
+                )
+        if not failures:
+            print("selftest: emitted spec parses as the race runner expects: ok")
     except Exception as e:  # noqa: BLE001
         failures.append(f"emitted spec is not consumable by hypotheses-race.py: {e}")
 
@@ -815,7 +883,12 @@ def main(argv=None):
     ap.add_argument("--host", default=None, help="expected router host")
     ap.add_argument("--port", default=None, help="expected local router port")
     ap.add_argument("--url", default=None, help="expected upstream url")
-    ap.add_argument("--prior-file")
+    ap.add_argument(
+        "--prior-file",
+        help="json file replacing the default layer priors (keys: "
+        + ", ".join(LAYER_ORDER)
+        + ")",
+    )
     ap.add_argument("--noise-file")
     ap.add_argument("--max-probes", type=int, default=8)
     ap.add_argument("--seed", type=int, default=7)
@@ -836,6 +909,8 @@ def main(argv=None):
         ap.error("--error is required (or use --selftest)")
     if not a.out:
         ap.error("--out is required")
+    if a.max_probes < 2:
+        ap.error("--max-probes must be at least 2 (one specific layer + catch-all)")
 
     try:
         priors = load_priors(a.prior_file)
