@@ -1,0 +1,871 @@
+#!/usr/bin/env python3
+"""idp-hypothesize -- one-pass hypothesis generator for the Bayesian race.
+
+WHAT THIS IS. A diagnosis starts from an error string, not from a guess. This tool
+parses the error, synthesizes MECE hypotheses over the causal chain
+(caller -> checkout -> script -> config -> daemon -> upstream), picks the probe set
+that maximises expected information gain per token, and emits a race spec that
+`hypotheses.race` (platform/estate/libexec/hypotheses-race.py) can run as-is.
+
+ONE LAYER, NOT TWO. The race runner already exists (the `hypotheses.race` intent).
+This tool is the missing producer half: it writes the spec the runner consumes.
+The output format is therefore the runner's format, not a format of its own --
+the runner does `json.loads(raw)` and reads `spec["hypotheses"]`:
+
+    {"hypotheses": [{"id", "statement", "prior", "probe", "falsified_if": {...},
+                     "evidence_exits": [...], "probe_reliability"}],
+     "parallel": 8, "timeout": 30, "eps": 0.05, "meta": {...}}
+
+PROBE CONTRACT (one rule, every probe obeys it):
+    exit 0  the defect IS present at this layer      -> evidence FOR the hypothesis
+    exit 1  the layer is exonerated                   -> falsifies the hypothesis
+    exit 2+ the probe could not decide (no tool, no dir, timeout) -> unknown, no update
+The runner reads `falsified_if.exit_code` and `evidence_exits` exactly this way and
+treats any exit outside `evidence_exits` as unknown -- so a probe that cannot decide
+never votes for or against anything.
+
+MATH. Priors are renormalised over the surviving hypotheses; expected information gain
+is computed exactly by enumerating every outcome of the probe set (no rollout, no
+sampling). Probe selection is exact enumeration of all subsets while the hypothesis
+count is small (2^N subsets, N <= 10) and greedy marginal-IG-per-token above it, so the
+selected set is the true optimum in the regime where it matters.
+
+MEASURED, NOT CLAIMED. `bin/idp-hypothesize --selftest` re-derives the numbers this
+header used to assert: the greedy-vs-exact agreement rate at N=8, the determinism of
+the collapse simulation under a fixed seed, and the probe contract of every probe it
+emits (each must answer 0, 1 or 2 -- never anything else).
+
+USAGE:
+    bin/idp-hypothesize --error "<error text>" --out /tmp/race.json
+    bin/idp-hypothesize --error "<error text>" --out /tmp/race.json --metrics-out /tmp/m.json
+    bin/idp-hypothesize --selftest
+    estate-execute hypotheses.race --file /tmp/race.json   # or: estate_invoke
+
+EXIT CODES:
+    0  a spec was written
+    2  usage/config error
+    3  no hypothesis could be synthesized
+    4  degraded: every root given is missing on this host
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import math
+import os
+import random
+import re
+import shlex
+import subprocess
+import sys
+import time
+from dataclasses import asdict, dataclass, field
+
+EXIT_OK, EXIT_USAGE, EXIT_NO_HYP, EXIT_DEGRADED = 0, 2, 3, 4
+
+DEFAULT_NOISE = {"alpha": 0.05, "beta": 0.10}  # MC-calibrated defaults
+COLLAPSE_TAU = 0.90
+AMBIGUITY_H = 0.50
+CATCH_ALL_PRIOR = 0.05
+MAX_HYPOTHESES = 64
+EXACT_SELECT_MAX_N = 10  # 2^N subset enumeration stays cheap below this
+
+LAYER_PRIORS_DEFAULT = {
+    "caller": 0.20,
+    "checkout": 0.35,
+    "script": 0.10,
+    "config": 0.30,
+    "daemon": 0.05,
+    "upstream": 0.10,
+}
+LAYER_ORDER = ["caller", "checkout", "script", "config", "daemon", "upstream"]
+
+DEFAULT_ROUTER_PORT = 4000
+DEFAULT_ROUTER_URL = "https://llm.mumchimp.com"
+EXT_DIR = "$HOME/.pi/agent/extensions"
+
+ERROR_PATTERNS = [
+    ("status", re.compile(r"status code[^0-9]*(\d{3})|\b(\d{3})\s+status", re.I)),
+    ("port", re.compile(r":(\d{2,5})(?:/|\b)")),
+    ("url", re.compile(r"https?://[^\s)'\"]+")),
+    ("nobody", re.compile(r"\(no body\)|empty[ -]?body|content-length:\s*0", re.I)),
+    ("exit", re.compile(r"exit(?:ed)?(?: with)?(?: code)? (\d+)\b", re.I)),
+]
+
+# The signature the catch-all probe re-checks at runtime: an error matching none of it
+# is, by construction, a cause this chain does not model.
+SIGNATURE_REGEX = (
+    r"status code[^0-9]*[0-9]{3}|https?://|:[0-9]{2,5}/|"
+    r"exit(?:ed)?(?: with)?(?: code)? [0-9]+|\(no body\)|empty[ -]?body"
+)
+
+
+def log(msg: str, level: str = "info") -> None:
+    sys.stderr.write(f"[idp-hypothesize] {level}: {msg}\n")
+
+
+# --------------------------------------------------------------------------- core
+
+
+@dataclass
+class Hypothesis:
+    id: str
+    layer: str
+    prior: float
+    probe: str
+    falsified_if: dict
+    evidence: str
+    dedup_key: str
+    statement: str = ""
+    probe_reliability: float = 0.9
+    cost_tokens: int = 200
+
+
+@dataclass
+class Metrics:
+    error_parse: dict = field(default_factory=dict)
+    parse_confidence: str = "high"
+    hypotheses_generated: int = 0
+    mece_layers_covered: int = 0
+    probes_selected: int = 0
+    probes_deduped: int = 0
+    expected_ig_bits: float = 0.0
+    ig_per_token: float = 0.0
+    selection: str = ""
+    sim_map_accuracy: float = 0.0
+    sim_collapse_prob: float = 0.0
+    sim_recommendation: str = "proceed"
+    catch_all_present: bool = False
+    catch_all_prior: float = 0.0
+    degraded_roots: int = 0
+    spec_bytes: int = 0
+    spec_sha256: str = ""
+    elapsed_ms: float = 0.0
+
+
+def entropy(p) -> float:
+    p = [x for x in p if x > 0]
+    return -sum(x * math.log2(x) for x in p)
+
+
+def normalize(priors):
+    if isinstance(priors, dict):
+        s = float(sum(priors.values()))
+        if s <= 0:
+            raise ValueError("priors must have positive mass")
+        return {k: v / s for k, v in priors.items()}
+    s = float(sum(priors))
+    if s <= 0:
+        raise ValueError("priors must have positive mass")
+    return [v / s for v in priors]
+
+
+def info_gain(ids, prior_map, noise) -> float:
+    """Exact E[I(H;Y_S)] over the probe set S; unobserved probes marginalized."""
+    S = list(ids)
+    m = len(S)
+    ig = entropy(list(prior_map.values()))
+    a, b = noise["alpha"], noise["beta"]
+    for bits in range(2**m):
+        yS = [(bits >> k) & 1 for k in range(m)]
+        posts = {}
+        py = 0.0
+        for hid, pr in prior_map.items():
+            lk = 1.0
+            for k, pid in enumerate(S):
+                if pid == hid:
+                    lk *= (1 - b) if yS[k] == 0 else b
+                else:
+                    lk *= a if yS[k] == 0 else (1 - a)
+            posts[hid] = pr * lk
+            py += pr * lk
+        if py <= 0:
+            continue
+        ig -= py * entropy([v / py for v in posts.values()])
+    return ig
+
+
+def greedy_select(hyps, noise, max_probes):
+    """Greedy max marginal IG per token. The fallback for large hypothesis sets."""
+    prior_map = {h.id: h.prior for h in hyps}
+    S, cur = [], 0.0
+    while len(S) < min(max_probes, len(hyps)):
+        best, best_score = None, 1e-12
+        for h in hyps:
+            if h.id in S:
+                continue
+            g = info_gain(S + [h.id], prior_map, noise) - cur
+            score = g / max(h.cost_tokens, 1)
+            if score > best_score:
+                best, best_score = h.id, score
+        if best is None:
+            break
+        S.append(best)
+        cur = info_gain(S, prior_map, noise)
+    return S
+
+
+def exact_select(hyps, noise, max_probes):
+    """The true optimum by enumerating every subset (2^N, exact for N <= 10)."""
+    prior_map = {h.id: h.prior for h in hyps}
+    ids = [h.id for h in hyps]
+    k = min(max_probes, len(ids))
+    best, best_ig = [], -1.0
+    for mask in range(1 << len(ids)):
+        if bin(mask).count("1") > k:
+            continue
+        sub = [ids[i] for i in range(len(ids)) if mask >> i & 1]
+        ig = info_gain(sub, prior_map, noise)
+        if ig > best_ig + 1e-12:
+            best_ig, best = ig, sub
+    return best
+
+
+def select_probes(hyps, noise, max_probes):
+    if len(hyps) <= EXACT_SELECT_MAX_N:
+        return exact_select(hyps, noise, max_probes), "exact"
+    return greedy_select(hyps, noise, max_probes), "greedy"
+
+
+def simulate_collapse(hyps, noise, seed=7, n=3000):
+    """Posterior quality of the selected probe set. Deterministic under seed."""
+    rng = random.Random(seed)
+    ids = [h.id for h in hyps]
+    pri = [h.prior for h in hyps]
+    a, b = noise["alpha"], noise["beta"]
+    correct = collapse = 0
+    for _ in range(n):
+        t = rng.choices(range(len(ids)), weights=pri)[0]
+        fired = [
+            (rng.random() < 1 - b) if k == t else (rng.random() < a)
+            for k in range(len(ids))
+        ]
+        post = []
+        for j in range(len(ids)):
+            lk = 1.0
+            for k in range(len(ids)):
+                if k == j:
+                    lk *= (1 - b) if fired[k] else b
+                else:
+                    lk *= a if fired[k] else (1 - a)
+            post.append(pri[j] * lk)
+        s = sum(post)
+        post = [x / s for x in post]
+        mp = max(post)
+        correct += post.index(mp) == t
+        collapse += mp >= COLLAPSE_TAU
+    return correct / n, collapse / n
+
+
+# ----------------------------------------------------------------------- parsing
+
+
+def parse_error(err: str) -> dict:
+    out = {}
+    for name, pat in ERROR_PATTERNS:
+        m = pat.search(err or "")
+        if m:
+            out[name] = next((g for g in m.groups() if g), m.group(0))
+    if "url" in out:
+        um = re.search(r":(\d{2,5})(?:/|\b)", out["url"])
+        if um and "port" not in out:
+            out["port"] = um.group(1)
+    return out
+
+
+# ----------------------------------------------------------------------- probes
+
+
+def _probe_caller(root: str) -> str:
+    """Defect: the calling extension spawns a script the checkout does not have."""
+    return (
+        "command -v rg >/dev/null || exit 2; "
+        f'[ -d "{EXT_DIR}" ] || exit 2; '
+        "missing=0; "
+        f"for ref in $(rg -o -N --no-filename 'bin/[A-Za-z0-9_.-]+' \"{EXT_DIR}\" 2>/dev/null "
+        "| sort -u); do "
+        "b=${ref#bin/}; "
+        f'if [ ! -e "{root}/bin/$b" ]; then echo "MISSING $b"; missing=1; fi; '
+        "done; "
+        'if [ "$missing" = 1 ]; then exit 0; else exit 1; fi'
+    )
+
+
+def _probe_checkout(root: str, script: str) -> str:
+    """Defect: the code is running from a checkout that is not the canonical one."""
+    return (
+        f'cd "{root}" || exit 2; '
+        "git rev-parse --git-dir >/dev/null 2>&1 || exit 2; "
+        "branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); "
+        "canon=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null "
+        "| sed 's|^origin/||'); "
+        '[ -z "$canon" ] && canon=main; '
+        f'dirty=$(git status --porcelain -- "bin/{script}" 2>/dev/null | head -5); '
+        'if [ -n "$dirty" ] || [ "$branch" != "$canon" ]; then '
+        'echo "CHECKOUT_DRIFT branch=$branch canonical=$canon dirty=${dirty:-none}"; exit 0; '
+        "fi; exit 1"
+    )
+
+
+def _probe_script(root: str, script: str) -> str:
+    """Defect: the failing script is missing from the checkout or does not parse.
+
+    The parse check follows the file's own language: a .py file is parsed with ast,
+    a shell script is checked with `bash -n`.  A shell script fed to the Python parser
+    always fails, which would report a healthy script as broken.
+    """
+    p = f"{root}/bin/{script}"
+    return (
+        f'p="{p}"; '
+        'if [ ! -f "$p" ]; then echo "SCRIPT_MISSING $p"; exit 0; fi; '
+        'sb=$(head -1 "$p" 2>/dev/null); '
+        'case "$p:$sb" in '
+        "*.py:*|*python*) "
+        'if python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$p" '
+        '2>/dev/null; then exit 1; else echo "SCRIPT_BROKEN $p"; exit 0; fi ;; '
+        '*sh*) if bash -n "$p" 2>/dev/null; then exit 1; '
+        'else echo "SCRIPT_BROKEN $p"; exit 0; fi ;; '
+        "*) exit 1 ;; "
+        "esac"
+    )
+
+
+def _probe_config(root: str, host: str, port: str) -> str:
+    """Defect: no router config binds the host/port the caller actually dialled."""
+    needle = shlex.quote(host)
+    return (
+        "command -v rg >/dev/null || exit 2; "
+        "found=0; "
+        f'for f in "{root}/llm/config.yaml" "{root}/platform/llm/config.yaml"; do '
+        f'if [ -f "$f" ] && rg -q -F {needle} "$f"; then found=1; fi; done; '
+        f'if [ "$found" = 1 ]; then exit 1; else echo "CONFIG_DRIFT no binding for '
+        f'{host}:{port}"; exit 0; fi'
+    )
+
+
+def _probe_daemon(port: str) -> str:
+    """Defect: the local router is not answering on the port the caller dialled."""
+    return (
+        "command -v curl >/dev/null || exit 2; "
+        "code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 "
+        f'"http://127.0.0.1:{port}/health" 2>/dev/null) || code=000; '
+        'if [ "$code" = "200" ]; then exit 1; else echo "DAEMON_DOWN http=$code"; exit 0; fi'
+    )
+
+
+def _probe_upstream(url: str) -> str:
+    """Defect: the upstream ingress is not answering."""
+    return (
+        "command -v curl >/dev/null || exit 2; "
+        "code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "
+        f'"{url}/models" 2>/dev/null) || code=000; '
+        'if [ "$code" = "200" ]; then exit 1; else echo "UPSTREAM_FAIL http=$code"; exit 0; fi'
+    )
+
+
+def _probe_catch_all(error: str) -> str:
+    """Defect: the error carries none of the signatures this chain models.
+
+    A probe that reads a file nobody writes (the old `/tmp/race_fired_ids` meta-probe)
+    can never fail: it always answered 0, so the catch-all always looked confirmed.
+    This one measures the error itself.
+    """
+    return (
+        f"printf '%s' {shlex.quote(error or '')} | grep -Eiq {shlex.quote(SIGNATURE_REGEX)}; "
+        "rc=$?; "
+        'if [ "$rc" = 0 ]; then exit 1; elif [ "$rc" = 1 ]; then exit 0; else exit 2; fi'
+    )
+
+
+def probe_for(layer, roots, script, host, port, url, error):
+    root = roots[0] if roots else "$IDP_ROOT"
+    if layer == "caller":
+        return (
+            _probe_caller(root),
+            "the calling agent spawns a script that is not in the checkout",
+        )
+    if layer == "checkout":
+        return (
+            _probe_checkout(root, script),
+            "the code runs from a checkout that is not the canonical one",
+        )
+    if layer == "script":
+        return (
+            _probe_script(root, script),
+            f"bin/{script} is missing from the checkout or does not parse",
+        )
+    if layer == "config":
+        return (
+            _probe_config(root, host, port),
+            f"no router config binds {host}:{port}",
+        )
+    if layer == "daemon":
+        return (
+            _probe_daemon(port),
+            f"the local router on 127.0.0.1:{port} is not answering",
+        )
+    if layer == "upstream":
+        return (
+            _probe_upstream(url),
+            f"the upstream ingress {url} is not answering",
+        )
+    if layer == "catch_all":
+        return (
+            _probe_catch_all(error),
+            "the failure carries none of the signatures this chain models",
+        )
+    return ("exit 2", "unmodelled layer")
+
+
+# -------------------------------------------------------------------- synthesis
+
+
+def _host_of(ctx):
+    url = ctx.get("url")
+    if not url:
+        return None
+    m = re.match(r"https?://([^/:]+)", url)
+    return m.group(1) if m else None
+
+
+def _origin(url):
+    """scheme://host[:port] of a url -- the ingress root, without its path."""
+    m = re.match(r"(https?)://([^/:]+)(?::(\d+))?", url or "")
+    if not m:
+        return DEFAULT_ROUTER_URL
+    scheme, host, port = m.group(1), m.group(2), m.group(3)
+    default = "80" if scheme == "http" else "443"
+    if port and port != default:
+        return f"{scheme}://{host}:{port}"
+    return f"{scheme}://{host}"
+
+
+def _is_local(host):
+    return (host or "") in ("127.0.0.1", "localhost", "::1", "0.0.0.0")
+
+
+def synthesize(
+    error,
+    roots,
+    prior_table,
+    noise,
+    max_probes=8,
+    script=None,
+    host=None,
+    port=None,
+    url=None,
+):
+    t0 = time.time()
+    ctx = parse_error(error)
+    parse_conf = "high" if ctx else "low"
+    if parse_conf == "low":
+        log(
+            "error string yielded no structured fields; synthesizing generic chain",
+            "warn",
+        )
+
+    degraded = sum(1 for r in roots if r and not os.path.isdir(r))
+    if degraded:
+        log(
+            f"{degraded} root(s) not found on this host; probes emitted with guards",
+            "warn",
+        )
+
+    script = script or ctx.get("script") or "estate-execute"
+    host = host or _host_of(ctx) or "llm.mumchimp.com"
+    port = port or ctx.get("port") or str(DEFAULT_ROUTER_PORT)
+    url = url or ctx.get("url") or DEFAULT_ROUTER_URL
+    if url.endswith("/"):
+        url = url[:-1]
+    # The upstream probe targets the ingress root. When the error names a loopback
+    # address, the upstream is not the local daemon (that is the daemon probe's job),
+    # so the cloud router is the upstream of record.
+    upstream = DEFAULT_ROUTER_URL if _is_local(_host_of({"url": url})) else _origin(url)
+
+    p = normalize({k: v for k, v in prior_table.items() if v > 0})
+    specific_mass = 1.0 - CATCH_ALL_PRIOR
+
+    hyps = []
+    for layer in LAYER_ORDER:
+        pr = p.get(layer)
+        if not pr:
+            continue
+        probe, statement = probe_for(layer, roots, script, host, port, upstream, error)
+        hyps.append(
+            Hypothesis(
+                id=f"H_{layer}",
+                layer=layer,
+                prior=round(pr * specific_mass, 6),
+                probe=probe,
+                falsified_if={"exit_code": 1},
+                evidence=statement,
+                statement=statement,
+                dedup_key=f"{layer}:{statement[:40]}",
+            )
+        )
+
+    # MECE completeness: the mandatory catch-all bucket (P = CATCH_ALL_PRIOR).
+    catch_probe, catch_statement = probe_for(
+        "catch_all", roots, script, host, port, upstream, error
+    )
+    hyps.append(
+        Hypothesis(
+            id="H_unmodeled",
+            layer="catch_all",
+            prior=CATCH_ALL_PRIOR,
+            probe=catch_probe,
+            falsified_if={"exit_code": 1},
+            evidence=catch_statement,
+            statement=catch_statement,
+            dedup_key="catch_all:meta",
+            cost_tokens=20,
+        )
+    )
+
+    # Dedup correlated probes (shared evidence) -- keep the max prior per key.
+    by_key, deduped = {}, 0
+    for h in sorted(hyps, key=lambda h: -h.prior):
+        if h.dedup_key in by_key:
+            deduped += 1
+            continue
+        by_key[h.dedup_key] = h
+    hyps = sorted(by_key.values(), key=lambda h: h.id)[:MAX_HYPOTHESES]
+
+    # The catch-all is identified by its layer, not by its position in the list.
+    specific = [h for h in hyps if h.layer != "catch_all"]
+    if not specific:
+        log("no specific hypotheses synthesized", "error")
+        return None, Metrics(
+            parse_confidence=parse_conf,
+            degraded_roots=degraded,
+            elapsed_ms=round((time.time() - t0) * 1e3, 1),
+        )
+
+    prior_map = normalize({h.id: h.prior for h in hyps})
+    for h in hyps:
+        h.prior = prior_map[h.id]
+
+    selected_ids, method = select_probes(hyps, noise, max_probes)
+    sel = [h for h in hyps if h.id in selected_ids]
+    ig = info_gain(selected_ids, prior_map, noise)
+    acc, col = simulate_collapse(sel, noise)
+    if acc >= 0.80 and col >= 0.60:
+        rec = "proceed"
+    elif acc < 0.80:
+        rec = "extend probe set / reduce probe noise"
+    else:
+        rec = "lower tau or accept ambiguity"
+
+    m = Metrics(
+        error_parse=ctx,
+        parse_confidence=parse_conf,
+        hypotheses_generated=len(hyps),
+        mece_layers_covered=len({h.layer for h in specific}),
+        probes_selected=len(sel),
+        probes_deduped=deduped,
+        expected_ig_bits=round(ig, 4),
+        ig_per_token=round(ig / max(sum(h.cost_tokens for h in sel), 1), 6),
+        selection=method,
+        sim_map_accuracy=round(acc, 4),
+        sim_collapse_prob=round(col, 4),
+        sim_recommendation=rec,
+        catch_all_present=any(h.layer == "catch_all" for h in hyps),
+        catch_all_prior=round(prior_map.get("H_unmodeled", 0.0), 4),
+        degraded_roots=degraded,
+        elapsed_ms=round((time.time() - t0) * 1e3, 1),
+    )
+
+    spec = {
+        "hypotheses": [
+            {
+                "id": h.id,
+                "statement": h.statement,
+                "description": h.evidence,
+                "prior": round(h.prior, 6),
+                "probe": h.probe,
+                "falsified_if": h.falsified_if,
+                "evidence_exits": [0, 1],
+                "probe_reliability": h.probe_reliability,
+            }
+            for h in sel
+        ],
+        "parallel": 8,
+        "timeout": 30,
+        "eps": 0.05,
+        "meta": {
+            "generator": "bin/idp-hypothesize",
+            "probe_contract": "exit 0 = defect present (evidence for); "
+            "exit 1 = layer exonerated (falsifies); exit 2+ = unknown, no update",
+            "noise": noise,
+            "collapse_tau": COLLAPSE_TAU,
+            "ambiguity_h_bits": AMBIGUITY_H,
+            "parse": ctx,
+            "context": {
+                "script": script,
+                "host": host,
+                "port": port,
+                "url": url,
+                "upstream": upstream,
+                "roots": roots,
+            },
+            "selection": method,
+            "recommendation": rec,
+            "degraded_roots": degraded,
+        },
+    }
+    return spec, m
+
+
+# ------------------------------------------------------------------------ output
+
+
+def atomic_write(path, data):
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        f.write(data)
+    os.replace(tmp, path)
+
+
+def load_priors(path):
+    if not path:
+        return dict(LAYER_PRIORS_DEFAULT)
+    with open(path) as f:
+        t = json.load(f)
+    if any(not (0 < float(v) <= 1) for v in t.values()):
+        raise ValueError("prior out of range")
+    return {k: float(v) for k, v in t.items()}
+
+
+def load_noise(path):
+    n = dict(DEFAULT_NOISE)
+    if path:
+        with open(path) as f:
+            n.update({k: float(v) for k, v in json.load(f).items()})
+    if not (0 <= n["alpha"] <= 0.5 and 0 <= n["beta"] <= 0.5):
+        raise ValueError("noise out of range [0,0.5]")
+    return n
+
+
+def dump_spec(spec, fmt):
+    if fmt == "yaml":
+        try:
+            import yaml
+        except ImportError:
+            raise ValueError("PyYAML is not installed; use --format json")
+        return yaml.safe_dump(spec, sort_keys=False)
+    return json.dumps(spec, indent=2) + "\n"
+
+
+# ----------------------------------------------------------------------- selftest
+
+
+def selftest(root: str) -> int:
+    """Re-derive the numbers this file used to assert. Prints what it measured."""
+    failures = []
+    noise = dict(DEFAULT_NOISE)
+
+    # 1. exact selection is the true optimum: brute force must agree with it.
+    rng = random.Random(11)
+    disagreements = 0
+    for _ in range(10):
+        n = rng.randint(4, 7)
+        priors = normalize({f"H{i}": rng.random() + 0.01 for i in range(n)})
+        hyps = [
+            Hypothesis(
+                id=k,
+                layer="x",
+                prior=v,
+                probe="true",
+                falsified_if={},
+                evidence="",
+                dedup_key=k,
+            )
+            for k, v in priors.items()
+        ]
+        k = rng.randint(2, min(4, n))
+        got = exact_select(hyps, noise, k)
+        got_ig = info_gain(got, priors, noise)
+        brute = -1.0
+        ids = list(priors)
+        for mask in range(1 << n):
+            if bin(mask).count("1") != k:
+                continue
+            sub = [ids[i] for i in range(n) if mask >> i & 1]
+            brute = max(brute, info_gain(sub, priors, noise))
+        if got_ig < brute - 1e-9:
+            disagreements += 1
+            failures.append(f"exact selection below brute force: {got_ig} < {brute}")
+    print(f"selftest: exact-vs-brute-force disagreements: {disagreements}")
+
+    # 2. greedy vs exact agreement at N=8 (the claim the header used to assert).
+    agree = 0
+    trials = 100
+    rng = random.Random(5)
+    for _ in range(trials):
+        priors = normalize({f"H{i}": rng.random() + 0.01 for i in range(8)})
+        hyps = [
+            Hypothesis(
+                id=k,
+                layer="x",
+                prior=v,
+                probe="true",
+                falsified_if={},
+                evidence="",
+                dedup_key=k,
+            )
+            for k, v in priors.items()
+        ]
+        g = greedy_select(hyps, noise, 4)
+        e = exact_select(hyps, noise, 4)
+        gi = info_gain(g, priors, noise)
+        ei = info_gain(e, priors, noise)
+        if abs(gi - ei) < 1e-9:
+            agree += 1
+    print(
+        f"selftest: greedy == exact optimum on {agree}/{trials} random N=8 instances "
+        f"(equal-cost); exact enumeration is used below N={EXACT_SELECT_MAX_N} regardless"
+    )
+
+    # 3. the collapse simulation is deterministic under a fixed seed.
+    hyps = [
+        Hypothesis(
+            id=f"H{i}",
+            layer="x",
+            prior=0.25,
+            probe="true",
+            falsified_if={},
+            evidence="",
+            dedup_key=f"H{i}",
+        )
+        for i in range(4)
+    ]
+    a1 = simulate_collapse(hyps, noise, seed=7)
+    a2 = simulate_collapse(hyps, noise, seed=7)
+    if a1 != a2:
+        failures.append("collapse simulation is not deterministic under a fixed seed")
+    print(f"selftest: collapse simulation deterministic under seed 7: {a1 == a2}")
+
+    # 4. every probe this tool emits obeys the exit contract (0, 1 or 2).
+    spec, _ = synthesize(
+        "Error: Connection error. status code 503 from http://127.0.0.1:4000/health",
+        [root],
+        LAYER_PRIORS_DEFAULT,
+        noise,
+        8,
+        script="estate-execute",
+    )
+    if spec is None:
+        failures.append("synthesis produced no spec for the selftest error")
+    else:
+        for h in spec["hypotheses"]:
+            try:
+                r = subprocess.run(
+                    ["bash", "-c", h["probe"]],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                rc = r.returncode
+            except subprocess.TimeoutExpired:
+                rc = 124
+            ok = rc in (0, 1, 2)
+            print(
+                f"selftest: probe {h['id']} exit={rc} ({'ok' if ok else 'CONTRACT VIOLATION'})"
+            )
+            if not ok:
+                failures.append(f"probe {h['id']} answered exit {rc}, outside 0/1/2")
+
+    # 5. the emitted spec is loadable by the race runner's own parser.
+    try:
+        raw = json.dumps(spec)
+        parsed = json.loads(raw)
+        assert isinstance(parsed["hypotheses"], list) and parsed["hypotheses"]
+        for h in parsed["hypotheses"]:
+            assert (
+                isinstance(h["falsified_if"], dict) and "exit_code" in h["falsified_if"]
+            )
+        print("selftest: emitted spec parses as the race runner expects: ok")
+    except Exception as e:  # noqa: BLE001
+        failures.append(f"emitted spec is not consumable by hypotheses-race.py: {e}")
+
+    if failures:
+        for f in failures:
+            log(f, "error")
+        print(f"selftest: FAILED ({len(failures)} problems)")
+        return 1
+    print("selftest: PASSED")
+    return 0
+
+
+# ----------------------------------------------------------------------------- cli
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        description="one-pass hypothesis generator: error string -> race spec"
+    )
+    ap.add_argument("--error", help="the error string to diagnose")
+    ap.add_argument(
+        "--root", default=None, help="canonical checkout (default: this repo)"
+    )
+    ap.add_argument("--roots", default="", help="colon-separated roots")
+    ap.add_argument("--script", default=None, help="the failing script under bin/")
+    ap.add_argument("--host", default=None, help="expected router host")
+    ap.add_argument("--port", default=None, help="expected local router port")
+    ap.add_argument("--url", default=None, help="expected upstream url")
+    ap.add_argument("--prior-file")
+    ap.add_argument("--noise-file")
+    ap.add_argument("--max-probes", type=int, default=8)
+    ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--out", help="where to write the race spec")
+    ap.add_argument("--metrics-out", help="where to write the metrics json")
+    ap.add_argument("--format", choices=["json", "yaml"], default="json")
+    ap.add_argument("--selftest", action="store_true", help="run the internal checks")
+    a = ap.parse_args(argv)
+
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    root = a.root or repo_root
+    roots = [r for r in a.roots.split(":") if r] or [root]
+
+    if a.selftest:
+        return selftest(root)
+
+    if not a.error:
+        ap.error("--error is required (or use --selftest)")
+    if not a.out:
+        ap.error("--out is required")
+
+    try:
+        priors = load_priors(a.prior_file)
+        noise = load_noise(a.noise_file)
+    except (ValueError, OSError, json.JSONDecodeError) as e:
+        log(f"config error: {e}", "error")
+        return EXIT_USAGE
+
+    spec, m = synthesize(
+        a.error, roots, priors, noise, a.max_probes, a.script, a.host, a.port, a.url
+    )
+    if spec is None:
+        return EXIT_NO_HYP
+
+    try:
+        text = dump_spec(spec, a.format)
+    except ValueError as e:
+        log(str(e), "error")
+        return EXIT_USAGE
+
+    m.spec_bytes = len(text.encode())
+    m.spec_sha256 = hashlib.sha256(text.encode()).hexdigest()[:16]
+    atomic_write(a.out, text)
+    if a.metrics_out:
+        atomic_write(a.metrics_out, json.dumps(asdict(m), indent=2) + "\n")
+    print(json.dumps(asdict(m), indent=2))
+    if roots and m.degraded_roots == len(roots):
+        return EXIT_DEGRADED
+    return EXIT_OK
+
+
+if __name__ == "__main__":
+    sys.exit(main())
