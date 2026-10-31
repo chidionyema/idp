@@ -52,8 +52,26 @@ def problems(m):
     into_done = [x["from"] for x in e if x["to"] == m["done"]]
     if into_done != ["closed"] or [x["from"] for x in e if x["to"] == "closed"] != ["operating"]:
         out.append("done must be reachable only via operating then closed")
-    if any(x["from"] == "landed" and x["to"] in ("closed", m["done"]) for x in e):
-        out.append("landed must not skip the operating proof")
+    if any(x["from"] == "landed" and x["to"] in ("closed", m["done"], "operating") for x in e):
+        out.append("landed must not skip integration and the operating proof")
+    # QA, integration and operating are states of delivery: landing needs verification, operating needs integration
+    for target, only_from in (("landed", "verified"), ("operating", "integrated"), ("integrated", "landed"), ("verified", "lane")):
+        srcs = sorted({x["from"] for x in e if x["to"] == target})
+        if srcs != [only_from]:
+            out.append("%s must be reachable only from %s, found %s" % (target, only_from, srcs))
+    v = s.get("verified", {})
+    if sorted(v.get("independent_of", [])) != ["issuer", "runner"]:
+        out.append("verified must be independent of the issuer and the runner")
+    for name in ("verified", "integrated", "operating"):
+        eb = s.get(name, {}).get("enforced_by") or []
+        if not eb:
+            out.append("%s has no enforcing piece" % name)
+        for pth in eb:
+            if not (CAT.parent.parent / pth).exists():
+                out.append("%s names %s, which does not exist" % (name, pth))
+    for x in e:
+        if (x["from"], x["to"]) in (("lane", "verified"), ("verified", "landed"), ("landed", "integrated"), ("integrated", "operating"), ("operating", "closed"), ("closed", m["done"])) and not x.get("evidence"):
+            out.append("edge %s->%s must name the evidence it emits (no gap in intel)" % (x["from"], x["to"]))
     # a legion state never decides: every edge out of a legion state is machine-decided
     for x in e:
         if s[x["from"]]["class"] == "legion" and x["decider"] != "machine":

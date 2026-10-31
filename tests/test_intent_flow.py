@@ -280,3 +280,72 @@ def test_report_separates_chosen_overrides_and_scores_enough_graded(tmp_path):
         and c["bad"] == 3
         and c["verdict"] == "0.75 good"
     )
+
+
+def test_delivery_includes_qa_integration_and_operating_as_states():
+    states = [h["to"] for h in f.path(M, "vision", "done")]
+    i = {
+        s: states.index(s)
+        for s in (
+            "lane",
+            "verified",
+            "landed",
+            "integrated",
+            "operating",
+            "closed",
+            "done",
+        )
+    }
+    assert list(i.values()) == sorted(i.values())
+
+
+def test_landing_without_verification_is_refused():
+    m = copy.deepcopy(M)
+    m["edges"].append(
+        {
+            "from": "lane",
+            "to": "landed",
+            "gate": "green",
+            "decider": "machine",
+            "evidence": "x",
+        }
+    )
+    assert any(
+        "landed must be reachable only from verified" in p for p in f.problems(m)
+    )
+
+
+def test_operating_without_integration_is_refused():
+    m = copy.deepcopy(M)
+    m["edges"].append(
+        {"from": "landed", "to": "operating", "gate": "x", "decider": "machine"}
+    )
+    p = f.problems(m)
+    assert any("skip integration" in x for x in p) and any(
+        "operating must be reachable only from integrated" in x for x in p
+    )
+
+
+def test_verifier_must_be_independent_of_issuer_and_runner():
+    m = copy.deepcopy(M)
+    m["states"]["verified"]["independent_of"] = ["runner"]
+    assert any("independent of the issuer and the runner" in p for p in f.problems(m))
+
+
+def test_every_delivery_edge_names_the_evidence_it_emits():
+    m = copy.deepcopy(M)
+    for x in m["edges"]:
+        if (x["from"], x["to"]) == ("landed", "integrated"):
+            x.pop("evidence")
+    assert any("no gap in intel" in p for p in f.problems(m))
+
+
+def test_qa_and_integration_failures_have_cause_classes_and_corrections():
+    ec = M["feedback"]["edge_causes"]
+    assert set(ec["verified->ordered"]) == {
+        "claim-unverified",
+        "eval-regressed",
+        "judge-rejected",
+    }
+    assert ec["integrated->ordered"] == ["integration-failed"]
+    assert all(c in M["feedback"]["causes"] for cs in ec.values() for c in cs)

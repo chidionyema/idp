@@ -54,7 +54,11 @@
     },
     "operating": {
       "level": "closing",
-      "class": "machine"
+      "class": "machine",
+      "enforced_by": [
+        "catalog/critical-functions.json",
+        "bin/estate-memory-audit"
+      ]
     },
     "closed": {
       "level": "closing",
@@ -82,6 +86,30 @@
     "held": {
       "level": "Malkuth",
       "class": "machine"
+    },
+    "verified": {
+      "level": "QA",
+      "class": "machine",
+      "independent_of": [
+        "issuer",
+        "runner"
+      ],
+      "enforced_by": [
+        "nsvee/engine.py",
+        "features/gates/deterministic-verifier.feature",
+        "features/gates/judge-drift.feature",
+        "features/gates/shadow-verify.feature",
+        "platform/estate/protocolkit/SPEC.md"
+      ]
+    },
+    "integrated": {
+      "level": "integration",
+      "class": "machine",
+      "enforced_by": [
+        "platform/estate/libexec/critical-probe.py",
+        "tests/behavioral",
+        "catalog/critical-functions.json"
+      ]
     }
   },
   "edges": [
@@ -165,33 +193,23 @@
     },
     {
       "from": "lane",
-      "to": "landed",
-      "gate": "Greenlane proves green on top of main",
-      "decider": "machine"
-    },
-    {
-      "from": "lane",
       "to": "ordered",
       "gate": "Greenlane red or conflicting: reason read from the head status, reissue",
-      "decider": "machine"
-    },
-    {
-      "from": "landed",
-      "to": "operating",
-      "gate": "a real production measurement on the founder's surface",
       "decider": "machine"
     },
     {
       "from": "operating",
       "to": "closed",
       "gate": "outcome graded by a collector that is not the executor; claim released; journal written",
-      "decider": "machine"
+      "decider": "machine",
+      "evidence": "grade: outcome, grader (not the executor), claim released"
     },
     {
       "from": "closed",
       "to": "done",
       "gate": "estate_health entry for the capability is green",
-      "decider": "machine"
+      "decider": "machine",
+      "evidence": "estate_health verdict for the capability"
     },
     {
       "from": "escalated",
@@ -228,6 +246,48 @@
       "to": "ordered",
       "gate": "landed but the production measurement is red: reissue a corrective order",
       "decider": "machine"
+    },
+    {
+      "from": "lane",
+      "to": "verified",
+      "gate": "every claim re-checked against evidence by a verifier that is neither the issuer nor the runner; evals not regressed; an independent judge has seen the diff and the evidence",
+      "decider": "machine",
+      "evidence": "verification-record: claim, evidence span, verifier, judge verdict"
+    },
+    {
+      "from": "verified",
+      "to": "landed",
+      "gate": "Greenlane proves green on top of main",
+      "decider": "machine",
+      "evidence": "greenlane-head status on the landed commit"
+    },
+    {
+      "from": "landed",
+      "to": "integrated",
+      "gate": "wired into its real caller path on the deployed system: the integration probe and the behavioural tests pass against what is running, not against the diff",
+      "decider": "machine",
+      "evidence": "integration-record: caller, probe output, deployed commit"
+    },
+    {
+      "from": "integrated",
+      "to": "operating",
+      "gate": "a real production measurement on the founder's surface",
+      "decider": "machine",
+      "evidence": "measurement: surface, value, time, collector"
+    },
+    {
+      "from": "verified",
+      "to": "ordered",
+      "gate": "a claim could not be verified, an eval regressed, or the judge rejected: reissue",
+      "decider": "machine",
+      "evidence": "verification-record with the failing claim"
+    },
+    {
+      "from": "integrated",
+      "to": "ordered",
+      "gate": "landed but not wired into its caller: reissue an integration order",
+      "decider": "machine",
+      "evidence": "integration-record with the failing probe"
     }
   ],
   "feedback": {
@@ -283,6 +343,26 @@
         "level": "correct the process",
         "correction": "classify before retrying; an unclassified failure is not retried blindly",
         "record": "lesson"
+      },
+      "claim-unverified": {
+        "level": "correct the order",
+        "correction": "restate the claim narrower, or produce the evidence that was missing; an unprovable claim is deleted from the report, not argued",
+        "record": "lesson"
+      },
+      "eval-regressed": {
+        "level": "correct the order",
+        "correction": "find the regressing case, fix the work, reissue; do not loosen the eval",
+        "record": "lesson"
+      },
+      "judge-rejected": {
+        "level": "correct the process",
+        "correction": "read the judge's reason against the evidence; if the judge was wrong, that is a decider correction recorded against the judge",
+        "record": "decision-record"
+      },
+      "integration-failed": {
+        "level": "correct the order",
+        "correction": "wire the caller path the work was meant to serve; merged-but-unwired is the failure this stage exists to catch",
+        "record": "lesson"
       }
     },
     "edge_causes": {
@@ -297,6 +377,14 @@
       ],
       "operating->ordered": [
         "production-red"
+      ],
+      "verified->ordered": [
+        "claim-unverified",
+        "eval-regressed",
+        "judge-rejected"
+      ],
+      "integrated->ordered": [
+        "integration-failed"
       ]
     }
   },

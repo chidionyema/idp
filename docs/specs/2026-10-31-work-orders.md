@@ -209,3 +209,24 @@ unmeasured. There is no session data yet, so every verdict today is BLIND.
 
 Not built: the hook that refuses a session start with no recorded decision, the outside grader that writes outcomes, and
 the link from these grades to the rank ledger (promotion and demotion above).
+
+## QA, integration and operating are states of delivery (founder, 2026-10-31: the biggest gap)
+
+A merged lane is not delivered. The flow now has three more states, each a gate that can fail and each emitting evidence,
+so there is no step where the estate stops knowing:
+
+| State | Gate | Independence | Evidence it emits | Existing pieces it uses |
+|---|---|---|---|---|
+| verified (QA, before landing) | every claim re-checked against evidence; evals not regressed; a judge has seen the diff and the evidence | the verifier is neither the issuer nor the runner | verification-record: claim, evidence span, verifier, judge verdict | `nsvee/engine.py`, deterministic-verifier, judge-drift, shadow-verify features, protocolkit proofset |
+| integrated (after landing) | wired into its real caller path on the deployed system; the probe and behavioural tests pass against what is running, not against the diff | collector is not the issuer | integration-record: caller, probe output, deployed commit | `critical-probe.py`, `tests/behavioral`, `critical-functions.json` |
+| operating | a real production measurement on the founder's surface | collector is not the executor | measurement: surface, value, time, collector | `critical-functions.json`, the memory audit |
+
+Order is enforced by the checker: landed is reachable only from verified, integrated only from landed, operating only
+from integrated, done only from closed. Failures return to `ordered` with cause classes (claim-unverified,
+eval-regressed, judge-rejected, integration-failed), so each is corrected at its level, and a repeated class fixes the
+process. A judge that rejects wrongly is itself a decider error recorded against the judge. Every delivery edge must name
+the evidence it emits, and the checker refuses one that does not: a transition with no evidence is a gap in intel.
+
+Not built: the verifier that re-checks claims generically (the estate's `idp-verify` checks the catalogue only, so this
+needs a claim-verification runner over the protocolkit proofset), the integration probe per capability, and the judge
+harness. Those are the next work orders; the model now says where each belongs and refuses delivery without them.
