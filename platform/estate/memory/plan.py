@@ -23,6 +23,7 @@ extension registers the plan tools in-process -- so this part has no plan.ts twi
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import json
 import os
@@ -69,6 +70,38 @@ HOUSEKEEPING = frozenset(
     }
 )
 
+
+# THE RUNTIMES THE ESTATE KNOWS. A session whose process tree contains one of these is an AGENT
+# session, and the door holds it to the contract even when its runtime adapter was never
+# installed. Detected from the PROCESS, never from anything the caller says: a gate that trusts
+# the caller's claim about who it is, is not a gate.
+HARNESS_BINARIES = frozenset(
+    {
+        "pi",
+        "claude",
+        "codex",
+        "gemini",
+        "cline",
+        ".cline",
+        "opencode",
+        "aider",
+        "goose",
+        "crush",
+        "cursor-agent",
+        "amp",
+        "qwen",
+        "droid",
+    }
+)
+# The node-based CLIs carry the runtime's name in the script they run, not in argv[0].
+HARNESS_PACKAGES = (
+    ("pi", re.compile(r"pi-coding-agent")),
+    ("claude", re.compile(r"claude-code")),
+    ("codex", re.compile(r"@openai/codex")),
+    ("gemini", re.compile(r"gemini-cli")),
+    ("cline", re.compile(r"(^|[/.-])cline([/.-]|$)")),
+    ("opencode", re.compile(r"opencode")),
+)
 
 # By absolute path in the refusal: bin/ is on no runtime's PATH, and the door must work anywhere.
 ESTATE_PLAN = os.path.join(
@@ -858,6 +891,61 @@ def publish_session(
     return out
 
 
+def _process_argv(pid: int) -> list:
+    """The command line of one pid, as tokens. Empty when it cannot be read."""
+    try:
+        out = subprocess.run(  # noqa: S603 -- fixed argv (/bin/ps), never a shell string
+            ["/bin/ps", "-ww", "-o", "args=", "-p", str(int(pid))],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:  # noqa: BLE001 - an unreadable process is no process, never a crash
+        return []
+    line = (out.stdout or "").strip()
+    return line.split() if line else []
+
+
+def harness_of_argv(argv) -> str:
+    """The runtime's name when this command line IS an agent runtime, else ""."""
+    if not argv:
+        return ""
+    exe = os.path.basename(argv[0]).lower()
+    if exe in HARNESS_BINARIES:
+        return exe.lstrip(".")
+    if exe in ("node", "bun", "deno", "npx") and len(argv) > 1:
+        target = argv[1]
+        for label, pat in HARNESS_PACKAGES:
+            if pat.search(target):
+                return label
+    return ""
+
+
+def harness_session_id() -> str:
+    """A session id for the agent runtime in this process's ancestry, minted from the PROCESS.
+
+    THE MINTING IS THE POINT. Before this, a runtime whose adapter was never installed
+    (Claude Code's CLI, Cline, Codex, Gemini) presented no session at all, so the door let its
+    work through and the contract held only where the runtime remembered to enforce it -- the
+    fail-open the estate's own root-cause table calls R1. Now the door can NAME every agent
+    session, so it can hold every one of them to the contract.
+
+    Automation (the fleet collector, the reaper, the lane watcher) has no runtime in its
+    ancestry, so it stays exempt -- and the fact that it ran is recorded.
+    """
+    for pid in _ancestor_pids():
+        name = harness_of_argv(_process_argv(pid))
+        if not name:
+            continue
+        sid = "harness:%s:%d" % (name, pid)
+        # A pointer that cannot be written is not a crash: the identity is still true, and the
+        # pointer is only a convenience for the next process up the tree.
+        with contextlib.suppress(Exception):
+            write_session_pointer(sid, pid=pid)
+        return sid
+    return ""
+
+
 def resolve_session_id() -> str:
     """The caller's session identity, in order of trust.
 
@@ -866,7 +954,10 @@ def resolve_session_id() -> str:
        process's ANCESTORS: an MCP server runs under its runtime, and the intent executor
        runs under the MCP server, so the owner is further up the tree than the immediate
        parent. The immediate parent and this process are searched too.
-    3. Nothing. The caller is automation, the fact is recorded, and the work is let through.
+    3. The agent runtime in this process's ancestry, named from the PROCESS itself
+       (harness_session_id). This is the step that makes the contract hold for every runtime
+       and not only for the ones that ship an adapter.
+    4. Nothing. The caller is automation, the fact is recorded, and the work is let through.
     """
     sid = (os.environ.get("ESTATE_SESSION_ID") or "").strip()
     if sid:
@@ -880,7 +971,39 @@ def resolve_session_id() -> str:
         sid = str((data or {}).get("session_id") or "").strip()
         if sid:
             return sid
-    return ""
+    return harness_session_id()
+
+
+def plan_lock_disabled() -> bool:
+    """The founder's switch: `ESTATE_PLAN_LOCK=off` turns the door's plan gate off.
+
+    The one humane way to work without a declaration. It is honoured by every copy of the
+    contract (pi's extension, the hook, the opencode plugin, this door), so an operator never
+    has to guess which surface is enforcing.
+    """
+    return (os.environ.get("ESTATE_PLAN_LOCK") or "").strip().lower() in (
+        "off",
+        "0",
+        "false",
+        "no",
+    )
+
+
+def record_plan_call(session_id: str, tool: str, args: dict) -> bool:
+    """One plan-tool call, appended to a session's ledger. The declaration itself.
+
+    The ledger is the plan: every copy of the contract replays it, so a declaration made
+    through the shell door is the same plan the door reads a moment later.
+    """
+    if not session_id or tool not in PLAN_TOOLS:
+        return False
+    with contextlib.suppress(Exception):
+        last = ledger_calls(session_id)
+        if last and last[-1][0] == tool and (last[-1][1] or {}) == (args or {}):
+            # Already the last thing this session did: the door writes the event before the
+            # command runs, so a second copy would be the same call twice.
+            return True
+    return append_plan_event(session_id, tool, args or {})
 
 
 def _ancestor_pids(limit: int = 6) -> list:
@@ -1033,31 +1156,41 @@ def door_plan_gate(command: str, session_id=None) -> dict:
 
     No session presented means no agent session was identified: the caller is automation (the
     fleet collector, the reaper, the lane watcher) and is let through, but the fact is RECORDED,
-    so the founder can see work that ran without a declaration. A session that presents an id
-    and has no plan is refused: that is the case the bug is about.
+    so the founder can see work that ran without a declaration. A session that IS identified and
+    has declared no plan is REFUSED: the door can name every agent session now (the runtime in
+    the caller's own process tree), and compliance is one command away (bin/estate-plan), so a
+    fence a correct machine cannot satisfy is no longer possible here.
     """
-    sid = (
-        session_id
-        if session_id is not None
-        else os.environ.get("ESTATE_SESSION_ID", "")
-    )
+    sid = (session_id or "").strip()
+    if not sid:
+        sid = (os.environ.get("ESTATE_SESSION_ID") or "").strip()
+    if not sid:
+        sid = resolve_session_id()
     if not sid:
         return {"ok": True, "reason": "no_session_presented"}
+    if plan_lock_disabled():
+        return {"ok": True, "reason": "plan_lock_disabled"}
     if is_read_only_command(command):
         return {"ok": True, "reason": "read_only"}
     plan = ledger_plan(sid)
     if not plan:
         if not ledger_exists(sid):
-            # The adapter for this session has not opened a ledger, so the door cannot tell a
-            # compliant agent from an unplanned one. Refusing here would trap a correct agent
-            # whose runtime adapter is not installed yet -- a fence a correct machine cannot
-            # satisfy is an outage, not a gate. The work is let through and RECORDED.
+            # The door NAMED this session (it is an agent session) and it has declared nothing.
+            # It is refused, not let through: the old fail-open let every runtime without an
+            # adapter work without a goal, which is the defect the contract exists to end.
+            # Compliance is one command, on every machine, with no adapter needed:
+            # bin/estate-plan writes the declaration into this session's own ledger.
             return {
-                "ok": True,
-                "reason": "session_unenforced",
+                "ok": False,
+                "reason": "plan_not_declared",
                 "detail": (
-                    "this session presented an id but has no plan ledger, so its runtime "
-                    "adapter is not live for it yet. The work is allowed and recorded."
+                    "this session ("
+                    + sid
+                    + ") has declared no goal and no sub-goal, so this command is refused. "
+                    "Declare the plan first -- one command, no adapter needed: "
+                    + ESTATE_PLAN
+                    + ' declare_plan \'{"goal": "<what done looks like>", "subgoals": '
+                    '[{"id": "goal_1", "text": "<first step>"}]}\''
                 ),
             }
         return {

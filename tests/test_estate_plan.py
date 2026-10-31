@@ -334,3 +334,100 @@ def test_opencode_refuses_work_until_the_sessions_plan_allows_it():
         "one session's plan must not open another's"
     )
     assert out["optout"] == "allowed"
+
+
+# --- the fleet: every runtime is named by the door, and every runtime can comply -------------
+
+
+def test_the_door_names_an_agent_runtime_from_the_process_tree(monkeypatch):
+    """A runtime with no adapter is identified from its OWN PROCESS, not from what it says."""
+    monkeypatch.setattr(plan, "_ancestor_pids", lambda limit=6: [4242, 4243])
+    monkeypatch.setattr(
+        plan,
+        "_process_argv",
+        lambda pid: ["/usr/local/bin/node", "cli.js"] if pid == 4243 else [],
+    )
+    monkeypatch.setattr(plan, "harness_of_argv", lambda argv: "claude" if argv else "")
+    assert plan.harness_session_id() == "harness:claude:4243"
+
+
+def test_a_node_runtime_is_named_by_the_package_it_runs():
+    assert (
+        plan.harness_of_argv(
+            ["node", "/x/node_modules/@anthropic-ai/claude-code/cli.js"]
+        )
+        == "claude"
+    )
+    assert (
+        plan.harness_of_argv(["node", "/x/node_modules/@openai/codex/bin/x.js"])
+        == "codex"
+    )
+    assert plan.harness_of_argv(["/usr/local/bin/claude", "--print"]) == "claude"
+    assert plan.harness_of_argv(["/usr/bin/python3", "worker.py"]) == ""
+    assert plan.harness_of_argv([]) == ""
+
+
+def test_an_agent_session_with_no_plan_is_refused_and_is_told_the_one_command(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(plan, "PLAN_LEDGER_DIR", str(tmp_path))
+    gate = plan.door_plan_gate("rm -rf ./build", "harness:claude:4242")
+    assert gate["ok"] is False
+    assert gate["reason"] == "plan_not_declared"
+    assert "estate-plan" in gate["detail"] and "declare_plan" in gate["detail"]
+
+
+def test_automation_with_no_session_is_still_allowed(monkeypatch, tmp_path):
+    monkeypatch.setattr(plan, "PLAN_LEDGER_DIR", str(tmp_path))
+    gate = plan.door_plan_gate("rm -rf ./build", "")
+    assert gate["ok"] is True
+    assert gate["reason"] == "no_session_presented"
+
+
+def test_the_door_honours_the_opt_out(monkeypatch, tmp_path):
+    monkeypatch.setattr(plan, "PLAN_LEDGER_DIR", str(tmp_path))
+    monkeypatch.setenv("ESTATE_PLAN_LOCK", "off")
+    gate = plan.door_plan_gate("rm -rf ./build", "harness:claude:4242")
+    assert gate["ok"] is True
+    assert gate["reason"] == "plan_lock_disabled"
+
+
+def _plan_cli(*args, env=None):
+    e = dict(os.environ)
+    e.update(env or {})
+    return subprocess.run(
+        [sys.executable, os.path.join(ROOT, "bin", "estate-plan"), *args],
+        capture_output=True,
+        text=True,
+        env=e,
+    )
+
+
+def test_the_shell_door_declares_the_plan_for_a_runtime_with_no_bridge(
+    monkeypatch, tmp_path
+):
+    """Compliance is one command on every machine: the ledger is the plan, whoever writes it."""
+    monkeypatch.setattr(plan, "PLAN_LEDGER_DIR", str(tmp_path))
+    env = {"ESTATE_PLAN_LEDGER_DIR": str(tmp_path)}
+    sid = "harness:codex:777"
+    ok = _plan_cli("--session", sid, "declare_plan", json.dumps(GOAL), env=env)
+    assert ok.returncode == 0, ok.stderr
+    assert "Plan declared" in ok.stdout
+    bdd = _plan_cli("--session", sid, "add_bdd", json.dumps(BDD), env=env)
+    assert bdd.returncode == 0, bdd.stderr
+    gate = plan.door_plan_gate("rm -rf ./build", sid)
+    assert gate["ok"] is True, gate
+    assert plan.ledger_plan(sid)["bdd"]["g1"]["then"] == "the button shows"
+
+
+def test_the_shell_door_refuses_a_call_that_does_not_apply(monkeypatch, tmp_path):
+    monkeypatch.setattr(plan, "PLAN_LEDGER_DIR", str(tmp_path))
+    bad = _plan_cli(
+        "--session",
+        "harness:codex:778",
+        "add_bdd",
+        json.dumps(BDD),
+        env={"ESTATE_PLAN_LEDGER_DIR": str(tmp_path)},
+    )
+    assert bad.returncode == 1
+    assert "no plan declared" in bad.stderr
