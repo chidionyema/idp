@@ -6,7 +6,7 @@
     "intent": 114,
     "layer": 246,
     "service": 121,
-    "tool": 470,
+    "tool": 471,
     "workflow": 88
   },
   "records": [
@@ -36225,6 +36225,67 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/idp-hydrate",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ]
+    },
+    {
+      "id": "cap:tool/idp-hypothesize",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "idp-hypothesize -- one-pass hypothesis generator for the Bayesian race.",
+      "contract": {
+        "inputs": [
+          "--error",
+          "--format",
+          "--host",
+          "--max-probes",
+          "--metrics-out",
+          "--noise-file",
+          "--out",
+          "--port",
+          "--prior-file",
+          "--root",
+          "--roots",
+          "--script",
+          "--seed",
+          "--selftest",
+          "--url"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/idp-hypothesize",
       "depends_on": [],
       "metrics": [],
       "blind": [
