@@ -1,0 +1,232 @@
+#!/usr/bin/env python3
+"""decision-frame: frame one decision from the situation, deterministically.
+
+Reads a situation (JSON, file or stdin) and answers: what binds, who decides, which method,
+and what to do next (PROCEED, GATHER, ESCALATE or REFUSE). It decides nothing the laws do
+not already decide, executes nothing, writes nothing (unless --record) and holds no credential.
+Tables live in catalog/decision-protocol.json; spec: docs/specs/2026-10-31-decision-protocol.md.
+
+  perceive    required fields present? a missing one is GATHER, never a guess (J4)
+  comprehend  which laws match the situation's tags, which tier each candidate sits in
+  project     the "and then what" questions from AGENTS.md section 0 that the decision must answer
+
+Exit: 0 PROCEED, 3 GATHER, 4 ESCALATE, 2 REFUSE, 1 unreadable input.
+"""
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+CATALOG = ROOT / "catalog" / "decision-protocol.json"
+CRITICAL = ROOT / "catalog" / "critical-functions.json"
+EXIT = {"PROCEED": 0, "REFUSE": 2, "GATHER": 3, "ESCALATE": 4}
+REVERSIBILITY = ("reversible", "costly", "irreversible")
+BLAST = ("local", "claim", "estate", "founder-surface")
+NOVELTY = ("precedent", "partial", "none")
+PROJECT_QUESTIONS = [
+    "context: in what execution context is this valid?",
+    "degree: to what degree, with what threshold where it tips to failing?",
+    "baseline: what measurable delta over the current state?",
+    "cost: what is the trade-off or opportunity cost?",
+    "ripple: and then what, for the consumers of what changes?",
+    "mechanism: by what deterministic check would a wrong answer be caught?",
+    "provenance: according to what authority, and is any input low-authority?",
+]
+
+
+def load(path=CATALOG):
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def critical_rank(path=CRITICAL):
+    """Function id -> (position, weight): the registry order is the priority order (J5)."""
+    try:
+        fns = json.loads(Path(path).read_text(encoding="utf-8")).get("functions", [])
+    except (OSError, ValueError):
+        return {}
+    return {f["id"]: (i, f.get("weight") or 1) for i, f in enumerate(fns) if "id" in f}
+
+
+def _tags(s):
+    t = set(s.get("tags") or [])
+    t.add("any")
+    t.add(s.get("kind", ""))
+    if s.get("reversibility") == "irreversible":
+        t.add("irreversible")
+    if s.get("outward_facing"):
+        t.add("outward-facing")
+    if s.get("claim_paths_ok") is False:
+        t.add("paths-outside-claim")
+    if s.get("kind") == "status-claim":
+        t.add("done-claim")
+    return t
+
+
+def perceive(s, cat):
+    missing = [k for k in cat["required_perception"] if s.get(k) in (None, "")]
+    bad = []
+    for key, allowed in (("reversibility", REVERSIBILITY), ("blast", BLAST), ("novelty", NOVELTY), ("kind", cat["kinds"])):
+        if s.get(key) is not None and s[key] not in allowed:
+            bad.append("%s=%r not in %s" % (key, s[key], list(allowed)))
+    ev = s.get("evidence")
+    if ev is not None and not isinstance(ev, dict):
+        bad.append("evidence must be an object")
+    return missing, bad
+
+
+def comprehend(s, cat):
+    tags = _tags(s)
+    return [l for l in cat["laws"] if tags & set(l["tags"])]
+
+
+def rank_candidates(cands, cat, rank):
+    """Lexicographic: law-hard-stop, irreversible, founder-critical (registry order), own claim, value, cost."""
+    out = []
+    for c in cands:
+        serves = [f for f in (c.get("serves") or []) if f in rank]
+        best = min((rank[f][0] for f in serves), default=10**6)
+        weight = max((rank[f][1] for f in serves), default=0)
+        key = (
+            1 if c.get("breaks_law") else 0,
+            1 if c.get("irreversible") else 0,
+            0 if serves else 1,
+            best,
+            0 if c.get("in_claim", True) else 1,
+            -(c.get("value") or 0),
+            c.get("cost") or 0,
+            str(c.get("id")),
+        )
+        out.append((key, c, weight))
+    out.sort(key=lambda t: t[0])
+    ties = [x for x in out[1:] if out and x[0][:6] == out[0][0][:6]]
+    return [dict(id=c.get("id"), tier=tier_of(k), registry_position=(k[3] if k[3] < 10**6 else None)) for k, c, _ in out], bool(ties)
+
+
+def tier_of(k):
+    if k[0]:
+        return "law-hard-stop"
+    if k[1]:
+        return "irreversible-or-outward"
+    if k[2] == 0:
+        return "founder-critical-function"
+    if k[4] == 0:
+        return "own-claim"
+    return "estate-value"
+
+
+def methods_for(kind, s, cat, mode):
+    ids = {
+        "diagnosis": ["M-hypothesis-race", "M-probe-first"],
+        "anomaly": ["M-probe-first", "M-anomaly-baseline", "M-hypothesis-race"],
+        "choose-work": ["M-rules-lexicographic"],
+        "competing-goals": ["M-rules-lexicographic"],
+        "bug-found": ["M-rules-lexicographic"],
+        "blocker": ["M-probe-first", "M-hypothesis-race"],
+        "discovery": ["M-probe-first", "M-method-selector"],
+        "status-claim": ["M-probe-first"],
+        "risky-action": ["M-rules-lexicographic", "M-model-check"],
+    }.get(kind, ["M-rules-lexicographic"])
+    if mode == "model":
+        ids = ["M-calibrated-model"] + ([ "M-consensus-vote"] if s.get("blast") in ("estate", "founder-surface") else [])
+        if s.get("repeated"):
+            ids.append("M-bandit")
+    if mode == "judgment":
+        ids = ["M-founder-door"]
+    by = {m["id"]: m for m in cat["methods"]}
+    return [dict(id=i, approach=by[i]["approach"], status=by[i]["status"], impl=by[i]["impl"]) for i in ids]
+
+
+def frame(s, cat=None, rank=None):
+    cat = cat or load()
+    rank = rank if rank is not None else critical_rank()
+    missing, bad = perceive(s, cat)
+    out = {"decision": s.get("decision"), "kind": s.get("kind"), "perceived": {"missing": missing, "invalid": bad}}
+    if bad:
+        out.update(action="REFUSE", decider="machine", why="the situation is malformed: " + "; ".join(bad), laws=[], methods=[])
+        return out
+    laws = comprehend(s, cat)
+    out["laws"] = [dict(id=l["id"], effect=l["effect"], source=l["source"], says=l["says"]) for l in laws]
+    out["projected"] = PROJECT_QUESTIONS
+    if missing:
+        out.update(action="GATHER", decider="machine", why="J4: unknown is not a pass; perceive %s first (cheapest reversible probe inside scope)" % ", ".join(missing), methods=methods_for("discovery", s, cat, "machine"))
+        return out
+    refuse = [l for l in laws if l["effect"] == "REFUSE"]
+    if refuse:
+        out.update(action="REFUSE", decider="machine", why="%s: %s" % (refuse[0]["id"], refuse[0]["says"]), methods=[])
+        return out
+    ev = s["evidence"]
+    kind = s["kind"]
+    irreversible = s["reversibility"] == "irreversible" or s["outward_facing"]
+    if s.get("candidates"):
+        out["ranking"], tie = rank_candidates(s["candidates"], cat, rank)
+    else:
+        tie = False
+    if irreversible:
+        out.update(action="ESCALATE", decider="judgment", irreducibility="irreversible", why="L-irreversible-asks: dry-run the same plan, then ask the founder door once", methods=methods_for(kind, s, cat, "judgment"))
+        return out
+    if not ev.get("measured"):
+        out.update(action="GATHER", decider="machine", why="L-proof-not-assertion/J4: no measurement this run; take the bounded probe first", methods=methods_for("discovery", s, cat, "machine"))
+        return out
+    if kind == "bug-found":
+        if s.get("claim_paths_ok") is False and not s.get("blocks_work"):
+            out.update(action="PROCEED", decider="machine", why="L-only-asked: outside your claim and not blocking; record it (issue or journal) with its evidence and continue the claimed work", record="finding", methods=methods_for(kind, s, cat, "machine"))
+            return out
+        if s.get("claim_paths_ok") is False and s.get("blocks_work"):
+            out.update(action="GATHER", decider="machine", why="L-claim-first: it blocks you but is outside your claim; check for an owner, widen the claim or comment on the holder's issue before touching it", methods=methods_for(kind, s, cat, "machine"))
+            return out
+    if kind == "blocker":
+        if not s.get("blocker_evidence"):
+            out.update(action="GATHER", decider="machine", why="L-no-handback: a blocker is real only with the intent run, its exit status and the printed line", methods=methods_for(kind, s, cat, "machine"))
+            return out
+        if s.get("irrevocable"):
+            out.update(action="ESCALATE", decider="judgment", irreducibility="irreversible", why="an irrevocable blocker with evidence: report it once, in the founder's channel", methods=methods_for(kind, s, cat, "judgment"))
+        else:
+            out.update(action="PROCEED", decider="machine", why="a blocker that is not irrevocable is a reason to try another way; pick the next approach", methods=methods_for(kind, s, cat, "machine"))
+        return out
+    if kind == "competing-goals" and s.get("incommensurable"):
+        out.update(action="ESCALATE", decider="judgment", irreducibility="value-tradeoff", why="the registry order does not rank these goals; ask once with both cases", methods=methods_for(kind, s, cat, "judgment"))
+        return out
+    if s["novelty"] == "none":
+        out.update(action="PROCEED" if s["reversibility"] == "reversible" and s["blast"] in ("local", "claim") else "ESCALATE", decider="machine" if s["reversibility"] == "reversible" and s["blast"] in ("local", "claim") else "judgment", methods=[])
+        if out["action"] == "PROCEED":
+            out["why"] = "no precedent but reversible and local: a time-boxed reversible probe; write the outcome to the decision record"
+            out["methods"] = methods_for("discovery", s, cat, "machine")
+            out["record"] = "decision"
+        else:
+            out["irreducibility"] = "novel"
+            out["why"] = "no precedent and reach beyond the claim: ask once"
+            out["methods"] = methods_for(kind, s, cat, "judgment")
+        return out
+    conf = ev.get("confidence")
+    deterministic = s.get("rule_decides", True)
+    if deterministic:
+        out.update(action="PROCEED", decider="machine", why="a rule decides; apply it and write the record", record="decision", methods=methods_for(kind, s, cat, "machine"))
+    elif conf is None or conf < cat["confidence_floor"]:
+        out.update(action="ESCALATE", decider="judgment", irreducibility="low-confidence-escalation", why="no rule decides and confidence %s is under the floor %s" % (conf, cat["confidence_floor"]), methods=methods_for(kind, s, cat, "judgment"))
+    else:
+        out.update(action="PROCEED", decider="model", why="no rule decides; calibrated confidence %s clears the floor" % conf, record="decision", methods=methods_for(kind, s, cat, "model"))
+    if tie and out["action"] == "PROCEED":
+        out["tie_break"] = "candidates tie through the first six keys: value, then cost, then id (stable)"
+    return out
+
+
+def main(argv):
+    args = [a for a in argv[1:] if not a.startswith("--")]
+    try:
+        text = Path(args[0]).read_text(encoding="utf-8") if args else sys.stdin.read()
+        s = json.loads(text)
+    except (OSError, ValueError, IndexError) as e:
+        sys.stderr.write("decision-frame: cannot read the situation: %s\n" % e)
+        return 1
+    if not isinstance(s, dict):
+        sys.stderr.write("decision-frame: the situation must be a JSON object\n")
+        return 1
+    r = frame(s)
+    sys.stdout.write(json.dumps(r, indent=2, sort_keys=True) + "\n")
+    return EXIT[r["action"]]
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

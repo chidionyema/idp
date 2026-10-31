@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "what": "The estate's decision protocol as data (spec: docs/specs/2026-10-31-decision-protocol.md). Two tables an agent consults through bin/decision-frame: LAWS (what binds, how to recognise that it applies, what it does to the decision) and METHODS (which way of deciding fits which situation, and whether the estate has it yet). It indexes the estate's laws; it does not restate them. The source of each law stays AGENTS.md or docs/training/2026-10-30-founder-judgement.md. Deciders follow ADR 0044 (machine, model, judgment).",
+  "confidence_floor": 0.7,
+  "priority_tiers": [
+    "law-hard-stop",
+    "irreversible-or-outward",
+    "founder-critical-function",
+    "own-claim",
+    "estate-value",
+    "cost"
+  ],
+  "required_perception": ["decision", "kind", "reversibility", "outward_facing", "blast", "novelty", "evidence"],
+  "kinds": ["choose-work", "bug-found", "blocker", "anomaly", "discovery", "competing-goals", "risky-action", "status-claim", "diagnosis"],
+  "laws": [
+    {"id": "L-no-pr-no-main", "source": "AGENTS.md section 2", "tags": ["raise-pr", "push-main"], "effect": "REFUSE", "says": "An agent never raises a pull request and never pushes main. Push lane/<name> and stop."},
+    {"id": "L-secrets-by-name", "source": "AGENTS.md section 4", "tags": ["secret-value"], "effect": "REFUSE", "says": "Secrets are referenced by name. Never print, paste or ask for a value."},
+    {"id": "L-intents-only", "source": "AGENTS.md section 7", "tags": ["raw-action"], "effect": "REQUIRE", "says": "An action goes through an intent; if no intent exists, add the capability properly, never a temporary door."},
+    {"id": "L-claim-first", "source": "AGENTS.md section 5", "tags": ["no-claim", "paths-outside-claim", "overlapping-claim"], "effect": "REQUIRE", "says": "No work without a claim; changes stay inside the claim's paths; overlap means pick other work."},
+    {"id": "L-one-layer", "source": "AGENTS.md section 6", "tags": ["new-layer", "second-copy"], "effect": "REQUIRE", "says": "Prove the layer does not exist (growmos query, rg) before building; a second copy is deleted in the same change."},
+    {"id": "L-proof-not-assertion", "source": "AGENTS.md section 3", "tags": ["status-claim", "done-claim"], "effect": "REQUIRE", "says": "Every status or done claim ties to a measurement taken this run. Built is not operating."},
+    {"id": "L-cloud-default", "source": "AGENTS.md section 7a", "tags": ["laptop-only", "mac-dependency"], "effect": "REQUIRE", "says": "Cloud is the default route; a capability that works only through the laptop is a fallback, not done."},
+    {"id": "L-placement", "source": "AGENTS.md section 8", "tags": ["new-workload"], "effect": "REQUIRE", "says": "Place a workload by the free-tier ladder; state CPU and memory requests for the node."},
+    {"id": "L-no-handback", "source": "AGENTS.md section 9", "tags": ["about-to-stop", "ask-founder"], "effect": "REQUIRE", "says": "Drive to operational and proven; stop only on an irrevocable blocker reported with the intent run, exit status and printed line."},
+    {"id": "L-only-asked", "source": "AGENTS.md section 10", "tags": ["scope-creep", "bug-found"], "effect": "ADVISE", "says": "Make only the change that was asked for; record what you find on the way, do not fix it unasked."},
+    {"id": "L-name-the-decider", "source": "AGENTS.md section 12", "tags": ["any"], "effect": "REQUIRE", "says": "Say machine, model or judgment before acting; judgment names its irreducibility."},
+    {"id": "L-irreversible-asks", "source": "AGENTS.md section 3 and protocolkit E4", "tags": ["irreversible", "outward-facing", "permanent-delete", "financial"], "effect": "ESCALATE", "says": "Irreversible or outward-facing steps need an explicit approval; dry-run the same plan first."},
+    {"id": "J1-no-degrade", "source": "founder-judgement J1", "tags": ["service-down", "fallback"], "effect": "REQUIRE", "says": "A fallback serves the same contract behind the same door, or it is a second door and is deleted."},
+    {"id": "J2-root-cause", "source": "founder-judgement J2", "tags": ["gate-tripped", "inherited-red"], "effect": "REQUIRE", "says": "A failing gate is a report, not a repair; remove the class of failure."},
+    {"id": "J3-goal-not-liveness", "source": "founder-judgement J3", "tags": ["health-claim", "anomaly"], "effect": "REQUIRE", "says": "Measure the goal, not the process: alive is not healthy."},
+    {"id": "J4-unknown-is-refuse", "source": "founder-judgement J4", "tags": ["cannot-measure", "blind"], "effect": "REQUIRE", "says": "An unmeasurable thing is unknown, and unknown is not a pass."},
+    {"id": "J5-founder-first", "source": "founder-judgement J5", "tags": ["choose-work", "competing-goals"], "effect": "REQUIRE", "says": "Priority is the registry's order and weights, not memory; founder-critical functions come first."},
+    {"id": "J6-highest-value", "source": "founder-judgement J6", "tags": ["choose-work", "idle"], "effect": "REQUIRE", "says": "A free agent takes the head of the incident queue, not the easiest item."},
+    {"id": "J7-assumptions", "source": "founder-judgement J7", "tags": ["assumption"], "effect": "REQUIRE", "says": "An assumption is written down with the probe that would show it broke."},
+    {"id": "J8-machine-measures", "source": "founder-judgement J8", "tags": ["manual-measurement"], "effect": "REQUIRE", "says": "If the founder would measure it by hand, build the machine that does."}
+  ],
+  "methods": [
+    {"id": "M-rules-lexicographic", "approach": "ordered rules (lexicographic priority)", "decider": "machine", "status": "exists", "impl": "catalog/critical-functions.json order and weights; sovereign/policy.py", "use_when": "goals have a declared order; a hard law applies; the answer must be re-derivable", "avoid_when": "the order itself is the open question"},
+    {"id": "M-probe-first", "approach": "value of information: take the cheapest measurement before acting", "decider": "machine", "status": "proposed", "impl": "probes in platform/estate/libexec/critical-probe.py; bounded probe request in packages/method_selector", "use_when": "evidence is missing or stale and a probe is cheap, reversible and inside scope", "avoid_when": "the probe costs more than a wrong reversible guess"},
+    {"id": "M-hypothesis-race", "approach": "Bayesian comparison of competing hypotheses", "decider": "machine", "status": "exists", "impl": "bin/estate-diagnose, intent hypotheses.race", "use_when": "a failure or anomaly has several candidate causes and evidence discriminates between them", "avoid_when": "one cause is already measured"},
+    {"id": "M-method-selector", "approach": "evidence-backed method recommendation with abstention", "decider": "machine", "status": "exists", "impl": "packages/method_selector, bin/method-select (all catalogue entries UNVERIFIED)", "use_when": "the question is which way to attack a problem", "avoid_when": "an authorisation is needed (it recommends, it never grants)"},
+    {"id": "M-calibrated-model", "approach": "calibrated decision model with a confidence floor", "decider": "model", "status": "exists", "impl": "mcp__jev__choice, platform/estate/libexec/jev-decide.py, ADR 0030", "use_when": "a bounded choice among named options, reversible, no deterministic rule", "avoid_when": "irreversible, or confidence is below the floor (then escalate)"},
+    {"id": "M-selective-prediction", "approach": "abstain/defer rule with a measured coverage-risk curve (selective prediction, conformal)", "decider": "model", "status": "proposed", "impl": "none yet; needs the decision record's outcomes to calibrate against", "use_when": "a model decides repeatedly and outcomes are graded; the floor should be earned, not fixed", "avoid_when": "fewer than a few hundred graded outcomes; keep the fixed floor until then"},
+    {"id": "M-consensus-vote", "approach": "independent-model vote with quorum", "decider": "model", "status": "exists", "impl": "consensus engine, quorum 2/3 (AGENTS.md section 11)", "use_when": "a hard-to-undo or cross-cutting choice a model may make; voters must be independent", "avoid_when": "voters share the same evidence and prompt (it is one vote repeated)"},
+    {"id": "M-bandit", "approach": "contextual bandit (Thompson sampling) with an exploration budget", "decider": "model", "status": "proposed", "impl": "none yet; candidate home is router lane choice and agent assignment", "use_when": "the same choice recurs, reward is measured per outcome, and a bad arm is cheap", "avoid_when": "one-off choices, delayed or unmeasured reward, irreversible arms"},
+    {"id": "M-anomaly-baseline", "approach": "robust statistical baseline (median/MAD or control chart) on estate_health history", "decider": "machine", "status": "proposed", "impl": "none yet; input is the heartbeat history", "use_when": "deciding if a reading is abnormal for this series", "avoid_when": "too little history; report BLIND, not normal"},
+    {"id": "M-replay-ablation", "approach": "replay and ablation: did the intervention change the outcome", "decider": "machine", "status": "proposed", "impl": "replay hit-rate benchmark (docs/specs/2026-10-31-memory-one-plane.md)", "use_when": "judging whether a protocol, brief or lane helped", "avoid_when": "no outcome grading exists yet"},
+    {"id": "M-model-check", "approach": "model checking / SMT for invariants", "decider": "machine", "status": "exists", "impl": "bin/tlc-check", "use_when": "a protocol or state machine must provably never reach a state", "avoid_when": "the property is empirical, not logical"},
+    {"id": "M-founder-door", "approach": "human judgment through the founder decision door (one message per decision)", "decider": "judgment", "status": "exists", "impl": "docs/decisions/2026-10-28-the-founder-decision-door-is-one-message-per-decision.md", "use_when": "value-tradeoff, irreversible, novel, or low-confidence escalation", "avoid_when": "a machine or model can decide: 'I was not sure' is not an irreducibility"}
+  ]
+}
