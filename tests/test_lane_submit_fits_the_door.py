@@ -138,26 +138,14 @@ def test_the_verdict_is_still_reachable_without_a_wait():
     )
 
 
-def test_the_push_step_measures_the_handover_instead_of_inferring_it():
-    """#5814: the timeout is ambiguous. The push is not killed with it, so the ref can land while
-    the intent reports `exit 124`, and the caller cannot tell a handed-over branch from nothing
-    happening at all -- measured twice on 2026-10-12, and the ref moved after the kill both
-    times. So the step ends by reading the remote ref, and hands the push to the background so
-    that reading it is never also the thing that kills the push."""
+def test_the_push_step_uses_the_governed_handover_helper():
     push = next(s for s in _steps() if "push" in s["name"])
-    cmd = push["cmd"]
-    assert "git ls-remote --heads origin" in cmd, (
-        "the push step never reads the remote ref, so its exit code is the only account of the "
-        "handover -- which is the ambiguity #5814 is about"
-    )
-    assert '"$on" = "$sha"' in cmd, (
-        "the push step reads the remote ref but does not compare it to the commit being handed "
-        "over, so a stale ref on the lane reads as a successful landing"
-    )
-    assert " &" in cmd and "push_pid=$!" in cmd, (
-        "the push is not backgrounded, so the step's own cap is also the push's cap and a slow "
-        "push is reported as an absent ref -- measured twice, 50s then 80s against a 98s push"
-    )
+    assert "python3 bin/lane-submit-handover" in push["cmd"]
+    assert ">" not in push["cmd"] and "tee" not in push["cmd"]
+    helper = (ROOT / "bin/lane-submit-handover").read_text()
+    assert '"ls-remote", "--heads", "origin"' in helper
+    assert "on == sha" in helper
+    assert "start_new_session=True" in helper
 
 
 def test_the_push_step_carries_no_bound_of_its_own():

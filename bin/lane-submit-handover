@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+"""Submit one claimed branch to Greenlane and report the remote ref as evidence."""
+
+import argparse
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+
+def git(*args: str, timeout: int = 10) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            ["git", *args], capture_output=True, text=True, timeout=timeout, check=False
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(["git", *args], 124, "", "timed out")
+
+
+def remote_head(lane: str) -> str:
+    result = git("ls-remote", "--heads", "origin", lane)
+    return result.stdout.split()[0] if result.returncode == 0 and result.stdout.strip() else ""
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--lane", default="")
+    parser.add_argument("--observe-seconds", type=int, default=20)
+    args = parser.parse_args()
+    branch = git("rev-parse", "--abbrev-ref", "HEAD")
+    sha_result = git("rev-parse", "HEAD")
+    if branch.returncode or sha_result.returncode:
+        print("BLIND lane-submit: cannot identify the branch", file=sys.stderr)
+        return 2
+    lane = args.lane or branch.stdout.strip()
+    if not lane.startswith("lane/"):
+        lane = f"lane/{lane}"
+    sha = sha_result.stdout.strip()
+    origin = git("config", "--get", "remote.origin.url").stdout.strip()
+    match = re.search(r"[:/]([^/:]+/[^/:]+?)(?:\.git)?$", origin)
+    repo = match.group(1) if match else "chidionyema/idp"
+
+    if remote_head(lane) == sha:
+        print(f"ok lane-submit {lane}={sha} on origin")
+        return 0
+
+    fd, log_path = tempfile.mkstemp(prefix="lane-submit-push-", suffix=".log")
+    with os.fdopen(fd, "wb") as log:
+        push = subprocess.Popen(
+            ["git", "push", "-q", "origin", f"HEAD:refs/heads/{lane}"],
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    deadline = time.monotonic() + max(1, args.observe_seconds)
+    while time.monotonic() < deadline:
+        if push.poll() is not None:
+            break
+        time.sleep(1)
+    on = remote_head(lane)
+    if on == sha:
+        print(f"ok lane-submit {lane}={sha} on origin")
+        print(f"verdict: gh api repos/{repo}/commits/{sha}/status")
+        return 0
+    if push.poll() is None:
+        print(
+            f"IN-FLIGHT lane-submit {lane}: push pid={push.pid}; "
+            f"remote ref absent; log={log_path}",
+            file=sys.stderr,
+        )
+        return 75
+    detail = Path(log_path).read_text(errors="replace")[-500:]
+    print(
+        f"FAIL lane-submit {lane}: push exit={push.returncode}; "
+        f"remote={on or 'absent'}; {detail}",
+        file=sys.stderr,
+    )
+    return push.returncode or 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
