@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+"""spec-forge: from one structured seed, deterministically write the spec, the BDD feature and the test that binds it.
+
+  spec-forge plan SEED.json [--root DIR]    print what would be written and a digest of it (writes nothing)
+  spec-forge write SEED.json [--root DIR]   write the three files; refuses to overwrite a file whose content differs
+  spec-forge from-edge FROM TO              print a seed built from an edge of catalog/intent-flow.json
+
+Seed: {"slug","title","date","why","area","scenarios":[{"name","given":[],"when":[],"then":[]}],"proof":"command"}.
+Same seed, same bytes: no clock, no model, no randomness. Outputs:
+  docs/specs/<date>-<slug>.md            the claim, the acceptance list and the proof command
+  features/<area>/<slug>.feature         the scenarios, Gherkin
+  tests/test_spec_<slug>.py              names the feature, so bin/spec-gate counts it as bound, and checks its structure
+A feature this tool writes is a skeleton of intent. It does not run the behaviour: the proof command does, and the spec is
+done only when that command exits zero (bin/estate-spec-status).
+Exit 0 ok, 1 invalid seed or would overwrite, 2 usage.
+"""
+import hashlib
+import json
+import re
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent.parent
+SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{1,60}$")
+DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def validate(s):
+    e = []
+    for k in ("slug", "title", "date", "why", "area", "proof"):
+        if not isinstance(s.get(k), str) or not s[k].strip():
+            e.append("missing %s" % k)
+    if isinstance(s.get("slug"), str) and not SLUG.match(s["slug"]):
+        e.append("slug must be lower-case words and hyphens")
+    if isinstance(s.get("area"), str) and not SLUG.match(s["area"]):
+        e.append("area must be lower-case words and hyphens")
+    if isinstance(s.get("date"), str) and not DATE.match(s["date"]):
+        e.append("date must be YYYY-MM-DD")
+    sc = s.get("scenarios")
+    if not isinstance(sc, list) or not sc:
+        e.append("need at least one scenario")
+        sc = []
+    for i, c in enumerate(sc):
+        if not str(c.get("name", "")).strip():
+            e.append("scenario %d has no name" % i)
+        for k in ("when", "then"):
+            if not c.get(k) or not all(isinstance(x, str) and x.strip() for x in c[k]):
+                e.append("scenario %d needs non-empty %s steps" % (i, k))
+        if c.get("given") and not all(isinstance(x, str) and x.strip() for x in c["given"]):
+            e.append("scenario %d has an empty given" % i)
+    return e
+
+
+def steps(kw, items):
+    out = []
+    for n, x in enumerate(items):
+        out.append("    %s %s" % (kw if n == 0 else "And", x.strip()))
+    return out
+
+
+def feature(s):
+    L = ["Feature: %s" % s["title"], "  %s" % s["why"].strip(), "  Spec: docs/specs/%s-%s.md" % (s["date"], s["slug"]), ""]
+    for c in s["scenarios"]:
+        L.append("  Scenario: %s" % c["name"].strip())
+        L += steps("Given", c.get("given") or [])
+        L += steps("When", c["when"])
+        L += steps("Then", c["then"])
+        L.append("")
+    return "\n".join(L)
+
+
+def spec(s):
+    L = ["# %s" % s["title"], "", "Date: %s" % s["date"], "", "## Why", "", s["why"].strip(), "", "## Acceptance", ""]
+    L += ["- %s: %s" % (c["name"].strip(), "; ".join(x.strip() for x in c["then"])) for c in s["scenarios"]]
+    L += ["", "Executable form: `features/%s/%s.feature`." % (s["area"], s["slug"]), "", "## Proof", "",
+          "Done when this exits zero, and not before:", "", "```", s["proof"].strip(), "```", ""]
+    return "\n".join(L)
+
+
+def test_file(s):
+    return '''from pathlib import Path
+
+FEATURE = Path(__file__).resolve().parents[1] / "features" / "%(area)s" / "%(slug)s.feature"
+SPEC = Path(__file__).resolve().parents[1] / "docs" / "specs" / "%(date)s-%(slug)s.md"
+
+
+def test_the_feature_has_scenarios_each_with_a_when_and_a_then():
+    text = FEATURE.read_text()
+    blocks = text.split("  Scenario:")[1:]
+    assert len(blocks) == %(n)d
+    for b in blocks:
+        assert "    When " in b and "    Then " in b
+
+
+def test_the_spec_names_the_proof_command():
+    assert %(proof)r in SPEC.read_text()
+''' % dict(area=s["area"], slug=s["slug"], date=s["date"], n=len(s["scenarios"]), proof=s["proof"].strip())
+
+
+def outputs(s):
+    return {
+        "docs/specs/%s-%s.md" % (s["date"], s["slug"]): spec(s),
+        "features/%s/%s.feature" % (s["area"], s["slug"]): feature(s),
+        "tests/test_spec_%s.py" % s["slug"].replace("-", "_"): test_file(s),
+    }
+
+
+def digest(o):
+    h = hashlib.sha256()
+    for k in sorted(o):
+        h.update(k.encode() + b"\0" + o[k].encode() + b"\0")
+    return h.hexdigest()
+
+
+def from_edge(a, b):
+    d = json.loads((HERE / "catalog" / "intent-flow.json").read_text())
+    e = next((x for x in d["edges"] if x["from"] == a and x["to"] == b), None)
+    if not e:
+        return None
+    return {"slug": "flow-%s-to-%s" % (a, b), "title": "Flow edge %s to %s" % (a, b), "date": "2026-10-31", "area": "flow",
+            "why": "The edge %s to %s is gated by: %s. Decider: %s. Moved by event %s." % (a, b, e["gate"], e["decider"], e["event"]),
+            "scenarios": [{"name": "The gate holds before the edge is taken", "given": ["the work is in state %s" % a],
+                           "when": ["the event %s arrives" % e["event"]],
+                           "then": ["the gate is met: %s" % e["gate"], "the work moves to %s" % b]},
+                          {"name": "The gate not met keeps the work where it is", "given": ["the work is in state %s" % a],
+                           "when": ["the event %s arrives and the gate is not met" % e["event"]],
+                           "then": ["the work stays in %s" % a, "the refusal names the gate"]}],
+            "proof": "bin/intent-flow path %s %s" % (a, b)}
+
+
+def main(argv):
+    if len(argv) >= 4 and argv[1] == "from-edge":
+        s = from_edge(argv[2], argv[3])
+        if not s:
+            print("no such edge")
+            return 1
+        print(json.dumps(s, indent=2))
+        return 0
+    if len(argv) >= 3 and argv[1] in ("plan", "write"):
+        root = Path(argv[argv.index("--root") + 1]) if "--root" in argv else HERE
+        s = json.loads(Path(argv[2]).read_text())
+        e = validate(s)
+        if e:
+            print("\n".join("INVALID " + x for x in e))
+            return 1
+        o = outputs(s)
+        if argv[1] == "plan":
+            print("\n".join("would write %s (%d bytes)" % (k, len(v)) for k, v in o.items()))
+            print("digest %s" % digest(o))
+            return 0
+        for k, v in o.items():
+            p = root / k
+            if p.exists() and p.read_text() != v:
+                print("REFUSED %s exists with different content" % k)
+                return 1
+        for k, v in o.items():
+            p = root / k
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(v)
+            print("wrote %s" % k)
+        print("digest %s" % digest(o))
+        return 0
+    print(__doc__)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
