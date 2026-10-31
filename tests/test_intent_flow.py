@@ -144,3 +144,139 @@ def test_promotion_cannot_be_self_graded_and_breach_demotes_to_shadow():
     m2 = copy.deepcopy(M)
     m2["ranks"]["demotion"]["rule"] = "a warning"
     assert any("demote to shadow" in p for p in f.problems(m2))
+
+
+def test_quad_layer_is_complete_and_every_enforcer_exists():
+    assert f.problems(M) == []
+    assert sorted(M["dna"]["layers"]) == [
+        "assassin",
+        "mathematician",
+        "soldier",
+        "surgeon",
+    ]
+
+
+def test_a_layer_with_no_enforcer_or_a_missing_one_is_refused():
+    m = copy.deepcopy(M)
+    m["dna"]["layers"]["assassin"]["enforced_by"] = []
+    assert any("a wish" in p for p in f.problems(m))
+    m2 = copy.deepcopy(M)
+    m2["dna"]["layers"]["surgeon"]["enforced_by"] = ["bin/does-not-exist"]
+    assert any("does not exist" in p for p in f.problems(m2))
+
+
+def test_dropping_a_layer_is_refused():
+    m = copy.deepcopy(M)
+    del m["dna"]["layers"]["mathematician"]
+    assert any("exactly soldier" in p for p in f.problems(m))
+
+
+def test_session_pick_follows_priority_and_defaults_to_surgeon_with_a_claim():
+    assert (
+        f.pick(M, {"has_sealed_order": True, "claim_open": True})["layer"] == "soldier"
+    )
+    assert (
+        f.pick(
+            M, {"retire_target": True, "target_in_register": True, "claim_open": True}
+        )["layer"]
+        == "assassin"
+    )
+    assert (
+        f.pick(M, {"unproved_claim": True, "claim_open": True})["layer"]
+        == "mathematician"
+    )
+    assert f.pick(M, {"claim_open": True})["layer"] == "surgeon"
+
+
+def test_no_signal_no_layer_a_session_cannot_start_unclaimed():
+    r = f.pick(M, {})
+    assert r["layer"] is None and r["how"] == "refused"
+
+
+def test_choosing_a_layer_needs_its_precondition_and_is_recorded():
+    bad = f.pick(M, {"claim_open": True}, choose="assassin")
+    assert bad["how"] == "refused" and "precondition" in bad["why"]
+    ok = f.pick(
+        M,
+        {"claim_open": True, "unproved_claim": True, "chosen_by": "founder"},
+        choose="mathematician",
+    )
+    assert (
+        ok["layer"] == "mathematician"
+        and ok["how"] == "chosen"
+        and ok["chosen_by"] == "founder"
+    )
+    assert f.pick(M, {}, choose="wizard")["how"] == "refused"
+
+
+def test_recording_is_append_only_and_needs_an_agent_name(tmp_path):
+    p = tmp_path / "s.jsonl"
+    r = f.pick(M, {"claim_open": True})
+    f.record(str(p), "a1", r, {"claim_open": True}, now="2026-10-31T00:00:00Z")
+    f.record(str(p), "a2", f.pick(M, {}), {}, now="2026-10-31T00:01:00Z")
+    lines = p.read_text().splitlines()
+    assert (
+        len(lines) == 2 and '"agent": "a1"' in lines[0] and '"layer": null' in lines[1]
+    )
+
+
+def test_drift_is_blind_without_enough_sessions():
+    rows = [{"layer": "surgeon"}] * 10
+    assert f.drift(rows)["verdict"] == "BLIND"
+
+
+def test_drift_flags_a_change_in_behaviour_and_calls_stable_stable():
+    steady = [{"layer": "surgeon"}, {"layer": "soldier"}] * 20
+    assert f.drift(steady)["verdict"] == "STABLE"
+    shifted = [{"layer": "surgeon"}] * 30 + [{"layer": None}] * 30
+    r = f.drift(shifted)
+    assert r["verdict"] == "CHANGED" and r["moved"][0][0] in ("surgeon", "refused")
+
+
+def _sess(tmp_path, n, layer="surgeon", how="picked", by_rule=None):
+    p = tmp_path / "o.jsonl"
+    ids = []
+    for i in range(n):
+        line = f.record(
+            str(p),
+            "agent-%d" % i,
+            {"layer": layer, "how": how, "by_rule": by_rule},
+            {},
+            now="2026-10-31T00:00:%02dZ" % i,
+        )
+        ids.append(line["id"])
+    return p, ids
+
+
+def test_an_agent_cannot_grade_itself_and_unknown_session_is_refused(tmp_path):
+    import pytest
+
+    p, ids = _sess(tmp_path, 1)
+    with pytest.raises(ValueError):
+        f.outcome(str(p), ids[0], "operating", "agent-0")
+    with pytest.raises(ValueError):
+        f.outcome(str(p), "nope", "operating", "grader")
+    with pytest.raises(ValueError):
+        f.outcome(str(p), ids[0], "great", "grader")
+
+
+def test_report_is_blind_below_min_graded_and_counts_ungraded(tmp_path):
+    p, ids = _sess(tmp_path, 3)
+    f.outcome(str(p), ids[0], "operating", "grader")
+    rows = [__import__("json").loads(x) for x in p.read_text().splitlines()]
+    r = f.report(rows)
+    assert r["ungraded"] == 2 and r["cells"]["surgeon/picked"]["verdict"] == "BLIND"
+
+
+def test_report_separates_chosen_overrides_and_scores_enough_graded(tmp_path):
+    p, ids = _sess(tmp_path, 12, layer="mathematician", how="chosen", by_rule="surgeon")
+    for i, sid in enumerate(ids):
+        f.outcome(str(p), sid, "operating" if i < 9 else "breach", "grader")
+    rows = [__import__("json").loads(x) for x in p.read_text().splitlines()]
+    c = f.report(rows)["cells"]["mathematician/chosen"]
+    assert (
+        c["overrides"] == 12
+        and c["graded"] == 12
+        and c["bad"] == 3
+        and c["verdict"] == "0.75 good"
+    )

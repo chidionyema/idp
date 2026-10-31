@@ -3,9 +3,15 @@
 
   intent-flow check          exit 0 if the machine is sound, 2 and the reasons if not
   intent-flow path FROM TO   shortest path of states, one gate per hop
+  intent-flow outcome FILE --id=ID --result=landed|operating|failed|breach --graded-by=WHO
+  intent-flow report FILE    outcome by choice: per layer and picked/chosen, BLIND until enough graded
+  intent-flow drift FILE     compare older vs newer sessions: STABLE, CHANGED or BLIND (too few to say)
+  intent-flow session [--has-sealed-order] [--retire-target --target-in-register] [--unproved-claim] [--claim-open]
+                      [--choose=LAYER --chosen-by=WHO]   pick (or choose) this session's primary layer
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from collections import deque
@@ -126,6 +132,23 @@ def problems(m):
             out.append("promotion must forbid self-grading and name an outside grader")
         if "shadow" not in rk.get("demotion", {}).get("rule", ""):
             out.append("a seal breach must demote to shadow")
+    dna = m.get("dna", {})
+    if dna:
+        layers = dna.get("layers", {})
+        if sorted(layers) != ["assassin", "mathematician", "soldier", "surgeon"]:
+            out.append("the quad layer must be exactly soldier, mathematician, surgeon, assassin")
+        if sorted(dna.get("order_of_application", [])) != sorted(layers):
+            out.append("order_of_application must name every layer once")
+        root = CAT.parent.parent
+        for name, v in layers.items():
+            if not (v.get("duty") and v.get("prevents") and v.get("gate")):
+                out.append("layer %s needs a duty, a failure it prevents and a gate" % name)
+            eb = v.get("enforced_by") or []
+            if not eb:
+                out.append("layer %s has no enforcing piece (a wish)" % name)
+            for pth in eb:
+                if not (root / pth).exists():
+                    out.append("layer %s names %s, which does not exist" % (name, pth))
     return out
 
 
@@ -150,6 +173,106 @@ def path(m, a, b):
     return hops[::-1]
 
 
+def pick(m, sig, choose=None):
+    """One primary layer for a session: by rule from the signals, or an explicit choice that must be allowed."""
+    sel = m["dna"]["selection"]
+    ok = {
+        "soldier": bool(sig.get("has_sealed_order")),
+        "assassin": bool(sig.get("retire_target") and sig.get("target_in_register")),
+        "mathematician": bool(sig.get("unproved_claim") or sig.get("new_invariant") or sig.get("no_falsifier")),
+        "surgeon": bool(sig.get("claim_open")),
+    }
+    by_rule = next((n for n in sel["priority"] if ok[n]), None)
+    if choose:
+        if choose not in ok:
+            return dict(layer=None, how="refused", why="unknown layer %r" % choose)
+        if not ok[choose]:
+            return dict(layer=None, how="refused", why="precondition for %s not met: %s" % (choose, next(r["precondition"] for r in sel["rules"] if r["layer"] == choose)))
+        return dict(layer=choose, how="chosen", by_rule=by_rule, chosen_by=sig.get("chosen_by", "unrecorded"))
+    if by_rule is None:
+        return dict(layer=None, how="refused", why="no layer applies: open a claim first (surgeon), or supply a sealed order")
+    return dict(layer=by_rule, how="picked")
+
+
+def record(path, agent, r, sig, now=None):
+    """Append one session decision. Append-only; one line per session; never rewritten."""
+    import datetime
+    now = now or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    line = dict(type="session", id=hashlib.sha256(("%s|%s|%s" % (now, agent, r.get("layer"))).encode()).hexdigest()[:12], at=now, agent=agent, layer=r.get("layer"), how=r["how"], by_rule=r.get("by_rule"), why=r.get("why"), signals=sorted(k for k, v in sig.items() if v is True))
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(line, sort_keys=True) + "\n")
+    return line
+
+
+RESULTS = ("landed", "operating", "failed", "breach")
+
+
+def outcome(path, sid, result, graded_by, now=None):
+    """Append a grade for one session. The grader must not be the agent that ran it."""
+    import datetime
+    rows = [json.loads(ln) for ln in Path(path).read_text(encoding="utf-8").splitlines() if ln.strip()]
+    sess = next((r for r in rows if r.get("type") == "session" and r["id"] == sid), None)
+    if sess is None:
+        raise ValueError("no session %s" % sid)
+    if result not in RESULTS:
+        raise ValueError("result must be one of %s" % (RESULTS,))
+    if graded_by == sess["agent"]:
+        raise ValueError("an agent never grades its own session")
+    now = now or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(dict(type="outcome", id=sid, at=now, result=result, graded_by=graded_by), sort_keys=True) + "\n")
+
+
+def report(rows, min_n=10):
+    """Outcome by choice: per (layer, picked or chosen) how often did it reach operating, and how often breach.
+
+    Ungraded sessions are counted and shown, never assumed good. Under min_n graded: BLIND."""
+    sess = {r["id"]: r for r in rows if r.get("type") == "session"}
+    graded = {r["id"]: r["result"] for r in rows if r.get("type") == "outcome" and r["id"] in sess}
+    cells = {}
+    for sid, s in sess.items():
+        key = "%s/%s" % (s.get("layer") or "refused", s["how"])
+        c = cells.setdefault(key, dict(n=0, graded=0, good=0, bad=0, overrides=0))
+        c["n"] += 1
+        if s["how"] == "chosen" and s.get("by_rule") not in (None, s.get("layer")):
+            c["overrides"] += 1
+        res = graded.get(sid)
+        if res:
+            c["graded"] += 1
+            c["good"] += res in ("landed", "operating")
+            c["bad"] += res in ("failed", "breach")
+    for c in cells.values():
+        c["verdict"] = "BLIND" if c["graded"] < min_n else ("%.2f good" % (c["good"] / c["graded"]))
+    return dict(sessions=len(sess), graded=len(graded), ungraded=len(sess) - len(graded), cells=cells)
+
+
+def drift(rows, min_n=20, threshold=0.25):
+    """Compare the older half of the sessions with the newer half.
+
+    Total variation distance over (layer or refusal) per half. Fewer than min_n rows in either half is BLIND,
+    never 'no change': an unmeasurable thing is unknown (J4). min_n and threshold are proposed, unmeasured."""
+    rows = [r for r in rows if r.get("type", "session") == "session"]
+    if len(rows) < 2 * min_n:
+        return dict(verdict="BLIND", why="need %d sessions, have %d" % (2 * min_n, len(rows)))
+    half = len(rows) // 2
+    old, new = rows[:half], rows[half:]
+
+    def dist(rs):
+        c = {}
+        for r in rs:
+            k = r.get("layer") or "refused"
+            c[k] = c.get(k, 0) + 1
+        return {k: v / len(rs) for k, v in c.items()}
+
+    a, b = dist(old), dist(new)
+    tvd = sum(abs(a.get(k, 0) - b.get(k, 0)) for k in set(a) | set(b)) / 2
+    moved = sorted(((k, round(b.get(k, 0) - a.get(k, 0), 3)) for k in set(a) | set(b)), key=lambda x: -abs(x[1]))
+    by_agent = {}
+    for r in new:
+        by_agent.setdefault(r.get("agent"), []).append(r.get("layer") or "refused")
+    return dict(verdict="CHANGED" if tvd > threshold else "STABLE", tvd=round(tvd, 3), threshold=threshold, moved=moved[:4], old_n=len(old), new_n=len(new))
+
+
 def main(argv):
     m = load()
     if len(argv) >= 2 and argv[1] == "check":
@@ -163,6 +286,48 @@ def main(argv):
         for x in h:
             print("%-10s -> %-10s [%s] %s" % (x["from"], x["to"], x["decider"], x["gate"]))
         return 0
+    if len(argv) >= 2 and argv[1] == "session":
+        sig, choose = {}, None
+        for a in argv[2:]:
+            if a.startswith("--choose="):
+                choose = a.split("=", 1)[1]
+            elif a.startswith(("--record=", "--agent=")):
+                continue
+            elif a.startswith("--chosen-by="):
+                sig["chosen_by"] = a.split("=", 1)[1]
+            elif a.startswith("--"):
+                sig[a[2:].replace("-", "_")] = True
+        r = pick(m, sig, choose)
+        rec = next((a.split("=", 1)[1] for a in argv[2:] if a.startswith("--record=")), None)
+        agent = next((a.split("=", 1)[1] for a in argv[2:] if a.startswith("--agent=")), None)
+        sig.pop("record", None); sig.pop("agent", None)
+        if rec:
+            if not agent:
+                sys.stderr.write("intent-flow: --record needs --agent=NAME (every agent decides, by name)\n")
+                return 1
+            record(rec, agent, r, sig)
+        if r["layer"]:
+            r["layer_spec"] = m["dna"]["layers"][r["layer"]]
+            r["then_check_in_order"] = [x for x in m["dna"]["order_of_application"] if x != r["layer"]]
+        print(json.dumps(r, indent=2))
+        return 0 if r["layer"] else 2
+    if len(argv) >= 3 and argv[1] == "report":
+        rows = [json.loads(ln) for ln in Path(argv[2]).read_text(encoding="utf-8").splitlines() if ln.strip()]
+        print(json.dumps(report(rows), indent=2))
+        return 0
+    if len(argv) >= 6 and argv[1] == "outcome":
+        kw = dict(a[2:].split("=", 1) for a in argv[3:] if a.startswith("--") and "=" in a)
+        try:
+            outcome(argv[2], kw["id"], kw["result"], kw["graded-by"])
+        except (KeyError, ValueError, OSError) as e:
+            sys.stderr.write("intent-flow: %s\n" % e)
+            return 1
+        return 0
+    if len(argv) >= 3 and argv[1] == "drift":
+        rows = [json.loads(ln) for ln in Path(argv[2]).read_text(encoding="utf-8").splitlines() if ln.strip()]
+        r = drift(rows)
+        print(json.dumps(r, indent=2))
+        return {"STABLE": 0, "CHANGED": 4, "BLIND": 3}[r["verdict"]]
     sys.stderr.write(__doc__)
     return 1
 

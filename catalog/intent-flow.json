@@ -463,5 +463,92 @@
         "grading"
       ]
     }
+  },
+  "dna": {
+    "what": "The core DNA of the legion: four disciplines, one per layer, each with the duty it imposes, the failure it prevents, and the estate piece that enforces it today. A layer with no enforcing piece that exists is a wish, and the checker refuses it. Founder, 2026-10-31: military precision, magicians/mathematicians, surgeons, assassins; the quad layer.",
+    "layers": {
+      "soldier": {
+        "discipline": "military precision",
+        "duty": "obey rank, order and seal exactly; no improvisation, no widening of scope",
+        "prevents": "drift from the sealed order; a runner deciding",
+        "enforced_by": [
+          "bin/work-order",
+          "bin/intent-flow"
+        ],
+        "gate": "the seal verifies or the order is refused"
+      },
+      "mathematician": {
+        "discipline": "proof before assertion",
+        "duty": "every invariant is stated so a machine can falsify it; an unproved claim is marked unverified",
+        "prevents": "gates that cannot fail; done claimed from a green check",
+        "enforced_by": [
+          "bin/tlc-check",
+          "platform/estate/protocolkit/SPEC.md",
+          "tests/test_critical_functions_registry.py"
+        ],
+        "gate": "a falsifier test exists and has been seen to fail"
+      },
+      "surgeon": {
+        "discipline": "minimal, sterile, counted",
+        "duty": "smallest incision (scope inside the claim), a pre-operation check (dry-run of the same plan), and a count at the end (claims released, branches and worktrees closed, nothing left behind)",
+        "prevents": "collateral change; abandoned claims; a mess nobody owns",
+        "enforced_by": [
+          "bin/claim-gate",
+          "bin/work-order",
+          "bin/estate-memory-audit"
+        ],
+        "gate": "sign-in (claim and paths), time-out (dry-run digest), sign-out (the closing stage)"
+      },
+      "assassin": {
+        "discipline": "one clean strike on a named target",
+        "duty": "retire what is proven dead or duplicated: target named in a register, zero live references shown, one deletion, the kill confirmed by the audit, nothing else touched",
+        "prevents": "second copies of a layer; dead code that keeps being rebuilt on",
+        "enforced_by": [
+          "catalog/memory-register.json",
+          "bin/estate-memory-audit",
+          "bin/capability-index"
+        ],
+        "gate": "RETIRE verdict plus an audit that shows the target gone and no new finding"
+      }
+    },
+    "order_of_application": [
+      "mathematician",
+      "soldier",
+      "surgeon",
+      "assassin"
+    ],
+    "reading": "The mathematician fixes what is true, the soldier carries it out exactly, the surgeon keeps the change small and counted, the assassin removes what the change made redundant.",
+    "selection": {
+      "what": "Each session takes one primary layer. It is picked by rule from signals in the situation, or chosen explicitly; a chosen layer is accepted only if its precondition holds, and the choice is recorded with who made it.",
+      "rules": [
+        {
+          "layer": "soldier",
+          "when": "has_sealed_order",
+          "precondition": "has_sealed_order"
+        },
+        {
+          "layer": "assassin",
+          "when": "retire_target",
+          "precondition": "retire_target and target_in_register"
+        },
+        {
+          "layer": "mathematician",
+          "when": "unproved_claim or new_invariant or no_falsifier",
+          "precondition": "unproved_claim or new_invariant or no_falsifier"
+        },
+        {
+          "layer": "surgeon",
+          "when": "default",
+          "precondition": "claim_open"
+        }
+      ],
+      "priority": [
+        "soldier",
+        "assassin",
+        "mathematician",
+        "surgeon"
+      ],
+      "one_primary": "a session has one primary layer; the other three still apply as checks in order_of_application"
+    }
   }
 }

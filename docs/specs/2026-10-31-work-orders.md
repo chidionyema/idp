@@ -182,3 +182,30 @@ higher rank includes the lower's reach, that shadow cannot push, that the top le
 promotion cannot be self-graded.
 
 Not built: the grader, the rank ledger, and the claim-time check that refuses an order above the runner's rank.
+
+## The quad layer, the per-session decision, and watching behaviour change
+
+The core DNA of the legion (`dna` in `catalog/intent-flow.json`), one layer per discipline (founder, 2026-10-31):
+- **Soldier** (military precision): obey rank, order and seal exactly. Enforced by `bin/work-order`, `bin/intent-flow`.
+- **Mathematician** (proof): every invariant is falsifiable; an unproved claim is marked unverified. `bin/tlc-check`, the protocolkit, the registry judge.
+- **Surgeon** (minimal, sterile, counted): smallest incision, dry-run as the time-out, a count at sign-out (claims released, nothing left behind). `bin/claim-gate`, `bin/work-order`, the memory audit.
+- **Assassin** (one clean strike): retire a named, proven-dead or duplicated target, once, and confirm the kill. The memory register's RETIRE verdicts and the audit; `bin/capability-index`.
+
+The checker refuses a layer with no duty, no gate, or an enforcing piece that does not exist in the repo.
+Order of application: mathematician, soldier, surgeon, assassin.
+
+**Every agent decides, every session.** `bin/intent-flow session` picks the session's one primary layer by rule from its
+signals (sealed order, retire target in the register, unproved claim, open claim), or accepts an explicit choice only when
+that layer's precondition holds; a session with no signal and no claim gets no layer. `--record=FILE --agent=NAME` appends
+one line to an append-only session record; an anonymous record is refused.
+
+**Choice and outcome, so behaviour change is visible.** `intent-flow outcome` appends a grade for a session; the grader
+cannot be the agent that ran it. `intent-flow report` shows, per layer and per picked or chosen, how many sessions were
+graded, how many reached operating, how many failed or breached, and how many were explicit overrides of the rule.
+Ungraded sessions are counted, never assumed good. `intent-flow drift` compares the older half of the sessions with the
+newer half (total variation distance over layer choice) and answers STABLE, CHANGED or BLIND; with too few sessions it says
+BLIND, because an unmeasurable thing is unknown (J4). The thresholds (20 per half, 0.25, 10 graded) are proposed and
+unmeasured. There is no session data yet, so every verdict today is BLIND.
+
+Not built: the hook that refuses a session start with no recorded decision, the outside grader that writes outcomes, and
+the link from these grades to the rank ledger (promotion and demotion above).
