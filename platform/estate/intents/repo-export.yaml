@@ -50,11 +50,11 @@ steps:
       if [ "{{compress}}" = "true" ]; then
         REPOMIX_ARGS+=(--compress)
       fi
-      if [ -n "{{include}}" ]; then
-        REPOMIX_ARGS+=(--include "{{include}}")
+      if [ -n {{include}} ]; then
+        REPOMIX_ARGS+=(--include {{include}})
       fi
-      if [ -n "{{ignore}}" ]; then
-        REPOMIX_ARGS+=(--ignore "{{ignore}}")
+      if [ -n {{ignore}} ]; then
+        REPOMIX_ARGS+=(--ignore {{ignore}})
       fi
       npx -y repomix@1.18.1 {{path}} "${REPOMIX_ARGS[@]}" --output {{output}}
   - name: verdict

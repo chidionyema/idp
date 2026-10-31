@@ -52,6 +52,19 @@
       ["declare_plan", {"goal": "ship the feature", "subgoals": [{"id": "g1", "text": "first step"}]}],
       ["add_bdd", {"goal_id": "g1", "given": "no button", "when": "the page loads", "then": "the button shows"}],
       ["revise_plan", {"goal": "ship the feature properly", "subgoals": [{"id": "g1", "text": "first step"}, {"id": "g2", "text": "second step"}]}]
-    ], "tool": "Edit", "expect": true}
+    ], "tool": "Edit", "expect": true},
+    {"name": "a plan that names its instruction and its founder prompt is accepted", "calls": [
+      ["declare_plan", {"goal": "ship the feature", "subgoals": [{"id": "g1", "text": "first step"}], "instruction": "lane-submit", "prompt": "prompt-20261030T101500Z-abc123"}],
+      ["add_bdd", {"goal_id": "g1", "given": "no button", "when": "the page loads", "then": "the button shows"}]
+    ], "tool": "Edit", "expect": true},
+    {"name": "a plan with an empty instruction is refused", "calls": [
+      ["declare_plan", {"goal": "ship the feature", "subgoals": [{"id": "g1", "text": "first step"}], "instruction": ""}]
+    ], "tool": "Edit", "expect": false, "reason": "declare_plan"},
+    {"name": "a plan whose instruction is not an intent name is refused", "calls": [
+      ["declare_plan", {"goal": "ship the feature", "subgoals": [{"id": "g1", "text": "first step"}], "instruction": "not an intent"}]
+    ], "tool": "Edit", "expect": false, "reason": "declare_plan"},
+    {"name": "a plan whose founder prompt id is not an id is refused", "calls": [
+      ["declare_plan", {"goal": "ship the feature", "subgoals": [{"id": "g1", "text": "first step"}], "prompt": "no such id"}]
+    ], "tool": "Edit", "expect": false, "reason": "declare_plan"}
   ]
 }
