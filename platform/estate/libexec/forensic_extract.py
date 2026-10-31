@@ -238,12 +238,40 @@ class Recorder(object):
         # the run. parse_errors names every one of them, so a silent gap is never mistaken
         # for "the agent never touched this file".
         self.parse_errors = []
+        # 2026-10-31: a resumed session copies the earlier messages verbatim, so the same
+        # call id AND the same timestamp appear in two session files. It is ONE call.
+        # Replaying it twice applies the same edit twice and every later diff disagrees
+        # with the runtime's own. The copy is dropped here and counted, never hidden.
+        self.ops_by_call = {}
+        self.reads_by_call = {}
+        self.duplicate_calls = 0
+        self.duplicate_reads = 0
 
     def add_op(self, op):
+        cid = op.get("call_id")
+        if cid:
+            key = (cid, op.get("ts"))
+            prior = self.ops_by_call.get(key)
+            if prior is not None:
+                self.duplicate_calls += 1
+                dup = prior.setdefault("duplicate_sessions", [])
+                if op.get("session") not in dup:
+                    dup.append(op.get("session"))
+                return prior
+            self.ops_by_call[key] = op
         op["seq"] = self.seq
         self.seq += 1
         self.ops.append(op)
         return op
+
+    def add_read(self, entry):
+        key = (entry.get("call_id"), entry.get("path"))
+        if key in self.reads_by_call:
+            self.duplicate_reads += 1
+            return False
+        self.reads_by_call[key] = entry
+        self.reads.append(entry)
+        return True
 
     def result_text(self, cid):
         r = self.results.get(cid)
@@ -448,8 +476,8 @@ def handle_pi_call(rec, info, blk, ts, cwd):
                 truncated=False,
                 lossy=False,
             )
-            rec.reads.append(entry)
             rec.reads_by_call[cid] = entry
+            rec.add_read(entry)
     elif name in ("bash", "estate_execute"):
         cmd = args.get("command")
         ingest_command(cmd, rec.ledger, info["session"], ts, name)
@@ -699,7 +727,7 @@ def attach_cline_reads(rec, cid, ts, info):
             truncated=False,
             lossy=True,
         )
-        rec.reads.append(entry)
+        rec.add_read(entry)
 
 
 def patch_files(patch_text, cwd):
@@ -766,6 +794,20 @@ def git_candidates(path, limit=5):
             continue
         cands.append(("git:%s" % sh[:12], blob.stdout.decode("utf-8", "replace")))
     return cands
+
+
+def dbg(path, **fields):
+    """Debug channel: one JSON line per interesting event for a path matching
+    FORENSIC_DEBUG_PATH, written to FORENSIC_DEBUG_LOG. Off unless the env var is set."""
+    filt = os.environ.get("FORENSIC_DEBUG_PATH", "")
+    if not filt or not path or filt not in path:
+        return
+    log = os.environ.get("FORENSIC_DEBUG_LOG", "")
+    if not log:
+        return
+    fields["path"] = path
+    with open(log, "a") as fh:
+        fh.write(json.dumps(fields, default=str) + "\n")
 
 
 def patch_applies(base, patch, expected):
@@ -1167,6 +1209,16 @@ def replay(rec, store, git_budget=200):
                         detail="%s: %s" % (type(exc).__name__, exc),
                     )
                 )
+                dbg(
+                    path,
+                    event="edit-error",
+                    ts=op["ts"],
+                    session=op["session"],
+                    tool=op["tool"],
+                    error="%s: %s" % (type(exc).__name__, exc),
+                    args=args,
+                    pre=s.content,
+                )
                 s.last_ts = op["ts"]
                 continue
             patch = store.get(res.get("patch_ref")) if res.get("patch_ref") else None
@@ -1175,6 +1227,17 @@ def replay(rec, store, git_budget=200):
                 s.validation = "patch-confirmed" if ok else "patch-mismatch"
                 if not ok:
                     s.uncertain += 1
+                    dbg(
+                        path,
+                        event="patch-mismatch",
+                        ts=op["ts"],
+                        session=op["session"],
+                        tool=op["tool"],
+                        base=s.base_source,
+                        patch=patch,
+                        pre=s.content,
+                        post=out["content"],
+                    )
             s.content = out["content"]
             s.deleted = False
             s.events.append(
@@ -1316,6 +1379,18 @@ def replay(rec, store, git_budget=200):
                     s.validation = "diff-confirmed" if ok else "diff-mismatch"
                     if not ok:
                         s.uncertain += 1
+                        dbg(
+                            path,
+                            event="diff-mismatch",
+                            ts=op["ts"],
+                            session=op["session"],
+                            tool=op["tool"],
+                            base=s.base_source,
+                            recorded=recorded,
+                            ours=FR.cline_create_line_diff(s.content, out["content"]),
+                            pre=s.content,
+                            post=out["content"],
+                        )
                 s.content = out["content"]
                 s.deleted = False
             s.events.append(
@@ -1707,6 +1782,8 @@ def main():
         reads=len(rec.reads),
         results=len(rec.results),
         parse_errors=len(rec.parse_errors),
+        duplicate_calls=rec.duplicate_calls,
+        duplicate_reads=rec.duplicate_reads,
         store_bytes=store.bytes,
         full=sum(1 for r in rows if r["recoverability"] == "FULL"),
         partial=sum(1 for r in rows if r["recoverability"] == "PARTIAL"),
