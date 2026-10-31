@@ -1,5 +1,0 @@
-.github/workflows/oke-check.yml
-backstage/templates/founder-actions/oke-check/template.yaml
-bin/idp-oke-break-glass
-docs/reference/incidents/2026-08-30-kyverno-webhook-refused-every-pod.md
-tests/test_incident_crew633_webhooks_restart_attributes_then_heals_with_a_breaker.py

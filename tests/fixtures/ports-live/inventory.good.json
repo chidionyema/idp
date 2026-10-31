@@ -1,1 +1,0 @@
-{"rows": [{"kind": "listener", "port": 3100, "bind": "::1", "process": "node", "owner": "backstage", "command": "node"}, {"kind": "listener", "port": 7107, "bind": "127.0.0.1", "process": "node", "owner": "backstage", "command": "node"}]}

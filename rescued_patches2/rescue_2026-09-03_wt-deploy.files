@@ -1,3 +1,0 @@
-bin/idp-deploy-lag
-bin/idp-pr-landable
-tests/test_incident_20260831_a_superseded_run_made_a_green_deploy_read_as_failing.py

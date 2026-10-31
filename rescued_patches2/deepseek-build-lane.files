@@ -1,6 +1,0 @@
-docs/how-to/onboarding/deepseek-build-lane.md
-llm/config.yaml
-mkdocs.yml
-platform/llm/config.yaml
-platform/vendors/consoles.yaml
-tests/test_llm_row.py

@@ -1,2 +1,0 @@
-# matrix-review.yml reads the matrix with pyyaml.
-pyyaml

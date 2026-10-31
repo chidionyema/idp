@@ -1,6 +1,0 @@
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: a-credential
-spec:
-  secretStoreRef: { name: estate-vault, kind: ClusterSecretStore }

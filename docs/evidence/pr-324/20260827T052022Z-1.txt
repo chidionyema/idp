@@ -1,9 +1,0 @@
-FAIL  /Users/chidionyema/dev/code/crew  on feat/research-engine-step1, not main; 36 behind origin/main; 50 dirty file(s)
-      path back: git -C /Users/chidionyema/dev/code/crew stash push -u -m 'crew437 live copies' && git -C /Users/chidionyema/dev/code/crew switch main && git -C /Users/chidionyema/dev/code/crew merge --ff-only origin/main
-FAIL  /Users/chidionyema/dev/code/idp  on fix/crew297-bind-self-aware-specs, not main; 2 behind origin/main; 24 dirty file(s)
-      path back: git -C /Users/chidionyema/dev/code/idp stash push -u -m 'crew437 live copies' && git -C /Users/chidionyema/dev/code/idp switch main && git -C /Users/chidionyema/dev/code/idp merge --ff-only origin/main
-FAIL  /Users/chidionyema/dev/code/hermes-v2  on feat/hermes-agent-ci-image, not main; 10 dirty file(s)
-      path back: git -C /Users/chidionyema/dev/code/hermes-v2 stash push -u -m 'crew437 live copies' && git -C /Users/chidionyema/dev/code/hermes-v2 switch main && git -C /Users/chidionyema/dev/code/hermes-v2 merge --ff-only origin/main
-FAIL  /Users/chidionyema/.claude/scripts  1 behind origin/main; 7 dirty file(s)
-      path back: git -C /Users/chidionyema/.claude/scripts stash push -u -m 'crew437 live copies' && git -C /Users/chidionyema/.claude/scripts switch main && git -C /Users/chidionyema/.claude/scripts merge --ff-only origin/main
-checkout-drift: 4 drifted, 0 unreadable, of 4

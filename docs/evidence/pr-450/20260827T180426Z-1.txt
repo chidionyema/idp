@@ -1,2 +1,0 @@
-2 passed in 1.15s
-assign

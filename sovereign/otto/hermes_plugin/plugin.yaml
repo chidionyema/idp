@@ -1,4 +1,0 @@
-name: sovereign
-version: 0.1.0
-description: "Sovereign Bus session control from chat: list/show/stop/approve/deny/steer, each shelling out to $IDP/bin/sb --json."
-author: "sovereign-bus"
