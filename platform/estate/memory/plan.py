@@ -23,6 +23,7 @@ extension registers the plan tools in-process -- so this part has no plan.ts twi
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import json
 import os
@@ -937,10 +938,10 @@ def harness_session_id() -> str:
         if not name:
             continue
         sid = "harness:%s:%d" % (name, pid)
-        try:
+        # A pointer that cannot be written is not a crash: the identity is still true, and the
+        # pointer is only a convenience for the next process up the tree.
+        with contextlib.suppress(Exception):
             write_session_pointer(sid, pid=pid)
-        except Exception:  # noqa: BLE001 - a pointer that cannot be written is not a crash
-            pass
         return sid
     return ""
 
@@ -996,14 +997,12 @@ def record_plan_call(session_id: str, tool: str, args: dict) -> bool:
     """
     if not session_id or tool not in PLAN_TOOLS:
         return False
-    try:
+    with contextlib.suppress(Exception):
         last = ledger_calls(session_id)
         if last and last[-1][0] == tool and (last[-1][1] or {}) == (args or {}):
             # Already the last thing this session did: the door writes the event before the
             # command runs, so a second copy would be the same call twice.
             return True
-    except Exception:  # noqa: BLE001 - a ledger that cannot be read is not a crash
-        pass
     return append_plan_event(session_id, tool, args or {})
 
 
