@@ -140,6 +140,7 @@ class Metrics:
     catch_all_present: bool = False
     catch_all_prior: float = 0.0
     degraded_roots: int = 0
+    seed: int = 7
     spec_bytes: int = 0
     spec_sha256: str = ""
     elapsed_ms: float = 0.0
@@ -496,6 +497,7 @@ def synthesize(
     host=None,
     port=None,
     url=None,
+    seed=7,
 ):
     t0 = time.time()
     ctx = parse_error(error)
@@ -604,7 +606,7 @@ def synthesize(
     selected_ids = list(selected_ids) + [h.id for h in catch]
     sel = [h for h in hyps if h.id in selected_ids]
     ig = info_gain(selected_ids, prior_map, noise)
-    acc, col = simulate_collapse(sel, noise)
+    acc, col = simulate_collapse(sel, noise, seed=seed)
     if acc >= 0.80 and col >= 0.60:
         rec = "proceed"
     elif acc < 0.80:
@@ -626,6 +628,7 @@ def synthesize(
         sim_collapse_prob=round(col, 4),
         sim_recommendation=rec,
         catch_all_present=any(h.layer == "catch_all" for h in sel),
+        seed=seed,
         catch_all_prior=round(prior_map.get("H_unmodeled", 0.0), 4),
         degraded_roots=degraded,
         elapsed_ms=round((time.time() - t0) * 1e3, 1),
@@ -667,6 +670,7 @@ def synthesize(
             "selection": method,
             "recommendation": rec,
             "degraded_roots": degraded,
+            "seed": seed,
         },
     }
     return spec, m
@@ -891,7 +895,9 @@ def main(argv=None):
     )
     ap.add_argument("--noise-file")
     ap.add_argument("--max-probes", type=int, default=8)
-    ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument(
+        "--seed", type=int, default=7, help="seed for the collapse simulation"
+    )
     ap.add_argument("--out", help="where to write the race spec")
     ap.add_argument("--metrics-out", help="where to write the metrics json")
     ap.add_argument("--format", choices=["json", "yaml"], default="json")
@@ -920,7 +926,16 @@ def main(argv=None):
         return EXIT_USAGE
 
     spec, m = synthesize(
-        a.error, roots, priors, noise, a.max_probes, a.script, a.host, a.port, a.url
+        a.error,
+        roots,
+        priors,
+        noise,
+        a.max_probes,
+        a.script,
+        a.host,
+        a.port,
+        a.url,
+        a.seed,
     )
     if spec is None:
         return EXIT_NO_HYP
