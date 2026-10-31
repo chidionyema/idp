@@ -766,18 +766,28 @@ async def handle(client_r, client_w) -> None:
     deadline = time.monotonic() + ANSWER_BUDGET
     over, load = saturated()
     if over:
-        # The box cannot answer inside any budget. Say so at once, so the caller may retry
-        # instead of waiting for an answer that is never coming.
+        # The box cannot answer inside any budget, so the laptop's own slots are not asked.
+        # But the laptop's load is not a reason to lose the request while a home that does
+        # not share this host is still in the route: a saturated laptop SPILLS to the remote
+        # homes (founder, 2026-10-31: "we can never have a single point of failure"; ADR 0037
+        # R1/R2; ticket router-ladder-actuator). Only when no remote home is configured is
+        # the caller told at once, so it may retry instead of waiting for an answer that is
+        # never coming.
+        remote = [t for t in route() if isinstance(t, str)]
         print(
-            f"front: the box is saturated (load {load:.1f} > {LOAD_MAX:.1f}); refusing",
+            f"front: the box is saturated (load {load:.1f} > {LOAD_MAX:.1f}); "
+            + (f"spilling to {remote}" if remote else "refusing"),
             file=sys.stderr,
             flush=True,
         )
-        await refuse(client_w, b"HTTP/1.1 503 Service Unavailable", b"Retry-After: 30")
-        client_w.close()
-        return
+        if not remote:
+            await refuse(
+                client_w, b"HTTP/1.1 503 Service Unavailable", b"Retry-After: 30"
+            )
+            client_w.close()
+            return
     sent = Counter()
-    targets = route()
+    targets = remote if over else route()
     for index, target in enumerate(targets):
         if isinstance(target, str):
             head = await read_head(client_r, min(300.0, remaining(deadline)))
@@ -803,6 +813,14 @@ async def handle(client_r, client_w) -> None:
             # Nothing else could answer: the caller gets the cloud's own complaint.
             if sent.n:
                 client_w.close()  # half an answer is already with the caller
+                return
+            if over:
+                # The box is saturated AND the remote home failed: there is nowhere left to
+                # ask. Say so at once and let the caller retry, as the shed always did.
+                await refuse(
+                    client_w, b"HTTP/1.1 503 Service Unavailable", b"Retry-After: 30"
+                )
+                client_w.close()
                 return
             if remaining(deadline) <= 0:
                 await refuse(

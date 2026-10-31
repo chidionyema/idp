@@ -58,15 +58,7 @@ CELLS = [
     pytest.param(
         {"box-saturated"},
         "cloud",
-        id="the laptop is saturated",
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason=(
-                "the front refuses above LOAD_MAX without asking the cloud (#7547), so the "
-                "laptop's load empties the service while a remote home is healthy. "
-                "Ticket router-ladder-actuator: spill to a remote home, do not shed."
-            ),
-        ),
+        id="the laptop is saturated: it spills to the cloud, it does not shed (#7547 fixed)",
     ),
 ]
 
@@ -98,3 +90,56 @@ def test_one_lost_home_does_not_lose_the_answer(front, monkeypatch, lost, answer
     line, body = asyncio.run(run())
     assert line.startswith(b"HTTP/1.1 200"), (lost, line)
     assert body.startswith(answered_by.encode()), (lost, body)
+
+
+def test_saturated_and_cloud_lost_is_refused_at_once_not_held(front, monkeypatch):
+    """The spill must not turn the old shed into a hang: with the box saturated AND the only
+    remote home gone, nothing can answer, so the caller is told 503 + Retry-After immediately and
+    may retry (the pre-spill behaviour, kept for the one cell where no home is left)."""
+
+    async def run():
+        a, b = front.SLOTS
+        servers = [
+            await _mod.answering(a, b"slot"),
+            await _mod.answering(b, b"slot"),
+        ]  # the cloud port has no listener: the cloud is lost
+        monkeypatch.setattr(front.os, "getloadavg", lambda: (999.0, 999.0, 999.0))
+        task = asyncio.create_task(front.main())
+        await asyncio.sleep(0.4)
+        try:
+            r, w = await asyncio.open_connection(*front.LISTEN)
+            w.write(_mod.REQUEST)
+            await w.drain()
+            head = await asyncio.wait_for(r.readuntil(b"\r\n\r\n"), 15)
+            w.close()
+        finally:
+            task.cancel()
+            for srv in servers:
+                srv.close()
+        return head
+
+    head = asyncio.run(run())
+    assert head.startswith(b"HTTP/1.1 503"), head
+    assert b"Retry-After: 30" in head, head
+
+
+def test_saturated_with_no_remote_home_configured_is_refused(front, monkeypatch):
+    """No remote home in the route at all (CLOUD turned off): the shed is unchanged."""
+
+    async def run():
+        monkeypatch.setattr(front, "CLOUD", "")
+        monkeypatch.setattr(front.os, "getloadavg", lambda: (999.0, 999.0, 999.0))
+        task = asyncio.create_task(front.main())
+        await asyncio.sleep(0.4)
+        try:
+            r, w = await asyncio.open_connection(*front.LISTEN)
+            w.write(_mod.REQUEST)
+            await w.drain()
+            head = await asyncio.wait_for(r.readuntil(b"\r\n\r\n"), 15)
+            w.close()
+        finally:
+            task.cancel()
+        return head
+
+    head = asyncio.run(run())
+    assert head.startswith(b"HTTP/1.1 503"), head
