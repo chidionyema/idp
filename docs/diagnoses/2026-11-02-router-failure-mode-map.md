@@ -384,10 +384,11 @@ never writes them.
 
 ## 9. The two questions this document exists to answer
 
-**Q. What can fail?** 74 named modes across ten layers (sec 2), each with a signature, a diagnostic
-and a grade. Six are live right now: **A1** (tunnel down), **A2** (signature block), **C1**
-(saturation refusal), **C9/J4** (deployed != repository), **D9** (one slot), plus **E2/J1** (the
-doctor's false BROKEN) and **H2** (disk at the executor's floor).
+**Q. What can fail?** **89** named modes across ten layers (sec 2) -- A 7, B 6, C 10, D 10, E 14,
+F 11, G 14, H 7, I 5, J 5 -- each with a signature, a diagnostic and a grade. The ones live right
+now are the headliners in sec 1: **A1/A2** (the edge), **B2** (the origin behind it), **C1** (the
+refusal), **C9/J4** (deployed != repository), **D1/D9** (the slots), **E2/J1** (the doctor's false
+BROKEN) and **H2** (the disk at the executor's floor).
 
 **Q. What does the estate do about it, in order?** sec 6. The first three are P0 and each carries a
 falsifier, because a gate that cannot fail is not a gate.
