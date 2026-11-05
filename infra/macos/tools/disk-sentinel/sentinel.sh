@@ -555,6 +555,56 @@ case "${1:-}" in
       NORMAL|WARNING) printf 'ADMIT: %s, %s GiB free (reserve %s GiB)\n' "$admit_mode" "$(bytes_gib "$admit_avail")" "$DISK_SENTINEL_RESERVE_GIB"; exit 0 ;;
       *) printf 'REFUSED: %s, %s GiB free against a %s GiB reserve. Discretionary work must wait.\n' "$admit_mode" "$(bytes_gib "${admit_avail:-0}")" "$DISK_SENTINEL_RESERVE_GIB"; exit 75 ;;
     esac ;;
+  probe)
+    # Metadata latency, not size (founder, 2026-11-05): "the directory is slow" and "the
+    # directory is large" are different findings, and a du timeout cannot tell them apart.
+    # One readdir per directory, bounded, reporting entries/ms/verdict - no recursion, no I/O
+    # beyond the directory itself.
+    shift
+    /usr/bin/python3 - "${@:-$HOME/Library/Mail|$HOME/Library/CloudStorage|$HOME/Pictures/Photos Library.photoslibrary|$HOME/Library/Application Support/FileProvider|$HOME/Library/Containers|$HOME/.estate/backups|$HOME/.cache}" <<'PROBE'
+import os, signal, sys, time
+
+class Timeout(Exception):
+    pass
+
+def _alarm(signum, frame):
+    raise Timeout()
+
+signal.signal(signal.SIGALRM, _alarm)
+
+def probe(path, budget=5):
+    if not os.path.isdir(path):
+        return "ABSENT", 0, 0.0
+    signal.alarm(budget)
+    t0 = time.time()
+    try:
+        n = 0
+        with os.scandir(path) as it:
+            for _ in it:
+                n += 1
+        ms = (time.time() - t0) * 1000
+        signal.alarm(0)
+        if ms > 2000:
+            return "SLOW", n, ms
+        return "OK", n, ms
+    except Timeout:
+        return "BLOCKED", 0, (time.time() - t0) * 1000
+    except PermissionError:
+        signal.alarm(0)
+        return "DENIED", 0, 0.0
+    except OSError as e:
+        signal.alarm(0)
+        return "ERROR:%s" % e.errno, 0, 0.0
+
+paths = [a for a in sys.argv[1:] if a]
+if len(paths) == 1 and "|" in paths[0]:
+    paths = [p for p in paths[0].split("|") if p]
+print("%-10s %9s %10s  %s" % ("VERDICT", "ENTRIES", "READDIR_MS", "PATH"))
+for p in paths:
+    v, n, ms = probe(os.path.expanduser(p))
+    print("%-10s %9d %10.1f  %s" % (v, n, ms, p))
+PROBE
+    ;;
   policy)
     policy_load
     printf 'Reserve (discretionary work refused below): %s GiB\n' "$DISK_SENTINEL_RESERVE_GIB"
@@ -567,6 +617,7 @@ case "${1:-}" in
   # time-bounded and is installed next to this one.
   forensics)
     if [ ! -x "$APP/forensics.sh" ]; then echo 'BLOCKED: forensics.sh is not installed; reinstall Disk Sentinel' >&2; exit 2; fi
+    shift
     optional_args "$@"
     refuse_unless_forced forensics "$OPT_FORCE" || exit $?
     [ ${#OPT_ARGS[@]} -eq 0 ] && OPT_ARGS=(--deep)
@@ -582,9 +633,10 @@ case "${1:-}" in
     elephant_lock="$STATE/elephant.lock"
     lock_acquire "$elephant_lock" || { echo 'BLOCKED: another elephant walk is already running; no duplicate I/O started.' >&2; exit 75; }
     trap 'lock_release "$elephant_lock"' EXIT INT TERM
+    shift
     optional_args "$@"
     refuse_unless_forced elephant "$OPT_FORCE" || exit $?
     [ ${#OPT_ARGS[@]} -eq 0 ] && OPT_ARGS=(--deep)
     /bin/bash "$APP/elephant.sh" "${OPT_ARGS[@]}" ;;
-  *) echo 'Usage: disk-sentinel {tick|scan|review|status|open|admit|policy|forensics [--deep|--quick]|elephant [--deep|--quick]}' >&2; exit 2 ;;
+  *) echo 'Usage: disk-sentinel {tick|scan|review|status|open|admit|probe|policy|forensics [--deep|--quick]|elephant [--deep|--quick]}' >&2; exit 2 ;;
 esac
