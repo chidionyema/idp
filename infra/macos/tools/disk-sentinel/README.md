@@ -15,6 +15,23 @@ bash install.sh
 `${HOME}`), so the job launchd runs and the job the estate declares are the same file. To prove
 the estate sees them: `bin/idp-inventory --plane mac` reports a `MANAGED` row per label.
 
+### Storage-pressure modes
+
+Free space decides what the supervisor is allowed to do. The thresholds are absolute, because a
+percentage of a 113 GiB laptop is not the same safety margin as a percentage of a 1 TiB box:
+
+| mode | free space | autonomous response |
+|---|---|---|
+| NORMAL | over 20 GiB | capacity tracking, growth attribution, retention accounting |
+| WARNING | 10-20 GiB | identify fast-growing owners, report reclaimable capacity |
+| CRITICAL | 3-10 GiB | expensive scans suspended; verify low-risk reclamation before acting |
+| EMERGENCY | under 3 GiB | optional investigations stopped; preserve headroom and notify |
+
+`scan --auto` is refused in CRITICAL and EMERGENCY and records `DEFERRED` with the reason; `forensics`
+and `elephant` refuse with exit 75 and print the policy. `--force` overrides for a human who has
+decided the read-only cost is worth it. The monitor itself never stops: it is one `df` and a small
+JSON write every 60 seconds, which is the one thing that must keep working when the disk is full.
+
 ### The investigation, in one door
 
 Two investigations ship with this tool and are installed next to `sentinel.sh`, so there is one

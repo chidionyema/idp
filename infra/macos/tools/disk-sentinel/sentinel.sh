@@ -87,6 +87,58 @@ metric_status() {
   fi
 }
 
+# The storage-pressure control plane (founder, 2026-11-05). Four modes by ABSOLUTE free space,
+# because "15% of 113 GiB" is not the same safety margin as "15% of 1 TiB": what matters is whether
+# there is room to work. Each mode says what the supervisor is allowed to do, so an expensive
+# investigation cannot start on a volume that is already failing.
+storage_mode() {
+  local avail=${1:-$AVAILABLE_K}
+  case "$avail" in ''|*[!0-9]*) echo UNKNOWN; return 0 ;; esac
+  if [ "$avail" -gt $((20*1048576)) ]; then echo NORMAL
+  elif [ "$avail" -gt $((10*1048576)) ]; then echo WARNING
+  elif [ "$avail" -gt $((3*1048576)) ]; then echo CRITICAL
+  else echo EMERGENCY; fi
+}
+
+mode_policy() {
+  case "$1" in
+    NORMAL) echo 'capacity tracking, growth attribution, retention accounting' ;;
+    WARNING) echo 'identify fast-growing owners, report reclaimable capacity' ;;
+    CRITICAL) echo 'expensive scans suspended; verify low-risk reclamation before acting' ;;
+    EMERGENCY) echo 'optional investigations stopped; preserve headroom and notify' ;;
+    *) echo 'free space could not be measured; refusing nothing on a BLIND reading' ;;
+  esac
+}
+
+# Given the current free space, may an optional (expensive) investigation start?
+# BLIND is not a refusal: an unmeasurable volume must not be mistaken for a full one.
+# One reader for "how much is free right now", with a test seam: the thresholds are the part
+# that must be provable without filling a disk, so a test can name the number instead of
+# pretending the machine is full.
+current_avail_k() {
+  if [ -n "${DISK_SENTINEL_TEST_AVAIL_K:-}" ]; then printf '%s\n' "$DISK_SENTINEL_TEST_AVAIL_K"; return 0; fi
+  /bin/df -kP "$HOME" 2>/dev/null | /usr/bin/awk 'NR==2 {print $4}'
+}
+
+optional_allowed() {
+  local avail mode
+  avail=$(current_avail_k)
+  case "$avail" in ''|*[!0-9]*) return 0 ;; esac
+  mode=$(storage_mode "$avail")
+  case "$mode" in CRITICAL|EMERGENCY) return 1 ;; *) return 0 ;; esac
+}
+
+refuse_optional() {
+  local what=$1 avail mode
+  avail=$(current_avail_k)
+  mode=$(storage_mode "$avail")
+  printf 'REFUSED: %s is an optional investigation and %s mode suspends it (%s free).\n' \
+    "$what" "$mode" "$(bytes_gib "${avail:-0}") GiB"
+  printf '  Policy: %s\n' "$(mode_policy "$mode")"
+  echo '  Reclaim capacity first, or pass --force to run it anyway (still read-only, still bounded).'
+  return 75
+}
+
 reserve_maintain() {
   # Dedicated self-owned emergency reserve: released automatically under pressure.
   # Never allocate at installation when disk is already tight.
@@ -123,6 +175,7 @@ inventory_rows() {
 }
 
 render_dashboard() {
+  MODE=${MODE:-$(storage_mode "${AVAILABLE_K:-0}")}
   local now_human free_gib total_gib used_pct growth labelg trend_text reserve_state chart_data scan_age scan_note color
   now_human=$(/bin/date '+%Y-%m-%d %H:%M:%S %Z')
   free_gib=$(bytes_gib "$AVAILABLE_K")
@@ -159,7 +212,7 @@ render_dashboard() {
 :root{color-scheme:dark;--bg:#090e18;--panel:#121b2b;--border:#25334a;--text:#edf3ff;--muted:#9aabc5;--accent:#63b4ff;--green:#4cdfa3;--yellow:#ffd26d;--red:#ff707f}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 85% -15%,#173152 0,transparent 42%),var(--bg);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text)}main{max-width:1250px;margin:0 auto;padding:32px 24px 60px}.head{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}.eyebrow{font-size:11px;letter-spacing:2.5px;font-weight:800;color:#75b9ff}h1{margin:4px 0;font-size:30px;letter-spacing:-.8px}.muted{color:var(--muted)}.live{border:1px solid var(--border);padding:9px 14px;border-radius:30px;font-size:12px}.dot{display:inline-block;width:8px;height:8px;background:var(--green);border-radius:50%;box-shadow:0 0 11px var(--green);margin-right:8px}.top{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px;margin-top:26px}.card,.panel{background:linear-gradient(150deg,#172239,#111927);border:1px solid var(--border);border-radius:16px;padding:23px}.metric{font-size:34px;letter-spacing:-1.2px;font-weight:760;margin:7px 0}.label{font-size:12px;text-transform:uppercase;letter-spacing:1.3px;color:var(--muted)}.hint{font-size:12px;color:var(--muted)}.good{color:var(--green)}.warn{color:var(--yellow)}.bad{color:var(--red)}.columns{display:grid;grid-template-columns:1.55fr 1fr;gap:16px;margin-top:17px}.panel h2{font-size:17px;margin:0 0 5px}.section-note{font-size:12px;color:var(--muted);margin:0 0 17px}.graph{width:100%;height:205px;display:block}.bar{height:9px;background:#253750;border-radius:20px;margin:20px 0 8px;overflow:hidden}.bar span{display:block;height:100%;background:linear-gradient(90deg,#3b8cf7,#f4ae54);border-radius:20px}.candidate{display:flex;justify-content:space-between;border-bottom:1px solid #27364b;padding:15px 0;gap:16px}.candidate:last-child{border:0}.candidate p{margin:3px 0 0;font-size:12px;color:var(--muted)}.right{min-width:90px;text-align:right;display:flex;flex-direction:column;align-items:flex-end}.risk{font-size:10px;margin-top:4px;border:1px solid #826d39;border-radius:6px;padding:1px 6px;color:#ffce71}.risk.protected{border-color:#754b65;color:#ffacbe}.guidance{margin-top:17px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}.guide{padding:17px;border-radius:12px;background:#121b2b;border:1px solid var(--border);font-size:13px}.guide strong{display:block;margin-bottom:5px}.guide p{color:var(--muted);margin:0}code{background:#19263a;color:#b9dbff;padding:2px 6px;border-radius:5px;font-size:12px;word-break:break-word}.actions{display:flex;flex-wrap:wrap;gap:10px;margin:13px 0}.action{background:#223956;color:#e5f4ff;border:1px solid #3c6388;border-radius:9px;padding:10px 13px;cursor:pointer;font-weight:650;font-size:12px}.action:active{transform:scale(.98)}footer{font-size:12px;color:var(--muted);padding:20px 0}.pill{display:inline-block;font-size:11px;padding:4px 9px;border-radius:8px;border:1px solid var(--border)}@media(max-width:850px){.columns{grid-template-columns:1fr}.top{grid-template-columns:1fr 1fr}.guidance{grid-template-columns:1fr}}@media(max-width:540px){.top{grid-template-columns:1fr}h1{font-size:24px}main{padding:20px 14px}.metric{font-size:28px}}
 </style></head><body><main>
 <div class="head"><div><div class="eyebrow">DISK SENTINEL / LOCAL ESTATE</div><h1>Storage mission control</h1><div class="muted">Capacity, growth and protected remediation - local-only</div></div><div class="live" id="heartbeat" data-epoch="$now"><span class="dot" id="pulse"></span> Updated $(escape_html "$now_human")</div></div>
-<div class="top"><div class="card"><div class="label">Available capacity</div><div class="metric">$free_gib <small style="font-size:16px">GiB</small></div><div class="hint">Volume capacity: $total_gib GiB</div></div><div class="card"><div class="label">Disk-pressure state</div><div class="metric $color" style="font-size:27px">$SEVERITY</div><div class="hint">Warnings adapt to disk size</div></div><div class="card"><div class="label">Forecast to depletion</div><div class="metric">$ETA_HOURS <small style="font-size:16px">hours</small></div><div class="hint">Trend-based estimate, not a guarantee</div></div></div>
+<div class="top"><div class="card"><div class="label">Available capacity</div><div class="metric">$free_gib <small style="font-size:16px">GiB</small></div><div class="hint">Volume capacity: $total_gib GiB</div></div><div class="card"><div class="label">Disk-pressure state</div><div class="metric $color" style="font-size:27px">$SEVERITY</div><div class="hint">Mode: $MODE - $(escape_html "$(mode_policy "$MODE")")</div></div><div class="card"><div class="label">Forecast to depletion</div><div class="metric">$ETA_HOURS <small style="font-size:16px">hours</small></div><div class="hint">Trend-based estimate, not a guarantee</div></div></div>
 <div class="columns"><section class="panel"><h2>Capacity trajectory</h2><p class="section-note">Previous seven days of samples - 60-second monitoring cadence</p><svg class="graph" id="graph" role="img" aria-label="Recent available disk space chart"><text x="20" y="40" fill="#9aabc5">Collecting observations...</text></svg><div class="bar"><span style="width:$used_pct%"></span></div><div class="hint">$used_pct% of reported capacity in use - $(escape_html "$trend_text")</div></section><section class="panel"><h2>Safety controls</h2><p class="section-note">Hard restrictions - mission-critical default</p><div class="candidate"><div><strong>Third-party deletion</strong><p>Not allowed without independent approval</p></div><span class="risk protected">Protected</span></div><div class="candidate"><div><strong>Agents, builds and source</strong><p>Never touched by unattended maintenance</p></div><span class="risk protected">Protected</span></div><div class="candidate"><div><strong>Emergency write reserve</strong><p>$(escape_html "$reserve_state")</p></div><span class="risk caution">Managed</span></div><div class="candidate"><div><strong>Snapshot safeguards</strong><p>No Time Machine or APFS snapshot deletion</p></div><span class="risk protected">Protected</span></div></section></div>
 <div class="columns"><section class="panel"><h2>Storage opportunities</h2><p class="section-note">$(escape_html "$scan_note") - Sizes overlap where one folder contains another; do not add totals.</p>
 HTML
@@ -200,6 +253,8 @@ tick() {
   now=$(/bin/date +%s)
   find_trend "$now" "$AVAILABLE_K"
   metric_status
+  MODE=$(storage_mode "$AVAILABLE_K")
+  printf '%s\n' "$MODE" > "$STATE/mode" 2>/dev/null || true
   reserve_maintain
   prev=$(cat "$STATE/last_severity" 2>/dev/null || true)
   if [ "$SEVERITY" != "$prev" ]; then
@@ -246,6 +301,11 @@ bounded_du() {
 scan() {
   local mode="${2:-}" now last_success=0
   now=$(/bin/date +%s)
+  if [ "$mode" != '--force' ] && ! optional_allowed; then
+    scan_state_write DEFERRED 'Storage pressure: optional inventory suspended by the control plane'
+    echo 'DEFERRED: storage pressure suspends the optional inventory. This is NOT a completed scan.'
+    return 75
+  fi
   if [ "$mode" = '--auto' ] && [ -r "$STATE/scan.completed.epoch" ]; then
     read -r last_success < "$STATE/scan.completed.epoch" || true
     case "$last_success" in ''|*[!0-9]*) last_success=0 ;; esac
@@ -349,6 +409,10 @@ status() {
     IFS='|' read -r ts total avail sev rate < "$STATUS"
     printf 'Current cached status: %s\nFree: %s GiB / %s GiB | Pressure: %s\n' "$(/bin/date -r "$ts" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "$ts")" "$(bytes_gib "$avail")" "$(bytes_gib "$total")" "$sev"
   else echo 'No samples yet; run: disk-sentinel tick'; fi
+  local cur_mode cur_avail
+  cur_avail=$(current_avail_k)
+  cur_mode=$(storage_mode "${cur_avail:-0}")
+  printf 'Mode: %s - %s\n' "$cur_mode" "$(mode_policy "$cur_mode")"
   echo "Dashboard: $DASH"
   if [ -s "$STATE/scan.state" ]; then
     printf 'Investigation: %s\n' "$(cat "$STATE/scan.state")"
@@ -359,6 +423,24 @@ status() {
   if command -v launchctl >/dev/null 2>&1; then
     /bin/launchctl print "gui/$(/usr/bin/id -u)/$LABEL" >/dev/null 2>&1 && echo 'Monitor: registered with launchd' || echo 'Monitor: not running or outside active GUI session'
   fi
+}
+
+# Split --force from the arguments an investigation understands: the sub-scripts reject
+# unknown flags, and the control plane must be able to override a refusal explicitly.
+OPT_ARGS=()
+OPT_FORCE=0
+optional_args() {
+  local a
+  OPT_ARGS=(); OPT_FORCE=0
+  for a in "$@"; do
+    case "$a" in --force) OPT_FORCE=1 ;; *) OPT_ARGS+=("$a") ;; esac
+  done
+}
+
+refuse_unless_forced() {
+  [ "${2:-0}" -eq 1 ] && return 0
+  optional_allowed && return 0
+  refuse_optional "$1"
 }
 
 case "${1:-}" in
@@ -372,8 +454,10 @@ case "${1:-}" in
   # time-bounded and is installed next to this one.
   forensics)
     if [ ! -x "$APP/forensics.sh" ]; then echo 'BLOCKED: forensics.sh is not installed; reinstall Disk Sentinel' >&2; exit 2; fi
-    shift
-    /bin/bash "$APP/forensics.sh" "${@:---deep}" ;;
+    optional_args "$@"
+    refuse_unless_forced forensics "$OPT_FORCE" || exit $?
+    [ ${#OPT_ARGS[@]} -eq 0 ] && OPT_ARGS=(--deep)
+    /bin/bash "$APP/forensics.sh" "${OPT_ARGS[@]}" ;;
   # One-pass attribution of the whole Data volume. Different question from "forensics":
   # that one probes named suspects; this one walks every entry once and buckets the blocks
   # by top-level owner, so "what is the 96 GB?" has an answer even when no suspect list hits.
@@ -385,7 +469,9 @@ case "${1:-}" in
     elephant_lock="$STATE/elephant.lock"
     lock_acquire "$elephant_lock" || { echo 'BLOCKED: another elephant walk is already running; no duplicate I/O started.' >&2; exit 75; }
     trap 'lock_release "$elephant_lock"' EXIT INT TERM
-    shift
-    /bin/bash "$APP/elephant.sh" "${@:---deep}" ;;
+    optional_args "$@"
+    refuse_unless_forced elephant "$OPT_FORCE" || exit $?
+    [ ${#OPT_ARGS[@]} -eq 0 ] && OPT_ARGS=(--deep)
+    /bin/bash "$APP/elephant.sh" "${OPT_ARGS[@]}" ;;
   *) echo 'Usage: disk-sentinel {tick|scan|review|status|open|forensics [--deep|--quick]|elephant [--deep|--quick]}' >&2; exit 2 ;;
 esac
