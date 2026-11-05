@@ -52,6 +52,7 @@ ln -sfn "$DST/sentinel.sh" "$BIN/disk-sentinel"
 # forensics.sh is the read-only investigation, installed as part of this tool so `disk-sentinel
 # forensics` is the one door: no second download, no second copy of the safety policy.
 install -m 700 "$SRC/forensics/disk_sentinel_forensics_macos.sh" "$DST/forensics.sh"
+install -m 700 "$SRC/forensics/disk_elephant_once_macos.sh" "$DST/elephant.sh"
 
 # Require successful telemetry and dashboard generation before creating launch jobs.
 "$DST/sentinel.sh" tick || { echo 'BLOCKED: first monitor tick failed. No jobs registered.' >&2; exit 1; }
@@ -98,3 +99,4 @@ printf '  "%s/sentinel.sh" status\n' "$DST"
 printf '  "%s/sentinel.sh" scan\n' "$DST"
 printf '  "%s/sentinel.sh" review\n' "$DST"
 printf '  "%s/sentinel.sh" forensics --deep   (read-only investigation, throttled, bounded)\n' "$DST"
+printf '  "%s/sentinel.sh" elephant --deep    (single-pass Data-volume attribution, throttled, bounded)\n' "$DST"

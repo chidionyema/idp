@@ -17,21 +17,31 @@ the estate sees them: `bin/idp-inventory --plane mac` reports a `MANAGED` row pe
 
 ### The investigation, in one door
 
-`forensics/disk_sentinel_forensics_macos.sh` ships with this tool and is installed as
-`forensics.sh` next to `sentinel.sh`, so there is one disk-management surface rather than a
-second download:
+Two investigations ship with this tool and are installed next to `sentinel.sh`, so there is one
+disk-management surface rather than a second download:
 
 ```bash
-disk-sentinel forensics --deep     # throttled read-only investigation, ~185s budget
+disk-sentinel forensics --deep     # named suspects, throttled, ~185s budget
 disk-sentinel forensics --quick    # ~55s budget
+disk-sentinel elephant --deep      # every Data-volume entry, visited once, 20-minute budget
+disk-sentinel elephant --quick     # 5-minute budget
 ```
 
-It measures APFS volumes and snapshots, top-level directories, Docker/VM images, Xcode and
-simulators, Node and agent footprints, files over 500 MiB, active processes, Disk Sentinel's own
-health and the capacity delta across the run. Each check is time-bounded and reported as
-complete, partial or timed out; nothing is deleted and no agent is stopped. `scan` and
-`forensics` answer different questions: `scan` is the recurring, cheap inventory the dashboard
-reads; `forensics` is the one-off deep investigation when the cause is not yet known.
+**`forensics`** measures APFS volumes and snapshots, top-level directories, Docker/VM images,
+Xcode and simulators, Node and agent footprints, files over 500 MiB, active processes, Disk
+Sentinel's own health and the capacity delta across the run. Each check is time-bounded and
+reported as complete, partial or timed out; nothing is deleted and no agent is stopped.
+
+**`elephant`** answers the question `forensics` cannot when every named suspect times out: it
+walks the APFS Data volume **once**, attributes allocated blocks to buckets by owner at depth
+1-5, lists files at or above 512 MiB, and reports `SCAN_STATE: COMPLETE`,
+`TIME_BOUNDED_PARTIAL` or `PARTIAL_OR_RESTRICTED`. It de-duplicates hardlinks, prunes other
+mounts, runs at `nice 15`, prints progress every 20 seconds and never re-walks a directory.
+Read the coverage line before trusting a bucket: a `PARTIAL` walk means unknown areas may be
+larger, not smaller.
+
+`scan` remains the recurring, cheap inventory the dashboard reads. The two investigations are
+run by hand when the cause is not yet known.
 
 The user LaunchAgent samples the **home-volume** capacity every 60 seconds and opens a dashboard at user login; a second agent attempts a bounded, read-only directory inventory every 30 minutes until a full daily scan succeeds. High load defers work but records a non-success outcome; timeouts produce a partial inventory. The dashboard auto-refreshes every 60 seconds.
 

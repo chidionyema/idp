@@ -374,5 +374,12 @@ case "${1:-}" in
     if [ ! -x "$APP/forensics.sh" ]; then echo 'BLOCKED: forensics.sh is not installed; reinstall Disk Sentinel' >&2; exit 2; fi
     shift
     /bin/bash "$APP/forensics.sh" "${@:---deep}" ;;
-  *) echo 'Usage: disk-sentinel {tick|scan|review|status|open|forensics [--deep|--quick]}' >&2; exit 2 ;;
+  # One-pass attribution of the whole Data volume. Different question from "forensics":
+  # that one probes named suspects; this one walks every entry once and buckets the blocks
+  # by top-level owner, so "what is the 96 GB?" has an answer even when no suspect list hits.
+  elephant)
+    if [ ! -x "$APP/elephant.sh" ]; then echo 'BLOCKED: elephant.sh is not installed; reinstall Disk Sentinel' >&2; exit 2; fi
+    shift
+    /bin/bash "$APP/elephant.sh" "${@:---deep}" ;;
+  *) echo 'Usage: disk-sentinel {tick|scan|review|status|open|forensics [--deep|--quick]|elephant [--deep|--quick]}' >&2; exit 2 ;;
 esac
