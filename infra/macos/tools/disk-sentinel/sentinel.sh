@@ -158,6 +158,80 @@ refuse_optional() {
   return 75
 }
 
+# Event-triggered capture (founder, 2026-11-05). Scanning hundreds of thousands of files is
+# the wrong instrument for "something is eating the disk right now": the monitor already takes
+# one sample a minute, so a sharp fall is a machine-observable event. When free space drops past
+# a threshold inside a window, capture the cheap evidence once - no walk, no sudo, bounded work.
+DISK_SENTINEL_DROP_MIB=${DISK_SENTINEL_DROP_MIB:-512}
+DISK_SENTINEL_DROP_WINDOW_MIN=${DISK_SENTINEL_DROP_WINDOW_MIN:-5}
+DISK_SENTINEL_CAPTURE_COOLDOWN_MIN=${DISK_SENTINEL_CAPTURE_COOLDOWN_MIN:-15}
+CAPTURES="$STATE/captures"
+CAPTURE_COOLDOWN="$STATE/capture.cooldown"
+
+policy_load_capture() {
+  local f="$STATE/policy.conf" k v
+  [ -r "$f" ] || return 0
+  while IFS='=' read -r k v; do
+    case "$k" in
+      DROP_MIB) case "$v" in ''|*[!0-9]*) ;; *) DISK_SENTINEL_DROP_MIB=$v ;; esac ;;
+      DROP_WINDOW_MIN) case "$v" in ''|*[!0-9]*) ;; *) DISK_SENTINEL_DROP_WINDOW_MIN=$v ;; esac ;;
+      CAPTURE_COOLDOWN_MIN) case "$v" in ''|*[!0-9]*) ;; *) DISK_SENTINEL_CAPTURE_COOLDOWN_MIN=$v ;; esac ;;
+    esac
+  done < "$f"
+}
+
+# KB lost between the oldest sample inside the window and the newest one.
+window_drop_k() {
+  local now=$1 win=$(( ${DISK_SENTINEL_DROP_WINDOW_MIN:-5} * 60 ))
+  [ -s "$HISTORY" ] || return 0
+  /usr/bin/awk -v now="$now" -v win="$win" -F '\t' '
+    ($1+0) >= (now-win) { if (!n) first=$2; last=$2; n++ }
+    END { if (n >= 2 && first+0 > last+0) printf "%d", first-last }
+  ' "$HISTORY"
+}
+
+capture_now() {
+  local drop_k=$1 stamp file
+  stamp=$(/bin/date '+%Y%m%d-%H%M%S')
+  file="$CAPTURES/capture-$stamp.txt"
+  /bin/mkdir -p "$CAPTURES" 2>/dev/null || return 0
+  {
+    printf 'DISK SENTINEL / TRIGGERED CAPTURE\n'
+    printf 'Captured: %s | free-space drop %s MiB inside %s min\n\n' \
+      "$(/bin/date '+%Y-%m-%d %H:%M:%S %Z')" "$((drop_k/1024))" "${DISK_SENTINEL_DROP_WINDOW_MIN:-5}"
+    printf '=== CAPACITY ===\n'; /bin/df -h "$HOME" 2>/dev/null
+    printf '\n=== SWAP ===\n'; /usr/sbin/sysctl -n vm.swapusage 2>/dev/null
+    printf '\n=== MODE ===\n%s\n' "$(storage_mode "${AVAILABLE_K:-0}")"
+    printf '\n=== SAMPLES IN WINDOW (epoch, free KiB) ===\n'
+    /usr/bin/tail -n 8 "$HISTORY" 2>/dev/null
+    printf '\n=== TOP CPU (may be unavailable under I/O starvation) ===\n'
+    /usr/bin/timeout 5 /bin/ps -axo pid,%cpu,%mem,comm 2>/dev/null | /usr/bin/sort -k2 -nr | /usr/bin/head -6 \
+      || printf 'unavailable: ps did not answer in 5s\n'
+    printf '\n=== LARGEST OPEN FILES OF THIS USER (bounded) ===\n'
+    /usr/bin/timeout 8 /usr/sbin/lsof -nP 2>/dev/null \
+      | /usr/bin/awk 'NR>1 && $5=="REG" && $7 ~ /^[0-9]+$/ && $7 > 52428800 {printf "%7.1f MiB  %s %s\n", $7/1048576, $1, $9}' \
+      | /usr/bin/sort -rn | /usr/bin/head -10 || true
+    printf '\nNote: no root view. Deleted-but-open files of system daemons need sudo lsof.\n'
+  } > "$file" 2>/dev/null
+  # Keep the last 20 captures; they are small text and the point is the recent shape.
+  /bin/ls -1t "$CAPTURES" 2>/dev/null | /usr/bin/tail -n +21 | while IFS= read -r old; do
+    /bin/rm -f "$CAPTURES/$old" 2>/dev/null || true
+  done
+  printf '%s\n' "$(cat "$file" 2>/dev/null | /usr/bin/head -n 12)"
+}
+
+maybe_capture() {
+  local now=$1 last=0 drop
+  if [ -s "$CAPTURE_COOLDOWN" ]; then read -r last < "$CAPTURE_COOLDOWN" 2>/dev/null || true; fi
+  case "$last" in ''|*[!0-9]*) last=0 ;; esac
+  [ $((now-last)) -lt $(( ${DISK_SENTINEL_CAPTURE_COOLDOWN_MIN:-15} * 60 )) ] && return 0
+  drop=$(window_drop_k "$now")
+  [ -n "$drop" ] || return 0
+  [ "$drop" -lt $(( ${DISK_SENTINEL_DROP_MIB:-512} * 1024 )) ] && return 0
+  printf '%s\n' "$now" > "$CAPTURE_COOLDOWN" 2>/dev/null || true
+  capture_now "$drop"
+}
+
 reserve_maintain() {
   # Dedicated self-owned emergency reserve: released automatically under pressure.
   # Never allocate at installation when disk is already tight.
@@ -274,6 +348,7 @@ tick() {
   metric_status
   MODE=$(storage_mode "$AVAILABLE_K")
   printf '%s\n' "$MODE" > "$STATE/mode" 2>/dev/null || true
+  maybe_capture "$now"
   reserve_maintain
   prev=$(cat "$STATE/last_severity" 2>/dev/null || true)
   if [ "$SEVERITY" != "$prev" ]; then
@@ -463,6 +538,7 @@ refuse_unless_forced() {
 }
 
 policy_load
+policy_load_capture
 
 case "${1:-}" in
   tick) tick ;;
@@ -470,6 +546,15 @@ case "${1:-}" in
   review) review ;;
   status) status ;;
   open) [ -f "$DASH" ] && /usr/bin/open "$DASH" || { tick && /usr/bin/open "$DASH"; } ;;
+  admit)
+    # The one-line capacity gate an estate job calls before starting discretionary work.
+    policy_load
+    admit_avail=$(current_avail_k)
+    admit_mode=$(storage_mode "$admit_avail")
+    case "$admit_mode" in
+      NORMAL|WARNING) printf 'ADMIT: %s, %s GiB free (reserve %s GiB)\n' "$admit_mode" "$(bytes_gib "$admit_avail")" "$DISK_SENTINEL_RESERVE_GIB"; exit 0 ;;
+      *) printf 'REFUSED: %s, %s GiB free against a %s GiB reserve. Discretionary work must wait.\n' "$admit_mode" "$(bytes_gib "${admit_avail:-0}")" "$DISK_SENTINEL_RESERVE_GIB"; exit 75 ;;
+    esac ;;
   policy)
     policy_load
     printf 'Reserve (discretionary work refused below): %s GiB\n' "$DISK_SENTINEL_RESERVE_GIB"
@@ -501,5 +586,5 @@ case "${1:-}" in
     refuse_unless_forced elephant "$OPT_FORCE" || exit $?
     [ ${#OPT_ARGS[@]} -eq 0 ] && OPT_ARGS=(--deep)
     /bin/bash "$APP/elephant.sh" "${OPT_ARGS[@]}" ;;
-  *) echo 'Usage: disk-sentinel {tick|scan|review|status|open|policy|forensics [--deep|--quick]|elephant [--deep|--quick]}' >&2; exit 2 ;;
+  *) echo 'Usage: disk-sentinel {tick|scan|review|status|open|admit|policy|forensics [--deep|--quick]|elephant [--deep|--quick]}' >&2; exit 2 ;;
 esac
