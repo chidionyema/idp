@@ -575,8 +575,12 @@ case "${1:-}" in
       "$verify_verdict" "$verify_rc" "$(bytes_gib "$verify_before")" "$(bytes_gib "$verify_after")" "$verify_delta" "$verify_dt"
     [ "$verify_verdict" = RECLAIMED ] || echo '  The command finished; the capacity did not return. Do not count it as recovered.'
     /bin/mkdir -p "$STATE/receipts" 2>/dev/null || true
-    printf '%s\t%s\t%s\t%s\t%s\n' "$(/bin/date '+%Y-%m-%dT%H:%M:%S')" "$verify_before" "$verify_after" "$verify_delta" "$verify_verdict" \
+    # The receipt carries WHAT was run, its status and both readings: a delta without the
+    # command is not an attribution, and an exit code without the target is not evidence.
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(/bin/date '+%Y-%m-%dT%H:%M:%S')" "$verify_verdict" \
+      "$verify_before" "$verify_after" "$verify_delta" "$verify_rc" "$*" \
       >> "$STATE/receipts/recovery.tsv" 2>/dev/null || true
+    printf '  receipt: %s\n' "$(tail -n 1 "$STATE/receipts/recovery.tsv" 2>/dev/null)" 
     exit "$verify_rc" ;;
   probe)
     # Metadata latency, not size (founder, 2026-11-05): "the directory is slow" and "the
