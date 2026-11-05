@@ -28,7 +28,7 @@ jobs:
           FOUNDER: ${{ vars.ESTATE_FOUNDER_LOGIN }}
         run: |
           [ -n "$FOUNDER" ] && [ "$AUTHOR" = "$FOUNDER" ] || { echo "issue author is not the founder: refusing"; exit 1; }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Write the issue as data
         env:
           TITLE: ${{ github.event.issue.title }}

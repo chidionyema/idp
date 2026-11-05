@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""idp-ci-touched -- did this change touch these paths? One question, one answer, one place.
+
+WHY. 2026-11-05. The answer was written into four workflows, four different ways, and one of
+them was wrong: on a Greenlane candidate (a fresh refs/heads/queue/<batch> branch, so
+github.event.before is forty zeros) the ui-kit job's limiter answered "I cannot name the
+base" with "judge EVERYTHING", so the kit-import guard ran over the whole tree and refused
+two front ends that never migrated to the kit. Every batch was red and nothing landed
+(run 41944852174). The base is named by bin/idp-ci-base; this script asks the question and
+answers it.
+
+THE ANSWER IS FAIL-CLOSED. When the base cannot be named, or the diff cannot be taken, or
+the base IS the head (there is no range to measure), the answer is YES -- the gate runs.
+"Cannot judge" is never "nothing changed": a gate that cannot fail is not a gate, and one
+that cannot judge must not pass (AGENTS.md section 9, R1).
+
+WHAT IT READS
+  git rev-parse     the base is a commit this checkout can measure from
+  git diff          the paths the change touches, base...HEAD (the merge base, so a lane
+                    that was rebased onto a moving main is measured against what it adds)
+
+USAGE
+  bin/idp-ci-touched --paths "packages/estate-ui-kit/ apps/ web/"
+  bin/idp-ci-touched --paths "bin/idp/migrate-domain/" --base origin/main
+
+OUTPUT
+  stdout  "yes=true" or "yes=false", one line
+  $GITHUB_OUTPUT  "yes=true" or "yes=false" when that file is set (a workflow step)
+  exit 0  the answer is the output; the script does not fail on a NO
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import subprocess
+import sys
+
+IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
+BASE_SCRIPT = os.path.join(HERE, "idp-ci-base")
+
+
+def _git(repo: str, *argv: str) -> tuple[int, str]:
+    try:
+        p = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+            ["git", *argv], capture_output=True, text=True, timeout=60, cwd=repo
+        )
+    except (
+        OSError,
+        subprocess.SubprocessError,
+    ) as exc:  # pragma: no cover -- git missing
+        return 128, str(exc)
+    return p.returncode, (p.stdout or "").strip()
+
+
+def resolve_base(repo: str, argv: list[str]) -> tuple[str, str]:
+    """(base, why). ("", why) when no base could be named -- the caller then judges everything."""
+    p = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+        [sys.executable, BASE_SCRIPT, "--repo", repo, *argv],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if p.returncode != 0:
+        return "", (p.stderr or "idp-ci-base could not name a base").strip()
+    return (p.stdout or "").strip(), "named by bin/idp-ci-base"
+
+
+def touched(repo: str, base: str, paths: list[str]) -> tuple[bool, str]:
+    """(answer, why). The answer is YES whenever the question could not be asked."""
+    if not base:
+        return True, "no base could be named: judge everything"
+    head = _git(repo, "rev-parse", "--verify", "--quiet", "HEAD")[1]
+    base_sha = _git(repo, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}")[1]
+    if not head or not base_sha:
+        return True, "the base or the head is not a commit here: judge everything"
+    if base_sha == head:
+        return (
+            True,
+            "the base IS the head: there is no range to measure, judge everything",
+        )
+    rc, out = _git(repo, "diff", "--name-only", f"{base}...HEAD", "--", *paths)
+    if rc != 0:
+        return True, "the diff could not be taken: judge everything"
+    changed = [line for line in out.splitlines() if line.strip()]
+    if changed:
+        return True, f"{len(changed)} path(s) under {', '.join(paths)} changed"
+    return False, f"nothing under {', '.join(paths)} changed against {base}"
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description="did this change touch these paths?")
+    ap.add_argument("--repo", default=IDP, help="the checkout to measure in")
+    ap.add_argument("--paths", required=True, help="space-separated pathspecs")
+    ap.add_argument(
+        "--base", default=None, help="the base to measure from (default: idp-ci-base)"
+    )
+    ap.add_argument(
+        "--event-name",
+        default=None,
+        help="the event shape; forwarded to bin/idp-ci-base",
+    )
+    ap.add_argument("--ref", default=None, help="the ref pushed; forwarded")
+    ap.add_argument("--base-ref", default=None, help="the PR target; forwarded")
+    ap.add_argument(
+        "--before", default=None, help="the sha the push moved from; forwarded"
+    )
+    ap.add_argument("--pr-base-sha", default=None, help="the PR's base sha; forwarded")
+    ap.add_argument(
+        "--merge-group-base", default=None, help="the merge group's base sha; forwarded"
+    )
+    ap.add_argument(
+        "--why", action="store_true", help="print the reason with the answer"
+    )
+    args = ap.parse_args(argv)
+
+    paths = [p for p in args.paths.split() if p]
+    if not paths:
+        print("BLIND idp-ci-touched: no paths were named", file=sys.stderr)
+        return 2
+
+    forwarded: list[str] = []
+    for flag, value in (
+        ("--event-name", args.event_name),
+        ("--ref", args.ref),
+        ("--base-ref", args.base_ref),
+        ("--before", args.before),
+        ("--pr-base-sha", args.pr_base_sha),
+        ("--merge-group-base", args.merge_group_base),
+    ):
+        if value is not None:
+            forwarded += [flag, value]
+    if args.base:
+        base, why_base = args.base, "named by the caller"
+    else:
+        base, why_base = resolve_base(args.repo, forwarded)
+
+    answer, why = touched(args.repo, base, paths)
+    value = "yes=true" if answer else "yes=false"
+    out = os.environ.get("GITHUB_OUTPUT", "").strip()
+    if out:
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(f"{value}\n")
+    if args.why:
+        print(f"{value}\t{why} ({why_base})")
+    else:
+        print(value)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

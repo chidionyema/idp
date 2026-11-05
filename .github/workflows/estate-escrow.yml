@@ -60,7 +60,7 @@ jobs:
         if: always()
         run: |
           printf '### estate-escrow\n```\n%s\n```\n' "$(cat escrow.out 2>/dev/null || echo 'no verdict: the escrow died before printing one')" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: escrow-receipt
