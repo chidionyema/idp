@@ -7,7 +7,7 @@ the estate knows it is still there.
 
 | tool | what it does | installs to | measured by |
 |---|---|---|---|
-| [disk-sentinel](disk-sentinel/) | 60-second disk-pressure sample, a bounded read-only inventory retried every 30 minutes until complete, the deep forensic investigation, local HTML dashboard | `~/.local/share/disk-sentinel`, `~/Library/LaunchAgents/dev.disksentinel.*.plist` | `bin/idp-inventory --plane mac` - three `MANAGED` rows; `sentinel.sh status` reports the investigation verdict |
+| [disk-sentinel](disk-sentinel/) | 60-second disk-pressure sample, a bounded read-only inventory retried every 30 minutes until complete, two read-only investigations (forensics, elephant), local HTML dashboard | `~/.local/share/disk-sentinel`, `~/Library/LaunchAgents/dev.disksentinel.*.plist` | `bin/idp-inventory --plane mac` - three `MANAGED` rows; `sentinel.sh status` reports the investigation verdict |
 | [ai-fleet](ai-fleet/) | login-time supervisors for DSH web, the Kimi web UI, and the desktop agents | `~/Library/Application Support/AI Fleet`, `~/Library/LaunchAgents/local.aifleet.*.plist` | `bin/idp-inventory --plane mac` after `install` |
 | [pi-node](pi-node/) | repairs the pinned Node runtime Pi needs, without nvm or sudo | `~/.local/opt/pinned-node`, `~/.local/bin/{node,npm,npx}` | `pi --version` in fresh bash and zsh; the script's own PASS line |
 
