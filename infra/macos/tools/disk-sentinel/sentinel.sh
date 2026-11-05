@@ -555,6 +555,29 @@ case "${1:-}" in
       NORMAL|WARNING) printf 'ADMIT: %s, %s GiB free (reserve %s GiB)\n' "$admit_mode" "$(bytes_gib "$admit_avail")" "$DISK_SENTINEL_RESERVE_GIB"; exit 0 ;;
       *) printf 'REFUSED: %s, %s GiB free against a %s GiB reserve. Discretionary work must wait.\n' "$admit_mode" "$(bytes_gib "${admit_avail:-0}")" "$DISK_SENTINEL_RESERVE_GIB"; exit 75 ;;
     esac ;;
+  verify)
+    # A cleanup that ran is not a cleanup that recovered anything (founder, 2026-11-05):
+    # deleting a file that is still held open frees the directory entry, not the blocks, and a
+    # system cache can be rebuilt before the next sample. This measures physical free space
+    # before and after the command and refuses to call it recovery unless the space came back.
+    shift
+    [ "${1:-}" = "--" ] && shift
+    [ $# -gt 0 ] || { echo 'usage: disk-sentinel verify -- <command...>' >&2; exit 2; }
+    verify_before=$(current_avail_k)
+    verify_t0=$(/bin/date +%s)
+    "$@" ; verify_rc=$?
+    verify_after=$(current_avail_k)
+    verify_dt=$(( $(/bin/date +%s) - verify_t0 ))
+    case "$verify_before$verify_after" in *[!0-9]*|'') echo 'verify: BLIND - free space could not be measured before and after'; exit "$verify_rc" ;; esac
+    verify_delta=$(( (verify_after - verify_before) / 1024 ))
+    if [ "$verify_delta" -gt 0 ]; then verify_verdict=RECLAIMED; else verify_verdict=NOT_RECLAIMED; fi
+    printf 'verify: %s  rc=%s  free %.2f -> %.2f GiB  delta %+d MiB in %ss\n' \
+      "$verify_verdict" "$verify_rc" "$(bytes_gib "$verify_before")" "$(bytes_gib "$verify_after")" "$verify_delta" "$verify_dt"
+    [ "$verify_verdict" = RECLAIMED ] || echo '  The command finished; the capacity did not return. Do not count it as recovered.'
+    /bin/mkdir -p "$STATE/receipts" 2>/dev/null || true
+    printf '%s\t%s\t%s\t%s\t%s\n' "$(/bin/date '+%Y-%m-%dT%H:%M:%S')" "$verify_before" "$verify_after" "$verify_delta" "$verify_verdict" \
+      >> "$STATE/receipts/recovery.tsv" 2>/dev/null || true
+    exit "$verify_rc" ;;
   probe)
     # Metadata latency, not size (founder, 2026-11-05): "the directory is slow" and "the
     # directory is large" are different findings, and a du timeout cannot tell them apart.
@@ -638,5 +661,5 @@ PROBE
     refuse_unless_forced elephant "$OPT_FORCE" || exit $?
     [ ${#OPT_ARGS[@]} -eq 0 ] && OPT_ARGS=(--deep)
     /bin/bash "$APP/elephant.sh" "${OPT_ARGS[@]}" ;;
-  *) echo 'Usage: disk-sentinel {tick|scan|review|status|open|admit|probe|policy|forensics [--deep|--quick]|elephant [--deep|--quick]}' >&2; exit 2 ;;
+  *) echo 'Usage: disk-sentinel {tick|scan|review|status|open|admit|probe|verify|policy|forensics [--deep|--quick]|elephant [--deep|--quick]}' >&2; exit 2 ;;
 esac
