@@ -23,9 +23,15 @@ percentage of a 113 GiB laptop is not the same safety margin as a percentage of 
 | mode | free space | autonomous response |
 |---|---|---|
 | NORMAL | over 20 GiB | capacity tracking, growth attribution, retention accounting |
-| WARNING | 10-20 GiB | identify fast-growing owners, report reclaimable capacity |
-| CRITICAL | 3-10 GiB | expensive scans suspended; verify low-risk reclamation before acting |
+| WARNING | 15-20 GiB | identify fast-growing owners, report reclaimable capacity |
+| CRITICAL | 3-15 GiB | discretionary work refused; verify low-risk reclamation before acting |
 | EMERGENCY | under 3 GiB | optional investigations stopped; preserve headroom and notify |
+
+The **15 GiB reserve** is the line an owner must not cross (provisional, founder 2026-11-05, on a
+113 GiB volume): below it, discretionary disk-heavy work is refused and only observation and
+verified reclamation may run. It is policy, not code: write `RESERVE_GIB=..` and `WARNING_GIB=..`
+into `~/.local/state/disk-sentinel/policy.conf`, or read the effective values with
+`disk-sentinel policy`.
 
 `scan --auto` is refused in CRITICAL and EMERGENCY and records `DEFERRED` with the reason; `forensics`
 and `elephant` refuse with exit 75 and print the policy. `--force` overrides for a human who has
