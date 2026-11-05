@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  dev.disksentinel.monitor: the 60-second disk-pressure sample.
+
+  install path: ~/Library/LaunchAgents/dev.disksentinel.monitor.plist
+  laid by: infra/macos/tools/disk-sentinel/install.sh, which renders ${HOME}
+  measured by: bin/idp-inventory, plane mac (MANAGED when this file name is tracked)
+
+  LowPriorityIO and ProcessType Background are the safety policy, not an optimisation:
+  the observer must never compete with the build or the agent for I/O on a volume it is
+  measuring. The job writes nothing to stdout or stderr by design. Its evidence is
+  ~/.local/state/disk-sentinel, and a log that grows on a nearly-full volume is the
+  failure it exists to report.
+-->
+<plist version="1.0"><dict>
+<key>Label</key><string>dev.disksentinel.monitor</string>
+<key>ProgramArguments</key><array><string>/bin/bash</string><string>${HOME}/.local/share/disk-sentinel/sentinel.sh</string><string>tick</string></array>
+<key>RunAtLoad</key><true/>
+<key>StartInterval</key><integer>60</integer>
+<key>LowPriorityIO</key><true/>
+<key>ProcessType</key><string>Background</string>
+<key>StandardOutPath</key><string>/dev/null</string><key>StandardErrorPath</key><string>/dev/null</string>
+</dict></plist>

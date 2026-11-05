@@ -224,6 +224,30 @@ while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
     # YAML is declarative too, and bin/idp-ci rung 1c.2 lints every *.yml/*.yaml in the diff
     # against .yamllint (a missing yamllint is a FAIL, never a skip). Without it here, no agent
     # could ever change .github/workflows/*.yml -- the gate refused the estate's own work.
+    #
+    # A PLIST IS DECLARATIVE AND MUST STILL PARSE (2026-11-05). launchd job definitions are
+    # tracked in this repo (launchd/, infra/macos/LaunchDaemons/, infra/macos/tools/*/launchd/)
+    # and bin/idp-inventory marks a running job MANAGED only when a file named <label>.plist is
+    # tracked. Every one of them was refused here -- "readable as neither shell nor Python" --
+    # so the gate made the estate's own declaration layer unpushable, and the workaround would
+    # have been an untracked plist, which is the ORPHAN this exists to prevent. The file is
+    # parsed, not waved through: plistlib refuses malformed XML and a dict with no Label.
+    case "$f" in
+      *.plist|*.plist.tmpl)
+        if ! python3 -c '
+import plistlib, sys
+try:
+    d = plistlib.load(open(sys.argv[1], "rb"))
+except Exception as e:
+    sys.stderr.write("%s: %s\n" % (type(e).__name__, e)); raise SystemExit(1)
+if not isinstance(d, dict) or "Label" not in d:
+    sys.stderr.write("not a launchd job: no Label key\n"); raise SystemExit(1)
+' "$f" >&2; then
+          echo "pre-push REFUSED: $f is not a parseable launchd plist" >&2
+          exit 1
+        fi
+        continue ;;
+    esac
     case "$f" in *.tf|*.tfvars|*.hcl|*.json|*.md|*.txt|*.yml|*.yaml) continue ;; esac
     # Unknown: no shebang, not a known extension. Accept it when EITHER parser reads it --
     # a file with no shebang is still one of the two languages, and refusing it would be the

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  dev.disksentinel.dashboard: open the local dashboard at login.
+
+  install path: ~/Library/LaunchAgents/dev.disksentinel.dashboard.plist
+  laid by: infra/macos/tools/disk-sentinel/install.sh, which renders ${HOME}
+  measured by: bin/idp-inventory, plane mac (MANAGED when this file name is tracked)
+
+  This job opens a FILE, never a server: the dashboard is dashboard.html, refreshed by
+  the monitor tick every 60 seconds. There is no port, no listener and no telemetry, so
+  there is nothing here to expose on a network and nothing to keep alive between logins.
+-->
+<plist version="1.0"><dict>
+<key>Label</key><string>dev.disksentinel.dashboard</string>
+<key>ProgramArguments</key><array><string>/usr/bin/open</string><string>${HOME}/.local/share/disk-sentinel/dashboard.html</string></array>
+<key>RunAtLoad</key><true/>
+<key>StandardOutPath</key><string>/dev/null</string><key>StandardErrorPath</key><string>/dev/null</string>
+</dict></plist>
