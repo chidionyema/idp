@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  dev.disksentinel.scan: the 03:15 read-only directory inventory.
+
+  install path: ~/Library/LaunchAgents/dev.disksentinel.scan.plist
+  laid by: infra/macos/tools/disk-sentinel/install.sh, which renders ${HOME}
+  measured by: bin/idp-inventory, plane mac (MANAGED when this file name is tracked)
+
+  Read-only by policy: sentinel.sh scan walks the tree and records sizes; it deletes
+  nothing. The nightly slot keeps the walk out of working hours, and LowPriorityIO keeps
+  it from winning the queue against whatever the founder is actually doing.
+-->
+<plist version="1.0"><dict>
+<key>Label</key><string>dev.disksentinel.scan</string>
+<key>ProgramArguments</key><array><string>/bin/bash</string><string>${HOME}/.local/share/disk-sentinel/sentinel.sh</string><string>scan</string></array>
+<key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>15</integer></dict>
+<key>LowPriorityIO</key><true/>
+<key>ProcessType</key><string>Background</string>
+<key>StandardOutPath</key><string>/dev/null</string><key>StandardErrorPath</key><string>/dev/null</string>
+</dict></plist>
