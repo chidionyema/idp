@@ -44,7 +44,16 @@ jobs:
             pyyaml
 
       - name: run verifier gauntlet
+        env:
+          ESTATE_CI_EVENT_NAME: ${{ github.event_name }}
+          ESTATE_CI_REF: ${{ github.ref }}
+          ESTATE_CI_BASE_REF: ${{ github.base_ref }}
+          ESTATE_CI_BEFORE: ${{ github.event.before }}
+          ESTATE_CI_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          ESTATE_CI_MERGE_GROUP_BASE: ${{ github.event.merge_group.base_sha }}
         run: |
+          # idp#7710 (2026-11-05): the base is named in ONE place now (bin/idp-ci-base), and
+          # the rule it holds is the one this comment used to hold:
           # The diff base depends on the event. On a pull_request the base is the PR
           # target branch. On a push to main the PR diff does not exist yet, so grade
           # against the previous commit (github.event.before) — the same convention
@@ -59,15 +68,11 @@ jobs:
           # an empty diff when the tip is unchanged) and reds the required ci
           # context, requeueing a batch that verifies clean against main. Queue
           # pushes always grade against main, like a fresh branch would.
-          before="${{ github.event.before }}"
-          case "${{ github.event_name }}" in
-            pull_request) base="origin/${{ github.base_ref }}" ;;
-            push)         case "$GITHUB_REF" in refs/heads/queue/*) base="origin/main" ;;
-                          *) base="$before"
-                             case "$before" in ''|*[!0]*) ;; *) base="origin/main" ;; esac ;;
-                          esac ;;
-            *)            base="origin/main" ;;
-          esac
+          base="$(bin/idp-ci-base)" || base=""
+          if [ -z "$base" ]; then
+            echo "BLIND verifier: no base could be named -- refusing to pass unproven"
+            exit 1
+          fi
           diff_out=$(git diff "$base"...HEAD)
           if [ -z "$diff_out" ]; then
             echo "BLIND verifier: empty diff — no merge base, refusing to pass unproven"

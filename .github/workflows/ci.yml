@@ -395,18 +395,13 @@ jobs:
         with: { fetch-depth: 0 }
       - name: did this change touch the tool at all
         id: touched
-        run: |
-          base="${{ github.event.pull_request.base.sha || github.event.before }}"
-          # A zero/empty base means GitHub could not name the parent (a freshly pushed branch on a
-          # push event). Falling back to HEAD^ asks the real question -- did the commit touch the
-          # tool -- instead of running the job unconditionally on every lane push.
-          case "$base" in ''|0000000000000000000000000000000000000000) base="$(git rev-parse HEAD^ 2>/dev/null || echo '')" ;; esac
-          case "$base" in '') echo "yes=false" >> "$GITHUB_OUTPUT"; exit 0;; esac
-          if git diff --name-only "$base"...HEAD -- bin/idp/migrate-domain/ | grep -q .; then
-            echo "yes=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "yes=false" >> "$GITHUB_OUTPUT"
-          fi
+        env:
+          ESTATE_CI_EVENT_NAME: ${{ github.event_name }}
+          ESTATE_CI_REF: ${{ github.ref }}
+          ESTATE_CI_BASE_REF: ${{ github.base_ref }}
+          ESTATE_CI_BEFORE: ${{ github.event.before }}
+          ESTATE_CI_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bin/idp-ci-touched --paths "bin/idp/migrate-domain/"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: steps.touched.outputs.yes == 'true'
         with:
@@ -427,14 +422,21 @@ jobs:
         with: { fetch-depth: 0 }
       - name: did this change touch a front end
         id: touched
-        run: |
-          base="${{ github.event.pull_request.base.sha || github.event.before }}"
-          case "$base" in ''|0000000000000000000000000000000000000000) echo "yes=true" >> "$GITHUB_OUTPUT"; exit 0;; esac
-          if git diff --name-only "$base"...HEAD -- packages/estate-ui-kit/ apps/ web/ backstage/packages/app/src/ | grep -q .; then
-            echo "yes=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "yes=false" >> "$GITHUB_OUTPUT"
-          fi
+        # idp#7710 (2026-11-05): this limiter used to answer a base it could not name with
+        # "judge EVERYTHING" (`case "$base" in ''|000...0) echo "yes=true"`), and the Greenlane
+        # pushes every candidate as a FRESH queue branch, so `github.event.before` is forty
+        # zeros on every candidate. The kit-import guard then ran over the whole tree and
+        # refused two front ends that never migrated to the kit, so every batch was red and
+        # nothing landed (run 41944852174). A candidate is main plus its lanes, so it is
+        # graded on its own diff, as a pull request is -- and the base is named in ONE place,
+        # bin/idp-ci-base, so no workflow keeps its own copy of the rule.
+        env:
+          ESTATE_CI_EVENT_NAME: ${{ github.event_name }}
+          ESTATE_CI_REF: ${{ github.ref }}
+          ESTATE_CI_BASE_REF: ${{ github.base_ref }}
+          ESTATE_CI_BEFORE: ${{ github.event.before }}
+          ESTATE_CI_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bin/idp-ci-touched --paths "packages/estate-ui-kit/ apps/ web/ backstage/packages/app/src/"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: steps.touched.outputs.yes == 'true'
         with: { node-version: "22" }
