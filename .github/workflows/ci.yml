@@ -287,7 +287,7 @@ jobs:
           echo "ok    compiled-helm $(jq -r '.summary.rendered' "$RUNNER_TEMP/compiled-helm.json") release(s), $(jq -r '.summary.objects' "$RUNNER_TEMP/compiled-helm.json") object(s)" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: upload the compiled estate (the Ops page reads it)
         if: matrix.shard == 'render'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v5.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v5.0.1
         with:
           name: compiled-helm
           path: ${{ runner.temp }}/compiled-helm.json
