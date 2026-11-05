@@ -49,6 +49,10 @@ if [ -L "$BIN/disk-sentinel" ] && [ "$(readlink "$BIN/disk-sentinel")" != "$DST/
 fi
 ln -sfn "$DST/sentinel.sh" "$BIN/disk-sentinel"
 
+# forensics.sh is the read-only investigation, installed as part of this tool so `disk-sentinel
+# forensics` is the one door: no second download, no second copy of the safety policy.
+install -m 700 "$SRC/forensics/disk_sentinel_forensics_macos.sh" "$DST/forensics.sh"
+
 # Require successful telemetry and dashboard generation before creating launch jobs.
 "$DST/sentinel.sh" tick || { echo 'BLOCKED: first monitor tick failed. No jobs registered.' >&2; exit 1; }
 
@@ -73,9 +77,9 @@ for name in monitor scan dashboard; do
   [ -f "$job" ] && launchctl bootout "$DOMAIN" "$job" >/dev/null 2>&1 || true
 done
 
-write_job monitor
-write_job scan
-write_job dashboard
+write_job monitor monitor
+write_job scan scan
+write_job dashboard dashboard
 
 for name in monitor scan dashboard; do
   job="$AGENTS/dev.disksentinel.$name.plist"
@@ -88,8 +92,9 @@ done
 
 printf '\nPASS: Disk Sentinel installed and registered.\n'
 printf 'Dashboard: %s\n' "$DST/dashboard.html"
-printf 'Monitor: every 60 seconds; inventory: daily at 03:15; browser: opens at login.\n'
+printf 'Monitor: every 60 seconds; inventory retries: every 30 minutes until a full daily scan; browser: opens at login.\n'
 printf 'Commands (absolute-path, unaffected by PATH problems):\n'
 printf '  "%s/sentinel.sh" status\n' "$DST"
 printf '  "%s/sentinel.sh" scan\n' "$DST"
 printf '  "%s/sentinel.sh" review\n' "$DST"
+printf '  "%s/sentinel.sh" forensics --deep   (read-only investigation, throttled, bounded)\n' "$DST"

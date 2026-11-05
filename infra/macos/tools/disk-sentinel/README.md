@@ -15,7 +15,25 @@ bash install.sh
 `${HOME}`), so the job launchd runs and the job the estate declares are the same file. To prove
 the estate sees them: `bin/idp-inventory --plane mac` reports a `MANAGED` row per label.
 
-The user LaunchAgent samples the **home-volume** capacity every 60 seconds and opens a dashboard at user login; a second agent performs a read-only directory inventory at 03:15 daily. The dashboard auto-refreshes every 60 seconds.
+### The investigation, in one door
+
+`forensics/disk_sentinel_forensics_macos.sh` ships with this tool and is installed as
+`forensics.sh` next to `sentinel.sh`, so there is one disk-management surface rather than a
+second download:
+
+```bash
+disk-sentinel forensics --deep     # throttled read-only investigation, ~185s budget
+disk-sentinel forensics --quick    # ~55s budget
+```
+
+It measures APFS volumes and snapshots, top-level directories, Docker/VM images, Xcode and
+simulators, Node and agent footprints, files over 500 MiB, active processes, Disk Sentinel's own
+health and the capacity delta across the run. Each check is time-bounded and reported as
+complete, partial or timed out; nothing is deleted and no agent is stopped. `scan` and
+`forensics` answer different questions: `scan` is the recurring, cheap inventory the dashboard
+reads; `forensics` is the one-off deep investigation when the cause is not yet known.
+
+The user LaunchAgent samples the **home-volume** capacity every 60 seconds and opens a dashboard at user login; a second agent attempts a bounded, read-only directory inventory every 30 minutes until a full daily scan succeeds. High load defers work but records a non-success outcome; timeouts produce a partial inventory. The dashboard auto-refreshes every 60 seconds.
 
 To see where space is used immediately:
 
@@ -64,3 +82,13 @@ Tested for Bash syntax and dashboard rendering in a sandbox. A full production d
 2. Integrate your agents' task ledger, running CI jobs, Docker state and backups to prove quiescence before approving a cleanup.
 3. Add operator-controlled off-device archive destinations, evidence receipts and a second volume for restore, rather than moving items to same-volume Trash.
 4. For truly always-on coverage before login, use a separately reviewed root LaunchDaemon and signed native menu-bar UI with permissions controls.
+
+## Version 1.1: deferred-scan fix
+
+- The scan no longer returns success when high CPU load prevented inventory. DEFERRED, PARTIAL and COMPLETE are tracked visibly in the dashboard and `status` command.
+- A dedicated `launchd` job retries every 30 minutes; once an inventory completes, subsequent scheduled checks skip I/O for 24 hours.
+- Directory traversal is read-only, low-nice and limited to approximately 12 seconds per candidate and 90 seconds overall. Directory sizes may be partial/missing if a traversal timed out.
+- The existing `scan --force` option is manual only and bypasses the high-load precheck, **not** the I/O timeouts. It can still compete with active work: use only after assessing load.
+- This is **not** an autonomous third-party cleanup system. Deletion still requires owner-specific approval, in-flight evidence and verification.
+
+To upgrade: extract the updated archive, then rerun `bash install.sh`. The installer backs up the prior `sentinel.sh`, reloads only Disk Sentinel jobs and leaves histories untouched.
