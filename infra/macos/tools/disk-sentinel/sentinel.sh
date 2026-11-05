@@ -91,12 +91,31 @@ metric_status() {
 # because "15% of 113 GiB" is not the same safety margin as "15% of 1 TiB": what matters is whether
 # there is room to work. Each mode says what the supervisor is allowed to do, so an expensive
 # investigation cannot start on a volume that is already failing.
+# The reserve is the line an owner must not cross: below it, discretionary disk-heavy work is
+# refused and only reclamation/observation may run. Provisional 15 GiB on a 113 GiB volume
+# (founder, 2026-11-05), overridable without editing code.
+DISK_SENTINEL_RESERVE_GIB=${DISK_SENTINEL_RESERVE_GIB:-15}
+DISK_SENTINEL_WARNING_GIB=${DISK_SENTINEL_WARNING_GIB:-20}
+
+policy_load() {
+  local f="$STATE/policy.conf" line k v
+  [ -r "$f" ] || return 0
+  while IFS='=' read -r k v; do
+    case "$k" in
+      RESERVE_GIB) case "$v" in ''|*[!0-9]*) ;; *) DISK_SENTINEL_RESERVE_GIB=$v ;; esac ;;
+      WARNING_GIB) case "$v" in ''|*[!0-9]*) ;; *) DISK_SENTINEL_WARNING_GIB=$v ;; esac ;;
+    esac
+  done < "$f"
+}
+
 storage_mode() {
-  local avail=${1:-$AVAILABLE_K}
+  local avail=${1:-$AVAILABLE_K} reserve warning
+  reserve=$(( ${DISK_SENTINEL_RESERVE_GIB:-15} * 1048576 ))
+  warning=$(( ${DISK_SENTINEL_WARNING_GIB:-20} * 1048576 ))
   case "$avail" in ''|*[!0-9]*) echo UNKNOWN; return 0 ;; esac
-  if [ "$avail" -gt $((20*1048576)) ]; then echo NORMAL
-  elif [ "$avail" -gt $((10*1048576)) ]; then echo WARNING
-  elif [ "$avail" -gt $((3*1048576)) ]; then echo CRITICAL
+  if [ "$avail" -gt "$warning" ]; then echo NORMAL
+  elif [ "$avail" -ge "$reserve" ]; then echo WARNING
+  elif [ "$avail" -ge $((3*1048576)) ]; then echo CRITICAL
   else echo EMERGENCY; fi
 }
 
@@ -443,12 +462,21 @@ refuse_unless_forced() {
   refuse_optional "$1"
 }
 
+policy_load
+
 case "${1:-}" in
   tick) tick ;;
   scan) scan "$@" ;;
   review) review ;;
   status) status ;;
   open) [ -f "$DASH" ] && /usr/bin/open "$DASH" || { tick && /usr/bin/open "$DASH"; } ;;
+  policy)
+    policy_load
+    printf 'Reserve (discretionary work refused below): %s GiB\n' "$DISK_SENTINEL_RESERVE_GIB"
+    printf 'Warning line: %s GiB\n' "$DISK_SENTINEL_WARNING_GIB"
+    printf 'Effective now: %s - %s\n' "$(storage_mode "$(current_avail_k)")" "$(mode_policy "$(storage_mode "$(current_avail_k)")")"
+    printf 'Override file: %s (RESERVE_GIB=.., WARNING_GIB=..)\n' "$STATE/policy.conf" ;;
+
   # The forensic investigation is part of this tool, not a second download: one disk-management
   # surface, one install, one place where the safety policy is stated. The script is read-only,
   # time-bounded and is installed next to this one.
@@ -473,5 +501,5 @@ case "${1:-}" in
     refuse_unless_forced elephant "$OPT_FORCE" || exit $?
     [ ${#OPT_ARGS[@]} -eq 0 ] && OPT_ARGS=(--deep)
     /bin/bash "$APP/elephant.sh" "${OPT_ARGS[@]}" ;;
-  *) echo 'Usage: disk-sentinel {tick|scan|review|status|open|forensics [--deep|--quick]|elephant [--deep|--quick]}' >&2; exit 2 ;;
+  *) echo 'Usage: disk-sentinel {tick|scan|review|status|open|policy|forensics [--deep|--quick]|elephant [--deep|--quick]}' >&2; exit 2 ;;
 esac
