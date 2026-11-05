@@ -379,6 +379,12 @@ case "${1:-}" in
   # by top-level owner, so "what is the 96 GB?" has an answer even when no suspect list hits.
   elephant)
     if [ ! -x "$APP/elephant.sh" ]; then echo 'BLOCKED: elephant.sh is not installed; reinstall Disk Sentinel' >&2; exit 2; fi
+    # Single flight (2026-11-05). Two walks were started by hand and both stalled at 0% CPU
+    # while writing the same report file; each truncates the other's offsets, so the report
+    # froze mid-progress. A whole-volume walk is exactly the thing that must not be doubled.
+    elephant_lock="$STATE/elephant.lock"
+    lock_acquire "$elephant_lock" || { echo 'BLOCKED: another elephant walk is already running; no duplicate I/O started.' >&2; exit 75; }
+    trap 'lock_release "$elephant_lock"' EXIT INT TERM
     shift
     /bin/bash "$APP/elephant.sh" "${@:---deep}" ;;
   *) echo 'Usage: disk-sentinel {tick|scan|review|status|open|forensics [--deep|--quick]|elephant [--deep|--quick]}' >&2; exit 2 ;;

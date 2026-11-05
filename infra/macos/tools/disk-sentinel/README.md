@@ -32,6 +32,10 @@ Xcode and simulators, Node and agent footprints, files over 500 MiB, active proc
 Sentinel's own health and the capacity delta across the run. Each check is time-bounded and
 reported as complete, partial or timed out; nothing is deleted and no agent is stopped.
 
+**`elephant` holds a single-flight lock**, so a second walk is refused rather than started
+beside the first: two concurrent whole-volume walks were measured on 2026-11-05 writing the same
+report file, each truncating the other's offsets until the report froze mid-progress.
+
 **`elephant`** answers the question `forensics` cannot when every named suspect times out: it
 walks the APFS Data volume **once**, attributes allocated blocks to buckets by owner at depth
 1-5, lists files at or above 512 MiB, and reports `SCAN_STATE: COMPLETE`,
