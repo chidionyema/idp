@@ -139,7 +139,12 @@ render_dashboard() {
     esac
   fi
   reserve_state="Not allocated"; [ -f "$RESERVE" ] && reserve_state="64 MiB allocated - automatic release at emergency"
-  scan_note="Not yet scanned"; [ -s "$STATE/scan.completed" ] && scan_note="Last read-only scan: $(cat "$STATE/scan.completed")"
+  scan_note="Not yet scanned"; [ -s "$STATE/scan.completed" ] && scan_note="Last complete read-only scan: $(cat "$STATE/scan.completed")"
+  if [ -s "$STATE/scan.state" ]; then
+    local scan_timestamp scan_status scan_details
+    IFS='|' read -r scan_timestamp scan_status scan_details < "$STATE/scan.state"
+    scan_note="$scan_note - Latest attempt: $scan_status ($scan_timestamp) - $scan_details"
+  fi
   chart_data=""
   if [ -s "$HISTORY" ]; then
     chart_data=$(/usr/bin/awk -F '\t' 'BEGIN{sep=""} $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && NR % 10 == 1 {printf "%s[%s,%.3f]",sep,$1,$2/1048576; sep=","}' "$HISTORY")
@@ -207,26 +212,82 @@ tick() {
   render_dashboard
 }
 
-# Read-only inventory; not run each minute, not scanning source trees or active builds.
+# Read-only inventory with bounded execution and explicit retryable outcomes.
+# A postponed scan is never reported as a successful inventory.
+scan_state_write() {
+  local state="$1" detail="$2" now
+  now=$(/bin/date '+%Y-%m-%d %H:%M:%S')
+  printf '%s|%s|%s\n' "$now" "$state" "$detail" > "$STATE/scan.state.tmp.$$" 2>/dev/null && \
+    /bin/mv -f "$STATE/scan.state.tmp.$$" "$STATE/scan.state" 2>/dev/null || true
+}
+
+# du is read-only but can still consume I/O; cap each traversal and run at low CPU priority.
+# No process other than the du launched by THIS invocation is ever signalled.
+bounded_du() {
+  local path="$1" output="$2" limit="${3:-12}" pid elapsed=0 rc=0
+  /usr/bin/nice -n 18 /usr/bin/du -skx "$path" > "$output" 2>/dev/null &
+  pid=$!
+  SCAN_DU_PID="$pid"
+  while /bin/kill -0 "$pid" 2>/dev/null; do
+    if [ "$elapsed" -ge "$limit" ]; then
+      /bin/kill -TERM "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      SCAN_DU_PID=""
+      return 124
+    fi
+    /bin/sleep 1
+    elapsed=$((elapsed+1))
+  done
+  wait "$pid" || rc=$?
+  SCAN_DU_PID=""
+  return "$rc"
+}
+
 scan() {
-  # Back off under heavy CPU load so read-only scans don't compete with running jobs.
-  if [ "${2:-}" != "--force" ] && command -v sysctl >/dev/null 2>&1; then
+  local mode="${2:-}" now last_success=0
+  now=$(/bin/date +%s)
+  if [ "$mode" = '--auto' ] && [ -r "$STATE/scan.completed.epoch" ]; then
+    read -r last_success < "$STATE/scan.completed.epoch" || true
+    case "$last_success" in ''|*[!0-9]*) last_success=0 ;; esac
+    if [ $((now-last_success)) -lt 86400 ] && [ "$now" -ge "$last_success" ]; then
+      return 0
+    fi
+  fi
+  # Avoid contention with in-flight builds. Automatically retry 30 minutes later.
+  if [ "$mode" != '--force' ] && [ -x /usr/sbin/sysctl ]; then
     local cores load1 busy
     cores=$(/usr/sbin/sysctl -n hw.logicalcpu 2>/dev/null || echo 1)
     load1=$(/usr/sbin/sysctl -n vm.loadavg 2>/dev/null | /usr/bin/awk '{gsub(/[{}]/, "");print $1}')
-    busy=$(/usr/bin/awk -v l="$load1" -v c="$cores" 'BEGIN { if (c>0 && l>c*0.8) print 1; else print 0 }')
-    if [ "$busy" = 1 ]; then echo 'DEFERRED: system under high load; no directory I/O performed. Use scan --force for manual override.'; return 0; fi
+    busy=$(/usr/bin/awk -v l="$load1" -v c="$cores" 'BEGIN {if(c>0 && l>c*0.8) print 1; else print 0}')
+    if [ "$busy" = 1 ]; then
+      scan_state_write DEFERRED 'System busy; retry scheduled in 30 minutes'
+      echo 'DEFERRED: system busy. This is NOT a completed scan; automatic retry is scheduled.'
+      return 75
+    fi
   fi
+
   local lock="$STATE/scan.lock" entries="$STATE/inventory.unsorted.$$" tmp="$STATE/inventory.tmp.$$"
-  lock_acquire "$lock" || { echo 'Scan already running; no duplicate I/O started.'; return 0; }
-  trap "lock_release '$lock'; rm -f '$entries' '$tmp'" EXIT INT TERM
-  : > "$entries" || { echo 'BLOCKED: insufficient space for scan inventory' >&2; return 1; }
-  local item label path risk note kb
+  lock_acquire "$lock" || { scan_state_write DEFERRED 'Another inventory is running'; echo 'DEFERRED: scan already active'; return 75; }
+  SCAN_DU_PID=""
+  SCAN_LOCK="$lock"; SCAN_ENTRIES="$entries"; SCAN_TMP="$tmp"; SCAN_DU_TMP="$STATE/du.tmp.$$"
+  trap 'if [ -n "${SCAN_DU_PID:-}" ]; then /bin/kill -TERM "$SCAN_DU_PID" 2>/dev/null || true; fi; lock_release "$SCAN_LOCK"; /bin/rm -f "$SCAN_ENTRIES" "$SCAN_TMP" "$SCAN_DU_TMP" 2>/dev/null || true' EXIT INT TERM
+  : > "$entries" || { scan_state_write FAILED 'Cannot write inventory (disk full or permissions)'; echo 'BLOCKED: insufficient disk space for scan inventory' >&2; return 1; }
+  local label path risk note kb measured=0 skipped=0 candidates=0 start_ts run_sec
+  start_ts=$(/bin/date +%s)
   while IFS='|' read -r label path risk note; do
     [ -d "$path" ] || continue
-    kb=$(/usr/bin/nice -n 18 /usr/bin/du -skx "$path" 2>/dev/null | /usr/bin/awk 'NR==1{print $1}')
-    case "$kb" in ''|*[!0-9]*) continue ;; esac
-    printf '%s|%s|%s|%s\n' "$label" "$kb" "$risk" "$note" >> "$entries"
+    candidates=$((candidates+1))
+    run_sec=$(( $(/bin/date +%s) - start_ts ))
+    if [ "$run_sec" -ge 90 ]; then skipped=$((skipped+1)); continue; fi
+    if bounded_du "$path" "$STATE/du.tmp.$$" 12; then
+      kb=$(/usr/bin/awk 'NR==1 {print $1}' "$STATE/du.tmp.$$")
+      case "$kb" in ''|*[!0-9]*) skipped=$((skipped+1)); continue ;; esac
+      printf '%s|%s|%s|%s\n' "$label" "$kb" "$risk" "$note" >> "$entries" || { scan_state_write FAILED 'Disk full while recording inventory'; return 1; }
+      measured=$((measured+1))
+    else
+      skipped=$((skipped+1))
+    fi
+    /bin/rm -f "$STATE/du.tmp.$$" 2>/dev/null || true
   done <<EOF_CANDIDATES
 Node/npm downloaded packages|$HOME/.npm/_cacache|Review|Reclaim only after confirming no package operation is active
 nvm downloaded archives|$HOME/.nvm/.cache|Review|May include in-progress Node downloads or compiles
@@ -241,12 +302,20 @@ Docker VM storage|$HOME/Library/Containers/com.docker.docker/Data/vms|Protected|
 General user caches|$HOME/Library/Caches|Protected|Mixed ownership; never bulk-delete blindly
 CLI and agent caches|$HOME/.cache|Protected|Includes active models, sessions and build data
 EOF_CANDIDATES
-  /usr/bin/sort -t '|' -k2,2nr "$entries" > "$tmp" || return 1
-  /bin/mv -f "$tmp" "$INVENTORY" || return 1
-  /bin/date '+%Y-%m-%d %H:%M:%S' > "$STATE/scan.completed" 2>/dev/null || true
-  printf 'Read-only inventory complete. Largest candidates:\n'
+  /usr/bin/sort -t '|' -k2,2nr "$entries" > "$tmp" || { scan_state_write FAILED 'Unable to sort inventory'; return 1; }
+  /bin/mv -f "$tmp" "$INVENTORY" || { scan_state_write FAILED 'Unable to publish inventory'; return 1; }
+  if [ "$skipped" -gt 0 ]; then
+    scan_state_write PARTIAL "Measured $measured of $candidates available locations; $skipped timed out or deferred; retry pending"
+    echo "PARTIAL INVENTORY: measured $measured locations, $skipped incomplete; will retry automatically."
+  else
+    scan_state_write COMPLETE "Measured $measured locations"
+    /bin/date '+%Y-%m-%d %H:%M:%S' > "$STATE/scan.completed" 2>/dev/null || true
+    /bin/date '+%s' > "$STATE/scan.completed.epoch" 2>/dev/null || true
+    echo "COMPLETE: measured $measured locations."
+  fi
   /usr/bin/head -n 10 "$INVENTORY" | /usr/bin/awk -F '|' '{printf "%-32s %8.1f GiB  %s\n",$1,$2/1048576,$3}'
-  /bin/bash "$APP/sentinel.sh" tick || true
+  /bin/bash "$APP/sentinel.sh" tick >/dev/null 2>&1 || true
+  [ "$skipped" -eq 0 ] || return 75
 }
 
 review() {
@@ -254,7 +323,8 @@ review() {
   echo 'No third-party files are deleted automatically. Candidate sizes are advisory.'
   echo 'First: check active build, install, backup, database and agent work.'
   echo
-  [ -s "$INVENTORY" ] && /usr/bin/head -n 12 "$INVENTORY" | /usr/bin/awk -F '|' '{printf "%-32s %8.1f GiB  %s\n",$1,$2/1048576,$3}' || echo 'Run: disk-sentinel scan'
+  [ -s "$STATE/scan.state" ] && echo "Latest attempt: $(cat "$STATE/scan.state")"
+  [ -s "$INVENTORY" ] && /usr/bin/head -n 12 "$INVENTORY" | /usr/bin/awk -F '|' '{printf "%-32s %8.1f GiB  %s\n",$1,$2/1048576,$3}' || echo 'No inventory yet: automatic retry will run every 30 minutes' 
   cat <<'EOM'
 
 APPROVED REVIEW COMMANDS (READ-ONLY):
@@ -280,6 +350,12 @@ status() {
     printf 'Current cached status: %s\nFree: %s GiB / %s GiB | Pressure: %s\n' "$(/bin/date -r "$ts" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "$ts")" "$(bytes_gib "$avail")" "$(bytes_gib "$total")" "$sev"
   else echo 'No samples yet; run: disk-sentinel tick'; fi
   echo "Dashboard: $DASH"
+  if [ -s "$STATE/scan.state" ]; then
+    printf 'Investigation: %s\n' "$(cat "$STATE/scan.state")"
+  else
+    echo 'Investigation: NEVER RUN - no scan attempt recorded'
+  fi
+  [ -s "$STATE/scan.completed" ] && echo "Last completed inventory: $(cat "$STATE/scan.completed")"
   if command -v launchctl >/dev/null 2>&1; then
     /bin/launchctl print "gui/$(/usr/bin/id -u)/$LABEL" >/dev/null 2>&1 && echo 'Monitor: registered with launchd' || echo 'Monitor: not running or outside active GUI session'
   fi
@@ -291,5 +367,12 @@ case "${1:-}" in
   review) review ;;
   status) status ;;
   open) [ -f "$DASH" ] && /usr/bin/open "$DASH" || { tick && /usr/bin/open "$DASH"; } ;;
-  *) echo 'Usage: disk-sentinel {tick|scan|review|status|open}' >&2; exit 2 ;;
+  # The forensic investigation is part of this tool, not a second download: one disk-management
+  # surface, one install, one place where the safety policy is stated. The script is read-only,
+  # time-bounded and is installed next to this one.
+  forensics)
+    if [ ! -x "$APP/forensics.sh" ]; then echo 'BLOCKED: forensics.sh is not installed; reinstall Disk Sentinel' >&2; exit 2; fi
+    shift
+    /bin/bash "$APP/forensics.sh" "${@:---deep}" ;;
+  *) echo 'Usage: disk-sentinel {tick|scan|review|status|open|forensics [--deep|--quick]}' >&2; exit 2 ;;
 esac
