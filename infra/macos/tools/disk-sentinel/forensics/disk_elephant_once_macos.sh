@@ -56,7 +56,7 @@ my $dev = $rst[0];
 my $begin = time();
 my $next_report = $begin + 20;
 my (%bucket, %seen_hardlink, @large);
-my ($visits, $files, $dirs, $unstat, $other_mounts, $hardlinks, $warnings) = (0,0,0,0,0,0,0);
+my ($visits, $files, $dirs, $unstat, $other_mounts, $hardlinks, $warnings, $cloud_skipped) = (0,0,0,0,0,0,0,0);
 my $timed_out = 0;
 my $all_alloc = 0;
 my $logical_total = 0;
@@ -71,6 +71,16 @@ local $SIG{__WARN__} = sub {
 my $abort = '__ELEPHANT_TIME_BUDGET__';
 my $callback = sub {
   my $path = $File::Find::name;
+  # File Provider trees are a network round trip per metadata op, not local storage:
+  # measured 2026-11-05 on this Mac, one readdir of a Google Drive mount root cost 38.5 ms
+  # against 0.5 ms for a local directory. A walk that descends into them spends its whole
+  # budget waiting on the provider and reports the local volume as unmeasurable. They are
+  # pruned and named, never silently counted as zero.
+  if ($path =~ m{/Library/CloudStorage(?:/|$)}) {
+    $File::Find::prune = 1 if -d $path;
+    $cloud_skipped++;
+    return;
+  }
   my @st = lstat($path);
   unless (@st) { $unstat++; return; }
   $visits++;
@@ -131,8 +141,8 @@ my $elapsed = time() - $begin;
 
 printf "\nSCAN_STATE: %s\n", ($complete && !$warnings && !$unstat) ? 'COMPLETE' :
   ($timed_out ? 'TIME_BOUNDED_PARTIAL' : 'PARTIAL_OR_RESTRICTED');
-printf "Entries visited: %d | regular/other files: %d | directories: %d | skipped mounts: %d | stat failures: %d | access notices: %d | hardlink duplicates avoided: %d\n",
-  $visits,$files,$dirs,$other_mounts,$unstat,$warnings,$hardlinks;
+printf "Entries visited: %d | regular/other files: %d | directories: %d | skipped mounts: %d | cloud provider trees pruned: %d | stat failures: %d | access notices: %d | hardlink duplicates avoided: %d\n",
+  $visits,$files,$dirs,$other_mounts,$cloud_skipped,$unstat,$warnings,$hardlinks;
 printf "Elapsed: %.0f sec. Sum of file-level allocated blocks visited: %.2f GiB (NOT guaranteed unique APFS usage).\n",
   $elapsed, $all_alloc/1073741824;
 if ($err && !$timed_out) { print "SCAN_ERROR: $err\n"; }
