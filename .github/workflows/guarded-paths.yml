@@ -40,18 +40,23 @@ jobs:
           # git rev-parse HEAD returns the commit the author actually signed.
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: run bin/idp-ci-guarded-paths against the base
+        env:
+          ESTATE_CI_EVENT_NAME: ${{ github.event_name }}
+          ESTATE_CI_REF: ${{ github.ref }}
+          ESTATE_CI_BASE_REF: ${{ github.base_ref }}
+          ESTATE_CI_BEFORE: ${{ github.event.before }}
+          ESTATE_CI_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          ESTATE_CI_MERGE_GROUP_BASE: ${{ github.event.merge_group.base_sha }}
         run: |
           set -uo pipefail
-          # On a push to main there is no base_ref, and grading main against origin/main would
-          # diff it against itself and check nothing. Grade the pushed range instead: the commit
-          # main was at before this push (${{ github.event.before }}). Guard the all-zeros sha a
-          # branch-create sends, falling back to the HEAD parent.
-          if [ -n "${{ github.base_ref }}" ]; then
-            base="origin/${{ github.base_ref }}"
-          else
-            base="${{ github.event.before }}"
-            if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
-              base="HEAD~1"
-            fi
+          # idp#7710 (2026-11-05): the base is named in ONE place now (bin/idp-ci-base). It used
+          # to be named here as "the commit main was at before this push", with a first push
+          # falling back to HEAD~1 -- which grades only the LAST commit of a batch, so a
+          # candidate's other lanes were invisible to this gate. A Greenlane candidate grades
+          # against origin/main, like a pull request from the same branch would.
+          base="$(bin/idp-ci-base)" || base=""
+          if [ -z "$base" ]; then
+            echo "BLIND   guarded-paths  no base could be named: refusing to pass unproven"
+            exit 1
           fi
           bin/idp-ci-guarded-paths "$base"

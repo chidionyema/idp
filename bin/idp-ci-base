@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""idp-ci-base -- the one place that names the ref a CI change is measured from.
+
+WHY. 2026-11-05. Every Greenlane batch was red and nothing landed: run 41944852174, the
+ui-kit job. That job asks "did this change touch a front end?" and answers with a scope
+limiter written in the workflow itself:
+
+    base="${{ github.event.pull_request.base.sha || github.event.before }}"
+    case "$base" in ''|0000000000000000000000000000000000000000) echo "yes=true"; exit 0;; esac
+
+The Greenlane pushes each candidate as a FRESH refs/heads/queue/<batch> branch, so
+github.event.before is forty zeros on every candidate -- and the limiter's answer to "I
+cannot name the base" is "judge EVERYTHING". The kit-import guard then runs over the whole
+tree and refuses two front ends that never migrated to the kit (deadline 2026-10-31), so a
+docs-only lane is red on a gate it never touched. Nothing lands.
+
+The estate already decided the answer, in three places, and wrote it down:
+
+  - greenlane/github.py push_candidate: "Delete the ref first: the create-push then has
+    before=zeros and the verifier grades origin/main...HEAD, the same grade a fresh branch
+    would get."
+  - .github/workflows/verifier.yml: "Queue pushes always grade against main, like a fresh
+    branch would."
+  - .github/workflows/portal-app.yml: "A candidate is built on main, so main is its base."
+
+Three copies of the rule, and one job that never got it. This script is the ONE place the
+rule lives; the workflows ask it. One rule, one copy, one test.
+
+THE RULE, in order.
+  1. a merge_group grades against the merge queue's base sha
+  2. a pull request grades against its target (the base sha, else origin/<base_ref>)
+  3. a Greenlane candidate (refs/heads/queue/*) grades against origin/main -- it is main
+     plus its lanes
+  4. a push grades against the range it moved (github.event.before)
+  5. a first push to any other branch grades against origin/main -- a fresh branch grades
+     like a pull request from the same branch would
+  6. otherwise: BLIND. The caller judges everything. A gate that cannot name its base
+     never passes silently.
+
+A candidate base that is not in the checkout (a force-pushed before, a shallow clone) is
+NOT used: the next rule is tried, and if none of them resolves, the answer is BLIND. Every
+candidate base is verified to be a commit, so "origin/main" on a runner that never fetched
+it is BLIND rather than an empty diff that reads as "nothing changed".
+
+EXIT
+  0  the base, on stdout, one line
+  2  BLIND -- the reason on stderr; the caller must judge everything (never pass)
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import subprocess
+import sys
+
+IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ZEROS = "0" * 40
+
+
+def _git(repo: str, *argv: str) -> tuple[int, str]:
+    try:
+        p = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+            ["git", *argv], capture_output=True, text=True, timeout=30, cwd=repo
+        )
+    except (
+        OSError,
+        subprocess.SubprocessError,
+    ) as exc:  # pragma: no cover -- git missing
+        return 128, str(exc)
+    return p.returncode, (p.stdout or "").strip()
+
+
+def _is_zero(sha: str) -> bool:
+    return not sha or set(sha) == {"0"}
+
+
+def _resolves(repo: str, base: str) -> bool:
+    """Is this base a commit this checkout can actually diff against?"""
+    if not base:
+        return False
+    rc, out = _git(repo, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}")
+    return rc == 0 and bool(out)
+
+
+def candidates(
+    event: str, ref: str, base_ref: str, before: str, pr_sha: str, mg_sha: str
+):
+    """The base candidates, best first, each with the reason it is the right one.
+
+    The rules are PAYLOAD-driven, not event-name-driven: a workflow called through
+    workflow_call sees github.event_name == "workflow_call" while github.event still
+    carries the caller's payload, so "is this a pull request?" is answered by the payload
+    (a pull_request base sha is present) and never by the name of the event.
+    """
+    if mg_sha:
+        yield mg_sha, "the merge queue's base"
+    if pr_sha:
+        yield pr_sha, "the pull request's base"
+    if base_ref:
+        yield f"origin/{base_ref}", "the pull request's target"
+    if ref.startswith("refs/heads/queue/"):
+        yield "origin/main", "a Greenlane candidate is main plus its lanes"
+    if before and not _is_zero(before):
+        yield before, "the range the push moved"
+    if ref and not ref.startswith("refs/heads/main"):
+        yield (
+            "origin/main",
+            "a fresh branch grades like a pull request from the same branch",
+        )
+    if event == "merge_group":
+        yield "origin/main", "a merge group grades against main"
+
+
+def resolve(
+    repo: str,
+    event: str,
+    ref: str,
+    base_ref: str,
+    before: str,
+    pr_sha: str,
+    mg_sha: str,
+) -> tuple[str, str]:
+    """(base, why) or ("", "why it is BLIND")."""
+    tried: list[str] = []
+    for base, why in candidates(event, ref, base_ref, before, pr_sha, mg_sha):
+        tried.append(base)
+        if _resolves(repo, base):
+            return base, why
+    return "", "no base could be named or resolved (tried: " + ", ".join(
+        tried or ["none"]
+    ) + ")"
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(
+        description="name the ref a CI change is measured from"
+    )
+    ap.add_argument("--repo", default=IDP, help="the checkout to resolve in")
+    ap.add_argument("--event-name", default=None)
+    ap.add_argument("--ref", default=None)
+    ap.add_argument("--base-ref", default=None)
+    ap.add_argument("--before", default=None)
+    ap.add_argument("--pr-base-sha", default=None)
+    ap.add_argument("--merge-group-base", default=None)
+    ap.add_argument("--why", action="store_true", help="print the reason with the base")
+    args = ap.parse_args(argv)
+
+    def given(arg: str | None, *names: str) -> str:
+        """The caller's value wins; then the environment, ESTATE_CI_* first (a workflow sets
+        those explicitly), then GitHub's own variables."""
+        if arg is not None:
+            return arg
+        for name in names:
+            value = os.environ.get(name, "")
+            if value:
+                return value
+        return ""
+
+    event = given(args.event_name, "ESTATE_CI_EVENT_NAME", "GITHUB_EVENT_NAME")
+    ref = given(args.ref, "ESTATE_CI_REF", "GITHUB_REF")
+    base_ref = given(args.base_ref, "ESTATE_CI_BASE_REF", "GITHUB_BASE_REF")
+    before = given(args.before, "ESTATE_CI_BEFORE", "GITHUB_EVENT_BEFORE")
+    pr_sha = given(args.pr_base_sha, "ESTATE_CI_PR_BASE_SHA")
+    mg_sha = given(args.merge_group_base, "ESTATE_CI_MERGE_GROUP_BASE")
+
+    base, why = resolve(args.repo, event, ref, base_ref, before, pr_sha, mg_sha)
+    if not base:
+        print(f"BLIND idp-ci-base: {why}", file=sys.stderr)
+        return 2
+    if args.why:
+        print(f"{base}\t{why}")
+    else:
+        print(base)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
