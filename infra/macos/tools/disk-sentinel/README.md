@@ -38,6 +38,33 @@ and `elephant` refuse with exit 75 and print the policy. `--force` overrides for
 decided the read-only cost is worth it. The monitor itself never stops: it is one `df` and a small
 JSON write every 60 seconds, which is the one thing that must keep working when the disk is full.
 
+### Event-triggered capture, not another crawl
+
+The monitor already takes a sample a minute, so a sharp fall is an event it can see. When free
+space drops past `DROP_MIB` (default 512) inside `DROP_WINDOW_MIN` (default 5), it writes one
+bounded capture to `~/.local/state/disk-sentinel/captures/`: capacity, swap, effective mode, the
+samples in the window, top CPU and this user's largest open files. No walk, no sudo, no storm -
+a capture holds the cooldown (`CAPTURE_COOLDOWN_MIN`, default 15) and the last 20 are kept.
+
+What it cannot see is the root view: deleted-but-open blocks held by system daemons. That needs
+`sudo lsof -nP +L1` and `sudo fs_usage`, run by a human; the capture says so in its own text
+rather than implying the picture is complete.
+
+### Admission control
+
+Any estate job can ask before starting discretionary work:
+
+```bash
+disk-sentinel admit    # exit 0 ADMIT, exit 75 REFUSED below the reserve
+```
+
+`ADMIT: NORMAL, 25.0 GiB free (reserve 15 GiB)` / `REFUSED: CRITICAL, 3.0 GiB free against a
+15 GiB reserve`. It is the same capacity read the modes use, so a job cannot believe it has
+headroom the supervisor has already refused.
+
+Policy keys, in `~/.local/state/disk-sentinel/policy.conf`: `RESERVE_GIB`, `WARNING_GIB`,
+`DROP_MIB`, `DROP_WINDOW_MIN`, `CAPTURE_COOLDOWN_MIN`. Read them with `disk-sentinel policy`.
+
 ### The investigation, in one door
 
 Two investigations ship with this tool and are installed next to `sentinel.sh`, so there is one
