@@ -568,7 +568,9 @@ def _answered_last_verified(record):
 
 
 def _answered_dependencies(record):
-    return bool(_dependency_edges(record))
+    # An explicitly referenced GitHub action is a real execution dependency,
+    # even if it is not an internal cap: graph node.
+    return bool(_dependency_edges(record)) or bool((record.get("contract") or {}).get("uses"))
 
 
 def _answered_interfaces(record):
@@ -1104,6 +1106,83 @@ def _yaml_top_keys(text, key):
     return keys
 
 
+
+# A GitHub workflow is a real dependency-bearing capability. Its "uses:" entries
+# declare concrete execution dependencies, including third-party actions and
+# reusable workflows. Keep these distinct from graph edges to internal cap: IDs.
+# Parsing literal YAML keys is deterministic and avoids importing CI dependencies.
+def workflow_uses(text):
+    """Literal action/reusable-workflow references, never comments or run payloads."""
+    found = set()
+    block_at = None
+    for raw in text.splitlines():
+        indent = len(raw) - len(raw.lstrip(" "))
+        if block_at is not None:
+            if not raw.strip() or indent > block_at:
+                continue
+            block_at = None
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        if re.match(r"^\s*(?:-\s+)?[\w-]+:\s*[|>][+-]?\s*(?:#.*)?$", raw):
+            block_at = indent
+            continue
+        m = re.match(r"^\s*(?:-\s+)?uses:\s*['\"]?([^'\"\s#]+)", raw)
+        if m and m.group(1) and not m.group(1).startswith("$"):
+            found.add(m.group(1))
+    return sorted(found)
+
+
+_WORKFLOW_COMMAND = re.compile(
+    r"(?:^|[;&|()])\s*(?:(?:if|then)\s+|!\s+)*"
+    r"(?:[A-Za-z_][A-Za-z_0-9]*=[^\s]+\s+)*"
+    r"(?:(?:python(?:3(?:\.\d+)?)?|bash|sh|sudo|env)\s+)*"
+    r"(?:\./)?bin/([A-Za-z0-9][A-Za-z0-9_.-]*)\b"
+)
+
+
+def workflow_tool_refs(text, names):
+    """Only manifest shell command positions can establish a first-party tool edge.
+
+    Comments, inline prose, and quoted heredoc bodies are not commands. This
+    deliberately undercounts conditional/dynamic invocation instead of making
+    up graph edges; declared action uses remain a separate observable fact.
+    """
+    refs = set()
+    block_at = None
+    heredoc = None
+    for raw in text.splitlines():
+        indent = len(raw) - len(raw.lstrip(" "))
+        if block_at is not None:
+            if raw.strip() and indent <= block_at:
+                block_at = None
+                heredoc = None
+            else:
+                line = raw.strip()
+                if heredoc:
+                    if line == heredoc:
+                        heredoc = None
+                    continue
+                if not line or line.startswith("#"):
+                    continue
+                for match in _WORKFLOW_COMMAND.finditer(line):
+                    if match.group(1) in names:
+                        refs.add(match.group(1))
+                h = re.search(r"<<-?\s*['\"]?([A-Za-z_]\w*)['\"]?\s*$", line)
+                if h:
+                    heredoc = h.group(1)
+                continue
+        m = re.match(r"^\s*(?:-\s+)?run:\s*(.*)$", raw)
+        if m:
+            value = m.group(1).strip()
+            if re.fullmatch(r"[|>][+-]?\s*(?:#.*)?", value):
+                block_at = indent
+            else:
+                for match in _WORKFLOW_COMMAND.finditer(value):
+                    if match.group(1) in names:
+                        refs.add(match.group(1))
+    return sorted(refs)
+
+
 def build_repo_workflows(ctx: Context):
     """Writer `repo`, plane `idp`: the GitHub Actions that ARE part of the estate.
 
@@ -1123,6 +1202,7 @@ def build_repo_workflows(ctx: Context):
         return []
     ctx.sources.append("idp:.github/workflows")
     out = []
+    known_tools = _script_names(ctx)  # one filesystem scan, not one per workflow
     for path in sorted(wf_dir.glob("*.y*ml")):
         rel = ".github/workflows/{}".format(path.name)
         stem = path.name.rsplit(".", 1)[0]
@@ -1134,24 +1214,43 @@ def build_repo_workflows(ctx: Context):
                 name = match.group(1).strip().strip("'\"")
                 break
         triggers = _yaml_top_keys(text, "on")
-        out.append(
-            make_record(
-                "cap:workflow/gha-{}".format(stem),
-                "workflow",
-                "{} -- the GitHub Actions workflow {}.".format(name or stem, path.name),
-                "idp",
-                ctx.owner(rel),
-                "repo",
-                "idp:.github/workflows",
-                inputs=triggers or ["workflow_dispatch"],
-                outputs=["job verdicts", "artifacts"],
-                errors=["non-zero exit", "a required check that never reports"],
-                cost_class="free",
-                latency_class="batch",
-                path=rel,
-                blind=["health", "proof", "metrics"],
-            )
+        uses = workflow_uses(text)
+        edges = [
+            {"id": "cap:tool/{}".format(tool), "edge": "invokes"}
+            for tool in workflow_tool_refs(text, known_tools)
+        ]
+        for target in uses:
+            if target.startswith("./.github/workflows/"):
+                relative = target.removeprefix("./.github/workflows/")
+                workflow_path = wf_dir / relative
+                if workflow_path.is_file() and relative != path.name:
+                    edges.append({
+                        "id": "cap:workflow/gha-{}".format(workflow_path.stem),
+                        "edge": "calls",
+                    })
+        edges.sort(key=lambda edge: (edge["id"], edge["edge"]))
+        workflow = make_record(
+            "cap:workflow/gha-{}".format(stem),
+            "workflow",
+            "{} -- the GitHub Actions workflow {}.".format(name or stem, path.name),
+            "idp",
+            ctx.owner(rel),
+            "repo",
+            "idp:.github/workflows",
+            inputs=triggers or ["workflow_dispatch"],
+            outputs=["job verdicts", "artifacts"],
+            errors=["non-zero exit", "a required check that never reports"],
+            cost_class="free",
+            latency_class="batch",
+            depends_on=edges,
+            path=rel,
+            blind=["health", "proof", "metrics"],
         )
+        # Preserve exact action references, including pins, independently of
+        # internal graph edges. Empty means not observed, never "none".
+        workflow["contract"]["uses"] = uses
+        out.append(workflow)
+
     ctx._cache["workflows"] = out
     return out
 
