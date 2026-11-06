@@ -130,6 +130,11 @@ app-id)
   jq -r .app_id <<<"$bundle"
   ;;
 token)
+  # 2026-11-06: a job on a lane/queue ref (or any context platform/github/oidc-trust.json does not
+  # declare) runs a workflow definition nobody reviewed -- a lane forked before #7743 still triggers
+  # greenlane on push. The github-app-token action always runs THIS (main's) copy of the script,
+  # whatever the branch, so this refusal reaches every stale definition before the vault is read.
+  if [ "${GITHUB_ACTIONS:-}" = true ]; then "$IDP/bin/idp-oidc-trust" allowed >&2 || exit 3; fi
   TMPDIR_ERR=$(mktemp); trap 'rm -f "$TMPDIR_ERR"' EXIT
   lane=${1:?lane name from platform/github-app/lanes.json}
   perms=$(jq -c --arg l "$lane" '.[$l] // empty' "$D/lanes.json"); [ -n "$perms" ] || { echo "REFUSED: no lane '$lane' in $D/lanes.json"; exit 2; }

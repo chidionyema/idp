@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# idp-oidc-trust -- which GitHub Actions jobs may become the estate's OCI identity, held in ONE place.
+#
+# WHY (founder, 2026-11-06: "address the rest"). The identity domain's propagation trust
+# `github-actions-estate` admitted `sub eq repo:<owner>@<id>/idp@<id>:*` (bin/idp-oci-bootstrap):
+# ANY job of this repository, on ANY ref. A lane branch forked before #7743 still carries the old
+# greenlane.yml with a `push` trigger, and GitHub runs a push from the PUSHED branch's YAML --
+# measured 2026-11-06 16:57Z..17:48Z: 50 greenlane runs on lane/* pushes in one hour, each able to
+# trade its OIDC token for the estate-ci session that reads the GitHub App key. Removing the trigger
+# on main cannot reach a branch that still has it; only the trust can. The fix is the trust's rule:
+# a closed list of contexts (platform/github/oidc-trust.json), never a wildcard.
+#
+#   bin/idp-oidc-trust context            this job's context (what GitHub puts after the prefix in `sub`)
+#   bin/idp-oidc-trust allowed            exit 0 if this job's context is in the list, 3 (REFUSED) if not
+#   bin/idp-oidc-trust rules <prefix>     the impersonation rules, one per context, as JSON
+#   bin/idp-oidc-trust check              the live trust's rules == the declared rules (OCI session needed)
+#   bin/idp-oidc-trust apply              reconcile the live trust to the declared rules, then re-read it
+#
+# EXIT 0 ok · 1 drift / refused write · 2 BLIND (cannot read) · 3 REFUSED context
+set -euo pipefail
+IDP="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SPEC="${OIDC_TRUST_SPEC:-$IDP/platform/github/oidc-trust.json}"
+say() { printf '%-7s oidc-trust  %s\n' "$1" "$2"; }
+
+context() {
+  case "${GITHUB_EVENT_NAME:-}" in
+    pull_request | pull_request_target) printf 'pull_request' ;;
+    "") printf '' ;;
+    *) printf 'ref:%s' "${GITHUB_REF:-}" ;;
+  esac
+}
+
+allowed() {
+  local c; c=$(context)
+  [ -n "$c" ] || { say REFUSED "no GitHub Actions context (GITHUB_EVENT_NAME unset)"; return 3; }
+  local n; for n in $(jq -r '.never[]' "$SPEC"); do
+    case "$c" in "$n"*) say REFUSED "context $c is a ${n#ref:refs/heads/}* ref: its workflow definition is whatever was pushed there, not reviewed main"; return 3 ;; esac
+  done
+  if jq -e --arg c "$c" 'any(.contexts[]; .context == $c)' "$SPEC" >/dev/null; then say ok "context $c is declared"; return 0; fi
+  say REFUSED "context $c is not in platform/github/oidc-trust.json"; return 3
+}
+
+rules() {
+  local prefix=${1:?sub prefix, e.g. repo:owner@1/idp@2:}
+  jq -c --arg p "$prefix" '[.contexts[] | "sub eq \($p)\(.context)"]' "$SPEC"
+}
+
+oci_scim() { oci raw-request --http-method "$1" --target-uri "${DOMAIN_BASE_URL%/}/admin/v1/$2" "${@:3}"; }
+
+live() {
+  : "${DOMAIN_BASE_URL:?DOMAIN_BASE_URL}"
+  local name f out
+  name=$(jq -r .trust "$SPEC")
+  f=$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "name eq \"$name\"")
+  out=$(oci_scim GET "IdentityPropagationTrusts?filter=$f&attributes=id,impersonationServiceUsers" 2>&1) || { say BLIND "GET trust $name: $(printf %s "$out" | head -c 200)"; return 2; }
+  printf %s "$out" | jq -e '.data.Resources[0].id' >/dev/null 2>&1 || { say BLIND "trust $name not found in the identity domain"; return 2; }
+  printf %s "$out" | jq -c '.data.Resources[0]'
+}
+
+prefix() {
+  local repo=${GITHUB_REPOSITORY:-chidionyema/idp}
+  # GitHub's immutable subject carries numeric ids (measured run 32883584446, ADR 0010)
+  gh api "repos/$repo" -q '"repo:\(.owner.login)@\(.owner.id)/\(.name)@\(.id):"'
+}
+
+check() {
+  local t want have
+  t=$(live) || return $?
+  want=$(rules "$(prefix)" | jq -c 'sort')
+  have=$(jq -c '[.impersonationServiceUsers[].rule] | sort' <<<"$t")
+  if [ "$want" = "$have" ]; then say ok "trust rules match the declared contexts: $have"; return 0; fi
+  say FAIL "trust rules drift: live $have, declared $want; fix: bin/idp-oidc-trust apply (oidc-trust.yml mode=apply)"
+  return 1
+}
+
+apply() {
+  local t id uid want body out
+  t=$(live) || return $?
+  id=$(jq -r .id <<<"$t")
+  # the service user the trust impersonates today (estate-ci): kept, only the rules narrow
+  uid=$(jq -r '[.impersonationServiceUsers[].value] | unique | if length == 1 then .[0] else empty end' <<<"$t")
+  [ -n "$uid" ] || { say FAIL "trust maps to more than one service user; refusing to guess which one the rules belong to"; return 1; }
+  want=$(rules "$(prefix)")
+  body=$(jq -nc --argjson r "$want" --arg u "$uid" '{schemas:["urn:ietf:params:scim:api:messages:2.0:PatchOp"],Operations:[{op:"replace",path:"impersonationServiceUsers",value:[$r[] | {rule:., value:$u}]}]}')
+  local tmp rc=0; tmp=$(mktemp); printf %s "$body" > "$tmp"
+  out=$(oci_scim PATCH "IdentityPropagationTrusts/$id" --request-body "file://$tmp" 2>&1) || rc=$?
+  rm -f "$tmp"
+  [ "$rc" -eq 0 ] || { say FAIL "PATCH refused: $(printf %s "$out" | jq -r '.data.detail // .' 2>/dev/null | head -c 300)"; return 1; }
+  printf %s "$out" | jq -e '.data.id' >/dev/null 2>&1 || { say FAIL "PATCH answered no trust: $(printf %s "$out" | head -c 300)"; return 1; }
+  check
+}
+
+cmd=${1:-check}; shift || true
+case "$cmd" in
+  context) context; echo ;;
+  allowed) allowed ;;
+  rules) rules "$@" ;;
+  check) check ;;
+  apply) apply ;;
+  *) echo "usage: bin/idp-oidc-trust context|allowed|rules <prefix>|check|apply" >&2; exit 2 ;;
+esac
