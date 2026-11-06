@@ -1,0 +1,88 @@
+description: 'On 2026-10-28 from 22:28Z every Claude Code session on the laptop got 502
+  from 127.0.0.1:4000. The front correctly passed over the failing OKE cloud, but the
+  laptop slot it falls back to (4001) refused connections for ~50 minutes: it never
+  bound its port. This record answers: why did the laptop slot never finish booting?
+  The priors and the likelihoods below were written before the counts were read; every
+  count is a measurement taken that night on the laptop, and the command that produced
+  it is named in the item. The winner is what #7381 is built on: bin/litellm-local bounds
+  the kubectl call with a SIGKILL, and platform/llm/watchdog.py leaves a booting slot
+  alone under a load storm.'
+hypotheses:
+- name: H1
+  description: 'two faults in series: the boot blocked on `kubectl -n llm get secrets`,
+    which ignores --request-timeout while the cluster is unreachable, and once a boot
+    could get past it, the watchdog''s 240 s refused-port cooldown kickstarted the slot
+    before a boot slowed by load ~600 could bind'
+  prior: 0.25
+- name: H2
+  description: 'the kubectl call alone: the boot blocked on kubectl, and the watchdog''s
+    restarts were harmless because every boot would have hung anyway'
+  prior: 0.25
+- name: H3
+  description: 'the watchdog alone: kubectl returned within its timeout, and the slot
+    simply never got the minutes it needed to boot under load before it was restarted'
+  prior: 0.25
+- name: H4
+  description: 'the router itself crashed at boot (a config, callback or module import
+    error in the staged copy), so no boot could ever have bound the port'
+  prior: 0.25
+evidence:
+- name: 'the booting slot''s process tree (pgrep -P on the `litellm-local run` pid):
+    a child `kubectl -n llm get secrets -o json --request-timeout=20s` alive at elapsed
+    05:07, and a separate probe `kubectl -n llm get secrets --request-timeout=5s` that
+    had not returned after 55 s (killed by the 60 s tool ceiling)'
+  observed:
+    kubectl_hung_past_timeout: 2
+  likelihoods:
+    H1:
+      kubectl_hung_past_timeout: 0.9
+      kubectl_returned: 0.1
+    H2:
+      kubectl_hung_past_timeout: 0.9
+      kubectl_returned: 0.1
+    H3:
+      kubectl_hung_past_timeout: 0.1
+      kubectl_returned: 0.9
+    H4:
+      kubectl_hung_past_timeout: 0.2
+      kubectl_returned: 0.8
+- name: 'restarts that cut a boot short (~/Library/Logs/litellm-watchdog.log against
+    ps -o etime): `restart: kickstart com.estate.litellm-local-4001` at 22:33:31Z, 22:38:33Z
+    and 23:08:42Z, each while a slot process was alive and unbound; a litellm process
+    from an earlier boot was still loading at elapsed 09:31 with nothing on 4001, at
+    load average 509-712'
+  observed:
+    restart_during_boot: 3
+  likelihoods:
+    H1:
+      restart_during_boot: 0.85
+      no_restart_during_boot: 0.15
+    H2:
+      restart_during_boot: 0.3
+      no_restart_during_boot: 0.7
+    H3:
+      restart_during_boot: 0.85
+      no_restart_during_boot: 0.15
+    H4:
+      restart_during_boot: 0.3
+      no_restart_during_boot: 0.7
+- name: 'the slot after both causes were removed by hand: the hung kubectl killed (pkill
+    -9), no kickstart issued, so the boot under way kept running; 4001 answered
+    /health/liveliness 200 at 23:19:19Z, and a real `claude -p` through 127.0.0.1:4000
+    answered "router-ok", with `POST /v1/messages?beta=true HTTP/1.1 200 OK` in
+    ~/Library/Logs/litellm-local.log; no startup traceback from litellm in that log'
+  observed:
+    slot_served_once_both_removed: 1
+  likelihoods:
+    H1:
+      slot_served_once_both_removed: 0.9
+      slot_still_failed: 0.1
+    H2:
+      slot_served_once_both_removed: 0.6
+      slot_still_failed: 0.4
+    H3:
+      slot_served_once_both_removed: 0.6
+      slot_still_failed: 0.4
+    H4:
+      slot_served_once_both_removed: 0.05
+      slot_still_failed: 0.95

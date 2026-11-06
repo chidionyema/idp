@@ -137,6 +137,21 @@ def restart(label):
     )
 
 
+def job_pid(label):
+    """The pid launchd reports for this job, or None when it has no live process."""
+    r = subprocess.run(
+        ["launchctl", "print", f"gui/{os.getuid()}/{label}"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    for line in r.stdout.splitlines():
+        line = line.strip()
+        if line.startswith("pid = "):
+            return int(line.split("=", 1)[1])
+    return None
+
+
 def main():
     now = time.time()
     s = load_state()
@@ -201,6 +216,20 @@ def main():
             log(f"recovered after {s['failures']} failure(s)")
         s["failures"] = 0
         s["wedged"] = 0
+        save_state(s)
+        return
+
+    # BOOTING UNDER A STORM (2026-10-28). At load ~600 a slot took over 9 min to bind, so the
+    # 240 s cooldown kickstarted every boot before it finished and the laptop fallback never came
+    # up while the cloud was down. A refused port whose launchd job still has a live process is a
+    # boot, not a death (a crashed one has no pid, and KeepAlive restarts it anyway); under a
+    # storm it is left to finish, same rule as a wedge.
+    load = load1()
+    if load >= WEDGE_LOAD_MAX and job_pid(label):
+        log(
+            f"probe refused :{port} but {label} is booting under load {load:.0f} -- not restarting"
+        )
+        s["failures"] = 0
         save_state(s)
         return
 
