@@ -205,9 +205,15 @@ def _oci_binary() -> str:
 def _oci(args: list[str], *, what: str) -> str:
     # The arguments are built here, never taken from a caller: this is a transport, not a
     # shell, and nothing in `args` is interpolated into a command line.
-    proc = subprocess.run(  # noqa: S603
-        [_oci_binary(), *args], capture_output=True, text=True
-    )
+    try:
+        proc = subprocess.run(  # noqa: S603
+            [_oci_binary(), *args], capture_output=True, text=True,
+            timeout=45,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise TransportError(
+            f"{what} BLIND: OCI CLI exceeded its 45-second per-call deadline"
+        ) from exc
     if proc.returncode != 0:
         raise TransportError(
             f"{what} failed (exit {proc.returncode}): {(proc.stderr or proc.stdout).strip()}"
@@ -283,31 +289,58 @@ def create_command(
 def wait_for_command(
     command_id: str, instance_id: str, poll_seconds: int, wait_timeout: int
 ) -> str:
-    """Poll one command to a terminal state. Sequential by design: order is the protocol."""
+    """Bounded readback of a SINGLE OCI command; PENDING is never success.
+
+    OCI CLI calls themselves have a separate 45s deadline. A stalled OCI
+    agent, invalid state, or unreadable command fails closed with command ID
+    and incident-correlatable evidence; never claim a host script executed.
+    """
+    if poll_seconds < 1 or wait_timeout < 1:
+        raise TransportError("invalid nonpositive OCI poll budget")
     deadline = time.monotonic() + wait_timeout
-    state = "PENDING"
+    tries = 0
+    previous = None
     while True:
-        out = _oci(
-            [
-                "instance-agent",
-                "command-execution",
-                "get",
-                "--command-id",
-                command_id,
-                "--instance-id",
-                instance_id,
-                "--query",
-                'data."lifecycle-state"',
-                "--raw-output",
-            ],
-            what="polling the Run Command",
-        )
-        state = out or "PENDING"
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TransportError(
+                f"OCI Run Command {command_id} on {instance_id}: "
+                f"BLIND no terminal state within {wait_timeout}s; "
+                f"last_state={previous or 'NONE'} polls={tries}"
+            )
+        try:
+            out = _oci(
+                [
+                    "instance-agent", "command-execution", "get",
+                    "--command-id", command_id, "--instance-id", instance_id,
+                    "--query", 'data."lifecycle-state"', "--raw-output",
+                ],
+                what=f"polling OCI Run Command {command_id}",
+            )
+        except TransportError as exc:
+            raise TransportError(
+                f"OCI Run Command {command_id} on {instance_id}: "
+                f"BLIND command state unreadable after {tries} poll(s): {exc}"
+            ) from exc
+        tries += 1
+        state = out.strip().upper()
+        if state != previous or tries == 1 or tries % 4 == 0:
+            say(
+                f"state   run-command  id={command_id} state={state or 'MISSING'} "
+                f"poll={tries} elapsed={max(0, wait_timeout - int(deadline - time.monotonic()))}s"
+            )
+            previous = state
         if state in {"SUCCEEDED", "FAILED", "TIMED_OUT", "CANCELED"}:
             return state
-        if time.monotonic() > deadline:
-            return "TIMED_OUT"
-        time.sleep(poll_seconds)
+        if state not in {"ACCEPTED", "IN_PROGRESS", "PENDING", "RUNNING", "SCHEDULED"}:
+            raise TransportError(
+                f"OCI Run Command {command_id}: BLIND unexpected lifecycle "
+                f"state={state!r}"
+            )
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            continue
+        time.sleep(min(poll_seconds, remaining))
 
 
 def command_output(command_id: str, instance_id: str) -> str:
