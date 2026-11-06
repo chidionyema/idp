@@ -49,11 +49,14 @@ this is a substantial credential blast radius, so the production preference is
 a dedicated low-privilege receiving repository or properly scoped GitHub App.
 Do not promote the script into production until that risk has been reviewed.
 
-The sender records only that the GitHub API returned HTTP 204 (dispatch
-accepted), not that the action completed. The receiver's actual GitHub Actions
-run and quarantined artifact must be checked before transport acceptance is
-claimed. There is currently **no proven durable, exactly-once processing ACK**
-back to the Drive sender; retry and recovery remain a tracked acceptance gap.
+The sender marks HTTP 204 as DISPATCHED_UNCONFIRMED, then checks GitHub's
+actual workflow run by event_id. Only a completed successful intake run changes
+that local record to ACKNOWLEDGED; a failed run is a hard stop and queued runs
+are retried after a bounded backoff. Its token therefore also needs Actions:read
+permission. This is *transport* acknowledgment, not approval/merge/deploy.
+There is still **no independently tested live Drive-to-GitHub ACK or durable
+cross-system exactly-once guarantee**; Apps Script Properties and the 100-run
+GitHub lookback window have bounded retention and require resilience tests.
 
 Operational completion requires, in order:
 1. Real authenticated Google Drive + Apps Script configuration and live trigger.
