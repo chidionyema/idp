@@ -22,6 +22,10 @@
 # Run Command body itself: one place builds it, and that place is tested.
 name: recovery-data
 on:
+  # Detect recovery-door regressions continuously, not only when someone edits code.
+  # Schedule always executes the main branch, and the default mode is read-only identify.
+  schedule:
+    - cron: "19 7 * * *"
   # Only a governed main-branch change can launch a new read-only volume census.
   # Never use pull_request or a lane: this job exchanges an OCI OIDC credential.
   push:
