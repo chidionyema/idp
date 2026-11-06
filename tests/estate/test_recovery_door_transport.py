@@ -521,5 +521,7 @@ def test_identify_is_bounded_without_shortening_copy_or_repair():
     workflow = WORKFLOW.read_text()
     assert "if [ \"$MODE\" = identify ]; then probe_budget=180; fi" in workflow
     assert "probe_budget=3600" in workflow
+    assert '  schedule:\n    - cron: "19 7 * * *"' in workflow
+    assert "MODE: ${{ inputs.mode || 'identify' }}" in workflow
     assert '--wait-timeout "$probe_budget"' in workflow
     assert "if: github.ref == 'refs/heads/main'" in workflow
