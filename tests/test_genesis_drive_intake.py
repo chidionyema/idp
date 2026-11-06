@@ -82,8 +82,12 @@ class IntakeTests(unittest.TestCase):
     def test_receipt_binds_exact_drive_document(self):
         obj = valid()
         receipt = evaluate(obj)
-        self.assertEqual(receipt["document_id"], obj["document_id"])
+        self.assertNotIn("document_id", receipt)  # Private Drive ID must not leak to public CI logs.
         self.assertEqual(receipt["source_sha256"], obj["source_sha256"])
+        modified = dict(obj)
+        modified["document_id"] = "different-private-file-id"
+        with self.assertRaisesRegex(ValueError, "signature"):
+            evaluate(modified)
 
     def test_rejects_array(self):
         with self.assertRaises(ValueError):
