@@ -10,6 +10,7 @@ set -uo pipefail
 IDP=$(cd "$(dirname "$0")/.." && pwd)
 BUCKET="${ESTATE_DB_BACKUP_BUCKET:-estate-db-backups}"
 MAX_HOURS="${ESTATE_DB_BACKUP_MAX_AGE_HOURS:-26}"
+MAX_DATA_HOURS="${ESTATE_DB_DATA_MAX_AGE_HOURS:-48}" # copy freshness is not source/RPO freshness
 blind() { printf 'BLIND   estate-db-backup  %s\n' "$1"; exit 2; }
 fail() { printf 'FAIL    estate-db-backup  %s\n' "$1"; exit 1; }
 command -v python3 >/dev/null || blind "python3 is not installed"
@@ -36,12 +37,16 @@ else
 	printf '%s' "$body" >"$bodyf"
 fi
 
-IDP_LIB="$IDP/bin/lib" python3 - "$head" "$bodyf" "$MAX_HOURS" <<'PY'
+IDP_LIB="$IDP/bin/lib" python3 - "$head" "$bodyf" "$MAX_HOURS" "$MAX_DATA_HOURS" <<'PY'
 import json, os, pathlib, sys
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 sys.path.insert(0, os.environ.get("IDP_LIB", ""))
 from receipt_age import receipt_age  # the store's clock, never this machine's
 
-head, path, max_hours = sys.argv[1], sys.argv[2], float(sys.argv[3])
+head, path, max_hours, max_data_hours = sys.argv[1], sys.argv[2], float(sys.argv[3]), float(sys.argv[4])
+if max_data_hours <= 0:
+    sys.exit("BLIND   estate-db-backup  data-age policy must be positive")
 try:
     receipt = json.loads(pathlib.Path(path).read_text())
     head = json.loads(head)
@@ -50,9 +55,43 @@ except ValueError as exc:
 age = receipt_age(head, 3600.0, "estate-db-backup")
 if "stamp" not in receipt:
     sys.exit("BLIND   estate-db-backup  the receipt carries no stamp")
+# The copy receipt can be 0 h old while its underlying data is months old.
+# Use the storage response Date header as our clock, never the runner's RTC.
+# A missing/ambiguous source timestamp is BLIND, never healthy.
+mode = receipt.get("mode")
+data_as_of = receipt.get("data_as_of")
+if mode == "dump-from-running-cluster" and not data_as_of:
+    try:
+        data_as_of = datetime.strptime(receipt["stamp"], "%Y%m%dT%H%M%SZ").replace(
+            tzinfo=timezone.utc
+        ).isoformat()
+    except (ValueError, TypeError, KeyError):
+        sys.exit("BLIND   estate-db-backup  live dump has no valid timestamp")
+elif mode == "restored-from-surviving-dump":
+    if not receipt.get("source") or not data_as_of:
+        sys.exit("BLIND   estate-db-backup  restored copy has no original source or data_as_of")
+else:
+    sys.exit("BLIND   estate-db-backup  unrecognised backup lineage mode")
+try:
+    clock = next(v for k, v in head.items() if str(k).lower() == "date")
+    served = parsedate_to_datetime(clock)
+    captured = datetime.fromisoformat(str(data_as_of).replace("Z", "+00:00"))
+    if served.tzinfo is None or captured.tzinfo is None:
+        raise ValueError("missing timezone")
+except (ValueError, TypeError, StopIteration) as exc:
+    sys.exit(f"BLIND   estate-db-backup  cannot measure original data age: {exc}")
+if captured > served + timedelta(seconds=60):
+    sys.exit("BLIND   estate-db-backup  source data claims to be from the future")
+data_age = (served - captured).total_seconds() / 3600.0
 problems = []
 if age > max_hours:
     problems.append(f"the last copy is {age:.1f} h old, over {max_hours:g} h")
+if data_age > max_data_hours:
+    problems.append(
+        f"recovery point is {data_age:.1f} h old (limit {max_data_hours:g} h); "
+        f"copy is {age:.1f} h old; original source={receipt.get('source') or 'live-cluster'} "
+        f"data_as_of={data_as_of}"
+    )
 if receipt.get("complete") is not True:
     problems.append("the dump is not marked complete")
 if not receipt.get("bytes"):
@@ -60,5 +99,5 @@ if not receipt.get("bytes"):
 if problems:
     print("FAIL    estate-db-backup  " + "; ".join(problems))
     raise SystemExit(1)
-print(f"ok      estate-db-backup  {receipt['stamp']} ({age:.1f} h old), {receipt['bytes']} bytes")
+print(f"ok      estate-db-backup  {receipt['stamp']} (copy {age:.1f} h old, recovery point {data_age:.1f} h old), {receipt['bytes']} bytes")
 PY
