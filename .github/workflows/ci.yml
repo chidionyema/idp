@@ -122,7 +122,11 @@ jobs:
           budget acceptance-deps 360 python -m pip install -q --disable-pip-version-check --timeout 30 --retries 2 -r sovereign/requirements-dev.txt "pytest-xdist==3.6.1"
           budget docs-deps 180 python -m pip install -q --disable-pip-version-check --timeout 30 --retries 2 "mkdocs<2" mkdocs-techdocs-core
       - uses: ./.github/actions/estate-tools
-      - run: bin/idp-ci
+      - run: |
+          set -o pipefail
+          # A FAIL line becomes an annotation the runner attaches to the check-run, so the exact
+          # error travels with the failure instead of being reconstructed from a log download.
+          bin/idp-ci 2>&1 | sed -u -E 's/^(FAIL[[:space:]].*)$/::error::\1/'
         env:
           IDP_KYVERNO_POLICIES: ${{ runner.temp }}/kyverno-policies/deploy/k8s/policies
           # crew#584 zero-bottleneck law: on a PR the kyverno rung judges the platform dirs the
