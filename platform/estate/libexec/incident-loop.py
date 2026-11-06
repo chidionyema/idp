@@ -54,6 +54,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -466,6 +467,7 @@ def sense_ci(repo: str, policy: dict) -> list[dict]:
                     "event": run.get("event", ""),
                     "conclusion": run.get("conclusion", ""),
                     "created_at": run.get("created_at", ""),
+                    "run_attempt": run.get("run_attempt", 1),
                 },
             }
         )
@@ -1028,54 +1030,66 @@ def lane_landed(repo: str, row: sqlite3.Row) -> tuple[bool, str]:
 
 
 def ci_resolved(repo: str, row: sqlite3.Row) -> tuple[bool, str]:
-    """A red run is resolved when the same check has been green since it went red.
+    """An unrelated green workflow or an older green is never recovery evidence.
 
-    The same branch is tried first. A lane's grade, though, is built on a candidate branch
-    (`queue/<batch>`) that is deleted after the merge, so the fix lands under a different
-    branch name: a later green run of the same check, anywhere in the repo, is the evidence
-    that the error is gone.
+    A queue candidate is judged by the existing exact-lane Greenlane authority.
+    For other branches, grade only the latest relevant workflow run on the
+    ORIGINAL branch. A later failure/queued run revokes any earlier green.
     """
     detail = json.loads(row["detail"] or "{}")
     run_id = detail.get("run_id")
-    workflow = detail.get("workflow", "")
-    branch = detail.get("branch", "")
-    if not run_id:
+    workflow = str(detail.get("workflow") or "")
+    branch = str(detail.get("branch") or "")
+    if not run_id or not workflow or not branch:
         return False, ""
+    if branch.startswith("queue/"):
+        return lane_landed(repo, row)
+    # GitHub Actions run listing is global by default. Under fleet load the
+    # most recent 60 runs may contain zero runs for the original workflow,
+    # and a green on another branch must never close a red on main.
+    branch_arg = urllib.parse.quote(branch, safe="")
     code, out, _ = run_gh(
         [
             "api",
-            f"repos/{repo}/actions/runs?per_page=60",
+            f"repos/{repo}/actions/runs?branch={branch_arg}&per_page=100",
             "--jq",
-            "[.workflow_runs[] | {id, name, conclusion, head_branch, created_at}]",
+            "[.workflow_runs[] | {id, name, conclusion, status, head_branch, run_attempt}]",
         ]
     )
     if code != 0:
         return False, ""
     try:
         runs = json.loads(out or "[]")
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
         return False, ""
-    if branch.startswith("queue/"):
-        # A candidate is graded under a branch of its own. The estate's own record of
-        # what became of that lane is the verdict; a green run of the same check on
-        # some other branch is not evidence about this one.
-        return lane_landed(repo, row)
-    later_green = None
-    for run in runs:
-        if int(run.get("id", 0)) <= int(run_id):
-            continue
-        if run.get("name") != workflow:
-            continue
-        if run.get("conclusion") != "success":
-            continue
-        if run.get("head_branch") == branch:
-            return True, f"run {run['id']} on {branch} is green"
-        if later_green is None:
-            later_green = run
-    if later_green is not None:
+    if not isinstance(runs, list):
+        return False, ""
+    matching = [
+        item for item in runs
+        if isinstance(item, dict)
+        and item.get("name") == workflow
+        and item.get("head_branch") == branch
+        and isinstance(item.get("id"), int)
+    ]
+    if not matching:
+        return False, ""
+    latest = max(matching, key=lambda item: (item["id"], item.get("run_attempt") if isinstance(item.get("run_attempt"), int) else 0))
+    try:
+        original_id = int(run_id)
+        original_attempt = int(detail.get("run_attempt") or 1)
+        attempt = int(latest.get("run_attempt") or 1)
+    except (TypeError, ValueError):
+        return False, ""
+    if latest.get("status") != "completed" or latest.get("conclusion") != "success":
+        return False, ""
+    if latest["id"] > original_id:
         return True, (
-            f"run {later_green['id']} of the same check on "
-            f"{later_green.get('head_branch', '?')} is green"
+            f"latest {workflow} run {latest['id']} on original branch {branch} is green"
+        )
+    if latest["id"] == original_id and attempt > original_attempt:
+        return True, (
+            f"original {workflow} run {original_id} rerun attempt {attempt} "
+            f"on branch {branch} is green"
         )
     return False, ""
 
