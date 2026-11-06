@@ -90,6 +90,12 @@ def test_forward_relays_output_and_exact_exit_without_a_retry_loop():
     assert "health scope=all" in command
 
 
+def test_identity_is_appended_so_early_cli_modes_keep_their_first_argument():
+    mod = load_bridge()
+    command = mod.forwarded_command(DOOR, ["--list"], "session-1")
+    assert command.index("--list") < command.index("--session")
+
+
 def test_a_refusal_is_surfaced_once_and_never_becomes_polling():
     mod = load_bridge()
     path, sock = socket_path()

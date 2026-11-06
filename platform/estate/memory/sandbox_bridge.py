@@ -73,9 +73,9 @@ def forwarded_command(
     prefix.extend(
         [
             str(executable),
+            *argv,
             "--session",
             session_id,
-            *argv,
         ]
     )
     return " ".join(shlex.quote(part) for part in prefix)
