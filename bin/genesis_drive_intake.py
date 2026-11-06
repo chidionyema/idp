@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Untrusted Gemini Drive relay envelope validator. No execution or promotion."""
 import hashlib
+import hmac
 import json
+import os
 import re
 import sys
+import time
 
 MAX_BYTES = 32768
 ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{7,127}$")
@@ -12,15 +15,22 @@ ALLOWED_REPOS = frozenset(("chidionyema/idp", "chidionyema/argon",
                            "chidionyema/argon-sync", "chidionyema/crew",
                            "chidionyema/estate-graph"))
 FIELDS = frozenset(("schema_version", "event_id", "source", "source_sha256",
-                    "document_id", "target_repo", "intent"))
+                    "document_id", "target_repo", "intent", "issued_at", "signature"))
 
-def validate(raw):
+def signing_bytes(obj):
+    """Canonical cross-language signed material (fixed order, UTF-8, no JSON ambiguity)."""
+    return ("\n".join((str(obj["schema_version"]), obj["event_id"], obj["source"],
+                      obj["source_sha256"], obj["document_id"], obj["target_repo"],
+                      obj["intent"], str(obj["issued_at"])))).encode("utf-8")
+
+
+def validate(raw, key=None, now=None):
     if len(raw) > MAX_BYTES:
         raise ValueError("envelope too large")
     obj = json.loads(raw)
     if not isinstance(obj, dict) or set(obj) != FIELDS:
         raise ValueError("unexpected envelope fields")
-    if obj["schema_version"] != 1 or obj["source"] != "gemini-web-drive":
+    if type(obj["schema_version"]) is not int or obj["schema_version"] != 1 or obj["source"] != "gemini-web-drive":
         raise ValueError("invalid source/version")
     if not isinstance(obj["event_id"], str) or not ID.fullmatch(obj["event_id"]):
         raise ValueError("invalid event ID")
@@ -32,11 +42,23 @@ def validate(raw):
         raise ValueError("invalid target")
     if obj["intent"] != "review-only":
         raise ValueError("privileged intent refused")
+    stamp = obj["issued_at"]
+    if type(stamp) is not int or abs((int(time.time()) if now is None else now) - stamp) > 900:
+        raise ValueError("stale/future timestamp")
+    key = os.environ.get("GENESIS_DRIVE_RELAY_HMAC_KEY", "") if key is None else key
+    if not isinstance(key, str) or len(key.encode("utf-8")) < 32:
+        raise ValueError("missing independent sender verification key")
+    sig = obj["signature"]
+    if not isinstance(sig, str) or not HEX.fullmatch(sig):
+        raise ValueError("invalid sender signature")
+    expected = hmac.new(key.encode("utf-8"), signing_bytes(obj), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        raise ValueError("sender signature mismatch")
     canonical = json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-    return {"status": "QUARANTINED_REVIEW_ONLY", "event_id": obj["event_id"],
+    return {"status": "QUARANTINED_AUTHENTICATED_REVIEW_ONLY", "event_id": obj["event_id"],
             "envelope_sha256": hashlib.sha256(canonical.encode()).hexdigest(),
             "source_sha256": obj["source_sha256"], "target_repo": obj["target_repo"],
-            "note": "Transport receipt only; no source authentication, approval, or execution"}
+            "note": "Authenticated relay sender only; Gemini authorship and source integrity require independent evidence. No approval or execution"}
 
 def main():
     try:
