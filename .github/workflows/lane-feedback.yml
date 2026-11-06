@@ -1,0 +1,66 @@
+# button: Why the lane went red
+# founder: The exact failing line reaches the agent with the failure, instead of the agent doing
+# API archaeology and then guessing. Measured 2026-11-06: the lane status names the job
+# ("ci-success failure -- offline-gate > Run bin/idp-ci") and never the error, so every red costs
+# four API calls before the real cause is visible.
+#
+# It posts the failing job's FAIL/error lines as a comment on the commit the lane tested, which is
+# where an agent already looks, and it prints them in the job summary for a human. No NATS hop is
+# added here on purpose: the commit is the one place every runtime already reads.
+name: lane-feedback
+on:
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
+permissions:
+  actions: read
+  contents: write
+jobs:
+  post-error:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Extract the failing job's error
+        id: err
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100" --jq '.jobs[]|select(.conclusion=="failure")|"\(.id)\t\(.name)"' > jobs.tsv || true
+          if [ ! -s jobs.tsv ]; then
+            echo "no failed job in run $RUN_ID" >&2
+            exit 0
+          fi
+          job_id=$(head -1 jobs.tsv | cut -f1)
+          job_name=$(head -1 jobs.tsv | cut -f2)
+          error=$(gh api "repos/$REPO/actions/jobs/$job_id/logs" 2>/dev/null \
+            | sed -E 's/^[^\t]*\t[^\t]*\t//' \
+            | grep -E 'FAIL |error:|Error:|##\[error\]|Traceback' | head -15 || true)
+          if [ -z "$error" ]; then
+            error=$(gh api "repos/$REPO/actions/jobs/$job_id/logs" 2>/dev/null \
+              | sed -E 's/^[^\t]*\t[^\t]*\t//' | tail -15 || true)
+          fi
+          {
+            echo "LANE FEEDBACK: the exact reason this commit is red"
+            echo
+            echo "failing job: $job_name"
+            echo
+            printf '%s\n' "$error"
+            echo
+            echo "run: https://github.com/$REPO/actions/runs/$RUN_ID"
+            echo "same answer locally: bin/lane-error $SHA"
+          } > feedback.md
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+      - name: Post it where the agent already looks
+        if: hashFiles('feedback.md') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ steps.err.outputs.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPO/commits/$SHA/comments" -F body=@feedback.md >/dev/null
+          cat feedback.md >> "$GITHUB_STEP_SUMMARY"
