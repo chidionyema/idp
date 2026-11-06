@@ -42,7 +42,17 @@ MIN_LINE = 8  # shorter added lines ("}", "fi", "") prove nothing about landing
 
 def sh(*a, cwd=None, timeout=120) -> tuple[int, str]:
     try:
-        r = subprocess.run(a, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(  # noqa: S603 - fixed argv, never a shell string
+            a,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            # 2026-11-06: one non-UTF-8 byte in a commit message made the whole audit
+            # BLIND ('utf-8' codec can't decode byte 0xfc) while it still exited 0.
+            # A byte the estate cannot decode costs that line, never the corpus.
+            errors="replace",
+        )
         return r.returncode, r.stdout
     except (subprocess.TimeoutExpired, OSError) as e:
         return 1, str(e)
@@ -90,8 +100,8 @@ def history(repo: Path, ref: str) -> set[int]:
     with _hist_lock:
         if str(repo) not in _hist:
             since = (SINCE[0] - dt.timedelta(days=30)).date()
-            p = subprocess.Popen(
-                [
+            p = subprocess.Popen(  # noqa: S603 - fixed argv, never a shell string
+                [  # noqa: S607 - git is resolved by PATH like every other estate tool
                     "git",
                     "-C",
                     str(repo),
@@ -301,11 +311,23 @@ def audit_local(since: dt.datetime) -> list[dict]:
     return items
 
 
+def _gh_binary() -> str:
+    """gh is not always on PATH: the estate executor and launchd start with a bare PATH,
+    where `gh` is at ~/.local/bin and the audit reported BLIND 'No such file or directory'
+    for both of its remote sources (2026-11-06)."""
+    import shutil
+
+    return shutil.which("gh") or str(HOME / ".local/bin/gh")
+
+
+_GH = _gh_binary()
+
+
 def gh_search(q: str) -> list[dict]:
     out, page = [], 1
     while True:
         rc, txt = sh(
-            "gh",
+            _GH,
             "api",
             "-X",
             "GET",
