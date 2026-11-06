@@ -1,0 +1,32 @@
+name: external-verdict-preflight
+# Read-only proof of adversarial signature checks; NOT production certification.
+on:
+  push:
+    branches:
+      - 'lane/**'
+      - 'queue/**'
+    paths:
+      - 'platform/verification/external-verdict-gate.mjs'
+      - 'platform/verification/external-verdict-gate.test.mjs'
+      - '.github/workflows/estate-external-verdict-preflight.yml'
+  pull_request:
+    paths:
+      - 'platform/verification/external-verdict-gate.mjs'
+      - 'platform/verification/external-verdict-gate.test.mjs'
+      - '.github/workflows/estate-external-verdict-preflight.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-refusal-behavior:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Adversarial signature and trust-boundary tests
+        run: node --test platform/verification/external-verdict-gate.test.mjs
