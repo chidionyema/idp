@@ -1254,6 +1254,12 @@ def tick(policy: dict, repo: str, dry_run: bool = False) -> dict:
             if verify_incident(conn, policy, row):
                 summary["verified"] += 1
                 summary["notes"].append(f"{row['id']} verified")
+            elif state == "verified":
+                summary["closure_pending"] += 1
+                summary["notes"].append(
+                    f"incident {row['id']} recovered but remote closure is not attested; "
+                    f"ticket #{row['ticket'] or '-'} remains pending"
+                )
     conn.close()
     return summary
 
