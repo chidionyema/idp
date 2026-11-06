@@ -73,4 +73,5 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           DOMAIN_BASE_URL: ${{ vars.DOMAIN_BASE_URL }}
           GH_TOKEN: ${{ github.token }}
+          OIDC_CLIENT_IDENTIFIER: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}   # apply re-proves main can still exchange
         run: bin/idp-oidc-trust ${{ inputs.mode || 'check' }}
