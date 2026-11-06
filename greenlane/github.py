@@ -999,6 +999,9 @@ class GitHubBackend:
             if len(leaves) > self.CAUSE_JOBS:
                 parts.append(f"+{len(leaves) - self.CAUSE_JOBS} more")
             cause = "; ".join(parts)
+            # the first failing job's own log is the one link worth a click (report() links it)
+            if cause and leaves[0].get("html_url"):
+                cause += f" {leaves[0]['html_url']}"
         except (RuntimeError, ValueError, OSError):
             cause = ""
         cache[run] = cause
@@ -1540,8 +1543,10 @@ class GitHubBackend:
         # 140 characters of it. A reason that starts with a 70-character job URL spent half of
         # them on a link nobody can click from a description, and the cause behind it was cut
         # off. The first job URL in the reason becomes the status's link (one click to the
-        # failing log); the description keeps the words.
-        url = _JOB_URL.search(reason or "")
+        # failing log -- the cause's job when the reason names one, else the check's own); the
+        # description keeps the words.
+        jobs = _JOB_URL.findall(reason or "")
+        url = jobs[-1] if jobs else ""  # the cause's own job, after the aggregator's
         text = _URL.sub("", reason or "").replace("  ", " ").strip() if url else reason
         fields = {
             "state": state,
@@ -1549,7 +1554,7 @@ class GitHubBackend:
             "description": (text or status)[:140],
         }
         if url:
-            fields["target_url"] = url.group(0)
+            fields["target_url"] = url
         elif self.run_url:
             fields["target_url"] = self.run_url
         try:
