@@ -1,0 +1,27 @@
+name: verdict-authenticity-preflight
+on:
+  push:
+    branches: ['lane/**','queue/**']
+    paths:
+      - probes/verdict.py
+      - bin/idp-verdict-fresh
+      - tests/test_verdict_authenticity.py
+      - .github/workflows/verdict-langfuse.yml
+  pull_request:
+    paths:
+      - probes/verdict.py
+      - bin/idp-verdict-fresh
+      - tests/test_verdict_authenticity.py
+      - .github/workflows/verdict-langfuse.yml
+permissions:
+  contents: read
+jobs:
+  verify-evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with: { python-version: '3.12' }
+      - run: python -W error -m py_compile probes/verdict.py bin/idp-verdict-fresh tests/test_verdict_authenticity.py
+      - run: python -W error -m unittest discover -s tests -p test_verdict_authenticity.py -v
