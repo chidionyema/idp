@@ -58835,6 +58835,7 @@
       "summary": "recovery-data -- the GitHub Actions workflow recovery-data.yml.",
       "contract": {
         "inputs": [
+          "schedule",
           "push",
           "workflow_dispatch"
         ],
