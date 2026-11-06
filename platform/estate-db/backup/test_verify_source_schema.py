@@ -82,12 +82,12 @@ class DumpSchemaTests(unittest.TestCase):
     def test_empty_estate_bootstrap_is_not_data_loss_when_backstage_has_tables(self):
         """The real 2026-10-26 bootstrap DB had ZERO tables by design."""
         self.write_dump(
-            "CREATE DATABASE estate WITH TEMPLATE = template0;\\n"
-            "\\connect estate\\n-- bootstrap intentionally has no user table\\n"
-            "CREATE DATABASE backstage WITH TEMPLATE = template0;\\n"
-            "\\connect backstage\\n"
-            "CREATE TABLE public.catalog_entities (id integer);\\n"
-            "CREATE TABLE public.knex_migrations (id integer);\\n"
+            "CREATE DATABASE estate WITH TEMPLATE = template0;\n"
+            "\\connect estate\n-- bootstrap intentionally has no user table\n"
+            "CREATE DATABASE backstage WITH TEMPLATE = template0;\n"
+            "\\connect backstage\n"
+            "CREATE TABLE public.catalog_entities (id integer);\n"
+            "CREATE TABLE public.knex_migrations (id integer);\n"
         )
         self.assertEqual(count_target_table_definitions(self.archive, "estate"), 0)
         self.assertEqual(count_target_table_definitions(self.archive, "backstage"), 2)
@@ -100,12 +100,12 @@ class DumpSchemaTests(unittest.TestCase):
 
     def test_bootstrap_and_unrelated_tables_cannot_fake_backstage_recovery(self):
         self.write_dump(
-            "CREATE DATABASE estate WITH TEMPLATE = template0;\\n"
-            "\\connect estate\\nCREATE TABLE public.bootstrap (id integer);\\n"
-            "CREATE DATABASE postgres WITH TEMPLATE = template0;\\n"
-            "\\connect postgres\\nCREATE TABLE public.fake (id integer);\\n"
-            "CREATE DATABASE backstage WITH TEMPLATE = template0;\\n"
-            "\\connect backstage\\n-- Backstage data missing\\n"
+            "CREATE DATABASE estate WITH TEMPLATE = template0;\n"
+            "\\connect estate\nCREATE TABLE public.bootstrap (id integer);\n"
+            "CREATE DATABASE postgres WITH TEMPLATE = template0;\n"
+            "\\connect postgres\nCREATE TABLE public.fake (id integer);\n"
+            "CREATE DATABASE backstage WITH TEMPLATE = template0;\n"
+            "\\connect backstage\n-- Backstage data missing\n"
         )
         self.assertEqual(count_target_table_definitions(self.archive, "backstage"), 0)
         result = subprocess.run(
