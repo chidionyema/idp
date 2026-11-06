@@ -16,7 +16,7 @@ function relayGenesisDriveOnce() {
     let processed = 0;
     while (files.hasNext() && processed < 20) {
       const file = files.next();
-      if (!/^GENESIS_[A-Za-z0-9_.-]+\\.json$/.test(file.getName())) continue;
+      if (!/^GENESIS_[A-Za-z0-9_.-]+\.json$/.test(file.getName())) continue;
       if (file.getSize() > 32768) throw new Error('Oversized envelope: ' + file.getId());
       const text = file.getBlob().getDataAsString('UTF-8');
       const obj = JSON.parse(text);
