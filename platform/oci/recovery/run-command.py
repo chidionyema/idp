@@ -276,6 +276,47 @@ def require_run_command_plugin(compartment: str, instance_id: str) -> None:
         )
 
 
+def require_idle_command_queue(compartment: str, instance_id: str) -> None:
+    """Never fill OCI's five in-flight command slots with repeated dead probes.
+
+    One existing ACCEPTED or IN_PROGRESS command is sufficient to block new
+    work. No command is cancelled automatically, because its actual owner and
+    execution state cannot be established by our failed sensor.
+    """
+    for lifecycle in ("ACCEPTED", "IN_PROGRESS"):
+        try:
+            raw = _oci(
+                [
+                    "instance-agent", "command-execution", "list",
+                    "--compartment-id", compartment,
+                    "--instance-id", instance_id,
+                    "--lifecycle-state", lifecycle,
+                    "--all", "--query", "data[].id",
+                ],
+                what=f"reading {lifecycle} OCI commands for {instance_id}",
+            )
+            commands = json.loads(raw)
+        except (TransportError, json.JSONDecodeError, TypeError) as exc:
+            raise TransportError(
+                f"BLIND unable to attest {lifecycle} OCI command queue on "
+                f"{instance_id}: {exc}"
+            ) from exc
+        if not isinstance(commands, list) or any(
+            not isinstance(item, str) or not item for item in commands
+        ):
+            raise TransportError(
+                f"BLIND invalid {lifecycle} OCI command list for {instance_id}"
+            )
+        if commands:
+            raise TransportError(
+                f"BLOCKED OCI Run Command on {instance_id}: "
+                f"{len(commands)} pre-existing {lifecycle} command(s) "
+                f"including {commands[0]}; no new script submitted. "
+                "Inspect/resolve existing commands under recovery governance."
+            )
+    say(f"ok      run-command  no pre-existing active commands on {instance_id}")
+
+
 def create_command(
     compartment: str,
     instance_id: str,
@@ -411,6 +452,7 @@ def transport(args: argparse.Namespace) -> int:
     )
     say(f"ok      run-command  instance={instance_id}")
     require_run_command_plugin(args.compartment, instance_id)
+    require_idle_command_queue(args.compartment, instance_id)
 
     for index, chunk in enumerate(chunks):
         text = chunk_command(chunk, first=index == 0)
