@@ -1,6 +1,9 @@
 import importlib.util
 import io
+import os
 import socket
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -157,3 +160,23 @@ def test_the_executor_contains_the_bridge_at_its_process_boundary():
     assert "_sandbox_bridge()" in text
     assert "ESTATE_HOST_EXECUTE" in text
     assert "readonly database" in text
+
+
+def test_list_is_local_and_never_waits_for_socket_polling():
+    env = dict(
+        os.environ,
+        CODEX_SANDBOX="seatbelt",
+        CODEX_SESSION_ID="session-1",
+        ESTATE_HOST_EXECUTE="",
+    )
+    result = subprocess.run(
+        [sys.executable, str(DOOR), "--list"],
+        cwd=str(ROOT),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Available intents:" in result.stderr
+    assert "host executor" not in result.stderr

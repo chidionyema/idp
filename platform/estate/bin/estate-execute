@@ -3,7 +3,7 @@
 estate-execute — intent ledger + pipeline executor
 
 Usage:
-  estate-execute --list
+  estate-execute --list [--verbose]
   estate-execute <intent> [arg=val ...] [positional...]
   estate-execute --from <worktree> <intent> [arg=val ...]   # an unmerged intent, labelled so
 
@@ -797,11 +797,20 @@ def _run_composed(intent_name, args, depth=0):
     return rc, "\n".join(stdout_parts)
 
 # ---- Commands -----------------------------------------------------------
-def cmd_list():
-    import yaml
+def cmd_list(verbose=False):
+    """List intent names in one directory scan; YAML parsing is opt-in.
+
+    Parsing ~400 YAML documents made an otherwise read-only ``--list`` take tens of seconds on a
+    loaded Mac. Default discovery is names only; ``--list --verbose`` keeps descriptions.
+    """
     log("Available intents:")
     for f in sorted(INTENTS.glob("*.yaml")):
         name = f.stem
+        if not verbose:
+            log(f"  {name}")
+            continue
+        import yaml
+
         try:
             with open(f) as fh:
                 d = yaml.safe_load(fh) or {}
@@ -989,6 +998,32 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
 
 # ---- Main ---------------------------------------------------------------
 if __name__ == "__main__":
+    if len(sys.argv) == 1 or sys.argv[1] == "--list":
+        cmd_list("--verbose" in sys.argv[2:])
+        sys.exit(0)
+
+    if sys.argv[1] == "--show" and len(sys.argv) >= 3:
+        import yaml
+
+        name = sys.argv[2]
+        path = INTENTS / f"{name}.yaml"
+        if not path.exists():
+            log(f"ERROR: unknown intent: {name}")
+            sys.exit(1)
+        with open(path) as f:
+            d = yaml.safe_load(f)
+        log(f"name: {name}")
+        log(f"description: {d.get('description', '')}")
+        if d.get("args"):
+            log("args:")
+            for k, v in d["args"].items():
+                log(f"  {k}: {v}")
+        if d.get("steps"):
+            log(f"steps: {len(d['steps'])}")
+            for i, s in enumerate(d["steps"]):
+                log(f"  {i+1}. {s.get('name', '?')}: {s.get('cmd', '')[:60]}")
+        sys.exit(0)
+
     import shutil
 
     sandboxed = (
@@ -1022,31 +1057,6 @@ if __name__ == "__main__":
             log(f"ERROR: --from {FROM_DIR}: no platform/estate/intents there")
             sys.exit(1)
         del sys.argv[1:3]
-
-    if len(sys.argv) == 1 or sys.argv[1] == "--list":
-        cmd_list()
-        sys.exit(0)
-
-    if sys.argv[1] == "--show" and len(sys.argv) >= 3:
-        import yaml
-        name = sys.argv[2]
-        path = INTENTS / f"{name}.yaml"
-        if not path.exists():
-            log(f"ERROR: unknown intent: {name}")
-            sys.exit(1)
-        with open(path) as f:
-            d = yaml.safe_load(f)
-        log(f"name: {name}")
-        log(f"description: {d.get('description', '')}")
-        if d.get('args'):
-            log("args:")
-            for k, v in d['args'].items():
-                log(f"  {k}: {v}")
-        if d.get('steps'):
-            log(f"steps: {len(d['steps'])}")
-            for i, s in enumerate(d['steps']):
-                log(f"  {i+1}. {s.get('name', '?')}: {s.get('cmd', '')[:60]}")
-        sys.exit(0)
 
     harness_name = None
     intent_name = None
@@ -1094,7 +1104,7 @@ if __name__ == "__main__":
             log(f"ERROR: unknown harness or intent: {harness_name}")
             log("usage: estate-execute <harness> --intent=<name>  # harness mode")
             log("       estate-execute <intent> [arg=val...]       # direct mode")
-            log("       estate-execute --list")
+            log("       estate-execute --list [--verbose]")
             sys.exit(1)
     elif intent_name:
         sys.exit(0 if cmd_run(intent_name, raw_args) == "ok" else 1)
