@@ -246,6 +246,77 @@ def resolve_instance(compartment: str, display_name: str) -> str:
     return out
 
 
+def require_run_command_plugin(compartment: str, instance_id: str) -> None:
+    """Read OCI control-plane plugin health before minting remote command work.
+
+    This is distinct from CLI authentication and instance RUNNING state.
+    A RUNNING VM with a STOPPED/INVALID cloud-agent plugin cannot receive
+    Run Command; repeating an hour-long poll cannot fix it.
+    """
+    try:
+        status = _oci(
+            [
+                "instance-agent", "plugin", "list",
+                "--compartment-id", compartment,
+                "--instanceagent-id", instance_id,
+                "--name", "Compute Instance Run Command",
+                "--query", "data[0].status", "--raw-output",
+            ],
+            what="checking Compute Instance Run Command plugin",
+        ).strip().upper()
+    except TransportError as exc:
+        raise TransportError(
+            f"BLIND run-command plugin state unreadable for instance {instance_id}: {exc}"
+        ) from exc
+    say(f"state   run-command  instance={instance_id} plugin_status={status or 'MISSING'}")
+    if status != "RUNNING":
+        raise TransportError(
+            f"BLIND Run Command plugin on instance {instance_id} is "
+            f"{status or 'MISSING'}, not RUNNING; no script submitted"
+        )
+
+
+def require_idle_command_queue(compartment: str, instance_id: str) -> None:
+    """Never fill OCI's five in-flight command slots with repeated dead probes.
+
+    One existing ACCEPTED or IN_PROGRESS command is sufficient to block new
+    work. No command is cancelled automatically, because its actual owner and
+    execution state cannot be established by our failed sensor.
+    """
+    for lifecycle in ("ACCEPTED", "IN_PROGRESS"):
+        try:
+            raw = _oci(
+                [
+                    "instance-agent", "command-execution", "list",
+                    "--compartment-id", compartment,
+                    "--instance-id", instance_id,
+                    "--lifecycle-state", lifecycle,
+                    "--all", "--query", "data[].id",
+                ],
+                what=f"reading {lifecycle} OCI commands for {instance_id}",
+            )
+            commands = json.loads(raw)
+        except (TransportError, json.JSONDecodeError, TypeError) as exc:
+            raise TransportError(
+                f"BLIND unable to attest {lifecycle} OCI command queue on "
+                f"{instance_id}: {exc}"
+            ) from exc
+        if not isinstance(commands, list) or any(
+            not isinstance(item, str) or not item for item in commands
+        ):
+            raise TransportError(
+                f"BLIND invalid {lifecycle} OCI command list for {instance_id}"
+            )
+        if commands:
+            raise TransportError(
+                f"BLOCKED OCI Run Command on {instance_id}: "
+                f"{len(commands)} pre-existing {lifecycle} command(s) "
+                f"including {commands[0]}; no new script submitted. "
+                "Inspect/resolve existing commands under recovery governance."
+            )
+    say(f"ok      run-command  no pre-existing active commands on {instance_id}")
+
+
 def create_command(
     compartment: str,
     instance_id: str,
@@ -380,6 +451,8 @@ def transport(args: argparse.Namespace) -> int:
         args.compartment, args.display_name
     )
     say(f"ok      run-command  instance={instance_id}")
+    require_run_command_plugin(args.compartment, instance_id)
+    require_idle_command_queue(args.compartment, instance_id)
 
     for index, chunk in enumerate(chunks):
         text = chunk_command(chunk, first=index == 0)
