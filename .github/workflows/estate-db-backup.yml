@@ -49,6 +49,7 @@ on:
     paths:
       - .github/workflows/estate-db-backup.yml
       - platform/estate-db/backup/**
+      - bin/idp-estate-db-backup
   workflow_dispatch:
 permissions:
   id-token: write # the OCI session that reads the surviving dump and writes the copy
