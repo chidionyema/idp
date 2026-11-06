@@ -215,7 +215,27 @@ State is one of **present**, **partial**, **missing**. Phase refers to §7.
 | R-38 Otto as always-on fleet surface | partial | Otto exists (#7054, #7058, #7066); research/science/concierge not fleet agents | 3 |
 | R-39 founder intent as data | missing | §1 is the first record | 0 |
 
+### 5.1 Greenlane lessons register: the rows that fell into the void
+
+`docs/research/2026-10-25-greenlane-agent-scale-merge-lessons.md` ended with four rows
+"proposed for the next epic revision". That revision never came: on 2026-11-06 a search of
+this file for `restore loop`, `verifier comparison`, `containment profile` and `last-green`
+returned **zero**, so four requirements were researched, costed and then never registered.
+They are registered here, with their state measured on the day they were recovered.
+
+| Row | Lesson | State | Evidence of state | Wave |
+|-----|--------|-------|-------------------|------|
+| G-01 restore loop for red main: auto-revert, capped, tree-keyed reland refusal, restore-time metric | L1 | **missing** | `Backend.main_red()` re-judges lanes only; nothing reverts a red main, and `State.retired` is keyed on (lane, head sha), so the same broken tree under a new lane name queues again | D0 |
+| G-02 verifier comparison gate: engine/gate/CI changes land with old-vs-new fixture parity | L2 | **missing** | lane pushes run the lane's own engine (`greenlane.yml:112-127`); no parity run compares the two engines on one fixture | D1 |
+| G-03 containment profile for graded code (workflows/gates/bin) | L3 | **missing** | no profile separates a change to the grader from a change to the graded code | D1 |
+| G-04 `refs/greenlane/last-green` published at each land | L4 | **missing** | the engine records a head sha per lane; no last-green ref is published | D0 |
+
+The lessons doc remains the source: L1 is the second loop (automatic, capped, out of the
+agents' reach), L2 the verifier-integrity discipline. Both import onto surfaces the estate
+already owns (the greenlane, the engine, the gates), so none of these rows needs a new layer.
+
 ---
+
 
 ## 6. Target architecture
 
