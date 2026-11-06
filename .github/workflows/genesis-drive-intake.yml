@@ -3,6 +3,18 @@ run-name: Gemini Drive receipt ${{ github.event.client_payload.event_id || 'unit
 on:
   repository_dispatch:
     types: [genesis_drive_review_v1]
+  push:
+    branches:
+      - 'lane/**'
+      - 'queue/**'
+    paths:
+      - bin/genesis_drive_intake.py
+      - bin/genesis_drive_receipt_issue.py
+      - tests/test_genesis_drive_intake.py
+      - tests/test_genesis_drive_receipt_issue.py
+      - tests/test_genesis_drive_sender.mjs
+      - integrations/gemini-drive-relay/Code.gs
+      - .github/workflows/genesis-drive-intake.yml
   pull_request:
     paths:
       - bin/genesis_drive_intake.py
