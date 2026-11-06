@@ -134,3 +134,12 @@ def test_the_bootstrap_has_no_wildcard_rule_left():
     text = (ROOT / "bin/idp-oci-bootstrap").read_text()
     assert 'sub eq ${SUB_PREFIX}*"' not in text
     assert text.count("bin/idp-oidc-trust\" rules") == 2
+
+
+def test_apply_proves_main_still_exchanges_and_restores_the_old_rules_if_not():
+    text = TRUST.read_text()
+    body = text[text.index("apply() {") : text.index("exchange_code() {")]
+    assert "exchange_code" in body and "previous rules restored" in body
+    assert body.index("PATCH") < body.index("exchange_code") < body.index("restored")
+    wf = (ROOT / ".github/workflows/oidc-trust.yml").read_text()
+    assert "OIDC_CLIENT_IDENTIFIER: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}" in wf
