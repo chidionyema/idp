@@ -19,8 +19,12 @@
 # the day the repository is organisation-owned this workflow can be retired for it.
 name: greenlane
 on:
-  push:
-    branches: [lane/**, flux/image-updates]
+  # Privileged workflow runs ONLY from GitHub's default-branch workflow definition.
+  # A lane push runs no-harness-folders (read-only); its workflow_run completion
+  # wakes this trusted-main workflow without executing candidate-supplied YAML.
+  workflow_run:
+    workflows: [no-harness-folders]
+    types: [completed]
   pull_request_target:
     types: [opened, reopened, ready_for_review]
   schedule:
@@ -65,13 +69,18 @@ concurrency:
   cancel-in-progress: false
 jobs:
   greenlane:
-    # A check_run event fires for every completed check in the repository. Only a completion on
-    # a queue/* tip can carry a batch verdict (queue/* branches are pushed only by the engine,
-    # and the judged sha comes from the CAS'd state ref, never from the event); everything else
-    # skips here in seconds.
+    # Only trusted-main workflow definitions may mint the App token. No
+    # unreviewed lane HEAD or GitHub event artifact may supply executable code.
+    # Lane wakeups come from the existing read-only no-harness-folders workflow
+    # completed on a lane push; unrelated workflow_run events do no work.
     if: >-
-      github.event_name != 'check_run' ||
-      startsWith(github.event.check_run.check_suite.head_branch || '', 'queue/')
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.event == 'push' &&
+       (startsWith(github.event.workflow_run.head_branch || '', 'lane/') ||
+        github.event.workflow_run.head_branch == 'flux/image-updates')) ||
+      (github.event_name == 'check_run' &&
+       startsWith(github.event.check_run.check_suite.head_branch || '', 'queue/')) ||
+      (github.event_name != 'workflow_run' && github.event_name != 'check_run')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -84,7 +93,15 @@ jobs:
           # GITHUB_TOKEN triggers no workflow -- queue/b2 sat with zero check runs
           # (2026-09-29 17:22Z). Candidates must be pushed as the App so CI grades them.
           persist-credentials: false
+      # The queue tip emits many optional check completions. Only the canonical
+      # required-check contexts can change its admission verdict. Filter those
+      # OTHER events before the expensive OCI/OIDC App credential exchange.
+      # Unknown/malformed events always INVOKE the judge: cost-only optimization.
+      - name: Skip optional checks before minting privileged estate credentials
+        id: check_relevance
+        run: python3 bin/idp-greenlane-check-trigger
       - id: app
+        if: steps.check_relevance.outputs.needs_judge == 'true'
         uses: ./.github/actions/github-app-token
         with:
           oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
@@ -93,6 +110,7 @@ jobs:
           oci_region: ${{ vars.OCI_REGION }}
           oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
       - name: one tick of the lane
+        if: steps.check_relevance.outputs.needs_judge == 'true'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
@@ -109,22 +127,13 @@ jobs:
           set -euo pipefail
           # pushes must carry the App's token so they start workflows on the refs they write
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git"
-          # For lane-branch pushes: run the engine from the lane's commit (not main's), so that
-          # lane-specific engine fixes take effect before the lane lands on main. ONLY for push
-          # events: a check_run event's sha is whatever sha the finished check graded (a lane's
-          # candidate, another agent's branch), and running that sha's engine with the App token
-          # would let its author script their own landing. The judge always runs main's engine.
-          # For main/schedule dispatches: github.ref == refs/heads/main, skip the reset.
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" != "refs/heads/main" ]; then
-            git reset --hard "${{ github.sha }}"
-            # Fetch the state from the lane branch's state ref. The bare refs/greenlane/state
-            # may be stale (last pushed by a different lane). The lane branch carries the freshest
-            # state. Fetch it explicitly by constructing the branch-nested ref path.
-            lane_name="${GITHUB_REF#refs/heads/}"
-            git fetch -q origin \
-              "+refs/heads/${lane_name}/refs/greenlane/state:refs/greenlane/state" \
-              "+refs/greenlane/state:refs/greenlane/state" 2>/dev/null || true
-          fi
+          # CRITICAL TRUST BOUNDARY: the workflow and engine are ALWAYS the
+          # reviewed main checkout. Lane/queue refs are data that GitHubBackend
+          # reads and rebases in isolated git worktrees, never code executed
+          # with the App token. The canonical state ref is already fetched and
+          # CAS-checked by GitHubBackend.fetch()/save_state_text().
+          trusted_main_sha="$(git rev-parse HEAD)"
+          echo "TRUSTED_GREENLANE_ENGINE_SHA=${trusted_main_sha}"
           # A check_run trigger means a batch's verdict may have arrived: collect it (judge-only
           # tick -- lands, bisects or requeues the candidate the state names, forms nothing).
           # Every other trigger is a full tick: observe, judge, form, retire, heartbeat.
