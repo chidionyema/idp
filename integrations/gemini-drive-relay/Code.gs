@@ -21,6 +21,30 @@ function relayMac_(value, key) {
   return relayHex_(Utilities.computeHmacSha256Signature(value, key,
                     Utilities.Charset.UTF_8));
 }
+function relayGitHubAck_(eventId, token) {
+  // One authoritative completion check; an HTTP 204 dispatch is never an ACK.
+  const url = 'https://api.github.com/repos/chidionyema/idp/actions/workflows/' +
+              'genesis-drive-intake.yml/runs?event=repository_dispatch&per_page=100';
+  const response = UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: {
+      Authorization: 'Bearer ' + token,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28'
+    },
+    muteHttpExceptions: true
+  });
+  if (response.getResponseCode() !== 200)
+    throw new Error('GITHUB_ACK_QUERY_HTTP_' + response.getResponseCode());
+  const runs = JSON.parse(response.getContentText()).workflow_runs || [];
+  const expected = 'Gemini Drive receipt ' + eventId;
+  for (const run of runs) {
+    if (run.display_title === expected)
+      return {status: run.status, conclusion: run.conclusion, runId: run.id};
+  }
+  return null;
+}
+
 function relayGenesisDriveOnce() {
   const props = PropertiesService.getScriptProperties();
   const folderId = props.getProperty('GENESIS_DRIVE_FOLDER_ID');
@@ -44,7 +68,26 @@ function relayGenesisDriveOnce() {
       const digest = relayDigest_(blob.getDataAsString('UTF-8'));
       const eventId = 'gemini-' + relayDigest_(docId + '\n' + digest).slice(0, 40);
       const stateKey = 'dispatched_' + eventId;
-      if (props.getProperty(stateKey) === digest) continue;
+      const stored = props.getProperty(stateKey);
+      let state = null;
+      if (stored) {
+        try { state = JSON.parse(stored); } catch (ignored) { state = null; }
+      }
+      if (state && state.sha === digest && state.state === 'ACKNOWLEDGED') continue;
+      if (state && state.sha === digest && state.state === 'DISPATCHED_UNCONFIRMED') {
+        const ack = relayGitHubAck_(eventId, token);
+        if (ack && ack.status === 'completed' && ack.conclusion === 'success') {
+          props.setProperty(stateKey, JSON.stringify({
+            sha: digest, state: 'ACKNOWLEDGED', runId: ack.runId,
+            verifiedAt: new Date().toISOString()
+          }));
+          continue;
+        }
+        if (ack && ack.status === 'completed' && ack.conclusion !== 'success')
+          throw new Error('GITHUB_RECEIVER_FAILED_' + ack.conclusion);
+        // Backoff: GitHub may accept the dispatch yet queue its workflow.
+        if (Date.now() - state.dispatchedAt < 300000) continue;
+      }
       const issuedAt = Math.floor(Date.now() / 1000);
       const envelope = {
         schema_version: 1,
@@ -75,10 +118,12 @@ function relayGenesisDriveOnce() {
       if (response.getResponseCode() !== 204)
         throw new Error('GITHUB_DISPATCH_HTTP_' + response.getResponseCode());
       // DISPATCHED does not mean verified, approved, merged, or deployed.
-      props.setProperty(stateKey, digest);
+      props.setProperty(stateKey, JSON.stringify({
+        sha: digest, state: 'DISPATCHED_UNCONFIRMED', dispatchedAt: Date.now()
+      }));
       sent++;
     }
-    console.log(JSON.stringify({status: 'dispatch_only', files_sent: sent}));
+    console.log(JSON.stringify({status: 'dispatch_submitted_ack_pending', files_sent: sent}));
   } finally {
     lock.releaseLock();
   }
