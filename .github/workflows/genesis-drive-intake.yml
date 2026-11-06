@@ -1,0 +1,38 @@
+name: genesis-drive-intake
+on:
+  repository_dispatch:
+    types: [genesis_drive_review_v1]
+  pull_request:
+    paths:
+      - bin/genesis_drive_intake.py
+      - tests/test_genesis_drive_intake.py
+      - .github/workflows/genesis-drive-intake.yml
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run fail-closed intake tests
+        run: python -m unittest discover -s tests -p test_genesis_drive_intake.py -v
+      - name: Quarantine dispatch envelope
+        if: github.event_name == 'repository_dispatch'
+        env:
+          EVENT_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: |
+          printf '%s' "$EVENT_PAYLOAD" | python bin/genesis_drive_intake.py > receipt.json
+          cat receipt.json
+      - name: Upload transport receipt
+        if: github.event_name == 'repository_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gemini-drive-quarantine-receipt
+          path: receipt.json
+          retention-days: 30
