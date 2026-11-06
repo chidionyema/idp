@@ -26,6 +26,7 @@ jobs:
         if: github.event_name == 'repository_dispatch'
         env:
           EVENT_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+          GENESIS_DRIVE_RELAY_HMAC_KEY: ${{ secrets.GENESIS_DRIVE_RELAY_HMAC_KEY }}
         run: |
           printf '%s' "$EVENT_PAYLOAD" | python bin/genesis_drive_intake.py > receipt.json
           cat receipt.json
