@@ -6,12 +6,17 @@ on:
   pull_request:
     paths:
       - bin/genesis_drive_intake.py
+      - bin/genesis_drive_receipt_issue.py
       - tests/test_genesis_drive_intake.py
+      - tests/test_genesis_drive_receipt_issue.py
       - tests/test_genesis_drive_sender.mjs
       - integrations/gemini-drive-relay/Code.gs
       - .github/workflows/genesis-drive-intake.yml
 permissions:
   contents: read
+concurrency:
+  group: genesis-drive-${{ github.event.client_payload.event_id || github.ref }}
+  cancel-in-progress: false
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -24,7 +29,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Run fail-closed intake tests
-        run: python -m unittest discover -s tests -p test_genesis_drive_intake.py -v
+        run: python -m unittest discover -s tests -p 'test_genesis_drive_*.py' -v
       - name: Emit exact Ruff formatter diff for CI diagnosis
         run: |
           python -m pip install -q ruff==0.15.18
@@ -47,3 +52,23 @@ jobs:
           path: receipt.json
           retention-days: 30
           if-no-files-found: error
+  publish-receipt:
+    needs: validate
+    if: github.event_name == 'repository_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: gemini-drive-quarantine-receipt
+      - name: Publish authenticated quarantine receipt to issue of record
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python bin/genesis_drive_receipt_issue.py receipt.json
