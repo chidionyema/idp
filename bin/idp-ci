@@ -356,6 +356,10 @@ MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
 if [ ! -x "$IDP/.venv/bin/python" ] && [ -x "$HOME/.cache/estate-tools/py312-venv/bin/python" ]; then
   MPY="$HOME/.cache/estate-tools/py312-venv/bin/python"
   PATH="$HOME/.cache/estate-tools/py312-venv/bin:$PATH"
+  # pyproject sets addopts = "-n auto"; a tool venv without xdist turns every gate rung
+  # into "unrecognized arguments: -n ..." (measured 2026-11-06: the language and schema
+  # self-tests). One import is cheaper than a flag we would have to add to every call.
+  "$MPY" -c 'import xdist' 2>/dev/null || "$MPY" -m pip install -q "pytest-xdist==3.6.1" >/dev/null 2>&1 || true
   export PYTHONPATH="$IDP/backstage/plugins/fleetview-backend/src${PYTHONPATH:+:$PYTHONPATH}"
 fi
 if ! "$MPY" -c 'import sys; sys.exit(sys.version_info[:2] < (3, 12))' 2>/dev/null; then
@@ -503,7 +507,7 @@ fi
 #      git itself calls Added in this diff, so the ~460 existing .py files under bin/ and
 #      platform/ are untouched. Proven by tests/test_language_gate.py against the real script.
 lg=$("$MPY" "$IDP/bin/language-gate" "${IDP_CI_BASE:-origin/main}" HEAD 2>&1); lg_rc=$?
-lgp=$("$MPY" -m pytest -q -p no:cacheprovider "$IDP/tests/test_language_gate.py" 2>&1); lgp_rc=$?
+lgp=$("$MPY" -m pytest -q -p no:cacheprovider -o addopts="" "$IDP/tests/test_language_gate.py" 2>&1); lgp_rc=$?
 if [ "$lg_rc" -eq 0 ] && [ "$lgp_rc" -eq 0 ]; then
   say "ok    language $(printf '%s' "$lg" | sed -n 's/^ok *//p') -- $(printf '%s' "$lgp" | grep -oE '[0-9]+ passed' | head -1) on the gate's own proof"
 else
