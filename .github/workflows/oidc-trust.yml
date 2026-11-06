@@ -1,5 +1,5 @@
 # button: OIDC trust
-# founder: Which GitHub jobs may become the estate's cloud identity. Only reviewed main, the image controller's branch and engine-raised pull requests; never a lane.
+# founder: Which GitHub jobs may become the estate's cloud identity. Only reviewed default-branch workflows and the image controller's branch; never an arbitrary pull request, lane or queue ref.
 #
 # WHY. 2026-11-06: the identity domain's propagation trust admitted `sub eq <repo prefix>*`, so a
 # job on ANY ref could trade its OIDC token for the estate-ci session that reads the GitHub App key.

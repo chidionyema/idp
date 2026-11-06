@@ -13,8 +13,6 @@ on:
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
-  pull_request:
-    paths: [".github/workflows/estate-state.yml", "bin/idp-estate-state-build", "bin/idp-router-lanes", "bin/idp-reports-render", "bin/idp-image-builds", "platform/estate-state/**"]
 permissions:
   contents: read
   id-token: write   # traded for the OCI session that reads the receipts bucket and the App key

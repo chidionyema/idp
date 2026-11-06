@@ -13,7 +13,8 @@
 # to change and exits 0, so no loop.
 name: feature-request-enable
 on:
-  pull_request:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths: ["platform/features/requests.yaml"]
 permissions:
   contents: write
@@ -27,6 +28,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      # pull_request_target executes this workflow from the base branch. Keep the executor on
+      # that reviewed main checkout; only declarative request data may come from the PR.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          path: .trusted
+          persist-credentials: false
       # The secret is base64 of the PEM (bin/idp-github-app writes it that way); the action wants
       # the PEM itself. Decoded and masked line by line, as agent-sandbox.yml does -- whose run
       # 36318633546 is the proof this secret decodes to a working App key (crew#975 CP28).
@@ -50,18 +58,25 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ steps.app.outputs.token }}
           fetch-depth: 0
+          path: .candidate
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with: { python-version: "3.12", cache: pip, cache-dependency-path: .github/requirements/feature-request-enable.txt }
-      - run: pip install -q -r .github/requirements/feature-request-enable.txt
+        with: { python-version: "3.12", cache: pip, cache-dependency-path: .trusted/.github/requirements/feature-request-enable.txt }
+      - run: pip install -q -r .trusted/.github/requirements/feature-request-enable.txt
       - name: flip the switches the request names, on this pull request's branch
         env: { GH_TOKEN: "${{ steps.app.outputs.token }}" }
+        working-directory: .candidate
         run: |
+          set -euo pipefail
+          # The executor is always main's reviewed script. The candidate supplies YAML data only,
+          # never executable workflow or helper code.
+          cp ../.trusted/bin/idp-features .idp-features-trusted
+          trap 'rm -f .idp-features-trusted' EXIT
           base="${{ github.event.pull_request.base.sha }}"
           added=$(git diff "$base" HEAD -- platform/features/requests.yaml | grep '^+' | grep -v '^+++' || true)
           feature=$(printf '%s\n' "$added" | grep -oP '(?<=feature:\s).*' | tail -1 | tr -d '"'"'"'"' | xargs)
           tier=$(printf '%s\n' "$added" | grep -oP '(?<=tier:\s).*' | tail -1 | tr -d '"'"'"'"' | xargs)
           if [ -z "$feature" ] || [ -z "$tier" ]; then echo "ok    no new feature/tier row in requests.yaml, nothing to flip"; exit 0; fi
-          out=$(bin/idp-features enable "$feature" "$tier") || { echo "$out"; gh pr comment "${{ github.event.pull_request.number }}" --body "$(printf 'FAIL  feature request %s/%s was not applied:\n```\n%s\n```' "$feature" "$tier" "$out")"; exit 1; }
+          out=$(python3 .idp-features-trusted enable "$feature" "$tier") || { echo "$out"; gh pr comment "${{ github.event.pull_request.number }}" --body "$(printf 'FAIL  feature request %s/%s was not applied:\n```\n%s\n```' "$feature" "$tier" "$out")"; exit 1; }
           echo "$out"
           if git diff --quiet; then echo "ok    $feature/$tier already switched on this branch"; exit 0; fi
           git config user.name "idp-writer[bot]"; git config user.email "idp-writer[bot]@users.noreply.github.com"

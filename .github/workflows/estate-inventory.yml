@@ -12,8 +12,6 @@ on:
   schedule:
     - cron: "23 2 * * *"
   workflow_dispatch:
-  pull_request:
-    paths: [".github/workflows/estate-inventory.yml", "bin/idp-inventory", "bin/idp-estate-audit", "bin/idp-reports-render", "platform/inventory/**"]
 permissions:
   contents: read
   id-token: write   # traded for the OCI session (discovery search, state bucket, vault reads)

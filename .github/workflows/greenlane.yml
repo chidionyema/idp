@@ -25,8 +25,6 @@ on:
   workflow_run:
     workflows: [no-harness-folders]
     types: [completed]
-  pull_request_target:
-    types: [opened, reopened, ready_for_review]
   schedule:
     - cron: "*/15 * * * *"  # every 15 minutes: judge queue batches when CI completes
   # workflow_run removed: guarded-paths fires on every main push, creating workflow_run events that

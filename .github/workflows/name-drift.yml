@@ -12,8 +12,6 @@ on:
   schedule:
     - cron: "37 */6 * * *"
   workflow_dispatch:
-  pull_request:
-    paths: [".github/workflows/name-drift.yml", "bin/estate-zone-gate", "tests/fixtures/estate-zone/**"]
 permissions:
   contents: read
   id-token: write   # traded for the OCI session that reads the App key (.github/actions/github-app-token)

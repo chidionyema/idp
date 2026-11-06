@@ -10,6 +10,11 @@
 # on main cannot reach a branch that still has it; only the trust can. The fix is the trust's rule:
 # a closed list of contexts (platform/github/oidc-trust.json), never a wildcard.
 #
+# pull_request is never trusted, even from the same repository: GitHub runs the workflow definition
+# from the pull-request branch, so "same repo" does not mean "reviewed bytes". Privileged validation
+# runs from main after merge, via workflow_run, or from pull_request_target only when that workflow
+# explicitly executes a main checkout and therefore never needs pull_request OIDC.
+#
 #   bin/idp-oidc-trust context            this job's context (what GitHub puts after the prefix in `sub`)
 #   bin/idp-oidc-trust allowed            exit 0 if this job's context is in the list, 3 (REFUSED) if not
 #   bin/idp-oidc-trust rules <prefix>     the impersonation rules, one per context, as JSON

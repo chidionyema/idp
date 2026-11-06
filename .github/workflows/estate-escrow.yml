@@ -11,12 +11,6 @@ on:
   schedule:
     - cron: "29 */6 * * *"   # four times a day; drills/catalogue.yaml row estate-escrow
   workflow_dispatch: {}
-  pull_request:
-    paths:
-      - .github/workflows/estate-escrow.yml
-      - bin/idp-escrow
-      - bin/idp-github-app
-      - platform/github-app/lanes.json
 permissions:
   id-token: write   # the OIDC token this job trades for OCI access
   contents: read

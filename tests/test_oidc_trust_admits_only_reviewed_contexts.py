@@ -69,8 +69,12 @@ def test_every_workflow_that_exchanges_a_token_runs_only_in_declared_contexts():
     )
 
 
-def test_no_lane_or_queue_ref_can_ever_be_declared():
-    assert set(SPEC["never"]) >= {"ref:refs/heads/lane/", "ref:refs/heads/queue/"}
+def test_no_lane_queue_or_pull_request_ref_can_ever_be_declared():
+    assert set(SPEC["never"]) >= {
+        "ref:refs/heads/lane/",
+        "ref:refs/heads/queue/",
+        "pull_request",
+    }
     for c in DECLARED:
         assert not any(c.startswith(n) for n in SPEC["never"]), c
         assert "*" not in c, f"a wildcard is how the trust admitted every ref: {c}"
@@ -88,8 +92,8 @@ def _allowed(event: str, ref: str) -> subprocess.CompletedProcess:
     [
         ("schedule", "refs/heads/main", 0),
         ("workflow_run", "refs/heads/main", 0),
-        ("pull_request", "refs/pull/7/merge", 0),
-        ("pull_request_target", "refs/heads/main", 0),
+        ("pull_request", "refs/pull/7/merge", 3),
+        ("pull_request_target", "refs/heads/main", 3),
         ("push", "refs/heads/flux/image-updates", 0),
         ("push", "refs/heads/lane/stale-before-7743", 3),
         ("push", "refs/heads/queue/b4782", 3),
@@ -128,6 +132,16 @@ def test_the_app_token_refuses_a_lane_before_it_reads_the_vault():
     assert p.returncode == 3, p.stdout + p.stderr
     assert "REFUSED oidc-trust" in p.stderr
     assert p.stdout == "", "nothing that could be taken for a token reaches stdout"
+
+
+def test_feature_request_pr_writer_uses_main_and_never_executes_candidate_code():
+    text = (ROOT / ".github/workflows/feature-request-enable.yml").read_text()
+    assert "pull_request_target:" in text
+    assert "ref: main" in text
+    assert "path: .trusted" in text
+    assert "cp ../.trusted/bin/idp-features .idp-features-trusted" in text
+    assert "python3 .idp-features-trusted enable" in text
+    assert "out=$(bin/idp-features" not in text
 
 
 def test_the_bootstrap_has_no_wildcard_rule_left():
