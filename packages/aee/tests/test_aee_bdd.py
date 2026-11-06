@@ -239,7 +239,9 @@ def _close_a_loop(ctx):
 @when("a node outside that scope is added")
 def _out_of_scope(ctx):
     with pytest.raises(ScopeError) as caught:
-        ctx["graph"].add_node(WorkNode(id="node-x", scope=("platform/llm/config.yaml",)))
+        ctx["graph"].add_node(
+            WorkNode(id="node-x", scope=("platform/llm/config.yaml",))
+        )
     ctx["error"] = caught.value
 
 
