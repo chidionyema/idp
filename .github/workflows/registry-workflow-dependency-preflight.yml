@@ -1,0 +1,59 @@
+name: registry-workflow-dependency-preflight
+# Reusable read-only fast-fail gate for registry and workflow edits; no privileged tokens.
+on:
+  push:
+    branches: ['lane/**']
+    paths:
+      - '.github/workflows/**'
+      - 'bin/capability-index'
+      - 'catalog/estate-capability-registry.json'
+      - 'catalog/estate-completeness-baseline.json'
+      - 'tests/test_registry_workflow_dependencies.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  prove-derived-dependencies:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with: { python-version: "3.12" }
+      - name: Produce deterministic census and machine-readable delta
+        run: |
+          set -euo pipefail
+          python3 bin/capability-index emit --write
+          python3 - <<'PY'
+          import hashlib, json, subprocess
+          from pathlib import Path
+          path = "catalog/estate-capability-registry.json"
+          previous = json.loads(subprocess.check_output(
+              ["git", "show", "HEAD:" + path], text=True))
+          actual_text = Path(path).read_text(encoding="utf-8")
+          generated = json.loads(actual_text)
+          before = {r["id"]: r for r in previous["records"]}
+          now = {r["id"]: r for r in generated["records"]}
+          changed = 0
+          for key, record in sorted(now.items()):
+              if before.get(key) != record:
+                  print("REGISTRY_PATCH_RECORD:" + json.dumps(
+                      record, ensure_ascii=True, separators=(",", ":")))
+                  changed += 1
+          for key in sorted(before.keys() - now.keys()):
+              print("REGISTRY_PATCH_REMOVED:" + key)
+          print("REGISTRY_PATCH_COUNT:{}:{}:{}".format(
+              len(now), changed, len(before.keys() - now.keys())))
+          print("REGISTRY_PATCH_SHA256:" + hashlib.sha256(
+              actual_text.encode("utf-8")).hexdigest())
+          PY
+      - name: Adversarial fixture suite, no simulated successes
+        run: python3 -W error -m unittest discover -s tests -p test_registry_workflow_dependencies.py -v
+      - name: Preserve original ratchet and require committed exact witness
+        run: |
+          python3 bin/registry-gate
+          if ! git diff --quiet -- catalog/estate-capability-registry.json; then
+            echo "REFUSED: deterministic witness not yet committed at exact HEAD"
+            exit 1
+          fi
