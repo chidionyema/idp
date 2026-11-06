@@ -525,3 +525,27 @@ def test_identify_is_bounded_without_shortening_copy_or_repair():
     assert "MODE: ${{ inputs.mode || 'identify' }}" in workflow
     assert '--wait-timeout "$probe_budget"' in workflow
     assert "if: github.ref == 'refs/heads/main'" in workflow
+
+
+def test_recovery_failure_reporter_has_independent_least_privilege_and_no_oci():
+    """A down agent never suppresses a P0, and a reporter cannot mint OCI auth."""
+    workflow = WORKFLOW.read_text()
+    reporter = workflow.split("\n  report-recovery-failure:", 1)
+    assert len(reporter) == 2
+    assert "needs: [run]" in reporter[1]
+    assert "always()" in reporter[1]
+    assert "needs.run.result != 'success'" in reporter[1]
+    assert "github.ref == 'refs/heads/main'" in reporter[1]
+    assert "      issues: write" in reporter[1]
+    assert "id-token: write" not in reporter[1]
+    assert "OCI session token from the GitHub OIDC token" not in reporter[1]
+    assert "GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}" in reporter[1]
+    assert "OCI_RECOVERY_RUN:" in reporter[1]
+    assert "gh api -X POST" in reporter[1]
+    assert "issues/7387/comments" in reporter[1]
+    assert 'comments=$(gh api' in reporter[1]
+    assert 'echo "BLIND recovery issue history unreadable"' in reporter[1]
+    assert "cancel-in-progress: false" in reporter[1]
+    # Never create duplicate incident authority or infer that red means recovered.
+    assert "issues -X POST" not in reporter[1]
+    assert "Do not mutate data volumes" in reporter[1]
