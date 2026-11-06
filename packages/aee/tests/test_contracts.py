@@ -24,7 +24,9 @@ from aee.contracts import (
 
 
 def lane(lane_id="lane-model"):
-    return IntelligenceLane(id=lane_id, provider="groq", model="llama-3.1-8b", cost_usd_per_1k=0.0002)
+    return IntelligenceLane(
+        id=lane_id, provider="groq", model="llama-3.1-8b", cost_usd_per_1k=0.0002
+    )
 
 
 def criterion():
@@ -50,12 +52,17 @@ def test_a_node_may_not_list_a_dependency_twice():
 
 def test_an_objective_needs_acceptance_criteria():
     with pytest.raises(ContractError):
-        Objective(id="obj-1", statement="do the thing", authority="founder", acceptance=())
+        Objective(
+            id="obj-1", statement="do the thing", authority="founder", acceptance=()
+        )
 
 
 def test_an_objective_may_be_read_for_its_criteria():
     objective = Objective(
-        id="obj-1", statement="do the thing", authority="founder", acceptance=(criterion(),)
+        id="obj-1",
+        statement="do the thing",
+        authority="founder",
+        acceptance=(criterion(),),
     )
     assert objective.criterion("acc-1").level is VerificationLevel.OPERATION
 
@@ -150,7 +157,9 @@ def test_a_contract_needs_at_least_one_attempt_and_one_level():
 
 def test_a_reservation_holds_something_and_names_its_budget():
     with pytest.raises(ContractError):
-        CapacityReservation(id="res-1", lane_id="lane-model", units=0, budget_ref="budget-1")
+        CapacityReservation(
+            id="res-1", lane_id="lane-model", units=0, budget_ref="budget-1"
+        )
     with pytest.raises(ContractError):
         CapacityReservation(id="res-2", lane_id="lane-model", units=1, budget_ref="")
     held = CapacityReservation(

@@ -79,7 +79,9 @@ def test_a_node_outside_the_objective_scope_is_refused():
 
 def test_a_node_inside_the_objective_scope_is_accepted():
     graph = make_graph()
-    node = graph.add_node(WorkNode(id="node-a", scope=("packages/aee/src/aee/graph.py",)))
+    node = graph.add_node(
+        WorkNode(id="node-a", scope=("packages/aee/src/aee/graph.py",))
+    )
     assert node.id == "node-a"
 
 
@@ -170,7 +172,9 @@ def test_a_node_with_passing_evidence_and_accepted_parents_is_accepted():
     graph.record_verification(passing(node_id="node-a", receipt_id="ver-a"))
     graph.record_verification(passing(node_id="node-b", receipt_id="ver-b"))
     graph.complete("node-a", verification_ids=["ver-a"])
-    assert graph.complete("node-b", verification_ids=["ver-b"]).state is NodeState.ACCEPTED
+    assert (
+        graph.complete("node-b", verification_ids=["ver-b"]).state is NodeState.ACCEPTED
+    )
 
 
 def test_a_contract_can_demand_the_integration_level_too():
@@ -181,7 +185,10 @@ def test_a_contract_can_demand_the_integration_level_too():
             id="c-a",
             node_id="node-a",
             lane=lane(),
-            verification_levels=(VerificationLevel.OPERATION, VerificationLevel.INTEGRATION),
+            verification_levels=(
+                VerificationLevel.OPERATION,
+                VerificationLevel.INTEGRATION,
+            ),
         )
     )
     graph.record_verification(passing(node_id="node-a", receipt_id="ver-a"))
@@ -194,7 +201,10 @@ def test_a_contract_can_demand_the_integration_level_too():
             level=VerificationLevel.INTEGRATION,
         )
     )
-    assert graph.complete("node-a", verification_ids=["ver-a", "ver-a2"]).state is NodeState.ACCEPTED
+    assert (
+        graph.complete("node-a", verification_ids=["ver-a", "ver-a2"]).state
+        is NodeState.ACCEPTED
+    )
 
 
 # ---- ownership ---------------------------------------------------------
@@ -221,7 +231,9 @@ def test_cancelling_a_node_releases_its_reservation_and_blocks_its_dependents():
     graph = make_graph()
     graph.add_node(WorkNode(id="node-a"))
     graph.add_node(WorkNode(id="node-b", depends_on=("node-a",)))
-    graph.attach_contract(ExecutionContract(id="c-a", node_id="node-a", lane=lane(), budget_usd=1.0))
+    graph.attach_contract(
+        ExecutionContract(id="c-a", node_id="node-a", lane=lane(), budget_usd=1.0)
+    )
     graph.reserve("node-a", lane=lane(), usd=0.5, budget_ref="budget-1")
     graph.cancel("node-a", reason="the plan changed")
 
@@ -257,7 +269,9 @@ def test_replacing_a_node_invalidates_its_evidence_but_keeps_the_receipt():
     graph.add_node(WorkNode(id="node-a"))
     graph.record_verification(passing(node_id="node-a", receipt_id="ver-a"))
     graph.mark_running("node-a", attempt_id="attempt-node-a")
-    graph.replace("node-a", contract=ExecutionContract(id="c-a2", node_id="node-a", lane=lane()))
+    graph.replace(
+        "node-a", contract=ExecutionContract(id="c-a2", node_id="node-a", lane=lane())
+    )
 
     assert graph.node("node-a").verification_ids == ()
     assert graph.node("node-a").state is NodeState.PENDING
@@ -331,7 +345,10 @@ def test_a_revision_records_the_state_of_every_node():
     graph = make_graph()
     graph.add_node(WorkNode(id="node-a"))
     graph.add_node(WorkNode(id="node-b"))
-    assert graph.revisions[-1].node_states == (("node-a", "pending"), ("node-b", "pending"))
+    assert graph.revisions[-1].node_states == (
+        ("node-a", "pending"),
+        ("node-b", "pending"),
+    )
 
 
 # ---- the plan's own mutations -----------------------------------------
