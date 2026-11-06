@@ -17,6 +17,15 @@ ALLOWED_REPOS = frozenset(("chidionyema/idp", "chidionyema/argon",
 FIELDS = frozenset(("schema_version", "event_id", "source", "source_sha256",
                     "document_id", "target_repo", "intent", "issued_at", "signature"))
 
+def reject_duplicate_keys(pairs):
+    """RFC-8259 duplicate JSON members must not be ambiguously interpreted."""
+    obj = {}
+    for name, value in pairs:
+        if name in obj:
+            raise ValueError("duplicate JSON field")
+        obj[name] = value
+    return obj
+
 def signing_bytes(obj):
     """Canonical cross-language signed material (fixed order, UTF-8, no JSON ambiguity)."""
     return ("\n".join((str(obj["schema_version"]), obj["event_id"], obj["source"],
@@ -27,7 +36,7 @@ def signing_bytes(obj):
 def validate(raw, key=None, now=None):
     if len(raw) > MAX_BYTES:
         raise ValueError("envelope too large")
-    obj = json.loads(raw)
+    obj = json.loads(raw, object_pairs_hook=reject_duplicate_keys)
     if not isinstance(obj, dict) or set(obj) != FIELDS:
         raise ValueError("unexpected envelope fields")
     if type(obj["schema_version"]) is not int or obj["schema_version"] != 1 or obj["source"] != "gemini-web-drive":
@@ -57,7 +66,8 @@ def validate(raw, key=None, now=None):
     canonical = json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return {"status": "QUARANTINED_AUTHENTICATED_REVIEW_ONLY", "event_id": obj["event_id"],
             "envelope_sha256": hashlib.sha256(canonical.encode()).hexdigest(),
-            "source_sha256": obj["source_sha256"], "target_repo": obj["target_repo"],
+            "source_sha256": obj["source_sha256"], "document_id": obj["document_id"],
+            "target_repo": obj["target_repo"],
             "note": "Authenticated relay sender only; Gemini authorship and source integrity require independent evidence. No approval or execution"}
 
 def main():

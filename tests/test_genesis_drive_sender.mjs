@@ -19,7 +19,7 @@ function signedBytes(algorithm, text, key) {
 
 function harness({token = 'opaque-github-token', signer = secret,
                   dispatchCode = 204, ackConclusion = null,
-                  ackStatus = 'completed'} = {}) {
+                  ackStatus = 'completed', receiptMatches = true, artifactPresent = true} = {}) {
   const settings = new Map([
     ['GENESIS_DRIVE_FOLDER_ID', 'private-folder'],
     ['GENESIS_GITHUB_TOKEN', token],
@@ -36,6 +36,20 @@ function harness({token = 'opaque-github-token', signer = secret,
   };
   const env = {
     Utilities: {
+      unzip: () => {
+        const dispatch = requests.find(r => r.url.includes('/dispatches'));
+        const e = JSON.parse(dispatch.options.payload).client_payload;
+        return [{
+          getName: () => 'receipt.json',
+          getDataAsString: () => JSON.stringify({
+            status: 'QUARANTINED_AUTHENTICATED_REVIEW_ONLY',
+            event_id: e.event_id,
+            source_sha256: receiptMatches ? e.source_sha256 : 'b'.repeat(64),
+            document_id: e.document_id,
+            target_repo: 'chidionyema/idp',
+          }),
+        }];
+      },
       DigestAlgorithm: {SHA_256: 'sha256'},
       Charset: {UTF_8: 'UTF-8'},
       computeDigest: (_algo, text) => signedBytes(_algo, text),
@@ -59,22 +73,33 @@ function harness({token = 'opaque-github-token', signer = secret,
     UrlFetchApp: {
       fetch: (url, options) => {
         requests.push({url, options});
-        if (url.includes('/dispatches')) {
+        if (url.includes('/dispatches'))
           return {getResponseCode: () => dispatchCode};
+        if (url.includes('/runs?')) {
+          const dispatch = requests.find(r => r.url.includes('/dispatches'));
+          const eventId = dispatch ? JSON.parse(dispatch.options.payload).client_payload.event_id : 'none';
+          return {
+            getResponseCode: () => 200,
+            getContentText: () => JSON.stringify({
+              workflow_runs: ackConclusion === null ? [] : [{
+                display_title: 'Gemini Drive receipt ' + eventId,
+                event: 'repository_dispatch',
+                status: ackStatus,
+                conclusion: ackConclusion,
+                id: 12345,
+              }],
+            }),
+          };
         }
-        const dispatch = requests.find(r => r.url.includes('/dispatches'));
-        const eventId = dispatch ? JSON.parse(dispatch.options.payload).client_payload.event_id : 'none';
-        return {
-          getResponseCode: () => 200,
-          getContentText: () => JSON.stringify({
-            workflow_runs: ackConclusion === null ? [] : [{
-              display_title: 'Gemini Drive receipt ' + eventId,
-              status: ackStatus,
-              conclusion: ackConclusion,
-              id: 12345,
-            }],
-          }),
-        };
+        if (url.includes('/runs/12345/artifacts'))
+          return {getResponseCode: () => 200, getContentText: () => JSON.stringify({
+            artifacts: artifactPresent ? [{id: 678, name: 'gemini-drive-quarantine-receipt', expired: false}] : []
+          })};
+        if (url.includes('/artifacts/678/zip'))
+          return {getResponseCode: () => 302, getHeaders: () => ({Location: 'https://signed-archive.example/zip'})};
+        if (url === 'https://signed-archive.example/zip')
+          return {getResponseCode: () => 200, getBlob: () => ({})};
+        throw new Error('Unexpected mocked URL: ' + url);
       },
     },
     ScriptApp: {getProjectTriggers: () => [], newTrigger: () => ({
@@ -140,4 +165,26 @@ test('source document content is not present in dispatch metadata', () => {
   const req = h.requests.find(x => x.url.includes('/dispatches'));
   assert.ok(!req.options.payload.includes(contents));
   assert.ok(!req.options.payload.includes(secret));
+});
+
+test('Actions success without an exact validated receipt is never ACK', () => {
+  const h = harness({ackConclusion: 'success', receiptMatches: false});
+  h.context.relayGenesisDriveOnce();
+  assert.throws(() => h.context.relayGenesisDriveOnce(), /GITHUB_RECEIPT_CONTENT_MISMATCH/);
+  assert.ok(!Array.from(h.settings.values()).some(x => String(x).includes('ACKNOWLEDGED')));
+});
+
+test('Actions success without a receipt artifact is never ACK', () => {
+  const h = harness({ackConclusion: 'success', artifactPresent: false});
+  h.context.relayGenesisDriveOnce();
+  assert.throws(() => h.context.relayGenesisDriveOnce(), /GITHUB_RECEIPT_MISSING/);
+});
+
+test('GitHub token is never sent to the redirected artifact host', () => {
+  const h = harness({ackConclusion: 'success'});
+  h.context.relayGenesisDriveOnce();
+  h.context.relayGenesisDriveOnce();
+  const redirectRequest = h.requests.find(x => x.url === 'https://signed-archive.example/zip');
+  assert.ok(redirectRequest);
+  assert.equal(redirectRequest.options.headers, undefined);
 });

@@ -21,28 +21,64 @@ function relayMac_(value, key) {
   return relayHex_(Utilities.computeHmacSha256Signature(value, key,
                     Utilities.Charset.UTF_8));
 }
-function relayGitHubAck_(eventId, token) {
-  // One authoritative completion check; an HTTP 204 dispatch is never an ACK.
-  const url = 'https://api.github.com/repos/chidionyema/idp/actions/workflows/' +
-              'genesis-drive-intake.yml/runs?event=repository_dispatch&per_page=100';
-  const response = UrlFetchApp.fetch(url, {
-    method: 'get',
-    headers: {
-      Authorization: 'Bearer ' + token,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28'
-    },
-    muteHttpExceptions: true
-  });
-  if (response.getResponseCode() !== 200)
-    throw new Error('GITHUB_ACK_QUERY_HTTP_' + response.getResponseCode());
-  const runs = JSON.parse(response.getContentText()).workflow_runs || [];
-  const expected = 'Gemini Drive receipt ' + eventId;
-  for (const run of runs) {
-    if (run.display_title === expected)
-      return {status: run.status, conclusion: run.conclusion, runId: run.id};
+function relayGitHubAck_(eventId, token, expectedSourceSha, expectedDocumentId) {
+  // A matching Actions run title is NOT a receipt. Require the validated
+  // artifact produced by the trusted default-branch receiver itself.
+  const base = 'https://api.github.com/repos/chidionyema/idp';
+  const headers = {
+    Authorization: 'Bearer ' + token,
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28'
+  };
+  function getJson(url) {
+    const r = UrlFetchApp.fetch(url, {method: 'get', headers: headers, muteHttpExceptions: true});
+    if (r.getResponseCode() !== 200)
+      throw new Error('GITHUB_PROOF_QUERY_HTTP_' + r.getResponseCode());
+    return JSON.parse(r.getContentText());
   }
-  return null;
+  const runs = getJson(base + '/actions/workflows/genesis-drive-intake.yml/runs' +
+                       '?event=repository_dispatch&per_page=100').workflow_runs || [];
+  const matching = runs.find(function(run) {
+    return run.display_title === 'Gemini Drive receipt ' + eventId &&
+           run.event === 'repository_dispatch';
+  });
+  if (!matching) return null;
+  if (matching.status !== 'completed' || matching.conclusion !== 'success')
+    return {status: matching.status, conclusion: matching.conclusion, runId: matching.id};
+
+  const artifacts = getJson(base + '/actions/runs/' + matching.id +
+                            '/artifacts?per_page=100').artifacts || [];
+  const artifact = artifacts.find(function(x) {
+    return x.name === 'gemini-drive-quarantine-receipt' && !x.expired;
+  });
+  if (!artifact) throw new Error('GITHUB_RECEIPT_MISSING');
+
+  // GitHub redirects artifact archives to a time-limited download URL.
+  // Never forward the GitHub bearer token to that different host.
+  const download = UrlFetchApp.fetch(base + '/actions/artifacts/' + artifact.id + '/zip', {
+    method: 'get', headers: headers, followRedirects: false, muteHttpExceptions: true
+  });
+  let archive = download;
+  if (download.getResponseCode() === 302) {
+    const redirect = download.getHeaders()['Location'] || download.getHeaders()['location'];
+    if (!redirect || !/^https:\/\//.test(redirect))
+      throw new Error('GITHUB_RECEIPT_INVALID_REDIRECT');
+    archive = UrlFetchApp.fetch(redirect, {method: 'get', muteHttpExceptions: true});
+  }
+  if (archive.getResponseCode() !== 200)
+    throw new Error('GITHUB_RECEIPT_DOWNLOAD_HTTP_' + archive.getResponseCode());
+
+  const entries = Utilities.unzip(archive.getBlob());
+  const receiptFiles = entries.filter(function(x) { return x.getName() === 'receipt.json'; });
+  if (receiptFiles.length !== 1) throw new Error('GITHUB_RECEIPT_ARCHIVE_INVALID');
+  const receipt = JSON.parse(receiptFiles[0].getDataAsString('UTF-8'));
+  if (receipt.status !== 'QUARANTINED_AUTHENTICATED_REVIEW_ONLY' ||
+      receipt.event_id !== eventId ||
+      receipt.source_sha256 !== expectedSourceSha ||
+      receipt.document_id !== expectedDocumentId ||
+      receipt.target_repo !== 'chidionyema/idp')
+    throw new Error('GITHUB_RECEIPT_CONTENT_MISMATCH');
+  return {status: 'completed', conclusion: 'success', runId: matching.id};
 }
 
 function relayGenesisDriveOnce() {
@@ -75,7 +111,7 @@ function relayGenesisDriveOnce() {
       }
       if (state && state.sha === digest && state.state === 'ACKNOWLEDGED') continue;
       if (state && state.sha === digest && state.state === 'DISPATCHED_UNCONFIRMED') {
-        const ack = relayGitHubAck_(eventId, token);
+        const ack = relayGitHubAck_(eventId, token, digest, docId);
         if (ack && ack.status === 'completed' && ack.conclusion === 'success') {
           props.setProperty(stateKey, JSON.stringify({
             sha: digest, state: 'ACKNOWLEDGED', runId: ack.runId,

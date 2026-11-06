@@ -73,6 +73,18 @@ class IntakeTests(unittest.TestCase):
         b = mod.validate(json.dumps(obj, sort_keys=True).encode(), key=KEY, now=1_000_000)
         self.assertEqual(a["envelope_sha256"], b["envelope_sha256"])
 
+    def test_rejects_duplicate_json_members(self):
+        obj = valid()
+        raw = json.dumps(obj).replace('"schema_version": 1', '"schema_version": 1, "schema_version": 1', 1)
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            mod.validate(raw.encode(), key=KEY, now=1_000_000)
+
+    def test_receipt_binds_exact_drive_document(self):
+        obj = valid()
+        receipt = evaluate(obj)
+        self.assertEqual(receipt["document_id"], obj["document_id"])
+        self.assertEqual(receipt["source_sha256"], obj["source_sha256"])
+
     def test_rejects_array(self):
         with self.assertRaises(ValueError):
             mod.validate(b"[]", key=KEY, now=1_000_000)

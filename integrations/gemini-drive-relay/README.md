@@ -50,9 +50,11 @@ a dedicated low-privilege receiving repository or properly scoped GitHub App.
 Do not promote the script into production until that risk has been reviewed.
 
 The sender marks HTTP 204 as DISPATCHED_UNCONFIRMED, then checks GitHub's
-actual workflow run by event_id. Only a completed successful intake run changes
-that local record to ACKNOWLEDGED; a failed run is a hard stop and queued runs
-are retried after a bounded backoff. Its token therefore also needs Actions:read
+repository_dispatch workflow run by event_id. A successful run title **alone is
+not a receipt**: it must download the workflow artifact and compare the exact
+validated event_id, source_sha256 and document_id. Missing/mismatched artifacts
+fail closed; a failed run is a hard stop and queued runs are retried after a
+bounded backoff. Artifact-download redirects do not receive the GitHub token. Its token therefore also needs Actions:read
 permission. This is *transport* acknowledgment, not approval/merge/deploy.
 There is still **no independently tested live Drive-to-GitHub ACK or durable
 cross-system exactly-once guarantee**; Apps Script Properties and the 100-run
