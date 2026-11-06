@@ -28,7 +28,7 @@ from urllib.parse import quote
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from greenlane.brief import brief  # noqa: E402
+from greenlane.brief import brief, candidate_check_index  # noqa: E402
 from greenlane.engine import LANDED, Engine, State, latency  # noqa: E402
 from greenlane.github import STATE_REF, GitHubBackend  # noqa: E402
 
@@ -254,7 +254,8 @@ def status() -> int:
         "candidates_total": st.candidates,
         "batch": (st.batch.__dict__ if st.batch else None),
         "lanes": {
-            k: {"status": v.status, "reason": v.reason, "head": v.head[:12]}
+            k: {"status": v.status, "reason": v.reason, "head": v.head[:12],
+                "arrived": v.arrived or None, "attempts": v.attempts}
             for k, v in st.lanes.items()
         },
         # where push-to-land time goes (minutes), from the engine's own bounded records
@@ -305,6 +306,15 @@ def status() -> int:
         return newest.get("conclusion") or newest.get("status") or "absent"
 
     required = required_contexts()
+    # One read for the candidate's 8 required checks (not one network call
+    # per required check). A truncated response is UNKNOWN, never a false green.
+    if st.batch:
+        checks, why = gh_or_why(
+            f"commits/{st.batch.tip}/check-runs?per_page=100&filter=latest"
+        )
+        out["candidate_checks"] = candidate_check_index(checks, required, why)
+    else:
+        out["candidate_checks"] = {}
     out["main"] = {
         "sha": (gh("commits/main") or {}).get("sha", "")[:12],
         "required": {c: required_read(c) for c in required},
@@ -341,7 +351,13 @@ def status() -> int:
         "red_open_prs": 0 if not prs else None,
         "work_lost": len(lost),
     }
-    out["alarm"] = (not out["main"]["green"]) or bool(lost)
+    out["alarm"] = (
+        not out["main"]["green"] or not out["state"]["available"] or bool(lost)
+        or any(
+            str(v.get("result", "")).startswith("unreadable")
+            for v in out["candidate_checks"].values()
+        )
+    )
     out["now_min"] = time.time() / 60.0  # the engine's own clock (github.py now()), for ages
     out["brief"] = brief(out)  # the three answers the Fleet dot and the voice both read
     print(json.dumps(out, indent=1, sort_keys=True))

@@ -1,0 +1,50 @@
+name: greenlane-efficiency-preflight
+# Separate read-only gate: never updates main, votes, claims or rulesets.
+on:
+  push:
+    branches: ['lane/**', 'queue/**']
+    paths:
+      - greenlane/brief.py
+      - greenlane/event_filter.py
+      - bin/idp-greenlane
+      - bin/idp-greenlane-check-trigger
+      - .github/workflows/greenlane.yml
+      - .github/workflows/greenlane-efficiency-preflight.yml
+      - tests/test_greenlane_event_filter.py
+      - tests/test_greenlane_founder_assurance.py
+  pull_request:
+    paths:
+      - greenlane/brief.py
+      - greenlane/event_filter.py
+      - bin/idp-greenlane
+      - bin/idp-greenlane-check-trigger
+      - .github/workflows/greenlane.yml
+      - .github/workflows/greenlane-efficiency-preflight.yml
+      - tests/test_greenlane_event_filter.py
+      - tests/test_greenlane_founder_assurance.py
+permissions:
+  contents: read
+jobs:
+  event-economy-and-founder-assurance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # Detect undocumented new Python before Greenlane spends an offline-gate batch.
+      # This is the real fail-closed policy checker, not a duplicate allowlist.
+      - name: Verify intentional Python exception at lane admission
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          python3 bin/language-gate origin/main HEAD
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Compile production event filter, founder brief and status CLI
+        run: python -W error -m py_compile greenlane/event_filter.py greenlane/brief.py bin/idp-greenlane bin/idp-greenlane-check-trigger tests/test_greenlane_event_filter.py tests/test_greenlane_founder_assurance.py
+      - name: Prove no required verdict lost; no false founder green
+        run: |
+          python -W error -m unittest discover -s tests -p test_greenlane_event_filter.py -v
+          python -W error -m unittest discover -s tests -p test_greenlane_founder_assurance.py -v
