@@ -63,6 +63,14 @@ live() {
 }
 
 prefix() {
+  local explicit="${GITHUB_SUB_PREFIX:-}"
+  if [ -n "$explicit" ]; then
+    case "$explicit" in
+      repo:*: ) printf '%s' "$explicit" ;;
+      *) say FAIL "GITHUB_SUB_PREFIX must end with ':'"; return 1 ;;
+    esac
+    return 0
+  fi
   local repo=${GITHUB_REPOSITORY:-chidionyema/idp}
   # GitHub's immutable subject carries numeric ids (measured run 32883584446, ADR 0010)
   gh api "repos/$repo" -q '"repo:\(.owner.login)@\(.owner.id)/\(.name)@\(.id):"'
