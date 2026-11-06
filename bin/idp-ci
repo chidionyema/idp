@@ -628,7 +628,7 @@ if [ "$FAST" != 1 ] && command -v kubeconform >/dev/null 2>&1; then
     fi
     fail=1
   fi
-  [ "$fail" -eq 0 ] && say "ok    kubeconform clusters/" || say "FAIL  kubeconform  clusters/"
+  [ "$_kubeconform_exit" -eq 0 ] && say "ok    kubeconform clusters/" || say "FAIL  kubeconform  clusters/"
 fi
 
 # 1g. crew#1194: flux build dry-run compiles the entire Kustomize tree exactly as the
