@@ -108,3 +108,78 @@ def test_tick_reconciles_verified_rows_and_exposes_pending_closure(incident, mon
     assert result["closure_pending"] == 0
     assert result["verified"] == 1
     assert loop.get_incident(conn, ident)["state"] == "closed"
+
+
+def test_queue_witness_requires_durable_worker_claim(incident, tmp_path):
+    import sqlite3
+
+    conn, policy, ident = incident
+    db = tmp_path / "worker.db"
+    with sqlite3.connect(db) as queue:
+        queue.execute(
+            "CREATE TABLE tasks (id INTEGER PRIMARY KEY, status TEXT, agent_id TEXT)"
+        )
+        queue.execute("INSERT INTO tasks VALUES (42, 'pending', NULL)")
+    policy["dispatch"]["queue_db"] = str(db)
+    assert loop.worker_queue_witness(policy, "")[0] == "UNPROVEN"
+    assert loop.worker_queue_witness(policy, "42")[0] == "QUEUED"
+    with sqlite3.connect(db) as queue:
+        queue.execute("UPDATE tasks SET status='running', agent_id=NULL WHERE id=42")
+    assert loop.worker_queue_witness(policy, "42")[0] == "UNOWNED"
+    with sqlite3.connect(db) as queue:
+        queue.execute("UPDATE tasks SET agent_id='worker-1' WHERE id=42")
+    state, witness = loop.worker_queue_witness(policy, "42")
+    assert state == "OWNED" and "worker-1" in witness
+    with sqlite3.connect(db) as queue:
+        queue.execute("UPDATE tasks SET status='completed' WHERE id=42")
+    assert loop.worker_queue_witness(policy, "42")[0] == "FINISHED_UNVERIFIED"
+    assert loop.worker_queue_witness(policy, "43")[0] == "MISSING"
+    db.unlink()
+    assert loop.worker_queue_witness(policy, "42")[0] == "BLIND"
+
+
+def test_overdue_p0_worker_is_escalated_once_but_never_auto_closed(incident, monkeypatch):
+    from datetime import datetime, timezone
+
+    conn, policy, ident = incident
+    loop.set_field(
+        conn, ident, dispatch_leg="worker", dispatch_ref="42",
+        dispatched_at="2026-11-06T12:00:00Z",
+    )
+    monkeypatch.setattr(loop, "wall_now", lambda: datetime(2026, 11, 6, 13, 0, tzinfo=timezone.utc))
+    monkeypatch.setattr(loop, "worker_queue_witness", lambda *a: ("QUEUED", "pending, no worker"))
+    posts = []
+
+    def gh(argv, timeout=45):
+        posts.append(tuple(argv))
+        return 0, "", ""
+
+    monkeypatch.setattr(loop, "run_gh", gh)
+    overdue, evidence = loop.audit_p0_worker_liveness(
+        conn, policy, loop.get_incident(conn, ident)
+    )
+    assert overdue and "QUEUED" in evidence
+    assert len(posts) == 1 and posts[0][:2] == ("issue", "comment")
+    assert loop.get_incident(conn, ident)["state"] == "open"
+    again, _ = loop.audit_p0_worker_liveness(
+        conn, policy, loop.get_incident(conn, ident)
+    )
+    assert again and len(posts) == 1, "one escalation per state, not every five minutes"
+
+
+def test_queue_escalation_never_fabricates_confirmation_on_git_hub_error(incident, monkeypatch):
+    from datetime import datetime, timezone
+
+    conn, policy, ident = incident
+    loop.set_field(
+        conn, ident, dispatch_leg="worker", dispatch_ref="42",
+        dispatched_at="2026-11-06T12:00:00Z",
+    )
+    monkeypatch.setattr(loop, "wall_now", lambda: datetime(2026, 11, 6, 13, 0, tzinfo=timezone.utc))
+    monkeypatch.setattr(loop, "worker_queue_witness", lambda *a: ("BLIND", "db unavailable"))
+    monkeypatch.setattr(loop, "run_gh", lambda *a, **kw: (124, "", "timeout"))
+    overdue, evidence = loop.audit_p0_worker_liveness(conn, policy, loop.get_incident(conn, ident))
+    assert overdue and "BLIND" in evidence
+    events = [e["event"] for e in __import__("json").loads(loop.get_incident(conn, ident)["history"])]
+    assert "p0-worker-overdue:BLIND" not in events
+    assert loop.get_incident(conn, ident)["state"] == "open"

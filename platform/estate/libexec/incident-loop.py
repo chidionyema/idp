@@ -799,6 +799,93 @@ def push_worker_task(policy: dict, goal: str) -> tuple[str, str]:
     return "worker", ""
 
 
+
+def worker_queue_witness(policy: dict, dispatch_ref: str) -> tuple[str, str]:
+    """Read the existing queue's durable task record; queued is not running.
+
+    Never create a second queue, resubmit a task, or infer an agent from a
+    successful enqueue. An unreadable or untrusted record is BLIND, not PASS.
+    """
+    ref = str(dispatch_ref or "")
+    if not ref.isdecimal() or int(ref) <= 0:
+        return "UNPROVEN", "no durable numeric queue task id"
+    queue_path = Path(
+        os.path.expanduser(str(policy.get("dispatch", {}).get("queue_db", "")))
+    )
+    if not queue_path.is_file():
+        return "BLIND", "queue database is unavailable"
+    try:
+        with sqlite3.connect(
+            queue_path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2
+        ) as db:
+            task = db.execute(
+                "SELECT status, agent_id FROM tasks WHERE id = ?", (int(ref),)
+            ).fetchone()
+    except (sqlite3.Error, OSError, ValueError) as exc:
+        return "BLIND", f"queue readback failed: {type(exc).__name__}"
+    if task is None:
+        return "MISSING", f"task {ref} is absent from the queue"
+    status, agent_id = str(task[0] or "").lower(), str(task[1] or "").strip()
+    if status == "running":
+        if agent_id:
+            return "OWNED", f"task {ref} claimed by agent {agent_id}"
+        return "UNOWNED", f"task {ref} says running without an agent_id"
+    if status == "pending":
+        return "QUEUED", f"task {ref} is pending, no worker claim"
+    if status in ("completed", "done", "success"):
+        return "FINISHED_UNVERIFIED", f"task {ref} finished; source recovery still open"
+    if status in ("failed", "error", "cancelled"):
+        return "FAILED", f"task {ref} has terminal status {status}"
+    return "BLIND", f"task {ref} has unrecognised status {status!r}"
+
+
+def audit_p0_worker_liveness(
+    conn: sqlite3.Connection, policy: dict, row: sqlite3.Row
+) -> tuple[bool, str]:
+    """Escalate a genuinely overdue P0 once per observed queue state.
+
+    A waiting worker cannot satisfy the incident SLA. Ticket comments are
+    advisory evidence, not resolution or proof of executing a worker.
+    """
+    if (
+        row["label"] != "P0"
+        or row["state"] != "open"
+        or row["dispatch_leg"] != "worker"
+    ):
+        return False, ""
+    state, witness = worker_queue_witness(policy, str(row["dispatch_ref"]))
+    if not row["dispatched_at"]:
+        elapsed = float("inf")
+    else:
+        try:
+            elapsed = max(0.0, (wall_now() - parse_iso(row["dispatched_at"])).total_seconds())
+        except (TypeError, ValueError):
+            elapsed = float("inf")
+    sla = max(60, int(row["sla_minutes"] or 15) * 60)
+    if elapsed < sla or state == "OWNED":
+        return False, f"{state}: {witness}"
+    marker = f"p0-worker-overdue:{state}"
+    history = json.loads(row["history"] or "[]")
+    if any(event.get("event") == marker for event in history):
+        return True, f"{state}: {witness}"
+    if row["ticket"]:
+        body = (
+            f"P0 dispatch-liveness breach for incident {row['id']}. "
+            f"Existing queue witness: {state}: {witness}. "
+            f"The task is not independently proven to have a running owner "
+            f"within its {row['sla_minutes']} minute SLA. "
+            "This is an escalation, not an automatic recovery, retry or closure. "
+            "Inspect the existing queue consumer and session bus; preserve the "
+            "original incident and source-verification requirements."
+        )
+        code, _, _ = run_gh(
+            ["issue", "comment", str(row["ticket"]), "--body", body], timeout=30
+        )
+        if code == 0:
+            set_field(conn, row["id"], event=marker)
+    return True, f"{state}: {witness}"
+
+
 def dispatch_incident(
     conn: sqlite3.Connection, policy: dict, row: sqlite3.Row
 ) -> tuple[str, str]:
@@ -1244,6 +1331,18 @@ def tick(policy: dict, repo: str, dry_run: bool = False) -> dict:
         except LoopError as exc:
             summary["notes"].append(f"recovery blocked for {row['id']}: {exc}")
             break
+    # A pending queue entry is not a running autonomous repair. Reconcile P0
+    # liveness even when an earlier tick wrote dispatch_leg=worker.
+    summary["p0_worker_overdue"] = 0
+    for row in list_incidents(conn, state="open", limit=1000):
+        if dry_run or row["label"] != "P0" or row["dispatch_leg"] != "worker":
+            continue
+        overdue, evidence = audit_p0_worker_liveness(conn, policy, row)
+        if overdue:
+            summary["p0_worker_overdue"] += 1
+            summary["notes"].append(
+                f"incident {row['id']} worker not proven within SLA: {evidence}"
+            )
     for state in ("open", "dispatched", "verified"):
         checked = 0
         budget = int(policy["sense"].get("verify_per_tick", 5))
