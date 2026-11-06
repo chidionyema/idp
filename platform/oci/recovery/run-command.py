@@ -246,6 +246,36 @@ def resolve_instance(compartment: str, display_name: str) -> str:
     return out
 
 
+def require_run_command_plugin(compartment: str, instance_id: str) -> None:
+    """Read OCI control-plane plugin health before minting remote command work.
+
+    This is distinct from CLI authentication and instance RUNNING state.
+    A RUNNING VM with a STOPPED/INVALID cloud-agent plugin cannot receive
+    Run Command; repeating an hour-long poll cannot fix it.
+    """
+    try:
+        status = _oci(
+            [
+                "instance-agent", "plugin", "list",
+                "--compartment-id", compartment,
+                "--instanceagent-id", instance_id,
+                "--name", "Compute Instance Run Command",
+                "--query", "data[0].status", "--raw-output",
+            ],
+            what="checking Compute Instance Run Command plugin",
+        ).strip().upper()
+    except TransportError as exc:
+        raise TransportError(
+            f"BLIND run-command plugin state unreadable for instance {instance_id}: {exc}"
+        ) from exc
+    say(f"state   run-command  instance={instance_id} plugin_status={status or 'MISSING'}")
+    if status != "RUNNING":
+        raise TransportError(
+            f"BLIND Run Command plugin on instance {instance_id} is "
+            f"{status or 'MISSING'}, not RUNNING; no script submitted"
+        )
+
+
 def create_command(
     compartment: str,
     instance_id: str,
@@ -380,6 +410,7 @@ def transport(args: argparse.Namespace) -> int:
         args.compartment, args.display_name
     )
     say(f"ok      run-command  instance={instance_id}")
+    require_run_command_plugin(args.compartment, instance_id)
 
     for index, chunk in enumerate(chunks):
         text = chunk_command(chunk, first=index == 0)
