@@ -1,0 +1,36 @@
+name: estate-db-backup-preflight
+
+# Run source-selection regressions before Greenlane promotion. No OCI secrets/publish.
+on:
+  push:
+    branches:
+      - 'lane/**'
+      - 'queue/**'
+    paths:
+      - 'platform/estate-db/backup/**'
+      - '.github/workflows/estate-db-backup.yml'
+      - '.github/workflows/estate-db-backup-preflight.yml'
+  pull_request:
+    paths:
+      - 'platform/estate-db/backup/**'
+      - '.github/workflows/estate-db-backup.yml'
+      - '.github/workflows/estate-db-backup-preflight.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  backup-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Bash syntax
+        run: bash -n platform/estate-db/backup/estate-db-backup.sh
+      - name: Python compile
+        run: python -W error -m py_compile platform/estate-db/backup/verify_source_schema.py platform/estate-db/backup/test_verify_source_schema.py
+      - name: Reject empty and wrong-database dumps; accept scoped schema
+        run: python -W error -m unittest discover -v -s platform/estate-db/backup -p 'test_verify_source_schema.py'
