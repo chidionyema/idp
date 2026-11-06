@@ -1,0 +1,49 @@
+name: genesis-drive-intake
+run-name: Gemini Drive receipt ${{ github.event.client_payload.event_id || 'unit-tests' }}
+on:
+  repository_dispatch:
+    types: [genesis_drive_review_v1]
+  pull_request:
+    paths:
+      - bin/genesis_drive_intake.py
+      - tests/test_genesis_drive_intake.py
+      - tests/test_genesis_drive_sender.mjs
+      - integrations/gemini-drive-relay/Code.gs
+      - .github/workflows/genesis-drive-intake.yml
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - name: Run fail-closed intake tests
+        run: python -m unittest discover -s tests -p test_genesis_drive_intake.py -v
+      - name: Emit exact Ruff formatter diff for CI diagnosis
+        run: |
+          python -m pip install -q ruff==0.15.18
+          ruff format --diff bin/genesis_drive_intake.py tests/test_genesis_drive_intake.py
+      - name: Falsify Google Apps Script sender boundary
+        run: node --test tests/test_genesis_drive_sender.mjs
+      - name: Quarantine dispatch envelope
+        if: github.event_name == 'repository_dispatch'
+        env:
+          EVENT_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+          GENESIS_DRIVE_RELAY_HMAC_KEY: ${{ secrets.GENESIS_DRIVE_RELAY_HMAC_KEY }}
+        run: |
+          printf '%s' "$EVENT_PAYLOAD" | python bin/genesis_drive_intake.py > receipt.json
+          cat receipt.json
+      - name: Upload transport receipt
+        if: github.event_name == 'repository_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gemini-drive-quarantine-receipt
+          path: receipt.json
+          retention-days: 30
+          if-no-files-found: error
