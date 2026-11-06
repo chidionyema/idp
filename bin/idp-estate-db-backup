@@ -80,8 +80,16 @@ try:
         raise ValueError("missing timezone")
 except (ValueError, TypeError, StopIteration) as exc:
     sys.exit(f"BLIND   estate-db-backup  cannot measure original data age: {exc}")
-if captured > served + timedelta(seconds=60):
-    sys.exit("BLIND   estate-db-backup  source data claims to be from the future")
+try:
+    copy_started = datetime.strptime(receipt["stamp"], "%Y%m%dT%H%M%SZ").replace(
+        tzinfo=timezone.utc
+    )
+except (ValueError, TypeError, KeyError):
+    sys.exit("BLIND   estate-db-backup  copy receipt has no valid UTC stamp")
+if copy_started > served + timedelta(seconds=60):
+    sys.exit("BLIND   estate-db-backup  copy claims to have occurred after storage responded")
+if captured > copy_started + timedelta(seconds=60):
+    sys.exit("BLIND   estate-db-backup  original data is newer than the copy itself")
 data_age = (served - captured).total_seconds() / 3600.0
 problems = []
 if age > max_hours:
