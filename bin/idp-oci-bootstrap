@@ -278,10 +278,14 @@ REPO="${GITHUB_REPO:-$(git -C "$IDP" remote get-url origin | sed -E 's#\.git$##;
 SUB_PREFIX=$(gh api "repos/$REPO" -q '"repo:\(.owner.login)@\(.owner.id)/\(.name)@\(.id):"' 2>/dev/null) || { echo "FAIL    gh cannot read repos/$REPO for the OIDC subject ids"; exit 1; }
 TR_ID=$(scim_find IdentityPropagationTrusts 'name eq "github-actions-estate"')
 if [ -z "$TR_ID" ]; then
-  jq -n --arg c "$CLIENT_ID" --arg u "$CI_UID" --arg r "sub eq ${SUB_PREFIX}*" '{"schemas":["urn:ietf:params:scim:schemas:oracle:idcs:IdentityPropagationTrust"],"name":"github-actions-estate","type":"JWT","issuer":"https://token.actions.githubusercontent.com","active":true,"subjectType":"User","subjectClaimName":"sub","publicKeyEndpoint":"https://token.actions.githubusercontent.com/.well-known/jwks","oauthClients":[$c],"clientClaimName":"aud","clientClaimValues":["https://cloud.oracle.com"],"allowImpersonation":true,"impersonationServiceUsers":[{"rule":$r,"value":$u}]}' > "$T2/t.json"
+  # 2026-11-06: the rules are the declared contexts (platform/github/oidc-trust.json via
+  # bin/idp-oidc-trust), never `sub eq <prefix>*` -- a wildcard admitted every lane branch's YAML.
+  RULES=$("$IDP/bin/idp-oidc-trust" rules "$SUB_PREFIX")
+  jq -n --arg c "$CLIENT_ID" --arg u "$CI_UID" --argjson r "$RULES" '{"schemas":["urn:ietf:params:scim:schemas:oracle:idcs:IdentityPropagationTrust"],"name":"github-actions-estate","type":"JWT","issuer":"https://token.actions.githubusercontent.com","active":true,"subjectType":"User","subjectClaimName":"sub","publicKeyEndpoint":"https://token.actions.githubusercontent.com/.well-known/jwks","oauthClients":[$c],"clientClaimName":"aud","clientClaimValues":["https://cloud.oracle.com"],"allowImpersonation":true,"impersonationServiceUsers":[$r[] | {"rule":.,"value":$u}]}' > "$T2/t.json"
   scim POST IdentityPropagationTrusts --request-body "file://$T2/t.json" | jq -e .data.id >/dev/null; echo "wif     trust github-actions-estate created for $REPO"
 else
-  jq -n --arg u "$CI_UID" --arg r "sub eq ${SUB_PREFIX}*" '{"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":[{"op":"replace","path":"impersonationServiceUsers","value":[{"rule":$r,"value":$u}]}]}' > "$T2/tp.json"
+  RULES=$("$IDP/bin/idp-oidc-trust" rules "$SUB_PREFIX")
+  jq -n --arg u "$CI_UID" --argjson r "$RULES" '{"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":[{"op":"replace","path":"impersonationServiceUsers","value":[$r[] | {"rule":.,"value":$u}]}]}' > "$T2/tp.json"
   # 2026-08-26: the PATCH answered an error body and `jq -e .data.id` printed a jq error and nothing
   # else; the run read as clean. Show the domain's answer (the detail, never a token) instead.
   pr=$(scim PATCH "IdentityPropagationTrusts/$TR_ID" --request-body "file://$T2/tp.json" 2>&1)
