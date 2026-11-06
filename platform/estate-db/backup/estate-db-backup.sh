@@ -60,6 +60,9 @@ RECEIPT_PREFIX="${ESTATE_DB_RECEIPT_PREFIX:-estate-db}"
 RECEIPT_NAME="${RECEIPT_PREFIX}/latest.json"
 SOURCE_PREFIXES="${ESTATE_DB_SOURCE_PREFIXES:-estate-db db}"
 ESTATE_DB_NAME="${ESTATE_DB_NAME:-estate}"
+# estate was verified empty on 2026-10-26: application data is in Backstage and peers.
+# A known-empty bootstrap database cannot validate a restored cluster.
+PROOF_DB="backstage"
 ESTATE_DB_LABEL="${ESTATE_DB_LABEL:-estate-db}"
 # How much of a candidate dump is read to recognise its header. The header is at the very top.
 VERIFY_HEADER_BYTES="${ESTATE_DB_VERIFY_HEADER_BYTES:-65536}"
@@ -176,10 +179,11 @@ verify_source() {
 	# The 2026-11-06 live recovery drill hit this trap. Reject such candidates here,
 	# before restoring them, so fetch_source can try the next surviving archive.
 	local table_probe
-	table_probe="$(python3 "$(dirname "$SCRIPT_PATH")/verify_source_schema.py" "$file" "$ESTATE_DB_NAME" 2>&1)" || {
+	table_probe="$(python3 "$(dirname "$SCRIPT_PATH")/verify_source_schema.py" "$file" "$PROOF_DB" 2>&1)" || {
 		printf 'estate schema preflight rejected archive: %s\n' "$table_probe"
 		return 1
 	}
+	say "ok      estate-db-backup  source witness $PROOF_DB: $table_probe"
 	return 0
 }
 
@@ -203,13 +207,13 @@ restore() {
 		fail "the restore hit $(printf '%s\n' "$bad" | wc -l | tr -d ' ') error(s); the copy is not published"
 	fi
 	local tables
-	tables=$(psql -d estate -Atc "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname not in ('pg_catalog', 'information_schema', 'pg_toast') and c.relkind in ('r', 'p')" || true)
+	tables=$(psql -d "$PROOF_DB" -Atc "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname not in ('pg_catalog', 'information_schema', 'pg_toast') and c.relkind in ('r', 'p')" || true)
 	case "${tables:-}" in
-	'' | *[!0-9]*) fail "the estate database did not answer after the restore; the copy is not published" ;;
+	'' | *[!0-9]*) fail "the application proof database did not answer after the restore; the copy is not published" ;;
 	esac
-	[ "$tables" -gt 0 ] || fail "the estate database restored with no tables; the copy is not published"
+	[ "$tables" -gt 0 ] || fail "the application proof database restored with no tables; the copy is not published"
 	rm -f "$err" "$out"
-	say "restored $file ($benign tolerated error(s), $tables table(s) in estate)"
+	say "restored $file ($benign tolerated error(s), $tables table(s) in $PROOF_DB)"
 }
 
 # A fresh copy of the running PostgreSQL. pg_dumpall writes its own completion marker last, and
