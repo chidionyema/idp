@@ -300,6 +300,7 @@ def test_ci_sensor_finds_main_p0_beyond_first_hundred_runs(monkeypatch, policy):
     assert len(target) == 1
     assert target[0]["title"].startswith("recovery-data")
     assert target[0]["severity"] == "critical"
+    assert seen[0]["detail"]["run_id"] == 1, "P0 must outrank 100 newer lane errors"
     assert any("status=failure" in url and "page=2" in url for url in requested)
     assert len({incident["id"] for incident in seen}) == len(seen)
 
