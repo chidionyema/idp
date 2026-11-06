@@ -83,15 +83,37 @@ def test_a_retry_is_a_pending_lane_not_a_priority_group():
     assert st.queued == [], "a retry must not claim a place ahead of the pending list"
 
 
-def test_a_retried_lane_shares_the_batch_behind_it_instead_of_running_alone():
+def test_a_retried_lane_waits_behind_the_lanes_that_arrived_and_never_poisons_them():
+    """Superseded 2026-11-06 (raises the bar on the 2026-10-11 rule, AGENTS.md section 6).
+
+    2026-10-11 removed the retry's PRIORITY and kept its `seq`, so the retry shared the next
+    batch with never-tested lanes. A lane that is red on its own then turned that shared
+    candidate red, and every batch-mate paid a bisection to rediscover it. Now a retry is
+    neither a priority nor a passenger: it goes to the back of the line (a new `seq`), the
+    never-tested lanes are batched together in front of it, and at its turn it is tested alone.
+    """
     be, st, eng = _red_under_test()
     eng._judge_batch()
+    assert st.lanes["lane/a"].seq > max(st.lanes["lane/b"].seq, st.lanes["lane/c"].seq)
     eng._start_batch()
-    assert [n for n, _, _ in st.batch.members] == ["lane/a", "lane/b"], (
-        "the retry takes its seq place and shares the suite; a one-lane batch for a lane that "
-        "already failed is what starved the never-tested lanes behind it"
+    assert [n for n, _, _ in st.batch.members] == ["lane/b", "lane/c"], (
+        "the lanes that never failed go first, together; the suspect is not stacked into them"
     )
-    assert be.candidates, "the shared batch must still be pushed"
+    assert be.candidates, "the batch must still be pushed"
+    # b and c land; then the suspect's turn comes, and it is tested on its own
+    for n in ("lane/b", "lane/c"):
+        st.lanes[n].status = E.LANDED
+    st.batch = None
+    eng._start_batch()
+    assert [n for n, _, _ in st.batch.members] == ["lane/a"]
+
+
+def test_the_retry_is_said_on_the_lane_head_not_left_reading_testing():
+    be, st, eng = _red_under_test()
+    eng._judge_batch()
+    lane, head, status, reason = be.reported[-1]
+    assert (lane, head, status) == ("lane/a", "ha", E.TESTING)
+    assert reason.startswith("retry 1/2 queued after red in b1: bdd failure"), reason
 
 
 def test_the_retry_budget_is_unchanged():

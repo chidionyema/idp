@@ -62,6 +62,8 @@ def _bodies(comments: list) -> list:
 
 
 GREEN_CONCLUSIONS = {"success", "skipped", "neutral"}
+_URL = re.compile(r"\s?https?://\S+")
+_JOB_URL = re.compile(r"https://github\.com/[^\s/]+/[^\s/]+/actions/runs/\d+/job/\d+")
 RED_CONCLUSIONS = {
     "failure",
     "cancelled",
@@ -921,15 +923,120 @@ class GitHubBackend:
             elif r.get("conclusion") in GREEN_CONCLUSIONS:
                 continue
             else:
-                red.append(f"{ctx} {r.get('conclusion')} {r.get('html_url', '')}")
+                line = f"{ctx} {r.get('conclusion')} {r.get('html_url', '')}"
+                cause = (
+                    self._cause(r.get("html_url") or "", ctx)
+                    if not getattr(self, "_verdict_only", False)
+                    else ""
+                )
+                red.append(f"{line} -- {cause}" if cause else line)
         if red:
             return "red", "; ".join(red)
         if pending:
             return "pending", "waiting on " + ", ".join(pending)
         return "green", ""
 
+    # -- why a required check is red, in the lane's own status ------------------------------
+    #
+    # 2026-11-06. A red verdict read `ci-success failure <url>` and nothing else: ci-success is
+    # the aggregator ("every required job in this workflow is success or skipped"), so the one
+    # word it carries names no cause. Every agent whose lane went red had to open the run, find
+    # the failed sibling job, download its log and search it -- and the engine's own history
+    # (`reason`) could not say which gate costs the estate its cycles. Measured on run
+    # 42263152128: the cause was one line, `registry-gate completeness: dependencies: measured
+    # coverage fell from 721/1048 to 725/1054 (coverage may only improve)`, in a 135 KB log that
+    # took 0.48 s to read. So the verdict carries it: the failed jobs of the same run, the step
+    # each failed in, and the most specific failure line of its log. Asked only on a red
+    # verdict (never on pending/green, never by main_red), at most CAUSE_JOBS jobs, cached per
+    # run; any read that fails leaves the old reason exactly as it was -- a cause is evidence
+    # added, never a verdict changed.
+    CAUSE_JOBS = 3
+    CAUSE_LOG_BYTES = 2_000_000
+    _RUN_JOB = re.compile(r"/actions/runs/(\d+)/job/(\d+)")
+    _TS = re.compile(r"^\d{4}-\d\d-\d\dT[\d:.]+Z\s?")
+    _FAIL = re.compile(
+        r"(\bFAIL(?:ED)?\b|\bERROR\b|##\[error\]|\bError:|AssertionError|\berror(?:\[\w+\])?:)"
+    )
+    _GENERIC = re.compile(
+        r"Process completed with exit code|^\s*FAIL\s+\S+\s*$|^\s*##\[error\]\s*$"
+    )
+
+    def _cause(self, url: str, ctx: str) -> str:
+        """`job > step: line; ...` for the failed jobs of the run behind `url`, or ""."""
+        m = self._RUN_JOB.search(url)
+        if not m:
+            return ""
+        run = m.group(1)
+        cache = self.__dict__.setdefault("_causes", {})
+        if run in cache:
+            return cache[run]
+        cause = ""
+        try:
+            page = self.gh(f"actions/runs/{run}/jobs?filter=latest&per_page=100") or {}
+            failed = [
+                j
+                for j in page.get("jobs", [])
+                if j.get("conclusion") in ("failure", "timed_out", "cancelled")
+            ]
+            # the aggregator says only that something else failed; its siblings are the cause
+            leaves = [j for j in failed if j.get("name") != ctx] or failed
+            parts = []
+            for j in leaves[: self.CAUSE_JOBS]:
+                step = next(
+                    (
+                        s.get("name", "")
+                        for s in j.get("steps") or []
+                        if s.get("conclusion") == "failure"
+                    ),
+                    "",
+                )
+                line = self._fail_line(str(j.get("id", "")))
+                parts.append(
+                    j.get("name", "?")
+                    + (f" > {step}" if step else "")
+                    + (f": {line}" if line else "")
+                )
+            if len(leaves) > self.CAUSE_JOBS:
+                parts.append(f"+{len(leaves) - self.CAUSE_JOBS} more")
+            cause = "; ".join(parts)
+        except (RuntimeError, ValueError, OSError):
+            cause = ""
+        cache[run] = cause
+        return cause
+
+    def _fail_line(self, job_id: str) -> str:
+        """The most specific failure line in a job's log ("" when none can be read)."""
+        if not job_id.isdigit():
+            return ""
+        try:
+            log = _run(
+                "gh", "api", f"repos/{self.repo}/actions/jobs/{job_id}/logs", check=True
+            )
+        except RuntimeError:
+            return ""
+        best = ""
+        seen = 0
+        for raw in log[: self.CAUSE_LOG_BYTES].splitlines():
+            text = self._TS.sub("", raw).strip()
+            if not self._FAIL.search(text) or self._GENERIC.search(text):
+                continue
+            # the longest of the first failure lines: a summary (`FAIL  idp-ci`) names the
+            # tool, the line under it names the cause
+            if len(text) > len(best):
+                best = text
+            seen += 1
+            if seen >= 12:
+                break
+        best = "".join(ch for ch in best if ch.isprintable())
+        return best[:200]
+
     def main_red(self, sha: str) -> bool:
-        return self.checks(sha)[0] == "red"
+        # the verdict only: main's cause is not a lane's to read, so no job or log is fetched
+        self._verdict_only = True
+        try:
+            return self.checks(sha)[0] == "red"
+        finally:
+            self._verdict_only = False
 
     CLAIM_GATE = Path(__file__).resolve().parent.parent / "bin" / "claim-gate"
 
@@ -1429,12 +1536,21 @@ class GitHubBackend:
             RED: "failure",
             CONFLICT: "failure",
         }.get(status, "pending")
+        # The status is the agent's one read of its lane (AGENTS.md section 2), and GitHub keeps
+        # 140 characters of it. A reason that starts with a 70-character job URL spent half of
+        # them on a link nobody can click from a description, and the cause behind it was cut
+        # off. The first job URL in the reason becomes the status's link (one click to the
+        # failing log); the description keeps the words.
+        url = _JOB_URL.search(reason or "")
+        text = _URL.sub("", reason or "").replace("  ", " ").strip() if url else reason
         fields = {
             "state": state,
             "context": "greenlane",
-            "description": (reason or status)[:140],
+            "description": (text or status)[:140],
         }
-        if self.run_url:
+        if url:
+            fields["target_url"] = url.group(0)
+        elif self.run_url:
             fields["target_url"] = self.run_url
         try:
             self._status(head, fields)
