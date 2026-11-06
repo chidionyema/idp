@@ -71,9 +71,15 @@ jobs:
           [ "$MODE" = repair ] && script=platform/oci/recovery/host-repair.sh
           # The host script is larger than OCI's 4096-character Run Command limit, so the
           # transport is chunked by the repository-owned helper, not inlined here (#7525).
+          # Identify is a read-only probe. An OCI agent that does not answer
+          # within 3 minutes per command must be BLIND, not a one-hour hang.
+          # Copy/repair retain their original explicit long budgets.
+          probe_budget=3600
+          if [ "$MODE" = identify ]; then probe_budget=180; fi
           python3 platform/oci/recovery/run-command.py \
             --script "$script" \
             --mode "$MODE" \
             --compartment "$COMP" \
             --display-name estate-recovery \
-            --run-id "$GITHUB_RUN_ID"
+            --run-id "$GITHUB_RUN_ID" \
+            --wait-timeout "$probe_budget"
