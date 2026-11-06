@@ -1037,10 +1037,50 @@ def ticket_resolved(row: sqlite3.Row) -> tuple[bool, str]:
     return False, ""
 
 
-def verify_incident(conn: sqlite3.Connection, policy: dict, row: sqlite3.Row) -> bool:
-    """One incident: is it over? If it is, record the verdict, the MTTR and the lesson."""
-    if row["state"] in ("verified", "closed"):
+def finalize_verified_incident(
+    conn: sqlite3.Connection, policy: dict, row: sqlite3.Row
+) -> bool:
+    """CLOSED requires independently observed GitHub issue state.
+
+    On timeout, permission refusal or unreadable remote GET, preserve VERIFIED
+    so a later tick can reconcile without recomputing MTTR or lessons.
+    """
+    if row["state"] != "verified":
         return False
+    if not row["ticket"]:
+        try:
+            raise_ticket(conn, policy, row)
+        except LoopError:
+            return False
+        row = get_incident(conn, row["id"])
+    confirmed, witness = ticket_resolved(row)
+    if not confirmed:
+        code, _, _ = run_gh(
+            [
+                "issue", "close", str(row["ticket"]), "--comment",
+                f"The incident loop verified the source: {row['lesson']}. "
+                f"MTTR {row['mttr_seconds']}s.",
+            ],
+            timeout=30,
+        )
+        if code != 0:
+            return False
+        confirmed, witness = ticket_resolved(row)
+        if not confirmed:
+            return False
+    set_field(
+        conn, row["id"], state="closed", closed_at=now_iso(),
+        event=f"remote closure attested: {witness}",
+    )
+    return True
+
+
+def verify_incident(conn: sqlite3.Connection, policy: dict, row: sqlite3.Row) -> bool:
+    """Source recovery first; remote closure must be independently attested."""
+    if row["state"] == "closed":
+        return False
+    if row["state"] == "verified":
+        return finalize_verified_incident(conn, policy, row)
     if row["source"] == "ci":
         resolved, evidence = ci_resolved(row["repo"], row)
     elif row["source"] == "door":
@@ -1056,30 +1096,11 @@ def verify_incident(conn: sqlite3.Connection, policy: dict, row: sqlite3.Row) ->
         f"Raised {row['first_seen']}, verified {verified_at}, MTTR {mttr}s."
     )
     set_field(
-        conn,
-        row["id"],
-        state="verified",
-        verified_at=verified_at,
-        mttr_seconds=mttr,
-        lesson=lesson,
-        event=f"verified: {evidence}",
+        conn, row["id"], state="verified", verified_at=verified_at,
+        mttr_seconds=mttr, lesson=lesson, event=f"verified: {evidence}",
     )
     write_lesson(policy, lesson)
-    if row["ticket"]:
-        run_gh(
-            [
-                "issue",
-                "close",
-                str(row["ticket"]),
-                "--comment",
-                f"The incident loop verified this one: {evidence}. MTTR {mttr}s. "
-                f"Lesson: {lesson}",
-            ],
-            timeout=30,
-        )
-    set_field(conn, row["id"], state="closed", closed_at=now_iso(), event="closed")
-    return True
-
+    return finalize_verified_incident(conn, policy, get_incident(conn, row["id"]))
 
 # --------------------------------------------------------------------------------------
 # the lesson: the estate's own knowledge graph
@@ -1116,7 +1137,7 @@ def write_lesson(policy: dict, lesson: str) -> str:
 def tick(policy: dict, repo: str, dry_run: bool = False) -> dict:
     """One pass of the whole loop."""
     conn = open_ledger()
-    summary = {"sensed": 0, "opened": 0, "dispatched": 0, "verified": 0, "notes": []}
+    summary = {"sensed": 0, "opened": 0, "dispatched": 0, "verified": 0, "closure_pending": 0, "notes": []}
     sensed: list[dict] = []
     # The clock is judged first: a tick that runs while the wall clock lies writes wrong
     # timestamps into every incident it senses. The verdict is stored, so the next tick can
@@ -1223,7 +1244,7 @@ def tick(policy: dict, repo: str, dry_run: bool = False) -> dict:
         except LoopError as exc:
             summary["notes"].append(f"recovery blocked for {row['id']}: {exc}")
             break
-    for state in ("open", "dispatched"):
+    for state in ("open", "dispatched", "verified"):
         checked = 0
         budget = int(policy["sense"].get("verify_per_tick", 5))
         for row in list_incidents(conn, state=state, limit=200):
@@ -1233,6 +1254,12 @@ def tick(policy: dict, repo: str, dry_run: bool = False) -> dict:
             if verify_incident(conn, policy, row):
                 summary["verified"] += 1
                 summary["notes"].append(f"{row['id']} verified")
+            elif state == "verified":
+                summary["closure_pending"] += 1
+                summary["notes"].append(
+                    f"incident {row['id']} recovered but remote closure is not attested; "
+                    f"ticket #{row['ticket'] or '-'} remains pending"
+                )
     conn.close()
     return summary
 
