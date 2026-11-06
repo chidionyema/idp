@@ -506,6 +506,18 @@ def sense_ci(repo: str, policy: dict) -> list[dict]:
                 },
             }
         )
+    # An incident loop admits only max_new_per_tick. The response must therefore
+    # be priority-ordered BEFORE admission, or hundreds of newer lane failures
+    # starve an older main-branch P0 indefinitely.
+    incidents.sort(
+        key=lambda incident: (
+            -score_incident(
+                policy, incident["severity"], incident["blast"]
+            )[0],
+            incident["detail"].get("created_at", ""),
+            incident["id"],
+        )
+    )
     return incidents
 
 
