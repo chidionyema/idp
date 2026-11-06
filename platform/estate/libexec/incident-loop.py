@@ -413,25 +413,60 @@ def sense_ci(repo: str, policy: dict) -> list[dict]:
     failures = set(policy["sense"]["failure_conclusions"])
     ignored = set(policy["sense"].get("ignore_workflows", []))
     cutoff = _since(window)
-    code, out, err = run_gh(
-        [
-            "api",
-            # The window is asked of the API, not of the reader: `per_page=50` with no
-            # `created` filter means "the newest 50 runs ever", which in a busy hour is
-            # minutes of history and misses the failure that started the incident. The API
-            # answers newest first, so the newest failures in the window are always seen.
-            f"repos/{repo}/actions/runs?created=>{cutoff}&per_page=100",
-            "--jq",
-            "[.workflow_runs[] | {id, name, head_branch, conclusion, event, created_at, "
-            "html_url, run_attempt}]",
-        ]
-    )
-    if code != 0:
-        raise LoopError(f"gh api actions/runs failed: {err.strip()[:200]}")
-    try:
-        runs = json.loads(out or "[]")
-    except json.JSONDecodeError as exc:
-        raise LoopError(f"gh api actions/runs returned unreadable JSON: {exc}") from exc
+    # Failure-volume shaping is mandatory. Across the estate, the most recent
+    # 100 *all* runs can cover only minutes of Greenlane churn while older P0
+    # service failures remain inside the requested 24h window. Query ONLY the
+    # failure conclusions, with pagination, never a single newest-page sample.
+    # GitHub Actions supports each of these status filters (verified live).
+    by_id: dict[int, dict] = {}
+    max_pages = 20
+    for conclusion in sorted(failures):
+        for page in range(1, max_pages + 1):
+            code, out, err = run_gh(
+                [
+                    "api",
+                    f"repos/{repo}/actions/runs?status={conclusion}"
+                    f"&created=>{cutoff}&per_page=100&page={page}",
+                    "--jq",
+                    "[.workflow_runs[] | {id, name, head_branch, conclusion, "
+                    "event, created_at, html_url, run_attempt}]",
+                ]
+            )
+            if code != 0:
+                raise LoopError(
+                    f"gh api failed to enumerate {conclusion} page {page}: "
+                    f"{err.strip()[:200]}"
+                )
+            try:
+                batch = json.loads(out or "[]")
+            except json.JSONDecodeError as exc:
+                raise LoopError(
+                    f"gh api {conclusion} page {page} returned invalid JSON: {exc}"
+                ) from exc
+            if not isinstance(batch, list):
+                raise LoopError(f"gh api {conclusion} page {page} returned non-list")
+            for run in batch:
+                if not isinstance(run, dict) or not isinstance(run.get("id"), int):
+                    raise LoopError(
+                        f"gh api {conclusion} page {page} returned invalid run"
+                    )
+                original = by_id.get(run["id"])
+                if (
+                    original is None
+                    or int(run.get("run_attempt") or 1)
+                    > int(original.get("run_attempt") or 1)
+                ):
+                    by_id[run["id"]] = run
+            if len(batch) < 100:
+                break
+        else:
+            # Saturation must be visible as BLIND, not a fabricated complete
+            # incident census. The next attempt is free to discover more.
+            raise LoopError(
+                f"CI failure sensor BLIND: over {max_pages * 100} "
+                f"{conclusion} runs since {cutoff}; pagination budget exhausted"
+            )
+    runs = sorted(by_id.values(), key=lambda x: x["id"], reverse=True)
     incidents = []
     for run in runs:
         if run.get("conclusion") not in failures:
