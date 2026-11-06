@@ -50,6 +50,8 @@ except ImportError:
 # this script asks it one question per command and never interprets a plan itself.
 _PLAN_CONTRACT = None
 _PLAN_CONTRACT_TRIED = False
+_SANDBOX_BRIDGE = None
+_SANDBOX_BRIDGE_TRIED = False
 
 # The session this invocation belongs to, when the caller states it explicitly (`--session <id>`).
 # Explicit beats the environment beats the runtime's pointer file: the caller that knows which
@@ -445,6 +447,45 @@ def _plan_contract():
             spec.loader.exec_module(module)
             _PLAN_CONTRACT = module
             return _PLAN_CONTRACT
+        except Exception:  # noqa: BLE001 - try the next candidate
+            continue
+    return None
+
+
+def _sandbox_bridge():
+    """Find the host-door bridge in repository, staged and runtime layouts."""
+    global _SANDBOX_BRIDGE, _SANDBOX_BRIDGE_TRIED
+    if _SANDBOX_BRIDGE_TRIED:
+        return _SANDBOX_BRIDGE
+    _SANDBOX_BRIDGE_TRIED = True
+    here = Path(__file__).resolve()
+    candidates = [
+        here.with_name("sandbox_bridge.py"),
+        here.parents[1] / "memory" / "sandbox_bridge.py",
+        here.parents[1] / "memory" / "platform" / "estate" / "memory" / "sandbox_bridge.py",
+        HOME / ".estate" / "memory" / "sandbox_bridge.py",
+        HOME
+        / ".estate"
+        / "runtime"
+        / "idp"
+        / "platform"
+        / "estate"
+        / "memory"
+        / "sandbox_bridge.py",
+    ]
+    for path in candidates:
+        try:
+            if not path.exists():
+                continue
+            import importlib.util
+
+            spec = importlib.util.spec_from_file_location("estate_sandbox_bridge", str(path))
+            if spec is None or spec.loader is None:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            _SANDBOX_BRIDGE = module
+            return _SANDBOX_BRIDGE
         except Exception:  # noqa: BLE001 - try the next candidate
             continue
     return None
@@ -949,6 +990,30 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
 # ---- Main ---------------------------------------------------------------
 if __name__ == "__main__":
     import shutil
+
+    sandboxed = (
+        os.environ.get("CODEX_SANDBOX") == "seatbelt"
+        and os.environ.get("ESTATE_HOST_EXECUTE") != "1"
+    )
+    bridge = _sandbox_bridge()
+    if sandboxed and bridge is None:
+        log(
+            "ERROR: this shell is sandboxed and the host-door bridge is not installed; "
+            "refusing before SQLite turns a filesystem boundary into a misleading "
+            "'readonly database' failure"
+        )
+        sys.exit(2)
+    if sandboxed:
+        forwarded = bridge.forward(
+            Path(__file__).resolve(),
+            sys.argv[1:],
+            cwd=Path.cwd(),
+            env=os.environ,
+        )
+        if forwarded is None:
+            log("ERROR: the sandbox is active but the host executor door is unavailable")
+            sys.exit(2)
+        sys.exit(forwarded)
 
     if len(sys.argv) >= 3 and sys.argv[1] == "--from":
         FROM_DIR = Path(sys.argv[2]).expanduser().resolve()
