@@ -5,17 +5,22 @@ unless the surface's latest verdict on main is PASS and younger than its TTL.
   bin/idp-verdict-fresh <surface> [--changed FILE ...]
 
 With --changed, the gate first asks whether any changed file is on the surface's paths; when none
-is, it says so and passes: the gate binds Langfuse changes, not the whole repository. The verdict
-comes from the newest completed run of `verdict-<surface>.yml` on main (the prover is the only
-identity holding the signing key, and only that workflow can create the `verify/<surface>`
-check-run), so this runner never needs the key: GitHub's attestation of the run is the trust
-anchor, and probes.verdict.grade still refuses an unsigned, expired or digest-less record.
+is, it says so and passes: the gate binds Langfuse changes, not the whole repository. The verdict is fetched from the latest completed `verdict-<surface>.yml` run on main.
+A plain Actions artifact or a non-empty HMAC tag does NOT prove who signed its bytes.
+The gate requires GitHub Sigstore artifact attestation verification of the EXACT
+verdict.json bytes and the expected trusted main-branch signer workflow identity
+and source SHA before inspecting the record. Missing/invalid attestation means FAIL.
+The signer workflow is protected and the IDP repository is public, so GitHub
+artifact attestations can provide an external OIDC trust root at no new subscription
+cost. This does not claim an independent machine, SLSA Level 3 or immunity from
+a compromised protected workflow.
 Output is one line, `ok|FAIL|BLIND  verdict-fresh  <why>`, exit 0 / 1 / 2.
 """
 
 import fnmatch
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -47,7 +52,7 @@ def latest_run(repo, surface):
         "api",
         f"repos/{repo}/actions/workflows/verdict-{surface}.yml/runs?branch=main&status=completed&per_page=1",
         "--jq",
-        ".workflow_runs[0] | {id, conclusion, head_sha, updated_at}",
+        ".workflow_runs[0] | {id, status, conclusion, head_sha, head_branch, path, event, updated_at}",
     ).strip()
     return json.loads(out) if out and out != "null" else None
 
@@ -81,6 +86,21 @@ def main(argv):
             f"BLIND   verdict-fresh  no completed verdict-{surface}.yml run on main; gh workflow run verdict-{surface}.yml"
         )
         return 2
+    # The signed certificate validates the workflow identity and SHA. Guard against
+    # a tampered run selection before downloading a single byte of the verdict.
+    expected_path = f".github/workflows/verdict-{surface}.yml"
+    if (
+        not isinstance(run, dict)
+        or not isinstance(run.get("id"), int)
+        or run.get("status") != "completed"
+        or run.get("conclusion") not in ("success", "failure")
+        or run.get("head_branch") != "main"
+        or run.get("path") != expected_path
+        or run.get("event") not in ("push", "schedule", "workflow_dispatch")
+        or not re.fullmatch(r"[a-f0-9]{40}", str(run.get("head_sha", "")))
+    ):
+        print(f"FAIL    verdict-fresh  unexpected or untrusted workflow run metadata for {surface}")
+        return 1
     with tempfile.TemporaryDirectory() as d:
         try:
             gh(
@@ -105,9 +125,46 @@ def main(argv):
                 f"FAIL    verdict-fresh  run {run['id']} ({run['conclusion']}) artifact has no verdict.json"
             )
             return 1
-        with open(path) as f:
-            v = json.load(f)
-    state, why = V.grade(v, None)
+        try:
+            with open(path) as f:
+                v = json.load(f)
+        except (OSError, ValueError) as e:
+            print(f"FAIL    verdict-fresh  unreadable verdict: {e}")
+            return 1
+        if (
+            not isinstance(v, dict)
+            or v.get("commit_sha") != run["head_sha"]
+            or str(v.get("prover_run_id")) != str(run["id"])
+            or v.get("prover_id") != f"github-actions/verdict-{surface}"
+            or v.get("evidence_ref") != f"https://github.com/{repo}/actions/runs/{run['id']}"
+        ):
+            print(
+                f"FAIL    verdict-fresh  verdict subject/issuer/run does not match GitHub run {run['id']}"
+            )
+            return 1
+        # Run the GitHub CLI's external Sigstore verifier: it checks artifact bytes
+        # AND the signed certificate's signer workflow, source ref and source SHA.
+        # A GitHub API response or an unverified 'sig' string does not suffice.
+        try:
+            report = gh(
+                "attestation", "verify", path,
+                "--repo", repo,
+                "--signer-workflow", f"{repo}/{expected_path}",
+                "--source-ref", "refs/heads/main",
+                "--source-digest", run["head_sha"],
+                "--format", "json",
+            )
+            verified = json.loads(report)
+            if not isinstance(verified, list) or not verified:
+                raise ValueError("no externally verified attestation")
+        except (RuntimeError, ValueError) as e:
+            print(
+                f"FAIL    verdict-fresh  no valid GitHub OIDC/Sigstore attestation for run {run['id']}: {e}"
+            )
+            return 1
+    # Authenticated bytes may now be inspected, but this function cannot itself
+    # authenticate bytes; use it only after the verifier above returned evidence.
+    state, why = V.inspect_claims_after_external_authentication(v)
     where = f"run {run['id']} on {v.get('artifact_digest', '')[:24] or 'no digest'}"
     if state == "PASS":
         print(
