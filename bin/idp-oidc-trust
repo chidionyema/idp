@@ -87,7 +87,34 @@ apply() {
   rm -f "$tmp"
   [ "$rc" -eq 0 ] || { say FAIL "PATCH refused: $(printf %s "$out" | jq -r '.data.detail // .' 2>/dev/null | head -c 300)"; return 1; }
   printf %s "$out" | jq -e '.data.id' >/dev/null 2>&1 || { say FAIL "PATCH answered no trust: $(printf %s "$out" | head -c 300)"; return 1; }
+  # The narrowed trust must still admit THIS job (reviewed main): a fresh OIDC token is exchanged now,
+  # while the session minted before the PATCH is still valid. If main is refused, the previous rules go
+  # straight back with that session -- a narrowing that locks the estate out is never left in place.
+  if [ -n "${OIDC_CLIENT_IDENTIFIER:-}" ] && [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+    local code="" i
+    for i in 1 2 3 4; do
+      code=$(exchange_code); [ "$code" = 200 ] && break; sleep 10
+    done
+    if [ "$code" != 200 ]; then
+      local back; back=$(jq -c '{schemas:["urn:ietf:params:scim:api:messages:2.0:PatchOp"],Operations:[{op:"replace",path:"impersonationServiceUsers",value:.impersonationServiceUsers}]}' <<<"$t")
+      tmp=$(mktemp); printf %s "$back" > "$tmp"
+      oci_scim PATCH "IdentityPropagationTrusts/$id" --request-body "file://$tmp" >/dev/null 2>&1 || true
+      rm -f "$tmp"
+      say FAIL "after the PATCH this main job's exchange answered http=$code; previous rules restored"
+      return 1
+    fi
+    say ok "after the PATCH this main job still exchanges (http=200)"
+  fi
   check
+}
+
+exchange_code() {
+  local jwt pub
+  jwt=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://cloud.oracle.com" | jq -r .value)
+  pub=$(openssl genrsa 2048 2>/dev/null | openssl rsa -pubout -outform DER 2>/dev/null | base64 -w0)
+  curl -sS -o /dev/null -w '%{http_code}' -u "$OIDC_CLIENT_IDENTIFIER" "${DOMAIN_BASE_URL%/}/oauth2/v1/token" \
+    --data-urlencode grant_type=urn:ietf:params:oauth:grant-type:token-exchange --data-urlencode requested_token_type=urn:oci:token-type:oci-upst \
+    --data-urlencode public_key="$pub" --data-urlencode subject_token="$jwt" --data-urlencode subject_token_type=jwt
 }
 
 cmd=${1:-check}; shift || true
