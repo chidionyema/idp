@@ -87,3 +87,38 @@ jobs:
             --display-name estate-recovery \
             --run-id "$GITHUB_RUN_ID" \
             --wait-timeout "$probe_budget"
+
+  report-recovery-failure:
+    # Independent from OCI credentials: a down host must still yield an issue receipt.
+    needs: [run]
+    if: ${{ always() && github.ref == 'refs/heads/main' && needs.run.result != 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    concurrency:
+      group: recovery-data-report-${{ github.run_id }}
+      cancel-in-progress: false
+    permissions:
+      issues: write
+    steps:
+      - name: Report the original P0 without creating another issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_RESULT: ${{ needs.run.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          marker="OCI_RECOVERY_RUN:${RUN_ID}"
+          # A failed read is BLIND. Never risk spamming a second issue or
+          # claiming that an unobserved comment was already posted.
+          comments=$(gh api "repos/${GH_REPO}/issues/7387/comments" --paginate --jq '.[].body') || {
+            echo "BLIND recovery issue history unreadable"
+            exit 2
+          }
+          if [[ "$comments" == *"$marker"* ]]; then
+            echo "ok recovery failure already attached: $marker"
+            exit 0
+          fi
+          body=$(printf 'P0 RECOVERY EXECUTION REFUSAL\n\n%s\nRun: %s\nConclusion: %s\n\nThis is NOT a successful AD-1 volume census or restore. Keep #7387 open, inspect the failed run and correct the recurring failure class under Greenlane. Do not mutate data volumes or bypass OCI capacity constraints.\n' "$marker" "$RUN_URL" "$RUN_RESULT")
+          gh api -X POST "repos/${GH_REPO}/issues/7387/comments" -f "body=$body" --jq '{id,html_url}'
