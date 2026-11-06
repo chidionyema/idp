@@ -30,6 +30,8 @@ import json
 import os
 import subprocess
 import sys
+
+import pytest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
@@ -461,3 +463,63 @@ def test_volume_census_rejects_unrecognised_mode_before_any_oci_access():
     )
     assert run.returncode == 64, (run.stdout, run.stderr)
     assert "invalid mode unexpected-mode" in run.stderr
+
+
+def test_oci_cli_call_is_hard_bounded_and_fails_blind(monkeypatch):
+    """A single OCI read cannot hold a GitHub runner for an hour."""
+    observed = []
+
+    def hang(argv, **kwargs):
+        observed.append((argv, kwargs.get("timeout")))
+        raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+
+    monkeypatch.setattr(helper, "_oci_binary", lambda: "/usr/bin/oci")
+    monkeypatch.setattr(helper.subprocess, "run", hang)
+    with pytest.raises(helper.TransportError, match="45-second per-call deadline"):
+        helper._oci(["instance-agent", "command-execution", "get"], what="polling")
+    assert observed[0][1] == 45
+
+
+def test_unclaimed_oci_command_times_out_with_command_id_and_last_state(monkeypatch):
+    """Pending is a state, not successful host execution."""
+    clock = [0.0]
+
+    monkeypatch.setattr(helper.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(helper.time, "sleep", lambda duration: clock.__setitem__(0, clock[0] + duration))
+    monkeypatch.setattr(helper, "_oci", lambda *args, **kwargs: "PENDING")
+    with pytest.raises(helper.TransportError) as error:
+        helper.wait_for_command("cmd-042", "recovery-1", poll_seconds=2, wait_timeout=5)
+    detail = str(error.value)
+    assert "cmd-042" in detail and "recovery-1" in detail
+    assert "last_state=PENDING" in detail
+    assert clock[0] == 5.0
+
+
+def test_unexpected_oci_state_is_blind_not_success(monkeypatch):
+    monkeypatch.setattr(helper, "_oci", lambda *args, **kwargs: "UNKNOWN")
+    with pytest.raises(helper.TransportError, match="unexpected lifecycle"):
+        helper.wait_for_command("cmd-043", "recovery-1", 2, 30)
+
+
+def test_failed_oci_poll_preserves_command_identity(monkeypatch):
+    def refused(*args, **kwargs):
+        raise helper.TransportError("Abort: instance agent unreachable")
+    monkeypatch.setattr(helper, "_oci", refused)
+    with pytest.raises(helper.TransportError) as error:
+        helper.wait_for_command("cmd-044", "recovery-1", 2, 30)
+    assert "cmd-044" in str(error.value)
+    assert "unreachable" in str(error.value)
+
+
+def test_known_terminal_oci_states_preserve_failure_semantics(monkeypatch):
+    for state in ("SUCCEEDED", "FAILED", "TIMED_OUT", "CANCELED"):
+        monkeypatch.setattr(helper, "_oci", lambda *args, state=state, **kwargs: state)
+        assert helper.wait_for_command("cmd-045", "recovery-1", 1, 3) == state
+
+
+def test_identify_is_bounded_without_shortening_copy_or_repair():
+    workflow = WORKFLOW.read_text()
+    assert "if [ \"$MODE\" = identify ]; then probe_budget=180; fi" in workflow
+    assert "probe_budget=3600" in workflow
+    assert '--wait-timeout "$probe_budget"' in workflow
+    assert "if: github.ref == 'refs/heads/main'" in workflow
