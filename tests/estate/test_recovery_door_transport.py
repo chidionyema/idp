@@ -76,6 +76,10 @@ if args[:3] == ["compute", "instance", "list"]:
     print("ocid1.instance.oc1.test.recovery")
     sys.exit(0)
 
+if args[:3] == ["instance-agent", "plugin", "list"]:
+    print(os.environ.get("FAKE_PLUGIN_STATUS", "RUNNING"))
+    sys.exit(0)
+
 if args[:3] == ["instance-agent", "command", "create"]:
     content = json.loads(opt("--content"))
     text = content["source"]["text"]
@@ -549,3 +553,47 @@ def test_recovery_failure_reporter_has_independent_least_privilege_and_no_oci():
     # Never create duplicate incident authority or infer that red means recovered.
     assert "issues -X POST" not in reporter[1]
     assert "Do not mutate data volumes" in reporter[1]
+
+
+def test_disabled_oci_agent_plugin_refuses_transport_before_any_command(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A healthy VM does not imply that its Run Command agent is running."""
+    script = tmp_path / "identify.sh"
+    script.write_text("#!/bin/sh\necho should-not-run\n")
+    monkeypatch.setenv("FAKE_PLUGIN_STATUS", "STOPPED")
+    code, output, sandbox = _run_helper(tmp_path, script, mode="identify")
+    assert code == 70, output
+    assert "plugin_status=STOPPED" in output
+    assert "no script submitted" in output
+    assert _bodies(sandbox) == [], "No payload chunk may reach an inactive agent"
+
+
+def test_running_agent_plugin_is_independently_confirmed_before_submission(
+    tmp_path: Path, monkeypatch
+) -> None:
+    script = tmp_path / "identify.sh"
+    script.write_text("#!/bin/sh\necho confirmed-plugin\n")
+    monkeypatch.setenv("FAKE_PLUGIN_STATUS", "RUNNING")
+    code, output, sandbox = _run_helper(tmp_path, script, mode="identify")
+    assert code == 0, output
+    assert "plugin_status=RUNNING" in output
+    assert "confirmed-plugin" in output
+    assert _bodies(sandbox), "Expected the real command transport to execute"
+
+
+def test_oci_agent_plugin_query_is_specific_to_the_target_instance(monkeypatch):
+    recorded = []
+
+    def fake_oci(args, *, what):
+        recorded.append(args)
+        return "INVALID"
+
+    monkeypatch.setattr(helper, "_oci", fake_oci)
+    with pytest.raises(helper.TransportError, match="INVALID"):
+        helper.require_run_command_plugin("compartment-1", "instance-1")
+    argv = recorded[0]
+    assert argv[:3] == ["instance-agent", "plugin", "list"]
+    assert argv[argv.index("--instanceagent-id") + 1] == "instance-1"
+    assert argv[argv.index("--compartment-id") + 1] == "compartment-1"
+    assert argv[argv.index("--name") + 1] == "Compute Instance Run Command"
