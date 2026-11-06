@@ -6,7 +6,7 @@
     "intent": 118,
     "layer": 253,
     "service": 121,
-    "tool": 476,
+    "tool": 477,
     "workflow": 94
   },
   "records": [
@@ -32134,6 +32134,55 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/genesis_drive_receipt_issue.py",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "Publish only independently validated quarantine receipts to the issue of record.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:workflow/gha-genesis-drive-intake"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/genesis_drive_receipt_issue.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/gvisor-cell-fence-gate",
       "schema_version": 1,
       "kind": "tool",
@@ -57061,6 +57110,7 @@
         "latency_class": "batch",
         "uses": [
           "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/download-artifact@v4",
           "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
           "actions/upload-artifact@v4"
         ]
@@ -57088,6 +57138,10 @@
       "depends_on": [
         {
           "id": "cap:tool/genesis_drive_intake.py",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/genesis_drive_receipt_issue.py",
           "edge": "invokes"
         }
       ],
