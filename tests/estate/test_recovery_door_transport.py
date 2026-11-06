@@ -76,6 +76,17 @@ if args[:3] == ["compute", "instance", "list"]:
     print("ocid1.instance.oc1.test.recovery")
     sys.exit(0)
 
+if args[:3] == ["instance-agent", "plugin", "list"]:
+    print(os.environ.get("FAKE_PLUGIN_STATUS", "RUNNING"))
+    sys.exit(0)
+
+if args[:3] == ["instance-agent", "command-execution", "list"]:
+    if opt("--lifecycle-state") == "ACCEPTED":
+        print(os.environ.get("FAKE_ACCEPTED_COMMANDS", "[]"))
+    else:
+        print(os.environ.get("FAKE_IN_PROGRESS_COMMANDS", "[]"))
+    sys.exit(0)
+
 if args[:3] == ["instance-agent", "command", "create"]:
     content = json.loads(opt("--content"))
     text = content["source"]["text"]
@@ -525,3 +536,129 @@ def test_identify_is_bounded_without_shortening_copy_or_repair():
     assert "MODE: ${{ inputs.mode || 'identify' }}" in workflow
     assert '--wait-timeout "$probe_budget"' in workflow
     assert "if: github.ref == 'refs/heads/main'" in workflow
+
+
+def test_recovery_failure_reporter_has_independent_least_privilege_and_no_oci():
+    """A down agent never suppresses a P0, and a reporter cannot mint OCI auth."""
+    workflow = WORKFLOW.read_text()
+    reporter = workflow.split("\n  report-recovery-failure:", 1)
+    assert len(reporter) == 2
+    assert "needs: [run]" in reporter[1]
+    assert "always()" in reporter[1]
+    assert "needs.run.result != 'success'" in reporter[1]
+    assert "github.ref == 'refs/heads/main'" in reporter[1]
+    assert "      issues: write" in reporter[1]
+    assert "id-token: write" not in reporter[1]
+    assert "OCI session token from the GitHub OIDC token" not in reporter[1]
+    assert "GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}" in reporter[1]
+    assert "OCI_RECOVERY_RUN:" in reporter[1]
+    assert "gh api -X POST" in reporter[1]
+    assert "issues/7387/comments" in reporter[1]
+    assert 'comments=$(gh api' in reporter[1]
+    assert 'echo "BLIND recovery issue history unreadable"' in reporter[1]
+    assert "cancel-in-progress: false" in reporter[1]
+    # Never create duplicate incident authority or infer that red means recovered.
+    assert "issues -X POST" not in reporter[1]
+    assert "Do not mutate data volumes" in reporter[1]
+
+
+def test_disabled_oci_agent_plugin_refuses_transport_before_any_command(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A healthy VM does not imply that its Run Command agent is running."""
+    script = tmp_path / "identify.sh"
+    script.write_text("#!/bin/sh\necho should-not-run\n")
+    monkeypatch.setenv("FAKE_PLUGIN_STATUS", "STOPPED")
+    code, output, sandbox = _run_helper(tmp_path, script, mode="identify")
+    assert code == 70, output
+    assert "plugin_status=STOPPED" in output
+    assert "no script submitted" in output
+    assert _bodies(sandbox) == [], "No payload chunk may reach an inactive agent"
+
+
+def test_running_agent_plugin_is_independently_confirmed_before_submission(
+    tmp_path: Path, monkeypatch
+) -> None:
+    script = tmp_path / "identify.sh"
+    script.write_text("#!/bin/sh\necho confirmed-plugin\n")
+    monkeypatch.setenv("FAKE_PLUGIN_STATUS", "RUNNING")
+    code, output, sandbox = _run_helper(tmp_path, script, mode="identify")
+    assert code == 0, output
+    assert "plugin_status=RUNNING" in output
+    assert "confirmed-plugin" in output
+    assert _bodies(sandbox), "Expected the real command transport to execute"
+
+
+def test_oci_agent_plugin_query_is_specific_to_the_target_instance(monkeypatch):
+    recorded = []
+
+    def fake_oci(args, *, what):
+        recorded.append(args)
+        return "INVALID"
+
+    monkeypatch.setattr(helper, "_oci", fake_oci)
+    with pytest.raises(helper.TransportError, match="INVALID"):
+        helper.require_run_command_plugin("compartment-1", "instance-1")
+    argv = recorded[0]
+    assert argv[:3] == ["instance-agent", "plugin", "list"]
+    assert argv[argv.index("--instanceagent-id") + 1] == "instance-1"
+    assert argv[argv.index("--compartment-id") + 1] == "compartment-1"
+    assert argv[argv.index("--name") + 1] == "Compute Instance Run Command"
+
+
+def test_outstanding_accepted_oci_command_blocks_new_dispatch(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Five in-flight slots cannot be consumed by repeated blind probes."""
+    script = tmp_path / "identify.sh"
+    script.write_text("#!/bin/sh\necho must-not-run\n")
+    monkeypatch.setenv("FAKE_PLUGIN_STATUS", "RUNNING")
+    monkeypatch.setenv("FAKE_ACCEPTED_COMMANDS", json.dumps(["cmd-unfinished-1"]))
+    code, output, sandbox = _run_helper(tmp_path, script, mode="identify")
+    assert code == 70, output
+    assert "pre-existing ACCEPTED command" in output
+    assert "cmd-unfinished-1" in output
+    assert "no new script submitted" in output
+    assert _bodies(sandbox) == []
+
+
+def test_outstanding_running_oci_command_also_blocks_dispatch(
+    tmp_path: Path, monkeypatch
+) -> None:
+    script = tmp_path / "identify.sh"
+    script.write_text("#!/bin/sh\necho must-not-run\n")
+    monkeypatch.setenv("FAKE_PLUGIN_STATUS", "RUNNING")
+    monkeypatch.setenv("FAKE_IN_PROGRESS_COMMANDS", json.dumps(["cmd-running-2"]))
+    code, output, sandbox = _run_helper(tmp_path, script, mode="identify")
+    assert code == 70, output
+    assert "pre-existing IN_PROGRESS command" in output
+    assert _bodies(sandbox) == []
+
+
+def test_unreadable_oci_command_queue_is_blind(monkeypatch):
+    def malformed(args, *, what):
+        return "{}"
+    monkeypatch.setattr(helper, "_oci", malformed)
+    with pytest.raises(helper.TransportError, match="invalid ACCEPTED OCI command list"):
+        helper.require_idle_command_queue("compartment", "instance")
+
+
+def test_idle_oci_queue_preflight_uses_exact_instance_and_read_only_list(monkeypatch):
+    calls = []
+
+    def empty(args, *, what):
+        calls.append(args)
+        return "[]"
+
+    monkeypatch.setattr(helper, "_oci", empty)
+    helper.require_idle_command_queue("compartment-7", "instance-7")
+    assert len(calls) == 2
+    assert [args[args.index("--lifecycle-state")+1] for args in calls] == [
+        "ACCEPTED", "IN_PROGRESS"
+    ]
+    for argv in calls:
+        assert argv[:3] == ["instance-agent", "command-execution", "list"]
+        assert argv[argv.index("--instance-id")+1] == "instance-7"
+        assert argv[argv.index("--compartment-id")+1] == "compartment-7"
+        assert "--all" in argv
+        assert "create" not in argv and "cancel" not in argv
