@@ -160,7 +160,7 @@ class DumpSchemaTests(unittest.TestCase):
 
     def test_tampered_copy_bytes_cannot_inherit_a_trusted_receipt(self):
         obj, path = self._copy_receipt()
-        self.archive.write_bytes(b"modified-at-rest-with-same-length")
+        self.archive.write_bytes(b"x" * self.archive.stat().st_size)
         with self.assertRaises(ValueError):
             verified_copy_provenance(self.archive, path, obj)
 
