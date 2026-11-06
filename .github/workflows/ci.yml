@@ -119,7 +119,7 @@ jobs:
           budget apt-index 180 sudo apt-get update -q
           budget apt-tools 180 sudo apt-get install -y -q shellcheck jq sqlite3 age
           budget science-deps 420 python -m pip install -q --disable-pip-version-check --timeout 30 --retries 2 check-jsonschema sqlite-utils pyyaml dagster dagster-webserver yamllint==1.37.1
-          budget acceptance-deps 360 python -m pip install -q --disable-pip-version-check --timeout 30 --retries 2 -r sovereign/requirements-dev.txt
+          budget acceptance-deps 360 python -m pip install -q --disable-pip-version-check --timeout 30 --retries 2 -r sovereign/requirements-dev.txt "pytest-xdist==3.6.1"
           budget docs-deps 180 python -m pip install -q --disable-pip-version-check --timeout 30 --retries 2 "mkdocs<2" mkdocs-techdocs-core
       - uses: ./.github/actions/estate-tools
       - run: bin/idp-ci
