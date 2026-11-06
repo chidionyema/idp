@@ -52,7 +52,7 @@ Do not promote the script into production until that risk has been reviewed.
 The sender marks HTTP 204 as DISPATCHED_UNCONFIRMED, then checks GitHub's
 repository_dispatch workflow run by event_id. A successful run title **alone is
 not a receipt**: it must download the workflow artifact and compare the exact
-validated event_id, source_sha256 and document_id. Missing/mismatched artifacts
+validated event_id, source_sha256 and SHA-256 of the Drive document ID (the raw ID is not stored in the receipt). Missing/mismatched artifacts
 fail closed; a failed run is a hard stop and queued runs are retried after a
 bounded backoff. Artifact-download redirects do not receive the GitHub token. Its token therefore also needs Actions:read
 permission. This is *transport* acknowledgment, not approval/merge/deploy.

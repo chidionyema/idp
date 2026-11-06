@@ -83,6 +83,7 @@ class IntakeTests(unittest.TestCase):
         obj = valid()
         receipt = evaluate(obj)
         self.assertNotIn("document_id", receipt)  # Private Drive ID must not leak to public CI logs.
+        self.assertEqual(receipt["document_ref_sha256"], hashlib.sha256(obj["document_id"].encode()).hexdigest())
         self.assertEqual(receipt["source_sha256"], obj["source_sha256"])
         modified = dict(obj)
         modified["document_id"] = "different-private-file-id"

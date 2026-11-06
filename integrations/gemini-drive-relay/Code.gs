@@ -75,7 +75,7 @@ function relayGitHubAck_(eventId, token, expectedSourceSha, expectedDocumentId) 
   if (receipt.status !== 'QUARANTINED_AUTHENTICATED_REVIEW_ONLY' ||
       receipt.event_id !== eventId ||
       receipt.source_sha256 !== expectedSourceSha ||
-      receipt.document_id !== expectedDocumentId ||
+      receipt.document_ref_sha256 !== relayDigest_(expectedDocumentId) ||
       receipt.target_repo !== 'chidionyema/idp')
     throw new Error('GITHUB_RECEIPT_CONTENT_MISMATCH');
   return {status: 'completed', conclusion: 'success', runId: matching.id};

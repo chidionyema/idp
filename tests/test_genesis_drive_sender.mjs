@@ -45,7 +45,7 @@ function harness({token = 'opaque-github-token', signer = secret,
             status: 'QUARANTINED_AUTHENTICATED_REVIEW_ONLY',
             event_id: e.event_id,
             source_sha256: receiptMatches ? e.source_sha256 : 'b'.repeat(64),
-            document_id: e.document_id,
+            document_ref_sha256: createHash('sha256').update(e.document_id).digest('hex'),
             target_repo: 'chidionyema/idp',
           }),
         }];
