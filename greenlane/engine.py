@@ -579,8 +579,33 @@ class Engine:
                 # PENDING either way, and its `seq` is unchanged, so plain `seq` order already
                 # puts it near the front: the group bought it a place ahead of newer work and a
                 # suite of its own, and nothing else.
+                # ...and a retry goes to the BACK of the line (2026-11-06). Keeping its `seq`
+                # kept it at the front, so a lane that is red on its own -- the usual case, not
+                # the flaky one -- spent the next two cycles of the one serial slot while every
+                # fresh lane waited behind it. Measured on refs/greenlane/state 2026-11-06, 200
+                # batches over 8.4 days: 73 ended without landing; 30 were `red/retried` and 10
+                # `red/parked`, and lanes such as offline-installer-budget took three of the
+                # last twelve cycles in one hour. A lane that is green on its own gets its turn
+                # behind the lanes that arrived while it was failing (FIFO still bounds it, I5);
+                # a lane that is red on its own no longer taxes them. Measured in
+                # greenlane/simulate.py over 20 seeds x 500 lanes, with the suspect rule in
+                # _start_batch: ticks to drain -23%, candidates (CI runs) -27%
+                # (tests/test_greenlane_spends_no_cycle_twice.py).
+                self.s.seq = (
+                    max([self.s.seq, *(l.seq for l in self.s.lanes.values())]) + 1
+                )
+                lane.seq = self.s.seq
                 lane.status = PENDING
                 lane.reason = f"retry after: {reason}"
+                # Said on the head, not only kept in state: the lane's own status still read
+                # `testing in <batch>` for a batch that had already ended red, so an agent saw
+                # a live test where there was a failure it could already be fixing.
+                self.b.report(
+                    name,
+                    head,
+                    TESTING,
+                    f"retry {lane.attempts}/{self.retries} queued after red in {b.id}: {reason}",
+                )
                 self._record(b, outcome, "retried", reason)
             else:
                 lane.status, lane.reason = RED, reason
@@ -749,8 +774,20 @@ class Engine:
             for l in pend:
                 if len(names) == self.batch_size:
                     break
+                # A SUSPECT RUNS ALONE (2026-11-06). A lane with `attempts` has already gone
+                # red as a batch of one on this very head (a new head is a new Lane with zero
+                # attempts). Stacked with fresh lanes it turns their candidate red, the batch
+                # is bisected, and every member pays log2(n) extra cycles to rediscover what
+                # the state already knew. So a suspect never joins a batch of others: at the
+                # head of the line it is tested on its own, anywhere else it waits for that
+                # turn. Simulated (20 seeds x 500 lanes, with the retry-to-the-back rule in
+                # _judge_batch): candidates -27%, ticks to drain -23%, every invariant held.
+                if l.attempts and names:
+                    continue
                 if not self._held(l, base):
                     names.append(l.name)
+                    if l.attempts:
+                        break
         names = [
             n for n in names if n in self.s.lanes and self.s.lanes[n].status == PENDING
         ]
