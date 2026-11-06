@@ -172,6 +172,14 @@ verify_source() {
 		printf 'it is a cluster dump without the %s database\n' "$ESTATE_DB_NAME"
 		return 1
 	fi
+	# A cluster archive can declare the estate database but contain ZERO estate tables.
+	# The 2026-11-06 live recovery drill hit this trap. Reject such candidates here,
+	# before restoring them, so fetch_source can try the next surviving archive.
+	local table_probe
+	table_probe="$(python3 "$(dirname "$SCRIPT_PATH")/verify_source_schema.py" "$file" "$ESTATE_DB_NAME" 2>&1)" || {
+		printf 'estate schema preflight rejected archive: %s\n' "$table_probe"
+		return 1
+	}
 	return 0
 }
 
