@@ -32,10 +32,11 @@ function b64(text, limit) {
 export function verifyExternalVerdict(envelope, {
   trustedPublicKeyPem, expectedRepository, expectedCommit,
   expectedArtifactSha256, expectedEvidenceSha256, expectedIssuer,
-  nowSeconds = Math.floor(Date.now()/1000),
+  expectedNonce, nowSeconds = Math.floor(Date.now()/1000),
 } = {}) {
   if (!trustedPublicKeyPem || !expectedRepository || !expectedCommit ||
-      !expectedArtifactSha256 || !expectedEvidenceSha256 || !expectedIssuer)
+      !expectedArtifactSha256 || !expectedEvidenceSha256 || !expectedIssuer ||
+      !expectedNonce)
     return { verdict: 'UNVERIFIED', reason: 'external-trust-input-missing' };
   try {
     if (!exactKeys(envelope, ['schema','payload_b64','signature_b64']) ||
@@ -50,11 +51,15 @@ export function verifyExternalVerdict(envelope, {
     if (!ed25519Verify(null, Buffer.concat([PREFIX,raw]), key, sig))
       return { verdict:'FAIL', reason:'signature-invalid' };
     const p = JSON.parse(raw.toString('utf8'));
-    // Make signed JSON byte-canonical; prevents duplicate-key parser ambiguity.
-    if (!Buffer.from(JSON.stringify(p), 'utf8').equals(raw))
-      return { verdict:'FAIL', reason:'noncanonical-signed-payload' };
+    // The protocol's exact UTF-8 object field order is normative across Rust/JS.
+    // Re-serialize only those ordered fields: reject duplicate, reordered and extra
+    // keys even when the candidate signs a structurally ambiguous JSON document.
     const fields=['schema','repository','commit','artifact_sha256',
       'evidence_sha256','issuer','result','issued_at_unix','expires_at_unix','nonce'];
+    if (!exactKeys(p, fields)) return { verdict:'FAIL', reason:'invalid-signed-payload' };
+    const canonical = Object.fromEntries(fields.map(f => [f,p[f]]));
+    if (!Buffer.from(JSON.stringify(canonical), 'utf8').equals(raw))
+      return { verdict:'FAIL', reason:'noncanonical-signed-payload' };
     if (!exactKeys(p, fields) || p.schema !== 'estate.external-verdict.v1' ||
         !REPO.test(p.repository) || !GIT_SHA.test(p.commit) ||
         !SHA256.test(p.artifact_sha256) || !SHA256.test(p.evidence_sha256) ||
@@ -65,7 +70,8 @@ export function verifyExternalVerdict(envelope, {
       return { verdict:'FAIL', reason:'invalid-signed-payload' };
     if (p.repository !== expectedRepository || p.commit !== expectedCommit ||
         p.artifact_sha256 !== expectedArtifactSha256 ||
-        p.evidence_sha256 !== expectedEvidenceSha256 || p.issuer !== expectedIssuer)
+        p.evidence_sha256 !== expectedEvidenceSha256 || p.issuer !== expectedIssuer ||
+        p.nonce !== expectedNonce)
       return { verdict:'FAIL', reason:'subject-or-issuer-mismatch' };
     if (!Number.isSafeInteger(nowSeconds) ||
         p.issued_at_unix > nowSeconds + 30 ||
@@ -86,14 +92,14 @@ export function verifyExternalVerdict(envelope, {
 // Read-only CLI. Never signs, writes status or loads a key from candidate data.
 if (process.argv[1] &&
     import.meta.url === new URL('file://' + process.argv[1]).href) {
-  const [file,repo,commit,artifact,evidence,issuer]=process.argv.slice(2);
+  const [file,repo,commit,artifact,evidence,issuer,nonce]=process.argv.slice(2);
   let envelope=null,publicKey;
   try {envelope=JSON.parse(readFileSync(file,'utf8'));}catch{}
   try {publicKey=readFileSync(process.env.EXTERNAL_CERTIFIER_PUBLIC_KEY_FILE,'utf8');}catch{}
   const result=verifyExternalVerdict(envelope,{
     trustedPublicKeyPem:publicKey,expectedRepository:repo,expectedCommit:commit,
     expectedArtifactSha256:artifact,expectedEvidenceSha256:evidence,
-    expectedIssuer:issuer});
+    expectedIssuer:issuer,expectedNonce:nonce});
   process.stdout.write(JSON.stringify(result)+'\n');
   process.exitCode=result.verdict==='PASS'?0:result.verdict==='UNVERIFIED'?2:1;
 }
