@@ -1073,7 +1073,7 @@ def ci_resolved(repo: str, row: sqlite3.Row) -> tuple[bool, str]:
     ]
     if not matching:
         return False, ""
-    latest = max(matching, key=lambda item: (item["id"], int(item.get("run_attempt") or 1)))
+    latest = max(matching, key=lambda item: (item["id"], item.get("run_attempt") if isinstance(item.get("run_attempt"), int) else 0))
     try:
         original_id = int(run_id)
         original_attempt = int(detail.get("run_attempt") or 1)
