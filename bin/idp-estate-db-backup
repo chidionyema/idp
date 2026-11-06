@@ -86,6 +86,8 @@ try:
     )
 except (ValueError, TypeError, KeyError):
     sys.exit("BLIND   estate-db-backup  copy receipt has no valid UTC stamp")
+if captured > served + timedelta(seconds=60):
+    sys.exit("BLIND   estate-db-backup  source data claims to be from the future")
 if copy_started > served + timedelta(seconds=60):
     sys.exit("BLIND   estate-db-backup  copy claims to have occurred after storage responded")
 if captured > copy_started + timedelta(seconds=60):
