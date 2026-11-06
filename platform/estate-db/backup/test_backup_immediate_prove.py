@@ -18,6 +18,7 @@ class BackupTriggerContract(unittest.TestCase):
 
     def test_accepted_main_change_starts_immediate_copy(self):
         self.assertIn("  push:\n    branches: [main]\n", self.source)
+        self.assertEqual(self.source.count("  push:\n"), 1, "one trusted push trigger")
         self.assertIn("      - .github/workflows/estate-db-backup.yml", self.source)
         self.assertIn("      - platform/estate-db/backup/**", self.source)
         self.assertIn("  schedule:\n", self.source)
