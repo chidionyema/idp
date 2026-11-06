@@ -121,27 +121,67 @@ def _epoch(s):
 
 
 def grade(v, key=None, *, now=None, artifact_digest=None):
-    """What a gate may conclude from a verdict file. Returns (state, why).
+    """Authenticate an HMAC verdict, then inspect its claims.
 
-    state is one of PASS, FAIL, BLOCKED, ERROR, UNVERIFIED. UNVERIFIED is every case where the
-    verdict cannot be trusted: bad or missing signature, expired, or about a different artifact.
-    Fail closed: a verdict the gate cannot check is a verdict that does not exist.
+    Without the independently held verification key there is NO authenticated
+    PASS, even when the record contains a non-empty sig field. This primitive
+    must never depend on the claimed verifier ID or a workflow's prose.
+    For a separately authenticated Sigstore attestation, call
+    inspect_claims_after_external_authentication only AFTER validating that
+    attestation with its trusted verifier.
     """
+    if not isinstance(key, (bytes, str)) or not key:
+        return "UNVERIFIED", "authenticating key unavailable; signature bytes are not proof"
+    if not isinstance(v, dict) or not signature_ok(v, key):
+        return "UNVERIFIED", "signature does not match the record"
+    return inspect_claims_after_external_authentication(
+        v, now=now, artifact_digest=artifact_digest
+    )
+
+
+def inspect_claims_after_external_authentication(v, *, now=None, artifact_digest=None):
+    """Check the authenticated record's declared outcome and freshness.
+
+    THIS DOES NOT AUTHENTICATE ITS CALLER. Never call it on an unverified
+    download or a raw agent-produced record: the only production call site
+    verifies the GitHub Sigstore attestation for the exact downloaded bytes,
+    signer workflow, repository and source SHA before calling this function.
+    A PASS claim with a failed or absent assertion is UNVERIFIED, not PASS.
+    """
+    if not isinstance(v, dict):
+        return "UNVERIFIED", "verdict is not an object"
     for k in FIELDS:
         if k not in v:
             return "UNVERIFIED", f"field {k} missing"
     if v["outcome"] not in OUTCOMES:
         return "UNVERIFIED", f"outcome {v['outcome']!r} is not one of {OUTCOMES}"
-    if key is not None and not signature_ok(v, key):
-        return "UNVERIFIED", "signature does not match the record"
-    if key is None and not v.get("sig"):
-        return "UNVERIFIED", "record carries no signature"
+    if isinstance(v["ttl_seconds"], bool) or not isinstance(v["ttl_seconds"], int):
+        return "UNVERIFIED", "TTL must be an integer number of seconds"
+    if not 1 <= v["ttl_seconds"] <= 3600:
+        return "UNVERIFIED", "TTL exceeds the 3600-second verifier ceiling or is invalid"
+    if not isinstance(v["assertions"], list) or not v["assertions"]:
+        return "UNVERIFIED", "no verifier assertions to substantiate the outcome"
+    if any(
+        not isinstance(a, dict)
+        or not isinstance(a.get("ok"), bool)
+        or not isinstance(a.get("name"), str)
+        or not a["name"]
+        for a in v["assertions"]
+    ):
+        return "UNVERIFIED", "verifier assertions have an invalid schema"
+    if not isinstance(v["artifact_digest"], str):
+        return "UNVERIFIED", "artifact digest must be a string"
+    if not isinstance(v["nonce"], str) or not v["nonce"].strip():
+        return "UNVERIFIED", "nonce missing"
     now = time.time() if now is None else now
     try:
         age = now - _epoch(v["completed_at"])
-    except (ValueError, TypeError):
-        return "UNVERIFIED", f"completed_at {v['completed_at']!r} unreadable"
-    if age > int(v["ttl_seconds"]):
+        duration = _epoch(v["completed_at"]) - _epoch(v["started_at"])
+    except (ValueError, TypeError, OverflowError):
+        return "UNVERIFIED", "verdict timestamps are invalid"
+    if duration < -60 or duration > 3600:
+        return "UNVERIFIED", "verdict run duration is implausible"
+    if age > v["ttl_seconds"]:
         return "UNVERIFIED", f"expired: {int(age)}s old, ttl {v['ttl_seconds']}s"
     if age < -60:
         return "UNVERIFIED", f"completed_at is {int(-age)}s in the future"
@@ -151,11 +191,10 @@ def grade(v, key=None, *, now=None, artifact_digest=None):
             f"about digest {v['artifact_digest'][:24]}, target runs {artifact_digest[:24]}",
         )
     if not v["artifact_digest"] and v["outcome"] == "PASS":
-        return (
-            "UNVERIFIED",
-            "PASS with no artifact digest: a verdict about a service name is not a verdict",
-        )
-    bad = [a["name"] for a in v["assertions"] if not a.get("ok")]
+        return "UNVERIFIED", "PASS with no artifact digest"
+    bad = [a["name"] for a in v["assertions"] if not a["ok"]]
+    if v["outcome"] == "PASS" and bad:
+        return "UNVERIFIED", "PASS contradicted by failed assertions: " + ", ".join(bad)
     return v["outcome"], (
         "all assertions ok" if not bad else "failed: " + ", ".join(bad)
     )
