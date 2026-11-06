@@ -270,6 +270,77 @@ def test_the_sensor_asks_the_api_for_the_window_it_reads(monkeypatch, policy):
     assert "per_page=100" in seen["url"], seen["url"]
 
 
+
+def test_ci_sensor_finds_main_p0_beyond_first_hundred_runs(monkeypatch, policy):
+    """A busy Greenlane cannot bury a main failure past a single GitHub page."""
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    requested = []
+
+    def event(n, conclusion="failure", branch="queue/b4806"):
+        return {
+            "id": n, "name": "ci" if n != 1 else "recovery-data",
+            "head_branch": branch, "conclusion": conclusion, "event": "push",
+            "created_at": now, "html_url": f"https://example.invalid/{n}",
+            "run_attempt": 1,
+        }
+
+    first = [event(i) for i in range(102, 2, -1)]
+    second = [event(2), event(1, branch="main")]
+
+    def gh(args):
+        query = args[1]
+        requested.append(query)
+        if "status=failure" in query:
+            return (0, json.dumps(second if "page=2" in query else first), "")
+        return (0, "[]", "")
+
+    monkeypatch.setattr(incident_loop, "run_gh", gh)
+    seen = incident_loop.sense_ci("chidionyema/idp", policy)
+    target = [incident for incident in seen if incident["detail"]["run_id"] == 1]
+    assert len(target) == 1
+    assert target[0]["title"].startswith("recovery-data")
+    assert target[0]["severity"] == "critical"
+    assert seen[0]["detail"]["run_id"] == 1, "P0 must outrank 100 newer lane errors"
+    assert any("status=failure" in url and "page=2" in url for url in requested)
+    assert len({incident["id"] for incident in seen}) == len(seen)
+
+
+def test_ci_sensor_does_not_silently_truncate_overflow(monkeypatch, policy):
+    """Exhausting a bounded sensor budget is BLIND; never an empty PASS."""
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def gh(args):
+        url = args[1]
+        if "status=failure" not in url:
+            return (0, "[]", "")
+        page = int(url.split("page=")[-1])
+        return (
+            0,
+            json.dumps([
+                {
+                    "id": page * 100 + i, "name": "ci", "head_branch": "main",
+                    "conclusion": "failure", "event": "push", "created_at": now,
+                    "html_url": "https://example.invalid/ci",
+                }
+                for i in range(100)
+            ]),
+            "",
+        )
+
+    monkeypatch.setattr(incident_loop, "run_gh", gh)
+    with pytest.raises(incident_loop.LoopError, match="pagination budget exhausted"):
+        incident_loop.sense_ci("chidionyema/idp", policy)
+
+
+def test_ci_sensor_never_accepts_invalid_or_unreadable_api_pages(monkeypatch, policy):
+    monkeypatch.setattr(incident_loop, "run_gh", lambda *a: (0, "{}", ""))
+    with pytest.raises(incident_loop.LoopError, match="non-list"):
+        incident_loop.sense_ci("chidionyema/idp", policy)
+    monkeypatch.setattr(incident_loop, "run_gh", lambda *a: (1, "", "forbidden"))
+    with pytest.raises(incident_loop.LoopError, match="forbidden"):
+        incident_loop.sense_ci("chidionyema/idp", policy)
+
+
 def test_the_ledger_holds_exactly_one_record_type(tmp_path):
     conn = incident_loop.open_ledger(tmp_path / "incidents.db")
     tables = {
