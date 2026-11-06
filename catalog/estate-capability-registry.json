@@ -7,7 +7,7 @@
     "layer": 252,
     "service": 121,
     "tool": 474,
-    "workflow": 90
+    "workflow": 91
   },
   "records": [
     {
@@ -25597,7 +25597,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-advisory-remediation"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -26233,7 +26235,9 @@
       "consumers": [
         "cap:tool/idp-ci",
         "cap:tool/media-dept-baseline",
-        "cap:tool/registry-gate"
+        "cap:tool/registry-gate",
+        "cap:workflow/gha-registry-snapshot",
+        "cap:workflow/gha-registry-workflow-dependency-preflight"
       ],
       "cost": {
         "estimate": null,
@@ -26783,7 +26787,8 @@
         "cap:tool/estate-founder",
         "cap:tool/estate-snapshot",
         "cap:tool/idp-estate-db-push",
-        "cap:tool/idp-pr-arm"
+        "cap:tool/idp-pr-arm",
+        "cap:workflow/gha-catalog-render"
       ],
       "cost": {
         "estimate": null,
@@ -26938,7 +26943,8 @@
         "cap:tool/estate-memory-enforce",
         "cap:tool/language-gate",
         "cap:tool/media-dept-baseline",
-        "cap:tool/process-census"
+        "cap:tool/process-census",
+        "cap:workflow/gha-ci"
       ],
       "cost": {
         "estimate": null,
@@ -27569,7 +27575,8 @@
         "cap:tool/estate-snapshot",
         "cap:tool/idp-stray-checkout",
         "cap:tool/multiarch-gate",
-        "cap:tool/treewalk.py"
+        "cap:tool/treewalk.py",
+        "cap:workflow/gha-build-multiarch"
       ],
       "cost": {
         "estimate": null,
@@ -27685,7 +27692,8 @@
         "cap:tool/idp-reasoning-gateway-hook",
         "cap:tool/idp-trajectory",
         "cap:tool/reasoning_gateway_hook.py",
-        "cap:tool/trajectory_lock.py"
+        "cap:tool/trajectory_lock.py",
+        "cap:workflow/gha-agent-sandbox"
       ],
       "cost": {
         "estimate": null,
@@ -28207,7 +28215,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-estate-dag-gen"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -28254,7 +28264,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-estate-dag-gen"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -29440,7 +29452,8 @@
       },
       "consumers": [
         "cap:tool/estate-receipt",
-        "cap:tool/estate-runtime-sync"
+        "cap:tool/estate-runtime-sync",
+        "cap:workflow/gha-ci"
       ],
       "cost": {
         "estimate": null,
@@ -31310,7 +31323,8 @@
         "cap:tool/idp-kyverno-audit-promote",
         "cap:tool/idp-linear-dispatch",
         "cap:tool/idp-mcp-first-gate",
-        "cap:tool/serve-fleetview"
+        "cap:tool/serve-fleetview",
+        "cap:workflow/gha-catalog-render"
       ],
       "cost": {
         "estimate": null,
@@ -31445,7 +31459,8 @@
         "cap:tool/idp-otto-homes",
         "cap:tool/idp-stray-checkout",
         "cap:tool/pr-report",
-        "cap:tool/treewalk.py"
+        "cap:tool/treewalk.py",
+        "cap:workflow/gha-name-drift"
       ],
       "cost": {
         "estimate": null,
@@ -31773,7 +31788,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-flux-board-reconcile"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -32307,7 +32324,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-deploy-when-green"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -33165,7 +33184,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-oke-check"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -33459,7 +33480,10 @@
         "cap:tool/idp-bootstrap-estate",
         "cap:tool/idp-estate-seed",
         "cap:tool/idp-oci-session",
-        "cap:tool/idp-otto-homes"
+        "cap:tool/idp-otto-homes",
+        "cap:workflow/gha-estate-bootstrap",
+        "cap:workflow/gha-oke-check",
+        "cap:workflow/gha-otto-lifeboat"
       ],
       "cost": {
         "estimate": null,
@@ -33601,7 +33625,8 @@
       },
       "consumers": [
         "cap:tool/idp-mac-adopt-otto",
-        "cap:tool/idp-mac-secret-deliver"
+        "cap:tool/idp-mac-secret-deliver",
+        "cap:workflow/gha-oke-check"
       ],
       "cost": {
         "estimate": null,
@@ -33668,7 +33693,8 @@
       },
       "consumers": [
         "cap:tool/idp-bootstrap-macrun",
-        "cap:tool/idp-cloud"
+        "cap:tool/idp-cloud",
+        "cap:workflow/gha-oke-check"
       ],
       "cost": {
         "estimate": null,
@@ -33729,7 +33755,9 @@
         "cap:tool/idp-bootstrap-cloudflare",
         "cap:tool/idp-bootstrap-estate",
         "cap:tool/idp-estate-seed",
-        "cap:tool/idp-oci-session"
+        "cap:tool/idp-oci-session",
+        "cap:workflow/gha-estate-bootstrap",
+        "cap:workflow/gha-oke-check"
       ],
       "cost": {
         "estimate": null,
@@ -33804,7 +33832,9 @@
         "cap:tool/idp-bootstrap-estate",
         "cap:tool/idp-estate-seed",
         "cap:tool/idp-estate-state-build",
-        "cap:tool/intent-compile"
+        "cap:tool/intent-compile",
+        "cap:workflow/gha-estate-bootstrap",
+        "cap:workflow/gha-oke-check"
       ],
       "cost": {
         "estimate": null,
@@ -33937,7 +33967,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-branch-archive"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -34476,7 +34508,10 @@
         "cap:tool/ns-fence-gate",
         "cap:tool/port-gate",
         "cap:tool/process-census",
-        "cap:tool/test-catalog-projection"
+        "cap:tool/test-catalog-projection",
+        "cap:workflow/gha-agent-trunk-batch",
+        "cap:workflow/gha-ci",
+        "cap:workflow/gha-fast-gate"
       ],
       "cost": {
         "estimate": null,
@@ -34765,7 +34800,9 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci-touched"
+        "cap:tool/idp-ci-touched",
+        "cap:workflow/gha-guarded-paths",
+        "cap:workflow/gha-verifier"
       ],
       "cost": {
         "estimate": null,
@@ -34815,7 +34852,8 @@
       },
       "consumers": [
         "cap:tool/idp-auth",
-        "cap:tool/idp-guarded-paths"
+        "cap:tool/idp-guarded-paths",
+        "cap:workflow/gha-guarded-paths"
       ],
       "cost": {
         "estimate": null,
@@ -34946,7 +34984,10 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-ci",
+        "cap:workflow/gha-portal-app"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -35001,7 +35042,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-verifier"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -35329,7 +35372,22 @@
         "cap:tool/idp-vault-refs",
         "cap:tool/idp-vault-split-guard",
         "cap:tool/idp-verdict",
-        "cap:tool/idp-workstation-bootstrap"
+        "cap:tool/idp-workstation-bootstrap",
+        "cap:workflow/gha-concierge-deploy",
+        "cap:workflow/gha-estate-inventory",
+        "cap:workflow/gha-estate-secret-prune",
+        "cap:workflow/gha-estate-state",
+        "cap:workflow/gha-flux-board-reconcile",
+        "cap:workflow/gha-forge-train",
+        "cap:workflow/gha-mac-salvage",
+        "cap:workflow/gha-op-verify",
+        "cap:workflow/gha-otto-parity",
+        "cap:workflow/gha-router-recovery",
+        "cap:workflow/gha-vault-bootstrap",
+        "cap:workflow/gha-vault-seed",
+        "cap:workflow/gha-verdict-surfaces",
+        "cap:workflow/gha-webhook-diagnose",
+        "cap:workflow/gha-webhook-diagnose-v2"
       ],
       "cost": {
         "estimate": null,
@@ -35486,7 +35544,8 @@
         "cap:tool/catalog-render",
         "cap:tool/idp-drift-blind",
         "cap:tool/idp-gitops-drift.py",
-        "cap:tool/idp-healthcheck-exists"
+        "cap:tool/idp-healthcheck-exists",
+        "cap:workflow/gha-ci"
       ],
       "cost": {
         "estimate": null,
@@ -36861,7 +36920,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-estate-escrow"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -37078,7 +37139,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-estate-db-backup"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -37270,7 +37333,10 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-estate-homes-drill",
+        "cap:workflow/gha-estate-watch"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -37332,7 +37398,9 @@
         "cap:tool/idp-pr-scope-audit",
         "cap:tool/idp-prove",
         "cap:tool/idp-router-key",
-        "cap:tool/idp-workstation-bootstrap"
+        "cap:tool/idp-workstation-bootstrap",
+        "cap:workflow/gha-estate-bootstrap",
+        "cap:workflow/gha-oke-check"
       ],
       "cost": {
         "estimate": null,
@@ -37450,7 +37518,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-estate-state"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -38006,7 +38076,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-deploy-models"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -38108,7 +38180,10 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-ci",
+        "cap:workflow/gha-feature-request-enable"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -38535,7 +38610,11 @@
         "cap:tool/idp-escrow",
         "cap:tool/idp-estate-seed",
         "cap:tool/idp-tailscale-policy",
-        "cap:tool/idp-workstation-bootstrap"
+        "cap:tool/idp-workstation-bootstrap",
+        "cap:workflow/gha-oke-check",
+        "cap:workflow/gha-ticket-verification",
+        "cap:workflow/gha-vault-seed",
+        "cap:workflow/gha-verdict-surfaces"
       ],
       "cost": {
         "estimate": null,
@@ -38800,7 +38879,8 @@
       "consumers": [
         "cap:tool/idp-objective-miner",
         "cap:tool/lane-where",
-        "cap:tool/process-census"
+        "cap:tool/process-census",
+        "cap:workflow/gha-greenlane"
       ],
       "cost": {
         "estimate": null,
@@ -38853,7 +38933,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-greenlane"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -39077,7 +39159,8 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-hc-enroll"
+        "cap:tool/idp-hc-enroll",
+        "cap:workflow/gha-oke-check"
       ],
       "cost": {
         "estimate": null,
@@ -39587,7 +39670,8 @@
       },
       "consumers": [
         "cap:tool/idp-login-drill",
-        "cap:tool/idp-verify"
+        "cap:tool/idp-verify",
+        "cap:workflow/gha-oke-check"
       ],
       "cost": {
         "estimate": null,
@@ -39665,7 +39749,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-estate-state"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -39724,7 +39810,8 @@
         "cap:tool/idp-admitted-mutation-diff",
         "cap:tool/idp-greenlane",
         "cap:tool/idp-image-update-pr",
-        "cap:tool/idp-scope-replay"
+        "cap:tool/idp-scope-replay",
+        "cap:workflow/gha-deploy-when-green"
       ],
       "cost": {
         "estimate": null,
@@ -40312,7 +40399,8 @@
       },
       "consumers": [
         "cap:tool/catalog-gen",
-        "cap:tool/idp-install-all"
+        "cap:tool/idp-install-all",
+        "cap:workflow/gha-estate-inventory"
       ],
       "cost": {
         "estimate": null,
@@ -41161,7 +41249,8 @@
       "consumers": [
         "cap:tool/idp-ci",
         "cap:tool/idp-kubeconform",
-        "cap:tool/idp-tests-for"
+        "cap:tool/idp-tests-for",
+        "cap:workflow/gha-shadow-verify"
       ],
       "cost": {
         "estimate": null,
@@ -41413,7 +41502,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-ci"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -41746,7 +41837,8 @@
       },
       "consumers": [
         "cap:tool/idp-identity-apply",
-        "cap:tool/idp-prove"
+        "cap:tool/idp-prove",
+        "cap:workflow/gha-login-drill"
       ],
       "cost": {
         "estimate": null,
@@ -41913,7 +42005,8 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci"
+        "cap:tool/idp-ci",
+        "cap:workflow/gha-mac-provision-test"
       ],
       "cost": {
         "estimate": null,
@@ -42297,7 +42390,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-ci"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -42513,7 +42608,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-objective-miner"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -42654,7 +42751,9 @@
         "cap:tool/idp-oke-break-glass",
         "cap:tool/idp-oke-rebuild",
         "cap:tool/idp-verify",
-        "cap:tool/idp-workstation-bootstrap"
+        "cap:tool/idp-workstation-bootstrap",
+        "cap:workflow/gha-router-recovery",
+        "cap:workflow/gha-vault-seed"
       ],
       "cost": {
         "estimate": null,
@@ -43018,7 +43117,9 @@
         "cap:tool/idp-oci-login",
         "cap:tool/idp-oke-break-glass",
         "cap:tool/idp-vault-reads",
-        "cap:tool/idp-vault-refs"
+        "cap:tool/idp-vault-refs",
+        "cap:workflow/gha-oke-check",
+        "cap:workflow/gha-otto-homes"
       ],
       "cost": {
         "estimate": null,
@@ -43326,7 +43427,8 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-estate-homes"
+        "cap:tool/idp-estate-homes",
+        "cap:workflow/gha-otto-lifeboat"
       ],
       "cost": {
         "estimate": null,
@@ -43585,7 +43687,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-pr-age"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -43647,7 +43751,8 @@
       },
       "consumers": [
         "cap:tool/idp-image-update-pr",
-        "cap:tool/idp-pr-age"
+        "cap:tool/idp-pr-age",
+        "cap:workflow/gha-kini-finish"
       ],
       "cost": {
         "estimate": null,
@@ -43700,7 +43805,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-deploy-when-green"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -44291,7 +44398,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-probe-mutations"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -44340,7 +44449,11 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-verdict-backstage",
+        "cap:workflow/gha-verdict-langfuse",
+        "cap:workflow/gha-verdict-signoz"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -45013,7 +45126,9 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/board_serve.py"
+        "cap:tool/board_serve.py",
+        "cap:workflow/gha-estate-inventory",
+        "cap:workflow/gha-estate-state"
       ],
       "cost": {
         "estimate": null,
@@ -45448,7 +45563,8 @@
       "consumers": [
         "cap:tool/idp-continuity-lane",
         "cap:tool/idp-estate-seed",
-        "cap:tool/idp-router-rows-to-console"
+        "cap:tool/idp-router-rows-to-console",
+        "cap:workflow/gha-vault-seed"
       ],
       "cost": {
         "estimate": null,
@@ -45519,7 +45635,8 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-estate-state-build"
+        "cap:tool/idp-estate-state-build",
+        "cap:workflow/gha-estate-state"
       ],
       "cost": {
         "estimate": null,
@@ -45571,7 +45688,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-vault-seed"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -46139,7 +46258,8 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-bootstrap-tailscale"
+        "cap:tool/idp-bootstrap-tailscale",
+        "cap:workflow/gha-forge-train-kaggle"
       ],
       "cost": {
         "estimate": null,
@@ -46209,7 +46329,8 @@
       "consumers": [
         "cap:tool/idp-shadow-run",
         "cap:tool/idp-shadow-verify",
-        "cap:tool/idp-truthteller-demo"
+        "cap:tool/idp-truthteller-demo",
+        "cap:workflow/gha-shadow-verify"
       ],
       "cost": {
         "estimate": null,
@@ -46277,7 +46398,10 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-shadow-image-bundle",
+        "cap:workflow/gha-shadow-verify"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -47306,7 +47430,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-estate-state"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -47403,7 +47529,8 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-bootstrap-tailscale"
+        "cap:tool/idp-bootstrap-tailscale",
+        "cap:workflow/gha-oke-check"
       ],
       "cost": {
         "estimate": null,
@@ -47585,7 +47712,8 @@
       "consumers": [
         "cap:tool/idp-ci",
         "cap:tool/idp-slow-tests",
-        "cap:tool/media-dept-baseline"
+        "cap:tool/media-dept-baseline",
+        "cap:workflow/gha-ci"
       ],
       "cost": {
         "estimate": null,
@@ -47698,7 +47826,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-ticket-verification"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -48030,7 +48160,10 @@
         "cap:tool/idp-router-key",
         "cap:tool/idp-signoz-key",
         "cap:tool/idp-vault-split-guard",
-        "cap:tool/idp-vendor-setup"
+        "cap:tool/idp-vendor-setup",
+        "cap:workflow/gha-oke-check",
+        "cap:workflow/gha-router-recovery",
+        "cap:workflow/gha-vault-seed"
       ],
       "cost": {
         "estimate": null,
@@ -48090,7 +48223,8 @@
       "consumers": [
         "cap:tool/cloud-agnostic-gate",
         "cap:tool/idp-oke-rebuild",
-        "cap:tool/idp-vault-refs"
+        "cap:tool/idp-vault-refs",
+        "cap:workflow/gha-vault-reads"
       ],
       "cost": {
         "estimate": null,
@@ -48147,7 +48281,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-vault-reads"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -48390,7 +48526,11 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-verdict-backstage",
+        "cap:workflow/gha-verdict-langfuse",
+        "cap:workflow/gha-verdict-signoz"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -48770,7 +48910,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-verdict-surfaces"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -49702,7 +49844,8 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci"
+        "cap:tool/idp-ci",
+        "cap:workflow/gha-greenlane-efficiency-preflight"
       ],
       "cost": {
         "estimate": null,
@@ -50242,7 +50385,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-matrix-review"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -52097,7 +52242,8 @@
       "consumers": [
         "cap:tool/capability-index",
         "cap:tool/claim-gate",
-        "cap:tool/idp-ci"
+        "cap:tool/idp-ci",
+        "cap:workflow/gha-registry-workflow-dependency-preflight"
       ],
       "cost": {
         "estimate": null,
@@ -53306,7 +53452,8 @@
       },
       "consumers": [
         "cap:tool/idp-trajectory",
-        "cap:tool/trajectory_lock.py"
+        "cap:tool/trajectory_lock.py",
+        "cap:workflow/gha-ci"
       ],
       "cost": {
         "estimate": null,
@@ -54284,7 +54431,12 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/actions/github-app-token",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -54306,13 +54458,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/advisory-remediation.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/advisory-remediation",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -54335,7 +54491,14 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510",
+          "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
+          "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -54357,13 +54520,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/agent-sandbox.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/epistemic_firewall.py",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -54387,7 +54554,10 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@v7"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -54409,13 +54579,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/agent-trunk-batch.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-ci",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -54439,7 +54613,10 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@v7"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -54491,7 +54668,12 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@v7",
+          "actions/setup-node@v7",
+          "softprops/action-gh-release@v3"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -54543,7 +54725,10 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -54565,13 +54750,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/branch-archive.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-branch-archive",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -54598,7 +54787,19 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/workflows/fast-gate.yml",
+          "./.github/workflows/verifier.yml",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25",
+          "docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc",
+          "docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6",
+          "docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069",
+          "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -54620,13 +54821,25 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/build-multiarch.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/dockerfiles",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:workflow/gha-fast-gate",
+          "edge": "calls"
+        },
+        {
+          "id": "cap:workflow/gha-verifier",
+          "edge": "calls"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -54650,7 +54863,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -54702,7 +54919,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./idp/.github/actions/github-app-token",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "fluxcd/flux2/action@ed8c5f2c24d57715d08423d3c1a7b0554ceb030e"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -54724,13 +54947,21 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/catalog-render.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/catalog-render",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-twin-runtime",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -54755,7 +54986,22 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/actions/estate-tools",
+          "./.github/actions/security-scan",
+          "./.github/workflows/fast-gate.yml",
+          "./.github/workflows/verifier.yml",
+          "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/github-script@v9",
+          "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "actions/upload-artifact@v7",
+          "azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -54777,13 +55023,61 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/ci.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/claim-gate",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-law-gate",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-ci",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-ci-touched",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-compile-helm",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-features",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-lane-receipts",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-messaging-demo",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-tests-for",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/test-executes-gate",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:workflow/gha-fast-gate",
+          "edge": "calls"
+        },
+        {
+          "id": "cap:workflow/gha-verifier",
+          "edge": "calls"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -54808,7 +55102,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/actions/github-app-token",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -54830,13 +55130,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/concierge-deploy.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -54860,7 +55164,14 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6",
+          "fluxcd/flux2/action@ed8c5f2c24d57715d08423d3c1a7b0554ceb030e",
+          "imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b",
+          "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -54912,7 +55223,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -54964,7 +55279,10 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -55016,7 +55334,8 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -55067,7 +55386,12 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/actions/k3d-estate",
+          "actions/checkout@v7",
+          "actions/setup-python@v7.1.0"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -55089,13 +55413,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/deploy-models.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-expert-manifest",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -55120,7 +55448,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/actions/github-app-token",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -55142,13 +55474,25 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/deploy-when-green.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-admitted-mutation-diff",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-image-only-diff",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-pr-landable",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -55172,7 +55516,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -55194,13 +55544,29 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/estate-bootstrap.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-bootstrap-cloudflare",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-bootstrap-tailscale",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-bootstrap-vendors",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-estate-seed",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -55224,7 +55590,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -55246,13 +55616,21 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/estate-dag-gen.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-dag-changed",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-dag-gen",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -55276,7 +55654,12 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -55298,13 +55681,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/estate-db-backup.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-estate-db-backup",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -55328,7 +55715,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -55381,7 +55772,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -55403,13 +55800,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/estate-escrow.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-escrow",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -55433,7 +55834,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@v7",
+          "actions/upload-artifact@v7"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -55455,13 +55860,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/estate-homes-drill.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-estate-homes",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -55486,7 +55895,20 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/actions/github-app-token",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6",
+          "fluxcd/flux2/action@ed8c5f2c24d57715d08423d3c1a7b0554ceb030e",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40",
+          "imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b",
+          "opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4",
+          "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -55508,13 +55930,25 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/estate-inventory.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-inventory",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-reports-render",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -55537,7 +55971,10 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@v7"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -55589,7 +56026,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -55611,13 +56052,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/estate-progress.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-progress",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -55640,7 +56085,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -55662,13 +56113,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/estate-secret-prune.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -55693,7 +56148,19 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/actions/github-app-token",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6",
+          "fluxcd/flux2/action@ed8c5f2c24d57715d08423d3c1a7b0554ceb030e",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40",
+          "imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b",
+          "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -55715,13 +56182,37 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/estate-state.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-estate-state-build",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-image-builds",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-reports-render",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-router-lanes",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-surface-liveness",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -55745,7 +56236,10 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@v7"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -55797,7 +56291,12 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -55819,13 +56318,21 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/estate-watch.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-estate-capacity",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-estate-homes",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -55852,7 +56359,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@v7",
+          "actions/setup-python@v7.1.0"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -55903,7 +56414,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -55917,7 +56432,11 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-build-multiarch",
+        "cap:workflow/gha-ci",
+        "cap:workflow/gha-portal-app"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -55925,13 +56444,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/fast-gate.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-ci",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -55954,7 +56477,12 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -55976,13 +56504,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/feature-request-enable.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-features",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -56005,7 +56537,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/actions/publish-model-artifact",
+          "actions/checkout@v7"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -56057,7 +56593,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -56079,13 +56621,21 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/flux-board-reconcile.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/flux-board-reconcile",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -56108,7 +56658,8 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -56159,7 +56710,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/actions/github-app-token",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -56210,7 +56767,14 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/actions/github-app-token",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -56232,13 +56796,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/forge-train.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -56261,7 +56829,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/actions/github-app-token",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -56283,13 +56857,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/forge-train-kaggle.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-set-root",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -56316,7 +56894,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/actions/github-app-token",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -56338,13 +56920,21 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/greenlane.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-greenlane",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-greenlane-check-trigger",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -56368,7 +56958,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -56390,13 +56984,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/greenlane-efficiency-preflight.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/language-gate",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -56421,7 +57019,10 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -56443,13 +57044,21 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/guarded-paths.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-ci-base",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-ci-guarded-paths",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -56472,7 +57081,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/actions/github-app-token",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -56524,7 +57137,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/actions/github-app-token",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -56546,13 +57163,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/kini-finish.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-pr-arm",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -56577,7 +57198,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -56599,13 +57226,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/login-drill.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-login-drill",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -56629,7 +57260,10 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@v7"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -56651,13 +57285,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/mac-provision-test.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-mac-provision",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -56680,7 +57318,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -56702,13 +57346,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/mac-salvage.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -56732,7 +57380,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -56754,13 +57406,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/matrix-review.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/matrix-gate",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -56784,7 +57440,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/actions/github-app-token",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -56836,7 +57496,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@v7",
+          "actions/setup-python@v7.1.0"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -56888,7 +57552,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@v7",
+          "actions/setup-python@v7.1.0"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -56941,7 +57609,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/actions/github-app-token",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -56963,13 +57635,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/name-drift.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-zone-gate",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -56993,7 +57669,10 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@v7"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -57045,7 +57724,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/actions/github-app-token",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -57067,13 +57750,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/objective-miner.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-objective-miner",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -57098,7 +57785,14 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40",
+          "opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -57120,13 +57814,65 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/oke-check.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-autoscaler-seed",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-bootstrap-cloudflare",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-bootstrap-macrun",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-bootstrap-sunshine",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-bootstrap-tailscale",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-bootstrap-vendors",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-estate-seed",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-github-app",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-hc-publish",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-identity-apply",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-oke-rebuild",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-tailscale-policy",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-vault-put",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -57149,7 +57895,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -57171,13 +57923,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/op-verify.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -57200,7 +57956,10 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -57251,7 +58010,14 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40",
+          "opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -57273,13 +58039,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/otto-homes.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-oke-rebuild",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -57302,7 +58072,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -57324,13 +58100,21 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/otto-lifeboat.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-bootstrap-cloudflare",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-otto-homes",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -57354,7 +58138,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -57376,13 +58166,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/otto-parity.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -57406,7 +58200,10 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -57459,7 +58256,16 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/workflows/fast-gate.yml",
+          "./.github/workflows/verifier.yml",
+          "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -57481,13 +58287,25 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/portal-app.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-ci-touched",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:workflow/gha-fast-gate",
+          "edge": "calls"
+        },
+        {
+          "id": "cap:workflow/gha-verifier",
+          "edge": "calls"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -57511,7 +58329,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/actions/github-app-token",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -57533,13 +58355,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/pr-age.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-pr-age",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -57564,7 +58390,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -57586,13 +58416,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/probe-mutations.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-probe-mutations",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -57615,7 +58449,12 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@v7.1.0",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -57666,7 +58505,12 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -57718,7 +58562,12 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "./.github/actions/estate-tools",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -57740,13 +58589,81 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/registry-snapshot.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/capability-index",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:workflow/gha-registry-workflow-dependency-preflight",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "registry-workflow-dependency-preflight -- the GitHub Actions workflow registry-workflow-dependency-preflight.yml.",
+      "contract": {
+        "inputs": [
+          "push",
+          "workflow_dispatch"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/registry-workflow-dependency-preflight.yml",
+      "depends_on": [
+        {
+          "id": "cap:tool/capability-index",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/registry-gate",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -57770,7 +58687,8 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": []
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -57823,7 +58741,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -57874,7 +58796,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40",
+          "opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -57896,13 +58824,25 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/router-recovery.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-oci-login",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-vault-put",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -57926,7 +58866,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@v7",
+          "astral-sh/ruff-action@v3"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -57979,7 +58923,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370",
+          "ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -58032,7 +58982,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/cache@v6",
+          "actions/checkout@v7"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -58054,13 +59008,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/shadow-image-bundle.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-shadow-bundle",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -58084,7 +59042,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/cache@v6",
+          "actions/checkout@v7",
+          "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -58106,13 +59070,25 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/shadow-verify.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-kyverno-dirs",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-shadow",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-shadow-bundle",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -58137,7 +59113,12 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -58159,13 +59140,21 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/ticket-verification.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-github-app",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-ticket-verify",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -58189,7 +59178,10 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -58240,7 +59232,12 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -58262,13 +59259,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/vault-bootstrap.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -58292,7 +59293,12 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -58314,13 +59320,21 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/vault-reads.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-vault-reads",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-vault-refs",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -58343,7 +59357,14 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40",
+          "nhedger/setup-sops@18e52f363488ed469d2e1855e542a1c651743bba",
+          "opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -58365,13 +59386,37 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/vault-seed.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-github-app",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-oci-login",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-router-key",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-router-rows-to-console",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-vault-put",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -58394,7 +59439,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -58446,7 +59495,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -58499,7 +59552,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -58521,13 +59580,21 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/verdict-backstage.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-prove",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-verdict",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -58552,7 +59619,14 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6",
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -58574,13 +59648,21 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/verdict-langfuse.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-prove",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-verdict",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -58605,7 +59687,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -58627,13 +59715,21 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/verdict-signoz.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-prove",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-verdict",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -58658,7 +59754,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -58680,13 +59782,25 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/verdict-surfaces.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-github-app",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-verify-surfaces",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -58709,7 +59823,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -58723,7 +59841,11 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:workflow/gha-build-multiarch",
+        "cap:workflow/gha-ci",
+        "cap:workflow/gha-portal-app"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -58731,13 +59853,21 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/verifier.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-ci-base",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-ci-verify",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -58761,7 +59891,10 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "chidionyema/idp/.github/actions/wake-blocked@main"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -58813,7 +59946,11 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@v7",
+          "actions/setup-node@v7"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -58864,7 +60001,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -58886,13 +60029,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/webhook-diagnose.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
@@ -58915,7 +60062,13 @@
           "a required check that never reports"
         ],
         "cost_class": "free",
-        "latency_class": "batch"
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -58937,13 +60090,17 @@
       "rung": null,
       "writer": "repo",
       "path": ".github/workflows/webhook-diagnose-v2.yml",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
         "proof",
-        "metrics",
-        "dependencies"
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
