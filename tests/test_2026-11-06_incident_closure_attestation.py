@@ -183,3 +183,106 @@ def test_queue_escalation_never_fabricates_confirmation_on_git_hub_error(inciden
     events = [e["event"] for e in __import__("json").loads(loop.get_incident(conn, ident)["history"])]
     assert "p0-worker-overdue:BLIND" not in events
     assert loop.get_incident(conn, ident)["state"] == "open"
+
+
+def test_main_ci_incident_rejects_green_on_other_branch(monkeypatch):
+    import json
+
+    row = {"detail": json.dumps({
+        "run_id": 100, "workflow": "login-drill", "branch": "main",
+        "run_attempt": 1,
+    })}
+    queries = []
+
+    def gh(args, timeout=45):
+        queries.append(args)
+        return 0, json.dumps([
+            {"id": 103, "name": "login-drill", "head_branch": "feature/unrelated",
+             "status": "completed", "conclusion": "success", "run_attempt": 1},
+            {"id": 102, "name": "login-drill", "head_branch": "main",
+             "status": "completed", "conclusion": "failure", "run_attempt": 1},
+            {"id": 101, "name": "login-drill", "head_branch": "main",
+             "status": "completed", "conclusion": "success", "run_attempt": 1},
+        ]), ""
+
+    monkeypatch.setattr(loop, "run_gh", gh)
+    ok, evidence = loop.ci_resolved("chidionyema/idp", row)
+    assert not ok and not evidence
+    assert "branch=main" in " ".join(queries[0])
+    assert "per_page=100" in " ".join(queries[0])
+
+
+def test_latest_same_branch_success_is_valid_but_not_an_earlier_green(monkeypatch):
+    import json
+
+    row = {"detail": json.dumps({
+        "run_id": 100, "workflow": "login-drill", "branch": "main",
+        "run_attempt": 1,
+    })}
+    records = [
+        {"id": 102, "name": "login-drill", "head_branch": "main",
+         "status": "completed", "conclusion": "failure", "run_attempt": 1},
+        {"id": 101, "name": "login-drill", "head_branch": "main",
+         "status": "completed", "conclusion": "success", "run_attempt": 1},
+    ]
+    monkeypatch.setattr(loop, "run_gh", lambda *a, **k: (0, json.dumps(records), ""))
+    assert not loop.ci_resolved("chidionyema/idp", row)[0]
+    records.append({
+        "id": 103, "name": "login-drill", "head_branch": "main",
+        "status": "completed", "conclusion": "success", "run_attempt": 1,
+    })
+    ok, evidence = loop.ci_resolved("chidionyema/idp", row)
+    assert ok and "103" in evidence and "main" in evidence
+
+
+def test_latest_run_in_progress_and_other_workflows_do_not_prove_recovery(monkeypatch):
+    import json
+
+    row = {"detail": json.dumps({
+        "run_id": 100, "workflow": "login-drill", "branch": "main",
+        "run_attempt": 1,
+    })}
+    records = [
+        {"id": 103, "name": "login-drill", "head_branch": "main",
+         "status": "in_progress", "conclusion": None, "run_attempt": 1},
+        {"id": 102, "name": "login-drill", "head_branch": "main",
+         "status": "completed", "conclusion": "success", "run_attempt": 1},
+        {"id": 104, "name": "other-workflow", "head_branch": "main",
+         "status": "completed", "conclusion": "success", "run_attempt": 1},
+    ]
+    monkeypatch.setattr(loop, "run_gh", lambda *a, **k: (0, json.dumps(records), ""))
+    assert not loop.ci_resolved("chidionyema/idp", row)[0]
+
+
+def test_exact_run_rerun_requires_strictly_later_attempt(monkeypatch):
+    import json
+
+    row = {"detail": json.dumps({
+        "run_id": 100, "workflow": "login-drill", "branch": "main",
+        "run_attempt": 1,
+    })}
+    attempts = {"value": 1}
+
+    def gh(*a, **k):
+        return 0, json.dumps([{
+            "id": 100, "name": "login-drill", "head_branch": "main",
+            "status": "completed", "conclusion": "success",
+            "run_attempt": attempts["value"],
+        }]), ""
+
+    monkeypatch.setattr(loop, "run_gh", gh)
+    assert not loop.ci_resolved("chidionyema/idp", row)[0]
+    attempts["value"] = 2
+    assert loop.ci_resolved("chidionyema/idp", row)[0]
+
+
+def test_unknown_git_hub_response_fails_closed_without_main_exception(monkeypatch):
+    import json
+
+    row = {"detail": json.dumps({
+        "run_id": 100, "workflow": "login-drill", "branch": "main",
+    })}
+    monkeypatch.setattr(loop, "run_gh", lambda *a, **k: (0, "not-json", ""))
+    assert loop.ci_resolved("chidionyema/idp", row) == (False, "")
+    monkeypatch.setattr(loop, "run_gh", lambda *a, **k: (0, "{}", ""))
+    assert loop.ci_resolved("chidionyema/idp", row) == (False, "")
