@@ -10,6 +10,10 @@
 # read-only here: nothing in this script can write to them.
 set -euo pipefail
 MODE="${1:-identify}"
+case "$MODE" in
+  identify|copy) ;;
+  *) printf 'FAIL    data-volumes  invalid mode %s (identify/copy only)\n' "$MODE" >&2; exit 64 ;;
+esac
 
 # OCI Run Command executes this script as `ocarun` (uid 988), NOT as root -- measured on
 # 2026-10-30. The instance-principal OCI calls and the mounts both need root, and the OCI CLI
@@ -30,14 +34,28 @@ fi
 export OCI_CLI_AUTH=instance_principal SUPPRESS_LABEL_WARNING=True
 NS="$(oci os ns get --query data --raw-output)"
 BUCKET="${RECOVERY_BUCKET:-estate-router-recovery}"
-command -v zstd >/dev/null || dnf install -y zstd >/dev/null
+# A census must not mutate the recovery host to install copy-only tools.
+if [ "$MODE" = copy ]; then
+  command -v zstd >/dev/null || dnf install -y zstd >/dev/null
+fi
 
 root_dev="$(lsblk -no PKNAME "$(findmnt -no SOURCE /)" | head -1)"
+seen=0
 for dev in $(lsblk -dno NAME,TYPE | awk '$2=="disk"{print $1}'); do
   [ "$dev" = "$root_dev" ] && continue
   part="/dev/$dev"; [ -b "/dev/${dev}1" ] && part="/dev/${dev}1"
   mnt="/mnt/recovery/$dev"; mkdir -p "$mnt"
-  mountpoint -q "$mnt" || mount -o ro,noload "$part" "$mnt" 2>/dev/null || mount -o ro "$part" "$mnt"
+  if mountpoint -q "$mnt"; then
+    # A pre-existing RW mount must NEVER be represented as a read-only witness.
+    opts="$(findmnt -no OPTIONS "$mnt" 2>/dev/null || true)"
+    case ",$opts," in
+      *,ro,*) ;;
+      *) printf 'FAIL    data-volumes  %s was already mounted writable or unreadable\n' "$mnt" >&2; exit 1 ;;
+    esac
+  else
+    mount -o ro,noload "$part" "$mnt" 2>/dev/null || mount -o ro "$part" "$mnt"
+  fi
+  seen=$((seen + 1))
   size="$(du -sm "$mnt" 2>/dev/null | cut -f1)"
   pg="$(find "$mnt" -maxdepth 4 -name PG_VERSION 2>/dev/null | head -1)"
   echo "VOLUME $dev part=$part used_mb=$size postgres=${pg:+$(cat "$pg") at ${pg%/PG_VERSION}}"
@@ -53,3 +71,11 @@ for dev in $(lsblk -dno NAME,TYPE | awk '$2=="disk"{print $1}'); do
     echo "COPIED $dev -> $BUCKET/$obj sha256=$sha"
   fi
 done
+# All three surviving OCI CSI data volumes are required for complete recovery.
+# A host with only its boot disk is not a successful volume census.
+printf 'state   data-volumes  examined %s of 3 required non-root data disks\n' "$seen"
+if [ "$seen" -lt 3 ]; then
+  printf 'FAIL    data-volumes  only %s of 3 required data volumes visible on this recovery host; check OCI availability-domain placement and attachments\n' "$seen" >&2
+  exit 1
+fi
+printf 'ok      data-volumes  all 3 non-root volumes observed read-only\n'
