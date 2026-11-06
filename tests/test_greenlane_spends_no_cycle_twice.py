@@ -140,6 +140,7 @@ def red_world(monkeypatch):
                     "id": 128048562627,
                     "name": "offline-gate",
                     "conclusion": "failure",
+                    "html_url": JOB.format("128048562627"),
                     "steps": [
                         {"name": "tools", "conclusion": "success"},
                         {"name": "Run bin/idp-ci", "conclusion": "failure"},
@@ -199,7 +200,9 @@ def test_a_missing_log_still_names_the_job_and_step(red_world):
     b, _ = red_world
     b.logs.clear()
     _, reason = b.checks("tip")
-    assert reason.endswith("-- offline-gate > Run bin/idp-ci"), reason
+    assert reason.endswith(
+        "-- offline-gate > Run bin/idp-ci " + JOB.format("128048562627")
+    ), reason
 
 
 def test_the_lane_status_links_the_failing_job_and_keeps_the_words(red_world):
@@ -207,7 +210,7 @@ def test_the_lane_status_links_the_failing_job_and_keeps_the_words(red_world):
     _, reason = b.checks("tip")
     b.report("lane/x", "h", RED, reason)
     f = b.statuses[-1]
-    assert f["target_url"] == JOB.format("128050314789")
+    assert f["target_url"] == JOB.format("128048562627"), "one click to the failing log"
     assert "http" not in f["description"]
     assert f["description"].startswith(
         "ci-success failure -- offline-gate > Run bin/idp-ci"
