@@ -7156,7 +7156,9 @@
       "kind": "layer",
       "summary": "Offline adversarial regression tests for estate recovery dump selection.",
       "contract": {
-        "inputs": [],
+        "inputs": [
+          "--copy-provenance"
+        ],
         "outputs": [
           "stdout",
           "exit code"
@@ -7209,7 +7211,9 @@
       "kind": "layer",
       "summary": "Reject cluster dumps that would restore zero user tables in the target database.",
       "contract": {
-        "inputs": [],
+        "inputs": [
+          "--copy-provenance"
+        ],
         "outputs": [
           "stdout",
           "exit code"
