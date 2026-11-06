@@ -1,4 +1,5 @@
 """Security regression tests: Gemini Web Drive is a signed data lane, never an actuator."""
+
 import hashlib
 import hmac
 import importlib.util
@@ -15,10 +16,14 @@ KEY = "testing-gemini-web-drive-verification-key-32bytes"
 
 def valid():
     obj = {
-        "schema_version": 1, "event_id": "gemini-123456789abcd",
-        "source": "gemini-web-drive", "source_sha256": "a" * 64,
-        "document_id": "document-1234", "target_repo": "chidionyema/idp",
-        "intent": "review-only", "issued_at": 1_000_000,
+        "schema_version": 1,
+        "event_id": "gemini-123456789abcd",
+        "source": "gemini-web-drive",
+        "source_sha256": "a" * 64,
+        "document_id": "document-1234",
+        "target_repo": "chidionyema/idp",
+        "intent": "review-only",
+        "issued_at": 1_000_000,
     }
     return sign(obj)
 
@@ -26,7 +31,9 @@ def valid():
 def sign(obj, key=KEY):
     o = dict(obj)
     o.pop("signature", None)
-    o["signature"] = hmac.new(key.encode(), mod.signing_bytes(o), hashlib.sha256).hexdigest()
+    o["signature"] = hmac.new(
+        key.encode(), mod.signing_bytes(o), hashlib.sha256
+    ).hexdigest()
     return o
 
 
@@ -36,10 +43,18 @@ def evaluate(obj, key=KEY, now=1_000_000):
 
 class IntakeTests(unittest.TestCase):
     def test_accepts_authenticated_quarantined_review_only(self):
-        self.assertEqual(evaluate(valid())["status"], "QUARANTINED_AUTHENTICATED_REVIEW_ONLY")
+        self.assertEqual(
+            evaluate(valid())["status"], "QUARANTINED_AUTHENTICATED_REVIEW_ONLY"
+        )
 
     def test_rejects_privileged_intents_even_if_signed(self):
-        for intent in ("merge", "rotate-secret", "workflow_dispatch", "shell", "approve"):
+        for intent in (
+            "merge",
+            "rotate-secret",
+            "workflow_dispatch",
+            "shell",
+            "approve",
+        ):
             obj = valid()
             obj["intent"] = intent
             with self.subTest(intent=intent), self.assertRaises(ValueError):
@@ -70,20 +85,29 @@ class IntakeTests(unittest.TestCase):
     def test_deterministic_envelope_receipt(self):
         obj = valid()
         a = mod.validate(json.dumps(obj).encode(), key=KEY, now=1_000_000)
-        b = mod.validate(json.dumps(obj, sort_keys=True).encode(), key=KEY, now=1_000_000)
+        b = mod.validate(
+            json.dumps(obj, sort_keys=True).encode(), key=KEY, now=1_000_000
+        )
         self.assertEqual(a["envelope_sha256"], b["envelope_sha256"])
 
     def test_rejects_duplicate_json_members(self):
         obj = valid()
-        raw = json.dumps(obj).replace('"schema_version": 1', '"schema_version": 1, "schema_version": 1', 1)
+        raw = json.dumps(obj).replace(
+            '"schema_version": 1', '"schema_version": 1, "schema_version": 1', 1
+        )
         with self.assertRaisesRegex(ValueError, "duplicate"):
             mod.validate(raw.encode(), key=KEY, now=1_000_000)
 
     def test_receipt_binds_exact_drive_document(self):
         obj = valid()
         receipt = evaluate(obj)
-        self.assertNotIn("document_id", receipt)  # Private Drive ID must not leak to public CI logs.
-        self.assertEqual(receipt["document_ref_sha256"], hashlib.sha256(obj["document_id"].encode()).hexdigest())
+        self.assertNotIn(
+            "document_id", receipt
+        )  # Private Drive ID must not leak to public CI logs.
+        self.assertEqual(
+            receipt["document_ref_sha256"],
+            hashlib.sha256(obj["document_id"].encode()).hexdigest(),
+        )
         self.assertEqual(receipt["source_sha256"], obj["source_sha256"])
         modified = dict(obj)
         modified["document_id"] = "different-private-file-id"
@@ -106,7 +130,10 @@ class IntakeTests(unittest.TestCase):
 
     def test_rejects_timestamp_backdating_and_future(self):
         for instant in (1_000_901, 999_099):
-            with self.subTest(instant=instant), self.assertRaisesRegex(ValueError, "timestamp"):
+            with (
+                self.subTest(instant=instant),
+                self.assertRaisesRegex(ValueError, "timestamp"),
+            ):
                 evaluate(valid(), now=instant)
 
     def test_rejects_boolean_timestamp(self):

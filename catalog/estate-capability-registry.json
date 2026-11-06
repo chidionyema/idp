@@ -57096,8 +57096,8 @@
       "contract": {
         "inputs": [
           "repository_dispatch",
-          "pull_request",
-          "push"
+          "push",
+          "pull_request"
         ],
         "outputs": [
           "job verdicts",
