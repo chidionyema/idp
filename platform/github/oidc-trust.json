@@ -1,0 +1,19 @@
+{
+  "$comment": "platform/github/oidc-trust.json. The GitHub Actions contexts whose OIDC token the estate's identity domain may exchange for the estate-ci OCI session (the session that reads the GitHub App key and the vault). One list, read by bin/idp-oidc-trust (reconciles the IdentityPropagationTrust `github-actions-estate`), by bin/idp-github-app token (refuses to mint outside it), and by tests/test_oidc_trust_admits_only_reviewed_contexts.py (every workflow that exchanges a token is covered; no lane or queue ref ever is). Founder 2026-11-06: close the stale-lane privileged-run gap at its root.",
+  "trust": "github-actions-estate",
+  "contexts": [
+    {
+      "context": "ref:refs/heads/main",
+      "why": "every schedule, workflow_dispatch, workflow_run, check_run, issue_comment and repository_dispatch run executes the default branch's reviewed definition"
+    },
+    {
+      "context": "ref:refs/heads/flux/image-updates",
+      "why": "image-update-pr.yml runs on the image controller's push; the controller, not an agent, writes this branch"
+    },
+    {
+      "context": "pull_request",
+      "why": "pull_request / pull_request_target runs (estate-escrow, estate-inventory, estate-state, greenlane, name-drift, oke-check); the engine raises pull requests only for lanes it has proven, and relanes any other"
+    }
+  ],
+  "never": ["ref:refs/heads/lane/", "ref:refs/heads/queue/"]
+}
