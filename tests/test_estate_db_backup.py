@@ -77,6 +77,7 @@ def test_recent_copy_cannot_certify_two_month_old_data(tmp_path):
 def test_age_uses_object_store_date_not_local_rtc(tmp_path):
     receipt = dict(GOOD)
     receipt["data_as_of"] = "2027-02-01T01:00:00+00:00"
+    receipt["stamp"] = "20270201T010000Z"
     r = grade(tmp_path, receipt, "Mon, 01 Feb 2027 01:00:00 GMT",
               "Mon, 01 Feb 2027 02:00:00 GMT")
     assert r.returncode == 0 and "recovery point 1.0 h old" in r.stdout
@@ -103,6 +104,19 @@ def test_live_cluster_dump_proves_its_own_timestamp(tmp_path):
     r = grade(tmp_path, live, T0, "Thu, 29 Oct 2026 05:41:00 GMT")
     assert r.returncode == 0 and "recovery point 2.0 h old" in r.stdout
 
+
+
+def test_source_date_after_copy_is_blind_even_if_storage_clock_later(tmp_path):
+    receipt = dict(GOOD, data_as_of="2026-11-01T00:00:00+00:00")
+    r = grade(tmp_path, receipt, "Sun, 01 Nov 2026 01:00:00 GMT",
+              "Sun, 01 Nov 2026 01:10:00 GMT")
+    assert r.returncode == 2 and "newer than the copy" in r.stdout
+
+
+def test_main_only_backup_runs_when_source_age_grader_changes():
+    workflow = (ROOT / ".github/workflows/estate-db-backup.yml").read_text()
+    assert "      - bin/idp-estate-db-backup" in workflow
+    assert "    if: github.ref == 'refs/heads/main'" in workflow
 
 def test_cronjob_is_wired_and_uses_no_block_volume():
     docs = list(
