@@ -25,6 +25,10 @@ jobs:
           python-version: '3.11'
       - name: Run fail-closed intake tests
         run: python -m unittest discover -s tests -p test_genesis_drive_intake.py -v
+      - name: Emit exact Ruff formatter diff for CI diagnosis
+        run: |
+          python -m pip install -q ruff==0.15.18
+          ruff format --diff bin/genesis_drive_intake.py tests/test_genesis_drive_intake.py
       - name: Falsify Google Apps Script sender boundary
         run: node --test tests/test_genesis_drive_sender.mjs
       - name: Quarantine dispatch envelope
