@@ -418,3 +418,46 @@ def test_the_repair_enables_the_refresh_timer_on_the_live_host() -> None:
     """The live host's timer was active=inactive enabled=static: nothing scheduled it."""
     text = HOST_REPAIR.read_text()
     assert "systemctl enable --now estate-router-refresh.timer" in text, text
+
+
+def test_recovery_host_census_launches_only_from_governed_main():
+    """An unreviewed lane must never mint the OCI token for host Run Command."""
+    workflow = WORKFLOW.read_text()
+    assert "  push:\n    branches: [main]\n" in workflow
+    assert "      - .github/workflows/recovery-data.yml" in workflow
+    assert "      - platform/oci/recovery/data-volumes.sh" in workflow
+    assert "    if: github.ref == 'refs/heads/main'" in workflow
+    assert "MODE: ${{ inputs.mode || 'identify' }}" in workflow
+    assert workflow.index("    if: github.ref == 'refs/heads/main'") < workflow.index(
+        "      - name: OCI session token from the GitHub OIDC token"
+    )
+    assert "  pull_request:" not in workflow
+    assert "  pull_request_target:" not in workflow
+
+
+def test_recovery_identify_never_silently_succeeds_without_all_three_volumes():
+    """No disks on AD-2 cannot be recorded as a recovered AD-1 database."""
+    source = DATA_VOLUMES.read_text()
+    assert 'case "$MODE" in' in source
+    assert "identify|copy)" in source
+    assert 'if [ "$MODE" = copy ]; then' in source
+    assert source.index('if [ "$MODE" = copy ]; then') < source.index('command -v zstd')
+    assert 'seen=0' in source
+    assert 'seen=$((seen + 1))' in source
+    assert 'if [ "$seen" -lt 3 ]; then' in source
+    assert "FAIL    data-volumes  only %s of 3 required data volumes" in source
+    assert "mountpoint -q" in source
+    assert "findmnt -no OPTIONS" in source
+    assert "was already mounted writable or unreadable" in source
+    assert "mount -o ro,noload" in source
+    assert "mount -o ro" in source
+
+
+def test_volume_census_rejects_unrecognised_mode_before_any_oci_access():
+    """The real host script must refuse malformed dispatch before touching cloud."""
+    run = subprocess.run(
+        ["bash", str(DATA_VOLUMES), "unexpected-mode"],
+        capture_output=True, text=True, timeout=5,
+    )
+    assert run.returncode == 64, (run.stdout, run.stderr)
+    assert "invalid mode unexpected-mode" in run.stderr

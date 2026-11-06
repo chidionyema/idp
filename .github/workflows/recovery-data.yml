@@ -22,6 +22,13 @@
 # Run Command body itself: one place builds it, and that place is tested.
 name: recovery-data
 on:
+  # Only a governed main-branch change can launch a new read-only volume census.
+  # Never use pull_request or a lane: this job exchanges an OCI OIDC credential.
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/recovery-data.yml
+      - platform/oci/recovery/data-volumes.sh
   workflow_dispatch:
     inputs:
       mode:
@@ -34,6 +41,7 @@ permissions:
   contents: read
 jobs:
   run:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -52,11 +60,11 @@ jobs:
           domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
           oci_region: ${{ vars.OCI_REGION }}
-      - name: ${{ inputs.mode }} on the recovery host
+      - name: ${{ inputs.mode || 'identify' }} on the recovery host
         env:
           OCI_CLI_AUTH: security_token
           COMP: ${{ vars.OCI_COMPARTMENT_OCID }}
-          MODE: ${{ inputs.mode }}
+          MODE: ${{ inputs.mode || 'identify' }}
         run: |
           set -euo pipefail
           script=platform/oci/recovery/data-volumes.sh
