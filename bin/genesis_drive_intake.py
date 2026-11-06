@@ -109,7 +109,9 @@ def validate(raw, key=None, now=None):
         "event_id": obj["event_id"],
         "envelope_sha256": hashlib.sha256(canonical.encode()).hexdigest(),
         "source_sha256": obj["source_sha256"],
-        "document_ref_sha256": hashlib.sha256(obj["document_id"].encode("utf-8")).hexdigest(),
+        "document_ref_sha256": hashlib.sha256(
+            obj["document_id"].encode("utf-8")
+        ).hexdigest(),
         "target_repo": obj["target_repo"],
         "note": (
             "Authenticated relay sender only; Gemini authorship and source "
@@ -123,7 +125,10 @@ def main():
         raw = sys.stdin.buffer.read(MAX_BYTES + 1)
         print(json.dumps(validate(raw), sort_keys=True))
     except (ValueError, TypeError, KeyError, UnicodeError, json.JSONDecodeError):
-        print(json.dumps({"status": "REJECTED", "error": "INVALID_ENVELOPE"}), file=sys.stderr)
+        print(
+            json.dumps({"status": "REJECTED", "error": "INVALID_ENVELOPE"}),
+            file=sys.stderr,
+        )
         return 2
     return 0
 
