@@ -65,6 +65,8 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: [fast-gate, verifier]
     runs-on: ubuntu-24.04
+    # Provisioning now has a finite budget; no gate may hang unbounded or skip.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }   # bin/law32-gate diffs the PR against origin/main
@@ -98,11 +100,27 @@ jobs:
           cache: pip
           cache-dependency-path: sovereign/requirements*.txt
       - name: tools
+        # Previously >70 min without reaching bin/idp-ci (b4759/42235644018).
+        # Timeout is a RED build, never skipped CI or a fabricated PASS.
+        timeout-minutes: 15
         run: |
-          sudo apt-get update -q && sudo apt-get install -y -q shellcheck jq sqlite3 age
-          pip install -q check-jsonschema sqlite-utils pyyaml dagster dagster-webserver yamllint==1.37.1   # bin/idp-ci rung 1c.2, same pin as bin/idp-install-deps
-          pip install -q -r sovereign/requirements-dev.txt   # crew#219 R39: the bdd acceptance leg
-          pip install -q "mkdocs<2" mkdocs-techdocs-core   # bin/idp-ci rung 8c: docs site builds --strict (ADR 0002)
+          set -euo pipefail
+          budget() {
+            label="$1"; seconds="$2"; shift 2
+            echo "INSTALL   offline-gate  ${label} budget=${seconds}s"
+            if timeout -k 10s "${seconds}s" "$@"; then
+              echo "ok        offline-gate  ${label} installed"
+            else
+              rc=$?
+              echo "::error::offline-gate dependency install ${label} failed: exit ${rc}, budget ${seconds}s" >&2
+              exit "${rc}"
+            fi
+          }
+          budget apt-index 180 sudo apt-get update -q
+          budget apt-tools 180 sudo apt-get install -y -q shellcheck jq sqlite3 age
+          budget science-deps 420 python -m pip install -q --disable-pip-version-check --timeout 30 --retries 2 check-jsonschema sqlite-utils pyyaml dagster dagster-webserver yamllint==1.37.1
+          budget acceptance-deps 360 python -m pip install -q --disable-pip-version-check --timeout 30 --retries 2 -r sovereign/requirements-dev.txt
+          budget docs-deps 180 python -m pip install -q --disable-pip-version-check --timeout 30 --retries 2 "mkdocs<2" mkdocs-techdocs-core
       - uses: ./.github/actions/estate-tools
       - run: bin/idp-ci
         env:
