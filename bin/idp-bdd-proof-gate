@@ -9,11 +9,23 @@ refused -- fail-closed.
 This is the "show the green run, do not describe it" rule (LAW 22) given a machine that
 can say no, and it applies to every session, not one agent's workflow.
 
-Input: a pull request as JSON on stdin or as a file path (the shape `gh pr view --json`).
+Input: a pull request as JSON on stdin or as a file path (the shape `gh pr view --json`),
+or `--live` to grade the pull request this CI run is for.
 Exit codes:
   0  the pull request carries BDD proof on its own head commit
   1  refused -- missing block, unparseable, or the run is not on this head
   2  the input could not be read at all (BLIND, never a pass)
+  3  `--live` only: this event carries no pull request (a push to main grades itself)
+
+The BODY IS READ LIVE, THE HEAD IS THE COMMIT UNDER TEST (measured 2026-10-25, on this gate's
+own pull request). `--live` used to grade the body out of `GITHUB_EVENT_PATH`, and on a
+re-run GitHub replays the payload it froze when the run was created: this lane's re-run was
+refused with `the proof names ced59a268, but the pull request's head is b9a59de20889` while the
+pull request's actual body named b9a59de2 -- the author had already corrected it, and the gate
+convicted a snapshot. So the payload now supplies only the identity and the head sha (what this
+run graded), and the body comes from `gh pr view` when gh can read it. A job with no token still
+grades the payload's body, and the gate says which one it read, so a stale snapshot is
+diagnosable instead of mysterious.
 """
 
 from __future__ import annotations
@@ -84,8 +96,75 @@ def looks_like_a_pass(block: str) -> bool:
     return any(p.search(block) for p in PASS_PATTERNS)
 
 
+def _event_payload() -> dict | None:
+    """The GitHub Actions event payload, or None off-CI. A SNAPSHOT of the event's moment."""
+    import os
+
+    p = os.environ.get("GITHUB_EVENT_PATH")
+    if not p or not Path(p).is_file():
+        return None
+    try:
+        return json.loads(Path(p).read_text())
+    except Exception:  # noqa: S110 - malformed event JSON falls through to gh
+        return None
+
+
+def _event_pr() -> dict | None:
+    """The pull request the event payload carries, or None (a push, a schedule, off-CI)."""
+    ev = _event_payload()
+    if ev is None:
+        return None
+    return ev.get("pull_request") or None
+
+
+def _payload_row(pr: dict) -> dict:
+    """The pull request row out of an event payload, in `gh pr view --json` shape."""
+    return {
+        "number": pr.get("number"),
+        "title": pr.get("title") or "",
+        "body": pr.get("body") or "",
+        "headRefOid": ((pr.get("head") or {}).get("sha") or ""),
+        "_source": "event payload",
+    }
+
+
+def _gh_view(number) -> dict | None:
+    """The pull request as it is NOW, or None when gh cannot read it (no token, no network)."""
+    import subprocess
+
+    if not number:
+        return None
+    try:
+        out = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "view",
+                str(number),
+                "--json",
+                "number,title,body,headRefOid",
+            ],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except Exception:  # noqa: S110 - a missing gh is a fallback, not a crash
+        return None
+    if out.returncode != 0:
+        return None
+    try:
+        row = json.loads(out.stdout)
+    except Exception:  # noqa: S112 - unreadable gh output is a fallback
+        return None
+    if not isinstance(row, dict):
+        return None
+    row["_source"] = "gh pr view"
+    return row
+
+
 def live_pr() -> dict:
-    """The pull request under test (the CI event's PR), as gh reports it.
+    """The pull request under test: the payload's identity and head, the live body.
 
     The previous shape `gh pr list --state all --limit 1` returned the newest PR ANY
     session opened, not the PR being graded -- so a run for branch A refused because branch
@@ -95,52 +174,25 @@ def live_pr() -> dict:
     (pull_request or merge_group event), and fall back to newest only when neither is
     present (local invocation).
     """
+    ev_row = _event_pr()
+    if ev_row is not None:
+        row = _payload_row(ev_row)
+        live = _gh_view(row["number"])
+        if live is not None:
+            # The body is where the author writes the proof, and they may have edited it after
+            # this run started; the head stays the payload's, because that is the commit this
+            # run graded. A re-run replays a frozen payload, and its body is the stale half.
+            row["body"] = live.get("body") or row["body"]
+            row["title"] = live.get("title") or row["title"]
+            row["_source"] = "gh pr view body, payload head"
+        return row
+
+    # No event payload: a local invocation, or the pre-push hook on a lane/* branch.
+
     import os
     import subprocess
 
     root = Path(__file__).resolve().parents[1]
-
-    # GHA sets GITHUB_EVENT_PATH to a JSON file describing the triggering event. For
-    # pull_request events its .pull_request.number is the PR under test; for merge_group
-    # its .merge_group.head_ref parses to `refs/heads/gh-readonly-queue/<base>/pr-<n>-...`.
-    pr_number = None
-    ev_path = os.environ.get("GITHUB_EVENT_PATH")
-    if ev_path and Path(ev_path).is_file():
-        try:
-            ev = json.loads(Path(ev_path).read_text())
-            pr_number = (ev.get("pull_request") or {}).get("number")
-            if not pr_number:
-                head = (ev.get("merge_group") or {}).get("head_ref") or ""
-                # refs/heads/gh-readonly-queue/main/pr-3702-abc123...
-                import re
-
-                m = re.search(r"/pr-(\d+)-", head)
-                if m:
-                    pr_number = int(m.group(1))
-        except Exception:  # noqa: S110 - malformed event JSON falls through to gh list
-            pass
-
-    if pr_number:
-        out = subprocess.run(
-            [
-                "gh",
-                "pr",
-                "view",
-                str(pr_number),
-                "--json",
-                "number,title,body,headRefOid",
-            ],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        if out.returncode != 0:
-            raise RuntimeError(
-                f"gh could not view PR #{pr_number}: {out.stderr.strip()[:200]}"
-            )
-        return json.loads(out.stdout)
-
     # GITHUB_HEAD_REF is set by the pre-push hook for lane/* branches. Use it to find
     # the correct PR for the branch being pushed, instead of the global newest PR.
     head_ref = os.environ.get("GITHUB_HEAD_REF", "")
@@ -222,6 +274,58 @@ def _self_test() -> int:
     return 0
 
 
+def grade(pr: dict) -> int:
+    """Grade one pull request, whoever fed it in. 0 proved on this head; 1 refused, named.
+
+    ONE grader, both paths (the file/stdin path and `--live`). `--live` used to check only that
+    a block existed and never bound its `head:` to the head being graded, so the same pull
+    request got a weaker answer depending on which door asked.
+    """
+    import os
+
+    body = pr.get("body") or ""
+    head = (pr.get("headRefOid") or pr.get("head_oid") or "").lower()
+    title = pr.get("title") or ""
+    source = pr.get("_source") or "input"
+
+    # Env overrides let a rule's fixture cases prove the both-ways cases without a live PR:
+    #   BDD_PR_HEAD   -- pretend the pull request's head is this commit
+    #   BDD_RUN_HEAD  -- pretend the proof names this commit
+    # Both default to the input, so an unset environment changes nothing.
+    if os.environ.get("BDD_PR_HEAD"):
+        head = os.environ["BDD_PR_HEAD"].lower()
+    run_head_override = os.environ.get("BDD_RUN_HEAD", "").lower()
+
+    block = extract_block(body)
+    if block is None:
+        print(
+            f"refused: '{title}' carries no {BEGIN} ... {END} block "
+            f"(body from {source})",
+            file=sys.stderr,
+        )
+        return 1
+
+    if not looks_like_a_pass(block):
+        print("refused: the proof block carries no passing BDD run", file=sys.stderr)
+        return 1
+
+    proved = run_head_override or head_from_block(block)
+    if proved is None:
+        print("refused: the proof block names no head commit", file=sys.stderr)
+        return 1
+
+    if head and not head.startswith(proved):
+        print(
+            f"refused: the proof names {proved}, but the pull request's head is {head[:12]} "
+            f"(body from {source})",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"ok: bdd proof on head {proved} (body from {source})")
+    return 0
+
+
 def main() -> int:
     if "--self-test" in sys.argv or "-h" in sys.argv or "--help" in sys.argv:
         return (
@@ -230,6 +334,21 @@ def main() -> int:
             else (print(__doc__ or "bdd-proof-gate") or 0)
         )
     if "--live" in sys.argv:
+        if "--pr" in sys.argv:
+            i = sys.argv.index("--pr")
+            row = _gh_view(sys.argv[i + 1] if i + 1 < len(sys.argv) else "")
+            if row is None:
+                print(
+                    "bdd-proof-gate: BLIND, gh could not read that pull request",
+                    file=sys.stderr,
+                )
+                return 2
+            return grade(row)
+        if _event_payload() is not None and _event_pr() is None:
+            # A push, a schedule, a merge-queue run: no pull request in this event, so there is
+            # nothing here to grade. Named and skipped, never counted as a pass.
+            print("skip: this event carries no pull request", file=sys.stderr)
+            return 3
         try:
             pr = live_pr()
         except Exception as e:
@@ -238,16 +357,7 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
-        body = pr.get("body") or ""
-        if extract_block(body) is None:
-            # Named, not silently green: the last PR carries no proof, and the rule says so.
-            print(
-                f"refused: PR #{pr.get('number')} carries no {BEGIN} ... {END} block",
-                file=sys.stderr,
-            )
-            return 1
-        print(f"ok: PR #{pr.get('number')} carries a {BEGIN} block")
-        return 0
+        return grade(pr)
 
     src = sys.argv[1] if len(sys.argv) > 1 else "-"
     try:
@@ -262,43 +372,10 @@ def main() -> int:
         print(f"bdd-proof-gate: input is not JSON: {e}", file=sys.stderr)
         return 2
 
-    import os
-
-    body = pr.get("body") or ""
-    head = (pr.get("headRefOid") or pr.get("head_oid") or "").lower()
-    title = pr.get("title") or ""
-
-    # Env overrides let a rule's fixture cases prove the both-ways cases without a live PR:
-    #   BDD_PR_HEAD   -- pretend the pull request's head is this commit
-    #   BDD_RUN_HEAD  -- pretend the proof names this commit
-    # Both default to the input, so an unset environment changes nothing.
-    if os.environ.get("BDD_PR_HEAD"):
-        head = os.environ["BDD_PR_HEAD"].lower()
-    run_head_override = os.environ.get("BDD_RUN_HEAD", "").lower()
-
-    block = extract_block(body)
-    if block is None:
-        print(f"refused: '{title}' carries no {BEGIN} ... {END} block", file=sys.stderr)
-        return 1
-
-    if not looks_like_a_pass(block):
-        print("refused: the proof block carries no passing BDD run", file=sys.stderr)
-        return 1
-
-    proved = run_head_override or head_from_block(block)
-    if proved is None:
-        print("refused: the proof block names no head commit", file=sys.stderr)
-        return 1
-
-    if head and not head.startswith(proved):
-        print(
-            f"refused: the proof names {proved}, but the pull request's head is {head[:12]}",
-            file=sys.stderr,
-        )
-        return 1
-
-    print(f"ok: bdd proof on head {proved}")
-    return 0
+    if not isinstance(pr, dict):
+        print("bdd-proof-gate: input is not a pull request object", file=sys.stderr)
+        return 2
+    return grade(pr)
 
 
 if __name__ == "__main__":

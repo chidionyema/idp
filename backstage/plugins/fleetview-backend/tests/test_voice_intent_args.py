@@ -22,6 +22,7 @@ from fleetview_backend import voice_intents as vi
 
 # In the spoken catalog: every argument has a default, so naming it is enough.
 CI_STATUS_YAML = """name: ci-status
+class: read
 description: CI status for a branch.
 args:
   repo:

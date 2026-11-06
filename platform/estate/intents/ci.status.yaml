@@ -1,4 +1,5 @@
 name: ci.status
+class: read
 description: Structured CI/CD status for a PR or SHA. Returns JSON (all check runs, not the first 30).
 args:
   pr:   {type: string, default: ""}

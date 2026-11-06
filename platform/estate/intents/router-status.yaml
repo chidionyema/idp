@@ -1,4 +1,5 @@
 name: router-status
+class: read
 description: Is the router up? Confirm reachability and model catalog.
 tools: [curl]
 models: []

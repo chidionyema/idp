@@ -13,7 +13,7 @@ import pytest
 from fleetview_backend import voice_intents as vi
 
 FLUX_RECONCILE_YAML = "name: flux-reconcile\nsteps:\n  - cmd: echo\n"
-CI_STATUS_YAML = "name: ci-status\nsteps:\n  - cmd: echo\n"
+CI_STATUS_YAML = "name: ci-status\nclass: read\nsteps:\n  - cmd: echo\n"
 
 
 class Laptop:

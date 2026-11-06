@@ -1,4 +1,5 @@
 name: lane
+class: read
 description: How the lane is doing -- what is landing and for how long, what is stuck and why, what is red and who owns it. Read from the Greenlane's own status; "how's the lane?" is enough.
 args: {}
 halt_on_failure: true

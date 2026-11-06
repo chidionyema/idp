@@ -1,4 +1,5 @@
 name: cost-today
+class: read
 description: Where is my money going? Query spend for the calling key.
 tools: [curl]
 models: []
