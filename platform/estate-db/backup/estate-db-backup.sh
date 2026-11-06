@@ -131,7 +131,14 @@ for obj in data:
     if prefixes and not any(name.startswith(p) for p in prefixes):
         continue
     base = name.rsplit("/", 1)[-1]
-    tier = 0 if (estate in base or name.startswith(label)) else 1
+    # Source archives rank ahead of regenerated copies; a recent upload
+    # is never proof of a recent data snapshot.
+    if name.startswith("db/") and label in base:
+        tier = 0
+    elif name.startswith(label + "/"):
+        tier = 1
+    else:
+        tier = 2
     rows.append((tier, obj.get("time-created") or "", name, int(obj.get("size") or 0)))
 if not rows:
     sys.exit("no surviving dump under %s in bucket %s" % ("/".join(prefixes), bucket))
@@ -322,7 +329,7 @@ except Exception:
 # tried in rank order and each one is checked before it is trusted, so a dump of another
 # database -- or a truncated object -- is skipped with its reason, not restored.
 fetch_source() {
-	local dest="$1" ns name created size reason candidate rejected=""
+	local dest="$1" ns name created size reason candidate provenance receipt_file rejected=""
 	[ -n "$dest" ] || fail "fetch-source needs a destination"
 	ns=$(namespace)
 	candidate="${dest}.candidate"
@@ -338,8 +345,27 @@ fetch_source() {
 			rejected="${rejected}"$'\n'"  $name: $reason"
 			continue
 		}
+		# A recent upload may still contain historical data. Its Object Storage
+		# creation time must never replace the ORIGINAL data_as_of witness.
+		if [[ "$name" == "$RECEIPT_PREFIX/"* ]]; then
+			receipt_file="${dest}.receipt"
+			rm -f "$receipt_file"
+			if ! oci_cli os object get --namespace-name "$ns" --bucket-name "$BUCKET" \
+				--name "$RECEIPT_NAME" --file "$receipt_file" >/dev/null 2>&1; then
+				rejected="${rejected}"$'\n'"  $name: no independently readable copy receipt"
+				continue
+			fi
+			provenance=$(python3 "$(dirname "$SCRIPT_PATH")/verify_source_schema.py" \
+				--copy-provenance "$candidate" "$receipt_file" "$name" 2>&1) || {
+				rejected="${rejected}"$'\n'"  $name: untrusted copy lineage: $provenance"
+				continue
+			}
+		else
+			provenance=$(printf '%s\n%s\n' "$name" "$created")
+		fi
 		mv "$candidate" "$dest"
-		printf '%s\n%s\n' "$name" "$created" >"${dest}.source"
+		printf '%s\n' "$provenance" >"${dest}.source"
+		rm -f "${dest}.receipt"
 		say "fetched $name ($size bytes, created $created) to $dest"
 		return 0
 	done < <(list_sources)
