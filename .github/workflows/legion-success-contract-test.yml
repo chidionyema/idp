@@ -1,0 +1,38 @@
+name: Legion Success-First Contract Verification
+on:
+  push:
+    branches:
+      - wip/legion-success-door-integration-20261107
+  pull_request:
+    paths:
+      - bin/legion-mission-preflight
+      - tests/test_legion_mission_preflight.py
+      - tests/test_agent_sandbox_workflow.py
+      - .github/workflows/agent-sandbox.yml
+permissions:
+  contents: read
+jobs:
+  capability-before-commit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Prepare isolated Python regression tools
+        run: |
+          python3 -m venv "$RUNNER_TEMP/p0-venv"
+          "$RUNNER_TEMP/p0-venv/bin/python" -m pip install -q pytest==8.3.5 PyYAML==6.0.2
+      - name: Verify executable model-preplan, protected-path and submission tests
+        run: |
+          "$RUNNER_TEMP/p0-venv/bin/python" -m pytest -q tests/test_legion_mission_preflight.py tests/test_agent_sandbox_workflow.py
+      - name: Verify missing health proof cannot mint model write capability
+        run: |
+          python3 bin/legion-mission-preflight --task "P0 repair" --out "$RUNNER_TEMP/packet.json"
+          python3 - "$RUNNER_TEMP/packet.json" <<'PY'
+          import json,sys
+          p=json.load(open(sys.argv[1]))
+          assert p["level"]=="L2" and not p["health_proven"]
+          assert p["this_is_not_a_capability"]
+          print("Unobservability is L2, diagnostics and peer repair only")
+          PY
