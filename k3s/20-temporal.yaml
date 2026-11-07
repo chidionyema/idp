@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal
+  namespace: estate
+spec:
+  selector:
+    app: temporal
+  ports:
+    - name: grpc
+      port: 7233
+    - name: ui
+      port: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal
+  namespace: estate
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: temporal
+  template:
+    metadata:
+      labels:
+        app: temporal
+    spec:
+      containers:
+        - name: temporal
+          # auto-setup: embedded sqlite, zero external deps — right-sized for a single VM
+          image: temporalio/auto-setup:1.24
+          env:
+            - name: DB
+              value: "sqlite"
+            - name: SQLITE_MODE
+              value: "memory"
+          ports:
+            - containerPort: 7233
+            - containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 7233
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "1", memory: 1Gi }
