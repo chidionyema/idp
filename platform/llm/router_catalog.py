@@ -25,7 +25,10 @@ import sys
 import time
 from pathlib import Path
 
-ROUTER = os.environ.get("ESTATE_ROUTER_URL", "http://127.0.0.1:4000/v1")
+# Clients default to the cloud router. The laptop front is an explicit fallback for an outage,
+# never the endpoint this projector writes into every surface by default (AGENTS.md section 7a).
+DEFAULT_ROUTER = "https://llm.mumchimp.com/v1"
+ROUTER = os.environ.get("ESTATE_ROUTER_URL", DEFAULT_ROUTER)
 KEY_ENV = "LITELLM_API_KEY"  # the one key every harness presents to the router
 DISCOVER_TIMEOUT_S = 30
 
