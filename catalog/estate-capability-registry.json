@@ -6,7 +6,7 @@
     "intent": 118,
     "layer": 253,
     "service": 121,
-    "tool": 475,
+    "tool": 476,
     "workflow": 95
   },
   "records": [
@@ -27707,6 +27707,66 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/dof-gate",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "dof-gate: while a critical service is down, only its repair may land.",
+      "contract": {
+        "inputs": [
+          "--lease",
+          "--name-only",
+          "--no-commit-id",
+          "--parents",
+          "--reverse",
+          "--root",
+          "--write-tree"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/dof-gate",
+      "depends_on": [
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/epistemic_firewall.py",
       "schema_version": 1,
       "kind": "tool",
@@ -53261,6 +53321,7 @@
         "cap:tool/catalog-gen",
         "cap:tool/diagnosis-gate",
         "cap:tool/diff-workspace",
+        "cap:tool/dof-gate",
         "cap:tool/epistemic_firewall.py",
         "cap:tool/estate-context-gate",
         "cap:tool/estate-digest-worker",
