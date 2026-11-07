@@ -23,6 +23,23 @@ jobs:
         run: |
           python3 -m venv "$RUNNER_TEMP/p0-venv"
           "$RUNNER_TEMP/p0-venv/bin/python" -m pip install -q pytest==8.3.5 PyYAML==6.0.2
+      - name: Validate every trusted and untrusted shell script parses before provider spend
+        run: |
+          "$RUNNER_TEMP/p0-venv/bin/python" - <<'PY'
+          import subprocess
+          from pathlib import Path
+          import yaml
+          data = yaml.safe_load(Path(".github/workflows/agent-sandbox.yml").read_text())
+          checked = 0
+          for job in data["jobs"].values():
+              for step in job["steps"]:
+                  if "run" not in step:
+                      continue
+                  p = subprocess.run(["bash", "-n"], input=step["run"], text=True, capture_output=True)
+                  assert p.returncode == 0, (step.get("name"), p.stderr)
+                  checked += 1
+          print(f"{checked} shell steps syntax-valid")
+          PY
       - name: Verify executable model-preplan, protected-path and submission tests
         run: |
           "$RUNNER_TEMP/p0-venv/bin/python" -m pytest -q tests/test_legion_mission_preflight.py tests/test_agent_sandbox_workflow.py
