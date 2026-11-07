@@ -38,9 +38,11 @@ name: agent-sandbox
 # The run's title is the job's record: Fleet's agent-jobs panel (fleetview_backend/agent_jobs.py)
 # lists these runs and reads harness and task back out of this line, so GitHub is the one ledger.
 # A title, never a script: nothing here is executed.
-run-name: "agent (${{ inputs.harness }}): ${{ inputs.task }}"
+run-name: "${{ github.event_name == 'issues' && format('agent (gemini): LEGION #{0}', github.event.issue.number) || format('agent ({0}): {1}', inputs.harness, inputs.task) }}"
 
 on:
+  issues:
+    types: [opened, labeled]
   workflow_dispatch:
     inputs:
       harness:
@@ -68,6 +70,14 @@ permissions:
 
 jobs:
   agent:
+    # Only the founder may label an issue they authored as a Legion mission.
+    if: >-
+      github.event_name != 'issues' || (
+        github.actor == vars.ESTATE_FOUNDER_LOGIN &&
+        github.event.issue.user.login == vars.ESTATE_FOUNDER_LOGIN &&
+        ((github.event.action == 'opened' && startsWith(github.event.issue.title, '[LEGION] ')) ||
+         (github.event.action == 'labeled' && github.event.label.name == 'legion-run'))
+      )
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -84,7 +94,7 @@ jobs:
 
       - name: Install the harness and age
         env:
-          HARNESS: ${{ inputs.harness }}
+          HARNESS: ${{ github.event_name == 'issues' && 'gemini' || inputs.harness }}
         run: |
           set -euo pipefail
           case "$HARNESS" in
@@ -96,8 +106,8 @@ jobs:
 
       - name: Run the agent (its output goes to a file, never to this public log)
         env:
-          HARNESS: ${{ inputs.harness }}
-          TASK: ${{ inputs.task }}
+          HARNESS: ${{ github.event_name == 'issues' && 'gemini' || inputs.harness }}
+          TASK: ${{ github.event_name == 'issues' && format('{0} -- {1}', github.event.issue.title, github.event.issue.body) || inputs.task }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
@@ -270,9 +280,9 @@ jobs:
         id: claim
         env:
           GH_TOKEN: ${{ github.token }}
-          HARNESS: ${{ inputs.harness }}
-          TASK: ${{ inputs.task }}
-          ISSUE: ${{ inputs.issue }}
+          HARNESS: ${{ github.event_name == 'issues' && 'gemini' || inputs.harness }}
+          TASK: ${{ github.event_name == 'issues' && format('{0} -- {1}', github.event.issue.title, github.event.issue.body) || inputs.task }}
+          ISSUE: ${{ github.event_name == 'issues' && github.event.issue.number || inputs.issue }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -294,8 +304,8 @@ jobs:
       - name: Commit through the estate's own hooks and push the lane
         env:
           GH_TOKEN: ${{ github.token }}
-          HARNESS: ${{ inputs.harness }}
-          TASK: ${{ inputs.task }}
+          HARNESS: ${{ github.event_name == 'issues' && 'gemini' || inputs.harness }}
+          TASK: ${{ github.event_name == 'issues' && format('{0} -- {1}', github.event.issue.title, github.event.issue.body) || inputs.task }}
           NUM: ${{ steps.claim.outputs.num }}
           AGENT: ${{ steps.claim.outputs.agent }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

@@ -13,6 +13,11 @@ on:
     - cron: "*/15 * * * *" # the lanes
     - cron: "41 5 * * *" # the capacity board, daily
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['legion/**', 'legions/**', 'legion.yaml', '.github/workflows/estate-watch.yml']
+  pull_request:
+    paths: ['legion/**', 'legions/**', 'legion.yaml', 'bin/sb', '.github/workflows/estate-watch.yml', 'tests/test_legion_kit.py']
 permissions:
   id-token: write # the capacity board's OCI session
   contents: read
@@ -20,15 +25,40 @@ permissions:
 concurrency: { group: estate-watch, cancel-in-progress: false }
 jobs:
   homes:
-    if: github.event.schedule != '41 5 * * *'
+    if: github.event_name != 'pull_request' && github.event.schedule != '41 5 * * *'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: bin/idp-estate-homes (grade every lane, file what is down)
+      - name: Legion cloud mission — real home probes and existing incident tickets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 bin/idp-estate-homes
+          LEGION_STATE_DIR: ${{ runner.temp }}/legion
+        run: |
+          set -uo pipefail
+          python3 -m legion validate legions/estate-homes.json || exit 2
+          rc=0
+          python3 -m legion proof legions/estate-homes.json || rc=$?
+          # A failed proof remains a recorded failure, not an invented success.
+          python3 -m legion proof "$LEGION_STATE_DIR/legion-proof.jsonl" --verify || exit 3
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          p = Path(os.environ["LEGION_STATE_DIR"]) / "legion-proof.jsonl"
+          rec = json.loads(p.read_text().splitlines()[-1])
+          print(f"LEGION_RECEIPT legion={rec['legion']} ok={rec['ok']} exit={rec['exit']} duration_ms={rec['duration_ms']} hash={rec['hash']}")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write(f"Legion estate-homes: {'PROVEN' if rec['ok'] else 'FAILED'} — run exit {rec['exit']}, proof {rec['hash'][:16]}\\n")
+          PY
+          exit "$rc"
+      - name: Archive Legion proof outside the disposable runner
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: legion-homes-proof-${{ github.run_id }}
+          path: ${{ runner.temp }}/legion/legion-proof.jsonl
+          retention-days: 5
+          if-no-files-found: error
 
   capacity:
     if: github.event.schedule == '41 5 * * *' || github.event_name == 'workflow_dispatch'
@@ -58,3 +88,27 @@ jobs:
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
           OCI_REGION: ${{ vars.OCI_REGION }}
         run: python3 bin/idp-estate-capacity
+
+  legion-kit-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Manifest + full proof contract (isolated)
+        run: |
+          set -euo pipefail
+          python -m pip install -q 'pytest==8.3.5' 'PyYAML==6.0.2'
+          python -m pytest tests/test_legion_kit.py -q
+          python -m legion validate legion.yaml
+          python -m legion validate legions/estate-homes.json
+          export LEGION_STATE_DIR="$(mktemp -d)"
+          python -m legion proof legion.yaml
+          python -m legion proof "$LEGION_STATE_DIR/legion-proof.jsonl" --verify
