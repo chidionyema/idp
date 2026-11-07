@@ -239,7 +239,7 @@ jobs:
           if [ "$quality_rc" -ne 0 ]; then
             echo "legion early-quality: FAIL; attempting one same-session repair"
             fix_prompt="Your patch failed the mandatory estate quality tools. Fix the actual defects, including security warnings, without disabling gates or unjustified noqa. Rerun the tests and checks before claiming completion. Exact errors:
-$(tail -c 12000 "$out/quality")"
+            $(tail -c 12000 "$out/quality")"
             fix_rc=0
             case "$HARNESS" in
               gemini)
