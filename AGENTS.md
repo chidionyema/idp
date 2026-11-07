@@ -600,3 +600,4 @@ could not be measured says so, never PASS.
 The live surfaces are the estate graph (`growmos context` — every row above is a node there),
 `crew/STATE.md` (the generated snapshot; regenerate it, never trust it), and `/fleet` (the live
 board). This block is dated **2026-10-28**: when it disagrees with those, they are right.
+
