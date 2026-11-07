@@ -193,7 +193,7 @@ FAKE = {
 
 
 def _agent_step(
-    tmp_path: Path, harness: str, fake: str | None
+    tmp_path: Path, harness: str, fake: str | None, overrides: dict[str, str] | None = None
 ) -> tuple[subprocess.CompletedProcess, Path]:
     r = _repo(tmp_path)
     (r / "a.txt").write_text("hi\n")
@@ -218,6 +218,7 @@ def _agent_step(
         "MINIMAX_API_KEY": "x",
         "GEMINI_API_KEY": "x",
     }
+    env.update(overrides or {})
     run = _step("agent", "Run the agent")["run"]
     p = subprocess.run(
         ["bash", "-e", "-c", run],
@@ -384,3 +385,70 @@ def test_the_lane_carries_a_claim_the_gate_accepts_and_the_hooks_stamp(tmp_path,
     assert f"Claim: #{num}" in msg and "Agent: gemini" in msg
     assert "X-Idp-Signed: " in msg
     assert msg.splitlines()[0] == "agent-sandbox (gemini): fix the router"
+
+
+def test_legion_fallback_uses_only_the_successful_provider_worktree(tmp_path):
+    """A failed first model must not poison the successful provider's patch."""
+    body = """d=""
+provider=""
+prev=""
+for a in "$@"; do
+    [ "$prev" = --session-dir ] && d="$a"
+    [ "$prev" = --provider ] && provider="$a"
+    prev="$a"
+done
+mkdir -p "$d"
+if [ "$provider" = google ]; then
+    echo '{"provider":"google","status":"failed"}' > "$d/google.jsonl"
+    echo 'FIRST_PROVIDER_EDIT' >> a.txt
+    echo 'private-authentication-secret-sentinel'
+    exit 1
+fi
+echo '{"provider":"minimax","status":"success"}' > "$d/minimax.jsonl"
+echo 'SECOND_PROVIDER_EDIT' >> a.txt
+"""
+    result, out = _agent_step(
+        tmp_path, "gemini", body, {"LEGION_FAILOVER": "1"}
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "fallback=minimax exit=0" in result.stdout
+    assert "private-authentication-secret-sentinel" not in result.stdout
+    assert "private-authentication-secret-sentinel" not in result.stderr
+    assert "FIRST_PROVIDER_EDIT" not in (out / "patch").read_text()
+    assert "SECOND_PROVIDER_EDIT" in (out / "patch").read_text()
+    assert '"provider":"minimax"' in (out / "transcript.jsonl").read_text()
+    assert '"provider":"google"' in (out / "google.failed.transcript.jsonl").read_text()
+    assert "private-authentication-secret-sentinel" in (out / "google.failed.stdout").read_text()
+
+
+def test_legion_fallback_is_not_used_without_a_second_provider_key(tmp_path):
+    body = FAKE["pi"] + 'echo "private-rate-limit-sentinel 429"\\nexit 1\\n'
+    result, out = _agent_step(
+        tmp_path, "gemini", body,
+        {"LEGION_FAILOVER": "1", "MINIMAX_API_KEY": ""},
+    )
+    assert result.returncode == 1
+    assert "fallback=unavailable" in result.stdout
+    assert "capacity-or-rate-limit" in result.stdout
+    assert "private-rate-limit-sentinel" not in result.stdout
+    assert (out / "transcript.jsonl").exists()
+
+
+def test_manual_gemini_failure_does_not_silently_switch_providers(tmp_path):
+    body = FAKE["pi"] + 'echo "private-no-failover"\\nexit 1\\n'
+    result, out = _agent_step(tmp_path, "gemini", body, {"LEGION_FAILOVER": "0"})
+    assert result.returncode == 1
+    assert "fallback=minimax" not in result.stdout
+    assert "private-no-failover" not in result.stdout
+    assert not (out / "google.failed.stdout").exists()
+
+
+def test_legion_failover_disabled_for_manual_workflow_dispatch():
+    step = _step("agent", "Run the agent")
+    assert "github.event_name == 'issues' && '1' || '0'" in step["env"]["LEGION_FAILOVER"]
+    assert JOBS["agent"]["permissions"] == {"contents": "read"}
+    # The firewall is still mandatory after the cloud provider switch.
+    assert "firewall" in JOBS["submit-lane"]["needs"]
+    assert "git reset --hard" in step["run"] and "git clean -fd" in step["run"]
+    encrypted = _step("agent", "Encrypt what leaves")["run"]
+    assert "google.failed.transcript.jsonl" in encrypted
