@@ -577,8 +577,8 @@ def file_issues(results: list, dry_run: bool = False) -> list:
         for issue in issues:
             # Existing outages are discharged only on completed recovery proof.
             # An UNKNOWN or reachability-only row must never release DoF.
-            down_title = f"{ISSUE_PREFIX} {service}: a lane is down"
-            if issue.get("title") == down_title:
+            managed_prefix = f"{ISSUE_PREFIX} {service}:"
+            if str(issue.get("title", "")).startswith(managed_prefix):
                 recovered, reason = _auto_closure_proof(service, rows)
                 if not recovered:
                     actions.append(
