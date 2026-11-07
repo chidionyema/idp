@@ -1378,3 +1378,35 @@ spec:
   type: founder-surface
   lifecycle: production
   owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: founder-one-brain
+  title: "One-Brain (Argon) — the estate's measured evidence"
+  description: "One stream of measured, signed evidence and the panel that shows it: what the estate claims about itself, what was actually measured, and where the two disagree."
+  annotations:
+    estate/group: "Watch"
+    estate/tier: "daily"
+    github.com/project-slug: "chidionyema/argon"
+    backstage.io/source-location: "url:https://github.com/chidionyema/argon/tree/main/"
+    idp/updated-by: "the argon repo on every merge; this entry by hand until argon carries its own catalog-info.yaml"
+  tags: [founder, screen, evidence]
+  links:
+    - title: "Open (the Mac screen)"
+      url: "https://catalogue.${ESTATE_ZONE}/screen/#one-brain"
+      icon: dashboard
+    - title: "The evidence stream (/api/brain/stream)"
+      url: "http://127.0.0.1:3099/api/brain/stream"
+      icon: dashboard
+    - title: "Source (argon)"
+      url: "https://github.com/chidionyema/argon"
+      icon: github
+    - title: "Where this is tracked"
+      url: "https://linear.app/crewestate/issue/MUM-299"
+      icon: docs
+spec:
+  type: founder-surface
+  lifecycle: production
+  owner: group:default/platform
+  system: system:default/estate
