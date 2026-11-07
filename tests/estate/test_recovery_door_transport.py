@@ -660,5 +660,6 @@ def test_idle_oci_queue_preflight_uses_exact_instance_and_read_only_list(monkeyp
         assert argv[:3] == ["instance-agent", "command-execution", "list"]
         assert argv[argv.index("--instance-id")+1] == "instance-7"
         assert argv[argv.index("--compartment-id")+1] == "compartment-7"
-        assert "--all" in argv
+        assert "--all" not in argv
+        assert argv[argv.index("--limit") + 1] == str(helper.COMMAND_QUEUE_LIMIT)
         assert "create" not in argv and "cancel" not in argv

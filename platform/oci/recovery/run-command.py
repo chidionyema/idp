@@ -64,6 +64,10 @@ REPORT_B64_PATH = "/var/tmp/estate-report.b64"  # noqa: S108
 # The instance agent truncates captured output near 1024 characters; slices are read under that.
 SLICE_BYTES = 900
 MAX_SLICES = 24
+# One bounded page is enough to prove the queue is non-empty or empty. The OCI CLI's
+# `--all` continuation path has returned `InvalidParameter: The pagination token is invalid`
+# for command-execution list, so this door never invokes it.
+COMMAND_QUEUE_LIMIT = 100
 
 EXIT_MARKER = re.compile(r"^exit=(\d+)$", re.MULTILINE)
 REPORT_BYTES_MARKER = re.compile(r"^report_bytes=(\d+)$", re.MULTILINE)
@@ -291,7 +295,8 @@ def require_idle_command_queue(compartment: str, instance_id: str) -> None:
                     "--compartment-id", compartment,
                     "--instance-id", instance_id,
                     "--lifecycle-state", lifecycle,
-                    "--all", "--query", "data[].id",
+                    "--limit", str(COMMAND_QUEUE_LIMIT),
+                    "--query", "data[].id",
                 ],
                 what=f"reading {lifecycle} OCI commands for {instance_id}",
             )
