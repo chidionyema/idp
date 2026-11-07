@@ -292,14 +292,21 @@ class TakeoverTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def takeover(self, now=201):
-        return c.attempt_verified_takeover("mission", self.store, self.beats,
-                                           self.req, now, 30,
-                                           lambda uri: self.objects[uri])
+    def takeover(self, now=201, decrypt=None):
+        if decrypt is None:
+            decrypt = lambda mission, uri, content: {
+                "schema": "genesis.mission.checkpoint.v1",
+                "mission_id": mission, "source_sha": "a" * 40,
+                "resume_cursor": "next-verified-step",
+            }
+        return c.attempt_verified_takeover(
+            "mission", self.store, self.beats, self.req, now, 30,
+            lambda uri: self.objects[uri], decrypt
+        )
 
     def test_good_checkpoint_and_capacity_transfers_fenced_ownership(self):
         result = self.takeover()
-        self.assertEqual(result["state"], "OWNED")
+        self.assertEqual(result["state"], "CUSTODY_TRANSFERRED")
         self.assertEqual(result["worker_id"], "cloud-new")
         self.assertGreater(result["lease_epoch"], self.old_epoch)
         with self.assertRaisesRegex(c.Refused, "STALE_FENCING_LEASE"):
@@ -323,7 +330,7 @@ class TakeoverTests(unittest.TestCase):
     def test_duplicate_takeover_does_not_spawn_another_owner(self):
         first = self.takeover()
         second = self.takeover(now=202)
-        self.assertEqual(first["state"], "OWNED")
+        self.assertEqual(first["state"], "CUSTODY_TRANSFERRED")
         self.assertEqual(second["state"], "RECOVERY_PENDING")
         self.assertEqual(second["reason"], "OWNER_LEASE_STILL_ACTIVE")
 
@@ -331,6 +338,8 @@ class TakeoverTests(unittest.TestCase):
         self.store.reserve_effect("mission", "billing", "old", self.old_epoch, 111)
         result = self.takeover()
         self.assertEqual(result["pending_effects_requiring_reconciliation"], ["billing"])
+        self.assertEqual(result["state"], "RECONCILIATION_REQUIRED")
+        self.assertEqual(result["scope"], "READ_AND_RECONCILE")
 
     def test_remote_read_exception_is_not_a_success(self):
         self.objects.clear()
