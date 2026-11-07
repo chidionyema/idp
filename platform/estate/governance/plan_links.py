@@ -316,6 +316,17 @@ def row_violations(row: Dict[str, Any]) -> List[str]:
             out.append(f"{sid}: instruction '{declared}' is not an intent name")
         elif declared not in row["known_intents"]:
             out.append(f"{sid}: instruction '{declared}' resolves to no known intent")
+    observed = row["observed_instructions"]
+    if declared and observed and declared not in observed:
+        out.append(
+            f"{sid}: declared instruction '{declared}' was not recorded by the intent door "
+            f"(observed: {', '.join(observed)})"
+        )
+    if row["founder_prompt"] and str(row["founder_prompt"].get("session") or ""):
+        if str(row["founder_prompt"]["session"]) != sid:
+            out.append(
+                f"{sid}: founder prompt '{row['prompt_id']}' belongs to another session"
+            )
     if row["declared_prompt"]:
         if not PROMPT_ID_RE.match(row["declared_prompt"]):
             out.append(
@@ -336,8 +347,14 @@ def row_gaps(row: Dict[str, Any]) -> List[str]:
     """The links that are absent. Counted, printed, and refusing only under --strict."""
     out: List[str] = []
     sid = row["session"]
-    if not row["declared_instruction"] and not row["observed_instructions"]:
-        out.append(f"{sid}: no instruction linked to this plan")
+    # The plan's declared instruction and the execution door's observed intent
+    # are independent evidence; one cannot silently substitute for the other.
+    if not row["declared_instruction"]:
+        out.append(f"{sid}: no instruction declared in plan")
+    elif not row["observed_instructions"]:
+        out.append(
+            f"{sid}: instruction '{row['declared_instruction']}' not observed by the intent door"
+        )
     if not row["founder_prompt"]:
         out.append(f"{sid}: no founder prompt linked to this plan")
     return out
@@ -351,6 +368,9 @@ def audit(session: Optional[str] = None) -> Dict[str, Any]:
     for row in rows:
         violations.extend(row_violations(row))
         gaps.extend(row_gaps(row))
+    if not rows:
+        subject = session if session else "estate"
+        gaps.append(f"{subject}: no plan declaration; empty evidence is never readiness")
     prompts = prompt_audit()
     for pid, problems in sorted(prompts.items()):
         for p in problems:
