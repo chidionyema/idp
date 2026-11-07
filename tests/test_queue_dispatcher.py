@@ -118,7 +118,7 @@ def test_a_task_is_claimed_given_a_worktree_and_completed(queue):
     assert task["goal"] == "prove the thing"
     assert Path(task["worktree"]).exists()
 
-    queue.complete_task(task["id"], "success")
+    queue.complete_task(task["id"], "success", agent_id=task["agent_id"], lease_epoch=task["lease_epoch"])
 
     row = queue.get_task_list()[0]
     assert row[2] == "success"
@@ -213,7 +213,7 @@ def test_completion_archives_the_work_before_it_removes_the_worktree(
     (worktree / "NOTES.md").write_text("the work\n")
     (worktree / "README.md").write_text("changed\n")
 
-    queue.complete_task(task["id"], "success")
+    queue.complete_task(task["id"], "success", agent_id=task["agent_id"], lease_epoch=task["lease_epoch"])
 
     assert not worktree.exists()
 
@@ -239,7 +239,7 @@ def test_an_archive_over_the_cap_keeps_the_worktree(queue, tmp_path, monkeypatch
     worktree = Path(task["worktree"])
     (worktree / "NOTES.md").write_text("the work\n")
 
-    queue.complete_task(task["id"], "success")
+    queue.complete_task(task["id"], "success", agent_id=task["agent_id"], lease_epoch=task["lease_epoch"])
 
     assert worktree.exists(), (
         "the worktree was removed although the archive was refused"
@@ -346,7 +346,7 @@ def _claimed_with_work(ctx, queue):
 
 @when("the task completes")
 def _complete(ctx, queue):
-    queue.complete_task(ctx["task"]["id"], "success")
+    queue.complete_task(ctx["task"]["id"], "success", agent_id=ctx["task"]["agent_id"], lease_epoch=ctx["task"]["lease_epoch"])
 
 
 @then("the worktree is gone")
@@ -362,3 +362,116 @@ def _work_archived(ctx, tmp_path):
     assert "changed" in (archive / "work.patch").read_text()
     with tarfile.open(archive / "untracked.tgz") as tar:
         assert "NOTES.md" in tar.getnames()
+
+
+# ---------------------------------------------------------------------------
+# IDP #7790: race-safe ownership, stale-completion rejection, custody
+# ---------------------------------------------------------------------------
+
+
+def test_legacy_completion_without_epoch_is_refused(queue):
+    queue.push_task("must not complete without ownership")
+    task = queue.claim_task("agent-a")
+    with pytest.raises(queue.QueueLeaseRefused, match="MISSING_OWNERSHIP_PROOF"):
+        queue.complete_task(task["id"], "success")
+    assert queue.load_task(task["id"])["status"] == "running"
+
+
+def test_zombie_completion_refused_and_takeover_worktree_preserved(queue):
+    queue.push_task("recover after agent exhaustion")
+    old = queue.claim_task("agent-kimi")
+    old_path = Path(old["worktree"])
+    (old_path / "UNCOMMITTED.txt").write_text("recover me\n")
+    _backdate(queue.db_path(), hours=2)
+    queue.sweep_zombies()
+    new = queue.claim_task("agent-gemini")
+    assert new["lease_epoch"] > old["lease_epoch"]
+    assert new["worktree"] != old["worktree"]
+    assert old["worktree"] in new["recovery_worktrees"]
+    assert old_path.exists() and (old_path / "UNCOMMITTED.txt").read_text() == "recover me\n"
+    with pytest.raises(queue.QueueLeaseRefused, match="STALE_FENCING_LEASE"):
+        queue.complete_task(old["id"], "success", agent_id=old["agent_id"],
+                            lease_epoch=old["lease_epoch"])
+    assert Path(new["worktree"]).exists()
+    assert queue.load_task(new["id"])["status"] == "running"
+    queue.complete_task(new["id"], "success", agent_id=new["agent_id"],
+                        lease_epoch=new["lease_epoch"])
+    assert queue.load_task(new["id"])["status"] == "success"
+    # Prior agent work remains recoverable; it has NOT been silently removed.
+    assert old_path.exists()
+
+
+def test_wrong_actor_and_stale_epoch_cannot_heartbeat(queue):
+    queue.push_task("lease owner must heartbeat")
+    task = queue.claim_task("agent-a")
+    with pytest.raises(queue.QueueLeaseRefused, match="STALE_FENCING_LEASE"):
+        queue.heartbeat_task(task["id"], "agent-b", task["lease_epoch"])
+    with pytest.raises(queue.QueueLeaseRefused, match="STALE_FENCING_LEASE"):
+        queue.heartbeat_task(task["id"], "agent-a", task["lease_epoch"] + 1)
+    queue.heartbeat_task(task["id"], "agent-a", task["lease_epoch"])
+
+
+def test_repeated_or_late_completion_never_mutates_terminal_task(queue):
+    queue.push_task("complete once")
+    task = queue.claim_task("agent-a")
+    queue.complete_task(task["id"], "success", agent_id="agent-a",
+                        lease_epoch=task["lease_epoch"])
+    with pytest.raises(queue.QueueLeaseRefused, match="STALE_FENCING_LEASE"):
+        queue.complete_task(task["id"], "failed", agent_id="agent-a",
+                            lease_epoch=task["lease_epoch"])
+    assert queue.load_task(task["id"])["status"] == "success"
+
+
+def test_real_sqlite_claim_race_has_exactly_one_owner(queue):
+    import threading
+    queue.push_task("only one worker can claim me")
+    barrier = threading.Barrier(2)
+    values, lock = [], threading.Lock()
+
+    def contender(actor):
+        barrier.wait()
+        result = queue.claim_task(actor)
+        with lock:
+            values.append(result)
+
+    a = threading.Thread(target=contender, args=("agent-a",))
+    b = threading.Thread(target=contender, args=("agent-b",))
+    a.start()
+    b.start()
+    a.join(timeout=10)
+    b.join(timeout=10)
+    assert not a.is_alive() and not b.is_alive()
+    live = [value for value in values if value is not None]
+    assert len(live) == 1
+    assert queue.load_task(live[0]["id"])["agent_id"] == live[0]["agent_id"]
+
+
+def test_migrates_legacy_queue_schema_without_dropping_tasks(tmp_path, monkeypatch):
+    path = tmp_path / "legacy-queue.db"
+    with sqlite3.connect(path) as db:
+        db.execute("""CREATE TABLE tasks(
+            id INTEGER PRIMARY KEY AUTOINCREMENT, goal TEXT NOT NULL,
+            status TEXT DEFAULT 'pending',agent_id TEXT,worktree_path TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
+        db.execute("INSERT INTO tasks(goal,status) VALUES('preserved mission','pending')")
+    monkeypatch.setenv("QUEUE_DB_PATH", str(path))
+    dispatcher.init_db()
+    dispatcher.init_db()
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT goal,lease_epoch FROM tasks").fetchone() == ("preserved mission", 0)
+        assert "task_recovery_worktrees" in {
+            x[0] for x in db.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+
+
+def test_sweep_invalidates_old_epoch_before_reclaim(queue):
+    queue.push_task("the zombie cannot finish between sweep and takeover")
+    task = queue.claim_task("agent-a")
+    _backdate(queue.db_path(), hours=2)
+    queue.sweep_zombies()
+    with pytest.raises(queue.QueueLeaseRefused, match="STALE_FENCING_LEASE"):
+        queue.complete_task(task["id"], "success",
+                            agent_id=task["agent_id"], lease_epoch=task["lease_epoch"])
+    assert queue.load_task(task["id"])["status"] == "pending"
+    assert queue.load_task(task["id"])["lease_epoch"] > task["lease_epoch"]
