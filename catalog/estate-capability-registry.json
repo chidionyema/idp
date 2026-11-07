@@ -6,7 +6,7 @@
     "intent": 118,
     "layer": 253,
     "service": 121,
-    "tool": 475,
+    "tool": 474,
     "workflow": 95
   },
   "records": [
@@ -40176,8 +40176,7 @@
         "cap:tool/idp-ci",
         "cap:tool/idp-install-all",
         "cap:tool/idp-install-hooks",
-        "cap:tool/idp-workstation-bootstrap",
-        "cap:tool/sb"
+        "cap:tool/idp-workstation-bootstrap"
       ],
       "cost": {
         "estimate": null,
@@ -52632,62 +52631,6 @@
       "mirrors": []
     },
     {
-      "id": "cap:tool/sb",
-      "schema_version": 1,
-      "kind": "tool",
-      "summary": "!/usr/bin/env bash",
-      "contract": {
-        "inputs": [],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:bin"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "bin/sb",
-      "depends_on": [
-        {
-          "id": "cap:tool/idp-install-deps",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/start",
-          "edge": "invokes"
-        }
-      ],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ],
-      "known_issues": [],
-      "mirrors": []
-    },
-    {
       "id": "cap:tool/sb-windows.ps1",
       "schema_version": 1,
       "kind": "tool",
@@ -53343,7 +53286,6 @@
         "cap:tool/reasoning_gateway_hook.py",
         "cap:tool/room-eye",
         "cap:tool/room-eyes",
-        "cap:tool/sb",
         "cap:tool/schema-conformance",
         "cap:tool/security-policy-gate",
         "cap:tool/serve-fleetview",
