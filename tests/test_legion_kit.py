@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -220,3 +221,19 @@ def test_cli_proof_and_verify(tmp_path, monkeypatch) -> None:
     assert _cli(["proof", str(m)], tmp_path).returncode == 0
     r = _cli(["proof", "--verify", str(tmp_path / "state" / "legion-proof.jsonl")], tmp_path)
     assert r.returncode == 0 and "CHAIN-OK" in r.stdout
+
+
+
+def test_real_homes_legion_command_resolves_from_manifest_dir() -> None:
+    """Proof commands run in their manifest's folder, not repository root."""
+    path = REPO / "legions" / "estate-homes.json"
+    manifest = load_manifest(path)
+    command = shlex.split(manifest["proof"]["command"])
+    assert command[-1] == "--gate"
+    # --help validates executable path without touching a live service.
+    command[-1] = "--help"
+    result = subprocess.run(
+        command, cwd=path.parent, capture_output=True, text=True, timeout=10
+    )
+    assert result.returncode == 0, result.stderr
+    assert "usage:" in result.stdout.lower()
