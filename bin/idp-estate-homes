@@ -189,6 +189,12 @@ def grade_service(service: dict, env: dict, timeout: float, zone: str = "") -> l
             "provider": leg.get("provider"),
             "role": leg.get("role"),
             "url": url,
+            # HTTP 404/500 is reachable, but not functional application health.
+            "probe_kind": (
+                "reachability_only" if leg.get("expect_any")
+                else "functional" if leg.get("recovery_proof_kind") == "functional"
+                else "health_status"
+            ),
         }
         if not url:
             results[index] = dict(base, verdict=UNKNOWN, detail="the lane has no url")
@@ -459,6 +465,27 @@ def _closing_note(service: str, rows: list) -> str:
     return note
 
 
+def _auto_closure_proof(service: str, rows: list) -> tuple[bool, str]:
+    """Necessary (not sufficient) evidence before discharging a down-lane issue.
+
+    This prevents a lost health probe, unobservable lane, or HTTP 404/500
+    reachability from clearing DoF. Functional proofs still require an
+    independently governed runtime observer and cannot be forged by a ticket.
+    """
+    if not rows:
+        return False, "NO_SERVICE_PROBES"
+    if any(row.get("verdict") != OK for row in rows):
+        return False, "MISSING_MEASURED_OK_OR_UNOBSERVABLE"
+    if any(row.get("probe_kind") == "reachability_only" for row in rows):
+        return False, "REACHABILITY_ONLY_NOT_FUNCTIONAL_RECOVERY"
+    if any(row.get("probe_kind") != "functional" for row in rows):
+        return False, "FUNCTIONAL_RECOVERY_PROBE_NOT_CONFIGURED"
+    ladder = next(iter(ladders(rows)), None)
+    if ladder is None or ladder.get("state") != "REDUNDANT":
+        return False, "FAILURE_DOMAIN_REDUNDANCY_UNPROVEN"
+    return True, "ALL_FUNCTIONAL_PROBES_OK_AND_REDUNDANT"
+
+
 def file_issues(results: list, dry_run: bool = False) -> list:
     """One ticket per service with a lane down. Comment on the open one; close it when
     the lane comes back. A drill that only prints is a report."""
@@ -527,6 +554,17 @@ def file_issues(results: list, dry_run: bool = False) -> list:
             )
             continue
         for issue in issues:
+            # Existing outages are discharged only on completed recovery proof.
+            # An UNKNOWN or reachability-only row must never release DoF.
+            down_title = f"{ISSUE_PREFIX} {service}: a lane is down"
+            if issue.get("title") == down_title:
+                recovered, reason = _auto_closure_proof(service, rows)
+                if not recovered:
+                    actions.append(
+                        f"HELD #{issue['number']} ({service}): {reason}; "
+                        "no DoF reset on incomplete recovery"
+                    )
+                    continue
             if dry_run:
                 actions.append(f"would close #{issue['number']} ({service})")
                 continue
