@@ -289,3 +289,42 @@ def test_claim_with_a_proof_reference_is_still_not_independent_validation(
     assert row["verified_yield_count"] == 0
     assert row["yield_state"] == "UNVERIFIED"
     assert any("proof not independently verified" in g for g in result["gaps"])
+
+
+
+def test_one_hop_lookup_names_a_deterministic_recovery_action(tmp_path, monkeypatch):
+    home = _home(tmp_path, monkeypatch)
+    _plan(home, "s1", instruction="lane-submit", prompt="prompt-1")
+    _intent(home, "s1", "code-review")
+    _prompt(home, id="prompt-1", session="s1", text="land it and prove it")
+    row = plan_links.audit("s1")["rows"][0]
+    assert row["next_action"] == "RECONCILE_INTENT_DOOR"
+    assert row["operationally_proven"] is False
+
+
+def test_one_hop_lookup_requires_yield_verification_after_completion(
+    tmp_path, monkeypatch
+):
+    home = _home(tmp_path, monkeypatch)
+    _plan(home, "s1", instruction="lane-submit", prompt="prompt-1")
+    _intent(home, "s1", "lane-submit")
+    _prompt(home, id="prompt-1", session="s1", text="land it and prove it")
+    with open(home / "plans" / "s1.jsonl", "a", encoding="utf8") as out:
+        out.write(json.dumps({"tool": "complete_goal", "args": {
+            "goal_id": "g1", "proof": "run:42379669617"
+        }}) + "\n")
+    row = plan_links.audit("s1")["rows"][0]
+    assert row["next_action"] == "VERIFY_YIELD_AT_RUNTIME_DOOR"
+    assert row["operationally_proven"] is False
+
+
+def test_correct_links_proceed_to_protocol_not_assumed_operational(
+    tmp_path, monkeypatch
+):
+    home = _home(tmp_path, monkeypatch)
+    _plan(home, "s1", instruction="lane-submit", prompt="prompt-1")
+    _intent(home, "s1", "lane-submit")
+    _prompt(home, id="prompt-1", session="s1", text="land it and prove it")
+    row = plan_links.audit("s1")["rows"][0]
+    assert row["next_action"] == "CONTINUE_PROTOCOL"
+    assert row["operationally_proven"] is False
