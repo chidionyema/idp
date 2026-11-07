@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 import json
+import hashlib
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -432,3 +433,76 @@ class HeartbeatRegistry:
                 "host": row["host"],
             }
         return out
+
+
+def restore_verified_checkpoint(uri: str, digest_sha256: str, read_ciphertext,
+                                *, max_ciphertext_bytes: int = 2 * 1024 * 1024) -> bytes:
+    """Read ciphertext from a governed off-host client and verify exact bytes.
+
+    This proves byte integrity ONLY. Encryption/key isolation, object existence,
+    and decrypted mission content's semantic correctness require separate proof.
+    """
+    if (not isinstance(uri, str) or not uri.startswith("oci://") or
+            not isinstance(digest_sha256, str) or len(digest_sha256) != 64 or
+            any(x not in "0123456789abcdef" for x in digest_sha256)):
+        raise Refused("INVALID_CHECKPOINT_REFERENCE")
+    if not callable(read_ciphertext):
+        raise Refused("NO_VERIFIED_CHECKPOINT_READER")
+    try:
+        contents = read_ciphertext(uri)
+    except Exception as exc:
+        raise Refused("CHECKPOINT_READ_FAILED") from exc
+    if (not isinstance(contents, bytes) or len(contents) < 1 or
+            len(contents) > max_ciphertext_bytes):
+        raise Refused("CHECKPOINT_UNAVAILABLE_OR_OVERSIZE")
+    if hashlib.sha256(contents).hexdigest() != digest_sha256:
+        raise Refused("CHECKPOINT_DIGEST_MISMATCH")
+    return contents
+
+
+def attempt_verified_takeover(mission_id: str, lease_store: LeaseStore,
+                              beats: HeartbeatRegistry, req: Requirement,
+                              now: float, ttl: float, read_ciphertext) -> dict:
+    """Claim a capable worker for a lost mission without dispatching unverified code.
+
+    A trusted caller must validate decrypted mission content and DoF scope
+    before invoking the existing dispatcher. OWNED never means OPERATING.
+    LeaseStore's transaction prevents concurrent supervisors double-claiming.
+    """
+    if not mission_id or not _finite(now) or not _finite(ttl) or ttl <= 0:
+        raise Refused("INVALID_TAKEOVER_REQUEST")
+    previous = lease_store.snapshot(mission_id)
+    if previous is None:
+        return {"state": "RECOVERY_PENDING", "reason": "MISSING_MISSION_LEASE"}
+    old_worker, _old_epoch, expires_at, digest, uri = previous
+    if now < expires_at:
+        return {"state": "RECOVERY_PENDING", "reason": "OWNER_LEASE_STILL_ACTIVE"}
+    if not digest or not uri:
+        return {"state": "RECOVERY_PENDING", "reason": "NO_DURABLE_CHECKPOINT"}
+    try:
+        restored = restore_verified_checkpoint(uri, digest, read_ciphertext)
+    except Refused as exc:
+        return {"state": "RECOVERY_PENDING", "reason": str(exc)}
+    observed = beats.observed(now)
+    offers = [row["offer"] for row in observed.values()
+              if row["status"] == "READY" and row["offer"] is not None]
+    selected = select_worker(offers, req, now, frozenset({old_worker}))
+    if selected is None:
+        return {"state": "RECOVERY_PENDING", "reason": "NO_ELIGIBLE_CAPACITY"}
+    try:
+        new_epoch = lease_store.claim(mission_id, selected.worker_id, now, ttl)
+    except Refused as exc:
+        return {"state": "RECOVERY_PENDING", "reason": str(exc)}
+    with lease_store._connect() as db:
+        pending_effects = [row[0] for row in db.execute(
+            "SELECT action_id FROM continuity_effects "
+            "WHERE mission_id=? AND state='PENDING' ORDER BY action_id", (mission_id,)
+        )]
+    return {
+        "state": "OWNED", "worker_id": selected.worker_id,
+        "lease_epoch": new_epoch,
+        "checkpoint_uri": uri, "checkpoint_sha256": digest,
+        "checkpoint_bytes_verified": len(restored),
+        "pending_effects_requiring_reconciliation": pending_effects,
+        "requires_external_policy_and_decrypt_verification": True,
+    }
