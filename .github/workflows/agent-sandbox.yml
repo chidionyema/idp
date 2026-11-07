@@ -329,6 +329,12 @@ jobs:
           rm -f "$RUNNER_TEMP/key"
           [ -s "$work/patch" ] || { echo "::error::the agent changed nothing; there is no PR to open"; exit 1; }
           git apply --index --3way "$work/patch"
+          # Read back what the index now holds, both sides of every rename included, rather than
+          # parse the patch text.
+          refused=$(git diff --cached --name-only --no-renames HEAD | grep -E '^(\.github|\.githooks)/' || true)
+          if [ -n "$refused" ]; then
+            echo "::error::an agent patch may not change CI or hooks:"; echo "$refused"; exit 1
+          fi
           # The agent-controlled candidate is DATA. Execute ONLY the pinned
           # trusted-main preflight, copied from HEAD before patch application.
           mkdir -p "$RUNNER_TEMP/legion-policy/bin" "$RUNNER_TEMP/legion-policy/catalog"
@@ -347,12 +353,7 @@ jobs:
           print("agent patch preflight admissible: final independent gates still required")
           PY
 
-          # Read back what the index now holds, both sides of every rename included, rather than
-          # parse the patch text.
-          refused=$(git diff --cached --name-only --no-renames HEAD | grep -E '^(\.github|\.githooks)/' || true)
-          if [ -n "$refused" ]; then
-            echo "::error::an agent patch may not change CI or hooks:"; echo "$refused"; exit 1
-          fi
+
 
       - name: Install what the estate's commit hooks run (the fast gate's own pins)
         run: |
