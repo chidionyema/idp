@@ -472,6 +472,12 @@ def test_submit_preflights_under_trusted_main_before_the_claim_or_commit():
     assert "Genesis-Resolves: [a-z0-9-]+" in script
     assert 'args+=(--repair-of "$repair_of")' in script
     assert '"${args[@]}"' in script
+    assert 'with_name("repair-of")' in script
+    actual_commit = _step("submit-lane", "Commit through the estate's own hooks")["run"]
+    assert 'repair_of=$(cat "$RUNNER_TEMP/legion-policy/repair-of")' in actual_commit
+    assert "Genesis-Resolves: %s" in actual_commit
+    assert actual_commit.index("Genesis-Resolves: %s") < actual_commit.index("git commit -q")
+ 
 
     assert JOBS["submit-lane"]["permissions"] == {"contents": "read", "issues": "write"}
     bootstrap = _step("submit-lane", "Install what the estate")["run"]
