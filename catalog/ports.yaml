@@ -94,6 +94,13 @@ ports:
   # non-loopback surface that launcher opens is the register companion on its own port, not this.
   - {port: 18790, service: fleetview-backend,   compose: none, bind: 127.0.0.1}
   - {port: 18900, service: reactor-standalone,  compose: none, bind: 127.0.0.1}
+  # One-Brain: the Argon surface that carries the estate's measured, signed evidence on
+  # /api/brain/stream and shows it in the One-Brain panel. It binds loopback on the Mac.
+  # R22 mechanism 4: a port a service binds is declared here or the gate refuses it, and
+  # the declaration is how the founder's inventory learns the door exists at all. The port
+  # here MUST be the port argon binds (BRAIN_PORT); if argon moves it, this row moves with
+  # it in the same change, or port-gate --live calls it an undeclared bind.
+  - {port: 3099, service: one-brain,             compose: none, bind: 127.0.0.1}
 # Not ours, not gated: 53/54861 (lima), 5000/7000 (macOS ControlCenter), 49248 (rapportd),
 # 49xxx ephemeral. The k3d API forward is 6445 and is declared above, not exempted here:
 # it moved from 53145 and the exemption went stale, so the gate called it undeclared.
