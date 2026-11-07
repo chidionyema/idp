@@ -1,0 +1,29 @@
+{
+  "legion": 2,
+  "name": "estate-homes",
+  "repo": "idp",
+  "summary": "Cloud-native execution of the existing critical service ladder; file actual incidents through the existing door",
+  "capabilities": [
+    "service-lane-health",
+    "incident-ticketing",
+    "failure-domain-ladder"
+  ],
+  "modes": [
+    "gh-runner",
+    "cron"
+  ],
+  "budget": {
+    "max_usd_per_day": 0.01
+  },
+  "proof": {
+    "command": "python3 bin/idp-estate-homes --gate",
+    "max_seconds": 240
+  },
+  "slo": {
+    "success_rate_min": 0.98,
+    "p95_latency_s_max": 300
+  },
+  "health": {
+    "max_heartbeat_age_minutes": 30
+  }
+}

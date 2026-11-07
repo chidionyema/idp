@@ -2,10 +2,40 @@
 # Sovereign Bus shim. Ensures sovereign/.venv exists (uv preferred, plain
 # venv as fallback), then execs the CLI. See sovereign/CONTRACT.md.
 # LAW 46: IDP is computed from this script's own location, never a literal.
+#
+# 2026-11-06 (Legion program): `sb --help` must never trigger a venv build.
+# Measured cost of the old behaviour: 90s+ of pip resolution to print usage
+# text on a cold checkout. Help is static text and answers instantly; only
+# commands that actually run the engine build the venv.
 set -euo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 VENV="$IDP/sovereign/.venv"
 REQ="$IDP/sovereign/requirements.txt"
+
+static_help() {
+  cat <<'EOF'
+sb — Sovereign Bus: durable, budgeted, approval-gated agent sessions
+
+  sb start --runner <echo|sleep|ask|burn|llm> --task '…' --budget N [--json]
+  sb list | show <id> | stop <id> | approve <id> | deny <id>
+  sb steer <id> --by <who>
+  sb attach <repo>     mount any repo as an estate, scaffold AGENTS.md
+  sb audit --verify    verify the signed receipt chain
+  sb how-to | sb demo
+
+(engine help: run any sb command once to build sovereign/.venv, then
+ `sb --help` delegates to the real CLI)
+EOF
+}
+
+case "${1:-}" in
+  --help|-h|help|"")
+    if [ ! -x "$VENV/bin/python" ]; then
+      static_help
+      exit 0
+    fi
+    ;;
+esac
 
 pick_python() {
   for cand in python3.10 python3.11 python3.12 python3.13 python3; do
