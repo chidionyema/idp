@@ -129,11 +129,21 @@ class LeaseTests(unittest.TestCase):
 class EffectTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.store = c.LeaseStore(str(pathlib.Path(self.temp.name) / "queue.db"))
+        import hashlib
+        self.sign = lambda message: hashlib.sha256(b"fixture-only-key" + message).digest()
+        self.store = c.LeaseStore(str(pathlib.Path(self.temp.name) / "queue.db"),
+                                  receipt_verifier=lambda message, proof:
+                                      self.sign(message) == proof)
         self.epoch = self.store.claim("mission", "owner-a", 100, 20)
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def proof(self, action, digest, *, worker="owner-a", epoch=None):
+        epoch = self.epoch if epoch is None else epoch
+        message = (f"genesis.effect.v1\nmission\n{action}\n{worker}\n"
+                   f"{epoch}\n{digest}\n").encode()
+        return self.sign(message)
 
     def test_pending_effect_never_replays_blindly(self):
         self.store.reserve_effect("mission", "github-push-sha", "owner-a", self.epoch, 105)
@@ -142,10 +152,10 @@ class EffectTests(unittest.TestCase):
 
     def test_independent_proof_needed_to_confirm(self):
         self.store.reserve_effect("mission", "publish", "owner-a", self.epoch, 105)
-        with self.assertRaisesRegex(c.Refused, "INDEPENDENT_PROOF_REQUIRED"):
+        with self.assertRaisesRegex(c.Refused, "INVALID_INDEPENDENT_RECEIPT"):
             self.store.confirm_effect("mission", "publish", "owner-a", self.epoch, 106, "a" * 64)
         self.store.confirm_effect("mission", "publish", "owner-a", self.epoch, 106, "a" * 64,
-                                  verified_by_independent_broker=True)
+                                  receipt_proof=self.proof("publish", "a" * 64))
         self.assertEqual(self.store.effect_snapshot("mission", "publish")[2:], ("CONFIRMED", "a" * 64))
         with self.assertRaisesRegex(c.Refused, "ALREADY_CONFIRMED"):
             self.store.reserve_effect("mission", "publish", "owner-a", self.epoch, 107)
@@ -155,7 +165,7 @@ class EffectTests(unittest.TestCase):
         new_epoch = self.store.claim("mission", "owner-b", 121, 20)
         with self.assertRaisesRegex(c.Refused, "STALE_FENCING_LEASE"):
             self.store.confirm_effect("mission", "deploy", "owner-a", self.epoch, 122, "c" * 64,
-                                      verified_by_independent_broker=True)
+                                      receipt_proof=self.proof("deploy", "c" * 64))
         with self.assertRaisesRegex(c.Refused, "STALE_FENCING_LEASE"):
             self.store.reserve_effect("mission", "new-task", "owner-a", self.epoch, 122)
         with self.assertRaisesRegex(c.Refused, "PENDING_RECONCILIATION_REQUIRED"):
@@ -164,10 +174,10 @@ class EffectTests(unittest.TestCase):
     def test_invalid_digest_and_unreserved_effect_refused(self):
         with self.assertRaisesRegex(c.Refused, "INVALID_RECEIPT_DIGEST"):
             self.store.confirm_effect("mission", "unknown", "owner-a", self.epoch, 106,
-                                      "bad", verified_by_independent_broker=True)
+                                      "bad", receipt_proof=b"ignored")
         with self.assertRaisesRegex(c.Refused, "EFFECT_NOT_RESERVED_BY_OWNER"):
             self.store.confirm_effect("mission", "unknown", "owner-a", self.epoch, 106,
-                                      "a" * 64, verified_by_independent_broker=True)
+                                      "a" * 64, receipt_proof=self.proof("unknown", "a" * 64))
 
     def test_effect_state_survives_restart(self):
         self.store.reserve_effect("mission", "billing", "owner-a", self.epoch, 105)
@@ -175,6 +185,23 @@ class EffectTests(unittest.TestCase):
         with self.assertRaisesRegex(c.Refused, "PENDING_RECONCILIATION_REQUIRED"):
             second.reserve_effect("mission", "billing", "owner-a", self.epoch, 106)
 
+    def test_wrong_proof_fails_even_with_fresh_lease(self):
+        self.store.reserve_effect("mission", "publish", "owner-a", self.epoch, 105)
+        with self.assertRaisesRegex(c.Refused, "INVALID_INDEPENDENT_RECEIPT"):
+            self.store.confirm_effect("mission", "publish", "owner-a", self.epoch,
+                                      106, "a" * 64, receipt_proof=b"forged")
+
+    def test_no_verifier_cannot_self_certify(self):
+        second = c.LeaseStore(self.store.path)
+        with self.assertRaisesRegex(c.Refused, "INDEPENDENT_PROOF_REQUIRED"):
+            second.confirm_effect("mission", "publish", "owner-a", self.epoch,
+                                  106, "a" * 64, receipt_proof=b"anything")
+
+    def test_receipt_cannot_be_replayed_for_another_action(self):
+        self.store.reserve_effect("mission", "deploy", "owner-a", self.epoch, 105)
+        with self.assertRaisesRegex(c.Refused, "INVALID_INDEPENDENT_RECEIPT"):
+            self.store.confirm_effect("mission", "deploy", "owner-a", self.epoch, 106,
+                                      "b" * 64, receipt_proof=self.proof("publish", "b" * 64))
 
 
 class HeartbeatRegistryTests(unittest.TestCase):
