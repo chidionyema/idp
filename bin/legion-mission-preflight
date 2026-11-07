@@ -42,7 +42,8 @@ def scope(registry, name):
     comp = registry.get("components", {}).get(name)
     if not isinstance(comp, dict): raise ValueError("unknown incident")
     return [q for p in comp.get("repairScope", [])
-            for q in (registry.get("substrateScope", []) if p == "@substrate" else [p])]
+            for q in (registry.get("substrateScope", []) if p == "@substrate" else [p])
+            if "oke" not in q.lower()]  # OKE retired; never recommend an obsolete repair command
 
 def scope_match(pattern, path):
     if pattern.endswith("/**"): return path.startswith(pattern[:-2])
@@ -89,6 +90,8 @@ def packet(registry, incidents, mission, files=None, repair=None):
         "health_proven": known, "active_incidents": down, "repair_scopes": scopes,
         "patch_preflight": decision(registry, incidents if known else None, files, repair) if files else None,
         "this_is_not_a_capability": True, "protected_paths": list(GUARDED),
+        "substrate": "Oracle ARM VM + k3s; OKE retired",
+        "registry_migration": "k3s paths must be signed into DoF repairScope before an autonomous repair is proposed",
         "first_actions": [
             "read exact current failed job log and existing solution before changing files",
             "identify every changed path, owning gate and required approvals",
