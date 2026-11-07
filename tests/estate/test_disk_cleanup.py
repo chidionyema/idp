@@ -122,6 +122,61 @@ def test_apply_empties_the_allow_list_and_nothing_else(tmp_path):
         assert (home / d / "blob").exists(), f"{d} must never be touched"
 
 
+def test_a_yarn_service_does_not_block_cache_cleanup(tmp_path):
+    """A running `yarn workspace ... start` does not write the global install cache.
+
+    Treating every Yarn process as an install kept the 1.6 GB cache locked while the Backstage
+    service ran for hours, so the volume stayed below the executor floor. Cache-writing Yarn
+    commands still block the delete.
+    """
+    home = tmp_path / "home"
+    cache = home / ".yarn/berry/cache"
+    cache.mkdir(parents=True)
+    (cache / "blob").write_bytes(b"x" * (2 * 1024 * 1024))
+    local_bin = home / ".local/bin"
+    local_bin.mkdir(parents=True)
+    (local_bin / "pgrep").write_text(
+        "#!/usr/bin/python3\n"
+        "import os, re, sys\nThePath = __import__('pathlib').Path\n"
+        "cmd = (ThePath(os.environ['HOME']) / 'fake-process-command').read_text()\n"
+        "raise SystemExit(0 if re.search(sys.argv[-1], cmd) else 1)\n"
+    )
+    (local_bin / "pgrep").chmod(0o755)
+    (home / "fake-process-command").write_text(
+        "/repo/.yarn/releases/yarn-4.13.0.cjs workspace backend start\n"
+    )
+    r = _run(home, "true", "false")
+
+    assert "SKIP   yarn-cache" not in r.stdout, r.stdout
+    assert not (home / ".yarn/berry/cache").exists() or not any(
+        (home / ".yarn/berry/cache").iterdir()
+    ), r.stdout
+
+
+def test_a_yarn_install_still_blocks_cache_cleanup(tmp_path):
+    home = tmp_path / "home"
+    cache = home / ".yarn/berry/cache"
+    cache.mkdir(parents=True)
+    (cache / "blob").write_bytes(b"x" * (2 * 1024 * 1024))
+    local_bin = home / ".local/bin"
+    local_bin.mkdir(parents=True)
+    (local_bin / "pgrep").write_text(
+        "#!/usr/bin/python3\n"
+        "import os, re, sys\nThePath = __import__('pathlib').Path\n"
+        "cmd = (ThePath(os.environ['HOME']) / 'fake-process-command').read_text()\n"
+        "raise SystemExit(0 if re.search(sys.argv[-1], cmd) else 1)\n"
+    )
+    (local_bin / "pgrep").chmod(0o755)
+    (home / "fake-process-command").write_text(
+        "/repo/.yarn/releases/yarn-4.13.0.cjs install --immutable\n"
+    )
+
+    r = _run(home, "true", "false")
+
+    assert "SKIP   yarn-cache" in r.stdout, r.stdout
+    assert (cache / "blob").exists()
+
+
 def test_trash_is_emptied_only_when_opted_in(tmp_path):
     home = _home(tmp_path)
     _run(home, "true", "false")
@@ -657,6 +712,39 @@ def test_a_live_lock_with_the_holder_start_time_is_respected(tmp_path):
         )
     finally:
         holder.kill()
+
+
+def test_a_zombie_holder_does_not_close_the_door(tmp_path):
+    """A killed worker that its parent has not reaped is dead work, not a live lock.
+
+    `kill -0` continues to succeed on a zombie, and the zombie keeps the original start time,
+    so the pid/start-time check alone treats a crashed cleanup as live forever. That leaves the
+    disk over the executor floor and every door closed. A zombie must be taken over.
+    """
+    home = _home(tmp_path)
+    ps_bin = home / ".local/bin"
+    ps_bin.mkdir(parents=True)
+    (ps_bin / "ps").write_text(
+        "#!/bin/sh\n"
+        "for arg in \"$@\"; do\n"
+        "  if [ \"$arg\" = \"state=\" ]; then echo Z; exit 0; fi\n"
+        "done\n"
+        "echo 'Thu Nov  7 08:00:00 2026'\n"
+    )
+    (ps_bin / "ps").chmod(0o755)
+    holder = subprocess.Popen(["true"])
+    try:
+        lock = home / ".estate/disk-cleanup.lock"
+        lock.mkdir(parents=True)
+        (lock / "pid").write_text(str(holder.pid))
+        (lock / "start").write_text("Thu Nov  7 08:00:00 2026")
+
+        p = _run(home, "true")
+
+        assert "another disk-cleanup" not in p.stdout, p.stdout
+        assert not lock.exists(), "the zombie's stale lock outlived the takeover"
+    finally:
+        holder.wait()
 
 
 def test_a_stale_lock_from_a_dead_run_is_taken_over(tmp_path):

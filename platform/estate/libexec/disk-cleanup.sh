@@ -260,6 +260,12 @@ if ! mkdir "$LOCK" 2>/dev/null; then
       live_start=$(ps -p "$holder" -o lstart= 2>/dev/null | sed 's/^ *//; s/ *$//')
       if [ -n "$live_start" ] && [ "$live_start" != "$holder_start" ]; then holder=""; fi
     fi
+    # A zombie still accepts kill -0 and keeps its original start time, but it is dead work.
+    # Without this check a crashed worker's lock closes every disk door until its parent reaps it.
+    if [ -n "$holder" ]; then
+      live_state=$(ps -p "$holder" -o state= 2>/dev/null | tr -d '[:space:]')
+      case "$live_state" in Z*) holder="";; esac
+    fi
   else
     holder=""
   fi
@@ -293,7 +299,7 @@ size_m() {
 # name | path | process that must not be mid-write into it
 # (patterns match the tool's entry point, not any path containing its name: /opt/homebrew/bin/*
 # would otherwise make every process "brew")
-TARGETS="yarn-cache|$HOME/.yarn/berry/cache|yarn-[0-9.]+\.c?js|bin/yarn( |$)
+TARGETS="yarn-cache|$HOME/.yarn/berry/cache|(yarn-[0-9.]+\.c?js|bin/yarn( |$)).* (install|add|up|remove|dedupe|dlx|exec|set|cache)( |$)
 go-build|$HOME/Library/Caches/go-build|go (build|test|install|run|vet) 
 pip-cache|$HOME/Library/Caches/pip|pip3? (install|download|wheel)|-m pip 
 homebrew-cache|$HOME/Library/Caches/Homebrew|Homebrew/brew\.rb|bin/brew( |$)
