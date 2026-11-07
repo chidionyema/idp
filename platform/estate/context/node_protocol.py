@@ -130,7 +130,9 @@ def evaluate_operation(
             "reason": "online read admitted",
         }
 
-    missing = [field for field in MUTATION_REQUIRED if not _present(envelope.get(field))]
+    missing = [
+        field for field in MUTATION_REQUIRED if not _present(envelope.get(field))
+    ]
     if missing:
         raise ProtocolError("online mutation requires " + ", ".join(missing))
     return {

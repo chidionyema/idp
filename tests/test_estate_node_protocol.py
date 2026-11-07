@@ -20,9 +20,7 @@ from estate.context.node_protocol import (  # noqa: E402
 )
 
 
-EXPECTED_RULES_HASH = (
-    "18e3ccdaee2a0cceff3ad85c777ddfe7b33255694844b6925a4d331b29a9f3dd"
-)
+EXPECTED_RULES_HASH = "18e3ccdaee2a0cceff3ad85c777ddfe7b33255694844b6925a4d331b29a9f3dd"
 SCHEMA = json.loads(
     (
         __import__("pathlib").Path(__file__).parents[1]

@@ -109,7 +109,9 @@ def _serve_in_thread():
 def _rpc(base, method, params=None, fid=1, envelope=None, connectivity="online"):
     params = dict(params or {})
     if method == "tools/call" and envelope is not False:
-        params.setdefault("envelope", DEFAULT_ENVELOPE if envelope is None else envelope)
+        params.setdefault(
+            "envelope", DEFAULT_ENVELOPE if envelope is None else envelope
+        )
         params.setdefault("connectivity", connectivity)
     body = json.dumps(
         {"jsonrpc": "2.0", "id": fid, "method": method, "params": params}
