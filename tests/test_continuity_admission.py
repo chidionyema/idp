@@ -176,5 +176,72 @@ class EffectTests(unittest.TestCase):
             second.reserve_effect("mission", "billing", "owner-a", self.epoch, 106)
 
 
+
+class HeartbeatRegistryTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.beats = c.HeartbeatRegistry(str(pathlib.Path(self.temp.name) / "beats.db"))
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def feed(self, *, worker="cloud-a", now=100, seq=1, quota=True,
+             slots=1, cap_source="provider_api", digest=None, actor=None):
+        self.beats.observe(offer(worker, "provider-a", at=now, quota=quota,
+                                 slots=slots), trusted_actor=actor or worker,
+                           broker_now=now, sequence=seq, adapter="GH Actions",
+                           provider="vendor-a", host="host-a",
+                           capacity_source=cap_source, capacity_evidence="verified:run/123",
+                           progress_digest=digest)
+
+    def test_absent_web_surface_remains_unknown(self):
+        row = self.beats.observed(150, expected_workers=["gemini-web"])["gemini-web"]
+        self.assertEqual(row["status"], "UNKNOWN")
+        self.assertIsNone(row["offer"])
+
+    def test_real_authenticated_observation_is_eligible(self):
+        self.feed()
+        r = self.beats.observed(110)["cloud-a"]
+        self.assertEqual(r["status"], "READY")
+        self.assertEqual(r["offer"].worker_id, "cloud-a")
+
+    def test_unverified_worker_principal_cannot_claim_identity(self):
+        with self.assertRaisesRegex(c.Refused, "UNAUTHENTICATED_HEARTBEAT"):
+            self.feed(actor="other-actor")
+
+    def test_replay_or_clock_regression_rejected(self):
+        self.feed()
+        with self.assertRaisesRegex(c.Refused, "HEARTBEAT_REPLAY_OR_CLOCK_REGRESSION"):
+            self.feed(now=101, seq=1)
+        with self.assertRaisesRegex(c.Refused, "HEARTBEAT_REPLAY_OR_CLOCK_REGRESSION"):
+            self.feed(now=99, seq=2)
+
+    def test_stale_beat_is_unknown_not_alive(self):
+        self.feed()
+        self.assertEqual(self.beats.observed(201, ttl=90)["cloud-a"]["status"], "UNKNOWN")
+
+    def test_self_reported_capacity_is_not_ready_for_critical_work(self):
+        self.feed(cap_source="authenticated_runtime")
+        self.assertEqual(self.beats.observed(110)["cloud-a"]["status"], "PROVISIONAL")
+
+    def test_worker_exhaustion_disables_capacity(self):
+        self.feed(quota=False)
+        self.assertEqual(self.beats.observed(105)["cloud-a"]["status"], "EXHAUSTED")
+
+    def test_progress_stall_distinct_from_liveness(self):
+        self.feed(digest="a" * 64)
+        self.feed(now=101, seq=2, digest="a" * 64)
+        self.assertEqual(self.beats.observed(400, ttl=500, max_progress_age=200)["cloud-a"]["status"], "STALLED")
+        self.feed(now=401, seq=3, digest="b" * 64)
+        self.assertEqual(self.beats.observed(402, ttl=500, max_progress_age=200)["cloud-a"]["status"], "READY")
+
+    def test_invalid_client_timestamp_refused(self):
+        with self.assertRaisesRegex(c.Refused, "UNTRUSTED_CLOCK_OR_SEQUENCE"):
+            self.beats.observe(offer("cloud-a", "d", at=90), trusted_actor="cloud-a",
+                               broker_now=100, sequence=1, adapter="GH", provider="x",
+                               host="h", capacity_source="provider_api",
+                               capacity_evidence="verification")
+
+
 if __name__ == '__main__':
     unittest.main()
