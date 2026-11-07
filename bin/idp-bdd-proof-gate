@@ -192,7 +192,55 @@ def _self_test() -> int:
     assert looks_like_a_pass(extract_block(bad_prose)) is False, (
         "prose accepted as pass"
     )
-    print("ok bdd-proof-gate --self-test: extractor + counts predicate both ways")
+    # Regression for issue #6639 and Legion run #42412348112: pre-push is
+    # not yet a PR. A foreign PR with a missing block MUST NOT be graded.
+    import os
+    import subprocess
+    import tempfile
+    from unittest.mock import patch
+
+    with patch.dict(
+        os.environ,
+        {"GITHUB_EVENT_NAME": "issues", "GITHUB_HEAD_REF": "lane/agent-gemini-42412348112"},
+        clear=True,
+    ):
+        with patch(
+            "subprocess.run",
+            return_value=subprocess.CompletedProcess(
+                args=["gh", "pr", "list"], returncode=0, stdout="[]", stderr=""
+            ),
+        ) as called:
+            assert live_pr() is None, "new lane without PR must be not-applicable"
+            args = called.call_args.args[0]
+            assert args[:3] == ["gh", "pr", "list"], args
+            assert args[args.index("--head") + 1] == "lane/agent-gemini-42412348112"
+            assert "--limit" in args and "1" in args, args
+    with tempfile.TemporaryDirectory() as tmp:
+        event = Path(tmp) / "event.json"
+        event.write_text(json.dumps({"pull_request": {"number": 7795}}))
+        with patch.dict(
+            os.environ,
+            {"GITHUB_EVENT_NAME": "pull_request", "GITHUB_EVENT_PATH": str(event)},
+            clear=True,
+        ):
+            with patch(
+                "subprocess.run",
+                return_value=subprocess.CompletedProcess(
+                    args=["gh", "pr", "view"], returncode=0,
+                    stdout=json.dumps({"number": 7795, "body": "NO BDD PROOF"}),
+                    stderr="",
+                ),
+            ) as called:
+                assert live_pr()["number"] == 7795
+                assert called.call_args.args[0][:3] == ["gh", "pr", "view"]
+    with patch.dict(os.environ, {"GITHUB_EVENT_NAME": "pull_request"}, clear=True):
+        try:
+            live_pr()
+        except RuntimeError as exc:
+            assert "PR" in str(exc)
+        else:
+            raise AssertionError("unidentified PR event passed an authority gate")
+    print("ok bdd-proof-gate --self-test: branch scoped, no foreign PR, CI PR pinned")
     return 0
 
 
