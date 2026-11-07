@@ -318,7 +318,7 @@ jobs:
             ruff==0.15.18 yamllint==1.37.1 pytest==8.3.5
           # The pre-push gate runs "python3 -m pytest", not the unrelated pip on PATH.
           # GITHUB_PATH makes this very same pinned interpreter available to later steps.
-          printf '%s\\n' "$RUNNER_TEMP/idp-gate-venv/bin" >> "$GITHUB_PATH"
+          printf '%s\n' "$RUNNER_TEMP/idp-gate-venv/bin" >> "$GITHUB_PATH"
           sudo apt-get install -y -qq shellcheck
 
       - name: Claim the work on an issue
