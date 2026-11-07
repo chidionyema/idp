@@ -16163,7 +16163,6 @@
       "summary": "Transport a host script into OCI Run Command, inside the 4096-character limit.",
       "contract": {
         "inputs": [
-          "--all",
           "--chunk-size",
           "--command-id",
           "--compartment",
@@ -16173,6 +16172,7 @@
           "--instance-id",
           "--instanceagent-id",
           "--lifecycle-state",
+          "--limit",
           "--mode",
           "--name",
           "--poll-seconds",
