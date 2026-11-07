@@ -111,6 +111,22 @@ a green check is not news; do not announce it. A claim of "blocked" carries its 
 that was run (`estate-execute <intent>` or `estate_invoke`), its exit status, and the line it
 printed. A blocker without an intent run behind it is a guess, and is not reported.
 
+### Failure means failure. Zero tolerance for symptom workarounds.
+
+The following are test failures, not conditions to tolerate:
+
+- a timeout, exit `124`, empty observation, `UNKNOWN`, `BLIND`, `offline`, or missing capability;
+- retries, sleeps or widened deadlines added to hide a deterministic defect;
+- accepting an expected timeout as success because the partial output looked plausible;
+- a static cloud screen asking the founder to use or check a laptop;
+- a green HTTP check that never renders the founder's actual path;
+- inventing a future plan instead of fixing the root cause in the current build.
+
+Address the mechanism from the beginning. A deployment gate must exercise the real page or endpoint,
+wait for an explicit observable outcome, fail on the first unmet condition, and exit normally. A
+finite cloud projection must not open an endless live stream. A Mac-local fallback is never cloud
+completion.
+
 ---
 
 ## 4. Secrets — by name only, from the vault
