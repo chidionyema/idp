@@ -9,7 +9,6 @@ the gate itself must also verify receipts before it stops restricting writes.
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 import math
 import re
