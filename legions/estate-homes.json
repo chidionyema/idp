@@ -16,7 +16,7 @@
     "max_usd_per_day": 0.01
   },
   "proof": {
-    "command": "python3 bin/idp-estate-homes --gate",
+    "command": "python3 ../bin/idp-estate-homes --gate",
     "max_seconds": 240
   },
   "slo": {
