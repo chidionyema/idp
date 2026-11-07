@@ -468,6 +468,11 @@ def test_submit_preflights_under_trusted_main_before_the_claim_or_commit():
     assert 'git show HEAD:bin/legion-mission-preflight' in script
     assert 'git show HEAD:catalog/dof-registry.json' in script
     assert "if not verdict.get(\"admitted\")" in script
+    # DoF must have an AVAILABLE success route for a real failed component.
+    assert "Genesis-Resolves: [a-z0-9-]+" in script
+    assert 'args+=(--repair-of "$repair_of")' in script
+    assert '"${args[@]}"' in script
+
     assert JOBS["submit-lane"]["permissions"] == {"contents": "read", "issues": "write"}
     bootstrap = _step("submit-lane", "Install what the estate")["run"]
     for pinned in ("ruff==0.15.18", "yamllint==1.37.1", "pytest==8.3.5"):
