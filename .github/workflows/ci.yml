@@ -634,6 +634,27 @@ jobs:
       - name: the laws, decided (and every gate proven able to fail)
         run: python3 bin/estate-law-gate
 
+  # Degree of freedom (founder, 2026-11-07: "all critical services need to be protected by
+  # auto-constraining agents' degree of freedom ... until the issue is solved, period"). While the
+  # cloud drill holds a `[lane] <service>: a lane is down` incident open, only a commit carrying
+  # `Genesis-Resolves: <service>` and staying inside that service's repairScope may land. Needed by
+  # ci-success, the ruleset's required context, so this refuses, it does not advise.
+  dof-gate:
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || startsWith(github.ref, 'refs/heads/queue/')
+    runs-on: ubuntu-24.04
+    permissions: { contents: read, issues: read }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+        run: |
+          base="${BASE:-$(git merge-base origin/main "$HEAD")}"
+          # judged by BASE's gate when it has one, so a change cannot rewrite its own judge
+          if git show "$base:bin/dof-gate" > /tmp/dof-gate 2>/dev/null; then python3 /tmp/dof-gate "$base" "$HEAD"; else python3 bin/dof-gate "$base" "$HEAD"; fi
+
   ci-success:
     if: always()
     # security-scan is judged here since 2026-10-12. It sat outside this list for as long as the
@@ -655,7 +676,7 @@ jobs:
     # greenlane status read "success proven", and main fast-forwarded red -- four pushes in a row.
     # The loop now judges every key of `needs`, so this is the one list, and
     # tests/test_ci_success_judges_every_job.py fails if a job in this file is missing from it.
-    needs: [fast-gate, verifier, offline-gate, bdd, bdd-suites, messaging-demo, migrate-domain, executes-gate, feature-request-plan, ui-kit, claim-gate, security-scan, law-gate]
+    needs: [fast-gate, verifier, offline-gate, bdd, bdd-suites, messaging-demo, migrate-domain, executes-gate, feature-request-plan, ui-kit, claim-gate, security-scan, law-gate, dof-gate]
     runs-on: ubuntu-24.04
     steps:
       - name: every required job in this workflow is success or skipped

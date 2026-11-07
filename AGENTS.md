@@ -188,6 +188,17 @@ These rules bind every agent, whatever model or runtime:
    on the real path the founder uses. Closing it releases the claim.
 7. **One capability at a time per agent.** Finish, or release, before claiming the next.
 
+## 5b. Degree of freedom: a critical service down narrows every agent to its repair
+
+Founder, 2026-11-07: critical services are protected by constraining every agent's degree of
+freedom until the failure is fixed, non-negotiable. Session start, any harness: `bin/dof-gate
+--lease` (exit 0 full lease, 3 repair-only). The incidents are the open `[lane] <service>: a lane
+is down` issues the cloud drill files and closes; nobody files or closes them by hand. While one is
+open, `dof-gate` (a needs of `ci-success`) refuses every commit that does not carry
+`Genesis-Resolves: <service>` and stay inside that service's repairScope in
+`catalog/dof-registry.json`. A refusal is the estate naming what is broken: claim the incident
+issue and fix it. There is no other work until it is green.
+
 ## 5a. The lead engineer owns the outcome
 
 One agent is the lead engineer for the estate at any moment, and the lead is judged on the OUTCOME:
