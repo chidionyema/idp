@@ -159,7 +159,7 @@ jobs:
                 cp "$transcript" "$out/google.failed.transcript.jsonl"
               fi
               git reset --hard "$(cat "$out/base")" >/dev/null
-              git clean -fd >/dev/null
+              git clean -fdx >/dev/null
               rm -rf "$RUNNER_TEMP/pi-sessions"
               mkdir -p "$RUNNER_TEMP/pi-sessions" "$RUNNER_TEMP/legion-fallback-home"
               rc=0
@@ -179,7 +179,7 @@ jobs:
           if [ -z "${transcript:-}" ]; then
             # No transcript means the harness never got as far as working; its first line is the
             # reason (a start-up error, not the agent's words).
-            echo "::error::the harness left no transcript; nothing can be graded. It said: $(head -1 "$out/stdout" | cut -c1-200)"
+            echo "::error::the harness left no transcript; category=provider-startup-failure; diagnostics retained in encrypted artifact"
             exit 1
           fi
           # Preserve failed runs too: their private transcript is the diagnostic evidence.
@@ -313,7 +313,12 @@ jobs:
       - name: Install what the estate's commit hooks run (the fast gate's own pins)
         run: |
           set -euo pipefail
-          pip install -q ruff==0.15.18 yamllint==1.37.1
+          python3 -m venv "$RUNNER_TEMP/idp-gate-venv"
+          "$RUNNER_TEMP/idp-gate-venv/bin/python" -m pip install -q --disable-pip-version-check \
+            ruff==0.15.18 yamllint==1.37.1 pytest==8.3.5
+          # The pre-push gate runs "python3 -m pytest", not the unrelated pip on PATH.
+          # GITHUB_PATH makes this very same pinned interpreter available to later steps.
+          printf '%s\\n' "$RUNNER_TEMP/idp-gate-venv/bin" >> "$GITHUB_PATH"
           sudo apt-get install -y -qq shellcheck
 
       - name: Claim the work on an issue
