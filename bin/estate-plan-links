@@ -81,7 +81,8 @@ def main(argv: list[str]) -> int:
                 f"goal={row['goal'][:70]} "
                 f"yield={row['yield_state']} "
                 f"completion_claims={row['completion_claims']} "
-                f"verified_yield={row['verified_yield_count']}"
+                f"verified_yield={row['verified_yield_count']} "
+                f"next={row['next_action']}"
             )
         if result["gaps"]:
             print(
