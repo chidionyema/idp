@@ -475,12 +475,17 @@ def restore_verified_checkpoint(uri: str, digest_sha256: str, read_ciphertext,
 
 def attempt_verified_takeover(mission_id: str, lease_store: LeaseStore,
                               beats: HeartbeatRegistry, req: Requirement,
-                              now: float, ttl: float, read_ciphertext) -> dict:
-    """Claim a capable worker for a lost mission without dispatching unverified code.
+                              now: float, ttl: float, read_ciphertext,
+                              decrypt_and_validate_checkpoint=None) -> dict:
+    """Resume only from independently authenticated AND decrypted durable content.
 
-    A trusted caller must validate decrypted mission content and DoF scope
-    before invoking the existing dispatcher. OWNED never means OPERATING.
-    LeaseStore's transaction prevents concurrent supervisors double-claiming.
+    The ciphertext reader and decryptor must be separately provisioned by
+    trusted broker startup. HTTP/model-controlled callbacks are NEVER trusted.
+    The verifier must authenticate the fixed KMS key/mission-associated data
+    and return a strict manifest with a full immutable source SHA.
+    This function ONLY transfers custody: it neither dispatches a worker nor
+    declares a mission operational. DoF and privileged effect checks remain
+    mandatory at the real action door.
     """
     if not mission_id or not _finite(now) or not _finite(ttl) or ttl <= 0:
         raise Refused("INVALID_TAKEOVER_REQUEST")
@@ -492,30 +497,51 @@ def attempt_verified_takeover(mission_id: str, lease_store: LeaseStore,
         return {"state": "RECOVERY_PENDING", "reason": "OWNER_LEASE_STILL_ACTIVE"}
     if not digest or not uri:
         return {"state": "RECOVERY_PENDING", "reason": "NO_DURABLE_CHECKPOINT"}
+    if not callable(decrypt_and_validate_checkpoint):
+        return {"state": "RECOVERY_PENDING", "reason": "AUTHENTICATED_DECRYPTOR_UNAVAILABLE"}
     try:
-        restored = restore_verified_checkpoint(uri, digest, read_ciphertext)
+        ciphertext = restore_verified_checkpoint(uri, digest, read_ciphertext)
+        manifest = decrypt_and_validate_checkpoint(mission_id, uri, ciphertext)
     except Refused as exc:
         return {"state": "RECOVERY_PENDING", "reason": str(exc)}
+    except Exception:
+        return {"state": "RECOVERY_PENDING", "reason": "CHECKPOINT_DECRYPT_OR_VALIDATION_FAILED"}
+    if not isinstance(manifest, dict):
+        return {"state": "RECOVERY_PENDING", "reason": "INVALID_DECRYPTED_MANIFEST"}
+    source_sha = manifest.get("source_sha")
+    if (manifest.get("mission_id") != mission_id or
+            not isinstance(source_sha, str) or len(source_sha) != 40 or
+            any(c not in "0123456789abcdef" for c in source_sha) or
+            not isinstance(manifest.get("resume_cursor"), str) or
+            not manifest["resume_cursor"] or
+            manifest.get("schema") != "genesis.mission.checkpoint.v1"):
+        return {"state": "RECOVERY_PENDING", "reason": "INVALID_DECRYPTED_MANIFEST"}
+
     observed = beats.observed(now)
     offers = [row["offer"] for row in observed.values()
               if row["status"] == "READY" and row["offer"] is not None]
     selected = select_worker(offers, req, now, frozenset({old_worker}))
     if selected is None:
         return {"state": "RECOVERY_PENDING", "reason": "NO_ELIGIBLE_CAPACITY"}
-    try:
-        new_epoch = lease_store.claim(mission_id, selected.worker_id, now, ttl)
-    except Refused as exc:
-        return {"state": "RECOVERY_PENDING", "reason": str(exc)}
     with lease_store._connect() as db:
         pending_effects = [row[0] for row in db.execute(
             "SELECT action_id FROM continuity_effects "
             "WHERE mission_id=? AND state='PENDING' ORDER BY action_id", (mission_id,)
         )]
+    try:
+        new_epoch = lease_store.claim(mission_id, selected.worker_id, now, ttl)
+    except Refused as exc:
+        return {"state": "RECOVERY_PENDING", "reason": str(exc)}
     return {
-        "state": "OWNED", "worker_id": selected.worker_id,
+        "state": "RECONCILIATION_REQUIRED" if pending_effects else "CUSTODY_TRANSFERRED",
+        "worker_id": selected.worker_id,
         "lease_epoch": new_epoch,
+        "source_sha": source_sha,
+        "resume_cursor": manifest["resume_cursor"],
         "checkpoint_uri": uri, "checkpoint_sha256": digest,
-        "checkpoint_bytes_verified": len(restored),
+        "checkpoint_bytes_verified": len(ciphertext),
         "pending_effects_requiring_reconciliation": pending_effects,
-        "requires_external_policy_and_decrypt_verification": True,
+        "scope": "READ_AND_RECONCILE" if pending_effects else "PENDING_DOF_AUTHORIZATION",
+        "runtime_dispatch_verified": False,
+        "operationally_complete": False,
     }
