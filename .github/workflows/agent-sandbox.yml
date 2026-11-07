@@ -92,6 +92,24 @@ jobs:
         with:
           node-version: "22"
 
+      # Trusted, read-only preparation; the model never receives GH_TOKEN.
+      # A source-only candidate cannot edit this preflight workflow itself.
+      - name: Preplan live DoF scope and protected paths before metered provider work
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TASK: ${{ github.event_name == 'issues' && format('{0} -- {1}', github.event.issue.title, github.event.issue.body) || inputs.task }}
+        run: |
+          set -euo pipefail
+          python3 bin/legion-mission-preflight --task "$TASK" --out "$RUNNER_TEMP/legion-success.json"
+          python3 -m json.tool "$RUNNER_TEMP/legion-success.json" > /dev/null
+          python3 - "$RUNNER_TEMP/legion-success.json" <<'PY'
+          import json, sys
+          p = json.load(open(sys.argv[1]))
+          print("Legion success preflight level=" + p["level"] +
+                " incidents=" + ",".join(p["active_incidents"]) +
+                " protected-workflow-change=independent-review-required")
+          PY
+
       - name: Install the harness and age
         env:
           HARNESS: ${{ github.event_name == 'issues' && 'gemini' || inputs.harness }}
@@ -116,6 +134,12 @@ jobs:
           LEGION_FAILOVER: ${{ github.event_name == 'issues' && '1' || '0' }}
         run: |
           set -euo pipefail
+          # This briefing was obtained BEFORE the model call and is not writable
+          # by the model in a different run step. It gives a positive, viable
+          # route for current work and explicitly forbids guarded source edits.
+          packet="$RUNNER_TEMP/legion-success.json"
+          [ -s "$packet" ] || { echo "::error::Legion success contract missing; no provider request"; exit 2; }
+          TASK="$(printf '%s\\n\\n%s\\n%s' "$TASK" 'MANDATORY LIVE ESTATE PREPLAN (read this before modifying any file; this packet is advice, never a permission grant):' "$(cat "$packet")")"
           out="$RUNNER_TEMP/out"; mkdir -p "$out" "$RUNNER_TEMP/pi-sessions"
           git rev-parse HEAD > "$out/base"
           # The newest transcript anywhere under a directory, or nothing. Not `ls -t <globs>`: one
@@ -159,7 +183,7 @@ jobs:
                 cp "$transcript" "$out/google.failed.transcript.jsonl"
               fi
               git reset --hard "$(cat "$out/base")" >/dev/null
-              git clean -fd >/dev/null
+              git clean -fdx >/dev/null
               rm -rf "$RUNNER_TEMP/pi-sessions"
               mkdir -p "$RUNNER_TEMP/pi-sessions" "$RUNNER_TEMP/legion-fallback-home"
               rc=0
@@ -294,6 +318,8 @@ jobs:
       - name: Apply the patch to main, refusing what an agent may not change
         env:
           AGE_KEY: ${{ secrets.AGENT_TRANSCRIPT_AGE_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          TASK: ${{ github.event_name == 'issues' && format('{0} -- {1}', github.event.issue.title, github.event.issue.body) || inputs.task }}
         run: |
           set -euo pipefail
           sudo apt-get update -qq && sudo apt-get install -y -qq age
@@ -303,6 +329,24 @@ jobs:
           rm -f "$RUNNER_TEMP/key"
           [ -s "$work/patch" ] || { echo "::error::the agent changed nothing; there is no PR to open"; exit 1; }
           git apply --index --3way "$work/patch"
+          # The agent-controlled candidate is DATA. Execute ONLY the pinned
+          # trusted-main preflight, copied from HEAD before patch application.
+          mkdir -p "$RUNNER_TEMP/legion-policy/bin" "$RUNNER_TEMP/legion-policy/catalog"
+          git show HEAD:bin/legion-mission-preflight > "$RUNNER_TEMP/legion-policy/bin/legion-mission-preflight"
+          git show HEAD:catalog/dof-registry.json > "$RUNNER_TEMP/legion-policy/catalog/dof-registry.json"
+          paths=$(git diff --cached --name-only --no-renames HEAD | paste -sd, -)
+          python3 "$RUNNER_TEMP/legion-policy/bin/legion-mission-preflight" --task "$TASK" --paths "$paths" --out "$RUNNER_TEMP/legion-policy/verdict.json"
+          python3 - "$RUNNER_TEMP/legion-policy/verdict.json" <<'PY'
+          import json, sys
+          packet = json.load(open(sys.argv[1]))
+          verdict = packet.get("patch_preflight") or {}
+          if not verdict.get("admitted"):
+              print("::error::agent patch fails preflight: " + str(verdict.get("reason")))
+              print("Next: " + str(verdict.get("next") or "refresh approved scope"))
+              sys.exit(2)
+          print("agent patch preflight admissible: final independent gates still required")
+          PY
+
           # Read back what the index now holds, both sides of every rename included, rather than
           # parse the patch text.
           refused=$(git diff --cached --name-only --no-renames HEAD | grep -E '^(\.github|\.githooks)/' || true)
@@ -313,7 +357,9 @@ jobs:
       - name: Install what the estate's commit hooks run (the fast gate's own pins)
         run: |
           set -euo pipefail
-          pip install -q ruff==0.15.18 yamllint==1.37.1
+          python3 -m venv "$RUNNER_TEMP/idp-gate-venv"
+          "$RUNNER_TEMP/idp-gate-venv/bin/python" -m pip install -q --disable-pip-version-check ruff==0.15.18 yamllint==1.37.1 pytest==8.3.5
+          echo "$RUNNER_TEMP/idp-gate-venv/bin" >> "$GITHUB_PATH"
           sudo apt-get install -y -qq shellcheck
 
       - name: Claim the work on an issue
