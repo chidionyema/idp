@@ -140,7 +140,10 @@ def _patch(r: Path, change) -> str:
 def _refusal_step(r: Path, patch: str, tmp_path: Path) -> subprocess.CompletedProcess:
     """Run the step's own shell after its decrypt lines, with the patch already in place."""
     run = _step("submit-lane", "Apply the patch")["run"]
-    tail = run[run.index('[ -s "$work/patch" ]') :]
+    # Isolate the existing guarded-path refusal: the new independent preflight
+    # is covered by the separate mission-preflight tests and requires a live
+    # external health witness that the tiny fake git fixture does not have.
+    tail = run[run.index('[ -s "$work/patch" ]'):run.index("# The agent-controlled candidate is DATA.")]
     work = tmp_path / "work"
     work.mkdir(exist_ok=True)
     (work / "patch").write_text(patch)
@@ -208,6 +211,9 @@ def _agent_step(
     temp, home = tmp_path / "runner", tmp_path / "home"
     temp.mkdir()
     home.mkdir()
+    # The trusted pre-provider step generates this read-only packet. The fake
+    # worker test supplies one; missing packets must fail before model invocation.
+    (temp / "legion-success.json").write_text('{"level":"L0","this_is_not_a_capability":true}\\n')
     env = {
         "PATH": f"{bin_}:/usr/bin:/bin",
         "HOME": str(home),
@@ -442,6 +448,37 @@ def test_manual_gemini_failure_does_not_silently_switch_providers(tmp_path):
     assert "private-no-failover" not in result.stdout
     assert not (out / "google.failed.stdout").exists()
 
+
+def test_success_contract_is_delivered_before_all_provider_harnesses_without_write_token():
+    steps = _steps("agent")
+    preplan = _step("agent", "Preplan live DoF")
+    runner = _step("agent", "Run the agent")
+    assert steps.index(preplan) < steps.index(_step("agent", "Install the harness"))
+    assert steps.index(preplan) < steps.index(runner)
+    assert "GH_TOKEN" in preplan["env"] and "GH_TOKEN" not in runner["env"]
+    assert "legion-mission-preflight" in preplan["run"]
+    assert 'packet="$RUNNER_TEMP/legion-success.json"' in runner["run"]
+    assert 'TASK="$(printf' in runner["run"]
+    assert "GENESIS_DOF_BYPASS" not in _text("agent")
+
+def test_submit_preflights_under_trusted_main_before_the_claim_or_commit():
+    script = _step("submit-lane", "Apply the patch")["run"]
+    assert script.index("refused=$(git diff --cached") < script.index("legion-policy/bin/legion-mission-preflight")
+    assert 'git show HEAD:bin/legion-mission-preflight' in script
+    assert 'git show HEAD:catalog/dof-registry.json' in script
+    assert "if not verdict.get(\"admitted\")" in script
+    assert JOBS["submit-lane"]["permissions"] == {"contents": "read", "issues": "write"}
+    bootstrap = _step("submit-lane", "Install what the estate")["run"]
+    for pinned in ("ruff==0.15.18", "yamllint==1.37.1", "pytest==8.3.5"):
+        assert pinned in bootstrap
+    assert '"$GITHUB_PATH"' in bootstrap
+
+def test_missing_preplan_packet_stops_model_call_before_first_tool(tmp_path):
+    r, work = _agent_step(tmp_path, "pi", None)
+    # The positive fixture is provided by _agent_step; its exact byte contents
+    # are not an authority grant, only a required briefing to the model.
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (work.parent / "legion-success.json").is_file()
 
 def test_legion_failover_disabled_for_manual_workflow_dispatch():
     step = _step("agent", "Run the agent")
