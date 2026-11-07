@@ -345,7 +345,10 @@ jobs:
           # The model/task can suggest the ID but cannot mint it: the pinned
           # checker independently confirms that it is a real OPEN incident and
           # that every changed path sits in its registered repairScope.
-          repair_of=$(printf '%s\\n' "$TASK" | grep -m1 -E '^Genesis-Resolves: [a-z0-9-]+
+          repair_of=$(printf '%s\n' "$TASK" | grep -m1 -E '^Genesis-Resolves: [a-z0-9-]+$' | cut -d' ' -f2 || true)
+          args=(--task "$TASK" --paths "$paths" --out "$RUNNER_TEMP/legion-policy/verdict.json")
+          if [ -n "$repair_of" ]; then args+=(--repair-of "$repair_of"); fi
+          python3 "$RUNNER_TEMP/legion-policy/bin/legion-mission-preflight" "\${args[@]}"
           python3 - "$RUNNER_TEMP/legion-policy/verdict.json" <<'PY'
           import json, sys
           packet = json.load(open(sys.argv[1]))
