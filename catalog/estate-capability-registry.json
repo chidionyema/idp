@@ -6,7 +6,7 @@
     "intent": 118,
     "layer": 253,
     "service": 121,
-    "tool": 475,
+    "tool": 473,
     "workflow": 95
   },
   "records": [
@@ -26289,7 +26289,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci",
         "cap:tool/media-dept-baseline",
         "cap:tool/registry-gate",
         "cap:workflow/gha-registry-snapshot",
@@ -26508,7 +26507,6 @@
         "cap:tool/estate-diagram",
         "cap:tool/estate-showcase",
         "cap:tool/idp-catalog-push",
-        "cap:tool/idp-ci",
         "cap:tool/idp-install-all",
         "cap:tool/idp-status",
         "cap:tool/idp-up",
@@ -26590,7 +26588,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci",
         "cap:tool/idp-verify"
       ],
       "cost": {
@@ -26773,8 +26770,7 @@
       "consumers": [
         "cap:tool/catalog-projection",
         "cap:tool/estate-security-scan",
-        "cap:tool/idp-blast-grade",
-        "cap:tool/idp-ci"
+        "cap:tool/idp-blast-grade"
       ],
       "cost": {
         "estimate": null,
@@ -27374,7 +27370,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci",
         "cap:tool/idp-estate-db-push",
         "cap:tool/idp-status",
         "cap:tool/idp-up"
@@ -27454,8 +27449,7 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/estate-diagnose",
-        "cap:tool/idp-ci"
+        "cap:tool/estate-diagnose"
       ],
       "cost": {
         "estimate": null,
@@ -27973,7 +27967,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci",
         "cap:tool/memory-door-schema",
         "cap:tool/memory-gate"
       ],
@@ -28213,9 +28206,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/idp-ci"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -28486,8 +28477,7 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/diagnosis-gate",
-        "cap:tool/idp-ci"
+        "cap:tool/diagnosis-gate"
       ],
       "cost": {
         "estimate": null,
@@ -28863,8 +28853,7 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/estate-face-vendor",
-        "cap:tool/idp-ci"
+        "cap:tool/estate-face-vendor"
       ],
       "cost": {
         "estimate": null,
@@ -28921,9 +28910,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/idp-ci"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -29810,7 +29797,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci",
         "cap:tool/language-gate"
       ],
       "cost": {
@@ -30143,7 +30129,6 @@
       },
       "consumers": [
         "cap:tool/estate-patch",
-        "cap:tool/idp-ci",
         "cap:tool/language-gate"
       ],
       "cost": {
@@ -31642,8 +31627,7 @@
       },
       "consumers": [
         "cap:tool/estate-face-avatar",
-        "cap:tool/estate-face-vendor",
-        "cap:tool/idp-ci"
+        "cap:tool/estate-face-vendor"
       ],
       "cost": {
         "estimate": null,
@@ -32849,9 +32833,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/idp-ci"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -32898,9 +32880,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/idp-ci"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -32965,7 +32945,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci",
         "cap:tool/idp-reconcile"
       ],
       "cost": {
@@ -33347,7 +33326,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci",
         "cap:tool/idp-ts-owner"
       ],
       "cost": {
@@ -33410,7 +33388,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci",
         "cap:tool/idp-pr-scope-audit"
       ],
       "cost": {
@@ -34372,9 +34349,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/idp-ci"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -34492,320 +34467,6 @@
       "writer": "repo",
       "path": "bin/idp-checkout-drift",
       "depends_on": [],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ],
-      "known_issues": [],
-      "mirrors": []
-    },
-    {
-      "id": "cap:tool/idp-ci",
-      "schema_version": 1,
-      "kind": "tool",
-      "summary": "!/usr/bin/env bash",
-      "contract": {
-        "inputs": [],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:bin"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [
-        "cap:tool/catalog-gen",
-        "cap:tool/catalog-projection",
-        "cap:tool/catalog-refcheck",
-        "cap:tool/diagnosis-gate",
-        "cap:tool/estate-zone-gate",
-        "cap:tool/face-licence-gate",
-        "cap:tool/idp-availability-gate",
-        "cap:tool/idp-backstage-tsc",
-        "cap:tool/idp-bdd-proof-gate",
-        "cap:tool/idp-catalog-links-gate",
-        "cap:tool/idp-catalog-spec-type-gate",
-        "cap:tool/idp-ci-local",
-        "cap:tool/idp-defs-validate",
-        "cap:tool/idp-envsubst-gate",
-        "cap:tool/idp-hardcode-scan",
-        "cap:tool/idp-install-deps",
-        "cap:tool/idp-install-hooks",
-        "cap:tool/idp-kubeconform",
-        "cap:tool/idp-kyverno-dirs",
-        "cap:tool/idp-kyverno-render",
-        "cap:tool/idp-oke-break-glass",
-        "cap:tool/idp-pipeverdict",
-        "cap:tool/idp-stray-checkout",
-        "cap:tool/idp-up",
-        "cap:tool/idp-vendor-render",
-        "cap:tool/intent-compile",
-        "cap:tool/intent-lint",
-        "cap:tool/law32-gate",
-        "cap:tool/memory-gate",
-        "cap:tool/nodesoftware-operator-gate",
-        "cap:tool/ns-fence-gate",
-        "cap:tool/port-gate",
-        "cap:tool/process-census",
-        "cap:tool/test-catalog-projection",
-        "cap:workflow/gha-agent-trunk-batch",
-        "cap:workflow/gha-ci",
-        "cap:workflow/gha-fast-gate"
-      ],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "bin/idp-ci",
-      "depends_on": [
-        {
-          "id": "cap:tool/capability-index",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/catalog-gen",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/catalog-links-check",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/catalog-refcheck",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/db-gen",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/diagnosis-gate",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/estate-claim-check",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/estate-context-gate",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/estate-diagnose",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/estate-face-avatar",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/estate-face-vendor",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/estate-patch",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/estate-read",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/face-licence-gate",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/face-licence-known-blockers",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-always-on-guard",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-api-version-gate",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-apply",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-backstage-tsc",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-bdd-proof-gate",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-catalog-validator",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-envsubst-gate",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-estate-seed",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-evidence-gate",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-image-pin-guard",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-install-deps",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-install-hooks",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-jev-scope-guard",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-kubeconform",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-kyverno-dirs",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-kyverno-render",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-local-evidence-gate",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-mac-provision",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-python-strict",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-reconcile",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-sleep-ban",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-status",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-tests-for",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-up",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-verify",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/intent-compile",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/intent-lint",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/language-gate",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/litellm-local",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/mcp-status",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/memory-gate",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/migration-gate",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/multiarch-gate",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/otto-conformance-gate",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/placement-audit",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/port-gate",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/registry-gate",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/scheduler-migrate",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/schema-conformance",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/test-catalog-projection",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/timeout-budget",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/timeout-budget.baseline",
-          "edge": "invokes"
-        }
-      ],
       "metrics": [],
       "blind": [
         "health",
@@ -36829,9 +36490,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/idp-ci"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -37449,7 +37108,6 @@
       },
       "consumers": [
         "cap:tool/idp-bootstrap-estate",
-        "cap:tool/idp-ci",
         "cap:tool/idp-pr-scope-audit",
         "cap:tool/idp-prove",
         "cap:tool/idp-router-key",
@@ -37701,7 +37359,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci",
         "cap:tool/idp-local-evidence-gate"
       ],
       "cost": {
@@ -39918,9 +39575,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/idp-ci"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -40144,76 +39799,6 @@
       "mirrors": []
     },
     {
-      "id": "cap:tool/idp-install-deps",
-      "schema_version": 1,
-      "kind": "tool",
-      "summary": "!/usr/bin/env bash",
-      "contract": {
-        "inputs": [],
-        "outputs": [
-          "stdout",
-          "exit code"
-        ],
-        "errors": [
-          "non-zero exit"
-        ],
-        "cost_class": "cheap",
-        "latency_class": "interactive"
-      },
-      "owner": "@chidionyema",
-      "plane": "idp",
-      "health": {
-        "state": "declared",
-        "observed_at": null,
-        "source": "idp:bin"
-      },
-      "proof": {
-        "receipt": null,
-        "proven_at": null,
-        "window_s": 2592000
-      },
-      "consumers": [
-        "cap:tool/idp-ci",
-        "cap:tool/idp-install-all",
-        "cap:tool/idp-install-hooks",
-        "cap:tool/idp-workstation-bootstrap",
-        "cap:tool/sb"
-      ],
-      "cost": {
-        "estimate": null,
-        "unit": "usd"
-      },
-      "rung": null,
-      "writer": "repo",
-      "path": "bin/idp-install-deps",
-      "depends_on": [
-        {
-          "id": "cap:tool/idp-ci",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-install-hooks",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-workstation-bootstrap",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/start",
-          "edge": "invokes"
-        }
-      ],
-      "metrics": [],
-      "blind": [
-        "health",
-        "proof",
-        "metrics"
-      ],
-      "known_issues": [],
-      "mirrors": []
-    },
-    {
       "id": "cap:tool/idp-install-hooks",
       "schema_version": 1,
       "kind": "tool",
@@ -40244,10 +39829,8 @@
       },
       "consumers": [
         "cap:tool/idp-agent-orchestrator",
-        "cap:tool/idp-ci",
         "cap:tool/idp-ci-guarded-paths",
         "cap:tool/idp-install-all",
-        "cap:tool/idp-install-deps",
         "cap:tool/idp-workstation-bootstrap"
       ],
       "cost": {
@@ -40514,9 +40097,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/idp-ci"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -41178,7 +40759,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci",
         "cap:tool/idp-kyverno-render"
       ],
       "cost": {
@@ -41306,7 +40886,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci",
         "cap:tool/idp-kubeconform",
         "cap:tool/idp-tests-for",
         "cap:workflow/gha-shadow-verify"
@@ -41428,7 +41007,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci",
         "cap:tool/idp-kubeconform",
         "cap:tool/idp-kyverno-dirs",
         "cap:tool/idp-kyverno-own-policies",
@@ -41840,7 +41418,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci",
         "cap:tool/idp-evidence-write"
       ],
       "cost": {
@@ -42064,7 +41641,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci",
         "cap:workflow/gha-mac-provision-test"
       ],
       "cost": {
@@ -44752,7 +44328,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci",
         "cap:tool/idp-python-strict-refresh"
       ],
       "cost": {
@@ -45058,8 +44633,7 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-apply",
-        "cap:tool/idp-ci"
+        "cap:tool/idp-apply"
       ],
       "cost": {
         "estimate": null,
@@ -46973,9 +46547,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/idp-ci"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -47239,7 +46811,6 @@
       },
       "consumers": [
         "cap:tool/db-gen",
-        "cap:tool/idp-ci",
         "cap:tool/idp-install-all",
         "cap:tool/idp-up"
       ],
@@ -47830,7 +47401,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci",
         "cap:tool/idp-slow-tests",
         "cap:tool/media-dept-baseline",
         "cap:workflow/gha-ci"
@@ -48180,7 +47750,6 @@
       },
       "consumers": [
         "cap:tool/db-gen",
-        "cap:tool/idp-ci",
         "cap:tool/idp-down",
         "cap:tool/idp-install-all",
         "cap:tool/idp-pipeverdict",
@@ -48872,7 +48441,6 @@
       },
       "consumers": [
         "cap:tool/catalog-gen",
-        "cap:tool/idp-ci",
         "cap:tool/idp-install-all",
         "cap:tool/idp-login-drill",
         "cap:tool/idp-up",
@@ -49260,7 +48828,6 @@
       },
       "consumers": [
         "cap:tool/idp-agent-key",
-        "cap:tool/idp-install-deps",
         "cap:tool/idp-jit"
       ],
       "cost": {
@@ -49413,7 +48980,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci",
         "cap:tool/intent-hydrate",
         "cap:tool/schema-conformance",
         "cap:tool/timeout-budget"
@@ -49540,9 +49106,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/idp-ci"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -49964,7 +49528,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci",
         "cap:workflow/gha-greenlane-efficiency-preflight"
       ],
       "cost": {
@@ -50158,7 +49721,6 @@
         "cap:tool/estate-graph-drain",
         "cap:tool/estate-runtime-sync",
         "cap:tool/fleetview-launchd",
-        "cap:tool/idp-ci",
         "cap:tool/idp-install-all",
         "cap:tool/oss-harvest"
       ],
@@ -50613,7 +50175,6 @@
       },
       "consumers": [
         "cap:tool/db-gen",
-        "cap:tool/idp-ci",
         "cap:tool/mcp-up"
       ],
       "cost": {
@@ -51025,7 +50586,6 @@
       },
       "consumers": [
         "cap:tool/estate-claim-check",
-        "cap:tool/idp-ci",
         "cap:tool/memory-door-schema"
       ],
       "cost": {
@@ -51135,8 +50695,7 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-apply",
-        "cap:tool/idp-ci"
+        "cap:tool/idp-apply"
       ],
       "cost": {
         "estimate": null,
@@ -51186,7 +50745,6 @@
       },
       "consumers": [
         "cap:tool/dockerfiles",
-        "cap:tool/idp-ci",
         "cap:tool/idp-stray-checkout",
         "cap:tool/treewalk.py"
       ],
@@ -51534,7 +51092,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci",
         "cap:tool/otto-readiness-gate"
       ],
       "cost": {
@@ -51820,9 +51377,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/idp-ci"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -51934,7 +51489,6 @@
       },
       "consumers": [
         "cap:tool/aei-collector",
-        "cap:tool/idp-ci",
         "cap:tool/idp-clean-tree",
         "cap:tool/idp-kyverno-dirs",
         "cap:tool/idp-pipeverdict",
@@ -52362,7 +51916,6 @@
       "consumers": [
         "cap:tool/capability-index",
         "cap:tool/claim-gate",
-        "cap:tool/idp-ci",
         "cap:workflow/gha-registry-workflow-dependency-preflight"
       ],
       "cost": {
@@ -52859,9 +52412,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/idp-ci"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -53021,7 +52572,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-ci",
         "cap:tool/language-gate"
       ],
       "cost": {
@@ -53297,7 +52847,6 @@
         "cap:tool/idp-flux-subst-gate",
         "cap:tool/idp-gitops-drift.py",
         "cap:tool/idp-headlamp-mac",
-        "cap:tool/idp-install-deps",
         "cap:tool/idp-install-hooks",
         "cap:tool/idp-install-launchd",
         "cap:tool/idp-install-verifier-hooks",
@@ -53514,8 +53063,7 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/catalog-projection",
-        "cap:tool/idp-ci"
+        "cap:tool/catalog-projection"
       ],
       "cost": {
         "estimate": null,
@@ -53691,9 +53239,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/idp-ci"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
