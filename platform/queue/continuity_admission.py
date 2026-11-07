@@ -98,8 +98,11 @@ class LeaseStore:
     call authorize_effect immediately before dispatch and honor its verdict.
     """
 
-    def __init__(self, path: str):
+    def __init__(self, path: str, *, receipt_verifier=None):
         self.path = path
+        # Supplied ONLY by an independently authenticated broker; no verifier
+        # means effect confirmation is refused, never accepted by default.
+        self._receipt_verifier = receipt_verifier
         with self._connect() as db:
             db.execute("""CREATE TABLE IF NOT EXISTS continuity_effects (
                 mission_id TEXT NOT NULL,
@@ -237,19 +240,29 @@ class LeaseStore:
 
     def confirm_effect(self, mission_id: str, action_id: str, worker: str,
                        epoch: int, now: float, receipt_sha256: str,
-                       *, verified_by_independent_broker: bool = False) -> None:
-        """Record outcome only after a distinct trusted effect-sink verifier confirms.
+                       *, receipt_proof: bytes = b"") -> None:
+        """Record only an independently verified, manifest-bound receipt.
 
-        The broker flag MUST be assigned by server code, never forwarded from
-        a user request, a model output, or an untrusted browser.
+        The verifier is provisioned by trusted server startup; it MUST verify
+        an exact signed action/actor/epoch/result manifest. Model or browser
+        inputs cannot set a Boolean to mint certifier authority.
         """
-        if not verified_by_independent_broker:
+        if self._receipt_verifier is None or not callable(self._receipt_verifier):
             raise Refused("INDEPENDENT_PROOF_REQUIRED")
         if (len(receipt_sha256) != 64 or
                 any(x not in "0123456789abcdef" for x in receipt_sha256)):
             raise Refused("INVALID_RECEIPT_DIGEST")
         if not _finite(now):
             raise Refused("INVALID_TIME")
+        message = (f"genesis.effect.v1\\n{mission_id}\\n{action_id}\\n{worker}\\n"
+                   f"{epoch}\\n{receipt_sha256}\\n").encode("utf-8")
+        try:
+            verified = (isinstance(receipt_proof, bytes) and
+                        bool(self._receipt_verifier(message, receipt_proof)))
+        except Exception:
+            verified = False
+        if not verified:
+            raise Refused("INVALID_INDEPENDENT_RECEIPT")
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             owner = db.execute(
