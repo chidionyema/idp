@@ -346,6 +346,45 @@ class TakeoverTests(unittest.TestCase):
         result = self.takeover()
         self.assertEqual(result["reason"], "CHECKPOINT_READ_FAILED")
 
+    def test_missing_decryptor_does_not_transfer_custody(self):
+        got = c.attempt_verified_takeover(
+            "mission", self.store, self.beats, self.req, 201, 30,
+            lambda uri: self.objects[uri],
+        )
+        self.assertEqual(got["reason"], "AUTHENTICATED_DECRYPTOR_UNAVAILABLE")
+        self.assertEqual(self.store.snapshot("mission")[0], "old")
+
+    def test_decrypt_failure_does_not_transfer_custody(self):
+        def decrypt(mission, uri, ciphertext):
+            raise RuntimeError("KMS unavailable")
+        got = self.takeover(decrypt=decrypt)
+        self.assertEqual(got["reason"], "CHECKPOINT_DECRYPT_OR_VALIDATION_FAILED")
+        self.assertEqual(self.store.snapshot("mission")[0], "old")
+
+    def test_decrypted_wrong_mission_refuses_takeover(self):
+        got = self.takeover(decrypt=lambda m, uri, blob: {
+            "schema": "genesis.mission.checkpoint.v1",
+            "mission_id": "forged-mission", "source_sha": "a" * 40,
+            "resume_cursor": "action",
+        })
+        self.assertEqual(got["reason"], "INVALID_DECRYPTED_MANIFEST")
+        self.assertEqual(self.store.snapshot("mission")[0], "old")
+
+    def test_decrypted_short_sha_refuses_takeover(self):
+        got = self.takeover(decrypt=lambda m, uri, blob: {
+            "schema": "genesis.mission.checkpoint.v1",
+            "mission_id": m, "source_sha": "da1536c7",
+            "resume_cursor": "action",
+        })
+        self.assertEqual(got["reason"], "INVALID_DECRYPTED_MANIFEST")
+        self.assertEqual(self.store.snapshot("mission")[0], "old")
+
+    def test_takeover_is_never_operational_certification(self):
+        result = self.takeover()
+        self.assertFalse(result["operationally_complete"])
+        self.assertFalse(result["runtime_dispatch_verified"])
+        self.assertEqual(result["scope"], "PENDING_DOF_AUTHORIZATION")
+
 
 if __name__ == '__main__':
     unittest.main()
