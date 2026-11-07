@@ -357,6 +357,12 @@ jobs:
               print("::error::agent patch fails preflight: " + str(verdict.get("reason")))
               print("Next: " + str(verdict.get("next") or "refresh approved scope"))
               sys.exit(2)
+          if verdict.get("reason") == "SCOPED_REPAIR":
+              from pathlib import Path
+              import re
+              component = verdict.get("repair_of")
+              assert isinstance(component, str) and re.fullmatch(r"[a-z][a-z0-9-]{0,63}", component)
+              Path(sys.argv[1]).with_name("repair-of").write_text(component + "\\n")
           print("agent patch preflight admissible: final independent gates still required")
           PY
 
@@ -412,6 +418,13 @@ jobs:
           git checkout -q -b "$branch"
           subject="agent-sandbox (${HARNESS}): $(printf '%s' "$TASK" | head -1 | cut -c1-72)"
           printf '%s\n\nRun: %s\n\nClaim: #%s\nAgent: %s\n' "$subject" "$RUN_URL" "$NUM" "$AGENT" > "$RUNNER_TEMP/msg"
+          # DoF resolves comes only from a trusted-main, live-incident-verified
+          # preflight result; the agent cannot self-assert an arbitrary trailer.
+          if [ -s "$RUNNER_TEMP/legion-policy/repair-of" ]; then
+            repair_of=$(cat "$RUNNER_TEMP/legion-policy/repair-of")
+            [[ "$repair_of" =~ ^[a-z][a-z0-9-]{0,63}$ ]] || { echo "::error::invalid verified repair id"; exit 2; }
+            printf '\nGenesis-Resolves: %s\n' "$repair_of" >> "$RUNNER_TEMP/msg"
+          fi
           git commit -q -F "$RUNNER_TEMP/msg"
           git log -1 --format=%B | grep -q '^X-Idp-Signed: ' || { echo "::error::the commit-msg hook did not stamp the commit"; exit 1; }
           git push -q origin "$branch"
