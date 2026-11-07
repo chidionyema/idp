@@ -99,6 +99,15 @@ class LeaseStore:
     def __init__(self, path: str):
         self.path = path
         with self._connect() as db:
+            db.execute("""CREATE TABLE IF NOT EXISTS continuity_effects (
+                mission_id TEXT NOT NULL,
+                action_id TEXT NOT NULL,
+                worker_id TEXT NOT NULL,
+                epoch INTEGER NOT NULL,
+                state TEXT NOT NULL CHECK(state IN ('PENDING','CONFIRMED')),
+                receipt_sha256 TEXT,
+                PRIMARY KEY(mission_id, action_id)
+            )""")
             db.execute("""CREATE TABLE IF NOT EXISTS continuity_leases (
                 mission_id TEXT PRIMARY KEY,
                 worker_id TEXT NOT NULL,
@@ -189,6 +198,85 @@ class LeaseStore:
         if (row is None or row[0] != worker or row[1] != epoch or
                 now >= row[2] or now < row[3]):
             raise Refused("STALE_FENCING_LEASE")
+
+    def reserve_effect(self, mission_id: str, action_id: str, worker: str,
+                       epoch: int, now: float) -> None:
+        """Atomically reserve a mediated side effect; the lease alone is not authorization.
+
+        External effects must pass the existing action-door DoF/policy checks.
+        A PENDING record after crash requires independent reconciliation, not replay.
+        """
+        if not mission_id or not action_id or not worker or not isinstance(epoch, int):
+            raise Refused("INVALID_EFFECT_REQUEST")
+        if not _finite(now):
+            raise Refused("INVALID_TIME")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT worker_id,epoch,expires_at,last_observed FROM continuity_leases "
+                "WHERE mission_id=?", (mission_id,),
+            ).fetchone()
+            if (row is None or row[0] != worker or row[1] != epoch or
+                    now >= row[2] or now < row[3]):
+                raise Refused("STALE_FENCING_LEASE")
+            existing = db.execute(
+                "SELECT state FROM continuity_effects WHERE mission_id=? AND action_id=?",
+                (mission_id, action_id),
+            ).fetchone()
+            if existing is not None:
+                raise Refused("ALREADY_CONFIRMED" if existing[0] == "CONFIRMED"
+                              else "PENDING_RECONCILIATION_REQUIRED")
+            db.execute(
+                "INSERT INTO continuity_effects "
+                "(mission_id,action_id,worker_id,epoch,state) VALUES(?,?,?,?,'PENDING')",
+                (mission_id, action_id, worker, epoch),
+            )
+            db.execute("COMMIT")
+
+    def confirm_effect(self, mission_id: str, action_id: str, worker: str,
+                       epoch: int, now: float, receipt_sha256: str,
+                       *, verified_by_independent_broker: bool = False) -> None:
+        """Record outcome only after a distinct trusted effect-sink verifier confirms.
+
+        The broker flag MUST be assigned by server code, never forwarded from
+        a user request, a model output, or an untrusted browser.
+        """
+        if not verified_by_independent_broker:
+            raise Refused("INDEPENDENT_PROOF_REQUIRED")
+        if (len(receipt_sha256) != 64 or
+                any(x not in "0123456789abcdef" for x in receipt_sha256)):
+            raise Refused("INVALID_RECEIPT_DIGEST")
+        if not _finite(now):
+            raise Refused("INVALID_TIME")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            owner = db.execute(
+                "SELECT worker_id,epoch,expires_at,last_observed FROM continuity_leases "
+                "WHERE mission_id=?", (mission_id,),
+            ).fetchone()
+            if (owner is None or owner[0] != worker or owner[1] != epoch or
+                    now >= owner[2] or now < owner[3]):
+                raise Refused("STALE_FENCING_LEASE")
+            reserved = db.execute(
+                "SELECT worker_id,epoch,state FROM continuity_effects "
+                "WHERE mission_id=? AND action_id=?", (mission_id, action_id),
+            ).fetchone()
+            if (reserved is None or reserved[0] != worker or reserved[1] != epoch
+                    or reserved[2] != "PENDING"):
+                raise Refused("EFFECT_NOT_RESERVED_BY_OWNER")
+            db.execute(
+                "UPDATE continuity_effects SET state='CONFIRMED',receipt_sha256=? "
+                "WHERE mission_id=? AND action_id=?",
+                (receipt_sha256, mission_id, action_id),
+            )
+            db.execute("COMMIT")
+
+    def effect_snapshot(self, mission_id: str, action_id: str):
+        with self._connect() as db:
+            return db.execute(
+                "SELECT worker_id,epoch,state,receipt_sha256 FROM continuity_effects "
+                "WHERE mission_id=? AND action_id=?", (mission_id, action_id),
+            ).fetchone()
 
     def snapshot(self, mission_id: str):
         with self._connect() as db:
