@@ -102,7 +102,9 @@ jobs:
             pi|gemini)   npm install -g --silent @earendil-works/pi-coding-agent@0.86.1 ;;
             *)           echo "::error::unknown harness"; exit 1 ;;
           esac
-          sudo apt-get update -qq && sudo apt-get install -y -qq age
+          # Exactly the pinned fast tools used by the trusted pre-push gate.
+          python3 -m pip install -q ruff==0.15.18 yamllint==1.37.1
+          sudo apt-get update -qq && sudo apt-get install -y -qq age shellcheck
 
       - name: Run the agent (its output goes to a file, never to this public log)
         env:
@@ -195,7 +197,83 @@ jobs:
           fi
           # The patch is everything the agent changed against the commit it started from,
           # committed or not, tracked or new.
-          git add -A
+          # Preflight before the expensive, credentialed trusted submission job.
+          # Reuse existing bin/idp-ruff* and .yamllint, not a second quality policy.
+          early_quality() {
+            git add -A
+            local base f first
+            base="$(cat "$out/base")"
+            local -a python_files=() yaml_files=() shell_files=()
+            while IFS= read -r f; do
+              [ -f "$f" ] || continue
+              first="$(head -n 1 "$f" 2>/dev/null || true)"
+              case "$f" in
+                .github/*|.githooks/*) echo "FAIL protected path: $f"; return 1 ;;
+              esac
+              case "$f" in
+                *.py) python_files+=("$f") ;;
+                *.yaml|*.yml) yaml_files+=("$f") ;;
+                *.sh|*.bash) shell_files+=("$f") ;;
+                *)
+                  case "$first" in
+                    '#!'*python*) python_files+=("$f") ;;
+                    '#!'*bash*|'#!'*/sh) shell_files+=("$f") ;;
+                  esac ;;
+              esac
+            done < <(git diff --cached --name-only --diff-filter=ACMR "$base")
+            if (( ${#python_files[@]} )); then
+              python3 -m py_compile "${python_files[@]}" || return 1
+              bin/idp-ruff --select E9,F,B,S "${python_files[@]}" || return 1
+              bin/idp-ruff-format --check "${python_files[@]}" || return 1
+            fi
+            if (( ${#yaml_files[@]} )); then
+              yamllint -c .yamllint "${yaml_files[@]}" || return 1
+            fi
+            if (( ${#shell_files[@]} )); then
+              shellcheck -S warning "${shell_files[@]}" || return 1
+            fi
+            return 0
+          }
+          quality_rc=0
+          early_quality > "$out/quality" 2>&1 || quality_rc=$?
+          if [ "$quality_rc" -ne 0 ]; then
+            echo "legion early-quality: FAIL; attempting one same-session repair"
+            fix_prompt="Your patch failed the mandatory estate quality tools. Fix the actual defects, including security warnings, without disabling gates or unjustified noqa. Rerun the tests and checks before claiming completion. Exact errors:
+$(tail -c 12000 "$out/quality")"
+            fix_rc=0
+            case "$HARNESS" in
+              gemini)
+                provider=google; chosen_model="${MODEL:-gemini-3.5-flash}"
+                if [ -f "$out/google.failed.stdout" ]; then
+                  provider=minimax; chosen_model=MiniMax-M2.7
+                fi
+                pi -p --continue --provider "$provider" --model "$chosen_model" \
+                  --session-dir "$RUNNER_TEMP/pi-sessions" "$fix_prompt" \
+                  < /dev/null > "$out/repair.stdout" 2>&1 || fix_rc=$?
+                transcript=$(newest "$RUNNER_TEMP/pi-sessions") ;;
+              pi)
+                pi -p --continue --provider minimax --model MiniMax-M2.7 \
+                  --session-dir "$RUNNER_TEMP/pi-sessions" "$fix_prompt" \
+                  < /dev/null > "$out/repair.stdout" 2>&1 || fix_rc=$?
+                transcript=$(newest "$RUNNER_TEMP/pi-sessions") ;;
+              claude-code)
+                claude -p --continue --dangerously-skip-permissions "$fix_prompt" \
+                  < /dev/null > "$out/repair.stdout" 2>&1 || fix_rc=$?
+                transcript=$(newest "$HOME/.claude/projects") ;;
+            esac
+            if [ -n "${transcript:-}" ] && [ -f "$transcript" ]; then
+              cp "$transcript" "$out/transcript.jsonl"
+            fi
+            quality_rc=0
+            early_quality > "$out/quality" 2>&1 || quality_rc=$?
+            if [ "$fix_rc" -ne 0 ] || [ "$quality_rc" -ne 0 ]; then
+              git add -A
+              git diff --cached --binary "$(cat "$out/base")" > "$out/patch"
+              echo "::error::legion preflight still red after bounded repair; encrypted diagnostics retained"
+              exit 1
+            fi
+          fi
+          echo "legion early-quality: PASS"
           git diff --cached --binary "$(cat "$out/base")" > "$out/patch"
           echo "patch: $(git diff --cached --stat "$(cat "$out/base")" | tail -1)"
 
@@ -208,7 +286,7 @@ jobs:
           [ -n "$RECIPIENT" ] || { echo "::error::AGENT_TRANSCRIPT_AGE_RECIPIENT is not set"; exit 1; }
           out="$RUNNER_TEMP/out"; mkdir -p "$RUNNER_TEMP/sealed"
           files=()
-          for name in base patch transcript.jsonl stdout google.failed.stdout google.failed.transcript.jsonl; do
+          for name in base patch transcript.jsonl stdout quality repair.stdout google.failed.stdout google.failed.transcript.jsonl; do
             if [ -f "$out/$name" ]; then files+=("$name"); fi
           done
           [ "${#files[@]}" -gt 0 ] || { echo "::error::the job left no evidence to seal"; exit 1; }
