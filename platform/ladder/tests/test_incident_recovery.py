@@ -106,15 +106,55 @@ class RecoveryClosureTests(unittest.TestCase):
         self.assertFalse(gh.closed)
         self.assertIn("FUNCTIONAL_RECOVERY_PROBE_NOT_CONFIGURED", str(acts))
 
-    def test_valid_redundant_functional_probes_currently_allow_closure(self):
-        """This positive case is a WARNING, not production proof.
-
-        Current implementation accepts unsigned rows: it is a security gap
-        to close before a production DoF reset can be trusted.
-        """
+    def test_unsigned_redundant_functional_probes_still_cannot_close(self):
         gh, acts = self.verdict([row(door.OK), row(door.OK, "cloudflare")])
+        self.assertFalse(gh.closed)
+        self.assertIn("INDEPENDENT_RECOVERY_TRUST_NOT_CONFIGURED", str(acts))
+
+    def test_valid_signed_recovery_receipt_allows_closure_in_fixture_only(self):
+        import base64
+        import os
+        import tempfile
+        import time
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        records = [row(door.OK), row(door.OK, "cloudflare")]
+        key = Ed25519PrivateKey.generate()
+        pub = base64.b64encode(key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )).decode("ascii")
+        moment = time.time()
+        payload = {
+            "schema": "genesis.recovery.v1",
+            "service": "llm-router",
+            "observer": "independent:test-fixture-only",
+            "deployment_sha": "a" * 40,
+            "run_id": "123456",
+            "issued_at": moment - 4,
+            "expires_at": moment + 150,
+            "observations": [
+                {"leg": r["leg"], "provider": r["provider"],
+                 "result": "FUNCTIONAL_READY", "evidence_sha256": "b" * 64,
+                 "observed_at": moment - age}
+                for r in records for age in (80, 30)
+            ],
+        }
+        source = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        envelope = {
+            "format": "genesis.recovery.ed25519.v1",
+            "payload_b64": base64.b64encode(source).decode(),
+            "signature_b64": base64.b64encode(key.sign(source)).decode(),
+        }
+        with tempfile.TemporaryDirectory() as path:
+            (pathlib.Path(path) / "llm-router.json").write_text(json.dumps(envelope))
+            with patch.dict(os.environ, {
+                "ESTATE_RECOVERY_CERTIFIER_ED25519_PUB": pub,
+                "ESTATE_RECOVERY_RECEIPTS_DIR": path,
+            }):
+                gh, actions = self.verdict(records)
         self.assertTrue(gh.closed)
-        self.assertIn("closed #7332", str(acts))
+        self.assertIn("closed #7332", str(actions))
 
     def test_legacy_dof_gate_remains_issue_state_only(self):
         gate = (ROOT / "bin" / "dof-gate").read_text()
