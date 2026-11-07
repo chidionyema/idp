@@ -577,15 +577,16 @@ def file_issues(results: list, dry_run: bool = False) -> list:
         for issue in issues:
             # Existing outages are discharged only on completed recovery proof.
             # An UNKNOWN or reachability-only row must never release DoF.
-            managed_prefix = f"{ISSUE_PREFIX} {service}:"
-            if str(issue.get("title", "")).startswith(managed_prefix):
-                recovered, reason = _auto_closure_proof(service, rows)
-                if not recovered:
-                    actions.append(
-                        f"HELD #{issue['number']} ({service}): {reason}; "
-                        "no DoF reset on incomplete recovery"
-                    )
-                    continue
+            # Do not exempt renamed/legacy issue titles. An attacker or a
+            # misconfigured observer can rename a GitHub issue; a title is
+            # presentation metadata and cannot grant closure authority.
+            recovered, reason = _auto_closure_proof(service, rows)
+            if not recovered:
+                actions.append(
+                    f"HELD #{issue['number']} ({service}): {reason}; "
+                    "no DoF reset on incomplete recovery"
+                )
+                continue
             if dry_run:
                 actions.append(f"would close #{issue['number']} ({service})")
                 continue
