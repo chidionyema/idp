@@ -72,21 +72,72 @@ if [ "$CHECK" = 1 ]; then
   set -uo pipefail
   echo "idp-ci --check: syntax gate"
   fail=0
-  # Non-ASCII guard on all tracked files
-  while IFS= read -r f; do
-    pos=$(python3 -c "
+  # A partial tree is BLIND, never a verdict. A sparse checkout lists every tracked
+  # file in `git ls-files` while the working tree holds only a few of them, so a rung
+  # that walks the index meets files that are not there: the read fails and the
+  # absence is reported as a failure -- or the rung skips it and reports a pass over
+  # a tree it never saw. Neither is a verdict. A blind run is not a pass (MUM-193):
+  # the gate says BLIND, names the remedy, and stops.
+  na_skip=$(git ls-files -t 2>/dev/null | grep -c '^S ' || true)
+  if [ "${na_skip:-0}" -gt 0 ]; then
+    echo "idp-ci --check: BLIND -- partial tree: ${na_skip} tracked file(s) are skip-worktree (sparse checkout)"
+    echo "  remedy: git sparse-checkout disable, or run the gate in a full checkout -- the gate cannot judge a tree it cannot see"
+    exit 3
+  fi
+  # The estate's own test inputs are excluded from every whole-tree scan in this block:
+  # tests/fixtures/ holds files that are broken ON PURPOSE (a broken Python fixture, and
+  # YAML fixtures for the secret and vendor-name scanners). A whole-tree scan of them can
+  # never pass, and a gate that cannot pass is not a gate -- it is a wall. The scans keep
+  # their whole-tree reach over everything else; only the deliberate breakage is excluded.
+  check_files() { git ls-files | grep -v '^\.git/' | grep -v '^tests/fixtures/'; }
+  # Non-ASCII guard. The rule is about what a change introduces, not what history
+  # contains -- .githooks/pre-push (layer 1c) says so in its own words: "The old check
+  # read the whole file, so it refused any push that touched a file that already held
+  # one -- this hook's own emoji, for one. It measured history, not the change ... The
+  # rule is about what a push introduces, so it reads the added lines." This rung still
+  # had the old whole-file form, which made it the one part of the syntax gate that
+  # could never pass on the estate's own tree: 1,878 tracked files carry pre-existing
+  # non-ASCII bytes (.githooks/commit-msg, backstage/founder/catalog-info.yaml, ...), so
+  # a clean checkout of main failed -- and a gate that cannot pass is not a gate, it is
+  # a wall. With a base, the added lines of the change are checked, exactly as pre-push
+  # does. With no base there is no change to scope to, so the tree-wide condition is
+  # reported as an audit count and never as a FAIL: the whole-repo sweep owns that debt.
+  if [ -n "${IDP_CI_BASE:-}" ]; then
+    for f in $(git diff --name-only "$IDP_CI_BASE...HEAD" 2>/dev/null | grep -v '^\.git/'); do
+      [ -f "$f" ] || continue
+      added=$(git diff --no-color -U0 "$IDP_CI_BASE...HEAD" -- "$f" 2>/dev/null | grep '^+' | grep -v '^+++' || true)
+      [ -n "$added" ] || continue
+      if printf '%s' "$added" | python3 -c "
 import sys
-with open('$f','rb') as fh:
-    for i,b in enumerate(fh.read()):
-        if b>127:
-            print(i+1, b)
-            sys.exit(1)
-" 2>&1) || true
-    if [ -n "$pos" ]; then
-      echo "  FAIL non-ASCII in $f: $pos"
-      fail=1
-    fi
-  done < <(git ls-files | grep -v '^\.git/')
+data = sys.stdin.buffer.read()
+bad = [i + 1 for i, b in enumerate(data) if b > 127]
+sys.exit(1 if bad else 0)
+" 2>/dev/null; then
+        : # clean
+      else
+        echo "  FAIL non-ASCII bytes added in $f"
+        fail=1
+      fi
+    done
+  else
+    na_audit=$(git ls-files 2>/dev/null | grep -v '^\.git/' | python3 -c "
+import sys
+bad = []
+for line in sys.stdin:
+    p = line.rstrip('\n')
+    if not p:
+        continue
+    try:
+        with open(p, 'rb') as fh:
+            data = fh.read()
+    except OSError:
+        continue
+    if any(b > 127 for b in data):
+        bad.append(p)
+print(len(bad))
+" 2>/dev/null || echo 0)
+    echo "  audit  non-ASCII bytes in ${na_audit:-0} tracked file(s) -- pre-existing, not a FAIL here (the weekly sweep owns it)"
+  fi
   # bin/idp-always-on-guard etc: an extensionless file under bin/ or .githooks/ is not
   # necessarily a shell script (a Python file with no .py extension used to be bash -n'd
   # and linted as bash here -- SC1071). *.sh/*.bash are trivially shell; anything under
@@ -105,7 +156,7 @@ with open('$f','rb') as fh:
     esac
   }
   # bash -n on shell files
-  for f in $(git ls-files | grep -v '^\.git/'); do
+  for f in $(check_files); do
     is_shell_file "$f" || continue
     if [ -f "$f" ] && ! bash -n "$f" 2>&1; then
       echo "  FAIL bash -n $f"
@@ -114,7 +165,7 @@ with open('$f','rb') as fh:
   done
   # run shellcheck on shell files (if available)
   if command -v shellcheck >/dev/null 2>&1; then
-    for f in $(git ls-files | grep -v '^\.git/'); do
+    for f in $(check_files); do
       is_shell_file "$f" && [ -f "$f" ] || continue
       if shellcheck -S warning "$f" >/dev/null 2>&1; then
         : # clean
@@ -124,8 +175,11 @@ with open('$f','rb') as fh:
       fi
     done
   fi
-  # python3 -m py_compile on Python files
-  for f in $(git ls-files | grep -v '^\.git/'); do
+  # python3 -m py_compile on Python files. This gate's intent is the whole tree --
+  # parse-only checks on every tracked file -- so the deliberate breakage in
+  # tests/fixtures/ is excluded by check_files() above rather than by narrowing the
+  # scan to the diff and leaving the rest of the tree unchecked.
+  for f in $(check_files); do
     case "$f" in
     *.py)
       [ -f "$f" ] || continue
@@ -145,9 +199,9 @@ with open('$f','rb') as fh:
     # on pre-existing drift, same class as the ruff-fmt defect #7086 fixed). Whole-repo
     # belongs on the weekly sweep workflow, not in every lane's way.
     if [ -n "${IDP_CI_BASE:-}" ]; then
-      YML_FILES=$(git diff --name-only "$IDP_CI_BASE" HEAD -- '*.yaml' '*.yml' | grep -v '^\.git/' || true)
+      YML_FILES=$(git diff --name-only "$IDP_CI_BASE" HEAD -- '*.yaml' '*.yml' | grep -v '^\.git/' | grep -v '^tests/fixtures/' || true)
     else
-      YML_FILES=$(git ls-files | grep -v '^\.git/')
+      YML_FILES=$(check_files)
     fi
     for f in $YML_FILES; do
       case "$f" in
@@ -395,7 +449,7 @@ if command -v yamllint >/dev/null 2>&1; then
   if [ -n "${IDP_CI_BASE:-}" ]; then
     ylf=$(cd "$IDP" && git diff --name-only --diff-filter=d "$IDP_CI_BASE...HEAD" -- '*.yaml' '*.yml')
   else
-    ylf=$(cd "$IDP" && git ls-files -- '*.yaml' '*.yml')
+    ylf=$(cd "$IDP" && git ls-files -- '*.yaml' '*.yml' | grep -v '^tests/fixtures/')
   fi
   yln=$(printf '%s' "$ylf" | grep -c .)
   if [ "$yln" = 0 ]; then say "ok    yamllint no YAML in the diff against $IDP_CI_BASE"
