@@ -254,8 +254,8 @@ class LeaseStore:
             raise Refused("INVALID_RECEIPT_DIGEST")
         if not _finite(now):
             raise Refused("INVALID_TIME")
-        message = (f"genesis.effect.v1\\n{mission_id}\\n{action_id}\\n{worker}\\n"
-                   f"{epoch}\\n{receipt_sha256}\\n").encode("utf-8")
+        message = (f"genesis.effect.v1\n{mission_id}\n{action_id}\n{worker}\n"
+                   f"{epoch}\n{receipt_sha256}\n").encode("utf-8")
         try:
             verified = (isinstance(receipt_proof, bytes) and
                         bool(self._receipt_verifier(message, receipt_proof)))
