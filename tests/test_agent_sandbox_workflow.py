@@ -213,7 +213,8 @@ def _agent_step(
     home.mkdir()
     # The trusted pre-provider step generates this read-only packet. The fake
     # worker test supplies one; missing packets must fail before model invocation.
-    (temp / "legion-success.json").write_text('{"level":"L0","this_is_not_a_capability":true}\\n')
+    if not (overrides or {}).get("OMIT_PREFLIGHT"):
+        (temp / "legion-success.json").write_text('{"level":"L0","this_is_not_a_capability":true}\\n')
     env = {
         "PATH": f"{bin_}:/usr/bin:/bin",
         "HOME": str(home),
@@ -474,11 +475,10 @@ def test_submit_preflights_under_trusted_main_before_the_claim_or_commit():
     assert '"$GITHUB_PATH"' in bootstrap
 
 def test_missing_preplan_packet_stops_model_call_before_first_tool(tmp_path):
-    r, work = _agent_step(tmp_path, "pi", None)
-    # The positive fixture is provided by _agent_step; its exact byte contents
-    # are not an authority grant, only a required briefing to the model.
-    assert r.returncode == 0, r.stdout + r.stderr
-    assert (work.parent / "legion-success.json").is_file()
+    r, work = _agent_step(tmp_path, "pi", None, {"OMIT_PREFLIGHT": "1"})
+    assert r.returncode == 2
+    assert "Legion success contract missing; no provider request" in r.stdout
+    assert not (work.parent / "legion-success.json").is_file()
 
 def test_legion_failover_disabled_for_manual_workflow_dispatch():
     step = _step("agent", "Run the agent")
