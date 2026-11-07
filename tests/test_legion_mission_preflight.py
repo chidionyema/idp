@@ -37,6 +37,7 @@ class SuccessFirstTest(unittest.TestCase):
 
     def test_safe_repair_is_explicitly_possible(self):
         self.assertTrue(mission.decision(REG, RED, ["k3s/router.yaml"], "llm-router")["admitted"])
+        self.assertEqual(mission.decision(REG, RED, ["k3s/router.yaml"], "llm-router")["repair_of"], "llm-router")
 
     def test_invalid_and_protected_paths_are_refused_before_model_spend(self):
         for paths in [["../leak"], ["/root/.ssh/key"], [".github/workflows/agent-sandbox.yml"],
