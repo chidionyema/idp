@@ -112,12 +112,18 @@ def verify_recovery_receipt(
     if not isinstance(probes, list) or not 2 * len(actual) <= len(probes) <= 4 * len(actual):
         return False, "INCOMPLETE_RECOVERY_OBSERVATIONS"
     grouped = {key: [] for key in actual}
+    expected_urls = {
+        (r["leg"], r["provider"]): r.get("url") for r in rows
+    }
     for probe in probes:
         if not isinstance(probe, dict):
             return False, "INVALID_RECOVERY_OBSERVATION"
         key = (probe.get("leg"), probe.get("provider"))
         t = probe.get("observed_at")
         if (key not in grouped or probe.get("result") != "FUNCTIONAL_READY"
+                or probe.get("url") != expected_urls.get(key)
+                or not isinstance(probe.get("check"), str)
+                or not probe["check"].startswith("authenticated-functional:")
                 or not DIGEST.fullmatch(str(probe.get("evidence_sha256", "")))
                 or type(t) not in (int, float) or not math.isfinite(t)
                 or t > issued + 10 or t < issued - MAX_AGE):
