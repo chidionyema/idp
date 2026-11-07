@@ -85,7 +85,7 @@ def looks_like_a_pass(block: str) -> bool:
 
 
 def live_pr() -> dict:
-    """The pull request under test (the CI event's PR), as gh reports it.
+    """The pull request under test or None if current lane has no PR yet.
 
     The previous shape `gh pr list --state all --limit 1` returned the newest PR ANY
     session opened, not the PR being graded -- so a run for branch A refused because branch
@@ -141,60 +141,34 @@ def live_pr() -> dict:
             )
         return json.loads(out.stdout)
 
-    # GITHUB_HEAD_REF is set by the pre-push hook for lane/* branches. Use it to find
-    # the correct PR for the branch being pushed, instead of the global newest PR.
+    # An issue-triggered Legion submit creates its lane branch locally; no PR
+    # exists yet. Only ever query THIS head. A repository-wide latest PR lookup
+    # grades an unrelated change (IDP #6639, observed again in run 42412348112).
+    event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+    if event_name in ("pull_request", "pull_request_target", "merge_group"):
+        raise RuntimeError("PR CI event lacks an authenticated pull request number")
     head_ref = os.environ.get("GITHUB_HEAD_REF", "")
-    if head_ref:
-        out = subprocess.run(
-            [
-                "gh",
-                "pr",
-                "list",
-                "--head",
-                head_ref,
-                "--state",
-                "all",
-                "--limit",
-                "1",
-                "--json",
-                "number,title,body,headRefOid",
-            ],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            timeout=120,
+    if not head_ref:
+        branch = subprocess.run(
+            ["git", "symbolic-ref", "--quiet", "--short", "HEAD"],
+            cwd=root, capture_output=True, text=True, timeout=15,
         )
-        if out.returncode == 0:
-            rows = json.loads(out.stdout or "[]")
-            if rows:
-                return rows[0]
-
+        if branch.returncode != 0:
+            raise RuntimeError("cannot determine current branch for PR proof check")
+        head_ref = branch.stdout.strip()
+    if not head_ref:
+        raise RuntimeError("empty current branch for PR proof check")
     out = subprocess.run(
-        [
-            "gh",
-            "pr",
-            "list",
-            "--state",
-            "all",
-            "--limit",
-            "1",
-            "--json",
-            "number,title,body,headRefOid",
-        ],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        timeout=120,
+        ["gh", "pr", "list", "--head", head_ref, "--state", "all",
+         "--limit", "1", "--json", "number,title,body,headRefOid"],
+        cwd=root, capture_output=True, text=True, timeout=120,
     )
     if out.returncode != 0:
-        raise RuntimeError(
-            f"gh could not list pull requests: {out.stderr.strip()[:200]}"
-        )
+        raise RuntimeError(f"cannot read pull requests for {head_ref}: {out.stderr.strip()[:200]}")
     rows = json.loads(out.stdout or "[]")
-    if not rows:
-        raise RuntimeError("no pull request exists on this repository to grade")
-    return rows[0]
-
+    if not isinstance(rows, list) or len(rows) > 1:
+        raise RuntimeError("invalid or ambiguous branch-specific PR lookup")
+    return rows[0] if rows else None
 
 def _self_test() -> int:
     """Exercise the block extractor + counts predicate on real bytes.
@@ -238,6 +212,9 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
+        if pr is None:
+            print("not-applicable: no PR for current lane; PR CI still requires BDD proof")
+            return 0
         body = pr.get("body") or ""
         if extract_block(body) is None:
             # Named, not silently green: the last PR carries no proof, and the rule says so.
