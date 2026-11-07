@@ -1,0 +1,27 @@
+# Legion 1 — Sovereign Sessions. The idp repo's own manifest (dogfooding).
+legion: 1
+name: sovereign-sessions
+repo: idp
+summary: durable, budgeted, approval-gated sessions for any agent task
+capabilities:
+  - session-execution
+  - approval-gates
+  - budget-enforcement
+  - audit-chain
+  - repo-attach
+modes:
+  - temporal
+  - in-process
+budget:
+  max_usd_per_day: 5
+proof:
+  # Entry-point proof: the shim must answer instantly, no venv build.
+  # Deep proof (temporal round-trip) requires the k3s substrate and joins
+  # the manifest once the VM is live.
+  command: "bash bin/sb --help"
+  max_seconds: 60
+slo:
+  success_rate_min: 0.98
+  p95_latency_s_max: 300
+health:
+  max_heartbeat_age_minutes: 30

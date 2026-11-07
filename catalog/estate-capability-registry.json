@@ -37390,8 +37390,7 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:workflow/gha-estate-homes-drill",
-        "cap:workflow/gha-estate-watch"
+        "cap:workflow/gha-estate-homes-drill"
       ],
       "cost": {
         "estimate": null,
@@ -52673,6 +52672,10 @@
         {
           "id": "cap:tool/idp-install-deps",
           "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
         }
       ],
       "metrics": [],
@@ -53340,6 +53343,7 @@
         "cap:tool/reasoning_gateway_hook.py",
         "cap:tool/room-eye",
         "cap:tool/room-eyes",
+        "cap:tool/sb",
         "cap:tool/schema-conformance",
         "cap:tool/security-policy-gate",
         "cap:tool/serve-fleetview",
@@ -54601,6 +54605,7 @@
       "summary": "agent-sandbox -- the GitHub Actions workflow agent-sandbox.yml.",
       "contract": {
         "inputs": [
+          "issues",
           "workflow_dispatch"
         ],
         "outputs": [
@@ -56456,7 +56461,9 @@
       "contract": {
         "inputs": [
           "schedule",
-          "workflow_dispatch"
+          "workflow_dispatch",
+          "push",
+          "pull_request"
         ],
         "outputs": [
           "job verdicts",
@@ -56471,6 +56478,7 @@
         "uses": [
           "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
           "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
           "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
         ]
       },
@@ -56497,10 +56505,6 @@
       "depends_on": [
         {
           "id": "cap:tool/idp-estate-capacity",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-estate-homes",
           "edge": "invokes"
         }
       ],
