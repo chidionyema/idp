@@ -245,8 +245,8 @@ def test_the_board_names_the_state_and_what_it_could_not_ask():
     assert "laptop" in text.split("LADDER")[1]
 
 
-def test_the_closing_comment_claims_only_what_was_asked(monkeypatch):
-    """It used to say 'every lane of <service> answered again' while a lane was UNKNOWN."""
+def test_closure_note_names_unobserved_lanes_but_does_not_release_unproven_incident(monkeypatch):
+    """Existing callers cannot turn an UNKNOWN leg into a recovery receipt."""
     calls = []
 
     def fake_gh(args):
@@ -261,14 +261,12 @@ def test_the_closing_comment_claims_only_what_was_asked(monkeypatch):
         _row("floor", "groq", door.OK),
         _row("laptop", "laptop", door.NOT_HERE),
     ]
+    note = door._closing_note("llm-router", rows)
+    assert "every lane" not in note
+    assert "laptop" in note and "could not be asked" in note
     actions = door.file_issues(rows)
-    comment = next(c for c in calls if c[:2] == ["issue", "comment"])
-    body = comment[comment.index("--body") + 1]
-    assert "every lane" not in body
-    assert "laptop" in body and "could not be asked" in body
-    assert ["issue", "close", "7"] in calls
-    assert any("closed #7" in a for a in actions)
-
+    assert not any(c[:2] == ["issue", "close"] for c in calls)
+    assert any("HELD #7" in a for a in actions)
 
 def test_a_single_provider_ladder_files_a_ticket_though_no_lane_failed(monkeypatch):
     calls = []
