@@ -1,0 +1,140 @@
+name: genesis-surface-preview
+
+on:
+  push:
+    branches: [cloud/genesis-surface-preview-*]
+    paths:
+      - genesis-founder-surface/**
+      - functions/**
+      - .github/workflows/genesis-surface-preview.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      API: https://api.cloudflare.com/client/v4
+      PROJECT: genesis-founder-surface
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify the root and mint one Pages token
+        id: token
+        env:
+          ROOT: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+          ACCOUNT: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          [ -n "$ROOT" ] && [ -n "$ACCOUNT" ] || {
+            echo "BLIND cloudflare root or account id is missing"
+            exit 2
+          }
+          curl -fsS -H "Authorization: Bearer $ROOT" "$API/user/tokens/verify" \
+            | jq -e '.success and .result.status=="active"' >/dev/null
+          groups=$(curl -fsS -H "Authorization: Bearer $ROOT" "$API/user/tokens/permission_groups")
+          pages=$(jq -r '.result[] | select(.name=="Pages Write" and (.scopes|index("com.cloudflare.api.account"))) | .id' <<<"$groups" | head -1)
+          settings=$(jq -r '.result[] | select(.name=="Account Settings Read" and (.scopes|index("com.cloudflare.api.account"))) | .id' <<<"$groups" | head -1)
+          [ -n "$pages" ] || { echo "FAIL no Pages Write permission group"; exit 1; }
+          expires=$(date -u -d '+2 hours' +%FT%TZ)
+          body=$(jq -nc --arg n "genesis-surface-preview-$GITHUB_RUN_ID" --arg a "$ACCOUNT" \
+            --arg p "$pages" --arg s "$settings" --arg e "$expires" \
+            '{name:$n,expires_on:$e,policies:[{effect:"allow",resources:{("com.cloudflare.api.account."+$a):"*"},permission_groups:([{id:$p}]+(if $s=="" then [] else [{id:$s}] end))}]}')
+          out=$(curl -fsS -X POST -H "Authorization: Bearer $ROOT" -H 'content-type: application/json' \
+            -d "$body" "$API/user/tokens")
+          jq -e .success <<<"$out" >/dev/null
+          token=$(jq -r .result.value <<<"$out")
+          id=$(jq -r .result.id <<<"$out")
+          echo "::add-mask::$token"
+          { echo "value=$token"; echo "id=$id"; } >> "$GITHUB_OUTPUT"
+
+      - name: Ensure the Pages project exists
+        env:
+          TOKEN: ${{ steps.token.outputs.value }}
+          ACCOUNT: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          get=$(curl -sS -H "Authorization: Bearer $TOKEN" "$API/accounts/$ACCOUNT/pages/projects/$PROJECT")
+          if ! jq -e '.success' <<<"$get" >/dev/null; then
+            curl -fsS -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+              -d "$(jq -nc --arg p "$PROJECT" '{name:$p,production_branch:"main"}')" \
+              "$API/accounts/$ACCOUNT/pages/projects" | jq -e '.success' >/dev/null
+          fi
+
+      - name: Deploy the integrated Genesis surface
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ steps.token.outputs.value }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+        run: |
+          npx --yes wrangler@4 pages deploy genesis-founder-surface \
+            --project-name "$PROJECT" --branch main \
+            --commit-hash "$GITHUB_SHA" \
+            --commit-message "Genesis integrated surface $GITHUB_SHA" \
+            --commit-dirty=true
+
+      - name: Prove the public founder surface
+        id: prove
+        env:
+          TOKEN: ${{ steps.token.outputs.value }}
+          ACCOUNT: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          project=$(curl -fsS -H "Authorization: Bearer $TOKEN" "$API/accounts/$ACCOUNT/pages/projects/$PROJECT")
+          subdomain=$(jq -r '.result.subdomain // empty' <<<"$project")
+          [ -n "$subdomain" ] || { echo "FAIL Pages returned no subdomain"; exit 1; }
+          url="https://$subdomain"
+          code=$(curl -sS -o /dev/null -w '%{http_code}' "$url")
+          [ "$code" = 200 ] || { echo "FAIL $url returned $code"; exit 1; }
+          state=$(curl -fsS "$url/api/brain/state")
+          jq -e '.alwaysOnHome == "cloudflare-pages" and .laptopMayBeRequired == false' <<<"$state" >/dev/null
+          evidence=$(curl -fsS "$url/api/brain/optimus/evidence?limit=5")
+          jq -e '.writable == false and (.records | type == "array")' <<<"$evidence" >/dev/null
+          curl -fsS "$url/assets/$(sed -n 's/.*src="[^"]*\/assets\/\([^"]*\.js\)".*/\1/p' genesis-founder-surface/index.html | head -1)" \
+            | grep -q 'Genesis modules'
+          echo "FOUNDER_SURFACE=$url" >> "$GITHUB_STEP_SUMMARY"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "ok $url"
+
+      - name: Browser-proof every founder module
+        env:
+          URL: ${{ steps.prove.outputs.url }}
+        run: |
+          set -euo pipefail
+          chrome=$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)
+          [ -n "$chrome" ] || { echo "BLIND no Chromium browser for the founder-surface smoke"; exit 2; }
+          for route in otto idp optimus omega; do
+            set +e
+            timeout 15 "$chrome" --headless=new --no-sandbox --disable-dev-shm-usage \
+              --disable-gpu --virtual-time-budget=8000 --dump-dom "$URL/#$route" \
+              > "/tmp/founder-$route.html"
+            rc=$?
+            set -e
+            case "$rc" in
+              0|124) ;;
+              *) echo "FAIL browser exited $rc for #$route"; exit 1 ;;
+            esac
+            test -s "/tmp/founder-$route.html"
+            if grep -Eiq 'check that the Genesis app is running on your Mac|stream offline|Start the local One-Brain server|Edge hub: offline' "/tmp/founder-$route.html"; then
+              echo "FAIL #$route still reports a Mac dependency or offline stream"
+              exit 1
+            fi
+          done
+          grep -Fq 'Otto — Universal Agent with Hands' /tmp/founder-otto.html
+          grep -Fq 'Gateway & Protocol Cockpit' /tmp/founder-idp.html
+          grep -Fq 'Measured estate evidence' /tmp/founder-optimus.html
+          grep -Fq 'Omega Codex' /tmp/founder-omega.html
+          echo "ok all four founder modules rendered without Mac-dependent or offline errors"
+
+      - name: Delete the run token
+        if: always() && steps.token.outputs.id != ''
+        env:
+          ROOT: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+        run: |
+          curl -sS -X DELETE -H "Authorization: Bearer $ROOT" \
+            "$API/user/tokens/${{ steps.token.outputs.id }}" >/dev/null || true
