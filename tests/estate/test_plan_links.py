@@ -176,3 +176,82 @@ def test_the_door_passes_on_a_correct_link(tmp_path, monkeypatch):
         timeout=60,
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_strict_audit_refuses_an_empty_estate_instead_of_reporting_green(tmp_path, monkeypatch):
+    """An empty ledger cannot establish instruction or yield readiness."""
+    home = _home(tmp_path, monkeypatch)
+    env = dict(os.environ, ESTATE_HOME=str(home))
+    proc = subprocess.run(
+        [sys.executable, os.path.join(REPO_ROOT, "bin", "estate-plan-links"),
+         "--strict", "--json"],
+        capture_output=True, text=True, env=env, timeout=15,
+    )
+    assert proc.returncode == 4, proc.stdout + proc.stderr
+    result = json.loads(proc.stdout)
+    assert result["sessions"] == 0
+    assert any("no plan declaration" in gap for gap in result["gaps"])
+
+
+def test_strict_session_lookup_refuses_absent_named_session(tmp_path, monkeypatch):
+    """One-hop lookup cannot silently substitute a different agent's session."""
+    home = _home(tmp_path, monkeypatch)
+    _plan(home, "existing", instruction="lane-submit", prompt="prompt-1")
+    _intent(home, "existing", "lane-submit")
+    _prompt(home, id="prompt-1", session="existing", text="land it and prove it")
+    env = dict(os.environ, ESTATE_HOME=str(home))
+    proc = subprocess.run(
+        [sys.executable, os.path.join(REPO_ROOT, "bin", "estate-plan-links"),
+         "--strict", "--session", "missing", "--json"],
+        capture_output=True, text=True, env=env, timeout=15,
+    )
+    assert proc.returncode == 4
+    result = json.loads(proc.stdout)
+    assert result["rows"] == []
+    assert any("missing: no plan declaration" in gap for gap in result["gaps"])
+
+
+def test_known_declared_instruction_disagreeing_with_executed_intent_is_violation(
+    tmp_path, monkeypatch
+):
+    home = _home(tmp_path, monkeypatch)
+    _plan(home, "s1", instruction="lane-submit", prompt="prompt-1")
+    _intent(home, "s1", "code-review")
+    _prompt(home, id="prompt-1", session="s1", text="land it and prove it")
+    result = plan_links.audit("s1")
+    assert any("not recorded by the intent door" in v
+               for v in result["violations"])
+
+
+def test_declared_instruction_without_an_executed_intent_is_a_strict_gap(
+    tmp_path, monkeypatch
+):
+    home = _home(tmp_path, monkeypatch)
+    _plan(home, "s1", instruction="lane-submit", prompt="prompt-1")
+    _prompt(home, id="prompt-1", session="s1", text="land it and prove it")
+    result = plan_links.audit("s1")
+    assert result["violations"] == []
+    assert any("not observed by the intent door" in g for g in result["gaps"])
+
+
+def test_plan_cannot_reuse_prompt_owned_by_another_session(tmp_path, monkeypatch):
+    home = _home(tmp_path, monkeypatch)
+    _plan(home, "s1", instruction="lane-submit", prompt="prompt-from-s2")
+    _intent(home, "s1", "lane-submit")
+    _prompt(home, id="prompt-from-s2", session="s2",
+            text="land it and prove it")
+    result = plan_links.audit("s1")
+    assert any("belongs to another session" in v
+               for v in result["violations"])
+
+
+def test_observed_intent_does_not_replace_missing_plan_instruction(
+    tmp_path, monkeypatch
+):
+    home = _home(tmp_path, monkeypatch)
+    _plan(home, "s1", prompt="prompt-1")
+    _intent(home, "s1", "lane-submit")
+    _prompt(home, id="prompt-1", session="s1", text="land it and prove it")
+    result = plan_links.audit("s1")
+    assert any("no instruction declared in plan" in g
+               for g in result["gaps"])
