@@ -240,9 +240,11 @@ def test_the_agent_step_hands_on_a_transcript_and_the_patch(tmp_path, harness):
 
 
 def test_a_harness_that_leaves_no_transcript_says_why(tmp_path):
-    p, _ = _agent_step(tmp_path, "pi", 'echo "error: no API key for minimax"; exit 1\n')
+    p, out = _agent_step(tmp_path, "pi", 'echo "error: no API key for minimax"; exit 1\n')
     assert p.returncode == 1
-    assert "harness exit 1" in p.stdout and "no API key for minimax" in p.stdout
+    assert "harness exit 1" in p.stdout and "provider-startup-failure" in p.stdout
+    assert "no API key for minimax" not in p.stdout + p.stderr
+    assert "no API key for minimax" in (out / "stdout").read_text()
 
 
 def test_a_harness_that_fails_stops_the_run_with_the_providers_reason(tmp_path):
@@ -449,6 +451,64 @@ def test_legion_failover_disabled_for_manual_workflow_dispatch():
     assert JOBS["agent"]["permissions"] == {"contents": "read"}
     # The firewall is still mandatory after the cloud provider switch.
     assert "firewall" in JOBS["submit-lane"]["needs"]
-    assert "git reset --hard" in step["run"] and "git clean -fd" in step["run"]
+    assert "git reset --hard" in step["run"] and "git clean -fdx" in step["run"]
     encrypted = _step("agent", "Encrypt what leaves")["run"]
     assert "google.failed.transcript.jsonl" in encrypted
+
+
+def test_legion_fallback_erases_ignored_files_before_second_model(tmp_path):
+    """The failed provider must not leave ignored prompt injection in the next provider."""
+    body = """d=""
+provider=""
+prev=""
+for a in "$@"; do
+    [ "$prev" = --session-dir ] && d="$a"
+    [ "$prev" = --provider ] && provider="$a"
+    prev="$a"
+done
+mkdir -p "$d"
+if [ "$provider" = google ]; then
+    echo poison.ignored >> .git/info/exclude
+    echo 'MALICIOUS_FIRST_PROVIDER_PROMPT' > poison.ignored
+    echo '{"provider":"google","status":"failed"}' > "$d/google.jsonl"
+    echo private-google-failure
+    exit 1
+fi
+if [ -e poison.ignored ]; then
+    echo 'first-provider-ignored-file-survived-cleanup'
+    exit 47
+fi
+echo '{"provider":"minimax","status":"success"}' > "$d/minimax.jsonl"
+echo CLEAN_SECOND_PROVIDER_EDIT >> a.txt
+"""
+    result, out = _agent_step(
+        tmp_path, "gemini", body, {"LEGION_FAILOVER": "1"}
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "MALICIOUS_FIRST_PROVIDER_PROMPT" not in (out / "patch").read_text()
+    assert "CLEAN_SECOND_PROVIDER_EDIT" in (out / "patch").read_text()
+    assert '"provider":"minimax"' in (out / "transcript.jsonl").read_text()
+
+
+def test_no_transcript_provider_output_never_leaks_to_public_logs(tmp_path):
+    sentinel = "PRIVATE_PROVIDER_STARTUP_DIAGNOSTIC_SENTINEL"
+    result, out = _agent_step(
+        tmp_path, "gemini", "echo " + sentinel + "\nexit 1\n",
+        {"LEGION_FAILOVER": "0"},
+    )
+    assert result.returncode == 1
+    assert "provider-startup-failure" in result.stdout
+    assert sentinel not in result.stdout + result.stderr
+    assert sentinel in (out / "stdout").read_text()
+
+
+def test_submit_runner_bootstraps_pinned_pytest_for_the_actual_gate_interpreter():
+    install = _step("submit-lane", "Install what the estate's commit hooks run")["run"]
+    assert 'python3 -m venv "$RUNNER_TEMP/idp-gate-venv"' in install
+    assert 'pytest==8.3.5' in install
+    assert 'ruff==0.15.18' in install and 'yamllint==1.37.1' in install
+    assert '"$GITHUB_PATH"' in install
+    # The pre-push hook remains compulsory; no skipping checks.
+    commit = _step("submit-lane", "Commit through the estate's own hooks")["run"]
+    assert 'git push -q origin "$branch"' in commit
+    assert "--no-verify" not in commit and "SKIP" not in commit
