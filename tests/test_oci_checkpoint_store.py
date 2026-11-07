@@ -200,5 +200,93 @@ class StoreTests(unittest.TestCase):
             )
 
 
+
+class EncryptedTakeoverIntegrationTests(unittest.TestCase):
+    """Real SQLite and AES-GCM; OCI remote/agent capacity are still simulated."""
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        path = str(pathlib.Path(self.tmp.name) / "queue.db")
+        continuity_path = source.parent / "continuity_admission.py"
+        continuity_spec = importlib.util.spec_from_file_location(
+            "continuity_admission", continuity_path
+        )
+        self.c = importlib.util.module_from_spec(continuity_spec)
+        sys.modules[continuity_spec.name] = self.c
+        continuity_spec.loader.exec_module(self.c)
+        c = self.c
+        self.leases, self.beats = c.LeaseStore(path), c.HeartbeatRegistry(path)
+        self.store = m.OCIEncryptedCheckpointStore(
+            storage=FakeStorage(), kms=FakeKMS(), oci_models=FakeModels,
+            namespace="real_namespace", bucket="estate-checkpoints",
+            prefix="idp_7790", kms_key_id="ocid1.key.oc1.test",
+        )
+        self.old_epoch = self.leases.claim("mission-1", "old", 100, 20)
+        manifest = {
+            "schema": m.SCHEMA, "mission_id": "mission-1",
+            "source_sha": "a" * 40, "resume_cursor": "step-7",
+        }
+        self.reference = self.store.write("mission-1", manifest)
+        self.leases.heartbeat(
+            "mission-1", "old", self.old_epoch, 110, 20, sequence=1,
+            checkpoint_sha256=self.reference.sha256,
+            checkpoint_uri=self.reference.uri,
+        )
+        self.beats.observe(
+            c.WorkerOffer(
+                "new", "other-domain", frozenset({"github"}), True,
+                200, 1, True, 2000, 0, 30, 0.91,
+            ),
+            trusted_actor="new", broker_now=200, sequence=1,
+            adapter="GH Actions", provider="github", host="GH-1",
+            capacity_source="provider_api",
+            capacity_evidence="fixture-only:provider-response",
+        )
+        self.requirement = c.Requirement(frozenset({"github"}), 5, 500, "old-domain")
+
+    def takeover(self):
+        return self.c.attempt_verified_takeover(
+            "mission-1", self.leases, self.beats, self.requirement, 201, 20,
+            self.store.read_ciphertext, self.store.decrypt_and_validate,
+        )
+
+    def test_real_encrypted_roundtrip_transfers_custody_not_operational_authority(self):
+        outcome = self.takeover()
+        self.assertEqual(outcome["state"], "CUSTODY_TRANSFERRED")
+        self.assertEqual(outcome["source_sha"], "a" * 40)
+        self.assertEqual(outcome["lease_epoch"], 2)
+        self.assertFalse(outcome["runtime_dispatch_verified"])
+        self.assertFalse(outcome["operationally_complete"])
+        with self.assertRaisesRegex(self.c.Refused, "STALE_FENCING_LEASE"):
+            self.leases.authorize_effect("mission-1", "old", self.old_epoch, 202)
+
+    def test_remote_ciphertext_tampering_cannot_transfer_custody(self):
+        key = next(iter(self.store.storage.objects))
+        self.store.storage.objects[key] += b"TAMPER"
+        result = self.takeover()
+        self.assertEqual(result["reason"], "CHECKPOINT_DIGEST_MISMATCH")
+        self.assertEqual(self.leases.snapshot("mission-1")[0], "old")
+
+    def test_wrong_kms_key_does_not_transfer_custody(self):
+        self.store.kms.key = b"X" * 32
+        result = self.takeover()
+        self.assertEqual(result["reason"], "CHECKPOINT_DECRYPT_OR_VALIDATION_FAILED")
+        self.assertEqual(self.leases.snapshot("mission-1")[0], "old")
+
+    def test_pending_external_effect_prevents_unrestricted_takeover(self):
+        self.leases.reserve_effect(
+            "mission-1", "billing-charge", "old", self.old_epoch, 111
+        )
+        result = self.takeover()
+        self.assertEqual(result["state"], "RECONCILIATION_REQUIRED")
+        self.assertEqual(result["scope"], "READ_AND_RECONCILE")
+        self.assertEqual(
+            result["pending_effects_requiring_reconciliation"],
+            ["billing-charge"],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
