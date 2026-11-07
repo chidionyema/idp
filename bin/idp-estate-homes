@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import importlib.util
 import os
 import socket
 import subprocess
@@ -483,7 +484,27 @@ def _auto_closure_proof(service: str, rows: list) -> tuple[bool, str]:
     ladder = next(iter(ladders(rows)), None)
     if ladder is None or ladder.get("state") != "REDUNDANT":
         return False, "FAILURE_DOMAIN_REDUNDANCY_UNPROVEN"
-    return True, "ALL_FUNCTIONAL_PROBES_OK_AND_REDUNDANT"
+    # No successful HTTP response, model assessment, GitHub comment or
+    # unsigned issue label may certify a critical-service recovery. The
+    # certifier's key is externally provisioned. Missing trust is a HOLD.
+    pinned_pub = os.environ.get("ESTATE_RECOVERY_CERTIFIER_ED25519_PUB", "")
+    receipt_dir = os.environ.get("ESTATE_RECOVERY_RECEIPTS_DIR", "")
+    if not pinned_pub or not receipt_dir:
+        return False, "INDEPENDENT_RECOVERY_TRUST_NOT_CONFIGURED"
+    module_path = IDP / "platform/ladder/recovery_evidence.py"
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "estate_recovery_evidence", str(module_path)
+        )
+        if spec is None or spec.loader is None:
+            return False, "RECOVERY_VERIFIER_UNAVAILABLE"
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.verify_recovery_receipt(
+            service, rows, receipt_dir=receipt_dir, verifier_key_b64=pinned_pub
+        )
+    except Exception:
+        return False, "RECOVERY_VERIFIER_FAILED_CLOSED"
 
 
 def file_issues(results: list, dry_run: bool = False) -> list:
