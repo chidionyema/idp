@@ -289,6 +289,16 @@ def link_rows(session: Optional[str] = None) -> List[Dict[str, Any]]:
         if prompt is None and not declared_prompt:
             prompt = prompt_for_session(sid)
         binding = protocol_of(prompt) if prompt else None
+        claims = [
+            e.get("args") if isinstance(e.get("args"), dict) else {}
+            for e in events if e.get("tool") == "complete_goal"
+        ]
+        claimed_goals = [str(c.get("goal_id") or "") for c in claims]
+        unproved = sum(1 for c in claims if not str(c.get("proof") or "").strip())
+        # This audit reads declared claims; it has no authenticated CI, live
+        # release, runtime consumer, or deployed-revision proof source. Even a
+        # proof-looking string is NOT a verified yield.
+        referenced = len(claims) - unproved
         rows.append(
             {
                 "session": sid,
@@ -301,6 +311,14 @@ def link_rows(session: Optional[str] = None) -> List[Dict[str, Any]]:
                 "prompt_id": str(prompt.get("id")) if prompt else "",
                 "protocol": binding.value if binding else "",
                 "known_intents": intents,
+                "completion_claims": len(claims),
+                "unproved_completion_claims": unproved,
+                "referenced_completion_claims": referenced,
+                "unknown_completed_goals": sorted(
+                    set(claimed_goals) - set(plan["subgoals"])
+                ),
+                "verified_yield_count": 0,
+                "yield_state": "UNVERIFIED" if claims else "NOT_MEASURED",
             }
         )
     return rows
@@ -340,6 +358,11 @@ def row_violations(row: Dict[str, Any]) -> List[str]:
         out.append(
             f"{sid}: founder prompt '{row['prompt_id']}' is bound to no protocol"
         )
+    if row["unknown_completed_goals"]:
+        out.append(
+            f"{sid}: completion claims unknown goals "
+            + ", ".join(row["unknown_completed_goals"])
+        )
     return out
 
 
@@ -357,6 +380,16 @@ def row_gaps(row: Dict[str, Any]) -> List[str]:
         )
     if not row["founder_prompt"]:
         out.append(f"{sid}: no founder prompt linked to this plan")
+    if row["unproved_completion_claims"]:
+        out.append(
+            f"{sid}: {row['unproved_completion_claims']} unproved completion "
+            "claim(s); no independent yield receipt"
+        )
+    if row["referenced_completion_claims"]:
+        out.append(
+            f"{sid}: {row['referenced_completion_claims']} completion "
+            "proof not independently verified by the release and runtime doors"
+        )
     return out
 
 
