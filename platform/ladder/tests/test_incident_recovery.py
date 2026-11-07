@@ -135,6 +135,7 @@ class RecoveryClosureTests(unittest.TestCase):
             "expires_at": moment + 150,
             "observations": [
                 {"leg": r["leg"], "provider": r["provider"],
+                 "url": r["url"], "check": "authenticated-functional:model-inference",
                  "result": "FUNCTIONAL_READY", "evidence_sha256": "b" * 64,
                  "observed_at": moment - age}
                 for r in records for age in (80, 30)
