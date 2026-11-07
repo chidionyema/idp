@@ -454,9 +454,9 @@ def test_recovery_identify_never_silently_succeeds_without_all_three_volumes():
     assert 'case "$MODE" in' in source
     assert "identify|copy)" in source
     assert 'if [ "$MODE" = copy ]; then' in source
-    assert source.index('if [ "$MODE" = copy ]; then') < source.index('command -v zstd')
-    assert 'seen=0' in source
-    assert 'seen=$((seen + 1))' in source
+    assert source.index('if [ "$MODE" = copy ]; then') < source.index("command -v zstd")
+    assert "seen=0" in source
+    assert "seen=$((seen + 1))" in source
     assert 'if [ "$seen" -lt 3 ]; then' in source
     assert "FAIL    data-volumes  only %s of 3 required data volumes" in source
     assert "mountpoint -q" in source
@@ -470,7 +470,9 @@ def test_volume_census_rejects_unrecognised_mode_before_any_oci_access():
     """The real host script must refuse malformed dispatch before touching cloud."""
     run = subprocess.run(
         ["bash", str(DATA_VOLUMES), "unexpected-mode"],
-        capture_output=True, text=True, timeout=5,
+        capture_output=True,
+        text=True,
+        timeout=5,
     )
     assert run.returncode == 64, (run.stdout, run.stderr)
     assert "invalid mode unexpected-mode" in run.stderr
@@ -496,7 +498,9 @@ def test_unclaimed_oci_command_times_out_with_command_id_and_last_state(monkeypa
     clock = [0.0]
 
     monkeypatch.setattr(helper.time, "monotonic", lambda: clock[0])
-    monkeypatch.setattr(helper.time, "sleep", lambda duration: clock.__setitem__(0, clock[0] + duration))
+    monkeypatch.setattr(
+        helper.time, "sleep", lambda duration: clock.__setitem__(0, clock[0] + duration)
+    )
     monkeypatch.setattr(helper, "_oci", lambda *args, **kwargs: "PENDING")
     with pytest.raises(helper.TransportError) as error:
         helper.wait_for_command("cmd-042", "recovery-1", poll_seconds=2, wait_timeout=5)
@@ -515,6 +519,7 @@ def test_unexpected_oci_state_is_blind_not_success(monkeypatch):
 def test_failed_oci_poll_preserves_command_identity(monkeypatch):
     def refused(*args, **kwargs):
         raise helper.TransportError("Abort: instance agent unreachable")
+
     monkeypatch.setattr(helper, "_oci", refused)
     with pytest.raises(helper.TransportError) as error:
         helper.wait_for_command("cmd-044", "recovery-1", 2, 30)
@@ -530,7 +535,7 @@ def test_known_terminal_oci_states_preserve_failure_semantics(monkeypatch):
 
 def test_identify_is_bounded_without_shortening_copy_or_repair():
     workflow = WORKFLOW.read_text()
-    assert "if [ \"$MODE\" = identify ]; then probe_budget=180; fi" in workflow
+    assert 'if [ "$MODE" = identify ]; then probe_budget=180; fi' in workflow
     assert "probe_budget=3600" in workflow
     assert '  schedule:\n    - cron: "19 7 * * *"' in workflow
     assert "MODE: ${{ inputs.mode || 'identify' }}" in workflow
@@ -554,7 +559,7 @@ def test_recovery_failure_reporter_has_independent_least_privilege_and_no_oci():
     assert "OCI_RECOVERY_RUN:" in reporter[1]
     assert "gh api -X POST" in reporter[1]
     assert "issues/7387/comments" in reporter[1]
-    assert 'comments=$(gh api' in reporter[1]
+    assert "comments=$(gh api" in reporter[1]
     assert 'echo "BLIND recovery issue history unreadable"' in reporter[1]
     assert "cancel-in-progress: false" in reporter[1]
     # Never create duplicate incident authority or infer that red means recovered.
@@ -638,8 +643,11 @@ def test_outstanding_running_oci_command_also_blocks_dispatch(
 def test_unreadable_oci_command_queue_is_blind(monkeypatch):
     def malformed(args, *, what):
         return "{}"
+
     monkeypatch.setattr(helper, "_oci", malformed)
-    with pytest.raises(helper.TransportError, match="invalid ACCEPTED OCI command list"):
+    with pytest.raises(
+        helper.TransportError, match="invalid ACCEPTED OCI command list"
+    ):
         helper.require_idle_command_queue("compartment", "instance")
 
 
@@ -653,12 +661,14 @@ def test_idle_oci_queue_preflight_uses_exact_instance_and_read_only_list(monkeyp
     monkeypatch.setattr(helper, "_oci", empty)
     helper.require_idle_command_queue("compartment-7", "instance-7")
     assert len(calls) == 2
-    assert [args[args.index("--lifecycle-state")+1] for args in calls] == [
-        "ACCEPTED", "IN_PROGRESS"
+    assert [args[args.index("--lifecycle-state") + 1] for args in calls] == [
+        "ACCEPTED",
+        "IN_PROGRESS",
     ]
     for argv in calls:
         assert argv[:3] == ["instance-agent", "command-execution", "list"]
-        assert argv[argv.index("--instance-id")+1] == "instance-7"
-        assert argv[argv.index("--compartment-id")+1] == "compartment-7"
-        assert "--all" in argv
+        assert argv[argv.index("--instance-id") + 1] == "instance-7"
+        assert argv[argv.index("--compartment-id") + 1] == "compartment-7"
+        assert "--all" not in argv
+        assert argv[argv.index("--limit") + 1] == str(helper.COMMAND_QUEUE_LIMIT)
         assert "create" not in argv and "cancel" not in argv
