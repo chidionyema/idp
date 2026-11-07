@@ -106,6 +106,16 @@ class RecoveryClosureTests(unittest.TestCase):
         self.assertFalse(gh.closed)
         self.assertIn("FUNCTIONAL_RECOVERY_PROBE_NOT_CONFIGURED", str(acts))
 
+    def test_single_point_of_failure_ticket_is_not_unsigned_closure(self):
+        gh = FakeGitHub(title="[lane] llm-router: single point of failure")
+        with patch.object(door, "_gh", gh):
+            actions = door.file_issues([
+                row(door.OK, "oracle"),
+                row(door.OK, "cloudflare"),
+            ])
+        self.assertFalse(gh.closed)
+        self.assertIn("INDEPENDENT_RECOVERY_TRUST_NOT_CONFIGURED", str(actions))
+
     def test_unsigned_redundant_functional_probes_still_cannot_close(self):
         gh, acts = self.verdict([row(door.OK), row(door.OK, "cloudflare")])
         self.assertFalse(gh.closed)
