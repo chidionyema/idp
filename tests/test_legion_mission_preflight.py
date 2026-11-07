@@ -25,6 +25,16 @@ class SuccessFirstTest(unittest.TestCase):
         self.assertNotIn("oke", str(brief).lower())
         self.assertEqual(brief["level"], "L2")
 
+    def test_actual_legacy_oke_scope_is_not_recommended_or_admitted(self):
+        retired = {"components": {"estate-doors": {"repairScope": ["@substrate"]}},
+                   "substrateScope": ["bin/idp-oke-rebuild", "k3s/**", "infra/**"]}
+        packet = mission.packet(retired, [{"id": "estate-doors", "issue": 7334}], "restore")
+        self.assertNotIn("oke", str(packet["repair_scopes"]).lower())
+        self.assertFalse(mission.decision(retired, [{"id": "estate-doors", "issue": 7334}],
+                                          ["bin/idp-oke-rebuild"], "estate-doors")["admitted"])
+        self.assertTrue(mission.decision(retired, [{"id": "estate-doors", "issue": 7334}],
+                                         ["k3s/manifest.yml"], "estate-doors")["admitted"])
+
     def test_safe_repair_is_explicitly_possible(self):
         self.assertTrue(mission.decision(REG, RED, ["k3s/router.yaml"], "llm-router")["admitted"])
 
