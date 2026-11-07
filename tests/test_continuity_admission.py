@@ -243,5 +243,73 @@ class HeartbeatRegistryTests(unittest.TestCase):
                                capacity_evidence="verification")
 
 
+
+class TakeoverTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        path = str(pathlib.Path(self.temp.name) / "queue.db")
+        self.store, self.beats = c.LeaseStore(path), c.HeartbeatRegistry(path)
+        self.old_epoch = self.store.claim("mission", "old", 100, 20)
+        self.payload = b"encrypted-checkpoint-ciphertext"
+        import hashlib
+        self.digest = hashlib.sha256(self.payload).hexdigest()
+        self.uri = "oci://estate-checkpoints/mission/blob"
+        self.objects = {self.uri: self.payload}
+        self.store.heartbeat("mission", "old", self.old_epoch, 110, 20,
+                             sequence=1, checkpoint_sha256=self.digest, checkpoint_uri=self.uri)
+        self.beats.observe(offer("cloud-new", "gh-independent", at=200), trusted_actor="cloud-new",
+                           broker_now=200, sequence=1, adapter="GH", provider="provider-b",
+                           host="host-b", capacity_source="provider_api", capacity_evidence="run:success")
+        self.req = c.Requirement(frozenset({"github"}), 5, 500, "old-domain")
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def takeover(self, now=201):
+        return c.attempt_verified_takeover("mission", self.store, self.beats,
+                                           self.req, now, 30,
+                                           lambda uri: self.objects[uri])
+
+    def test_good_checkpoint_and_capacity_transfers_fenced_ownership(self):
+        result = self.takeover()
+        self.assertEqual(result["state"], "OWNED")
+        self.assertEqual(result["worker_id"], "cloud-new")
+        self.assertGreater(result["lease_epoch"], self.old_epoch)
+        with self.assertRaisesRegex(c.Refused, "STALE_FENCING_LEASE"):
+            self.store.authorize_effect("mission", "old", self.old_epoch, 202)
+
+    def test_unexpired_owner_cannot_be_preempted(self):
+        result = self.takeover(now=125)
+        self.assertEqual(result["reason"], "OWNER_LEASE_STILL_ACTIVE")
+
+    def test_corrupt_checkpoint_refuses_takeover(self):
+        self.objects[self.uri] = b"tampered"
+        result = self.takeover()
+        self.assertEqual(result["reason"], "CHECKPOINT_DIGEST_MISMATCH")
+        self.assertEqual(self.store.snapshot("mission")[0], "old")
+
+    def test_no_healthy_replacement_preserves_mission(self):
+        result = self.takeover(now=401)
+        self.assertEqual(result["reason"], "NO_ELIGIBLE_CAPACITY")
+        self.assertEqual(self.store.snapshot("mission")[0], "old")
+
+    def test_duplicate_takeover_does_not_spawn_another_owner(self):
+        first = self.takeover()
+        second = self.takeover(now=202)
+        self.assertEqual(first["state"], "OWNED")
+        self.assertEqual(second["state"], "RECOVERY_PENDING")
+        self.assertEqual(second["reason"], "OWNER_LEASE_STILL_ACTIVE")
+
+    def test_unreconciled_effect_is_carried_to_new_owner_as_blocker(self):
+        self.store.reserve_effect("mission", "billing", "old", self.old_epoch, 111)
+        result = self.takeover()
+        self.assertEqual(result["pending_effects_requiring_reconciliation"], ["billing"])
+
+    def test_remote_read_exception_is_not_a_success(self):
+        self.objects.clear()
+        result = self.takeover()
+        self.assertEqual(result["reason"], "CHECKPOINT_READ_FAILED")
+
+
 if __name__ == '__main__':
     unittest.main()
