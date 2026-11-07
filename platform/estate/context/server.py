@@ -46,6 +46,7 @@ from .broker import (
     provenance,
     scrub,
 )
+from .node_protocol import ProtocolError, guarded_execute
 
 PROTOCOL_VERSION = "2026-06-18"
 SERVER_NAME = "estate-context-broker"
@@ -588,6 +589,21 @@ TOOL_FUNCS = {
     "estate_context_status": tool_estate_context_status,
 }
 
+# Tool calls are capabilities, not raw function names. Admission is checked against the
+# caller's declared capability scope before the tool function is reached.
+TOOL_OPERATIONS = {
+    "estate_context": {
+        "name": "context.read",
+        "mutating": False,
+        "offlineSafe": True,
+    },
+    "estate_context_status": {
+        "name": "context.read",
+        "mutating": False,
+        "offlineSafe": True,
+    },
+}
+
 
 # --- the MCP transport ------------------------------------------------------------------------
 class Handler(BaseHTTPRequestHandler):
@@ -733,8 +749,40 @@ class Handler(BaseHTTPRequestHandler):
                         "isError": True,
                     },
                 }
+            envelope_data = params.get("envelope")
+            if not isinstance(envelope_data, dict):
+                return {
+                    "jsonrpc": "2.0",
+                    "id": fid,
+                    "result": _error(
+                        "tools/call requires params.envelope",
+                        verdict="PROTOCOL_REFUSED",
+                    ),
+                }
+            operation = TOOL_OPERATIONS[name]
+            capabilities = envelope_data.get("capabilities")
+            if (
+                not isinstance(capabilities, list)
+                or operation["name"] not in capabilities
+            ):
+                return {
+                    "jsonrpc": "2.0",
+                    "id": fid,
+                    "result": _error(
+                        f"capability {operation['name']} is not declared",
+                        verdict="CAPABILITY_REFUSED",
+                    ),
+                }
             try:
-                out = func(args)
+                admitted = guarded_execute(
+                    envelope_data,
+                    operation,
+                    connectivity=str(params.get("connectivity") or "online"),
+                    execute=lambda _decision: func(args),
+                )
+                out = admitted["result"]
+            except ProtocolError as exc:
+                out = _error(str(exc), verdict="PROTOCOL_REFUSED")
             except Exception as exc:  # a tool that raises is a refusal, not a crash
                 out = _error(
                     f"the broker failed to answer: {exc}", verdict="BROKER_ERROR"

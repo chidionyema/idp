@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://estate.local/protocol/estate.node-protocol.v1/envelope.schema.json",
+  "title": "Estate Node Protocol Envelope",
+  "type": "object",
+  "required": [
+    "protocolVersion",
+    "rulesHash",
+    "nodeId",
+    "sessionId",
+    "surface",
+    "capabilities",
+    "cursor"
+  ],
+  "properties": {
+    "protocolVersion": {
+      "const": "estate.node-protocol.v1"
+    },
+    "rulesHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nodeId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "surface": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "cursor": {
+      "type": "object",
+      "required": [
+        "eventId",
+        "offset"
+      ],
+      "properties": {
+        "eventId": {
+          "type": "string"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "leaseId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "contextPlanHash": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "idempotencyKey": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": true
+}

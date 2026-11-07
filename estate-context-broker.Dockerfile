@@ -23,9 +23,10 @@ ENV PYTHONPATH=/app \
 # module is missing. A door that cannot start is a closed door, and it must not be closed by a
 # packaging mistake nobody saw until a client called it.
 RUN cd /tmp && python3 -c "
-from estate.context import server, broker, claims
+from estate.context import server, broker, claims, node_protocol
 names = sorted(t['name'] for t in server.TOOLS)
 assert names == ['estate_context', 'estate_context_status'], names
+assert node_protocol.RULES_HASH == '18e3ccdaee2a0cceff3ad85c777ddfe7b33255694844b6925a4d331b29a9f3dd'
 assert server.decide(broker.ContextRequest(tool='smart_context', paths=[], request_commit=None, mode='committed', token_budget=10),
                      broker.BrokerState(index_commit='a'*40, head_commit='a'*40, claim_paths=['x'], secrets={}, engine_reachable=True)).verdict == 'ALLOW'
 print('estate-context-broker tools register:', names)

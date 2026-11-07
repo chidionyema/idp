@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "platform"))
 
 from estate.context import server as broker_server  # noqa: E402
 from estate.context import plan as plan_rules  # noqa: E402
+from estate.context.node_protocol import RULES_HASH  # noqa: E402
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 # The engine stores a tracked repository's files under that repository's NAME. On this
@@ -30,6 +31,18 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 ENGINE_REPO_NAME = plan_rules.repo_name(REPO_ROOT)
 
 CLAIM = "CLAIM agent=pi paths=platform/estate/context/** heartbeat=2026-10-27T02:39:57Z"
+DEFAULT_ENVELOPE = {
+    "protocolVersion": "estate.node-protocol.v1",
+    "rulesHash": RULES_HASH,
+    "nodeId": "node-test-web",
+    "sessionId": "session-test-1",
+    "surface": "web",
+    "capabilities": ["context.read"],
+    "cursor": {"eventId": "evt-test-1", "offset": 1},
+    "leaseId": None,
+    "contextPlanHash": None,
+    "idempotencyKey": None,
+}
 
 
 def _engine_file(rel: str) -> str:
@@ -93,9 +106,13 @@ def _serve_in_thread():
     return httpd, f"http://127.0.0.1:{httpd.server_address[1]}"
 
 
-def _rpc(base, method, params=None, fid=1):
+def _rpc(base, method, params=None, fid=1, envelope=None, connectivity="online"):
+    params = dict(params or {})
+    if method == "tools/call" and envelope is not False:
+        params.setdefault("envelope", DEFAULT_ENVELOPE if envelope is None else envelope)
+        params.setdefault("connectivity", connectivity)
     body = json.dumps(
-        {"jsonrpc": "2.0", "id": fid, "method": method, "params": params or {}}
+        {"jsonrpc": "2.0", "id": fid, "method": method, "params": params}
     ).encode()
     req = urllib.request.Request(  # noqa: S310
         f"{base}/mcp", data=body, headers={"Content-Type": "application/json"}
@@ -349,6 +366,106 @@ def test_an_unknown_tool_is_an_error_not_a_crash(monkeypatch):
     try:
         out = _rpc(base, "tools/call", {"name": "nope", "arguments": {}})
         assert out["result"]["isError"] is True
+    finally:
+        httpd.shutdown()
+
+
+def test_a_tool_call_without_a_node_envelope_is_refused_before_dispatch(monkeypatch):
+    engine = _setup(monkeypatch)
+    httpd, base = _serve_in_thread()
+    try:
+        out = _rpc(
+            base,
+            "tools/call",
+            {
+                "name": "estate_context",
+                "arguments": {
+                    "task": "must not reach the capability",
+                    "claim_issue": 7262,
+                    "claim_agent": "pi",
+                },
+            },
+            envelope=False,
+        )
+        result = out["result"]
+        assert result["isError"] is True
+        assert result["structuredContent"]["verdict"] == "PROTOCOL_REFUSED"
+        assert "params.envelope" in result["structuredContent"]["reason"]
+        assert not engine.calls
+    finally:
+        httpd.shutdown()
+
+
+def test_a_tool_call_cannot_exceed_its_declared_capability_scope(monkeypatch):
+    engine = _setup(monkeypatch)
+    httpd, base = _serve_in_thread()
+    try:
+        out = _rpc(
+            base,
+            "tools/call",
+            {
+                "name": "estate_context",
+                "arguments": {
+                    "task": "must not reach the capability",
+                    "claim_issue": 7262,
+                    "claim_agent": "pi",
+                },
+            },
+            envelope={**DEFAULT_ENVELOPE, "capabilities": ["mobile.control"]},
+        )
+        result = out["result"]
+        assert result["isError"] is True
+        assert result["structuredContent"]["verdict"] == "CAPABILITY_REFUSED"
+        assert not engine.calls
+    finally:
+        httpd.shutdown()
+
+
+def test_unknown_rules_keep_the_gateway_read_only(monkeypatch):
+    engine = _setup(monkeypatch)
+    httpd, base = _serve_in_thread()
+    try:
+        out = _rpc(
+            base,
+            "tools/call",
+            {
+                "name": "estate_context",
+                "arguments": {
+                    "task": "where is the context policy decided",
+                    "claim_issue": 7262,
+                    "claim_agent": "pi",
+                },
+            },
+            envelope={**DEFAULT_ENVELOPE, "rulesHash": "0" * 64},
+        )
+        assert out["result"]["isError"] is False
+        assert engine.calls
+    finally:
+        httpd.shutdown()
+
+
+def test_an_unknown_connectivity_state_is_refused_before_dispatch(monkeypatch):
+    engine = _setup(monkeypatch)
+    httpd, base = _serve_in_thread()
+    try:
+        out = _rpc(
+            base,
+            "tools/call",
+            {
+                "name": "estate_context",
+                "arguments": {
+                    "task": "must not reach the capability",
+                    "claim_issue": 7262,
+                    "claim_agent": "pi",
+                },
+            },
+            connectivity="sometimes",
+        )
+        result = out["result"]
+        assert result["isError"] is True
+        assert result["structuredContent"]["verdict"] == "PROTOCOL_REFUSED"
+        assert "connectivity" in result["structuredContent"]["reason"]
+        assert not engine.calls
     finally:
         httpd.shutdown()
 

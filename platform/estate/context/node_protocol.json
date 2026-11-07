@@ -1,0 +1,43 @@
+{
+  "schema": "estate.node-protocol.v1",
+  "version": "estate.node-protocol.v1",
+  "authority": "cloud-event-log",
+  "requiredEnvelopeFields": [
+    "protocolVersion",
+    "rulesHash",
+    "nodeId",
+    "sessionId",
+    "surface",
+    "capabilities",
+    "cursor"
+  ],
+  "mutationEnvelopeFields": [
+    "leaseId",
+    "contextPlanHash",
+    "idempotencyKey"
+  ],
+  "offlineQueueAllowed": [
+    "launch",
+    "back",
+    "home",
+    "wait"
+  ],
+  "rules": [
+    "cloud-event-log-is-authoritative",
+    "every-surface-is-a-replaceable-node",
+    "disconnection-is-a-normal-operating-state",
+    "reads-carry-freshness-and-cursor",
+    "mutations-require-a-live-lease",
+    "offline-mutations-must-be-idempotent-and-policy-approved",
+    "conflicts-are-explicit-events-never-silent-overwrites",
+    "sessions-span-reconnects-and-surfaces",
+    "founder-identity-is-a-protected-key-or-passkey",
+    "context-is-compiled-by-the-cloud-gateway",
+    "every-accepted-mutation-returns-a-signed-receipt",
+    "unknown-protocol-versions-are-read-only",
+    "ai-studio-is-consult-only",
+    "mobile-actions-obey-the-shared-action-policy",
+    "wda-is-tls-only",
+    "capability-claims-require-registry-and-context-evidence"
+  ]
+}

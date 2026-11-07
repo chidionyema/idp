@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+"""Validate one disconnected-surface envelope against the estate node protocol."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+if __package__:
+    from .node_protocol import PROTOCOL, RULES_HASH, ProtocolError, evaluate_operation
+else:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from node_protocol import PROTOCOL, RULES_HASH, ProtocolError, evaluate_operation
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--manifest", action="store_true")
+    parser.add_argument("--connectivity", choices=("online", "offline"), default="online")
+    parser.add_argument("--action", default="")
+    parser.add_argument("--mutating", action="store_true")
+    parser.add_argument("--offline-safe", action="store_true")
+    args = parser.parse_args(argv)
+
+    if args.manifest:
+        print(json.dumps({**PROTOCOL, "rulesHash": RULES_HASH}, indent=2, sort_keys=True))
+        return 0
+    if not args.action:
+        parser.error("--action is required unless --manifest is used")
+
+    try:
+        envelope = json.load(sys.stdin)
+    except ValueError as exc:
+        print(f"invalid envelope JSON: {exc}", file=sys.stderr)
+        return 1
+    if not isinstance(envelope, dict):
+        print("invalid envelope: expected a JSON object", file=sys.stderr)
+        return 1
+
+    operation = {
+        "name": args.action,
+        "mutating": bool(args.mutating),
+        "offlineSafe": bool(args.offline_safe),
+    }
+    try:
+        decision = evaluate_operation(
+            envelope,
+            operation,
+            connectivity=args.connectivity,
+        )
+    except ProtocolError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(json.dumps(decision, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
