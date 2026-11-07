@@ -11,7 +11,9 @@
     bin/estate-plan-links --strict        a missing link refuses too
 
 EXIT.  0 nothing is wrong.  4 a link is present and WRONG (unknown instruction, unresolvable
-founder prompt, a prompt bound to no protocol); with --strict, a MISSING link refuses too.
+founder prompt, a prompt bound to no protocol); with --strict, missing plans,
+intents and independently verified yields refuse too. A completion CLAIM is never an
+operational yield receipt.
 2 usage.
 
 The links are derived from the estate's own ledgers -- ~/.estate/plans/<session>.jsonl for the
@@ -76,7 +78,10 @@ def main(argv: list[str]) -> int:
             print(
                 f"{row['session']}  protocol={row['protocol'] or '-'}  "
                 f"instruction={instruction}  prompt={row['prompt_id'] or '-'}  "
-                f"goal={row['goal'][:70]}"
+                f"goal={row['goal'][:70]} "
+                f"yield={row['yield_state']} "
+                f"completion_claims={row['completion_claims']} "
+                f"verified_yield={row['verified_yield_count']}"
             )
         if result["gaps"]:
             print(
