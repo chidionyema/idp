@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""dof-gate: while a critical service is down, only its repair may land.
+
+    bin/dof-gate <base> <head>     judge every commit in base..head (CI; a needs of ci-success)
+    bin/dof-gate --lease           print the current lease (session start, any harness)
+
+Decider: machine. The incidents are the open `[lane] <service>: a lane is down` issues the
+cloud drill files and closes (catalog/dof-registry.json says why they are not re-probed here).
+A commit is admitted when no incident is open, or when it carries `Genesis-Resolves: <id>` for
+an open incident and every path it changes sits inside that id's repairScope. GitHub's own
+clean merge commits are judged by their parents. The registry is read from BASE, so a change
+cannot loosen the rules that judge it. An unreadable incident list is health unproven: the
+gate fails closed to the `dof-probe` component, whose only admitted repair is the gate itself.
+Exit 0 admitted / full lease, 1 refused, 3 lease is repair-only.
+"""
+from __future__ import annotations
+
+import fnmatch
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.request
+
+REPO = os.environ.get("GITHUB_REPOSITORY", "chidionyema/idp")
+REGISTRY = "catalog/dof-registry.json"
+
+
+def git(*args: str) -> str:
+    return subprocess.run(["git", *args], capture_output=True, text=True, timeout=20, check=True).stdout.strip()
+
+
+def load_registry(base: str | None) -> tuple[dict, bool]:
+    if base:
+        try:
+            return json.loads(git("show", f"{base}:{REGISTRY}")), False
+        except subprocess.CalledProcessError:
+            pass
+    with open(REGISTRY) as fh:
+        return json.load(fh), base is not None
+
+
+def glob_match(pattern: str, path: str) -> bool:
+    if pattern.endswith("/**"):
+        return path.startswith(pattern[:-2])
+    return fnmatch.fnmatchcase(path, pattern) and pattern.count("/") == path.count("/")
+
+
+def scope_of(registry: dict, comp_id: str) -> tuple[list, dict]:
+    comp = registry["components"].get(comp_id) or {"repairScope": registry.get("defaultRepairScope", [])}
+    out = []
+    for p in comp["repairScope"]:
+        out.extend(registry.get("substrateScope", []) if p == "@substrate" else [p])
+    return out, comp
+
+
+def open_incidents(registry: dict) -> list:
+    """The open incidents, or the fail-closed `dof-probe` incident when they cannot be read."""
+    rx = re.compile(registry["incident_title_regex"])
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    found, page = [], 1
+    try:
+        while page <= 10:
+            req = urllib.request.Request(
+                f"https://api.github.com/repos/{REPO}/issues?state=open&per_page=100&page={page}",
+                headers={"Accept": "application/vnd.github+json", "User-Agent": "idp-dof-gate",
+                         **({"Authorization": f"Bearer {token}"} if token else {})},
+            )
+            with urllib.request.urlopen(req, timeout=15) as res:
+                batch = json.load(res)
+            for issue in batch:
+                m = rx.match(issue.get("title", ""))
+                if m and "pull_request" not in issue:
+                    found.append({"id": m.group("id"), "issue": issue["number"], "updated_at": issue["updated_at"]})
+            if len(batch) < 100:
+                return found
+            page += 1
+        return found
+    except Exception as exc:  # noqa: BLE001 -- any failure to see is health unproven
+        return [{"id": "dof-probe", "issue": None, "evidence": f"incident list unreadable: {exc}"}]
+
+
+def trailers(message: str) -> dict:
+    out = {}
+    for line in message.splitlines():
+        m = re.match(r"^([A-Za-z-]+):\s*(.+)$", line)
+        if m:
+            out[m.group(1)] = m.group(2).strip()
+    return out
+
+
+def evaluate(registry: dict, incidents: list, message: str, changed: list) -> dict:
+    """Pure decision for one commit."""
+    if not incidents:
+        return {"admitted": True, "reason": "L0: no critical incident open"}
+    failing = {i["id"]: i for i in incidents}
+    resolves = trailers(message).get("Genesis-Resolves")
+    first = incidents[0]
+    refusal = {
+        "admitted": False, "refused": True, "level": "L2",
+        "open_incidents": [{"id": i["id"], "issue": i.get("issue")} for i in incidents],
+        "required_trailer": f"Genesis-Resolves: {first['id']}",
+    }
+    if resolves not in failing:
+        reason = f"Genesis-Resolves '{resolves}' is not an open incident" if resolves else "missing Genesis-Resolves while a critical service is down"
+        return {**refusal, "reason": reason}
+    scope, comp = scope_of(registry, resolves)
+    if not comp.get("selfRepair"):
+        frozen = [p for p in changed if any(glob_match(g, p) for g in registry.get("immutableWhileRed", []))]
+        if frozen:
+            return {**refusal, "reason": "the gate is immutable while a critical service is down", "files": frozen}
+    stray = [p for p in changed if not any(glob_match(g, p) for g in scope)]
+    if stray:
+        return {**refusal, "reason": f"files outside {resolves} repairScope", "files": stray}
+    return {"admitted": True, "reason": f"resolves {resolves} (issue #{failing[resolves].get('issue')}) within repairScope"}
+
+
+def clean_merge(sha: str) -> bool:
+    parents = git("rev-list", "--parents", "-n", "1", sha).split()[1:]
+    if len(parents) < 2:
+        return False
+    try:
+        return git("merge-tree", "--write-tree", *parents).splitlines()[0] == git("rev-parse", f"{sha}^{{tree}}")
+    except subprocess.CalledProcessError:
+        return False
+
+
+def main(argv: list) -> int:
+    if argv[:1] == ["--lease"]:
+        registry, _ = load_registry(None)
+        incidents = open_incidents(registry)
+        lease = {
+            "repo": REPO, "level": "L2" if incidents else "L0",
+            "lease": f"repair-only: Genesis-Resolves: {incidents[0]['id']}" if incidents else "full",
+            "open_incidents": incidents,
+        }
+        print(json.dumps(lease, indent=2))
+        return 3 if incidents else 0
+    base, head = argv[0], argv[1] if len(argv) > 1 else "HEAD"
+    registry, bootstrap = load_registry(base)
+    incidents = open_incidents(registry)
+    decisions = []
+    for sha in [s for s in git("rev-list", "--reverse", f"{base}..{head}").splitlines() if s]:
+        if bootstrap:
+            d = {"admitted": True, "reason": "bootstrap: base has no DoF registry"}
+        elif clean_merge(sha):
+            d = {"admitted": True, "reason": "clean merge of judged parents"}
+        else:
+            changed = [p for p in git("diff-tree", "--root", "--no-commit-id", "--name-only", "-r", sha).splitlines() if p]
+            d = evaluate(registry, incidents, git("log", "-1", "--format=%B", sha), changed)
+        decisions.append({"sha": sha, **d})
+    ok = all(d["admitted"] for d in decisions)
+    print(json.dumps({"gate": "dof", "ok": ok, "level": "L2" if incidents else "L0", "bootstrap": bootstrap,
+                      "open_incidents": incidents, "commits": decisions}, indent=2))
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a") as fh:
+            fh.write(f"## DoF level: {'L2' if incidents else 'L0'}\n| incident | issue |\n|---|---|\n")
+            fh.writelines(f"| {i['id']} | #{i.get('issue')} |\n" for i in incidents)
+            fh.write("\n| commit | decision | reason |\n|---|---|---|\n")
+            fh.writelines(f"| {d['sha'][:9]} | {'admitted' if d['admitted'] else 'REFUSED'} | {d['reason']} |\n" for d in decisions)
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
