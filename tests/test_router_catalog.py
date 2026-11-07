@@ -35,6 +35,11 @@ def test_catalog_is_aliases_then_every_discovered_model():
     assert rc.all_models(CATALOG) == EXPECTED
 
 
+def test_the_default_client_route_is_the_cloud_router():
+    assert rc.DEFAULT_ROUTER == "https://llm.mumchimp.com/v1"
+    assert rc.ROUTER == rc.DEFAULT_ROUTER
+
+
 def test_opencode_gets_every_model_and_keeps_its_other_settings(tmp_path):
     cfg = tmp_path / ".config/opencode/opencode.jsonc"
     cfg.parent.mkdir(parents=True)
