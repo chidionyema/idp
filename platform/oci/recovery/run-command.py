@@ -211,7 +211,9 @@ def _oci(args: list[str], *, what: str) -> str:
     # shell, and nothing in `args` is interpolated into a command line.
     try:
         proc = subprocess.run(  # noqa: S603
-            [_oci_binary(), *args], capture_output=True, text=True,
+            [_oci_binary(), *args],
+            capture_output=True,
+            text=True,
             timeout=45,
         )
     except subprocess.TimeoutExpired as exc:
@@ -258,21 +260,34 @@ def require_run_command_plugin(compartment: str, instance_id: str) -> None:
     Run Command; repeating an hour-long poll cannot fix it.
     """
     try:
-        status = _oci(
-            [
-                "instance-agent", "plugin", "list",
-                "--compartment-id", compartment,
-                "--instanceagent-id", instance_id,
-                "--name", "Compute Instance Run Command",
-                "--query", "data[0].status", "--raw-output",
-            ],
-            what="checking Compute Instance Run Command plugin",
-        ).strip().upper()
+        status = (
+            _oci(
+                [
+                    "instance-agent",
+                    "plugin",
+                    "list",
+                    "--compartment-id",
+                    compartment,
+                    "--instanceagent-id",
+                    instance_id,
+                    "--name",
+                    "Compute Instance Run Command",
+                    "--query",
+                    "data[0].status",
+                    "--raw-output",
+                ],
+                what="checking Compute Instance Run Command plugin",
+            )
+            .strip()
+            .upper()
+        )
     except TransportError as exc:
         raise TransportError(
             f"BLIND run-command plugin state unreadable for instance {instance_id}: {exc}"
         ) from exc
-    say(f"state   run-command  instance={instance_id} plugin_status={status or 'MISSING'}")
+    say(
+        f"state   run-command  instance={instance_id} plugin_status={status or 'MISSING'}"
+    )
     if status != "RUNNING":
         raise TransportError(
             f"BLIND Run Command plugin on instance {instance_id} is "
@@ -291,12 +306,19 @@ def require_idle_command_queue(compartment: str, instance_id: str) -> None:
         try:
             raw = _oci(
                 [
-                    "instance-agent", "command-execution", "list",
-                    "--compartment-id", compartment,
-                    "--instance-id", instance_id,
-                    "--lifecycle-state", lifecycle,
-                    "--limit", str(COMMAND_QUEUE_LIMIT),
-                    "--query", "data[].id",
+                    "instance-agent",
+                    "command-execution",
+                    "list",
+                    "--compartment-id",
+                    compartment,
+                    "--instance-id",
+                    instance_id,
+                    "--lifecycle-state",
+                    lifecycle,
+                    "--limit",
+                    str(COMMAND_QUEUE_LIMIT),
+                    "--query",
+                    "data[].id",
                 ],
                 what=f"reading {lifecycle} OCI commands for {instance_id}",
             )
@@ -387,9 +409,16 @@ def wait_for_command(
         try:
             out = _oci(
                 [
-                    "instance-agent", "command-execution", "get",
-                    "--command-id", command_id, "--instance-id", instance_id,
-                    "--query", 'data."lifecycle-state"', "--raw-output",
+                    "instance-agent",
+                    "command-execution",
+                    "get",
+                    "--command-id",
+                    command_id,
+                    "--instance-id",
+                    instance_id,
+                    "--query",
+                    'data."lifecycle-state"',
+                    "--raw-output",
                 ],
                 what=f"polling OCI Run Command {command_id}",
             )
