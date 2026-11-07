@@ -12,6 +12,9 @@ tomli>=2.0; python_version < "3.11"
 # `ModuleNotFoundError: No module named 'cryptography'` at the point of
 # signing, hundreds of lines after the module had loaded clean.
 cryptography>=42
+# IDP #7790: OCI checkpoint adapter uses workload identity, KMS and Object Storage.
+# No API-key fallback; pinned major boundary for breaking SDK changes.
+oci>=2.190.0,<3
 # Stage 2 of the gauntlet, `stage_symbolic`, asks Z3 for a counterexample to the
 # guard a patch declares. Declared here for the same reason as `cryptography`
 # above, and found the same way -- CI run 34798223412, one commit later:
