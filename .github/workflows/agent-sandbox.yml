@@ -112,6 +112,8 @@ jobs:
           MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
           MODEL: ${{ inputs.model }}
+          # Only founder-issued Legion missions receive a bounded provider fallback.
+          LEGION_FAILOVER: ${{ github.event_name == 'issues' && '1' || '0' }}
         run: |
           set -euo pipefail
           out="$RUNNER_TEMP/out"; mkdir -p "$out" "$RUNNER_TEMP/pi-sessions"
@@ -135,6 +137,44 @@ jobs:
               rc=0; pi -p --provider google --model "${MODEL:-gemini-3.5-flash}" --session-dir "$RUNNER_TEMP/pi-sessions" "$TASK" < /dev/null > "$out/stdout" 2>&1 || rc=$?
               transcript=$(newest "$RUNNER_TEMP/pi-sessions") ;;
           esac
+          # An untrusted model can change the worktree before failing. A second
+          # provider must NEVER inherit its edits: firewall sees only the
+          # successful provider's transcript, so the patch must match it.
+          if [ "$HARNESS" = gemini ] && [ "${LEGION_FAILOVER:-0}" = 1 ] && [ "$rc" -ne 0 ]; then
+            class=provider-failure-unclassified
+            if grep -Eiq 'model.?not.?found|unknown model|unsupported model|model.*does not exist' "$out/stdout"; then
+              class=model-unavailable
+            elif grep -Eiq 'authentication_error|unauthori[sz]ed|invalid.?api.?key|permission.denied' "$out/stdout"; then
+              class=authentication
+            elif grep -Eiq '429|quota.exceeded|rate.?limit|resource.exhausted' "$out/stdout"; then
+              class=capacity-or-rate-limit
+            elif grep -Eiq 'timeout|timed out|ECONNRESET|ECONNREFUSED|network error' "$out/stdout"; then
+              class=transport
+            fi
+            if [ -n "${MINIMAX_API_KEY:-}" ]; then
+              # Preserve all failure details inside the age-encrypted artifact;
+              # the public log gets only a fixed, low-entropy category.
+              cp "$out/stdout" "$out/google.failed.stdout"
+              if [ -n "${transcript:-}" ] && [ -f "$transcript" ]; then
+                cp "$transcript" "$out/google.failed.transcript.jsonl"
+              fi
+              git reset --hard "$(cat "$out/base")" >/dev/null
+              git clean -fd >/dev/null
+              rm -rf "$RUNNER_TEMP/pi-sessions"
+              mkdir -p "$RUNNER_TEMP/pi-sessions" "$RUNNER_TEMP/legion-fallback-home"
+              rc=0
+              # The second provider also gets a clean HOME: no first-model
+              # edits to ~/.pi, shell profiles or agent tools may carry over.
+              HOME="$RUNNER_TEMP/legion-fallback-home" pi -p --provider minimax --model MiniMax-M2.7 --session-dir "$RUNNER_TEMP/pi-sessions" "$TASK" < /dev/null > "$out/stdout" 2>&1 || rc=$?
+              transcript=$(newest "$RUNNER_TEMP/pi-sessions")
+              echo "legion provider fallback: google_failure=$class fallback=minimax exit=$rc"
+              if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+                printf 'Legion fallback: Gemini failed (%s); MiniMax exit %s; firewall still required.\n' "$class" "$rc" >> "$GITHUB_STEP_SUMMARY"
+              fi
+            else
+              echo "legion provider failure: class=$class fallback=unavailable"
+            fi
+          fi
           echo "harness exit $rc"
           if [ -z "${transcript:-}" ]; then
             # No transcript means the harness never got as far as working; its first line is the
@@ -168,7 +208,7 @@ jobs:
           [ -n "$RECIPIENT" ] || { echo "::error::AGENT_TRANSCRIPT_AGE_RECIPIENT is not set"; exit 1; }
           out="$RUNNER_TEMP/out"; mkdir -p "$RUNNER_TEMP/sealed"
           files=()
-          for name in base patch transcript.jsonl stdout; do
+          for name in base patch transcript.jsonl stdout google.failed.stdout google.failed.transcript.jsonl; do
             if [ -f "$out/$name" ]; then files+=("$name"); fi
           done
           [ "${#files[@]}" -gt 0 ] || { echo "::error::the job left no evidence to seal"; exit 1; }
