@@ -8,8 +8,8 @@ import sys
 import urllib.request
 from pathlib import Path
 
-INCIDENT = re.compile(r"^\\[lane\\] (?P<id>[a-z0-9-]+): a lane is down$")
-SAFE_PATH = re.compile(r"^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9_./-]+$")
+INCIDENT = re.compile(r"^\[lane\] (?P<id>[a-z0-9-]+): a lane is down$")
+SAFE_PATH = re.compile(r"^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9_./-]+$")
 GUARDED = (".github/", ".githooks/")
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -120,7 +120,7 @@ def main():
     obj = packet(registry, incidents, a.task, a.paths.split(",") if a.paths else None, a.repair_of or None)
     if not registry: obj.update(level="L2", health_proven=False)
     out = json.dumps(obj, indent=2, sort_keys=True)
-    if a.out: Path(a.out).write_text(out + "\\n")
+    if a.out: Path(a.out).write_text(out + "\n")
     else: print(out)
     return 0  # Diagnostic preflight, does not mint authority.
 
