@@ -393,12 +393,43 @@ def row_gaps(row: Dict[str, Any]) -> List[str]:
     return out
 
 
+def next_action_for_row(row: Dict[str, Any]) -> str:
+    """Deterministic *remediation hint*, never an authorization or success token.
+
+    The actions describe work that the existing estate doors and peer scheduler
+    can perform. This projection does not claim to dispatch them.
+    """
+    if row["unknown_completed_goals"]:
+        return "RECONCILE_COMPLETION_SCOPE"
+    if row["declared_instruction"] and row["observed_instructions"]:
+        if row["declared_instruction"] not in row["observed_instructions"]:
+            return "RECONCILE_INTENT_DOOR"
+    if not row["declared_instruction"]:
+        return "DECLARE_INSTRUCTION_IN_PLAN"
+    if not row["observed_instructions"]:
+        return "OBSERVE_INSTRUCTION_AT_INTENT_DOOR"
+    if not row["founder_prompt"]:
+        return "LINK_FOUNDER_PROMPT"
+    if not row["protocol"]:
+        return "BIND_FOUNDER_PROMPT_TO_PROTOCOL"
+    if row["unproved_completion_claims"]:
+        return "PRODUCE_COMPLETION_PROOF"
+    if row["referenced_completion_claims"]:
+        return "VERIFY_YIELD_AT_RUNTIME_DOOR"
+    return "CONTINUE_PROTOCOL"
+
+
 def audit(session: Optional[str] = None) -> Dict[str, Any]:
     """The whole picture: the rows, the violations, the gaps and the kit's prompt audit."""
     rows = link_rows(session)
     violations: List[str] = []
     gaps: List[str] = []
     for row in rows:
+        row["next_action"] = next_action_for_row(row)
+        # A plan ledger contains declarations, not a trusted release/runtime
+        # attestation. Never promote a completion or an expected/actual number
+        # into operational success from this one-hop context projection.
+        row["operationally_proven"] = False
         violations.extend(row_violations(row))
         gaps.extend(row_gaps(row))
     if not rows:
