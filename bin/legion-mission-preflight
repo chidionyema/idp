@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""Legion success-first briefing, derived from live GitHub incidents. NEVER a capability grant."""
+import argparse
+import json
+import os
+import re
+import sys
+import urllib.request
+from pathlib import Path
+
+INCIDENT = re.compile(r"^\\[lane\\] (?P<id>[a-z0-9-]+): a lane is down$")
+SAFE_PATH = re.compile(r"^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9_./-]+$")
+GUARDED = (".github/", ".githooks/")
+ROOT = Path(__file__).resolve().parents[1]
+
+def collect(issues):
+    if not isinstance(issues, list): raise ValueError("invalid issue inventory")
+    return [{"id": match.group("id"), "issue": i["number"]} for i in issues
+            if isinstance(i, dict) and "pull_request" not in i
+            if (match := INCIDENT.fullmatch(str(i.get("title", ""))))]
+
+def live(repo, token):
+    if not token: return None
+    all_issues = []
+    try:
+        for n in range(1, 11):
+            req = urllib.request.Request(
+                f"https://api.github.com/repos/{repo}/issues?state=open&per_page=100&page={n}",
+                headers={"Authorization": "Bearer " + token,
+                         "Accept": "application/vnd.github+json", "User-Agent": "legion-success/1"})
+            with urllib.request.urlopen(req, timeout=12) as response:
+                if response.status != 200: return None
+                issues = json.load(response)
+            if not isinstance(issues, list): return None
+            all_issues.extend(issues)
+            if len(issues) < 100: return collect(all_issues)
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return None
+
+def scope(registry, name):
+    comp = registry.get("components", {}).get(name)
+    if not isinstance(comp, dict): raise ValueError("unknown incident")
+    return [q for p in comp.get("repairScope", [])
+            for q in (registry.get("substrateScope", []) if p == "@substrate" else [p])]
+
+def scope_match(pattern, path):
+    if pattern.endswith("/**"): return path.startswith(pattern[:-2])
+    if pattern.endswith("*"): return path.startswith(pattern[:-1]) and "/" not in path[len(pattern)-1:]
+    return pattern == path
+
+def decision(registry, incidents, files, repair=None):
+    files = list(files)
+    if not files or len(files) > 256 or any(not isinstance(f, str) or not SAFE_PATH.fullmatch(f) for f in files):
+        return {"admitted": False, "reason": "INVALID_PATHS", "next": "identify exact safe changed files"}
+    bad = [f for f in files if f.startswith(GUARDED)]
+    if bad:
+        return {"admitted": False, "reason": "PROTECTED_PATH", "paths": bad,
+                "next": "split into safe source patch and separate signed peer-reviewed workflow proposal"}
+    if incidents is None:
+        return {"admitted": False, "reason": "HEALTH_UNPROVEN", "next": "read-only diagnosis, retry independent probe with new hypothesis"}
+    down = {i["id"] for i in incidents}
+    if down:
+        if repair not in down:
+            return {"admitted": False, "reason": "REPAIR_ONLY", "incidents": sorted(down),
+                    "next": "choose active measured incident and its allowed scope"}
+        try:
+            allowed = scope(registry, repair)
+            bad = [f for f in files if not any(scope_match(p, f) for p in allowed)]
+        except (KeyError, ValueError, TypeError):
+            return {"admitted": False, "reason": "INVALID_REGISTRY"}
+        if bad:
+            return {"admitted": False, "reason": "OUTSIDE_REPAIR_SCOPE", "paths": bad,
+                    "next": "split work or seek legitimate scoped independent approval"}
+        return {"admitted": True, "reason": "SCOPED_REPAIR", "paths": files}
+    if repair:
+        return {"admitted": False, "reason": "FAKE_REPAIR_TRAILER"}
+    return {"admitted": True, "reason": "NORMAL_CHANGE", "paths": files}
+
+def packet(registry, incidents, mission, files=None, repair=None):
+    known = incidents is not None and isinstance(registry.get("components"), dict)
+    down = sorted({i["id"] for i in (incidents or [])})
+    scopes = {}
+    for name in down:
+        try: scopes[name] = scope(registry, name)
+        except (TypeError, ValueError, KeyError): known = False
+    return {
+        "mission": mission[:220], "level": "L0" if known and not down else "L2",
+        "health_proven": known, "active_incidents": down, "repair_scopes": scopes,
+        "patch_preflight": decision(registry, incidents if known else None, files, repair) if files else None,
+        "this_is_not_a_capability": True, "protected_paths": list(GUARDED),
+        "first_actions": [
+            "read exact current failed job log and existing solution before changing files",
+            "identify every changed path, owning gate and required approvals",
+            "preplan dependency DAG, estimate cost and longest critical path, parallelise safely",
+            "reproduce failure then fix one root-cause class with a regression test",
+            "run local syntax, dependency and DoF preflight before claiming or pushing",
+            "never change .github or .githooks from sandbox: open separate signed peer-reviewed proposal",
+            "if two attempts repeat a failure, change hypothesis and delegate to qualified peer, not founder",
+            "submit in-scope source via Greenlane; completion needs observed operational SHA and independent proof"],
+        "limits": {"slice_seconds": 100, "identical_retry_cap": 2, "parallel_limit": 4,
+                   "api_cost": "unknown until measured"},
+        "final_gates": ["guarded-paths", "dof-gate", "claim-gate", "fast-gate", "greenlane"],
+        "completion": "independent operational yield; CI green or a demo alone is insufficient"
+    }
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--task", required=True)
+    ap.add_argument("--paths", default="")
+    ap.add_argument("--repair-of", default="")
+    ap.add_argument("--out", default="")
+    a = ap.parse_args()
+    try:
+        registry = json.loads((ROOT / "catalog/dof-registry.json").read_text())
+        if not isinstance(registry.get("components"), dict): registry = {}
+    except (ValueError, OSError, TypeError): registry = {}
+    incidents = live(os.environ.get("GITHUB_REPOSITORY", "chidionyema/idp"),
+        os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or "")
+    obj = packet(registry, incidents, a.task, a.paths.split(",") if a.paths else None, a.repair_of or None)
+    if not registry: obj.update(level="L2", health_proven=False)
+    out = json.dumps(obj, indent=2, sort_keys=True)
+    if a.out: Path(a.out).write_text(out + "\\n")
+    else: print(out)
+    return 0  # Diagnostic preflight, does not mint authority.
+
+if __name__ == "__main__": sys.exit(main())
