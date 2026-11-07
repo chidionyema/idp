@@ -44,6 +44,10 @@ DEFAULT_WORKTREE_BASE = ".wt-agents"
 DEFAULT_ARCHIVE_ROOT = os.path.expanduser("~/.estate/quarantine/worktrees")
 DEFAULT_ARCHIVE_MAX_BYTES = 64 * 1024 * 1024
 
+
+class QueueLeaseRefused(RuntimeError):
+    """Stale or unproven task owner. Never perform task completion side effects."""
+
 # Build output is regenerable by definition: the estate's cleaner does not archive it
 # either (the same REBUILDABLE list), and archiving it would put gigabytes in the
 # quarantine for nothing.
@@ -96,9 +100,15 @@ def _ensure_parent(path: str) -> None:
 
 
 def init_db():
-    """Create the queue if it is not there."""
+    """Idempotently migrate the existing queue to monotonic claim epochs.
+
+    The tasks row remains the single owner authority. We keep prior worktree
+    locations for forensic recovery when a zombie is reassigned; no automatic
+    deletion or untrusted patch application occurs during takeover.
+    """
     _ensure_parent(db_path())
-    with sqlite3.connect(db_path()) as conn:
+    with sqlite3.connect(db_path(), timeout=15, isolation_level=None) as conn:
+        conn.execute("BEGIN IMMEDIATE")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,10 +117,24 @@ def init_db():
                 agent_id TEXT,
                 worktree_path TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                lease_epoch INTEGER NOT NULL DEFAULT 0
             )
         """)
-        conn.commit()
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+        if "lease_epoch" not in columns:
+            conn.execute("ALTER TABLE tasks ADD COLUMN lease_epoch INTEGER NOT NULL DEFAULT 0")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS task_recovery_worktrees (
+                task_id INTEGER NOT NULL,
+                lease_epoch INTEGER NOT NULL,
+                worktree_path TEXT NOT NULL,
+                recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(task_id, lease_epoch, worktree_path)
+            )
+        """)
+        conn.execute("COMMIT")
+
 
 
 def push_task(goal: str):
@@ -123,122 +147,161 @@ def push_task(goal: str):
 
 
 def load_task(task_id: int):
-    """One task as a dict, or None when there is no such task.
-
-    The worktree manager asks for a task by id to decide whether a worktree is
-    orphaned. It used to ask for a function that did not exist.
-    """
+    """Return state and ownership epoch, plus paths needed to recover a takeover."""
     with sqlite3.connect(db_path()) as conn:
         row = conn.execute(
-            "SELECT id, goal, status, agent_id, worktree_path, created_at, updated_at "
-            "FROM tasks WHERE id = ?",
-            (task_id,),
+            "SELECT id, goal, status, agent_id, worktree_path, created_at, updated_at, lease_epoch "
+            "FROM tasks WHERE id = ?", (task_id,),
         ).fetchone()
-    if row is None:
-        return None
-    keys = (
-        "id",
-        "goal",
-        "status",
-        "agent_id",
-        "worktree_path",
-        "created_at",
-        "updated_at",
-    )
-    return dict(zip(keys, row, strict=True))
+        if row is None:
+            return None
+        recovery = [
+            item[0] for item in conn.execute(
+                "SELECT worktree_path FROM task_recovery_worktrees "
+                "WHERE task_id=? ORDER BY recorded_at, lease_epoch", (task_id,)
+            )
+        ]
+    keys = ("id", "goal", "status", "agent_id", "worktree_path", "created_at",
+            "updated_at", "lease_epoch")
+    return {**dict(zip(keys, row, strict=True)), "recovery_worktrees": recovery}
+
 
 
 def claim_task(agent_id: str):
-    """Claim the oldest pending task and give the agent a worktree to work in.
+    """Claim one pending task with a unique epoch and a fresh worktree.
 
-    The claim and the workspace are one thing: if the workspace cannot be created the
-    claim is rolled back and the agent gets nothing, because a task in 'running' with no
-    worktree is a task nobody can work on.
+    BEGIN IMMEDIATE precedes the SELECT: otherwise concurrent callers can both
+    select the same pending row and allocate the same workspace. Reassignment
+    preserves previous worktrees for explicit recovery rather than reusing the
+    still-running zombie's directory.
     """
+    if not agent_id:
+        raise QueueLeaseRefused("MISSING_AGENT_ID")
     init_db()
-    conn = sqlite3.connect(db_path(), isolation_level="IMMEDIATE")
+    conn = sqlite3.connect(db_path(), timeout=15, isolation_level=None)
     try:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id, goal FROM tasks WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1"
-        )
-        row = cursor.fetchone()
-
-        if not row:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT id,goal,lease_epoch,worktree_path FROM tasks "
+            "WHERE status='pending' ORDER BY created_at,id LIMIT 1"
+        ).fetchone()
+        if row is None:
+            conn.execute("COMMIT")
             return None
-
-        task_id, goal = row
-        worktree = os.path.join(worktree_base(), f"task-{task_id}")
+        task_id, goal, last_epoch, previous_worktree = row
+        epoch = last_epoch + 1
+        worktree = os.path.join(worktree_base(), f"task-{task_id}-epoch-{epoch}")
         os.makedirs(os.path.dirname(os.path.abspath(worktree)), exist_ok=True)
-        # The stamp is the claim's heartbeat: sweep_zombies re-queues any running task
-        # whose stamp is older than an hour, so a claim without a stamp is a task that
-        # can be run twice.
-        cursor.execute(
-            "UPDATE tasks SET status = 'running', agent_id = ?, worktree_path = ?, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (agent_id, worktree, task_id),
-        )
-        conn.commit()
-
-        result = _git(["worktree", "add", worktree, "--detach", "HEAD"], repo_root())
-        if result.returncode != 0 and not _is_worktree(worktree):
-            # No workspace: give the task back rather than leave it running with
-            # nothing to work in.
-            _release(task_id, agent_id)
-            print(
-                f"[QUEUE] Task {task_id} released: no workspace "
-                f"({result.stderr.strip()[:200] or 'git worktree add failed'})"
+        if previous_worktree and previous_worktree != worktree:
+            conn.execute(
+                "INSERT OR IGNORE INTO task_recovery_worktrees "
+                "(task_id,lease_epoch,worktree_path) VALUES(?,?,?)",
+                (task_id, last_epoch, previous_worktree),
             )
-            return None
-
-        return {"id": task_id, "goal": goal, "worktree": worktree}
+        conn.execute(
+            "UPDATE tasks SET status='running',agent_id=?,worktree_path=?, "
+            "lease_epoch=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'",
+            (agent_id, worktree, epoch, task_id),
+        )
+        conn.execute("COMMIT")
     finally:
         conn.close()
 
+    result = _git(["worktree", "add", worktree, "--detach", "HEAD"], repo_root())
+    if result.returncode != 0 and not _is_worktree(worktree):
+        _release(task_id, agent_id, epoch)
+        print(f"[QUEUE] Task {task_id} released: no workspace "
+              f"({result.stderr.strip()[:200] or 'git worktree add failed'})")
+        return None
 
-def _release(task_id: int, agent_id: str):
-    """Put a claimed task back in the queue."""
+    recovery = load_task(task_id)["recovery_worktrees"]
+    return {"id": task_id, "goal": goal, "worktree": worktree,
+            "agent_id": agent_id, "lease_epoch": epoch,
+            "recovery_worktrees": recovery}
+
+
+
+def _release(task_id: int, agent_id: str, lease_epoch: int):
+    """Release only the exact attempt whose workspace failed."""
     with sqlite3.connect(db_path()) as conn:
         conn.execute(
-            "UPDATE tasks SET status = 'pending', agent_id = NULL, worktree_path = NULL, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ? AND agent_id = ?",
-            (task_id, agent_id),
+            "UPDATE tasks SET status='pending',agent_id=NULL,worktree_path=NULL, "
+            "updated_at=CURRENT_TIMESTAMP WHERE id=? AND agent_id=? "
+            "AND lease_epoch=? AND status='running'",
+            (task_id, agent_id, lease_epoch),
         )
         conn.commit()
 
 
-def complete_task(task_id: int, status: str):
-    """Complete a task: the worktree is archived, then removed, then the task is marked."""
+def heartbeat_task(task_id: int, agent_id: str, lease_epoch: int):
+    """Keep the real owner alive; a stale worker cannot extend another's task."""
+    if not agent_id or not isinstance(lease_epoch, int) or lease_epoch < 1:
+        raise QueueLeaseRefused("MISSING_OWNERSHIP_PROOF")
     with sqlite3.connect(db_path()) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT worktree_path FROM tasks WHERE id = ?", (task_id,))
-        row = cursor.fetchone()
-
-        if row and row[0]:
-            remove_worktree(row[0])
-
-        cursor.execute(
-            "UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (status, task_id),
+        result = conn.execute(
+            "UPDATE tasks SET updated_at=CURRENT_TIMESTAMP "
+            "WHERE id=? AND agent_id=? AND lease_epoch=? AND status='running'",
+            (task_id, agent_id, lease_epoch),
         )
+        if result.rowcount != 1:
+            raise QueueLeaseRefused("STALE_FENCING_LEASE")
         conn.commit()
+
+
+
+def complete_task(task_id: int, status: str, *, agent_id: str | None = None,
+                  lease_epoch: int | None = None):
+    """Commit a terminal outcome ONLY for the current owner and epoch.
+
+    The status transition is serialized before worktree cleanup; no stale
+    attempt is allowed to archive or delete the next worker's files. External
+    GitHub/Cloud side effects still require their own broker-side fencing.
+    Legacy callers without an epoch are deliberately refused instead of
+    silently defeating takeover safety.
+    """
+    if not agent_id or not isinstance(lease_epoch, int) or lease_epoch < 1:
+        raise QueueLeaseRefused("MISSING_OWNERSHIP_PROOF")
+    if status not in ("success", "failed", "error", "cancelled"):
+        raise QueueLeaseRefused("INVALID_TERMINAL_STATUS")
+    with sqlite3.connect(db_path(), timeout=15, isolation_level=None) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT status,agent_id,lease_epoch,worktree_path FROM tasks WHERE id=?",
+            (task_id,),
+        ).fetchone()
+        if row is None or row[0] != "running" or row[1] != agent_id or row[2] != lease_epoch:
+            raise QueueLeaseRefused("STALE_FENCING_LEASE")
+        worktree = row[3]
+        conn.execute(
+            "UPDATE tasks SET status=?,updated_at=CURRENT_TIMESTAMP "
+            "WHERE id=? AND agent_id=? AND lease_epoch=? AND status='running'",
+            (status, task_id, agent_id, lease_epoch),
+        )
+        conn.execute("COMMIT")
+    if worktree:
+        remove_worktree(worktree)
+    return True
+
 
 
 def sweep_zombies():
-    """Re-queue the tasks that stopped moving.
+    """Invalidate stale ownership, retaining worktree custody for takeover.
 
-    A task is a zombie when it is still marked 'running' and its stamp has not moved for
-    an hour. The stamp is written when the task is claimed, so a task that is running
-    right now is never re-queued.
+    The next claim increments the epoch again and gets its own directory.
+    Preserve the previous location until the new worker can checkpoint,
+    inspect and explicitly recover any uncommitted data.
     """
-    with sqlite3.connect(db_path()) as conn:
+    init_db()
+    with sqlite3.connect(db_path(), timeout=15, isolation_level=None) as conn:
+        conn.execute("BEGIN IMMEDIATE")
         conn.execute("""
             UPDATE tasks
-            SET status = 'pending', agent_id = NULL, worktree_path = NULL,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE status = 'running' AND updated_at < datetime('now', '-1 hour')
+            SET status='pending', agent_id=NULL, lease_epoch=lease_epoch+1,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE status='running' AND updated_at < datetime('now', '-1 hour')
         """)
-        conn.commit()
+        conn.execute("COMMIT")
+
 
 
 def get_task_list():
