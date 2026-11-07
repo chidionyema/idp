@@ -255,3 +255,37 @@ def test_observed_intent_does_not_replace_missing_plan_instruction(
     result = plan_links.audit("s1")
     assert any("no instruction declared in plan" in g
                for g in result["gaps"])
+
+
+
+def test_completion_without_independent_proof_is_not_yield(tmp_path, monkeypatch):
+    home = _home(tmp_path, monkeypatch)
+    _plan(home, "s1", instruction="lane-submit", prompt="prompt-1")
+    _intent(home, "s1", "lane-submit")
+    _prompt(home, id="prompt-1", session="s1", text="land it and prove it")
+    with open(home / "plans" / "s1.jsonl", "a", encoding="utf8") as out:
+        out.write(json.dumps({"tool": "complete_goal", "args": {"goal_id": "g1"}}) + "\n")
+    result = plan_links.audit("s1")
+    row = result["rows"][0]
+    assert row["completion_claims"] == 1
+    assert row["verified_yield_count"] == 0
+    assert row["yield_state"] == "UNVERIFIED"
+    assert any("unproved completion" in g for g in result["gaps"])
+
+
+def test_claim_with_a_proof_reference_is_still_not_independent_validation(
+    tmp_path, monkeypatch
+):
+    home = _home(tmp_path, monkeypatch)
+    _plan(home, "s1", instruction="lane-submit", prompt="prompt-1")
+    _intent(home, "s1", "lane-submit")
+    _prompt(home, id="prompt-1", session="s1", text="land it and prove it")
+    with open(home / "plans" / "s1.jsonl", "a", encoding="utf8") as out:
+        out.write(json.dumps({"tool": "complete_goal",
+                              "args": {"goal_id": "g1", "proof": "run:42379669617"}}) + "\n")
+    result = plan_links.audit("s1")
+    row = result["rows"][0]
+    assert row["completion_claims"] == 1
+    assert row["verified_yield_count"] == 0
+    assert row["yield_state"] == "UNVERIFIED"
+    assert any("proof not independently verified" in g for g in result["gaps"])
