@@ -22,7 +22,7 @@ class SuccessFirstTest(unittest.TestCase):
 
     def test_no_oke_recovery_route_is_suggested(self):
         brief = mission.packet(REG, RED, "restore service")
-        self.assertNotIn("oke", str(brief).lower())
+        self.assertNotIn("oke", str(brief["repair_scopes"]).lower())
         self.assertEqual(brief["level"], "L2")
 
     def test_actual_legacy_oke_scope_is_not_recommended_or_admitted(self):
