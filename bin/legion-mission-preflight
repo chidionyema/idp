@@ -73,7 +73,7 @@ def decision(registry, incidents, files, repair=None):
         if bad:
             return {"admitted": False, "reason": "OUTSIDE_REPAIR_SCOPE", "paths": bad,
                     "next": "split work or seek legitimate scoped independent approval"}
-        return {"admitted": True, "reason": "SCOPED_REPAIR", "paths": files}
+        return {"admitted": True, "reason": "SCOPED_REPAIR", "repair_of": repair, "paths": files}
     if repair:
         return {"admitted": False, "reason": "FAKE_REPAIR_TRAILER"}
     return {"admitted": True, "reason": "NORMAL_CHANGE", "paths": files}
