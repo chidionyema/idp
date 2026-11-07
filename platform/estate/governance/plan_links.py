@@ -289,6 +289,16 @@ def link_rows(session: Optional[str] = None) -> List[Dict[str, Any]]:
         if prompt is None and not declared_prompt:
             prompt = prompt_for_session(sid)
         binding = protocol_of(prompt) if prompt else None
+        claims = [
+            e.get("args") if isinstance(e.get("args"), dict) else {}
+            for e in events if e.get("tool") == "complete_goal"
+        ]
+        claimed_goals = [str(c.get("goal_id") or "") for c in claims]
+        unproved = sum(1 for c in claims if not str(c.get("proof") or "").strip())
+        # This audit reads declared claims; it has no authenticated CI, live
+        # release, runtime consumer, or deployed-revision proof source. Even a
+        # proof-looking string is NOT a verified yield.
+        referenced = len(claims) - unproved
         rows.append(
             {
                 "session": sid,
@@ -301,6 +311,14 @@ def link_rows(session: Optional[str] = None) -> List[Dict[str, Any]]:
                 "prompt_id": str(prompt.get("id")) if prompt else "",
                 "protocol": binding.value if binding else "",
                 "known_intents": intents,
+                "completion_claims": len(claims),
+                "unproved_completion_claims": unproved,
+                "referenced_completion_claims": referenced,
+                "unknown_completed_goals": sorted(
+                    set(claimed_goals) - set(plan["subgoals"])
+                ),
+                "verified_yield_count": 0,
+                "yield_state": "UNVERIFIED" if claims else "NOT_MEASURED",
             }
         )
     return rows
@@ -316,6 +334,17 @@ def row_violations(row: Dict[str, Any]) -> List[str]:
             out.append(f"{sid}: instruction '{declared}' is not an intent name")
         elif declared not in row["known_intents"]:
             out.append(f"{sid}: instruction '{declared}' resolves to no known intent")
+    observed = row["observed_instructions"]
+    if declared and observed and declared not in observed:
+        out.append(
+            f"{sid}: declared instruction '{declared}' was not recorded by the intent door "
+            f"(observed: {', '.join(observed)})"
+        )
+    if row["founder_prompt"] and str(row["founder_prompt"].get("session") or ""):
+        if str(row["founder_prompt"]["session"]) != sid:
+            out.append(
+                f"{sid}: founder prompt '{row['prompt_id']}' belongs to another session"
+            )
     if row["declared_prompt"]:
         if not PROMPT_ID_RE.match(row["declared_prompt"]):
             out.append(
@@ -329,6 +358,11 @@ def row_violations(row: Dict[str, Any]) -> List[str]:
         out.append(
             f"{sid}: founder prompt '{row['prompt_id']}' is bound to no protocol"
         )
+    if row["unknown_completed_goals"]:
+        out.append(
+            f"{sid}: completion claims unknown goals "
+            + ", ".join(row["unknown_completed_goals"])
+        )
     return out
 
 
@@ -336,11 +370,53 @@ def row_gaps(row: Dict[str, Any]) -> List[str]:
     """The links that are absent. Counted, printed, and refusing only under --strict."""
     out: List[str] = []
     sid = row["session"]
-    if not row["declared_instruction"] and not row["observed_instructions"]:
-        out.append(f"{sid}: no instruction linked to this plan")
+    # The plan's declared instruction and the execution door's observed intent
+    # are independent evidence; one cannot silently substitute for the other.
+    if not row["declared_instruction"]:
+        out.append(f"{sid}: no instruction declared in plan")
+    elif not row["observed_instructions"]:
+        out.append(
+            f"{sid}: instruction '{row['declared_instruction']}' not observed by the intent door"
+        )
     if not row["founder_prompt"]:
         out.append(f"{sid}: no founder prompt linked to this plan")
+    if row["unproved_completion_claims"]:
+        out.append(
+            f"{sid}: {row['unproved_completion_claims']} unproved completion "
+            "claim(s); no independent yield receipt"
+        )
+    if row["referenced_completion_claims"]:
+        out.append(
+            f"{sid}: {row['referenced_completion_claims']} completion "
+            "proof not independently verified by the release and runtime doors"
+        )
     return out
+
+
+def next_action_for_row(row: Dict[str, Any]) -> str:
+    """Deterministic *remediation hint*, never an authorization or success token.
+
+    The actions describe work that the existing estate doors and peer scheduler
+    can perform. This projection does not claim to dispatch them.
+    """
+    if row["unknown_completed_goals"]:
+        return "RECONCILE_COMPLETION_SCOPE"
+    if row["declared_instruction"] and row["observed_instructions"]:
+        if row["declared_instruction"] not in row["observed_instructions"]:
+            return "RECONCILE_INTENT_DOOR"
+    if not row["declared_instruction"]:
+        return "DECLARE_INSTRUCTION_IN_PLAN"
+    if not row["observed_instructions"]:
+        return "OBSERVE_INSTRUCTION_AT_INTENT_DOOR"
+    if not row["founder_prompt"]:
+        return "LINK_FOUNDER_PROMPT"
+    if not row["protocol"]:
+        return "BIND_FOUNDER_PROMPT_TO_PROTOCOL"
+    if row["unproved_completion_claims"]:
+        return "PRODUCE_COMPLETION_PROOF"
+    if row["referenced_completion_claims"]:
+        return "VERIFY_YIELD_AT_RUNTIME_DOOR"
+    return "CONTINUE_PROTOCOL"
 
 
 def audit(session: Optional[str] = None) -> Dict[str, Any]:
@@ -349,8 +425,16 @@ def audit(session: Optional[str] = None) -> Dict[str, Any]:
     violations: List[str] = []
     gaps: List[str] = []
     for row in rows:
+        row["next_action"] = next_action_for_row(row)
+        # A plan ledger contains declarations, not a trusted release/runtime
+        # attestation. Never promote a completion or an expected/actual number
+        # into operational success from this one-hop context projection.
+        row["operationally_proven"] = False
         violations.extend(row_violations(row))
         gaps.extend(row_gaps(row))
+    if not rows:
+        subject = session if session else "estate"
+        gaps.append(f"{subject}: no plan declaration; empty evidence is never readiness")
     prompts = prompt_audit()
     for pid, problems in sorted(prompts.items()):
         for p in problems:
