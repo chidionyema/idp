@@ -176,6 +176,128 @@ else
   else _fail "temporal install failed (url: $URL)"; fi
 fi
 
+# --- offline wheel fetch ---------------------------------------------------------
+# The PyPI index is only a directory. The JSON API (pypi.org/pypi/<pkg>/<ver>/json)
+# publishes the same wheel URLs, and pip installs from a local directory with
+# --no-index. Measured 2026-11-07 in a cloud sandbox: the index answered "Connection
+# reset by peer" twice inside a minute, while the JSON API and files.pythonhosted.org
+# answered 200 -- so the installer's pip and uv calls died on a network the wheels
+# themselves could have come from, and an agent that cannot install the gate's tools
+# cannot run the gate. _fetch_wheels resolves the dependency closure through the JSON
+# API and downloads the wheels into a wheelhouse; the installer then installs from that
+# wheelhouse with --no-index. The index stays the FIRST route: this is the fallback for
+# when it is down, not a second source of truth.
+#
+# The target interpreter's tag decides the wheel: a 3.12 venv needs cp312 wheels, and
+# a wheel built for another tag installs into nothing.
+_fetch_wheels() {
+  local dest="$1"; shift
+  local tag="${1:-}"; shift 2>/dev/null || true
+  [ -n "$tag" ] || tag="py3-none-any"
+  mkdir -p "$dest" || return 1
+  python3 - "$dest" "$tag" "$@" <<'PYEOF'
+import json, os, platform, re, sys, urllib.request
+
+dest, tag = sys.argv[1], sys.argv[2]
+pins = sys.argv[3:]
+# The wheel must match this machine: the installer runs where the gate runs.
+HOSTARCH = platform.machine()
+
+def api(pkg, ver=None):
+    url = "https://pypi.org/pypi/%s/%s/json" % (pkg, ver) if ver else "https://pypi.org/pypi/%s/json" % pkg
+    with urllib.request.urlopen(url, timeout=60) as r:
+        return json.load(r)
+
+def pick_wheel(doc, tag):
+    cands = [u for u in (doc.get("urls") or []) if u.get("packagetype") == "bdist_wheel"]
+    def rank(u):
+        fn = u["filename"]
+        if fn.endswith("-none-any.whl"):
+            return 0                                   # pure python: fits every interpreter
+        # The interpreter part of the wheel tag: this interpreter's tag, or a
+        # forward-compatible one (py3, abi3). A cp311 wheel does not fit cp312.
+        interp = any(k in fn for k in (tag, "py3", "abi3"))
+        plat = (HOSTARCH in fn and "linux" in fn) or fn.endswith("-none-any.whl")
+        if interp and plat:
+            return 1
+        if interp:
+            return 2
+        return 9
+    cands.sort(key=rank)
+    for u in cands:
+        if rank(u) < 9:
+            return u
+    return None
+
+def deps_of(doc):
+    out = []
+    for req in (doc.get("info") or {}).get("requires_dist") or []:
+        if "extra ==" in req:
+            continue                                    # an extra is opt-in; nobody asked for it
+        m = re.match(r"\s*([A-Za-z0-9._-]+)\s*(\[[^\]]*\])?\s*([<>=!~].*)?$", req)
+        if m:
+            out.append(m.group(1))
+    return out
+
+seen, queue = {}, []
+for pin in pins:
+    name, _, ver = pin.partition("==")
+    queue.append((name, ver or None))
+while queue:
+    name, ver = queue.pop(0)
+    key = name.lower().replace("_", "-")
+    if key in seen:
+        continue
+    try:
+        doc = api(name, ver)
+    except Exception as exc:
+        print("wheel-resolve: %s %s: %s" % (name, ver or "", exc), file=sys.stderr)
+        continue
+    wheel = pick_wheel(doc, tag)
+    if not wheel:
+        print("wheel-resolve: %s %s: no wheel for %s (sdist only?)" % (name, ver or "", tag), file=sys.stderr)
+        continue
+    seen[key] = wheel
+    for dep in deps_of(doc):
+        if dep.lower().replace("_", "-") not in seen:
+            queue.append((dep, None))
+failed = []
+for wheel in seen.values():
+    out = os.path.join(dest, wheel["filename"])
+    want = wheel.get("size") or 0
+    # A wheel already on disk counts only if it is the right size: a download cut
+    # short leaves a file that looks present and is not, and the install then fails
+    # on a truncated zip with nothing to point at. Download to a .part file, check
+    # the length against the index's, and move it into place only when it is whole.
+    if os.path.exists(out) and (not want or os.path.getsize(out) == want):
+        continue
+    tmp = out + ".part"
+    last = None
+    for _attempt in range(4):
+        try:
+            with urllib.request.urlopen(wheel["url"], timeout=180) as r, open(tmp, "wb") as fh:
+                fh.write(r.read())
+            got = os.path.getsize(tmp)
+            if want and got != want:
+                raise IOError("short read: %d of %d bytes" % (got, want))
+            os.replace(tmp, out)
+            last = None
+            break
+        except Exception as exc:
+            last = exc
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+    if last is not None:
+        print("wheel-download: %s: %s" % (wheel["filename"], last), file=sys.stderr)
+        failed.append(wheel["filename"])
+if failed:
+    sys.exit(1)
+print("wheelhouse: %d wheel(s) in %s" % (len(seen), dest))
+PYEOF
+}
+
 # yamllint -- the yamllint rung in bin/idp-ci and .githooks/pre-commit refuse when it is missing,
 # rather than skipping. It is a Python package, so it gets its own venv under TOOLS_DIR (no
 # --user install into whichever python3 is first on PATH) and a symlink beside the binaries.
@@ -183,11 +305,24 @@ if _ver_ok yamllint "$YAMLLINT_VER"; then
   _ok "yamllint $YAMLLINT_VER"
 else
   _inst "yamllint $YAMLLINT_VER"
-  if python3 -m venv "$TOOLS_DIR/yamllint-venv" >/dev/null 2>&1 \
-     && "$TOOLS_DIR/yamllint-venv/bin/pip" install -q "yamllint==$YAMLLINT_VER" >/dev/null 2>&1; then
-    ln -sf "$TOOLS_DIR/yamllint-venv/bin/yamllint" "$TOOLS_DIR/yamllint"
-    _ok "yamllint $YAMLLINT_VER installed"
-  else _fail "yamllint install failed (python3 -m venv + pip install yamllint==$YAMLLINT_VER)"; fi
+  if python3 -m venv "$TOOLS_DIR/yamllint-venv" >/dev/null 2>&1; then
+    _PYT="$TOOLS_DIR/yamllint-venv/bin/python"
+    if ! "$_PYT" -m pip install -q "yamllint==$YAMLLINT_VER" >/dev/null 2>&1; then
+      # The index is unreachable. Fetch the wheels through the JSON API and install from
+      # the local wheelhouse with --no-index; same versions, same bytes, no index.
+      _fetch_wheels "$TOOLS_DIR/wheelhouse" "$($_PYT -c 'import sys; print(sys.implementation.cache_tag)')" \
+        "yamllint==$YAMLLINT_VER" >/dev/null 2>&1 \
+        && "$_PYT" -m pip install -q --no-index --find-links "$TOOLS_DIR/wheelhouse" "yamllint==$YAMLLINT_VER" >/dev/null 2>&1
+    fi
+    if "$_PYT" -m pip show yamllint >/dev/null 2>&1; then
+      ln -sf "$TOOLS_DIR/yamllint-venv/bin/yamllint" "$TOOLS_DIR/yamllint"
+      _ok "yamllint $YAMLLINT_VER installed"
+    else
+      _fail "yamllint install failed (pip install yamllint==$YAMLLINT_VER; the PyPI index was unreachable and the offline wheelhouse could not satisfy it)"
+    fi
+  else
+    _fail "yamllint install failed (python3 -m venv for $TOOLS_DIR/yamllint-venv)"
+  fi
 fi
 
 # python 3.12 -- the interpreter ci.yml's offline-gate runs bin/idp-ci on, with the same pip lines.
@@ -211,13 +346,26 @@ else
   _inst "python 3.12 gate venv (sovereign/requirements*.txt)"
   _req="$(mktemp)"
   grep -v '^-e ' "$_REPO/sovereign/requirements-dev.txt" | sed "s#^-r requirements.txt#-r $_REPO/sovereign/requirements.txt#" > "$_req"
+  # The pins the gate needs, as uv/pip arguments and as the list the offline wheel
+  # fetch resolves. The requirements file's own entries are included: their closure
+  # comes with them.
+  _PINS="check-jsonschema sqlite-utils pyyaml dagster dagster-webserver yamllint==$YAMLLINT_VER ruff==0.15.18 mkdocs mkdocs-techdocs-core"
+  _FPINS=$(grep -v '^-' "$_req" 2>/dev/null | sed 's/#.*//' | awk 'NF{print $1}' | tr '\n' ' ')
   if uv venv -q --allow-existing --python 3.12 "$_PYV" \
      && mkdir -p "$_WH" && uv pip install -q --python "$_PYV/bin/python" --find-links "$_WH" -r "$_req" \
           check-jsonschema sqlite-utils pyyaml dagster dagster-webserver "yamllint==$YAMLLINT_VER" \
           ruff==0.15.18 "mkdocs<2" mkdocs-techdocs-core; then
     find "$(uv cache dir)"/sdists-v* -name '*.whl' -exec cp -n {} "$_WH"/ \; 2>/dev/null
     printf '%s' "$_PYSTAMP" > "$_PYV/.idp-stamp"; _ok "python gate venv installed"
-  else _fail "python gate venv install failed (uv pip install into $_PYV)"; fi
+  elif _fetch_wheels "$_WH" "$($_PYV/bin/python -c 'import sys; print(sys.implementation.cache_tag)' 2>/dev/null || echo py3-none-any)" \
+          $_FPINS $_PINS >/dev/null 2>&1 \
+       && uv pip install -q --python "$_PYV/bin/python" --no-index --find-links "$_WH" $_FPINS $_PINS; then
+    # The PyPI index was unreachable. The same versions came from the JSON API instead,
+    # and the wheelhouse they landed in is the same --find-links directory the index
+    # route uses, so the next build starts from what this one downloaded.
+    find "$(uv cache dir)"/sdists-v* -name '*.whl' -exec cp -n {} "$_WH"/ \; 2>/dev/null
+    printf '%s' "$_PYSTAMP" > "$_PYV/.idp-stamp"; _ok "python gate venv installed (offline wheelhouse: the PyPI index was unreachable)"
+  else _fail "python gate venv install failed (uv pip install into $_PYV; the PyPI index was unreachable and the offline wheelhouse could not satisfy the pins)"; fi
   rm -f "$_req"
 fi
 
