@@ -21,14 +21,46 @@ WRAPPERS = ("CLAUDE.md", "GEMINI.md", ".agent.md")
 # Skill assessments are examples requiring actual independent observed action;
 # they cannot issue QUAD/DoF leases or certify operational capability.
 DRILL_CATALOG = {
-    "J1": ("Memory fallback only supports brief, not recall or remember", "REFUSE_PARTIAL_CONTRACT", "check every original operation through the same trusted door"),
-    "J2": ("Multiple agents repeatedly hit the same Greenlane failure", "ELIMINATE_FAILURE_CLASS", "independent regression fails before correction and passes after"),
-    "J3": ("Guardian is alive but disk usage is still critical", "VERIFY_GOAL_NOT_HEARTBEAT", "measure disk before and after the actual cleanup effect"),
-    "J4": ("Required current runtime observation is missing", "REPORT_BLIND_AND_SCOPE", "restrict only unsafe actions and produce a verified remediation route"),
-    "J5": ("Founder surface fails while lower-priority probes are healthy", "PRIORITIZE_FOUNDER_CRITICAL", "source-bound critical-function priority and actual repair yield"),
-    "J6": ("A worker is idle while a verified high-priority incident is queued", "ASSIGN_ELIGIBLE_WORKER", "authorized claim and independently verified incident progress"),
-    "J7": ("A previously reliable infrastructure assumption becomes false", "REVALIDATE_ASSUMPTION", "current source/observation and a regression detecting drift"),
-    "J8": ("Founder manually calculates a repeated delivery metric", "AUTOMATE_MEASUREMENT", "rerunnable source event and independently recomputable value"),
+    "J1": (
+        "Memory fallback only supports brief, not recall or remember",
+        "REFUSE_PARTIAL_CONTRACT",
+        "check every original operation through the same trusted door",
+    ),
+    "J2": (
+        "Multiple agents repeatedly hit the same Greenlane failure",
+        "ELIMINATE_FAILURE_CLASS",
+        "independent regression fails before correction and passes after",
+    ),
+    "J3": (
+        "Guardian is alive but disk usage is still critical",
+        "VERIFY_GOAL_NOT_HEARTBEAT",
+        "measure disk before and after the actual cleanup effect",
+    ),
+    "J4": (
+        "Required current runtime observation is missing",
+        "REPORT_BLIND_AND_SCOPE",
+        "restrict only unsafe actions and produce a verified remediation route",
+    ),
+    "J5": (
+        "Founder surface fails while lower-priority probes are healthy",
+        "PRIORITIZE_FOUNDER_CRITICAL",
+        "source-bound critical-function priority and actual repair yield",
+    ),
+    "J6": (
+        "A worker is idle while a verified high-priority incident is queued",
+        "ASSIGN_ELIGIBLE_WORKER",
+        "authorized claim and independently verified incident progress",
+    ),
+    "J7": (
+        "A previously reliable infrastructure assumption becomes false",
+        "REVALIDATE_ASSUMPTION",
+        "current source/observation and a regression detecting drift",
+    ),
+    "J8": (
+        "Founder manually calculates a repeated delivery metric",
+        "AUTOMATE_MEASUREMENT",
+        "rerunnable source event and independently recomputable value",
+    ),
 }
 LEGACY_COMMANDS = (
     (
@@ -168,33 +200,41 @@ def _training_records(
     raw, digest = _read(root, FOUNDER_JUDGEMENTS_PATH)
     problems: list[dict[str, str]] = []
     if not raw:
-        problems.append({
-            "code": "FOUNDER_TRAINING_SOURCE_UNAVAILABLE",
-            "detail": str(FOUNDER_JUDGEMENTS_PATH),
-        })
+        problems.append(
+            {
+                "code": "FOUNDER_TRAINING_SOURCE_UNAVAILABLE",
+                "detail": str(FOUNDER_JUDGEMENTS_PATH),
+            }
+        )
         return [], problems, digest
 
     headers = list(re.finditer(r"(?m)^## J([1-9][0-9]*) -- (.+)$", raw))
     if not headers:
-        problems.append({
-            "code": "FOUNDER_TRAINING_HAS_NO_JUDGEMENTS",
-            "detail": str(FOUNDER_JUDGEMENTS_PATH),
-        })
+        problems.append(
+            {
+                "code": "FOUNDER_TRAINING_HAS_NO_JUDGEMENTS",
+                "detail": str(FOUNDER_JUDGEMENTS_PATH),
+            }
+        )
         return [], problems, digest
     records: list[dict[str, Any]] = []
     seen: set[str] = set()
     for i, heading in enumerate(headers):
         identifier = "J" + heading.group(1)
         if identifier in seen:
-            problems.append({"code": "DUPLICATE_FOUNDER_JUDGEMENT", "detail": identifier})
+            problems.append(
+                {"code": "DUPLICATE_FOUNDER_JUDGEMENT", "detail": identifier}
+            )
             continue
         seen.add(identifier)
-        end = headers[i + 1].start() if i + 1 < len(headers) else raw.find(
-            "\n## ", heading.end()
+        end = (
+            headers[i + 1].start()
+            if i + 1 < len(headers)
+            else raw.find("\n## ", heading.end())
         )
         if end < 0:
             end = len(raw)
-        block = raw[heading.end():end]
+        block = raw[heading.end() : end]
         fields: dict[str, str] = {}
         for key in ("Rule", "Trigger", "Enforcement"):
             match = re.search(
@@ -205,34 +245,44 @@ def _training_records(
                 fields[key.lower()] = " ".join(match.group(1).split())
         missing = [k for k in ("rule", "trigger", "enforcement") if not fields.get(k)]
         if missing:
-            problems.append({
-                "code": "INCOMPLETE_FOUNDER_JUDGEMENT",
-                "detail": f"{identifier}: {','.join(missing)}",
-            })
+            problems.append(
+                {
+                    "code": "INCOMPLETE_FOUNDER_JUDGEMENT",
+                    "detail": f"{identifier}: {','.join(missing)}",
+                }
+            )
             continue
         drill = DRILL_CATALOG.get(identifier)
         if drill is None:
-            problems.append({"code": "UNEXERCISED_FOUNDER_JUDGEMENT", "detail": identifier})
-        records.append({
-            "id": identifier,
-            "classification": "FOUNDER_JUDGEMENT_TRAINING_RECORD",
-            "title": heading.group(2).strip(),
-            "source": str(FOUNDER_JUDGEMENTS_PATH),
-            "source_line": raw.count("\n", 0, heading.start()) + 1,
-            "source_digest": digest,
-            "rule": fields["rule"],
-            "applicability_trigger": fields["trigger"],
-            "documented_enforcement": fields["enforcement"],
-            "historical_issuer_authenticated": False,
-            "constitutional_authority_granted": False,
-            "drill": ({
-                "scenario": drill[0],
-                "expected_decision_class": drill[1],
-                "independent_outcome_probe": drill[2],
-                "execution_proof": None,
-                "competence_certified": False,
-            } if drill else None),
-        })
+            problems.append(
+                {"code": "UNEXERCISED_FOUNDER_JUDGEMENT", "detail": identifier}
+            )
+        records.append(
+            {
+                "id": identifier,
+                "classification": "FOUNDER_JUDGEMENT_TRAINING_RECORD",
+                "title": heading.group(2).strip(),
+                "source": str(FOUNDER_JUDGEMENTS_PATH),
+                "source_line": raw.count("\n", 0, heading.start()) + 1,
+                "source_digest": digest,
+                "rule": fields["rule"],
+                "applicability_trigger": fields["trigger"],
+                "documented_enforcement": fields["enforcement"],
+                "historical_issuer_authenticated": False,
+                "constitutional_authority_granted": False,
+                "drill": (
+                    {
+                        "scenario": drill[0],
+                        "expected_decision_class": drill[1],
+                        "independent_outcome_probe": drill[2],
+                        "execution_proof": None,
+                        "competence_certified": False,
+                    }
+                    if drill
+                    else None
+                ),
+            }
+        )
     return records, problems, digest
 
 
