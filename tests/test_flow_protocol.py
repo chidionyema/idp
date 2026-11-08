@@ -130,5 +130,10 @@ def test_flow_has_one_canonical_agent_contract_and_no_new_yaml_intent_requiremen
     assert "FLOW — Fractal Lifecycle of Operational Work" in agents
     assert "FLOW — Fractal Lifecycle of Operational Work" in protocol
     assert "To add a new capability: write `~/.estate/intents/" not in agents
+    assert len(agents.splitlines()) <= 300, "canonical bootstrap must pass agents-md-gate"
+    assert agents.count("```toml") == 1, "single live TOML authority"
+    assert "AGENTS-pre-FLOW-2026-11-08.md" in agents
+    archived = (ROOT / "docs" / "archive" / "AGENTS-pre-FLOW-2026-11-08.md").read_text()
+    assert "## 11. Living policy" in archived, "historical laws must be preserved"
     for phrase in ("600", "PREVENTION_GAP", "Founder", "idempotency", "Temporal"):
         assert phrase in protocol
