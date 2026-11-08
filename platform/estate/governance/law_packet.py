@@ -4,6 +4,7 @@ This module DOES NOT grant identity, DoF, execution, approval or completion.
 It refuses ambiguous legacy instructions rather than silently choosing their precedence.
 The actual law enforcer remains governance.registry and the trusted action doors.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -17,22 +18,47 @@ LAW_PATH = Path("platform/estate/governance/laws.yaml")
 AGENTS_PATH = Path("AGENTS.md")
 WRAPPERS = ("CLAUDE.md", "GEMINI.md", ".agent.md")
 LEGACY_COMMANDS = (
-    ("LEGACY_INTENT_MANDATE", re.compile(r"(?im)^every action the agent performs goes through an \*\*intent YAML\*\*")),
-    ("LEGACY_INTENT_ONLY_RULE", re.compile(r"(?im)^\*\*rule: if an action is not a YAML intent")),
-    ("LEGACY_INTENT_CREATION", re.compile(r"(?im)^to add a new capability: write .*intents/.*\.yaml")),
-    ("STATIC_ESTATE_STATUS", re.compile(r"(?im)^## 13\. the estate's state right now\s*$")),
+    (
+        "LEGACY_INTENT_MANDATE",
+        re.compile(
+            r"(?im)^every action the agent performs goes through an \*\*intent YAML\*\*"
+        ),
+    ),
+    (
+        "LEGACY_INTENT_ONLY_RULE",
+        re.compile(r"(?im)^\*\*rule: if an action is not a YAML intent"),
+    ),
+    (
+        "LEGACY_INTENT_CREATION",
+        re.compile(r"(?im)^to add a new capability: write .*intents/.*\.yaml"),
+    ),
+    (
+        "STATIC_ESTATE_STATUS",
+        re.compile(r"(?im)^## 13\. the estate's state right now\s*$"),
+    ),
 )
-STRUCTURAL_CHECKS = frozenset((
-    "grep_present", "grep_absent", "file_exists", "file_absent", "yaml_key",
-    "yaml_key_present", "workflow_strict",
-))
+STRUCTURAL_CHECKS = frozenset(
+    (
+        "grep_present",
+        "grep_absent",
+        "file_exists",
+        "file_absent",
+        "yaml_key",
+        "yaml_key_present",
+        "workflow_strict",
+    )
+)
 
 
 def _read(root: Path, relative: Path) -> tuple[str, str]:
     """No fallback and no implicit creation if a source is missing."""
     path = root / relative
     # A governance source may never silently dereference an untrusted symlink.
-    if path.is_symlink() or any(parent.is_symlink() for parent in path.parents if parent != root and root in parent.parents):
+    if path.is_symlink() or any(
+        parent.is_symlink()
+        for parent in path.parents
+        if parent != root and root in parent.parents
+    ):
         return "", ""
     try:
         content = path.read_bytes()
@@ -54,12 +80,19 @@ def _law_rows(raw: str) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     problems: list[dict[str, str]] = []
     try:
         import yaml  # already used by governance.registry; no new service
+
         data = yaml.safe_load(raw) if raw else None
     except (ImportError, ValueError, TypeError) as exc:
         data = None
         problems.append({"code": "LAW_SOURCE_UNREADABLE", "detail": type(exc).__name__})
-    if not isinstance(data, dict) or not isinstance(data.get("laws"), list) or not data["laws"]:
-        problems.append({"code": "LAW_SOURCE_MISSING_OR_EMPTY", "detail": str(LAW_PATH)})
+    if (
+        not isinstance(data, dict)
+        or not isinstance(data.get("laws"), list)
+        or not data["laws"]
+    ):
+        problems.append(
+            {"code": "LAW_SOURCE_MISSING_OR_EMPTY", "detail": str(LAW_PATH)}
+        )
         return [], problems
     out: list[dict[str, Any]] = []
     ids: set[str] = set()
@@ -68,7 +101,9 @@ def _law_rows(raw: str) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
             problems.append({"code": "INVALID_LAW", "detail": str(i)})
             continue
         identifier = law.get("id")
-        if not isinstance(identifier, str) or not re.fullmatch(r"GOV-[0-9]+", identifier):
+        if not isinstance(identifier, str) or not re.fullmatch(
+            r"GOV-[0-9]+", identifier
+        ):
             problems.append({"code": "INVALID_LAW_ID", "detail": str(identifier)})
             continue
         if identifier in ids:
@@ -81,21 +116,30 @@ def _law_rows(raw: str) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
         if not kind or not isinstance(falsifier, dict):
             problems.append({"code": "UNDECIDABLE_LAW", "detail": identifier})
         link = law.get("founder_law")
-        if link and (not isinstance(link, str) or not re.fullmatch(r"LAW-[0-9]+", link)):
+        if link and (
+            not isinstance(link, str) or not re.fullmatch(r"LAW-[0-9]+", link)
+        ):
             problems.append({"code": "BAD_FOUNDER_LAW_REFERENCE", "detail": identifier})
         # GOV controls are not the original founding constitution. Source strings
         # are provenance *claims* until independently authenticated/ratified.
-        out.append({
-            "id": identifier, "classification": "ESTATE_ENFORCEMENT_CONTROL",
-            "founder_law_ref": link if isinstance(link, str) else None,
-            "claimed_source": str(law.get("source", "")),
-            "issuer_authenticated_by_packet": False,
-            "check_type": kind,
-            "check_grade": "STRUCTURAL_ONLY" if kind in STRUCTURAL_CHECKS else "EXECUTION_NOT_RUN",
-            "falsifier_declared": isinstance(falsifier, dict),
-            "runtime_enforcement_verified": False,
-            "training_scenario": "FALSIFY_AT_REAL_EFFECT_DOOR" if falsifier else "MISSING_FALSIFIER",
-        })
+        out.append(
+            {
+                "id": identifier,
+                "classification": "ESTATE_ENFORCEMENT_CONTROL",
+                "founder_law_ref": link if isinstance(link, str) else None,
+                "claimed_source": str(law.get("source", "")),
+                "issuer_authenticated_by_packet": False,
+                "check_type": kind,
+                "check_grade": "STRUCTURAL_ONLY"
+                if kind in STRUCTURAL_CHECKS
+                else "EXECUTION_NOT_RUN",
+                "falsifier_declared": isinstance(falsifier, dict),
+                "runtime_enforcement_verified": False,
+                "training_scenario": "FALSIFY_AT_REAL_EFFECT_DOOR"
+                if falsifier
+                else "MISSING_FALSIFIER",
+            }
+        )
     return out, problems
 
 
@@ -110,24 +154,63 @@ def compile_packet(root: Path) -> dict[str, Any]:
     laws, laws_digest = _read(root, LAW_PATH)
     problems: list[dict[str, str]] = []
     if not agents:
-        problems.append({"code": "AGENT_ENTRYPOINT_UNAVAILABLE", "detail": str(AGENTS_PATH)})
+        problems.append(
+            {"code": "AGENT_ENTRYPOINT_UNAVAILABLE", "detail": str(AGENTS_PATH)}
+        )
     if agents:
         fence = chr(96) * 3
-        blocks = re.findall(r"(?ms)^" + re.escape(fence) + r"toml\s*\n(.*?)^" + re.escape(fence) + r"\s*$", agents)
+        blocks = re.findall(
+            r"(?ms)^"
+            + re.escape(fence)
+            + r"toml\s*\n(.*?)^"
+            + re.escape(fence)
+            + r"\s*$",
+            agents,
+        )
         if len(blocks) != 1:
-            problems.append({"code": "EMBEDDED_RUNTIME_POLICY_MISSING", "detail": "sovereign/policy.py requires exactly one closed TOML block"})
+            problems.append(
+                {
+                    "code": "EMBEDDED_RUNTIME_POLICY_MISSING",
+                    "detail": "sovereign/policy.py requires exactly one closed TOML block",
+                }
+            )
         else:
             try:
                 import tomllib
+
                 data = tomllib.loads(blocks[0])
-                if not isinstance(data, dict) or not all(k in data for k in ("capabilities", "fsm", "budget", "cost", "routing", "merge", "invariants", "jev")):
-                    problems.append({"code": "INCOMPLETE_RUNTIME_POLICY", "detail": "missing required machine policy sections"})
+                if not isinstance(data, dict) or not all(
+                    k in data
+                    for k in (
+                        "capabilities",
+                        "fsm",
+                        "budget",
+                        "cost",
+                        "routing",
+                        "merge",
+                        "invariants",
+                        "jev",
+                    )
+                ):
+                    problems.append(
+                        {
+                            "code": "INCOMPLETE_RUNTIME_POLICY",
+                            "detail": "missing required machine policy sections",
+                        }
+                    )
             except (ImportError, ValueError) as exc:
-                problems.append({"code": "MALFORMED_RUNTIME_POLICY", "detail": type(exc).__name__})
+                problems.append(
+                    {"code": "MALFORMED_RUNTIME_POLICY", "detail": type(exc).__name__}
+                )
     if agents:
         for code, pattern in LEGACY_COMMANDS:
             if pattern.search(agents):
-                problems.append({"code": code, "detail": "active AGENTS.md instruction is superseded by IDP #7794"})
+                problems.append(
+                    {
+                        "code": code,
+                        "detail": "active AGENTS.md instruction is superseded by IDP #7794",
+                    }
+                )
     wrappers: dict[str, str] = {}
     for name in WRAPPERS:
         p = root / name
@@ -135,7 +218,11 @@ def compile_packet(root: Path) -> dict[str, Any]:
             wrappers[name] = "ABSENT"
             continue
         content, _ = _read(root, Path(name))
-        wrappers[name] = "POINTER_ONLY" if _active_wrapper(name, content) else "CONFLICTING_SECOND_INSTRUCTION_SURFACE"
+        wrappers[name] = (
+            "POINTER_ONLY"
+            if _active_wrapper(name, content)
+            else "CONFLICTING_SECOND_INSTRUCTION_SURFACE"
+        )
         if wrappers[name] != "POINTER_ONLY":
             problems.append({"code": "DUPLICATE_HARNESS_POLICY", "detail": name})
     rows, law_problems = _law_rows(laws)
@@ -144,11 +231,16 @@ def compile_packet(root: Path) -> dict[str, Any]:
     # enforcement, founder assent, provider health and admission remain external.
     status = "CONFLICTED" if problems else "SOURCE_CONSISTENT_UNVERIFIED_RUNTIME"
     return {
-        "schema": SCHEMA, "status": status, "scope": "chidionyema/idp",
+        "schema": SCHEMA,
+        "status": status,
+        "scope": "chidionyema/idp",
         "canonical_entrypoint": "AGENTS.md",
         "source_digests": {"AGENTS.md": agents_digest, str(LAW_PATH): laws_digest},
         "runtime_machine_policy": "AGENTS.md#toml (must migrate transactionally before shrink)",
-        "external_jurisdictions": {"argon": "NOT_FEDERATED", "argon-sync": "NOT_FEDERATED"},
+        "external_jurisdictions": {
+            "argon": "NOT_FEDERATED",
+            "argon-sync": "NOT_FEDERATED",
+        },
         "law_category_meaning": {
             "FOUNDER_LAW": "Authenticated founder-issued directive (none authenticated by this read-only packet)",
             "ESTATE_CONSTITUTION": "Ratified estate-wide invariant (not inferred from GOV identifiers)",
@@ -158,7 +250,8 @@ def compile_packet(root: Path) -> dict[str, Any]:
             "GENERAL_PRINCIPLE": "Evidence-backed, non-authorizing reasoning guidance",
             "HISTORY": "Superseded provenance, never privileged authority",
         },
-        "laws": rows, "wrappers": wrappers,
+        "laws": rows,
+        "wrappers": wrappers,
         "problems": sorted(problems, key=lambda x: (x["code"], x["detail"])),
         "required_next_actions": [
             "Authenticate agent principal through QUAD / existing trusted gateway",
@@ -167,7 +260,8 @@ def compile_packet(root: Path) -> dict[str, Any]:
             "Verify real enforcement and restore path; never infer from this packet",
             "Train against applicable falsifiers before privilege promotion",
         ],
-        "is_admission_decision": False, "grants_execution": False,
+        "is_admission_decision": False,
+        "grants_execution": False,
         "independent_law_effect_proof": "NOT_EXECUTED",
         "runtime_freshness": "BLIND",
     }
