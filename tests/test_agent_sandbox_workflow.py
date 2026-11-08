@@ -423,7 +423,7 @@ echo 'SECOND_PROVIDER_EDIT' >> a.txt
 
 
 def test_legion_fallback_is_not_used_without_a_second_provider_key(tmp_path):
-    body = FAKE["pi"] + 'echo "private-rate-limit-sentinel 429"\\nexit 1\\n'
+    body = FAKE["pi"] + 'echo "private-rate-limit-sentinel 429"\nexit 1\n'
     result, out = _agent_step(
         tmp_path, "gemini", body,
         {"LEGION_FAILOVER": "1", "MINIMAX_API_KEY": ""},
@@ -436,7 +436,7 @@ def test_legion_fallback_is_not_used_without_a_second_provider_key(tmp_path):
 
 
 def test_manual_gemini_failure_does_not_silently_switch_providers(tmp_path):
-    body = FAKE["pi"] + 'echo "private-no-failover"\\nexit 1\\n'
+    body = FAKE["pi"] + 'echo "private-no-failover"\nexit 1\n'
     result, out = _agent_step(tmp_path, "gemini", body, {"LEGION_FAILOVER": "0"})
     assert result.returncode == 1
     assert "fallback=minimax" not in result.stdout
