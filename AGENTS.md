@@ -304,6 +304,21 @@ LOST / PARTIAL / REMOVED / LANDED, plus unticked checkpoints in open issues. Ful
 Every model call the estate makes goes to the **cloud router** — `https://llm.${ESTATE_ZONE}`
 (`llm.mumchimp.com`). That is the default route, and it is the route new work targets.
 
+**Canonical router identity.** The words below are not interchangeable:
+
+- `estate.model-router` — the LiteLLM inference gateway at `https://llm.mumchimp.com/v1`.
+  It is the only authoritative model router. Every harness selects this by default.
+- `estate.control-router` — the Rust sovereign-router daemon. It governs local route/control
+  decisions; it is not a model endpoint and never replaces `estate.model-router`.
+- `estate.laptop-fallback` — Mac launchd LiteLLM front/back on `127.0.0.1:4000` and
+  `127.0.0.1:4002`. It is a temporary fallback, never the canonical route.
+- Vendor endpoints (DeepSeek, Z.AI, Google, MiniMax and others) are providers, not estate
+  routers. A harness may use one only as an explicitly selected degraded fallback.
+
+The current contract and release version are in `catalog/router-authority.v1.json`. A client
+must not claim router health, model presence or route authority without reading that contract
+and the live endpoint. A route that omits its authority version is `UNKNOWN`, not healthy.
+
 The **laptop router** — `http://127.0.0.1:4000` (`bin/litellm-local`) — is a **fallback**. It
 exists so a cluster outage does not disable every agent, and it stays. It is not the default, and
 it is not where new capability is built.

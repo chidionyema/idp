@@ -295,7 +295,10 @@ def require_idle_command_queue(compartment: str, instance_id: str) -> None:
                 ],
                 what=f"reading {lifecycle} OCI commands for {instance_id}",
             )
-            commands = json.loads(raw)
+            # OCI prints nothing for an empty list, and an empty body is exactly the healthy
+            # state this guard wants. Parsing "" raised JSONDecodeError and reported BLIND,
+            # which blocked every repair while the queue was idle.
+            commands = json.loads(raw) if raw.strip() else []
         except (TransportError, json.JSONDecodeError, TypeError) as exc:
             raise TransportError(
                 f"BLIND unable to attest {lifecycle} OCI command queue on "

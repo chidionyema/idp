@@ -1,0 +1,84 @@
+{
+  "schemaVersion": "1.0.0",
+  "contractId": "estate.router-authority",
+  "release": {
+    "id": "router-2026.11.08.1",
+    "version": "1.0.0",
+    "createdAt": "2026-11-08T05:45:00Z",
+    "state": "candidate"
+  },
+  "canonicalModelRouter": "estate.model-router",
+  "routers": [
+    {
+      "id": "estate.model-router",
+      "role": "model-inference",
+      "authoritative": true,
+      "implementation": "litellm",
+      "deployment": "oci:estate-recovery",
+      "baseUrl": "https://llm.mumchimp.com/v1",
+      "healthUrl": "https://llm.mumchimp.com/health/liveliness",
+      "clientEnvironment": {
+        "openai": "OPENAI_BASE_URL",
+        "anthropic": "ANTHROPIC_BASE_URL"
+      },
+      "configuration": "platform/llm/config.yaml",
+      "releaseVersion": "1.0.0",
+      "releaseId": "router-2026.11.08.1"
+    },
+    {
+      "id": "estate.control-router",
+      "role": "route-control",
+      "authoritative": false,
+      "implementation": "rust:sovereign-router",
+      "modelEndpoint": false,
+      "rule": "May select or constrain routes. May not serve model completions and may not override estate.model-router identity."
+    },
+    {
+      "id": "estate.laptop-fallback",
+      "role": "model-inference-fallback",
+      "authoritative": false,
+      "implementation": "litellm",
+      "deployment": "macos:launchd",
+      "baseUrl": "http://127.0.0.1:4000/v1",
+      "backendUrl": "http://127.0.0.1:4002",
+      "rule": "Usable only after the cloud router is measured unavailable. It must never be reported as the canonical router."
+    }
+  ],
+  "clients": [
+    {
+      "id": "claude-code",
+      "router": "estate.model-router",
+      "model": "glm",
+      "configuration": "~/.estate/harness/cc/settings.json"
+    },
+    {
+      "id": "claude-desktop",
+      "router": "estate.model-router",
+      "model": "glm",
+      "configuration": "~/Library/Application Support/Claude/ccd-session-presets.json"
+    },
+    {
+      "id": "dsh-web",
+      "router": "estate.model-router",
+      "model": "glm",
+      "configuration": "~/.dsh/profiles/web/cordis.patch.yml"
+    },
+    {
+      "id": "pi",
+      "router": "estate.model-router",
+      "fallback": "deepseek-direct",
+      "configuration": "~/.pi/agent/models.json"
+    },
+    {
+      "id": "opencode",
+      "router": "estate.model-router",
+      "configuration": "~/.config/opencode/opencode.jsonc"
+    }
+  ],
+  "invariants": [
+    "Only estate.model-router is authoritative for model inference.",
+    "A provider endpoint is not a router.",
+    "A missing or unknown schemaVersion, releaseId or rules hash makes the client read-only.",
+    "Founder and agent surfaces must show the canonical router ID, release version and live health together."
+  ]
+}

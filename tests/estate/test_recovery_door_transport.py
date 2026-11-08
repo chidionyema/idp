@@ -643,6 +643,19 @@ def test_unreadable_oci_command_queue_is_blind(monkeypatch):
         helper.require_idle_command_queue("compartment", "instance")
 
 
+def test_empty_oci_command_queue_is_idle(monkeypatch):
+    """OCI emits an empty body, not `[]`, when a lifecycle has no commands."""
+    calls = []
+
+    def empty(args, *, what):
+        calls.append(args)
+        return ""
+
+    monkeypatch.setattr(helper, "_oci", empty)
+    helper.require_idle_command_queue("compartment", "instance")
+    assert len(calls) == 2
+
+
 def test_idle_oci_queue_preflight_uses_exact_instance_and_read_only_list(monkeypatch):
     calls = []
 

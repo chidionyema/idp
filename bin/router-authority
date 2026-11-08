@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""Print the canonical estate router identity and, with --check, its live health."""
+
+from __future__ import annotations
+
+import json
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+CONTRACT = ROOT / "catalog" / "router-authority.v1.json"
+
+
+def main(argv: list[str]) -> int:
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    canonical = next(
+        row
+        for row in contract["routers"]
+        if row["id"] == contract["canonicalModelRouter"]
+    )
+    if "--check" in argv:
+        try:
+            request = urllib.request.Request(
+                canonical["healthUrl"],
+                headers={"User-Agent": "estate-router-authority/1.0"},
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                status = response.status
+                body = response.read(200).decode("utf-8", "replace").strip()
+        except (OSError, urllib.error.URLError) as exc:
+            print(f"FAIL    router-authority  {canonical['id']} health unreadable: {exc}")
+            return 1
+        if status != 200:
+            print(f"FAIL    router-authority  {canonical['id']} health HTTP {status}: {body}")
+            return 1
+        print(f"ok      router-authority  {canonical['id']} health HTTP 200")
+
+    print(f"canonical={canonical['id']}")
+    print(f"release={contract['release']['id']} version={contract['release']['version']}")
+    print(f"endpoint={canonical['baseUrl']}")
+    for router in contract["routers"]:
+        print(
+            f"router={router['id']} role={router['role']} "
+            f"authoritative={'true' if router['authoritative'] else 'false'}"
+        )
+    print("invariant=provider endpoints are not routers")
+    print("invariant=control and laptop fallbacks cannot claim model authority")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

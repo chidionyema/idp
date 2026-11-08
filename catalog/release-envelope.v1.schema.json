@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://estate.local/schema/release-envelope.v1.schema.json",
+  "title": "Estate component release envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractId",
+    "schemaVersion",
+    "release"
+  ],
+  "properties": {
+    "contractId": {
+      "type": "string",
+      "pattern": "^estate\\.[a-z0-9][a-z0-9.-]*$"
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "sourceSha",
+        "artifactDigest",
+        "configDigest",
+        "deployedAt",
+        "healthUrl",
+        "authority"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"
+        },
+        "sourceSha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "artifactDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "configDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "deployedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "healthUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "authority": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}
