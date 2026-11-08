@@ -5,6 +5,18 @@ the gates and the hooks, which refuse.
 
 ---
 
+## FLOW — Fractal Lifecycle of Operational Work (binding operating DNA; 2026-11-08)
+
+**FLOW is the canonical instruction-to-yield protocol.** Read `docs/protocols/FLOW.md` before planning or dispatching. It applies recursively to every instruction, child task, incident, remediation, governance correction and self-improvement. Each node has immutable identity, accountable owner, authorized next transition, progress clock, independent evidence, durable continuation and a verified effect. A parent cannot declare success while any required child has not produced operational evidence.
+
+**The algorithm, not an exhortation:** trusted instruction → capability/context/memory lookup → immutable plan/BDD/claim → existing Temporal + authorized action doors → independent live-effect verification → immutable receipt + Founder Surface/ Otto readback → learning/FCR adoption → CLOSED. Failures enter one existing incident/FCR recovery loop. At genuine 600-second stagnation, reconcile and recover using the mapped, fenced, capacity-aware safe action without founder mediation. A known failure class is *not investigated twice*: load its proven correction, otherwise diagnose once, create a regression falsifier, fix its root cause and verify adoption on every affected surface. Recurrence means **PREVENTION_GAP**, not another identical retry or a new ticket theatre. Never report a commit, CI run, dispatch, documentation, or model claim as operational yield.
+
+**One machine, one truth:** Temporal owns running workflow state; IDP #7771 owns zero-touch mission completion, #7452 the FCR prevention contract, #7790 continuity, #7794 agent admission; Argon #62/#47 own founder visibility and instruction projection. Reuse existing incident loop, claim/DoF/Greenlane/Flux, memory, receipts and observability. Do **not** create a second scheduler, intent YAML catalogue, ledger, agent-private law, worker, peer bus or dashboard. Every read-only/opaque agent gets the same bounded context and cannot impersonate authority. The Founder Surface must show exact stage, real progress age, parent/child DAG, SHA, evidence freshness, recovery class/action/owner, actual yield and alerts for its own blind spots. No founder manual orchestration.
+
+**Enforcement is phased by live proof:** observe and reconcile first; introduce mandatory controls only after independently proving an authorized remediation path and rollback. Essential security, separate reviewers and restricted effect doors remain enforced at all times. Missing evidence is BLIND, never a green success. `AGENTS.md` is the sole canonical cross-agent instruction file; vendor-specific files are adapters, not alternate laws.
+
+---
+
 ## Programme of record and the tenets
 
 The estate's programme of record is `docs/epics/2026-10-25-estate-master-epic.md`. Every agent reads
@@ -256,31 +268,11 @@ the same change. The rule is not "never build a second thing" - it is "never lea
 
 ---
 
-## 7. Execution — intents only
+## 7. Execution — trusted FLOW doors; legacy YAML cataloguing is superseded
 
-Every action the agent performs goes through an **intent YAML** in `~/.estate/intents/`.
+The estate has existing `estate-execute` and `estate_mcp` compatibility doors. **Do not remove an existing working door until its replacement has operational proof**, and do not bypass it. However, the earlier rule that *every future capability must be a new handwritten YAML intent* is **superseded by IDP #7794 and FLOW**. The old handwritten `platform/estate/intents/*` library is **not** a workflow engine, not canonical capability discovery, and must not be expanded. New typed automations compile from executable definitions to the *existing* Temporal sovereign worker/task queue, with the same authenticated ingress, immutable plan, DoF/Greenlane authorization, receipt/independent verification, and Founder Surface projection.
 
-```
-~/.estate/              # NOT a git repo — lives outside version control
-  bin/estate-execute    # executor binary
-  intents/*.yaml        # 24 intents: shell.parse, git.branch, ci.run, etc.
-  libexec/*.sh, *.py    # helpers: shell-suggest.py, shell-verify.py, etc.
-
-~/Documents/code/idp/mcp/plugins/estate_mcp.py   # MCP plugin (3 tools only)
-  estate_list   — list all available intents
-  estate_show   — show args for one intent
-  estate_invoke — run an intent
-```
-
-**Rule: if an action is not a YAML intent, the agent cannot perform it.**
-
-`estate_executor.py` (13 raw tools) is deleted. `estate_simulate.py` is deleted.
-Only `estate_mcp.py` remains — it wraps the intent executor.
-
-To add a new capability: write `~/.estate/intents/<name>.yaml`, commit to idp.
-To invoke: `estate_invoke { intent: <name> }` via MCP, or `estate-execute <name>` directly.
-
-Design spec: `docs/specs/2026-09-24-estate-agent-enforcement-platform.md`
+Use the established executor and registry for capabilities that currently exist. Treat as `CANDIDATE` any newer execution capability whose code is unmerged, whose worker is undeployed, or whose live issuer/probe cannot be independently observed. Never infer production authority from documentation, a fixture or a workflow draft. See `docs/protocols/FLOW.md` and IDP #7794/#7771.
 
 **The estate's one skill layer.** The twelve UI/design/research/architecture capabilities
 the founder named live once, in `platform/estate/skills/`, and they reach an agent through
