@@ -4,10 +4,10 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 118,
-    "layer": 253,
+    "layer": 254,
     "service": 121,
     "tool": 476,
-    "workflow": 95
+    "workflow": 96
   },
   "records": [
     {
@@ -7477,6 +7477,54 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/governance/freeze.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-governance-law_packet",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "Read-only governance/onboarding projection over IDP's existing authoritative sources.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/governance/law_packet.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -29540,6 +29588,7 @@
           "--falsify",
           "--head",
           "--json",
+          "--onboarding-packet",
           "--proof-required",
           "--self-test",
           "--spec-trace"
@@ -29569,7 +29618,8 @@
       "consumers": [
         "cap:tool/estate-receipt",
         "cap:tool/estate-runtime-sync",
-        "cap:workflow/gha-ci"
+        "cap:workflow/gha-ci",
+        "cap:workflow/gha-law-packet-preflight"
       ],
       "cost": {
         "estimate": null,
@@ -57467,6 +57517,65 @@
         "proof",
         "metrics",
         "dependencies"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:workflow/gha-law-packet-preflight",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "law-packet-preflight -- the GitHub Actions workflow law-packet-preflight.yml.",
+      "contract": {
+        "inputs": [
+          "push"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/law-packet-preflight.yml",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-law-gate",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
