@@ -62,9 +62,21 @@ touched() {
   return 1
 }
 # crew#584 CP-C (founder playbook Phase 2): IDP_CI_FAST=1 is the fast gate -- rungs 1, 1b, 1c and
-# ruff, under 60 s, no docker/conftest/helm. .github/workflows/fast-gate.yml runs it and every
+# ruff, no docker/conftest/helm. .github/workflows/fast-gate.yml runs it and every
 # heavy job (offline-gate, bdd, image builds, the drills) needs it green first.
+#
+# ITS BUDGET IS DECLARED, AND IT IS SMALLER THAN THE BUDGET THAT CONTAINS IT. The fast gate
+# runs inside the pre-push hook, which runs inside the lane-submit push step, which is capped
+# at 50 s (platform/estate/intents/lane-submit.yaml). A gate that declares 60 s inside a 50 s
+# door cannot be satisfied by a correct machine: measured 2026-11-08, a two-file Python change
+# took 51.1 s in this gate, the door killed the push mid-gate, and the retry paid the identical
+# 51.1 s again. Under parallel agent sessions that repeats once per lane -- the friction every
+# session inherits. 30 s is the honest number for the scoped gate (measured 24 s on a two-file
+# Python change after the scoping below), and it leaves the push step room for the claim gate
+# and the push itself. The relationship is enforced by tests/test_prepush_gate_fits_its_budget.py.
 FAST="${IDP_CI_FAST:-0}"
+IDP_CI_FAST_BUDGET_S="${IDP_CI_FAST_BUDGET_S:-30}"
+export IDP_CI_FAST_BUDGET_S
 # --check: syntax gate. Parse-only checks on every tracked file -- no execution,
 # no side effects, no secrets. Mathematically impossible for bad syntax to reach CI
 # if this passes. Layers: pre-push | CI --check | CI full run. crew#1194.
@@ -361,6 +373,14 @@ fi
 if ! "$MPY" -c 'import sys; sys.exit(sys.version_info[:2] < (3, 12))' 2>/dev/null; then
   say "FAIL  python   $("$MPY" --version 2>&1) is not CI's 3.12 -- run bin/idp-install-deps"; fail=1
 fi
+# The fan-out flag, defined HERE so the proof suites below can use it. It used to be defined at
+# the bdd block, hundreds of lines later, which is why the schema rung's proof ran serially (its
+# own comment blamed `set -u` and the undefined variable). The law was never "no fan-out": it is
+# "no fan-out without xdist", and a missing xdist is serial, never a skip.
+# It is named XD_MP, not XD: the bdd block below derives its own XD from BDD_PY, which is NOT
+# always this interpreter (it falls back to the system python3 when pytest-bdd is missing), and a
+# fan-out flag that does not match the interpreter running the suite is an error, not a speed-up.
+XD_MP=""; "$MPY" -c 'import xdist' >/dev/null 2>&1 && XD_MP="-n auto"
 
 # 1f. One bound, at the door (bin/timeout-budget). Wall-clock time used to be bounded in three places
 #     at once -- the executor ceiling, estate-execute's per-step default (120 against a 100s door, so
@@ -372,7 +392,12 @@ fi
 #     which may only shrink, so the estate converges instead of freezing the habit in place.
 #     Runs on $MPY: the gate parses the intent library with PyYAML, and the system python3 has none.
 if [ -x "$IDP/bin/timeout-budget" ]; then
-  if out=$("$MPY" "$IDP/bin/timeout-budget" 2>&1); then
+  # Scoped like the rungs above it: this rung refuses a NEW inner bound, and a new inner
+  # bound can only arrive in an intent, in the gate itself, or in its baseline. Measured
+  # 2026-11-08: 7 s of the fast gate's 51 s went here on a diff that touched no intent.
+  if ! touched platform/estate/intents/ bin/timeout-budget bin/timeout-budget.baseline; then
+    say "ok    budget   no intent, gate or baseline change against ${IDP_CI_BASE:-main}"
+  elif out=$("$MPY" "$IDP/bin/timeout-budget" 2>&1); then
     say "ok    budget   $(printf '%s' "$out" | tail -1 | sed 's/^timeout-budget: //')"
   else
     say "FAIL  budget   a second wall-clock bound, or a budget no door can honour"
@@ -460,9 +485,23 @@ else
          --baseline "$IDP/docs/research/2026-10-25-constrained-formats.baseline.json" 2>&1); sc_rc=$?
   # No $XD here: this rung sits before xdist's arguments are defined, and `XD` under `set -u`
   # refused the run on 2026-10-25 (line 406: XD: unbound variable) instead of running the proof.
-  sp=$("$MPY" -m pytest -q -p no:cacheprovider "$IDP/tests/test_schema_conformance.py" 2>&1); sp_rc=$?
+  # THE PROOF PROVES THE RATCHET, NOT THE LANE. bin/schema-conformance is the checker; an intent
+  # a lane adds is what the ratchet GRADES, and the ratchet still runs for every one of them (it
+  # is the guard above, which stays wide). The proof suite proves the CHECKER is sound, so it is
+  # owed exactly when the checker, its own proof, or its baseline changed. Measured 2026-11-08:
+  # it costs 29 s serially (36 subprocess-spawning tests) and it was re-run for every lane that
+  # touched an intent -- 29 s of a gate that had to fit a 50 s push step. Scoping it does not
+  # make it theatre: it runs whenever the thing it proves changes, and the ratchet it proves
+  # still runs on every intent.
+  if touched bin/schema-conformance tests/test_schema_conformance.py \
+        docs/research/2026-10-25-constrained-formats.baseline.json; then
+    sp=$("$MPY" -m pytest -q -p no:cacheprovider $XD_MP "$IDP/tests/test_schema_conformance.py" 2>&1); sp_rc=$?
+    sp_note="$(printf '%s' "$sp" | grep -oE '[0-9]+ passed' | head -1) on the gate's own proof"
+  else
+    sp=""; sp_rc=0; sp_note="checker unchanged; the ratchet still graded every intent"
+  fi
   if [ "$sc_rc" -eq 0 ] && [ "$sp_rc" -eq 0 ]; then
-    say "ok    schema   $(printf '%s' "$sc" | grep -E '^ratchet' | sed 's/^ratchet *//') -- $(printf '%s' "$sp" | grep -oE '[0-9]+ passed' | head -1) on the gate's own proof"
+    say "ok    schema   $(printf '%s' "$sc" | grep -E '^ratchet' | sed 's/^ratchet *//') -- $sp_note"
   else
     [ "$sc_rc" -eq 2 ] && say "FAIL  schema   BLIND: the ratchet baseline could not be read" \
       || say "FAIL  schema   a lane added a violation (rc=$sc_rc) or the gate's proof broke (rc=$sp_rc)"
@@ -503,9 +542,22 @@ fi
 #      git itself calls Added in this diff, so the ~460 existing .py files under bin/ and
 #      platform/ are untouched. Proven by tests/test_language_gate.py against the real script.
 lg=$("$MPY" "$IDP/bin/language-gate" "${IDP_CI_BASE:-origin/main}" HEAD 2>&1); lg_rc=$?
-lgp=$("$MPY" -m pytest -q -p no:cacheprovider -o addopts="" "$IDP/tests/test_language_gate.py" 2>&1); lgp_rc=$?
+# THE PROOF SUITE VALIDATES THE GATE, NOT THE LANE. bin/language-gate itself is diff-scoped by
+# construction -- it only inspects files git calls Added -- so it always runs and always grades
+# the push. Its proof (tests/test_language_gate.py) proves the GATE SCRIPT is sound; that is
+# only in question when the gate script or its proof changed. Measured 2026-11-08: a two-file
+# Python change paid 20 s here -- 37 of the gate's 51 s -- re-running a proof about a script
+# the push did not touch, while the push itself was killed for taking too long. "Grade what the
+# push changes" is this repo's own rule (tests/test_prepush_grades_only_what_the_push_changes.py
+# holds the hook to it); this rung now obeys it.
+if touched bin/language-gate tests/test_language_gate.py; then
+  lgp=$("$MPY" -m pytest -q -p no:cacheprovider -o addopts="" $XD_MP "$IDP/tests/test_language_gate.py" 2>&1); lgp_rc=$?
+  lg_proof="$(printf '%s' "$lgp" | grep -oE '[0-9]+ passed' | head -1) on the gate's own proof"
+else
+  lgp=""; lgp_rc=0; lg_proof="proof unchanged since ${IDP_CI_BASE:-origin/main}"
+fi
 if [ "$lg_rc" -eq 0 ] && [ "$lgp_rc" -eq 0 ]; then
-  say "ok    language $(printf '%s' "$lg" | sed -n 's/^ok *//p') -- $(printf '%s' "$lgp" | grep -oE '[0-9]+ passed' | head -1) on the gate's own proof"
+  say "ok    language $(printf '%s' "$lg" | sed -n 's/^ok *//p') -- $lg_proof"
 else
   [ "$lg_rc" -eq 2 ] && say "FAIL  language BLIND: could not read the commit range" \
     || say "FAIL  language $(printf '%s' "$lg" | tail -1)"
@@ -592,6 +644,21 @@ if [ "$FAST" = 1 ]; then
   # 1e. crew#679 CP5: the incident register is generated from tests/test_incident_*.py; a new
   # incident test without its committed row is refused here, so the chaos drills never drift.
   [ "$fail" -eq 0 ] && say "ok    fast-gate: ruff" || say "FAIL  fast-gate"
+  # THE SCOPED VERDICT, written where the FAST path actually exits. It was first written at the
+  # very end of the script, which only the FULL path reaches: measured 2026-11-08, a green fast
+  # run printed its PASS line and exited at this line, so the cache the hook consults was never
+  # populated and every retry re-paid the whole gate. Keyed by BOTH head and base -- a commit
+  # graded green against one base is not proof against another, and once main moves the same
+  # tree is a different diff.
+  if [ "$fail" -eq 0 ]; then
+    _head=$(git -C "$IDP" rev-parse HEAD 2>/dev/null || echo unknown)
+    _base=$(git -C "$IDP" rev-parse "${base_local:-HEAD}" 2>/dev/null || echo unknown)
+    if [ "$_head" != unknown ] && [ "$_base" != unknown ]; then
+      mkdir -p "$HOME/.cache/idp-ci-verified"
+      touch "$HOME/.cache/idp-ci-verified/${_head}-${_base}"
+      say "ok    verified  scoped verdict for ${_head:0:12} against ${_base:0:12}"
+    fi
+  fi
   exit "$fail"
 fi
 
@@ -1131,7 +1198,9 @@ else say "FAIL  diagram  tests/test_estate_diagram.py"; printf '%s\n' "$out" | s
 # BDD_PY and XD are used by the face-route check (rung 8d) which runs after
 # this block, so they must be set unconditionally (not only when IDP_CI_SKIP_PYTEST=0).
 BDD_PY="$MPY"
-XD=""
+# XD (the bdd block's own fan-out flag) is derived from BDD_PY below and is NOT the same
+# variable as XD_MP above: BDD_PY is not always MPY, and a fan-out flag that does not match the
+# interpreter running the suite is an error, not a speed-up.
 # crew#584, measured on run 33202098401: these two suites took 132 of offline-gate's 211 s, and
 # ci.yml's bdd job ran the same two suites again, strictly, in parallel. In CI the bdd job owns
 # them and offline-gate sets IDP_CI_SKIP_PYTEST=1; locally (pre-push, bin/idp-ci by hand) they run.
@@ -1529,4 +1598,6 @@ if [ "$FULL" = 1 ] && [ "$fail" -eq 0 ]; then
   touch "$HOME/.cache/idp-ci-verified/$_sha"
   say "ok    verified  sentinel written for $_sha"
 fi
+# The fast path exits where it prints its PASS line and writes its own scoped verdict there;
+# a --full run never reaches this line, so nothing is written for it beyond the head sentinel.
 exit "$fail"

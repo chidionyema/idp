@@ -324,8 +324,20 @@ fi
 # Skip the gate in that case: nothing to lint, nothing to type-check.
 local_head=$(git -C "$repo_root" rev-parse HEAD)
 remote_main=$(git -C "$repo_root" rev-parse origin/main 2>/dev/null || true)
+# A verdict already on disk for THIS EXACT DIFF is read, not recomputed. bin/idp-ci writes
+# ~/.cache/idp-ci-verified/<head>-<base> when the fast gate grades that diff green against that
+# base. Measured 2026-11-08: the gate cost 51.1 s on a two-file Python change, the lane-submit
+# push step (capped at 50 s) killed the push mid-gate, and every retry re-ran the identical gate
+# -- once per lane, which is how one session's friction became every session's friction.
+# Keyed by BOTH head and base: the same commit against a different base is a different diff, and
+# a verdict about one base is not proof about another. It is an `elif` and not a wrapper around
+# the block below so that not one line of that block is re-indented: the estate bans non-ASCII
+# bytes ADDED by a push, and a re-indented emoji line reads as an addition.
+gate_verdict="$HOME/.cache/idp-ci-verified/${local_head}-${base}"
 if [ -n "$remote_main" ] && [ "$local_head" = "$remote_main" ]; then
   echo "ok    idp-fast-gate: no diff from origin/main (worktree at same commit); gate skipped"
+elif [ -n "$base" ] && [ -f "$gate_verdict" ]; then
+  echo "ok    idp-fast-gate: ${local_head:0:12} against ${base:0:12} was already graded green by bin/idp-ci; a retry of an unchanged diff reads its verdict instead of re-running the gate"
 elif [ -n "$base" ]; then
   echo "🛡️  idp-fast-gate: running IDP_CI_FAST=1 IDP_CI_BASE=${base:0:12} bin/idp-ci ..."
   if ! IDP_CI_FAST=1 IDP_CI_BASE="$base" GITHUB_HEAD_REF="${lane_branch:-}" "$repo_root/bin/idp-ci"; then
