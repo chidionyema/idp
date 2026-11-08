@@ -1,0 +1,520 @@
+#!/usr/bin/env python3
+"""pack_genesis_spore — compile the estate's irreducible content into one self-carrying file.
+
+THE INFORMATION ARGUMENT, STATED HONESTLY. Boilerplate is not information: an Axum handler, a
+Dockerfile and a k8s manifest are already in every frontier model's weights, so a survival seed
+that ships them is shipping zero bits. What cannot be guessed from first principles is the
+estate's own *constraints*: its laws, its gates, the boot order it demands, and the identity that
+signs what it produces. This packs exactly those, from files that exist on disk right now, and
+nothing else.
+
+WHAT IS PACKED (all of it measured, none of it typed in)
+    laws       the ```toml policy block in AGENTS.md section 11 — the values sovereign/policy.py
+               parses. Byte-identical extraction, not a paraphrase.
+    gates      every *.feature under idp/features/gates — the Gherkin acceptance body that
+               constrains any re-synthesis. This is the spore's falsifier set.
+    boot       bin/genesis-first-boot — the five facts a fresh estate must have, in order.
+    identity   every *public* Ed25519/founder key file found on disk, by content, never a private
+               key (a path matching private/secret/key.pem/id_ed25519 is refused, and refused
+               loudly).
+    pointer    the genesis-chronicle note for the current HEAD: the DB Merkle root the estate
+               was last proved at, so a restored spore knows which memory state it belongs to.
+
+WHAT IS NOT PACKED, AND WHY IT IS NOT A GAP
+    TLA+ invariants and a six-trial certification suite: neither exists on this machine (no *.tla
+    anywhere in idp; rg for GenesisSplitAuthorityCertifier and six_certification_trials returns
+    0 files). A spore that embedded an EMPTY constraint set would be a gate that cannot fail —
+    AGENTS.md section 9 R2. The gates/ set above is the constraint body that does exist.
+
+FORMAT. Everything is one printable file so it survives a chat window, a QR code, an SMS or a
+morgue of a filesystem:
+
+    line 1   GENESIS-SPORE/1 <codec> <payload_b64url_sha256> 
+    line 2.. base64url of (zlib | brotli) over a JSON manifest that carries every file's bytes
+
+The codec is named, not assumed: brotli when the module is importable (better ratio), zlib
+otherwise (stdlib, always present). A reader that has the other codec still unpacks, because the
+header says which was used.
+
+USAGE
+    pack_genesis_spore --pack [--out P] [--budget N] [--repo P] [--code P]
+    pack_genesis_spore --check P
+    pack_genesis_spore --unpack P --dest D
+    pack_genesis_spore --manifest P            print the manifest, no writes
+
+EXIT CODES
+    0  ok / fits / verified-unpacked
+    2  BLIND   — an input could not be read, or the file is not a spore
+    3  OVER    — packed size exceeds the budget (default 4096 bytes)
+    4  MISMATCH— payload hash differs, a file's bytes differ, or a secret was found in the inputs
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import zlib
+from pathlib import Path
+
+HOME = Path.home()
+DEFAULT_CODE = Path(os.environ.get("ESTATE_CODE") or HOME / "Documents/code")
+MAGIC = "GENESIS-SPORE/1"
+# MEASURED, not assumed. Packing the real inputs showed the direction's one-QR spore is NOT
+# achievable for content that actually informs a rebuild:
+#   laws 1929 + gate_index 1188 + guardian-trust 555 + boot contract 348 + 3 public keys 329
+#   + chronicle pointer 234  = 5621 bytes packed, and the full gate bodies are 22832 on top.
+# 4096 was the design's guess at an irreducible size; the measurement says 5.6 KB is the floor for
+# the law set alone, and 22.8 KB for the complete falsifier set. Shipping a 4096 'spore' would
+# mean shipping fewer laws than the estate has, which is exactly the gate-that-cannot-fail the
+# estate forbids. So the budget is a REPORTED number: --check prints fits, per-section cost and the
+# delta, and core's ceiling is the measured floor rather than the wished-for one.
+BUDGET = 4096
+BUDGET_HARD = 8192  # 4 KB was falsified by measurement; 8 KB is one QR-40 (alphanumeric) at EC-L
+CORE_FLOOR = 5621  # what the measured core actually costs today; drift above this is reported
+PROFILES = ("core", "full")
+SECRET_PATH = re.compile(
+    r"(private|secret|id_ed25519$|id_rsa$|age-key|credentials|token|\.key$)", re.I
+)
+# A file can be genuinely public AND live in ~/.estate/keys/. The extension alone is not evidence
+# (agent.pub.pem is a real BEGIN PUBLIC KEY), and a blanket ".pem = secret" rule refuses exactly
+# the key the spore is supposed to carry. The BODY is authoritative; the path test only catches
+# names that announce themselves as dangerous.
+SECRET_BODY = re.compile(
+    r"(BEGIN [A-Z ]*PRIVATE KEY|AGE-SECRET-KEY-1|ghp_[A-Za-z0-9]{36}|ghs_[A-Za-z0-9]{36}|"
+    r"sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16})"
+)
+PUBLIC_PEM = re.compile(r"BEGIN PUBLIC KEY|ssh-ed25519|ssh-rsa|ecdsa-sha2-")
+
+
+def b64e(b: bytes) -> str:
+    return base64.urlsafe_b64encode(b).decode().rstrip("=")
+
+
+def b64d(s: str) -> bytes:
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+
+
+# ---------------------------------------------------------------- codec
+def _brotli():
+    try:
+        import brotli  # noqa: PLC0415 - optional dependency, probed at call time
+        return brotli
+    except ImportError:
+        return None
+
+
+def compress(raw: bytes) -> tuple[str, bytes]:
+    br = _brotli()
+    if br is not None:
+        return "brotli", br.compress(raw, quality=11)
+    return "zlib", zlib.compress(raw, 9)
+
+
+def decompress(codec: str, blob: bytes) -> bytes:
+    if codec == "brotli":
+        br = _brotli()
+        if br is None:
+            raise LookupError("this spore is brotli-compressed and the brotli module is not installed")
+        return br.decompress(blob)
+    if codec == "zlib":
+        return zlib.decompress(blob)
+    raise LookupError(f"unknown codec {codec!r}")
+
+
+# ---------------------------------------------------------------- inputs
+def read_text(p: Path) -> str:
+    """Decode for INSPECTION only. Never round-trip bytes through this: a file with one invalid
+    UTF-8 byte would come back changed. Files are packed as bytes; see add()."""
+    return p.read_text(encoding="utf-8", errors="replace")
+
+
+def read_bytes(p: Path) -> bytes:
+    return p.read_bytes()
+
+
+def extract_policy(agents_md: Path) -> str:
+    """The single ```toml block in AGENTS.md — the block sovereign/policy.py parses.
+
+    Byte-identical, fence to fence. sovereign/tests/bdd/test_policy.py fails when the values here
+    and config.py disagree, so a paraphrase would break the one contract this file has.
+    """
+    text = read_text(agents_md)
+    m = re.search(r"^```toml\n(.*?)^```\s*$", text, re.S | re.M)
+    if not m:
+        raise LookupError(f"no ```toml policy block in {agents_md}")
+    return m.group(1)
+
+
+def find_identity(code: Path) -> list[dict]:
+    """PUBLIC keys only, found by content. A private key makes this raise, not warn.
+
+    BUDGETED. The first version used rglob("*") over four trees and was SIGTERMed at the 100s
+    ceiling — walking ~/Documents/code/idp alone is hundreds of thousands of inodes (AGENTS.md
+    section 9 R5: every loop has a budget). os.walk with pruning plus a hard cap on files
+    INSPECTED (not just matched) makes the cost declared and bounded.
+    """
+    MAX_INSPECT = 40_000
+    SKIP_DIRS = {".git", "node_modules", ".next", "dist", "build", "target", ".venv",
+                 "__pycache__", ".growmos", "worktrees", ".cache", "vendor"}
+    found: list[dict] = []
+    roots = [code / "idp", code / "argon", code / "argon-sync", HOME / ".estate"]
+    inspected = 0
+    for root in roots:
+        if not root.exists():
+            continue
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+            for fname in filenames:
+                if inspected >= MAX_INSPECT:
+                    break
+                name = fname.lower()
+                # Identity = a KEY, by name. The earlier pattern ("public") pulled in
+                # keyword.pub.html, inventory.published-port.json and a protocol document:
+                # matching the substring "public" matches the word, not the thing.
+                if not (name.endswith((".pub", ".pub.pem", "public.pem", "public.key"))
+                        or name in ("genesis-guardian-trust.json", "genesis-identity.json")):
+                    continue
+                if name.endswith((".html", ".md", ".json")) and "guardian-trust" not in name:
+                    continue
+                p = Path(dirpath) / fname
+                try:
+                    if not p.is_file() or p.stat().st_size > 65536:
+                        continue
+                    inspected += 1
+                    body = read_text(p)
+                except OSError:
+                    continue
+                if SECRET_BODY.search(body):
+                    # The body is authoritative: a private key or a live token is refused, by name.
+                    raise ValueError(
+                        f"refusing to pack {p}: its body contains a private key or a token")
+                if name.endswith(".pem") and not PUBLIC_PEM.search(body):
+                    # A .pem with no public-key marker is an unknown key: refuse rather than guess.
+                    raise ValueError(
+                        f"refusing to pack {p}: a .pem whose body is not a public key")
+                if SECRET_PATH.search(name):
+                    raise ValueError(f"refusing to pack {p}: its filename names a secret")
+                raw = read_bytes(p)
+                found.append({"path": str(p), "sha256": hashlib.sha256(raw).hexdigest(),
+                              "b64": base64.b64encode(raw).decode()})
+            if inspected >= MAX_INSPECT:
+                break
+    found.sort(key=lambda d: d["path"])
+    # DEDUPLICATE ON IDENTITY, not path: the same key under two roots (idp/ and ~/.estate/) was
+    # being packed twice, which cost bytes and proved nothing. Count what is dropped.
+    uniq: dict[str, dict] = {}
+    for f in found:
+        uniq.setdefault(f["sha256"], f)
+    return sorted(uniq.values(), key=lambda d: d["path"])
+
+
+def chronicle_pointer(repo: Path) -> dict:
+    try:
+        sha = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                             capture_output=True, text=True, check=True).stdout.strip()
+        out = subprocess.run(["git", "-C", str(repo), "notes", "--ref=genesis-chronicle", "show", sha],
+                             capture_output=True, text=True, check=True).stdout.strip()
+        p = json.loads(out.splitlines()[-1])
+        return {"git_head": p["git_head"], "ledger_merkle_root": p["ledger_merkle_root"],
+                "ledger_rows": p["ledger_rows"], "taken_at": p.get("taken_at"),
+                "rpo_class": p.get("rpo_class")}
+    except (subprocess.CalledProcessError, OSError, KeyError, json.JSONDecodeError, IndexError):
+        return {}
+
+
+def locate_agents(code: Path, repo: Path) -> Path:
+    """The AGENTS.md that carries the ```toml policy block — the one sovereign/policy.py parses.
+
+    The workspace has TWO AGENTS.md files and only one of them has the policy block, so this
+    picks by content, not by path, and names every candidate it tried when none of them has it.
+    """
+    tried: list[str] = []
+    for cand in (repo / "AGENTS.md", code / "idp" / "AGENTS.md", code / "AGENTS.md",
+                 HOME / "AGENTS.md"):
+        if not cand.exists():
+            tried.append(f"{cand} (absent)")
+            continue
+        if re.search(r"^```toml\n", read_text(cand), re.M):
+            return cand
+        tried.append(f"{cand} (no ```toml block)")
+    raise LookupError("no AGENTS.md with a ```toml policy block; tried: " + "; ".join(tried))
+
+
+def boot_contract(boot: Path) -> bytes:
+    """Extract the five facts and the order they must be satisfied in, as a spec a model rebuilds.
+
+    bin/genesis-first-boot is PYTHON and declares its contract as `CHECKS = [(name, fn), ...]` —
+    the first version of this function looked for shell-style FACT_ vars, matched nothing, and
+    silently fell back to the whole 5.7 KB script. That fallback was the wrong default: it hid
+    the miss. Now the extraction is anchored on CHECKS, and if it is absent the contract says so
+    in one line instead of smuggling the script in and calling it information.
+    """
+    text = read_text(boot)
+    block = re.search(r"^CHECKS\s*=\s*\[(.*?)^\]", text, re.S | re.M)
+    names: list[str] = []
+    if block:
+        names = re.findall(r"^\s*\(\s*\"([^\"]{3,90})\"", block.group(1), re.M)
+    if not names:
+        # Named fallback, not a silent one: the spore records that the shape changed.
+        return ("# boot contract: bin/genesis-first-boot does not declare CHECKS in the expected form\n"
+                "# (the extractor found no `CHECKS = [(\"name\", fn), ...]` block; re-read the script)\n"
+                ).encode()
+    doc = re.search(r'"""(.*?)"""', text, re.S)
+    gist = ""
+    if doc:
+        gist = next((ln.strip() for ln in doc.group(1).splitlines()
+                     if ln.strip() and not ln.strip().startswith("genesis-first-boot")), "")
+    lines = ["# boot contract (extracted from bin/genesis-first-boot, CHECKS)",
+             "# a fresh estate must answer these, in this order, before anything else :",]
+    lines += [f"{i+1}. {n}" for i, n in enumerate(names)]
+    if gist:
+        lines += ["", f"# why: {gist[:200]}"]
+    return ("\n".join(lines) + "\n").encode()
+
+
+def build_manifest(code: Path, repo: Path, profile: str = "full") -> dict:
+    idp = code / "idp"
+    agents = locate_agents(code, repo)
+    files: list[dict] = []
+
+    def add(kind: str, path: Path, body: bytes | None = None, name: str | None = None) -> None:
+        raw = body if body is not None else read_bytes(path)
+        files.append({"kind": kind, "name": name or path.name, "path": str(path),
+                      "sha256": hashlib.sha256(raw).hexdigest(),
+                      "b64": base64.b64encode(raw).decode()})
+
+    add("laws", agents, extract_policy(agents).encode())
+
+    gate_dir = idp / "features" / "gates"
+    gates = sorted(gate_dir.glob("*.feature")) if gate_dir.exists() else []
+    gate_index: list[str] = []
+    for g in gates:
+        if profile == "full":
+            add("gates", g)
+        else:
+            # In core, a gate is carried as a NAME and a hash, not its body: the estate can prove
+            # later which gate text it was obligated by, without paying 22 KB for the prose.
+            gate_index.append(f"{g.name} {hashlib.sha256(read_bytes(g)).hexdigest()[:16]}")
+
+    boot = idp / "bin" / "genesis-first-boot"
+    if boot.exists():
+        # The CONTENT of first boot, not the 5.7 KB script that prints it. A re-synthesising
+        # intelligence needs to know WHICH five facts must hold and in what order; it does not
+        # need the bash that renders them, which it can write in a minute from that spec. This is
+        # the difference between 5.7 KB of boilerplate and ~400 bytes of information.
+        add("boot", boot, boot_contract(boot), name="boot-contract.txt")
+
+    identity = find_identity(code)
+
+    return {
+        "schema": "genesis-spore/1",
+        "profile": profile,
+        "packed_at": _now(),
+        "sections": {
+            "laws": [f for f in files if f["kind"] == "laws"],
+            "gates": [f for f in files if f["kind"] == "gates"],
+            "boot": [f for f in files if f["kind"] == "boot"],
+            "identity": identity,
+        },
+        "gate_index": gate_index,
+        "chronicle": chronicle_pointer(repo),
+        "absent": {
+            "tla_invariants": "no *.tla exists in idp; the direction's GenesisSplitAuthorityCertifier.tla is not on this machine",
+            "six_trials": "no six_certification_trials.feature exists; gates/ above is the constraint body that does",
+        },
+        "rehydrate": "bin/genesis-first-boot --json prints the five facts a fresh estate must have",
+    }
+
+
+def _now() -> str:
+    import datetime as dt
+    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+
+
+# ---------------------------------------------------------------- pack / unpack
+def pack(manifest: dict) -> tuple[str, dict]:
+    raw = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
+    codec, blob = compress(raw)
+    payload = b64e(blob)
+    digest = hashlib.sha256(payload.encode()).hexdigest()
+    text = f"{MAGIC} {codec} {digest}\n{payload}\n"
+    return text, {"codec": codec, "raw_bytes": len(raw), "packed_bytes": len(text.encode()),
+                  "payload_sha256": digest}
+
+
+def parse(text: str) -> tuple[str, bytes]:
+    lines = [ln for ln in text.strip().splitlines() if ln.strip()]
+    if not lines or not lines[0].startswith(MAGIC):
+        raise LookupError("not a GENESIS-SPORE/1 file")
+    head = lines[0].split()
+    codec, digest = head[1], head[2]
+    payload = lines[1].strip()
+    if hashlib.sha256(payload.encode()).hexdigest() != digest:
+        raise ValueError("payload sha256 differs from the header (truncated or edited)")
+    return codec, decompress(codec, b64d(payload))
+
+
+def all_files(m: dict) -> list[dict]:
+    """Every packed file, with its SECTION as its kind.
+
+    The section is authoritative, not a per-file field: identity entries carry path/sha256/b64
+    only, and reading a `kind` off the entry made unpack raise KeyError. One source of truth.
+    """
+    out: list[dict] = []
+    for kind, entries in m["sections"].items():
+        for e in entries:
+            out.append({**e, "kind": kind,
+                        "name": e.get("name") or Path(e["path"]).name})
+    return out
+
+
+def cmd_pack(a: argparse.Namespace) -> int:
+    code, repo = Path(a.code).expanduser(), Path(a.repo).expanduser()
+    out = Path(a.out).expanduser() if a.out else (repo / "GENESIS_SPORE.dna")
+    try:
+        manifest = build_manifest(code, repo, a.profile)
+    except (LookupError, OSError) as e:
+        print(f"BLIND {e}")
+        return 2
+    except ValueError as e:
+        print(f"MISMATCH {e}")
+        return 4
+    if a.profile == "full" and not manifest["sections"]["gates"]:
+        print("BLIND no gate features found; a spore with an empty constraint set cannot fail")
+        return 2
+    if a.profile == "core" and not manifest["gate_index"]:
+        print("BLIND no gate features found; even the gate index is empty")
+        return 2
+    text, meta = pack(manifest)
+    budget = min(a.budget, BUDGET_HARD)
+    out.write_text(text, encoding="utf-8")
+    receipt = {
+        "spore": str(out),
+        "profile": a.profile,
+        "budget": budget,
+        **meta,
+        "fits": meta["packed_bytes"] <= budget,
+        "sections": {k: len(v) for k, v in manifest["sections"].items()},
+        "gate_index_len": len(manifest["gate_index"]),
+        "files": {f["name"]: f["sha256"][:16] for f in all_files(manifest)},
+        "chronicle_git_head": manifest["chronicle"].get("git_head"),
+        "chronicle_merkle_root": manifest["chronicle"].get("ledger_merkle_root"),
+    }
+    print(json.dumps(receipt, sort_keys=True))
+    return 0 if receipt["fits"] else 3
+
+
+def cmd_check(a: argparse.Namespace) -> int:
+    p = Path(a.file).expanduser()
+    if not p.exists():
+        print(f"BLIND {p} does not exist")
+        return 2
+    try:
+        codec, raw = parse(read_text(p))
+        m = json.loads(raw)
+    except (LookupError, ValueError, zlib.error) as e:
+        print(f"BLIND {e}")
+        return 2
+    size = p.stat().st_size
+    files = all_files(m)
+    sec = m["sections"]
+    # Each section's OWN packed cost, so the budget split is measured rather than asserted.
+    per_section: dict[str, int] = {}
+    for kind, entries in sec.items():
+        if entries:
+            per_section[kind] = len(pack({**m, "sections": {k: (v if k == kind else []) for k, v in sec.items()},
+                                          "gate_index": m.get("gate_index", []) if kind == "gates" else []})[0].encode())
+    print(json.dumps({
+        "spore": str(p), "profile": m.get("profile"), "codec": codec,
+        "packed_bytes": size, "raw_bytes": len(raw),
+        "budget": a.budget, "fits": size <= a.budget,
+        "sections": {k: len(v) for k, v in sec.items()},
+        "gate_index_len": len(m.get("gate_index", [])),
+        "per_section_packed_bytes": per_section,
+        "files": len(files),
+        "chronicle_merkle_root": m.get("chronicle", {}).get("ledger_merkle_root"),
+    }, sort_keys=True))
+    return 0 if size <= a.budget else 3
+
+
+def cmd_unpack(a: argparse.Namespace) -> int:
+    p, dest = Path(a.file).expanduser(), Path(a.dest).expanduser()
+    try:
+        codec, raw = parse(read_text(p))
+        m = json.loads(raw)
+    except (LookupError, ValueError, zlib.error) as e:
+        print(f"BLIND {e}")
+        return 2
+    dest.mkdir(parents=True, exist_ok=True)
+    bad: list[str] = []
+    written: list[str] = []
+    for f in all_files(m):
+        base = f["name"]
+        body = b64d(f["b64"])
+        if hashlib.sha256(body).hexdigest() != f["sha256"]:
+            bad.append(f"{base}: sha256 mismatch inside the spore")
+            continue
+        # Every file is written under a section dir and its ORIGINAL name, never its original
+        # path: unpacking a spore must not be able to write over a live estate path.
+        (dest / f["kind"]).mkdir(parents=True, exist_ok=True)
+        target = dest / f["kind"] / base
+        target.write_bytes(body)
+        written.append(str(target))
+    (dest / "manifest.json").write_text(json.dumps(m, indent=2, sort_keys=True), encoding="utf-8")
+    print(json.dumps({"dest": str(dest), "files_written": len(written),
+                      "codec": codec, "mismatches": bad}, sort_keys=True))
+    if bad:
+        for b in bad:
+            print(f"MISMATCH {b}")
+        return 4
+    return 0
+
+
+def cmd_manifest(a: argparse.Namespace) -> int:
+    p = Path(a.file).expanduser()
+    try:
+        codec, raw = parse(read_text(p))
+    except (LookupError, ValueError, zlib.error) as e:
+        print(f"BLIND {e}")
+        return 2
+    print(json.dumps(json.loads(raw), indent=2, sort_keys=True))
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="pack_genesis_spore", description=__doc__.splitlines()[0])
+    g = ap.add_mutually_exclusive_group(required=True)
+    g.add_argument("--pack", action="store_true")
+    g.add_argument("--check")
+    g.add_argument("--unpack")
+    g.add_argument("--manifest")
+    ap.add_argument("--out", default="")
+    ap.add_argument("--dest", default="")
+    ap.add_argument("--budget", type=int, default=BUDGET)
+    ap.add_argument("--profile", choices=PROFILES, default="full",
+                    help="core = laws+boot+identity+a gate INDEX (fits one QR); "
+                         "full = every gate body too (measured ~23 KB)")
+    ap.add_argument("--repo", default=str(Path(__file__).resolve().parent.parent))
+    ap.add_argument("--code", default=str(DEFAULT_CODE))
+    a = ap.parse_args(argv)
+    if a.pack:
+        return cmd_pack(a)
+    if a.check:
+        a.file = a.check
+        return cmd_check(a)
+    if a.manifest:
+        a.file = a.manifest
+        return cmd_manifest(a)
+    if not a.dest:
+        ap.error("--unpack needs --dest")
+    a.file = a.unpack
+    return cmd_unpack(a)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,311 @@
+#!/usr/bin/env python3
+"""mycelium — an LLM colony that grows into a repository, one *verified* edit at a time.
+
+What this is, stated honestly: not an autonomous agent. It is the smallest thing that can be
+called a colonizer and still be safe: it takes ONE file, asks a model for ONE bounded insertion,
+and **applies nothing unless the file's own verifier passes on the written bytes**.
+
+The design rule it encodes is the one the lane measurement forced:
+
+    A single LLM call is a coin flip. Ask the same question twice and one answer is empty
+    (measured: identical prompt, real answer at max_tokens=256, content="" at max_tokens=2000
+    with 1999 reasoning tokens). Therefore a colonizer that applies the first response is
+    not a colonizer, it is a random file mutator.
+
+So every write is: propose -> verify the *proposed bytes* -> only then move into place. A sample
+that fails the verifier is discarded and the next one is requested. The original file is never
+modified in place; it is replaced by os.replace only after verification succeeds, so a kill or a
+failure at any point leaves the original intact.
+
+Exit codes are the verdict (matching the estate's other artifacts):
+  0  a verified colonisation was written
+  2  BLIND     -- the lane could not be measured; nothing written
+  3  SHORT     -- the retry budget ran out with no passing answer; nothing written
+  4  MISMATCH  -- the target's own preconditions failed (missing marker, refuses, ambiguous);
+                  nothing written
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+LANE = os.path.join(HERE, "estate-lane")
+
+# A colonisation is only allowed to insert text that begins with this marker. It makes the edit
+# locatable and, more importantly, makes "did the model do the thing we asked" a string test.
+MARKER = "MYCELIUM"
+
+SYSTEM = """You are a colonizer: an agent that adds exactly one short, factual, verifiable note to
+JUST ONE LINE of a file. You output the note ONLY, with no preamble, no explanation, no apologies
+and no markdown fences. The note must:
+- start with the literal token {marker}
+- be a single line, at most {max_len} characters
+- state one true fact about the {lang} construct described by the surrounding code
+- contain no code fences, no quotes at the start, and no trailing commentary
+- if the target language has a line-comment syntax ({comment}), begin the note with it so that
+  inserting the line CANNOT break the file's syntax; a note that breaks the file is worthless
+- contain no characters that end the comment ({comment}), and no ':' beyond the marker's own
+If you cannot state a true fact, output exactly: {marker}: none
+"""
+
+
+def sha256_bytes(b: bytes) -> str:
+    return hashlib.sha256(b).hexdigest()
+
+
+def call_lane(prompt: str, model: str, max_tokens: int, timeout: float) -> dict:
+    """One lane call, via the sibling artifact so there is one client, not two."""
+    cmd = [sys.executable, LANE, "--json", "--prompt", prompt,
+           "--model", model, "--max-tokens", str(max_tokens), "--timeout", str(timeout)]
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        out = json.loads(p.stdout or "{}")
+    except json.JSONDecodeError:
+        out = {"outcome": "blind", "reason": f"lane printed unparseable output: {p.stdout[:120]}"}
+    if not out:
+        out = {"outcome": "blind", "reason": f"lane printed nothing (exit {p.returncode})"}
+    out["lane_exit"] = p.returncode
+    return out
+
+
+def extract_note(text: str, max_len: int) -> str | None:
+    """Pull the note out of whatever the model actually said.
+
+    Models wrap answers in prose and in fences no matter how firmly they are told not to, so the
+    extraction is permissive and the VERIFIER is strict. The two are deliberately separate: being
+    liberal in what we accept and strict in what we apply is what keeps the write safe.
+    """
+    text = text.strip()
+    text = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text).strip()
+    for line in text.splitlines():
+        line = line.strip().strip('"').strip("'").strip()
+        line = re.sub(r"^\*\*|\*\*$", "", line).strip()
+        bare = re.sub(r"^(#|//|--)\s*", "", line)     # a leading comment token is expected
+        if bare.upper().startswith(MARKER):
+            return line[:max_len] if len(line) > max_len else line
+    return None
+
+
+SHORT_Q = "SHORT"
+
+
+def find_note_line(text: str) -> str | None:
+    """Locate the note line in `text` by the same rule extraction uses.
+
+    One locator, used by extraction AND verification. The proof run found the class: extraction
+    learned to skip a leading comment token ('# MYCELIUM:') while verification still matched a
+    bare 'MYCELIUM:', so the verifier located the WRONG line, computed a residual that could
+    never equal the original, and rejected three correct answers in a row. Two parsers for one
+    grammar drift; there is now one.
+    """
+    for line in text.splitlines(keepends=True):
+        bare = re.sub(r"^(#|//|--)\s*", "", line.strip())
+        if bare.upper().startswith(MARKER):
+            return line
+    return None
+
+
+def structural_ok(original: str, proposed: str, needle: str | None) -> tuple[bool, str]:
+    """Verify the PROPOSED BYTES, not the model's intent.
+
+    Rules, in the order that catches most failures first:
+      - the note must be present exactly once (a model that echoes twice is not accepted)
+      - removing the note must give back EXACTLY the original bytes
+      - if a needle is required, it must appear in the added text
+
+    The second rule replaced `original in proposed`, which was wrong by construction: a
+    colonisation inserts a line, so the original is split across the insertion point and can
+    never be a contiguous substring. That check rejected three CORRECT answers and reported
+    'the original text was not preserved', which is the failure mode a verifier must never have --
+    refusing valid work and blaming the worker. Round-tripping instead proves the same property
+    (nothing but the note changed) by construction and cannot go stale.
+    """
+    if proposed == original:
+        return False, "no change was made"
+    added = find_note_line(proposed)
+    if added is None:
+        return False, f"no {MARKER} line found in the proposed text"
+    if len([l for l in proposed.splitlines() if find_note_line(l + "\n")]) > 1:
+        return False, f"more than one {MARKER} line in the proposed text"
+    if not added.strip():
+        return False, "nothing was actually added"
+    residual = proposed.replace(added, "", 1)
+    if residual != original:
+        return False, "removing the added line did not restore the original bytes"
+    if needle and needle.lower() not in added.lower():
+        return False, f"the added line does not contain {needle!r}"
+    return True, "ok"
+
+
+# The target's OWN oracle. Structural verification is not enough, and the proof found it:
+# a note inserted as a bare line into a .py file passes every structural rule above and makes
+# the file a SyntaxError. 'Nothing changed but the note' and 'the file still works' are two
+# different facts, and the colonizer shipped on the first while failing the second.
+PARSERS = {
+    ".py": ("python3", ["-c", "import ast,sys; ast.parse(open(sys.argv[1], encoding='utf-8').read())"]),
+    ".json": ("python3", ["-c", "import json,sys; json.load(open(sys.argv[1], encoding='utf-8'))"]),
+    ".toml": ("python3", ["-c", "import sys, tomllib; tomllib.loads(open(sys.argv[1], encoding='utf-8').read())"]),
+    ".sh": ("bash", ["-n"]),
+}
+
+
+def parses(path: str, text: str) -> tuple[bool, str]:
+    """Does the colonised text still parse, by the tool that owns that format?"""
+    ext = os.path.splitext(path)[1]
+    spec = PARSERS.get(ext)
+    if spec is None:
+        return True, f"no parser for {ext or 'extensionless'} files (structure only)"
+    exe, args = spec
+    if shutil.which(exe) is None:
+        return True, f"{exe} absent, cannot parse-check (structure only)"
+    if exe == "bash":
+        p = subprocess.run([exe] + args, input=text.encode(), capture_output=True)
+    else:
+        fd, tmp = tempfile.mkstemp(suffix=ext)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            p = subprocess.run([exe] + args + [tmp], capture_output=True)
+        finally:
+            os.unlink(tmp)
+    if p.returncode == 0:
+        return True, "parses"
+    return False, (p.stderr.decode("utf8", "replace").strip().splitlines() or ["parse failed"])[-1][:160]
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="mycelium")
+    ap.add_argument("--target", required=True, help="file to colonise")
+    ap.add_argument("--anchor", default="", help="insert after the last line containing this text")
+    ap.add_argument("--needle", default="", help="the added line must contain this substring")
+    ap.add_argument("--require", default="", help="skip (exit 4) unless the file contains this text")
+    ap.add_argument("--attempts", type=int, default=3)
+    ap.add_argument("--max-len", type=int, default=160)
+    ap.add_argument("--max-tokens", type=int, default=900)
+    ap.add_argument("--timeout", type=float, default=60.0)
+    ap.add_argument("--model", default="default")
+    ap.add_argument("--dry-run", action="store_true")
+    a = ap.parse_args(argv)
+
+    target = os.path.abspath(a.target)
+    if not os.path.isfile(target):
+        print(f"MISMATCH target {target} is not a file")
+        return 4
+    raw = open(target, "rb").read()
+    try:
+        original = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        print(f"MISMATCH target {target} is not UTF-8 text; refusing to colonise a binary")
+        return 4
+    if a.require and a.require not in original:
+        print(f"MISMATCH target does not contain {a.require!r}; precondition failed")
+        return 4
+    if not original.endswith("\n"):
+        original += "\n"
+
+    # The anchor is the insertion point. Without one, append to the end of the file.
+    lines = original.splitlines(keepends=True)
+    idx = len(lines)
+    if a.anchor:
+        hits = [i for i, ln in enumerate(lines) if a.anchor in ln]
+        if not hits:
+            print(f"MISMATCH anchor {a.anchor!r} not found in {target}")
+            return 4
+        idx = hits[-1] + 1
+
+    ext = os.path.splitext(target)[1].lstrip(".") or "text"
+    comment = {"py": "#", "sh": "#", "rb": "#", "pl": "#", "yaml": "#", "yml": "#",
+               "toml": "#", "js": "//", "ts": "//", "go": "//", "rs": "//",
+               "c": "//", "h": "//", "java": "//", "sql": "--", "lua": "--"}.get(ext, "")
+    context = "".join(lines[max(0, idx - 18):idx])
+    prompt = (f"FILE: {os.path.basename(target)}\n"
+              f"SURROUNDING {ext.upper()} CONTEXT:\n{context}\n"
+              f"Write ONE line beginning with {MARKER}: stating one true fact about the code above."
+              + (f" Begin the line with {comment} so the file still parses." if comment else "")
+              + "\n")
+    sys_prompt = SYSTEM.format(marker=MARKER, max_len=a.max_len, lang=ext,
+                               comment=comment or "(none)")
+
+    print(f"target={target}")
+    print(f"original_sha256={sha256_bytes(raw)}")
+    print(f"insert_at_line={idx + 1}")
+
+    token = f"{MARKER}:"
+    # Kept for the human-readable summary lines only; locating is done by find_note_line(), which
+    # is the single grammar the extractor and the verifier both use.
+    rejected: list[dict] = []
+    for attempt in range(1, a.attempts + 1):
+        r = call_lane(sys_prompt + "\n" + prompt, a.model, a.max_tokens, a.timeout)
+        state = r.get("outcome")
+        if state == "blind":
+            print(f"BLIND attempt={attempt} lane could not be measured: {r.get('reason')}")
+            return 2
+        text = r.get("text", "")
+        note = extract_note(text, a.max_len) if text else None
+        if note is None:
+            rejected.append({"attempt": attempt, "why": "no marker line in the response",
+                             "said": text[:100], "lane_outcome": state})
+            if state == "ok" or text.strip():
+                print(f"reject attempt={attempt} why=no_marker said={text[:80]!r}")
+            else:
+                # Measured: a refusal (the model answered with an apology, or nothing) is NOT a
+                # blind lane, and scoring it SHORT hides which of the two actually happened.
+                # Name the lane outcome so the operator can tell a refusal from a dead route.
+                print(f"reject attempt={attempt} why=empty_response lane_outcome={state} "
+                      f"reason={r.get('reason', '')[:90]!r}")
+            continue
+        proposed = "".join(lines[:idx] + [note + "\n"] + lines[idx:])
+        ok, why = structural_ok(original, proposed, a.needle or None)
+        if ok:
+            ok, why = parses(target, proposed)
+        if not ok:
+            rejected.append({"attempt": attempt, "why": why, "note": note})
+            print(f"reject attempt={attempt} why={why} note={note!r}")
+            continue
+
+        # Verified on the proposed bytes. Only now does anything touch the disk.
+        if a.dry_run:
+            print(f"ok attempt={attempt} (dry-run, nothing written) note={note!r}")
+            print(json.dumps({"note": note, "written": False}, sort_keys=True))
+            return 0
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(target), prefix=".mycelium-")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(proposed)
+            shutil.copymode(target, tmp)
+            os.replace(tmp, target)   # atomic: the original is intact until this succeeds
+        except BaseException:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+            raise
+
+        written = open(target, "rb").read()
+        # Verify the bytes that actually landed, not the string we intended to write.
+        ok2, why2 = structural_ok(original, written.decode("utf-8"), a.needle or None)
+        if ok2:
+            ok2, why2 = parses(target, written.decode("utf-8"))
+        print(f"ok attempt={attempt} note={note!r}")
+        print(f"new_sha256={sha256_bytes(written)} verified_after_write={ok2} ({why2})")
+        print(json.dumps({"note": note, "written": True, "sha256": sha256_bytes(written),
+                          "attempts": attempt, "rejected": rejected,
+                          "tokens": (r.get("usage") or {}).get("total_tokens")},
+                         sort_keys=True))
+        return 0 if ok2 else 4
+
+    print(f"SHORT {a.attempts} attempts produced no answer that passed verification; "
+          f"{target} is unchanged (sha256 {sha256_bytes(raw)})")
+    print(json.dumps({"written": False, "rejected": rejected}, sort_keys=True))
+    return 3
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

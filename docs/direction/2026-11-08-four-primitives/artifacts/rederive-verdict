@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""rederive-verdict — recompute a science verdict from science.db alone.
+
+The question this answers: is `science_loop verdict` a measurement, or a program that asserts its
+own conclusion? A verdict that can only be reproduced by the tool that produced it is not
+reproducible, it is a receipt for a claim.
+
+So this file deliberately:
+  * opens science.db with sqlite3 directly -- readonly URI, no writes, no schema changes
+  * reads ONLY raw rows (science_preregistrations, experiment_trial_runs, science_verdicts)
+  * re-implements the rule arithmetic here, from the rule JSON and threshold as recorded
+  * never imports science_loop, never shells out to it, never reads its source
+
+Real schema it reads (measured, not assumed):
+  science_preregistrations: id created_at title hypothesis rule_json rule_sha256
+                            sample_size metric direction threshold alpha sealed_at author
+  experiment_trial_runs:    id prereg_id trial_idx cmd exit_code duration_ms ran_at
+                            output_sha256 value raw_out
+  science_verdicts:         id prereg_id decided_at verdict rule_sha256 n_used statistic
+                            detail exit_code
+
+Direction is 'higher' or 'lower' -- the column's own vocabulary.
+
+Exit codes are the verdict:
+  0  reproduced: independently re-derived verdict equals the stored verdict
+  2  BLIND      -- the database or the tables cannot be read at all
+  3  SHORT      -- fewer usable trials than preregistered; nothing to re-derive
+  4  MISMATCH   -- the re-derivation contradicts the stored verdict, or the rule was edited
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import sqlite3
+import sys
+
+# The default must be the file the verdict was actually proven in, not a path that used to exist.
+# Measured 2026-11-08: the old default (~/.estate/science.db) was a 0-byte placeholder, deleted as
+# one-path-per-concept. Left as the default, every bare invocation of this tool -- the one the founder
+# is told to run -- answered BLIND on a file that is not there, while the real evidence sat beside it.
+DEFAULT_DB = os.path.expanduser("~/.estate/science/science-proof.db")
+
+
+def rule_sha256(rule_json: str) -> str:
+    """Hash the rule exactly as stored. science_loop hashes the canonical form of this text."""
+    try:
+        canon = json.dumps(json.loads(rule_json), sort_keys=True, separators=(",", ":"))
+    except Exception:
+        canon = rule_json
+    return hashlib.sha256(canon.encode("utf-8")).hexdigest()
+
+
+def rederive(row, trials) -> dict:
+    """Apply the preregistered rule to raw trial rows. Written from the rule's fields only."""
+    usable = [t for t in trials if t["exit_code"] == 0 and t["value"] is not None]
+    need = int(row["sample_size"])
+    out = {"usable": len(usable), "required": need, "values": [t["value"] for t in usable[:need]]}
+    if len(usable) < need:
+        out.update(verdict="INCONCLUSIVE", why=f"{len(usable)} usable trials < preregistered {need}")
+        return out
+
+    vals = out["values"]
+    mean = sum(vals) / len(vals)
+    threshold = float(row["threshold"])
+    direction = row["direction"]
+    # Independent arithmetic: the mean on the declared side of the pre-declared threshold.
+    better = mean > threshold if direction == "higher" else mean < threshold
+    rule = json.loads(row["rule_json"])
+    rtype = rule.get("type")
+
+    out.update(mean=round(mean, 6), threshold=threshold, direction=direction, rule_type=rtype)
+    if rtype == "mean_vs_threshold":
+        # The tool's own vocabulary: supported, contradicted, refuted, inconclusive.
+        out["verdict"] = "SUPPORTED" if better else "CONTRADICTED"
+    elif rtype == "all_within":
+        tol = float(rule.get("tolerance", 0.0))
+        target = float(rule["target"])
+        out["verdict"] = "SUPPORTED" if all(abs(v - target) <= tol for v in vals) else "REFUTED"
+    elif rtype in ("threshold_below", "threshold_above"):
+        out["verdict"] = "SUPPORTED" if better else "CONTRADICTED"
+    else:
+        out["verdict"] = None
+        out["why"] = f"rule type {rtype!r} is not implemented by this re-derivation"
+    return out
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="rederive-verdict")
+    ap.add_argument("--db", default=DEFAULT_DB)
+    ap.add_argument("--id", default="", help="preregistration id (default: the latest)")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args(argv)
+
+    if not os.path.isfile(a.db) or os.path.getsize(a.db) == 0:
+        print(f"BLIND {a.db} is missing or empty -- there is nothing to re-derive")
+        return 2
+    try:
+        con = sqlite3.connect(f"file:{a.db}?mode=ro", uri=True)
+        con.row_factory = sqlite3.Row
+        q = "select * from science_preregistrations " + ("where id=? " if a.id else "") \
+            + "order by created_at desc, rowid desc limit 1"
+        pre = con.execute(q, ((a.id,) if a.id else ())).fetchone()
+        if pre is None:
+            print(f"BLIND no preregistration{' ' + a.id if a.id else ''} in {a.db}")
+            return 2
+        trials = [dict(r) for r in con.execute(
+            "select trial_idx, exit_code, value from experiment_trial_runs "
+            "where prereg_id=? order by trial_idx", (pre["id"],)).fetchall()]
+        stored = con.execute(
+            "select * from science_verdicts where prereg_id=? order by rowid desc limit 1",
+            (pre["id"],)).fetchone()
+    except sqlite3.Error as e:
+        print(f"BLIND cannot read {a.db}: {e}")
+        return 2
+
+    print(f"db={a.db}")
+    print(f"prereg_id={pre['id']} sample_size={pre['sample_size']} "
+          f"threshold={pre['threshold']} direction={pre['direction']}")
+    print(f"trials_read={len(trials)}")
+
+    # Rule integrity is re-derived from the stored rule_json, not taken from the stored column.
+    # The column's stored value is the record of what was registered.
+    recomputed = rule_sha256(pre["rule_json"])
+    print(f"rule_sha256 rule_json recomputes to: {recomputed}")
+    print(f"rule_sha256 recorded at registration: {pre['rule_sha256']}")
+    if recomputed != pre["rule_sha256"]:
+        print(f"MISMATCH the stored rule_json does not hash to the registered digest "
+              f"-- the rule was edited after registration")
+        return 4
+
+    d = rederive(pre, trials)
+    if a.json:
+        print(json.dumps({"derived": d, "stored": dict(stored) if stored else None},
+                         sort_keys=True, default=str))
+
+    # PROVENANCE FIRST, arithmetic second. Measured: when the threshold is tuned after the data,
+    # the re-derivation disagrees on arithmetic and fires first -- so a threshold-integrity check
+    # placed after it was dead code that could never report the tuning it existed to catch.
+    # Ask 'was the rule the one that was registered?' before asking 'what does it compute?'.
+    try:
+        stored_rule = json.loads(stored["detail"] or "{}").get("rule", {}) if stored else {}
+    except Exception:
+        stored_rule = {}
+    if stored_rule and "threshold" in stored_rule:
+        if float(stored_rule["threshold"]) != float(pre["threshold"]):
+            print(f"MISMATCH the rule was tuned after the data: the verdict was decided at "
+                  f"threshold={stored_rule['threshold']} but the preregistration now says "
+                  f"threshold={pre['threshold']}")
+            return 4
+        print(f"threshold at decision ({stored_rule['threshold']}) equals the registered one")
+
+    if d["verdict"] is None:
+        print(f"BLIND {d.get('why')}")
+        return 2
+    if d["verdict"] == "INCONCLUSIVE":
+        print(f"SHORT {d['why']} -- nothing to re-derive")
+        return 3
+
+    stored_v = stored["verdict"] if stored else None
+    print(f"re-derived: {d['verdict']}  n_used={d['usable']} mean={d.get('mean')} "
+          f"threshold={d.get('threshold')} ({d.get('direction')} is better)")
+    print(f"stored:     {stored_v} n_used={stored['n_used'] if stored else None} "
+          f"statistic={stored['statistic'] if stored else None}")
+
+    if stored_v != d["verdict"]:
+        print(f"MISMATCH stored={stored_v} re-derived={d['verdict']}")
+        return 4
+    if stored and stored["n_used"] != d["usable"]:
+        print(f"MISMATCH sample size: stored={stored['n_used']} re-derived={d['usable']}")
+        return 4
+    print(f"REPRODUCED {d['verdict']} from {a.db} alone "
+          f"(readonly, no science_loop code involved)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

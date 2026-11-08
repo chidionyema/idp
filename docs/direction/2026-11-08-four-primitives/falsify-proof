@@ -1,0 +1,86 @@
+#!/bin/bash
+# A verifier is only worth its exit code if a broken claim makes it red.
+# This mutates the tree, runs verify-proof, and requires it to FAIL. Then it puts the tree back.
+set -u
+D=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 2
+export D   # the python blocks below build paths from it
+cd "$D" || exit 9
+
+restore() {
+  [ -f "$D/.fals.bak" ] && cp "$D/.fals.bak" "$D/artifacts/science_loop" && rm -f "$D/.fals.bak"
+  [ -f "$D/.fals-rederive.bak" ] && cp "$D/.fals-rederive.bak" "$D/artifacts/rederive-verdict" \
+    && rm -f "$D/.fals-rederive.bak"
+  [ -f "$D/.fals-default.bak" ] && cp "$D/.fals-default.bak" "$D/artifacts/rederive-verdict" \
+    && rm -f "$D/.fals-default.bak"
+  return 0
+}
+trap restore EXIT
+
+echo "=== baseline: the untouched tree must be green ==="
+./verify-proof >/tmp/fals-base.log 2>&1; base=$?
+echo "baseline_exit=$base  $(tail -2 /tmp/fals-base.log | head -1)"
+if [ $base -ne 0 ]; then echo "BLIND the tree is already red; cannot falsify a green verifier"; exit 2; fi
+
+echo
+echo "=== F1: re-derivation that trusts the stored verdict instead of computing it ==="
+# The exact fail-open rederive-verdict was written to exclude: print what the DB says and pass.
+cp artifacts/rederive-verdict .fals-rederive.bak
+python3 - <<'PY'
+p = os.path.join(D, "artifacts/rederive-verdict")
+src = open(p).read()
+# Replace the comparison with an unconditional endorsement.
+src = src.replace('if stored_v != d["verdict"]:', 'if False and stored_v != d["verdict"]:')
+open(p, "w").write(src)
+PY
+./verify-proof >/tmp/fals-rederive.log 2>&1; rc=$?
+echo "mutant_exit=$rc"
+grep -E "FAIL|^checked" /tmp/fals-rederive.log | tail -4
+[ $rc -ne 0 ] && echo "F1 PASS: a verdict-trusting re-derivation makes verify-proof RED" \
+  || echo "F1 FAIL: verify-proof stayed green on a re-derivation that trusts the DB"
+restore
+
+echo
+echo "=== F2: introduce a real artefact defect the claims depend on ==="
+cp artifacts/science_loop .fals.bak
+# Make the rule hash content-insensitive: the exact tuning fail-open, silently reintroduced.
+python3 - <<'PY'
+p = os.path.join(D, "artifacts/science_loop")
+src = open(p).read()
+old = 'print("MISMATCH the preregistered rule was edited after it was recorded; the rule cannot '
+src = open(p).read()
+assert old in src, "anchor not found -- this falsifier would be measuring nothing"
+src = src.replace(old, 'print("ignored")  # fail-open reintroduced')
+open(p, "w").write(src)
+PY
+./verify-proof >/tmp/fals-rule.log 2>&1; rc=$?
+echo "mutant_exit=$rc"
+grep -E "FAIL|^checked" /tmp/fals-rule.log | tail -4
+[ $rc -ne 0 ] && echo "F2 PASS: a reintroduced fail-open makes verify-proof RED" \
+  || echo "F2 FAIL: verify-proof stayed green with the tuned-rule guard removed"
+restore
+
+echo
+# F3: the default path regresses to a file that does not exist. Every check that passes --db still
+# passes; only the bare invocation catches it. This is the defect the board broadcast surfaced.
+echo "=== F3: rederivation default regressed to a nonexistent path ==="
+cp artifacts/rederive-verdict .fals-default.bak
+python3 - <<'PY'
+p = os.path.join(D, "artifacts/rederive-verdict")
+src = open(p).read()
+old = 'DEFAULT_DB = os.path.expanduser("~/.estate/science/science-proof.db")'
+assert old in src, "anchor not found -- this falsifier would be measuring nothing"
+src = src.replace(old, 'DEFAULT_DB = os.path.expanduser("~/.estate/science.db")')
+open(p, "w").write(src)
+PY
+./verify-proof >/tmp/fals-default.log 2>&1; rc=$?
+echo "mutant_exit=$rc"
+grep -E "FAIL|^checked" /tmp/fals-default.log | tail -3
+[ $rc -ne 0 ] && echo "F3 PASS: a dead default makes verify-proof RED" \
+  || echo "F3 FAIL: verify-proof stayed green on a default that points at nothing"
+cp .fals-default.bak artifacts/rederive-verdict && rm -f .fals-default.bak
+
+echo
+echo "=== after restore: the tree must be green again ==="
+./verify-proof >/tmp/fals-after.log 2>&1; rc=$?
+echo "restored_exit=$rc  $(tail -2 /tmp/fals-after.log | head -1)"
+[ $rc -eq 0 ] && echo "RESTORE PASS" || echo "RESTORE FAIL: restore was incomplete"

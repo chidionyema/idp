@@ -1,0 +1,297 @@
+#!/bin/sh
+# Re-run every falsifiable claim in PROOF.md against the CURRENT tree.
+# Any mismatch means PROOF.md contains a claim that is not true right now.
+# Exit 0 = every claim reproduced. Exit 4 = a claim failed. Exit 2 = could not measure.
+set -u
+# The artifacts this script verifies are the ones NEXT TO IT, wherever this directory has been
+# checked out. Hardcoding the laptop's path was a real fail-open, found on 2026-11-08 while shipping
+# this tree into idp: the shipped copy would have verified the developer's local artifacts and
+# reported green about a tree nobody else could see. A verifier that silently grades the wrong copy
+# is worse than no verifier, because it manufactures confidence. Resolve against $0 instead.
+D=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || { echo "BLIND cannot resolve my own directory"; exit 2; }
+# The python blocks below read DIR from the environment. They must never compute it themselves and
+# must never carry a hardcoded path: found shipping on 2026-11-08, A= pointed at the laptop's
+# directory, so the shipped copy would have verified somebody else's artifacts and gone green.
+export DIR="$D"
+A=$D/artifacts
+[ -d "$A" ] || { echo "BLIND no artifacts/ beside this script ($A)"; exit 2; }
+fail=0; n=0
+chk() { # chk "<label>" <expected-exit> <actual-exit>
+  n=$((n+1))
+  if [ "$2" != "$3" ]; then echo "FAIL [$1] expected exit $2, got $3"; fail=$((fail+1));
+  else echo "ok   [$1] exit $3"; fi
+}
+
+# --- 0. artifact hashes -------------------------------------------------------
+want_chronicle=711cbf5a655802b36a100fb531762487d7eac8ee6e474255d535239ec5ba27fe
+want_spore=6dc7d93d292290cbd80cc94bd089228aaf586f550f5bc654876898560ad1bcef
+got=$(shasum -a 256 "$A/estate-chronicle" | cut -d' ' -f1)
+[ "$got" = "$want_chronicle" ] && { echo "ok   [chronicle sha256] ${got%????????????????????????????????}"; } \
+  || { echo "FAIL [chronicle sha256] $got != $want_chronicle"; fail=$((fail+1)); }
+got=$(shasum -a 256 "$A/GENESIS_SPORE.dna" | cut -d' ' -f1)
+[ "$got" = "$want_spore" ] && { echo "ok   [core spore sha256] ${got}"; } \
+  || { echo "FAIL [core spore sha256] $got != $want_spore"; fail=$((fail+1)); }
+
+# --- 1. chronicle: snapshot from a non-repo cwd (the fixed defect) ------------
+OUT=$(cd /tmp && "$A/estate-chronicle" snapshot --db "$HOME/.estate/estate.db" --dest /tmp/proof-chron 2>&1); rc=$?
+chk "chronicle snapshot from /tmp" 0 $rc
+echo "     $OUT" | head -c 200; echo
+SNAP=$(printf '%s' "$OUT" | python3 -c 'import json,sys;print(json.load(sys.stdin)["snapshot"])' 2>/dev/null)
+[ -n "${SNAP:-}" ] || { echo "BLIND no snapshot path"; exit 2; }
+
+# --- 2. chronicle: verify pristine = 0 ---------------------------------------
+# NOTE: verify takes --file, not a positional. Reading the usage is part of the check: an
+# argument error exits 2 (BLIND) and would otherwise be mistaken for a real verdict.
+"$A/estate-chronicle" verify --file "$SNAP" --db "$SNAP" >/dev/null 2>&1
+chk "verify pristine snapshot" 0 $?
+
+# --- 3. chronicle: verify the LIVE db against that pointer = 4 ---------------
+# This is the row that caught the fail-open --db flag: verify used to accept --db and never read
+# it, reporting matches=true for a measurement it never took. It must now detect live drift.
+"$A/estate-chronicle" verify --file "$SNAP" --db "$HOME/.estate/estate.db" >/dev/null 2>&1
+chk "verify live db (must detect drift)" 4 $?
+# ...and a snapshot verified against itself is a clean match, with no phantom live_db field.
+"$A/estate-chronicle" verify --file "$SNAP" --db "$SNAP" >/dev/null 2>&1
+chk "verify snapshot against itself" 0 $?
+"$A/estate-chronicle" verify --file "$SNAP" 2>/dev/null | grep -q live_db \
+  && { echo "FAIL [no phantom live_db without --db]"; fail=$((fail+1)); n=$((n+1)); } \
+  || { echo "ok   [no phantom live_db without --db]"; n=$((n+1)); }
+
+# --- 4. chronicle: tamper one byte -> verify = 4 -----------------------------
+python3 - "$SNAP" <<'PY'
+import sys, shutil
+src, dst = sys.argv[1], "/tmp/proof-tampered.db"
+shutil.copyfile(src, dst)
+# skip the 100-byte SQLite header so the file stays a database, corrupt real content
+with open(dst, "r+b") as f:
+    f.seek(200); b = f.read(1); f.seek(200); f.write(bytes([b[0] ^ 0xFF]))
+PY
+"$A/estate-chronicle" verify --file /tmp/proof-tampered.db --db /tmp/proof-tampered.db >/dev/null 2>&1
+chk "verify tampered snapshot" 4 $?
+
+# --- 5. chronicle: rewind before any pointer = 3 -----------------------------
+"$A/estate-chronicle" rewind --at 2020-01-01T00:00:00Z --db "$HOME/.estate/estate.db" --out /tmp/proof-rewind.db >/dev/null 2>&1
+chk "rewind before any pointer" 3 $?
+
+# --- 6. spore: core pack fits 8192 at exit 0, full is OVER at exit 3 ---------
+"$A/pack_genesis_spore" --pack --profile core --budget 8192 --out /tmp/proof-core.dna >/dev/null 2>&1
+chk "core spore packs within budget" 0 $?
+"$A/pack_genesis_spore" --pack --profile full --budget 8192 --out /tmp/proof-full.dna >/dev/null 2>&1
+chk "full spore honestly reports OVER" 3 $?
+
+# --- 7. spore: unpack round-trips with zero mismatches -----------------------
+rm -rf /tmp/proof-unpack; mkdir -p /tmp/proof-unpack
+"$A/pack_genesis_spore" --unpack "$A/GENESIS_SPORE.dna" --dest /tmp/proof-unpack >/dev/null 2>&1
+chk "core spore unpacks" 0 $?
+
+# --- 8. spore: corrupt payload -> BLIND 2 ------------------------------------
+cp "$A/GENESIS_SPORE.dna" /tmp/proof-corrupt.dna
+python3 - <<'PY'
+p="/tmp/proof-corrupt.dna"
+with open(p,"r+b") as f:
+    f.seek(40); b=f.read(1); f.seek(40); f.write(bytes([b[0]^0xFF]))
+PY
+"$A/pack_genesis_spore" --check /tmp/proof-corrupt.dna >/dev/null 2>&1
+chk "corrupt spore payload is BLIND" 2 $?
+
+# --- 9. science: fresh prereg + 3 real trials + verdict = 0 ------------------
+S=/tmp/proof-science.db; rm -f $S
+"$A/science_loop" --db $S init >/dev/null 2>&1
+chk "science init" 0 $?
+cat > /tmp/proof-prereg.json <<'JSON'
+{"title":"chronicle snapshot latency","hypothesis":"a snapshot of the live estate.db completes in under 60s",
+ "metric":"wall_seconds","direction":"lower","threshold":60.0,"sample_size":2,
+ "rule":{"type":"mean_vs_threshold","statistic":"mean","compare":"< threshold"},"author":"proof"}
+JSON
+P=$("$A/science_loop" --db $S preregister --file /tmp/proof-prereg.json 2>/dev/null \
+     | python3 -c 'import json,sys;print(json.load(sys.stdin)["prereg_id"])')
+[ -n "$P" ] || { echo "BLIND preregistration failed"; exit 2; }
+echo "     prereg_id=$P"
+"$A/science_loop" --db $S dispatch --prereg "$P" --cmd /tmp/trial.sh --max-runs 2 >/dev/null 2>&1
+chk "science dispatch 2 real trials" 0 $?
+V=$("$A/science_loop" --db $S verdict --prereg "$P" 2>/dev/null); rc=$?
+chk "science verdict resolves" 0 $rc
+echo "     $V" | head -c 240; echo
+
+# --- 10. science: short sample = 3 -------------------------------------------
+S2=/tmp/proof-short.db; rm -f $S2
+"$A/science_loop" --db $S2 init >/dev/null 2>&1
+P2=$("$A/science_loop" --db $S2 preregister --file /tmp/proof-prereg.json 2>/dev/null \
+      | python3 -c 'import json,sys;print(json.load(sys.stdin)["prereg_id"])')
+"$A/science_loop" --db $S2 dispatch --prereg "$P2" --cmd "echo 5.0" --max-runs 1 >/dev/null 2>&1
+"$A/science_loop" --db $S2 verdict --prereg "$P2" >/dev/null 2>&1
+chk "science short sample" 3 $?
+
+# --- 11. science: contradiction = 4 -----------------------------------------
+S3=/tmp/proof-contra.db; rm -f $S3
+"$A/science_loop" --db $S3 init >/dev/null 2>&1
+P3=$("$A/science_loop" --db $S3 preregister --file /tmp/proof-prereg.json 2>/dev/null \
+      | python3 -c 'import json,sys;print(json.load(sys.stdin)["prereg_id"])')
+"$A/science_loop" --db $S3 dispatch --prereg "$P3" --cmd "echo 75.0" --max-runs 2 >/dev/null 2>&1
+"$A/science_loop" --db $S3 verdict --prereg "$P3" >/dev/null 2>&1
+chk "science contradiction" 4 $?
+
+# --- 12. science: tampered rule = 4 -----------------------------------------
+sqlite3 $S3 "update science_preregistrations set rule_json='{\"type\":\"mean_vs_threshold\",\"statistic\":\"mean\",\"compare\":\"< threshold\",\"threshold\":1}' where id='$P3'"
+"$A/science_loop" --db $S3 verdict --prereg "$P3" >/dev/null 2>&1
+chk "science edited-after-data rule" 4 $?
+
+# --- 13. science: failed trials are not data = 3 ----------------------------
+S4=/tmp/proof-failed.db; rm -f $S4
+"$A/science_loop" --db $S4 init >/dev/null 2>&1
+P4=$("$A/science_loop" --db $S4 preregister --file /tmp/proof-prereg.json 2>/dev/null \
+      | python3 -c 'import json,sys;print(json.load(sys.stdin)["prereg_id"])')
+"$A/science_loop" --db $S4 dispatch --prereg "$P4" --cmd "exit 7" --max-runs 2 >/dev/null 2>&1
+chk "dispatch of failing trials is not complete" 3 $?
+"$A/science_loop" --db $S4 verdict --prereg "$P4" >/dev/null 2>&1
+chk "verdict on zero usable trials" 3 $?
+
+
+# --- 14. no secret material in any shipped artifact --------------------------
+# pack_genesis_spore contains these patterns on purpose (it is the guard). Every OTHER artifact
+# and every packed spore must be clean; the guard's own regex lines are the only permitted hits.
+python3 - <<'PY2'
+import re, sys, pathlib
+PAT = re.compile(r"BEGIN [A-Z ]*PRIVATE KEY|AGE-SECRET-KEY-1|ghp_[A-Za-z0-9]{36}|"
+                 r"ghs_[A-Za-z0-9]{36}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}")
+A = pathlib.Path(DIR) / "artifacts"
+bad = []
+for f in A.iterdir():
+    if not f.is_file():
+        continue
+    try:
+        text = f.read_text()
+    except UnicodeDecodeError:
+        text = f.read_bytes().decode("latin-1")
+    for i, line in enumerate(text.splitlines(), 1):
+        if not PAT.search(line):
+            continue
+        # The guard's own pattern table is the one allowed source of these strings.
+        if f.name == "pack_genesis_spore" and ('r"(BEGIN' in line or 'r"sk-' in line):
+            continue
+        bad.append(f"{f.name}:{i}: {line.strip()[:70]}")
+print(("SECRET-MATCH " + "; ".join(bad)) if bad else "clean")
+sys.exit(4 if bad else 0)
+PY2
+chk "no secret material in artifacts" 0 $?
+
+# --- 15. mycelium: a real colonisation that refuses to be trusted ------------
+# The API is a coin flip, so this check does NOT assert that a model answered. It asserts the two
+# things that must hold whatever the model says: a dry run writes NOTHING, and the tool cannot be
+# made to accept an unverified write. Row counts are printed so a refusal is visible, not hidden.
+rm -rf /tmp/proof-colony && mkdir -p /tmp/proof-colony && cd /tmp/proof-colony
+printf 'def f():\n    return 1\n' > t.py
+cp t.py t.orig
+"$A/mycelium" --target t.py --dry-run >/tmp/proof-colony/dry.log 2>&1
+rc=$?
+# 0 = a verified note was proposed; 3 = no sample passed verification. BOTH are honest outcomes
+# because the model is non-deterministic. A 4 or a crash here is the failure this catches.
+chk "mycelium dry-run finishes honestly (0 verified or 3 refused)" \
+    "$( [ $rc -eq 0 ] || [ $rc -eq 3 ] && echo 0 || echo $rc)" 0
+# The claim that must never fail: a dry run leaves the file byte-identical.
+cmp -s t.py t.orig; chk "mycelium dry-run wrote nothing" 0 $?
+# The claim that must never fail: a missing target is refused, not created.
+"$A/mycelium" --target nope.py --dry-run >/dev/null 2>&1
+chk "mycelium refuses a missing target" 4 $?
+# The claim that must never fail: an unsatisfiable requirement is refused, file untouched.
+"$A/mycelium" --target t.py --needle 'zzqqxx-never' --attempts 1 >/dev/null 2>&1
+rc=$?; [ $rc -eq 3 ] || [ $rc -eq 2 ]; chk "mycelium refuses an unsatisfiable requirement" 0 $?
+cmp -s t.py t.orig; chk "mycelium SHORT wrote nothing" 0 $?
+# The structural verifier itself: a note with a comma-prefixed marker must round-trip exactly.
+python3 - <<'PY3'
+import runpy, sys
+A = DIR + "/artifacts/mycelium"
+ns = runpy.run_path(A, run_name="mycelium_module")
+structural_ok = ns["structural_ok"]
+original = "def f():\n    return 1\n"
+note = "# MYCELIUM: f returns 1"
+proposed = "def f():\n" + note + "\n    return 1\n"
+ok, why = structural_ok(original, proposed, None)
+print(f"structural_ok(correct)={ok} ({why})")
+sys.exit(0 if ok else 4)
+PY3
+chk "mycelium accepts a correctly inserted note" 0 $?
+python3 - <<'PY3'
+import runpy, sys
+A = DIR + "/artifacts/mycelium"
+ns = runpy.run_path(A, run_name="mycelium_module")
+structural_ok, parses = ns["structural_ok"], ns["parses"]
+original = "def f():\n    return 1\n"
+# A note inserted WITHOUT a comment token passes every structural rule and breaks the file.
+proposed = "def f():\nMYCELIUM: f returns 1\n    return 1\n"
+ok, _ = structural_ok(original, proposed, None)
+print(f"structural_only={ok}")
+if not ok:
+    sys.exit(2)          # the structural rule rejected it: nothing to prove about parsers
+ok2, why2 = parses("t.py", proposed)
+print(f"parses_after_structural_pass={ok2} ({why2})")
+sys.exit(0 if not ok2 else 4)   # a structural pass with a parse failure is the defect we fixed
+PY3
+chk "mycelium's parser catches a syntax-breaking note" 0 $?
+# The mutation that must be caught: perturbing the original must make the round-trip fail.
+python3 - <<'PY3'
+import runpy, sys
+A = DIR + "/artifacts/mycelium"
+ns = runpy.run_path(A, run_name="mycelium_module")
+structural_ok = ns["structural_ok"]
+original = "def f():\n    return 1\n"
+note = "# MYCELIUM: f returns 1"
+# The model returned a note AND silently changed the body: must be refused.
+proposed = "def f():\n" + note + "\n    return 2\n"
+ok, why = structural_ok(original, proposed, None)
+print(f"silent_body_edit accepted={ok} ({why})")
+sys.exit(4 if ok else 0)
+PY3
+chk "mycelium rejects a note that also edits the body" 0 $?
+
+# --- 16. science: the verdict reproduces from science.db alone ---------------
+SCI="$HOME/.estate/science/science-proof.db"
+if [ ! -s "$SCI" ]; then
+  echo "BLIND the science evidence database is missing or empty: $SCI"; exit 2
+fi
+"$A/rederive-verdict" --db "$SCI" >/tmp/proof-rederive.log 2>&1
+chk "verdict re-derived from science.db alone" 0 $?
+tail -1 /tmp/proof-rederive.log
+# THE DEFAULT, not just the flag. Every check above passes --db, so a default pointing at a file that
+# does not exist was invisible to all of them: measured 2026-11-08, `rederive-verdict` with no
+# arguments answered BLIND on a deleted placeholder while the real evidence sat beside it. The
+# command PROOF.md prints for the founder is the bare one, so the bare one is what is checked.
+OUT=$("$A/rederive-verdict" 2>&1); rc=$?
+chk "bare invocation (no --db) reproduces" 0 $rc
+case "$OUT" in
+  *REPRODUCED*) ;;   # a bare run must actually reproduce, not merely exit 0
+  *) echo "FAIL [bare invocation really re-derived] output did not say REPRODUCED"; exit 4 ;;
+esac
+# The checker must never mutate the evidence it checks.
+B4=$(shasum -a 256 "$SCI" | cut -d' ' -f1)
+"$A/rederive-verdict" --db "$SCI" >/dev/null 2>&1
+AF=$(shasum -a 256 "$SCI" | cut -d' ' -f1)
+[ "$B4" = "$AF" ]; chk "science.db is unchanged by the checker" 0 $?
+# The falsifier: a flipped stored verdict must be caught.
+cp "$SCI" /tmp/proof-tamper.db
+sqlite3 /tmp/proof-tamper.db "update science_verdicts set verdict='CONTRADICTED';" 2>/dev/null
+"$A/rederive-verdict" --db /tmp/proof-tamper.db >/dev/null 2>&1
+chk "re-derivation catches a flipped verdict" 4 $?
+# The falsifier that matters: a threshold tuned AFTER the data must be named.
+cp "$SCI" /tmp/proof-tuned.db
+sqlite3 /tmp/proof-tuned.db "update science_preregistrations set threshold=0.5;" 2>/dev/null
+OUT=$("$A/rederive-verdict" --db /tmp/proof-tuned.db 2>&1); rc=$?
+chk "re-derivation catches a tuned threshold" 4 $rc
+printf '%s' "$OUT" | grep -q "tuned after the data"
+chk "...and names the tuning, not just a number mismatch" 0 $?
+
+# --- 17. mycelium/scientific independence: no hidden dependency --------------
+# Independence must be proved by execution, not by a comment: a grep for 'science_loop' matches
+# the comment saying it is not used. Poison the import and the process surface, then run for real.
+[ -f /tmp/isolation_probe.py ] || cp "$(dirname "$0")/isolation_probe.py" /tmp/isolation_probe.py 2>/dev/null
+if [ -f /tmp/isolation_probe.py ]; then
+  python3 /tmp/isolation_probe.py >/tmp/proof-iso.log 2>&1
+  chk "re-derivation runs with science_loop imports poisoned" 0 $?
+else
+  echo "BLIND isolation_probe.py not found; independence not measured"; exit 2
+fi
+
+echo
+echo "checked $n claims, $fail failed"
+[ "$fail" -eq 0 ] && { echo "PROOF.md reproduces on this tree"; exit 0; }
+echo "PROOF.md contains $fail claim(s) that do not reproduce"; exit 4

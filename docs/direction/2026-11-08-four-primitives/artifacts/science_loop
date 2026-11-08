@@ -1,0 +1,356 @@
+#!/usr/bin/env python3
+"""science_loop — a preregistration-first experiment loop that can prove its own verdict.
+
+The design claim under test: "a serverless science engine can dispatch experiment trials and
+reach a verdict at zero marginal cost." The honest version of that claim has three parts, and this
+tool refuses to collapse them:
+
+  1. PREREGISTRATION FIRST. A hypothesis, a sample size, a decision rule and a stopping rule are
+     written to the database BEFORE any trial runs. The rule is stored as a blob whose sha256 is
+     recorded at draft time; `verdict` re-derives that hash and refuses (exit 4) if the rule was
+     edited after data was seen. A rule that can be tuned to the result is not a rule.
+
+  2. EVERY TRIAL RECORDED. Each dispatch writes a row to experiment_trial_runs with the command,
+     its real exit code, its duration and its output hash. A trial that did not run is not a
+     skipped row: it is absent, and the verdict counts absences against the preregistered size
+     (exit 3) instead of quietly shrinking the denominator.
+
+  3. THE VERDICT IS A FUNCTION OF THE RULE. `verdict` reads only rows that exist, applies the
+     preregistered rule, and prints the arithmetic it used. Re-running it later produces the same
+     answer from the same rows, which is what makes the audit trail auditable.
+
+Exit codes are the verdict (AGENTS.md section 3):
+  0  rule resolved            (the preregistered decision was reached)
+  2  BLIND: cannot judge      (no preregistration, unreadable rule, or a rule that does not parse)
+  3  SHORT or OVER budget     (fewer complete trials than the preregistration demanded)
+  4  MISMATCH / CONTRADICTION (rule edited after data, or the result contradicts the preregistration)
+
+Subcommands:
+  init                     create the three tables if absent (idempotent)
+  preregister --file F     store a preregistration; prints its id and rule sha256
+  dispatch  --prereg ID    run the preregistered trials (--dry-run to plan only)
+  verdict   --prereg ID    apply the rule to the recorded rows
+  status                   what is in the database right now
+
+Nothing here needs a network, a credential, or a paid tier. The compute tier is the local host,
+which is the only zero-marginal-cost tier that exists on this machine; a caller that wants a
+different tier passes --cmd and the loop records whatever it was given.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import sqlite3
+import statistics
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+SCHEMA = "estate-science/1"
+# The loop's own database, in its own directory -- never estate.db (see the note below), and never a
+# bare path that only some past session created. Measured 2026-11-08: `~/.estate/science.db` was a
+# 0-byte placeholder from an earlier run; the only database that holds a real proven verdict is
+# `~/.estate/science/science-proof.db`. One path per concept: the loop and rederive-verdict agree.
+DEFAULT_DB = Path.home() / ".estate" / "science" / "science-proof.db"
+
+# The three tables the loop owns. They do not exist in estate.db today (verified: no experiment,
+# prereg, trial or science table there), so this tool creates them rather than pretending to
+# attach to a schema somebody else maintains.
+DDL = """
+CREATE TABLE IF NOT EXISTS science_preregistrations (
+    id            TEXT PRIMARY KEY,
+    created_at    TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    hypothesis    TEXT NOT NULL,
+    -- The rule is stored as canonical JSON and its sha256 is recorded at draft time. `verdict`
+    -- re-derives the hash before applying the rule, so an edit after data is seen is caught.
+    rule_json     TEXT NOT NULL,
+    rule_sha256   TEXT NOT NULL,
+    sample_size   INTEGER NOT NULL,
+    metric        TEXT NOT NULL,
+    direction     TEXT NOT NULL,          -- 'higher' or 'lower' is better
+    threshold     REAL NOT NULL,
+    alpha         REAL NOT NULL,
+    sealed_at     TEXT,                   -- set when the first trial runs; further edits are refused
+    author        TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS experiment_trial_runs (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    prereg_id     TEXT NOT NULL REFERENCES science_preregistrations(id),
+    trial_idx     INTEGER NOT NULL,
+    cmd           TEXT NOT NULL,
+    exit_code     INTEGER NOT NULL,
+    duration_ms   INTEGER NOT NULL,
+    ran_at        TEXT NOT NULL,
+    output_sha256 TEXT NOT NULL,
+    value         REAL,                    -- the metric the trial reported, if it parsed one
+    raw_out       TEXT NOT NULL,
+    UNIQUE(prereg_id, trial_idx)
+);
+CREATE TABLE IF NOT EXISTS science_verdicts (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    prereg_id     TEXT NOT NULL REFERENCES science_preregistrations(id),
+    decided_at    TEXT NOT NULL,
+    verdict       TEXT NOT NULL,          -- SUPPORTED / REFUTED / INCONCLUSIVE / CONTRADICTED
+    rule_sha256   TEXT NOT NULL,
+    n_used        INTEGER NOT NULL,
+    statistic     REAL,
+    detail        TEXT NOT NULL,
+    exit_code     INTEGER NOT NULL
+);
+"""
+
+
+def connect(path: Path, create: bool = False) -> sqlite3.Connection:
+    if not create and not path.exists():
+        raise LookupError(f"no science database at {path}; run init first")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(str(path))
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA foreign_keys = ON")
+    return con
+
+
+def now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def canon(rule: dict) -> str:
+    return json.dumps(rule, sort_keys=True, separators=(",", ":"))
+
+
+def rule_digest(rule: dict) -> str:
+    return hashlib.sha256(canon(rule).encode()).hexdigest()
+
+
+def cmd_init(a) -> int:
+    con = connect(Path(a.db).expanduser(), create=True)
+    con.executescript(DDL)
+    con.commit()
+    tables = [r[0] for r in con.execute(
+        "select name from sqlite_master where type='table' order by name")]
+    print(json.dumps({"db": str(a.db), "schema": SCHEMA, "tables": tables}))
+    return 0
+
+
+def cmd_preregister(a) -> int:
+    p = Path(a.file).expanduser()
+    try:
+        spec = json.loads(p.read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"BLIND cannot read preregistration {p}: {e}")
+        return 2
+    required = ("title", "hypothesis", "metric", "direction", "threshold", "sample_size", "rule")
+    missing = [k for k in required if k not in spec]
+    if missing:
+        print(f"BLIND preregistration is missing required fields: {', '.join(missing)}")
+        return 2
+    if spec["direction"] not in ("higher", "lower"):
+        print(f"BLIND direction must be 'higher' or 'lower', got {spec['direction']!r}")
+        return 2
+    if int(spec["sample_size"]) < 1:
+        print("BLIND sample_size must be >= 1: a preregistration that needs no data proves nothing")
+        return 2
+    rule = spec["rule"]
+    if not isinstance(rule, dict) or "type" not in rule:
+        print("BLIND rule must be an object with a 'type'")
+        return 2
+    rid = hashlib.sha256(
+        (spec["title"] + spec["hypothesis"] + canon(rule) + now()).encode()).hexdigest()[:16]
+    con = connect(Path(a.db).expanduser(), create=True)
+    con.executescript(DDL)
+    con.execute(
+        "insert into science_preregistrations (id, created_at, title, hypothesis, rule_json,"
+        " rule_sha256, sample_size, metric, direction, threshold, alpha, author)"
+        " values (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (rid, now(), spec["title"], spec["hypothesis"], canon(rule), rule_digest(rule),
+         int(spec["sample_size"]), spec["metric"], spec["direction"], float(spec["threshold"]),
+         float(spec.get("alpha", 0.05)), spec.get("author", "unknown")))
+    con.commit()
+    print(json.dumps({"prereg_id": rid, "rule_sha256": rule_digest(rule),
+                      "sample_size": int(spec["sample_size"]), "db": str(a.db)}))
+    return 0
+
+
+def cmd_dispatch(a) -> int:
+    db = Path(a.db).expanduser()
+    con = connect(db, create=False)
+    row = con.execute("select * from science_preregistrations where id = ?", (a.prereg,)).fetchone()
+    if row is None:
+        print(f"BLIND no preregistration {a.prereg} in {db}")
+        return 2
+    # Seal on first dispatch: the rule may not change once data exists.
+    if row["sealed_at"] is None and not a.dry_run:
+        con.execute("update science_preregistrations set sealed_at = ? where id = ?",
+                    (now(), a.prereg))
+        con.commit()
+
+    # Resume rather than restart: a dispatch that is re-run fills the missing indices.
+    done = {r[0] for r in con.execute(
+        "select trial_idx from experiment_trial_runs where prereg_id = ?", (a.prereg,))}
+    plan = [i for i in range(int(row["sample_size"])) if i not in done]
+    if a.dry_run:
+        print(json.dumps({"prereg_id": a.prereg, "would_run": plan,
+                          "already_done": sorted(done), "cmd": a.cmd}))
+        return 0 if plan else 3
+
+    ran = 0
+    for idx in plan[: a.max_runs]:
+        t0 = time.time()
+        try:
+            proc = subprocess.run(a.cmd, shell=True, capture_output=True, text=True, timeout=a.timeout)
+            out, code = (proc.stdout + proc.stderr), proc.returncode
+        except subprocess.TimeoutExpired:
+            out, code = f"TIMEOUT after {a.timeout}s", 124
+        dur = int((time.time() - t0) * 1000)
+        value = parse_value(out)
+        con.execute(
+            "insert or replace into experiment_trial_runs"
+            " (prereg_id, trial_idx, cmd, exit_code, duration_ms, ran_at, output_sha256,"
+            "  value, raw_out) values (?,?,?,?,?,?,?,?,?)",
+            (a.prereg, idx, a.cmd, code, dur, now(),
+             hashlib.sha256(out.encode()).hexdigest(), value, out[-4000:]))
+        con.commit()
+        ran += 1
+    total = con.execute("select count(*) from experiment_trial_runs where prereg_id = ?",
+                        (a.prereg,)).fetchone()[0]
+    # 'complete' means the preregistration's data requirement is MET, not that N rows exist. A trial
+    # that exited non-zero or reported no metric is a row, and it is an absent data point: counting
+    # it as complete was the defect that let 3 failing trials look like a finished experiment.
+    usable = con.execute(
+        "select count(*) from experiment_trial_runs where prereg_id = ? and exit_code = 0"
+        " and value is not null", (a.prereg,)).fetchone()[0]
+    print(json.dumps({"prereg_id": a.prereg, "ran_now": ran, "total_rows": total,
+                      "usable_rows": usable, "required": int(row["sample_size"]),
+                      "complete": usable >= int(row["sample_size"])}))
+    return 0 if usable >= int(row["sample_size"]) else 3
+
+
+def parse_value(out: str) -> float | None:
+    """The metric is the last number in the trial's output, by contract with --cmd."""
+    tok = None
+    for tok in out.replace("=", " ").replace(":", " ").split():
+        try:
+            float(tok)
+        except ValueError:
+            continue
+        return float(tok)
+    return float(tok) if tok else None
+
+
+def cmd_verdict(a) -> int:
+    db = Path(a.db).expanduser()
+    con = connect(db, create=False)
+    row = con.execute("select * from science_preregistrations where id = ?", (a.prereg,)).fetchone()
+    if row is None:
+        print(f"BLIND no preregistration {a.prereg}")
+        return 2
+    # The falsifier that makes preregistration mean something: the rule must still hash to what
+    # was recorded at draft time.
+    if rule_digest(json.loads(row["rule_json"])) != row["rule_sha256"]:
+        print("MISMATCH the preregistered rule was edited after it was recorded; the rule cannot "
+              "be trusted to judge data it was changed to fit")
+        return 4
+    rule = json.loads(row["rule_json"])
+    rows = con.execute(
+        "select * from experiment_trial_runs where prereg_id = ? order by trial_idx",
+        (a.prereg,)).fetchall()
+    need = int(row["sample_size"])
+    usable = [r for r in rows if r["exit_code"] == 0 and r["value"] is not None]
+    detail = {"rule": rule, "required": need, "rows": len(rows), "usable": len(usable)}
+    if len(usable) < need:
+        detail["verdict"] = "INCONCLUSIVE"
+        detail["why"] = f"{len(usable)} usable trials < preregistered {need}"
+        emit(con, a.prereg, detail, None, len(usable), 3, row["rule_sha256"])
+        return 3
+
+    values = [r["value"] for r in usable[:need]]
+    stat = statistics.fmean(values)
+    detail["values"] = values
+    detail["mean"] = stat
+    better = stat > row["threshold"] if row["direction"] == "higher" else stat < row["threshold"]
+    detail["threshold"] = row["threshold"]
+    detail["direction"] = row["direction"]
+
+    rtype = rule.get("type")
+    if rtype == "mean_vs_threshold":
+        if better:
+            detail["verdict"] = "SUPPORTED"
+        else:
+            # A clean mean on the wrong side of a pre-declared threshold is not "no result": it is
+            # the hypothesis being contradicted, and it exits 4 rather than being filed as neutral.
+            detail["verdict"] = "CONTRADICTED"
+            emit(con, a.prereg, detail, stat, len(values), 4, row["rule_sha256"])
+            print(json.dumps(detail, sort_keys=True))
+            return 4
+        emit(con, a.prereg, detail, stat, len(values), 0, row["rule_sha256"])
+        print(json.dumps(detail, sort_keys=True))
+        return 0
+    if rtype == "all_within":
+        tol = float(rule.get("tolerance", 0.0))
+        target = float(rule["target"])
+        ok = all(abs(v - target) <= tol for v in values)
+        detail["verdict"] = "SUPPORTED" if ok else "REFUTED"
+        emit(con, a.prereg, detail, stat, len(values), 0 if ok else 4, row["rule_sha256"])
+        print(json.dumps(detail, sort_keys=True))
+        return 0 if ok else 4
+    print(f"BLIND rule type {rtype!r} is not implemented; refusing to invent a verdict")
+    return 2
+
+
+def emit(con, prereg, detail, stat, n, code, digest) -> None:
+    con.execute(
+        "insert into science_verdicts (prereg_id, decided_at, verdict, rule_sha256, n_used,"
+        " statistic, detail, exit_code) values (?,?,?,?,?,?,?,?)",
+        (prereg, now(), detail["verdict"], digest, n, stat,
+         json.dumps(detail, sort_keys=True), code))
+    con.commit()
+
+
+def cmd_status(a) -> int:
+    con = connect(Path(a.db).expanduser(), create=False)
+    pre = con.execute("select count(*) from science_preregistrations").fetchone()[0]
+    tr = con.execute("select count(*) from experiment_trial_runs").fetchone()[0]
+    vd = con.execute("select count(*) from science_verdicts").fetchone()[0]
+    print(json.dumps({"db": str(a.db), "preregistrations": pre, "trial_runs": tr,
+                      "verdicts": vd}))
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--db", default=str(DEFAULT_DB))
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    sub.add_parser("init").set_defaults(fn=cmd_init)
+    sub.add_parser("status").set_defaults(fn=cmd_status)
+
+    p = sub.add_parser("preregister"); p.add_argument("--file", required=True)
+    p.set_defaults(fn=cmd_preregister)
+
+    p = sub.add_parser("dispatch"); p.add_argument("--prereg", required=True)
+    p.add_argument("--cmd", default="python3 -c 'import random;print(random.gauss(10,2))'")
+    p.add_argument("--max-runs", type=int, default=200)
+    p.add_argument("--timeout", type=int, default=20)
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(fn=cmd_dispatch)
+
+    p = sub.add_parser("verdict"); p.add_argument("--prereg", required=True)
+    p.set_defaults(fn=cmd_verdict)
+
+    a = ap.parse_args(argv)
+    try:
+        return a.fn(a)
+    except LookupError as e:
+        print(f"BLIND {e}")
+        return 2
+    except sqlite3.Error as e:
+        print(f"BLIND database error: {e}")
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

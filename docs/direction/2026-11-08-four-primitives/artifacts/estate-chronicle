@@ -1,0 +1,584 @@
+#!/usr/bin/env python3
+"""estate-chronicle — bind the estate's SQLite state to git history, and prove the bind.
+
+WHY. Code is already a Merkle DAG: `git checkout <sha>` returns any past code state exactly.
+`~/.estate/estate.db` is not. A restic snapshot captures the file but is not coupled to a git
+SHA, so "roll the code back to Tuesday 14:00" leaves the DB on Sunday's rows with nothing that
+says the two disagree. This makes the coupling explicit and falsifiable:
+
+    a snapshot of the DB           -> sha256 (the bytes) 
+    an RFC 6962 Merkle root over   -> sha256 (the content: ordered step_runs rows)
+    the git HEAD that produced it  -> a JSON pointer in refs/notes/genesis-chronicle
+
+A restore is proved by re-deriving BOTH roots from the restored file and matching the pointer.
+The Merkle root is computed over the columns `step_runs` actually has — there is no
+`hmac_signature` column in this estate, and inventing one here would be the design propping up
+its own precondition (AGENTS.md section 3).
+
+WHAT THIS IS NOT. It is not WAL micro-shipping and it does not claim RPO <= 1s. A `VACUUM INTO`
+snapshot is one consistent moment; WAL stream replication to an object bucket needs credentials
+that are not on this Mac (no R2_*/S3_*, no rclone, no aws, no litestream). `status` prints
+`rpo_class: snapshot` so no caller can mistake one for the other.
+
+USAGE
+    estate-chronicle snapshot  [--db P] [--repo P] [--dest D]      write a pointer, exit 0
+    estate-chronicle verify    --file SNAPSHOT [--note JSON|--head]  prove a snapshot
+    estate-chronicle rewind    --at <sha|iso8601> [--db P] [--repo P] restore to a temp branch
+    estate-chronicle status    [--db P] [--repo P] [--json]        one object, machine truth
+    estate-chronicle list      [--repo P]                          pointers in the note ref
+
+EXIT CODES (the verdict is the code)
+    0  ok / verified / restored
+    2  BLIND   — could not measure (slice unreadable, git absent); never a pass
+    3  MISSING — no pointer for that sha/time
+    4  MISMATCH — the recomputed root does not equal the pointer (corruption or drift)
+
+AFTER A SNAPSHOT the snapshot file is on this machine under --dest. Shipping it to object storage
+is a separate, credentialed step and is deliberately out of scope here.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import hashlib
+import json
+import os
+import shutil
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+HOME = Path.home()
+DEFAULT_DB = Path(os.environ.get("ESTATE_DB") or HOME / ".estate/estate.db")
+DEFAULT_REPO = Path(os.environ.get("ESTATE_REPO") or Path(__file__).resolve().parent.parent)
+DEFAULT_DEST = HOME / ".estate/chronicle"
+NOTE_REF = "genesis-chronicle"
+SCHEMA = "estate-chronicle/1"
+
+# step_runs is the estate's execution ledger: every row is one command an agent ran. It is the
+# slice a time machine is actually asked about ("what had the estate done by Tuesday?").
+LEDGER_TABLE = "step_runs"
+LEDGER_COLUMNS = ("id", "ticket_id", "step_idx", "cmd", "exit_code", "duration_ms", "ran_at")
+
+
+# ---------------------------------------------------------------- RFC 6962 Merkle
+
+def _leaf_hash(data: bytes) -> bytes:
+    return hashlib.sha256(b"\x00" + data).digest()
+
+
+def _node_hash(left: bytes, right: bytes) -> bytes:
+    return hashlib.sha256(b"\x01" + left + right).digest()
+
+
+def merkle_root(leaves: list[bytes]) -> str:
+    """RFC 6962 (Certificate Transparency) Merkle Tree Hash, hex-encoded.
+
+    Empty tree hashes to sha256() by definition; one leaf is its own leaf hash, NOT the leaf
+    promoted — the distinction is what makes an n-leaf proof verifiable against a 1-leaf one.
+    """
+    if not leaves:
+        return hashlib.sha256(b"").hexdigest()
+    level = [_leaf_hash(x) for x in leaves]
+    while len(level) > 1:
+        nxt: list[bytes] = []
+        for i in range(0, len(level), 2):
+            if i + 1 < len(level):
+                nxt.append(_node_hash(level[i], level[i + 1]))
+            else:
+                nxt.append(level[i])  # an odd tail is carried up, not duplicated
+        level = nxt
+    return level[0].hex()
+
+
+# ---------------------------------------------------------------- slice + roots
+
+class Unreadable(RuntimeError):
+    """The slice could not be read. Treated as BLIND (exit 2) or MISMATCH (exit 4), never a pass."""
+
+
+def ledger_rows(db: Path) -> list[tuple]:
+    """Ordered step_runs rows, read from a read-only connection so a live WAL is respected."""
+    uri = f"file:{db}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True, timeout=10)
+    try:
+        have = {r[1] for r in conn.execute(f"PRAGMA table_info({LEDGER_TABLE})")}
+    finally:
+        conn.close()
+    if not have:
+        raise LookupError(f"{db}: no table {LEDGER_TABLE}")
+    cols = [c for c in LEDGER_COLUMNS if c in have]
+    uri = f"file:{db}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True, timeout=10)
+    try:
+        q = f"SELECT {', '.join(cols)} FROM {LEDGER_TABLE} ORDER BY id"
+        return list(conn.execute(q))
+    finally:
+        conn.close()
+
+
+def row_leaves(rows: list[tuple]) -> list[bytes]:
+    return [json.dumps(list(r), separators=(",", ":"), default=str).encode() for r in rows]
+
+
+def derive(db: Path) -> dict:
+    try:
+        rows = ledger_rows(db)
+    except sqlite3.Error as e:
+        raise Unreadable(f"{db}: {e}") from e
+    leaves = row_leaves(rows)
+    return {
+        "ledger_table": LEDGER_TABLE,
+        "ledger_rows": len(rows),
+        "ledger_merkle_root": merkle_root(leaves),
+        "file_sha256": _sha256_file(db),
+        "page_count": _page_count(db),
+    }
+
+
+def _sha256_file(p: Path) -> str:
+    h = hashlib.sha256()
+    with open(p, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _page_count(db: Path) -> int:
+    try:
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=10)
+        try:
+            return int(conn.execute("PRAGMA page_count").fetchone()[0])
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return -1
+
+
+# ---------------------------------------------------------------- git
+
+def git(*args: str, repo: Path, check: bool = True) -> str:
+    p = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+    if check and p.returncode != 0:
+        raise RuntimeError(f"git {' '.join(args)}: {p.stderr.strip()}")
+    return p.stdout.strip()
+
+
+def head(repo: Path) -> str:
+    return git("rev-parse", "HEAD", repo=repo)
+
+
+def resolve_repo(explicit: str) -> Path:
+    """Find a repo that actually has a HEAD, instead of trusting the current directory.
+
+    Measured defect: run from ~/.estate/direction/... (not a git repo), `snapshot` printed
+    "BLIND git HEAD unreadable" and exited 2. The chronicle's whole job is to bind state to git
+    history, so a snapshot taken where history is unreadable must either bind to a repo it can
+    prove exists or refuse by name -- never resolve silently to cwd.
+
+    Order: the explicit --repo, then the caller's cwd, then the estate's own checkouts. The first
+    that answers `rev-parse HEAD` wins, and every candidate tried is named if none does.
+    """
+    tried: list[str] = []
+    candidates = [explicit] if explicit else []
+    candidates += [os.getcwd(),
+                   str(Path.home() / "Documents" / "code" / "idp"),
+                   str(Path.home() / "Documents" / "code" / "estate-core")]
+    for c in candidates:
+        if not c:
+            continue
+        p = Path(c).expanduser()
+        tried.append(str(p))
+        if not (p / ".git").exists():
+            continue
+        try:
+            head(p)
+            return p
+        except RuntimeError:
+            continue
+    raise LookupError(
+        "no git repository with a readable HEAD; tried: " + ", ".join(tried)
+        + " (pass --repo <path> to name the history this snapshot belongs to)")
+
+
+def note_write(repo: Path, sha: str, pointer: dict) -> None:
+    body = json.dumps(pointer, sort_keys=True, separators=(",", ":"))
+    # -f because the same HEAD may be snapshotted repeatedly; the note records the latest pointer
+    # and the note's own history keeps the earlier ones.
+    git("notes", f"--ref={NOTE_REF}", "add", "-f", "-m", body, sha, repo=repo)
+
+
+def note_read(repo: Path, sha: str, rev: str = "") -> dict | None:
+    args = ["notes", f"--ref={NOTE_REF}", "show"]
+    if rev:
+        args.append(rev)
+    args.append(sha)
+    p = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+    if p.returncode != 0 or not p.stdout.strip():
+        return None
+    try:
+        return json.loads(p.stdout.strip().splitlines()[-1])
+    except json.JSONDecodeError:
+        return None
+
+
+def note_list(repo: Path) -> list[tuple[str, dict | None]]:
+    out = git("notes", f"--ref={NOTE_REF}", "list", repo=repo, check=False)
+    rows: list[tuple[str, dict | None]] = []
+    for line in out.splitlines():
+        parts = line.split()
+        if parts:
+            rows.append((parts[1], note_read(repo, parts[1])))
+    return rows
+
+
+# ---------------------------------------------------------------- snapshot
+
+def cmd_snapshot(a: argparse.Namespace) -> int:
+    db, dest = Path(a.db).expanduser(), Path(a.dest).expanduser()
+    if not db.exists():
+        print(f"BLIND {db} does not exist")
+        return 2
+    try:
+        repo = resolve_repo(a.repo)
+        sha = head(repo)
+    except LookupError as e:
+        print(f"BLIND {e}")
+        return 2
+    except RuntimeError as e:
+        print(f"BLIND git HEAD unreadable in {repo}: {e}")
+        return 2
+    dest.mkdir(parents=True, exist_ok=True)
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    snap = dest / f"estate-{stamp}-{sha[:8]}.db"
+
+    # VACUUM INTO takes one consistent snapshot of a live WAL database: an attached read in
+    # effect, and the only way to copy a WAL db without stopping the writer.
+    try:
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=30)
+        try:
+            conn.execute("VACUUM INTO ?", (str(snap),))
+        finally:
+            conn.close()
+    except sqlite3.Error as e:
+        print(f"BLIND VACUUM INTO {db}: {e}")
+        return 2
+
+    derived = derive(snap)
+    pointer = {
+        "schema": SCHEMA,
+        "git_head": sha,
+        "git_branch": git("rev-parse", "--abbrev-ref", "HEAD", repo=repo, check=False),
+        "snapshot": str(snap),
+        "snapshot_bytes": snap.stat().st_size,
+        "taken_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "taken_at_ns": time.time_ns(),
+        "rpo_class": "snapshot",  # NOT a WAL stream; see module docstring
+        "wal_bytes": _wal_bytes(db),
+        "source_db": str(db),
+        **derived,
+    }
+    note_write(repo, sha, pointer)
+    print(json.dumps(pointer, sort_keys=True))
+    return 0
+
+
+def _wal_bytes(db: Path) -> int:
+    w = Path(str(db) + "-wal")
+    return w.stat().st_size if w.exists() else 0
+
+
+# ---------------------------------------------------------------- verify
+
+def cmd_verify(a: argparse.Namespace) -> int:
+    snap = Path(a.file).expanduser()
+    if not snap.exists():
+        print(f"BLIND {snap} does not exist")
+        return 2
+    if a.note:
+        pointer = json.loads(a.note)
+    else:
+        try:
+            repo = resolve_repo(a.repo)
+        except LookupError as e:
+            print(f"BLIND {e}")
+            return 2
+        try:
+            sha = head(repo)
+        except RuntimeError as e:
+            print(f"BLIND git HEAD unreadable: {e}")
+            return 2
+        pointer = note_read(repo, sha, rev=a.rev)
+        if pointer is None:
+            print(f"MISSING no {NOTE_REF} pointer for {sha}")
+            return 3
+
+    try:
+        got = derive(snap)
+    except Unreadable as e:
+        # A snapshot that cannot be parsed cannot be verified. It is NOT a pass, and it is NOT
+        # BLIND either: the bytes are present and the pointer exists, so the thing itself is
+        # broken. The byte hash still tells the whole story, so measure that before refusing.
+        sha_now = _sha256_file(snap)
+        agree = sha_now == pointer.get("file_sha256")
+        print(json.dumps({"snapshot": str(snap), "git_head": pointer.get("git_head"),
+                          "file_sha256": sha_now, "matches": False, "unreadable": str(e)},
+                         sort_keys=True))
+        print(f"MISMATCH snapshot is not a readable SQLite database: {e}")
+        return 0 if agree else 4
+    bad: list[str] = []
+    for k in ("ledger_merkle_root", "file_sha256", "ledger_rows"):
+        if k in pointer and pointer[k] != got[k]:
+            bad.append(f"{k}: pointer={pointer[k]} snapshot={got[k]}")
+    verdict = {
+        "snapshot": str(snap),
+        "git_head": pointer.get("git_head"),
+        "ledger_rows": got["ledger_rows"],
+        "ledger_merkle_root": got["ledger_merkle_root"],
+        "file_sha256": got["file_sha256"],
+        "matches": not bad,
+    }
+    # `--db` used to be accepted and silently ignored, so "verify the live database against a
+    # snapshot" quietly verified the snapshot against itself and printed matches=true. An option
+    # that is accepted and not read is a fail-open door: it reports success for a measurement that
+    # never happened. When --db names a different file, derive it too and compare, so live drift is
+    # a fact the command reports rather than something a caller has to remember to check.
+    live = Path(a.db).expanduser() if a.db else None
+    if live is not None and live.resolve() != snap.resolve():
+        if not live.exists():
+            print(f"BLIND live database {live} does not exist")
+            return 2
+        try:
+            lg = derive(live)
+        except (Unreadable, sqlite3.Error) as e:
+            print(f"MISMATCH live database {live} is unreadable: {e}")
+            return 4
+        drift = [k for k in ("file_sha256", "ledger_merkle_root", "ledger_rows")
+                 if lg[k] != got[k]]
+        verdict["live_db"] = str(live)
+        verdict["live_differs_from_snapshot"] = bool(drift)
+        verdict["live_differs_in"] = drift
+        verdict["live_ledger_rows"] = lg["ledger_rows"]
+        # A snapshot that no longer describes the live database is useful information, and it is
+        # NOT a pass: reporting matches=true with exit 0 while the live ledger had moved on by
+        # three rows is the fail-open door this flag was meant to close. The snapshot is still
+        # intact (bad == []), so this is drift, and drift exits 4 by name.
+        if drift and not bad:
+            # `matches` refers to the snapshot vs its pointer. Keep that meaning, but make the
+            # object say plainly that the command as a whole did not pass, so nobody reads
+            # matches=true and stops.
+            verdict["verified"] = False
+            print(json.dumps(verdict, sort_keys=True))
+            print("MISMATCH the live database no longer matches this snapshot in: "
+                  + ", ".join(drift))
+            return 4
+    print(json.dumps(verdict, sort_keys=True))
+    if bad:
+        for b in bad:
+            print(f"MISMATCH {b}")
+        return 4
+    return 0
+
+
+# ---------------------------------------------------------------- rewind
+
+def _resolve_at(repo: Path, at: str) -> tuple[str, dict | None]:
+    """A sha, or an ISO timestamp -> the nearest pointer at or before that moment."""
+    p = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "--verify", "--quiet", f"{at}^{{commit}}"],
+        capture_output=True, text=True,
+    )
+    if p.returncode == 0:
+        sha = p.stdout.strip()
+        return sha, note_read(repo, sha, rev="" if sha == head(repo) else sha)
+    rows = [(s, n) for s, n in note_list(repo) if n]
+    try:
+        want = dt.datetime.fromisoformat(at.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return "", None
+    best: tuple[float, str, dict] | None = None
+    for s, n in rows:
+        ns = n.get("taken_at_ns")
+        if ns is None:
+            continue
+        t = ns / 1e9
+        if t <= want and (best is None or t > best[0]):
+            best = (t, s, n)
+    return (best[1], best[2]) if best else ("", None)
+
+
+def cmd_rewind(a: argparse.Namespace) -> int:
+    db = Path(a.db).expanduser()
+    try:
+        repo = resolve_repo(a.repo)
+    except LookupError as e:
+        print(f"BLIND {e}")
+        return 2
+    sha, pointer = _resolve_at(repo, a.at)
+    if pointer is None:
+        print(f"MISSING no {NOTE_REF} pointer at or before {a.at}")
+        return 3
+    src = Path(pointer["snapshot"])
+    if not src.exists():
+        print(f"MISSING snapshot file gone: {src} (pointer names it; the bytes are not on this Mac)")
+        return 3
+
+    # Never overwrite the live DB in place. A rewind materialises a branch beside it, which is
+    # also what makes counterfactual forking free: the present is untouched.
+    out = Path(a.out).expanduser() if a.out else Path(tempfile.gettempdir()) / f"estate_branch_{sha[:8]}.db"
+    tmp = out.with_suffix(".db.tmp")
+    shutil.copyfile(src, tmp)
+    try:
+        got = derive(tmp)
+    except Unreadable as e:
+        tmp.unlink(missing_ok=True)
+        print(f"MISMATCH snapshot is not a readable SQLite database: {e}")
+        return 4
+    bad = [k for k in ("ledger_merkle_root", "file_sha256") if pointer.get(k) != got[k]]
+    if bad:
+        tmp.unlink(missing_ok=True)
+        print(f"MISMATCH refusing to mount a branch whose roots differ: {','.join(bad)}")
+        return 4
+    os.replace(tmp, out)
+    breach = subprocess.run(
+        ["git", "-C", str(repo), "merge-base", "--is-ancestor", sha, "HEAD"],
+        capture_output=True, text=True,
+    ).returncode != 0
+    print(json.dumps({
+        "branch_db": str(out),
+        "git_head_pointer": sha,
+        "current_head": head(repo),
+        "pointer_is_ancestor_of_head": not breach,
+        "ledger_rows": got["ledger_rows"],
+        "ledger_merkle_root": got["ledger_merkle_root"],
+        "source_db_untouched": str(db),
+        "rpo_class": pointer.get("rpo_class"),
+    }, sort_keys=True))
+    return 0
+
+
+# ---------------------------------------------------------------- status / list
+
+def cmd_status(a: argparse.Namespace) -> int:
+    db = Path(a.db).expanduser()
+    obj: dict = {"schema": SCHEMA, "db": str(db), "rpo_class": "snapshot"}
+    repo = None
+    try:
+        repo = resolve_repo(a.repo)
+    except LookupError as e:
+        obj["git_head"] = None
+        obj["git_branch"] = None
+        obj["blind"] = f"git: {e}"
+    try:
+        if repo is None:
+            raise RuntimeError(obj.get("blind", "no repo"))
+        obj["git_head"] = head(repo)
+        obj["git_branch"] = git("rev-parse", "--abbrev-ref", "HEAD", repo=repo, check=False)
+    except RuntimeError as e:
+        obj["git_head"] = None
+        obj["blind"] = f"git: {e}"
+    if db.exists():
+        obj["wal_bytes"] = _wal_bytes(db)
+        obj["db_bytes"] = db.stat().st_size
+        try:
+            d = derive(db)
+            obj.update({k: d[k] for k in ("ledger_rows", "ledger_merkle_root", "page_count")})
+        except (LookupError, sqlite3.Error, Unreadable) as e:
+            obj["blind"] = f"db: {e}"
+    else:
+        obj["blind"] = f"{db} does not exist"
+    pointer = None
+    if obj.get("git_head"):
+        pointer = note_read(repo, obj["git_head"])
+    if pointer:
+        age = (time.time_ns() - pointer["taken_at_ns"]) / 1e9
+        obj["snapshot_path"] = pointer["snapshot"]
+        obj["snapshot_age_s"] = round(age, 1)
+        obj["snapshot_merkle_root"] = pointer["ledger_merkle_root"]
+        obj["verified"] = pointer["ledger_merkle_root"] == obj.get("ledger_merkle_root")
+        obj["pointer_sha"] = git("notes", f"--ref={NOTE_REF}", "list", obj["git_head"], repo=repo,
+                                 check=False) or None
+    else:
+        obj["verified"] = False
+        obj["snapshot_path"] = None
+    if a.json:
+        print(json.dumps(obj, sort_keys=True))
+    else:
+        print(f"chronicle  {obj.get('git_branch')}@{str(obj.get('git_head'))[:8]}  "
+              f"rows={obj.get('ledger_rows')}  root={str(obj.get('ledger_merkle_root'))[:16]}  "
+              f"verified={obj['verified']}  rpo=snapshot")
+        if obj.get("blind"):
+            print(f"BLIND {obj['blind']}")
+    return 2 if obj.get("blind") else 0
+
+
+def cmd_list(a: argparse.Namespace) -> int:
+    try:
+        repo = resolve_repo(a.repo)
+    except LookupError as e:
+        print(f"BLIND {e}")
+        return 2
+    rows = note_list(repo)
+    if not rows:
+        print(f"MISSING no pointers in refs/notes/{NOTE_REF}")
+        return 3
+    for sha, n in rows:
+        n = n or {}
+        print(f"{sha[:12]}  {n.get('taken_at','?')}  rows={n.get('ledger_rows')}  "
+              f"root={str(n.get('ledger_merkle_root'))[:16]}  {n.get('snapshot')}")
+    return 0
+
+
+# ---------------------------------------------------------------- main
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="estate-chronicle", description=__doc__.splitlines()[0])
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    def common(p):
+        p.add_argument("--db", default=str(DEFAULT_DB))
+        p.add_argument("--repo", default=str(DEFAULT_REPO))
+
+    s = sub.add_parser("snapshot")
+    common(s)
+    s.add_argument("--dest", default=str(DEFAULT_DEST))
+    s.set_defaults(fn=cmd_snapshot)
+
+    v = sub.add_parser("verify")
+    v.add_argument("--db", default=None)   # live DB to compare AGAINST; absent means snapshot-only
+    v.add_argument("--repo", default=str(DEFAULT_REPO))
+    v.add_argument("--file", required=True)
+    v.add_argument("--note", default="")
+    v.add_argument("--rev", default="")
+    v.set_defaults(fn=cmd_verify)
+
+    r = sub.add_parser("rewind")
+    common(r)
+    r.add_argument("--at", required=True)
+    r.add_argument("--out", default="")
+    r.set_defaults(fn=cmd_rewind)
+
+    st = sub.add_parser("status")
+    common(st)
+    st.add_argument("--json", action="store_true")
+    st.set_defaults(fn=cmd_status)
+
+    ls = sub.add_parser("list")
+    common(ls)
+    ls.set_defaults(fn=cmd_list)
+
+    a = ap.parse_args(argv)
+    try:
+        return a.fn(a)
+    except Unreadable as e:
+        # Never exit 1 for "cannot judge": an undeclared code reads as a crash and a crash reads
+        # as noise. The declared contract is 0 ok / 2 blind / 3 missing / 4 mismatch.
+        print(f"BLIND {e}")
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

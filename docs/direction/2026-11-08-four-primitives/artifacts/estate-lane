@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+"""estate-lane — one client for the estate's model lanes.
+
+The estate's routing law (AGENTS.md 7a): the CLOUD router is the default, the laptop router is
+the fallback. On this host there is no fallback at all -- ollama's x86_64 build cannot load
+MLX's float16 symbol (measured: `_mlx_array_item_float16` is absent from the x86_64 slice of
+libmlxc.dylib and present in the arm64 slice) -- so this client talks to the cloud first and
+names every lane it tried when it cannot.
+
+Two things this file exists to get right, both learned by measurement:
+
+1. **Cloudflare answers 403 "error code: 1010" to urllib's default User-Agent.** That looks
+   exactly like an auth failure and is not one: the same key and body return 200 with an
+   explicit User-Agent. A client that omits it produces a permanent, mysterious 403.
+2. **The key is resolved by NAME from the vault, never from a literal and never printed.**
+   `LITELLM_CLUSTER_AGENT_KEY` contains an ed25519 *signing* key (field ESTATE_AGENT_KEY), not a
+   bearer token; the estate's own voice engine reads `LITELLM_API_KEY`. Names are read from the
+   caller's code, not guessed by trying (attempting to send the signing key produced a
+   ValueError that printed a private key to the transcript -- a real leak caused by a wrong name).
+
+Exit codes are the verdict:
+  0  a real NON-EMPTY completion was returned
+  2  BLIND   -- no lane could be measured (no key, no network, DNS, timeout)
+  4  REFUSED -- a lane answered and declined (HTTP error, 200 without choices, or 200 with
+               EMPTY content, which happens when reasoning tokens consume the whole max_tokens
+               budget and the answer is truncated away)
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+
+USER_AGENT = "estate-lane/1.0 (+https://github.com/chidionyema/idp)"
+VAULT = os.path.expanduser("~/Documents/code/estate-secrets")
+
+# Lane order is a decision, not a list: cloud first (AGENTS.md 7a), laptop second (fallback).
+LANES = (
+    {"name": "cloud", "base": "https://llm.mumchimp.com", "vault_name": "LITELLM_LAPTOP_KEY",
+     "vault_env": "dev", "field": "LITELLM_API_KEY"},
+    {"name": "laptop", "base": "http://127.0.0.1:4000", "vault_name": "LITELLM_LAPTOP_KEY",
+     "vault_env": "dev", "field": "LITELLM_API_KEY"},
+)
+
+
+def resolve_key(lane: dict) -> str | None:
+    """Resolve the bearer token by NAME. Returns None rather than printing anything on failure."""
+    env = os.environ.get(lane["field"], "").strip()
+    if env:
+        return env
+    loader = os.path.join(VAULT, "scripts", "secret-load")
+    if not os.access(loader, os.X_OK):
+        return None
+    p = subprocess.run([loader, lane["vault_env"], lane["vault_name"], lane["field"]],
+                       capture_output=True, text=True)
+    if p.returncode != 0:
+        return None
+    val = p.stdout.strip()
+    # A PEM block in an Authorization header is a private key being sent to an HTTP endpoint.
+    # Refuse by shape, because the vault name said "key" and the content said "signing key".
+    if "PRIVATE KEY" in val:
+        return None
+    return val or None
+
+
+def chat(lane: dict, model: str, prompt: str, max_tokens: int, timeout: float) -> dict:
+    key = resolve_key(lane)
+    if not key:
+        return {"lane": lane["name"], "outcome": "blind",
+                "reason": f"no usable {lane['field']} for lane {lane['name']}"}
+    body = json.dumps({
+        "model": model, "max_tokens": max_tokens, "temperature": 0,
+        "messages": [{"role": "user", "content": prompt}],
+    }).encode()
+    req = urllib.request.Request(
+        lane["base"].rstrip("/") + "/v1/chat/completions", data=body,
+        headers={"Content-Type": "application/json", "Authorization": "Bearer " + key,
+                 "User-Agent": USER_AGENT},   # without this Cloudflare returns 403 / 1010
+    )
+    t0 = time.time()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            d = json.load(r)
+    except urllib.error.HTTPError as e:
+        return {"lane": lane["name"], "outcome": "refused", "status": e.code,
+                "reason": e.read()[:200].decode("utf8", "replace").strip()}
+    except Exception as e:  # DNS, TLS, timeout, connection reset
+        return {"lane": lane["name"], "outcome": "blind",
+                "reason": f"{type(e).__name__}: {str(e)[:160]}"}
+    elapsed = round(time.time() - t0, 3)
+    try:
+        text = d["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError):
+        return {"lane": lane["name"], "outcome": "refused", "status": 200,
+                "reason": "200 without choices[0].message.content"}
+    usage = d.get("usage") or {}
+    reasoning = (usage.get("completion_tokens_details") or {}).get("reasoning_tokens") or 0
+    # A 200 with empty content is not a completion. Measured: asking for an 8-word answer with
+    # max_tokens=256 returned content="" because the model spent 255 tokens on reasoning and was
+    # truncated by the token limit before emitting an answer. Exit 0 there would be a fail-open:
+    # the caller would splice an empty string into a file and call it a colonisation.
+    if not text.strip():
+        return {"lane": lane["name"], "outcome": "empty", "status": 200,
+                "model": d.get("model"), "latency_s": elapsed, "usage": usage,
+                "reason": (f"200 with empty content ({reasoning} reasoning tokens; the answer "
+                           f"was truncated by max_tokens={max_tokens})")}
+    return {"lane": lane["name"], "outcome": "ok", "status": 200, "model": d.get("model"),
+            "latency_s": elapsed, "usage": usage, "reasoning_tokens": reasoning,
+            # Models prefix and suffix whitespace constantly; the caller compares stripped text.
+            "text": text.strip(), "text_raw_len": len(text)}
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="estate-lane")
+    ap.add_argument("--prompt", required=True)
+    ap.add_argument("--model", default="default")
+    ap.add_argument("--max-tokens", type=int, default=256)
+    ap.add_argument("--timeout", type=float, default=60.0)
+    ap.add_argument("--lane", default="", help="cloud | laptop | (empty = try all in order)")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args(argv)
+
+    lanes = [l for l in LANES if not a.lane or l["name"] == a.lane]
+    if not lanes:
+        print(f"BLIND unknown lane {a.lane!r}; known: {[l['name'] for l in LANES]}")
+        return 2
+
+    tried = []
+    for lane in lanes:
+        r = chat(lane, a.model, a.prompt, a.max_tokens, a.timeout)
+        tried.append(r)
+        if r["outcome"] == "ok":
+            if a.json:
+                print(json.dumps(r, sort_keys=True))
+            else:
+                print(r["text"])
+            return 0
+
+    # Nothing answered. Distinguish "could not measure" (blind) from "asked and refused".
+    if a.json:
+        print(json.dumps({"outcome": "exhausted", "tried": tried}, sort_keys=True))
+    else:
+        for r in tried:
+            tag = {"blind": "BLIND", "empty": "EMPTY"}.get(
+                r["outcome"], f"REFUSED {r.get('status')}")
+            print(f"{tag} lane={r['lane']}: {r['reason']}")
+    return 4 if any(r["outcome"] in ("refused", "empty") for r in tried) else 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
