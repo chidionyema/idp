@@ -133,3 +133,17 @@ def test_empty_noop_not_counted_as_yield(tmp_path):
     git(repo, "reset", "-q", "--", "README.md")
     bad = record(repo)
     assert bad.returncode != 0 and "stage actual work" in bad.stderr
+
+
+def test_resolved_friction_requires_finite_measured_improvement(tmp_path):
+    repo = setup(tmp_path)
+    for before, after in [
+        (float("nan"), 1), (10, float("inf")), (3, 4),
+        (0, 0), (-1, 0), (10, -1),
+    ]:
+        r = record(repo, friction="legion-429", symptom="repeat provider failure",
+                   resolution="RESOLVED", before=before, after=after)
+        assert r.returncode != 0, (before, after, r.stdout, r.stderr)
+    good = record(repo, friction="legion-429", symptom="repeat provider failure",
+                  resolution="RESOLVED", before=10, after=3)
+    assert good.returncode == 0, good.stderr
