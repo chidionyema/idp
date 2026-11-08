@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+"""Commit-bound session yield: deterministic source evidence, never fake operational proof.
+
+record: create and stage a unique yield receipt from the exact staged diff.
+check: verify the receipt recorded in the commit message against Git's index.
+summary: print reusable intelligence from receipts without inferring deployment.
+No credentials, external dependencies, network requests, or expensive background work.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+SCHEMA = "estate.session-yield.v1"
+KINDS = frozenset({
+    "delivery", "bug-fix", "security", "friction", "optimization",
+    "intelligence", "process", "failure-mode", "recovery",
+})
+STATES = frozenset({"SOURCE_EVIDENCED", "RUNTIME_RECEIPT_DECLARED", "BLOCKED_WITH_RECOVERY"})
+SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{2,100}$")
+TRAILER = re.compile(r"^Yield-Receipt: (\.yield/[A-Za-z0-9][A-Za-z0-9_.-]{2,100}\.json)$", re.M)
+
+
+class YieldError(Exception):
+    pass
+
+
+def git(*args: str) -> bytes:
+    result = subprocess.run(["git", *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    if result.returncode:
+        raise YieldError(f"git {args[0]} unavailable (exit {result.returncode})")
+    return result.stdout
+
+
+def staged_paths() -> list[str]:
+    raw = git("diff", "--cached", "--name-only", "-z", "--diff-filter=ACMR")
+    paths = [p.decode("utf-8") for p in raw.split(b"\0") if p]
+    return sorted(p for p in paths if not p.startswith(".yield/"))
+
+
+def patch_digest() -> str:
+    return hashlib.sha256(git("diff", "--cached", "--binary", "--", ".", ":(exclude).yield/**")).hexdigest()
+
+
+def staged_bytes(path: str) -> bytes:
+    if not path or path.startswith("/") or ".." in Path(path).parts or "\n" in path:
+        raise YieldError("unsafe receipt/evidence path")
+    return git("show", ":" + path)
+
+
+def sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def validate(data: dict, receipt_path: str) -> None:
+    if not isinstance(data, dict) or data.get("schema") != SCHEMA:
+        raise YieldError("unknown yield receipt schema")
+    session = data.get("session")
+    if not isinstance(session, str) or not SAFE_ID.fullmatch(session):
+        raise YieldError("session identifier missing/invalid")
+    if receipt_path != f".yield/{session}.json":
+        raise YieldError("receipt session does not match unique path")
+    if data.get("kind") not in KINDS or data.get("maturity") not in STATES:
+        raise YieldError("yield kind or maturity unrecognized")
+    summary = data.get("summary")
+    if not isinstance(summary, str) or len(summary.strip()) < 16 or len(summary) > 600:
+        raise YieldError("a substantive bounded yield summary is required")
+    paths = staged_paths()
+    if not paths:
+        raise YieldError("no staged non-receipt change: no commit yield")
+    if data.get("changedPaths") != paths or data.get("patchSha256") != patch_digest():
+        raise YieldError("yield receipt does not match the exact staged patch")
+    evidence = data.get("evidence")
+    if not isinstance(evidence, list) or not evidence or len(evidence) > 40:
+        raise YieldError("at least one staged source/evidence witness is required")
+    for item in evidence:
+        if not isinstance(item, dict) or item.get("path") not in paths:
+            raise YieldError("evidence must be a changed path in this commit")
+        if item.get("sha256") != sha256(staged_bytes(item["path"])):
+            raise YieldError("staged evidence hash mismatch")
+    intel = data.get("intelligence")
+    if not isinstance(intel, dict):
+        raise YieldError("reusable institutional intelligence is required")
+    for key in ("lookupKey", "finding", "nextAction"):
+        val = intel.get(key)
+        if not isinstance(val, str) or len(val.strip()) < 8 or len(val) > 800:
+            raise YieldError(f"incomplete intelligence.{key}")
+    if not SAFE_ID.fullmatch(intel["lookupKey"]):
+        raise YieldError("intelligence lookup key must be canonical")
+    friction = data.get("friction")
+    if friction is not None:
+        if not isinstance(friction, dict) or not SAFE_ID.fullmatch(str(friction.get("fingerprint", ""))):
+            raise YieldError("friction requires a stable fingerprint")
+        if not isinstance(friction.get("symptom"), str) or len(friction["symptom"]) < 8:
+            raise YieldError("friction requires observed symptom")
+        if friction.get("resolution") not in ("IDENTIFIED", "RESOLVED", "PARTIAL"):
+            raise YieldError("friction resolution is not evidenced")
+        if friction["resolution"] == "RESOLVED" and (
+            not isinstance(friction.get("before"), (int, float))
+            or not isinstance(friction.get("after"), (int, float))
+        ):
+            raise YieldError("resolved friction requires numeric before/after")
+    if data["maturity"] == "RUNTIME_RECEIPT_DECLARED":
+        runtime = data.get("runtime")
+        if not isinstance(runtime, dict) or any(
+            not isinstance(runtime.get(k), str) or len(runtime[k]) < 8
+            for k in ("sourceSha", "probe", "receipt", "rollback")
+        ):
+            raise YieldError("claimed runtime yield needs source SHA, effect probe, receipt and rollback")
+    if data["maturity"] == "BLOCKED_WITH_RECOVERY" and len(intel["nextAction"]) < 20:
+        raise YieldError("blocker needs an executable recovery next action")
+
+
+def record(args: argparse.Namespace) -> None:
+    if not SAFE_ID.fullmatch(args.session):
+        raise YieldError("session must be 3-101 safe identifier characters")
+    receipt = f".yield/{args.session}.json"
+    if Path(receipt).exists() or receipt in staged_paths():
+        raise YieldError("session receipt already exists: replay forbidden")
+    paths = staged_paths()
+    if not paths:
+        raise YieldError("stage actual work before recording yield")
+    evidence_paths = args.evidence or paths[:1]
+    for p in evidence_paths:
+        if p not in paths:
+            raise YieldError("evidence path must be changed in this staged patch")
+    data = {
+        "schema": SCHEMA, "session": args.session, "kind": args.kind,
+        "maturity": args.maturity, "summary": args.summary,
+        "changedPaths": paths, "patchSha256": patch_digest(),
+        "evidence": [{"path": p, "sha256": sha256(staged_bytes(p))} for p in evidence_paths],
+        "intelligence": {"lookupKey": args.lookup_key, "finding": args.finding,
+                         "nextAction": args.next_action},
+        "friction": None, "runtime": None,
+    }
+    if args.friction:
+        data["friction"] = {"fingerprint": args.friction, "symptom": args.symptom,
+                            "resolution": args.resolution, "before": args.before,
+                            "after": args.after}
+    if args.maturity == "RUNTIME_RECEIPT_DECLARED":
+        data["runtime"] = {"sourceSha": args.source_sha, "probe": args.probe,
+                           "receipt": args.effect_receipt, "rollback": args.rollback}
+    validate(data, receipt)
+    Path(".yield").mkdir(exist_ok=True)
+    Path(receipt).write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+    git("add", "--", receipt)
+    print(f"YIELD-RECORDED {receipt} {data['maturity']} patch={data['patchSha256'][:12]}")
+    print(f"Commit trailer: Yield-Receipt: {receipt}")
+
+
+def check(message_path: str) -> None:
+    message = Path(message_path).read_text(encoding="utf-8")
+    refs = TRAILER.findall(message)
+    if len(refs) != 1:
+        raise YieldError("exactly one Yield-Receipt trailer required; run bin/idp-yield-gate record")
+    receipt_path = refs[0]
+    added = git("diff", "--cached", "--name-status", "-z", "--", receipt_path).split(b"\0")
+    if not added or added[0] != b"A":
+        raise YieldError("receipt must be added new in the SAME commit, not replayed")
+    try:
+        data = json.loads(staged_bytes(receipt_path))
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise YieldError("invalid staged receipt JSON") from exc
+    validate(data, receipt_path)
+    print(f"YIELD-ADMITTED {receipt_path}: SOURCE-BOUND (runtime independently unverified)")
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(description=__doc__)
+    sub = p.add_subparsers(dest="mode", required=True)
+    c = sub.add_parser("check")
+    c.add_argument("message")
+    r = sub.add_parser("record")
+    r.add_argument("--session", required=True)
+    r.add_argument("--kind", choices=sorted(KINDS), required=True)
+    r.add_argument("--maturity", choices=sorted(STATES), default="SOURCE_EVIDENCED")
+    r.add_argument("--summary", required=True)
+    r.add_argument("--lookup-key", required=True)
+    r.add_argument("--finding", required=True)
+    r.add_argument("--next-action", required=True)
+    r.add_argument("--evidence", action="append")
+    r.add_argument("--friction")
+    r.add_argument("--symptom", default="")
+    r.add_argument("--resolution", default="IDENTIFIED", choices=["IDENTIFIED", "RESOLVED", "PARTIAL"])
+    r.add_argument("--before", type=float)
+    r.add_argument("--after", type=float)
+    r.add_argument("--source-sha", default="")
+    r.add_argument("--probe", default="")
+    r.add_argument("--effect-receipt", default="")
+    r.add_argument("--rollback", default="")
+    args = p.parse_args(argv)
+    try:
+        if args.mode == "record":
+            record(args)
+        else:
+            check(args.message)
+        return 0
+    except (YieldError, OSError) as exc:
+        print(f"YIELD-REFUSED {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
