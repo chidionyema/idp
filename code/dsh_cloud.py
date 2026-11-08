@@ -10,9 +10,11 @@ container replacement.
 from __future__ import annotations
 
 import atexit
+import hashlib
 import json
 import os
 import pathlib
+import re
 import socket
 import subprocess
 import threading
@@ -22,6 +24,11 @@ import modal
 
 
 DSH_VERSION = "0.2.1-rc.5"
+CONTRACT_ID = "estate.dsh-web"
+SCHEMA_VERSION = "1.0.0"
+RELEASE_ID = "dsh-web-2026.11.08.1"
+RELEASE_VERSION = DSH_VERSION
+RELEASE_AUTHORITY = "work-surface"
 DSH_HOME = "/root/.dsh"
 DSH_PORT = 3080
 PUBLIC_PORT = 8080
@@ -103,6 +110,7 @@ import net from "node:net";
 
 const targetHost = "127.0.0.1";
 const targetPort = 3080;
+const health = __ESTATE_HEALTH__;
 
 function upstreamHeaders(req) {
   const headers = { ...req.headers, host: `${targetHost}:${targetPort}` };
@@ -113,7 +121,7 @@ function upstreamHeaders(req) {
 const server = http.createServer((req, res) => {
   if (req.url === "/healthz") {
     res.writeHead(200, {"content-type": "application/json"});
-    res.end(JSON.stringify({ok: true, service: "estate-dsh-web", upstream: "dsh"}));
+    res.end(JSON.stringify(health));
     return;
   }
   const outbound = http.request({
@@ -187,7 +195,40 @@ runtime = modal.Secret.from_name("estate-dsh-runtime")
 app = modal.App("estate-dsh-web")
 
 
-def prepare_profile() -> None:
+def runtime_health() -> dict:
+    source_sha = os.environ.get("DSH_SOURCE_SHA", "")
+    deployed_at = os.environ.get("DSH_DEPLOYED_AT", "")
+    if not re.fullmatch(r"[0-9a-f]{40}", source_sha):
+        raise RuntimeError("estate-dsh-runtime is missing a valid DSH_SOURCE_SHA")
+    if not deployed_at:
+        raise RuntimeError("estate-dsh-runtime is missing DSH_DEPLOYED_AT")
+    config_bytes = (
+        DSH_VERSION
+        + "\n"
+        + json.dumps(PROFILE_PACKAGE, sort_keys=True, separators=(",", ":"))
+        + "\n"
+        + PROFILE_PATCH
+    ).encode()
+    return {
+        "ok": True,
+        "service": "estate-dsh-web",
+        "surface": "cloud",
+        "upstream": "dsh",
+        "contractId": CONTRACT_ID,
+        "schemaVersion": SCHEMA_VERSION,
+        "release": {
+            "id": RELEASE_ID,
+            "version": RELEASE_VERSION,
+            "sourceSha": source_sha,
+            "configDigest": "sha256:" + hashlib.sha256(config_bytes).hexdigest(),
+            "deployedAt": deployed_at,
+            "authority": RELEASE_AUTHORITY,
+            "router": "estate.model-router",
+        },
+    }
+
+
+def prepare_profile(health: dict) -> None:
     root = pathlib.Path(DSH_HOME, "profiles", "web")
     root.mkdir(parents=True, exist_ok=True)
     (root / "package.json").write_text(json.dumps(PROFILE_PACKAGE, indent=2) + "\n")
@@ -195,7 +236,12 @@ def prepare_profile() -> None:
         "# composed from package.json bundles and cordis.patch.yml\n[]\n"
     )
     (root / "cordis.patch.yml").write_text(PROFILE_PATCH)
-    pathlib.Path("/root/dsh-cloud/gateway.mjs").write_text(GATEWAY)
+    pathlib.Path("/root/dsh-cloud/gateway.mjs").write_text(
+        GATEWAY.replace(
+            "__ESTATE_HEALTH__",
+            json.dumps(health, separators=(",", ":")),
+        )
+    )
 
 
 def port_ready(port: int, timeout_s: int = 180) -> None:
@@ -236,7 +282,7 @@ def web() -> None:
     if not os.environ.get("DSH_LAUNCH_TOKEN"):
         raise RuntimeError("estate-dsh-runtime is missing DSH_LAUNCH_TOKEN")
 
-    prepare_profile()
+    prepare_profile(runtime_health())
     env = {
         **os.environ,
         "HOME": "/root",
