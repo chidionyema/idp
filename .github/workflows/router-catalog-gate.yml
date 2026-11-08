@@ -99,13 +99,13 @@ jobs:
           import json, sys
           report = json.load(open(sys.argv[1]))
           lines = [f"- **{x['lane']}** ({x['model']}): {x['reason'][:200]}" for x in report["red"]]
-          text = f"Live provider probe at {report['at']}: {len(report['red'])} RED lane(s).\\n\\n"
-          text += "\\n".join(lines)
+          text = f"Live provider probe at {report['at']}: {len(report['red'])} RED lane(s).\n\n"
+          text += "\n".join(lines)
           open(sys.argv[2], "w").write(text)
           PY
           existing=$(gh api "repos/${GH_REPO}/issues?state=open&labels=router-catalog-gate&per_page=1" --jq '.[0].number' 2>/dev/null || true)
           if [ "$red" -gt 0 ]; then
-            printf '\\nRun: %s\\n' "$RUN_URL" >> "$RUNNER_TEMP/comment.txt"
+            printf '\nRun: %s\n' "$RUN_URL" >> "$RUNNER_TEMP/comment.txt"
             # The canonical existing #7578 is the fallback, not a new issue.
             target="${existing:-7578}"
             [ "$target" != null ] || target=7578
