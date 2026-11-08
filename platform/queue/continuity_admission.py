@@ -646,6 +646,9 @@ class MorphBudget:
     safety_margin_seconds: float
     max_signal_age_seconds: float = 120.0
     max_checkpoint_age_seconds: float = 300.0
+    # Independently defined by the trusted runtime/admission profile.
+    # Empty scope can never produce a trusted HEALTHY verdict.
+    required_resources: FrozenSet[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -693,6 +696,10 @@ def assess_morph_risk(signals: Iterable[LifeSignal], *,
     if not math.isfinite(total) or total <= 0:
         raise Refused("INVALID_MORPH_RECOVERY_BUDGET")
 
+    if (not isinstance(budget.required_resources, frozenset) or
+            any(not isinstance(item, str) or not item.strip()
+                for item in budget.required_resources)):
+        raise Refused("INVALID_MORPH_RESOURCE_SCOPE")
     seen, unknown, reasons, runways = set(), set(), set(), []
     for signal in signals:
         if not isinstance(signal, LifeSignal) or not signal.resource:
@@ -741,6 +748,12 @@ def assess_morph_risk(signals: Iterable[LifeSignal], *,
 
     if not seen:
         reasons.add("NO_RESOURCE_TELEMETRY")
+    if not budget.required_resources:
+        unknown.add("_risk_profile")
+        reasons.add("UNDECLARED_RESOURCE_COVERAGE")
+    for missing in budget.required_resources - seen:
+        unknown.add(missing)
+        reasons.add("MISSING_REQUIRED_RESOURCE")
     runway = min(runways) if runways else None
     if runway is not None and runway <= budget.checkpoint_seconds:
         state = "CRITICAL"
@@ -756,6 +769,9 @@ def assess_morph_risk(signals: Iterable[LifeSignal], *,
     else:
         state = "HEALTHY"
 
+    if state in ("HEALTHY", "PRESSURED") and unknown:
+        state = "UNKNOWN"
+        reasons.add("INSUFFICIENT_RESOURCE_COVERAGE")
     if checkpoint_age_seconds is None:
         reasons.add("NO_VERIFIED_CHECKPOINT")
         if state not in ("CRITICAL",):
