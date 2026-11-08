@@ -34,8 +34,8 @@ pinned to either checkout would be measuring the wrong tree half the time.
 | `artifacts/rederive-verdict` | 8559 | `728234bf13a526bb2b33e5e8dea7cde2ac369b1818e72a413d966675ea3f70e7` |
 | `artifacts/GENESIS_SPORE.dna` (core) | 5621 | `6dc7d93d292290cbd80cc94bd089228aaf586f550f5bc654876898560ad1bcef` |
 | `artifacts/GENESIS_SPORE.full.dna` | 42299 | `77921fb78049ce96027770309a1bbd4e613d8b596947bccdd99a3d271fa636a0` |
-| `verify-proof` | 16268 | `dba07ed72bcd42bfecb18051cca2f498ae4dbca3d0632b8d7d93432fa456acb9` |
-| `falsify-proof` | 4019 | `dfbf8e6bea138fa0c3e4cf9e9006c943672d00ce6bde6ef4e07ad0eceac03433` |
+| `verify-proof` | 17862 | `8785bfc3ffd1a39fc733b03f96b3c49e0a5fb62027e082b162c582cb1db82af4` |
+| `falsify-proof` | 4928 | `25012063691da1c05dc4457f5dc8d4e8aa2fd80d6fcfbeec3816001c2ad39e40` |
 | `isolation_probe.py` | 1663 | `96a5d2c1c6f85260e1a7113e6cae13eb120d5606e9b476edad7f08a814df524e` |
 
 Re-run: `shasum -a 256 ~/.estate/direction/2026-11-08-four-primitives/artifacts/*`

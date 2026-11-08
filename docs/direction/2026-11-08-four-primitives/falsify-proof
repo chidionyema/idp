@@ -26,6 +26,11 @@ echo "=== F1: re-derivation that trusts the stored verdict instead of computing 
 # The exact fail-open rederive-verdict was written to exclude: print what the DB says and pass.
 cp artifacts/rederive-verdict .fals-rederive.bak
 python3 - <<'PY'
+import os, sys
+# `D` and `DIR` are SHELL variables: they are not Python names. The first shipped copy
+# referenced bare `os` and `D` in every heredoc, so all three mutations died with NameError
+# and the falsifier could not falsify anything -- a checker that cannot run cannot fail.
+D = os.environ["D"]
 p = os.path.join(D, "artifacts/rederive-verdict")
 src = open(p).read()
 # Replace the comparison with an unconditional endorsement.
@@ -44,6 +49,11 @@ echo "=== F2: introduce a real artefact defect the claims depend on ==="
 cp artifacts/science_loop .fals.bak
 # Make the rule hash content-insensitive: the exact tuning fail-open, silently reintroduced.
 python3 - <<'PY'
+import os, sys
+# `D` and `DIR` are SHELL variables: they are not Python names. The first shipped copy
+# referenced bare `os` and `D` in every heredoc, so all three mutations died with NameError
+# and the falsifier could not falsify anything -- a checker that cannot run cannot fail.
+D = os.environ["D"]
 p = os.path.join(D, "artifacts/science_loop")
 src = open(p).read()
 old = 'print("MISMATCH the preregistered rule was edited after it was recorded; the rule cannot '
@@ -65,6 +75,11 @@ echo
 echo "=== F3: rederivation default regressed to a nonexistent path ==="
 cp artifacts/rederive-verdict .fals-default.bak
 python3 - <<'PY'
+import os, sys
+# `D` and `DIR` are SHELL variables: they are not Python names. The first shipped copy
+# referenced bare `os` and `D` in every heredoc, so all three mutations died with NameError
+# and the falsifier could not falsify anything -- a checker that cannot run cannot fail.
+D = os.environ["D"]
 p = os.path.join(D, "artifacts/rederive-verdict")
 src = open(p).read()
 old = 'DEFAULT_DB = os.path.expanduser("~/.estate/science/science-proof.db")'

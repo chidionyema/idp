@@ -23,14 +23,36 @@ chk() { # chk "<label>" <expected-exit> <actual-exit>
 }
 
 # --- 0. artifact hashes -------------------------------------------------------
-want_chronicle=711cbf5a655802b36a100fb531762487d7eac8ee6e474255d535239ec5ba27fe
-want_spore=6dc7d93d292290cbd80cc94bd089228aaf586f550f5bc654876898560ad1bcef
+# The hashes come from PROOF.md, not from constants copied into this script. Copied constants drift:
+# on 2026-11-08 the ASCII transliteration rewrote the artifacts, PROOF.md was updated for all of
+# them, but this verifier kept the pre-transliteration chronicle hash and reported a shipped file
+# as corrupt. One source of truth: read the published table and hold the files to it.
+hash_of() { # hash_of <path-as-written-in-PROOF.md>
+  python3 - "$D/PROOF.md" "$1" <<'PY1'
+import re, sys
+for line in open(sys.argv[1], encoding="utf-8"):
+    if not line.startswith("|"):
+        continue
+    # The spore row is published as `artifacts/GENESIS_SPORE.dna` (core): match on the path cell
+    # with any parenthetical suffix stripped, or that row is silently skipped and the check is BLIND.
+    cells = [c.strip().strip("`") for c in line.strip().strip("|").split("|")]
+    if not cells:
+        continue
+    cells[0] = cells[0].split(" (")[0].strip().strip("`")
+    if len(cells) >= 3 and cells[0] == sys.argv[2] and re.fullmatch(r"[0-9a-f]{64}", cells[2]):
+        print(cells[2]); break
+PY1
+}
+want_chronicle=$(hash_of "artifacts/estate-chronicle")
+want_spore=$(hash_of "artifacts/GENESIS_SPORE.dna")
+[ -n "$want_chronicle" ] && [ -n "$want_spore" ] \
+  || { echo "BLIND PROOF.md does not publish a hash for the chronicle and the core spore"; exit 2; }
 got=$(shasum -a 256 "$A/estate-chronicle" | cut -d' ' -f1)
 [ "$got" = "$want_chronicle" ] && { echo "ok   [chronicle sha256] ${got%????????????????????????????????}"; } \
-  || { echo "FAIL [chronicle sha256] $got != $want_chronicle"; fail=$((fail+1)); }
+  || { echo "FAIL [chronicle sha256] $got != $want_chronicle (PROOF.md)"; fail=$((fail+1)); }
 got=$(shasum -a 256 "$A/GENESIS_SPORE.dna" | cut -d' ' -f1)
 [ "$got" = "$want_spore" ] && { echo "ok   [core spore sha256] ${got}"; } \
-  || { echo "FAIL [core spore sha256] $got != $want_spore"; fail=$((fail+1)); }
+  || { echo "FAIL [core spore sha256] $got != $want_spore (PROOF.md)"; fail=$((fail+1)); }
 
 # --- 1. chronicle: snapshot from a non-repo cwd (the fixed defect) ------------
 OUT=$(cd /tmp && "$A/estate-chronicle" snapshot --db "$HOME/.estate/estate.db" --dest /tmp/proof-chron 2>&1); rc=$?
@@ -151,7 +173,11 @@ chk "verdict on zero usable trials" 3 $?
 # pack_genesis_spore contains these patterns on purpose (it is the guard). Every OTHER artifact
 # and every packed spore must be clean; the guard's own regex lines are the only permitted hits.
 python3 - <<'PY2'
-import re, sys, pathlib
+import os, re, sys, pathlib
+# `export DIR` in the shell does NOT create a Python name: the first shipped copy referenced a
+# bare DIR and these heredocs died with NameError, which the runner reported as
+# "expected exit 0, got 1" -- a verifier failing on its own bug and blaming the artifacts.
+DIR = os.environ["DIR"]
 PAT = re.compile(r"BEGIN [A-Z ]*PRIVATE KEY|AGE-SECRET-KEY-1|ghp_[A-Za-z0-9]{36}|"
                  r"ghs_[A-Za-z0-9]{36}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}")
 A = pathlib.Path(DIR) / "artifacts"
@@ -199,7 +225,8 @@ rc=$?; [ $rc -eq 3 ] || [ $rc -eq 2 ]; chk "mycelium refuses an unsatisfiable re
 cmp -s t.py t.orig; chk "mycelium SHORT wrote nothing" 0 $?
 # The structural verifier itself: a note with a comma-prefixed marker must round-trip exactly.
 python3 - <<'PY3'
-import runpy, sys
+import os, runpy, sys
+DIR = os.environ["DIR"]
 A = DIR + "/artifacts/mycelium"
 ns = runpy.run_path(A, run_name="mycelium_module")
 structural_ok = ns["structural_ok"]
@@ -212,7 +239,8 @@ sys.exit(0 if ok else 4)
 PY3
 chk "mycelium accepts a correctly inserted note" 0 $?
 python3 - <<'PY3'
-import runpy, sys
+import os, runpy, sys
+DIR = os.environ["DIR"]
 A = DIR + "/artifacts/mycelium"
 ns = runpy.run_path(A, run_name="mycelium_module")
 structural_ok, parses = ns["structural_ok"], ns["parses"]
@@ -230,7 +258,8 @@ PY3
 chk "mycelium's parser catches a syntax-breaking note" 0 $?
 # The mutation that must be caught: perturbing the original must make the round-trip fail.
 python3 - <<'PY3'
-import runpy, sys
+import os, runpy, sys
+DIR = os.environ["DIR"]
 A = DIR + "/artifacts/mycelium"
 ns = runpy.run_path(A, run_name="mycelium_module")
 structural_ok = ns["structural_ok"]
