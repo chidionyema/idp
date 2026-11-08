@@ -63,7 +63,13 @@ jobs:
         run: |
           set -euo pipefail
           python -m py_compile code/dsh_cloud.py
-          modal deploy code/dsh_cloud.py
+          if ! modal deploy code/dsh_cloud.py >"$RUNNER_TEMP/modal-deploy.log" 2>&1; then
+            tail -60 "$RUNNER_TEMP/modal-deploy.log"
+            detail=$(tail -1 "$RUNNER_TEMP/modal-deploy.log" | sed -E 's/[A-Za-z0-9_+\/=-]{40,}/<redacted>/g')
+            echo "::error title=DSH Modal deploy::${detail}"
+            exit 1
+          fi
+          tail -20 "$RUNNER_TEMP/modal-deploy.log"
           URL=$(python -c 'import modal; print(modal.Function.from_name("estate-dsh-web","web").get_web_url() or "")')
           case "$URL" in https://*) ;; *) echo "FAIL Modal returned no HTTPS URL"; exit 1;; esac
           python - "$URL" <<'PY'
