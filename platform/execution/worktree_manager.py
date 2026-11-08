@@ -6,9 +6,11 @@ Agents never collide with each other or the main branch.
 """
 
 import os
+import shutil
 import subprocess
 import logging
 from datetime import datetime
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,25 @@ def _queue_dispatcher():
     return sys.modules["platform.queue"].load_dispatcher()
 
 
+def _free_mb(path: str = "/") -> Optional[int]:
+    """Free space in MB on the volume holding `path`. None when it cannot be read.
+
+    The number is read from the kernel (`shutil.disk_usage`), never from a
+    command's self-report: a worker that reports its own free space is the
+    measurement that went blind from 2361M to 396M while claiming progress every
+    cycle (see bin/idp-disk-watch). BLIND (None) is not zero.
+    """
+    try:
+        usage = shutil.disk_usage(path)
+    except OSError:
+        return None
+    return int(usage.free // (1024 * 1024))
+
+
+class WorktreeManagerBudgetRefused(RuntimeError):
+    """A birth refused by the creation-time budget. The worktree was NOT created."""
+
+
 class WorktreeManager:
     """
     Manages git worktrees for task isolation.
@@ -61,6 +82,20 @@ class WorktreeManager:
         Returns: path to worktree
         """
         worktree_path = os.path.join(self.base_path, f"task-{task_id}")
+        # THE CREATION-TIME BUDGET. Refuse the birth before it consumes disk, when
+        # free space is already under the floor. Measured 2026-10-29: the cleaner
+        # reaches the worktree tier LAST (12 x ~293M = ~3.5GB in /private/tmp, fed by
+        # any lane/session that spawns a worktree and never removes it), so a sweep can
+        # never catch a regrowth the births keep feeding. The only point that closes
+        # the loop is the point where the thing is created: refuse it there, and the
+        # volume cannot regrow.
+        free = _free_mb(self.base_path)
+        floor = int(os.environ.get("WORKTREE_MIN_FREE_MB", "1500"))
+        if free is not None and free < floor:
+            raise WorktreeManagerBudgetRefused(
+                f"refusing worktree for task {task_id}: {free}M free, under the "
+                f"{floor}M creation floor"
+            )
         os.makedirs(self.base_path, exist_ok=True)
 
         try:
