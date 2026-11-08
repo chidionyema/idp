@@ -57,10 +57,17 @@ jobs:
           PY
           )
           echo "::add-mask::$TOKEN"
-          args=(DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" DSH_LAUNCH_TOKEN="$TOKEN")
+          DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          args=(
+            DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY"
+            DSH_LAUNCH_TOKEN="$TOKEN"
+            DSH_SOURCE_SHA="$GITHUB_SHA"
+            DSH_DEPLOYED_AT="$DEPLOYED_AT"
+          )
           if [ -n "$ZAI_API_KEY" ]; then args+=(ZAI_API_KEY="$ZAI_API_KEY"); fi
           modal secret create estate-dsh-runtime "${args[@]}" --force >/dev/null
       - name: Deploy and prove DSH Web
+        id: deploy
         run: |
           set -euo pipefail
           python -m py_compile code/dsh_cloud.py
@@ -74,8 +81,9 @@ jobs:
           URL=$(python -c 'import modal; print(modal.Function.from_name("estate-dsh-web","web").get_web_url() or "")')
           case "$URL" in https://*) ;; *) echo "FAIL Modal returned no HTTPS URL"; exit 1;; esac
           if ! python - "$URL" <<'PY' >"$RUNNER_TEMP/dsh-health.log" 2>&1
-          import json, sys, time, urllib.request
+          import json, os, sys, time, urllib.request
           url = sys.argv[1].rstrip("/") + "/healthz"
+          expected_sha = os.environ["GITHUB_SHA"]
           last = None
           for attempt in range(24):
               try:
@@ -84,7 +92,20 @@ jobs:
                   )
                   with urllib.request.urlopen(req, timeout=15) as response:
                       body = json.load(response)
-                  if response.status == 200 and body.get("service") == "estate-dsh-web":
+                  release = body.get("release") or {}
+                  contract_ok = (
+                      response.status == 200
+                      and body.get("service") == "estate-dsh-web"
+                      and body.get("contractId") == "estate.dsh-web"
+                      and body.get("schemaVersion") == "1.0.0"
+                      and release.get("id") == "dsh-web-2026.11.08.1"
+                      and release.get("version") == "0.2.1-rc.5"
+                      and release.get("sourceSha") == expected_sha
+                      and str(release.get("configDigest", "")).startswith("sha256:")
+                      and release.get("authority") == "work-surface"
+                      and release.get("router") == "estate.model-router"
+                  )
+                  if contract_ok:
                       print(f"ok      dsh-web-cloud  {url} HTTP 200 after {attempt + 1} probe(s)")
                       raise SystemExit(0)
                   last = f"HTTP {response.status} {body}"
@@ -101,6 +122,33 @@ jobs:
           cat "$RUNNER_TEMP/dsh-health.log"
           printf 'DSH_WEB_URL=%s\n' "$URL" >> "$GITHUB_STEP_SUMMARY"
           echo "DSH_MODEL_ROUTE=$MODEL_ROUTE" >> "$GITHUB_STEP_SUMMARY"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - name: Publish operational milestone
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DSH_URL: ${{ steps.deploy.outputs.url }}
+          DSH_SOURCE_SHA: ${{ steps.deploy.outputs.source_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/dsh-success.md"
+          {
+            echo "DSH Web cloud surface deployed and health-verified."
+            echo
+            echo "- Surface: \`$DSH_URL\`"
+            echo "- Contract: \`estate.dsh-web\` v1.0.0"
+            echo "- Release: \`dsh-web-2026.11.08.1\`"
+            echo "- DSH: \`0.2.1-rc.5\`"
+            echo "- Source: \`$DSH_SOURCE_SHA\`"
+            echo "- Router: \`estate.model-router\`"
+            echo "- Workflow: $RUN_URL"
+            echo
+            echo "The launch credential is intentionally not published here."
+          } >"$body"
+          gh issue comment 7797 --body-file "$body"
       - name: Publish deployment failure
         if: failure()
         env:
