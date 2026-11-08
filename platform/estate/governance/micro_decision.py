@@ -128,17 +128,17 @@ def preflight(record: Any) -> dict:
             out["reasons"].append("known class without inherited corrective protocol")
             return out
 
-    if not record["reversible"] and not isinstance(record.get("irreversible_authority_ref"), str):
+    if not record["reversible"] and impact > 0 and not (isinstance(record.get("irreversible_authority_ref"), str) and record["irreversible_authority_ref"].strip()):
         out["state"] = "REQUIRES_TRUSTED_DECISION"
         out["next_action"] = "EXISTING_INDEPENDENT_IRREVERSIBILITY_AUTHORITY"
         out["reasons"].append("irreversible effect requires independently bound authority")
         return out
-    if record["reversible"] and not isinstance(record.get("rollback_ref"), str):
+    if record["reversible"] and impact > 0 and not (isinstance(record.get("rollback_ref"), str) and record["rollback_ref"].strip()):
         out["state"] = "NEEDS_EVIDENCE"
         out["next_action"] = "RESOLVE_TRUSTED_ROLLBACK"
         out["reasons"].append("no rollback locator for proposed reversible effect")
         return out
-    if impact >= 2 and not isinstance(record.get("independent_review_ref"), str):
+    if impact >= 2 and not (isinstance(record.get("independent_review_ref"), str) and record["independent_review_ref"].strip()):
         out["state"] = "REQUIRES_TRUSTED_DECISION"
         out["next_action"] = "EXISTING_INDEPENDENT_REVIEW"
         out["reasons"].append("cross-boundary/critical action requires external review")
