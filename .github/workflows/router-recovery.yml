@@ -20,6 +20,9 @@
 #     llm.mumchimp.com is the cutover; run it only after the candidate hostname answered.
 name: router-recovery
 on:
+  push:
+    branches:
+      - feat/router-zai-cutover-20261108
   workflow_dispatch:
     inputs:
       cutover:
