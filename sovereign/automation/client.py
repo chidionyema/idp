@@ -30,8 +30,8 @@ async def state(workflow_id: str) -> dict[str, Any]:
     handle = client.get_workflow_handle(workflow_id)
     try:
         return await handle.query("state")
-    except Exception:
+    except Exception as exc:
         result = await handle.result()
         if not isinstance(result, dict):
-            raise TypeError("unreadable automation receipt")
+            raise TypeError("unreadable automation receipt") from exc
         return result
