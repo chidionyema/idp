@@ -28,6 +28,17 @@ def tree(tmp_path):
     (tmp_path / "platform/estate/governance/laws.yaml").write_text(LAWS)
     (tmp_path / "AGENTS.md").write_text(AGENTS)
     (tmp_path / "CLAUDE.md").write_text("@AGENTS.md\n")
+    training = tmp_path / "docs/training/2026-10-30-founder-judgement.md"
+    training.parent.mkdir(parents=True)
+    training.write_text(
+        "\n".join(
+            f"## J{i} -- Recorded case {i}\n"
+            f"**Rule.** A verifiable rule {i}.\n"
+            f"**Trigger.** Applicable risk {i}.\n"
+            f"**Enforcement.** Rerun independent effect verification {i}.\n"
+            for i in range(1, 9)
+        )
+    )
     return tmp_path
 
 
@@ -138,6 +149,82 @@ def test_real_repository_fixes_the_superseded_directives():
     ]
     assert packet["wrappers"]["CLAUDE.md"] == "POINTER_ONLY"
     assert packet["laws"], "No active GOV enforcement inventory"
+
+
+
+def test_founder_judgements_are_training_records_not_laws(tmp_path):
+    packet = compile_packet(tree(tmp_path))
+    cases = packet["founder_judgement_training"]
+    assert [item["id"] for item in cases] == [f"J{i}" for i in range(1, 9)]
+    assert packet["fleet_drills_executed"] is False
+    assert packet["competence_certified"] is False
+    for record in cases:
+        assert record["source_line"] > 0
+        assert len(record["source_digest"]) == 64
+        assert record["historical_issuer_authenticated"] is False
+        assert record["constitutional_authority_granted"] is False
+        assert record["drill"]["execution_proof"] is None
+        assert record["drill"]["competence_certified"] is False
+        assert record["applicability_trigger"]
+        assert record["documented_enforcement"]
+
+
+def test_missing_founder_training_is_visible_not_implicitly_healthy(tmp_path):
+    root = tree(tmp_path)
+    (root / "docs/training/2026-10-30-founder-judgement.md").unlink()
+    packet = compile_packet(root)
+    assert packet["status"] == "CONFLICTED"
+    assert "FOUNDER_TRAINING_SOURCE_UNAVAILABLE" in {
+        problem["code"] for problem in packet["problems"]
+    }
+
+
+def test_incomplete_judgement_refuses_static_readiness(tmp_path):
+    root = tree(tmp_path)
+    src = root / "docs/training/2026-10-30-founder-judgement.md"
+    src.write_text(src.read_text().replace(
+        "**Enforcement.** Rerun independent effect verification 2.",
+        "Enforcement missing for J2"
+    ))
+    packet = compile_packet(root)
+    assert packet["status"] == "CONFLICTED"
+    assert "INCOMPLETE_FOUNDER_JUDGEMENT" in {
+        problem["code"] for problem in packet["problems"]
+    }
+
+
+def test_duplicate_judgements_do_not_silently_override(tmp_path):
+    root = tree(tmp_path)
+    src = root / "docs/training/2026-10-30-founder-judgement.md"
+    src.write_text(src.read_text() + "\n## J1 -- rewritten\n"
+                   "**Rule.** New rule.\n**Trigger.** Always.\n"
+                   "**Enforcement.** Assume green.\n")
+    assert "DUPLICATE_FOUNDER_JUDGEMENT" in {
+        problem["code"] for problem in compile_packet(root)["problems"]
+    }
+
+
+def test_new_unexercised_judgement_never_auto_certifies(tmp_path):
+    root = tree(tmp_path)
+    src = root / "docs/training/2026-10-30-founder-judgement.md"
+    src.write_text(src.read_text() + "\n## J9 -- proposal\n"
+                   "**Rule.** A possible improvement.\n"
+                   "**Trigger.** Unknown conditions.\n"
+                   "**Enforcement.** A later test.\n")
+    packet = compile_packet(root)
+    assert "UNEXERCISED_FOUNDER_JUDGEMENT" in {
+        problem["code"] for problem in packet["problems"]
+    }
+    assert packet["status"] == "CONFLICTED"
+
+
+def test_real_founder_judgements_are_present_and_source_bound():
+    repo = Path(__file__).resolve().parents[2]
+    packet = compile_packet(repo)
+    assert [r["id"] for r in packet["founder_judgement_training"]] == [
+        f"J{i}" for i in range(1, 9)
+    ]
+    assert packet["status"] == "SOURCE_CONSISTENT_UNVERIFIED_RUNTIME", packet["problems"]
 
 
 def test_malformed_toml_is_not_safe(tmp_path):
