@@ -13,14 +13,28 @@
     "docs/diagnoses/**", ".growmos/**"
   ],
   "components": {
-    "llm-router": { "repairProtocol": "issue body of the open [lane] llm-router incident", "repairScope": ["@substrate"] },
-    "otto": { "repairProtocol": "issue body of the open [lane] otto incident", "repairScope": ["@substrate"] },
-    "estate-doors": { "repairProtocol": "issue body of the open [lane] estate-doors incident", "repairScope": ["@substrate"] },
+    "llm-router": {
+      "repairProtocol": "issue body of the open [lane] llm-router incident",
+      "repairScope": ["llm/**", "platform/llm/**", "clusters/**", "deploy/**", "flux/**", "docs/diagnoses/**"]
+    },
+    "otto": {
+      "repairProtocol": "issue body of the open [lane] otto incident",
+      "repairScope": ["platform/otto-gateway/**", "platform/otto-golden/**", "platform/otto-golden-secret/**", "bin/idp-otto-homes", "docs/diagnoses/**"]
+    },
+    "estate-doors": {
+      "repairProtocol": "issue body of the open [lane] estate-doors incident",
+      "repairScope": ["bin/idp-oke-*", "bin/idp-estate-homes", "clusters/**", "deploy/**", "flux/**", ".github/workflows/oke-*.yml", ".github/workflows/estate-homes-drill.yml", "docs/diagnoses/**"]
+    },
     "dof-probe": {
       "repairProtocol": "the gate could not read the incident list: fix the gate",
       "selfRepair": true,
       "repairScope": ["bin/dof-gate", "catalog/dof-registry.json", "tests/test_dof_gate.py", ".github/workflows/ci.yml"]
     }
+  },
+  "safeWorkScope": {
+    "why": "A broken service constrains operations that DEPEND on it, not the whole estate. Paths outside every substrate glob depend on no critical service, so they keep an authorised path during an outage. This is the deadlock breaker: without it, independent work has no admissible route and the estate cannot recover by building anything except a repair.",
+    "rule": "a commit whose every changed path is outside substrateScope is admitted without a Genesis-Resolves trailer",
+    "neverSafe": ["bin/dof-gate", "catalog/dof-registry.json", "tests/test_dof_gate.py", ".github/workflows/ci.yml"]
   },
   "defaultRepairScope": ["@substrate"]
 }
