@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""Generate the DSH model picker from the canonical estate router.
+
+The router owns model identity. DSH receives only the live ``/v1/models`` rows and
+selects a stable default alias; it never carries a vendor or model list of its own.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import pathlib
+import sys
+import urllib.request
+
+
+DEFAULT_ROUTER = "https://llm.mumchimp.com/v1"
+DEFAULT_PROFILE = pathlib.Path.home() / ".dsh/profiles/web/cordis.patch.yml"
+
+
+def router_models(url: str) -> tuple[list[dict], str]:
+    request = urllib.request.Request(
+        url.rstrip("/") + "/models",
+        headers={"User-Agent": "estate-dsh-catalog/1.0"},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        payload = json.load(response)
+    models = []
+    for row in payload.get("data", []):
+        model_id = str(row.get("id", "")).strip()
+        if not model_id:
+            continue
+        model = {"id": model_id, "name": model_id}
+        if isinstance(row.get("max_input_tokens"), int):
+            model["contextWindow"] = row["max_input_tokens"]
+        if isinstance(row.get("max_output_tokens"), int):
+            model["maxTokens"] = row["max_output_tokens"]
+        models.append(model)
+    models.sort(key=lambda item: item["id"])
+    ids = {item["id"] for item in models}
+    if not ids:
+        raise RuntimeError(f"{url}/models returned no models")
+    configured = os.environ.get("DSH_DEFAULT_MODEL", "").strip()
+    if configured and configured not in ids:
+        raise RuntimeError(f"DSH_DEFAULT_MODEL={configured!r} is not served by the router")
+    return models, configured or ("default" if "default" in ids else models[0]["id"])
+
+
+def patch(models: list[dict], default_model: str, router: str) -> list[dict]:
+    return [
+        {
+            "id": "ui-settings-general",
+            "name": "@deepseek-ai/dsh-client-ui-settings-general",
+            "config": {"welcomeNoticeVersion": "2026-09-28.1"},
+        },
+        {
+            "id": "sandbox-policy",
+            "name": "@deepseek-ai/dsh-sandbox-policy",
+            "config": {
+                "mode": "danger-full-access",
+                "workspaceRoot": os.environ.get(
+                    "DSH_WORKSPACE_ROOT",
+                    str(pathlib.Path.home() / "Documents/deepseek-harness/default-workspace"),
+                ),
+            },
+        },
+        {
+            "id": "approval",
+            "name": "@deepseek-ai/dsh-user-approval",
+            "config": {"policy": "never"},
+        },
+        {
+            "id": "permission",
+            "name": "@deepseek-ai/dsh-permission-presets",
+            "config": {
+                "presets": {
+                    "danger-full-access": {
+                        "sandbox": "danger-full-access",
+                        "approval": "never",
+                    }
+                },
+                "defaultPreset": "danger-full-access",
+            },
+        },
+        {
+            "id": "llm-pi-ai",
+            "name": "@deepseek-ai/dsh-llm-pi-ai",
+            "config": {
+                "providers": {
+                    "estate": {
+                        "displayName": "Estate Router",
+                        "apiKeyEnv": "LITELLM_API_KEY",
+                        "api": "openai-completions",
+                        "baseURL": router,
+                        "defaultContextWindow": 262144,
+                        "defaultMaxTokens": 32768,
+                        "models": models,
+                    }
+                }
+            },
+        },
+        {
+            "id": "agent-default-model",
+            "name": "@deepseek-ai/dsh-agent-default-model",
+            "config": {
+                "provider": "estate",
+                "model": default_model,
+                "reasoningEffort": "low",
+            },
+        },
+    ]
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--router", default=os.environ.get("ESTATE_ROUTER_URL", DEFAULT_ROUTER))
+    parser.add_argument("--profile", type=pathlib.Path, default=DEFAULT_PROFILE)
+    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--check", action="store_true")
+    args = parser.parse_args(argv)
+
+    models, default_model = router_models(args.router)
+    rendered = json.dumps(patch(models, default_model, args.router.rstrip("/")), indent=2) + "\n"
+    current = args.profile.read_text(encoding="utf-8") if args.profile.exists() else ""
+    same = current == rendered
+    summary = {
+        "router": args.router.rstrip("/"),
+        "profile": str(args.profile),
+        "models": len(models),
+        "default": default_model,
+        "inSync": same,
+    }
+    if args.check:
+        print(json.dumps(summary, indent=2))
+        return 0 if same else 1
+    if args.apply and not same:
+        args.profile.parent.mkdir(parents=True, exist_ok=True)
+        temporary = args.profile.with_suffix(args.profile.suffix + ".tmp")
+        temporary.write_text(rendered, encoding="utf-8")
+        temporary.replace(args.profile)
+        summary["inSync"] = True
+    print(json.dumps(summary, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
