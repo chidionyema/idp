@@ -108,8 +108,60 @@ def probe(lane: dict) -> dict:
         return {**lane, "status": status, "reason": reason}
 
 
+def summarize_report(path: Path) -> dict[str, int]:
+    """Validate a complete machine report; never turn corrupt evidence into zero RED."""
+    report = json.loads(path.read_text())
+    if not isinstance(report, dict):
+        raise ValueError("report must be an object")
+    results, red = report.get("results"), report.get("red")
+    count = report.get("lanes_checked")
+    if (
+        not isinstance(results, list)
+        or not results
+        or not isinstance(red, list)
+        or type(count) is not int
+        or count != len(results)
+    ):
+        raise ValueError("missing, empty or inconsistent probe evidence")
+    if any(
+        not isinstance(r, dict)
+        or r.get("status") not in ("GREEN", "RED", "UNKNOWN")
+        or not isinstance(r.get("lane"), str)
+        or not isinstance(r.get("model"), str)
+        for r in results
+    ):
+        raise ValueError("malformed lane verdict")
+    actual_red = [r for r in results if r["status"] == "RED"]
+    if actual_red != red:
+        raise ValueError("RED list disagrees with the individual lane verdicts")
+    return {
+        "red": len(actual_red),
+        "unknown": sum(r["status"] == "UNKNOWN" for r in results),
+        "green": sum(r["status"] == "GREEN" for r in results),
+        "lanes_checked": count,
+    }
+
+
 def main(argv: list[str]) -> int:
-    config_path = Path(argv[1]) if len(argv) > 1 else DEFAULT_CONFIG
+    # The file is the machine contract. Provider SDKs may print diagnostics to
+    # stdout before our JSON, so a tee of stdout is NOT a valid receipt.
+    if len(argv) == 3 and argv[1] == "--summary":
+        try:
+            print(json.dumps(summarize_report(Path(argv[2])), sort_keys=True))
+            return 0
+        except (OSError, ValueError, TypeError) as exc:
+            print(f"BLIND catalog report: {exc}", file=sys.stderr)
+            return 70
+
+    if len(argv) == 4 and argv[2] == "--output":
+        config_path, output = Path(argv[1]), Path(argv[3])
+    elif len(argv) <= 2:
+        config_path = Path(argv[1]) if len(argv) > 1 else DEFAULT_CONFIG
+        output = None
+    else:
+        print("usage: catalog_gate.py [config.yaml [--output report.json]] | --summary report.json", file=sys.stderr)
+        return 64
+
     lanes = _lanes(config_path)
     results = [probe(lane) for lane in lanes]
     red = [r for r in results if r["status"] == "RED"]
@@ -120,7 +172,20 @@ def main(argv: list[str]) -> int:
         "red": red,
         "results": results,
     }
-    print(json.dumps(report, indent=1))
+    if output is not None:
+        # A partial JSON file must never be mistaken for a clean report.
+        tmp = output.with_name(output.name + ".tmp")
+        try:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as stream:
+                json.dump(report, stream, indent=1)
+                stream.write("\n")
+            os.replace(tmp, output)
+        except OSError as exc:
+            print(f"BLIND catalog report write: {exc}", file=sys.stderr)
+            return 70
+    else:
+        print(json.dumps(report, indent=1))
     for r in red:
         print(f"RED   {r['lane']:<20} {r['model']:<35} {r['reason']}", file=sys.stderr)
     return len(red)
