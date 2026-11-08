@@ -12,8 +12,8 @@ Temporal dev server, so history is recorded and replayed end to end.
 What is proven here:
   * the workflow compiles a real plan, runs, and emits a verified receipt only after
     the completion activity joins the independent health and models probes;
-  * an activity fault marks the workflow failed and emits a failed receipt — never
-    verified — as the machine-decidable falsifier;
+  * an activity fault marks the workflow failed and emits a failed receipt, never
+    verified, as the machine-decidable falsifier;
   * two runs of the same compiled plan reach the same terminal state once the
     fields Temporal alone may change (run id and wall-clock timestamps) are excluded,
     so a plan is a pure function of its inputs, never of the run.
@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
