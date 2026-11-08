@@ -1,5 +1,5 @@
 # button: Recover the router
-# founder: Publishes what the recovery host's router needs -- its config bundle, its vault entry and its Cloudflare Tunnel -- and with cutover=true points llm.mumchimp.com at it.
+# founder: Publishes the candidate router bundle/vault/tunnel without altering production ingress. Production cutover is REFUSED until authenticated proof and rollback are independently governed.
 #
 # WHY (#7387, 2026-10-29). The OCI free trial ended and OKE cannot exist on this tenancy, so
 # llm.mumchimp.com has no backend. platform/oci/recovery-host.tf is one Always Free A1 VM that runs
@@ -14,15 +14,15 @@
 #     lanes admit only the laptop router key; nobody gets the master key.
 #   - vault entry router-recovery: the vendor keys (repository SEED_* secrets), the laptop caller
 #     key (the vault's own `laptop` entry) and the tunnel token. Values are never printed.
-#   - Cloudflare: one remotely-managed tunnel `estate-recovery` routing llm-recovery.mumchimp.com
-#     (always) and llm.mumchimp.com (only with cutover=true) to the router. The DNS change for
-#     llm.mumchimp.com is the cutover; run it only after the candidate hostname answered.
+#   - Cloudflare: the existing shared tunnel, preserving every established production and
+#     unrelated route while updating only llm-recovery.mumchimp.com. cutover=true is deliberately
+#     refused: the previous workflow modified production BEFORE authenticated caller proof.
 name: router-recovery
 on:
   workflow_dispatch:
     inputs:
       cutover:
-        description: "also point llm.mumchimp.com at the recovery tunnel (after llm-recovery answered)"
+        description: "REFUSED pending governed authenticated production cutover with rollback"
         type: boolean
         default: false
 permissions:
@@ -135,16 +135,22 @@ jobs:
           current=$(cf "$API/accounts/$ACCOUNT/cfd_tunnel/$id/configurations")
           ingress=$(python3 platform/oci/recovery/plan_tunnel_ingress.py <<<"$current") || exit 70
           old_prod=$(jq -ce '[.result.config.ingress[] | select(.hostname == "llm.mumchimp.com")]' <<<"$current")
+          previous=$(jq -c '{config:.result.config}' <<<"$current")
+          rollback_candidate() {
+            echo "::error::Cloudflare candidate update failed; restoring prior tunnel configuration"
+            cf -X PUT "$API/accounts/$ACCOUNT/cfd_tunnel/$id/configurations" -d "$previous" | jq -e .success >/dev/null || echo "::error::Cloudflare rollback failed; P0 remains open"
+          }
+          trap rollback_candidate ERR
           cf -X PUT "$API/accounts/$ACCOUNT/cfd_tunnel/$id/configurations" -d "$ingress" | jq -e .success >/dev/null
           updated=$(cf "$API/accounts/$ACCOUNT/cfd_tunnel/$id/configurations")
           new_prod=$(jq -ce '[.result.config.ingress[] | select(.hostname == "llm.mumchimp.com")]' <<<"$updated") || new_prod=BLIND
           if [ "$old_prod" != "$new_prod" ]; then
             echo "FAIL tunnel production ingress changed; attempting rollback"
-            previous=$(jq -c '{config:.result.config}' <<<"$current")
-            cf -X PUT "$API/accounts/$ACCOUNT/cfd_tunnel/$id/configurations" -d "$previous" | jq -e .success >/dev/null || echo "::error::rollback failed: manual incident remains OPEN"
+            rollback_candidate
             exit 70
           fi
-          echo "ok      tunnel  candidate-only ingress, production preserved; plan-sha256=$(printf '%s' "$ingress" | sha256sum | cut -d' ' -f1)"
+          trap - ERR
+          echo "ok      tunnel  candidate-only ingress, production preserved; plan-sha256=$(printf '%s' "$ingress" | sha256sum | cut -d' ' -f1) readback-sha256=$(printf '%s' "$updated" | sha256sum | cut -d' ' -f1)"
           zone=$(cf "$API/zones?name=$ZONE" | jq -r '.result[0].id')
           for h in $(jq -r '.[]' <<<"$hosts"); do
             rec=$(cf "$API/zones/$zone/dns_records?name=$h" | jq -r '.result[0].id // empty')
