@@ -9,6 +9,7 @@ container replacement.
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import pathlib
@@ -257,22 +258,29 @@ def web() -> None:
         cwd="/workspace",
         env=env,
     )
-    try:
-        port_ready(DSH_PORT)
-        gateway = subprocess.Popen(
-            ["node", "/root/dsh-cloud/gateway.mjs"],
-            cwd="/root/dsh-cloud",
-            env=env,
-        )
-        threading.Thread(target=commit_loop, daemon=True).start()
-        returncode = gateway.wait()
-        if returncode:
-            raise RuntimeError(f"DSH gateway exited {returncode}")
-    finally:
+    port_ready(DSH_PORT)
+    gateway = subprocess.Popen(
+        ["node", "/root/dsh-cloud/gateway.mjs"],
+        cwd="/root/dsh-cloud",
+        env=env,
+    )
+    port_ready(PUBLIC_PORT, timeout_s=30)
+    if gateway.poll() is not None:
+        raise RuntimeError(f"DSH gateway exited {gateway.returncode}")
+    threading.Thread(target=commit_loop, daemon=True).start()
+
+    # Modal's web_server entrypoint must finish initialization after the public
+    # listener is ready. Both servers are child processes of this container and
+    # continue serving after this function returns.
+    def cleanup() -> None:
         dsh.terminate()
         try:
             dsh.wait(timeout=15)
         except subprocess.TimeoutExpired:
             dsh.kill()
+        if gateway.poll() is None:
+            gateway.terminate()
         state.commit()
         workspace.commit()
+
+    atexit.register(cleanup)
