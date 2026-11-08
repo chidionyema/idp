@@ -66,7 +66,7 @@ class EstateAutomationWorkflowV1:
                  "source_sha": self._state["release"]["source_sha"],
                  "release": self._state["release"], "node_id": name},
                 start_to_close_timeout=timedelta(seconds=node["timeout_s"]),
-                heartbeat_timeout=timedelta(seconds=min(30, node["timeout_s"])),
+                **({"heartbeat_timeout": timedelta(seconds=30)} if node["action"] == "github.router_observe" else {}),
                 retry_policy=RetryPolicy(maximum_attempts=node["max_attempts"]),
             )
             self._state["steps"][name] = {"state": "verified", "evidence": result,
