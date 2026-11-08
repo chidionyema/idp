@@ -8,6 +8,15 @@ name: estate-homes-drill
 # never a red main: this workflow's job is to keep the board honest, and the board is
 # honest when a lane that cannot be asked is reported as UNKNOWN and a lane that is proven
 # dead becomes an issue someone owns.
+#
+# CHRONOS (idp#7799, legion 3) rides here for the same reason it exists at all. The lanes
+# above answer "is each home alive?". They cannot answer "did the thing that checks them
+# actually run?" -- and that gap has already cost this estate: idp#5918 measured every
+# declared cron delivering 20-70x late, and conscience.yml ran hourly until 2026-09-23 and
+# then stopped with nobody noticing for six weeks. A drill that is itself a ghost clock is
+# the one failure this workflow cannot see about itself, because a workflow that does not
+# run cannot report that it did not run. So the reading happens off the laptop, on GitHub's
+# own scheduler, in the observer that already grades homes.
 on:
   schedule:
     - cron: "17,47 * * * *"
@@ -16,6 +25,7 @@ on:
 permissions:
   contents: read
   issues: write
+  actions: read   # Chronos reads this repo's own workflow runs to measure delivery
 
 concurrency:
   group: estate-homes-drill
@@ -39,3 +49,97 @@ jobs:
           name: estate-lanes
           path: drill.txt
           retention-days: 14
+
+      # Chronos: did every DECLARED clock actually deliver, inside its own tolerance?
+      #
+      # Its exit codes follow the estate's ok_exit convention, so they mean different
+      # things and are reported differently:
+      #   0  every declared clock delivered
+      #   1  at least one MISSED_CYCLE / NOT_HERE -- a finding, filed as a ticket below
+      #   2  BLIND: the runs could not be read at all -- never treated as healthy (R1)
+      #
+      # continue-on-error is deliberate and is NOT a swallowed failure: the lane artifact
+      # above is the primary product of this workflow, and a Chronos finding must not
+      # cost the estate its home grading. The finding is carried in the step summary and
+      # in a filed issue instead.
+      - name: chronos -- measure delivered cadence, not declared cadence
+        id: chronos
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          python3 bin/idp-estate-clocks --gate 2>&1 | tee chronos.txt
+          code=${PIPESTATUS[0]}
+          echo "exit=$code" | tee -a chronos.txt
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          {
+            echo '### Chronos: delivered cadence'
+            echo '```'
+            cat chronos.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+
+      # A clock that stopped is a ticket someone owns, exactly like a dead lane -- not a
+      # red main and not a line in a log nobody reads. Exit 2 (BLIND) is filed too, and
+      # says so in its title: the estate must never let 'cannot judge' pass as healthy.
+      - name: file a clock that missed its cadence
+        if: steps.chronos.outputs.exit_code != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXIT_CODE: ${{ steps.chronos.outputs.exit_code }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import subprocess
+
+          exit_code = os.environ.get("EXIT_CODE", "")
+          blind = exit_code == "2"
+          title = (
+              "chronos: clock state is BLIND - delivered cadence could not be measured"
+              if blind
+              else "chronos: a declared clock missed its cadence"
+          )
+          with open("chronos.txt", encoding="utf-8") as handle:
+              board = handle.read().strip()
+          body = "\n".join([
+              f"Chronos measured the delivered cadence of every declared clock and exited **{exit_code}**.",
+              "",
+              "Exit 2 means BLIND: the runs could not be read, which is never the same fact as",
+              "healthy. Exit 1 means a finding: a clock is past its own tolerance, has never",
+              "fired, or its workflow is no longer in the tree.",
+              "",
+              f"```\n{board}\n```",
+              "",
+              f"Run: {os.environ.get('RUN_URL', '')}",
+              "",
+              "Registry: `legions/estate-clocks.json` (legion 3). Claim: idp#7799.",
+          ])
+          # One open issue per state, not one per run: a twice-hourly drill that filed a
+          # ticket every tick would bury the board it is trying to keep honest.
+          existing = subprocess.run(
+              ["gh", "issue", "list", "--state", "open", "--search", f'{title} in:title',
+               "--json", "number", "--jq", ".[0].number // empty"],
+              capture_output=True, text=True, check=False,
+          ).stdout.strip()
+          if existing:
+              subprocess.run(["gh", "issue", "comment", existing, "--body", body], check=False)
+              print(f"commented on existing issue #{existing}")
+          else:
+              subprocess.run(
+                  ["gh", "issue", "create", "--title", title, "--body", body],
+                  check=False,
+              )
+          PY
+
+      - name: keep the chronos board
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: chronos-clocks
+          path: chronos.txt
+          retention-days: 14
+          if-no-files-found: ignore

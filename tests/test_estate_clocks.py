@@ -69,7 +69,11 @@ def test_the_clock_view_survives_a_manifest_that_is_not_yaml(tmp_path, capsys):
 
     clocks = module._read_cronjobs(tmp_path)
     assert [c["clock"] for c in clocks] == ["estate-example"], clocks
-    assert clocks[0]["where"] == "cluster · estate"
+    # The separator is ASCII on purpose: the pre-push guard refuses non-ASCII bytes on
+    # any added line, and this row lands in docs/scheduling/CLOCKS.md as a new line
+    # whenever a clock is added. A middle dot here made every later clock addition
+    # unpushable, so the view emits "-" and this case pins that.
+    assert clocks[0]["where"] == "cluster - estate"
     err = capsys.readouterr().err
     assert "externalsecrets.yaml" in err, err
     assert "not readable YAML" in err, err
@@ -143,3 +147,19 @@ def test_the_clock_view_does_not_reparse_the_same_manifest_for_every_file(monkey
             calls["n"], platform_files
         )
     )
+
+
+def test_the_generated_page_is_ascii_only():
+    """The pre-push guard refuses non-ASCII bytes on any ADDED line.
+
+    Measured 2026-11-08: pushing a lane that added two clock rows was refused with
+    `pre-push REFUSED: non-ASCII bytes added in docs/scheduling/CLOCKS.md`, twice,
+    because the generator drew a middle dot between namespace and name. The guard is
+    right and the generator was wrong: CLOCKS.md is machine-written, so it must be
+    machine-safe. This is the falsifier -- it fails against the old renderer, which
+    emitted U+00B7 for every cluster clock.
+    """
+    module = load_clocks()
+    out = module.render(REPO)
+    bad = sorted({ch for ch in out if ord(ch) > 127})
+    assert not bad, "CLOCKS.md must be ASCII only; found {!r}".format(bad)

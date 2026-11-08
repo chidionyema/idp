@@ -698,8 +698,29 @@ jobs:
     env:
       HOME: '~'
       PROSPECTOR_STORE_DIR: ~/Documents/code/prospector/store
+  com.estate.chronos:
+    # Chronos (idp#7799, legion 3): measure the DELIVERED cadence of every declared clock,
+    # not the declared one. bin/estate-clocks renders what each clock was written to do;
+    # nothing measured whether it did it, which is how conscience.yml ran hourly until
+    # 2026-09-23 and then stopped for six weeks unnoticed (idp#5918 measured every declared
+    # GitHub cron delivering 20-70x late). This reads each workflow's own recorded
+    # scheduled runs and grades it against its own tolerance in legions/estate-clocks.json.
+    #
+    # It also runs off the laptop in .github/workflows/estate-homes-drill.yml. Both are
+    # wanted: the GitHub copy is the one that survives this Mac being asleep or dead, and
+    # this copy is the one that still reads the board when GitHub itself is unreachable.
+    # A single observer is a single point of blindness.
+    runs_on: mac
+    runs_on_ref: idp#7799
+    ok_exit: [1, 2]  # 1 = measured fine and a declared clock missed or is absent from the tree (a finding, a ticket, not a crash); 2 = BLIND: the runs could not be read at all, which is never the same fact as healthy and never a pass (R1)
+    command:
+    - python3
+    - $CODE/idp/bin/idp-estate-clocks
+    - --gate
+    cron: 8,38 * * * *
+    cwd: $CODE/idp
     skip_on_battery: false
-    timeout_s: 1800
+    timeout_s: 300
   com.prospector.log-rotation:
     runs_on: retire
     runs_on_ref: crew#458

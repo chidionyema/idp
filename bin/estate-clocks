@@ -60,16 +60,19 @@ def _read_schedule_yml(root: Path) -> list[dict]:
                     break
             else:
                 description = cmd_str[:80]
-        # Truncate to 110 characters
+        # Truncate to 110 characters. Every string this script emits stays ASCII: the pre-push
+        # guard refuses non-ASCII bytes on an ADDED line, so a middle dot or an ellipsis here
+        # makes every new clock row unpushable -- and the agent hits it on a push, minutes after
+        # the change looked finished (measured 2026-11-08 on the com.estate.chronos row).
         if len(description) > 110:
-            description = description[:107] + "…"
+            description = description[:107] + "..."
         # Format where based on runs_on
         if runs_on == "retire":
-            where = "Mac scheduler (Dagster) · retiring"
+            where = "Mac scheduler (Dagster) - retiring"
         elif runs_on == "mac":
-            where = "Mac scheduler (Dagster) · moves to the cluster"
+            where = "Mac scheduler (Dagster) - moves to the cluster"
         else:
-            where = f"Mac scheduler (Dagster) · runs_on={runs_on}"
+            where = f"Mac scheduler (Dagster) - runs_on={runs_on}"
         clocks.append(
             {
                 "clock": name,
@@ -209,7 +212,7 @@ def _read_cronjobs(root: Path) -> list[dict]:
             clocks.append(
                 {
                     "clock": name,
-                    "where": f"cluster · {namespace}",
+                    "where": f"cluster - {namespace}",
                     "cron": schedule,
                     "source": str(yaml_path.relative_to(root)),
                     "what": first_comment,
@@ -290,7 +293,7 @@ def _read_github_workflows(root: Path) -> list[dict]:
             what = first_comment if first_comment else workflow_name
             # Truncate to 110 characters
             if len(what) > 110:
-                what = what[:107] + "…"
+                what = what[:107] + "..."
 
             clocks.append(
                 {
@@ -327,6 +330,40 @@ def render(repo_root: Path) -> str:
         "",
         "Regenerate with `bin/estate-clocks`; the test tests/test_estate_clocks.py fails when this page is stale.",
         "",
+        # The distinction below is the whole reason Chronos exists, so it is generated
+        # with the page rather than appended by hand: a hand-edit here would be reverted
+        # by the next regeneration and the reader would silently lose it.
+        "## This page lists DECLARED cadence. It does not say whether the clock fires.",
+        "",
+        "Every row is read from the source of a clock: a cron expression, a plist, a",
+        "CronJob. That is the clock as it was written, not the clock as it runs, and those",
+        "are different facts. idp#5918 measured declared GitHub crons delivering 20-70x",
+        "later than declared, and `conscience.yml` ran hourly until 2026-09-23 and then",
+        "stopped for six weeks with nobody noticing. A page that renders only declarations",
+        "can see neither.",
+        "",
+        "Delivered cadence is measured separately by `bin/idp-estate-clocks` against",
+        "`legions/estate-clocks.json` (legion 3), grading each obligation against its own",
+        "tolerance using that workflow's recorded scheduled runs:",
+        "",
+        "```bash",
+        "python3 bin/idp-estate-clocks            # the board",
+        "python3 bin/idp-estate-clocks --gate     # exit 0 delivered, 1 missed/absent, 2 BLIND",
+        "python3 bin/idp-estate-clocks-proof      # the falsifier: proves the gate can fail",
+        "```",
+        "",
+        "A tolerance is deliberately looser than the declared cron, set above measured",
+        "reality and tightened as the time base improves: pinned to the cron expression it",
+        "would be red permanently and then ignored. `conscience` is carried as",
+        "`state: retired` rather than deleted, so the fact that an hourly clock existed and",
+        "stopped survives.",
+        "",
+        "It runs off the laptop, in `.github/workflows/estate-homes-drill.yml`, and files a",
+        "ticket when a clock misses rather than reddening main: a stopped clock is a finding",
+        "someone owns, exactly like a dead lane. A clock that does not run cannot report",
+        "that it did not run, which is why the observer's own delivery is one of the",
+        "obligations it grades.",
+        "",
         "| Clock | Where it runs | Cron | Source | What it does |",
         "| ----- | ------------- | ---- | ------ | ------------ |",
     ]
@@ -344,7 +381,45 @@ def render(repo_root: Path) -> str:
         lines.append(f"| `{clock}` | {where} | {cron} | `{source}` | {what} |")
 
     lines.append("")
-    return "\n".join(lines) + "\n"
+    # The page is generated from manifests, and those comments carry typographic
+    # characters (U+00A7 section sign, emoji). The pre-push guard refuses non-ASCII
+    # bytes on any ADDED line, so a source comment turning into a table row would
+    # block the push of every clock added after it -- a deterministic check failing
+    # at the last moment, on a file no agent hand-writes. Transliterate here, at the
+    # single point the page is written, so the guard never has to be argued with.
+    return _ascii("\n".join(lines) + "\n")
+
+
+_ASCII_MAP = {
+    "\u00a7": "section ",
+    "\u00b7": "-",
+    "\u2018": "'",
+    "\u2019": "'",
+    "\u201c": '\"',
+    "\u201d": '\"',
+    "\u2013": "-",
+    "\u2014": "--",
+    "\u2026": "...",
+    "\u2192": "->",
+    "\u2264": "<=",
+    "\u2265": ">=",
+    "\u00a0": " ",
+}
+
+
+def _ascii(text: str) -> str:
+    """Return `text` with every non-ASCII character replaced by an ASCII stand-in."""
+    out = []
+    for ch in text:
+        if ord(ch) < 128:
+            out.append(ch)
+        elif ch in _ASCII_MAP:
+            out.append(_ASCII_MAP[ch])
+        else:
+            # Anything unmapped (emoji, CJK) is dropped rather than guessed at:
+            # a clock row must never fail to push because of a comment's decoration.
+            out.append("?")
+    return "".join(out)
 
 
 def main():
