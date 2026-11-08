@@ -49,9 +49,11 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import json, os, urllib.request
-          with urllib.request.urlopen(
-              "https://llm.mumchimp.com/v1/models", timeout=30
-          ) as response:
+          catalog_request = urllib.request.Request(
+              "https://llm.mumchimp.com/v1/models",
+              headers={"User-Agent": "estate-dsh-deploy/1.0"},
+          )
+          with urllib.request.urlopen(catalog_request, timeout=30) as response:
               catalog = json.load(response)
           model_ids = sorted(
               str(row["id"]) for row in catalog.get("data", []) if row.get("id")
