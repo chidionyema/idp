@@ -114,15 +114,66 @@ def _exempted_paths(messages: str) -> set[str]:
     return {m.group(1) for m in TRAILER_RE.finditer(messages)}
 
 
+def _staged_added_python_files() -> list[str]:
+    """New Python files the NEXT commit would introduce, read from the index against HEAD.
+
+    commit-msg runs before the commit object exists, so `base..HEAD` cannot see it -- but neither
+    may this compare against `base`, and that was a real defect found by the lab test in
+    tests/test_language_gate_at_commit_time.py: with `origin/main` as the base, files committed
+    earlier on the SAME branch are still 'additions', so the hook re-judged history and refused a
+    commit whose only new file was a bash script -- because an unrelated .py from the previous
+    commit was re-listed. The pending commit is `HEAD` -> index, nothing wider. The branch's whole
+    range is still judged, at pre-push, by bin/idp-ci via the committed path.
+    """
+    out = subprocess.run(
+        ["git", "diff", "--cached", "--diff-filter=A", "--name-only", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=Path.cwd(),
+    )
+    return [p for p in out.stdout.splitlines() if p and _is_staged_python(p)]
+
+
+def _is_staged_python(path: str) -> bool:
+    if path.endswith(".py"):
+        return True
+    shown = subprocess.run(
+        ["git", "show", f":{path}"], capture_output=True, text=True, check=False
+    )
+    if shown.returncode != 0:
+        return False
+    first_line = shown.stdout.splitlines()[0] if shown.stdout else ""
+    return first_line.startswith("#!") and "python" in first_line
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("base", nargs="?", default="origin/main")
     ap.add_argument("head", nargs="?", default="HEAD")
+    ap.add_argument(
+        "--message-file",
+        default="",
+        metavar="PATH",
+        help="judge the PENDING commit named by this message file against the staged index "
+        "(the commit-msg hook mode: the commit does not exist yet, so base..head cannot see it)",
+    )
     args = ap.parse_args(argv)
 
     try:
-        added = _added_python_files(args.base, args.head)
-        messages = _commit_messages(args.base, args.head)
+        if args.message_file:
+            added = _staged_added_python_files()
+            try:
+                messages = Path(args.message_file).read_text(errors="replace")
+            except OSError as exc:
+                print(
+                    f"BLIND language-gate: cannot read message file {args.message_file}: {exc}",
+                    file=sys.stderr,
+                )
+                return 2
+        else:
+            added = _added_python_files(args.base, args.head)
+            messages = _commit_messages(args.base, args.head)
     except subprocess.CalledProcessError as exc:
         print(
             f"BLIND language-gate: could not read {args.base}..{args.head}: {exc}",

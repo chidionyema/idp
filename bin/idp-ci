@@ -55,8 +55,17 @@ need() { command -v "$1" >/dev/null || { say "FAIL  $1 is not installed -- run b
 # pull request gets only the rungs its diff can actually break. The kyverno rung has scoped itself
 # this way since crew#584; this makes the same test available to every other rung.
 touched() {
-  [ -n "${IDP_CI_BASE:-}" ] || return 0
-  local changed; changed=$(cd "$IDP" && git diff --name-only "$IDP_CI_BASE...HEAD" 2>/dev/null) || return 0
+  # With no base, this used to return true for everything -- so every path-gated rung ran in full on
+  # a bare invocation, which is the shape a developer and the pre-push hook actually use. That is
+  # how a docs-only lane came to be graded by tsc (measured 2026-11-08: 3 FAILs, 0 caused by the
+  # change). Derive the base the same way the ruff rung does, from the merge-base with origin/main,
+  # so "what did this lane touch" has an answer without anyone exporting a variable by hand.
+  local base="${IDP_CI_BASE:-}"
+  if [ -z "$base" ]; then
+    base=$(cd "$IDP" && git merge-base HEAD origin/main 2>/dev/null) || base=""
+  fi
+  [ -n "$base" ] || return 0
+  local changed; changed=$(cd "$IDP" && git diff --name-only "$base...HEAD" 2>/dev/null) || return 0
   local p
   for p in "$@"; do printf '%s\n' "$changed" | grep -q "^$p" && return 0; done
   return 1
@@ -521,13 +530,17 @@ if [ "$FAST" = 1 ]; then
   (cd "$IDP" && "${RUFF[@]}" check --quiet .) && say "ok    ruff     pyproject rule set" || { say "FAIL  ruff"; fail=1; }
   # 1d.2: tsc --noEmit on the backstage app package. A build failure in CI for an unused
   # identifier is a 1950-pattern embarrassment; refuse it locally with the same compiler.
-  # Locally blind is red. In Actions this job installs no node_modules; portal-app (a required
-  # check, run on pull requests) is the compiler there. Scoped by touched(): a diff with no
-  # backstage/ file cannot change what tsc reads, and it was 175 s of a pre-push under load.
+  # Locally blind is red -- except when the lane never touched what the compiler reads. Scoped by
+  # touched(): a diff with no backstage/ file cannot change what tsc reads, and it was 175 s of a
+  # pre-push under load. The scope gate was bypassed on a bare run (no IDP_CI_BASE meant "touched
+  # everything"), so a docs-only lane was graded FAIL by a compiler that had nothing to compile --
+  # measured 2026-11-08 on a change with zero .ts files. BLIND now says BLIND and names its fix;
+  # it is red only when the lane DID touch backstage/, which is when an unanswerable tsc is a gap
+  # in this lane's own evidence rather than an accident of the machine.
   if touched backstage/ bin/idp-backstage-tsc; then (cd "$IDP" && bin/idp-backstage-tsc); rc=$?; else rc=4; fi
-  if [ $rc = 4 ]; then say "ok    tsc      backstage untouched since $IDP_CI_BASE"
+  if [ $rc = 4 ]; then say "ok    tsc      backstage untouched since the merge-base"
   elif [ $rc = 0 ]; then say "ok    tsc      backstage"
-  elif [ $rc = 3 ] && [ -n "${GITHUB_ACTIONS:-}" ]; then say "skip  tsc      backstage (no node_modules in this job; portal-app is the required tsc)"
+  elif [ $rc = 3 ]; then say "BLIND tsc      backstage: no node_modules; fix: (cd backstage && yarn install)"
   else say "FAIL  tsc      backstage"; fail=1; fi
   # 1d.3: ruff format --check. On a pull request (IDP_CI_BASE set) it checks the Python the diff
   # touches; with no base, the whole repo -- the same shape as the yamllint rung above, for the
@@ -538,16 +551,29 @@ if [ "$FAST" = 1 ]; then
   # claim). "Grade what the push changes" is this repo's own rule -- py-strict below grades
   # base...HEAD, and tests/test_prepush_grades_only_what_the_push_changes.py holds the hook to it.
   # A gate that fails for code you did not write is not a stricter gate, it is a stopped pipeline.
-  if [ -n "${IDP_CI_BASE:-}" ]; then
-    pyf=$(cd "$IDP" && git diff --name-only --diff-filter=d "$IDP_CI_BASE...HEAD" -- '*.py')
-    pyn=$(printf '%s' "$pyf" | grep -c .)
-    if [ "$pyn" = 0 ]; then say "ok    ruff-fmt no Python in the diff against $IDP_CI_BASE"
+  #
+  # MEASURED 2026-11-08: the diff-scoped path above only ran when IDP_CI_BASE was exported by hand.
+  # Every other invocation -- a developer running bin/idp-ci bare, a hook, a scheduled run -- fell
+  # through to the whole-repo branch and was judged against main's own 23 unformatted files, none of
+  # which the lane had touched. 23 FAILs for 0 authored offences is the same stopped pipeline the
+  # 2026-10-22 fix removed, still reachable by the most common path. So the base is now DERIVED when
+  # it is not given: the merge-base of HEAD and origin/main is what the lane actually adds to. The
+  # whole-repo sweep still runs, and still reports, but only when there is no base to grade against
+  # (detached CI checkout with no origin/main) -- where "what the diff touches" is unanswerable.
+  _ruff_base="${IDP_CI_BASE:-}"
+  if [ -z "$_ruff_base" ]; then
+    _ruff_base=$(cd "$IDP" && git merge-base HEAD origin/main 2>/dev/null || true)
+  fi
+  if [ -n "$_ruff_base" ]; then
+    pyf=$(cd "$IDP" && git diff --name-only --diff-filter=d "$_ruff_base...HEAD" -- '*.py')
+    pyn=$(printf '%s' "$pyf" | grep -c . || true)
+    if [ "$pyn" = 0 ]; then say "ok    ruff-fmt no Python in the diff against ${_ruff_base:0:12}"
     else
       _rf=$(cd "$IDP" && printf '%s\n' "$pyf" | tr '\n' '\0' | xargs -0 "${RUFF[@]}" format --check 2>&1)
       if printf '%s' "$_rf" | grep -qE 'Would reformat|error'; then
         say "FAIL  ruff-fmt  the Python this push touches; fix: ruff format <files>"
         printf '%s\n' "$_rf" | head -20 | sed 's/^/      /'; fail=1
-      else say "ok    ruff-fmt $pyn file(s) in the diff against $IDP_CI_BASE"; fi
+      else say "ok    ruff-fmt $pyn file(s) in the diff against ${_ruff_base:0:12}"; fi
     fi
   else
     (cd "$IDP" && "${RUFF[@]}" format --check --quiet .) \

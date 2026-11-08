@@ -306,11 +306,31 @@ NOTED_MAX = 5
 
 
 def note_claim(num: int, now: float = 0.0, path: str = "") -> None:
+    """Tell this machine's focus register the claim exists now, not at the next ledger poll.
+
+    Two lags stack against the author here, and both were measured on 2026-11-08 while a lane was
+    being shipped: the register is cached FOCUS_TTL_S (300s), and recording the note did not touch
+    that cache. Measured: `note_claim` wrote 7801 at 1794131288 while the cached register was 25s
+    old (TTL 300) and still held the rows from BEFORE the claim, so the file the claim plainly
+    covered was absent and the write door refused it -- three times in one session. A guard judging
+    today's write against a snapshot taken before the claim existed is not protective, it is wrong,
+    and it is the kind of wrong that teaches an agent to distrust the door and route around it.
+
+    So the note drops the cached register as well as recording itself: the next reader refetches
+    instead of reusing a view that predates the claim it is about to be asked about. A failed drop
+    costs nothing beyond the old delay, which is why it is not allowed to raise.
+    """
     path = path or noted_claims_path()
     now = now or time.time()
     noted = {k: v for k, v in load_json(path).items() if now - v < LAPSE_S}
     noted[str(int(num))] = now
     save_json(path, noted)
+    try:
+        register = focus_cache_path()
+        if os.path.exists(register):
+            os.unlink(register)
+    except OSError:
+        pass
 
 
 def noted_rows(now: float = 0.0, path: str = "", view_fn=None):

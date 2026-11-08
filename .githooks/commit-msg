@@ -54,6 +54,30 @@ if grep -qE '^Co-Authored-By: .*(Claude|Anthropic)' "$msg_file"; then
   rm -f "$tmp_stripped"
 fi
 
+# A NEW PYTHON FILE NAMES ITS OWN REASON, AT COMMIT TIME (2026-11-08).
+#
+# bin/language-gate existed and was correct, and it ran only inside bin/idp-ci -- that is, at
+# pre-push. Measured this session: a change with seven new extensionless python3 artifacts was
+# committed, pushed, spent 56s inside the fast gate, and was then REFUSED for a trailer the author
+# could have been told about in 1.46s. The gate's cost is a diff read and a regex; the gate's data
+# (the message) is a file that exists precisely here and nowhere earlier. Pre-push is 95x the work
+# for the same verdict, one commit too late.
+#
+# This is the estate's own law (AGENTS.md section 9, principle 2: "what a machine decides in
+# milliseconds is decided at write, commit, push and CI -- by the same one script"). Not a second
+# copy: it calls bin/language-gate, the same file idp-ci calls, so the two cannot drift.
+#
+# Placement is deliberate. It runs BEFORE the HMAC below, so a refused message is never stamped --
+# a stamp on a message this gate rejected would be the signature asserting something untrue.
+if [ -x "$(git rev-parse --show-toplevel)/bin/language-gate" ]; then
+  base_ref="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main)"
+  if ! (cd "$(git rev-parse --show-toplevel)" && bin/language-gate "$base_ref" HEAD --message-file "$msg_file"); then
+    echo "REFUSE: language-gate rejected this commit message. It is correct and it is cheap -- fix the" >&2
+    echo "        trailer above, do not skip the gate. A new Python file must name why it is not Rust." >&2
+    exit 1
+  fi
+fi
+
 body="$(cat "$msg_file")"
 # $NF, not $2. `openssl dgst` prints "HMAC-SHA256(stdin)= <hex>" on some builds and the bare hex
 # on others -- LibreSSL 3.3.x, which is what macOS ships, prints one field. $2 was then empty,
