@@ -112,6 +112,32 @@ class FlowMachineDecisionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             plan(node("a", depends_on=["b"]), node("b", depends_on=["a"]))
 
+    def test_critical_requests_fenced_preemption_not_blind_kill(self):
+        r = plan(node("routine", state="RUNNING", severity="minor",
+                      preemptible=True, checkpoint_evidence=evidence(),
+                      resources=["worker-1"]),
+                 node("p0", severity="critical", blast="main"), slots=0)
+        self.assertEqual(r["wake"], [])
+        self.assertEqual(r["preempt_requests"][0]["victim"], "routine")
+        self.assertEqual(r["preempt_requests"][0]["for"], "p0")
+        self.assertFalse(r["preempt_requests"][0]["release_authority"])
+        self.assertEqual(next(x for x in r["waiting"] if x["id"] == "p0")["state"],
+                         "WAIT_FENCED_PREEMPTION")
+
+    def test_no_preemption_without_remote_checkpoint(self):
+        r = plan(node("routine", state="RUNNING", preemptible=True,
+                      checkpoint_evidence=evidence(1000)),
+                 node("p0", severity="critical", blast="main"), slots=0)
+        self.assertEqual(r["preempt_requests"], [])
+        self.assertEqual(next(x for x in r["waiting"] if x["id"] == "p0")["state"],
+                         "WAIT_CAPACITY")
+
+    def test_p0_must_not_preempt_another_p0(self):
+        r = plan(node("current", state="RUNNING", severity="critical", blast="main",
+                      preemptible=True, checkpoint_evidence=evidence()),
+                 node("next", severity="critical", blast="main"), slots=0)
+        self.assertEqual(r["preempt_requests"], [])
+
     def test_machine_cannot_self_mint_authority(self):
         r = plan(node("a", severity="critical", blast="main"))
         self.assertFalse(r["release_authority"])
