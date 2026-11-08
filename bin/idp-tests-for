@@ -36,7 +36,33 @@ if [ -n "$forced" ]; then
   changed=$(printf '%s' "$forced" | sort -u)
   SKIP_TESTS_ON_TRIVIAL=0   # a hypothetical path has no diff to call trivial
 else
-  changed=$( { git -C "$IDP" diff --name-only "$base"...HEAD; git -C "$IDP" diff --name-only HEAD; git -C "$IDP" ls-files --others --exclude-standard; } | sort -u )
+  # A shallow CI checkout may not contain origin/main. Previously git diff printed
+  # 'fatal: bad revision' but sort exited 0, so the selector silently ran an
+  # unrelated subset and reported green. Only the test selector owns this fix.
+  if ! git -C "$IDP" rev-parse --verify --quiet "${base}^{commit}" >/dev/null; then
+    if [ "$base" != "origin/main" ]; then
+      echo "BLIND tests-for: missing explicit base $base; refusing an ungrounded selection" >&2
+      exit 2
+    fi
+    if ! git -C "$IDP" fetch -q --depth=1 --no-tags origin "+refs/heads/main:refs/remotes/origin/main"; then
+      echo "BLIND tests-for: cannot obtain origin/main; no tests may be claimed selected" >&2
+      exit 2
+    fi
+  fi
+  # The shallow candidate may not contain a merge-base, even when the two
+  # commit trees are available. A direct tree diff is a conservative upper bound
+  # (it may select EXTRA tests); an empty guessed selection is never acceptable.
+  if git -C "$IDP" merge-base "$base" HEAD >/dev/null 2>&1; then
+    DIFF_ARGS=("$base...HEAD")
+  else
+    DIFF_ARGS=("$base" HEAD)
+    echo "tests-for: shallow ancestry; using source-tree comparison ($base vs HEAD)" >&2
+  fi
+  if ! git -C "$IDP" diff --name-only "${DIFF_ARGS[@]}" >/dev/null; then
+    echo "BLIND tests-for: cannot compare $base to HEAD; refusing a false-green selection" >&2
+    exit 2
+  fi
+  changed=$( { git -C "$IDP" diff --name-only "${DIFF_ARGS[@]}"; git -C "$IDP" diff --name-only HEAD; git -C "$IDP" ls-files --others --exclude-standard; } | sort -u )
 fi
 if [ -z "$changed" ]; then echo "ok    tests-for: nothing changed against $base, nothing to run"; exit 0; fi
 # SKIP_TESTS_ON_TRIVIAL (founder 2026-08-28, crew#584: "if you change only docs, comments, or trivial
@@ -48,7 +74,7 @@ trivial() {
   case "$1" in *.md|*.txt|*.rst|docs/*|reports/*|LICENSE*|CODEOWNERS|.gitignore) return 0 ;; esac
   [ -f "$IDP/$1" ] || return 1
   git -C "$IDP" ls-files --error-unmatch "$1" >/dev/null 2>&1 || return 1
-  ! { git -C "$IDP" diff -U0 "$base"...HEAD -- "$1"; git -C "$IDP" diff -U0 HEAD -- "$1"; } \
+  ! { git -C "$IDP" diff -U0 "${DIFF_ARGS[@]}" -- "$1"; git -C "$IDP" diff -U0 HEAD -- "$1"; } \
       | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -vE '^[+-][[:space:]]*(#|//|--|$)' >/dev/null
 }
 if [ "${SKIP_TESTS_ON_TRIVIAL:-1}" = 1 ]; then
