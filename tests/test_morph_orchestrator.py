@@ -16,8 +16,28 @@ from types import SimpleNamespace
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from platform.queue import continuity_admission as c
-from platform.queue import morph_orchestrator as m
+# The repository's "platform/" directory shares a name with Python's stdlib
+# module. Use an isolated package alias so ordinary stdlib imports remain safe.
+import importlib.util
+import types
+
+package_name = "_genesis_morph_queue_test"
+package = types.ModuleType(package_name)
+package.__path__ = [str(ROOT / "platform" / "queue")]
+sys.modules[package_name] = package
+
+
+def load(name):
+    path = ROOT / "platform" / "queue" / (name + ".py")
+    spec = importlib.util.spec_from_file_location(package_name + "." + name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+c = load("continuity_admission")
+m = load("morph_orchestrator")
 
 
 def checkpoint(mission="mission"):
