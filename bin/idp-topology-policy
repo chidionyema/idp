@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""Source-only off-host topology preflight for IDP #7794 / ADR 0052.
+
+NO deployment/OCI authorization, no agent identity, no effect door and no
+operational certification. The trusted admission gateway MUST independently
+verify signed provider/tenant/cost/restore evidence before granting an action.
+Outputs only REFUSED, BLIND or CANDIDATE_NEEDS_TRUSTED_VERIFICATION.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import math
+import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+POLICY_PATH = ROOT / "docs/decisions/0052-genesis-off-host-foundations.md"
+BEGIN = "<!-- GENESIS_OFFHOST_POLICY_BEGIN -->"
+END = "<!-- GENESIS_OFFHOST_POLICY_END -->"
+MAX_OBSERVATION_AGE_SECONDS = 900
+SOURCE_ONLY = "CANDIDATE_NEEDS_TRUSTED_VERIFICATION"
+ALLOWED_FIELDS = {
+    "placement", "role", "incremental_monthly_gbp", "requires_founder_device",
+    "requires_local_infrastructure", "remote_recovery_custody",
+    "quota_bound", "capacity_observation", "always_on",
+    "source_only", "commercial_sla_promised", "endpoint",
+}
+
+
+def load_policy(path: Path = POLICY_PATH) -> tuple[dict, str]:
+    raw = path.read_text(encoding="utf-8")
+    if raw.count(BEGIN) != 1 or raw.count(END) != 1:
+        raise ValueError("off-host policy boundaries missing or duplicated")
+    part = raw.split(BEGIN, 1)[1].split(END, 1)[0].strip()
+    p = json.loads(part)
+    if p.get("version") != "genesis.offhost.v1":
+        raise ValueError("unsupported off-host policy version")
+    if p.get("incremental_monthly_gbp_ceiling") != 0:
+        raise ValueError("zero incremental budget must not be relaxed")
+    if not {"oke", "local", "laptop", "paid"}.issubset(set(p.get("retired", []))):
+        raise ValueError("critical retired paths absent")
+    return p, hashlib.sha256(part.encode("utf-8")).hexdigest()
+
+
+def _observed_fresh(data: object, now: datetime) -> bool:
+    if not isinstance(data, dict):
+        return False
+    if not all(isinstance(data.get(k), str) and data[k].strip()
+               for k in ("observer", "receipt", "observed_at")):
+        return False
+    try:
+        at = datetime.fromisoformat(data["observed_at"].replace("Z", "+00:00"))
+        if at.tzinfo is None:
+            return False
+        age = (now - at.astimezone(timezone.utc)).total_seconds()
+        return 0 <= age <= MAX_OBSERVATION_AGE_SECONDS
+    except ValueError:
+        return False
+
+
+def evaluate(plan: object, policy: dict, digest: str, now: datetime | None = None) -> dict:
+    now = now or datetime.now(timezone.utc)
+    reasons: list[str] = []
+    unknown: list[str] = []
+    if not isinstance(plan, dict):
+        reasons.append("expected a JSON object for the proposed deployment")
+        plan = {}
+    fields = set(plan)
+    if fields - ALLOWED_FIELDS:
+        reasons.append("unknown plan fields: " + ",".join(sorted(fields - ALLOWED_FIELDS)))
+    placement, role = plan.get("placement"), plan.get("role")
+    mapping = policy["placement_roles"]
+    if not isinstance(placement, str) or placement not in mapping:
+        reasons.append("retired/unknown placement (OKE, local, paid and laptop are forbidden)")
+    elif role not in mapping[placement]:
+        reasons.append("role is incompatible with the proposed remote placement")
+    if placement in policy["retired"]:
+        reasons.append("explicitly retired placement")
+    amount = plan.get("incremental_monthly_gbp")
+    if (isinstance(amount, bool) or not isinstance(amount, (int, float))
+            or not math.isfinite(amount) or amount != 0):
+        reasons.append("incremental hosting cost must be numeric zero")
+    if plan.get("requires_founder_device") is not False:
+        reasons.append("founder-device independence is mandatory")
+    if plan.get("requires_local_infrastructure") is not False:
+        reasons.append("local infrastructure dependency is prohibited")
+    if plan.get("source_only") is not False:
+        reasons.append("source-only configuration is not a running placement")
+    if plan.get("commercial_sla_promised") is not False:
+        reasons.append("unsupported commercial availability commitment")
+    if plan.get("always_on") is not False and placement in ("github_actions", "cloudflare_free"):
+        reasons.append("ephemeral batch/edge cannot be authoritative always-on stateful infrastructure")
+    endpoint = plan.get("endpoint", "")
+    if not isinstance(endpoint, str) or re.search(
+        r"localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0|file://|/Users/",
+        endpoint, re.I
+    ):
+        reasons.append("endpoint is local, untrusted or malformed")
+    if plan.get("remote_recovery_custody") is not True:
+        unknown.append("independent off-host recovery and custody not evidenced")
+    if plan.get("quota_bound") is not True:
+        unknown.append("binding free quota and spend cap not evidenced")
+    if not _observed_fresh(plan.get("capacity_observation"), now):
+        unknown.append("fresh independently checkable capacity observation missing")
+    state = "REFUSED" if reasons else "BLIND" if unknown else SOURCE_ONLY
+    return {
+        "policy": policy["version"],
+        "policy_digest": digest,
+        "state": state,
+        "release_authority": False,
+        "reason": reasons + unknown,
+        "next_action": (
+            "revise proposal and preserve safe remote work" if reasons else
+            "obtain fresh off-host capacity/quota/restore evidence" if unknown else
+            "submit to existing authenticated gateway for INDEPENDENT verification"
+        ),
+        "source_only": True,
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--brief", action="store_true", help="source decision packet (never live runtime truth)")
+    p.add_argument("--plan", default="-", help="JSON plan file, or - for standard input")
+    args = p.parse_args(argv)
+    try:
+        policy, digest = load_policy()
+        if args.brief:
+            print(json.dumps({"policy": policy, "digest": digest, "runtime": "UNKNOWN",
+                              "release_authority": False}, sort_keys=True))
+            return 0
+        data = sys.stdin.read() if args.plan == "-" else Path(args.plan).read_text(encoding="utf-8")
+        plan = json.loads(data)
+        result = evaluate(plan, policy, digest)
+        print(json.dumps(result, sort_keys=True))
+        return 0 if result["state"] == SOURCE_ONLY else 2 if result["state"] == "BLIND" else 1
+    except (ValueError, OSError, KeyError) as exc:
+        print(json.dumps({"state": "BLIND", "release_authority": False,
+                          "reason": [f"{type(exc).__name__}: {exc}"]}), file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
