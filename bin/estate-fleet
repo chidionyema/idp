@@ -9,14 +9,21 @@ durable consumer: a message stays pending, and is redelivered, until that agent 
     estate-fleet send <agent> <text>     one agent          subject estate.fleet.to.<agent>
     estate-fleet broadcast <text>        every agent        subject estate.fleet.broadcast
     estate-fleet directive <text>        every agent + growmos DECISION (survives the bus)
-    estate-fleet inbox [--ack]           print my pending messages; --ack acknowledges them
+    estate-fleet inbox [--ack]           print pending; --ack acknowledges DELIVERY only (received)
     estate-fleet inbox --pipe CMD...     feed messages to CMD on stdin; ack ONLY if CMD exits 0
+    estate-fleet applied <seq> --proof H prove real work; REQUIRED before 'applied' is recorded
     estate-fleet watch                   live push of new messages
     estate-fleet refuse <seq> <reason>   record that I will not apply message <seq>
-    estate-fleet status <seq>            who has acked (applied) or refused message <seq>
+    estate-fleet status <seq>            who received/applied/refused message <seq>
 Envelope: {id, from, kind, text, at, channel, reply_to}. $ESTATE_FLEET_CHANNEL names the door
 (console, voice, telegram, face, mcp; default console); $ESTATE_FLEET_REPLY_TO threads a reply.
-Acks are records on estate.fleet.ack.<seq>.<agent>, so "who applied this" survives restarts.
+Receipts are records on estate.fleet.ack.<seq>.<agent> in one of four states -- never conflated:
+    received  the message reached this agent's durable consumer (inbox --ack)
+    applied   the agent did real work and carries a proof artifact (applied, required here)
+    refused   this agent will not apply it (refuse <seq> <reason>)
+`inbox --ack` only acknowledges DELIVERY: it records `received`, never `applied`. To claim
+`applied` you must run `estate-fleet applied <seq> --proof <hash-or-artifact>` after the work
+exists; an empty or missing proof is refused.
 Identity: $ESTATE_AGENT. Bus: $ESTATE_NATS_URL (default nats://127.0.0.1:4222).
 Exit 0 ok, 1 FAIL, 2 BLIND (bus unreachable: never reported as an empty inbox).
 """
@@ -89,6 +96,17 @@ async def refuse(seq, reason):
     print(f"ok      estate-fleet  refusal of seq={seq} recorded for {me()}")
 
 
+async def applied(seq, proof):
+    # The ONLY producer of an `applied` receipt. A proof artifact is mandatory: an agent that
+    # cannot name what changed has not applied anything. An empty proof is refused.
+    if not proof:
+        sys.exit("FAIL    estate-fleet  applied requires --proof <artifact>; a mere read is not applied")
+    nc, js = await connect()
+    await record_ack(js, int(seq), me(), "applied", proof)
+    await nc.close()
+    print(f"ok      estate-fleet  seq={seq} applied by {me()} proof={proof}")
+
+
 async def status(seq):
     nc, js = await connect()
     rows = {}
@@ -131,18 +149,20 @@ async def inbox(ack, pipe=None):
             if pipe:
                 held.append((m, d))
             elif ack:
-                await record_ack(js, m.metadata.sequence.stream, agent, "applied", "")
+                await record_ack(js, m.metadata.sequence.stream, agent, "received", "")
                 await m.ack()
     if pipe and held:
         # A fetched message is invisible to a second inbox call until ack_wait expires, so a
-        # separate "read, then ack" can ack nothing and redeliver forever. Ack only on success.
+        # separate "read, then ack" can ack nothing and redeliver forever. The pipe running
+        # successfully is delivery+processing, which earns `received`, NOT `applied`: the agent
+        # must still run `estate-fleet applied <seq> --proof H` with a real artifact to claim work.
         text = "".join(f"{d['kind']} from={d['from']} {d['text']}\n" for _, d in held)
         rc = subprocess.run(pipe, input=text, text=True).returncode
         if rc:
             await nc.close()
             sys.exit(f"FAIL    estate-fleet  {pipe[0]} exited {rc}: {n} message(s) left un-acked")
         for m, _ in held:
-            await record_ack(js, m.metadata.sequence.stream, agent, "applied", "")
+            await record_ack(js, m.metadata.sequence.stream, agent, "received", "")
             await m.ack()
     await nc.close()
     print(f"ok      estate-fleet  {n} pending message(s) for {agent}" + ("" if ack else " (not acked: will be redelivered)"))
@@ -178,6 +198,8 @@ def main(argv):
         asyncio.run(inbox(False, rest[rest.index("--pipe") + 1 :] or sys.exit("FAIL    estate-fleet  --pipe needs a command")))
     elif c == "inbox":
         asyncio.run(inbox("--ack" in rest))
+    elif c == "applied" and len(rest) >= 3 and rest[0].isdigit() and rest[1] == "--proof":
+        asyncio.run(applied(rest[0], " ".join(rest[2:])))
     elif c == "refuse" and len(rest) >= 2 and rest[0].isdigit():
         asyncio.run(refuse(rest[0], " ".join(rest[1:])))
     elif c == "status" and len(rest) == 1 and rest[0].isdigit():

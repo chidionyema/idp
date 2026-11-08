@@ -83,13 +83,24 @@ def test_send_rejects_flag_as_agent():
     assert "nothing was sent" in r.stderr
 
 
-def test_ack_ledger_says_who_applied_and_who_refused(bus):
+def test_ack_ledger_says_who_received_applied_and_refused(bus):
+    # The false positive this retires: `inbox --ack` recorded `applied` from a mere read.
+    # Now --ack records `received` (delivery only); `applied` requires a proof artifact.
     out = run(bus, "founder", "directive", "ship it").stdout
     seq = out.split("seq=")[1].split()[0]
-    run(bus, "agent-a", "inbox", "--ack")
+    r = run(bus, "agent-a", "inbox", "--ack")
+    assert r.returncode == 0
+    # a bare --ack must NOT be able to claim `applied`: no proof artifact, no applied receipt.
+    st = run(bus, "founder", "status", seq).stdout
+    assert f"applied  seq={seq} by=agent-a" not in st
+    assert f"received seq={seq} by=agent-a" in st
+    # `applied` without a proof is refused.
+    assert run(bus, "agent-a", "applied", seq).returncode != 0
+    # With a real proof artifact the agent records `applied`.
+    assert run(bus, "agent-a", "applied", seq, "--proof", "sha:abc123").returncode == 0
     assert run(bus, "agent-b", "refuse", seq, "claimed by pi").returncode == 0
     st = run(bus, "founder", "status", seq).stdout
-    assert f"applied  seq={seq} by=agent-a" in st
+    assert f"applied  seq={seq} by=agent-a" in st and "sha:abc123" in st
     assert f"refused  seq={seq} by=agent-b" in st and "claimed by pi" in st
     assert "2 agent(s) on record" in st
 
