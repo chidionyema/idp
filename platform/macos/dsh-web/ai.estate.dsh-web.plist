@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>ai.estate.dsh-web</string>
+
+	<!-- The wrapper derives the model picker from the canonical router and injects
+	     the router key from the encrypted estate vault before exec'ing the pinned
+	     standalone installation. -->
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>/Users/roseonyema/.estate/bin/dsh-web-launchd</string>
+	</array>
+
+	<!-- PATH is what the agent's bash tool inherits, so keep it complete. -->
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/Users/roseonyema/.nvm/versions/node/v26.13.0/bin:/Users/roseonyema/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<key>HOME</key>
+		<string>/Users/roseonyema</string>
+	</dict>
+
+	<key>WorkingDirectory</key>
+	<string>/Users/roseonyema/Documents/deepseek-harness/default-workspace</string>
+
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>LimitLoadToSessionType</key>
+	<string>Aqua</string>
+
+	<key>StandardOutPath</key>
+	<string>/Users/roseonyema/.dsh/logs/web.out.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/roseonyema/.dsh/logs/web.err.log</string>
+</dict>
+</plist>
