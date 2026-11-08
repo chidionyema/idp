@@ -64,7 +64,7 @@ jobs:
           ]
           import os
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as out:
-              out.write("\\n".join(summary) + "\\n")
+              out.write("\n".join(summary) + "\n")
           PY
       - name: Existing runtime TOML policy remains compatible
         run: python -m pytest sovereign/tests/bdd/test_policy.py -q -p no:cacheprovider
