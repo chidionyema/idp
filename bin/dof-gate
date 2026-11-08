@@ -10,7 +10,7 @@ A commit is admitted when no incident is open, or when it carries `Genesis-Resol
 an open incident and every path it changes sits inside that id's repairScope. GitHub's own
 clean merge commits are judged by their parents. The registry is read from BASE, so a change
 cannot loosen the rules that judge it. An unreadable incident list is health unproven: the
-gate fails closed to the `dof-probe` component, whose only admitted repair is the gate itself.
+gate fails closed to the `dof-probe` component, which NEVER authorizes protected changes without separately authenticated authority.
 Exit 0 admitted / full lease, 1 refused, 3 lease is repair-only.
 """
 from __future__ import annotations
@@ -59,16 +59,23 @@ def scope_of(registry: dict, comp_id: str) -> tuple[list, dict]:
 
 
 def is_independent(registry: dict, changed: list) -> list:
-    """Paths that depend on no critical service: outside every substrate glob.
+    """Only explicitly allowlisted, non-protected paths can progress during outages.
 
-    A broken service constrains what DEPENDS on it. A docs page or a product test does
-    not, so gating it on an unrelated outage is the deadlock the invariant forbids.
-    A commit that touches no paths depends on nothing, so it is independent by definition.
+    Merely being outside substrateScope does NOT prove a path has no privileged
+    runtime effect. A subset of safe files must also never admit a mixed commit.
     """
     if not changed:
         return []
-    substrate = registry.get("substrateScope", [])
-    return [p for p in changed if not any(glob_match(g, p) for g in substrate)]
+    policy = registry.get("safeWorkScope") or {}
+    allowed = policy.get("allowPatterns") or []
+    never_safe = (registry.get("substrateScope") or []) + (
+        registry.get("immutableWhileRed") or []
+    ) + (policy.get("neverSafe") or [])
+    return [
+        p for p in changed
+        if any(glob_match(g, p) for g in allowed)
+        and not any(glob_match(g, p) for g in never_safe)
+    ]
 
 
 def dedupe_key(incidents: list, changed: list) -> str:
@@ -142,27 +149,44 @@ def evaluate(registry: dict, incidents: list, message: str, changed: list) -> di
         "required_trailer": f"Genesis-Resolves: {first['id']}",
         "dedupe_key": key,
     }
-    # Independent safe work keeps an authorised path. Checked BEFORE the trailer, because
-    # demanding a repair claim for work that repairs nothing is itself the deadlock.
-    # The one exception is the blindness incident: when the gate cannot read the incident
-    # list it knows nothing, so the safe-work lane is closed too (health unproven).
-    if resolves is None and first["id"] != "dof-probe":
-        if not changed or is_independent(registry, changed):
-            return {"admitted": True, "reason": "safe work: every changed path is independent of the down service",
-                    "dedupe_key": key}
-        return {**refusal, "reason": "missing Genesis-Resolves while a critical service is down",
-                "unblocker": unblocker(registry, incidents, changed)}
+    # Missing incident visibility cannot generate its own grant. In particular,
+    # the synthetic dof-probe incident has no independent issuer/principal.
+    # A commit-authored Genesis-Resolves trailer is never an emergency permit.
+    if any(i.get("id") == "dof-probe" or i.get("issue") is None for i in incidents):
+        return {
+            **refusal,
+            "required_trailer": None,
+            "reason": "BLIND incident inventory: a commit trailer cannot authorize protected recovery",
+            "unblocker": {
+                "kind": "authenticated-recovery",
+                "next": "restore independently verified incident visibility or obtain an authentic patch-bound trusted recovery permit",
+            },
+        }
+    # Every changed file must be explicitly safe, not merely SOME files.
+    # Unknown/source/privileged effects remain refused; isolated candidate
+    # preparation is still allowed, but this gate controls protected landing.
     if resolves is None:
-        return {**refusal, "reason": "missing Genesis-Resolves while a critical service is down",
-                "unblocker": unblocker(registry, incidents, changed)}
+        independent = is_independent(registry, changed)
+        if not changed or len(independent) == len(changed):
+            return {
+                "admitted": True,
+                "reason": "explicitly allowlisted independent safe work",
+                "dedupe_key": key,
+            }
+        return {
+            **refusal,
+            "reason": "missing Genesis-Resolves while a critical service is down",
+            "unblocker": unblocker(registry, incidents, changed),
+        }
     if resolves not in failing:
         reason = f"Genesis-Resolves '{resolves}' is not an open incident"
         return {**refusal, "reason": reason, "unblocker": unblocker(registry, incidents, changed)}
     scope, comp = scope_of(registry, resolves)
-    if not comp.get("selfRepair"):
-        frozen = [p for p in changed if any(glob_match(g, p) for g in registry.get("immutableWhileRed", []))]
-        if frozen:
-            return {**refusal, "reason": "the gate is immutable while a critical service is down", "files": frozen}
+    # Even a registry selfRepair flag cannot bypass immutable protected controls.
+    # This must instead use the separately authenticated trusted bootstrap path.
+    frozen = [p for p in changed if any(glob_match(g, p) for g in registry.get("immutableWhileRed", []))]
+    if frozen:
+        return {**refusal, "reason": "the gate is immutable while a critical service is down", "files": frozen}
     stray = [p for p in changed if not any(glob_match(g, p) for g in scope)]
     if stray:
         return {**refusal, "reason": f"files outside {resolves} repairScope", "files": stray,

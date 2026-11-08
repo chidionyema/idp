@@ -1,40 +1,90 @@
 {
   "spec": "chidionyema/argon-sync docs/DOF-GOVERNANCE-v1.md (cloud layer)",
-  "revision": "2026-11-07.1",
-  "why": "Degree of freedom: while a critical service is down, every agent's landing rights narrow to repairing it. The incidents are not probed here a second time (AGENTS.md section 6): they are the open issues the cloud drill (estate-homes-drill.yml -> bin/idp-estate-homes) files every 30 minutes and closes when the lane is back. bin/dof-gate, a needs of ci-success (the ruleset's required context), refuses every commit that does not carry `Genesis-Resolves: <failing id>` and stay inside that id's repairScope.",
+  "revision": "2026-11-08.1-proposed",
+  "why": "An open critical incident constrains changes that DEPEND on it; unrelated low-effect docs and non-protected tests may proceed only under explicit safeWorkScope.allowPatterns. Unknown or privileged effects require incident-scoped repairs with authenticated authority. Incident visibility failure cannot mint authority from commit trailers.",
   "incident_title_regex": "^\\[lane\\] (?P<id>[a-z0-9-]+): a lane is down$",
-  "immutableWhileRed": ["bin/dof-gate", "catalog/dof-registry.json", "tests/test_dof_gate.py", ".github/workflows/ci.yml"],
+  "immutableWhileRed": [
+    "bin/dof-gate",
+    "catalog/dof-registry.json",
+    "tests/test_dof_gate.py",
+    ".github/workflows/ci.yml"
+  ],
   "substrateScope": [
-    "clusters/**", "deploy/**", "infra/**", "flux/**",
-    "platform/llm/**", "llm/**", "platform/ladder/**",
-    "platform/otto-gateway/**", "platform/otto-golden/**", "platform/otto-golden-secret/**",
-    "bin/idp-oke-*", "bin/idp-estate-homes", "bin/idp-otto-homes",
-    ".github/workflows/oke-*.yml", ".github/workflows/estate-homes-drill.yml",
-    "docs/diagnoses/**", ".growmos/**"
+    "clusters/**",
+    "deploy/**",
+    "infra/**",
+    "flux/**",
+    "platform/llm/**",
+    "llm/**",
+    "platform/ladder/**",
+    "platform/otto-gateway/**",
+    "platform/otto-golden/**",
+    "platform/otto-golden-secret/**",
+    "bin/idp-oke-*",
+    "bin/idp-estate-homes",
+    "bin/idp-otto-homes",
+    ".github/workflows/oke-*.yml",
+    ".github/workflows/estate-homes-drill.yml",
+    "docs/diagnoses/**",
+    ".growmos/**"
   ],
   "components": {
     "llm-router": {
       "repairProtocol": "issue body of the open [lane] llm-router incident",
-      "repairScope": ["llm/**", "platform/llm/**", "clusters/**", "deploy/**", "flux/**", "docs/diagnoses/**"]
+      "repairScope": [
+        "llm/**",
+        "platform/llm/**",
+        "clusters/**",
+        "deploy/**",
+        "flux/**",
+        "docs/diagnoses/**"
+      ]
     },
     "otto": {
       "repairProtocol": "issue body of the open [lane] otto incident",
-      "repairScope": ["platform/otto-gateway/**", "platform/otto-golden/**", "platform/otto-golden-secret/**", "bin/idp-otto-homes", "docs/diagnoses/**"]
+      "repairScope": [
+        "platform/otto-gateway/**",
+        "platform/otto-golden/**",
+        "platform/otto-golden-secret/**",
+        "bin/idp-otto-homes",
+        "docs/diagnoses/**"
+      ]
     },
     "estate-doors": {
       "repairProtocol": "issue body of the open [lane] estate-doors incident",
-      "repairScope": ["bin/idp-oke-*", "bin/idp-estate-homes", "clusters/**", "deploy/**", "flux/**", ".github/workflows/oke-*.yml", ".github/workflows/estate-homes-drill.yml", "docs/diagnoses/**"]
+      "repairScope": [
+        "bin/idp-oke-*",
+        "bin/idp-estate-homes",
+        "clusters/**",
+        "deploy/**",
+        "flux/**",
+        ".github/workflows/oke-*.yml",
+        ".github/workflows/estate-homes-drill.yml",
+        "docs/diagnoses/**"
+      ]
     },
     "dof-probe": {
-      "repairProtocol": "the gate could not read the incident list: fix the gate",
-      "selfRepair": true,
-      "repairScope": ["bin/dof-gate", "catalog/dof-registry.json", "tests/test_dof_gate.py", ".github/workflows/ci.yml"]
+      "repairProtocol": "BLIND incident inventory is not a real repair ticket. Restore independently authenticated incident visibility or obtain an independently signed, patch-bound trusted recovery permit; never treat Genesis-Resolves:dof-probe as approval.",
+      "selfRepair": false,
+      "repairScope": []
     }
   },
   "safeWorkScope": {
-    "why": "A broken service constrains operations that DEPEND on it, not the whole estate. Paths outside every substrate glob depend on no critical service, so they keep an authorised path during an outage. This is the deadlock breaker: without it, independent work has no admissible route and the estate cannot recover by building anything except a repair.",
-    "rule": "a commit whose every changed path is outside substrateScope is admitted without a Genesis-Resolves trailer",
-    "neverSafe": ["bin/dof-gate", "catalog/dof-registry.json", "tests/test_dof_gate.py", ".github/workflows/ci.yml"]
+    "why": "Only reviewed, explicitly listed low-effect paths are eligible while a different service is unavailable. Outside substrateScope alone is NOT proof of independence; protected controls and mixes with unknown effects are always blocked.",
+    "rule": "EVERY changed path must match allowPatterns and NO changed path may match substrateScope, immutableWhileRed or neverSafe; no trailer may bootstrap an unreadable incident inventory.",
+    "allowPatterns": [
+      "README.md",
+      "docs/specs/**",
+      "tests/**"
+    ],
+    "neverSafe": [
+      "bin/dof-gate",
+      "catalog/dof-registry.json",
+      "tests/test_dof_gate.py",
+      ".github/workflows/ci.yml"
+    ]
   },
-  "defaultRepairScope": ["@substrate"]
+  "defaultRepairScope": [
+    "@substrate"
+  ]
 }

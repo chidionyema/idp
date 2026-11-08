@@ -21,13 +21,18 @@ def test_no_incident_admits_anything():
     assert gate.evaluate(REGISTRY, [], "feat: x", ["README.md"])["admitted"]
 
 
-def test_unrelated_work_keeps_an_authorised_path_while_a_service_is_down():
-    """The invariant (idp#7787): a broken service constrains what depends on it, not the estate.
+def test_unrelated_low_effect_work_keeps_an_authorised_path_during_outage():
+    """Explicit safe docs/tests can progress, but unknown source effects cannot."""
+    d = gate.evaluate(
+        REGISTRY, ROUTER_DOWN, "docs: no runtime effect",
+        ["docs/specs/instruction-flow.md", "tests/test_accounting.py"],
+    )
+    assert d["admitted"], f"safe work has no admissible path: {d.get('reason')}"
 
-    This test previously asserted the opposite and encoded the deadlock.
-    """
-    d = gate.evaluate(REGISTRY, ROUTER_DOWN, "feat: unrelated", ["web/app.tsx"])
-    assert d["admitted"], f"independent work has no admissible path: {d.get('reason')}"
+
+def test_unclassified_source_cannot_claim_runtime_independence_from_its_path():
+    d = gate.evaluate(REGISTRY, ROUTER_DOWN, "feat: unknown effects", ["web/app.tsx"])
+    assert not d["admitted"], "arbitrary source has no proven low-effect contract"
 
 
 def test_a_resolving_commit_inside_scope_is_admitted():
@@ -62,12 +67,40 @@ def test_the_gate_cannot_unlock_itself():
     assert not d["admitted"]
 
 
-def test_an_unreadable_incident_list_fails_closed_to_gate_repair_only():
+def test_blind_inventory_cannot_mint_self_repair_authority_from_trailers():
     blind = [{"id": "dof-probe", "issue": None}]
-    assert not gate.evaluate(REGISTRY, blind, "feat: x", ["README.md"])["admitted"]
-    assert gate.evaluate(
-        REGISTRY, blind, "Genesis-Resolves: dof-probe", ["bin/dof-gate"]
-    )["admitted"]
+    for paths in (
+        ["README.md"],
+        ["docs/specs/safe.md"],
+        ["bin/dof-gate"],
+        ["catalog/dof-registry.json"],
+        ["tests/test_dof_gate.py"],
+        [".github/workflows/ci.yml"],
+    ):
+        for message in ("feat: x", "Genesis-Resolves: dof-probe"):
+            result = gate.evaluate(REGISTRY, blind, message, paths)
+            assert not result["admitted"], (message, paths, result)
+            assert result["required_trailer"] is None
+            assert result["unblocker"]["kind"] == "authenticated-recovery"
+
+
+def test_mixed_safe_and_unsafe_commit_must_not_use_truthy_partial_safe_list():
+    for unsafe in (".github/workflows/ci.yml", "web/app.tsx",
+                   "bin/dof-gate", "platform/otto-gateway/deploy.yaml"):
+        result = gate.evaluate(
+            REGISTRY, ROUTER_DOWN, "docs: partly safe",
+            ["docs/specs/safe.md", unsafe],
+        )
+        assert not result["admitted"], (unsafe, result)
+        assert result["unblocker"]["split_out"] == ["docs/specs/safe.md"]
+
+
+def test_repair_trailer_never_overrides_immutable_dof_control():
+    for path in REGISTRY["immutableWhileRed"]:
+        result = gate.evaluate(
+            REGISTRY, ROUTER_DOWN, "Genesis-Resolves: llm-router", [path]
+        )
+        assert not result["admitted"], (path, result)
 
 
 # --- Scope-aware deadlock breaker (idp#7787) ---------------------------------
