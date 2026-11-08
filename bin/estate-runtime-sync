@@ -170,7 +170,26 @@ def launchers() -> list[str]:
 
 # /fleet's frontend: its own sparse clone (backstage/ only) with node_modules, served by
 # ai.estate.fleetview-frontend. The dev server hot-reloads what this checks out.
+#
+# RETIRED 2026-11-08 (founder: "not the fleetview fe, we still use the infra voice etc, jets
+# stream nats but not the fe"). The work surface is ARGON (~/.estate/argon/.genesis/live-surface,
+# node on 127.0.0.1:3000), plus the estate's infra, voice and JetStream/NATS. This clone was kept
+# for a /fleet frontend that is no longer used, and it was not free: its backstage/node_modules
+# is a 2.3G dependency tree that put the volume under the executor's 1500M floor and closed EVERY
+# door on the machine (estate_execute and the git MCP tools refused all work, 2026-11-08). A
+# service nobody uses must not be able to starve the ones that are used.
+#
+# So the clone is now OPT-IN, not provisioned on every tick. Setting ESTATE_FRONTEND_ENABLED=1
+# restores the old behaviour exactly (clone, sparse-checkout, yarn install, probe, rollback).
+# Left unset, the tick reports it once and touches nothing, and the tree is left alone: it is
+# never deleted from here, because deleting a tree is disk-reclaim's job (which reclaims an
+# unused dependency tree without needing a repo change).
 FRONTEND = Path(os.environ.get("ESTATE_FRONTEND_TREE") or STATE / "frontend/idp")
+FRONTEND_ENABLED = os.environ.get("ESTATE_FRONTEND_ENABLED", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
 # `localhost`, not 127.0.0.1: the dev server binds ::1 only (app.baseUrl says localhost), so the v4
 # literal was refused on every tick and every frontend deploy was rolled back (2026-09-28).
 FRONTEND_PROBE = "http://localhost:3100/"
@@ -750,7 +769,20 @@ def tree_last_move() -> str:
 
 
 def sync_frontend(sha: str) -> list[str]:
-    """Move the frontend tree to sha; a lockfile change reinstalls; a dead /fleet rolls it back."""
+    """Move the frontend tree to sha; a lockfile change reinstalls; a dead /fleet rolls it back.
+
+    Opt-in since 2026-11-08: with ESTATE_FRONTEND_ENABLED unset this provisions nothing. The
+    /fleet frontend it serves is retired (the work surface is argon), and its dependency tree
+    was closing every door on the machine. A tick that provisions a service nobody uses is
+    weight the estate pays for on every run.
+    """
+    if not FRONTEND_ENABLED:
+        if FRONTEND.exists():
+            return [
+                "frontend retired: ESTATE_FRONTEND_ENABLED is unset; "
+                f"{FRONTEND} left as it is (provision nothing, delete nothing)"
+            ]
+        return []
     fresh = not (FRONTEND / ".git").exists()
     if fresh:
         FRONTEND.parent.mkdir(parents=True, exist_ok=True)
