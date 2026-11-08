@@ -1206,6 +1206,87 @@ git -C "$HOME/Documents/code/idp" worktree list 2>/dev/null | awk 'NR>1 {print $
 done
 fi
 
+# MEASURED RECLAIM (2026-11-08). The allow-list above AND the critical tier are both fixed lists.
+# On 2026-11-08 the volume sat at 798M free -- under the executor's 1500M floor, so every door on
+# the machine was closed including read-only ones -- while:
+#
+#   allow-list total: 0M                  (every cache this script knows was absent/empty)
+#   freed_mb=-488, then -311              (two consecutive runs: the runs were NET NEGATIVE)
+#   146/223 runs not ok in 30d, p_fail=0.65 (the harness's own policy shadow)
+#   "BLIND  du of HOME did not finish"    (this script's own scan, T_SCAN narrowed under a budget)
+#
+# The weight was on NO list: ~/Documents/code/argon-sync/.estate/runtime, 2390M of orphaned
+# duplicate toolchain (a rustup-copy-conflict-YYYYMMDD backup and an orphaned rustup), untracked
+# by git, referenced by no script (`grep -c argon-sync disk-cleanup.sh` = 0), held open by no
+# process, last touched four days earlier. Removing it took free 4829M -> 7235M (+2406M) and left
+# that checkout's tracked files at 3560 -> 3560. This script freed 0 of it, because it never looked:
+# a cleaner that cannot measure cannot reclaim, and it still printed "every phase ran".
+#
+# So weight that is ORPHANED BY CONSTRUCTION is measured and reclaimed here, not listed:
+# a *copy-conflict* / *backup-YYYYMMDD* directory left by a resolved conflict, or a SECOND
+# runtime/cargo/rustup/toolchains tree inside a product checkout while the live one is the user's
+# own ($RUSTUP_HOME unset -> ~/.rustup, $CARGO_HOME unset -> ~/.cargo).
+#
+# A tree is reclaimed only when ALL of these hold, and each decision is printed with its reason:
+# it is not inside a worktree a live claim covers, lsof shows no process holding it, git does not
+# track it, and no file inside was touched for ORPHAN_MIN_DAYS. Otherwise it is reported as kept,
+# with why. Nothing here is a ledger, a database, a claim's worktree or a toolchain the runtime names.
+#
+# The measurement is BOUNDED PER TREE (one `du` per candidate, each through tmo), so it cannot
+# repeat the BLIND failure above: no single call walks all of HOME, and a tree that does not finish
+# in its slot is reported BLIND rather than silently absent.
+ORPHAN_MIN_DAYS="${DISK_CLEANUP_ORPHAN_MIN_DAYS:-2}"
+claim_worktrees() { git -C "$HOME/Documents/code/idp" worktree list 2>/dev/null | awk 'NR>1 {print $1}'; }
+inside_claimed_worktree() {
+  local p=$1 wt
+  for wt in $(claim_worktrees); do
+    case "$p" in "$wt"|"$wt"/*) return 0;; esac
+  done
+  return 1
+}
+orphan_candidates() {
+  local root
+  for root in "$HOME/Documents/code" "$HOME/code"; do
+    [ -d "$root" ] || continue
+    find "$root" -maxdepth 4 -type d \
+         \( -name rustup -o -name cargo -o -name toolchains \
+            -o -name '*copy-conflict*' -o -name '*backup-2026*' -o -name '*conflict-2026*' \) \
+         -not -path '*/.git/*' 2>/dev/null
+  done | sort -u
+}
+reclaim_orphan_trees() {
+  local p sz age_days keep_why repo live_rustup live_cargo
+  live_rustup="${RUSTUP_HOME:-$HOME/.rustup}"
+  live_cargo="${CARGO_HOME:-$HOME/.cargo}"
+  echo "measured reclaim (orphaned duplicate toolchain under checkouts):"
+  orphan_candidates | while IFS= read -r p; do
+    [ -d "$p" ] || continue
+    case "$p" in "$live_rustup"|"$live_rustup"/*|"$live_cargo"|"$live_cargo"/*) continue;; esac
+    case "$p" in "$HOME/.rustup"*|"$HOME/.nvm"*|"$HOME/.cache/estate-tools"*) continue;; esac
+    sz=$(size_m "$p")
+    [ "$sz" -ge 100 ] || continue
+    age_days=$(( ($(date +%s) - $(stat -f %m "$p" 2>/dev/null || echo 0)) / 86400 ))
+    keep_why=""
+    if lsof -nP +d "$p" 2>/dev/null | tail -n +2 | grep -q .; then keep_why="a process holds it open"; fi
+    [ -z "$keep_why" ] && inside_claimed_worktree "$p" && keep_why="inside a worktree a live claim covers"
+    if [ -z "$keep_why" ]; then
+      repo=$(git -C "$p" rev-parse --show-toplevel 2>/dev/null)
+      if [ -n "$repo" ] && git -C "$repo" ls-files --error-unmatch "${p#$repo/}" >/dev/null 2>&1; then
+        keep_why="git tracks it"
+      fi
+    fi
+    [ -z "$keep_why" ] && [ "$age_days" -lt "$ORPHAN_MIN_DAYS" ] && keep_why="touched ${age_days}d ago (< ${ORPHAN_MIN_DAYS}d)"
+    if [ -n "$keep_why" ]; then echo "  keep     ${sz}M  $p  ($keep_why)"; continue; fi
+    if [ "$APPLY" = 0 ]; then echo "  would    ${sz}M  $p  (${age_days}d old, orphaned duplicate; dry run removes nothing)"; continue; fi
+    if [ "$(remaining)" -lt 10 ]; then echo "  SKIP     ${sz}M  $p  ($(remaining)s left of the budget: run again)"; budget_hit=1; continue; fi
+    echo "  remove   ${sz}M  $p  (${age_days}d old, untracked, unheld, unreferenced)"
+    tmo "$DELETE_S" rm -rf "$p" >/dev/null 2>&1
+    if [ -e "$p" ]; then echo "  step     $p  (still deleting; the next run continues)"; else echo "  removed  $p"; fi
+  done
+  echo "measured reclaim: done"
+}
+if [ "$INCREMENTAL" != 1 ]; then reclaim_orphan_trees; fi
+
 # WHERE THE SPACE IS (2026-10-20). The list above is fixed, so on 2026-10-19 the log read "nothing
 # left to free" at 249M free while 6.3G of Chrome clones, an 8.6G staged macOS update and 0.8G of
 # ~/.estate logs and ledgers sat outside it -- the owner could not tell from the log what to decide
