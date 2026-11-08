@@ -12,8 +12,9 @@
 #     wildcard, no callbacks but local_caller_auth (the #7311 aei_observer crash and every
 #     cluster-only callback stay out), plus platform/llm/local_caller_auth.py. Auth is kept: keyed
 #     lanes admit only the laptop router key; nobody gets the master key.
-#   - vault entry router-recovery: the vendor keys (repository SEED_* secrets), the laptop caller
-#     key (the vault's own `laptop` entry) and the tunnel token. Values are never printed.
+#   - vault entry router-recovery: every vendor key the estate project holds in Bitwarden and a
+#     model lane needs, the caller key (the vault's own `laptop` entry) and the tunnel token.
+#     Values are never printed and never copied into another GitHub secret.
 #   - Cloudflare: one remotely-managed tunnel `estate-recovery` routing llm-recovery.mumchimp.com
 #     (always) and llm.mumchimp.com (only with cutover=true) to the router. The DNS change for
 #     llm.mumchimp.com is the cutover; run it only after the candidate hostname answered.
@@ -56,11 +57,104 @@ jobs:
           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
           oci_region: ${{ vars.OCI_REGION }}
 
-      - name: The bundle (config + auth module)
-        env:
-          SERVED: DEEPSEEK_API_KEY,GEMINI_API_KEY,OPENROUTER_API_KEY,MINIMAX_API_KEY,MOONSHOT_API_KEY
+      - name: bws, the vendor's own tool, pinned and checksummed
         run: |
           set -euo pipefail
+          curl -sSLo bws.zip https://github.com/bitwarden/sdk-sm/releases/download/bws-v2.1.0/bws-x86_64-unknown-linux-gnu-2.1.0.zip
+          echo "ba8233c3a4aee5d43e3c73bbd04d99e9bc5aba13bbbfd06d89b073abe732b860  bws.zip" | sha256sum -c -
+          unzip -q bws.zip bws
+          sudo install -m 0755 bws /usr/local/bin/bws
+          rm -f bws bws.zip
+
+      - name: Bitwarden keys for every recovery-router lane
+        id: vendor_keys
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_CI: "1"
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+        run: |
+          set -euo pipefail
+          BWS_ACCESS_TOKEN=$(bin/idp-cloud secret get bitwarden-machine)
+          if printf '%s' "$BWS_ACCESS_TOKEN" | jq -e '.token' >/dev/null 2>&1; then
+            BWS_ACCESS_TOKEN=$(printf '%s' "$BWS_ACCESS_TOKEN" | jq -r '.token')
+          fi
+          export BWS_ACCESS_TOKEN
+          project=$(awk -F'"' '/BITWARDEN_PROJECT_ID/{print $2}' clusters/oke/estate-config.yaml)
+          [ -n "$project" ] || { echo "FAIL    bitwarden  BITWARDEN_PROJECT_ID is absent"; exit 1; }
+          umask 077
+          bws secret list "$project" --output json > "$RUNNER_TEMP/bws-secrets.json"
+          python3 - "$RUNNER_TEMP/bws-secrets.json" "$RUNNER_TEMP/router-vendor.env" "$RUNNER_TEMP/served.txt" <<'PY'
+          import json
+          import re
+          import sys
+
+          import yaml
+
+          secrets_path, env_path, served_path = sys.argv[1:]
+          rows = json.load(open(secrets_path))
+          by_name = {
+              row.get("key"): row.get("value")
+              for row in rows
+              if row.get("key") and row.get("value") is not None
+          }
+          cfg = yaml.safe_load(open("llm/config.yaml"))
+          vendors = yaml.safe_load(open("platform/vendors/consoles.yaml")).get("vendors", {})
+
+          needed = {
+              key.split("/", 1)[1]
+              for model in cfg.get("model_list", [])
+              if (key := str(model.get("litellm_params", {}).get("api_key", ""))).startswith("os.environ/")
+          }
+          aliases = {}
+          for vendor_name, vendor in vendors.items():
+              if not isinstance(vendor, dict):
+                  continue
+              for target in vendor.get("targets", []):
+                  if not isinstance(target, dict) or not target.get("field"):
+                      continue
+                  names = aliases.setdefault(target["field"], [target["field"]])
+                  for candidate in (
+                      target.get("bw"),
+                      vendor.get("secret"),
+                      f"{vendor_name.upper()}_API_KEY",
+                  ):
+                      if not candidate:
+                          continue
+                      candidate = str(candidate).removeprefix("SEED_")
+                      if candidate not in names:
+                          names.append(candidate)
+
+          resolved = {}
+          for env_name in sorted(needed):
+              for candidate in aliases.get(env_name, [env_name]):
+                  value = by_name.get(candidate)
+                  if value:
+                      resolved[env_name] = value
+                      break
+          if not resolved:
+              raise SystemExit("FAIL    bitwarden  no router model key resolved from the estate project")
+
+          safe = re.compile(r"^[A-Za-z0-9_.:/+=-]+$")
+          with open(env_path, "w", encoding="utf-8") as handle:
+              for name, value in resolved.items():
+                  if "\n" in value or not safe.fullmatch(value):
+                      raise SystemExit(f"FAIL    bitwarden  {name} has a value the vault env file cannot carry safely")
+                  print(f"::add-mask::{value}")
+                  handle.write(f"{name}={value}\n")
+          with open(served_path, "w", encoding="utf-8") as handle:
+              handle.write(",".join(resolved))
+          print(f"ok      bitwarden  {len(resolved)} router key(s): {', '.join(resolved)}")
+          PY
+          echo "served=$(cat "$RUNNER_TEMP/served.txt")" >> "$GITHUB_OUTPUT"
+
+      - name: The bundle (config + auth module)
+        env:
+          SERVED: ${{ steps.vendor_keys.outputs.served }}
+        run: |
+          set -euo pipefail
+          [ -n "$SERVED" ] || { echo "FAIL    bundle  no Bitwarden-backed router keys"; exit 1; }
           mkdir -p "$RUNNER_TEMP/bundle/modules"
           cp platform/llm/local_caller_auth.py "$RUNNER_TEMP/bundle/modules/"
           python3 - "$RUNNER_TEMP/bundle/config.yaml" <<'PY'
@@ -149,23 +243,17 @@ jobs:
           OKE_SSH_PUBKEY_TEXT: ${{ vars.OKE_SSH_PUBKEY }}   # bin/idp-oci-login --check refuses without it (run 40845502703)
           OKE_ALLOWED_CIDRS: ${{ vars.OKE_ALLOWED_CIDRS }}
           ESTATE_FOUNDER_EMAIL: ${{ vars.ESTATE_FOUNDER_EMAIL }}
-          SEED_DEEPSEEK_API_KEY: ${{ secrets.SEED_DEEPSEEK_API_KEY }}
-          SEED_GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
-          SEED_OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
-          SEED_MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
-          SEED_MOONSHOT_API_KEY: ${{ secrets.SEED_KIMI_API_KEY }}
           SEED_TUNNEL_TOKEN: ${{ steps.tunnel.outputs.token }}
         run: |
           set -euo pipefail
           bin/idp-oci-login --check
           (cd platform/oci && tofu init -input=false -reconfigure -no-color >/dev/null)
           caller=$(bin/idp-cloud secret get laptop | jq -r .key); echo "::add-mask::$caller"
-          export ESTATE_ENV_FILE="$RUNNER_TEMP/seed.env"; umask 077
-          { env | sed -n 's/^SEED_//p'; echo "ESTATE_LOCAL_CALLER_KEY=$caller"; } > "$ESTATE_ENV_FILE"
-          bin/idp-vault-put --merge router-recovery \
-            DEEPSEEK_API_KEY=DEEPSEEK_API_KEY GEMINI_API_KEY=GEMINI_API_KEY OPENROUTER_API_KEY=OPENROUTER_API_KEY \
-            MINIMAX_API_KEY=MINIMAX_API_KEY MOONSHOT_API_KEY=MOONSHOT_API_KEY TUNNEL_TOKEN=TUNNEL_TOKEN \
-            ESTATE_LOCAL_CALLER_KEY=ESTATE_LOCAL_CALLER_KEY
+          export ESTATE_ENV_FILE="$RUNNER_TEMP/router-vendor.env"; umask 077
+          printf 'TUNNEL_TOKEN=%s\nESTATE_LOCAL_CALLER_KEY=%s\n' \
+            "$SEED_TUNNEL_TOKEN" "$caller" >> "$ESTATE_ENV_FILE"
+          mapping=$(cut -d= -f1 "$ESTATE_ENV_FILE" | awk '{printf "%s=%s ", $0, $0}')
+          bin/idp-vault-put --merge router-recovery $mapping
           rm -f "$ESTATE_ENV_FILE"
           oci os object put --namespace "$OCI_OS_NAMESPACE" --bucket-name estate-router-recovery \
             --name bundle.tgz --file "$RUNNER_TEMP/bundle.tgz" --force >/dev/null
