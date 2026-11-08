@@ -2,12 +2,12 @@
   "counters": {
     "extractions": 13,
     "profiles": 0,
-    "queries": 9,
+    "queries": 18,
     "resolutions": 0
   },
   "created": "2026-09-22T18:15:24Z",
   "last_eval": null,
-  "last_run": "2026-10-01T23:05:11Z",
+  "last_run": "2026-10-30T00:53:58Z",
   "last_sample": null,
   "pending_resummarize": [],
   "runs": [
@@ -386,6 +386,56 @@
       "kind": "link",
       "relation": "r_72ea79c9ccdb",
       "ts": "2026-10-01T23:05:11Z"
+    },
+    {
+      "entity": "event/oci-block-storage-quota-exhaustion-2026-10-28",
+      "kind": "remember",
+      "ts": "2026-10-28T19:39:07Z"
+    },
+    {
+      "entity": "component/oci-reclaim",
+      "kind": "remember",
+      "ts": "2026-10-28T19:39:08Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_51d193f5a5fa",
+      "ts": "2026-10-28T19:39:09Z"
+    },
+    {
+      "entity": "principle/founder-works-away-from-the-laptop",
+      "kind": "remember",
+      "ts": "2026-10-29T01:07:14Z"
+    },
+    {
+      "entity": "system/otto-numum-telegram-channel",
+      "kind": "remember",
+      "ts": "2026-10-29T01:07:17Z"
+    },
+    {
+      "entity": "incident/discovery-failure-2026-10-29",
+      "kind": "remember",
+      "ts": "2026-10-29T08:19:01Z"
+    },
+    {
+      "entity": "project/idp-7391-estate-db-backup-status",
+      "kind": "remember",
+      "ts": "2026-10-30T00:01:58Z"
+    },
+    {
+      "entity": "project/idp-7391-estate-db-backup-status",
+      "kind": "remember",
+      "ts": "2026-10-30T00:02:05Z"
+    },
+    {
+      "entity": "decision/founder-directive-fleet-comms-realtime",
+      "kind": "remember",
+      "ts": "2026-10-30T00:12:00Z"
+    },
+    {
+      "entity": "decision/fleet-comms-live-7481",
+      "kind": "remember",
+      "ts": "2026-10-30T00:53:58Z"
     }
   ]
 }

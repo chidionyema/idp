@@ -339,3 +339,23 @@ escalate_on_timeout = true
 model = "jev-1.13.0"
 force_on_decisions = true   # when true, the Stop-hook blocks turns that skip Jev for bounded decisions
 ```
+
+---
+
+## 12. Day 0, and the no-manual-chore law (founder, 2026-11-06)
+
+A fresh machine answers one command before anything else: `bin/genesis-first-boot`. It prints the
+five facts a working estate must have with the live state of each -- GitHub App identity, the
+Genesis trust anchor, delivery secrets, main green, host headroom -- with the action and the
+reason. It exits 1 while anything is missing, so a hook and a human read the same answer.
+
+**Never hand the founder a command to type.** An action that needs a privilege the agent does not
+hold is queued to the host (`genesis-admin-actuation.py`: allowlisted, ancestry-checked,
+secret-by-name, inert without a 1-tap) and surfaced once, as a single tap. A checklist of shell
+commands is a P0 defect: it evaporates, it is repeated next session, and it converts a system
+failure into founder labour.
+
+**The one exception is the GitHub App.** GitHub exposes App creation only through the manifest
+redirect, which ends in one browser tap; no token can make it. Everything after that tap --
+convert, vault write, per-lane installation tokens -- is API. That is why the App is step 1 of
+first boot and not a footnote in a runbook.

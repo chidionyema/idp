@@ -152,3 +152,4 @@ packages/estate-ui-kit/dist-gallery/
 
 # Built by installer/build.sh, never committed: a committed pkg is a stale copy of the converger.
 installer/IDP-Estate.pkg
+.aider*

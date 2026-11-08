@@ -49,16 +49,34 @@ staged_sh=$(printf '%s\n' "$staged_sh" | grep -v '^$' || true)
 staged_yaml=$(printf '%s\n' "$staged_all" | grep -E '\.(yaml|yml)$' || true)
 
 # 1. ruff format --check on staged .py
+#
+# FAIL CLOSED (2026-11-06). This used to print "ruff unavailable, skipping format check" and let
+# the commit through -- a check that cannot fail for the agent who needs it. Every agent whose
+# ambient python lacked ruff committed unformatted Python and met the failure in CI, after a
+# batch. The resolver below tries the estate's pinned binary before the ambient module, and a
+# missing ruff is a refusal with the one command that installs it.
 if [ -n "$staged_py" ]; then
+  ruff_cmd=""
   if command -v python3 >/dev/null 2>&1 && python3 -m ruff --version >/dev/null 2>&1; then
-    echo "  ruff format --check: $(echo "$staged_py" | tr '\n' ' ')"
-    echo "$staged_py" | xargs python3 -m ruff format --check --quiet || {
-      echo "pre-commit: ruff format failed. fix: python3 -m ruff format $staged_py" >&2
-      exit 1
-    }
+    ruff_cmd="python3 -m ruff"
+  elif command -v ruff >/dev/null 2>&1 && ruff --version >/dev/null 2>&1; then
+    ruff_cmd="ruff"
+  elif [ -x "$HOME/Library/Python/3.9/bin/ruff" ]; then
+    ruff_cmd="$HOME/Library/Python/3.9/bin/ruff"
+  elif [ -x "$HOME/.cache/estate-tools/ruff" ]; then
+    ruff_cmd="$HOME/.cache/estate-tools/ruff"
   else
-    echo "pre-commit: ruff unavailable, skipping format check (CI enforces)" >&2
+    echo "pre-commit: REFUSED -- ruff is not installed, so the format check cannot run." >&2
+    echo "  install: bin/idp-install-deps   (or: python3 -m pip install --user ruff==0.15.18)" >&2
+    echo "  a check that skips itself is how unformatted Python reaches CI." >&2
+    exit 1
   fi
+  echo "  ruff format --check ($ruff_cmd): $(echo "$staged_py" | tr '\n' ' ')"
+  echo "$staged_py" | xargs $ruff_cmd format --check --quiet || {
+    echo "pre-commit: ruff format failed. fix: $ruff_cmd format $staged_py" >&2
+    echo "  then re-stage: git add $staged_py" >&2
+    exit 1
+  }
 fi
 
 # 2. ruff check on staged .py — uses pyproject.toml's [tool.ruff.lint] select via
