@@ -198,7 +198,7 @@ def _training_records(
         fields: dict[str, str] = {}
         for key in ("Rule", "Trigger", "Enforcement"):
             match = re.search(
-                rf"(?ms)^\\*\\*{key}\\.\\*\\*\\s*(.*?)(?=^\\*\\*[A-Za-z][^*]*\\.\\*\\*|^## |\\Z)",
+                rf"(?ms)^\*\*{key}\.\*\*\s*(.*?)(?=^\*\*[A-Za-z][^*]*\.\*\*|^## |\Z)",
                 block,
             )
             if match:
