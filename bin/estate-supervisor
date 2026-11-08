@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""estate-supervisor -- one warning per violation class, then the keys are taken away.
+"""estate-supervisor -- bounded warnings, proof-based recovery, then lockdown.
 
     estate-supervisor --class write-without-claim --session <sid> [--provider minimax]
                        [--detail "..."] [--pid 1234] [--cwd /path] [--model x]
 
 What it does, in the founder's order (2026-10-29):
 
-    first violation of a class   warn, and the class is written down
-    second violation of a class  terminate the session, lock it (no write, no shell, no
-                                 push), and relaunch it with the instruction to plug the hole
-                                 first and prove it
+    reporting classes            warn, final warn, then terminate after the third violation
+    mutation/security classes    warn, then terminate on a second violation inside the window
+
+    --unlock <session> --proof "<command>"  run the named proof; unlock only if it exits 0
+    --clear <session>                       clear a warning-only grace state
 
 Exit 0 on a warning, 3 when the session was terminated and locked, 1 on a bad call.
 HARNESS AGNOSTIC: it kills a pid and relaunches `pi --print`; the same call works for any
@@ -19,8 +20,11 @@ runtime that passes its own pid.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import shlex
+import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.realpath(__file__))
@@ -46,10 +50,28 @@ sys.path.insert(0, _governance_path())
 from governance import ledger, supervisor  # noqa: E402
 
 
+def run_proof(command: str) -> dict:
+    argv = shlex.split(command)
+    proc = subprocess.run(  # noqa: S603 - shlex argv, never a shell
+        argv,
+        cwd=os.getcwd(),
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    evidence = (proc.stdout or "") + (proc.stderr or "")
+    return {
+        "exit": proc.returncode,
+        "output": evidence[-4000:],
+        "sha256": hashlib.sha256(evidence.encode()).hexdigest(),
+    }
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--class", dest="cls", default="")
-    ap.add_argument("--session", required=True)
+    ap.add_argument("--session", default="")
     ap.add_argument("--status", action="store_true", help="report the session's lock state and exit")
     ap.add_argument("--provider", default="")
     ap.add_argument("--detail", default="")
@@ -58,8 +80,83 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--model", default="")
     ap.add_argument("--source", default="")
     ap.add_argument("--no-relaunch", action="store_true")
+    ap.add_argument(
+        "--unlock",
+        nargs="?",
+        const=True,
+        default=None,
+        help="unlock a session only after a proof exits 0",
+    )
+    ap.add_argument(
+        "--clear",
+        nargs="?",
+        const=True,
+        default=None,
+        help="clear a warning-only grace state",
+    )
+    ap.add_argument("--proof", default="", help="proof command for --unlock")
+    ap.add_argument(
+        "--recover-class",
+        default="",
+        help="unlock every locked session for this class after one proof",
+    )
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv[1:])
+    if isinstance(args.unlock, str) and args.unlock:
+        args.session = args.unlock
+    if isinstance(args.clear, str) and args.clear:
+        args.session = args.clear
+    if not args.session and not args.recover_class:
+        ap.error("--session is required unless --unlock/--clear/--recover-class names it")
+
+    if args.recover_class:
+        if not args.proof.strip():
+            print(
+                "estate-supervisor: --recover-class requires --proof '<command>'",
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            got = run_proof(args.proof)
+        except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+            print(f"estate-supervisor: proof could not run: {exc}", file=sys.stderr)
+            return 1
+        if got["exit"] != 0:
+            print(
+                f"estate-supervisor: proof refused with exit {got['exit']}",
+                file=sys.stderr,
+            )
+            print(got["output"], file=sys.stderr)
+            return 1
+        recovered = []
+        sessions_dir = ledger.sessions_dir()
+        try:
+            names = sorted(n for n in os.listdir(sessions_dir) if n.endswith(".json"))
+        except OSError:
+            names = []
+        for name in names:
+            sid = name[:-5]
+            state = ledger.get_session_state(sid)
+            if not ledger.is_locked(sid):
+                continue
+            if (state.get("violation_class") or state.get("class")) != args.recover_class:
+                continue
+            ledger.unlock_session(
+                sid,
+                proof_result=(
+                    f"{args.proof}\nexit=0\nsha256={got['sha256']}\n"
+                    f"recovered_class={args.recover_class}"
+                ),
+            )
+            recovered.append(sid)
+        out = {
+            "recovered_class": args.recover_class,
+            "sessions": recovered,
+            "proof": args.proof,
+            "proof_sha256": got["sha256"],
+        }
+        print(json.dumps(out, indent=2) if args.json else "recovered: " + ", ".join(recovered))
+        return 0
 
     if args.status:
         state = ledger.get_session_state(args.session)
@@ -81,8 +178,61 @@ def main(argv: list[str]) -> int:
             )
         return 3 if out["locked"] else 0
 
+    if args.clear is not None:
+        if ledger.is_locked(args.session):
+            print(
+                "estate-supervisor: session is locked; use --unlock --proof",
+                file=sys.stderr,
+            )
+            return 1
+        state = ledger.set_session_state(
+            args.session,
+            status="free",
+            locked=False,
+            warning_cleared_at=ledger.now(),
+        )
+        print(json.dumps(state, indent=2, default=str) if args.json else "cleared")
+        return 0
+
+    if args.unlock is not None:
+        if not args.proof.strip():
+            print(
+                "estate-supervisor: --unlock requires --proof '<command>'",
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            got = run_proof(args.proof)
+        except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+            print(f"estate-supervisor: proof could not run: {exc}", file=sys.stderr)
+            return 1
+        if got["exit"] != 0:
+            print(
+                f"estate-supervisor: proof refused with exit {got['exit']}",
+                file=sys.stderr,
+            )
+            print(got["output"], file=sys.stderr)
+            return 1
+        digest = got["sha256"]
+        state = ledger.unlock_session(
+            args.session,
+            proof_result=f"{args.proof}\nexit=0\nsha256={digest}",
+        )
+        state["session"] = args.session
+        state["proof_sha256"] = digest
+        if args.json:
+            print(json.dumps(state, indent=2, default=str))
+        else:
+            print(f"unlocked: {args.session}")
+            print(f"proof: {args.proof}")
+            print(f"sha256: {digest}")
+        return 0
+
     if not args.cls:
-        print("estate-supervisor: --class is required (or --status)", file=sys.stderr)
+        print(
+            "estate-supervisor: --class is required (or --status/--clear/--unlock)",
+            file=sys.stderr,
+        )
         return 1
 
     verdict = supervisor.grade(
