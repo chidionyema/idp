@@ -309,3 +309,113 @@ def test_the_real_address_is_the_one_the_package_declares() -> None:
         f"the checker's executable lines carry email literals beyond GitHub's own committer "
         f"addresses: {sorted(emails - allowed)}"
     )
+
+
+# --- A trailer is not a signature (idp#7770) ---------------------------------
+# The gate used to accept `X-Idp-Signed: <anything>` on PRESENCE alone: one `grep` into a
+# variable, then a no-op branch that granted entry. `.githooks/commit-msg` mints that HMAC
+# per-checkout (openssl rand into ~/.idp, never on the tree), so CI has never been able to
+# verify it -- bin/idp-install-hooks says so outright. A check that inspects a format it
+# cannot validate fails open on exactly the adversary it exists to stop (AGENTS.md 9 R1),
+# and the only commit it reliably rejected was the honest unstamped one.
+
+
+def test_the_checker_never_reads_the_unverifiable_trailer() -> None:
+    """FALSIFIER: the presence-only branch cannot come back.
+
+    Named after the defect: if a future edit reintroduces a read of `X-Idp-Signed`, it
+    re-opens the hole, because the value can never be checked here. The trailer may be
+    discussed in comments (the fix explains it at length); it may not be read in code.
+    """
+    for line in _code_lines():
+        assert "X-Idp-Signed" not in line, (
+            "the guarded-paths checker reads X-Idp-Signed again; that trailer is minted "
+            f"per-checkout and cannot be verified in CI, so trusting it fails open: {line!r}"
+        )
+
+
+def test_only_server_or_founder_can_authorize_a_commit() -> None:
+    """The two surviving authorities are the unforgeable ones, and both are required."""
+    code = "\n".join(_code_lines())
+    assert "server_committed" in code, (
+        "the server-written commit exemption is gone; GitHub image-update PRs would fail "
+        "guarded-paths and main would stop receiving image tags"
+    )
+    assert "idp-auth-verify" in code, (
+        "the founder X-Idp-Auth verification is gone; there is no signature authority left"
+    )
+
+
+def test_a_forged_signed_trailer_is_refused_by_the_real_checker(tmp_path: Path) -> None:
+    """FALSIFIER, end to end: a commit carrying a forged trailer fails the real gate.
+
+    Builds a throwaway repository whose HEAD is stamped `X-Idp-Signed: forged` -- exactly
+    what an attacker writes -- and runs bin/idp-ci-guarded-paths against it. Before the fix
+    this exited 0 (the no-op branch); it must now exit non-zero.
+    """
+
+    def run(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(args, cwd=cwd, capture_output=True, text=True, check=True)
+
+    run("git", "init", "-q", "-b", "main", cwd=tmp_path)
+    run("git", "config", "user.email", "attacker@example.com", cwd=tmp_path)
+    run("git", "config", "user.name", "attacker", cwd=tmp_path)
+
+    # The checker bootstrap-passes while the base branch has no founder public key (that is the
+    # PR that introduces the contract). Seed it so the run reaches the provenance logic this
+    # test is about -- otherwise the falsifier grades the bootstrap path and proves nothing.
+    keys = tmp_path / "docs" / "keys"
+    keys.mkdir(parents=True)
+    (keys / "founder.pub").write_text("not-a-real-key\n")
+    run("git", "add", "-A", cwd=tmp_path)
+    run(
+        "git",
+        "commit",
+        "-q",
+        "--no-verify",
+        "-m",
+        "chore: seed the contract",
+        cwd=tmp_path,
+    )
+    run("git", "update-ref", "refs/remotes/origin/main", "HEAD", cwd=tmp_path)
+    run(
+        "git",
+        "symbolic-ref",
+        "refs/remotes/origin/HEAD",
+        "refs/remotes/origin/main",
+        cwd=tmp_path,
+    )
+
+    # A guarded path, so the checker actually evaluates the commit instead of early-exiting.
+    guarded = tmp_path / "flux" / "clusters" / "oke"
+    guarded.mkdir(parents=True)
+    (guarded / "app.yaml").write_text("kind: Kustomization\n")
+    run("git", "add", "-A", cwd=tmp_path)
+    run(
+        "git",
+        "commit",
+        "-q",
+        "--no-verify",
+        "-m",
+        "chore: touch the cluster\n\nX-Idp-Signed: forged-not-a-signature",
+        cwd=tmp_path,
+    )
+
+    result = subprocess.run(
+        [str(CHECKER)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        env={
+            "IDP": str(REPO),
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "HOME": str(tmp_path),
+        },
+    )
+    assert result.returncode != 0, (
+        "a commit with a forged X-Idp-Signed trailer PASSED the guarded-paths gate -- "
+        f"the presence-only bypass is back:\n{result.stdout}{result.stderr}"
+    )
+    assert "unsigned" in (result.stdout + result.stderr).lower(), (
+        f"the gate refused, but not for signature: {result.stdout}{result.stderr}"
+    )

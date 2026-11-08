@@ -4,12 +4,13 @@
 # Refuses a PR when:
 #   1. HEAD touched a guarded path without a valid X-Idp-Auth trailer signed by the founder key.
 #   2. HEAD merge trailer indicates blind-accept strategy (-X theirs or -X ours).
-#   3. HEAD carries no X-Idp-Signed trailer (defeats git commit/push --no-verify since the hook
-#      stamps X-Idp-Signed on every legitimate commit).
+#   3. HEAD was not stamped by .githooks/commit-msg (defeats git commit/push --no-verify).
+#      The stamp is NOT trusted on its own: it is minted per-checkout and cannot be verified
+#      off the tree, so it proved nothing (idp#7770). What is checked here instead is that the
+#      commit was written by GitHub itself, or carries a founder signature that verifies.
 #
 # Zero-trust: none of these can be worked around by an agent — the signature requires a private
-# key no agent holds; X-Idp-Signed is stamped by the commit-msg hook using a secret only present
-# on machines that ran bin/idp-install-hooks.
+# key no agent holds, and the server exemption rests on a committer field only GitHub can set.
 set -uo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -64,7 +65,7 @@ if [ -n "$merge_bad" ]; then
   rc=1
 fi
 
-# 3) X-Idp-Signed trailer (defeats --no-verify).
+# 3) the commit's provenance (defeats --no-verify).
 #
 # TWO exemptions, and only two, both of which rest on a fact the author cannot forge:
 #
@@ -113,23 +114,34 @@ case "$head_committer" in
     server_committed=true ;;
 esac
 
-signed_line="$(printf '%s\n' "$head_msg" | grep -E '^X-Idp-Signed: ' || true)"
+# The `X-Idp-Signed` trailer is deliberately NOT read here (idp#7770). It was accepted on
+# PRESENCE alone -- `[ -n "$signed_line" ]`, then a no-op -- so any commit carrying
+# `X-Idp-Signed: x` passed this gate. The HMAC behind it is minted per-checkout by
+# .githooks/commit-msg (openssl rand into ~/.idp, never on the tree), so CI cannot verify it
+# and never did: bin/idp-install-hooks says so in as many words. That made the trailer a
+# format string this gate could not check, which AGENTS.md section 9 R1 names as failing open
+# on exactly the adversary it exists to stop -- a forged trailer defeats it, while the unstamped
+# commit it was meant to catch is the only thing it reliably rejects.
+#
+# Two authorities remain, and neither is forgeable from the committing side:
+#   server_committed  GitHub wrote the commit; no hook can run there (committer is server-set).
+#   founder_signed    X-Idp-Auth verified against docs/keys/founder.pub with the private key
+#                     held by the founder alone -- a real signature, checked, not a string.
 founder_signed=false
 if "$IDP/bin/idp-auth-verify" "$HEAD_REV" >/dev/null 2>&1; then
   founder_signed=true
 fi
 
-if [ -n "$signed_line" ]; then
-  : # stamped by .githooks/commit-msg; nothing further to prove
-elif [ "$server_committed" = "true" ]; then
+if [ "$server_committed" = "true" ]; then
   echo "ok    guarded-paths  commit written by GitHub ($head_committer) — no hook can run there"
 elif [ "$founder_signed" = "true" ]; then
   echo "ok    guarded-paths  founder X-Idp-Auth signature valid — exemption applies"
 else
   echo "FAIL  guarded-paths  HEAD is unsigned (--no-verify / --no-commit-hooks bypass detected)."
-  echo "                 Every legitimate commit is stamped by .githooks/commit-msg."
-  echo "                 A commit carrying neither a stamp nor a founder signature is refused"
-  echo "                 regardless of the name in the author field; that field is not an identity."
+  echo "                 A commit must be written by GitHub itself, or carry a founder signature"
+  echo "                 (X-Idp-Auth) that bin/idp-auth-verify checks against docs/keys/founder.pub."
+  echo "                 An author name is not an identity, and a self-stamped trailer is not a"
+  echo "                 signature: it is minted per-checkout and cannot be verified off it."
   rc=1
 fi
 
