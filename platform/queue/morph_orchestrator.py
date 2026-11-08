@@ -22,6 +22,7 @@ from typing import Callable, FrozenSet, Mapping, Optional
 from .continuity_admission import (
     HeartbeatRegistry, LeaseStore, LifeSignal, MorphBudget, MorphVerdict,
     Refused, Requirement, assess_morph_risk, prepare_preemptive_morph,
+    select_worker, restore_verified_checkpoint,
 )
 
 REQUIRED_CONTEXT_KEYS = frozenset((
@@ -322,3 +323,90 @@ class MorphCoordinator:
         result["dispatch_receipt"] = dispatch_receipt
         # Never promote to OPERATIONAL without independent new-worker effect.
         return result
+
+
+def continuity_readiness(
+    *, mission_id: str, now: float, leases: LeaseStore,
+    beats: HeartbeatRegistry, checkpoint_store: object,
+    requirement: Requirement, expected_source_sha: str,
+    expected_plan_sha256: str, expected_view_digest: str,
+    max_view_age_seconds: float = 300.0,
+) -> dict:
+    """Produce strictly non-authoritative #7794 MORPH onboarding evidence.
+
+    Requires LIVE exact checkpoint KMS restore and current Oracle/source hashes.
+    An optimistic model self-report, last-known snapshot, local file, provider
+    ACK or live process heartbeat cannot certify continuity. Even "READY"
+    below requires *external* fresh QUAD/DoF proof at the real mutation door.
+    """
+    def verdict(state: str, reason: str, **facts):
+        return {
+            "schema": "genesis.morph.admission-evidence.v1",
+            "mission_id": mission_id, "state": state, "reason": reason,
+            "observed_at": now, "promotes_admission": False,
+            "grants_effect_authority": False, **facts,
+        }
+
+    if (not _nonempty(mission_id) or not _clock(now)
+            or not _clock(max_view_age_seconds) or max_view_age_seconds <= 0
+            or not isinstance(expected_source_sha, str)
+            or len(expected_source_sha) != 40
+            or any(x not in "0123456789abcdef" for x in expected_source_sha)
+            or not _digest(expected_plan_sha256)
+            or not _digest(expected_view_digest)):
+        return verdict("BLIND", "CURRENT_AUTHORITY_DIGEST_UNAVAILABLE")
+    old = leases.snapshot(mission_id)
+    if old is None:
+        return verdict("BLIND", "MISSING_MISSION_CUSTODY")
+    worker, epoch, expires, digest, uri = old
+    if not _clock(expires) or now >= expires:
+        return verdict("RECOVERY_PENDING", "OWNER_LEASE_EXPIRED")
+    if not _digest(digest) or not _nonempty(uri):
+        return verdict("BLIND", "NO_OFFHOST_CHECKPOINT_READBACK")
+    if not all(callable(getattr(checkpoint_store, n, None))
+               for n in ("read_ciphertext", "decrypt_and_validate")):
+        return verdict("BLIND", "TRUSTED_CHECKPOINT_ADAPTER_UNAVAILABLE")
+    try:
+        data = restore_verified_checkpoint(
+            uri, digest, checkpoint_store.read_ciphertext,
+        )
+        manifest = _verified_checkpoint_manifest(
+            mission_id, checkpoint_store.decrypt_and_validate(mission_id, uri, data),
+        )
+    except Exception:
+        return verdict("BLIND", "CHECKPOINT_RESTORE_OR_SEMANTIC_CHECK_FAILED")
+
+    if (manifest["source_sha"] != expected_source_sha or
+            manifest["plan_sha256"] != expected_plan_sha256 or
+            manifest["estate_view_digest"] != expected_view_digest):
+        return verdict("STALE", "CHECKPOINT_SOURCE_OR_ORACLE_VIEW_SUPERSEDED")
+    view_age = now - manifest["estate_view_observed_at"]
+    if view_age < 0 or view_age > max_view_age_seconds:
+        return verdict("STALE", "ESTATE_VIEW_OUTSIDE_FRESHNESS_WINDOW",
+                       view_age_seconds=view_age)
+    with leases._connect() as db:
+        pending = db.execute(
+            "SELECT COUNT(*) FROM continuity_effects "
+            "WHERE mission_id=? AND state='PENDING'", (mission_id,),
+        ).fetchone()[0]
+    if pending:
+        return verdict("RECOVERY_PENDING", "EXTERNAL_EFFECT_RECONCILIATION_REQUIRED",
+                       unresolved_effect_count=pending)
+    observed = beats.observed(now)
+    offers = [
+        row["offer"] for row in observed.values()
+        if row["status"] == "READY" and row["offer"] is not None
+    ]
+    successor = select_worker(offers, requirement, now, frozenset({worker}))
+    if successor is None:
+        return verdict("RECOVERY_PENDING", "NO_INDEPENDENT_ELIGIBLE_DESTINATION",
+                       checkpoint_verified=True)
+    return verdict(
+        "READY_FOR_ACTION_DOOR_PROOF", "CHECKPOINT_AND_CAPACITY_OBSERVED",
+        checkpoint_verified=True, source_sha=manifest["source_sha"],
+        checkpoint_digest=digest, estate_view_digest=expected_view_digest,
+        estate_view_age_seconds=view_age, current_worker=worker,
+        current_epoch=epoch, successor_worker=successor.worker_id,
+        successor_failure_domain=successor.failure_domain,
+        next_action="INDEPENDENT_IDENTITY_DOF_FENCE_AND_DISPATCH_PROOF",
+    )
