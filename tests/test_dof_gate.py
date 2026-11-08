@@ -1,11 +1,14 @@
 """bin/dof-gate: while a critical service is down, only its repair may land. Each test can fail."""
+
 import importlib.machinery
 import importlib.util
 import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-_loader = importlib.machinery.SourceFileLoader("dof_gate", str(ROOT / "bin" / "dof-gate"))
+_loader = importlib.machinery.SourceFileLoader(
+    "dof_gate", str(ROOT / "bin" / "dof-gate")
+)
 _spec = importlib.util.spec_from_loader("dof_gate", _loader)
 gate = importlib.util.module_from_spec(_spec)
 _loader.exec_module(gate)
@@ -28,27 +31,43 @@ def test_unrelated_work_keeps_an_authorised_path_while_a_service_is_down():
 
 
 def test_a_resolving_commit_inside_scope_is_admitted():
-    assert gate.evaluate(REGISTRY, ROUTER_DOWN, "fix\n\nGenesis-Resolves: llm-router", ["clusters/oke/pool.yaml"])["admitted"]
+    assert gate.evaluate(
+        REGISTRY,
+        ROUTER_DOWN,
+        "fix\n\nGenesis-Resolves: llm-router",
+        ["clusters/oke/pool.yaml"],
+    )["admitted"]
 
 
 def test_a_resolving_commit_that_strays_is_refused():
-    d = gate.evaluate(REGISTRY, ROUTER_DOWN, "fix\n\nGenesis-Resolves: llm-router", ["clusters/a.yaml", "web/app.tsx"])
+    d = gate.evaluate(
+        REGISTRY,
+        ROUTER_DOWN,
+        "fix\n\nGenesis-Resolves: llm-router",
+        ["clusters/a.yaml", "web/app.tsx"],
+    )
     assert not d["admitted"] and d["files"] == ["web/app.tsx"]
 
 
 def test_claiming_a_service_that_is_not_down_is_refused():
-    assert not gate.evaluate(REGISTRY, ROUTER_DOWN, "Genesis-Resolves: otto", ["clusters/a.yaml"])["admitted"]
+    assert not gate.evaluate(
+        REGISTRY, ROUTER_DOWN, "Genesis-Resolves: otto", ["clusters/a.yaml"]
+    )["admitted"]
 
 
 def test_the_gate_cannot_unlock_itself():
-    d = gate.evaluate(REGISTRY, ROUTER_DOWN, "Genesis-Resolves: llm-router", ["bin/dof-gate"])
+    d = gate.evaluate(
+        REGISTRY, ROUTER_DOWN, "Genesis-Resolves: llm-router", ["bin/dof-gate"]
+    )
     assert not d["admitted"]
 
 
 def test_an_unreadable_incident_list_fails_closed_to_gate_repair_only():
     blind = [{"id": "dof-probe", "issue": None}]
     assert not gate.evaluate(REGISTRY, blind, "feat: x", ["README.md"])["admitted"]
-    assert gate.evaluate(REGISTRY, blind, "Genesis-Resolves: dof-probe", ["bin/dof-gate"])["admitted"]
+    assert gate.evaluate(
+        REGISTRY, blind, "Genesis-Resolves: dof-probe", ["bin/dof-gate"]
+    )["admitted"]
 
 
 # --- Scope-aware deadlock breaker (idp#7787) ---------------------------------
@@ -75,8 +94,12 @@ def test_a_privileged_surface_owned_by_another_component_is_refused():
     Fails today: every component's repairScope is the unbounded '@substrate' alias, so
     claiming to repair the router also authorises otto's gateway.
     """
-    d = gate.evaluate(REGISTRY, ROUTER_DOWN, "fix\n\nGenesis-Resolves: llm-router", PRIVILEGED)
-    assert not d["admitted"], "a surface owned by another component was admitted under a foreign incident"
+    d = gate.evaluate(
+        REGISTRY, ROUTER_DOWN, "fix\n\nGenesis-Resolves: llm-router", PRIVILEGED
+    )
+    assert not d["admitted"], (
+        "a surface owned by another component was admitted under a foreign incident"
+    )
 
 
 def test_repair_scope_narrows_to_the_component_being_repaired():
@@ -92,7 +115,9 @@ def test_repair_of_the_failing_component_is_still_admitted():
     """POSITIVE: narrowing must not break genuine repair, the whole point of the lease."""
     scope, _ = gate.scope_of(REGISTRY, "llm-router")
     in_scope = scope[0].replace("/**", "/probe.yaml").replace("*", "probe")
-    d = gate.evaluate(REGISTRY, ROUTER_DOWN, "fix\n\nGenesis-Resolves: llm-router", [in_scope])
+    d = gate.evaluate(
+        REGISTRY, ROUTER_DOWN, "fix\n\nGenesis-Resolves: llm-router", [in_scope]
+    )
     assert d["admitted"], f"a genuine repair was refused: {d.get('reason')}"
 
 
@@ -105,7 +130,9 @@ def test_the_gate_reports_the_smallest_safe_unblocker_when_work_is_deadlocked():
     if not d["admitted"]:
         u = d.get("unblocker")
         assert u, "a deadlocked author is told no, but not how to proceed"
-        assert u["split_out"] == SAFE_DOCS, "the unblocker must name the paths that can proceed"
+        assert u["split_out"] == SAFE_DOCS, (
+            "the unblocker must name the paths that can proceed"
+        )
         assert u["repair_trailer"] == "Genesis-Resolves: llm-router"
 
 
@@ -115,14 +142,30 @@ def test_a_repeated_failure_with_unchanged_preconditions_is_not_admitted_twice()
     Fails today: no dedupe key exists, so an identical re-push is decided identically
     and can be retried indefinitely without a changed precondition.
     """
-    first = gate.evaluate(REGISTRY, ROUTER_DOWN, "fix\n\nGenesis-Resolves: llm-router", PRIVILEGED + ["otto/x.yaml"])
+    first = gate.evaluate(
+        REGISTRY,
+        ROUTER_DOWN,
+        "fix\n\nGenesis-Resolves: llm-router",
+        PRIVILEGED + ["otto/x.yaml"],
+    )
     assert not first["admitted"]
     assert first.get("dedupe_key"), (
         "a refusal carries no dedupe key, so an identical retry is indistinguishable from a new attempt"
     )
     # The same attempt decides identically: identity is stable, so a loop is detectable.
-    again = gate.evaluate(REGISTRY, ROUTER_DOWN, "fix\n\nGenesis-Resolves: llm-router", PRIVILEGED + ["otto/x.yaml"])
+    again = gate.evaluate(
+        REGISTRY,
+        ROUTER_DOWN,
+        "fix\n\nGenesis-Resolves: llm-router",
+        PRIVILEGED + ["otto/x.yaml"],
+    )
     assert again["dedupe_key"] == first["dedupe_key"]
+
+
+def test_an_empty_commit_depends_on_nothing_and_proceeds():
+    """POSITIVE: a commit touching no paths cannot depend on a broken service."""
+    d = gate.evaluate(REGISTRY, ROUTER_DOWN, "docs: empty", [])
+    assert d["admitted"], f"a no-op commit was refused: {d.get('reason')}"
 
 
 def test_glob_is_anchored():

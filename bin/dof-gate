@@ -63,7 +63,10 @@ def is_independent(registry: dict, changed: list) -> list:
 
     A broken service constrains what DEPENDS on it. A docs page or a product test does
     not, so gating it on an unrelated outage is the deadlock the invariant forbids.
+    A commit that touches no paths depends on nothing, so it is independent by definition.
     """
+    if not changed:
+        return []
     substrate = registry.get("substrateScope", [])
     return [p for p in changed if not any(glob_match(g, p) for g in substrate)]
 
@@ -144,7 +147,7 @@ def evaluate(registry: dict, incidents: list, message: str, changed: list) -> di
     # The one exception is the blindness incident: when the gate cannot read the incident
     # list it knows nothing, so the safe-work lane is closed too (health unproven).
     if resolves is None and first["id"] != "dof-probe":
-        if is_independent(registry, changed):
+        if not changed or is_independent(registry, changed):
             return {"admitted": True, "reason": "safe work: every changed path is independent of the down service",
                     "dedupe_key": key}
         return {**refusal, "reason": "missing Genesis-Resolves while a critical service is down",
