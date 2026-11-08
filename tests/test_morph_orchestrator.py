@@ -10,7 +10,6 @@ import json
 import pathlib
 import sys
 import tempfile
-import threading
 import unittest
 from types import SimpleNamespace
 
