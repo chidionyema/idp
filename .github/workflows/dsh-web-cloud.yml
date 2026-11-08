@@ -1,0 +1,67 @@
+# button: Deploy DSH Web
+# founder: Deploys the always-on DSH work surface to Modal and proves its health endpoint.
+name: dsh-web-cloud
+on:
+  push:
+    branches: [cloud/dsh-web-20261108]
+    paths:
+      - code/dsh_cloud.py
+      - .github/workflows/dsh-web-cloud.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dsh-web-cloud
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.SEED_MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.SEED_MODAL_TOKEN_SECRET }}
+      LITELLM_API_KEY: ${{ secrets.SEED_LITELLM_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Modal root and router key must be present
+        run: |
+          set -euo pipefail
+          test -n "$MODAL_TOKEN_ID" && test -n "$MODAL_TOKEN_SECRET"
+          test -n "$LITELLM_API_KEY"
+          python -m pip install --quiet 'modal==1.5.5'
+          modal secret list >/dev/null
+      - name: Create the versioned DSH runtime secret
+        run: |
+          set -euo pipefail
+          TOKEN=$(python - <<'PY'
+          import hashlib, os
+          print(hashlib.sha256(
+              (os.environ["LITELLM_API_KEY"] + "\nchidionyema/idp:estate-dsh-web:v1").encode()
+          ).hexdigest())
+          PY
+          )
+          echo "::add-mask::$TOKEN"
+          modal secret create estate-dsh-runtime \
+            LITELLM_API_KEY="$LITELLM_API_KEY" \
+            DSH_LAUNCH_TOKEN="$TOKEN" --force >/dev/null
+      - name: Deploy and prove DSH Web
+        run: |
+          set -euo pipefail
+          python -m py_compile code/dsh_cloud.py
+          modal deploy code/dsh_cloud.py
+          URL=$(python -c 'import modal; print(modal.Function.from_name("estate-dsh-web","web").get_web_url() or "")')
+          case "$URL" in https://*) ;; *) echo "FAIL Modal returned no HTTPS URL"; exit 1;; esac
+          python - "$URL" <<'PY'
+          import json, sys, urllib.request
+          url = sys.argv[1].rstrip("/") + "/healthz"
+          req = urllib.request.Request(url, headers={"User-Agent": "estate-dsh-deploy/1.0"})
+          with urllib.request.urlopen(req, timeout=30) as response:
+              body = json.load(response)
+          if response.status != 200 or body.get("service") != "estate-dsh-web":
+              raise SystemExit(f"FAIL health contract: HTTP {response.status} {body}")
+          print(f"ok      dsh-web-cloud  {url} HTTP 200")
+          print(f"DSH_WEB_URL={sys.argv[1]}")
+          PY

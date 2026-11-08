@@ -198,7 +198,7 @@ model_list:
   # concurrency limit (Lite: one project at a time). Priced at zero on purpose.
   - model_name: glm
     litellm_params:
-      model: openai/glm-5.3
+      model: zai/glm-5.3
       api_base: https://api.z.ai/api/coding/paas/v4
       api_key: os.environ/ZAI_API_KEY
       timeout: 300

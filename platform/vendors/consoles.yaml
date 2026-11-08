@@ -399,7 +399,7 @@ vendors:
         # (shadow folds, voice, bulk) can never land on it.\n#\n# Flat rate: the plan bills\
         \ by the month, so the marginal token is $0 until the plan's\n# concurrency limit\
         \ (Lite: one project at a time). Priced at zero on purpose.\n- model_name: glm\n\
-        \  litellm_params:\n    model: openai/glm-5.3\n    api_base: https://api.z.ai/api/coding/paas/v4\n\
+        \  litellm_params:\n    model: zai/glm-5.3\n    api_base: https://api.z.ai/api/coding/paas/v4\n\
         \    api_key: os.environ/ZAI_API_KEY\n    timeout: 300\n    input_cost_per_token:\
         \ 0\n    output_cost_per_token: 0\n"
   gemini:

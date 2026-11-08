@@ -3,6 +3,13 @@
 What the estate is and where things live. Enforcement is not in this file; it is in the executor,
 the gates and the hooks, which refuse.
 
+**Machinery before repetition.** The first occurrence is diagnosis. The second occurrence is an
+automation defect. A repeated manual command sequence is forbidden: convert it into a versioned,
+idempotent automation with `plan`, `apply`, `verify` and `rollback` paths, then execute that
+automation. A fix that exists only in chat history, a shell transcript or one agent's memory is
+not a platform capability. Every deployable also carries the release envelope in
+`catalog/release-envelope.v1.schema.json`.
+
 ---
 
 ## Programme of record and the tenets
