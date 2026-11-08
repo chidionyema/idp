@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""estate-chronicle — bind the estate's SQLite state to git history, and prove the bind.
+"""estate-chronicle -- bind the estate's SQLite state to git history, and prove the bind.
 
 WHY. Code is already a Merkle DAG: `git checkout <sha>` returns any past code state exactly.
 `~/.estate/estate.db` is not. A restic snapshot captures the file but is not coupled to a git
@@ -11,7 +11,7 @@ says the two disagree. This makes the coupling explicit and falsifiable:
     the git HEAD that produced it  -> a JSON pointer in refs/notes/genesis-chronicle
 
 A restore is proved by re-deriving BOTH roots from the restored file and matching the pointer.
-The Merkle root is computed over the columns `step_runs` actually has — there is no
+The Merkle root is computed over the columns `step_runs` actually has -- there is no
 `hmac_signature` column in this estate, and inventing one here would be the design propping up
 its own precondition (AGENTS.md section 3).
 
@@ -29,9 +29,9 @@ USAGE
 
 EXIT CODES (the verdict is the code)
     0  ok / verified / restored
-    2  BLIND   — could not measure (slice unreadable, git absent); never a pass
-    3  MISSING — no pointer for that sha/time
-    4  MISMATCH — the recomputed root does not equal the pointer (corruption or drift)
+    2  BLIND   -- could not measure (slice unreadable, git absent); never a pass
+    3  MISSING -- no pointer for that sha/time
+    4  MISMATCH -- the recomputed root does not equal the pointer (corruption or drift)
 
 AFTER A SNAPSHOT the snapshot file is on this machine under --dest. Shipping it to object storage
 is a separate, credentialed step and is deliberately out of scope here.
@@ -78,7 +78,7 @@ def merkle_root(leaves: list[bytes]) -> str:
     """RFC 6962 (Certificate Transparency) Merkle Tree Hash, hex-encoded.
 
     Empty tree hashes to sha256() by definition; one leaf is its own leaf hash, NOT the leaf
-    promoted — the distinction is what makes an n-leaf proof verifiable against a 1-leaf one.
+    promoted -- the distinction is what makes an n-leaf proof verifiable against a 1-leaf one.
     """
     if not leaves:
         return hashlib.sha256(b"").hexdigest()

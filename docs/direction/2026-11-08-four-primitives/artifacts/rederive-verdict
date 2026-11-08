@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""rederive-verdict — recompute a science verdict from science.db alone.
+"""rederive-verdict -- recompute a science verdict from science.db alone.
 
 The question this answers: is `science_loop verdict` a measurement, or a program that asserts its
 own conclusion? A verdict that can only be reproduced by the tool that produced it is not

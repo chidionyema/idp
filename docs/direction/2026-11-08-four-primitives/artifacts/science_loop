@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""science_loop — a preregistration-first experiment loop that can prove its own verdict.
+"""science_loop -- a preregistration-first experiment loop that can prove its own verdict.
 
 The design claim under test: "a serverless science engine can dispatch experiment trials and
 reach a verdict at zero marginal cost." The honest version of that claim has three parts, and this

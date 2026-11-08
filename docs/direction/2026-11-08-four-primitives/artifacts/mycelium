@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""mycelium — an LLM colony that grows into a repository, one *verified* edit at a time.
+"""mycelium -- an LLM colony that grows into a repository, one *verified* edit at a time.
 
 What this is, stated honestly: not an autonomous agent. It is the smallest thing that can be
 called a colonizer and still be safe: it takes ONE file, asks a model for ONE bounded insertion,

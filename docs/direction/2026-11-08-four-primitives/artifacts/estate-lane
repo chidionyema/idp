@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""estate-lane — one client for the estate's model lanes.
+"""estate-lane -- one client for the estate's model lanes.
 
 The estate's routing law (AGENTS.md 7a): the CLOUD router is the default, the laptop router is
 the fallback. On this host there is no fallback at all -- ollama's x86_64 build cannot load

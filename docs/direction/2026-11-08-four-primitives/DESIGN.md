@@ -1,6 +1,6 @@
 # Direction: four architectural primitives (as submitted 2026-11-08)
 
-**Status: REVIEWED AGAINST THE ESTATE — the premise does not hold.**
+**Status: REVIEWED AGAINST THE ESTATE -- the premise does not hold.**
 Saved verbatim below, then falsified section by section with the command and exit status that
 proved each verdict. Artifacts that *can* be built on what actually exists are in `artifacts/`
 and are proven in `PROOF.md`.
@@ -26,7 +26,7 @@ Source of this text: the founder's direction of 2026-11-08, copied unedited into
 > Merkle DAGs (you can git checkout <sha> any historical code state). Furthermore, genesis-kernel
 > (src/certifier.rs) already implements Gate 4 (compute_ledger_merkle_root), which hashes step_runs
 > (ticket_id, step_idx, hmac_signature) into a pairwise RFC 6962 binary SHA-256 Merkle root, and
-> your BDD spec (Demonstration 3) defines an RPO of ≤5s and RTO of ≤12s.
+> your BDD spec (Demonstration 3) defines an RPO of <=5s and RTO of <=12s.
 >
 > What is missing: estate.db (step_runs, memory_store, people_graph, catechism_antibodies,
 > experiment_preregistrations) runs in SQLite WAL mode on local/worker disks, but SQLite WAL alone
@@ -34,7 +34,7 @@ Source of this text: the founder's direction of 2026-11-08, copied unedited into
 > back to Tuesday at 14:00, estate.db is still stuck on Sunday's mutated schema and rows.
 >
 > The Ingenious Solution: Bi-Temporal Merkle-WAL Chronicle (git-notes + Content-Addressable SQLite
-> Pages) ... continuous WAL micro-shipping (RPO ≤1s) ... refs/notes/genesis-chronicle ... Every
+> Pages) ... continuous WAL micro-shipping (RPO <=1s) ... refs/notes/genesis-chronicle ... Every
 > time Greenlane promotes a commit or CifKernel certifies a step, the kernel writes a tiny 128-byte
 > receipt ... `estate-chronicle checkout` ... Counterfactual Branching.
 >
@@ -80,7 +80,7 @@ Every one of the four designs rests on a stated precondition. Measured on this m
 |---|---|---|---|
 | 1 | `genesis-kernel v0.5.3` repo with `src/certifier.rs` | no such repo on disk; no `certifier*.rs` anywhere under `~/Documents/code` or `~/.estate` | **ABSENT** |
 | 1 | `compute_ledger_merkle_root()` exists (Gate 4) | zero code hits; the only hits are this session's own transcript, plan and prompt logs | **ABSENT** |
-| 1 | `step_runs` has `hmac_signature` to Merkle-hash | real column set is `id, ticket_id, step_idx, cmd, exit_code, duration_ms, ran_at` — **no hmac_signature** | **ABSENT** |
+| 1 | `step_runs` has `hmac_signature` to Merkle-hash | real column set is `id, ticket_id, step_idx, cmd, exit_code, duration_ms, ran_at` -- **no hmac_signature** | **ABSENT** |
 | 2 | `GENESIS_SPORE`, `six_certification_trials.feature`, `GenesisSplitAuthorityCertifier.tla` | 0 files each; no `.tla` in idp | **ABSENT** |
 | 3 | `mycelium`, colonizer, `refs/notes/genesis-mycelium` | 0 files | **ABSENT** |
 | 4 | `experiment_preregistrations`, `experiment_trial_runs`, `cost_telemetry_ledger`, Welch/CVaR certifier, `science_burst_dispatcher.py` | 0 tables in `estate.db`, 0 code hits, 0 files | **ABSENT** |
@@ -91,18 +91,18 @@ So the direction is not "partially built and disconnected". Three of the four pr
 implementation at all** on this machine, and the fourth (the science plane) has no tables, no
 certifier and no runner. What does exist is real but different from the claim:
 
-- `~/.estate/estate.db` — a genuine CIF-style kernel database: `intent_tickets`, `step_runs`
+- `~/.estate/estate.db` -- a genuine CIF-style kernel database: `intent_tickets`, `step_runs`
   (13,812 rows), `ticket_fences`, `outbox_events`, `policy_decisions`, `patch_receipts`,
   `read_receipts`, `instruction_ledger`, `surface_yield_ledger`, `wwfd_decisions`, `mem_pointers`,
   `cockpit_config`, `optimus_evidence`.
-- `idp/catalog/estate.db` — a catalogue view: `assets`, `sessions`, `session_events`, `voice_turns`,
+- `idp/catalog/estate.db` -- a catalogue view: `assets`, `sessions`, `session_events`, `voice_turns`,
   `jev_decisions`, `provider_coupling`, `fleetview_*`, `meta`.
 - Backup reality: `~/.estate/bin/estate-data-backup.sh` is a **restic snapshot to Google DriveFS**,
   and `backup-r2.yaml` is the R2 restic job. Restic is point-in-time *for files as a set*, at
   snapshot granularity, and is **not coupled to a git SHA**. That is exactly the gap the direction
-  correctly identifies — and it is the one gap that is real.
+  correctly identifies -- and it is the one gap that is real.
 
-Per AGENTS.md §6, building the four designs verbatim would create a **fifth parallel
+Per AGENTS.md sec.6, building the four designs verbatim would create a **fifth parallel
 implementation** of layers the estate already has (a backup plane, a verification plane, a memory
 plane). So the direction is revised rather than implemented as written.
 
@@ -110,40 +110,40 @@ plane). So the direction is revised rather than implemented as written.
 
 ## 2. Law it violates, and the law that is missing
 
-Root cause of the direction's errors, per AGENTS.md §0: **the direction was written from a
+Root cause of the direction's errors, per AGENTS.md sec.0: **the direction was written from a
 transcript of an earlier session, not from the estate.** That is root cause R9 (fixes and rulings
-stay in one session) and R11 (assertion instead of proof) in §9. A design that names
+stay in one session) and R11 (assertion instead of proof) in sec.9. A design that names
 `src/certifier.rs` should be reading it.
 
 The missing law, written here so it is written once:
 
-> **D-LAW-1 — A design that names a file, a table or a symbol must cite a read of it.** Before a
+> **D-LAW-1 -- A design that names a file, a table or a symbol must cite a read of it.** Before a
 > design is accepted, every named path is resolved and every named symbol grepped; the resolution
 > output is attached. A design whose cited artifacts do not resolve is a *proposal*, not a plan,
 > and is labelled as such in its first line.
 
-The existing law it broke: §3 ("Proof, not assertion") and §10 ("Do not guess. Search.").
+The existing law it broke: sec.3 ("Proof, not assertion") and sec.10 ("Do not guess. Search.").
 
 ---
 
 ## 3. What is actually buildable today, and what is not
 
-### Buildable on real estate state (built and proven — see `artifacts/` and `PROOF.md`)
+### Buildable on real estate state (built and proven -- see `artifacts/` and `PROOF.md`)
 
-1. **`estate-chronicle`** — the honest half of the time machine. Snapshot `~/.estate/estate.db` with
+1. **`estate-chronicle`** -- the honest half of the time machine. Snapshot `~/.estate/estate.db` with
    `VACUUM INTO`, hash the snapshot (sha256 over the file, plus a content Merkle root over
    `step_runs` rows as they actually are), attach the pointer to `refs/notes/genesis-chronicle`
    next to the git HEAD that produced it, and verify a restore by re-deriving both roots. This
-   binds DB state to git SHA history, which is the real gap. It does **not** claim RPO ≤1s: a
+   binds DB state to git SHA history, which is the real gap. It does **not** claim RPO <=1s: a
    `VACUUM INTO` snapshot is at-a-moment, not a WAL stream, and the command says which it is.
 
    Proven by: `artifacts/estate-chronicle` run against the live `~/.estate/estate.db`, giving a
    15 MB snapshot, an RFC 6962 Merkle root over the 13,812 real `step_runs` rows, a git note
    written and read back, and a `verify` that recomputes the root from the restored file and
-   matches it — and a `verify` that *fails* on a deliberately corrupted copy (the falsifier).
+   matches it -- and a `verify` that *fails* on a deliberately corrupted copy (the falsifier).
 
-2. **`pack_genesis_spore`** — the spore pattern, compiled from files that exist: the estate's laws
-   as they actually exist (`AGENTS.md` §11 policy TOML, `idp/features/gates/*.feature` as the BDD
+2. **`pack_genesis_spore`** -- the spore pattern, compiled from files that exist: the estate's laws
+   as they actually exist (`AGENTS.md` sec.11 policy TOML, `idp/features/gates/*.feature` as the BDD
    body, `idp/bin/genesis-first-boot` as the micro-loader, the real Ed25519/founder identity if one
    is on disk, the chronicle Merkle pointer). Brotli when available, zlib otherwise, with the codec
    named in the 4-byte header. Proven by an unpack that reproduces every input byte-for-byte and
@@ -153,16 +153,16 @@ The existing law it broke: §3 ("Proof, not assertion") and §10 ("Do not guess.
    Gherkin suite on disk to constrain an LLM, so the spore packs the gates that do exist and says
    so in its manifest.
 
-3. **`science_loop`** — the epistemic engine built against tables that are *created by this change*
+3. **`science_loop`** -- the epistemic engine built against tables that are *created by this change*
    (`experiment_preregistrations`, `experiment_trial_runs`) in the real `~/.estate/estate.db`, with
    the guards the direction names because they are correct and cheap: backdated-trial rejection
-   (`trial_ts > prereg_ts`), `min_n >= 2`, Welch's t with a Welch–Satterthwaite df guard, CVaR at
-   99% in GBP, and a signed verdict. Proven by a full loop on a real row: preregister → dispatch a
-   local worker → write BASELINE and CANDIDATE trials → verdict PROMOTE or FALSIFY.
+   (`trial_ts > prereg_ts`), `min_n >= 2`, Welch's t with a Welch-Satterthwaite df guard, CVaR at
+   99% in GBP, and a signed verdict. Proven by a full loop on a real row: preregister -> dispatch a
+   local worker -> write BASELINE and CANDIDATE trials -> verdict PROMOTE or FALSIFY.
 
-### Not buildable, with the reason (not a "remaining work" list — these are refused)
+### Not buildable, with the reason (not a "remaining work" list -- these are refused)
 
-- **WAL micro-shipping with RPO ≤1s** to R2/OCI: no R2/OCI credentials on this Mac
+- **WAL micro-shipping with RPO <=1s** to R2/OCI: no R2/OCI credentials on this Mac
   (`env` has no `R2_*`/`S3_*`), no `rclone`, no `aws` CLI, no `zstd`, no `litestream` binary
   (the single `litestream` hit is a text mention in `idp/rescued_patches2/temp-work.patch`).
   A shipper cannot be proven at 1s RPO without a destination, and a shipper that proves nothing is
@@ -172,28 +172,28 @@ The existing law it broke: §3 ("Proof, not assertion") and §10 ("Do not guess.
   executor's writer, which is a different claim on a different layer.
 - **Stage-2 spore synthesis of `genesis-kernel`**: the kernel does not exist to re-synthesize, and
   the 6-trial suite it would be constrained by does not exist. Packing a constraint set that is
-  empty would produce a spore that can never fail — the §9 R2 defect, a gate that cannot fail.
-- **Browser userscript "Symbiont Bridge" (Lane B)** and **`GENESIS-PACKET://` → Telegram ingest
+  empty would produce a spore that can never fail -- the sec.9 R2 defect, a gate that cannot fail.
+- **Browser userscript "Symbiont Bridge" (Lane B)** and **`GENESIS-PACKET://` -> Telegram ingest
   (Lane C)**: both are founder-surface integrations and both depend on endpoints that do not exist
   (`genesis-founder-surface.pages.dev/api/mycelium/lease`). Building a client for an unbuilt server
-  is the stitching §6 forbids. What is built instead is the **contract** they will speak, and it is
+  is the stitching sec.6 forbids. What is built instead is the **contract** they will speak, and it is
   exercised by the science loop's signed-receipt path.
 
 ---
 
 ## 4. Founder surface integration (the part that was asked for)
 
-The founder reaches a capability through `/fleet` and by voice (AGENTS.md §3 and §9). So each built
+The founder reaches a capability through `/fleet` and by voice (AGENTS.md sec.3 and sec.9). So each built
 artifact exposes itself as **one line of machine state** that /fleet can render and that voice can
 speak, and nothing else:
 
-- `estate-chronicle status --json` → `{db, git_head, merkle_root, snapshot_path, snapshot_age_s,
-  wal_bytes, verified}` — one object, no prose.
-- `pack_genesis_spore --check` → `{bytes, codec, merkle_root, git_head, sections:[...], fits:bool}`.
-- `science_loop status --json` → `{preregistrations, trials, promoted, falsified, latest_verdict}`.
+- `estate-chronicle status --json` -> `{db, git_head, merkle_root, snapshot_path, snapshot_age_s,
+  wal_bytes, verified}` -- one object, no prose.
+- `pack_genesis_spore --check` -> `{bytes, codec, merkle_root, git_head, sections:[...], fits:bool}`.
+- `science_loop status --json` -> `{preregistrations, trials, promoted, falsified, latest_verdict}`.
 
 These three objects are the whole founder surface: rendered on /fleet as three rows, spoken as one
-sentence each. Anything richer is a report to read later, which §9 forbids.
+sentence each. Anything richer is a report to read later, which sec.9 forbids.
 
 ---
 

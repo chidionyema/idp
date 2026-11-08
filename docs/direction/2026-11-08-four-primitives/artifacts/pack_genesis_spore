@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""pack_genesis_spore — compile the estate's irreducible content into one self-carrying file.
+"""pack_genesis_spore -- compile the estate's irreducible content into one self-carrying file.
 
 THE INFORMATION ARGUMENT, STATED HONESTLY. Boilerplate is not information: an Axum handler, a
 Dockerfile and a k8s manifest are already in every frontier model's weights, so a survival seed
@@ -9,11 +9,11 @@ signs what it produces. This packs exactly those, from files that exist on disk 
 nothing else.
 
 WHAT IS PACKED (all of it measured, none of it typed in)
-    laws       the ```toml policy block in AGENTS.md section 11 — the values sovereign/policy.py
+    laws       the ```toml policy block in AGENTS.md section 11 -- the values sovereign/policy.py
                parses. Byte-identical extraction, not a paraphrase.
-    gates      every *.feature under idp/features/gates — the Gherkin acceptance body that
+    gates      every *.feature under idp/features/gates -- the Gherkin acceptance body that
                constrains any re-synthesis. This is the spore's falsifier set.
-    boot       bin/genesis-first-boot — the five facts a fresh estate must have, in order.
+    boot       bin/genesis-first-boot -- the five facts a fresh estate must have, in order.
     identity   every *public* Ed25519/founder key file found on disk, by content, never a private
                key (a path matching private/secret/key.pem/id_ed25519 is refused, and refused
                loudly).
@@ -23,7 +23,7 @@ WHAT IS PACKED (all of it measured, none of it typed in)
 WHAT IS NOT PACKED, AND WHY IT IS NOT A GAP
     TLA+ invariants and a six-trial certification suite: neither exists on this machine (no *.tla
     anywhere in idp; rg for GenesisSplitAuthorityCertifier and six_certification_trials returns
-    0 files). A spore that embedded an EMPTY constraint set would be a gate that cannot fail —
+    0 files). A spore that embedded an EMPTY constraint set would be a gate that cannot fail --
     AGENTS.md section 9 R2. The gates/ set above is the constraint body that does exist.
 
 FORMAT. Everything is one printable file so it survives a chat window, a QR code, an SMS or a
@@ -44,9 +44,9 @@ USAGE
 
 EXIT CODES
     0  ok / fits / verified-unpacked
-    2  BLIND   — an input could not be read, or the file is not a spore
-    3  OVER    — packed size exceeds the budget (default 4096 bytes)
-    4  MISMATCH— payload hash differs, a file's bytes differ, or a secret was found in the inputs
+    2  BLIND   -- an input could not be read, or the file is not a spore
+    3  OVER    -- packed size exceeds the budget (default 4096 bytes)
+    4  MISMATCH-- payload hash differs, a file's bytes differ, or a secret was found in the inputs
 """
 from __future__ import annotations
 
@@ -138,7 +138,7 @@ def read_bytes(p: Path) -> bytes:
 
 
 def extract_policy(agents_md: Path) -> str:
-    """The single ```toml block in AGENTS.md — the block sovereign/policy.py parses.
+    """The single ```toml block in AGENTS.md -- the block sovereign/policy.py parses.
 
     Byte-identical, fence to fence. sovereign/tests/bdd/test_policy.py fails when the values here
     and config.py disagree, so a paraphrase would break the one contract this file has.
@@ -154,7 +154,7 @@ def find_identity(code: Path) -> list[dict]:
     """PUBLIC keys only, found by content. A private key makes this raise, not warn.
 
     BUDGETED. The first version used rglob("*") over four trees and was SIGTERMed at the 100s
-    ceiling — walking ~/Documents/code/idp alone is hundreds of thousands of inodes (AGENTS.md
+    ceiling -- walking ~/Documents/code/idp alone is hundreds of thousands of inodes (AGENTS.md
     section 9 R5: every loop has a budget). os.walk with pruning plus a hard cap on files
     INSPECTED (not just matched) makes the cost declared and bounded.
     """
@@ -228,7 +228,7 @@ def chronicle_pointer(repo: Path) -> dict:
 
 
 def locate_agents(code: Path, repo: Path) -> Path:
-    """The AGENTS.md that carries the ```toml policy block — the one sovereign/policy.py parses.
+    """The AGENTS.md that carries the ```toml policy block -- the one sovereign/policy.py parses.
 
     The workspace has TWO AGENTS.md files and only one of them has the policy block, so this
     picks by content, not by path, and names every candidate it tried when none of them has it.
@@ -248,7 +248,7 @@ def locate_agents(code: Path, repo: Path) -> Path:
 def boot_contract(boot: Path) -> bytes:
     """Extract the five facts and the order they must be satisfied in, as a spec a model rebuilds.
 
-    bin/genesis-first-boot is PYTHON and declares its contract as `CHECKS = [(name, fn), ...]` —
+    bin/genesis-first-boot is PYTHON and declares its contract as `CHECKS = [(name, fn), ...]` --
     the first version of this function looked for shell-style FACT_ vars, matched nothing, and
     silently fell back to the whole 5.7 KB script. That fallback was the wrong default: it hid
     the miss. Now the extraction is anchored on CHECKS, and if it is absent the contract says so
