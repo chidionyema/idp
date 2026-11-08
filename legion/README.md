@@ -68,3 +68,9 @@ preserve the CLI and evidence contracts and pass the same test suite.
 The active execution plane is GitHub-hosted; the Mac and the unavailable
 cluster are not runtime prerequisites. The proof command for the estate-homes
 Legion invokes the existing service-lane probe and publishes its exact verdict.
+
+## Recursive tool-first readiness and failure memory
+
+The Legion tool itself must prove startup, failover, failed-work preservation, signed firewall, issue claim, Greenlane admission and runtime-effect readback **before** it is admitted to govern other critical tools. Unknown failures quarantine privileged effects while preserving original missions and recovery capability.
+
+Every next session performs one lookup: `python -m legion diagnose LEGION_RATE_BOTH --json` for the registered diagnosis, bounded authorized repair and independent effect proof. The versioned `legion/failure_atlas.json` is institutional memory; run receipts must land on the original GitHub mission issue. This source addition is NOT a deployed recovery job or a claim of 30-second activation.
