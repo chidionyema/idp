@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# lane-error <sha> -- the exact reason a lane is red, in one command.
+#
+# WHY. The greenlane reports a failure as a ~60-character commit status: "ci-success failure --
+# offline-gate > Run bin/idp-ci". That names the job, never the error. The agent then does API
+# archaeology -- find the run, find the job, download the log, grep it -- and after two minutes of
+# that it is cheaper to guess. Guessing is not a character flaw; it is what a slow feedback path
+# rewards. This returns the failing step and the last lines of its output, unasked.
+set -uo pipefail
+export PATH="$HOME/.local/bin:$PATH"
+sha="${1:-HEAD}"
+repo="${2:-chidionyema/idp}"
+[ "$sha" = "HEAD" ] && sha="$(git rev-parse HEAD)"
+
+run=$(gh api "repos/$repo/commits/$sha/check-runs" \
+  --jq '[.check_runs[]|select(.conclusion=="failure")][0].id // empty' 2>/dev/null)
+if [ -z "$run" ]; then
+  echo "lane-error: no failed check run for $sha (status: $(gh api "repos/$repo/commits/$sha/status" --jq .state 2>/dev/null))"
+  exit 0
+fi
+name=$(gh api "repos/$repo/check-runs/$run" --jq '.name' 2>/dev/null)
+echo "FAILED CHECK: $name  ($sha)"
+echo
+# Effort order, cheapest first. A check-run annotation is a few hundred bytes and one call; the
+# job log is a redirected zip that can be megabytes. Measured 2026-11-06: the same failure costs
+# ~4 calls and a log download the old way, 1 call and ~1 KB this way.
+ann=$(gh api "repos/$repo/check-runs/$run/annotations?per_page=100" \
+  --jq '.[]|"\(.path // ""):\(.start_line // 0)  \(.message)"' 2>/dev/null | head -20)
+if [ -n "$ann" ]; then
+  echo "ANNOTATIONS (the failing lines):"
+  printf '%s\n' "$ann" | cut -c1-220
+  exit 0
+fi
+url=$(gh api "repos/$repo/check-runs/$run" --jq '.details_url' 2>/dev/null)
+runid=$(printf '%s' "$url" | grep -oE 'runs/[0-9]+' | head -1 | cut -d/ -f2)
+if [ -z "$runid" ]; then echo "lane-error: no run id in $url"; exit 0; fi
+# ci-success is an aggregator: its own log is a JSON summary. The actionable error is in the
+# job that actually failed, so find that job inside the same run and print its log.
+jobid=$(gh api "repos/$repo/actions/runs/$runid/jobs?per_page=100" \
+  --jq '[.jobs[]|select(.conclusion=="failure")][0].id // empty' 2>/dev/null)
+if [ -n "$jobid" ]; then
+  jobname=$(gh api "repos/$repo/actions/jobs/$jobid" --jq '.name' 2>/dev/null)
+  echo "FAILING JOB: $jobname"
+  echo
+  log=$(gh run view --job "$jobid" --repo "$repo" --log 2>/dev/null \
+    | grep -vE '^\S+\t(Set up job|Run actions/|Post |Complete job)' \
+    | sed -E 's/^[^\t]*\t[^\t]*\t//')
+  # The error, not the transcript: FAIL/error lines first (with one line of context), and the
+  # tail only when the job died without printing one.
+  hits=$(printf '%s\n' "$log" | grep -nE 'FAIL |error:|Error:|##\[error\]|Traceback' | head -12)
+  if [ -n "$hits" ]; then
+    printf '%s\n' "$hits" | cut -c1-220
+  else
+    printf '%s\n' "$log" | tail -n 20 | cut -c1-220
+  fi
+else
+  gh run view "$runid" --repo "$repo" --log-failed 2>/dev/null | tail -n 40 | sed -E 's/^[^\t]*\t[^\t]*\t//'
+fi

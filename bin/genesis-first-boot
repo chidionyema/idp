@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""genesis-first-boot: the five things a fresh estate must have, in the order it must have them.
+
+Why a surface and not a document: the founder's first question on a new machine is "what do
+I do first", and the answer was scattered across runbooks, issues and chat. This prints the
+list with the *current* state of each item, so the same command answers "what is missing" on
+day 0 and "is it still true" on day 400.
+
+Step 1 is the GitHub App on purpose. It is the only item GitHub refuses to let an API create:
+the manifest flow ends in one browser tap that no token can make. Everything after that tap
+(convert, vault write, per-lane installation tokens) is API, which is why the tap is worth
+surfacing first rather than hiding in a runbook.
+
+    bin/genesis-first-boot              human list, exit 1 when anything is missing
+    bin/genesis-first-boot --json       machine receipt
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+HOME = Path.home()
+IDP = Path(os.environ.get("IDP") or Path(__file__).resolve().parent.parent)
+APP_URL = "https://github.com/settings/apps/new"
+
+
+def sh(argv: list[str], timeout: int = 20) -> tuple[int, str]:
+    try:
+        p = subprocess.run(  # noqa: S603 - fixed argv, never a shell string
+            argv, capture_output=True, text=True, timeout=timeout
+        )
+        return p.returncode, ((p.stdout or "") + (p.stderr or "")).strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return 124, ""
+
+
+def check_app() -> dict:
+    rc, out = sh(["gh", "api", "/app", "--jq", ".slug"])
+    if rc == 0 and out and not out.startswith("{"):
+        return {"ok": True, "detail": f"github acts as the App: {out}"}
+    return {
+        "ok": False,
+        "detail": "gh acts as a person; no installation token exists",
+        "action": f"create the App (one browser tap): {APP_URL} — then bin/idp-github-app convert <code>",
+        "why": "GitHub exposes App creation only through the manifest redirect; every later step is API",
+    }
+
+
+def check_anchor() -> dict:
+    rc, out = sh(["gh", "variable", "list", "--repo", "chidionyema/argon"])
+    sha = ""
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 2 and parts[0] == "GENESIS_GUARDIAN_SHA":
+            sha = parts[1].strip()
+    if rc != 0:
+        return {"ok": False, "detail": "cannot read the argon variables"}
+    if not sha:
+        return {"ok": False, "detail": "GENESIS_GUARDIAN_SHA is unset", "action": "pin it to a reviewed commit on main that tracks genesis-guardian-trust.json"}
+    if len(sha) != 40:
+        return {"ok": False, "detail": f"GENESIS_GUARDIAN_SHA is not a full sha: {sha}"}
+    return {"ok": True, "detail": sha}
+
+
+def check_secrets() -> dict:
+    missing = []
+    for repo in ("chidionyema/argon", "chidionyema/argon-sync"):
+        rc, out = sh(["gh", "secret", "list", "--repo", repo])
+        have = {line.split()[0] for line in out.splitlines() if line.split()}
+        for name in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_HOME_CHANNEL"):
+            if name not in have:
+                missing.append(f"{repo}:{name}")
+    return {"ok": not missing, "detail": "all present" if not missing else ", ".join(missing)}
+
+
+def check_disk() -> dict:
+    sentinel = HOME / ".local/share/disk-sentinel/sentinel.sh"
+    if not sentinel.exists():
+        return {"ok": True, "detail": "disk-sentinel not installed on this host (not required)"}
+    rc, out = sh([str(sentinel), "admit"], timeout=30)
+    return {"ok": rc == 0, "detail": out.splitlines()[0] if out else "no answer"}
+
+
+def check_main() -> dict:
+    # gh run list takes >25s through subprocess on this host (measured 2026-11-06), so the
+    # check asks the REST endpoint directly: same fact, one request, fast.
+    rc, out = sh(
+        ["gh", "api", "repos/chidionyema/argon/actions/runs?branch=main&per_page=1",
+         "--jq", ".workflow_runs[0] | .name + \"|\" + (.conclusion // .status)"],
+        timeout=20,
+    )
+    if rc != 0 or not out.strip():
+        return {"ok": False, "detail": "cannot read the latest run on argon main"}
+    name, _, state = out.partition("|")
+    return {"ok": state == "success", "detail": f"{name}: {state}"}
+
+
+CHECKS = [
+    ("GitHub App identity", check_app),
+    ("Genesis trust anchor", check_anchor),
+    ("Delivery secrets", check_secrets),
+    ("Main is green", check_main),
+    ("This host has headroom", check_disk),
+]
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args(argv)
+
+    results = []
+    for name, fn in CHECKS:
+        try:
+            r = fn()
+        except Exception as e:  # noqa: BLE001 - a check that throws is a finding, not a crash
+            r = {"ok": False, "detail": f"check failed: {type(e).__name__}: {e}"}
+        results.append({"name": name, **r})
+
+    if args.json:
+        print(json.dumps({"checks": results, "ready": all(r["ok"] for r in results)}, indent=2))
+        return 0 if all(r["ok"] for r in results) else 1
+
+    print("GENESIS FIRST BOOT — in this order\n")
+    for i, r in enumerate(results, 1):
+        mark = "ok  " if r["ok"] else "TODO"
+        print(f"{mark} {i}. {r['name']}: {r['detail']}")
+        if r.get("action"):
+            print(f"          -> {r['action']}")
+        if r.get("why"):
+            print(f"          why: {r['why']}")
+    ready = all(r["ok"] for r in results)
+    print(f"\n{'READY' if ready else 'NOT READY'}: {sum(r['ok'] for r in results)}/{len(results)}")
+    return 0 if ready else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
