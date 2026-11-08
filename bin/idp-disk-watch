@@ -104,7 +104,8 @@ CYCLE_S = int(os.environ.get("DISK_WATCH_CYCLE_S", "20"))
 STEP_BUDGET_S = int(os.environ.get("DISK_WATCH_STEP_BUDGET_S", "90"))
 LOG = os.environ.get("DISK_WATCH_LOG", os.path.expanduser("~/.estate/disk-watch.log"))
 HEARTBEAT = os.environ.get(
-    "DISK_WATCH_HEARTBEAT", os.path.expanduser("~/.estate/heartbeats/disk-guardian.json")
+    "DISK_WATCH_HEARTBEAT",
+    os.path.expanduser("~/.estate/heartbeats/disk-guardian.json"),
 )
 CLEANER = os.environ.get(
     "DISK_WATCH_CLEANER", os.path.expanduser("~/.estate/libexec/disk-cleanup.sh")
@@ -127,7 +128,8 @@ PHASE_LADDER = (
 )
 ESCALATION_STATE = Path(
     os.environ.get(
-        "DISK_WATCH_ESCALATION_STATE", os.path.expanduser("~/.estate/disk-watch.escalation.json")
+        "DISK_WATCH_ESCALATION_STATE",
+        os.path.expanduser("~/.estate/disk-watch.escalation.json"),
     )
 )
 # How long the guardian waits before it may raise the incident again after a full-ladder
@@ -183,46 +185,63 @@ def _mach_free_ram_mb() -> int | None:
         host = libc.mach_host_self()
 
         class VMStat(ctypes.Structure):
-            _fields_ = [
-                (n, ctypes.c_uint32)
-                for n in ("free_count", "active_count", "inactive_count", "wire_count")
-            ] + [
-                (n, ctypes.c_uint64)
-                for n in (
-                    "zero_fill_count",
-                    "reactivations",
-                    "pageins",
-                    "pageouts",
-                    "faults",
-                    "cow_faults",
-                    "lookups",
-                    "hits",
-                    "purges",
-                )
-            ] + [
-                ("purgeable_count", ctypes.c_uint32),
-                ("speculative_count", ctypes.c_uint32),
-            ] + [
-                (n, ctypes.c_uint64)
-                for n in ("decompressions", "compressions", "swapins", "swapouts")
-            ] + [
-                ("compressor_page_count", ctypes.c_uint32),
-                ("throttled_count", ctypes.c_uint32),
-                ("external_page_count", ctypes.c_uint32),
-                ("internal_page_count", ctypes.c_uint32),
-            ] + [("total_uncompressed_pages_in_compressor", ctypes.c_uint64)]
+            _fields_ = (
+                [
+                    (n, ctypes.c_uint32)
+                    for n in (
+                        "free_count",
+                        "active_count",
+                        "inactive_count",
+                        "wire_count",
+                    )
+                ]
+                + [
+                    (n, ctypes.c_uint64)
+                    for n in (
+                        "zero_fill_count",
+                        "reactivations",
+                        "pageins",
+                        "pageouts",
+                        "faults",
+                        "cow_faults",
+                        "lookups",
+                        "hits",
+                        "purges",
+                    )
+                ]
+                + [
+                    ("purgeable_count", ctypes.c_uint32),
+                    ("speculative_count", ctypes.c_uint32),
+                ]
+                + [
+                    (n, ctypes.c_uint64)
+                    for n in ("decompressions", "compressions", "swapins", "swapouts")
+                ]
+                + [
+                    ("compressor_page_count", ctypes.c_uint32),
+                    ("throttled_count", ctypes.c_uint32),
+                    ("external_page_count", ctypes.c_uint32),
+                    ("internal_page_count", ctypes.c_uint32),
+                ]
+                + [("total_uncompressed_pages_in_compressor", ctypes.c_uint64)]
+            )
 
         stat = VMStat()
         count = ctypes.c_uint32(ctypes.sizeof(VMStat))
-        if libc.host_statistics64(host, 4, ctypes.byref(stat), ctypes.byref(count)) != 0:
+        if (
+            libc.host_statistics64(host, 4, ctypes.byref(stat), ctypes.byref(count))
+            != 0
+        ):
             return None
         page_size = ctypes.c_uint32()
         libc.host_page_size(host, ctypes.byref(page_size))
         if not page_size.value:
             return None
         return (
-            stat.free_count + stat.speculative_count
-        ) * page_size.value // (1024 * 1024)
+            (stat.free_count + stat.speculative_count)
+            * page_size.value
+            // (1024 * 1024)
+        )
     except Exception:  # ctypes, struct layout, symbol -- any of it means "not measured"
         return None
 
@@ -298,9 +317,17 @@ def _vm_stat_free_ram_mb() -> int | None:
             if "page size of" in line:
                 page_size = int(line.split("page size of")[1].split()[0])
             elif line.startswith("Pages free"):
-                free_ram = int(line.split(":")[1].strip().rstrip(".")) * page_size // (1024 * 1024)
+                free_ram = (
+                    int(line.split(":")[1].strip().rstrip("."))
+                    * page_size
+                    // (1024 * 1024)
+                )
             elif line.startswith("Pages speculative"):
-                spec = int(line.split(":")[1].strip().rstrip(".")) * page_size // (1024 * 1024)
+                spec = (
+                    int(line.split(":")[1].strip().rstrip("."))
+                    * page_size
+                    // (1024 * 1024)
+                )
                 if free_ram is not None:
                     free_ram += spec
         return free_ram
@@ -334,11 +361,16 @@ def brake(pressure: bool, measured: str) -> None:
         return
     for proc in BRAKE_PROCS:
         try:
-            if subprocess.run(
-                ["/usr/bin/pgrep", "-x", proc], capture_output=True, timeout=10
-            ).returncode == 0:
+            if (
                 subprocess.run(
-                    ["/usr/bin/pkill", "-TERM", "-x", proc], capture_output=True, timeout=10
+                    ["/usr/bin/pgrep", "-x", proc], capture_output=True, timeout=10
+                ).returncode
+                == 0
+            ):
+                subprocess.run(
+                    ["/usr/bin/pkill", "-TERM", "-x", proc],
+                    capture_output=True,
+                    timeout=10,
                 )
                 _LAST_BRAKE = now
                 log(
@@ -361,6 +393,84 @@ def parse_result(stdout: str) -> dict:
     return out
 
 
+# The cleaner's per-target lines. crit_reclaim() prints
+#     freed  NAME  123M  /path  (why it was safe to remove)
+# and crit_repack() prints
+#     freed  NAME  NM of loose objects  /repo/.git  (10M -> 4M on disk; git gc: ...)
+# MEASURED (`disk-cleanup.sh`, APPLY=0 dry runs, 2026-11-08): the first field after `freed`
+# is the name, and the megabyte count is the token immediately after it -- in crit_repack's
+# case that is "NM of loose objects", and NM is NOT bytes reclaimed. The repack line's real
+# disk effect is its own `(beforeM -> afterM on disk)` pair, so it is read from there and
+# bounded at zero: a repack that grew the repo freed nothing.
+_FREED_LINE = re.compile(r"^\s*freed\s+(?P<name>\S+)\s+(?P<amount>\S+)(?P<rest>.*)$")
+_REPACK_DELTA = re.compile(
+    r"\(\s*(?P<before>\d+)\s*M\s*->\s*(?P<after>\d+)\s*M\s+on disk"
+)
+
+
+def parse_reclaimed(stdout: str) -> dict:
+    """What THIS run's cleaner actually freed, from the cleaner's own lines.
+
+    WHY THIS EXISTS (measured 2026-11-08). The guardian reported `freed_mb` as a whole-volume
+    statvfs delta. On a volume that concurrent agents are writing to, that number is dominated
+    by the other writers, so the log carries `freed=-1634M` and `freed=-158M` runs next to
+    `+2480M` ones while free space swung between 401M and 3745M within minutes. Worse, `met`
+    is assigned solely by `after_mb >= TARGET_MB`, so a run could print `met=yes` beside a
+    negative delta: a LOSS presented as successful reclamation.
+
+    The net delta is still true and still reported -- it is the volume's fact, not the
+    cleaner's. This function answers the different question: how much did this run attribute
+    to itself? Only lines the child actually printed count, so the number is never invented.
+
+    `complete` is the honesty marker. If the child printed its RESULT line then its output
+    finished and the absence of `freed` lines means it genuinely freed nothing (0). If RESULT
+    is missing the child was cut short and its output is PARTIAL, so attributable reclaim is
+    unknown -- reported as None, never as 0.
+    """
+    total = 0
+    targets = []
+    for line in stdout.splitlines():
+        m = _FREED_LINE.match(line)
+        if not m:
+            continue
+        name, amount, rest = m.group("name"), m.group("amount"), m.group("rest")
+        repack = _REPACK_DELTA.search(rest)
+        if repack:
+            # crit_repack: "NM of loose objects" is a count of objects, not bytes. The repo's
+            # own on-disk before/after is the only measurement of what the repack freed.
+            freed_mb = max(0, int(repack.group("before")) - int(repack.group("after")))
+        else:
+            mb = re.match(r"^(?P<n>\d+)M$", amount)
+            if not mb:
+                continue
+            freed_mb = int(mb.group("n"))
+        targets.append({"name": name, "freed_mb": freed_mb, "repack": bool(repack)})
+        total += freed_mb
+    return {
+        "reclaimed_mb": total if "RESULT " in stdout or "\nRESULT " in stdout else None,
+        "complete": "RESULT " in stdout or "\nRESULT " in stdout,
+        "targets": targets,
+    }
+
+
+def outcome_of(reclaimed_mb: int | None, net_delta_mb: int | None) -> str:
+    """One word for what the run DID, kept apart from what the target NEEDS (`met`).
+
+    `met` answers "is the volume above TARGET_MB" -- a fact about the volume. `outcome`
+    answers "what did this run do" -- a fact about the run. Pairing a loss with `met=yes` is
+    how a loss came to read as success, so the two are never collapsed into one field.
+    """
+    if reclaimed_mb is None:
+        return "unknown"
+    if reclaimed_mb > 0:
+        return "reclaimed"
+    if net_delta_mb is not None and net_delta_mb < 0:
+        # The cleaner freed nothing AND the volume lost space to concurrent writers. Saying
+        # "no_change" here would hide the loss; saying "reclaimed" would be a lie.
+        return "loss"
+    return "no_change"
+
+
 # -- the third leg: the gate the worker cannot write to -----------------------------------------------
 
 
@@ -372,7 +482,10 @@ def _load_gate():
     gate must SAY so rather than silently go back to the behaviour that looped for eight hours.
     """
     here = Path(__file__).resolve().parent
-    for cand in (here.parent / "libexec", here.parent / "platform" / "estate" / "libexec"):
+    for cand in (
+        here.parent / "libexec",
+        here.parent / "platform" / "estate" / "libexec",
+    ):
         if (cand / "epistemic_loop.py").exists():
             if str(cand) not in sys.path:
                 sys.path.insert(0, str(cand))
@@ -491,7 +604,7 @@ def step(free_before: int, beat=None, phases: str = "") -> tuple[int, dict, str]
     return proc.returncode, parse_result(out), out
 
 
-def synth_result(free_before: int, free_after: int | None) -> dict:
+def synth_result(free_before: int, free_after: int | None, raw: str = "") -> dict:
     """The guardian's OWN RESULT line, from its own statvfs readings.
 
     This is the measurement the guardian reports, because the child's self-report is not
@@ -502,7 +615,15 @@ def synth_result(free_before: int, free_after: int | None) -> dict:
     contract is not "never print a non-numeric field"; it is "never print a number this file did
     not measure". A zero here would be a claim that nothing was freed, which is a different fact
     from "the volume could not be read".
+
+    TWO MEASUREMENTS, NEVER ONE (measured 2026-11-08). `freed_mb` is the NET whole-volume
+    delta: true, but dominated by whichever other agents are writing to the same volume. The
+    cleaner's attributable share is parsed out of the stdout this guardian already captured and
+    reported as `reclaimed_mb` / `reclaim_targets`. `outcome` says what the run DID
+    (reclaimed / no_change / loss / unknown) so that `met` -- which only says whether the
+    volume sits above TARGET_MB -- can never again make a loss read as successful reclamation.
     """
+    reclaim = parse_reclaimed(raw)
     if free_after is None:
         return {
             "mode": "guardian",
@@ -511,14 +632,24 @@ def synth_result(free_before: int, free_after: int | None) -> dict:
             "target_mb": str(TARGET_MB),
             "met": "blind",
             "freed_mb": "blind",
+            "reclaimed_mb": "blind",
+            "reclaim_complete": "yes" if reclaim["complete"] else "no",
+            "reclaim_targets": reclaim["targets"],
+            "outcome": "unknown",
         }
+    net = free_after - free_before
+    reclaimed = reclaim["reclaimed_mb"]
     return {
         "mode": "guardian",
         "free_before_mb": str(free_before),
         "free_after_mb": str(free_after),
         "target_mb": str(TARGET_MB),
         "met": "yes" if free_after >= TARGET_MB else "no",
-        "freed_mb": str(free_after - free_before),
+        "freed_mb": str(net),
+        "reclaimed_mb": "unknown" if reclaimed is None else str(reclaimed),
+        "reclaim_complete": "yes" if reclaim["complete"] else "no",
+        "reclaim_targets": reclaim["targets"],
+        "outcome": outcome_of(reclaimed, net),
     }
 
 
@@ -602,7 +733,9 @@ def escalate_incident(reason: str, evidence: dict) -> None:
             )
     except OSError:
         pass
-    notify("The disk guardian exhausted every phase set without freeing space. See the incident.")
+    notify(
+        "The disk guardian exhausted every phase set without freeing space. See the incident."
+    )
     invoke = Path(os.path.expanduser("~/.estate/libexec/agent-invoke.sh"))
     if invoke.exists():
         payload = {
@@ -672,7 +805,9 @@ def main() -> int:
                 rung = 0
                 state = {"rung": 0, "last_alert": last_escalation_alert}
                 save_escalation(state)
-                log("the volume is above the target; the escalation ladder resets to its base rung")
+                log(
+                    "the volume is above the target; the escalation ladder resets to its base rung"
+                )
             time.sleep(CYCLE_S)
             continue
 
@@ -701,16 +836,18 @@ def main() -> int:
             # The guardian's own statvfs failed but the child managed to measure the volume
             # before it was cut short. Use the child's measurement and say where it came from.
             after_mb = int(child_after)
-            own = synth_result(free, after_mb)
+            own = synth_result(free, after_mb, raw)
             own["free_after_source"] = "child"
         else:
-            own = synth_result(free, after_mb)
+            own = synth_result(free, after_mb, raw)
             own["free_after_source"] = "guardian"
         if child_after and child_after.isdigit():
             own["child_free_after_mb"] = child_after
         freed = own["freed_mb"]
         met = own["met"]
         after = own["free_after_mb"]
+        reclaimed = own["reclaimed_mb"]
+        outcome = own["outcome"]
 
         verdict_row = None
         g = gate()
@@ -720,7 +857,9 @@ def main() -> int:
                 subject="disk-guardian",
                 metric="free_mb",
                 ledger=ledger,
-                no_progress_limit=int(os.environ.get("DISK_WATCH_NO_PROGRESS_LIMIT", "3")),
+                no_progress_limit=int(
+                    os.environ.get("DISK_WATCH_NO_PROGRESS_LIMIT", "3")
+                ),
                 direction="higher",
             )
             verdict_row = prog.judge(
@@ -739,6 +878,8 @@ def main() -> int:
                 "step_started_at": step_started,
                 "last_rc": rc,
                 "last_freed_mb": freed,
+                "last_reclaimed_mb": reclaimed,
+                "last_outcome": outcome,
                 "last_met": met,
                 "last_result": own,
                 "phases": phases,
@@ -748,9 +889,19 @@ def main() -> int:
         )
         log(
             f"step free={free}M target={TARGET_MB}M rc={rc} freed={freed}M met={met} "
+            f"reclaimed={reclaimed}M outcome={outcome} "
             f"after={after}M memory={measured} phases={phases} "
             f"verdict={(verdict_row or {}).get('verdict', 'none')}"
         )
+        if outcome == "loss":
+            # A LOSS IS NOT A RECLAMATION. The cleaner freed nothing attributable and the volume
+            # fell anyway -- concurrent writers, not this run. It is reported as what it is, and
+            # `met` (a fact about the volume) is never allowed to stand in for it.
+            log(
+                f"LOSS the run reclaimed {reclaimed}M attributable but the net volume moved "
+                f"{freed}M (other writers own the difference); this run is NOT counted as "
+                f"reclamation even though met={met} -- met reports the volume, not the run"
+            )
 
         # THE LOOP BREAKER. An action that measurably does not work is not repeated: the
         # guardian walks the ladder instead, and when every rung has failed it stops stepping
@@ -806,13 +957,17 @@ def main() -> int:
                             "verdict": verdict_row,
                         },
                     )
-                    log("ESCALATED every phase set failed; an incident was raised and an agent woken")
+                    log(
+                        "ESCALATED every phase set failed; an incident was raised and an agent woken"
+                    )
 
         if rc == 3:
             # A delete that could not be proven: rare, and worth saying out loud.
             now = time.time()
             if now - last_fail_alert >= FAIL_ALERT_EVERY_S:
-                notify("Reclaim could not prove a delete (exit 3). See ~/.estate/disk-watch.log")
+                notify(
+                    "Reclaim could not prove a delete (exit 3). See ~/.estate/disk-watch.log"
+                )
                 last_fail_alert = now
         time.sleep(CYCLE_S)
     log("guardian stopped")

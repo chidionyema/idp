@@ -302,3 +302,141 @@ def test_the_guardian_writes_a_heartbeat_the_spine_can_read(tmp_path):
     assert row["state"] == "healthy"
     assert row["free_mb"] == 4096
     assert row["at"].endswith("Z")
+
+
+# -- the bound: a contended volume loss is never presented as successful reclamation ----------
+#
+# MEASURED 2026-11-08. The guardian reported `freed_mb` as a whole-volume statvfs delta. On a
+# volume that concurrent agents write to, that number belongs to the other writers: the log in
+# ~/.estate/disk-watch.log carries `freed=-1634M` and `freed=-158M` runs beside `+2480M` ones
+# while free space swung between 401M and 3745M within minutes. And `met` is assigned solely by
+# `after_mb >= TARGET_MB`, so a run could print `met=yes` next to a negative delta: a LOSS
+# presented as successful reclamation. These tests are the falsifier for that class.
+#
+# The child's RESULT contract is untouched: `freed_mb` keeps its pinned `-?\d+` format and its
+# net-delta meaning. What is new is a SECOND measurement, parsed from the stdout the guardian
+# already captured, plus an explicit `outcome` so the two can never be collapsed.
+
+_RESULT_FULL = (
+    "freed  Caches  1200M  /Users/x/Library/Caches  (the cache regenerates)\n"
+    "freed  Repo  NM of loose objects  /p/.git  (400M -> 380M on disk; git gc)\n"
+    "RESULT mode=full free_before_mb=2000 free_after_mb=1500 target_mb=2500 met=no freed_mb=-500\n"
+)
+
+
+def test_a_negative_net_delta_cannot_be_read_as_reclamation(tmp_path):
+    """THE FALSIFIER for the defect: met=yes must never stand in for success.
+
+    Under the old behaviour this case produced `freed_mb=-400, met=yes` and nothing else, so a
+    reader -- or the heartbeat's `last_freed_mb`, or an escalation that described the run as
+    having freed space -- saw a successful reclaim. The volume was above target (met=yes) while
+    it LOST 400M. The run's own outcome is `loss`, and that is a fact no other field answers.
+    """
+    mod = _load()
+    own = mod.synth_result(
+        3000,
+        2600,
+        "RESULT mode=full free_before_mb=3000 free_after_mb=2600 target_mb=2500 "
+        "met=yes freed_mb=-400\n",
+    )
+    # The old fields are unchanged, so every existing consumer still works.
+    assert own["freed_mb"] == "-400", own
+    assert own["met"] == "yes", own
+    # And the run can no longer be mistaken for a reclamation.
+    assert own["reclaimed_mb"] == "0", own
+    assert own["outcome"] == "loss", own
+    assert own["outcome"] != "reclaimed"
+
+
+def test_the_cleaners_own_share_is_reported_apart_from_the_contended_volume():
+    """Two measurements, never one: what the cleaner freed, and what the volume did.
+
+    The cleaner really removed 1200M of caches and repacked a repo from 400M to 380M (20M on
+    disk) -- 1220M attributable to it. The volume fell 500M anyway, because other agents wrote
+    more than the cleaner freed. Both facts are true and both are reported.
+    """
+    mod = _load()
+    own = mod.synth_result(2000, 1500, _RESULT_FULL)
+    assert own["reclaimed_mb"] == "1220", own
+    assert own["freed_mb"] == "-500", own
+    assert own["outcome"] == "reclaimed", own
+    names = [t["name"] for t in own["reclaim_targets"]]
+    assert names == ["Caches", "Repo"], own["reclaim_targets"]
+
+
+def test_cut_short_output_is_unknown_and_never_a_fabricated_zero():
+    """A step the door cut short printed a partial line: its reclaim is UNKNOWN, not 0.
+
+    `reclaim_complete` is the honesty marker. Without the child's RESULT line the output
+    finished early, so silence about other targets proves nothing -- and reporting 0 would be a
+    number this file did not measure.
+    """
+    mod = _load()
+    own = mod.synth_result(2000, 1900, "freed  Caches  500M  /c  (x)\n")
+    assert own["reclaim_complete"] == "no", own
+    assert own["reclaimed_mb"] == "unknown", own
+    assert own["outcome"] == "unknown", own
+
+
+def test_a_complete_run_that_freed_nothing_reports_a_genuine_zero():
+    """The other side of the same coin: RESULT present and no freed lines IS a real 0."""
+    mod = _load()
+    own = mod.synth_result(2000, 2000, "RESULT mode=full met=no freed_mb=0\n")
+    assert own["reclaim_complete"] == "yes", own
+    assert own["reclaimed_mb"] == "0", own
+    assert own["outcome"] == "no_change", own
+
+
+def test_a_repack_that_grew_the_repository_counts_as_nothing_freed():
+    """crit_repack prints an object COUNT, not bytes, and a repack can grow the repo.
+
+    Reading `NM of loose objects` as megabytes would invent hundreds of MB that never existed;
+    the repo's own `(beforeM -> afterM on disk)` is the only measurement of the disk effect, and
+    a repack that grew the repo freed nothing.
+    """
+    mod = _load()
+    grew = mod.parse_reclaimed(
+        "freed  Repo  NM of loose objects  /p/.git  (100M -> 130M on disk; git gc)\nRESULT m\n"
+    )
+    assert grew["reclaimed_mb"] == 0, grew
+    shrank = mod.parse_reclaimed(
+        "freed  Repo  NM of loose objects  /p/.git  (400M -> 380M on disk; git gc)\nRESULT m\n"
+    )
+    assert shrank["reclaimed_mb"] == 20, shrank
+
+
+def test_an_unreadable_volume_is_blind_not_a_loss_and_not_a_success():
+    """The third thing a run can be: unable to measure at all. That is BLIND, not 0 and not ok."""
+    mod = _load()
+    own = mod.synth_result(2000, None, "RESULT mode=full met=no freed_mb=0\n")
+    assert own["freed_mb"] == "blind", own
+    assert own["reclaimed_mb"] == "blind", own
+    assert own["outcome"] == "unknown", own
+
+
+def test_the_child_result_contract_is_unchanged():
+    """The pinned RESULT regex still accepts what the guardian's own line now looks like.
+
+    The guardian must not break the field contract just because it added fields: `freed_mb`
+    stays a signed integer and `met` stays a word, so every existing consumer keeps working.
+    """
+    import re
+
+    pin = re.compile(
+        r"^RESULT mode=\S+ free_before_mb=\d+ free_after_mb=\d+ target_mb=\d+ "
+        r"met=\S+ freed_mb=-?\d+$"
+    )
+    mod = _load()
+    own = mod.synth_result(3000, 2600, "RESULT mode=full met=yes freed_mb=-400\n")
+    line = "RESULT " + " ".join(
+        f"{k}={own[k]}"
+        for k in (
+            "mode",
+            "free_before_mb",
+            "free_after_mb",
+            "target_mb",
+            "met",
+            "freed_mb",
+        )
+    )
+    assert pin.match(line), line
