@@ -96,7 +96,7 @@ def evaluate(plan: object, policy: dict, digest: str, now: datetime | None = Non
         reasons.append("ephemeral batch/edge cannot be authoritative always-on stateful infrastructure")
     endpoint = plan.get("endpoint", "")
     if not isinstance(endpoint, str) or re.search(
-        r"localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0|file://|/Users/",
+        r"localhost|127\.0\.0\.1|0\.0\.0\.0|file://|/Users/",
         endpoint, re.I
     ):
         reasons.append("endpoint is local, untrusted or malformed")
