@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import math
 import json
 import re
 import subprocess
@@ -100,11 +101,21 @@ def validate(data: dict, receipt_path: str) -> None:
             raise YieldError("friction requires observed symptom")
         if friction.get("resolution") not in ("IDENTIFIED", "RESOLVED", "PARTIAL"):
             raise YieldError("friction resolution is not evidenced")
-        if friction["resolution"] == "RESOLVED" and (
-            not isinstance(friction.get("before"), (int, float))
-            or not isinstance(friction.get("after"), (int, float))
-        ):
-            raise YieldError("resolved friction requires numeric before/after")
+        if friction["resolution"] == "RESOLVED":
+            before, after = friction.get("before"), friction.get("after")
+            if (
+                type(before) not in (int, float)
+                or type(after) not in (int, float)
+                or not math.isfinite(before)
+                or not math.isfinite(after)
+                or before <= 0
+                or after < 0
+                or after >= before
+            ):
+                raise YieldError(
+                    "resolved friction requires finite nonnegative measurements"
+                    " and a strictly reduced after value"
+                )
     if data["maturity"] == "RUNTIME_RECEIPT_DECLARED":
         runtime = data.get("runtime")
         if not isinstance(runtime, dict) or any(

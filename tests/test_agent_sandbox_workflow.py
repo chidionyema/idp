@@ -444,6 +444,32 @@ def test_manual_gemini_failure_does_not_silently_switch_providers(tmp_path):
     assert not (out / "google.failed.stdout").exists()
 
 
+def test_dual_provider_429_preserves_both_private_patches_and_types_the_failure(tmp_path):
+    """Actual shell harness, not a mocked classifier; no duplicate blind retry."""
+    body = """d=""
+provider=""
+prev=""
+for a in "$@"; do
+    [ "$prev" = --session-dir ] && d="$a"
+    [ "$prev" = --provider ] && provider="$a"
+    prev="$a"
+done
+mkdir -p "$d"
+echo '{"provider":"limited"}' > "$d/$provider.jsonl"
+echo "FAILED_EDIT_$provider" >> a.txt
+echo '429 {"type":"error","error":{"type":"rate_limit_error"}}'
+exit 1
+"""
+    result, out = _agent_step(tmp_path, "gemini", body, {"LEGION_FAILOVER": "1"})
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "fallback=minimax exit=1" in result.stdout
+    assert "LEGION_RATE_BOTH" in (tmp_path / "step_output").read_text()
+    assert "FAILED_EDIT_google" in (out / "google.failed.patch").read_text()
+    assert "FAILED_EDIT_minimax" in (out / "failed.patch").read_text()
+    assert "rate_limit_error" in (out / "stdout").read_text()
+    assert "rate_limit_error" not in result.stdout + result.stderr
+
+
 def test_legion_failover_disabled_for_manual_workflow_dispatch():
     step = _step("agent", "Run the agent")
     assert "github.event_name == 'issues' && '1' || '0'" in step["env"]["LEGION_FAILOVER"]
