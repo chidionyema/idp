@@ -1,4 +1,7 @@
-"""Preserve production Cloudflare ingress on candidate-only recovery (#7387)."""
+"""Preserve production Cloudflare ingress on candidate-only recovery (#7387).
+
+Pure standard-library JSON planner; no credentials, cloud writes, new service or paid runtime.
+"""
 from __future__ import annotations
 
 import copy
