@@ -6,16 +6,28 @@
 # hook-facing wrapper, and it is the only place a push is refused -- so the place that can
 # stop someone is one small, greppable file rather than buried in the scorer.
 #
-# IT REFUSES AT `high` ONLY, and only when a decision layer is actually reachable. If the
-# scorer cannot read `jev-pr-risk.yml`, or the layer is unreachable, the tier it returns is
-# not evidence of risk -- and a fence a correct machine cannot satisfy is an outage (LAW 38).
-# In those cases this prints the reason and ALLOWS the push.
+# IT REFUSES AT `high`, and it refuses on a BLIND verdict too. The rule is one rule, not two:
+# a check that did not answer has not cleared the change any more than it has condemned it.
+# `bin/idp-pr-risk` already honours this -- when the decision layer cannot be reached it
+# escalates every unanswered condition and returns tier `high` with `escalated: true`,
+# because its own docstring says an unanswered condition counts as LIKELY, never as cleared.
+# This file used to overrule that: on `scored == 0` it printed the tier it had just been given
+# and allowed the push, so the estate's one decision layer returned `high` and the push went
+# out with the score discarded. Measured 2026-11-09: tier=high, score=1.0, escalated=true,
+# all six conditions unanswered, and the push was allowed.
+#
+# LAW 38, read correctly. The law is "a gate that cannot fail is not a gate" -- a check that
+# allows on blindness cannot fail, so this was the law's own defect wearing its name. The
+# law has a second edge and it is real: a fence a correct machine cannot satisfy is an
+# outage. Both are satisfied by refusing WITH a named, logged override rather than by either
+# silently allowing or refusing with no way out -- so no correct push is ever permanently
+# blocked, and no blind push is ever silently allowed.
 #
 # OVERRIDE, deliberately, never by habit:
-#   IDP_PR_RISK_GATE=0 git push
+#   IDP_PR_RISK_GATE=0 git push      # a person owns this push; the reason is printed
 #
-#   bin/idp-pr-risk-gate            # refuse only at high
-#   bin/idp-pr-risk-gate --advise   # never refuse; print the tier
+#   bin/idp-pr-risk-gate            # refuse at high, including when blind
+#   bin/idp-pr-risk-gate --advise   # never refuse; print the tier (used by .githooks/pre-push)
 set -euo pipefail
 
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
@@ -37,38 +49,116 @@ out="$(cd "$IDP" && bin/idp-pr-risk --json 2>/dev/null)"
 rc=$?
 set -e
 
-# No JSON at all means the scorer could not run. That is BLIND, not risky.
+# No JSON at all means the scorer could not run at all. That is BLIND: the change was not
+# cleared, it was not examined. Refuse and name both the reason and the way out.
 if [ -z "$out" ]; then
-	echo "idp-pr-risk-gate: scorer produced nothing (rc=$rc); not refusing on a blind check" >&2
-	exit 0
+	echo "idp-pr-risk-gate: REFUSED -- the scorer produced nothing (rc=$rc), so this change was never examined." >&2
+	echo "  a check that did not run has not cleared the change (LAW 38)." >&2
+	echo "  fix:      bin/idp-pr-risk --json    # see why it cannot score" >&2
+	echo "  override: IDP_PR_RISK_GATE=0 git push   # a person owns this push" >&2
+	exit 1
 fi
 
-tier="$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("tier",""))' 2>/dev/null || echo "")"
-config_error="$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("config_error") or "")' 2>/dev/null || echo "")"
+# ONE parse, ONE scorer run. Two costs were paid on every refusal: the verdict's JSON was
+# parsed by FOUR separate python processes (one per field), and the scorer was run a SECOND
+# time purely to render the human summary it had already produced. Under the estate's load
+# (measured load average 97-116 on this host) each process spawn costs ~0.3-1.3s of wall
+# time for ~15ms of CPU, so that duplication cost seconds of push time for nothing. The scorer
+# now ships its own rendering inside the JSON (`summary`) and its own block tier (`block_tier`),
+# so this gate reads one verdict, once, and prints what the scorer already said.
+#
+# `block_tier` is NOT hardcoded here. The scorer reads it from JEV_PR_RISK_BLOCK_TIER; when
+# this file said "high" and the environment said something else, the two disagreed about when
+# to refuse and neither was wrong on its own terms.
+parsed="$(printf '%s' "$out" | python3 -S -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(3)
+conds = d.get("conditions") or []
+scored = sum(1 for c in conds if c.get("probability") is not None)
+print("\t".join([
+    str(d.get("tier") or ""),
+    str(d.get("block_tier") or "high"),
+    "1" if d.get("escalated") else "0",
+    str(scored),
+    (d.get("config_error") or "").replace("\t", " "),
+]))
+print()
+print(d.get("summary") or "")
+' 2>/dev/null)" || parsed=""
+
+if [ -z "$parsed" ]; then
+	echo "idp-pr-risk-gate: REFUSED -- the scorer's verdict could not be read, so this change was never examined." >&2
+	echo "  a verdict that cannot be parsed has not cleared the change (LAW 38)." >&2
+	echo "  fix:      bin/idp-pr-risk --json    # see the raw verdict" >&2
+	echo "  override: IDP_PR_RISK_GATE=0 git push   # a person owns this push" >&2
+	exit 1
+fi
+
+# bash 3.2 has no mapfile: the first line carries the fields, the rest is the summary.
+if [ "$parsed" = "${parsed%%$'\n'*}" ]; then
+	summary=""
+else
+	summary="${parsed#*$'\n'}"
+fi
+IFS=$'\t' read -r tier block_tier escalated scored config_error <<< "${parsed%%$'\n'*}"
 
 if [ -n "$config_error" ]; then
-	echo "idp-pr-risk-gate: cannot score -- $config_error (not refusing on a blind check)" >&2
-	exit 0
-fi
-
-# A REFUSAL REQUIRES AT LEAST ONE REAL PROBABILITY. When the decision layer is unreachable
-# every condition reports probability:null and the score is a statement about the LAYER, not
-# about the change -- refusing then would block every push on a machine whose layer is down,
-# which is an outage rather than enforcement (LAW 38). Count the conditions that actually
-# answered; zero of them means there is no evidence to refuse on.
-scored="$(printf '%s' "$out" | python3 -c 'import json,sys; print(sum(1 for c in json.load(sys.stdin).get("conditions",[]) if c.get("probability") is not None))' 2>/dev/null || echo 0)"
-
-if [ "$scored" = "0" ]; then
-	echo "idp-pr-risk-gate: no condition could be scored (layer unreachable); tier=$tier is advisory only" >&2
-	echo "idp-pr-risk-gate: push allowed -- a blind check is not evidence of risk" >&2
-	exit 0
-fi
-
-if [ "$tier" = "high" ] && [ "$ADVISE" = "0" ]; then
-	echo "REFUSED: idp-pr-risk scored this change HIGH before submission." >&2
-	(cd "$IDP" && bin/idp-pr-risk 2>&1 | sed 's/^/  /' >&2) || true
-	echo "  override deliberately:  IDP_PR_RISK_GATE=0 git push" >&2
+	echo "idp-pr-risk-gate: REFUSED -- cannot score: $config_error" >&2
+	echo "  a gate that cannot read its own rules has not cleared the change (LAW 38)." >&2
+	echo "  fix:      repair jev-pr-risk.yml, then bin/idp-pr-risk --json" >&2
+	echo "  override: IDP_PR_RISK_GATE=0 git push   # a person owns this push" >&2
 	exit 1
+fi
+
+if [ -z "$tier" ]; then
+	echo "idp-pr-risk-gate: REFUSED -- the scorer returned no tier, so this change was never examined." >&2
+	echo "  fix:      bin/idp-pr-risk --json    # see the raw verdict" >&2
+	echo "  override: IDP_PR_RISK_GATE=0 git push   # a person owns this push" >&2
+	exit 1
+fi
+
+# BLIND IS NOT CLEARED. An unanswered condition counts as LIKELY, never as cleared -- that is
+# the scorer's own stated contract, and it already returns the block tier with `escalated: true`
+# when the layer cannot answer. This gate's job is to pass that verdict on, not to overrule it.
+# The `scored` count is kept only to say WHY the refusal happened, never to decide it.
+if [ "$ADVISE" = "0" ]; then
+	blocked=0
+	blind=0
+	if [ "$tier" = "$block_tier" ]; then
+		blocked=1
+	fi
+	# `escalated` is sufficient on its own, independently of the tier. The scorer escalates
+	# every condition it could not score to LIKELY and says so in the verdict. If the tier it
+	# printed were ever lower -- a regression in the scorer, a changed block tier -- the
+	# conditions still were not cleared, so this change still was not examined. A gate that
+	# lets a regression re-open the fail-open is not a gate.
+	if [ "$escalated" = "1" ]; then
+		blocked=1
+		blind=1
+	fi
+	if [ "$blocked" = "1" ] && [ "$scored" = "0" ]; then
+		blind=1
+	fi
+
+	if [ "$blocked" = "1" ]; then
+		if [ "$blind" = "1" ]; then
+			echo "REFUSED: the decision layer could not answer ($scored condition(s) scored, escalated=$escalated)." >&2
+			echo "  Tier is '$tier' and an unanswered condition counts as LIKELY, never as cleared." >&2
+			echo "  fix:      bin/idp-pr-risk           # see which conditions could not be scored" >&2
+		else
+			echo "REFUSED: idp-pr-risk scored this change $tier before submission." >&2
+		fi
+		if [ -n "$summary" ]; then
+			# Pure bash indentation, no `sed`: under this host's load (average 97-116) each extra
+			# process spawn costs 0.3-1.3s of wall time for ~15ms of CPU.
+			printf '%s\n' "${summary//$'\n'/$'\n  '}" >&2
+		fi
+		echo "  override deliberately:  IDP_PR_RISK_GATE=0 git push" >&2
+		exit 1
+	fi
 fi
 
 echo "idp-pr-risk-gate: tier=$tier -- push allowed"

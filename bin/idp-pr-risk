@@ -43,6 +43,61 @@ def _load_jev():
     return module
 
 
+def _render(result) -> tuple:
+    """The human rendering of a verdict, as (stderr_lines, stdout_lines).
+
+    ONE formatter, two consumers. `bin/idp-pr-risk-gate` used to print this by running the
+    scorer a SECOND time, which meant a second full decision-layer round trip on every
+    refusal; measured 2026-11-09 the gate cost 5.9s of which ~2.9s was that duplicate run.
+    The gate now receives this rendering inside the JSON (`summary`) and prints it directly.
+    """
+    err = []
+    if result.get("config_error"):
+        err.append(f"idp-pr-risk: config: {result['config_error']} (advising low)")
+    if result.get("diff_error"):
+        err.append(f"idp-pr-risk: diff: {result['diff_error']}")
+    if result.get("escalated"):
+        err.append("idp-pr-risk: note -- a condition escalated; it counts as likely")
+
+    out = [
+        f"idp-pr-risk: base={result['base']} tier={result['tier']} score={result['score']}"
+    ]
+    for c in result["conditions"]:
+        mark = "LIKELY" if c["contributed"] else "clear "
+        prob = "" if c["probability"] is None else f" P={float(c['probability']):.3f}"
+        out.append(f"  {mark} (w={c['weight']}) {c['name']}{prob}")
+        if c["contributed"]:
+            out.append(f"         {c['when']}")
+    return err, out
+
+
+def _high_note(result, block_tier) -> list:
+    """The one line that says the verdict reached the block tier."""
+    if result.get("tier") != block_tier:
+        return []
+    return [
+        f"idp-pr-risk: {str(result['tier']).upper()} -- a person should read this before "
+        "it is pushed. Override deliberately, not by habit."
+    ]
+
+
+def _payload(result, block_tier) -> dict:
+    """The machine-readable verdict: the scorer's own fields plus the contract the gate reads.
+
+    `block_tier` travels with the verdict because the gate must not hardcode a threshold the
+    scorer reads from the environment (JEV_PR_RISK_BLOCK_TIER), or the two disagree about when
+    to refuse and each is right on its own terms. `summary` is this scorer's own human
+    rendering, shipped so the gate never has to run the scorer a second time to print it.
+    """
+    err_lines, out_lines = _render(result)
+    payload = dict(result)
+    payload["block_tier"] = block_tier
+    payload["summary"] = "\n".join(
+        err_lines + out_lines + _high_note(result, block_tier)
+    )
+    return payload
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="pre-submission PR risk")
     ap.add_argument("--repo", default=str(REPO))
@@ -52,42 +107,24 @@ def main() -> int:
 
     jev = _load_jev()
     result = jev.jev_pr_risk(args.repo, args.base)
+    block_tier = jev.PR_RISK_BLOCK_TIER
+    err_lines, out_lines = _render(result)
+    high_note = _high_note(result, block_tier)
 
     if args.json:
-        print(json.dumps(result, indent=2))
-        return 1 if result["tier"] == jev.PR_RISK_BLOCK_TIER else 0
+        # The block tier travels with the verdict: the gate must not hardcode a threshold the
+        # scorer reads from the environment (JEV_PR_RISK_BLOCK_TIER), or the two disagree
+        # about when to refuse and each is right on its own terms.
+        print(json.dumps(_payload(result, block_tier), indent=2))
+        return 1 if result["tier"] == block_tier else 0
 
-    if result.get("config_error"):
-        print(
-            f"idp-pr-risk: config: {result['config_error']} (advising low)",
-            file=sys.stderr,
-        )
-    if result.get("diff_error"):
-        print(f"idp-pr-risk: diff: {result['diff_error']}", file=sys.stderr)
-    if result.get("escalated"):
-        print(
-            "idp-pr-risk: note -- a condition escalated; it counts as likely",
-            file=sys.stderr,
-        )
-
-    print(
-        f"idp-pr-risk: base={result['base']} tier={result['tier']} score={result['score']}"
-    )
-    for c in result["conditions"]:
-        mark = "LIKELY" if c["contributed"] else "clear "
-        prob = "" if c["probability"] is None else f" P={float(c['probability']):.3f}"
-        print(f"  {mark} (w={c['weight']}) {c['name']}{prob}")
-        if c["contributed"]:
-            print(f"         {c['when']}")
-
-    if result["tier"] == jev.PR_RISK_BLOCK_TIER:
-        print(
-            "idp-pr-risk: HIGH -- a person should read this before it is pushed. "
-            "Override deliberately, not by habit.",
-            file=sys.stderr,
-        )
-        return 1
-    return 0
+    for line in err_lines:
+        print(line, file=sys.stderr)
+    for line in out_lines:
+        print(line)
+    for line in high_note:
+        print(line, file=sys.stderr)
+    return 1 if result["tier"] == block_tier else 0
 
 
 if __name__ == "__main__":

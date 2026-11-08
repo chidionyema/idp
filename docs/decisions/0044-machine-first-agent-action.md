@@ -20,7 +20,11 @@ the founder because it works:
 - `policy/operating_model.rego` refuses a PR that creates an identity without a grant, asks for a GUI
   step, or raises the secret ceiling without capacity approval.
 - `bin/claim-gate` refuses a change with no live claim.
-- `bin/idp-pr-risk-gate` refuses a risky diff.
+- `bin/idp-pr-risk-gate` refuses a risky diff, and refuses a diff the decision layer could not
+  examine. (Until 2026-11-09 it did the opposite: on a blind verdict it printed "push allowed --
+  a blind check is not evidence of risk" and exited 0, while the scorer answered `tier=high,
+  escalated=true`. `.githooks/pre-push` calls the gate with `--advise`, which logs the band and
+  never refuses, so the automated push path still does not block on it.)
 
 Those are machine decisions about the estate, made by machines. Everything the founder is complaining
 about is the residue where no such machine exists — and the residue is not a small list. Measured on

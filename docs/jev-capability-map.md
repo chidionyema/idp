@@ -340,12 +340,18 @@ not doors.
 Fails open, on purpose: with no `TYPESAFE_API_KEY` (or a non-200) every call returns
 `_fallback: jev_unavailable` and **still writes its row**, so a consult is always visible on
 `/fleet` Ring 1 and in `jev_decisions`. A down layer is an outage to report, never enforcement
-(bin/idp-pr-risk-gate refuses only when at least one real probability exists — LAW 38).
+of a verdict. The one place this must not be read as "so a blind answer clears the change" is
+the push-risk gate: `bin/idp-pr-risk` escalates every condition it could not score to LIKELY and
+`bin/idp-pr-risk-gate` REFUSES on that blindness rather than treating it as cleared (LAW 38). The
+refusal carries a named override, `IDP_PR_RISK_GATE=0`, so a correct push is never permanently
+blocked.
 
 Wiring, in the order it pays:
 
-1. `.githooks/pre-push` — advisory risk band on every push (never refuses; refusal stays with
-   `bin/idp-pr-risk-gate`). **live**
+1. `.githooks/pre-push` -- advisory risk band on every push. It calls
+   `bin/idp-pr-risk-gate --advise`, which logs the band and never refuses. The gate's enforcing
+   mode (refuse at the block tier, and on a blind verdict) exists and is tested; the hook has not
+   been switched to it, so a push is not blocked by this path today. **live**
 2. `bin/idp-pr-risk` — the PR risk gate's probabilities. **live**
 3. `bin/idp-affected` — which test tiers a diff needs. **live**
 4. `jev.decide` — every agent, from the governed door. **live (this intent)**
