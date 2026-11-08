@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 """ci-status — structured CI status for a PR or SHA."""
 
-import json, subprocess, sys
+import hashlib
+import json
+import subprocess
+import sys
+from pathlib import Path
+from urllib.parse import quote
+
+ROOT = Path(__file__).resolve().parents[3]
+POLICY = ROOT / "platform/github/ruleset.idp.required-checks.json"
+GREEN = {"success", "skipped", "neutral"}
 
 
 def gh_json(path):
@@ -44,8 +53,88 @@ else:
     title = "?"
     is_draft = False
 
-# per_page=100: the default page is 30, and a PR here carries more checks than that
-runs = gh_json(f"repos/{repo}/commits/{sha}/check-runs?per_page=100")["check_runs"]
+# The first page is diagnostic only. This SHA may have >500 non-required
+# Greenlane/land/tick runs; page 1 cannot establish merge-readiness.
+raw = gh_json(f"repos/{repo}/commits/{sha}/check-runs?per_page=100")
+runs = raw.get("check_runs", [])
+
+def policy():
+    if repo != "chidionyema/idp":
+        return [], "", "no locally verified required-check policy for requested repo"
+    try:
+        raw_policy = POLICY.read_bytes()
+        data = json.loads(raw_policy)
+        checks = next(rule["parameters"]["required_status_checks"]
+                      for rule in data["rules"]
+                      if rule.get("type") == "required_status_checks")
+        names = [x["context"] for x in checks]
+        if not names or len(set(names)) != len(names):
+            raise ValueError("required checks empty or duplicated")
+        return checks, hashlib.sha256(raw_policy).hexdigest(), ""
+    except (OSError, ValueError, KeyError, TypeError, StopIteration) as ex:
+        return [], "", f"policy unavailable: {ex}"
+
+def required_result(name, app_id):
+    url = (f"repos/{repo}/commits/{sha}/check-runs?"
+           f"check_name={quote(name, safe='')}&per_page=100")
+    proc = subprocess.run(["gh", "api", url], capture_output=True,
+                          text=True, timeout=15)
+    if proc.returncode != 0:
+        return {"state": "unreadable", "reason": proc.stderr.strip()[:160]}
+    try:
+        obj = json.loads(proc.stdout)
+        if not isinstance(obj, dict) or not isinstance(obj.get("check_runs"), list):
+            raise ValueError("malformed check response")
+        match = [c for c in obj["check_runs"] if c.get("name") == name
+                 and (app_id is None or (c.get("app") or {}).get("id") == app_id)]
+        if not match:
+            return {"state": "absent"}
+        chosen = max(match, key=lambda c: (c.get("id") or 0,
+                     c.get("completed_at") or c.get("started_at") or ""))
+        state = chosen.get("conclusion") if chosen.get("status") == "completed" else "pending"
+        return {"state": state or "pending", "url": chosen.get("html_url", ""),
+                "check_run_id": chosen.get("id")}
+    except (ValueError, KeyError, TypeError, AttributeError) as ex:
+        return {"state": "unreadable", "reason": str(ex)[:160]}
+
+required, policy_digest, policy_error = policy()
+per_required = {c["context"]: required_result(c["context"], c.get("integration_id"))
+                for c in required}
+missing = [k for k, v in per_required.items() if v["state"] == "absent"]
+unreadable = [k for k, v in per_required.items() if v["state"] == "unreadable"]
+pending_required = [k for k, v in per_required.items() if v["state"] == "pending"]
+failed_required = [k for k, v in per_required.items()
+                   if v["state"] not in GREEN | {"absent", "unreadable", "pending"}]
+passing = [k for k, v in per_required.items() if v["state"] in GREEN]
+ready = bool(required) and len(passing) == len(required)
+if not required:
+    required_verdict = "BLIND_REQUIRED_POLICY"
+elif unreadable:
+    required_verdict = "BLIND_REQUIRED_CHECKS"
+elif failed_required:
+    required_verdict = "FAILED_REQUIRED_CHECKS"
+elif missing:
+    required_verdict = "ABSENT_REQUIRED_CHECKS"
+elif pending_required:
+    required_verdict = "PENDING_REQUIRED_CHECKS"
+else:
+    required_verdict = "REQUIRED_CHECKS_GREEN"
+if missing:
+    next_action = {"code": "RECONCILE_REQUIRED_CHECK_PRODUCERS",
+                   "owner": "estate-greenlane", "sha": sha, "contexts": missing,
+                   "boundary": "run genuine checks; never synthesize green"}
+elif failed_required:
+    next_action = {"code": "REMEDIATE_FAILED_CHECK_CLASS",
+                   "owner": "estate-greenlane", "sha": sha, "contexts": failed_required}
+elif unreadable or policy_error:
+    next_action = {"code": "REPAIR_CHECK_VISIBILITY",
+                   "owner": "estate-greenlane", "sha": sha}
+elif pending_required:
+    next_action = {"code": "OBSERVE_REQUIRED_CHECKS",
+                   "owner": "estate-greenlane", "sha": sha}
+else:
+    next_action = None
+
 pending = [r for r in runs if r.get("conclusion") is None]
 failed = [r for r in runs if r.get("conclusion") == "failure"]
 skipped = [r for r in runs if r.get("conclusion") == "skipped"]
@@ -57,7 +146,9 @@ if failed:
 elif pending:
     verdict = f"no failures, {len(pending)} still running"
 else:
-    verdict = "all green"
+    verdict = "no failures in first diagnostic page"
+# Existing check pagination is NOT proof of required-context coverage.
+verdict += f"; required {len(passing)}/{len(required)} green ({required_verdict})"
 # One sentence a voice can say; the rest of this JSON is for agents (voice_intents._spoken_result).
 summary = f"CI on {where}: {len(passed)} passed, {verdict}."
 
@@ -75,6 +166,17 @@ result = {
     "running": len(pending),
     "failures": [{"name": r["name"], "url": r.get("html_url", "")} for r in failed],
     "running_names": [r["name"] for r in pending],
-    "merge_ready": len(failed) == 0 and len(pending) == 0,
+    "required_policy": str(POLICY.relative_to(ROOT)) if required else None,
+    "required_policy_sha256": policy_digest,
+    "required_policy_error": policy_error,
+    "required_checks": per_required,
+    "required_verdict": required_verdict,
+    "required_missing": missing,
+    "required_failed": failed_required,
+    "required_unreadable": unreadable,
+    "required_pending": pending_required,
+    "required_green": passing,
+    "next_estate_action": next_action,
+    "merge_ready": ready,
 }
 print(json.dumps(result, indent=2))
