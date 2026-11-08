@@ -148,16 +148,42 @@ def test_a_gate_that_fails_open_is_named_as_such():
 # ---------------------------------------------------------------- the supervisor
 
 
-def test_the_first_violation_warns_and_the_second_terminates():
+def test_a_dangerous_class_warns_then_terminates_inside_the_window():
     first = supervisor.grade("write-without-claim", "session-a", detail="no claim")
     assert first["decision"] == "warn"
-    assert "warning 1 of 1" in first["message"]
+    assert "1 of 2" in first["message"]
     second = supervisor.grade(
         "write-without-claim", "session-a", detail="no claim again"
     )
     assert second["decision"] == "terminate"
     assert second["locked"] is True
     assert ledger.is_locked("session-a")
+
+
+def test_a_reporting_class_gets_a_final_warning_and_a_third_chance_guard():
+    first = supervisor.grade(
+        "unsupported-report", "session-report", detail="no machine proof"
+    )
+    assert first["decision"] == "warn"
+    assert first["strikeLimit"] == 3
+    assert not ledger.is_locked("session-report")
+    assert "bin/estate-receipt --self-test" in first["message"]
+
+    second = supervisor.grade(
+        "unsupported-report", "session-report", detail="still no machine proof"
+    )
+    assert second["decision"] == "warn"
+    assert second["attemptsRemaining"] == 1
+    assert "FINAL WARNING" in second["message"]
+    assert not ledger.is_locked("session-report")
+
+    third = supervisor.grade(
+        "unsupported-report", "session-report", detail="ignored both warnings"
+    )
+    assert third["decision"] == "terminate"
+    assert third["attemptsRemaining"] == 0
+    assert ledger.is_locked("session-report")
+    assert "--unlock session-report" in third["message"]
 
 
 def test_a_locked_session_has_no_write_path():
