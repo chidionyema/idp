@@ -98,11 +98,13 @@ class LeaseStore:
     call authorize_effect immediately before dispatch and honor its verdict.
     """
 
-    def __init__(self, path: str, *, receipt_verifier=None):
+    def __init__(self, path: str, *, receipt_verifier=None, handover_verifier=None):
         self.path = path
         # Supplied ONLY by an independently authenticated broker; no verifier
         # means effect confirmation is refused, never accepted by default.
         self._receipt_verifier = receipt_verifier
+        # Inject ONLY from a trusted broker; never accept a model-supplied flag.
+        self._handover_verifier = handover_verifier
         with self._connect() as db:
             db.execute("""CREATE TABLE IF NOT EXISTS continuity_effects (
                 mission_id TEXT NOT NULL,
@@ -292,6 +294,72 @@ class LeaseStore:
                 "SELECT worker_id,epoch,state,receipt_sha256 FROM continuity_effects "
                 "WHERE mission_id=? AND action_id=?", (mission_id, action_id),
             ).fetchone()
+
+
+    def preemptive_handover(self, mission_id: str, old_worker: str,
+                           old_epoch: int, new_worker: str, now: float,
+                           ttl: float, checkpoint_sha256: str, checkpoint_uri: str,
+                           *, handover_proof: bytes = b"") -> int:
+        """Atomically fence an active owner after a trusted broker authorizes morph.
+
+        Caller must first independently authenticate the destination, establish
+        DoF eligibility and restore the encrypted checkpoint. This method
+        enforces signed authorization AND compare-and-swap custody, not admission
+        or semantic correctness. No proof verifier -> no proactive transfer.
+        All real mutation doors must separately enforce the resulting epoch.
+        """
+        self._validate(new_worker, now, ttl)
+        if (not mission_id or not old_worker or new_worker == old_worker or
+                not isinstance(old_epoch, int) or isinstance(old_epoch, bool) or
+                old_epoch <= 0 or not isinstance(checkpoint_sha256, str) or
+                len(checkpoint_sha256) != 64 or
+                any(c not in "0123456789abcdef" for c in checkpoint_sha256) or
+                not isinstance(checkpoint_uri, str) or
+                not checkpoint_uri.startswith("oci://")):
+            raise Refused("INVALID_PREEMPTIVE_HANDOVER")
+        verifier = getattr(self, "_handover_verifier", None)
+        if not callable(verifier):
+            raise Refused("INDEPENDENT_HANDOVER_PROOF_REQUIRED")
+        # Bind approval to the precise old custody, new executor, stored
+        # checkpoint and a bounded timestamp/TTL. Epoch CAS prevents replay.
+        message = (f"genesis.morph.handover.v1\\n{mission_id}\\n{old_worker}\\n"
+                   f"{old_epoch}\\n{new_worker}\\n{checkpoint_sha256}\\n"
+                   f"{checkpoint_uri}\\n{now:.6f}\\n{ttl:.6f}\\n").encode()
+        try:
+            approved = (type(handover_proof) is bytes and
+                        bool(verifier(message, handover_proof)))
+        except Exception:
+            approved = False
+        if not approved:
+            raise Refused("INVALID_INDEPENDENT_HANDOVER_PROOF")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT worker_id,epoch,expires_at,last_observed,checkpoint_sha256,"
+                "checkpoint_uri FROM continuity_leases WHERE mission_id=?",
+                (mission_id,),
+            ).fetchone()
+            if (row is None or row[0] != old_worker or row[1] != old_epoch or
+                    now < row[3] or now >= row[2]):
+                raise Refused("STALE_FENCING_LEASE")
+            if (row[4] != checkpoint_sha256 or row[5] != checkpoint_uri):
+                raise Refused("CHECKPOINT_NOT_DURABLY_ACKNOWLEDGED")
+            unresolved = db.execute(
+                "SELECT 1 FROM continuity_effects WHERE mission_id=? "
+                "AND state='PENDING' LIMIT 1", (mission_id,),
+            ).fetchone()
+            if unresolved:
+                raise Refused("PENDING_RECONCILIATION_REQUIRED")
+            next_epoch = old_epoch + 1
+            db.execute(
+                "UPDATE continuity_leases SET worker_id=?,epoch=?,expires_at=?,"
+                "last_observed=?,progress_sequence=0 "
+                "WHERE mission_id=? AND worker_id=? AND epoch=?",
+                (new_worker, next_epoch, now + ttl, now, mission_id,
+                 old_worker, old_epoch),
+            )
+            db.execute("COMMIT")
+        return next_epoch
 
     def snapshot(self, mission_id: str):
         with self._connect() as db:
@@ -544,4 +612,239 @@ def attempt_verified_takeover(mission_id: str, lease_store: LeaseStore,
         "scope": "READ_AND_RECONCILE" if pending_effects else "PENDING_DOF_AUTHORIZATION",
         "runtime_dispatch_verified": False,
         "operationally_complete": False,
+    }
+
+
+# Genesis MORPH foundation, #7790: deterministic resource/runway evaluation only.
+# This does NOT constitute a provider adapter, authorization gate or auto-scheduler.
+# Trusted server adapters must bind every observation's principal and evidence.
+MORPH_SCHEMA = "genesis.morph.risk.v1"
+MORPH_PROVENANCE = frozenset(("provider_api", "authenticated_runtime",
+                             "host_metrics", "trusted_supervisor"))
+MORPH_STATES = ("HEALTHY", "PRESSURED", "AT_RISK", "CRITICAL", "UNKNOWN")
+
+
+@dataclass(frozen=True)
+class LifeSignal:
+    """One broker-observed resource signal; missing values remain UNKNOWN."""
+    resource: str
+    observed_at: float
+    provenance: str
+    evidence_ref: str
+    remaining_units: Optional[float] = None
+    depletion_per_second: Optional[float] = None
+    hard_deadline_at: Optional[float] = None
+    failed: bool = False
+
+
+@dataclass(frozen=True)
+class MorphBudget:
+    """Independent supervisor policy measurements, never model-supplied authority."""
+    checkpoint_seconds: float
+    destination_seconds: float
+    restore_verify_seconds: float
+    safety_margin_seconds: float
+    max_signal_age_seconds: float = 120.0
+    max_checkpoint_age_seconds: float = 300.0
+
+
+@dataclass(frozen=True)
+class MorphVerdict:
+    schema: str
+    state: str
+    action: str
+    reason_codes: Tuple[str, ...]
+    runway_seconds: Optional[float]
+    recovery_budget_seconds: float
+    observed_resources: Tuple[str, ...]
+    unknown_resources: Tuple[str, ...]
+    permits_privileged_effects: bool = False  # a risk evaluator NEVER grants authority
+
+
+def _metric(value) -> bool:
+    return type(value) in (int, float) and math.isfinite(value)
+
+
+def assess_morph_risk(signals: Iterable[LifeSignal], *,
+                      now: float, budget: MorphBudget,
+                      checkpoint_age_seconds: Optional[float],
+                      previous_state: str = "UNKNOWN",
+                      consecutive_clear_observations: int = 0) -> MorphVerdict:
+    """Pure life/runway evaluation, with cautious UNKNOWN and hysteresis.
+
+    This is decision support for the existing trusted supervisor. Signals,
+    budget and time must be independently established outside the agent/model.
+    The returned verdict never constitutes a DoF permit, a signed admission,
+    or evidence that any checkpoint or morph actually occurred.
+    """
+    constraints = (budget.checkpoint_seconds, budget.destination_seconds,
+                   budget.restore_verify_seconds, budget.safety_margin_seconds,
+                   budget.max_signal_age_seconds, budget.max_checkpoint_age_seconds)
+    if (not _metric(now) or any(not _metric(x) or x < 0 for x in constraints)
+            or budget.max_signal_age_seconds <= 0
+            or budget.max_checkpoint_age_seconds <= 0
+            or (checkpoint_age_seconds is not None and
+                (not _metric(checkpoint_age_seconds) or checkpoint_age_seconds < 0))
+            or previous_state not in MORPH_STATES
+            or type(consecutive_clear_observations) is not int
+            or consecutive_clear_observations < 0):
+        raise Refused("INVALID_MORPH_EVALUATION")
+    total = sum(constraints[:4])
+    if not math.isfinite(total) or total <= 0:
+        raise Refused("INVALID_MORPH_RECOVERY_BUDGET")
+
+    seen, unknown, reasons, runways = set(), set(), set(), []
+    for signal in signals:
+        if not isinstance(signal, LifeSignal) or not signal.resource:
+            raise Refused("INVALID_MORPH_SIGNAL")
+        if signal.resource in seen:
+            raise Refused("DUPLICATE_MORPH_RESOURCE")
+        seen.add(signal.resource)
+        if (not _metric(signal.observed_at) or now < signal.observed_at or
+                now - signal.observed_at > budget.max_signal_age_seconds or
+                signal.provenance not in MORPH_PROVENANCE or
+                not signal.evidence_ref):
+            unknown.add(signal.resource)
+            reasons.add("STALE_OR_UNTRUSTED_SIGNAL")
+            continue
+        if type(signal.failed) is not bool:
+            raise Refused("INVALID_MORPH_SIGNAL")
+        if signal.failed:
+            runways.append(0.0)
+            reasons.add("VERIFIED_RESOURCE_FAILURE")
+            continue
+        known = False
+        if signal.remaining_units is not None or signal.depletion_per_second is not None:
+            if (not _metric(signal.remaining_units) or
+                    not _metric(signal.depletion_per_second) or
+                    signal.remaining_units < 0 or signal.depletion_per_second < 0):
+                unknown.add(signal.resource)
+                reasons.add("INVALID_OR_INCOMPLETE_RUNWAY")
+                continue
+            if signal.depletion_per_second > 0:
+                runways.append(signal.remaining_units / signal.depletion_per_second)
+                known = True
+            elif signal.remaining_units == 0:
+                runways.append(0.0)
+                known = True
+            # Zero burn rate does not establish infinite future capacity.
+        if signal.hard_deadline_at is not None:
+            if not _metric(signal.hard_deadline_at):
+                unknown.add(signal.resource)
+                reasons.add("INVALID_DEADLINE")
+                continue
+            runways.append(max(0.0, signal.hard_deadline_at - now))
+            known = True
+        if not known:
+            unknown.add(signal.resource)
+            reasons.add("UNBOUNDED_OR_MISSING_RUNWAY")
+
+    if not seen:
+        reasons.add("NO_RESOURCE_TELEMETRY")
+    runway = min(runways) if runways else None
+    if runway is not None and runway <= budget.checkpoint_seconds:
+        state = "CRITICAL"
+        reasons.add("RECOVERY_RUNWAY_CRITICAL")
+    elif runway is not None and runway <= total:
+        state = "AT_RISK"
+        reasons.add("RECOVERY_RUNWAY_INSUFFICIENT")
+    elif runway is not None and runway <= 2 * total:
+        state = "PRESSURED"
+        reasons.add("RESOURCE_MARGIN_NARROWING")
+    elif unknown or runway is None:
+        state = "UNKNOWN"
+    else:
+        state = "HEALTHY"
+
+    if checkpoint_age_seconds is None:
+        reasons.add("NO_VERIFIED_CHECKPOINT")
+        if state not in ("CRITICAL",):
+            state = "AT_RISK"
+    elif checkpoint_age_seconds > budget.max_checkpoint_age_seconds:
+        reasons.add("CHECKPOINT_TOO_OLD")
+        if state not in ("CRITICAL",):
+            state = "AT_RISK"
+    # Prevent a single healthy sample from cancelling an imminent morph:
+    # callers must count independent trusted clear observations, not heartbeats.
+    if (state == "HEALTHY" and previous_state in ("CRITICAL", "AT_RISK",
+                                                    "PRESSURED") and
+            consecutive_clear_observations < 2):
+        state = "PRESSURED"
+        reasons.add("WAITING_FOR_INDEPENDENT_CLEARANCE")
+
+    action = {
+        "HEALTHY": "CONTINUE",
+        "PRESSURED": "PREPARE_DESTINATION",
+        "AT_RISK": "CHECKPOINT_AND_MORPH",
+        "CRITICAL": "STOP_RISKY_EFFECTS_AND_RECOVER",
+        "UNKNOWN": "CHECKPOINT_AND_PROBE",
+    }[state]
+    return MorphVerdict(
+        MORPH_SCHEMA, state, action, tuple(sorted(reasons)), runway, total,
+        tuple(sorted(seen - unknown)), tuple(sorted(unknown)),
+    )
+
+
+def prepare_preemptive_morph(mission_id: str, lease_store: LeaseStore,
+                             beats: HeartbeatRegistry, req: Requirement,
+                             verdict: MorphVerdict, now: float,
+                             read_ciphertext, decrypt_and_validate_checkpoint) -> dict:
+    """Verify custody, checkpoint and alternate capacity BEFORE signing a handover.
+
+    Only returns an *unsigned proposal*, never grants or rotates a lease.
+    Trusted broker must recheck fresh state/DoF, authenticate a destination,
+    sign the exact transfer and call LeaseStore.preemptive_handover.
+    """
+    if (not isinstance(verdict, MorphVerdict) or
+            verdict.schema != MORPH_SCHEMA or verdict.state not in MORPH_STATES
+            or not mission_id or not _metric(now)):
+        raise Refused("INVALID_MORPH_PREPARATION")
+    if verdict.state not in ("AT_RISK", "CRITICAL"):
+        return {"state": "NOT_TRIGGERED", "reason": verdict.state}
+    previous = lease_store.snapshot(mission_id)
+    if previous is None:
+        return {"state": "RECOVERY_PENDING", "reason": "MISSING_MISSION_LEASE"}
+    old_worker, epoch, expires_at, digest, uri = previous
+    if now >= expires_at:
+        return {"state": "RECOVERY_PENDING", "reason": "LEASE_EXPIRED_USE_TAKEOVER"}
+    if not digest or not uri:
+        return {"state": "RECOVERY_PENDING", "reason": "NO_DURABLE_CHECKPOINT"}
+    if not callable(decrypt_and_validate_checkpoint):
+        return {"state": "RECOVERY_PENDING", "reason": "AUTHENTICATED_DECRYPTOR_UNAVAILABLE"}
+    try:
+        ciphertext = restore_verified_checkpoint(uri, digest, read_ciphertext)
+        manifest = decrypt_and_validate_checkpoint(mission_id, uri, ciphertext)
+    except Refused as exc:
+        return {"state": "RECOVERY_PENDING", "reason": str(exc)}
+    except Exception:
+        return {"state": "RECOVERY_PENDING", "reason": "CHECKPOINT_DECRYPT_OR_VALIDATION_FAILED"}
+    if (not isinstance(manifest, dict) or manifest.get("mission_id") != mission_id or
+            manifest.get("schema") != "genesis.mission.checkpoint.v1" or
+            not isinstance(manifest.get("source_sha"), str) or
+            len(manifest["source_sha"]) != 40 or
+            any(c not in "0123456789abcdef" for c in manifest["source_sha"]) or
+            not isinstance(manifest.get("resume_cursor"), str) or
+            not manifest["resume_cursor"]):
+        return {"state": "RECOVERY_PENDING", "reason": "INVALID_DECRYPTED_MANIFEST"}
+    with lease_store._connect() as db:
+        pending = db.execute(
+            "SELECT 1 FROM continuity_effects WHERE mission_id=? "
+            "AND state='PENDING' LIMIT 1", (mission_id,),
+        ).fetchone()
+    if pending:
+        return {"state": "RECOVERY_PENDING", "reason": "PENDING_RECONCILIATION_REQUIRED"}
+    obs = beats.observed(now)
+    offers = [row["offer"] for row in obs.values()
+              if row["status"] == "READY" and row["offer"] is not None]
+    selected = select_worker(offers, req, now, frozenset({old_worker}))
+    if selected is None:
+        return {"state": "RECOVERY_PENDING", "reason": "NO_ELIGIBLE_CAPACITY"}
+    return {
+        "state": "READY_FOR_SIGNED_HANDOVER", "mission_id": mission_id,
+        "old_worker": old_worker, "old_epoch": epoch,
+        "new_worker": selected.worker_id,
+        "checkpoint_sha256": digest, "checkpoint_uri": uri,
+        "source_sha": manifest["source_sha"], "resume_cursor": manifest["resume_cursor"],
+        "runtime_dispatch_verified": False, "operationally_complete": False,
+        "authorization_granted": False,
     }
