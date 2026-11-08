@@ -30,8 +30,9 @@ import os
 import sys
 import time
 from typing import Any, Dict, List, Optional
+from pathlib import Path
 
-from . import ledger, provider_renewal, registry
+from . import law_packet, ledger, provider_renewal, registry
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
@@ -71,6 +72,9 @@ def compute(root: str = REPO_ROOT, falsify: bool = False) -> Dict[str, Any]:
     always runs them.
     """
     law = registry.evaluate_all(root, falsify=falsify)
+    # The existing estate-state page feeds every session brief. Include source
+    # consistency and training coverage, not a second policy adjudicator.
+    policy_source = law_packet.compile_packet(Path(root))
     spec = registry.evaluate_specs(root)
     renewals = provider_renewal.status()
     claims = _focus_rows()
@@ -100,6 +104,17 @@ def compute(root: str = REPO_ROOT, falsify: bool = False) -> Dict[str, Any]:
         by_class[key] = by_class.get(key, 0) + 1
     return {
         "ts": ledger.now(),
+        "law_source": {
+            "status": policy_source["status"],
+            "canonical_entrypoint": policy_source["canonical_entrypoint"],
+            "source_digests": policy_source["source_digests"],
+            "problem_codes": sorted({p["code"] for p in policy_source["problems"]}),
+            "founder_judgements": len(policy_source["founder_judgement_training"]),
+            "drills_executed": policy_source["fleet_drills_executed"],
+            "competence_certified": policy_source["competence_certified"],
+            "is_admission_decision": False,
+            "runtime_freshness": "BLIND",
+        },
         "law_gate": {
             "ok": law["ok"],
             "laws": len(law["results"]),
@@ -145,6 +160,24 @@ def render(facts: Dict[str, Any]) -> str:
     lines.append(
         f"- flaws to hunt: {law['audit_count']} (prose-only laws, unfalsified gates, advisory gates)"
     )
+    lines.append("")
+    source = facts.get("law_source")
+    lines.append("## Fleet law and onboarding sources")
+    if not isinstance(source, dict):
+        lines.append("- BLIND: law-source projection unavailable (NOT an admission pass)")
+    else:
+        lines.append(f"- source: {source.get('status', 'BLIND')}; no execution authority granted")
+        problems = source.get("problem_codes") or []
+        if problems:
+            lines.append("- source conflicts: " + ", ".join(str(x) for x in problems))
+        else:
+            lines.append("- source conflicts: none observed in this IDP source snapshot")
+        lines.append(
+            f"- founder judgement: {source.get('founder_judgements', 0)} "
+            "source-bound training record(s); drills NOT independently certified"
+        )
+        lines.append("- active runtime enforcement / multi-repo federation: NOT VERIFIED")
+        lines.append("- repair contract: bin/estate-law-gate --onboarding-packet")
     lines.append("")
     lines.append("## Founder specs")
     lines.append(f"- done: {len(specs['done'])}/{specs['total']}")
