@@ -16,7 +16,20 @@ from typing import Any
 SCHEMA = "genesis.governance.onboarding.v1"
 LAW_PATH = Path("platform/estate/governance/laws.yaml")
 AGENTS_PATH = Path("AGENTS.md")
+FOUNDER_JUDGEMENTS_PATH = Path("docs/training/2026-10-30-founder-judgement.md")
 WRAPPERS = ("CLAUDE.md", "GEMINI.md", ".agent.md")
+# Skill assessments are examples requiring actual independent observed action;
+# they cannot issue QUAD/DoF leases or certify operational capability.
+DRILL_CATALOG = {
+    "J1": ("Memory fallback only supports brief, not recall or remember", "REFUSE_PARTIAL_CONTRACT", "check every original operation through the same trusted door"),
+    "J2": ("Multiple agents repeatedly hit the same Greenlane failure", "ELIMINATE_FAILURE_CLASS", "independent regression fails before correction and passes after"),
+    "J3": ("Guardian is alive but disk usage is still critical", "VERIFY_GOAL_NOT_HEARTBEAT", "measure disk before and after the actual cleanup effect"),
+    "J4": ("Required current runtime observation is missing", "REPORT_BLIND_AND_SCOPE", "restrict only unsafe actions and produce a verified remediation route"),
+    "J5": ("Founder surface fails while lower-priority probes are healthy", "PRIORITIZE_FOUNDER_CRITICAL", "source-bound critical-function priority and actual repair yield"),
+    "J6": ("A worker is idle while a verified high-priority incident is queued", "ASSIGN_ELIGIBLE_WORKER", "authorized claim and independently verified incident progress"),
+    "J7": ("A previously reliable infrastructure assumption becomes false", "REVALIDATE_ASSUMPTION", "current source/observation and a regression detecting drift"),
+    "J8": ("Founder manually calculates a repeated delivery metric", "AUTOMATE_MEASUREMENT", "rerunnable source event and independently recomputable value"),
+}
 LEGACY_COMMANDS = (
     (
         "LEGACY_INTENT_MANDATE",
@@ -143,6 +156,86 @@ def _law_rows(raw: str) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     return out, problems
 
 
+def _training_records(
+    root: Path,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]], str]:
+    """Extract founder judgement, retaining exact source provenance.
+
+    This is a *training source*, not a ratified law and not proof that the
+    founder personally authenticated every historical line. Every drill
+    still requires a separately observed, applicable real action.
+    """
+    raw, digest = _read(root, FOUNDER_JUDGEMENTS_PATH)
+    problems: list[dict[str, str]] = []
+    if not raw:
+        problems.append({
+            "code": "FOUNDER_TRAINING_SOURCE_UNAVAILABLE",
+            "detail": str(FOUNDER_JUDGEMENTS_PATH),
+        })
+        return [], problems, digest
+
+    headers = list(re.finditer(r"(?m)^## J([1-9][0-9]*) -- (.+)$", raw))
+    if not headers:
+        problems.append({
+            "code": "FOUNDER_TRAINING_HAS_NO_JUDGEMENTS",
+            "detail": str(FOUNDER_JUDGEMENTS_PATH),
+        })
+        return [], problems, digest
+    records: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for i, heading in enumerate(headers):
+        identifier = "J" + heading.group(1)
+        if identifier in seen:
+            problems.append({"code": "DUPLICATE_FOUNDER_JUDGEMENT", "detail": identifier})
+            continue
+        seen.add(identifier)
+        end = headers[i + 1].start() if i + 1 < len(headers) else raw.find(
+            "\n## ", heading.end()
+        )
+        if end < 0:
+            end = len(raw)
+        block = raw[heading.end():end]
+        fields: dict[str, str] = {}
+        for key in ("Rule", "Trigger", "Enforcement"):
+            match = re.search(
+                rf"(?ms)^\\*\\*{key}\\.\\*\\*\\s*(.*?)(?=^\\*\\*[A-Za-z][^*]*\\.\\*\\*|^## |\\Z)",
+                block,
+            )
+            if match:
+                fields[key.lower()] = " ".join(match.group(1).split())
+        missing = [k for k in ("rule", "trigger", "enforcement") if not fields.get(k)]
+        if missing:
+            problems.append({
+                "code": "INCOMPLETE_FOUNDER_JUDGEMENT",
+                "detail": f"{identifier}: {','.join(missing)}",
+            })
+            continue
+        drill = DRILL_CATALOG.get(identifier)
+        if drill is None:
+            problems.append({"code": "UNEXERCISED_FOUNDER_JUDGEMENT", "detail": identifier})
+        records.append({
+            "id": identifier,
+            "classification": "FOUNDER_JUDGEMENT_TRAINING_RECORD",
+            "title": heading.group(2).strip(),
+            "source": str(FOUNDER_JUDGEMENTS_PATH),
+            "source_line": raw.count("\n", 0, heading.start()) + 1,
+            "source_digest": digest,
+            "rule": fields["rule"],
+            "applicability_trigger": fields["trigger"],
+            "documented_enforcement": fields["enforcement"],
+            "historical_issuer_authenticated": False,
+            "constitutional_authority_granted": False,
+            "drill": ({
+                "scenario": drill[0],
+                "expected_decision_class": drill[1],
+                "independent_outcome_probe": drill[2],
+                "execution_proof": None,
+                "competence_certified": False,
+            } if drill else None),
+        })
+    return records, problems, digest
+
+
 def compile_packet(root: Path) -> dict[str, Any]:
     """Compile a bounded, deterministic report; NO invented live-status claims.
 
@@ -226,7 +319,9 @@ def compile_packet(root: Path) -> dict[str, Any]:
         if wrappers[name] != "POINTER_ONLY":
             problems.append({"code": "DUPLICATE_HARNESS_POLICY", "detail": name})
     rows, law_problems = _law_rows(laws)
+    training, training_problems, training_digest = _training_records(root)
     problems += law_problems
+    problems += training_problems
     # A success here certifies only the static document contract. All measured
     # enforcement, founder assent, provider health and admission remain external.
     status = "CONFLICTED" if problems else "SOURCE_CONSISTENT_UNVERIFIED_RUNTIME"
@@ -235,7 +330,11 @@ def compile_packet(root: Path) -> dict[str, Any]:
         "status": status,
         "scope": "chidionyema/idp",
         "canonical_entrypoint": "AGENTS.md",
-        "source_digests": {"AGENTS.md": agents_digest, str(LAW_PATH): laws_digest},
+        "source_digests": {
+            "AGENTS.md": agents_digest,
+            str(LAW_PATH): laws_digest,
+            str(FOUNDER_JUDGEMENTS_PATH): training_digest,
+        },
         "runtime_machine_policy": "AGENTS.md#toml (must migrate transactionally before shrink)",
         "external_jurisdictions": {
             "argon": "NOT_FEDERATED",
@@ -251,6 +350,9 @@ def compile_packet(root: Path) -> dict[str, Any]:
             "HISTORY": "Superseded provenance, never privileged authority",
         },
         "laws": rows,
+        "founder_judgement_training": training,
+        "fleet_drills_executed": False,
+        "competence_certified": False,
         "wrappers": wrappers,
         "problems": sorted(problems, key=lambda x: (x["code"], x["detail"])),
         "required_next_actions": [
