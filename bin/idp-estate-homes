@@ -58,6 +58,11 @@ IDP = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG = IDP / "platform/ladder/critical-lanes.json"
 
 OK, FAIL, UNKNOWN, NOT_HERE = "MEASURED_OK", "MEASURED_FAIL", "UNKNOWN", "NOT_HERE"
+# A home the estate has declared and has not provisioned yet, whose NAME does not resolve. There
+# is nothing there to be down, so it is neither a failure nor an unasked question. It is only
+# ever reachable through a leg's `state: planned` (platform/ladder/critical-lanes.json), which
+# keeps the narrow case narrow: an `active` home that loses its DNS is still MEASURED_FAIL.
+NOT_PROVISIONED = "NOT_PROVISIONED"
 DEFAULT_TIMEOUT = 10.0
 ISSUE_PREFIX = "[lane]"
 # Every probe names itself. MEASURED 2026-09-10 (bin/idp-otto-homes): api.groq.com answers
@@ -102,12 +107,28 @@ def _tunnel_refused(reason: object) -> bool:
     return "Tunnel connection failed" in str(reason)
 
 
+def _name_missing(reason: object) -> bool:
+    """The name does not RESOLVE on this host: nothing is pointed at it (NXDOMAIN, or a
+    resolver that will not answer). Measured 2026-11-08 on the live drill: the lifeboat leg read
+    `no answer: [Errno 8] nodename nor servname provided, or not known`, which is a name nobody
+    ever provisioned being graded as a dead lane.
+
+    This is not a verdict on its own -- an `active` home whose DNS disappears IS down. It only
+    lets a leg the ladder declares `planned` be told apart from a home that died.
+    """
+    if isinstance(reason, socket.gaierror):
+        return True
+    text = str(reason)
+    return "nodename nor servname" in text or "Name or service not known" in text
+
+
 def probe(
     url: str,
     headers: dict | None = None,
     timeout: float = DEFAULT_TIMEOUT,
     expect: tuple = (200,),
     expect_any: bool = False,
+    planned: bool = False,
 ) -> tuple:
     """Ask a lane one question. Returns (verdict, detail).
 
@@ -115,6 +136,10 @@ def probe(
     the lane was asked to give: the code it promised (expect) is MEASURED_OK, any other
     code is MEASURED_FAIL, and no answer at all is MEASURED_FAIL for a lane that lives
     somewhere else and NOT_HERE for one that lives on this machine only.
+
+    `planned` (from the ladder, never guessed here) narrows one case: a home the estate has
+    declared and not provisioned, whose name does not resolve, is NOT_PROVISIONED. A planned
+    home that DOES resolve and then stays silent is still MEASURED_FAIL.
     """
     request = urllib.request.Request(url, method="GET")
     request.add_header("user-agent", USER_AGENT)
@@ -133,6 +158,8 @@ def probe(
             return UNKNOWN, f"could not be asked: a proxy refused the tunnel ({reason})"
         if isinstance(reason, socket.timeout):
             return FAIL, f"no answer: timed out after {timeout:.0f}s"
+        if planned and _name_missing(reason):
+            return NOT_PROVISIONED, f"declared, never provisioned: no such name ({reason})"
         return FAIL, f"no answer: {reason}"
     except (TimeoutError, socket.timeout):
         return FAIL, f"no answer: timed out after {timeout:.0f}s"
@@ -141,6 +168,8 @@ def probe(
             return NOT_HERE, f"not this host ({exc})"
         if _tunnel_refused(exc):
             return UNKNOWN, f"could not be asked: a proxy refused the tunnel ({exc})"
+        if planned and _name_missing(exc):
+            return NOT_PROVISIONED, f"declared, never provisioned: no such name ({exc})"
         return FAIL, f"no answer: {exc}"
     if expect_any:
         return OK, f"HTTP {code}"
@@ -195,6 +224,7 @@ def grade_service(service: dict, env: dict, timeout: float, zone: str = "") -> l
             continue
         expect = tuple(leg.get("expect") or (200,))
         headers = _headers(leg, env)
+        planned = str(leg.get("state") or "active").lower() == "planned"
         if "${" in url or any("${" in value for value in headers.values()):
             # A lane that needs a secret this host does not carry is UNKNOWN, not FAIL: the
             # lane may be perfectly alive, and the runner is simply not the machine that has
@@ -207,13 +237,13 @@ def grade_service(service: dict, env: dict, timeout: float, zone: str = "") -> l
             )
             continue
         tasks.append(
-            (index, base, url, headers, expect, bool(leg.get("expect_any")))
+            (index, base, url, headers, expect, bool(leg.get("expect_any")), planned)
         )
     if tasks:
         with ThreadPoolExecutor(max_workers=min(8, len(tasks))) as pool:
             futures = {
-                pool.submit(probe, url, headers, timeout, expect, expect_any): index
-                for index, _base, url, headers, expect, expect_any in tasks
+                pool.submit(probe, url, headers, timeout, expect, expect_any, planned): index
+                for index, _base, url, headers, expect, expect_any, planned in tasks
             }
             for future in as_completed(futures):
                 index = futures[future]
@@ -304,6 +334,7 @@ def ladder(rows: list) -> dict:
         "providers_ok": providers,
         "down": [r["leg"] for r in rows if r["verdict"] == FAIL],
         "unasked": [r["leg"] for r in unasked],
+        "not_provisioned": [r["leg"] for r in rows if r["verdict"] == NOT_PROVISIONED],
     }
 
 
@@ -415,14 +446,18 @@ def render(results: list) -> str:
     alive = sum(1 for r in results if r["verdict"] == OK)
     down = [r for r in results if r["verdict"] == FAIL]
     blind = [r for r in results if r["verdict"] == UNKNOWN]
+    planned = [r for r in results if r["verdict"] == NOT_PROVISIONED]
     lines.append("")
     lines.append(
         f"{alive} of {len(results)} lane(s) answered; {len(down)} down, {len(blind)} unknown"
+        + (f", {len(planned)} declared but not provisioned" if planned else "")
     )
     for row in down:
         lines.append(f"  DOWN    {row['service']} / {row['leg']}: {row['detail']}")
     for row in blind:
         lines.append(f"  UNKNOWN {row['service']} / {row['leg']}: {row['detail']}")
+    for row in planned:
+        lines.append(f"  PLANNED {row['service']} / {row['leg']}: {row['detail']}")
     for lad in ladders(results):
         text = (
             f"  LADDER  {lad['service']}: {lad['state']}"
@@ -449,12 +484,17 @@ def _closing_note(service: str, rows: list) -> str:
     """Say what was asked and what answered, and name what could not be asked. It used to say
     'every lane answered again' while a lane was UNKNOWN: a claim the drill had not measured."""
     unasked = [r for r in rows if r["verdict"] in (UNKNOWN, NOT_HERE)]
-    asked = len(rows) - len(unasked)
+    planned = [r for r in rows if r["verdict"] == NOT_PROVISIONED]
+    asked = len(rows) - len(unasked) - len(planned)
     answered = sum(1 for r in rows if r["verdict"] == OK)
     note = f"{answered} of {asked} lane(s) of {service} that this host could ask answered at {_now()}"
     if unasked:
         note += "; could not be asked from this host (unproven, not OK): " + ", ".join(
             str(r.get("leg")) for r in unasked
+        )
+    if planned:
+        note += "; declared and never provisioned (not down, not counted): " + ", ".join(
+            str(r.get("leg")) for r in planned
         )
     return note
 
@@ -471,6 +511,7 @@ def file_issues(results: list, dry_run: bool = False) -> list:
         rows = [r for r in results if r["service"] == service]
         down = [r for r in rows if r["verdict"] == FAIL]
         blind = [r for r in rows if r["verdict"] == UNKNOWN]
+        planned = [r for r in rows if r["verdict"] == NOT_PROVISIONED]
         lad = next(iter(ladders(rows)), None)
         spof = bool(lad and lad["state"] in ("SPOF", "DOWN"))
         title_prefix = (
@@ -603,6 +644,9 @@ def main(argv: list) -> int:
                         "down": sum(1 for r in results if r["verdict"] == FAIL),
                         "unknown": sum(1 for r in results if r["verdict"] == UNKNOWN),
                         "not_here": sum(1 for r in results if r["verdict"] == NOT_HERE),
+                        "not_provisioned": sum(
+                            1 for r in results if r["verdict"] == NOT_PROVISIONED
+                        ),
                     },
                     "ladders": ladders(results),
                 },
