@@ -226,6 +226,50 @@ def main() -> int:
             f"exit={code} {out.strip()[:150]}{err.strip()[:100]}",
         )
 
+        # ---- case 8: an unreadable registry is BLIND, not a finding --------
+        # Measured 2026-11-08: load_registry raised SystemExit with a STRING, so
+        # a missing or malformed registry exited 1 -- the same code this gate
+        # reserves for a clock that genuinely missed, and the one exit a caller
+        # reads as "the estate stopped delivering". A gate that could not look
+        # must never report a judgement (AGENTS.md R1). All three shapes are
+        # covered, because each was a separate way to reach the same wrong code.
+        missing = tmp / "case8-no-such-registry.json"
+        missing_code = subprocess.run(
+            [sys.executable, str(CLOCKS), "--registry", str(missing), "--now", NOW, "--gate"],
+            capture_output=True, text=True,
+        ).returncode
+        check(
+            "a MISSING registry is BLIND (exit 2), not the exit 1 a missed clock uses",
+            missing_code == 2,
+            f"exit={missing_code}",
+        )
+
+        malformed = tmp / "case8-malformed.json"
+        malformed.write_text("this is not: a legion manifest\n\t- broken: [unclosed\n", encoding="utf-8")
+        malformed_code = subprocess.run(
+            [sys.executable, str(CLOCKS), "--registry", str(malformed), "--now", NOW, "--gate"],
+            capture_output=True, text=True,
+        ).returncode
+        check(
+            "a MALFORMED registry is BLIND (exit 2), not the exit 1 a missed clock uses",
+            malformed_code == 2,
+            f"exit={malformed_code}",
+        )
+
+        empty_doc = write_registry(tmp, "case8-empty", ob("ping", "ping.yml"))
+        empty_payload = json.loads(empty_doc.read_text(encoding="utf-8"))
+        empty_payload["obligations"] = []
+        empty_doc.write_text(json.dumps(empty_payload), encoding="utf-8")
+        empty_code = subprocess.run(
+            [sys.executable, str(CLOCKS), "--registry", str(empty_doc), "--now", NOW, "--gate"],
+            capture_output=True, text=True,
+        ).returncode
+        check(
+            "an EMPTY registry is BLIND (exit 2): zero obligations cannot mean zero problems",
+            empty_code == 2,
+            f"exit={empty_code}",
+        )
+
     print()
     if failures:
         print(f"chronos proof: FAILED ({len(failures)} case(s)): {'; '.join(failures)}")
@@ -235,7 +279,8 @@ def main() -> int:
         "chronos proof: PASS -- accepts a delivered clock, rejects the same evidence once its\n"
         "tolerance lapses, calls a never-fired clock a finding, ignores human-triggered runs as\n"
         "delivery, goes BLIND rather than green when it cannot read history, never grades a\n"
-        "retired clock, and fails on a workflow that has vanished from the tree."
+        "retired clock, fails on a workflow that has vanished from the tree, and treats a\n"
+        "missing, malformed or empty registry as BLIND rather than as a finding."
     )
     return 0
 

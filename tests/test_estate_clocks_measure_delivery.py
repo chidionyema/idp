@@ -219,6 +219,62 @@ def test_an_unreadable_history_is_blind_and_exits_two(tmp_path):
     )
 
 
+def test_a_missing_registry_is_blind_and_exits_two(tmp_path):
+    """An unreadable registry is BLIND, never the exit 1 a missed clock uses.
+
+    Measured 2026-11-08: load_registry raised SystemExit with a STRING, which
+    exits 1 -- the same code this gate reserves for a clock that genuinely
+    missed. A workflow treating 1 as "the estate stopped delivering" could not
+    tell that apart from "the registry was not there", and the gate reported a
+    judgement it had not made (AGENTS.md R1). Before the fix this case exited 1.
+    """
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(CLOCKS),
+            "--registry",
+            str(tmp_path / "no-such-registry.json"),
+            "--now",
+            NOW,
+            "--gate",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 2, (
+        f"expected BLIND exit 2, got {proc.returncode}: {proc.stdout}{proc.stderr}"
+    )
+    assert "BLIND" in proc.stderr
+
+
+def test_a_malformed_registry_is_blind_and_exits_two(tmp_path):
+    bad = tmp_path / "malformed.json"
+    bad.write_text(
+        "this is not: a legion manifest\n\t- broken: [unclosed\n", encoding="utf-8"
+    )
+    proc = subprocess.run(
+        [sys.executable, str(CLOCKS), "--registry", str(bad), "--now", NOW, "--gate"],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 2, (
+        f"expected BLIND exit 2, got {proc.returncode}: {proc.stdout}{proc.stderr}"
+    )
+
+
+def test_an_empty_registry_is_blind_and_exits_two(tmp_path):
+    """Zero obligations must not read as zero problems."""
+    reg = registry(tmp_path, [])
+    proc = subprocess.run(
+        [sys.executable, str(CLOCKS), "--registry", str(reg), "--now", NOW, "--gate"],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 2, (
+        f"expected BLIND exit 2, got {proc.returncode}: {proc.stdout}{proc.stderr}"
+    )
+
+
 def test_a_scheduled_run_without_a_usable_timestamp_is_unknown(tmp_path):
     reg = registry(tmp_path, [obligation()])
     broken = [

@@ -23,7 +23,7 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: read
+  contents: write   # the chronos board is published to refs/chronos/state for the founder's surface
   issues: write
   actions: read   # Chronos reads this repo's own workflow runs to measure delivery
 
@@ -134,6 +134,34 @@ jobs:
                   check=False,
               )
           PY
+
+      - name: publish the chronos board to the founder's surface
+        # The founder's live surface is ARGON, which reads idp state by one shallow TOKENLESS
+        # fetch of a ref (src/engine/greenlaneFeed.ts) rather than through the REST rate limit.
+        # So the board ships the same way: refs/chronos/state, a sibling of refs/greenlane/state.
+        #
+        # This runs even when the gate found a miss (exit 1): a missed cadence is exactly what
+        # the founder must be able to see. It does NOT run on exit 2 -- a blind registry must
+        # leave the last true board in place rather than replace it with an empty one, and the
+        # publisher refuses on its own (exit 2) even if this condition were removed.
+        if: always() && steps.chronos.outputs.exit_code != '2'
+        env:
+          EXIT_CODE: ${{ steps.chronos.outputs.exit_code }}
+        run: |
+          set -uo pipefail
+          git config user.name  "estate-chronos"
+          git config user.email "chronos@estate.invalid"
+          python3 bin/idp-estate-clocks-publish 2>&1 | tee -a chronos.txt
+          code=${PIPESTATUS[0]}
+          echo "publish_exit=$code" | tee -a chronos.txt
+          {
+            echo '### Chronos: board published to the founder surface'
+            echo ''
+            echo "\`refs/chronos/state\`, detector exit \`${EXIT_CODE}\`, publish exit \`${code}\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+          # A publish failure is not a cadence finding, so it must not masquerade as one: the
+          # gate above owns exit 1/2, this step only reports that the surface did not update.
+          exit 0
 
       - name: keep the chronos board
         if: always()

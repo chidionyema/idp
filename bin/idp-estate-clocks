@@ -260,19 +260,37 @@ def grade(obligation: dict, repo: str, now: dt.datetime, runs_for=None) -> dict:
     return row
 
 
+class RegistryBlind(Exception):
+    """The registry could not be read, so no obligation could be measured.
+
+    This is BLIND, not a finding. Measured 2026-11-08: a missing registry file
+    and a malformed one both exited 1, which is the code this gate reserves for
+    a clock that genuinely missed its cadence -- so an operator reading the exit
+    status could not tell "the estate stopped delivering" from "I could not
+    look", and a caller (a workflow, the Mac scheduler) treating 1 as a warning
+    would see the same number either way. AGENTS.md R1: a gate that cannot judge
+    must not report a judgement. main() turns this into exit 2.
+    """
+
+
 def load_registry(path: Path) -> dict:
     """Load through the estate's own legion loader, so a malformed registry fails
     the same way every other legion manifest fails -- one schema, one loader."""
     sys.path.insert(0, str(IDP))
     from legion.manifest import load_manifest, validate  # noqa: PLC0415
 
-    manifest = load_manifest(path)
+    if not path.is_file():
+        raise RegistryBlind(f"{path}: the registry does not exist, so nothing can be graded")
+    try:
+        manifest = load_manifest(path)
+    except Exception as exc:  # noqa: BLE001 - any parse failure is BLIND, never a pass
+        raise RegistryBlind(f"{path}: the registry cannot be parsed: {exc}") from exc
     errors = validate(manifest)
     if errors:
-        raise SystemExit(f"{path}: invalid legion manifest: {'; '.join(errors)}")
+        raise RegistryBlind(f"{path}: invalid legion manifest: {'; '.join(errors)}")
     obligations = manifest.get("obligations")
     if not isinstance(obligations, list) or not obligations:
-        raise SystemExit(f"{path}: obligations must be a non-empty list")
+        raise RegistryBlind(f"{path}: obligations must be a non-empty list")
     return manifest
 
 
@@ -329,7 +347,13 @@ def main(argv: list[str]) -> int:
             # fixture is untrusted input like any other.
             return [r for r in _f.get(wf, []) if isinstance(r, dict) and r.get("event") == "schedule"]
 
-    manifest = load_registry(Path(args.registry))
+    try:
+        manifest = load_registry(Path(args.registry))
+    except RegistryBlind as blind_registry:
+        # BLIND exits 2 on every path, including this one: the gate could not
+        # look, so it must not report that the estate is well OR unwell.
+        print(f"BLIND chronos: {blind_registry}", file=sys.stderr)
+        return 2
     wanted = [o for o in manifest["obligations"] if not args.obligation or o.get("id") == args.obligation]
     if args.obligation and not wanted:
         print(f"--obligation: no such obligation {args.obligation!r}", file=sys.stderr)
