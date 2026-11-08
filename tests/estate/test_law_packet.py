@@ -1,4 +1,5 @@
 """Adversarial tests for the read-only law packet and live-instruction hygiene."""
+
 from pathlib import Path
 import sys
 
@@ -13,7 +14,13 @@ LAWS = """laws:
     check: {type: grep_present, path: guard, pattern: fence}
     falsifier: {files: {guard: 'no fence'}}
 """
-AGENTS = '# One canonical entry\n'+chr(96)*3+'toml\n[capabilities]\nread=[]\n[fsm]\n[budget.usd_per_day]\ntest=1\n[cost]\n[routing]\n[merge]\n[invariants]\n[jev]\n'+chr(96)*3+'\n'
+AGENTS = (
+    "# One canonical entry\n"
+    + chr(96) * 3
+    + "toml\n[capabilities]\nread=[]\n[fsm]\n[budget.usd_per_day]\ntest=1\n[cost]\n[routing]\n[merge]\n[invariants]\n[jev]\n"
+    + chr(96) * 3
+    + "\n"
+)
 
 
 def tree(tmp_path):
@@ -41,7 +48,9 @@ def test_valid_packet_never_grants_admission(tmp_path):
 def test_contradictory_legacy_intents_are_refused(tmp_path):
     root = tree(tmp_path)
     with (root / "AGENTS.md").open("a") as out:
-        out.write("Every action the agent performs goes through an **intent YAML** in old folder.\n")
+        out.write(
+            "Every action the agent performs goes through an **intent YAML** in old folder.\n"
+        )
     packet = compile_packet(root)
     assert packet["status"] == "CONFLICTED"
     assert "LEGACY_INTENT_MANDATE" in [x["code"] for x in packet["problems"]]
@@ -51,7 +60,9 @@ def test_stale_status_is_refused(tmp_path):
     root = tree(tmp_path)
     with (root / "AGENTS.md").open("a") as out:
         out.write("## 13. The estate's state right now\n")
-    assert "STATIC_ESTATE_STATUS" in [x["code"] for x in compile_packet(root)["problems"]]
+    assert "STATIC_ESTATE_STATUS" in [
+        x["code"] for x in compile_packet(root)["problems"]
+    ]
 
 
 def test_duplicate_harness_rules_are_refused(tmp_path):
@@ -73,12 +84,16 @@ def test_missing_laws_cannot_be_certified(tmp_path):
 def test_missing_runtime_policy_fence_fails_static_readiness(tmp_path):
     root = tree(tmp_path)
     (root / "AGENTS.md").write_text("Read AGENTS.md\n")
-    assert "EMBEDDED_RUNTIME_POLICY_MISSING" in [x["code"] for x in compile_packet(root)["problems"]]
+    assert "EMBEDDED_RUNTIME_POLICY_MISSING" in [
+        x["code"] for x in compile_packet(root)["problems"]
+    ]
 
 
 def test_duplicate_gov_ids_cannot_hide(tmp_path):
     root = tree(tmp_path)
-    (root / "platform/estate/governance/laws.yaml").write_text(LAWS + LAWS.replace("laws:\n", ""))
+    (root / "platform/estate/governance/laws.yaml").write_text(
+        LAWS + LAWS.replace("laws:\n", "")
+    )
     assert "DUPLICATE_LAW_ID" in [x["code"] for x in compile_packet(root)["problems"]]
 
 
@@ -105,16 +120,22 @@ def test_empty_or_malformed_yaml_is_not_healthy(tmp_path):
 
 def test_no_file_system_mutation(tmp_path):
     root = tree(tmp_path)
-    before = {str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+    before = {
+        str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file()
+    }
     compile_packet(root)
-    after = {str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+    after = {
+        str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file()
+    }
     assert before == after
 
 
 def test_real_repository_fixes_the_superseded_directives():
     repo = Path(__file__).resolve().parents[2]
     packet = compile_packet(repo)
-    assert packet["status"] == "SOURCE_CONSISTENT_UNVERIFIED_RUNTIME", packet["problems"]
+    assert packet["status"] == "SOURCE_CONSISTENT_UNVERIFIED_RUNTIME", packet[
+        "problems"
+    ]
     assert packet["wrappers"]["CLAUDE.md"] == "POINTER_ONLY"
     assert packet["laws"], "No active GOV enforcement inventory"
 
@@ -122,7 +143,9 @@ def test_real_repository_fixes_the_superseded_directives():
 def test_malformed_toml_is_not_safe(tmp_path):
     root = tree(tmp_path)
     (root / "AGENTS.md").write_text(AGENTS.replace("read=[]", "read=["))
-    assert "MALFORMED_RUNTIME_POLICY" in [x["code"] for x in compile_packet(root)["problems"]]
+    assert "MALFORMED_RUNTIME_POLICY" in [
+        x["code"] for x in compile_packet(root)["problems"]
+    ]
 
 
 def test_symlinked_policy_source_not_accepted(tmp_path):
