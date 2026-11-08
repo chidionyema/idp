@@ -42,6 +42,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       red_count: ${{ steps.probe.outputs.red_count }}
+      unknown_count: ${{ steps.probe.outputs.unknown_count }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -57,10 +58,28 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
           MOONSHOT_API_KEY: ${{ secrets.SEED_KIMI_API_KEY }}
         run: |
-          set -o pipefail
-          python3 platform/llm/catalog_gate.py llm/config.yaml | tee "$RUNNER_TEMP/report.json" | tail -n +2
-          red=$(python3 -c "import json,sys; print(len(json.load(open('$RUNNER_TEMP/report.json'))['red']))" 2>/dev/null || echo "?")
+          set -uo pipefail
+          rm -f "$RUNNER_TEMP/report.json"
+          # Provider SDKs print to stdout. Never tee that stream as JSON evidence.
+          python3 platform/llm/catalog_gate.py llm/config.yaml --output "$RUNNER_TEMP/report.json"
+          probe_rc=$?
+          summary=$(python3 platform/llm/catalog_gate.py --summary "$RUNNER_TEMP/report.json") || {
+            echo "::error::BLIND router catalog: missing/corrupt/incomplete provider receipt"
+            exit 70
+          }
+          red=$(jq -er '.red' <<<"$summary") || exit 70
+          unknown=$(jq -er '.unknown' <<<"$summary") || exit 70
           echo "red_count=$red" >> "$GITHUB_OUTPUT"
+          echo "unknown_count=$unknown" >> "$GITHUB_OUTPUT"
+          if [ "$probe_rc" -ne "$red" ]; then
+            echo "::error::BLIND router catalog: probe exit $probe_rc differs from $red RED lanes"
+            exit 70
+          fi
+          if [ "$unknown" -gt 0 ]; then
+            echo "::error::BLIND router catalog: $unknown provider lanes not independently verified"
+            exit 70
+          fi
+          exit "$probe_rc"
       - name: file or refresh the one tracking issue, never spam a new one
         if: always()
         env:
@@ -69,42 +88,37 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+          # Missing/malformed evidence is BLIND, never the previous red=0 fallback.
+          summary=$(python3 platform/llm/catalog_gate.py --summary "$RUNNER_TEMP/report.json") || {
+            echo "::error::BLIND router catalog: report missing or malformed; existing incident retained"
+            exit 70
+          }
+          red=$(jq -er '.red' <<<"$summary") || exit 70
+          unknown=$(jq -er '.unknown' <<<"$summary") || exit 70
           python3 - "$RUNNER_TEMP/report.json" "$RUNNER_TEMP/comment.txt" <<'PY'
           import json, sys
-          report_path, out_path = sys.argv[1], sys.argv[2]
-          try:
-              report = json.load(open(report_path))
-          except (OSError, ValueError):
-              report = {"red": [], "at": ""}
-          red = report.get("red", [])
-          lines = [f"- **{x['lane']}** ({x['model']}): {x['reason'][:200]}" for x in red]
-          text = f"Live probe at {report.get('at', '')}: {len(red)} lane(s) red.\n\n"
-          text += "\n".join(lines)
-          open(out_path, "w").write(text)
-          print(f"red={len(red)}")
+          report = json.load(open(sys.argv[1]))
+          lines = [f"- **{x['lane']}** ({x['model']}): {x['reason'][:200]}" for x in report["red"]]
+          text = f"Live provider probe at {report['at']}: {len(report['red'])} RED lane(s).\\n\\n"
+          text += "\\n".join(lines)
+          open(sys.argv[2], "w").write(text)
           PY
-          red=$(python3 -c "import json; print(len(json.load(open('$RUNNER_TEMP/report.json')).get('red', [])))" 2>/dev/null || echo 0)
           existing=$(gh api "repos/${GH_REPO}/issues?state=open&labels=router-catalog-gate&per_page=1" --jq '.[0].number' 2>/dev/null || true)
-          title="router catalog gate: a lane the router serves is red"
-          if [ "$red" != "0" ]; then
-            printf '\nRun: %s\n' "$RUN_URL" >> "$RUNNER_TEMP/comment.txt"
-            if [ -n "${existing:-}" ] && [ "$existing" != "null" ]; then
-              gh api "repos/${GH_REPO}/issues/${existing}/comments" -F body=@"$RUNNER_TEMP/comment.txt" >/dev/null
-            else
-              gh api "repos/${GH_REPO}/issues" -f title="$title" -F body=@"$RUNNER_TEMP/comment.txt" -f 'labels[]=router-catalog-gate' >/dev/null
-            fi
-          elif [ -n "${existing:-}" ] && [ "$existing" != "null" ]; then
-            # gh issue close, never the raw PATCH: this closes a tracking issue this same
-            # workflow opened, not a pull request, but sovereign/tests/bdd/test_pr_flow_never_closes.py
-            # refuses any workflow line shaped like a PR closer (`-f state=closed`,
-            # `"state": "closed"`) wherever it appears, on purpose -- no workflow outside
-            # bin/idp-pr-age gets to look like it could close a PR. gh issue close matches none
-            # of those shapes.
-            gh issue close "$existing" --repo "$GH_REPO" \
-              --comment "Live probe at $(date -u +%Y-%m-%dT%H:%M:%SZ): every checked lane answered. Closing."
+          if [ "$red" -gt 0 ]; then
+            printf '\\nRun: %s\\n' "$RUN_URL" >> "$RUNNER_TEMP/comment.txt"
+            # The canonical existing #7578 is the fallback, not a new issue.
+            target="${existing:-7578}"
+            [ "$target" != null ] || target=7578
+            gh api "repos/${GH_REPO}/issues/${target}/comments" -F body=@"$RUNNER_TEMP/comment.txt" >/dev/null
+          elif [ "$unknown" -gt 0 ]; then
+            echo "::warning::BLIND router catalog: $unknown UNKNOWN lane(s); retain existing incident"
+          else
+            # One green provider sample is not independent incident closure.
+            echo "ok catalog receipt verified: all provider lanes green; incident closure remains with its owner"
           fi
       - name: gate
         if: inputs.gate == true
         run: |
           red="${{ steps.probe.outputs.red_count }}"
-          [ "$red" = "0" ] || { echo "::error::${red} lane(s) red; see the run output above"; exit 1; }
+          unknown="${{ steps.probe.outputs.unknown_count }}"
+          [ "$red" = "0" ] && [ "$unknown" = "0" ] || { echo "::error::BLIND/RED catalog: red=${red:-missing}, unknown=${unknown:-missing}"; exit 1; }
