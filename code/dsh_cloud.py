@@ -45,6 +45,10 @@ PROFILE_PATCH = """\
 - id: permission
   name: "@deepseek-ai/dsh-permission-presets"
   config:
+    presets:
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
     defaultPreset: danger-full-access
 - id: llm-pi-ai
   name: "@deepseek-ai/dsh-llm-pi-ai"
