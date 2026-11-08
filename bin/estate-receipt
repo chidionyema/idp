@@ -45,7 +45,7 @@ def _governance_path() -> str:
 
 sys.path.insert(0, _governance_path())
 
-from governance import receipt  # noqa: E402
+from governance import ledger, receipt  # noqa: E402
 
 
 def _self_test() -> int:
@@ -152,7 +152,7 @@ def main(argv: list[str]) -> int:
         path = receipt.save(
             got,
             os.path.join(
-                receipt.ledger.state_home(), "receipts", got["sha256"] + ".json"
+                ledger.state_home(), "receipts", got["sha256"] + ".json"
             ),
         )
         got["path"] = path
