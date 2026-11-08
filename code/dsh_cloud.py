@@ -38,11 +38,17 @@ PROFILE_PACKAGE = {
     "name": "dsh-profile-web",
     "private": True,
     "dependencies": {},
-    "dsh": {"profile": {"bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"]}},
+    "dsh": {
+        "profile": {"bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"]}
+    },
 }
 
-ROUTER_BASE_URL = os.environ.get("ESTATE_ROUTER_URL", "https://llm.mumchimp.com/v1").rstrip("/")
-MODEL_CATALOG_URL = os.environ.get("ESTATE_MODEL_CATALOG_URL", ROUTER_BASE_URL + "/models")
+ROUTER_BASE_URL = os.environ.get(
+    "ESTATE_ROUTER_URL", "https://llm.mumchimp.com/v1"
+).rstrip("/")
+MODEL_CATALOG_URL = os.environ.get(
+    "ESTATE_MODEL_CATALOG_URL", ROUTER_BASE_URL + "/models"
+)
 
 GATEWAY = r"""
 import http from "node:http";
@@ -120,7 +126,7 @@ image = (
         "\\tdelete process.env.DSH_LAUNCH_TOKEN;\\n"
         "\\tconst created = launchToken || encodeBase64Url(randomBytes(SECRET_BYTES));';"
         "if(!s.includes(old)) throw new Error('DSH launch-token patch site missing');"
-        "fs.writeFileSync(p,s.replace(old,replacement));\"",
+        'fs.writeFileSync(p,s.replace(old,replacement));"',
     )
     .add_local_dir(
         os.path.dirname(os.path.abspath(__file__)),
@@ -139,11 +145,11 @@ def router_catalog() -> tuple[list[dict], str]:
     last = None
     for _ in range(6):
         try:
-            request = urllib.request.Request(
+            request = urllib.request.Request(  # noqa: S310 - production HTTPS router
                 MODEL_CATALOG_URL,
                 headers={"User-Agent": "estate-dsh-cloud/1.0"},
             )
-            with urllib.request.urlopen(request, timeout=20) as response:
+            with urllib.request.urlopen(request, timeout=20) as response:  # noqa: S310
                 payload = json.load(response)
             models: list[dict] = []
             for row in payload.get("data", []):
@@ -167,7 +173,9 @@ def router_catalog() -> tuple[list[dict], str]:
                 raise RuntimeError(
                     f"DSH_DEFAULT_MODEL={configured!r} is not served by {MODEL_CATALOG_URL}"
                 )
-            default_model = configured or ("default" if "default" in ids else models[0]["id"])
+            default_model = configured or (
+                "default" if "default" in ids else models[0]["id"]
+            )
             return models, default_model
         except Exception as exc:
             last = exc
@@ -302,7 +310,7 @@ def commit_loop() -> None:
         try:
             state.commit()
             workspace.commit()
-        except Exception:
+        except Exception:  # noqa: S110 - volume commit is retried on the next cycle
             # A transient Volume commit failure must not kill the live surface.
             pass
 
