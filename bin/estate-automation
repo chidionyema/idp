@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""Outcome-first discovery and typed preview. Writes go to the existing Temporal plane."""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from sovereign.automation.contracts import catalogue, compile_request, find  # noqa: E402
+
+
+def main() -> int:
+    p = argparse.ArgumentParser()
+    sub = p.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("list")
+    f = sub.add_parser("search")
+    f.add_argument("outcome")
+    d = sub.add_parser("describe")
+    d.add_argument("id")
+    for name in ("plan", "run"):
+        c = sub.add_parser(name)
+        c.add_argument("request_json", type=Path)
+    s = sub.add_parser("state")
+    s.add_argument("workflow_id")
+    args = p.parse_args()
+    if args.cmd == "list":
+        result = catalogue()
+    elif args.cmd == "search":
+        result = find(args.outcome)
+    elif args.cmd == "describe":
+        result = next((m for m in catalogue() if m["id"] == args.id), None)
+        if result is None:
+            p.error("unknown id")
+    elif args.cmd == "state":
+        from sovereign.automation.client import state
+        result = asyncio.run(state(args.workflow_id))
+    else:
+        release = {k: os.environ.get("ESTATE_AUTOMATION_" + k.upper(), "")
+                   for k in ("source_sha", "artifact_digest", "config_digest")}
+        request = json.loads(args.request_json.read_text())
+        result = compile_request(request, release)
+        if args.cmd == "run":
+            from sovereign.automation.client import start
+            result = asyncio.run(start(request, release))
+    print(json.dumps(result, sort_keys=True, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (ValueError, PermissionError) as e:
+        print(f"REFUSED: {e}", file=sys.stderr)
+        sys.exit(2)
