@@ -22,7 +22,8 @@ jobs:
       MODAL_TOKEN_ID: ${{ secrets.SEED_MODAL_TOKEN_ID }}
       MODAL_TOKEN_SECRET: ${{ secrets.SEED_MODAL_TOKEN_SECRET }}
       DEEPSEEK_API_KEY: ${{ secrets.SEED_DEEPSEEK_API_KEY }}
-      ZAI_API_KEY: ${{ secrets.SEED_ZAI_API_KEY }}
+      LITELLM_API_KEY: ${{ secrets.SEED_DSH_ROUTER_KEY }}
+      DSH_DEFAULT_MODEL: ${{ vars.ESTATE_DSH_DEFAULT_MODEL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -35,17 +36,64 @@ jobs:
           [ -n "$MODAL_TOKEN_ID" ] || missing="$missing MODAL_TOKEN_ID"
           [ -n "$MODAL_TOKEN_SECRET" ] || missing="$missing MODAL_TOKEN_SECRET"
           [ -n "$DEEPSEEK_API_KEY" ] || missing="$missing DEEPSEEK_API_KEY"
+          [ -n "$LITELLM_API_KEY" ] || missing="$missing LITELLM_API_KEY"
           if [ -n "$missing" ]; then
             echo "::error title=DSH cloud credentials::MISSING repository secrets:$missing"
             exit 1
           fi
-          if [ -n "$ZAI_API_KEY" ]; then
-            echo "MODEL_ROUTE=zai" >> "$GITHUB_ENV"
-          else
-            echo "MODEL_ROUTE=deepseek" >> "$GITHUB_ENV"
-          fi
+          echo "MODEL_ROUTE=estate-router" >> "$GITHUB_ENV"
           python -m pip install --quiet 'modal==1.5.5'
           modal secret list >/dev/null
+      - name: Prove the founder catalogue and its default alias
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, urllib.request
+          catalog_request = urllib.request.Request(
+              "https://llm.mumchimp.com/v1/models",
+              headers={"User-Agent": "estate-dsh-deploy/1.0"},
+          )
+          with urllib.request.urlopen(catalog_request, timeout=30) as response:
+              catalog = json.load(response)
+          model_ids = sorted(
+              str(row["id"]) for row in catalog.get("data", []) if row.get("id")
+          )
+          if not model_ids:
+              raise SystemExit("FAIL router catalogue is empty")
+          configured = os.environ.get("DSH_DEFAULT_MODEL", "").strip()
+          if configured and configured not in model_ids:
+              raise SystemExit(f"FAIL configured default {configured!r} is not in the router")
+          default_model = configured or (
+              "default" if "default" in model_ids else model_ids[0]
+          )
+          request = urllib.request.Request(
+              "https://llm.mumchimp.com/v1/chat/completions",
+              data=json.dumps({
+                  "model": default_model,
+                  "messages": [{
+                      "role": "user",
+                      "content": "Reply with exactly DSH_ROUTER_OK and nothing else.",
+                  }],
+                  "max_tokens": 16,
+                  "temperature": 0,
+              }).encode(),
+              headers={
+                  "Authorization": f"Bearer {os.environ['LITELLM_API_KEY']}",
+                  "Content-Type": "application/json",
+                  "User-Agent": "estate-dsh-deploy/1.0",
+              },
+              method="POST",
+          )
+          with urllib.request.urlopen(request, timeout=60) as response:
+              body = json.load(response)
+          content = body["choices"][0]["message"]["content"].strip()
+          if "DSH_ROUTER_OK" not in content:
+              raise SystemExit(f"FAIL canonical router completion: {content[:120]!r}")
+          print(
+              "ok      model-completion estate.model-router "
+              f"default={default_model} catalogue={len(model_ids)} DSH_ROUTER_OK"
+          )
+          PY
       - name: Create the versioned DSH runtime secret
         run: |
           set -euo pipefail
@@ -57,10 +105,20 @@ jobs:
           PY
           )
           echo "::add-mask::$TOKEN"
-          args=(DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" DSH_LAUNCH_TOKEN="$TOKEN")
-          if [ -n "$ZAI_API_KEY" ]; then args+=(ZAI_API_KEY="$ZAI_API_KEY"); fi
+          DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          args=(
+            DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY"
+            LITELLM_API_KEY="$LITELLM_API_KEY"
+            DSH_LAUNCH_TOKEN="$TOKEN"
+            DSH_SOURCE_SHA="$GITHUB_SHA"
+            DSH_DEPLOYED_AT="$DEPLOYED_AT"
+          )
+          if [ -n "$DSH_DEFAULT_MODEL" ]; then
+            args+=(DSH_DEFAULT_MODEL="$DSH_DEFAULT_MODEL")
+          fi
           modal secret create estate-dsh-runtime "${args[@]}" --force >/dev/null
       - name: Deploy and prove DSH Web
+        id: deploy
         run: |
           set -euo pipefail
           python -m py_compile code/dsh_cloud.py
@@ -73,9 +131,11 @@ jobs:
           tail -20 "$RUNNER_TEMP/modal-deploy.log"
           URL=$(python -c 'import modal; print(modal.Function.from_name("estate-dsh-web","web").get_web_url() or "")')
           case "$URL" in https://*) ;; *) echo "FAIL Modal returned no HTTPS URL"; exit 1;; esac
-          if ! python - "$URL" <<'PY' >"$RUNNER_TEMP/dsh-health.log" 2>&1
-          import json, sys, time, urllib.request
+          if ! python - "$URL" "$RUNNER_TEMP/dsh-health.json" <<'PY' >"$RUNNER_TEMP/dsh-health.log" 2>&1
+          import json, os, sys, time, urllib.request
           url = sys.argv[1].rstrip("/") + "/healthz"
+          evidence_path = sys.argv[2]
+          expected_sha = os.environ["GITHUB_SHA"]
           last = None
           for attempt in range(24):
               try:
@@ -84,7 +144,26 @@ jobs:
                   )
                   with urllib.request.urlopen(req, timeout=15) as response:
                       body = json.load(response)
-                  if response.status == 200 and body.get("service") == "estate-dsh-web":
+                  release = body.get("release") or {}
+                  contract_ok = (
+                      response.status == 200
+                      and body.get("service") == "estate-dsh-web"
+                      and body.get("contractId") == "estate.dsh-web"
+                      and body.get("schemaVersion") == "1.0.0"
+                      and release.get("id") == "dsh-web-2026.11.08.2"
+                      and release.get("version") == "0.2.1-rc.5+estate.2"
+                      and release.get("sourceSha") == expected_sha
+                      and str(release.get("configDigest", "")).startswith("sha256:")
+                      and release.get("authority") == "work-surface"
+                      and release.get("router") == "estate.model-router"
+                      and release.get("modelRoute") == "estate-router"
+                      and release.get("catalogSource", "").endswith("/models")
+                      and int(release.get("modelCount", 0)) > 0
+                      and bool(release.get("defaultModel"))
+                  )
+                  if contract_ok:
+                      with open(evidence_path, "w", encoding="utf-8") as handle:
+                          json.dump(body, handle, indent=2)
                       print(f"ok      dsh-web-cloud  {url} HTTP 200 after {attempt + 1} probe(s)")
                       raise SystemExit(0)
                   last = f"HTTP {response.status} {body}"
@@ -99,8 +178,49 @@ jobs:
             exit 1
           fi
           cat "$RUNNER_TEMP/dsh-health.log"
+          read -r MODEL_COUNT DEFAULT_MODEL <<EOF
+          $(python - "$RUNNER_TEMP/dsh-health.json" <<'PY'
+          import json, sys
+          release = json.load(open(sys.argv[1], encoding="utf-8"))["release"]
+          print(release["modelCount"], release["defaultModel"])
+          PY
+          )
+          EOF
           printf 'DSH_WEB_URL=%s\n' "$URL" >> "$GITHUB_STEP_SUMMARY"
           echo "DSH_MODEL_ROUTE=$MODEL_ROUTE" >> "$GITHUB_STEP_SUMMARY"
+          printf 'DSH_MODEL_CATALOG=%s models default=%s\n' "$MODEL_COUNT" "$DEFAULT_MODEL" >> "$GITHUB_STEP_SUMMARY"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "model_count=$MODEL_COUNT" >> "$GITHUB_OUTPUT"
+          echo "default_model=$DEFAULT_MODEL" >> "$GITHUB_OUTPUT"
+      - name: Publish operational milestone
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DSH_URL: ${{ steps.deploy.outputs.url }}
+          DSH_SOURCE_SHA: ${{ steps.deploy.outputs.source_sha }}
+          DSH_MODEL_COUNT: ${{ steps.deploy.outputs.model_count }}
+          DSH_DEFAULT_MODEL: ${{ steps.deploy.outputs.default_model }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/dsh-success.md"
+          {
+            echo "DSH Web cloud surface deployed and health-verified."
+            echo
+            echo "- Surface: \`$DSH_URL\`"
+            echo "- Contract: \`estate.dsh-web\` v1.0.0"
+            echo "- Release: \`dsh-web-2026.11.08.2\`"
+            echo "- DSH: \`0.2.1-rc.5+estate.2\`"
+            echo "- Source: \`$DSH_SOURCE_SHA\`"
+            echo "- Router: \`estate.model-router\`"
+            echo "- Founder catalogue: \`$DSH_MODEL_COUNT\` models; default \`$DSH_DEFAULT_MODEL\`"
+            echo "- Workflow: $RUN_URL"
+            echo
+            echo "The launch credential is intentionally not published here."
+          } >"$body"
+          gh issue comment 7797 --body-file "$body"
       - name: Publish deployment failure
         if: failure()
         env:
