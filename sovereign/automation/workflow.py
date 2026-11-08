@@ -12,7 +12,8 @@ from typing import Any
 from temporalio import workflow
 from temporalio.common import RetryPolicy
 
-from sovereign.automation.contracts import verify_plan
+with workflow.unsafe.imports_passed_through():
+    from sovereign.automation.contracts import verify_plan
 
 
 @workflow.defn(name="EstateAutomationWorkflowV1")
