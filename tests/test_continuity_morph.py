@@ -30,7 +30,7 @@ def life(remaining=600.0, burn=1.0, *, name="context", observed=100.0,
 
 class MorphRiskTests(unittest.TestCase):
     def setUp(self):
-        self.budget = m.MorphBudget(5, 10, 4, 6, 120, 300)
+        self.budget = m.MorphBudget(5, 10, 4, 6, 120, 300, frozenset({"context"}))
 
     def evaluate(self, signals, checkpoint=10, **kwargs):
         return m.assess_morph_risk(
@@ -85,6 +85,35 @@ class MorphRiskTests(unittest.TestCase):
         self.assertEqual(value.state, "UNKNOWN")
         self.assertEqual(value.action, "CHECKPOINT_AND_PROBE")
         self.assertIn("NO_RESOURCE_TELEMETRY", value.reason_codes)
+
+
+    def test_undeclared_resource_scope_cannot_be_green(self):
+        value = m.assess_morph_risk(
+            [life()], now=100, budget=m.MorphBudget(5, 10, 4, 6),
+            checkpoint_age_seconds=10,
+        )
+        self.assertEqual(value.state, "UNKNOWN")
+        self.assertIn("UNDECLARED_RESOURCE_COVERAGE", value.reason_codes)
+
+    def test_missing_required_resource_cannot_be_green(self):
+        value = m.assess_morph_risk(
+            [life()], now=100,
+            budget=m.MorphBudget(5, 10, 4, 6,
+                                 required_resources=frozenset({"context", "storage"})),
+            checkpoint_age_seconds=10,
+        )
+        self.assertEqual(value.state, "UNKNOWN")
+        self.assertIn("storage", value.unknown_resources)
+
+    def test_missing_resource_cannot_downgrade_critical_risk(self):
+        value = m.assess_morph_risk(
+            [life(2)], now=100,
+            budget=m.MorphBudget(5, 10, 4, 6,
+                                 required_resources=frozenset({"context", "storage"})),
+            checkpoint_age_seconds=10,
+        )
+        self.assertEqual(value.state, "CRITICAL")
+        self.assertIn("storage", value.unknown_resources)
 
     def test_stale_signal_is_not_treated_as_healthy(self):
         value = self.evaluate([life(observed=-50)])
@@ -172,7 +201,7 @@ class MorphCustodyTests(unittest.TestCase):
         )
         self.req = m.Requirement(frozenset({"python"}), 1, 100, "provider-a")
         self.verdict = m.assess_morph_risk(
-            [life(15)], now=100, budget=m.MorphBudget(5, 10, 4, 6),
+            [life(15)], now=100, budget=m.MorphBudget(5, 10, 4, 6, required_resources=frozenset({"context"})),
             checkpoint_age_seconds=1
         )
 
@@ -240,7 +269,7 @@ class MorphCustodyTests(unittest.TestCase):
 
     def test_morph_not_triggered_by_good_runway(self):
         healthy = m.assess_morph_risk(
-            [life()], now=100, budget=m.MorphBudget(5, 10, 4, 6),
+            [life()], now=100, budget=m.MorphBudget(5, 10, 4, 6, required_resources=frozenset({"context"})),
             checkpoint_age_seconds=1,
         )
         result = m.prepare_preemptive_morph(
