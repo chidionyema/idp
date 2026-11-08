@@ -7517,7 +7517,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:layer/platform-estate-governance-state_page"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -7988,6 +7990,10 @@
         "cost_class": "cheap",
         "latency_class": "interactive",
         "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-governance-law_packet",
+            "edge": "imports"
+          },
           {
             "id": "cap:layer/platform-estate-governance-ledger",
             "edge": "imports"
@@ -57528,7 +57534,9 @@
       "summary": "law-packet-preflight -- the GitHub Actions workflow law-packet-preflight.yml.",
       "contract": {
         "inputs": [
-          "push"
+          "push",
+          "schedule",
+          "workflow_dispatch"
         ],
         "outputs": [
           "job verdicts",
