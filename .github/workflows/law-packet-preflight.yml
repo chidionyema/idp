@@ -12,6 +12,7 @@ on:
       - "bin/estate-law-gate"
       - "platform/estate/governance/**"
       - "tests/estate/test_law_packet.py"
+      - "docs/training/2026-10-30-founder-judgement.md"
       - ".github/workflows/law-packet-preflight.yml"
 permissions:
   contents: read
