@@ -1,6 +1,7 @@
 """Genesis MORPH execution adapter for the existing #7790 broker and Temporal runner.
 
 No new scheduler, admission authority, credential store, event bus or control plane.
+The broker must construct this adapter with independent trusted dependencies.
 The only mutation here is a *broker-mediated* custody transition following real
 checkpoint readback and a separately authorized, signed handover.
 
