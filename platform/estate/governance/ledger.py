@@ -120,6 +120,45 @@ def count_in_session(cls: str, session: str) -> int:
     return len(violations(session=session, cls=cls))
 
 
+def clear_violations(
+    session: str, cls: Optional[str] = None, provider: Optional[str] = None
+) -> int:
+    """Remove the strikes this session has accumulated, optionally for one class only.
+
+    The graduated ladder's reset leg: a receipt that proves the hole is plugged clears the
+    prior strike instead of leaving the session one report away from death forever. Returns
+    the number of records removed, so the caller can say whether anything changed.
+
+    The clear is scoped to `session` (never `session=None`), because clearing every session's
+    record would erase the estate's evidence of what broke across agents.
+    """
+    rows = read_jsonl(violations_path())
+    kept: List[Dict[str, Any]] = []
+    removed = 0
+    for row in rows:
+        keep = True
+        if session is not None and row.get("session") != session:
+            keep = True
+        elif session is not None and row.get("session") == session:
+            keep = cls is not None and row.get("class") != cls
+        if cls is not None and row.get("class") != cls:
+            keep = True
+        if provider is not None and row.get("provider") != provider:
+            keep = True
+        if not keep:
+            removed += 1
+        else:
+            kept.append(row)
+    path = violations_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        for row in kept:
+            f.write(json.dumps(row, sort_keys=True) + "\n")
+    os.replace(tmp, path)
+    return removed
+
+
 def provider_counts() -> Dict[str, int]:
     counts: Dict[str, int] = {}
     for row in violations():

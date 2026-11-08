@@ -57,6 +57,29 @@ def class_proof(cls: str) -> str:
     return CLASS_PROOFS.get(cls, "bin/estate-law-gate")
 
 
+# The graduated ladder (founder, 2026-11-08): report-only mistakes get a countdown and two
+# corrections before lockdown, instead of the hard warn->terminate that killed a session for
+# one unconfirmed sentence. Mutation and security classes keep the short fail-closed ladder.
+# A receipt that proves the hole plugged clears the strike (see ledger.clear_violations), so a
+# corrected turn resets the count instead of leaving the session one report away from death.
+REPORT_CLASSES = {"unsupported-report", "founder-repeat"}
+# The number of warnings before removal. Report-only classes get two warnings (then removal
+# on the third strike); mutation/security classes get one warning (then removal on the
+# second), exactly the founder's original ladder.
+REPORT_WARNINGS = 2
+MUTATION_WARNINGS = 1
+
+
+def correction_limit(cls: str) -> int:
+    """The number of warnings this class grants before removal.
+
+    Report-only classes keep the founder's hard fence's teeth (removal is still the answer to
+    a repeating pattern) but grant two corrections so a single prose sentence doesn't burn
+    the whole session. Mutation/security classes stay at one warning: no second chance.
+    """
+    return REPORT_WARNINGS if cls in REPORT_CLASSES else MUTATION_WARNINGS
+
+
 def plug_the_hole_instruction(cls: str, detail: str, session: str) -> str:
     """The first message of the relaunched session. One hole, one proof, no narrative."""
     proof = class_proof(cls)
@@ -192,20 +215,39 @@ def grade(
     record = ledger.record_violation(
         cls, session, provider=provider, detail=detail, source=source
     )
-    decision = "warn" if prior == 0 else "terminate"
+    limit = correction_limit(cls)
+    prior_total = prior + 1  # this strike is the prior_total-th
+    remaining = limit - prior
+    if prior < limit:
+        decision = "warn"
+    else:
+        decision = "terminate"
     out: Dict[str, Any] = {
         "decision": decision,
         "class": cls,
         "prior": prior,
         "record": record,
         "proof": class_proof(cls),
+        "correction_limit": limit,
+        "strikes": prior_total,
+        "remaining": max(remaining, 0),
     }
     if decision == "warn":
-        out["message"] = (
-            f"LAW VIOLATION [{cls}]: {detail or 'no detail'}. This is warning 1 of 1 for "
-            "this class in this session. Repeat it and this session is terminated and "
-            f"relaunched under lockdown. The proof that lifts the lock is: {out['proof']}"
-        )
+        if limit > 1:
+            out["message"] = (
+                f"LAW VIOLATION [{cls}]: {detail or 'no detail'}. "
+                f"Correction {prior_total} of {limit + 1}; {remaining} left before lockdown. "
+                "Prove the hole is plugged ("
+                f"{out['proof']}) and the strike clears. The countdown is "
+                f"{remaining}."
+            )
+        else:
+            out["message"] = (
+                f"LAW VIOLATION [{cls}]: {detail or 'no detail'}. This is warning 1 of 1 "
+                "for this class in this session. Repeat it and this session is terminated "
+                f"and relaunched under lockdown. The proof that lifts the lock is: "
+                f"{out['proof']}"
+            )
         return out
 
     instruction = plug_the_hole_instruction(cls, detail, session)

@@ -4,12 +4,19 @@
     estate-supervisor --class write-without-claim --session <sid> [--provider minimax]
                        [--detail "..."] [--pid 1234] [--cwd /path] [--model x]
 
-What it does, in the founder's order (2026-10-29):
+What it does, in the founder's order (2026-10-29, graduated 2026-11-08):
 
-    first violation of a class   warn, and the class is written down
-    second violation of a class  terminate the session, lock it (no write, no shell, no
-                                 push), and relaunch it with the instruction to plug the hole
-                                 first and prove it
+    first violation of a report class    warn, with a countdown (one correction left)
+    second violation of a report class   warn again, last correction
+    next violation                       terminate the session, lock it (no write, no shell,
+                                         no push), and relaunch it with the instruction to
+                                         plug the hole first and prove it
+
+    --clear --session S                  reset the countdown after a green receipt
+    --unlock --session S --proof "CMD"  run CMD; if it exits 0, lift the lockdown and clear
+
+Mutation and security classes keep the short ladder: one warning, then removal.
+Path is clear: every runtime (pi, Claude, Codex) calls this same binary.
 
 Exit 0 on a warning, 3 when the session was terminated and locked, 1 on a bad call.
 HARNESS AGNOSTIC: it kills a pid and relaunches `pi --print`; the same call works for any
@@ -59,7 +66,61 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--source", default="")
     ap.add_argument("--no-relaunch", action="store_true")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument(
+        "--clear",
+        action="store_true",
+        help="clear this session's strikes (green receipt resets the countdown)",
+    )
+    ap.add_argument(
+        "--unlock",
+        action="store_true",
+        help="run the proof and, if it exits 0, lift the lockdown",
+    )
+    ap.add_argument(
+        "--proof",
+        default="",
+        help="the proof command to run with --unlock",
+    )
     args = ap.parse_args(argv[1:])
+
+    if args.clear:
+        removed = ledger.clear_violations(args.session)
+        print(
+            json.dumps({"session": args.session, "cleared": removed, "ok": True})
+            if args.json
+            else f"cleared {removed} violation record(s) for session {args.session}"
+        )
+        return 0
+
+    if args.unlock:
+        proof = args.proof or ledger.get_session_state(args.session).get("proof", "")
+        if not proof:
+            print(
+                "estate-supervisor: --unlock needs --proof <command> (none recorded)",
+                file=sys.stderr,
+            )
+            return 1
+        import subprocess as _sp
+
+        run = _sp.run(  # noqa: S603 - the proof is data, subprocess.run is correct here
+            proof, shell=True, capture_output=True, text=True
+        )
+        out = {
+            "session": args.session,
+            "unlocked": run.returncode == 0,
+            "proof": proof,
+            "exit": run.returncode,
+        }
+        tail = (run.stdout or run.stderr or "").strip().splitlines()
+        if tail:
+            out["line"] = tail[-1]
+        if run.returncode == 0:
+            ledger.unlock_session(
+                args.session, proof_result=f"exit 0"
+            )
+            ledger.clear_violations(args.session)
+        print(json.dumps(out, indent=2, default=str))
+        return 0 if run.returncode == 0 else 3
 
     if args.status:
         state = ledger.get_session_state(args.session)

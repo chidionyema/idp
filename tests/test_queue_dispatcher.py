@@ -362,3 +362,27 @@ def _work_archived(ctx, tmp_path):
     assert "changed" in (archive / "work.patch").read_text()
     with tarfile.open(archive / "untracked.tgz") as tar:
         assert "NOTES.md" in tar.getnames()
+
+
+# ---------------------------------------------------------------------------
+# the creation-time budget (idp#7801)
+# ---------------------------------------------------------------------------
+
+
+def test_a_birth_under_the_floor_is_refused_and_not_left_running(
+    queue, tmp_path, repo, monkeypatch
+):
+    """Free space under the floor refuses the claim: no worktree, no running task."""
+    monkeypatch.setenv("WORKTREE_MIN_FREE_MB", "10")
+    monkeypatch.setattr(dispatcher, "_free_mb", lambda path: 5)  # 5M < 10M floor
+
+    queue.push_task("prove the thing")
+    task = queue.claim_task("agent-a")
+
+    assert task is None
+    # The task must have been left pending, not 'running' with no workspace.
+    row = queue.get_task_list()[0]
+    assert row[2] == "pending"
+    assert row[3] is None
+    assert not (tmp_path / "wt").exists()
+

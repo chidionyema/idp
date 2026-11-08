@@ -34,6 +34,7 @@ import sqlite3
 import subprocess
 import tarfile
 from datetime import datetime, timezone
+from typing import Optional
 
 DEFAULT_DB_PATH = "state/queue.db"
 DEFAULT_WORKTREE_BASE = ".wt-agents"
@@ -57,6 +58,20 @@ REBUILDABLE = re.compile(
 def db_path() -> str:
     """Where the queue lives. Read at call time: an operator moves it with an env var."""
     return os.environ.get("QUEUE_DB_PATH", DEFAULT_DB_PATH)
+
+
+def _free_mb(path: str) -> Optional[int]:
+    """Free space in MB on the volume holding `path`. None when it cannot be read.
+
+    Read from the kernel (shutil.disk_usage), never a self-report — the same measurement
+    the manager and the disk-watch guardian use. BLIND (None) is not zero and does not
+    refuse a birth: a measurement that cannot be read must not block legitimate work.
+    """
+    try:
+        return int(shutil.disk_usage(path).free // (1024 * 1024))
+    except OSError:
+        return None
+
 
 
 def worktree_base() -> str:
@@ -169,6 +184,19 @@ def claim_task(agent_id: str):
 
         task_id, goal = row
         worktree = os.path.join(worktree_base(), f"task-{task_id}")
+        # THE CREATION-TIME BUDGET (idp#7801). Refuse the birth before it consumes
+        # disk, when free space is under the floor. The worktree tier is the LAST thing
+        # the cleaner reaches and the births are what feed the ~3.5GB regrowth, so the
+        # only point that closes the loop is here: no worktree, no makedirs, no task
+        # left 'running' with nothing to work in.
+        free = _free_mb(worktree_base())
+        floor = int(os.environ.get("WORKTREE_MIN_FREE_MB", "1500"))
+        if free is not None and free < floor:
+            print(
+                f"[QUEUE] Task {task_id} refused: {free}M free, under the "
+                f"{floor}M creation floor"
+            )
+            return None
         os.makedirs(os.path.dirname(os.path.abspath(worktree)), exist_ok=True)
         # The stamp is the claim's heartbeat: sweep_zombies re-queues any running task
         # whose stamp is older than an hour, so a claim without a stamp is a task that
