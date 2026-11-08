@@ -64,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m py_compile code/dsh_cloud.py
-          if ! modal deploy code/dsh_cloud.py >"$RUNNER_TEMP/modal-deploy.log" 2>&1; then
+          if ! modal deploy --force code/dsh_cloud.py >"$RUNNER_TEMP/modal-deploy.log" 2>&1; then
             tail -60 "$RUNNER_TEMP/modal-deploy.log"
             detail=$(tail -1 "$RUNNER_TEMP/modal-deploy.log" | sed -E 's/[A-Za-z0-9_+\/=-]{40,}/<redacted>/g')
             echo "::error title=DSH Modal deploy::${detail}"
@@ -73,17 +73,33 @@ jobs:
           tail -20 "$RUNNER_TEMP/modal-deploy.log"
           URL=$(python -c 'import modal; print(modal.Function.from_name("estate-dsh-web","web").get_web_url() or "")')
           case "$URL" in https://*) ;; *) echo "FAIL Modal returned no HTTPS URL"; exit 1;; esac
-          python - "$URL" <<'PY'
-          import json, sys, urllib.request
+          if ! python - "$URL" <<'PY' >"$RUNNER_TEMP/dsh-health.log" 2>&1
+          import json, sys, time, urllib.request
           url = sys.argv[1].rstrip("/") + "/healthz"
-          req = urllib.request.Request(url, headers={"User-Agent": "estate-dsh-deploy/1.0"})
-          with urllib.request.urlopen(req, timeout=30) as response:
-              body = json.load(response)
-          if response.status != 200 or body.get("service") != "estate-dsh-web":
-              raise SystemExit(f"FAIL health contract: HTTP {response.status} {body}")
-          print(f"ok      dsh-web-cloud  {url} HTTP 200")
-          print(f"DSH_WEB_URL={sys.argv[1]}")
+          last = None
+          for attempt in range(24):
+              try:
+                  req = urllib.request.Request(
+                      url, headers={"User-Agent": "estate-dsh-deploy/1.0"}
+                  )
+                  with urllib.request.urlopen(req, timeout=15) as response:
+                      body = json.load(response)
+                  if response.status == 200 and body.get("service") == "estate-dsh-web":
+                      print(f"ok      dsh-web-cloud  {url} HTTP 200 after {attempt + 1} probe(s)")
+                      raise SystemExit(0)
+                  last = f"HTTP {response.status} {body}"
+              except Exception as exc:
+                  last = f"{type(exc).__name__}: {exc}"
+              time.sleep(10)
+          raise SystemExit(f"FAIL health contract after 240s: {last}")
           PY
+          then
+            cat "$RUNNER_TEMP/dsh-health.log"
+            echo "::error title=DSH health::$(tail -1 "$RUNNER_TEMP/dsh-health.log")"
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/dsh-health.log"
+          printf 'DSH_WEB_URL=%s\n' "$URL" >> "$GITHUB_STEP_SUMMARY"
           echo "DSH_MODEL_ROUTE=$MODEL_ROUTE" >> "$GITHUB_STEP_SUMMARY"
       - name: Publish deployment failure
         if: failure()
@@ -107,6 +123,16 @@ jobs:
             else
               echo "The failure happened before modal-deploy.log was created."
             fi
+            if [ -f "$RUNNER_TEMP/dsh-health.log" ]; then
+              echo
+              echo "Health probe:"
+              tail -80 "$RUNNER_TEMP/dsh-health.log" |
+                sed -E 's/[A-Za-z0-9_+\/=.-]{40,}/<redacted>/g'
+            fi
+            echo
+            echo "Modal application log:"
+            modal app logs estate-dsh-web --tail 200 2>&1 |
+              sed -E 's/[A-Za-z0-9_+\/=.-]{40,}/<redacted>/g' || true
             echo '```'
           } >"$body"
           existing=$(gh issue list --state open --search "$title in:title" \
