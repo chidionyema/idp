@@ -40,7 +40,7 @@ def _request(url: str, *, method: str = "GET", body: dict[str, Any] | None = Non
     data = None if body is None else json.dumps(body, sort_keys=True).encode()
     if data is not None:
         headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)  # noqa: S310 -- both allowed origins are pinned to HTTPS above
 
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, req, fp, code, msg, headers, newurl):
