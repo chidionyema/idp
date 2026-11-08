@@ -297,16 +297,21 @@ class MorphIntegrationTests(unittest.TestCase):
 
 
 
-class ContinuousOnboardingTests(MorphIntegrationTests):
+class ContinuousOnboardingTests(unittest.TestCase):
     """The existing #7794 admission door consumes these facts, never a permit."""
 
     def setUp(self):
-        super().setUp()
+        # Reuse the real SQLite fixture setup, not its tests: its own test
+        # actions assume an uncheckpointed lease and would otherwise replay.
+        MorphIntegrationTests.setUp(self)
         ref = self.store.write("mission", checkpoint())
         self.leases.heartbeat(
             "mission", self.old, self.epoch, 109, 90, 1,
             ref.sha256, ref.uri,
         )
+
+    def tearDown(self):
+        MorphIntegrationTests.tearDown(self)
 
     def inspect(self, **kwargs):
         args = dict(
