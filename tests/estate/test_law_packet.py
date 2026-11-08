@@ -151,7 +151,6 @@ def test_real_repository_fixes_the_superseded_directives():
     assert packet["laws"], "No active GOV enforcement inventory"
 
 
-
 def test_founder_judgements_are_training_records_not_laws(tmp_path):
     packet = compile_packet(tree(tmp_path))
     cases = packet["founder_judgement_training"]
@@ -182,10 +181,12 @@ def test_missing_founder_training_is_visible_not_implicitly_healthy(tmp_path):
 def test_incomplete_judgement_refuses_static_readiness(tmp_path):
     root = tree(tmp_path)
     src = root / "docs/training/2026-10-30-founder-judgement.md"
-    src.write_text(src.read_text().replace(
-        "**Enforcement.** Rerun independent effect verification 2.",
-        "Enforcement missing for J2"
-    ))
+    src.write_text(
+        src.read_text().replace(
+            "**Enforcement.** Rerun independent effect verification 2.",
+            "Enforcement missing for J2",
+        )
+    )
     packet = compile_packet(root)
     assert packet["status"] == "CONFLICTED"
     assert "INCOMPLETE_FOUNDER_JUDGEMENT" in {
@@ -196,9 +197,11 @@ def test_incomplete_judgement_refuses_static_readiness(tmp_path):
 def test_duplicate_judgements_do_not_silently_override(tmp_path):
     root = tree(tmp_path)
     src = root / "docs/training/2026-10-30-founder-judgement.md"
-    src.write_text(src.read_text() + "\n## J1 -- rewritten\n"
-                   "**Rule.** New rule.\n**Trigger.** Always.\n"
-                   "**Enforcement.** Assume green.\n")
+    src.write_text(
+        src.read_text() + "\n## J1 -- rewritten\n"
+        "**Rule.** New rule.\n**Trigger.** Always.\n"
+        "**Enforcement.** Assume green.\n"
+    )
     assert "DUPLICATE_FOUNDER_JUDGEMENT" in {
         problem["code"] for problem in compile_packet(root)["problems"]
     }
@@ -207,10 +210,12 @@ def test_duplicate_judgements_do_not_silently_override(tmp_path):
 def test_new_unexercised_judgement_never_auto_certifies(tmp_path):
     root = tree(tmp_path)
     src = root / "docs/training/2026-10-30-founder-judgement.md"
-    src.write_text(src.read_text() + "\n## J9 -- proposal\n"
-                   "**Rule.** A possible improvement.\n"
-                   "**Trigger.** Unknown conditions.\n"
-                   "**Enforcement.** A later test.\n")
+    src.write_text(
+        src.read_text() + "\n## J9 -- proposal\n"
+        "**Rule.** A possible improvement.\n"
+        "**Trigger.** Unknown conditions.\n"
+        "**Enforcement.** A later test.\n"
+    )
     packet = compile_packet(root)
     assert "UNEXERCISED_FOUNDER_JUDGEMENT" in {
         problem["code"] for problem in packet["problems"]
@@ -224,7 +229,9 @@ def test_real_founder_judgements_are_present_and_source_bound():
     assert [r["id"] for r in packet["founder_judgement_training"]] == [
         f"J{i}" for i in range(1, 9)
     ]
-    assert packet["status"] == "SOURCE_CONSISTENT_UNVERIFIED_RUNTIME", packet["problems"]
+    assert packet["status"] == "SOURCE_CONSISTENT_UNVERIFIED_RUNTIME", packet[
+        "problems"
+    ]
 
 
 def test_malformed_toml_is_not_safe(tmp_path):
