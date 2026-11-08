@@ -104,6 +104,13 @@ jobs:
           CUTOVER: ${{ inputs.cutover }}
         run: |
           set -euo pipefail
+          # The old cutover=true path changed production DNS before any authenticated
+          # caller proof. Fail BEFORE any Cloudflare/OCI mutation until a reviewed
+          # reversible production cutover door with independent proof is deployed.
+          if [ "$CUTOVER" = true ]; then
+            echo "REFUSED production cutover: authenticated proof + rollback door not yet available"
+            exit 70
+          fi
           [ -n "$ROOT" ] && [ -n "$ACCOUNT" ] || { echo "BLIND   cloudflare  SEED_CLOUDFLARE_ROOT_TOKEN / SEED_R2_ACCOUNT_ID missing"; exit 2; }
           groups=$(curl -sS -H "Authorization: Bearer $ROOT" "$API/user/tokens/permission_groups")
           gid() { jq -r --arg n "$1" --arg s "$2" '.result[] | select(.name==$n and (.scopes|index($s))) | .id' <<<"$groups" | head -1; }
@@ -122,9 +129,22 @@ jobs:
             id=$(cf -X POST "$API/accounts/$ACCOUNT/cfd_tunnel" -d "{\"name\":\"$TUNNEL\",\"config_src\":\"cloudflare\"}" | jq -r .result.id)
             echo "ok      tunnel  created $TUNNEL"
           fi
-          hosts='["llm-recovery.mumchimp.com"]'; [ "$CUTOVER" = true ] && hosts='["llm-recovery.mumchimp.com","llm.mumchimp.com"]'
-          ingress=$(jq -nc --argjson h "$hosts" '{config:{ingress:([$h[] | {hostname:., service:"http://127.0.0.1:4000"}] + [{service:"http_status:404"}])}}')
+          hosts='["llm-recovery.mumchimp.com"]'
+          # This is a SHARED tunnel. Read the actual config and preserve production
+          # and every other existing route, including non-ingress settings.
+          current=$(cf "$API/accounts/$ACCOUNT/cfd_tunnel/$id/configurations")
+          ingress=$(python3 platform/oci/recovery/plan_tunnel_ingress.py <<<"$current") || exit 70
+          old_prod=$(jq -ce '[.result.config.ingress[] | select(.hostname == "llm.mumchimp.com")]' <<<"$current")
           cf -X PUT "$API/accounts/$ACCOUNT/cfd_tunnel/$id/configurations" -d "$ingress" | jq -e .success >/dev/null
+          updated=$(cf "$API/accounts/$ACCOUNT/cfd_tunnel/$id/configurations")
+          new_prod=$(jq -ce '[.result.config.ingress[] | select(.hostname == "llm.mumchimp.com")]' <<<"$updated") || new_prod=BLIND
+          if [ "$old_prod" != "$new_prod" ]; then
+            echo "FAIL tunnel production ingress changed; attempting rollback"
+            previous=$(jq -c '{config:.result.config}' <<<"$current")
+            cf -X PUT "$API/accounts/$ACCOUNT/cfd_tunnel/$id/configurations" -d "$previous" | jq -e .success >/dev/null || echo "::error::rollback failed: manual incident remains OPEN"
+            exit 70
+          fi
+          echo "ok      tunnel  candidate-only ingress, production preserved; plan-sha256=$(printf '%s' "$ingress" | sha256sum | cut -d' ' -f1)"
           zone=$(cf "$API/zones?name=$ZONE" | jq -r '.result[0].id')
           for h in $(jq -r '.[]' <<<"$hosts"); do
             rec=$(cf "$API/zones/$zone/dns_records?name=$h" | jq -r '.result[0].id // empty')
@@ -173,9 +193,44 @@ jobs:
 
       - name: The candidate answers
         run: |
+          set -euo pipefail
+          c=000
           for i in $(seq 1 20); do
             c=$(curl -s -m 10 -o /dev/null -w '%{http_code}' https://llm-recovery.mumchimp.com/health/liveliness || true)
             [ "$c" = 200 ] && { echo "ok      llm-recovery.mumchimp.com/health/liveliness 200"; exit 0; }
             sleep 15
           done
-          echo "WAIT    llm-recovery.mumchimp.com not answering yet ($c): the host may still be booting; re-run later"
+          echo "::error::FAIL candidate HTTP $c after 20 bounded observations (530/000 are NOT success)"
+          exit 1
+
+      - name: Candidate authenticates a real free-tier inference and rejects a wrong key twice
+        env:
+          OCI_CI: "1"
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+        run: |
+          set -euo pipefail
+          caller=$(bin/idp-cloud secret get laptop | jq -er .key)
+          [ -n "$caller" ] || { echo "::error::BLIND caller key absent"; exit 70; }
+          echo "::add-mask::$caller"
+          payload='{"model":"gemini","messages":[{"role":"user","content":"Reply with one word: ready"}],"max_tokens":8}'
+          for n in 1 2; do
+            good=$(curl -sS --max-time 40 -o "$RUNNER_TEMP/candidate-good.json" -w '%{http_code}' \
+              -H "Authorization: Bearer $caller" -H 'Content-Type: application/json' \
+              -d "$payload" https://llm-recovery.mumchimp.com/v1/chat/completions) || good=000
+            [ "$good" = 200 ] && jq -e '.choices[0].message.content | type == "string" and length > 0' "$RUNNER_TEMP/candidate-good.json" >/dev/null || {
+              echo "::error::FAIL authenticated candidate inference observation $n: HTTP $good"
+              exit 1
+            }
+            bad=$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' \
+              -H 'Authorization: Bearer deliberately-invalid-estate-caller' -H 'Content-Type: application/json' \
+              -d "$payload" https://llm-recovery.mumchimp.com/v1/chat/completions) || bad=000
+            { [ "$bad" = 401 ] || [ "$bad" = 403 ]; } || {
+              echo "::error::FAIL wrong-key refusal observation $n: HTTP $bad"
+              exit 1
+            }
+            echo "ok candidate authenticated real completion and wrong-key refusal observation=$n source=$GITHUB_SHA"
+            [ "$n" -eq 2 ] || sleep 30
+          done
+          echo "ok candidate bundle-sha256=$(sha256sum "$RUNNER_TEMP/bundle.tgz" | cut -d' ' -f1)"
