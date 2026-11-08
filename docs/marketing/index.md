@@ -1,14 +1,12 @@
-# The catalogue — what we sell
+# The catalogue — capabilities, historic offers, and evidence-based product readiness
 
-This is the buyer's index to every product, feature and bundle the estate ships.
-Every page below follows the same shape: the problem first, what you get, how it
-works, why us, pricing, and how to start.
+This index began as a September 2026 commercial inventory. **The historic product tiers below are plans, not independently verified current availability or a permission to sell.** Several rows described services on the now-retired OKE cluster. Verify every live endpoint, source version, security/recovery guarantee and customer entitlement before any external offer. **The current commercialization decision and proof gates are in the Genesis Assurance roadmap below.** Historical rows remain for product discovery and science, not operating truth.
 
 The full register of everything built, product or not, with who it is useful for: [capabilities.md](./capabilities.md).
 
 ## Products
 
-| Product | What it is | Tier |
+| Historic product concept | Intended value proposition | September plan (not release status) |
 |---|---|---|
 | [The Platform](./products/platform.md) | The whole IDP, sold as a managed deployment | Strategic |
 | [FleetView](./products/fleetview.md) | One live board for every AI agent you run, with stop/approve/steer from the page | 2 weeks |
@@ -70,19 +68,12 @@ For every product feature or process improvement: **before** acting record the m
 
 **Commercial roadmap status: SOURCE PROPOSAL / UNVERIFIED**. This section records intent and acceptance criteria only. The actual code, independent tests, production health, customer demand and funding are not established by this document.
 
-## How to start
+## Historical sales-entry plan — not yet independently certified
 
-Every product above has three ways in:
+The previous catalogue proposed the following three entry routes. **None should be advertised as currently functional solely because it appears in this document.** Each requires independent live proof after the estate's infrastructure loss:
 
-1. **Run the install wedge** — a single image, `idp/quickstart`, that runs the
-   platform on a fresh k3d cluster in 30 minutes. The drill is the demo; the
-   screenshot is the case study.
-2. **Read the showcase** — `/showcase` on the install wedge renders the live
-   estate bar, the per-system health donuts, and the buyer sandbox launch
-   button. The showcase is the page a buyer's engineer opens first.
-3. **Call us** — for the platform itself, for the bundles, and for any product
-   that needs a tenant, a SOC 2 conversation, or a procurement-grade security
-   one-pager.
+1. **Evaluate the install wedge** — the former `idp/quickstart` / k3d plan claimed a 30-minute install. Treat it as an unverified historical demo, not a production deployment strategy, until a clean independent test passes. No founder-laptop dependency and no OKE.
+2. **Review a live independently verified showcase** — any `/showcase` must display a current remotely verifiable deployment, authenticated acceptance results and observation freshness. Historic seeded screenshots or unproven health donuts do not qualify.
+3. **Arrange a design-partner discussion** — only offer capabilities whose current operational maturity and risks are disclosed; do not claim SOC 2 certification, production SLAs or a tenant-isolated commercial service without independent supporting evidence.
 
-The drill runs hourly. The receipts land in the collector. The case study is
-the dogfood chain: we ship every product here because we use every product here.
+The historic plan called for hourly drills and collector receipts. Their current operation is **unverified**. The accepted product claim is instead a fresh end-to-end deployed run, independently observed receipt, replayable benchmark and second-tenant verification. No proof, no commercial-ready label.
