@@ -5,6 +5,12 @@ description: >
   main, raises the pull request itself and lands it in the same move; a red or conflicting lane
   keeps its branch and carries the reason on its head commit's `greenlane` status.
 
+  PROOF-OF-HANDOVER (2026-11-08): the intent returns 0 only after a remote ref actually equals
+  the checked-out SHA. A detached HEAD does not require a local branch; if no lane is supplied,
+  it derives the stable remote name lane/estate-agent-<short-sha>. IN-FLIGHT and
+  SENT-UNVERIFIED are nonzero observations, never "submitted". A git push exit 0 with no
+  verified ref is not delivery. A later session must use lane-where, not rerun a guessed push.
+
   Bounded on purpose (2026-10-12). This intent used to end in a step that blocked up to 1900s for
   that status. No door an agent invokes it through can run such a step -- the harness door kills
   a job at 60s and the MCP door defaults to 55s (mcp/plugins/estate_mcp.py) -- so it declared
@@ -97,7 +103,18 @@ steps:
     timeout: 50
     cmd: |
       cd {{cwd}} || exit 2
-      b=$(git rev-parse --abbrev-ref HEAD); lane={{lane}}; [ -n "$lane" ] || lane="$b"
+      # Detached HEAD is a valid Git checkout, not a reason to invent a local branch.
+      # A detached job with no explicit lane gets a stable SHA-derived remote lane.
+      # This is idempotent across retries, and HEAD itself is never a branch name.
+      b=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+      lane={{lane}}
+      if [ -z "$lane" ]; then
+        if [ -n "$b" ]; then
+          lane="$b"
+        else
+          lane="estate-agent-$(git rev-parse --short=12 HEAD)"
+        fi
+      fi
       # 2026-10-11: a lane branch is already named lane/NAME, so the old `${lane:-lane/$b}`
       # pushed lane/lane/NAME whenever --lane was omitted. Measured on this very change:
       # branch lane/front-door-identity-row pushed as lane/lane/front-door-identity-row, which
@@ -105,7 +122,15 @@ steps:
       # prefix is missing (#5756). The fix belongs here, in the file estate-runtime-sync reads:
       # patching ~/.estate/intents/lane-submit.yaml alone is reverted by the next sync.
       case "$lane" in lane/*) ;; *) lane="lane/$lane" ;; esac
-      sha=$(git rev-parse HEAD)
+      case "$lane" in
+        lane/HEAD|lane/refs/*|lane/lane/*)
+          echo "REFUSED lane-submit: invalid/ambiguous lane '$lane'; supply one concrete lane name" >&2
+          exit 2 ;;
+      esac
+      git check-ref-format "refs/heads/$lane" >/dev/null || {
+        echo "REFUSED lane-submit: invalid git ref '$lane'" >&2; exit 2;
+      }
+      sha=$(git rev-parse --verify HEAD) || exit 2
       pushlog=$(mktemp -t lane-submit-push.XXXXXX)
       # THE PUSH MUST OUTLIVE THIS STEP (2026-10-27). Measured twice today: the step was
       # SIGTERMed at its 50s ceiling while the push was still running, and the push DIED WITH IT
@@ -175,8 +200,12 @@ steps:
         # step's point of view and fails a minute later, and the agent that has to read the log
         # by hand should not have to guess which file it is.
         echo "        push log: $pushlog" >&2
+        # The push is detached but NOT YET HANDED OVER. Exit nonzero so no agent/tool can
+        # translate a queued background process into a verified delivery receipt.
+        # The same lane name can be checked later through the existing lane-where door.
+        echo "        NOT SUBMITTED: expected $sha on refs/heads/$lane; check bin/lane-where --json $lane" >&2
         verdict
-        exit 0
+        exit 3
       fi
       wait "$push_pid" 2>/dev/null; rc=$?
       out=$(cat "$pushlog")
@@ -198,9 +227,10 @@ steps:
       if [ "$rc" -eq 0 ]; then
         # git says it sent it; origin's ref does not say so yet. Neither "landed" nor "failed" is a
         # fact here, so say the fact.
-        echo "SENT    lane-submit  $lane: push exited 0, origin has not shown the ref after $((polls + i)) observations" >&2
+        echo "SENT-UNVERIFIED lane-submit $lane: push exited 0, origin has not shown the expected $sha after $((polls + i)) observations" >&2
+        echo "        NOT SUBMITTED: verify with bin/lane-where --json $lane; never report success from a local exit code" >&2
         verdict
-        exit 0
+        exit 3
       fi
       if printf '%s' "$out" | grep -qiE 'non-fast-forward|fetch first|stale info'; then
         # the engine (greenlane/github.py land()) force-pushes a rebased commit onto the
