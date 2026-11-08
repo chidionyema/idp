@@ -372,11 +372,49 @@ def decision_signals(sources):
         return None
     decisions = (doc.get("decisions") or {}) if isinstance(doc, dict) else {}
     counts = {"asked": 0, "answered": 0, "expired": 0, "other": 0}
-    for rec in decisions.values():
-        state = str((rec or {}).get("state") or "other")
+    # An approval waiting on the founder is only visible if its QUESTION is visible. Before
+    # 2026-11-08 this function counted states and printed "%d decisions", so the founder's one
+    # surface said "2 asked" and named nothing: a black hole with a number in front of it, and
+    # four decisions expired unanswered behind it. A pending decision is now carried with its
+    # id, question, options and the way to answer, and the source line names the count that
+    # actually needs a human.
+    pending = []
+    for key, rec in decisions.items():
+        rec = rec or {}
+        state = str(rec.get("state") or "other")
         counts[state if state in counts else "other"] += 1
-    sources.add("decisions", "yes", "", "%d decisions" % len(decisions))
+        if state != "asked":
+            continue
+        opts = rec.get("options") or []
+        shown = []
+        for o in opts:
+            if isinstance(o, dict):
+                shown.append({"key": o.get("key"), "label": o.get("label")})
+            else:
+                shown.append({"key": None, "label": str(o)})
+        did = rec.get("decision_id") or key
+        pending.append(
+            {
+                "decision_id": did,
+                "question": rec.get("question") or "(no question recorded)",
+                "options": shown,
+                "answer_with": "comment containing '%s' and an option key" % did,
+            }
+        )
+    pending.sort(key=lambda p: str(p["decision_id"]))
+    if pending:
+        first = pending[0]
+        sources.add(
+            "decisions",
+            "yes",
+            "%d AWAITING THE FOUNDER: %s -- %s"
+            % (len(pending), first["decision_id"], str(first["question"])[:110]),
+            "%d decisions" % len(decisions),
+        )
+    else:
+        sources.add("decisions", "yes", "", "%d decisions" % len(decisions))
     counts["total"] = len(decisions)
+    counts["pending"] = pending
     return counts
 
 
@@ -591,6 +629,18 @@ def speak(report):
         parts.append("Oldest live lane %.0f minutes old." % oldest)
     if blind:
         parts.append("%d sources blind: %s." % (len(blind), ", ".join(blind)))
+    # Anything waiting on the founder is spoken FIRST-CLASS, with its id: a decision the founder
+    # cannot see is a black hole (founder, 2026-11-08). Four decisions expired unanswered while
+    # the sentence said "stuck" and named none of them.
+    decisions = (report.get("signals") or {}).get("decisions") or {}
+    pending = decisions.get("pending") or []
+    if pending:
+        ids = ", ".join(str(p.get("decision_id")) for p in pending[:3])
+        more = "" if len(pending) <= 3 else " and %d more" % (len(pending) - 3)
+        parts.append(
+            "%d decision%s awaiting you (%s%s) -- say the id and an option to answer."
+            % (len(pending), "" if len(pending) == 1 else "s", ids, more)
+        )
     return " ".join(parts)
 
 
@@ -892,6 +942,11 @@ def main(argv=None):
                     "verdict": report.get("verdict"),
                     "deltas": report.get("deltas"),
                     "read": where,
+                    # Carried even in the terse shape: an approval that only exists in --json is
+                    # a black hole for every surface that reads the terse line.
+                    "pending": (
+                        (report.get("signals") or {}).get("decisions") or {}
+                    ).get("pending"),
                 },
                 sort_keys=True,
             )
