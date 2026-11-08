@@ -388,6 +388,73 @@ def list_incidents(
     ).fetchall()
 
 
+
+# --------------------------------------------------------------------------------------
+# FLOW — read-only projection of the existing incident ledger; no second state store.
+# --------------------------------------------------------------------------------------
+
+def flow_projection(row: sqlite3.Row, observed_at: datetime | None = None) -> dict:
+    """Expose what the estate actually knows, never infer operating from a ticket.
+
+    This is a read model for Founder Surface/agents, not an execution or FCR
+    authority. A dispatch is custody, not proof of a productive transition.
+    The current class-specific correction must be resolved by the existing
+    FCR authority (#7452), not guessed from an incident title or workflow name.
+    """
+    at = observed_at or wall_now()
+    state = str(row["state"])
+    dispatch = str(row["dispatch_leg"] or "")
+    dispatch_ref = str(row["dispatch_ref"] or "")
+    if state == "closed":
+        phase, next_action = "SOURCE_CLOSED", "independent-operational-yield-check"
+    elif state == "verified":
+        phase, next_action = "SOURCE_RECOVERED", "confirm-remote-closure"
+    elif dispatch and not dispatch_ref:
+        phase, next_action = "BLIND", "reconcile-ambiguous-dispatch"
+    elif dispatch:
+        phase, next_action = "RECOVERY_ASSIGNED", "reconcile-executor-and-live-effect"
+    elif row["ticket"]:
+        phase, next_action = "TICKETED", "dispatch-authorized-work"
+    else:
+        phase, next_action = "RECEIVED", "claim-ticket-and-classify"
+    # The only independently proven source transition here is verified_at.
+    # last_seen/updated_at/heartbeats never reset the no-yield timer.
+    real_progress = row["verified_at"]
+    if state in ("closed", "verified"):
+        age = None
+    else:
+        try:
+            age = max(0, int((at - parse_iso(real_progress or row["first_seen"])).total_seconds()))
+        except (TypeError, ValueError, OverflowError):
+            age = None
+    if age is None and state not in ("closed", "verified"):
+        phase, next_action = "BLIND", "repair-trusted-clock-or-provenance"
+    elif age is not None and age >= 600 and phase != "BLIND":
+        phase, next_action = "STAGNANT_UNVERIFIED", "existing-supervisor-recovery"
+    return {
+        "contract": "FLOW.v1",
+        "entity_id": "incident:" + str(row["id"]),
+        "parent_instruction": None,  # unresolved, never invented
+        "ticket": row["ticket"],
+        "owner": None,  # a queued task or ticket is NOT a verified worker claim
+        "dispatch_leg": dispatch or None,
+        "dispatch_ref": dispatch_ref or None,
+        "source": row["source"],
+        "source_uri": row["url"] or None,
+        "state": phase,
+        "incident_state": state,
+        "operational_yield": False,  # incident source recovery != real caller proof
+        "failure_class_id": None,  # owned by FCR, not guessed from a run id
+        "last_source_verified_at": real_progress,
+        "no_verified_progress_seconds": age,
+        "stagnation_threshold_seconds": 600,
+        "last_observed_at": at.isoformat(),
+        "evidence": row["lesson"] if state in ("verified", "closed") else None,
+        "next_action": next_action,
+        "founder_surface_readback": "UNVERIFIED",
+    }
+
+
 # --------------------------------------------------------------------------------------
 # sensors: real errors, no simulation
 # --------------------------------------------------------------------------------------
@@ -1234,7 +1301,10 @@ def verify_incident(conn: sqlite3.Connection, policy: dict, row: sqlite3.Row) ->
     elif row["source"] == "door":
         resolved, evidence = door_resolved(policy, row)
     else:
-        resolved, evidence = ticket_resolved(row)
+        # A reported issue being manually closed (or a clock warning ticket)
+        # is not independent source/effect recovery. There is no observer for
+        # this source kind yet: keep custody OPEN, never manufacture success.
+        resolved, evidence = False, ""
     if not resolved:
         return False
     verified_at = now_iso()
@@ -1544,7 +1614,7 @@ def main(argv: list[str] | None = None) -> int:
         "action",
         nargs="?",
         default="tick",
-        help="tick | sense | list | show | report | verify | drill | policy | clock",
+        help="tick | sense | list | show | flow | report | verify | drill | policy | clock",
     )
     parser.add_argument("--repo", default="")
     parser.add_argument("--incident", default="")
@@ -1579,6 +1649,13 @@ def main(argv: list[str] | None = None) -> int:
                     f"{incident['title']}"
                 )
             print(f"{len(incidents)} error(s) sensed")
+        return 0
+
+    if args.action == "flow":
+        # The Founder Surface may consume this existing-ledger projection, but
+        # deployed UI coverage must still be proven independently (Argon #62).
+        rows = list_incidents(conn, state=args.state, limit=1000)
+        print(json.dumps([flow_projection(row) for row in rows], indent=2))
         return 0
 
     if args.action == "list":
@@ -1618,9 +1695,20 @@ def main(argv: list[str] | None = None) -> int:
             "detail": {"reported_by": "estate-incident-loop"},
         }
         row = record_incident(conn, incident, policy)
+        # Repeated reports of one still-owned failure are observation events,
+        # not a licence to launch a second worker or duplicate external effects.
+        if row["state"] in ("closed", "verified"):
+            print(
+                f"incident {row['id']} already {row['state']}; "
+                "source closure is not an operational FLOW receipt"
+            )
+            return 0
         number = raise_ticket(conn, policy, row)
         row = get_incident(conn, row["id"])
-        leg, ref = dispatch_incident(conn, policy, row)
+        if row["dispatch_leg"]:
+            leg, ref = row["dispatch_leg"], row["dispatch_ref"] or "UNPROVEN"
+        else:
+            leg, ref = dispatch_incident(conn, policy, row)
         print(
             f"incident {row['id']} label {row['label']} ticket #{number} -> {leg} {ref}"
         )
