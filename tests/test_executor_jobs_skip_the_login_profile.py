@@ -22,7 +22,10 @@ spec.loader.exec_module(daemon)
 
 def test_a_job_does_not_start_a_login_shell(tmp_path):
     argv = daemon._runner_argv("exec-1-1", "echo hello", str(tmp_path), 60)
-    assert argv[-3:] == ["bash", "-c", "echo hello"]
+    # `bash`, not `bash -lc`: the login environment is handed to the job, not re-read by it.
+    # `pipefail` rides with it (2026-11-08): a piped command must not report the pipe's exit
+    # status as the verdict -- `cmd | tail` reports `tail`'s status, which is always 0.
+    assert argv[-5:] == ["bash", "-o", "pipefail", "-c", "echo hello"]
     assert "-lc" not in argv
 
 

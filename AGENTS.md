@@ -129,6 +129,25 @@ a green check is not news; do not announce it. A claim of "blocked" carries its 
 that was run (`estate-execute <intent>` or `estate_invoke`), its exit status, and the line it
 printed. A blocker without an intent run behind it is a guess, and is not reported.
 
+**The exit code IS the verdict -- never take it from a pipe.** Bash reports the exit status of the
+LAST stage of a pipeline, so `cmd | tail -6` reports `tail`'s status, which is always 0, however
+`cmd` ended. An agent that reads the door's exit code after piping through `tail`, `head` or `cat`
+reads a refusal as a success. Measured twice on 2026-11-08 in one session: a `git commit` refused
+by the pre-commit hook came back `exit: 0` and the agent pushed an empty commit; a gate that
+printed `FAIL` and exited 1 came back `exit: 0` and was nearly filed as "the gate fails open".
+
+The executor now runs every command under `bash -o pipefail` (idp#7807), so the door's exit code
+is the upstream failure's own status and the mask is gone at the source. **Two rules remain, and
+they are about how you read the door, not about what you may write:**
+
+1. **Read the exit code of the command you ran.** Do not pipe the command you are judging -- if you
+   need to truncate the output, capture it (`cmd > /tmp/out 2>&1; status=$?; tail -6 /tmp/out`)
+   and report the captured `status`. The door now tells the truth; do not launder it.
+2. **A pipeline you pipe on purpose is a thing to name.** `cmd | tail` is fine when you WANT the
+   tail; it is a defect when you use it to decide whether `cmd` succeeded. Say which one you meant.
+
+`false | tail` must never read as success. That is the whole rule.
+
 ---
 
 ## 4. Secrets — by name only, from the vault

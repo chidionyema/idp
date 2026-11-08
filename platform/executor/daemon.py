@@ -286,7 +286,26 @@ def _runner_argv(
     # `[TIMEOUT_BIN, "--signal=TERM", f"{ceiling_sec}s", ...]` prefix is gone: `/usr/local/bin/timeout`
     # on this machine is a bash shim that discards `--signal` and kills with perl's `alarm()`
     # (SIGALRM, 14), taking the exit-file writer down with the job. See `run.py`'s ceiling note.
-    inner = ["bash", "-c", command]
+    # `pipefail` (2026-11-08). Bash reports the exit status of the LAST stage of a pipeline, so
+    # `cmd | tail -6` reports `tail`'s status -- always 0 -- no matter what `cmd` did. An agent
+    # that reads the door's exit code as the verdict therefore reads a REFUSAL as a success.
+    # Measured twice in one session on this machine: a `git commit` refused by the pre-commit
+    # hook (`yamllint is not installed`, exit 1) was reported by this door as exit 0, and the
+    # agent pushed an empty commit believing it had committed; and a `guarded-paths` gate that
+    # printed FAIL and exited 1 was reported as exit 0, and was nearly filed as "the gate fails
+    # open". Both times the agent's own `| tail` was the thing that hid the verdict.
+    #
+    # `bash -o pipefail` makes a pipeline's status the rightmost NON-ZERO status, so the upstream
+    # failure becomes the door's verdict. It is set as a shell OPTION rather than prepended to
+    # the command string, so the agent's command cannot be broken by the surgery: heredocs,
+    # quoting and `#` comments are all unaffected. 81 files in this repo already use
+    # `set -o pipefail` for exactly this reason (bin/, .github/workflows/); the door was the one
+    # place that did not.
+    #
+    # The only behaviour it changes is the behaviour that was wrong: an earlier stage failing
+    # while a later stage succeeds now reports non-zero instead of 0. A command whose last stage
+    # fails is unaffected -- it already reported that stage's status.
+    inner = ["bash", "-o", "pipefail", "-c", command]
     argv = [*run_argv, "--ceiling", str(ceiling_sec), job_id, *inner]
     if cwd:
         argv = [*run_argv, "--cwd", cwd, "--ceiling", str(ceiling_sec), job_id, *inner]
