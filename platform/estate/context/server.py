@@ -36,6 +36,8 @@ from typing import Any, Mapping
 
 from . import claims as claim_rules
 from . import plan as plan_rules
+from .onboarding_proofs import KINDS as ONBOARDING_PROOF_KINDS
+from .onboarding_proofs import VERSION as ONBOARDING_PROOF_VERSION
 from .broker import (
     BrokerState,
     ContextRequest,
@@ -480,6 +482,15 @@ def tool_estate_context_status(args: Mapping[str, Any]) -> dict[str, Any]:
         "engine_reachable": _engine_reachable(),
         "source_dir": SOURCE_DIR,
         "claims": claims,
+        # Discoverable through the EXISTING broker status door, not a new MCP tool.
+        # These are evidence slots, not earned proofs or an admission decision.
+        "onboarding_proof_contract": {
+            "version": ONBOARDING_PROOF_VERSION,
+            "kinds": list(ONBOARDING_PROOF_KINDS),
+            "verdict": "STRUCTURE_ONLY",
+            "trusted_verification": "existing-context-and-action-doors",
+            "grants_authority": False,
+        },
     }
     return {
         "content": [
