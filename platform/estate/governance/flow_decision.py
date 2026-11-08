@@ -205,11 +205,34 @@ def select(snapshot, *, now=None, policy=None, score_fn=None):
     # One stable, deterministic total order (scores from one policy; IDs break ties).
     ready.sort(key=lambda x: (-effective[x[0]], -scores[x[0]]["score"], x[0]))
     wake = []
+    preempt = []  # REQUESTS only: trusted runtime must checkpoint/fence before releasing a lease.
     resources = set(active_resources)
     for key, row in ready:
         locks = set(row["resources"])
         if len(wake) >= slots:
-            waiting.append({"id": key, "state": "WAIT_CAPACITY", "reason": "no verified remote execution slot"})
+            # A true emergency outranks maintenance; never simply kill a
+            # worker. PREEMPT_REQUEST first proves remote checkpoint,
+            # independent fence and available alternate execution authority.
+            # The active worker is NOT freed in this planning pass.
+            candidates = []
+            if scores[key]["label"] == "P0":
+                for active_key, running in nodes.items():
+                    if running["state"] not in ACTIVE or not running.get("preemptible"):
+                        continue
+                    if not _proof_ok({"evidence": running.get("checkpoint_evidence")}, now):
+                        continue
+                    if effective[active_key] < effective[key]:
+                        candidates.append((effective[active_key], active_key))
+            if candidates:
+                _, victim = min(candidates)
+                if not any(x["victim"] == victim for x in preempt):
+                    preempt.append({"victim": victim, "for": key,
+                                    "state": "FENCED_PREEMPTION_REQUEST",
+                                    "protocol": "CHECKPOINT_FENCE_REASSIGN_THEN_REEVALUATE",
+                                    "release_authority": False})
+                waiting.append({"id": key, "state": "WAIT_FENCED_PREEMPTION", "for": victim})
+            else:
+                waiting.append({"id": key, "state": "WAIT_CAPACITY", "reason": "no verified remote execution slot"})
             continue
         if locks & resources:
             waiting.append({"id": key, "state": "SERIAL_RESOURCE_WAIT",
@@ -232,6 +255,7 @@ def select(snapshot, *, now=None, policy=None, score_fn=None):
         "priority_policy": str(INCIDENT_POLICY.relative_to(ROOT)),
         "wake": wake,
         "recovery": sorted(recovery, key=lambda x: (-effective[x["id"]], x["id"])),
+        "preempt_requests": preempt,
         "waiting": sorted(waiting, key=lambda x: x["id"]),
         "parallel_width": len(wake), "remote_capacity": slots,
         "generated_at": now.isoformat(),
