@@ -6,6 +6,9 @@ suite) and no dependency on any network call actually happening."""
 from __future__ import annotations
 
 import importlib.util
+import json
+
+import pytest
 import sys
 import types
 from pathlib import Path
@@ -168,3 +171,75 @@ model_list:
     assert rc == 1
     out = capsys.readouterr().out
     assert '"lanes_checked": 2' in out
+
+
+def test_noisy_provider_stdout_cannot_corrupt_the_machine_receipt(tmp_path, monkeypatch, capsys):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("""
+model_list:
+  - model_name: deepseek
+    litellm_params: {model: "deepseek/deepseek-chat", api_key: "os.environ/DEEPSEEK_API_KEY"}
+""")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "not-a-real-key")
+
+    def noisy_rejection(**_):
+        print("LiteLLM.Info: provider emitted stdout before the JSON")
+        raise litellm.AuthenticationError("401 invalid api key")
+
+    monkeypatch.setattr(litellm, "completion", noisy_rejection)
+    receipt = tmp_path / "provider-report.json"
+    assert cg.main(["catalog_gate.py", str(cfg), "--output", str(receipt)]) == 1
+    assert json.loads(receipt.read_text())["red"][0]["lane"] == "deepseek"
+    assert cg.summarize_report(receipt) == {
+        "red": 1, "unknown": 0, "green": 0, "lanes_checked": 1,
+    }
+    assert "LiteLLM.Info" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("bad", [
+    "",
+    "LiteLLM.Info: noisy prefix\\n{\\\"red\\\":[]}",
+    "{}",
+    '{"lanes_checked":0,"red":[],"results":[]}',
+    '{"lanes_checked":1,"red":[],"results":[{"lane":"a","model":"m","status":"RED"}]}',
+    '{"lanes_checked":1,"red":[],"results":[{"lane":"a","model":"m","status":"UNKNOWN"}]}',
+    '{"lanes_checked":1,"red":[],"results":[{"lane":"a","model":"m","status":"PASS"}]}',
+])
+def test_malformed_incomplete_or_forged_report_is_blind_not_zero(tmp_path, bad):
+    receipt = tmp_path / "provider-report.json"
+    receipt.write_text(bad)
+    with pytest.raises((ValueError, TypeError)):
+        cg.summarize_report(receipt)
+    assert cg.main(["catalog_gate.py", "--summary", str(receipt)]) == 70
+
+
+def test_missing_report_is_blind_not_a_clean_provider_sample(tmp_path):
+    assert cg.main(["catalog_gate.py", "--summary", str(tmp_path / "absent.json")]) == 70
+
+
+def test_unknown_provider_is_not_green_or_safe_to_close(tmp_path):
+    receipt = tmp_path / "provider-report.json"
+    receipt.write_text(json.dumps({
+        "lanes_checked": 2,
+        "red": [],
+        "results": [
+            {"lane": "one", "model": "m1", "status": "GREEN", "reason": ""},
+            {"lane": "two", "model": "m2", "status": "UNKNOWN", "reason": "key absent"},
+        ],
+    }))
+    assert cg.summarize_report(receipt) == {
+        "red": 0, "unknown": 1, "green": 1, "lanes_checked": 2,
+    }
+
+
+def test_cloud_reporter_refuses_false_zero_and_never_autocloses_on_blind():
+    workflow = (ROOT / ".github/workflows/router-catalog-gate.yml").read_text()
+    assert '--output "$RUNNER_TEMP/report.json"' in workflow
+    assert '--summary "$RUNNER_TEMP/report.json"' in workflow
+    assert "unknown_count" in workflow
+    assert "exit 70" in workflow
+    assert "or echo 0" not in workflow
+    assert 'report = {"red": [], "at": ""}' not in workflow
+    assert "gh issue close" not in workflow
+    assert "gh issue create" not in workflow
+    assert "if: always()" in workflow
