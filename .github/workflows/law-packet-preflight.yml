@@ -1,0 +1,58 @@
+# Fast, isolated source-truth preflight. Do NOT make another global required check.
+# It never receives secrets, protected-branch write authority or agent credentials.
+name: law-packet-preflight
+on:
+  push:
+    branches: ["lane/**", "queue/**"]
+    paths:
+      - "AGENTS.md"
+      - "CLAUDE.md"
+      - "GEMINI.md"
+      - ".agent.md"
+      - "bin/estate-law-gate"
+      - "platform/estate/governance/**"
+      - "tests/estate/test_law_packet.py"
+      - ".github/workflows/law-packet-preflight.yml"
+permissions:
+  contents: read
+jobs:
+  source-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Toolchain
+        run: python -m pip install -q pytest==8.4.2 pyyaml==6.0.3 ruff==0.15.18
+      - name: Source-bound fleet law packet and falsifiers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest tests/estate/test_law_packet.py -q -p no:cacheprovider
+          python bin/estate-law-gate --onboarding-packet > "$RUNNER_TEMP/law-packet.json"
+          python - "$RUNNER_TEMP/law-packet.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          obj = json.loads(Path(sys.argv[1]).read_text())
+          if obj["status"] != "SOURCE_CONSISTENT_UNVERIFIED_RUNTIME":
+              raise SystemExit("FAIL: policy source is conflicting or missing")
+          if obj["is_admission_decision"] or obj["grants_execution"]:
+              raise SystemExit("FAIL: source packet falsely grants authority")
+          print("ok: source-consistent; runtime law enforcement and admission NOT VERIFIED")
+          PY
+      - name: Existing runtime TOML policy remains compatible
+        run: python -m pytest sovereign/tests/bdd/test_policy.py -q -p no:cacheprovider
+      - name: Exact source style and static safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruff check platform/estate/governance/law_packet.py tests/estate/test_law_packet.py
+          if ! ruff format --check platform/estate/governance/law_packet.py tests/estate/test_law_packet.py; then
+            ruff format --diff platform/estate/governance/law_packet.py tests/estate/test_law_packet.py
+            exit 1
+          fi
