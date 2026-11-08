@@ -212,6 +212,7 @@ def _agent_step(
         "PATH": f"{bin_}:/usr/bin:/bin",
         "HOME": str(home),
         "RUNNER_TEMP": str(temp),
+        "GITHUB_OUTPUT": str(tmp_path / "step_output"),
         "HARNESS": harness,
         "TASK": "append there",
         "CLAUDE_CODE_OAUTH_TOKEN": "x",
