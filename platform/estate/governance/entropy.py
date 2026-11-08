@@ -78,7 +78,8 @@ def evaluate_prevention(record: Any) -> dict:
         missing.append("scope_inventory")
     if not isinstance(adoption, list) or any(not isinstance(x, str) or not x for x in adoption):
         missing.append("scope_adoption")
-    if isinstance(scope, list) and isinstance(adoption, list):
+    if (isinstance(scope, list) and isinstance(adoption, list)
+            and all(isinstance(x, str) for x in scope + adoption)):
         if len(scope) != len(set(scope)) or len(adoption) != len(set(adoption)):
             missing.append("duplicate scope")
         if set(scope) != set(adoption):
