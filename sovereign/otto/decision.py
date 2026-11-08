@@ -434,13 +434,44 @@ def telegram_call(
         return {"ok": False, "description": f"{type(exc).__name__}"}
 
 
-def send_message(token: str, chat_id: str, text: str) -> Optional[int]:
-    result = telegram_call(
-        token,
-        "sendMessage",
-        {"chat_id": chat_id, "text": text, "disable_web_page_preview": True},
-    )
+def option_markup(decision_id: str, options) -> Optional[dict]:
+    """One inline button per option, so the founder answers with a TAP.
+
+    Until 2026-11-08 the door sent plain text, so the only way to answer was to read a decision
+    id out of the message and type `<id> <option-key>` back: copy the id, guess the key,
+    remember the syntax. That is founder labour. The founder's instruction was "make everything
+    one tap seamless".
+
+    callback_data is `dec:<decision_id>:<option_key>`, capped at Telegram's 64-byte limit. A key
+    that will not fit is left OUT of the keyboard rather than truncated into a wrong answer --
+    the typed form still accepts it, so no option becomes unanswerable.
+    """
+    rows = []
+    for opt in options or ():
+        key = opt.get("key") if isinstance(opt, dict) else getattr(opt, "key", None)
+        label = (
+            opt.get("label") if isinstance(opt, dict) else getattr(opt, "label", None)
+        )
+        if not key:
+            continue
+        data = "dec:%s:%s" % (decision_id, key)
+        if len(data.encode()) > 64:
+            continue
+        rows.append([{"text": str(label or key), "callback_data": data}])
+    return {"inline_keyboard": rows} if rows else None
+
+
+def send_message(
+    token: str, chat_id: str, text: str, reply_markup: Optional[dict] = None
+) -> Optional[int]:
+    payload = {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    result = telegram_call(token, "sendMessage", payload)
     if not result.get("ok"):
+        # A rejected keyboard must never cost the founder the message itself: retry plain.
+        if reply_markup:
+            return send_message(token, chat_id, text)
         return None
     try:
         return int(result["result"]["message_id"])
@@ -475,15 +506,61 @@ def set_webhook(token: str, url: str) -> bool:
 
 
 def update_text(update: dict) -> Optional[str]:
-    message = update.get("message") if isinstance(update, dict) else None
+    """The text to run through match_comment -- from a typed message OR a button tap.
+
+    A tap arrives as `callback_query`, not `message`, and carries its meaning in
+    `data` ("dec:<decision_id>:<option_key>"). Before 2026-11-08 only `message.text` was read,
+    so a tap was invisible to the door even if one had been sent: answering required typing.
+    A call-data tap is rewritten into the same `<id> <option>` shape match_comment already
+    understands, so there is ONE matcher and the two paths cannot drift apart.
+    """
+    if not isinstance(update, dict):
+        return None
+    callback = update.get("callback_query")
+    if isinstance(callback, dict):
+        data = callback.get("data")
+        if isinstance(data, str) and data.startswith("dec:"):
+            _, _, rest = data.partition(":")
+            decision_id, _, option = rest.partition(":")
+            if decision_id and option:
+                return "%s %s" % (decision_id, option)
+        return None
+    message = update.get("message")
     if not isinstance(message, dict):
         return None
     text = message.get("text")
     return str(text) if isinstance(text, str) else None
 
 
+def callback_query_id(update: dict) -> Optional[str]:
+    """The id needed to stop the button spinning on the founder's phone."""
+    callback = update.get("callback_query") if isinstance(update, dict) else None
+    if not isinstance(callback, dict):
+        return None
+    cid = callback.get("id")
+    return str(cid) if cid else None
+
+
+def answer_callback(token: str, callback_id: str, text: str = "") -> bool:
+    """Acknowledge the tap so the button stops loading and the founder sees it landed."""
+    if not token or not callback_id:
+        return False
+    return bool(
+        telegram_call(
+            token,
+            "answerCallbackQuery",
+            {"callback_query_id": callback_id, "text": text},
+        ).get("ok")
+    )
+
+
 def update_chat_id(update: dict) -> Optional[str]:
-    message = update.get("message") if isinstance(update, dict) else None
+    if not isinstance(update, dict):
+        return None
+    message = update.get("message")
+    if not isinstance(message, dict):
+        callback = update.get("callback_query")
+        message = callback.get("message") if isinstance(callback, dict) else None
     if not isinstance(message, dict):
         return None
     chat = message.get("chat")
@@ -593,7 +670,9 @@ class Door:
                     "error": "no telegram credentials on this host",
                     "decision_id": request.decision_id,
                 }
-            sender = lambda text: send_message(token, chat, text)  # noqa: E731
+            sender = lambda text: send_message(  # noqa: E731
+                token, chat, text, option_markup(request.decision_id, request.options)
+            )
         message_id = sender(render(request))
         if message_id is None:
             return {
@@ -762,6 +841,15 @@ class Door:
             if chat and update_chat_id(update) not in (None, chat):
                 continue
             record = self.absorb(text)
+            # Stop the button loading on the founder's phone, so a tap visibly lands.
+            callback = callback_query_id(update)
+            if callback:
+                landed = bool(record and record.get("state") == STATE_ANSWERED)
+                answer_callback(
+                    token,
+                    callback,
+                    "Recorded: %s" % record.get("option") if landed else "Not recorded",
+                )
             if record and record.get("state") == STATE_ANSWERED:
                 answered.append(record.get("decision_id"))
         # Expire first, then hand the estate its webhook back: a decision that closed by
