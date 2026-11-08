@@ -53,8 +53,13 @@ def test_the_disk_free_intent_budgets_the_work_it_hands_the_cleaner():
             f"not {words!r}"
         )
         budgets.append(int(words[4]))
-        assert "DISK_CLEANUP_PHASES=" in step["cmd"], (
-            f"step {step['name']} must name the phases it runs, or the split reclaims nothing"
+        # The intent no longer names phases: it runs ONE call in the engine's own order
+        # (caches, critical tier, docker, worktrees, temp, clones), which is the only order
+        # that spends the budget where the bytes are. An explicit DISK_CLEANUP_PHASES= override
+        # is the guardian's escalation ladder, not the on-demand sweep's job.
+        assert "DISK_CLEANUP_PHASES=" not in step["cmd"], (
+            f"step {step['name']} must run the engine's own phase order, not override "
+            "DISK_CLEANUP_PHASES= (only the guardian's escalation ladder sets that)"
         )
     assert budgets, "no cleaning step at all"
     assert sum(budgets) < door_s, (
@@ -142,18 +147,25 @@ def test_the_scheduled_watcher_also_gives_the_cleaner_a_budget():
     """Measured 2026-10-25: bin/idp-disk-watch called the cleaner with four args (no budget), so a
     tick could run for minutes; every door call that wanted the disk then found the lock held and
     answered "nothing done" -- the agent that needed space could not get it."""
+    # The watcher is now a resident Python guardian (2026-10-28: the 5-minute tick held the
+    # reclaim lock 240 of 300s and freed 0M). It still hands the cleaner a budget -- as the
+    # 5th element of subprocess.Popen's argv -- and still treats 4 (work owed) and 5 (another
+    # run holds the lock) as non-failures. The call shape changed, not the contract.
     src = (ROOT / "bin/idp-disk-watch").read_text()
-    call = [ln for ln in src.splitlines() if 'bash "$CLEANUP"' in ln]
-    assert call, (
-        "the watcher no longer calls the cleaner: update this test, not the assertion"
+    assert (
+        'argv = ["/bin/bash", CLEANER, "true", "false", "0", "false", str(STEP_BUDGET_S)]'
+        in src
+    ), (
+        "the watcher must call the cleaner with its budget as the fifth argument: "
+        "update this test to the current call shape"
     )
-    assert all("$WATCH_BUDGET" in ln for ln in call), (
-        "the scheduled call must pass a budget as the cleaner's fifth argument: "
-        + repr(call)
+    assert "STEP_BUDGET_S" in src and "str(STEP_BUDGET_S)" in src, (
+        "the watcher must budget its cleaner step, not hand it an unbounded call"
     )
-    assert 'case "$rc" in 0|4|5)' in src, (
-        "a budgeted tick exits 4 (phases owed, the next tick continues) and 5 (another run held the "
-        "lock): neither may raise the failure alert"
+    # rc 4 (phases owed, the next step continues) and 5 (another run holds the lock) must not
+    # raise the failure alert; 3 (unproven delete) is notified separately, in main().
+    assert "if rc == 3:" in src, (
+        "the guardian must still distinguish rc 3 (unproven delete) from the budget lockouts"
     )
 
 
