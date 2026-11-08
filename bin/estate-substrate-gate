@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+"""estate-substrate-gate -- the admission gate that eradicates the substrate-staleness trap.
+
+WHAT THIS GATES. The estate's own state-of-record prose (the AGENTS.md files an agent loads at
+session start) is the one place a *dated* claim about the substrate -- what hosts the estate,
+which kubeconfig context is live, whether a cluster/lane is "down", "retired" or "active" --
+survives to be quoted as *current* fact by the next agent. The estate observed this exact trap
+twice before this gate existed: the 2026-10-28 "BLOCKED on the node half / nodes-per-node-pool
+exceeded (idp#7318)" line was a dated OKE-era claim, re-asserted as live when the estate had
+already left that substrate. A dated row in a live file, read as current, silently propagates.
+
+THE ONE RULE. A substrate/cluster-state assertion in a session-start file must say WHEN the
+state was measured, or say that it is NOT current. Either of two markers discharges the claim:
+
+  * `<measured=YYYY-MM-DDTHH:MM:SSZ>` (or `<measured YYYY-MM-DD ...>`) -- a live measurement; or
+  * the literal token `STALE` or `HISTORICAL` in the same claim -- a dated claim marked as such.
+
+A claim that carries NEITHER is refused. Refusal is the gate's job: a bare "the estate runs on
+OKE" is a trap for the next reader, and the gate names the line so a human or an agent fixes it
+by adding one of the two markers -- never by deleting the claim that a future reader needs to
+know is no longer true.
+
+WHAT IT SCANS. The session-start files: AGENTS.md at the repo root (and, when present beside the
+repo, the home-level and Documents-level AGENTS.md). It checks every line that names a substrate
+word; the line number and the offending text are reported, so the fix is mechanical.
+
+DEGRADATION, NOT FALSE GREEN. It is not possible to detect every prose substrate claim, and this
+gate must not pretend it did. Substrate words are added when the trap mutates, and never removed:
+a removed token is a reopened hole.
+
+HOW IT IS PROVEN. `--self-test` runs the check against deliberately BROKEN inputs and requires
+each one to fail, and against the two marked forms and requires each one to pass. A gate that
+cannot fail is not a gate (AGENTS.md 3).
+
+Usage:
+  bin/estate-substrate-gate               run the gate; exit 1 on any refusal
+  bin/estate-substrate-gate --json        machine-readable verdict
+  bin/estate-substrate-gate --self-test   prove the gate can fail (exit 0 when it can)
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
+# The one discharge rule, kept as one place so the falsifier and the checker cannot drift.
+MEASURED = re.compile(
+    r"measured[=:]\s*\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?Z?)?", re.IGNORECASE
+)
+STALE_MARKER = re.compile(r"\b(STALE|HISTORICAL)\b", re.IGNORECASE)
+
+# Substrate words: a claim that names one of these is a state assertion about the estate's host.
+# These are the tokens the trap has historically travelled on; append the next one when the trap
+# mutates, never delete an old one (a removed token is a reopened hole).
+# Substrate words, each as a word-boundary regex so short tokens cannot match inside
+# unrelated words ("oke" must not match "invoke", "smoke", "revoke"). A claim that names
+# one of these is a state assertion about the estate's host. These are the tokens the trap has
+# historically travelled on; append the next one when the trap mutates, never delete an old one.
+SUBSTRATE_WORDS = (
+    r"\boke\b",
+    r"\boracle-oke\b",
+    r"\bk3s\b",
+    r"\bkubeconfig\b",
+    r"\bcurrent-context\b",
+    r"\brancher-desktop\b",
+    r"\bcontrol plane\b",
+    r"\bcontrol-plane\b",
+    r"\bnode half\b",
+    r"\bnode-pool\b",
+    r"\bnodes-per-node-pool\b",
+    r"\bthe cluster is\b",
+    r"\bcluster is not\b",
+    r"\bcluster at\b",
+    r"\bidp-oke-rebuild\b",
+    r"\boci public\b",
+    r"\bretired oke\b",
+)
+
+SUBSTRATE_RE = re.compile("|".join(SUBSTRATE_WORDS), re.IGNORECASE)
+
+
+def _read(path: str) -> str:
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+
+def session_start_files(root: str) -> list:
+    """The AGENTS.md files an agent loads. The repo one is authoritative; home-level ones, when
+    they sit beside the repo, are the same trap in a second copy and are graded too."""
+    paths = [os.path.join(root, "AGENTS.md")]
+    for candidate in (
+        os.path.abspath(os.path.join(root, "..", "..", "AGENTS.md")),  # ~/AGENTS.md
+        os.path.abspath(
+            os.path.join(root, "..", "AGENTS.md")
+        ),  # ~/Documents/code/AGENTS.md
+    ):
+        if os.path.isfile(candidate):
+            paths.append(candidate)
+    return paths
+
+
+def _is_substrate_claim(line: str) -> bool:
+    return bool(SUBSTRATE_RE.search(line))
+
+
+def _has_marker(line: str) -> bool:
+    return bool(MEASURED.search(line) or STALE_MARKER.search(line))
+
+
+def check_file(path: str) -> list:
+    """The unmarked substrate assertions in one file. Each is a line a future reader can quote
+    as current without knowing it is dated."""
+    failures: list = []
+    text = _read(path)
+    if not text:
+        return failures
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        if not _is_substrate_claim(line):
+            continue
+        if _has_marker(line):
+            continue
+        failures.append(
+            "{}:{}: a substrate claim with no measured=<ISO> and no STALE/HISTORICAL marker: "
+            "{}".format(os.path.basename(path), lineno, line.strip())
+        )
+    return failures
+
+
+def run_all(root: str = ROOT) -> list:
+    """Grade every session-start file. Returns one result per file."""
+    results: list = []
+    for path in session_start_files(root):
+        results.append(
+            {
+                "file": os.path.basename(path),
+                "failures": check_file(path),
+                "warnings": [],
+            }
+        )
+    return results
+
+
+def _self_test() -> list:
+    """Every check, run against a deliberately broken input, must refuse it."""
+    problems: list = []
+
+    # A bare substrate assertion (no marker) must be recognised as a claim and refused.
+    bare = "the estate runs on OKE"
+    if not _is_substrate_claim(bare):
+        problems.append("the substrate detector missed a bare OKE assertion")
+    if _has_marker(bare):
+        problems.append("a bare substrate assertion was treated as marked")
+
+    # The two marked forms must be accepted.
+    stale = "STALE: the estate runs on OKE (do not re-assert)"
+    measured = "the estate runs on OKE <measured=2026-11-08T21:00:00Z>"
+    if not _is_substrate_claim(stale) or not _has_marker(stale):
+        problems.append("a STALE-marked substrate assertion was refused")
+    if not _is_substrate_claim(measured) or not _has_marker(measured):
+        problems.append("a measured=<ISO> substrate assertion was refused")
+
+    # A stale-marked and measured line must pass; a bare line must fail -- via the file checker.
+    import tempfile
+
+    fd, stale_path = tempfile.mkstemp(suffix=".md")
+    with os.fdopen(fd, "w") as fh:
+        fh.write("nothing here\n")
+        fh.write("STALE: the estate runs on OKE\n")
+        fh.write("the estate runs on OKE\n")
+        fh.write("the estate runs on OKE <measured=2026-11-08T21:00:00Z>\n")
+    try:
+        failures = check_file(stale_path)
+    finally:
+        os.unlink(stale_path)
+    if len(failures) != 1 or "the estate runs on OKE" not in failures[0]:
+        problems.append(
+            "check_file did not return exactly the one bare line: {}".format(failures)
+        )
+
+    return problems
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(
+        description="eradicate the substrate-staleness trap"
+    )
+    parser.add_argument("--json", action="store_true", help="machine-readable verdict")
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help="prove the gate can fail (exit 0 when it can)",
+    )
+    parser.add_argument(
+        "--repo", default=ROOT, help="the tree to grade (default: this checkout)"
+    )
+    args = parser.parse_args(argv)
+
+    if args.self_test:
+        problems = _self_test()
+        if problems:
+            for problem in problems:
+                print("FAIL  self-test  {}".format(problem))
+            return 1
+        print("PASS  self-test  every check fails on a broken input")
+        return 0
+
+    results = run_all(args.repo)
+    failed = [r for r in results if r["failures"]]
+    payload = {
+        "gate": "estate-substrate-gate",
+        "repo": args.repo,
+        "verdict": "FAIL" if failed else "PASS",
+        "checks": results,
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        for result in results:
+            for failure in result["failures"]:
+                print("FAIL  substrate  {}".format(failure))
+            if not result["failures"]:
+                print("PASS  substrate  {}".format(result["file"]))
+        print("estate-substrate-gate: {}".format(payload["verdict"]))
+
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
