@@ -388,6 +388,17 @@ need no card or are hard-limited qualify. A PR that adds to the node states its 
 requests; the node's requests stay under 1.8 CPU. Before any node reboot, resize or drain,
 calico-node must be Ready on every node.
 
+**Zero MacBook dependency for infrastructure (founder, 2026-11-08).** The existing Mac is not a
+hosting target and carries no new hosting subscription; its electricity, hardware wear and
+availability are real, unsubsidised costs - never treat it as an authorised free or paid home.
+It is a host for source development and the laptop-side tools only, and it is **never turned on**
+as a service. The one exception, narrowly scoped: the Mac may serve as an **emergency lifeline**
+for `otto` and for the **crew** coordination plane in an emergency when their primary homes are
+down - a just-in-time fallback that is switch-off-by-default, never an always-on or production
+home, and never a reason to add a subscription or bind infrastructure to it. Any proposal that
+makes the Mac a dependency of the production estate - including leaving an "emergency" fallback
+running when the primary home is healthy - is refused at review.
+
 ## 9. Voice first and realtime
 
 The platform is moving to voice first and realtime (founder, 2026-09-26). The founder speaks to the
@@ -429,6 +440,19 @@ and the opt-out is ledgered.
 - **Never use `grep -r`. Use `rg -l "pattern" path`** — `rg -l` finishes in <1s where
   `grep -r` times out at the 60s ceiling. A broad `grep -r` that hits the ceiling is a defect
   in the search, not evidence the thing is absent.
+- **Collaborate and broadcast with peers constantly (founder, 2026-11-08).** Delivery is a shared
+exercise: coordinate with other agents continuously so work that is in flux, with dependencies
+that can be spread across the fleet, is taken up without duplicated work or stepping on toes.
+Smooth delivery and shared understanding come from constant peer broadcast, not from silent
+parallel effort. This complements, never overrides, the claim rule in section 5 - one owner per
+path is what makes the broadcast safe; the broadcast is what makes the ownership visible. Before
+starting work that overlaps another agent's paths or dependencies, say so on the shared channel
+and agree the split, rather than discovering the collision at review time.
+- **The machine is not a database (founder, 2026-11-08).** Never leave an uncommitted, unclaimed
+change sitting in a working tree across a context or branch switch. Every change flows claim ->
+signed commit -> lane immediately, or it is reverted and re-derived later; half-done state is
+never parked in the checkout for the next agent to trip over. This binds your own changes (transient
+typing and an in-flight commit are fine); it does not licence touching another actor's dirty files.
 
 ## 11. Living policy (crew#219 R38): the block below is code, not prose
 
