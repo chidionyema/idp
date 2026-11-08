@@ -1,0 +1,36 @@
+description: >
+  DSH cloud and Mac carried hand-written model lists while the canonical router
+  exposed the active model catalogue. The question was whether the drift came
+  from clients owning model identity, or from the router itself lacking a usable
+  catalogue. A live unauthenticated GET against https://llm.mumchimp.com/v1/models
+  returned 15 model aliases including the stable `default` alias, while both DSH
+  profiles still contained a single hard-coded model. The client list was the
+  defect; the router was the available authority.
+hypotheses:
+  - name: H1
+    description: >
+      The clients carried their own model lists, so their pickers diverged from
+      the models the router actually served.
+    prior: 0.5
+  - name: H2
+    description: >
+      The router did not expose a usable catalogue, so clients had to maintain
+      model lists locally.
+    prior: 0.5
+evidence:
+  - name: live router catalogue probe
+    observed:
+      catalogue_returned: 1
+    likelihoods:
+      H1:
+        catalogue_returned: 0.95
+      H2:
+        catalogue_returned: 0.05
+  - name: direct inspection of the deployed DSH profiles
+    observed:
+      static_client_list: 1
+    likelihoods:
+      H1:
+        static_client_list: 0.99
+      H2:
+        static_client_list: 0.20
