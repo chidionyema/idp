@@ -64,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m py_compile code/dsh_cloud.py
-          if ! modal deploy --force code/dsh_cloud.py >"$RUNNER_TEMP/modal-deploy.log" 2>&1; then
+          if ! modal deploy code/dsh_cloud.py >"$RUNNER_TEMP/modal-deploy.log" 2>&1; then
             tail -60 "$RUNNER_TEMP/modal-deploy.log"
             detail=$(tail -1 "$RUNNER_TEMP/modal-deploy.log" | sed -E 's/[A-Za-z0-9_+\/=-]{40,}/<redacted>/g')
             echo "::error title=DSH Modal deploy::${detail}"
