@@ -1,0 +1,13 @@
+name: sre
+description: >-
+  Read the one cloud-authoritative SRE projection for the whole estate. The answer
+  carries the snapshot hash, every source state, weighted coverage, explicit blind
+  spots, correlated failure domains, service-objective burn and the highest-leverage
+  repair. A missing cloud object returns BLIND; stale or hash-tampered evidence never
+  returns healthy. Read-only.
+class: read
+door_s: 100
+halt_on_failure: true
+steps:
+  - name: cloud-projection
+    cmd: python3 bin/estate-sre read --remote --json

@@ -1,0 +1,2548 @@
+#!/usr/bin/env python3
+"""One freshness-aware SRE projection over the estate's existing authorities.
+
+The collector does not replace the critical-function spine, the estate-homes drill,
+estate-truth, estate-progress, the incident loop or OCI health. It runs those authorities,
+labels what each vantage can and cannot measure, correlates shared failure domains, evaluates
+service objectives against snapshot history, and emits one hash shared by the agent and founder
+projections.
+
+    estate-sre collect [--repo PATH] [--config PATH] [--json] [--publish] [--strict]
+    estate-sre read [--out PATH] [--json]
+    estate-sre explain [--out PATH]
+
+States are deliberately not scalar:
+    OK, DEGRADED, DOWN, BLIND, STALE, NOT_HERE, CONFLICT
+
+BLIND and STALE are never healthy. NOT_HERE is a declared vantage boundary, not a pass.
+"""
+
+from __future__ import annotations
+
+import argparse
+import concurrent.futures
+import hashlib
+import json
+import os
+import re
+import shutil
+import socket
+import sqlite3
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+
+SCHEMA = "estate.sre.v1"
+VANTAGES = {"laptop", "cloud", "sandbox"}
+STATE_ORDER = {
+    "OK": 0,
+    "NOT_HERE": 1,
+    "STALE": 2,
+    "BLIND": 3,
+    "CONFLICT": 4,
+    "DEGRADED": 5,
+    "DOWN": 6,
+}
+TERMINAL_BAD = {"DOWN", "DEGRADED", "BLIND", "STALE", "CONFLICT"}
+DEFAULT_CONFIG = "catalog/sre-contract.v1.json"
+USER_AGENT = "estate-sre/1.0"
+MEASURED_OK = {"PASS", "MEASURED_OK", "OK", "HEALTHY", "GREEN", "TRUE", "REDUNDANT"}
+MEASURED_FAIL = {"FAIL", "MEASURED_FAIL", "DOWN", "RED", "FALSE"}
+MEASURED_UNKNOWN = {"UNKNOWN", "BLIND", "UNPROVEN", "SPOF", "NOT_PROBED"}
+SECRET_PATTERNS = (
+    re.compile(r"sk-[A-Za-z0-9_-]{12,}"),
+    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}"),
+    re.compile(
+        r"(?i)\b(bearer|token|api[_-]?key|password|secret)\b"
+        r"\s*[:=]\s*[\"']?[A-Za-z0-9._~+/=-]{8,}"
+    ),
+    re.compile(
+        r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?"
+        r"-----END [A-Z ]*PRIVATE KEY-----",
+        re.DOTALL,
+    ),
+)
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def iso(dt: Optional[datetime] = None) -> str:
+    return (dt or utc_now()).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def parse_time(value: Any) -> Optional[float]:
+    if not value:
+        return None
+    text = str(value).strip()
+    for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S.%fZ"):
+        try:
+            return datetime.strptime(text, fmt).replace(tzinfo=timezone.utc).timestamp()
+        except ValueError:
+            pass
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def age_seconds(value: Any) -> Optional[float]:
+    stamp = parse_time(value)
+    return round(max(0.0, time.time() - stamp), 1) if stamp else None
+
+
+def expand(value: str) -> str:
+    return os.path.expandvars(os.path.expanduser(str(value)))
+
+
+def redact_text(value: Any) -> str:
+    text = str(value or "")
+    for pattern in SECRET_PATTERNS:
+        text = pattern.sub("<redacted>", text)
+    return text
+
+
+def redact_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): redact_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [redact_value(item) for item in value]
+    if isinstance(value, str):
+        return redact_text(value)
+    return value
+
+
+def compact(value: Any, limit: int = 400) -> str:
+    text = re.sub(r"\s+", " ", redact_text(value)).strip()
+    return text[:limit]
+
+
+def load_json(path: Path) -> Any:
+    with path.open(encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def extract_json(text: str) -> Tuple[Any, str]:
+    """The first JSON object or array in command output, plus trailing diagnostic text."""
+    start = min(
+        [index for index in (text.find("{"), text.find("[")) if index >= 0],
+        default=-1,
+    )
+    if start < 0:
+        raise ValueError("no JSON object or array in command output")
+    value, end = json.JSONDecoder().raw_decode(text[start:])
+    return value, compact(text[end:], 500)
+
+
+def run_command(
+    argv: List[str],
+    *,
+    cwd: Path,
+    timeout: float,
+    env: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    try:
+        proc = subprocess.run(  # noqa: S603 - argv is fixed data from the SRE contract
+            [expand(part) for part in argv],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=max(1.0, timeout),
+            env={**os.environ, **(env or {})},
+            check=False,
+        )
+        return {
+            "rc": proc.returncode,
+            "stdout": proc.stdout or "",
+            "stderr": proc.stderr or "",
+            "timedOut": False,
+        }
+    except FileNotFoundError as exc:
+        return {"rc": 127, "stdout": "", "stderr": str(exc), "timedOut": False}
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "rc": 124,
+            "stdout": exc.stdout or "",
+            "stderr": exc.stderr or f"timed out after {timeout}s",
+            "timedOut": True,
+        }
+
+
+def resolve_command_argv(repo: Path, argv: List[str]) -> List[str]:
+    """Resolve repository-relative executables without changing flags or PATH lookups."""
+    resolved = []
+    for part in argv:
+        value = expand(part)
+        path = Path(value)
+        if path.is_absolute() or part.startswith("-") or "/" not in part:
+            resolved.append(value)
+            continue
+        candidate = repo / part
+        resolved.append(str(candidate) if candidate.exists() else value)
+    return resolved
+
+
+def state_of_source(result: Dict[str, Any]) -> str:
+    state = str(result.get("state") or "BLIND").upper()
+    return state if state in STATE_ORDER else "BLIND"
+
+
+def max_state(values: Iterable[str], default: str = "OK") -> str:
+    rows = list(values)
+    if not rows:
+        return default
+    return max(rows, key=lambda value: STATE_ORDER.get(value, STATE_ORDER["BLIND"]))
+
+
+def source_result(
+    source: Dict[str, Any],
+    *,
+    state: str,
+    summary: str,
+    vantage: str,
+    evidence: Optional[Dict[str, Any]] = None,
+    observed_at: Optional[str] = None,
+) -> Dict[str, Any]:
+    stamp = observed_at or iso()
+    return {
+        "id": source["id"],
+        "kind": source.get("kind"),
+        "state": state,
+        "summary": compact(summary),
+        "observedAt": stamp,
+        "ageSeconds": age_seconds(stamp),
+        "vantage": vantage,
+        "failureDomain": source.get("failureDomain", "unknown"),
+        "required": bool(source.get("required", False)),
+        "evidence": redact_value(evidence or {}),
+    }
+
+
+def detect_vantage() -> str:
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        return "cloud"
+    if os.environ.get("CODEX_SANDBOX", "").lower() == "seatbelt":
+        return "sandbox"
+    return "laptop"
+
+
+def has_binary(name: str) -> bool:
+    return shutil.which(name) is not None
+
+
+def resolve_contract_path(repo: Path, value: str) -> Path:
+    path = Path(expand(value))
+    return path if path.is_absolute() else repo / path
+
+
+def source_applies(source: Dict[str, Any], vantage: str) -> bool:
+    declared = source.get("vantages")
+    return not declared or vantage in {str(value) for value in declared}
+
+
+def percentile(values: List[float], ratio: float) -> Optional[float]:
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, max(0, int(round((len(ordered) - 1) * ratio))))
+    return ordered[index]
+
+
+# --------------------------------------------------------------------------- source adapters
+
+
+def collect_critical_spine(
+    source: Dict[str, Any], repo: Path, vantage: str
+) -> Dict[str, Any]:
+    if vantage == "cloud":
+        return source_result(
+            source,
+            state="NOT_HERE",
+            summary="host-local critical functions are not present on a cloud runner",
+            vantage=vantage,
+        )
+    if vantage == "sandbox":
+        return source_result(
+            source,
+            state="BLIND",
+            summary="the sandbox cannot reliably probe local sockets or host DNS; use the host collector",
+            vantage=vantage,
+        )
+    argv = resolve_command_argv(repo, list(source.get("command", [])))
+    proc = run_command(
+        argv,
+        cwd=repo,
+        timeout=float(source.get("timeoutSeconds", 120)),
+    )
+    raw = proc["stdout"]
+    if proc["rc"] == 127 or not raw.strip():
+        return source_result(
+            source,
+            state="BLIND",
+            summary=f"critical spine unreadable: {compact(proc['stderr'] or 'no output')}",
+            vantage=vantage,
+        )
+    try:
+        body, trailing = extract_json(raw)
+    except ValueError as exc:
+        return source_result(
+            source,
+            state="BLIND",
+            summary=f"critical spine returned no JSON: {exc}",
+            vantage=vantage,
+        )
+    rows = list(body.get("functions") or []) + list(body.get("assumptions") or [])
+    counts = dict(body.get("counts") or {})
+    queue = [
+        {
+            "id": row.get("id"),
+            "verdict": row.get("verdict"),
+            "why": compact(row.get("why"), 240),
+        }
+        for row in rows
+        if row.get("verdict") not in (None, "PASS")
+    ]
+    registry_path = Path(str(body.get("registry") or ""))
+    health = None
+    try:
+        registry = load_json(registry_path)
+        entries = list(registry.get("functions") or []) + list(
+            registry.get("assumptions") or []
+        )
+        weights = {str(row.get("id")): float(row.get("weight", 1)) for row in entries}
+        total = sum(weights.get(str(row.get("id")), 1.0) for row in rows)
+        passed = sum(
+            weights.get(str(row.get("id")), 1.0)
+            for row in rows
+            if row.get("verdict") == "PASS"
+        )
+        health = round(100.0 * passed / total, 1) if total else None
+    except Exception:  # noqa: BLE001 - health is a summary, never the authority
+        health = None
+    evidence = {
+        "counts": counts,
+        "estateHealth": health,
+        "queue": queue[:20],
+        "diagnostic": trailing,
+    }
+    if counts.get("BLIND", 0):
+        state = "BLIND"
+        summary = f"{counts.get('BLIND')} critical function(s) are blind"
+    elif counts.get("FAIL", 0):
+        state = "DOWN"
+        summary = (
+            f"{counts.get('FAIL')} critical function(s) fail; "
+            f"estate_health={health if health is not None else 'unknown'}%"
+        )
+    else:
+        state = "OK"
+        summary = f"all {len(rows)} critical functions pass"
+    return source_result(
+        source,
+        state=state,
+        summary=summary,
+        vantage=vantage,
+        evidence=evidence,
+        observed_at=str(body.get("at") or iso()),
+    )
+
+
+def collect_estate_lanes(
+    source: Dict[str, Any], repo: Path, vantage: str
+) -> Dict[str, Any]:
+    if vantage == "sandbox":
+        return source_result(
+            source,
+            state="BLIND",
+            summary="the sandbox resolver cannot represent the cloud/edge vantage; use the scheduled collector",
+            vantage=vantage,
+        )
+    argv = resolve_command_argv(repo, list(source.get("command", [])))
+    proc = run_command(
+        argv,
+        cwd=repo,
+        timeout=float(source.get("timeoutSeconds", 90)),
+    )
+    if proc["rc"] == 127 or not proc["stdout"].strip():
+        return source_result(
+            source,
+            state="BLIND",
+            summary=f"lane drill unreadable: {compact(proc['stderr'] or 'no output')}",
+            vantage=vantage,
+        )
+    try:
+        body, trailing = extract_json(proc["stdout"])
+    except ValueError as exc:
+        return source_result(
+            source,
+            state="BLIND",
+            summary=f"lane drill returned no JSON: {exc}",
+            vantage=vantage,
+        )
+    ladders = list(body.get("ladders") or [])
+    lanes = list(body.get("lanes") or [])
+    states = {str(row.get("state") or "UNKNOWN").upper() for row in ladders}
+    summary = body.get("summary") or {}
+    down_count = int(summary.get("down") or 0)
+    unknown_count = int(summary.get("unknown") or 0)
+    not_provisioned = int(summary.get("not_provisioned") or 0)
+    affected = [
+        {
+            "service": row.get("service"),
+            "leg": row.get("leg"),
+            "provider": row.get("provider"),
+            "verdict": row.get("verdict"),
+            "detail": compact(row.get("detail"), 200),
+        }
+        for row in lanes
+        if row.get("verdict") not in ("MEASURED_OK", "NOT_PROVISIONED", "NOT_HERE")
+    ]
+    failed_services = [
+        ladder
+        for ladder in ladders
+        if str(ladder.get("state")).upper() in ("DOWN", "UNPROVEN")
+        and not (ladder.get("providers_ok") or [])
+    ]
+    if "DOWN" in states or down_count or failed_services:
+        state = "DOWN"
+    elif unknown_count or not_provisioned or states & {"UNPROVEN", "SPOF", "UNKNOWN"}:
+        state = "DEGRADED"
+    else:
+        state = "OK"
+    evidence = {
+        "summary": summary,
+        "ladders": ladders,
+        "affected": affected[:40],
+        "failedServices": failed_services,
+        "diagnostic": trailing,
+    }
+    return source_result(
+        source,
+        state=state,
+        summary=(
+            f"{down_count} lane(s) failed, {unknown_count} could not be asked; "
+            f"ladder states={','.join(sorted(states)) or 'none'}"
+        ),
+        vantage=vantage,
+        evidence=evidence,
+        observed_at=str(body.get("generated_at") or iso()),
+    )
+
+
+def truth_state(body: Dict[str, Any]) -> str:
+    verdict = str(body.get("verdict") or "").upper()
+    if verdict in MEASURED_OK:
+        return "OK"
+    if verdict in MEASURED_FAIL:
+        return "DOWN"
+    if verdict in ("DEGRADED", "PARTIAL"):
+        return "DEGRADED"
+    if verdict in MEASURED_UNKNOWN:
+        return "BLIND"
+    return "BLIND"
+
+
+def collect_truth(source: Dict[str, Any], repo: Path, vantage: str) -> Dict[str, Any]:
+    if vantage == "sandbox":
+        return source_result(
+            source,
+            state="BLIND",
+            summary="the sandbox resolver makes founder-path DNS/HTTP results unrepresentative",
+            vantage=vantage,
+        )
+    argv = resolve_command_argv(repo, list(source.get("command", [])))
+    proc = run_command(
+        argv,
+        cwd=repo,
+        timeout=float(source.get("timeoutSeconds", 90)),
+    )
+    if not proc["stdout"].strip():
+        return source_result(
+            source,
+            state="BLIND",
+            summary=f"truth instrument unreadable: {compact(proc['stderr'] or 'no output')}",
+            vantage=vantage,
+        )
+    try:
+        body, trailing = extract_json(proc["stdout"])
+    except ValueError as exc:
+        return source_result(
+            source,
+            state="BLIND",
+            summary=f"truth instrument returned no JSON: {exc}",
+            vantage=vantage,
+        )
+    predicates = list(body.get("predicates") or [])
+    failed = [
+        row for row in predicates if str(row.get("verdict")).upper() not in MEASURED_OK
+    ]
+    evidence = {
+        "verdict": body.get("verdict"),
+        "predicates": [
+            {
+                "id": row.get("id"),
+                "verdict": row.get("verdict"),
+                "detail": compact(row.get("detail"), 220),
+            }
+            for row in predicates
+        ],
+        "diagnostic": trailing,
+    }
+    state = truth_state(body)
+    if failed and state == "OK":
+        state = "DEGRADED"
+    return source_result(
+        source,
+        state=state,
+        summary=(
+            f"truth verdict={body.get('verdict', 'unknown')}; "
+            f"{len(failed)} of {len(predicates)} predicates not passing"
+        ),
+        vantage=vantage,
+        evidence=evidence,
+        observed_at=str(
+            body.get("generated_at")
+            or body.get("generatedAt")
+            or body.get("at")
+            or iso()
+        ),
+    )
+
+
+def load_cached_estate_state(
+    source: Dict[str, Any], repo: Path, vantage: str
+) -> Tuple[
+    Optional[Dict[str, Any]],
+    Optional[Dict[str, Any]],
+    Dict[str, Any],
+]:
+    """Read the cloud authority snapshot already produced by estate-state.
+
+    The SRE plane is a synthesis layer. On a cloud runner it consumes that one
+    published document instead of pretending the Mac's filesystem and socket are
+    present. A missing, malformed or stale document is an explicit state, never
+    an empty section interpreted as healthy.
+    """
+    raw_path = str(
+        source.get("path")
+        or os.environ.get(str(source.get("pathEnv") or "ESTATE_STATE_JSON_PATH"), "")
+        or ""
+    )
+    if not raw_path:
+        return (
+            None,
+            source_result(
+                source,
+                state="BLIND",
+                summary="the cloud estate-state snapshot path is not configured",
+                vantage=vantage,
+            ),
+            {},
+        )
+    path = resolve_contract_path(repo, raw_path)
+    try:
+        body = load_json(path)
+    except (OSError, ValueError) as exc:
+        return (
+            None,
+            source_result(
+                source,
+                state="BLIND",
+                summary=f"cloud estate-state snapshot unreadable at {path}: {compact(exc)}",
+                vantage=vantage,
+                evidence={"path": str(path)},
+            ),
+            {},
+        )
+    if not isinstance(body, dict):
+        return (
+            None,
+            source_result(
+                source,
+                state="BLIND",
+                summary="cloud estate-state snapshot has an incompatible root type",
+                vantage=vantage,
+                evidence={"path": str(path), "type": type(body).__name__},
+            ),
+            {},
+        )
+    missing = [
+        key
+        for key in ("generated_at", "overview", "delivery", "runtime")
+        if key not in body
+    ]
+    if missing:
+        return (
+            None,
+            source_result(
+                source,
+                state="BLIND",
+                summary=(
+                    "cloud estate-state snapshot is incompatible; missing "
+                    + ", ".join(missing)
+                ),
+                vantage=vantage,
+                evidence={"path": str(path), "missingSections": missing},
+            ),
+            {},
+        )
+    stamp = str(body.get("generated_at"))
+    age = age_seconds(stamp)
+    max_age = float(source.get("maxAgeSeconds", 1800))
+    meta = {"path": str(path), "generatedAt": stamp, "ageSeconds": age}
+    if age is None:
+        return (
+            None,
+            source_result(
+                source,
+                state="BLIND",
+                summary="cloud estate-state snapshot has no trustworthy timestamp",
+                vantage=vantage,
+                evidence=meta,
+            ),
+            meta,
+        )
+    if age > max_age:
+        return (
+            body,
+            source_result(
+                source,
+                state="STALE",
+                summary=(
+                    f"cloud estate-state snapshot is {age:.0f}s old; "
+                    f"maximum is {max_age:.0f}s"
+                ),
+                vantage=vantage,
+                evidence=meta,
+                observed_at=stamp,
+            ),
+            meta,
+        )
+    return body, None, meta
+
+
+def verdict_state(value: Any) -> str:
+    verdict = str(value or "").upper()
+    if verdict in MEASURED_OK:
+        return "OK"
+    if verdict in MEASURED_FAIL:
+        return "DOWN"
+    return "BLIND"
+
+
+def collect_cloud_critical(
+    source: Dict[str, Any], repo: Path, vantage: str
+) -> Dict[str, Any]:
+    body, error, meta = load_cached_estate_state(source, repo, vantage)
+    if error:
+        return error
+    if body is None:
+        return source_result(
+            source,
+            state="BLIND",
+            summary="cloud estate-state snapshot did not produce a document",
+            vantage=vantage,
+        )
+    runtime = body.get("runtime") or {}
+    clusters = list(runtime.get("clusters") or [])
+    surfaces = list(runtime.get("surfaces") or [])
+    lanes = list(runtime.get("router_lanes") or [])
+    states = [verdict_state(row.get("state")) for row in clusters]
+    failed_surfaces = [
+        row for row in surfaces if verdict_state(row.get("verdict")) == "DOWN"
+    ]
+    failed_lanes = [row for row in lanes if verdict_state(row.get("verdict")) == "DOWN"]
+    blind_lanes = [row for row in lanes if verdict_state(row.get("verdict")) == "BLIND"]
+    if "DOWN" in states or failed_surfaces or failed_lanes:
+        state = "DOWN"
+    elif not clusters or "BLIND" in states or blind_lanes:
+        state = "BLIND"
+    elif any(verdict_state(row.get("verdict")) == "BLIND" for row in surfaces):
+        state = "BLIND"
+    else:
+        state = "OK"
+    evidence = {
+        **meta,
+        "clusterStates": states,
+        "surfaces": len(surfaces),
+        "failedSurfaces": [
+            {"name": row.get("name"), "detail": compact(row.get("detail"), 220)}
+            for row in failed_surfaces[:20]
+        ],
+        "routerLanes": len(lanes),
+        "failedLanes": [
+            {"lane": row.get("lane"), "detail": compact(row.get("detail"), 220)}
+            for row in failed_lanes[:20]
+        ],
+        "blindLanes": [
+            {"lane": row.get("lane"), "detail": compact(row.get("detail"), 220)}
+            for row in blind_lanes[:20]
+        ],
+    }
+    return source_result(
+        source,
+        state=state,
+        summary=(
+            f"cloud authority reports {len(failed_surfaces)} failed surface(s), "
+            f"{len(failed_lanes)} failed router lane(s), "
+            f"cluster states={','.join(states) or 'none'}"
+        ),
+        vantage=vantage,
+        evidence=evidence,
+        observed_at=meta.get("generatedAt"),
+    )
+
+
+def collect_cloud_founder_path(
+    source: Dict[str, Any], repo: Path, vantage: str
+) -> Dict[str, Any]:
+    body, error, meta = load_cached_estate_state(source, repo, vantage)
+    if error:
+        return error
+    if body is None:
+        return source_result(
+            source,
+            state="BLIND",
+            summary="cloud estate-state snapshot did not produce a document",
+            vantage=vantage,
+        )
+    surfaces = list((body.get("runtime") or {}).get("surfaces") or [])
+    rows = [
+        {
+            "name": row.get("name"),
+            "state": verdict_state(row.get("verdict")),
+            "detail": compact(row.get("detail"), 220),
+            "checkedAt": row.get("checked_at"),
+        }
+        for row in surfaces
+    ]
+    states = [row["state"] for row in rows]
+    if not rows:
+        state = "BLIND"
+        summary = "cloud estate-state carries no founder-surface evidence"
+    elif "DOWN" in states:
+        state = "DOWN"
+        summary = f"{states.count('DOWN')} of {len(states)} founder surface(s) failed"
+    elif "BLIND" in states:
+        state = "BLIND"
+        summary = (
+            f"{states.count('BLIND')} of {len(states)} founder surface(s) are blind"
+        )
+    else:
+        state = "OK"
+        summary = f"all {len(states)} founder surface(s) answered"
+    return source_result(
+        source,
+        state=state,
+        summary=summary,
+        vantage=vantage,
+        evidence={**meta, "surfaces": rows},
+        observed_at=meta.get("generatedAt"),
+    )
+
+
+def collect_cloud_lanes(
+    source: Dict[str, Any], repo: Path, vantage: str
+) -> Dict[str, Any]:
+    body, error, meta = load_cached_estate_state(source, repo, vantage)
+    if error:
+        return error
+    if body is None:
+        return source_result(
+            source,
+            state="BLIND",
+            summary="cloud estate-state snapshot did not produce a document",
+            vantage=vantage,
+        )
+    lanes = list((body.get("runtime") or {}).get("router_lanes") or [])
+    rows = [
+        {
+            "lane": row.get("lane"),
+            "state": verdict_state(row.get("verdict")),
+            "status": row.get("status"),
+            "detail": compact(row.get("detail"), 220),
+            "measuredAt": row.get("measured_at"),
+        }
+        for row in lanes
+    ]
+    states = [row["state"] for row in rows]
+    if not rows:
+        state = "BLIND"
+        summary = "cloud estate-state carries no router-lane evidence"
+    elif "DOWN" in states:
+        state = "DOWN"
+        summary = f"{states.count('DOWN')} of {len(states)} router lane(s) failed"
+    elif "BLIND" in states:
+        state = "BLIND"
+        summary = f"{states.count('BLIND')} of {len(states)} router lane(s) are blind"
+    else:
+        state = "OK"
+        summary = f"all {len(states)} router lane(s) answered"
+    return source_result(
+        source,
+        state=state,
+        summary=summary,
+        vantage=vantage,
+        evidence={**meta, "lanes": rows},
+        observed_at=meta.get("generatedAt"),
+    )
+
+
+def collect_cloud_incidents(
+    source: Dict[str, Any], repo: Path, vantage: str
+) -> Dict[str, Any]:
+    body, error, meta = load_cached_estate_state(source, repo, vantage)
+    if error:
+        return error
+    if body is None:
+        return source_result(
+            source,
+            state="BLIND",
+            summary="cloud estate-state snapshot did not produce a document",
+            vantage=vantage,
+        )
+    rows = list((body.get("runtime") or {}).get("incidents") or [])
+    open_rows = [row for row in rows if not row.get("resolved")]
+    state = "DEGRADED" if open_rows else "OK"
+    return source_result(
+        source,
+        state=state,
+        summary=f"{len(open_rows)} open incident(s) in the cloud estate-state ledger",
+        vantage=vantage,
+        evidence={
+            **meta,
+            "totalOpen": len(open_rows),
+            "top": [
+                {
+                    "id": row.get("id"),
+                    "title": compact(row.get("title"), 180),
+                    "surface": row.get("surface"),
+                    "detected": row.get("detected"),
+                }
+                for row in open_rows[:10]
+            ],
+        },
+        observed_at=meta.get("generatedAt"),
+    )
+
+
+def collect_cloud_agent_fabric(
+    source: Dict[str, Any], repo: Path, vantage: str
+) -> Dict[str, Any]:
+    body, error, meta = load_cached_estate_state(source, repo, vantage)
+    if error:
+        return error
+    if body is None:
+        return source_result(
+            source,
+            state="BLIND",
+            summary="cloud estate-state snapshot did not produce a document",
+            vantage=vantage,
+        )
+    sessions = list((body.get("overview") or {}).get("sessions") or [])
+    ages = [
+        age
+        for age in (age_seconds(row.get("last_handoff_at")) for row in sessions)
+        if age is not None
+    ]
+    stale_after = float(source.get("staleAfterSeconds", 7200))
+    stale_sessions = sum(1 for age in ages if age > stale_after)
+    blocked = [row for row in sessions if row.get("blocked")]
+    # The estate-state artifact sees claims and handoffs. It does not expose model
+    # quota, context headroom or takeover capacity, so those stay explicitly
+    # unmeasured rather than being inferred from a session count.
+    state = "STALE" if sessions and stale_sessions == len(sessions) else "DEGRADED"
+    return source_result(
+        source,
+        state=state,
+        summary=(
+            f"{len(sessions)} session(s) visible, {stale_sessions} stale, "
+            f"{len(blocked)} blocked; token and takeover capacity are unmeasured"
+        ),
+        vantage=vantage,
+        evidence={
+            **meta,
+            "sessions": len(sessions),
+            "staleSessions": stale_sessions,
+            "blockedSessions": len(blocked),
+            "capacity": "UNMEASURED",
+            "staleAfterSeconds": stale_after,
+        },
+        observed_at=meta.get("generatedAt"),
+    )
+
+
+def collect_cloud_delivery(
+    source: Dict[str, Any], repo: Path, vantage: str
+) -> Dict[str, Any]:
+    body, error, meta = load_cached_estate_state(source, repo, vantage)
+    if error:
+        return error
+    if body is None:
+        return source_result(
+            source,
+            state="BLIND",
+            summary="cloud estate-state snapshot did not produce a document",
+            vantage=vantage,
+        )
+    delivery = body.get("delivery") or {}
+    if "open_p0" not in delivery and "failed_runs" not in delivery:
+        return source_result(
+            source,
+            state="BLIND",
+            summary="cloud estate-state carries no delivery evidence",
+            vantage=vantage,
+            evidence=meta,
+        )
+    open_p0 = list(delivery.get("open_p0") or [])
+    failed_runs = list(delivery.get("failed_runs") or [])
+    open_prs = list(delivery.get("open_prs") or [])
+    state = "DEGRADED" if open_p0 or failed_runs else "OK"
+    return source_result(
+        source,
+        state=state,
+        summary=(
+            f"{len(open_p0)} open P0(s), {len(failed_runs)} failing workflow group(s), "
+            f"{len(open_prs)} open pull request(s)"
+        ),
+        vantage=vantage,
+        evidence={
+            **meta,
+            "openP0": len(open_p0),
+            "failedRuns": len(failed_runs),
+            "openPullRequests": len(open_prs),
+        },
+        observed_at=meta.get("generatedAt"),
+    )
+
+
+def collect_progress_cache(
+    source: Dict[str, Any], repo: Path, vantage: str
+) -> Dict[str, Any]:
+    if vantage == "cloud":
+        return source_result(
+            source,
+            state="NOT_HERE",
+            summary="the progress cache is published by the cloud delivery source",
+            vantage=vantage,
+        )
+    path = resolve_contract_path(repo, str(source.get("path") or ""))
+    try:
+        body = load_json(path)
+    except (OSError, ValueError) as exc:
+        return source_result(
+            source,
+            state="BLIND",
+            summary=f"progress cache unreadable at {path}: {compact(exc)}",
+            vantage=vantage,
+        )
+    stamp = body.get("generated_at") or body.get("generatedAt")
+    age = age_seconds(stamp)
+    max_age = float(source.get("maxAgeSeconds", 1800))
+    if age is None:
+        return source_result(
+            source,
+            state="BLIND",
+            summary="progress cache has no trustworthy timestamp",
+            vantage=vantage,
+            evidence={"path": str(path)},
+        )
+    if age > max_age:
+        return source_result(
+            source,
+            state="STALE",
+            summary=f"progress cache is {age:.0f}s old; maximum is {max_age:.0f}s",
+            vantage=vantage,
+            evidence={"path": str(path), "ageSeconds": age},
+            observed_at=str(stamp),
+        )
+    raw_state = str((body.get("verdict") or {}).get("state") or "").upper()
+    state = (
+        "OK"
+        if raw_state in ("PROGRESSING", "HEALTHY", "OK")
+        else "DOWN"
+        if raw_state in ("BLOCKED", "STALLED", "FAIL")
+        else "BLIND"
+        if not raw_state or raw_state == "UNKNOWN"
+        else "DEGRADED"
+    )
+    return source_result(
+        source,
+        state=state,
+        summary=f"delivery verdict={raw_state or 'UNKNOWN'}",
+        vantage=vantage,
+        evidence={
+            "path": str(path),
+            "verdict": body.get("verdict") or {},
+            "blindSources": (body.get("signals") or {}).get("blind") or [],
+        },
+        observed_at=str(stamp),
+    )
+
+
+def collect_incidents(
+    source: Dict[str, Any], repo: Path, vantage: str
+) -> Dict[str, Any]:
+    if vantage == "cloud":
+        return source_result(
+            source,
+            state="NOT_HERE",
+            summary="the laptop incident database is not a cloud authority",
+            vantage=vantage,
+        )
+    path = resolve_contract_path(repo, str(source.get("path") or ""))
+    try:
+        connection = sqlite3.connect(path)
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            """
+            SELECT id, source, severity, blast, title, label, state, last_seen, score
+              FROM incidents
+             WHERE state IN ('open', 'dispatched', 'verifying')
+             ORDER BY score DESC, last_seen DESC
+             LIMIT 50
+            """
+        ).fetchall()
+        connection.close()
+    except (OSError, sqlite3.Error) as exc:
+        return source_result(
+            source,
+            state="BLIND",
+            summary=f"incident ledger unreadable at {path}: {compact(exc)}",
+            vantage=vantage,
+        )
+    open_rows = [dict(row) for row in rows]
+    critical = [
+        row
+        for row in open_rows
+        if str(row.get("severity")).lower() == "critical"
+        or str(row.get("label")).upper() in ("P0", "P1")
+    ]
+    state = "DEGRADED" if open_rows else "OK"
+    evidence = {
+        "path": str(path),
+        "totalOpen": len(open_rows),
+        "criticalOpen": len(critical),
+        "top": [
+            {
+                "id": row.get("id"),
+                "severity": row.get("severity"),
+                "label": row.get("label"),
+                "title": compact(row.get("title"), 180),
+                "lastSeen": row.get("last_seen"),
+            }
+            for row in open_rows[:10]
+        ],
+    }
+    return source_result(
+        source,
+        state=state,
+        summary=f"{len(open_rows)} open incident(s), {len(critical)} critical",
+        vantage=vantage,
+        evidence=evidence,
+        observed_at=str(open_rows[0].get("last_seen")) if open_rows else iso(),
+    )
+
+
+def socket_ready(path: Path, timeout: float = 1.5) -> Tuple[bool, str]:
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        sock.settimeout(timeout)
+        sock.connect(str(path))
+        return True, "connected"
+    except OSError as exc:
+        return False, compact(exc)
+    finally:
+        sock.close()
+
+
+def collect_agent_fabric(
+    source: Dict[str, Any], repo: Path, vantage: str
+) -> Dict[str, Any]:
+    if vantage == "cloud":
+        return source_result(
+            source,
+            state="NOT_HERE",
+            summary="host-local sessions and executor state belong to the node reporter",
+            vantage=vantage,
+        )
+    sessions_dir = resolve_contract_path(
+        repo, str(source.get("sessionsDirectory") or "~/.estate/state/sessions")
+    )
+    heartbeats_dir = resolve_contract_path(
+        repo, str(source.get("heartbeatsDirectory") or "~/.estate/heartbeats")
+    )
+    executor_socket = resolve_contract_path(
+        repo, str(source.get("executorSocket") or "~/.estate/executor.sock")
+    )
+    sessions = []
+    try:
+        for path in sessions_dir.glob("*.json"):
+            try:
+                row = load_json(path)
+                sessions.append(row)
+            except (OSError, ValueError):
+                pass
+    except OSError:
+        sessions = []
+    locked = [
+        row for row in sessions if row.get("locked") or row.get("status") == "locked"
+    ]
+    grace = [row for row in sessions if row.get("status") == "grace"]
+    disk_heartbeat = {}
+    disk_path = heartbeats_dir / "disk-guardian.json"
+    try:
+        disk_heartbeat = load_json(disk_path)
+    except (OSError, ValueError):
+        disk_heartbeat = {}
+    disk_age = age_seconds(disk_heartbeat.get("at"))
+    try:
+        stat = os.statvfs("/System/Volumes/Data")
+        free_mb = int(stat.f_bavail * stat.f_frsize / (1024 * 1024))
+    except OSError:
+        free_mb = None
+    executor_ok, executor_detail = socket_ready(executor_socket)
+    if (
+        not executor_ok
+        and vantage == "sandbox"
+        and "permitted" in executor_detail.lower()
+    ):
+        executor_state = "BLIND"
+    else:
+        executor_state = "OK" if executor_ok else "DOWN"
+    floor = int(source.get("diskFloorMb", 1500))
+    states = [executor_state]
+    if free_mb is not None and free_mb < floor:
+        states.append("DOWN")
+    if disk_age is None or disk_age > 180:
+        states.append("STALE")
+    if locked:
+        states.append("DEGRADED")
+    state = max_state(states)
+    return source_result(
+        source,
+        state=state,
+        summary=(
+            f"{len(sessions)} logical session(s), {len(locked)} locked, "
+            f"{free_mb if free_mb is not None else 'unknown'}MB free, executor={executor_state.lower()}"
+        ),
+        vantage=vantage,
+        evidence={
+            "sessions": len(sessions),
+            "locked": len(locked),
+            "grace": len(grace),
+            "diskFreeMb": free_mb,
+            "diskFloorMb": floor,
+            "diskHeartbeatAgeSeconds": disk_age,
+            "executor": {"state": executor_state, "detail": executor_detail},
+        },
+    )
+
+
+def oci_command(
+    source: Dict[str, Any], extra: List[str], timeout: float
+) -> Dict[str, Any]:
+    profile = os.environ.get(str(source.get("profileEnv", "OCI_CLI_PROFILE")), "")
+    if not profile:
+        profile = str(source.get("defaultProfile") or "DEFAULT")
+    config_file = str(source.get("configFile") or "~/.oci/config")
+    auth = os.environ.get(str(source.get("authEnv") or "OCI_CLI_AUTH"), "")
+    if not auth:
+        auth = str(source.get("auth") or "api_key")
+    argv = [
+        "oci",
+        "lb",
+        "backend-set-health",
+        "get",
+        "--load-balancer-id",
+        str(source["loadBalancerId"]),
+        "--backend-set-name",
+        extra[0],
+        "--profile",
+        profile,
+        "--auth",
+        auth,
+        "--config-file",
+        config_file,
+        "--output",
+        "json",
+    ]
+    return run_command(argv, cwd=Path.cwd(), timeout=timeout)
+
+
+def collect_load_balancer_health(
+    source: Dict[str, Any], repo: Path, vantage: str
+) -> Dict[str, Any]:
+    if not has_binary("oci"):
+        return source_result(
+            source,
+            state="BLIND",
+            summary="OCI CLI is not installed",
+            vantage=vantage,
+        )
+    backend_sets = list(source.get("backendSets") or [])
+    timeout = float(source.get("timeoutSeconds", 30))
+    results: Dict[str, Any] = {}
+
+    def one(name: str) -> Tuple[str, Dict[str, Any]]:
+        proc = oci_command(source, [name], timeout)
+        if not proc["stdout"].strip():
+            return name, {
+                "state": "BLIND",
+                "detail": compact(proc["stderr"] or "no output"),
+            }
+        try:
+            body, trailing = extract_json(proc["stdout"])
+        except ValueError as exc:
+            return name, {"state": "BLIND", "detail": compact(exc)}
+        data = body.get("data") or {}
+        status = str(data.get("status") or "UNKNOWN").upper()
+        state = (
+            "OK"
+            if status == "OK"
+            else "DOWN"
+            if status == "CRITICAL"
+            else "DEGRADED"
+            if status == "WARNING"
+            else "BLIND"
+        )
+        return name, {
+            "state": state,
+            "status": status,
+            "criticalBackends": data.get("critical-state-backend-names") or [],
+            "warningBackends": data.get("warning-state-backend-names") or [],
+            "unknownBackends": data.get("unknown-state-backend-names") or [],
+            "backends": data.get("total-backend-count"),
+            "diagnostic": trailing,
+        }
+
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=max(1, len(backend_sets))
+    ) as pool:
+        for name, result in pool.map(one, backend_sets):
+            results[name] = result
+    state = max_state([row["state"] for row in results.values()], default="BLIND")
+    critical = sum(len(row.get("criticalBackends") or []) for row in results.values())
+    return source_result(
+        source,
+        state=state,
+        summary=(
+            f"OCI load balancer backend health={state.lower()}; "
+            f"{critical} critical backend(s)"
+        ),
+        vantage=vantage,
+        evidence={
+            "loadBalancerId": source.get("loadBalancerId"),
+            "backendSets": results,
+        },
+    )
+
+
+def collect_dns(source: Dict[str, Any], repo: Path, vantage: str) -> Dict[str, Any]:
+    if not has_binary("dig"):
+        return source_result(
+            source,
+            state="BLIND",
+            summary="dig is not installed",
+            vantage=vantage,
+        )
+    timeout = float(source.get("timeoutSeconds", 10))
+    hosts = list(source.get("hosts") or [])
+
+    def one(host: str) -> Tuple[str, List[str], str]:
+        proc = run_command(
+            ["dig", "+short", "A", host],
+            cwd=repo,
+            timeout=timeout,
+        )
+        addresses = [
+            line.strip()
+            for line in proc["stdout"].splitlines()
+            if re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}", line.strip())
+        ]
+        return host, sorted(set(addresses)), compact(proc["stderr"], 160)
+
+    resolved: Dict[str, List[str]] = {}
+    errors: Dict[str, str] = {}
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=min(8, max(1, len(hosts)))
+    ) as pool:
+        for host, addresses, error in pool.map(one, hosts):
+            resolved[host] = addresses
+            if error and not addresses:
+                errors[host] = error
+    clusters: Dict[str, List[str]] = {}
+    for host, addresses in resolved.items():
+        for address in addresses:
+            clusters.setdefault(address, []).append(host)
+    missing = [host for host, addresses in resolved.items() if not addresses]
+    state = "DOWN" if len(missing) == len(hosts) else "DEGRADED" if missing else "OK"
+    correlated = [
+        {"address": address, "hosts": sorted(host_names)}
+        for address, host_names in clusters.items()
+        if len(host_names) > 1
+    ]
+    return source_result(
+        source,
+        state=state,
+        summary=(
+            f"{len(hosts) - len(missing)} of {len(hosts)} DNS names resolve; "
+            f"{len(correlated)} shared-address group(s)"
+        ),
+        vantage=vantage,
+        evidence={
+            "resolved": resolved,
+            "missing": missing,
+            "errors": errors,
+            "sharedAddresses": correlated,
+        },
+    )
+
+
+ADAPTERS = {
+    "critical-spine": collect_critical_spine,
+    "estate-lanes": collect_estate_lanes,
+    "estate-truth": collect_truth,
+    "cloud-critical": collect_cloud_critical,
+    "cloud-founder-path": collect_cloud_founder_path,
+    "cloud-lanes": collect_cloud_lanes,
+    "cloud-incidents": collect_cloud_incidents,
+    "cloud-agent-fabric": collect_cloud_agent_fabric,
+    "cloud-delivery": collect_cloud_delivery,
+    "progress-cache": collect_progress_cache,
+    "incident-ledger": collect_incidents,
+    "agent-fabric": collect_agent_fabric,
+    "load-balancer-health": collect_load_balancer_health,
+    "dns": collect_dns,
+}
+
+
+def collect_sources(
+    contract: Dict[str, Any],
+    repo: Path,
+    vantage: str,
+) -> List[Dict[str, Any]]:
+    sources = [
+        source
+        for source in contract.get("sources") or []
+        if source_applies(source, vantage)
+    ]
+
+    def one(source: Dict[str, Any]) -> Dict[str, Any]:
+        adapter = ADAPTERS.get(str(source.get("kind") or ""))
+        if adapter is None:
+            return source_result(
+                source,
+                state="BLIND",
+                summary=f"unknown source adapter {source.get('kind')!r}",
+                vantage=vantage,
+            )
+        try:
+            return adapter(source, repo, vantage)
+        except Exception as exc:  # noqa: BLE001 - one failed source is BLIND, never a crash
+            return source_result(
+                source,
+                state="BLIND",
+                summary=f"{source.get('id')} raised {type(exc).__name__}: {compact(exc)}",
+                vantage=vantage,
+            )
+
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=min(8, max(1, len(sources)))
+    ) as pool:
+        return list(pool.map(one, sources))
+
+
+# --------------------------------------------------------------------------- synthesis
+
+
+def source_map(sources: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    return {str(source.get("id")): source for source in sources}
+
+
+def plane_state(
+    source_ids: List[str], sources: Dict[str, Dict[str, Any]]
+) -> Dict[str, Any]:
+    rows = [
+        sources.get(source_id)
+        or {
+            "id": source_id,
+            "state": "BLIND",
+            "summary": "required source was not collected",
+        }
+        for source_id in source_ids
+    ]
+    states = [state_of_source(row) for row in rows]
+    if "DOWN" in states:
+        state = "DOWN"
+    elif "CONFLICT" in states:
+        state = "CONFLICT"
+    elif states and all(value == "NOT_HERE" for value in states):
+        state = "NOT_HERE"
+    elif any(value in ("BLIND", "NOT_HERE") for value in states):
+        state = "BLIND"
+    elif "STALE" in states:
+        state = "STALE"
+    elif "DEGRADED" in states:
+        state = "DEGRADED"
+    else:
+        state = "OK"
+    return {
+        "state": state,
+        "sources": [
+            {
+                "id": row.get("id"),
+                "state": state_of_source(row),
+                "summary": row.get("summary"),
+            }
+            for row in rows
+        ],
+    }
+
+
+def correlated_findings(sources: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    findings: List[Dict[str, Any]] = []
+    dns = sources.get("dns") or {}
+    lb = sources.get("oci-lb") or {}
+    dns_evidence = dns.get("evidence") or {}
+    shared = list(dns_evidence.get("sharedAddresses") or [])
+    lb_evidence = lb.get("evidence") or {}
+    backend_sets = lb_evidence.get("backendSets") or {}
+    critical_backends = sum(
+        len(row.get("criticalBackends") or []) for row in backend_sets.values()
+    )
+    if shared and state_of_source(lb) == "DOWN":
+        hosts = sorted(
+            {host for cluster in shared for host in (cluster.get("hosts") or [])}
+        )
+        findings.append(
+            {
+                "code": "CORRELATED_FAILURE",
+                "severity": "critical",
+                "title": "Public doors share one failed OCI load balancer",
+                "detail": (
+                    f"{len(hosts)} hostname(s) resolve to shared addresses; "
+                    f"{len(backend_sets)} load-balancer backend set(s) hold "
+                    f"{critical_backends} critical backend entr"
+                    f"{'y' if critical_backends == 1 else 'ies'}"
+                ),
+                "failureDomain": "oci-lb",
+                "planes": ["founder-path", "cloud-substrate", "identity"],
+                "sources": ["dns", "oci-lb", "estate-lanes"],
+                "affected": hosts,
+                "action": (
+                    "Repair the OCI load-balancer backend sets "
+                    + ", ".join(sorted(backend_sets))
+                    + " or move the affected DNS names to a healthy "
+                    "cross-provider edge."
+                ),
+                "evidence": {
+                    "sharedAddresses": shared,
+                    "backendSets": backend_sets,
+                },
+            }
+        )
+    lanes = sources.get("estate-lanes") or {}
+    affected = list((lanes.get("evidence") or {}).get("affected") or [])
+    providers: Dict[str, List[Dict[str, Any]]] = {}
+    for row in affected:
+        providers.setdefault(str(row.get("provider") or "unknown"), []).append(row)
+    for provider, rows in providers.items():
+        if provider == "oracle-oke" and any(
+            row.get("code") == "CORRELATED_FAILURE" for row in findings
+        ):
+            # The load-balancer finding is the sharper shared cause. Keeping the
+            # provider-wide symptom as a second top finding would create the same
+            # incident twice and hide the single repair that clears both.
+            continue
+        if len(rows) < 2:
+            continue
+        title = (
+            "Apex/public doors are down at the provider boundary"
+            if provider == "oracle-oke" and len(rows) >= 3
+            else f"{len(rows)} lanes fail through provider {provider}"
+        )
+        findings.append(
+            {
+                "code": "PROVIDER_CONCENTRATION",
+                "severity": "critical" if len(rows) >= 3 else "high",
+                "title": title,
+                "detail": f"{len(rows)} lane(s) fail through the same provider",
+                "failureDomain": provider,
+                "planes": ["cloud-substrate", "identity"],
+                "sources": ["estate-lanes"],
+                "affected": [f"{row.get('service')}/{row.get('leg')}" for row in rows],
+                "action": (
+                    "Restore the provider edge or move the affected hostnames to the "
+                    "independent cross-provider home."
+                ),
+                "evidence": {"provider": provider, "lanes": rows[:40]},
+            }
+        )
+    return findings
+
+
+def source_findings(
+    sources: Dict[str, Dict[str, Any]], planes: Dict[str, Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    findings = []
+    plane_membership: Dict[str, List[str]] = {}
+    for plane_id, plane in planes.items():
+        for row in plane["sources"]:
+            plane_membership.setdefault(str(row["id"]), []).append(plane_id)
+    for source_id, source in sources.items():
+        state = state_of_source(source)
+        if state == "OK":
+            continue
+        code = (
+            "VISIBILITY_GAP"
+            if state in ("BLIND", "STALE", "NOT_HERE")
+            else "PLANE_DEGRADED"
+            if state == "DEGRADED"
+            else "PLANE_DOWN"
+        )
+        severity = (
+            "critical"
+            if state == "DOWN" and source.get("required")
+            else "high"
+            if source.get("required")
+            else "medium"
+        )
+        findings.append(
+            {
+                "code": code,
+                "severity": severity,
+                "title": f"{source_id}: {source.get('summary')}",
+                "detail": source.get("summary"),
+                "failureDomain": source.get("failureDomain"),
+                "planes": plane_membership.get(source_id, []),
+                "sources": [source_id],
+                "affected": [],
+                "action": (
+                    f"Restore readable evidence for {source_id}."
+                    if code == "VISIBILITY_GAP"
+                    else f"Repair the authority behind {source_id}."
+                ),
+                "evidence": source.get("evidence") or {},
+            }
+        )
+    return findings
+
+
+def history_files(contract: Dict[str, Any], repo: Path) -> List[Path]:
+    directory = resolve_contract_path(
+        repo,
+        str(
+            (contract.get("history") or {}).get("directory")
+            or "~/.estate/sre/snapshots"
+        ),
+    )
+    if not directory.is_dir():
+        return []
+    return sorted(directory.glob("*.json"), key=lambda path: path.name)
+
+
+def load_history(contract: Dict[str, Any], repo: Path) -> List[Dict[str, Any]]:
+    rows = []
+    retain = int((contract.get("history") or {}).get("retain", 288))
+    for path in history_files(contract, repo)[-retain:]:
+        try:
+            value = load_json(path)
+            if isinstance(value, dict):
+                rows.append(value)
+        except (OSError, ValueError):
+            continue
+    archive_value = (contract.get("history") or {}).get("archiveFile")
+    if archive_value:
+        archive_path = resolve_contract_path(repo, str(archive_value))
+        try:
+            archive = load_json(archive_path)
+            if isinstance(archive, list):
+                rows.extend(row for row in archive if isinstance(row, dict))
+            elif isinstance(archive, dict) and isinstance(
+                archive.get("snapshots"), list
+            ):
+                rows.extend(
+                    row for row in archive["snapshots"] if isinstance(row, dict)
+                )
+        except (OSError, ValueError):
+            pass
+    unique: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for row in rows:
+        key = (
+            str(row.get("generatedAt") or ""),
+            str((row.get("integrity") or {}).get("digest") or ""),
+        )
+        unique[key] = row
+    return sorted(unique.values(), key=lambda row: str(row.get("generatedAt") or ""))[
+        -retain:
+    ]
+
+
+def source_states(snapshot: Dict[str, Any]) -> Dict[str, str]:
+    return {
+        str(row.get("id")): state_of_source(row)
+        for row in snapshot.get("sources") or []
+    }
+
+
+def build_slos(
+    contract: Dict[str, Any],
+    history: List[Dict[str, Any]],
+    current: Dict[str, Any],
+    vantage: str,
+) -> List[Dict[str, Any]]:
+    minimum = int((contract.get("history") or {}).get("minimumSamples", 6))
+    samples = history + [current]
+    results = []
+    for slo in contract.get("slos") or []:
+        window_hours = float(slo.get("windowHours", 24))
+        cutoff = time.time() - window_hours * 3600
+        selected = [
+            row
+            for row in samples
+            if parse_time(row.get("generatedAt")) is not None
+            and float(parse_time(row.get("generatedAt")) or 0) >= cutoff
+        ][-int(max(24, minimum * 6)) :]
+        predicates = list(
+            (slo.get("sourcesByVantage") or {}).get(vantage) or slo.get("sources") or []
+        )
+        passes = 0
+        measured = 0
+        for row in selected:
+            states = row.get("sourceStates") or source_states(row)
+            observed = [states.get(source_id, "BLIND") for source_id in predicates]
+            if any(
+                state in ("BLIND", "STALE", "NOT_HERE", "CONFLICT")
+                for state in observed
+            ):
+                continue
+            measured += 1
+            if all(state == "OK" for state in observed):
+                passes += 1
+        target = float(slo.get("target", 0.99))
+        if measured < minimum:
+            state = "LEARNING"
+            observed_availability = round(passes / measured, 6) if measured else None
+            burn = None
+            confidence = round(measured / minimum, 3)
+        else:
+            observed_availability = passes / measured
+            allowed_error = max(1e-12, 1.0 - target)
+            observed_error = 1.0 - observed_availability
+            burn = round(observed_error / allowed_error, 3)
+            confidence = round(min(1.0, measured / max(minimum, 1)), 3)
+            state = "HEALTHY" if observed_availability >= target else "BREACHING"
+        results.append(
+            {
+                "id": slo.get("id"),
+                "title": slo.get("title"),
+                "target": target,
+                "windowHours": window_hours,
+                "state": state,
+                "samples": measured,
+                "minimumSamples": minimum,
+                "observedAvailability": (
+                    round(observed_availability, 6)
+                    if observed_availability is not None
+                    else None
+                ),
+                "burnRate": burn,
+                "confidence": confidence,
+                "sources": predicates,
+            }
+        )
+    return results
+
+
+def add_history_findings(
+    contract: Dict[str, Any],
+    history: List[Dict[str, Any]],
+    current: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    threshold = int(
+        (contract.get("priority") or {}).get("proactiveConsecutiveFailures", 3)
+    )
+    limit = int((contract.get("history") or {}).get("predictionSamples", 12))
+    rows = history[-limit:] + [current]
+    findings = []
+    ids = {str(source.get("id")) for source in current.get("sources") or []}
+    for source_id in sorted(ids):
+        sequence = []
+        for row in rows:
+            states = row.get("sourceStates") or source_states(row)
+            sequence.append(states.get(source_id, "BLIND"))
+        count = 0
+        for state in reversed(sequence):
+            if state in TERMINAL_BAD:
+                count += 1
+            else:
+                break
+        if count >= threshold:
+            findings.append(
+                {
+                    "code": "CHRONIC_FAILURE",
+                    "severity": "high",
+                    "title": f"{source_id} has failed for {count} consecutive observations",
+                    "detail": (
+                        "The same source remains non-OK across snapshots; this is a pattern, "
+                        "not a transient blip."
+                    ),
+                    "failureDomain": "recurrence",
+                    "planes": [],
+                    "sources": [source_id],
+                    "affected": [],
+                    "action": f"Open a root-cause repair for {source_id}; stop repeating the same probe.",
+                    "evidence": {"sequence": sequence, "consecutive": count},
+                }
+            )
+    return findings
+
+
+def severity_rank(finding: Dict[str, Any]) -> float:
+    severity = {"critical": 4.0, "high": 3.0, "medium": 2.0, "low": 1.0}.get(
+        str(finding.get("severity")), 1.0
+    )
+    code_priority = {
+        "CORRELATED_FAILURE": 100.0,
+        "PROVIDER_CONCENTRATION": 40.0,
+        "CHRONIC_FAILURE": 30.0,
+        "VISIBILITY_GAP": 20.0,
+    }.get(str(finding.get("code")), 0.0)
+    blast = len(finding.get("affected") or [])
+    return severity * 1000.0 + code_priority + min(blast, 99)
+
+
+def snapshot_hash(snapshot: Dict[str, Any]) -> str:
+    copy = dict(snapshot)
+    for operational in (
+        "integrity",
+        "written",
+        "publication",
+        "issueLedger",
+        "read",
+        "api",
+    ):
+        copy.pop(operational, None)
+    for projection in ("agent", "founder"):
+        if isinstance(copy.get(projection), dict):
+            copy[projection] = dict(copy[projection])
+            copy[projection]["snapshotHash"] = None
+
+    def canonical(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {str(key): canonical(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [canonical(item) for item in value]
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        return value
+
+    body = json.dumps(
+        canonical(copy),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(body.encode()).hexdigest()
+
+
+def synthesize(
+    contract: Dict[str, Any],
+    sources: List[Dict[str, Any]],
+    history: List[Dict[str, Any]],
+    vantage: str,
+) -> Dict[str, Any]:
+    source_index = source_map(sources)
+    planes = {}
+    for plane in contract.get("planes") or []:
+        required = (
+            (plane.get("requiredByVantage") or {}).get(vantage)
+            or plane.get("requiredSources")
+            or []
+        )
+        state = plane_state(list(required), source_index)
+        planes[str(plane.get("id"))] = {
+            "title": plane.get("title"),
+            "weight": float(plane.get("weight", 1)),
+            "critical": bool(plane.get("critical", False)),
+            **state,
+        }
+    total_weight = sum(plane["weight"] for plane in planes.values()) or 1.0
+    blind_weight = sum(
+        plane["weight"]
+        for plane in planes.values()
+        if plane["state"] in ("BLIND", "STALE", "NOT_HERE", "CONFLICT")
+    )
+    measured_weight = total_weight - blind_weight
+    coverage_pct = round(100.0 * measured_weight / total_weight, 1)
+
+    critical_states = [
+        plane["state"] for plane in planes.values() if plane.get("critical")
+    ]
+    if "DOWN" in critical_states:
+        overall = "CRITICAL"
+    elif "BLIND" in critical_states:
+        overall = "BLIND"
+    elif "CONFLICT" in critical_states:
+        overall = "CONFLICT"
+    elif "STALE" in critical_states:
+        overall = "STALE"
+    elif "DEGRADED" in critical_states:
+        overall = "DEGRADED"
+    elif critical_states and all(state == "OK" for state in critical_states):
+        overall = "HEALTHY"
+    else:
+        overall = "BLIND"
+
+    base = {
+        "schemaVersion": SCHEMA,
+        "contractId": contract.get("contractId"),
+        "release": contract.get("release") or {},
+        "generatedAt": iso(),
+        "vantage": vantage,
+        "state": overall,
+        "coveragePercent": coverage_pct,
+        "sources": sources,
+        "sourceStates": {source["id"]: state_of_source(source) for source in sources},
+        "planes": planes,
+        "blindSpots": [
+            {
+                "source": source.get("id"),
+                "state": state_of_source(source),
+                "summary": source.get("summary"),
+                "vantage": source.get("vantage"),
+            }
+            for source in sources
+            if state_of_source(source) in ("BLIND", "STALE", "NOT_HERE")
+        ],
+    }
+    findings = (
+        correlated_findings(source_index)
+        + source_findings(source_index, planes)
+        + add_history_findings(contract, history, base)
+    )
+    unique = {}
+    for finding in findings:
+        key = (
+            str(finding.get("code")),
+            str(finding.get("failureDomain")),
+            tuple(finding.get("sources") or []),
+        )
+        existing = unique.get(key)
+        if existing is None or severity_rank(finding) > severity_rank(existing):
+            unique[key] = finding
+    findings = sorted(unique.values(), key=severity_rank, reverse=True)
+    slos = build_slos(contract, history, base, vantage)
+    top_action = (
+        findings[0].get("action") if findings else "No action; evidence is green."
+    )
+    headline = (
+        f"{overall}: {len([s for s in sources if state_of_source(s) == 'DOWN'])} source(s) down, "
+        f"{len(base['blindSpots'])} visibility gap(s), {coverage_pct:.1f}% weighted coverage"
+    )
+    base.update(
+        {
+            "headline": headline,
+            "findings": findings,
+            "topAction": top_action,
+            "slos": slos,
+            "prediction": {
+                "historySamples": len(history),
+                "minimumSamples": int(
+                    (contract.get("history") or {}).get("minimumSamples", 6)
+                ),
+                "state": "LEARNING"
+                if len(history)
+                < int((contract.get("history") or {}).get("minimumSamples", 6))
+                else "ACTIVE",
+            },
+            "agent": {
+                "state": overall,
+                "headline": headline,
+                "topAction": top_action,
+                "canClaimHealthy": overall == "HEALTHY" and not base["blindSpots"],
+                "snapshotHash": None,
+            },
+            "founder": {
+                "state": overall,
+                "headline": headline,
+                "confidence": round(measured_weight / total_weight, 3),
+                "blindSpotCount": len(base["blindSpots"]),
+                "freshnessSeconds": 0,
+                "topRisks": findings[:3],
+                "snapshotHash": None,
+            },
+        }
+    )
+    digest = snapshot_hash(base)
+    base["integrity"] = {"algorithm": "sha256", "digest": digest}
+    base["agent"]["snapshotHash"] = digest
+    base["founder"]["snapshotHash"] = digest
+    return base
+
+
+def render_markdown(snapshot: Dict[str, Any]) -> str:
+    lines = [
+        "# Estate SRE",
+        "",
+        f"**{snapshot['state']}** | {snapshot['headline']}",
+        "",
+        f"- Generated: `{snapshot['generatedAt']}`",
+        f"- Vantage: `{snapshot['vantage']}`",
+        f"- Evidence coverage: `{snapshot['coveragePercent']:.1f}%`",
+        f"- Snapshot: `{snapshot['integrity']['digest']}`",
+        "",
+        "## Planes",
+        "",
+        "| Plane | State | Sources |",
+        "|---|---|---|",
+    ]
+    for plane_id, plane in snapshot["planes"].items():
+        sources = ", ".join(
+            f"{row['id']}={row['state']}" for row in plane.get("sources") or []
+        )
+        lines.append(
+            f"| {plane.get('title') or plane_id} | {plane['state']} | {sources} |"
+        )
+    lines += ["", "## Findings", ""]
+    if not snapshot.get("findings"):
+        lines.append("No findings.")
+    for finding in snapshot.get("findings") or []:
+        lines.append(
+            f"- **{str(finding.get('severity')).upper()} {finding.get('code')}** - "
+            f"{finding.get('title')}. {finding.get('action')}"
+        )
+    lines += ["", "## Visibility gaps", ""]
+    if not snapshot.get("blindSpots"):
+        lines.append("None.")
+    for gap in snapshot.get("blindSpots") or []:
+        lines.append(f"- `{gap['source']}`: **{gap['state']}** - {gap['summary']}")
+    lines += ["", "## Service objectives", ""]
+    if not snapshot.get("slos"):
+        lines.append("No SLOs configured.")
+    for slo in snapshot.get("slos") or []:
+        lines.append(
+            f"- `{slo['id']}`: **{slo['state']}** - "
+            f"target {slo['target']:.3%}, observed "
+            f"{slo['observedAvailability'] if slo['observedAvailability'] is not None else 'unknown'}, "
+            f"samples {slo['samples']}/{slo['minimumSamples']}, "
+            f"burn {slo['burnRate'] if slo['burnRate'] is not None else 'learning'}"
+        )
+    lines += ["", "## Agent projection", "", snapshot["agent"]["topAction"], ""]
+    return "\n".join(lines)
+
+
+def write_snapshot(
+    snapshot: Dict[str, Any],
+    contract: Dict[str, Any],
+    repo: Path,
+    out_dir: Optional[Path] = None,
+) -> Dict[str, str]:
+    output = contract.get("output") or {}
+    out_dir = out_dir or resolve_contract_path(
+        repo, str(output.get("directory") or "~/.estate/sre")
+    )
+    history_dir = resolve_contract_path(
+        repo,
+        str(
+            (contract.get("history") or {}).get("directory")
+            or "~/.estate/sre/snapshots"
+        ),
+    )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    history_dir.mkdir(parents=True, exist_ok=True)
+    state_path = out_dir / str(output.get("stateFile") or "current.json")
+    markdown_path = out_dir / str(output.get("markdownFile") or "current.md")
+    state_path.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n")
+    markdown_path.write_text(render_markdown(snapshot) + "\n")
+    stamp = snapshot["generatedAt"].replace(":", "").replace("-", "")
+    snapshot_path = history_dir / f"{stamp}-{snapshot['integrity']['digest'][:12]}.json"
+    snapshot_path.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n")
+    keep = int((contract.get("history") or {}).get("retain", 288))
+    for old in sorted(history_dir.glob("*.json"))[:-keep]:
+        old.unlink(missing_ok=True)
+    written = {
+        "state": str(state_path),
+        "markdown": str(markdown_path),
+        "snapshot": str(snapshot_path),
+    }
+    archive_value = (contract.get("history") or {}).get("archiveFile")
+    if archive_value:
+        archive_path = resolve_contract_path(repo, str(archive_value))
+        history = load_history(contract, repo)
+        history = [
+            row
+            for row in history
+            if str((row.get("integrity") or {}).get("digest"))
+            != snapshot["integrity"]["digest"]
+        ]
+        history.append(snapshot)
+        archive_path.parent.mkdir(parents=True, exist_ok=True)
+        archive_path.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": SCHEMA,
+                    "updatedAt": snapshot["generatedAt"],
+                    "snapshots": history[-keep:],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        written["history"] = str(archive_path)
+    return written
+
+
+def publish_snapshot(
+    snapshot: Dict[str, Any],
+    contract: Dict[str, Any],
+    repo: Path,
+    out_dir: Path,
+) -> Dict[str, Any]:
+    publication = contract.get("publication") or {}
+    state_path = out_dir / str(
+        (contract.get("output") or {}).get("stateFile") or "current.json"
+    )
+    markdown_path = out_dir / str(
+        (contract.get("output") or {}).get("markdownFile") or "current.md"
+    )
+    archive_value = (contract.get("history") or {}).get("archiveFile")
+    archive_path = (
+        resolve_contract_path(repo, str(archive_value)) if archive_value else None
+    )
+    bucket = str(publication.get("bucket") or "estate-drill-receipts")
+    objects = [
+        (
+            str(publication.get("object") or "state/sre"),
+            state_path,
+        ),
+        (
+            str(publication.get("markdownObject") or "state/sre.md"),
+            markdown_path,
+        ),
+    ]
+    if archive_path and archive_path.is_file():
+        objects.append(
+            (
+                str(
+                    (contract.get("history") or {}).get("publicationObject")
+                    or "state/sre-history"
+                ),
+                archive_path,
+            )
+        )
+    results = []
+    for name, path in objects:
+        proc = run_command(
+            [
+                str(repo / "bin/idp-cloud"),
+                "object",
+                "put",
+                "--bucket",
+                bucket,
+                "--name",
+                name,
+                "--file",
+                str(path),
+            ],
+            cwd=repo,
+            timeout=90,
+        )
+        results.append(
+            {
+                "object": name,
+                "published": proc["rc"] == 0,
+                "reason": compact(proc["stderr"] or proc["stdout"], 300),
+            }
+        )
+    failed = [row for row in results if not row["published"]]
+    return {
+        "published": not failed,
+        "bucket": bucket,
+        "objects": results,
+        "reason": "all objects published"
+        if not failed
+        else "; ".join(str(row["reason"]) for row in failed),
+    }
+
+
+SRE_ISSUE_PREFIX = "[SRE]"
+SRE_ISSUE_MARKER = "<!-- estate-sre-domain:"
+
+
+def domain_issue_body(
+    snapshot: Dict[str, Any], domain: str, findings: List[Dict[str, Any]]
+) -> str:
+    run_url = os.environ.get("SRE_RUN_URL", "")
+    sources = snapshot.get("sourceStates") or {}
+    planes = [
+        {"plane": plane_id, "state": plane.get("state")}
+        for plane_id, plane in snapshot.get("planes", {}).items()
+        if plane.get("state") != "OK"
+    ]
+    lines = [
+        f"{SRE_ISSUE_MARKER}{domain} -->",
+        f"# {SRE_ISSUE_PREFIX} {domain}",
+        "",
+        (
+            f"Snapshot `{snapshot['integrity']['digest']}` at "
+            f"`{snapshot['generatedAt']}` reports **{snapshot['state']}**."
+        ),
+        "",
+        f"Top action: {snapshot.get('topAction')}",
+        "",
+        "## Findings",
+        "",
+    ]
+    for finding in findings:
+        lines.append(
+            f"- **{str(finding.get('severity')).upper()} {finding.get('code')}** - "
+            f"{finding.get('title')}. {finding.get('action')}"
+        )
+    lines += [
+        "",
+        "## Source evidence",
+        "",
+        "| Source | State |",
+        "|---|---|",
+    ]
+    for source_id, state in sorted(sources.items()):
+        lines.append(f"| `{source_id}` | {state} |")
+    if planes:
+        lines += ["", "## Non-green planes", ""]
+        for row in sorted(planes, key=lambda item: str(item["plane"])):
+            lines.append(f"- `{row['plane']}`: {row['state']}")
+    if run_url:
+        lines += ["", f"Collector run: {run_url}"]
+    lines += [
+        "",
+        (
+            "This issue is maintained by the deterministic SRE synthesizer. "
+            "It is grouped by failure domain, not by individual symptom. "
+            "Closing the upstream failure clears the finding on a later snapshot."
+        ),
+    ]
+    return "\n".join(lines)
+
+
+def sync_issue_ledger(
+    snapshot: Dict[str, Any], repo: Path, repo_slug: str
+) -> Dict[str, Any]:
+    if not has_binary("gh"):
+        return {
+            "published": False,
+            "reason": "gh is not installed",
+            "created": [],
+            "updated": [],
+            "resolved": [],
+        }
+    listed = run_command(
+        [
+            "gh",
+            "issue",
+            "list",
+            "--repo",
+            repo_slug,
+            "--state",
+            "open",
+            "--search",
+            "estate-sre-domain in:body",
+            "--limit",
+            "200",
+            "--json",
+            "number,title,body,url",
+        ],
+        cwd=repo,
+        timeout=30,
+    )
+    if listed["rc"] != 0 or not listed["stdout"].strip():
+        return {
+            "published": False,
+            "reason": compact(listed["stderr"] or "gh issue list returned no JSON"),
+            "created": [],
+            "updated": [],
+            "resolved": [],
+        }
+    try:
+        existing = json.loads(listed["stdout"])
+    except ValueError as exc:
+        return {
+            "published": False,
+            "reason": f"gh issue list returned invalid JSON: {exc}",
+            "created": [],
+            "updated": [],
+            "resolved": [],
+        }
+    by_domain: Dict[str, Dict[str, Any]] = {}
+    for issue in existing:
+        match = re.search(
+            re.escape(SRE_ISSUE_MARKER) + r"([a-zA-Z0-9._-]+)",
+            str(issue.get("body") or ""),
+        )
+        if match:
+            by_domain[match.group(1)] = issue
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for finding in snapshot.get("findings") or []:
+        domain = str(finding.get("failureDomain") or "").strip()
+        if not domain or domain in ("recurrence", "unknown"):
+            continue
+        grouped.setdefault(domain, []).append(finding)
+    created, updated, resolved, failures = [], [], [], []
+    for domain, findings in sorted(grouped.items()):
+        if max(severity_rank(row) for row in findings) < 2000:
+            continue
+        title = f"{SRE_ISSUE_PREFIX} {domain}"
+        body = domain_issue_body(snapshot, domain, findings)
+        issue = by_domain.get(domain)
+        if issue:
+            if (
+                str(issue.get("title")) == title
+                and str(issue.get("body") or "").strip() == body
+            ):
+                continue
+            proc = run_command(
+                [
+                    "gh",
+                    "issue",
+                    "edit",
+                    str(issue.get("number")),
+                    "--repo",
+                    repo_slug,
+                    "--title",
+                    title,
+                    "--body",
+                    body,
+                ],
+                cwd=repo,
+                timeout=30,
+            )
+            (updated if proc["rc"] == 0 else failures).append(
+                {
+                    "domain": domain,
+                    "number": issue.get("number"),
+                    "url": issue.get("url"),
+                    "reason": compact(proc["stderr"] or proc["stdout"], 300),
+                }
+            )
+            continue
+        proc = run_command(
+            [
+                "gh",
+                "issue",
+                "create",
+                "--repo",
+                repo_slug,
+                "--title",
+                title,
+                "--body",
+                body,
+            ],
+            cwd=repo,
+            timeout=30,
+        )
+        created.append(
+            {
+                "domain": domain,
+                "url": compact(proc["stdout"], 500) if proc["rc"] == 0 else None,
+                "reason": compact(proc["stderr"], 300),
+            }
+        )
+        if proc["rc"] != 0:
+            failures.append(created[-1])
+    for domain, issue in sorted(by_domain.items()):
+        if domain in grouped or not str(issue.get("title")).startswith(
+            SRE_ISSUE_PREFIX
+        ):
+            continue
+        marker = (
+            f"Resolved by SRE snapshot `{snapshot['integrity']['digest']}` at "
+            f"`{snapshot['generatedAt']}`; no current finding is assigned to `{domain}`."
+        )
+        proc = run_command(
+            [
+                "gh",
+                "issue",
+                "comment",
+                str(issue.get("number")),
+                "--repo",
+                repo_slug,
+                "--body",
+                marker,
+            ],
+            cwd=repo,
+            timeout=30,
+        )
+        if proc["rc"] != 0:
+            failures.append(
+                {
+                    "domain": domain,
+                    "number": issue.get("number"),
+                    "reason": compact(proc["stderr"] or proc["stdout"], 300),
+                }
+            )
+            continue
+        proc = run_command(
+            [
+                "gh",
+                "issue",
+                "close",
+                str(issue.get("number")),
+                "--repo",
+                repo_slug,
+                "--reason",
+                "completed",
+            ],
+            cwd=repo,
+            timeout=30,
+        )
+        resolved.append(
+            {
+                "domain": domain,
+                "number": issue.get("number"),
+                "url": issue.get("url"),
+                "closed": proc["rc"] == 0,
+                "reason": compact(proc["stderr"] or proc["stdout"], 300),
+            }
+        )
+        if proc["rc"] != 0:
+            failures.append(resolved[-1])
+    return {
+        "published": not failures,
+        "created": created,
+        "updated": updated,
+        "resolved": resolved,
+        "failures": failures,
+        "reason": "ok"
+        if not failures
+        else f"{len(failures)} issue operation(s) failed",
+    }
+
+
+def evaluate_snapshot(snapshot: Dict[str, Any], max_age_s: int) -> Dict[str, Any]:
+    declared_digest = str((snapshot.get("integrity") or {}).get("digest") or "")
+    actual_digest = snapshot_hash(snapshot)
+    integrity_ok = bool(declared_digest and declared_digest == actual_digest)
+    stale = (
+        age_seconds(snapshot.get("generatedAt")) is not None
+        and float(age_seconds(snapshot.get("generatedAt")) or 0) > max_age_s
+    )
+    result = dict(snapshot)
+    result["read"] = {
+        "at": iso(),
+        "ageSeconds": age_seconds(snapshot.get("generatedAt")),
+        "stale": stale,
+        "integrityValid": integrity_ok,
+        "declaredDigest": declared_digest,
+        "computedDigest": actual_digest,
+        "maxAgeSeconds": max_age_s,
+    }
+    if stale or not integrity_ok:
+        result["state"] = "STALE" if stale else "CONFLICT"
+        result.setdefault("agent", {})["canClaimHealthy"] = False
+        result.setdefault("agent", {})["state"] = result["state"]
+        result.setdefault("founder", {})["state"] = result["state"]
+        result.setdefault("founder", {})["headline"] = (
+            f"STALE: SRE snapshot is older than {max_age_s}s"
+            if stale
+            else "CONFLICT: SRE snapshot integrity hash does not match its content"
+        )
+    return result
+
+
+def read_state(path: Path, max_age_s: int) -> Dict[str, Any]:
+    return evaluate_snapshot(load_json(path), max_age_s)
+
+
+def read_remote_state(
+    repo: Path, contract: Dict[str, Any], max_age_s: int
+) -> Dict[str, Any]:
+    publication = contract.get("publication") or {}
+    bucket = str(publication.get("bucket") or "estate-drill-receipts")
+    name = str(publication.get("object") or "state/sre")
+    proc = run_command(
+        [
+            str(repo / "bin/idp-cloud"),
+            "object",
+            "get",
+            "--bucket",
+            bucket,
+            "--name",
+            name,
+        ],
+        cwd=repo,
+        timeout=90,
+    )
+    if proc["rc"] != 0 or not proc["stdout"].strip():
+        snapshot = {
+            "schemaVersion": SCHEMA,
+            "contractId": contract.get("contractId"),
+            "generatedAt": iso(),
+            "vantage": "cloud",
+            "state": "BLIND",
+            "headline": "BLIND: the cloud SRE snapshot could not be read",
+            "coveragePercent": 0.0,
+            "sources": [],
+            "sourceStates": {},
+            "planes": {},
+            "blindSpots": [
+                {
+                    "source": "cloud-sre-publication",
+                    "state": "BLIND",
+                    "summary": compact(
+                        proc["stderr"] or proc["stdout"] or "no object returned"
+                    ),
+                    "vantage": "cloud",
+                }
+            ],
+            "findings": [],
+            "slos": [],
+            "topAction": "Restore the cloud SRE publication path.",
+            "agent": {
+                "state": "BLIND",
+                "headline": "the cloud SRE snapshot could not be read",
+                "topAction": "Restore the cloud SRE publication path.",
+                "canClaimHealthy": False,
+                "snapshotHash": None,
+            },
+            "founder": {
+                "state": "BLIND",
+                "headline": "the cloud SRE snapshot could not be read",
+                "confidence": 0.0,
+                "blindSpotCount": 1,
+                "freshnessSeconds": None,
+                "topRisks": [],
+                "snapshotHash": None,
+            },
+            "integrity": {"algorithm": "sha256", "digest": None},
+        }
+        digest = snapshot_hash(snapshot)
+        snapshot["integrity"]["digest"] = digest
+        snapshot["agent"]["snapshotHash"] = digest
+        snapshot["founder"]["snapshotHash"] = digest
+        return evaluate_snapshot(snapshot, max_age_s)
+    try:
+        snapshot = json.loads(proc["stdout"])
+    except ValueError as exc:
+        snapshot = {
+            "schemaVersion": SCHEMA,
+            "generatedAt": iso(),
+            "state": "CONFLICT",
+            "headline": f"CONFLICT: cloud SRE snapshot is not JSON: {compact(exc)}",
+            "coveragePercent": 0.0,
+            "sources": [],
+            "sourceStates": {},
+            "planes": {},
+            "blindSpots": [],
+            "findings": [],
+            "slos": [],
+            "agent": {"canClaimHealthy": False},
+            "founder": {},
+            "integrity": {"algorithm": "sha256", "digest": None},
+        }
+        digest = snapshot_hash(snapshot)
+        snapshot["integrity"]["digest"] = digest
+        snapshot["agent"]["snapshotHash"] = digest
+        snapshot["founder"]["snapshotHash"] = digest
+        return evaluate_snapshot(snapshot, max_age_s)
+    if not isinstance(snapshot, dict):
+        raise ValueError("cloud SRE snapshot root is not an object")
+    return evaluate_snapshot(snapshot, max_age_s)
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "command",
+        nargs="?",
+        choices=("collect", "read", "explain"),
+        default="collect",
+    )
+    parser.add_argument("--repo", default=str(Path(__file__).resolve().parents[1]))
+    parser.add_argument("--config", default=DEFAULT_CONFIG)
+    parser.add_argument(
+        "--vantage", choices=("auto", "laptop", "cloud", "sandbox"), default="auto"
+    )
+    parser.add_argument("--out")
+    parser.add_argument(
+        "--remote",
+        action="store_true",
+        help="read the published cloud snapshot instead of the local cache",
+    )
+    parser.add_argument("--publish", action="store_true")
+    parser.add_argument("--sync-issues", action="store_true")
+    parser.add_argument(
+        "--repo-slug",
+        default=os.environ.get("GITHUB_REPOSITORY", "chidionyema/idp"),
+    )
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--strict", action="store_true")
+    parser.add_argument("--max-age", type=int, default=1200)
+    args = parser.parse_args(argv)
+    repo = Path(args.repo).resolve()
+    contract_path = resolve_contract_path(repo, args.config)
+    try:
+        contract = load_json(contract_path)
+    except (OSError, ValueError) as exc:
+        print(f"BLIND estate-sre: contract unreadable: {exc}", file=sys.stderr)
+        return 2
+    output = contract.get("output") or {}
+    out_dir = (
+        Path(args.out).resolve()
+        if args.out
+        else resolve_contract_path(
+            repo, str(output.get("directory") or "~/.estate/sre")
+        )
+    )
+    state_path = out_dir / str(output.get("stateFile") or "current.json")
+    if args.command in ("read", "explain"):
+        try:
+            snapshot = (
+                read_remote_state(repo, contract, args.max_age)
+                if args.remote
+                else read_state(state_path, args.max_age)
+            )
+        except (OSError, ValueError) as exc:
+            print(f"BLIND estate-sre: snapshot unreadable at {state_path}: {exc}")
+            return 2
+        if args.command == "explain":
+            print(render_markdown(snapshot))
+        else:
+            print(json.dumps(snapshot, indent=2, sort_keys=True))
+        return 0
+    vantage = detect_vantage() if args.vantage == "auto" else args.vantage
+    history = load_history(contract, repo)
+    sources = collect_sources(contract, repo, vantage)
+    snapshot = synthesize(contract, sources, history, vantage)
+    if args.sync_issues:
+        snapshot["issueLedger"] = sync_issue_ledger(snapshot, repo, str(args.repo_slug))
+    written = write_snapshot(snapshot, contract, repo, out_dir)
+    if args.publish:
+        snapshot["publication"] = publish_snapshot(snapshot, contract, repo, out_dir)
+    snapshot["written"] = written
+    write_snapshot(snapshot, contract, repo, out_dir)
+    if args.json:
+        print(json.dumps(snapshot, indent=2, sort_keys=True))
+    else:
+        print(render_markdown(snapshot))
+    automation_failed = (
+        args.publish and not (snapshot.get("publication") or {}).get("published", False)
+    ) or (
+        args.sync_issues
+        and not (snapshot.get("issueLedger") or {}).get("published", False)
+    )
+    if automation_failed:
+        return 3
+    if args.strict and (snapshot["state"] != "HEALTHY" or snapshot.get("blindSpots")):
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

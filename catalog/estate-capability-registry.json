@@ -3,11 +3,11 @@
   "generator": "bin/capability-index emit",
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
-    "intent": 118,
+    "intent": 119,
     "layer": 253,
     "service": 121,
-    "tool": 476,
-    "workflow": 95
+    "tool": 477,
+    "workflow": 96
   },
   "records": [
     {
@@ -5480,6 +5480,53 @@
       "mirrors": [
         "platform/estate/libexec/spire-proof-run.sh"
       ]
+    },
+    {
+      "id": "cap:intent/sre",
+      "schema_version": 1,
+      "kind": "intent",
+      "summary": "Read the one cloud-authoritative SRE projection for the whole estate. The answer carries the snapshot hash, every source state, weighted coverage, explicit blind spots, correlated failure domains, service-objective burn and the highest-leverage repair. A missing cloud object returns BLIND; stale or hash-tampered evidence never returns healthy. Read-only. class: read door_s: 100 halt_on_failure: true steps: - name: cloud-projection cmd: python3 bin/estate-sre read --remote --json",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "executor job record"
+        ],
+        "errors": [
+          "non-zero step exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "seconds"
+      },
+      "owner": "estate-runtime",
+      "plane": "estate",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform/estate/intents"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "intents",
+      "path": "platform/estate/intents/sre.yaml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics",
+        "dependencies"
+      ],
+      "known_issues": [],
+      "mirrors": []
     },
     {
       "id": "cap:intent/telegram-agent.doctor",
@@ -31078,6 +31125,95 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/estate-sre",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "One freshness-aware SRE projection over the estate's existing authorities.",
+      "contract": {
+        "inputs": [
+          "--auth",
+          "--backend-set-name",
+          "--body",
+          "--bucket",
+          "--config",
+          "--config-file",
+          "--file",
+          "--json",
+          "--limit",
+          "--load-balancer-id",
+          "--max-age",
+          "--name",
+          "--out",
+          "--output",
+          "--profile",
+          "--publish",
+          "--reason",
+          "--remote",
+          "--repo",
+          "--repo-slug",
+          "--search",
+          "--state",
+          "--strict",
+          "--sync-issues"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:workflow/gha-estate-sre"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-sre",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-progress",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": [
+        ".github/workflows/estate-sre.yml"
+      ]
+    },
+    {
       "id": "cap:tool/estate-state-page",
       "schema_version": 1,
       "kind": "tool",
@@ -35440,6 +35576,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/estate-sre",
         "cap:tool/estate-twin-runtime",
         "cap:tool/idp-agent-key",
         "cap:tool/idp-bootstrap-cloudflare",
@@ -35492,6 +35629,7 @@
         "cap:workflow/gha-concierge-deploy",
         "cap:workflow/gha-estate-inventory",
         "cap:workflow/gha-estate-secret-prune",
+        "cap:workflow/gha-estate-sre",
         "cap:workflow/gha-estate-state",
         "cap:workflow/gha-flux-board-reconcile",
         "cap:workflow/gha-forge-train",
@@ -53331,6 +53469,7 @@
         "cap:tool/estate-patch",
         "cap:tool/estate-read",
         "cap:tool/estate-runtime-sync",
+        "cap:tool/estate-sre",
         "cap:tool/estate-state-page",
         "cap:tool/estate-surface-map",
         "cap:tool/estate-work-status",
@@ -56356,6 +56495,75 @@
       "writer": "repo",
       "path": ".github/workflows/estate-secret-prune.yml",
       "depends_on": [
+        {
+          "id": "cap:tool/idp-cloud",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:workflow/gha-estate-sre",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "estate-sre -- the GitHub Actions workflow estate-sre.yml.",
+      "contract": {
+        "inputs": [
+          "schedule",
+          "workflow_run",
+          "workflow_dispatch",
+          "pull_request"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0",
+          "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/estate-sre.yml",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-sre",
+          "edge": "invokes"
+        },
         {
           "id": "cap:tool/idp-cloud",
           "edge": "invokes"

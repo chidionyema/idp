@@ -1,0 +1,328 @@
+{
+  "schemaVersion": "1.0.0",
+  "contractId": "estate.sre",
+  "release": {
+    "id": "sre-2026.11.08.1",
+    "version": "1.0.0"
+  },
+  "history": {
+    "directory": "~/.estate/sre/snapshots",
+    "archiveFile": "~/.estate/sre/history.json",
+    "retain": 288,
+    "minimumSamples": 6,
+    "predictionSamples": 12,
+    "publicationObject": "state/sre-history"
+  },
+  "output": {
+    "directory": "~/.estate/sre",
+    "stateFile": "current.json",
+    "markdownFile": "current.md"
+  },
+  "publication": {
+    "bucket": "estate-drill-receipts",
+    "object": "state/sre",
+    "markdownObject": "state/sre.md"
+  },
+  "sources": [
+    {
+      "id": "critical-spine",
+      "kind": "critical-spine",
+      "vantage": "host",
+      "vantages": ["laptop"],
+      "required": true,
+      "failureDomain": "node",
+      "timeoutSeconds": 120,
+      "command": [
+        "python3",
+        "~/.estate/runtime/idp/platform/estate/libexec/critical-watch.py",
+        "--dry-run",
+        "--json"
+      ]
+    },
+    {
+      "id": "estate-lanes",
+      "kind": "estate-lanes",
+      "vantage": "network",
+      "vantages": ["laptop", "cloud", "sandbox"],
+      "required": true,
+      "failureDomain": "public-edge",
+      "timeoutSeconds": 90,
+      "command": [
+        "python3",
+        "bin/idp-estate-homes",
+        "--no-file",
+        "--json"
+      ]
+    },
+    {
+      "id": "founder-path",
+      "kind": "estate-truth",
+      "vantage": "network",
+      "vantages": ["laptop", "cloud"],
+      "required": true,
+      "failureDomain": "public-edge",
+      "timeoutSeconds": 90,
+      "command": [
+        "python3",
+        "platform/estate/libexec/estate-truth.py",
+        "--json"
+      ]
+    },
+    {
+      "id": "delivery-progress",
+      "kind": "progress-cache",
+      "vantage": "any",
+      "vantages": ["laptop"],
+      "required": false,
+      "failureDomain": "github",
+      "path": "~/.estate/progress/estate-progress.json",
+      "maxAgeSeconds": 1800
+    },
+    {
+      "id": "incidents",
+      "kind": "incident-ledger",
+      "vantage": "any",
+      "vantages": ["laptop"],
+      "required": true,
+      "failureDomain": "ownership",
+      "path": "~/.estate/state/incidents.db"
+    },
+    {
+      "id": "agent-fabric",
+      "kind": "agent-fabric",
+      "vantage": "any",
+      "vantages": ["laptop", "sandbox"],
+      "required": true,
+      "failureDomain": "agent-fabric",
+      "sessionsDirectory": "~/.estate/state/sessions",
+      "heartbeatsDirectory": "~/.estate/heartbeats",
+      "executorSocket": "~/.estate/executor.sock",
+      "diskFloorMb": 1500
+    },
+    {
+      "id": "oci-lb",
+      "kind": "load-balancer-health",
+      "vantage": "oci",
+      "vantages": ["laptop", "cloud"],
+      "required": true,
+      "failureDomain": "oci-lb",
+      "timeoutSeconds": 30,
+      "loadBalancerId": "ocid1.loadbalancer.oc1.uk-london-1.aaaaaaaaapvlh4mk6lwwomrj7vygkorqoalj4q5kqjry3urcu2em4u4ieorq",
+      "backendSets": ["TCP-80", "TCP-443"],
+      "profileEnv": "OCI_CLI_PROFILE",
+      "defaultProfile": "agent"
+    },
+    {
+      "id": "cloud-critical",
+      "kind": "cloud-critical",
+      "vantage": "cloud",
+      "vantages": ["cloud"],
+      "required": true,
+      "failureDomain": "cloud-substrate",
+      "pathEnv": "ESTATE_STATE_JSON_PATH",
+      "maxAgeSeconds": 1800
+    },
+    {
+      "id": "cloud-incidents",
+      "kind": "cloud-incidents",
+      "vantage": "cloud",
+      "vantages": ["cloud"],
+      "required": true,
+      "failureDomain": "ownership",
+      "pathEnv": "ESTATE_STATE_JSON_PATH",
+      "maxAgeSeconds": 1800
+    },
+    {
+      "id": "cloud-agent-fabric",
+      "kind": "cloud-agent-fabric",
+      "vantage": "cloud",
+      "vantages": ["cloud"],
+      "required": true,
+      "failureDomain": "agent-fabric",
+      "pathEnv": "ESTATE_STATE_JSON_PATH",
+      "maxAgeSeconds": 1800,
+      "staleAfterSeconds": 7200
+    },
+    {
+      "id": "cloud-delivery",
+      "kind": "cloud-delivery",
+      "vantage": "cloud",
+      "vantages": ["cloud"],
+      "required": false,
+      "failureDomain": "github",
+      "pathEnv": "ESTATE_STATE_JSON_PATH",
+      "maxAgeSeconds": 1800
+    },
+    {
+      "id": "dns",
+      "kind": "dns",
+      "vantage": "network",
+      "vantages": ["laptop", "cloud"],
+      "required": true,
+      "failureDomain": "dns",
+      "timeoutSeconds": 10,
+      "hosts": [
+        "mumchimp.com",
+        "api.mumchimp.com",
+        "auth.mumchimp.com",
+        "catalogue.mumchimp.com",
+        "llm.mumchimp.com",
+        "mcp.mumchimp.com",
+        "meridian.mumchimp.com",
+        "otto.mumchimp.com"
+      ]
+    }
+  ],
+  "planes": [
+    {
+      "id": "founder-path",
+      "title": "Founder path and visible surfaces",
+      "weight": 3,
+      "critical": true,
+      "requiredSources": ["founder-path", "dns", "oci-lb"],
+      "requiredByVantage": {
+        "cloud": ["founder-path", "dns", "oci-lb"]
+      }
+    },
+    {
+      "id": "model-routing",
+      "title": "Model routing and provider floors",
+      "weight": 3,
+      "critical": true,
+      "requiredSources": ["critical-spine", "estate-lanes"],
+      "requiredByVantage": {
+        "cloud": ["cloud-critical", "estate-lanes"]
+      }
+    },
+    {
+      "id": "memory-context",
+      "title": "Memory, context and continuity",
+      "weight": 3,
+      "critical": true,
+      "requiredSources": ["critical-spine"],
+      "requiredByVantage": {
+        "cloud": ["founder-path"]
+      }
+    },
+    {
+      "id": "agent-execution",
+      "title": "Agent execution and capacity",
+      "weight": 3,
+      "critical": true,
+      "requiredSources": ["critical-spine", "agent-fabric"],
+      "requiredByVantage": {
+        "cloud": ["cloud-critical", "cloud-agent-fabric"]
+      }
+    },
+    {
+      "id": "cloud-substrate",
+      "title": "Cloud substrate and public edge",
+      "weight": 3,
+      "critical": true,
+      "requiredSources": ["critical-spine", "estate-lanes", "oci-lb", "dns"],
+      "requiredByVantage": {
+        "cloud": ["cloud-critical", "estate-lanes", "oci-lb", "dns"]
+      }
+    },
+    {
+      "id": "identity",
+      "title": "Identity and protected access",
+      "weight": 3,
+      "critical": true,
+      "requiredSources": ["estate-lanes", "dns"],
+      "requiredByVantage": {
+        "cloud": ["estate-lanes", "dns"]
+      }
+    },
+    {
+      "id": "delivery",
+      "title": "Delivery and promotion",
+      "weight": 2,
+      "critical": false,
+      "requiredSources": ["delivery-progress", "incidents"],
+      "requiredByVantage": {
+        "cloud": ["cloud-delivery", "cloud-incidents"]
+      }
+    },
+    {
+      "id": "observability",
+      "title": "Observability and incident ownership",
+      "weight": 2,
+      "critical": true,
+      "requiredSources": ["incidents"],
+      "requiredByVantage": {
+        "cloud": ["cloud-incidents"]
+      }
+    },
+    {
+      "id": "security-secrets",
+      "title": "Security, secrets and authority",
+      "weight": 3,
+      "critical": true,
+      "requiredSources": ["founder-path", "incidents"],
+      "requiredByVantage": {
+        "cloud": ["founder-path", "cloud-incidents"]
+      }
+    }
+  ],
+  "slos": [
+    {
+      "id": "founder-path-availability",
+      "title": "Founder path availability",
+      "target": 0.999,
+      "windowHours": 720,
+      "planes": ["founder-path"],
+      "sources": ["founder-path"],
+      "sourcesByVantage": {
+        "cloud": ["founder-path"]
+      }
+    },
+    {
+      "id": "model-route-availability",
+      "title": "Canonical model route availability",
+      "target": 0.995,
+      "windowHours": 168,
+      "planes": ["model-routing"],
+      "sources": ["estate-lanes"],
+      "sourcesByVantage": {
+        "cloud": ["estate-lanes"]
+      }
+    },
+    {
+      "id": "agent-execution-availability",
+      "title": "Agent execution availability",
+      "target": 0.995,
+      "windowHours": 168,
+      "planes": ["agent-execution"],
+      "sources": ["critical-spine", "agent-fabric"],
+      "sourcesByVantage": {
+        "cloud": ["cloud-critical", "cloud-agent-fabric"]
+      }
+    },
+    {
+      "id": "public-door-availability",
+      "title": "Public estate door availability",
+      "target": 0.999,
+      "windowHours": 720,
+      "planes": ["cloud-substrate", "identity"],
+      "sources": ["estate-lanes", "oci-lb", "dns"],
+      "sourcesByVantage": {
+        "cloud": ["estate-lanes", "oci-lb", "dns"]
+      }
+    }
+  ],
+  "priority": {
+    "stateWeights": {
+      "DOWN": 1.0,
+      "BLIND": 0.8,
+      "STALE": 0.7,
+      "DEGRADED": 0.5,
+      "CONFLICT": 0.6,
+      "NOT_HERE": 0.1,
+      "OK": 0.0
+    },
+    "proactiveConsecutiveFailures": 3,
+    "burnRateWarning": 1.0,
+    "burnRateCritical": 4.0
+  }
+}

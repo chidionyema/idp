@@ -1,0 +1,161 @@
+name: estate-sre
+
+# One cloud-side SRE projection over the authorities the estate already runs.
+# It consumes estate-state, invokes the existing truth and estate-homes doors from
+# a cloud vantage, reads OCI and DNS directly, groups shared causes, and publishes
+# one signed-by-hash snapshot to the receipt bucket. It creates at most one issue
+# per failure domain and closes only issues carrying its own marker.
+on:
+  schedule:
+    # Offset from the 15-minute source schedules. A workflow_run below reduces
+    # latency when one of those authorities finishes first.
+    - cron: "7,22,37,52 * * * *"
+  workflow_run:
+    workflows: [estate-state, estate-truth, estate-homes-drill]
+    types: [completed]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/estate-sre.yml
+      - bin/estate-sre
+      - catalog/sre-contract.v1.json
+      - catalog/sre-snapshot.v1.schema.json
+      - platform/estate/intents/sre.yaml
+      - tests/test_estate_sre.py
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+  issues: write
+  packages: read
+
+concurrency:
+  group: estate-sre
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: install the one test dependency
+        run: python3 -m pip install -q pytest ruff jsonschema
+      - name: falsify the signal plane
+        run: |
+          set -euo pipefail
+          python3 -m pytest -q tests/test_estate_sre.py
+          ruff check --select E9,F,B,S bin/estate-sre tests/test_estate_sre.py
+          ruff format --check bin/estate-sre tests/test_estate_sre.py
+          python3 -m json.tool catalog/sre-contract.v1.json >/dev/null
+          python3 -m json.tool catalog/sre-snapshot.v1.schema.json >/dev/null
+
+  collect:
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      ARTIFACT: oci://ghcr.io/${{ github.repository }}/estate-state:latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
+      - uses: fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b # v2.4.0
+      - name: install the OCI CLI
+        run: python3 -m pip install -q -r .github/requirements/oci-cli.txt
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: consume the cloud-authority state artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          mkdir -p "$RUNNER_TEMP/estate-state"
+          if printf '%s' "$GH_TOKEN" | flux pull artifact "${ARTIFACT,,}" \
+            --output "$RUNNER_TEMP/estate-state" \
+            --creds "${{ github.repository_owner }}:$(cat)" >/dev/null; then
+            echo "ok      cloud authority artifact pulled"
+          else
+            echo "BLIND   cloud authority artifact not pulled; dependent sources will be BLIND"
+          fi
+          test -f "$RUNNER_TEMP/estate-state/estate-state.json" \
+            && echo "ok      ESTATE_STATE_JSON_PATH=$RUNNER_TEMP/estate-state/estate-state.json" \
+            || echo "BLIND   estate-state.json is absent from the artifact"
+      - name: restore the SRE history needed for SLOs
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
+        run: |
+          set -uo pipefail
+          mkdir -p "$HOME/.estate/sre"
+          if bin/idp-cloud object get \
+            --bucket estate-drill-receipts \
+            --name state/sre-history \
+            > "$HOME/.estate/sre/history.json"; then
+            echo "ok      SRE history restored"
+          else
+            rm -f "$HOME/.estate/sre/history.json"
+            echo "LEARNING no prior SRE history; this run starts the sample window"
+          fi
+      - name: collect, correlate, publish and maintain one issue per failure domain
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ESTATE_STATE_JSON_PATH: ${{ runner.temp }}/estate-state/estate-state.json
+          SRE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          OCI_CLI_AUTH: security_token
+          OCI_CLI_PROFILE: DEFAULT
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
+        run: |
+          set -euo pipefail
+          python3 bin/estate-sre collect \
+            --vantage cloud \
+            --sync-issues \
+            --publish \
+            --json > "$RUNNER_TEMP/sre.json"
+          python3 - "$RUNNER_TEMP/sre.json" <<'PY'
+          import json
+          import sys
+
+          snapshot = json.load(open(sys.argv[1], encoding="utf-8"))
+          print(
+              f"SRE {snapshot['state']} snapshot={snapshot['integrity']['digest']}",
+              f"coverage={snapshot['coveragePercent']}%",
+              f"blind={len(snapshot['blindSpots'])}",
+              f"findings={len(snapshot['findings'])}",
+          )
+          for finding in snapshot["findings"][:8]:
+              print(
+                  f"- {str(finding.get('severity')).upper()} "
+                  f"{finding.get('failureDomain')}: {finding.get('title')}"
+              )
+          PY
+          cat "$HOME/.estate/sre/current.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: retain the machine and human projections
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: estate-sre
+          path: |
+            ${{ runner.temp }}/sre.json
+            ~/.estate/sre/current.md
+          if-no-files-found: warn
+          retention-days: 30
