@@ -20,11 +20,11 @@ DEFAULT_PROFILE = pathlib.Path.home() / ".dsh/profiles/web/cordis.patch.yml"
 
 
 def router_models(url: str) -> tuple[list[dict], str]:
-    request = urllib.request.Request(
+    request = urllib.request.Request(  # noqa: S310 - operator-selected HTTP(S) router
         url.rstrip("/") + "/models",
         headers={"User-Agent": "estate-dsh-catalog/1.0"},
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
+    with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
         payload = json.load(response)
     models = []
     for row in payload.get("data", []):
@@ -43,7 +43,9 @@ def router_models(url: str) -> tuple[list[dict], str]:
         raise RuntimeError(f"{url}/models returned no models")
     configured = os.environ.get("DSH_DEFAULT_MODEL", "").strip()
     if configured and configured not in ids:
-        raise RuntimeError(f"DSH_DEFAULT_MODEL={configured!r} is not served by the router")
+        raise RuntimeError(
+            f"DSH_DEFAULT_MODEL={configured!r} is not served by the router"
+        )
     return models, configured or ("default" if "default" in ids else models[0]["id"])
 
 
@@ -61,7 +63,10 @@ def patch(models: list[dict], default_model: str, router: str) -> list[dict]:
                 "mode": "danger-full-access",
                 "workspaceRoot": os.environ.get(
                     "DSH_WORKSPACE_ROOT",
-                    str(pathlib.Path.home() / "Documents/deepseek-harness/default-workspace"),
+                    str(
+                        pathlib.Path.home()
+                        / "Documents/deepseek-harness/default-workspace"
+                    ),
                 ),
             },
         },
@@ -114,14 +119,19 @@ def patch(models: list[dict], default_model: str, router: str) -> list[dict]:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--router", default=os.environ.get("ESTATE_ROUTER_URL", DEFAULT_ROUTER))
+    parser.add_argument(
+        "--router", default=os.environ.get("ESTATE_ROUTER_URL", DEFAULT_ROUTER)
+    )
     parser.add_argument("--profile", type=pathlib.Path, default=DEFAULT_PROFILE)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args(argv)
 
     models, default_model = router_models(args.router)
-    rendered = json.dumps(patch(models, default_model, args.router.rstrip("/")), indent=2) + "\n"
+    rendered = (
+        json.dumps(patch(models, default_model, args.router.rstrip("/")), indent=2)
+        + "\n"
+    )
     current = args.profile.read_text(encoding="utf-8") if args.profile.exists() else ""
     same = current == rendered
     summary = {
