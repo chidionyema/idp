@@ -1,4 +1,5 @@
 """One gateway-normalized Temporal client for CLI/MCP/founder/voice."""
+
 from __future__ import annotations
 
 import os
@@ -18,11 +19,17 @@ async def start(request: dict[str, Any], release: dict[str, str]) -> dict[str, A
     plan = compile_request(request, release)
     client = await get_client()
     handle = await client.start_workflow(
-        "EstateAutomationWorkflowV1", plan, id=plan["workflow_id"],
+        "EstateAutomationWorkflowV1",
+        plan,
+        id=plan["workflow_id"],
         task_queue=config.TEMPORAL_TASK_QUEUE,
     )
-    return {"workflow_id": plan["workflow_id"], "run_id": handle.result_run_id,
-            "plan_hash": plan["plan_hash"], "status": "started"}
+    return {
+        "workflow_id": plan["workflow_id"],
+        "run_id": handle.result_run_id,
+        "plan_hash": plan["plan_hash"],
+        "status": "started",
+    }
 
 
 async def state(workflow_id: str) -> dict[str, Any]:

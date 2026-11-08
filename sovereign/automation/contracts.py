@@ -3,6 +3,7 @@
 An automation is described by executable Python, not by a maintained catalogue.
 The compiled plan is a value: never mutate it after starting a Temporal history.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -25,11 +26,20 @@ def _automations() -> tuple[type, ...]:
     hand-maintained list of intent names or manifests.
     """
     result = []
-    for module_info in pkgutil.iter_modules(definitions.__path__, definitions.__name__ + "."):
+    for module_info in pkgutil.iter_modules(
+        definitions.__path__, definitions.__name__ + "."
+    ):
         mod = importlib.import_module(module_info.name)
         for _, cls in inspect.getmembers(mod, inspect.isclass):
             if cls.__module__ == mod.__name__ and all(
-                hasattr(cls, field) for field in ("ID", "VERSION", "manifest", "compile_steps", "authorized")
+                hasattr(cls, field)
+                for field in (
+                    "ID",
+                    "VERSION",
+                    "manifest",
+                    "compile_steps",
+                    "authorized",
+                )
             ):
                 result.append(cls)
     if len({c.ID for c in result}) != len(result):
@@ -42,7 +52,13 @@ _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 def canonical(value: Any) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode()
 
 
 def sha256(value: Any) -> str:
@@ -58,7 +74,9 @@ def find(outcome: str) -> list[dict[str, Any]]:
     tokens = set(re.findall(r"[a-z0-9]+", outcome.lower()))
     matches = []
     for manifest in catalogue():
-        terms = " ".join([manifest["id"], manifest["summary"], *manifest["search_terms"]]).lower()
+        terms = " ".join(
+            [manifest["id"], manifest["summary"], *manifest["search_terms"]]
+        ).lower()
         if tokens and tokens & set(re.findall(r"[a-z0-9]+", terms)):
             matches.append(manifest)
     return matches
@@ -74,9 +92,13 @@ def compile_request(request: dict[str, Any], release: dict[str, str]) -> dict[st
     allowed = {"id", "version", "request_id", "surface", "actor", "inputs"}
     if set(request) != allowed:
         raise ValueError(f"request keys must be exactly {sorted(allowed)}")
-    if not isinstance(request["request_id"], str) or not re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", request["request_id"]):
+    if not isinstance(request["request_id"], str) or not re.fullmatch(
+        r"[A-Za-z0-9._:-]{8,128}", request["request_id"]
+    ):
         raise ValueError("request_id must be a stable 8-128 character idempotency key")
-    if not isinstance(request["actor"], str) or not re.fullmatch(r"[A-Za-z0-9._:@/-]{2,128}", request["actor"]):
+    if not isinstance(request["actor"], str) or not re.fullmatch(
+        r"[A-Za-z0-9._:@/-]{2,128}", request["actor"]
+    ):
         raise ValueError("actor must be a verified identity, not an unbounded string")
     if not isinstance(request["surface"], str):
         raise ValueError("surface must be a string")
@@ -92,9 +114,13 @@ def compile_request(request: dict[str, Any], release: dict[str, str]) -> dict[st
         not _DIGEST.fullmatch(release[k]) for k in ("artifact_digest", "config_digest")
     ):
         raise ValueError("invalid release identity; refuse execution")
-    errors = list(Draft202012Validator(manifest["input_schema"]).iter_errors(request["inputs"]))
+    errors = list(
+        Draft202012Validator(manifest["input_schema"]).iter_errors(request["inputs"])
+    )
     if errors:
-        raise ValueError("invalid automation inputs: " + "; ".join(sorted(e.message for e in errors)))
+        raise ValueError(
+            "invalid automation inputs: " + "; ".join(sorted(e.message for e in errors))
+        )
     if not chosen.authorized(request["actor"], request["inputs"]):
         raise PermissionError("actor lacks authority for this automation")
     steps = chosen.compile_steps(request["inputs"])
@@ -108,9 +134,18 @@ def compile_request(request: dict[str, Any], release: dict[str, str]) -> dict[st
         "receipt_schema_version": 1,
     }
     digest = sha256(content)
-    workflow_id = "estate-auto:" + chosen.ID.replace(".", "-") + ":" + sha256({
-        "request_id": request["request_id"], "actor": request["actor"], "version": chosen.VERSION
-    })[:32]
+    workflow_id = (
+        "estate-auto:"
+        + chosen.ID.replace(".", "-")
+        + ":"
+        + sha256(
+            {
+                "request_id": request["request_id"],
+                "actor": request["actor"],
+                "version": chosen.VERSION,
+            }
+        )[:32]
+    )
     return {**content, "plan_hash": digest, "workflow_id": workflow_id}
 
 
@@ -120,10 +155,20 @@ def _validate_dag(steps: list[dict[str, Any]], ceiling: int) -> None:
     nodes = {s["id"]: s for s in steps}
     if len(nodes) != len(steps):
         raise ValueError("duplicate DAG node")
-    if any(s["timeout_s"] < 1 or s["timeout_s"] > 600 or s["max_attempts"] < 1 or s["max_attempts"] > 5 for s in steps):
+    if any(
+        s["timeout_s"] < 1
+        or s["timeout_s"] > 600
+        or s["max_attempts"] < 1
+        or s["max_attempts"] > 5
+        for s in steps
+    ):
         raise ValueError("unsafe activity timeout / retry")
     for s in steps:
-        if s["id"] in s["deps"] or len(s["deps"]) != len(set(s["deps"])) or any(d not in nodes for d in s["deps"]):
+        if (
+            s["id"] in s["deps"]
+            or len(s["deps"]) != len(set(s["deps"]))
+            or any(d not in nodes for d in s["deps"])
+        ):
             raise ValueError("invalid dependency")
     pending = set(nodes)
     while pending:

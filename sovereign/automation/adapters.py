@@ -3,6 +3,7 @@
 The existing GitHub recovery job owns OCI, vault, bundle and tunnel operations.
 Only candidate restoration is supported; no untested production cutover.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -29,12 +30,21 @@ class ExternalFailure(RuntimeError):
     pass
 
 
-def _request(url: str, *, method: str = "GET", body: dict[str, Any] | None = None,
-             token: str | None = None, timeout: int = 15) -> Any:
+def _request(
+    url: str,
+    *,
+    method: str = "GET",
+    body: dict[str, Any] | None = None,
+    token: str | None = None,
+    timeout: int = 15,
+) -> Any:
     # No arbitrary hosts (SSRF), including redirect targets.
     if not (url.startswith(GH_API + "/") or url.startswith(CANDIDATE + "/")):
         raise ValueError("endpoint not allowed by automation policy")
-    headers = {"Accept": "application/vnd.github+json", "User-Agent": "estate-automation-v1"}
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "estate-automation-v1",
+    }
     if token:
         headers["Authorization"] = f"Bearer {token}"
     data = None if body is None else json.dumps(body, sort_keys=True).encode()
@@ -58,8 +68,10 @@ def _request(url: str, *, method: str = "GET", body: dict[str, Any] | None = Non
         try:
             return json.loads(payload)
         except (ValueError, UnicodeError):
-            return {"text_digest": sha256(payload.decode("utf-8", "replace")),
-                    "http_200": response.status == 200}
+            return {
+                "text_digest": sha256(payload.decode("utf-8", "replace")),
+                "http_200": response.status == 200,
+            }
 
 
 def _github_token() -> str:
@@ -87,14 +99,18 @@ def _runs(token: str) -> list[dict[str, Any]]:
 def _candidate_run(runs: list[dict[str, Any]], marker: str) -> dict[str, Any] | None:
     matching = [r for r in runs if r.get("head_branch") == f"auto-run-{marker}"]
     if len(matching) > 1:
-        raise ExternalFailure("duplicate delivery: multiple GitHub runs for one automation")
+        raise ExternalFailure(
+            "duplicate delivery: multiple GitHub runs for one automation"
+        )
     return matching[0] if matching else None
 
 
 def router_dispatch(inp: dict[str, Any]) -> dict[str, Any]:
     """One POST at most; ambiguous deliveries require reconciliation, not retries."""
     token = _github_token()
-    marker = sha256({"workflow_id": inp["workflow_id"], "plan_hash": inp["plan_hash"]})[:32]
+    marker = sha256({"workflow_id": inp["workflow_id"], "plan_hash": inp["plan_hash"]})[
+        :32
+    ]
     found = _candidate_run(_runs(token), marker)
     if found:
         return {"marker": marker, "github_run_id": found["id"], "recovered": True}
@@ -110,13 +126,23 @@ def router_dispatch(inp: dict[str, Any]) -> dict[str, Any]:
     if ref:
         if ref.get("object", {}).get("sha") != inp["source_sha"]:
             raise ExternalFailure("existing run branch has wrong source SHA")
-        raise ExternalFailure("AMBIGUOUS_DISPATCH: existing run ref needs reconciliation " + branch)
-    _request(f"{GH_API}/git/refs", method="POST",
-             body={"ref": "refs/heads/" + branch, "sha": inp["source_sha"]}, token=token)
+        raise ExternalFailure(
+            "AMBIGUOUS_DISPATCH: existing run ref needs reconciliation " + branch
+        )
+    _request(
+        f"{GH_API}/git/refs",
+        method="POST",
+        body={"ref": "refs/heads/" + branch, "sha": inp["source_sha"]},
+        token=token,
+    )
     payload = {"ref": branch, "inputs": {"cutover": "false"}}
     try:
-        _request(f"{GH_API}/actions/workflows/{GH_WORKFLOW}/dispatches",
-                 method="POST", body=payload, token=token)
+        _request(
+            f"{GH_API}/actions/workflows/{GH_WORKFLOW}/dispatches",
+            method="POST",
+            body=payload,
+            token=token,
+        )
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise ExternalFailure("AMBIGUOUS_DISPATCH: reconcile marker " + marker) from exc
     return {"marker": marker, "submitted": True}
@@ -131,40 +157,70 @@ def router_observe(inp: dict[str, Any]) -> dict[str, Any]:
         found = _candidate_run(_runs(token), marker)
         if found and found.get("status") == "completed":
             if found.get("conclusion") != "success":
-                raise ExternalFailure("recovery workflow did not succeed: " + str(found.get("conclusion")))
+                raise ExternalFailure(
+                    "recovery workflow did not succeed: " + str(found.get("conclusion"))
+                )
             if found.get("head_sha") != inp["source_sha"]:
-                raise ExternalFailure("observed execution SHA does not equal plan source SHA")
-            return {"github_run_id": found["id"], "head_sha": found["head_sha"],
-                    "conclusion": "success"}
+                raise ExternalFailure(
+                    "observed execution SHA does not equal plan source SHA"
+                )
+            return {
+                "github_run_id": found["id"],
+                "head_sha": found["head_sha"],
+                "conclusion": "success",
+            }
         time.sleep(12)
     raise ExternalFailure("candidate workflow did not finish inside observation budget")
 
 
 def router_health(inp: dict[str, Any]) -> dict[str, Any]:
     response = _request(CANDIDATE + "/health/liveliness", timeout=10)
-    return {"http_200": True, "probe": "candidate-liveliness", "body_digest": sha256(response)}
+    return {
+        "http_200": True,
+        "probe": "candidate-liveliness",
+        "body_digest": sha256(response),
+    }
 
 
 def router_models(inp: dict[str, Any]) -> dict[str, Any]:
     response = _request(CANDIDATE + "/v1/models", token=_probe_key(), timeout=15)
-    models = sorted(m["id"] for m in response.get("data", [])
-                    if isinstance(m, dict) and isinstance(m.get("id"), str))
+    models = sorted(
+        m["id"]
+        for m in response.get("data", [])
+        if isinstance(m, dict) and isinstance(m.get("id"), str)
+    )
     if not models:
         raise ExternalFailure("candidate lists zero models")
-    return {"models_count": len(models), "model": models[0], "models_digest": sha256(models)}
+    return {
+        "models_count": len(models),
+        "model": models[0],
+        "models_digest": sha256(models),
+    }
 
 
 def router_completion(inp: dict[str, Any]) -> dict[str, Any]:
     model = inp["dependencies"]["models"]["model"]
-    response = _request(CANDIDATE + "/v1/chat/completions", method="POST", token=_probe_key(),
-                        body={"model": model, "max_tokens": 8,
-                              "messages": [{"role": "user", "content": "Reply OK"}]}, timeout=45)
+    response = _request(
+        CANDIDATE + "/v1/chat/completions",
+        method="POST",
+        token=_probe_key(),
+        body={
+            "model": model,
+            "max_tokens": 8,
+            "messages": [{"role": "user", "content": "Reply OK"}],
+        },
+        timeout=45,
+    )
     choices = response.get("choices") or []
     content = (choices[0].get("message") or {}).get("content") if choices else None
     if not isinstance(content, str) or not content.strip():
         raise ExternalFailure("model returned no generated content")
-    return {"generated": True, "requested_model": model,
-            "reported_model": response.get("model"), "response_digest": sha256(content)}
+    return {
+        "generated": True,
+        "requested_model": model,
+        "reported_model": response.get("model"),
+        "response_digest": sha256(content),
+    }
 
 
 _ACTIONS = {
@@ -178,8 +234,10 @@ _ACTIONS = {
 
 @activity.defn(name="automation_activity")
 async def automation_activity(inp: dict[str, Any]) -> dict[str, Any]:
-    actual_release = {k: os.environ.get("ESTATE_AUTOMATION_" + k.upper(), "")
-                      for k in ("source_sha", "artifact_digest", "config_digest")}
+    actual_release = {
+        k: os.environ.get("ESTATE_AUTOMATION_" + k.upper(), "")
+        for k in ("source_sha", "artifact_digest", "config_digest")
+    }
     if inp.get("release") != actual_release:
         raise ExternalFailure("BLIND: worker release identity mismatch")
     action = inp["action"]

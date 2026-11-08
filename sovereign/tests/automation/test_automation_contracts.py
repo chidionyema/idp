@@ -1,26 +1,42 @@
 """BDD acceptance of typed automation contracts; no live infrastructure required."""
+
 from __future__ import annotations
 
 import copy
 
 import pytest
 
-from sovereign.automation.contracts import _validate_dag, catalogue, compile_request, find, verify_plan
+from sovereign.automation.contracts import (
+    _validate_dag,
+    catalogue,
+    compile_request,
+    find,
+    verify_plan,
+)
 
 
 @pytest.fixture
 def automation_request():
-    return {"id": "router-recovery", "version": "1.0.0",
-            "request_id": "recover-router-20261108",
-            "surface": "cli", "actor": "svc:estate-router",
-            "inputs": {"repository": "chidionyema/idp",
-                       "candidate_url": "https://llm-recovery.mumchimp.com"}}
+    return {
+        "id": "router-recovery",
+        "version": "1.0.0",
+        "request_id": "recover-router-20261108",
+        "surface": "cli",
+        "actor": "svc:estate-router",
+        "inputs": {
+            "repository": "chidionyema/idp",
+            "candidate_url": "https://llm-recovery.mumchimp.com",
+        },
+    }
 
 
 @pytest.fixture
 def release():
-    return {"source_sha": "a" * 40, "artifact_digest": "sha256:" + "b" * 64,
-            "config_digest": "sha256:" + "c" * 64}
+    return {
+        "source_sha": "a" * 40,
+        "artifact_digest": "sha256:" + "b" * 64,
+        "config_digest": "sha256:" + "c" * 64,
+    }
 
 
 def test_outcome_first_discovery_generated_from_implementation():
@@ -33,8 +49,17 @@ def test_compiled_plan_is_stable_and_provenance_bound(automation_request, releas
     assert p == compile_request(automation_request, release)
     verify_plan(p)
     assert p["workflow_id"].startswith("estate-auto:router-recovery:")
-    assert set(s["id"] for s in p["steps"]) == {"dispatch", "observe", "health", "models", "completion"}
-    assert {s["id"] for s in p["steps"] if s["deps"] == ["observe"]} == {"health", "models"}
+    assert set(s["id"] for s in p["steps"]) == {
+        "dispatch",
+        "observe",
+        "health",
+        "models",
+        "completion",
+    }
+    assert {s["id"] for s in p["steps"] if s["deps"] == ["observe"]} == {
+        "health",
+        "models",
+    }
     assert p["max_concurrency"] == 2
     q = copy.deepcopy(p)
     q["steps"][0]["inputs"]["repository"] = "attacker/other"
@@ -73,7 +98,9 @@ def test_release_unknown_makes_automation_read_only(automation_request, release)
         compile_request(automation_request, release)
 
 
-def test_idempotency_key_and_actor_participate_in_workflow_identity(automation_request, release):
+def test_idempotency_key_and_actor_participate_in_workflow_identity(
+    automation_request, release
+):
     first = compile_request(automation_request, release)
     automation_request["request_id"] = "recover-router-new-request"
     second = compile_request(automation_request, release)
