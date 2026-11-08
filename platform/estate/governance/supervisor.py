@@ -82,9 +82,13 @@ def _epoch(timestamp: str) -> float:
         return 0.0
 
 
-def _recent_violations(cls: str, session: str, now_epoch: float) -> list[Dict[str, Any]]:
+def _recent_violations(
+    cls: str, session: str, now_epoch: float
+) -> list[Dict[str, Any]]:
     cutoff = now_epoch - grace_seconds(cls)
-    cleared_at = _epoch(str(ledger.get_session_state(session).get("warning_cleared_at", "")))
+    cleared_at = _epoch(
+        str(ledger.get_session_state(session).get("warning_cleared_at", ""))
+    )
     cutoff = max(cutoff, cleared_at)
     return [
         row
