@@ -457,7 +457,7 @@ done
 mkdir -p "$d"
 echo '{"provider":"limited"}' > "$d/$provider.jsonl"
 echo "FAILED_EDIT_$provider" >> a.txt
-echo '429 {"type":"error","error":{"type":"rate_limit_error"}}'
+echo '429 {"type":"error","error":{"type":"rate_limit_error","message":"private-both-provider-sentinel"}}'
 exit 1
 """
     result, out = _agent_step(tmp_path, "gemini", body, {"LEGION_FAILOVER": "1"})
@@ -467,7 +467,9 @@ exit 1
     assert "FAILED_EDIT_google" in (out / "google.failed.patch").read_text()
     assert "FAILED_EDIT_minimax" in (out / "failed.patch").read_text()
     assert "rate_limit_error" in (out / "stdout").read_text()
-    assert "rate_limit_error" not in result.stdout + result.stderr
+    assert "rate_limit_error" in result.stdout + result.stderr
+    assert "private-both-provider-sentinel" in (out / "stdout").read_text()
+    assert "private-both-provider-sentinel" not in result.stdout + result.stderr
 
 
 def test_legion_failover_disabled_for_manual_workflow_dispatch():
