@@ -31,6 +31,7 @@ jobs:
           set -euo pipefail
           gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100" > jobs.json
           python3 - <<'PY'
+          import concurrent.futures
           import hashlib
           import json
           import os
@@ -47,6 +48,17 @@ jobs:
                     ("failure", "timed_out", "startup_failure", "action_required")]
           complete = bool(failed) and len(failed) <= 16 and data.get("total_count", len(jobs)) <= len(jobs)
           findings = []
+
+          # Failed-job logs are independent. Fetch them concurrently so one
+          # slow GitHub download does not delay the entire fleet's feedback.
+          pool = concurrent.futures.ThreadPoolExecutor(max_workers=8)
+          log_futures = {
+              j["id"]: pool.submit(
+                  subprocess.run,
+                  ["gh", "api", f"repos/{repo}/actions/jobs/{j['id']}/logs"],
+                  capture_output=True, text=True, timeout=18, check=False)
+              for j in failed[:16] if j.get("id")
+          }
 
           def redact(line):
               line = re.sub(r"\x1b\[[0-9;]*m", "", line)
@@ -79,12 +91,10 @@ jobs:
                            if s.get("conclusion") in ("failure", "timed_out")), "UNKNOWN_STEP")
               logs_state = "NOT_RETRIEVED"
               excerpt = []
-              if job.get("id") and len(findings) < 16:
+              if job.get("id") in log_futures:
                   try:
-                      proc = subprocess.run(
-                          ["gh", "api", f"repos/{repo}/actions/jobs/{job['id']}/logs"],
-                          capture_output=True, text=True, timeout=35, check=False)
-                  except (OSError, subprocess.TimeoutExpired):
+                      proc = log_futures[job["id"]].result(timeout=23)
+                  except (OSError, subprocess.TimeoutExpired, concurrent.futures.TimeoutError):
                       proc = None
                   if proc is not None and proc.returncode == 0:
                       pattern = re.compile(
@@ -114,6 +124,7 @@ jobs:
                   "error_excerpt": excerpt, "next_estate_action": next_action,
               })
 
+          pool.shutdown(wait=True)
           packet = {
               "contract": "genesis.greenlane.failure-packet.v1",
               "source": "github-actions",
