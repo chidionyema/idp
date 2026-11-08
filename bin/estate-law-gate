@@ -7,6 +7,7 @@
     estate-law-gate --cosmetic      refuse a diff that carries no behaviour
     estate-law-gate --proof-required  refuse a change with no proof attached
     estate-law-gate --spec-trace    refuse a change to a component with no spec behind it
+    estate-law-gate --onboarding-packet  canonical source-based fleet law packet, not an admission grant
     estate-law-gate --self-test     the gate testing itself: every law has a check and a falsifier
     estate-law-gate --json          the verdicts as JSON
 
@@ -70,6 +71,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--cosmetic", action="store_true")
     ap.add_argument("--proof-required", action="store_true")
     ap.add_argument("--spec-trace", action="store_true")
+    ap.add_argument("--onboarding-packet", action="store_true")
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--base", default="origin/main")
     ap.add_argument("--head", default="HEAD")
@@ -77,6 +79,13 @@ def main(argv: list[str]) -> int:
     args = ap.parse_args(argv[1:])
 
     root = ROOT
+    if args.onboarding_packet:
+        from governance import law_packet  # noqa: PLC0415 - same existing governance package
+
+        packet = law_packet.compile_packet(root)
+        print(law_packet.encoded(packet))
+        return 0 if packet["status"] == "SOURCE_CONSISTENT_UNVERIFIED_RUNTIME" else 1
+
     results = []
     failed = False
 
