@@ -212,6 +212,7 @@ def _agent_step(
         "PATH": f"{bin_}:/usr/bin:/bin",
         "HOME": str(home),
         "RUNNER_TEMP": str(temp),
+        "GITHUB_OUTPUT": str(tmp_path / "step_output"),
         "HARNESS": harness,
         "TASK": "append there",
         "CLAUDE_CODE_OAUTH_TOKEN": "x",
@@ -422,7 +423,7 @@ echo 'SECOND_PROVIDER_EDIT' >> a.txt
 
 
 def test_legion_fallback_is_not_used_without_a_second_provider_key(tmp_path):
-    body = FAKE["pi"] + 'echo "private-rate-limit-sentinel 429"\\nexit 1\\n'
+    body = FAKE["pi"] + 'echo "private-rate-limit-sentinel 429"\nexit 1\n'
     result, out = _agent_step(
         tmp_path, "gemini", body,
         {"LEGION_FAILOVER": "1", "MINIMAX_API_KEY": ""},
@@ -435,7 +436,7 @@ def test_legion_fallback_is_not_used_without_a_second_provider_key(tmp_path):
 
 
 def test_manual_gemini_failure_does_not_silently_switch_providers(tmp_path):
-    body = FAKE["pi"] + 'echo "private-no-failover"\\nexit 1\\n'
+    body = FAKE["pi"] + 'echo "private-no-failover"\nexit 1\n'
     result, out = _agent_step(tmp_path, "gemini", body, {"LEGION_FAILOVER": "0"})
     assert result.returncode == 1
     assert "fallback=minimax" not in result.stdout
@@ -452,3 +453,33 @@ def test_legion_failover_disabled_for_manual_workflow_dispatch():
     assert "git reset --hard" in step["run"] and "git clean -fd" in step["run"]
     encrypted = _step("agent", "Encrypt what leaves")["run"]
     assert "google.failed.transcript.jsonl" in encrypted
+
+def test_no_double_start_from_founder_issue_opened_plus_labeled():
+    guard = JOBS["agent"]["if"]
+    assert "github.event.action == 'opened'" in guard
+    assert "github.event.action == 'labeled'" in guard
+    assert "!startsWith(github.event.issue.title, '[LEGION] ')" in guard
+
+def test_failure_classifier_and_failed_patches_are_durably_sealed():
+    job=JOBS["agent"]
+    assert job["outputs"]["failure_code"] == "${{ steps.agent_result.outputs.failure_code }}"
+    run=_step("agent","Run the agent")["run"]
+    assert "LEGION_RATE_BOTH" in run and "google.failed.patch" in run
+    assert "failed.patch" in run and "failure_code=$failure_code" in run
+    encrypted=_step("agent","Encrypt what leaves")["run"]
+    assert "google.failed.patch" in encrypted and "failed.patch" in encrypted
+    upload=next(x for x in _steps("agent") if x.get("uses","").startswith("actions/upload-artifact@"))
+    assert upload["if"]=="always()" and upload["with"]["retention-days"]==90
+
+def test_one_least_privileged_recovery_receipt_on_original_issue():
+    job=JOBS["recovery-receipt"]
+    assert set(job["needs"])=={"agent","firewall","submit-lane"}
+    assert "always()" in job["if"]
+    assert job["permissions"]=={"contents":"read","issues":"write"}
+    script=_step("recovery-receipt","Register typed failure")["run"]
+    assert "LEGION-RECOVERY-RUN" in script
+    assert "python3 -m legion diagnose" in script
+    assert "LEGION_UNKNOWN" in script and "Original mission remains OPEN" in script
+    assert "gh api -X POST" in script
+    assert "SEED_MINIMAX_API_KEY" not in _text("recovery-receipt")
+    assert "AGENT_TRANSCRIPT_AGE_KEY" not in _text("recovery-receipt")
