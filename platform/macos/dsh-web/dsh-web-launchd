@@ -1,0 +1,24 @@
+#!/bin/bash
+# Launch the Mac DSH surface with the founder-owned router catalogue.
+set -euo pipefail
+
+SOPS="${SOPS_BIN:-$HOME/.cache/estate-tools/sops}"
+AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
+VAULT_KEY="$HOME/.estate/secrets/dev/LITELLM_LAPTOP_KEY.yaml"
+NODE="$HOME/.nvm/versions/node/v26.13.0/bin/node"
+DSH_ENTRYPOINT="$HOME/.local/opt/dsh-standalone/lib/node_modules/@deepseek-ai/dsh/lib/bin.js"
+CATALOG="$HOME/.estate/bin/dsh-router-catalog"
+PORT="${DSH_PORT:-3080}"
+
+"$CATALOG" --apply --profile "$HOME/.dsh/profiles/web/cordis.patch.yml" >/dev/null
+
+key="$(SOPS_AGE_KEY_FILE="$AGE_KEY_FILE" "$SOPS" -d --extract '["LITELLM_API_KEY"]' "$VAULT_KEY")"
+[ -n "$key" ] || { echo "dsh-web-launchd: router key is missing from the vault" >&2; exit 1; }
+export LITELLM_API_KEY="$key"
+unset key
+
+exec "$NODE" "$DSH_ENTRYPOINT" \
+  --profile web \
+  --no-open \
+  --host 127.0.0.1 \
+  --port "$PORT"
