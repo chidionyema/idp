@@ -322,9 +322,9 @@ class LeaseStore:
             raise Refused("INDEPENDENT_HANDOVER_PROOF_REQUIRED")
         # Bind approval to the precise old custody, new executor, stored
         # checkpoint and a bounded timestamp/TTL. Epoch CAS prevents replay.
-        message = (f"genesis.morph.handover.v1\\n{mission_id}\\n{old_worker}\\n"
-                   f"{old_epoch}\\n{new_worker}\\n{checkpoint_sha256}\\n"
-                   f"{checkpoint_uri}\\n{now:.6f}\\n{ttl:.6f}\\n").encode()
+        message = (f"genesis.morph.handover.v1\n{mission_id}\n{old_worker}\n"
+                   f"{old_epoch}\n{new_worker}\n{checkpoint_sha256}\n"
+                   f"{checkpoint_uri}\n{now:.6f}\n{ttl:.6f}\n").encode()
         try:
             approved = (type(handover_proof) is bytes and
                         bool(verifier(message, handover_proof)))
