@@ -84,17 +84,21 @@ deciding, `remember` what a later session must know. What comes back is context,
 
 ---
 
-## 2. Never hand-apply. Merge, and let Flux converge.
+## 2. Never hand-apply. Governed source and verified runtime convergence
 
-`kubectl apply` by hand is forbidden. PR merges to `main` → `build-multiarch.yml` builds amd64 +
-arm64, Trivy, cosign → tag `ghcr.io/chidionyema/<name>:main-<run>-<sha>` → Flux image-reflector
-polls → `image-automation` writes `flux/image-updates` → `deploy-when-green` merges on green.
-`bin/build-image` enforces R24. Do not bypass it.
+Manual `kubectl apply` and unauthenticated infrastructure mutation are forbidden.
+Existing Greenlane, image-build and Flux controllers own their respective actions
+**only where the current environment proves they are installed and healthy**.
+The historical CI → image → Flux sequence is a design, not evidence that a given
+source change has reached any live staging or production caller. Discover the
+current exact SHA, deployed revision, GitOps health and independent effect receipt.
 
 **An agent never raises a pull request and never pushes main** (founder 2026-09-29: "a PR that
 can fail should never be allowed to be raised", "main must never go red, never"). Work reaches
-main through the Greenlane only: push the branch to `lane/<name>` (`estate-execute lane-submit`),
-then STOP. The lane (`greenlane/engine.py`, `.github/workflows/greenlane.yml`) proves it green on
+main through the existing trusted Greenlane route: publish the verified candidate
+to `lane/<name>` using the currently available authenticated lane-submission
+capability, never by creating new legacy intent YAML. The lane (`greenlane/engine.py`,
+`.github/workflows/greenlane.yml`) must independently prove the exact head on
 top of the current main, raises the pull request itself and fast-forwards main to the tested
 commit; a red or conflicting lane keeps its branch and carries the reason on its head's
 `greenlane` commit status. A hand-raised pull request is closed and relaned; a push to main is
@@ -137,23 +141,23 @@ prove a blocker; its historical receipts are evidence only.
 
 ## 4. Secrets — by name only, from the vault
 
-Keys arrive through `estate-secrets` (SOPS + age) or the Bitwarden human-vault bridge:
-
-```bash
-gh workflow run vault-seed.yml -f entry=laptop
-git -C ~/Documents/code/estate-secrets pull
-source ~/Documents/code/estate-secrets/scripts/secret-load
-```
-
-Never paste a key into a file, an env var in code, a commit, a message, a journal entry, or a graph
-node. Reference it by env var name. Never print a secret value. Never ask the founder to carry one
-between surfaces.
+Secrets arrive only via the current authenticated, approved credential broker /
+`estate-secrets` interface when available; the historical local Mac vault-loader
+commands are **not universal onboarding steps** and cannot authorize a cloud or
+web harness. Agents request a scoped capability or credential *reference*, not
+the secret's contents. Never copy values across sessions, providers or hosts,
+print them, commit them, include them in memory, or ask the founder to carry them.
+If the broker cannot authenticate or issue the required capability, mark
+`BLIND` or `DENIED` and use an authorized diagnosis/recovery path.
 
 ---
 
 ## 5. Coordination
 
-**Docker runs on Rancher Desktop (moby, x86_64) — `docker` lives at `~/.rd/bin`, the engine socket is `~/.rd/docker.sock` via the `rancher-desktop` context; there is no Docker Desktop and no colima (the `colima` context is stale and must not be used).**
+**Runtime discovery is per host, not universal.** Do not assume a laptop's
+Docker daemon, socket path, architecture, credentials or local tools exist in
+cloud, web or desktop harnesses. Probe the authorized adapter's capabilities
+and give missing tooling an explicit `BLIND` verdict.
 
 **Every agent declares its work before doing it, and nothing lands without that declaration**
 (founder, 2026-09-30: ten concurrent agents for two days delivered nothing that could be pointed to
@@ -231,8 +235,11 @@ Three laws follow, and they are the same law seen from three sides:
 The lead also owns the mess: every worktree, claim, lane and door it opens is either closed or
 explained before the lead reports.
 
-The founder sees every live claim on /fleet: who, what, which paths, and heartbeat age. Never restart
-another agent's process. Never touch the Telegram token's polling.
+Project current claim ownership, affected paths and observation age onto the
+Founder Surface **when a deployed, independently current feed is verified**.
+A stale or unavailable surface must say `BLIND`; it cannot certify that every
+agent or claim is visible. Never restart another agent's process or seize
+another agent's credentials.
 
 ---
 
@@ -242,9 +249,12 @@ The platform is `idp`. Products run on it. Exactly one of each: routing, traces,
 scheduling, catalog, execution boundary, evidence, verification, memory. A product is never deleted
 for living outside `idp`; a duplicate layer always is.
 
-**Before building anything, prove it does not already exist** — `growmos query "<what you want to
-build>"`, then read the candidate. The estate has built the same capability five to ten times. Do
-not make it eleven.
+**Before building anything, prove it does not already exist.** Query the current
+Oracle/context broker, source-owned capability index, GitHub and versioned memory
+for a compatible existing unit of work, and inspect its actual implementation.
+The historical `growmos` command is one possible memory adapter, **not** the
+universal discovery authority or a mandatory command for every harness.
+Missing coverage is `BLIND`, not a reason to invent a second execution stack.
 
 **But raising the bar supersedes do-not-duplicate (founder's ruling, 2026-10-26).** A new layer is
 allowed when it RAISES the bar, and then the lesser implementation is merged into it or deleted in
