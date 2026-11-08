@@ -105,7 +105,7 @@ class EstateAutomationWorkflowV1:
                     if node["approval"]:
                         gate = node["id"]
                         self._state["status"] = "waiting-approval"
-                        await workflow.wait_condition(lambda: gate in self._approved or gate in self._denied)
+                        await workflow.wait_condition(lambda gate=gate: gate in self._approved or gate in self._denied)
                         if gate in self._denied:
                             self._state["status"] = "denied"
                             await self._receipt("denied", gate)
@@ -117,7 +117,7 @@ class EstateAutomationWorkflowV1:
                 errors = [v for v in outcomes if isinstance(v, BaseException)]
                 if errors:
                     raise errors[0]
-                for node, result in zip(batch, outcomes):
+                for node, result in zip(batch, outcomes, strict=True):
                     results[node["id"]] = result
                     del pending[node["id"]]
             self._state["status"] = "verified"
