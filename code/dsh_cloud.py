@@ -19,6 +19,7 @@ import socket
 import subprocess
 import threading
 import time
+import urllib.request
 
 import modal
 
@@ -40,69 +41,8 @@ PROFILE_PACKAGE = {
     "dsh": {"profile": {"bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"]}},
 }
 
-PROFILE_PATCH = """\
-- id: sandbox-policy
-  name: "@deepseek-ai/dsh-sandbox-policy"
-  config:
-    mode: danger-full-access
-    workspaceRoot: /workspace
-- id: approval
-  name: "@deepseek-ai/dsh-user-approval"
-  config:
-    policy: never
-- id: permission
-  name: "@deepseek-ai/dsh-permission-presets"
-  config:
-    presets:
-      danger-full-access:
-        sandbox: danger-full-access
-        approval: never
-    defaultPreset: danger-full-access
-- id: llm-pi-ai
-  name: "@deepseek-ai/dsh-llm-pi-ai"
-  config:
-    providers:
-      estate:
-        displayName: Estate Router
-        apiKeyEnv: LITELLM_API_KEY
-        api: openai-completions
-        baseURL: https://llm.mumchimp.com/v1
-        defaultContextWindow: 200000
-        defaultMaxTokens: 32768
-        models:
-          - id: glm
-            name: GLM 5.3
-            contextWindow: 200000
-            maxTokens: 32768
-            reasoningEfforts:
-              off:
-              low: low
-              medium: medium
-              high: high
-      zai:
-        displayName: Z.AI
-        apiKeyEnv: ZAI_API_KEY
-        api: openai-completions
-        baseURL: https://api.z.ai/api/coding/paas/v4
-        defaultContextWindow: 200000
-        defaultMaxTokens: 32768
-        models:
-          - id: glm-5.3
-            name: GLM 5.3
-            contextWindow: 200000
-            maxTokens: 32768
-            reasoningEfforts:
-              off:
-              low: low
-              medium: medium
-              high: high
-- id: agent-default-model
-  name: "@deepseek-ai/dsh-agent-default-model"
-  config:
-    provider: estate
-    model: glm
-    reasoningEffort: low
-"""
+ROUTER_BASE_URL = os.environ.get("ESTATE_ROUTER_URL", "https://llm.mumchimp.com/v1").rstrip("/")
+MODEL_CATALOG_URL = os.environ.get("ESTATE_MODEL_CATALOG_URL", ROUTER_BASE_URL + "/models")
 
 GATEWAY = r"""
 import http from "node:http";
@@ -195,19 +135,114 @@ runtime = modal.Secret.from_name("estate-dsh-runtime")
 app = modal.App("estate-dsh-web")
 
 
-def runtime_health() -> dict:
+def router_catalog() -> tuple[list[dict], str]:
+    last = None
+    for _ in range(6):
+        try:
+            request = urllib.request.Request(
+                MODEL_CATALOG_URL,
+                headers={"User-Agent": "estate-dsh-cloud/1.0"},
+            )
+            with urllib.request.urlopen(request, timeout=20) as response:
+                payload = json.load(response)
+            models: list[dict] = []
+            for row in payload.get("data", []):
+                model_id = str(row.get("id", "")).strip()
+                if not model_id:
+                    continue
+                model = {"id": model_id, "name": model_id}
+                context_window = row.get("max_input_tokens")
+                if isinstance(context_window, int) and context_window > 0:
+                    model["contextWindow"] = context_window
+                max_tokens = row.get("max_output_tokens")
+                if isinstance(max_tokens, int) and max_tokens > 0:
+                    model["maxTokens"] = max_tokens
+                models.append(model)
+            models.sort(key=lambda item: item["id"])
+            if not models:
+                raise RuntimeError(f"router catalogue {MODEL_CATALOG_URL} is empty")
+            configured = os.environ.get("DSH_DEFAULT_MODEL", "").strip()
+            ids = {model["id"] for model in models}
+            if configured and configured not in ids:
+                raise RuntimeError(
+                    f"DSH_DEFAULT_MODEL={configured!r} is not served by {MODEL_CATALOG_URL}"
+                )
+            default_model = configured or ("default" if "default" in ids else models[0]["id"])
+            return models, default_model
+        except Exception as exc:
+            last = exc
+            time.sleep(5)
+    raise RuntimeError(f"router catalogue unavailable after 6 probes: {last}")
+
+
+def profile_patch(models: list[dict], default_model: str) -> list[dict]:
+    return [
+        {
+            "id": "sandbox-policy",
+            "name": "@deepseek-ai/dsh-sandbox-policy",
+            "config": {"mode": "danger-full-access", "workspaceRoot": "/workspace"},
+        },
+        {
+            "id": "approval",
+            "name": "@deepseek-ai/dsh-user-approval",
+            "config": {"policy": "never"},
+        },
+        {
+            "id": "permission",
+            "name": "@deepseek-ai/dsh-permission-presets",
+            "config": {
+                "presets": {
+                    "danger-full-access": {
+                        "sandbox": "danger-full-access",
+                        "approval": "never",
+                    }
+                },
+                "defaultPreset": "danger-full-access",
+            },
+        },
+        {
+            "id": "llm-pi-ai",
+            "name": "@deepseek-ai/dsh-llm-pi-ai",
+            "config": {
+                "providers": {
+                    "estate": {
+                        "displayName": "Estate Router",
+                        "apiKeyEnv": "LITELLM_API_KEY",
+                        "api": "openai-completions",
+                        "baseURL": ROUTER_BASE_URL,
+                        "defaultContextWindow": 262144,
+                        "defaultMaxTokens": 32768,
+                        "models": models,
+                    }
+                }
+            },
+        },
+        {
+            "id": "agent-default-model",
+            "name": "@deepseek-ai/dsh-agent-default-model",
+            "config": {
+                "provider": "estate",
+                "model": default_model,
+                "reasoningEffort": "low",
+            },
+        },
+    ]
+
+
+def runtime_health(models: list[dict], default_model: str) -> dict:
     source_sha = os.environ.get("DSH_SOURCE_SHA", "")
     deployed_at = os.environ.get("DSH_DEPLOYED_AT", "")
     if not re.fullmatch(r"[0-9a-f]{40}", source_sha):
         raise RuntimeError("estate-dsh-runtime is missing a valid DSH_SOURCE_SHA")
     if not deployed_at:
         raise RuntimeError("estate-dsh-runtime is missing DSH_DEPLOYED_AT")
+    effective_profile = profile_patch(models, default_model)
     config_bytes = (
         DSH_VERSION
         + "\n"
         + json.dumps(PROFILE_PACKAGE, sort_keys=True, separators=(",", ":"))
         + "\n"
-        + PROFILE_PATCH
+        + json.dumps(effective_profile, sort_keys=True, separators=(",", ":"))
     ).encode()
     return {
         "ok": True,
@@ -225,18 +260,23 @@ def runtime_health() -> dict:
             "authority": RELEASE_AUTHORITY,
             "router": "estate.model-router",
             "modelRoute": "estate-router",
+            "catalogSource": MODEL_CATALOG_URL,
+            "modelCount": len(models),
+            "defaultModel": default_model,
         },
     }
 
 
-def prepare_profile(health: dict) -> None:
+def prepare_profile(health: dict, models: list[dict], default_model: str) -> None:
     root = pathlib.Path(DSH_HOME, "profiles", "web")
     root.mkdir(parents=True, exist_ok=True)
     (root / "package.json").write_text(json.dumps(PROFILE_PACKAGE, indent=2) + "\n")
     (root / "cordis.yml").write_text(
         "# composed from package.json bundles and cordis.patch.yml\n[]\n"
     )
-    (root / "cordis.patch.yml").write_text(PROFILE_PATCH)
+    (root / "cordis.patch.yml").write_text(
+        json.dumps(profile_patch(models, default_model), indent=2) + "\n"
+    )
     pathlib.Path("/root/dsh-cloud/gateway.mjs").write_text(
         GATEWAY.replace(
             "__ESTATE_HEALTH__",
@@ -283,7 +323,9 @@ def web() -> None:
     if not os.environ.get("DSH_LAUNCH_TOKEN"):
         raise RuntimeError("estate-dsh-runtime is missing DSH_LAUNCH_TOKEN")
 
-    prepare_profile(runtime_health())
+    models, default_model = router_catalog()
+    health = runtime_health(models, default_model)
+    prepare_profile(health, models, default_model)
     env = {
         **os.environ,
         "HOME": "/root",
