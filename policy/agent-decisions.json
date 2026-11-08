@@ -7,16 +7,24 @@
     "novel": "no precedent in the estate and no rule that covers it",
     "low-confidence-escalation": "a decision model returned below its calibrated confidence floor"
   },
-  "roles": ["founder", "owner", "operator", "escalated-reviewer", "human-reviewer"],
+  "roles": [
+    "founder",
+    "owner",
+    "operator",
+    "escalated-reviewer",
+    "human-reviewer"
+  ],
   "decisions": [
     {
       "id": "dec:which-failure-next",
       "decision": "Which failure in the estate gets the next unit of work?",
-      "mode": "judgment",
-      "irreducibility": "value-tradeoff",
-      "justification": "The order is a trade-off between the founder's wellbeing, the blast radius of the failure and what the estate can carry in parallel. The evidence can rank candidates on each axis separately; it cannot say which axis wins this week, and getting it wrong spends the founder's attention on the wrong fire.",
-      "decided_by": "founder",
-      "surfaces": []
+      "mode": "machine",
+      "irreducibility": null,
+      "justification": "Founder ratified that routine failure ordering, time-critical preemption proposals, parallel vs serial dependencies, and recovery selection are machine decisions. The one R-14 incident-loop scorer and canonical catalog/incident-policy.json decide risk and urgency; the FLOW decision core consumes those scores and issues bounded work orders. Existing trusted execution gates independently attest identity, dependencies, capacity, resource fences and effect before any dispatched action. Novel high-consequence tradeoffs remain separately escalated, never treated as permission for agent self-prioritisation.",
+      "decided_by": "cap:intent/incident-loop",
+      "surfaces": [
+        "incident-loop"
+      ]
     },
     {
       "id": "dec:what-the-estate-becomes",
@@ -52,7 +60,9 @@
       "irreducibility": null,
       "justification": "The estate's one decision layer (ADR 0030) returns a typed value with a calibrated confidence, and a machine can check that the value is well-formed and inside the floor. What it cannot do is be right; the confidence is the model's own, so the mode is a model and not a machine.",
       "decided_by": "model:jev",
-      "surfaces": ["jev.decide"]
+      "surfaces": [
+        "jev.decide"
+      ]
     },
     {
       "id": "dec:propose-hypotheses",
@@ -70,7 +80,9 @@
       "irreducibility": "irreversible",
       "justification": "A public repository is outward-facing and cannot be un-published; the estate's own description of this intent says a human reviews and merges. A machine can prove the command is well-formed, and that is all it can do: whether the estate should be the one to publish is the founder's.",
       "decided_by": "founder",
-      "surfaces": ["create-repo"]
+      "surfaces": [
+        "create-repo"
+      ]
     },
     {
       "id": "dec:novel-no-precedent",
@@ -87,35 +99,50 @@
       "mode": "machine",
       "decided_by": "cap:intent/flux-status",
       "justification": "The spine (EFDA) wakes a workflow from a Flux event, and the workflow's first act is to read the reconciliation status the event is about. That is a state fetch with a deterministic answer, and the estate already holds the capability that makes it (flux-status). The workflow that runs it is the trigger, not the decider.",
-      "surfaces": ["flux-status"]
+      "surfaces": [
+        "flux-status"
+      ]
     },
     {
       "id": "dec:submit-change",
       "decision": "Which branch carries a change, and when it is merged.",
       "mode": "machine",
       "decided_by": "cap:intent/lane-submit",
-      "surfaces": ["lane-submit"]
+      "surfaces": [
+        "lane-submit"
+      ]
     },
     {
       "id": "dec:ci-green",
       "decision": "Whether a change's CI is green, and which job failed if it is not.",
       "mode": "machine",
       "decided_by": "cap:intent/ci.status",
-      "surfaces": ["ci.status", "ci.run", "ci.errors"]
+      "surfaces": [
+        "ci.status",
+        "ci.run",
+        "ci.errors"
+      ]
     },
     {
       "id": "dec:fetch-remote-state",
       "decision": "What the remote actually says: pull requests, check runs, comments, files.",
       "mode": "machine",
       "decided_by": "cap:intent/gh-api",
-      "surfaces": ["gh-api", "gh-check-runs", "pr.list"]
+      "surfaces": [
+        "gh-api",
+        "gh-check-runs",
+        "pr.list"
+      ]
     },
     {
       "id": "dec:diff-risk",
       "decision": "How risky a diff is, and whether it needs the full suite.",
       "mode": "model",
       "decided_by": "model:jev",
-      "surfaces": ["idp-pr-risk", "idp-affected"]
+      "surfaces": [
+        "idp-pr-risk",
+        "idp-affected"
+      ]
     },
     {
       "id": "dec:which-hypothesis-explains-a-failure",
@@ -123,14 +150,18 @@
       "mode": "machine",
       "decided_by": "cap:intent/hypotheses.race",
       "justification": "The probes are commands and the posterior is arithmetic over their evidence, so the race disposes deterministically: the same probes and the same priors give the same ranking. The model proposes the hypotheses (dec:propose-hypotheses) and the machine disposes of them, and an errored probe is UNKNOWN rather than support, which is the part that makes the answer honest.",
-      "surfaces": ["hypotheses.race"]
+      "surfaces": [
+        "hypotheses.race"
+      ]
     },
     {
       "id": "dec:review-a-diff",
       "decision": "What is wrong with a diff, proposed by a model and disposed of by deterministic checks.",
       "mode": "model",
       "decided_by": "model:code-review.tier2",
-      "surfaces": ["code-review"]
+      "surfaces": [
+        "code-review"
+      ]
     }
   ]
 }
