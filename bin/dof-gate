@@ -16,7 +16,6 @@ Exit 0 admitted / full lease, 1 refused, 3 lease is repair-only.
 from __future__ import annotations
 
 import fnmatch
-import hashlib
 import json
 import os
 import re
@@ -52,45 +51,8 @@ def scope_of(registry: dict, comp_id: str) -> tuple[list, dict]:
     comp = registry["components"].get(comp_id) or {"repairScope": registry.get("defaultRepairScope", [])}
     out = []
     for p in comp["repairScope"]:
-        # '@substrate' is the whole deploy surface. It is only honest when the substrate
-        # ITSELF is what is broken; for a single named service it is a universal key.
         out.extend(registry.get("substrateScope", []) if p == "@substrate" else [p])
     return out, comp
-
-
-def is_independent(registry: dict, changed: list) -> list:
-    """Paths that depend on no critical service: outside every substrate glob.
-
-    A broken service constrains what DEPENDS on it. A docs page or a product test does
-    not, so gating it on an unrelated outage is the deadlock the invariant forbids.
-    A commit that touches no paths depends on nothing, so it is independent by definition.
-    """
-    if not changed:
-        return []
-    substrate = registry.get("substrateScope", [])
-    return [p for p in changed if not any(glob_match(g, p) for g in substrate)]
-
-
-def dedupe_key(incidents: list, changed: list) -> str:
-    """One identity for one attempt, so an unchanged retry is not judged anew."""
-    ids = ",".join(sorted(i["id"] for i in incidents))
-    joined = "\n".join(sorted(changed))
-    return hashlib.sha256(f"{ids}|{joined}".encode()).hexdigest()[:16]
-
-
-def unblocker(registry: dict, incidents: list, changed: list) -> dict:
-    """The smallest executable next action for a deadlocked author."""
-    first = incidents[0]
-    scope, _ = scope_of(registry, first["id"])
-    independent = is_independent(registry, changed)
-    return {
-        "kind": "split",
-        "reason": "these paths do not depend on any down service; they are refused only because they share a commit with substrate paths",
-        "split_out": independent,
-        "keep_for_repair": [p for p in changed if p not in independent],
-        "repair_trailer": f"Genesis-Resolves: {first['id']}",
-        "repair_scope_sample": scope[:3],
-    }
 
 
 def open_incidents(registry: dict) -> list:
@@ -135,29 +97,14 @@ def evaluate(registry: dict, incidents: list, message: str, changed: list) -> di
     failing = {i["id"]: i for i in incidents}
     resolves = trailers(message).get("Genesis-Resolves")
     first = incidents[0]
-    key = dedupe_key(incidents, changed)
     refusal = {
         "admitted": False, "refused": True, "level": "L2",
         "open_incidents": [{"id": i["id"], "issue": i.get("issue")} for i in incidents],
         "required_trailer": f"Genesis-Resolves: {first['id']}",
-        "dedupe_key": key,
     }
-    # Independent safe work keeps an authorised path. Checked BEFORE the trailer, because
-    # demanding a repair claim for work that repairs nothing is itself the deadlock.
-    # The one exception is the blindness incident: when the gate cannot read the incident
-    # list it knows nothing, so the safe-work lane is closed too (health unproven).
-    if resolves is None and first["id"] != "dof-probe":
-        if not changed or is_independent(registry, changed):
-            return {"admitted": True, "reason": "safe work: every changed path is independent of the down service",
-                    "dedupe_key": key}
-        return {**refusal, "reason": "missing Genesis-Resolves while a critical service is down",
-                "unblocker": unblocker(registry, incidents, changed)}
-    if resolves is None:
-        return {**refusal, "reason": "missing Genesis-Resolves while a critical service is down",
-                "unblocker": unblocker(registry, incidents, changed)}
     if resolves not in failing:
-        reason = f"Genesis-Resolves '{resolves}' is not an open incident"
-        return {**refusal, "reason": reason, "unblocker": unblocker(registry, incidents, changed)}
+        reason = f"Genesis-Resolves '{resolves}' is not an open incident" if resolves else "missing Genesis-Resolves while a critical service is down"
+        return {**refusal, "reason": reason}
     scope, comp = scope_of(registry, resolves)
     if not comp.get("selfRepair"):
         frozen = [p for p in changed if any(glob_match(g, p) for g in registry.get("immutableWhileRed", []))]
@@ -165,10 +112,8 @@ def evaluate(registry: dict, incidents: list, message: str, changed: list) -> di
             return {**refusal, "reason": "the gate is immutable while a critical service is down", "files": frozen}
     stray = [p for p in changed if not any(glob_match(g, p) for g in scope)]
     if stray:
-        return {**refusal, "reason": f"files outside {resolves} repairScope", "files": stray,
-                "unblocker": unblocker(registry, incidents, changed)}
-    return {"admitted": True, "reason": f"resolves {resolves} (issue #{failing[resolves].get('issue')}) within repairScope",
-            "dedupe_key": key}
+        return {**refusal, "reason": f"files outside {resolves} repairScope", "files": stray}
+    return {"admitted": True, "reason": f"resolves {resolves} (issue #{failing[resolves].get('issue')}) within repairScope"}
 
 
 def clean_merge(sha: str) -> bool:

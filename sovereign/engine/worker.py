@@ -17,8 +17,6 @@ from sovereign import config
 from sovereign.engine import activities
 from sovereign.engine import kini
 from sovereign.engine.workflow import SessionWorkflow
-from sovereign.automation.workflow import EstateAutomationWorkflowV1
-from sovereign.automation import adapters as automation_adapters
 from sovereign.shadow import activities as shadow_activities
 from sovereign.shadow.workflow import BranchChildWorkflow, BranchParentWorkflow
 
@@ -52,7 +50,6 @@ class _RedactBotTokenFilter(logging.Filter):
 # served SessionWorkflow). tests/bdd/test_cp3_worker_registry.py holds the rule.
 WORKFLOWS = [
     SessionWorkflow,
-    EstateAutomationWorkflowV1,
     BranchParentWorkflow,
     BranchChildWorkflow,
     *kini.WORKFLOWS,
@@ -62,7 +59,6 @@ ACTIVITIES = [
     activities.append_receipt,
     activities.notify_change,
     activities.budget_op,
-    automation_adapters.automation_activity,
     *shadow_activities.ACTIVITIES,
     *kini.ACTIVITIES,
 ]
