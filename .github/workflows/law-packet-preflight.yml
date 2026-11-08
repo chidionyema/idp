@@ -3,7 +3,12 @@
 name: law-packet-preflight
 on:
   push:
-    branches: ["lane/**", "queue/**"]
+    branches: [main, "lane/**", "queue/**"]
+  # A deterministic unattended review of active governance sources.
+  # It produces evidence, never auto-amends law or approves itself.
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
     paths:
       - "AGENTS.md"
       - "CLAUDE.md"
@@ -45,6 +50,21 @@ jobs:
           if obj["is_admission_decision"] or obj["grants_execution"]:
               raise SystemExit("FAIL: source packet falsely grants authority")
           print("ok: source-consistent; runtime law enforcement and admission NOT VERIFIED")
+          summary = [
+              "## Genesis law and onboarding source review",
+              "",
+              f"- Source contract: {obj['status']}",
+              f"- GOV controls inventoried: {len(obj['laws'])}",
+              f"- Founder judgement records: {len(obj['founder_judgement_training'])}",
+              f"- Explicit conflicts: {len(obj['problems'])}",
+              "- Agent authority granted: NO",
+              "- Founder-judgement competence certified: NO",
+              "- Runtime, independent verifier and Argon federation: NOT VERIFIED",
+              "- Action: use the existing admission/DoF and governed recovery machinery.",
+          ]
+          import os
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as out:
+              out.write("\\n".join(summary) + "\\n")
           PY
       - name: Existing runtime TOML policy remains compatible
         run: python -m pytest sovereign/tests/bdd/test_policy.py -q -p no:cacheprovider
