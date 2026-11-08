@@ -95,7 +95,7 @@ if launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
   launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null
   for _ in $(seq 1 15); do
     launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1 || break
-    sleep 1
+    sleep 1  # sleep-ok: poll the launchd service-removal condition
   done
   launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1 \
     && die "agent still loaded after bootout" || ok "agent unloaded"
@@ -104,7 +104,7 @@ else
 fi
 BEFORE_FILES=$(ls "$LOGDIR"/startup-*.log 2>/dev/null | wc -l | tr -d ' ')
 BEFORE_BYTES=$(cat "$LOGDIR"/web.err.log 2>/dev/null | wc -c | tr -d ' ')
-sleep 5
+sleep 5  # sleep-ok: hold quiesced long enough to prove log writes stopped
 AFTER_FILES=$(ls "$LOGDIR"/startup-*.log 2>/dev/null | wc -l | tr -d ' ')
 AFTER_BYTES=$(cat "$LOGDIR"/web.err.log 2>/dev/null | wc -c | tr -d ' ')
 if [ "$BEFORE_FILES" = "$AFTER_FILES" ] && [ "$BEFORE_BYTES" = "$AFTER_BYTES" ]; then
@@ -139,12 +139,12 @@ if [ -n "${OLD_PID:-}" ]; then
   kill -TERM "$OLD_PID" 2>/dev/null
   for _ in $(seq 1 12); do
     [ -z "$(listener_pid)" ] && break
-    sleep 1
+    sleep 1  # sleep-ok: poll the port-release condition
   done
   if [ -n "$(listener_pid)" ]; then
     printf '  ... still listening after 12s; sending KILL\n'
     kill -KILL "$OLD_PID" 2>/dev/null
-    sleep 3
+    sleep 3  # sleep-ok: bounded grace after forced termination
   fi
   [ -z "$(listener_pid)" ] && ok "port 3080 freed (was pid $OLD_PID)" || die "port 3080 still held after TERM+KILL"
 else
@@ -162,7 +162,7 @@ NEW_PID=""
 # machine. Wait for the service to be UP (port bound AND the launch URL
 # printed), not for a bare-URL 200 that the auth contract forbids.
 for _ in $(seq 1 90); do
-  sleep 2
+  sleep 2  # sleep-ok: poll the single bootstrap health condition
   [ -n "$(listener_pid)" ] && [ -n "$(launch_url)" ] && break
 done
 
