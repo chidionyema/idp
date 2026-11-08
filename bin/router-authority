@@ -23,23 +23,29 @@ def main(argv: list[str]) -> int:
     )
     if "--check" in argv:
         try:
-            request = urllib.request.Request(
+            request = urllib.request.Request(  # noqa: S310 - registry-owned HTTPS health URL
                 canonical["healthUrl"],
                 headers={"User-Agent": "estate-router-authority/1.0"},
             )
-            with urllib.request.urlopen(request, timeout=10) as response:
+            with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310
                 status = response.status
                 body = response.read(200).decode("utf-8", "replace").strip()
         except (OSError, urllib.error.URLError) as exc:
-            print(f"FAIL    router-authority  {canonical['id']} health unreadable: {exc}")
+            print(
+                f"FAIL    router-authority  {canonical['id']} health unreadable: {exc}"
+            )
             return 1
         if status != 200:
-            print(f"FAIL    router-authority  {canonical['id']} health HTTP {status}: {body}")
+            print(
+                f"FAIL    router-authority  {canonical['id']} health HTTP {status}: {body}"
+            )
             return 1
         print(f"ok      router-authority  {canonical['id']} health HTTP 200")
 
     print(f"canonical={canonical['id']}")
-    print(f"release={contract['release']['id']} version={contract['release']['version']}")
+    print(
+        f"release={contract['release']['id']} version={contract['release']['version']}"
+    )
     print(f"endpoint={canonical['baseUrl']}")
     for router in contract["routers"]:
         print(
