@@ -76,12 +76,15 @@ jobs:
         github.actor == vars.ESTATE_FOUNDER_LOGIN &&
         github.event.issue.user.login == vars.ESTATE_FOUNDER_LOGIN &&
         ((github.event.action == 'opened' && startsWith(github.event.issue.title, '[LEGION] ')) ||
-         (github.event.action == 'labeled' && github.event.label.name == 'legion-run'))
+         (github.event.action == 'labeled' && github.event.label.name == 'legion-run' &&
+          !startsWith(github.event.issue.title, '[LEGION] ')))
       )
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
+    outputs:
+      failure_code: ${{ steps.agent_result.outputs.failure_code }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -105,6 +108,7 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq age
 
       - name: Run the agent (its output goes to a file, never to this public log)
+        id: agent_result
         env:
           HARNESS: ${{ github.event_name == 'issues' && 'gemini' || inputs.harness }}
           TASK: ${{ github.event_name == 'issues' && format('{0} -- {1}', github.event.issue.title, github.event.issue.body) || inputs.task }}
@@ -158,6 +162,9 @@ jobs:
               if [ -n "${transcript:-}" ] && [ -f "$transcript" ]; then
                 cp "$transcript" "$out/google.failed.transcript.jsonl"
               fi
+              # Preserve first provider partial edits before isolated fallback.
+              git add -A || true
+              git diff --cached --binary "$(cat "$out/base")" > "$out/google.failed.patch" || true
               git reset --hard "$(cat "$out/base")" >/dev/null
               git clean -fd >/dev/null
               rm -rf "$RUNNER_TEMP/pi-sessions"
@@ -176,6 +183,26 @@ jobs:
             fi
           fi
           echo "harness exit $rc"
+          # Only fixed low-entropy failure codes enter the issue recovery receipt.
+          failure_code=LEGION_UNKNOWN
+          if [ "$rc" -ne 0 ]; then
+            if [ -f "$out/google.failed.stdout" ] &&
+               grep -Eiq '429|quota.exceeded|rate.?limit|resource.exhausted' "$out/google.failed.stdout" &&
+               grep -Eiq '429|quota.exceeded|rate.?limit|resource.exhausted' "$out/stdout"; then
+              failure_code=LEGION_RATE_BOTH
+            elif grep -Eiq '429|quota.exceeded|rate.?limit|resource.exhausted' "$out/stdout"; then
+              failure_code=LEGION_RATE_PRIMARY
+            elif grep -Eiq 'authentication_error|unauthori[sz]ed|invalid.?api.?key|permission.denied' "$out/stdout"; then
+              failure_code=LEGION_AUTH
+            elif grep -Eiq 'model.?not.?found|unknown model|unsupported model' "$out/stdout"; then
+              failure_code=LEGION_MODEL_UNAVAILABLE
+            elif grep -Eiq 'timeout|timed out|ECONNRESET|ECONNREFUSED|network error' "$out/stdout"; then
+              failure_code=LEGION_TRANSPORT
+            fi
+            git add -A || true
+            git diff --cached --binary "$(cat "$out/base")" > "$out/failed.patch" || true
+          fi
+          echo "failure_code=$failure_code" >> "$GITHUB_OUTPUT"
           if [ -z "${transcript:-}" ]; then
             # No transcript means the harness never got as far as working; its first line is the
             # reason (a start-up error, not the agent's words).
@@ -208,7 +235,7 @@ jobs:
           [ -n "$RECIPIENT" ] || { echo "::error::AGENT_TRANSCRIPT_AGE_RECIPIENT is not set"; exit 1; }
           out="$RUNNER_TEMP/out"; mkdir -p "$RUNNER_TEMP/sealed"
           files=()
-          for name in base patch transcript.jsonl stdout google.failed.stdout google.failed.transcript.jsonl; do
+          for name in base patch failed.patch transcript.jsonl stdout google.failed.stdout google.failed.transcript.jsonl google.failed.patch; do
             if [ -f "$out/$name" ]; then files+=("$name"); fi
           done
           [ "${#files[@]}" -gt 0 ] || { echo "::error::the job left no evidence to seal"; exit 1; }
@@ -219,7 +246,7 @@ jobs:
         with:
           name: agent-work
           path: ${{ runner.temp }}/sealed/work.tar.age
-          retention-days: 5
+          retention-days: 90
           if-no-files-found: error
 
   firewall:
@@ -363,3 +390,56 @@ jobs:
           git push -q origin "$branch"
           gh issue comment "$NUM" --body "Submitted \`${branch}\` (harness ${HARNESS}). The Greenlane lands it when it is green. Run: ${RUN_URL}"
           echo "submitted $branch for claim #$NUM"
+
+  # Existing issue is the durable work unit; no model or private data here.
+  recovery-receipt:
+    needs: [agent, firewall, submit-lane]
+    if: >-
+      always() && github.event_name == 'issues' &&
+      github.actor == vars.ESTATE_FOUNDER_LOGIN &&
+      github.event.issue.user.login == vars.ESTATE_FOUNDER_LOGIN &&
+      (needs.agent.result == 'failure' ||
+       needs.firewall.result == 'failure' ||
+       needs.submit-lane.result == 'failure')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Register typed failure on original issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          RUN_ID: ${{ github.run_id }}
+          AGENT_STATUS: ${{ needs.agent.result }}
+          FIREWALL_STATUS: ${{ needs.firewall.result }}
+          SUBMIT_STATUS: ${{ needs.submit-lane.result }}
+          AGENT_CODE: ${{ needs.agent.outputs.failure_code }}
+        run: |
+          set -euo pipefail
+          case "$ISSUE" in ''|*[!0-9]*) echo "::error::invalid mission issue"; exit 1;; esac
+          fingerprint="LEGION-RECOVERY-RUN-${RUN_ID}"
+          existing=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${ISSUE}/comments?per_page=100" --jq '.[].body')
+          if grep -Fq "$fingerprint" <<< "$existing"; then echo "recovery already recorded"; exit 0; fi
+          if [ "$AGENT_STATUS" != success ]; then code="${AGENT_CODE:-LEGION_UNKNOWN}";
+          elif [ "$FIREWALL_STATUS" != success ]; then code=LEGION_FIREWALL_REFUSED;
+          else code=LEGION_SUBMISSION_FAILED; fi
+          case "$code" in
+            LEGION_RATE_BOTH|LEGION_RATE_PRIMARY|LEGION_AUTH|LEGION_MODEL_UNAVAILABLE|LEGION_TRANSPORT|LEGION_FIREWALL_REFUSED|LEGION_SUBMISSION_FAILED|LEGION_UNKNOWN) ;;
+            *) code=LEGION_UNKNOWN ;;
+          esac
+          diagnosis=$(python3 -m legion diagnose "$code" --json)
+          body="$fingerprint
+          status=RECOVERY_REQUIRED class=$code agent=$AGENT_STATUS firewall=$FIREWALL_STATUS submission=$SUBMIT_STATUS
+          Evidence: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}
+          Known diagnosis: $(jq -r '.diagnosis' <<< "$diagnosis")
+          Existing repair route: $(jq -r '.recovery' <<< "$diagnosis")
+          Independent effect proof: $(jq -r '.proof' <<< "$diagnosis")
+          Original mission remains OPEN. Recover from age-encrypted artifact in trusted custody; no repeat-blind provider calls and no false success."
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${ISSUE}/comments" -f body="$body" >/dev/null
+          echo "typed recovery fingerprint=${fingerprint} code=${code}"

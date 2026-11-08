@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "canonical": "legion/failure_atlas.json",
+  "law": "Tool-first recursive self-improvement: no critical agent work before its own failure classes and recovery are proven. Failure memory must serve next session in one lookup; UNKNOWN never authorizes a protected effect.",
+  "modes": [
+    {
+      "id": "LEGION_RATE_BOTH",
+      "diagnosis": "Both Gemini and MiniMax-M2.7 returned HTTP 429; provider capacity exhausted.",
+      "recovery": "Preserve issue plus encrypted partial patches. Pause both provider lanes; use existing approved capacity probe before one scoped fresh dispatch. After two identical failures change provider or owner, not retry again.",
+      "proof": "Real provider response, trusted firewall pass, exact governed lane and deployed effect receipt.",
+      "cooldown_s": 900,
+      "max_identical_attempts": 2
+    },
+    {
+      "id": "LEGION_RATE_PRIMARY",
+      "diagnosis": "Primary model was rate-limited; fallback availability must be measured.",
+      "recovery": "Reuse a proven already-authorized fallback once if its capacity receipt is fresh; otherwise preserve mission and defer until verified capacity.",
+      "proof": "Authenticated fallback response and successfully applied mission.",
+      "cooldown_s": 900,
+      "max_identical_attempts": 2
+    },
+    {
+      "id": "LEGION_AUTH",
+      "diagnosis": "Authentication denied; job-local empty secret does not establish unavailable broker credentials.",
+      "recovery": "Verify an authorized nonsecret broker-resolution receipt and route custody correction through existing owner. No speculative key rotation.",
+      "proof": "Broker resolution readback plus scoped successful model response.",
+      "cooldown_s": 300,
+      "max_identical_attempts": 2
+    },
+    {
+      "id": "LEGION_TRANSPORT",
+      "diagnosis": "Runner, network, TLS or upstream transport interrupted request.",
+      "recovery": "Distinguish assigned runner, DNS/TLS and upstream status with existing probes; use an approved alternate executor only with authenticated evidence.",
+      "proof": "Real runner ID and executed steps followed by independent service effect.",
+      "cooldown_s": 300,
+      "max_identical_attempts": 2
+    },
+    {
+      "id": "LEGION_MODEL_UNAVAILABLE",
+      "diagnosis": "Requested model is unavailable/unknown.",
+      "recovery": "Use canonical approved capability map and select a tested available model, not a guessed alias.",
+      "proof": "Model availability and real successful task result.",
+      "cooldown_s": 0,
+      "max_identical_attempts": 1
+    },
+    {
+      "id": "LEGION_NO_TRANSCRIPT",
+      "diagnosis": "Harness returned no durable transcript or failed before initialization.",
+      "recovery": "Preserve original issue and any encrypted stdout or patch; use existing no-secret harness startup fixture, then retry the same mission with authorized runner.",
+      "proof": "New actual transcript sealed and trusted firewall executed.",
+      "cooldown_s": 0,
+      "max_identical_attempts": 2
+    },
+    {
+      "id": "LEGION_FIREWALL_REFUSED",
+      "diagnosis": "Epistemic firewall detected false claims or was BLIND.",
+      "recovery": "Quarantine ungraded patch, preserve encrypted transcript and route independent bounded repair using the same mission issue.",
+      "proof": "Independent corrected transcript passes original firewall; forged negative control still denied.",
+      "cooldown_s": 0,
+      "max_identical_attempts": 2
+    },
+    {
+      "id": "LEGION_SUBMISSION_FAILED",
+      "diagnosis": "Claim, hook, patch, App token or Greenlane submission failed after model work.",
+      "recovery": "Reuse original sealed patch and claim, determine exact failing native gate, repair that path without rerunning the model.",
+      "proof": "Existing Greenlane lands exact SHA and independent runtime effect is recorded.",
+      "cooldown_s": 0,
+      "max_identical_attempts": 2
+    },
+    {
+      "id": "LEGION_RUNNER_UNASSIGNED",
+      "diagnosis": "Workflow queued but no runner ID or executed steps.",
+      "recovery": "Verify actual runner assignment against trusted GitHub run. Restore permitted host or use existing approved cloud executor.",
+      "proof": "Runner ID > 0, actual steps, no orphaned work, receipt on original issue.",
+      "cooldown_s": 60,
+      "max_identical_attempts": 2
+    },
+    {
+      "id": "LEGION_DUPLICATE_TRIGGER",
+      "diagnosis": "Opened and labeled events started duplicate model runs for one issue.",
+      "recovery": "Deduplicate by canonical mission fingerprint before model invocation; retain one primary execution and preserve original issue evidence.",
+      "proof": "One run accepted per mission fingerprint and no concurrent duplicate provider calls.",
+      "cooldown_s": 0,
+      "max_identical_attempts": 1
+    },
+    {
+      "id": "LEGION_UNKNOWN",
+      "diagnosis": "No registered failure fingerprint or insufficient evidence to classify.",
+      "recovery": "Quarantine protected effects, preserve mission and sealed evidence; add a tested failure class, safe probe and bounded recovery before another attempt.",
+      "proof": "New failure class plus falsifying test and independent verified recovery effect.",
+      "cooldown_s": 0,
+      "max_identical_attempts": 1
+    }
+  ]
+}

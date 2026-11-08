@@ -8,6 +8,7 @@ import sys
 
 from .manifest import ManifestError, load_manifest, validate
 from .proof import run_proof, verify_chain
+from .failure_atlas import diagnose
 from .scorecard import ScorecardError, build_scoreboard
 
 
@@ -41,6 +42,17 @@ def _cmd_proof(args: argparse.Namespace) -> int:
         f"{state}: {record['legion']} exit={record['exit']} {record['duration_ms']}ms"
     )
     return 0 if record["ok"] else 1
+
+
+def _cmd_diagnose(args: argparse.Namespace) -> int:
+    record = diagnose(args.failure_code)
+    if args.json:
+        print(json.dumps(record, sort_keys=True))
+    else:
+        print(record["id"] + ": " + record["diagnosis"])
+        print("RECOVERY: " + record["recovery"])
+        print("PROOF: " + record["proof"])
+    return 0 if record["known"] else 2
 
 
 def _cmd_scorecard(args: argparse.Namespace) -> int:
@@ -86,6 +98,11 @@ def main(argv: list[str] | None = None) -> int:
     ps.add_argument("--weights", help="JSON object overriding default weights")
     ps.add_argument("--out", help="write scoreboard JSON here instead of stdout")
     ps.set_defaults(fn=_cmd_scorecard)
+
+    pd = sub.add_parser("diagnose", help="look up a known Legion failure and recovery")
+    pd.add_argument("failure_code")
+    pd.add_argument("--json", action="store_true")
+    pd.set_defaults(fn=_cmd_diagnose)
 
     args = parser.parse_args(argv)
     return args.fn(args)
