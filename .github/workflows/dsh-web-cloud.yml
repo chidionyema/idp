@@ -29,8 +29,14 @@ jobs:
       - name: Modal root and router key must be present
         run: |
           set -euo pipefail
-          test -n "$MODAL_TOKEN_ID" && test -n "$MODAL_TOKEN_SECRET"
-          test -n "$LITELLM_API_KEY"
+          missing=""
+          [ -n "$MODAL_TOKEN_ID" ] || missing="$missing MODAL_TOKEN_ID"
+          [ -n "$MODAL_TOKEN_SECRET" ] || missing="$missing MODAL_TOKEN_SECRET"
+          [ -n "$LITELLM_API_KEY" ] || missing="$missing LITELLM_API_KEY"
+          if [ -n "$missing" ]; then
+            echo "MISSING repository secrets:$missing"
+            exit 1
+          fi
           python -m pip install --quiet 'modal==1.5.5'
           modal secret list >/dev/null
       - name: Create the versioned DSH runtime secret
