@@ -31,6 +31,9 @@ STRUCTURAL_CHECKS = frozenset((
 def _read(root: Path, relative: Path) -> tuple[str, str]:
     """No fallback and no implicit creation if a source is missing."""
     path = root / relative
+    # A governance source may never silently dereference an untrusted symlink.
+    if path.is_symlink() or any(parent.is_symlink() for parent in path.parents if parent != root and root in parent.parents):
+        return "", ""
     try:
         content = path.read_bytes()
         text = content.decode("utf-8")
@@ -108,8 +111,19 @@ def compile_packet(root: Path) -> dict[str, Any]:
     problems: list[dict[str, str]] = []
     if not agents:
         problems.append({"code": "AGENT_ENTRYPOINT_UNAVAILABLE", "detail": str(AGENTS_PATH)})
-    if agents and chr(96)*3+"toml" not in agents:
-        problems.append({"code": "EMBEDDED_RUNTIME_POLICY_MISSING", "detail": "sovereign/policy.py currently consumes the AGENTS.md TOML block"})
+    if agents:
+        fence = chr(96) * 3
+        blocks = re.findall(r"(?ms)^" + re.escape(fence) + r"toml\s*\n(.*?)^" + re.escape(fence) + r"\s*$", agents)
+        if len(blocks) != 1:
+            problems.append({"code": "EMBEDDED_RUNTIME_POLICY_MISSING", "detail": "sovereign/policy.py requires exactly one closed TOML block"})
+        else:
+            try:
+                import tomllib
+                data = tomllib.loads(blocks[0])
+                if not isinstance(data, dict) or not all(k in data for k in ("capabilities", "fsm", "budget", "cost", "routing", "merge", "invariants", "jev")):
+                    problems.append({"code": "INCOMPLETE_RUNTIME_POLICY", "detail": "missing required machine policy sections"})
+            except (ImportError, ValueError) as exc:
+                problems.append({"code": "MALFORMED_RUNTIME_POLICY", "detail": type(exc).__name__})
     if agents:
         for code, pattern in LEGACY_COMMANDS:
             if pattern.search(agents):
