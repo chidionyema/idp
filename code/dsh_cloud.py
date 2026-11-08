@@ -36,12 +36,16 @@ PROFILE_PATCH = """\
 - id: sandbox-policy
   name: "@deepseek-ai/dsh-sandbox-policy"
   config:
-    mode: workspace-write
+    mode: danger-full-access
     workspaceRoot: /workspace
 - id: approval
   name: "@deepseek-ai/dsh-user-approval"
   config:
     policy: never
+- id: permission
+  name: "@deepseek-ai/dsh-permission-presets"
+  config:
+    defaultPreset: danger-full-access
 - id: llm-pi-ai
   name: "@deepseek-ai/dsh-llm-pi-ai"
   config:
@@ -159,8 +163,9 @@ image = (
         "dsh-client-connection/lib/index.js';"
         "const s=fs.readFileSync(p,'utf8');"
         "const old='const created = encodeBase64Url(randomBytes(SECRET_BYTES));';"
-        "const replacement='const created = process.env.DSH_LAUNCH_TOKEN || "
-        "encodeBase64Url(randomBytes(SECRET_BYTES));';"
+        "const replacement='const launchToken = process.env.DSH_LAUNCH_TOKEN;\\n"
+        "\\tdelete process.env.DSH_LAUNCH_TOKEN;\\n"
+        "\\tconst created = launchToken || encodeBase64Url(randomBytes(SECRET_BYTES));';"
         "if(!s.includes(old)) throw new Error('DSH launch-token patch site missing');"
         "fs.writeFileSync(p,s.replace(old,replacement));\"",
     )
