@@ -198,8 +198,13 @@ def main(argv):
         asyncio.run(inbox(False, rest[rest.index("--pipe") + 1 :] or sys.exit("FAIL    estate-fleet  --pipe needs a command")))
     elif c == "inbox":
         asyncio.run(inbox("--ack" in rest))
-    elif c == "applied" and len(rest) >= 3 and rest[0].isdigit() and rest[1] == "--proof":
-        asyncio.run(applied(rest[0], " ".join(rest[2:])))
+    elif c == "applied" and rest:
+        # `applied <seq>` with no proof is a common mistake; route it to the same refusal an
+        # empty proof gets, so the agent sees the one-line reason instead of the full help.
+        if not (len(rest) >= 3 and rest[0].isdigit() and rest[1] == "--proof"):
+            asyncio.run(applied(rest[0] if rest[0].isdigit() else "0", ""))
+        else:
+            asyncio.run(applied(rest[0], " ".join(rest[2:])))
     elif c == "refuse" and len(rest) >= 2 and rest[0].isdigit():
         asyncio.run(refuse(rest[0], " ".join(rest[1:])))
     elif c == "status" and len(rest) == 1 and rest[0].isdigit():
