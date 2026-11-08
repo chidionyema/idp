@@ -295,6 +295,73 @@ class MorphIntegrationTests(unittest.TestCase):
         self.assertEqual(result["source_sha"], "a"*40)
 
 
+
+
+class ContinuousOnboardingTests(MorphIntegrationTests):
+    """The existing #7794 admission door consumes these facts, never a permit."""
+
+    def setUp(self):
+        super().setUp()
+        ref = self.store.write("mission", checkpoint())
+        self.leases.heartbeat(
+            "mission", self.old, self.epoch, 109, 90, 1,
+            ref.sha256, ref.uri,
+        )
+
+    def inspect(self, **kwargs):
+        args = dict(
+            mission_id="mission", now=110, leases=self.leases,
+            beats=self.beats, checkpoint_store=self.store,
+            requirement=self.requirement, expected_source_sha="a"*40,
+            expected_plan_sha256="b"*64, expected_view_digest="c"*64,
+        )
+        args.update(kwargs)
+        return m.continuity_readiness(**args)
+
+    def test_readback_and_capacity_is_not_admission_or_effect_authority(self):
+        result = self.inspect()
+        self.assertEqual(result["state"], "READY_FOR_ACTION_DOOR_PROOF")
+        self.assertTrue(result["checkpoint_verified"])
+        self.assertEqual(result["successor_worker"], self.new)
+        self.assertEqual(result["next_action"],
+                         "INDEPENDENT_IDENTITY_DOF_FENCE_AND_DISPATCH_PROOF")
+        self.assertFalse(result["promotes_admission"])
+        self.assertFalse(result["grants_effect_authority"])
+
+    def test_source_changed_during_restore_is_stale(self):
+        result = self.inspect(expected_source_sha="e"*40)
+        self.assertEqual(result["state"], "STALE")
+
+    def test_current_oracle_digest_changed_is_stale(self):
+        result = self.inspect(expected_view_digest="e"*64)
+        self.assertEqual(result["state"], "STALE")
+
+    def test_old_estate_view_requires_reconciliation(self):
+        result = self.inspect(now=140, max_view_age_seconds=15)
+        self.assertEqual(result["state"], "STALE")
+        self.assertEqual(result["reason"], "ESTATE_VIEW_OUTSIDE_FRESHNESS_WINDOW")
+
+    def test_remote_tampering_never_proves_continuity(self):
+        self.store.bad_readback = True
+        result = self.inspect()
+        self.assertEqual(result["state"], "BLIND")
+
+    def test_unresolved_effect_cannot_be_admitted(self):
+        self.leases.reserve_effect("mission", "payment", self.old, 1, 110)
+        result = self.inspect()
+        self.assertEqual(result["state"], "RECOVERY_PENDING")
+        self.assertEqual(result["unresolved_effect_count"], 1)
+
+    def test_no_destination_means_recovery_pending(self):
+        self.requirement = c.Requirement(frozenset({"not-present"}), 1, 100)
+        self.assertEqual(self.inspect()["state"], "RECOVERY_PENDING")
+
+    def test_bad_authority_digest_refused(self):
+        self.assertEqual(
+            self.inspect(expected_plan_sha256="missing")["state"], "BLIND",
+        )
+
+
 class LifeObserverTests(unittest.TestCase):
     def test_local_disk_observation_does_not_fabricate_depletion(self):
         obs = m.BrokerLifeObserver().sample_storage(".", now=100)
