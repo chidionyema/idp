@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """ci-status — structured CI status for a PR or SHA."""
 
+import base64
 import hashlib
 import json
 import subprocess
 import sys
-from pathlib import Path
 from urllib.parse import quote
 
-ROOT = Path(__file__).resolve().parents[3]
-POLICY = ROOT / "platform/github/ruleset.idp.required-checks.json"
+POLICY_PATH = "platform/github/ruleset.idp.required-checks.json"
 GREEN = {"success", "skipped", "neutral"}
 
 
@@ -24,6 +23,7 @@ def gh_json(path):
 repo = "chidionyema/idp"
 sha = ""
 pr_num = 0
+pr_mergeable = None
 
 for arg in sys.argv[1:]:
     if arg.startswith("pr="):
@@ -38,6 +38,7 @@ if pr_num and not sha:
     sha = d["head"]["sha"]
     branch = d["head"]["ref"]
     title = d["title"]
+    pr_mergeable = d.get("mergeable")
     is_draft = d.get(
         "draft", False
     )  # REST says "draft"; "isDraft" is the GraphQL/gh name
@@ -59,10 +60,28 @@ raw = gh_json(f"repos/{repo}/commits/{sha}/check-runs?per_page=100")
 runs = raw.get("check_runs", [])
 
 def policy():
+    """Read the real main policy through the estate's existing GitHub authority.
+
+    ci-status.py is deployed as ~/.estate/libexec/ci-status.py, NOT beneath
+    the source checkout. Guessing __file__.parents[3] silently points outside
+    the repo on Pi/Mac. A trusted remote content read works from every agent
+    surface and fails BLIND if GitHub/its permission is missing.
+    """
     if repo != "chidionyema/idp":
-        return [], "", "no locally verified required-check policy for requested repo"
+        return [], "", "no verified IDP policy for requested repository"
+    url = f"repos/{repo}/contents/{POLICY_PATH}?ref=main"
     try:
-        raw_policy = POLICY.read_bytes()
+        proc = subprocess.run(["gh", "api", url], capture_output=True,
+                              text=True, timeout=15)
+    except (OSError, subprocess.TimeoutExpired) as ex:
+        return [], "", "cannot read canonical GitHub ruleset: " + str(ex)[:120]
+    if proc.returncode != 0:
+        return [], "", "cannot read canonical GitHub ruleset: " + proc.stderr.strip()[:120]
+    try:
+        payload = json.loads(proc.stdout)
+        if payload.get("encoding") != "base64":
+            raise ValueError("GitHub policy content not base64")
+        raw_policy = base64.b64decode(payload["content"])
         data = json.loads(raw_policy)
         checks = next(rule["parameters"]["required_status_checks"]
                       for rule in data["rules"]
@@ -71,14 +90,18 @@ def policy():
         if not names or len(set(names)) != len(names):
             raise ValueError("required checks empty or duplicated")
         return checks, hashlib.sha256(raw_policy).hexdigest(), ""
-    except (OSError, ValueError, KeyError, TypeError, StopIteration) as ex:
-        return [], "", f"policy unavailable: {ex}"
+    except (ValueError, KeyError, TypeError, StopIteration) as ex:
+        return [], "", f"policy unreadable: {ex}"
+
 
 def required_result(name, app_id):
     url = (f"repos/{repo}/commits/{sha}/check-runs?"
            f"check_name={quote(name, safe='')}&per_page=100")
-    proc = subprocess.run(["gh", "api", url], capture_output=True,
-                          text=True, timeout=15)
+    try:
+        proc = subprocess.run(["gh", "api", url], capture_output=True,
+                              text=True, timeout=15)
+    except (OSError, subprocess.TimeoutExpired) as ex:
+        return {"state": "unreadable", "reason": str(ex)[:160]}
     if proc.returncode != 0:
         return {"state": "unreadable", "reason": proc.stderr.strip()[:160]}
     try:
@@ -155,6 +178,7 @@ summary = f"CI on {where}: {len(passed)} passed, {verdict}."
 result = {
     "summary": summary,
     "sha": sha[:8],
+    "full_sha": sha,
     "branch": branch,
     "title": title,
     "draft": is_draft,
@@ -166,7 +190,7 @@ result = {
     "running": len(pending),
     "failures": [{"name": r["name"], "url": r.get("html_url", "")} for r in failed],
     "running_names": [r["name"] for r in pending],
-    "required_policy": str(POLICY.relative_to(ROOT)) if required else None,
+    "required_policy": POLICY_PATH if required else None,
     "required_policy_sha256": policy_digest,
     "required_policy_error": policy_error,
     "required_checks": per_required,
@@ -177,6 +201,8 @@ result = {
     "required_pending": pending_required,
     "required_green": passing,
     "next_estate_action": next_action,
-    "merge_ready": ready,
+    "required_checks_green": ready,
+    "merge_ready": bool(pr_num and ready and not is_draft and pr_mergeable is True),
+    "merge_readiness_scope": "PR only; source SHA checks alone never establish branch mergeability",
 }
 print(json.dumps(result, indent=2))

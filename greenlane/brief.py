@@ -126,6 +126,14 @@ def brief(status: dict[str, Any]) -> dict[str, Any]:
 
     required = (status.get("main") or {}).get("required") or {}
     main_red = [k for k, v in required.items() if v not in GREEN]
+    main_missing = [k for k, v in required.items() if v == "absent"]
+    main_unknown = [k for k, v in required.items()
+                    if str(v).startswith("unreadable:")]
+    main_pending = [k for k, v in required.items()
+                    if v in ("pending", "in_progress", "queued", "waiting")]
+    main_failed = [k for k, v in required.items()
+                   if v not in GREEN and k not in main_missing
+                   and k not in main_unknown and k not in main_pending]
     lost = (status.get("invariants") or {}).get("work_lost") or 0
     loud = bool(
         not state_known or status.get("alarm") or main_red or lost
@@ -138,24 +146,48 @@ def brief(status: dict[str, Any]) -> dict[str, Any]:
     next_action = None
     if not state_known:
         next_action = {"code": "restore-state-read", "why": "Greenlane state unavailable"}
-    elif main_red:
-        next_action = {"code": "repair-required-main-check", "check": main_red[0]}
     elif blocking_checks and (
         batch_age is not None and batch_age >= LONG_TESTING_MIN
         or any(c.get("result") in ("failure", "timed_out", "cancelled")
                for c in blocking_checks)
         or visibility_blind
     ):
-        target = blocking_checks[0]
+        # Actual failing candidate precedes absent post-landing main contexts.
+        target = next((c for c in blocking_checks if c.get("result")
+                       in ("failure", "timed_out", "cancelled")), blocking_checks[0])
         next_action = {"code": "inspect-candidate-check",
                        "check": target["name"], "result": target["result"],
-                       "url": target.get("url")}
-    elif held_claims:
-        next_action = {"code": "renew-claim", "lane": held_claims[0]["lane"],
-                       "why": held_claims[0]["why"]}
+                       "url": target.get("url"), "candidate": batch.get("tip") if batch else None}
     elif red:
         next_action = {"code": "repair-red-lane", "lane": red[0]["lane"],
                        "owner": red[0]["owner"], "why": red[0]["why"]}
+    elif main_failed:
+        next_action = {"code": "repair-required-main-check",
+                       "check": main_failed[0], "result": required[main_failed[0]]}
+    elif landing:
+        next_action = {"code": "await-candidate-verdict",
+                       "candidate": batch.get("tip"), "pending": [c["name"] for c in blocking_checks],
+                       "why": "Greenlane verifies automatically; no agent polling loop"}
+    elif main_unknown:
+        next_action = {"code": "repair-required-main-visibility",
+                       "sha": (status.get("main") or {}).get("sha"),
+                       "contexts": main_unknown, "owner": "estate-greenlane",
+                       "why": "cannot read evidence; cannot infer the check did not run"}
+    elif main_pending:
+        next_action = {"code": "observe-required-main-checks",
+                       "sha": (status.get("main") or {}).get("sha"),
+                       "contexts": main_pending, "owner": "estate-greenlane",
+                       "why": "legitimate in-flight checks are not a failed verdict"}
+    elif main_missing:
+        next_action = {"code": "reconcile-required-main-checks",
+                       "sha": (status.get("main") or {}).get("sha"),
+                       "contexts": main_missing,
+                       "owner": "estate-greenlane",
+                       "why": "post-landing evidence absent; candidate work remains independently judged",
+                       "boundary": "run authentic checks, never manufacture a success"}
+    elif held_claims:
+        next_action = {"code": "renew-claim", "lane": held_claims[0]["lane"],
+                       "why": held_claims[0]["why"]}
     elif stuck:
         next_action = {"code": "investigate-stuck-lane",
                        "lane": stuck[0]["lane"], "why": stuck[0]["why"]}
@@ -174,8 +206,12 @@ def brief(status: dict[str, Any]) -> dict[str, Any]:
         parts.append("nothing landing")
     if not state_known:
         parts.append("Greenlane state unreadable: no operational all-clear")
-    if main_red:
-        parts.append(f"main is red on {', '.join(main_red)}")
+    if main_missing:
+        parts.append(f"main proof absent for {', '.join(main_missing)}")
+    if main_unknown:
+        parts.append(f"main proof unreadable for {', '.join(main_unknown)}")
+    if main_failed:
+        parts.append(f"main is red on {', '.join(main_failed)}")
     if blocking_checks and landing:
         names = ", ".join(b["name"] for b in blocking_checks[:3])
         parts.append(f"candidate outstanding on {names}")
@@ -194,7 +230,53 @@ def brief(status: dict[str, Any]) -> dict[str, Any]:
     if state_known and not (main_red or lost or stuck or red or blocking_checks):
         parts.append("all clear")
 
+    # One source-bound recovery packet for Pi, cloud workers, web relay, voice
+    # and the ORIGINAL Founder Surface. It is derived from the same canonical
+    # Greenlane snapshot, not assembled independently by each agent or from
+    # guessed GitHub check status. No extra network reads; no grant of authority.
+    failed_checks = [c for c in blocking_checks
+                     if c.get("result") in ("failure", "timed_out", "cancelled",
+                                            "action_required", "startup_failure", "stale")]
+    pending_checks = [c for c in blocking_checks if c not in failed_checks]
+    if not state_known:
+        phase = "BLIND"
+    elif failed_checks or red or main_failed:
+        phase = "REPAIR_REQUIRED"
+    elif landing or main_pending:
+        phase = "VERIFYING"
+    elif main_unknown:
+        phase = "BLIND"
+    elif main_missing or stuck:
+        phase = "RECOVERY_REQUIRED"
+    elif waiting:
+        phase = "QUEUED"
+    else:
+        phase = "IDLE"
+    decision = {
+        "contract": "genesis.greenlane.failure-packet.v1",
+        "state": phase,
+        "main_sha": (status.get("main") or {}).get("sha"),
+        "candidate_sha": batch.get("tip") if batch else None,
+        "candidate_base_sha": batch.get("base") if batch else None,
+        "batch_id": batch.get("id") if batch else None,
+        "affected_lanes": ([x[0] for x in batch.get("members", [])]
+                           if batch else []),
+        "candidate_failed_checks": failed_checks,
+        "candidate_pending_checks": pending_checks,
+        "red_lanes": red,
+        "held_claims": held_claims,
+        "main_missing_checks": main_missing,
+        "main_failed_checks": main_failed,
+        "main_unreadable_checks": main_unknown,
+        "main_pending_checks": main_pending,
+        "evidence_complete": state_known and not visibility_blind and not main_unknown,
+        "next_estate_action": next_action,
+        "authorization": "no privilege from a status or failure packet; existing DoF/action door",
+        "retry_rule": "do not repeat an unchanged failure; existing Greenlane owns automatic judging",
+    }
+
     return {
+        "recovery_packet": decision,
         "loud": loud,
         "landing": landing,
         "waiting": waiting,
@@ -213,6 +295,10 @@ def brief(status: dict[str, Any]) -> dict[str, Any]:
             "oldest_pending_or_testing_age_min": max_queue_age,
             "held_claims": held_claims,
             "candidate_blocking_checks": blocking_checks,
+            "main_missing_required_checks": main_missing,
+            "main_failed_required_checks": main_failed,
+            "main_unreadable_required_checks": main_unknown,
+            "main_pending_required_checks": main_pending,
             "next_action": next_action,
             "batch_outcome_sample": {
                 "n": sample, "landed": landed_sample, "timeouts": timeouts,

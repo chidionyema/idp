@@ -22,12 +22,28 @@ REQUIRED = [
 ]
 
 FAKE_GH = r'''#!/usr/bin/env python3
-import json, os, sys
+import base64, json, os, sys
 from urllib.parse import parse_qs, urlparse
 path = sys.argv[2]
 mode = os.environ.get("FAKE_CI_MODE", "missing")
+if path.endswith("/pulls/12"):
+    print(json.dumps({"head": {"sha": "a1df4b42c0ffee", "ref": "lane/real"},
+                      "title": "valid candidate", "draft": False, "mergeable": True}))
+    sys.exit(0)
+if path.endswith("/pulls/13"):
+    print(json.dumps({"head": {"sha": "a1df4b42c0ffee", "ref": "lane/draft"},
+                      "title": "draft", "draft": True, "mergeable": True}))
+    sys.exit(0)
 if path.endswith("/commits/main"):
     print(json.dumps({"sha": "a1df4b42c0ffee", "commit": {"message": "head of main\n\nbody"}}))
+    sys.exit(0)
+if "/contents/platform/github/ruleset.idp.required-checks.json?ref=main" in path:
+    if mode == "policy_missing":
+        print("404 ruleset", file=sys.stderr)
+        sys.exit(1)
+    with open(os.environ["FAKE_RULESET"], "rb") as source:
+        data = source.read()
+    print(json.dumps({"encoding": "base64", "content": base64.b64encode(data).decode()}))
     sys.exit(0)
 if "/check-runs?" in path:
     query = parse_qs(urlparse(path).query)
@@ -80,7 +96,7 @@ def _run(tmp_path, mode="missing", *args):
     gh.write_text(FAKE_GH)
     gh.chmod(0o755)
     env = {**os.environ, "PATH": f"{tmp_path}:/usr/bin:/bin",
-           "FAKE_CI_MODE": mode}
+           "FAKE_CI_MODE": mode, "FAKE_RULESET": str(POLICY)}
     p = subprocess.run([sys.executable, str(SCRIPT), *args],
                        capture_output=True, text=True, env=env, timeout=40)
     return p, json.loads(p.stdout)
@@ -108,7 +124,8 @@ def test_one_success_out_of_all_required_contexts_is_not_merge_ready(tmp_path):
 def test_all_required_exact_names_and_proper_app_can_be_green(tmp_path):
     p, body = _run(tmp_path, "all_green")
     assert p.returncode == 0
-    assert body["merge_ready"] is True
+    assert body["required_checks_green"] is True
+    assert body["merge_ready"] is False  # main SHA is not a mergeable PR
     assert body["required_verdict"] == "REQUIRED_CHECKS_GREEN"
     assert set(body["required_green"]) == set(REQUIRED)
 
@@ -153,3 +170,26 @@ def test_other_repository_cannot_inherit_idp_required_check_contract(tmp_path):
     assert body["merge_ready"] is False
     assert body["required_verdict"] == "BLIND_REQUIRED_POLICY"
     assert body["next_estate_action"]["code"] == "REPAIR_CHECK_VISIBILITY"
+
+
+
+def test_ruleset_unreadable_is_blind_not_merge_ready(tmp_path):
+    p, body = _run(tmp_path, "policy_missing")
+    assert p.returncode == 0
+    assert body["required_verdict"] == "BLIND_REQUIRED_POLICY"
+    assert not body["merge_ready"]
+    assert body["required_policy_error"]
+
+
+
+def test_real_pr_merge_readiness_requires_checks_draft_false_and_mergeability(tmp_path):
+    p, body = _run(tmp_path, "all_green", "pr=12")
+    assert p.returncode == 0
+    assert body["required_checks_green"] is True
+    assert body["merge_ready"] is True
+    assert body["full_sha"] == "a1df4b42c0ffee"
+
+    p, body = _run(tmp_path, "all_green", "pr=13")
+    assert p.returncode == 0
+    assert body["required_checks_green"] is True
+    assert body["merge_ready"] is False

@@ -123,3 +123,99 @@ def test_lost_work_is_loud_and_counted():
     s = status(invariants={"work_lost": 2}, alarm=True)
     b = brief(s)
     assert b["loud"] is True and "2 pull requests lost work" in b["summary"]
+
+
+
+def test_main_absent_checks_do_not_hijack_a_live_candidate():
+    s = status(
+        main={"sha": "main-sha", "required": {
+            "bdd": "absent", "ci-success": "absent", "test": "success"}},
+        state={"lanes": {"lane/a": {"status": "testing"}},
+               "batch": {"id": "b42", "tip": "candidate-sha", "base": "main-sha",
+                         "started": NOW - 5,
+                         "members": [["lane/a", "lane-head", "candidate-sha"]]}},
+        candidate_checks={"bdd": {"result": "in_progress", "url": "https://example.invalid/ci"}},
+    )
+    response = brief(s)
+    packet = response["recovery_packet"]
+    assert response["assurance"]["next_action"]["code"] == "await-candidate-verdict"
+    assert packet["main_missing_checks"] == ["bdd", "ci-success"]
+    assert packet["candidate_sha"] == "candidate-sha"
+    assert packet["batch_id"] == "b42"
+    assert packet["affected_lanes"] == ["lane/a"]
+    assert packet["candidate_pending_checks"][0]["name"] == "bdd"
+    assert packet["state"] == "VERIFYING"
+    assert "no agent polling loop" in response["assurance"]["next_action"]["why"]
+
+
+def test_actual_failing_candidate_precedes_absent_main_contexts():
+    s = status(
+        main={"sha": "main-sha", "required": {"bdd": "absent", "test": "success"}},
+        state={"lanes": {"lane/a": {"status": "testing"}},
+               "batch": {"id": "b44", "tip": "exact-tip", "base": "main-sha",
+                         "started": NOW - 5, "members": [["lane/a", "head", "tip"]]}},
+        candidate_checks={
+            "bdd": {"result": "failure", "url": "https://github.com/example/bdd"},
+            "test": {"result": "in_progress", "url": None},
+        },
+    )
+    response = brief(s)
+    assert response["assurance"]["next_action"]["code"] == "inspect-candidate-check"
+    assert response["assurance"]["next_action"]["check"] == "bdd"
+    packet = response["recovery_packet"]
+    assert packet["candidate_failed_checks"] == [{
+        "name": "bdd", "result": "failure", "url": "https://github.com/example/bdd"}]
+    assert packet["candidate_base_sha"] == "main-sha"
+    assert packet["state"] == "REPAIR_REQUIRED"
+    assert packet["authorization"].startswith("no privilege")
+
+
+def test_missing_main_checks_have_machine_owned_reconciliation_without_false_green():
+    s = status(main={"sha": "main-sha", "required": {
+        "bdd": "absent", "ci-success": "absent", "test": "success"}})
+    response = brief(s)
+    act = response["assurance"]["next_action"]
+    assert act["code"] == "reconcile-required-main-checks"
+    assert act["sha"] == "main-sha"
+    assert act["contexts"] == ["bdd", "ci-success"]
+    assert "never manufacture" in act["boundary"]
+    assert response["recovery_packet"]["main_missing_checks"] == ["bdd", "ci-success"]
+    assert response["loud"]
+
+
+def test_red_lane_has_priority_over_postlanding_main_coverage():
+    s = status(main={"required": {"bdd": "absent"}},
+               state={"lanes": {"lane/fix": {
+                   "status": "red", "reason": "dof-gate failure", "owner": "agent-pi"}}})
+    response = brief(s)
+    assert response["assurance"]["next_action"]["code"] == "repair-red-lane"
+    assert response["recovery_packet"]["red_lanes"][0]["owner"] == "agent-pi"
+
+
+def test_unreadable_controller_state_is_not_success_or_agent_recovery_permission():
+    s = status(state={"available": False, "lanes": {}, "batch": None},
+               main={"required": {"ci-success": "unreadable: HTTP 403"}})
+    response = brief(s)
+    assert response["recovery_packet"]["state"] == "BLIND"
+    assert response["recovery_packet"]["evidence_complete"] is False
+    assert response["assurance"]["next_action"]["code"] == "restore-state-read"
+    assert "no privilege" in response["recovery_packet"]["authorization"]
+
+
+
+def test_pending_main_check_is_not_misclassified_as_a_failed_gate():
+    response = brief(status(main={"sha": "main", "required": {
+        "bdd": "in_progress", "test": "success"}}))
+    assert response["recovery_packet"]["main_failed_checks"] == []
+    assert response["recovery_packet"]["main_pending_checks"] == ["bdd"]
+    assert response["recovery_packet"]["state"] == "VERIFYING"
+    assert response["assurance"]["next_action"]["code"] == "observe-required-main-checks"
+
+
+def test_unreadable_main_proof_is_blind_not_an_absent_workflow():
+    response = brief(status(main={"sha": "main", "required": {
+        "bdd": "unreadable: 403", "test": "success"}}))
+    assert response["recovery_packet"]["main_missing_checks"] == []
+    assert response["recovery_packet"]["main_unreadable_checks"] == ["bdd"]
+    assert response["recovery_packet"]["evidence_complete"] is False
+    assert response["assurance"]["next_action"]["code"] == "repair-required-main-visibility"
