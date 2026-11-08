@@ -42,7 +42,9 @@ def _governance_path() -> str:
     ):
         if cand and os.path.isfile(os.path.join(cand, "governance", "registry.py")):
             return cand
-    raise SystemExit("estate: the governance package was not found (set ESTATE_GOVERNANCE_TREE)")
+    raise SystemExit(
+        "estate: the governance package was not found (set ESTATE_GOVERNANCE_TREE)"
+    )
 
 
 sys.path.insert(0, _governance_path())
@@ -72,7 +74,9 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--class", dest="cls", default="")
     ap.add_argument("--session", default="")
-    ap.add_argument("--status", action="store_true", help="report the session's lock state and exit")
+    ap.add_argument(
+        "--status", action="store_true", help="report the session's lock state and exit"
+    )
     ap.add_argument("--provider", default="")
     ap.add_argument("--detail", default="")
     ap.add_argument("--pid", type=int, default=None)
@@ -107,7 +111,9 @@ def main(argv: list[str]) -> int:
     if isinstance(args.clear, str) and args.clear:
         args.session = args.clear
     if not args.session and not args.recover_class:
-        ap.error("--session is required unless --unlock/--clear/--recover-class names it")
+        ap.error(
+            "--session is required unless --unlock/--clear/--recover-class names it"
+        )
 
     if args.recover_class:
         if not args.proof.strip():
@@ -139,7 +145,9 @@ def main(argv: list[str]) -> int:
             state = ledger.get_session_state(sid)
             if not ledger.is_locked(sid):
                 continue
-            if (state.get("violation_class") or state.get("class")) != args.recover_class:
+            if (
+                state.get("violation_class") or state.get("class")
+            ) != args.recover_class:
                 continue
             ledger.unlock_session(
                 sid,
@@ -155,7 +163,11 @@ def main(argv: list[str]) -> int:
             "proof": args.proof,
             "proof_sha256": got["sha256"],
         }
-        print(json.dumps(out, indent=2) if args.json else "recovered: " + ", ".join(recovered))
+        print(
+            json.dumps(out, indent=2)
+            if args.json
+            else "recovered: " + ", ".join(recovered)
+        )
         return 0
 
     if args.status:
