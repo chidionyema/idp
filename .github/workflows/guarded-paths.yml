@@ -4,8 +4,11 @@
 #   not a defence -- mathematical guarantees". This workflow is the mathematical guarantee: no PR
 #   merges to main unless bin/idp-ci-guarded-paths passes on its HEAD commit, and that check
 #   refuses (a) touching a guarded policy file without a founder-signed X-Idp-Auth trailer,
-#   (b) a blind-accept merge trailer, (c) a commit that lacks the X-Idp-Signed HMAC the commit-msg
-#   hook stamps on every legitimate commit (defeats --no-verify).
+#   (b) a blind-accept merge trailer, (c) a commit whose provenance cannot be verified to a fact
+#   its author cannot forge -- it must have been written by GitHub itself, or carry a founder
+#   signature (defeats --no-verify). The commit-msg HMAC (X-Idp-Signed) is NOT accepted here as
+#   evidence (idp#7770): it is minted per-checkout and CI cannot verify it, so accepting its
+#   presence alone let `X-Idp-Signed: x` through the gate.
 name: guarded-paths
 on:
   pull_request:
