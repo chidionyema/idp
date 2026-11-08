@@ -85,7 +85,7 @@ def _runs(token: str) -> list[dict[str, Any]]:
 
 
 def _candidate_run(runs: list[dict[str, Any]], marker: str) -> dict[str, Any] | None:
-    matching = [r for r in runs if r.get("display_title") == f"router-recovery / {marker}"]
+    matching = [r for r in runs if r.get("head_branch") == f"auto-run-{marker}"]
     if len(matching) > 1:
         raise ExternalFailure("duplicate delivery: multiple GitHub runs for one automation")
     return matching[0] if matching else None
@@ -98,12 +98,22 @@ def router_dispatch(inp: dict[str, Any]) -> dict[str, Any]:
     found = _candidate_run(_runs(token), marker)
     if found:
         return {"marker": marker, "github_run_id": found["id"], "recovered": True}
-    tag = inp["run_source_ref"]
-    ref = _request(f"{GH_API}/git/ref/tags/{tag}", token=token)
-    if ref.get("object", {}).get("sha") != inp["source_sha"] or ref.get("object", {}).get("type") != "commit":
-        raise ExternalFailure("BLIND: immutable release tag does not match source SHA")
-    payload = {"ref": "refs/tags/" + tag,
-               "inputs": {"cutover": "false", "automation_run_id": marker}}
+    # A dedicated pinned run branch gives the legacy workflow exact correlation.
+    # An orphaned ref after a failed POST is ambiguous; never dispatch twice.
+    branch = "auto-run-" + marker
+    try:
+        ref = _request(f"{GH_API}/git/ref/heads/{branch}", token=token)
+    except urllib.error.HTTPError as exc:
+        if exc.code != 404:
+            raise
+        ref = None
+    if ref:
+        if ref.get("object", {}).get("sha") != inp["source_sha"]:
+            raise ExternalFailure("existing run branch has wrong source SHA")
+        raise ExternalFailure("AMBIGUOUS_DISPATCH: existing run ref needs reconciliation " + branch)
+    _request(f"{GH_API}/git/refs", method="POST",
+             body={"ref": "refs/heads/" + branch, "sha": inp["source_sha"]}, token=token)
+    payload = {"ref": branch, "inputs": {"cutover": "false"}}
     try:
         _request(f"{GH_API}/actions/workflows/{GH_WORKFLOW}/dispatches",
                  method="POST", body=payload, token=token)
@@ -177,9 +187,6 @@ async def automation_activity(inp: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("unsupported automation action")
     if inp["inputs"] != {"repository": REPOSITORY, "candidate_url": CANDIDATE}:
         raise ValueError("unapproved adapter inputs")
-    inp = {**inp, "run_source_ref": os.environ.get("ESTATE_AUTOMATION_SOURCE_REF", "")}
-    if not inp["run_source_ref"] or not re.fullmatch(r"auto-v1-[a-f0-9]{12}", inp["run_source_ref"]):
-        raise ExternalFailure("BLIND: immutable release tag not configured")
     if not re.fullmatch(r"[a-f0-9]{40}", inp["source_sha"]):
         raise ExternalFailure("BLIND: workflow source SHA invalid")
     return await asyncio.to_thread(_ACTIONS[action], inp)
