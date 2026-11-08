@@ -10,6 +10,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  issues: write
 concurrency:
   group: dsh-web-cloud
   cancel-in-progress: false
@@ -84,3 +85,34 @@ jobs:
           print(f"DSH_WEB_URL={sys.argv[1]}")
           PY
           echo "DSH_MODEL_ROUTE=$MODEL_ROUTE" >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish deployment failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="[cloud] DSH Web deployment failure"
+          body="$RUNNER_TEMP/dsh-failure.md"
+          {
+            echo "DSH Web deployment failed."
+            echo
+            echo "Run: $RUN_URL"
+            echo
+            echo '```'
+            if [ -f "$RUNNER_TEMP/modal-deploy.log" ]; then
+              tail -120 "$RUNNER_TEMP/modal-deploy.log" |
+                sed -E 's/[A-Za-z0-9_+\/=.-]{40,}/<redacted>/g'
+            else
+              echo "The failure happened before modal-deploy.log was created."
+            fi
+            echo '```'
+          } >"$body"
+          existing=$(gh issue list --state open --search "$title in:title" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file "$body"
+          else
+            gh issue create --title "$title" --body-file "$body"
+          fi
