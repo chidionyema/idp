@@ -1,0 +1,57 @@
+# Genesis Anti-Entropy Doctrine — causal inquiry, preventive control and inherited learning
+
+**Governance owner:** IDP #7771 FLOW, #7452 FCR, #7342 method selector, #7372 Science, #7800 DoF, Argon #47/#62. **Status:** founder-approved principle; source candidate; not a claim of deployed enforcement.
+
+> **HOW TO MANAGE ENTROPY: eliminate each known failure class at root cause the first time. Prove the correction within a stated scope, independently test its recurrence paths across the estate, and make the next agent inherit the verified remedy. Recurrence means PREVENTION_GAP, not another unbounded investigation.**
+
+This is an **invariant governing evolving implementations**. No claim that all unknown faults can be eliminated or that any finite test proves infinite future nonrecurrence. Specify the threat model, tested conditions, residual risk, expiry and observer. Errors in the observer, law, governance gate and verification mechanism are themselves failure classes.
+
+## Layered causal adjudication (no single-cause fiction)
+
+1. **Loss and boundary:** define a user-visible top event, precise time interval, affected tenant, live topology, expected state and blast radius. Separate symptoms, trigger, proximate mechanisms, latent enabling conditions, shared external cause, safeguards that did not activate, and observer blindness. Use **historical IDP incidents as experimental inputs**, not current deployment instructions.
+2. **Collect time-indexed evidence:** preserve raw independent logs, causal trace/span links, exact source/deploy/host identities, receipts, timestamps with clock uncertainty, negative observations, missing data, interventions and sampled populations. No causal arrow is established merely because two observations are correlated or ordered.
+3. **Enumerate competing explanations:** multiple independent alternatives **OR**; necessary co-occurring factors **AND**; shared upstream dependency; temporally mediated chain; feedback/dynamic SCC; accidental correlation/confounder; selection effects; policy/authority contradictions; unknown unknowns. Maintain a hypothesis *set*, including the null and a missing-evidence explanation, instead of one model-generated story. Each causal edge is HYPOTHESIZED, SUPPORTED, FALSIFIED or INTERVENTION_VERIFIED with observer provenance.
+4. **Compute cut sets and missing controls:** NIST/NASA fault tree AND/OR minimal cut sets enumerate sufficient combinations *conditional on the model*. Prevent or robustly mitigate each known minimal cut set. FMEA/FTA catches component combinations; STPA asks whether the controller omitted, issued, mistimed or prolonged an unsafe action. Bow-tie maps protective and mitigation controls. Inference stops when model boundary/evidence cannot justify completeness.
+5. **Chicken-and-egg vs cyclic causality:** distinguish a **static prerequisite cycle** (A deployment requires B and B requires A), a **time-lagged feedback system** (A(t) changes B(t+1) which changes A(t+2)), and an **observation cycle** created by shared telemetry. Identify strongly connected components and the required independent bootstrap cut; do not break a safety/authentication cycle with an agent self-signature. Acyclic structural causal models must be time-unrolled for genuine feedback.
+6. **Double binds/conflicting laws:** translate mandates/forbiddances, preconditions and authority scopes to a versioned constraint model. Where inconsistent, ask an existing Z3/NSVEE solver for an UNSAT core, then minimize to an explanation (an arbitrary unsat core need not be the unique or smallest one). Attach rule version, source authorizer, protected resource and exact unblocking choices; only a separately authorized constitution repair/exception may change a protected constraint. Never infer that the loudest agent or newest issue wins.
+7. **Cheapest discriminating next observation:** select via *existing* `packages/method_selector` (git bisect, delta debugging, causal graph, fault tree, five-whys as question generator, counterfactual experiments, Bayesian probes, formal constraints, simulations). Prioritize an intervention that maximizes expected information gain / risk reduction per unit cost, safely, after preserving capacity for urgent mitigation. Unknown = ask for evidence, not guess. Bayesian posterior from **existing** `bin/estate-diagnose`, with preregistered hypotheses, calibrated/defensible priors, correlated-evidence adjustment, alternative-model check and sensitivity analysis. **A posterior ≥0.95 is model-relative, not causal proof.**
+8. **Split emergency response from causal closure:** first execute the pre-authorized reversible mitigation needed to stop ongoing loss, with real-caller effect proof. In parallel or afterward, design safe sandbox/off-host interventions and counterfactuals to test each live hypothesis. Production must not be used as an uncontrolled experiment.
+9. **Independent replication and closure:** a diagnosis only becomes `CANDIDATE_CAUSAL_EXPLANATION` after its predicted observations survive a discriminating intervention or independently replayed reproducer. Permanent corrective action prevents all identified path combinations, independent verifier reproduces old failure on the pre-fix baseline and nonfailure with corrected control, checks for new failure paths and second-agent adoption. Existing FCR owns causal record, versioned repair, per-surface adoption and PREVENTION_GAP; Science owns preregistered experiments and independent audit; FLOW owns the real resumed mission and operational yield.
+10. **Continuous scientific governance:** instrument false positives/negatives, mean time to differential diagnosis, conditional recurrence rate, prevention coverage, independently verified cut sets, missing evidence, counterfactual contradictions, prediction calibration, marginal diagnosis cost, founder interruptions and revenue from customer-grade reusable tools. Update weights, hypotheses, probe library and method-selector versions from data. Laws specify invariants and falsifiers, not a permanently fixed model vendor, implementation or magic numeric confidence.
+
+## Role of the existing forces (do not duplicate)
+
+| Estate force | Correct role | Forbidden authority |
+|---|---|---|
+| **FLOW / Temporal / Greenlane** | Own typed work, retries, serial/parallel plans, bounded safe dispatch and source→runtime effect | Never self-declare verified operational closure |
+| **DoF / guardians / independent reviewer** | Verify authorization, scope, protected effects, signed patch/base, contradiction repair | Never turn outage into an unremediable permanent global freeze |
+| **Method selector #7342** | Choose the cheapest applicable diagnosis strategy, show alternatives and missing evidence | A recommendation is not a verified finding or permission |
+| **Bayesian estate-diagnose** | Recompute likelihood updates and sensitivity from preregistered candidates | No blind 0.95-as-causality certification; do not double-count related logs |
+| **Jev** | Fast bounded TRIAGE/heuristic proposal with uncertainty and abstention; optionally rank tests | No unsafe substitution for exact deterministic rule, causal intervention, solver or signed approval; no invented probability |
+| **Mega Oracle / transcript miner #7665** | Retrieve historical episodes, failure classes, contradictory cases, effective repairs and relevant source provenance | A retrieved story, popularity or LLM answer is never causality, authority or current topology |
+| **NSVEE / Z3 / assurance #7452** | Falsifiers, invariant checks, UNSAT diagnosis, stochastic/correlated model risk under validated assumptions | Satisfiability of the wrong model is not operational proof |
+| **Science kernel #7372** | Preregister, sample, intervene, replicate independently, update evidence-based model | Cannot assume local laptop or modify production without approved action |
+| **FCR #7452 + memory** | One authoritative failure class, correction version and inherited agent knowledge | No speculative agent-owned forked root-cause registry |
+| **Genesis Founder Surface #62** | Honest live projection: known unknowns, causal paths, gaps, time-to-yield and residual risk | No decorative green, invented 100% or omitted unresolved path |
+
+## Reinforcement at execution boundaries (not prompt spam)
+
+**Internal advertising is a safety-feedback loop, not persuasion by an untrusted document.** Show a versioned, compact doctrine banner at session start, every active context refresh, FLOW state transition, Greenlane refusal/promotion, DoF lease/refusal, recovery, and during an active fleet watcher **at most once per 600 seconds per process**. Also show the current relevant FCR correction and one concrete next permitted action when available. Use the existing identity-authenticated messaging and agent bootstrap; delivery alone is `DELIVERED`, not `ACKNOWLEDGED`, `UNDERSTOOD` or `EFFECT_VERIFIED`. Never let a reminder authorize a privileged action, override governance or spam a founder channel. An inactive session is not magically reachable: enforce through the real remote agent-executor and signed session context packet.
+
+Each checkpoint records `policy_version/source_sha, agent_principal, mission_id, boundary, shown_at, relevant_class, corrective_action_id, acknowledged_by_runtime, independent_guard_decision` in existing FLOW/telemetry. Periodic work cannot depend on a founder laptop. A missing/failed reminder is a diagnosed visibility/admission fault rather than a universal blocking gate without recovery.
+
+## Falsifiers and graduation
+
+- OR: A or B independently breaks a service; correction of A alone fails to close.
+- AND: Both B and C together break a service; fixing only one interrupts current minimal cut set but leaves other cut sets to enumerate.
+- COMMON: 13 SSL EOF endpoints share one vanished backend; the analysis must test shared upstream infrastructure, not open 13 unrelated "root cause" stories.
+- LOOP: two services depend on each other to start; propose a separate authenticated bootstrap, refuse circular self-authorization.
+- DYNAMIC: a positive feedback loop evolves across temporal slices; no fake static DAG claim.
+- DOUBLE_BIND: gate forbids policy amendment during outage while outage restoration requires that same amendment; report UNSAT/subset plus existing constitutional repair authority, do not self-relax law.
+- CONFOUNDER: deployment and outage correlate because both followed one hidden capacity event; no causal claim without discriminating evidence.
+- OBSERVER_FAIL: heartbeats and message ACKs advance while real caller effect does not; do not reset FLOW's productive clock.
+- REPEAT: a resolved FCR resurfaces through a different agent/provider; `PREVENTION_GAP` with action-owner rather than fresh analysis.
+- FALSE_GREEN: blank log, no witnesses, incomplete adoption or an LLM saying "solved" must not certify control or operational readiness.
+- COMMERCIAL: a fresh independent customer tenant can operate the preventive control without founder laptop, secrets or estate-only hardcoding.
+
+**Existing law registry:** `platform/estate/governance/laws.yaml` and its real falsifier gate. New anti-entropy law must fail on bad records, and **must not be introduced as another unconditional blocker until its trusted remediation path is demonstrated**. Its scope is scoped prevention certification; emergency mitigations proceed through existing authorized recovery.
