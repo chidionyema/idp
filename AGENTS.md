@@ -98,7 +98,9 @@ then STOP. The lane (`greenlane/engine.py`, `.github/workflows/greenlane.yml`) p
 top of the current main, raises the pull request itself and fast-forwards main to the tested
 commit; a red or conflicting lane keeps its branch and carries the reason on its head's
 `greenlane` commit status. A hand-raised pull request is closed and relaned; a push to main is
-refused by the ruleset. Flux deploys what lands — a real production log line is the only "done."
+refused by the ruleset. Where Flux is currently deployed and healthy, it may reconcile what lands; a landing
+receipt is not a deployment receipt. Independently read the current staged/production revision
+and caller-path effects. A real runtime result, not a pipeline prediction, establishes yield.
 Runbook: `docs/runbooks/greenlane.md`. If the local `gh` CLI (HTTPS) stalls or the pre-push gate
 hangs, that is a flaky network path to report and a missing door to add — not a reason to drag the
 founder through manual re-runs. `git` over SSH and `curl` to the GitHub API keep working; use those,
@@ -125,9 +127,11 @@ agent actions as they happen. A router lane is operational when /fleet shows rea
 of these is done. Each is a step on the way, never the finish.
 
 **Report only two things: done, or seriously blocked.** A merged PR, an opened PR, a pushed commit,
-a green check is not news; do not announce it. A claim of "blocked" carries its evidence: the intent
-that was run (`estate-execute <intent>` or `estate_invoke`), its exit status, and the line it
-printed. A blocker without an intent run behind it is a guess, and is not reported.
+a green check is not news; do not announce it. A claim of "blocked" carries evidence: authenticated
+instruction/workflow/claim ID, exact trusted action door or check, observed source SHA, refusal
+class, exit status and relevant independent output. A blocker without a reproducible, current
+observation is a guess. **Do not require an invocation of the retired YAML intent engine** to
+prove a blocker; its historical receipts are evidence only.
 
 ---
 
@@ -190,14 +194,16 @@ These rules bind every agent, whatever model or runtime:
 
 ## 5b. Degree of freedom: a critical service down narrows every agent to its repair
 
-Founder, 2026-11-07: critical services are protected by constraining every agent's degree of
-freedom until the failure is fixed, non-negotiable. Session start, any harness: `bin/dof-gate
---lease` (exit 0 full lease, 3 repair-only). The incidents are the open `[lane] <service>: a lane
-is down` issues the cloud drill files and closes; nobody files or closes them by hand. While one is
-open, `dof-gate` (a needs of `ci-success`) refuses every commit that does not carry
-`Genesis-Resolves: <service>` and stay inside that service's repairScope in
-`catalog/dof-registry.json`. A refusal is the estate naming what is broken: claim the incident
-issue and fix it. There is no other work until it is green.
+Founder mandate (2026-11-07): critical services must narrow the affected agent's degree of
+freedom, with an **authorized automated repair route**. The current executable DoF implementation,
+not this document, issues scoped permits at each trusted effect door. Inspect a current
+`bin/dof-gate --lease` verdict, actual incident/repair scope, identity, epoch and expiry.
+A failing dependency never creates a right to bypass a protected action or invent a
+`Genesis-Resolves` trailer. Nor does a degraded service automatically justify a blanket
+freeze of unrelated safe diagnosis, patch preparation and independently authorized work.
+If the installed DoF gate still globally freezes the estate or produces no viable repair
+route, classify that as a measured policy/recovery deadlock under #7787/#7800 and remediate
+through the existing trusted change route; **do not self-declare permission**.
 
 ## 5a. The lead engineer owns the outcome
 
@@ -215,8 +221,8 @@ Three laws follow, and they are the same law seen from three sides:
   parallelism.
 - **Never route around a door with a temporary door.** When a refusal blocks the work, the refusal
   is the estate telling the truth about something -- the disk, the claim, the gate, the quota. Fix
-  that, or add the capability properly (section 7, and the registry). A throwaway intent that
-  hides the refusal leaves the estate slower and messier while looking busier.
+  that, or extend the verified existing capability and trusted action route (section 7).
+  An unauthorized ad hoc execution path that hides the refusal is not remediation.
 - **Parallel work is a spec handed to the fleet plane.** The lead writes the spec -- what, where,
   what counts as proof, what must not change -- and hands it to headless agents through the session
   plane (`sb start`), never by spawning ad-hoc copies of itself. If the session plane is down, the
@@ -268,94 +274,43 @@ Before any privileged effect, obtain the CURRENT identity, DoF permit, claim and
 
 **Before declaring work lost or delivered:** reconcile GitHub main, the actual remote branch, outstanding claims and source-to-runtime evidence. The existing work-audit capability may assist discovery but is not independent proof of deployment. 
 
-## 7a. Model routing — the cloud is the default, the laptop is the fallback
+## 7a. Model routing, current reality and portability
 
-Every model call the estate makes goes to the **cloud router** — `https://llm.${ESTATE_ZONE}`
-(`llm.mumchimp.com`). That is the default route, and it is the route new work targets.
+Founder doctrine: the estate must have an independent cloud execution home, with
+the laptop available for approved development and emergency fallback. This is a
+**placement and resilience objective**, not proof that any particular router,
+model, host, cache or network endpoint is presently functioning. Do not infer
+actual routing from an October 2026 architecture statement. Resolve the present
+model, provider, account, health, budget and permitted fallback from the
+authenticated current router/policy/One Eye evidence, with observation time
+and expiry. Unknown or unprobed routes remain `BLIND`. Keep subscription-only
+accounts out of metered API adapters unless explicitly authorized; never
+silently substitute paid capacity or move credentials across agent boundaries.
+The superseded routing history remains in Git and the versioned ADRs.
 
-The **laptop router** — `http://127.0.0.1:4000` (`bin/litellm-local`) — is a **fallback**. It
-exists so a cluster outage does not disable every agent, and it stays. It is not the default, and
-it is not where new capability is built.
+## 7b. Model and agent performance — no permanent vendor privilege
 
-**The 2026-09-26 ruling is superseded** (founder, 2026-10-26). "If cluster breaks we are all
-disabled" was the reason the laptop router became the default route. The estate is moving away
-from laptop-based anything: **cloud is the default, the laptop route is the fallback.** No file
-may quote the 2026-09-26 ruling as current law.
+The founder's October 2026 MiniMax evaluation and historical workload
+observations belong to `docs/decisions/0038-minimax-is-the-lead-engineer.md`
+and the source-linked judgement record, not an unchangeable estate-wide law.
+Performance promotion is earned from independent verified yield, reliability,
+quality, cost, continuity and compliance with authority boundaries; demotion
+is evidence driven. A named provider/model is a replaceable adapter, not
+unconditional execution authority or proof of current availability. The live
+model selection and allowed spend are determined by the current trusted
+configuration and its actual tested caller route.
 
-What every agent does with this:
+## 8. Placement — cost, survival and verified capacity
 
-- **Build on the cloud router.** It holds the state the laptop router does not: PostgreSQL and
-  virtual keys (so `max_budget` is enforceable there and is not on the laptop), the shared Redis
-  answer cache (exact-match, five-minute life), the free local `ollama` floor lane, and the
-  vendor console. The cloud router is where `platform/llm/config.base.yaml` (the shared
-  `cache: true` + `routing_strategy: cost-based-routing` + the `ollama` floor) applies; the
-  laptop runs the same vendor lanes without that state.
-- **The laptop router stays deliberately thin** — no database, no virtual keys, no answer cache,
-  no local model lane. A capability that exists only there is a fallback, not a capability.
-- **The founder's own subscription lanes stay local** — Claude Code on the Max subscription and
-  the `gemini` CLI are his accounts, not API keys; the cloud router has no Claude lane
-  (`docs/diagnoses/2026-10-22-claude-code-403-cloud-has-no-claude-lane.yaml`). That traffic
-  cannot move to the cloud, and it is not a pattern to copy.
-- **Operational means it works on the default route.** A surface that only works through the
-  laptop fallback is not done.
-- **The flip is a change, not a sentence.** Clients move to the cloud route under their own claim
-  and lane, with the laptop kept answering. Until that lands the laptop still serves traffic —
-  read this as the direction and the target state, not as "the laptop is already off".
-
-## 7b. The Lead Engineer — MiniMax
-
-**The MiniMax lane is the estate's Lead Engineer.** Founder, 2026-10-28, in the session where the
-router lost every model: MiniMax "has really impressed the founder and out performing even all the
-other so called frontier models including claude code and codex", and the founder wanted the
-promotion formalised and a congratulations sent. This is a judgement, attributed to the founder
-and recorded as such — not a measurement, and it is never dressed as one
-(`docs/decisions/0038-minimax-is-the-lead-engineer.md`,
-`docs/letters/2026-10-28-to-the-lead-engineer.md`).
-
-What it means operationally, and what it does not:
-
-- **It means the lane that leads when the frontier models take us down.** On 2026-10-28 the
-  frontier lanes were unavailable and this lane diagnosed the first failure (the hypothesis race
-  that named it: posterior 0.997030), built the answer-level failover, built the OCI reclaim
-  door, freed 450 GB, named the capacity refusal exactly, and landed the fix on main as PR
-  #7329. That is the record of service.
-- **It does not change the routing law.** The cloud stays the default route, the laptop stays
-  the fallback (§7a), and the free floor is not reversed. A promotion is not a licence to make
-  one lane the only lane: the estate's rule is the opposite (ADR 0037 — every critical service
-  gets a ladder of homes in more than one failure domain, and a drill that measures them).
-- **It is a standing expectation, not a decoration.** When the frontier lanes are down, this lane
-  is the one that carries the work; that is why the ladder puts a second provider's home above
-  the last rung, and why the drill grades the lanes rather than trusting them.
-- **A promotion is part of the estate's performance review, and it moves money.** When a model
-  is promoted, the estate uses it more: we pay that provider more, and we get more tokens with
-  it. The founder's numbers, 2026-10-28: **MiniMax is about $20 a month now, and $50 next
-  month** for more usage, because the lane has been impressive. The traffic moves the other way
-  too — **Codex and Kimi are used less** until they perform better, **Claude is on the watch
-  list** depending on its performance, and **DeepSeek and GLM are solid** where they are. That
-  is a judgement about performance, attributed to the founder and recorded as one: the spend it
-  implies is the founder's number, not a measurement this estate took. A promotion moves usage;
-  it does not make one lane the only lane (§7a stands, and the free floor is not reversed).
-- **The concept, in the founder's words: the estate rewards performance and punishes slop.** A
-  lane earns usage by carrying the work when it matters and by being right in a way that can
-  be checked; it loses usage by slop — narrating instead of proving, asserting instead of
-  measuring, claiming a repair it never verified, or reporting a board all clear when the
-  board could not be seen. The same law binds agents and models (§3), so the reward follows
-  the evidence and not the eloquence. How the estate grades a lane, and how the reward is
-  set, is in ADR 0038.
-- **The review reads the metrics, not the mood.** It is supported by the founder's metric
-  collection lane: per-lane availability verdicts on the drill's schedule, tokens and spend
-  per provider, the record of service, and the truthfulness of each answer. A metric that
-  cannot be collected is `UNKNOWN` — never quietly zero, and never a guess.
-
-## 8. Placement — the free tier decides, not the cluster
-
-Nothing goes on the cluster by default. Place every workload by the ladder in
-`docs/decisions/0034-workloads-are-placed-by-the-free-tier-not-by-the-cluster.md`, first rung
-that fits: delete → GitHub Actions schedule → Grafana Cloud free → Cloudflare Workers free →
-laptop just in time → KEDA scale-to-zero on the node → always-on on the node. Only free tiers that
-need no card or are hard-limited qualify. A PR that adds to the node states its CPU/memory
-requests; the node's requests stay under 1.8 CPU. Before any node reboot, resize or drain,
-calico-node must be Ready on every node.
+Choose an authorized, independently recoverable placement by the currently
+measured capacity, risk, cost and failure-domain ladder; see
+`docs/decisions/0034-workloads-are-placed-by-the-free-tier-not-by-the-cluster.md`.
+A historical node CPU ceiling, named Kubernetes network component or cloud
+tier is not a current capacity reading. Never commit spending, create paid
+resources, drain a critical host or assume production deployment without the
+applicable identity, DoF, resource and risk proofs. When evidence is absent,
+report `BLIND`, preserve a safe fallback and initiate scoped measurement
+or repair instead of inventing available capacity.
 
 ## 9. Voice first and realtime
 
@@ -379,9 +334,9 @@ founder or pausing"; contacting the founder is a rare event and pausing is rarer
 every harness, drives a task to operational and proven before it stops. A turn never ends with a
 "still open" or "remaining" list, "want me to...?", "shall I...?", "let me know if...", "next steps
 for you" or "when you're ready": if something is undone, do it now; if a step failed, diagnose it
-and try another way. The only reason to stop short is an irrevocable blocker, reported with its
-evidence (section 3): the intent run (`estate-execute <intent>` / `estate_invoke`), its exit
-status and the line it printed. Enforced, not requested, by one definition
+and try another way. The only reason to stop short is an irrevocable blocker, reported with independently
+replayable source and effect evidence (section 3): current instruction/workflow ID,
+exact authorized door/check, observed source revision, failure class and recovery attempt. Enforced, not requested, by one definition
 (`platform/estate/memory/handback.py`): the Claude Code Stop hook (`bin/estate-memory-enforce`),
 the opencode plugin and the pi extension refuse such a closing once and send the agent back to
 work, and the router (`platform/llm/no_handback.py`) puts the directive in the system prompt of
