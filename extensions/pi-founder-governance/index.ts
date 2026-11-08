@@ -8,8 +8,9 @@
 //   2. feeds the founder's prompt to the intake, and raises the repeat as a violation,
 //   3. refuses a report to the founder that carries no machine-generated receipt.
 //
-// The three refusals are the founder's order (2026-10-29): warn once per violation class,
-// terminate and relaunch on the repeat; no write path while locked; no report without proof.
+// The controls are graduated: report-only mistakes get a countdown and two corrections before
+// lockdown; mutation/security classes keep the shorter fail-closed ladder. Every warning names
+// the exact proof command, and a locked session can recover through the same proof.
 //
 // Fail-open on its own errors, loudly (R38: a fence a correct machine cannot satisfy is an
 // outage). ESTATE_FOUNDER_GOVERNANCE=0 opts out, exactly as the binaries do.
@@ -96,7 +97,7 @@ async function grade(
   session: string,
   detail: string,
   ctx: any,
-): Promise<void> {
+): Promise<any | null> {
   const args = [
     path.join(BIN, "estate-supervisor"),
     "--class",
@@ -117,12 +118,15 @@ async function grade(
       ctx?.ui?.notify?.(verdict.message ?? `law violation [${cls}]`, "warning");
     } else if (verdict.decision === "terminate") {
       ctx?.ui?.notify?.(
-        `law violation [${cls}] repeated: this session is locked and relaunched under lockdown`,
+        verdict.message ??
+          `law violation [${cls}] reached the correction limit: locked until ${verdict.proof}`,
         "error",
       );
     }
+    return verdict;
   } catch {
     /* the ledger is the record; the notification is a courtesy */
+    return null;
   }
 }
 
@@ -166,9 +170,8 @@ export default function (pi: ExtensionAPI) {
         /* the ledger is the record */
       }
       ctx?.ui?.notify?.(
-        "this session is locked down: no write, no shell, no push until " +
-          (state.proof || "the proof") +
-          " exits 0",
+        "this session is locked: no write, no shell, no push. Recover with: " +
+          `bin/estate-supervisor --unlock ${sessionId(ctx)} --proof "${state.proof || "the named proof"}"`,
         "error",
       );
       return undefined;
@@ -214,17 +217,21 @@ export default function (pi: ExtensionAPI) {
         [path.join(BIN, "estate-receipt"), "--has-receipt", "--stdin"],
         text,
       );
-      if (code === 0) return undefined;
+      if (code === 0) {
+        await run([
+          path.join(BIN, "estate-supervisor"),
+          "--clear",
+          "--session",
+          sessionId(ctx),
+          "--json",
+        ]);
+        return undefined;
+      }
       await grade(
         "unsupported-report",
         sessionId(ctx),
         "a report without machine-generated proof",
         ctx,
-      );
-      ctx?.ui?.notify?.(
-        "that report carries no machine-generated proof: run bin/estate-receipt -- <command> " +
-          "and quote the receipt",
-        "warning",
       );
       return undefined;
     } catch (e) {
