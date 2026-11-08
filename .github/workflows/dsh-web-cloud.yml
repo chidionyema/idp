@@ -20,22 +20,28 @@ jobs:
     env:
       MODAL_TOKEN_ID: ${{ secrets.SEED_MODAL_TOKEN_ID }}
       MODAL_TOKEN_SECRET: ${{ secrets.SEED_MODAL_TOKEN_SECRET }}
-      LITELLM_API_KEY: ${{ secrets.SEED_LITELLM_API_KEY }}
+      DEEPSEEK_API_KEY: ${{ secrets.SEED_DEEPSEEK_API_KEY }}
+      ZAI_API_KEY: ${{ secrets.SEED_ZAI_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Modal root and router key must be present
+      - name: Modal root and a model fallback must be present
         run: |
           set -euo pipefail
           missing=""
           [ -n "$MODAL_TOKEN_ID" ] || missing="$missing MODAL_TOKEN_ID"
           [ -n "$MODAL_TOKEN_SECRET" ] || missing="$missing MODAL_TOKEN_SECRET"
-          [ -n "$LITELLM_API_KEY" ] || missing="$missing LITELLM_API_KEY"
+          [ -n "$DEEPSEEK_API_KEY" ] || missing="$missing DEEPSEEK_API_KEY"
           if [ -n "$missing" ]; then
             echo "::error title=DSH cloud credentials::MISSING repository secrets:$missing"
             exit 1
+          fi
+          if [ -n "$ZAI_API_KEY" ]; then
+            echo "MODEL_ROUTE=zai" >> "$GITHUB_ENV"
+          else
+            echo "MODEL_ROUTE=deepseek" >> "$GITHUB_ENV"
           fi
           python -m pip install --quiet 'modal==1.5.5'
           modal secret list >/dev/null
@@ -45,14 +51,14 @@ jobs:
           TOKEN=$(python - <<'PY'
           import hashlib, os
           print(hashlib.sha256(
-              (os.environ["LITELLM_API_KEY"] + "\nchidionyema/idp:estate-dsh-web:v1").encode()
+              (os.environ["DEEPSEEK_API_KEY"] + "\nchidionyema/idp:estate-dsh-web:v1").encode()
           ).hexdigest())
           PY
           )
           echo "::add-mask::$TOKEN"
-          modal secret create estate-dsh-runtime \
-            LITELLM_API_KEY="$LITELLM_API_KEY" \
-            DSH_LAUNCH_TOKEN="$TOKEN" --force >/dev/null
+          args=(DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" DSH_LAUNCH_TOKEN="$TOKEN")
+          if [ -n "$ZAI_API_KEY" ]; then args+=(ZAI_API_KEY="$ZAI_API_KEY"); fi
+          modal secret create estate-dsh-runtime "${args[@]}" --force >/dev/null
       - name: Deploy and prove DSH Web
         run: |
           set -euo pipefail
@@ -71,3 +77,4 @@ jobs:
           print(f"ok      dsh-web-cloud  {url} HTTP 200")
           print(f"DSH_WEB_URL={sys.argv[1]}")
           PY
+          echo "DSH_MODEL_ROUTE=$MODEL_ROUTE" >> "$GITHUB_STEP_SUMMARY"

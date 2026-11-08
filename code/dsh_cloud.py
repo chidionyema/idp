@@ -63,11 +63,28 @@ PROFILE_PATCH = """\
               low: low
               medium: medium
               high: high
+      zai:
+        displayName: Z.AI
+        apiKeyEnv: ZAI_API_KEY
+        api: openai-completions
+        baseURL: https://api.z.ai/api/coding/paas/v4
+        defaultContextWindow: 200000
+        defaultMaxTokens: 32768
+        models:
+          - id: glm-5.3
+            name: GLM 5.3
+            contextWindow: 200000
+            maxTokens: 32768
+            reasoningEfforts:
+              off:
+              low: low
+              medium: medium
+              high: high
 - id: agent-default-model
   name: "@deepseek-ai/dsh-agent-default-model"
   config:
-    provider: estate
-    model: glm
+    provider: !!js "process.env.ZAI_API_KEY ? 'zai' : 'deepseek-official'"
+    model: !!js "process.env.ZAI_API_KEY ? 'glm-5.3' : 'deepseek-flash'"
     reasoningEffort: low
 """
 
@@ -204,8 +221,8 @@ def commit_loop() -> None:
 )
 @modal.web_server(port=PUBLIC_PORT, startup_timeout=300)
 def web() -> None:
-    if not os.environ.get("LITELLM_API_KEY"):
-        raise RuntimeError("estate-dsh-runtime is missing LITELLM_API_KEY")
+    if not (os.environ.get("ZAI_API_KEY") or os.environ.get("DEEPSEEK_API_KEY")):
+        raise RuntimeError("estate-dsh-runtime is missing both ZAI_API_KEY and DEEPSEEK_API_KEY")
     if not os.environ.get("DSH_LAUNCH_TOKEN"):
         raise RuntimeError("estate-dsh-runtime is missing DSH_LAUNCH_TOKEN")
 
