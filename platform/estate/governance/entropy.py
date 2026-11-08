@@ -56,11 +56,21 @@ def evaluate_prevention(record: Any) -> dict:
         result["missing"] = ["typed record"]
         result["next_action"] = "CLASSIFY_WITH_EXISTING_FCR"
         return result
-    if record.get("known_class") is not True:
+    if type(record.get("known_class")) is not bool:
+        result["state"] = "BLIND"
+        result["missing"] = ["trusted known_class classification"]
+        result["next_action"] = "QUERY_EXISTING_FCR_FOR_CLASS"
+        return result
+    if record["known_class"] is False:
         result["state"] = "INVESTIGATE_ONCE"
         result["next_action"] = "REPRODUCE_CLASS_AND_REGISTER_FCR"
         return result
-    if record.get("recurrence_observed") is True:
+    if type(record.get("recurrence_observed")) is not bool:
+        result["state"] = "BLIND"
+        result["missing"] = ["independently observed recurrence status"]
+        result["next_action"] = "QUERY_EXISTING_FCR_FOR_RECURRENCE"
+        return result
+    if record["recurrence_observed"] is True:
         result["missing"] = ["previous prevention control failed in real operation"]
         result["next_action"] = "OPEN_PREVENTION_GAP_AND_SELECT_NEW_HYPOTHESIS"
         return result
