@@ -26,8 +26,8 @@ import modal
 DSH_VERSION = "0.2.1-rc.5"
 CONTRACT_ID = "estate.dsh-web"
 SCHEMA_VERSION = "1.0.0"
-RELEASE_ID = "dsh-web-2026.11.08.1"
-RELEASE_VERSION = DSH_VERSION
+RELEASE_ID = "dsh-web-2026.11.08.2"
+RELEASE_VERSION = "0.2.1-rc.5+estate.2"
 RELEASE_AUTHORITY = "work-surface"
 DSH_HOME = "/root/.dsh"
 DSH_PORT = 3080
@@ -99,8 +99,8 @@ PROFILE_PATCH = """\
 - id: agent-default-model
   name: "@deepseek-ai/dsh-agent-default-model"
   config:
-    provider: !!js "process.env.ZAI_API_KEY ? 'zai' : 'deepseek-official'"
-    model: !!js "process.env.ZAI_API_KEY ? 'glm-5.3' : 'deepseek-flash'"
+    provider: estate
+    model: glm
     reasoningEffort: low
 """
 
@@ -224,6 +224,7 @@ def runtime_health() -> dict:
             "deployedAt": deployed_at,
             "authority": RELEASE_AUTHORITY,
             "router": "estate.model-router",
+            "modelRoute": "estate-router",
         },
     }
 
@@ -277,8 +278,8 @@ def commit_loop() -> None:
 )
 @modal.web_server(port=PUBLIC_PORT, startup_timeout=300)
 def web() -> None:
-    if not (os.environ.get("ZAI_API_KEY") or os.environ.get("DEEPSEEK_API_KEY")):
-        raise RuntimeError("estate-dsh-runtime is missing both ZAI_API_KEY and DEEPSEEK_API_KEY")
+    if not os.environ.get("LITELLM_API_KEY"):
+        raise RuntimeError("estate-dsh-runtime is missing LITELLM_API_KEY")
     if not os.environ.get("DSH_LAUNCH_TOKEN"):
         raise RuntimeError("estate-dsh-runtime is missing DSH_LAUNCH_TOKEN")
 
