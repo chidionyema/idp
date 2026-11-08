@@ -21,7 +21,7 @@ from pathlib import Path
 
 SECRET_LOAD = Path(
     os.environ.get("ESTATE_SECRET_LOAD")
-    or Path.home() / "Documents/code/estate-secrets/scripts/secret-load"
+    or Path.home() / ".estate/bin/mac-door-secret"
 )
 
 

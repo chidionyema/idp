@@ -40,6 +40,7 @@
 {"alias": "net-forensics", "entity": "component/net-forensics", "type": "COMPONENT"}
 {"alias": "net-triage", "entity": "component/net-triage", "type": "COMPONENT"}
 {"alias": "ns-fences", "entity": "component/ns-fences", "type": "COMPONENT"}
+{"alias": "oci-reclaim", "entity": "component/oci-reclaim", "type": "COMPONENT"}
 {"alias": "Optimizer", "entity": "component/optimizer", "type": "COMPONENT"}
 {"alias": "Parallel Agent Stack", "entity": "component/parallel-agent-stack", "type": "COMPONENT"}
 {"alias": "ParallelExecutionStack", "entity": "component/parallelexecutionstack", "type": "COMPONENT"}
@@ -74,6 +75,8 @@
 {"alias": "ADR 0034 Free-Tier Placement", "entity": "decision/adr-0034-free-tier-placement", "type": "DECISION"}
 {"alias": "built-to-be-sold law", "entity": "decision/built-to-be-sold-law", "type": "DECISION"}
 {"alias": "Dual-trunk enforcement", "entity": "decision/dual-trunk-enforcement", "type": "DECISION"}
+{"alias": "fleet-comms-live-7481", "entity": "decision/fleet-comms-live-7481", "type": "DECISION"}
+{"alias": "founder-directive-fleet-comms-realtime", "entity": "decision/founder-directive-fleet-comms-realtime", "type": "DECISION"}
 {"alias": "front-end-kit decision", "entity": "decision/front-end-kit-decision", "type": "DECISION"}
 {"alias": "intent-engine consultant proposals", "entity": "decision/intent-engine-consultant-proposals", "type": "DECISION"}
 {"alias": "no-agent-works-in-the-main-checkout", "entity": "decision/no-agent-works-in-the-main-checkout", "type": "DECISION"}
@@ -81,6 +84,7 @@
 {"alias": "OCI Always Free A1 cut", "entity": "decision/oci-always-free-a1-cut", "type": "DECISION"}
 {"alias": "piper lessac voice licence", "entity": "decision/piper-lessac-voice-licence", "type": "DECISION"}
 {"alias": "Host provisioning drift", "entity": "defect/host-provisioning-drift", "type": "DEFECT"}
+{"alias": "OCI block-storage quota exhaustion 2026-10-28", "entity": "event/oci-block-storage-quota-exhaustion-2026-10-28", "type": "EVENT"}
 {"alias": "salvage event 2026-09-07", "entity": "event/salvage-event-2026-09-07", "type": "EVENT"}
 {"alias": "Action Fusion", "entity": "feature/action-fusion", "type": "FEATURE"}
 {"alias": "Code mutation gate gap", "entity": "feature/code-mutation-gate-gap", "type": "FEATURE"}
@@ -98,7 +102,10 @@
 {"alias": "TRAP parents[N] repo root", "entity": "gotcha/trap-parents-n-repo-root", "type": "GOTCHA"}
 {"alias": "TRAP reasoning-model token budget", "entity": "gotcha/trap-reasoning-model-token-budget", "type": "GOTCHA"}
 {"alias": "TRAP sessions DB-first", "entity": "gotcha/trap-sessions-db-first", "type": "GOTCHA"}
+{"alias": "Discovery failure 2026-10-29", "entity": "incident/discovery-failure-2026-10-29", "type": "INCIDENT"}
 {"alias": "Founder", "entity": "person/founder", "type": "PERSON"}
+{"alias": "Founder works away from the laptop", "entity": "principle/founder-works-away-from-the-laptop", "type": "PRINCIPLE"}
+{"alias": "idp-7391-estate-db-backup-status", "entity": "project/idp-7391-estate-db-backup-status", "type": "PROJECT"}
 {"alias": "Dagster", "entity": "service/dagster", "type": "SERVICE"}
 {"alias": "estate MCP server", "entity": "service/estate-mcp-server", "type": "SERVICE"}
 {"alias": "External Secrets Operator", "entity": "service/external-secrets-operator", "type": "SERVICE"}
@@ -113,6 +120,7 @@
 {"alias": "Fleet page", "entity": "system/fleet-page", "type": "SYSTEM"}
 {"alias": "FleetView", "entity": "system/fleetview", "type": "SYSTEM"}
 {"alias": "OKE node capacity 2026-09-26", "entity": "system/oke-node-capacity-2026-09-26", "type": "SYSTEM"}
+{"alias": "otto numum Telegram channel", "entity": "system/otto-numum-telegram-channel", "type": "SYSTEM"}
 {"alias": "voice-router", "entity": "system/voice-router", "type": "SYSTEM"}
 {"alias": "Backstage", "entity": "tool/backstage", "type": "TOOL"}
 {"alias": "bin/idp-ci", "entity": "tool/bin-idp-ci", "type": "TOOL"}
