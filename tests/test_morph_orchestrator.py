@@ -6,19 +6,19 @@ Only real deployed OCI/Temporal/DoF and cross-host canaries can certify operatio
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import pathlib
 import sys
 import tempfile
+import types
 import unittest
 from types import SimpleNamespace
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
 # The repository's "platform/" directory shares a name with Python's stdlib
 # module. Use an isolated package alias so ordinary stdlib imports remain safe.
-import importlib.util
-import types
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 package_name = "_genesis_morph_queue_test"
 package = types.ModuleType(package_name)
