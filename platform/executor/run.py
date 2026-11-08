@@ -84,8 +84,28 @@ SUPERVISOR_FLAG = "--supervise"
 
 
 def _exit_for(returncode: int) -> int:
-    """A negative `Popen.returncode` is `-signum`; the shell convention is 128+signum."""
-    return 128 + (-returncode) if returncode < 0 else returncode
+    """The door's verdict for a job: the shell convention for a status, minus one exception.
+
+    A negative `Popen.returncode` is `-signum`; the shell convention is 128+signum.
+
+    THE EXCEPTION: 141 (SIGPIPE) is not a verdict. 141 means a writer was killed because the
+    reader closed the pipe -- which is exactly what `cmd | head -5` asks for on purpose. The
+    command is run under `bash -o pipefail` (see `daemon.py::_runner_argv`), and pipefail
+    reports the RIGHTMOST NON-ZERO stage status. So by the time a 141 is the rightmost non-zero
+    status, every stage that failed was a writer whose reader had gone: the last stage either
+    succeeded or was itself the one that was killed. A genuine failure -- the last stage
+    failing, or an upstream stage failing with anything but SIGPIPE -- outranks the 141 and is
+    what this returns untouched.
+
+    Without this exception, pipefail turns every legitimate truncation into a false failure:
+    this repo has 120 `| head` sites in bin/ alone, and `seq 1 100000 | head -5` exits 141
+    under plain pipefail. A guard that taxes the estate's own scripts is the R14 defect, so
+    the truncation the caller asked for is reported as the success it is.
+
+    143 (SIGTERM) and 137 (SIGKILL) are NOT masked: the ceiling's own kills stay visible.
+    """
+    code = 128 + (-returncode) if returncode < 0 else returncode
+    return 0 if code == 141 else code
 
 
 def supervise(name: str, ceiling: int, argv: list[str], cwd: str | None) -> int:

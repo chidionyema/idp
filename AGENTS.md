@@ -137,14 +137,19 @@ by the pre-commit hook came back `exit: 0` and the agent pushed an empty commit;
 printed `FAIL` and exited 1 came back `exit: 0` and was nearly filed as "the gate fails open".
 
 The executor now runs every command under `bash -o pipefail` (idp#7807), so the door's exit code
-is the upstream failure's own status and the mask is gone at the source. **Two rules remain, and
-they are about how you read the door, not about what you may write:**
+is the upstream failure's own status and the mask is gone at the source. A deliberate truncation
+(`cmd | head -5`) still reads as success, because 141 (SIGPIPE) there means the reader closed the
+pipe on purpose -- not a failure the agent should chase. **Two rules remain, and they are about
+how you read the door, not about what you may write:**
 
 1. **Read the exit code of the command you ran.** Do not pipe the command you are judging -- if you
    need to truncate the output, capture it (`cmd > /tmp/out 2>&1; status=$?; tail -6 /tmp/out`)
    and report the captured `status`. The door now tells the truth; do not launder it.
 2. **A pipeline you pipe on purpose is a thing to name.** `cmd | tail` is fine when you WANT the
    tail; it is a defect when you use it to decide whether `cmd` succeeded. Say which one you meant.
+
+The door's guarantee covers the estate executor. A command you run in your OWN shell has no such
+guarantee: capture the status yourself, the long way round, every time.
 
 `false | tail` must never read as success. That is the whole rule.
 

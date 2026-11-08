@@ -305,6 +305,15 @@ def _runner_argv(
     # The only behaviour it changes is the behaviour that was wrong: an earlier stage failing
     # while a later stage succeeds now reports non-zero instead of 0. A command whose last stage
     # fails is unaffected -- it already reported that stage's status.
+    #
+    # SIGPIPE (141) is the one exception, and it is applied where the status becomes the door's
+    # verdict rather than here: `run.py::_exit_for` is the single place a process's termination
+    # becomes the exit code, and it maps 141 to 0 there. Pipefail reports the rightmost non-zero
+    # stage status, so a 141 that reaches it means every failed stage was a writer whose reader
+    # had gone -- a truncation the agent asked for (`cmd | head -5`), not a failure. There are
+    # 120 `| head` sites in bin/ alone; without this, pipefail would trade one false verdict for
+    # another. A genuine failure -- the last stage failing, or an upstream stage failing with
+    # anything but SIGPIPE -- outranks the 141 and is reported untouched.
     inner = ["bash", "-o", "pipefail", "-c", command]
     argv = [*run_argv, "--ceiling", str(ceiling_sec), job_id, *inner]
     if cwd:

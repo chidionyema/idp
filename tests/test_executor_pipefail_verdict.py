@@ -37,27 +37,44 @@ import pytest
 DAEMON = (
     pathlib.Path(__file__).resolve().parents[1] / "platform" / "executor" / "daemon.py"
 )
+RUN = pathlib.Path(__file__).resolve().parents[1] / "platform" / "executor" / "run.py"
 
 
-def _load():
-    spec = importlib.util.spec_from_file_location("estate_executor_daemon", DAEMON)
+def _load_module(path, name):
+    spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
-    sys.modules["estate_executor_daemon"] = module
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
 
+def _load_run():
+    """`run.py` is the ONE place a process's termination becomes the door's exit code."""
+    return _load_module(RUN, "estate_executor_run")
+
+
 @pytest.fixture(scope="module")
 def daemon():
-    return _load()
+    return _load_module(DAEMON, "estate_executor_daemon")
+
+
+@pytest.fixture(scope="module")
+def run():
+    return _load_run()
 
 
 def _run(daemon, command: str) -> int:
-    """Run the command the way the door runs it, and return the status the door would report."""
+    """Run the command the way the door runs it, and return the status the door would report.
+
+    The door's verdict is TWO things: the argv it builds, and the conversion of the process's
+    termination into an exit code (`run.py::_exit_for`). Both are applied here, so this grades
+    the verdict the door actually reports -- not a proxy for it.
+    """
     argv = daemon._runner_argv("job-test", command, None, 60)
     # The door runs `bash ... -c <command>`; run exactly that, and read its status.
     bash = argv[argv.index("bash") :]
-    return subprocess.run(bash, capture_output=True, text=True, timeout=60).returncode
+    raw = subprocess.run(bash, capture_output=True, text=True, timeout=60).returncode
+    return _load_run()._exit_for(raw)
 
 
 # The two shapes that hid the verdict, verbatim.
@@ -97,6 +114,53 @@ def test_a_masked_failure_is_not_reported_as_success(daemon, command):
 def test_a_real_verdict_is_still_reported(daemon, command, expected):
     """The known-good shape: the door must keep reporting the true status."""
     assert _run(daemon, command) == expected
+
+
+# The truncation the caller asked for. Under plain `pipefail` these exit 141 (SIGPIPE): the
+# reader closed the pipe, so the writer was killed for doing what it was asked. This repo has
+# 120 `| head` sites in bin/ alone, so treating that as a failure would trade one false verdict
+# for another -- the guard taxing the estate's own scripts (R14).
+TRUNCATIONS = [
+    "seq 1 100000 | head -5",
+    "seq 1 100000 | head -5 | tail -3",
+    "seq 1 100000 | tail -5",
+]
+
+
+@pytest.mark.parametrize("command", TRUNCATIONS)
+def test_a_truncation_the_caller_asked_for_is_not_a_failure(daemon, command):
+    """The known-good shape: a deliberate `| head` is a success, not a 141."""
+    assert _run(daemon, command) == 0, (
+        f"the door reported a failure for {command!r}: a truncation the caller asked for was "
+        "read as a failure, so the agent would chase a problem that does not exist"
+    )
+
+
+def test_sigpipe_is_masked_only_where_it_is_a_truncation(run):
+    """The exception is narrow: 141 is a verdict only when nothing else failed.
+
+    A genuine failure outranks the SIGPIPE -- pipefail reports the rightmost non-zero stage
+    status, so `false | head -6` is 1 and never 141. This pins the boundary so the mask cannot
+    widen by accident, and so the ceiling's own kills stay visible.
+    """
+    assert run._exit_for(141) == 0, "a SIGPIPE truncation must read as success"
+    assert run._exit_for(1) == 1, "a real failure must stay a failure"
+    assert run._exit_for(0) == 0
+    assert run._exit_for(-13) == 0, "a process killed by SIGPIPE is the same truncation"
+    # The ceiling's kills are NOT masked: a job killed at the ceiling must still say so.
+    assert run._exit_for(-15) == 143, "SIGTERM must stay visible"
+    assert run._exit_for(-9) == 137, "SIGKILL must stay visible"
+    assert run._exit_for(124) == 124, "the ceiling's own exit code must stay visible"
+
+
+def test_a_real_failure_behind_a_truncation_still_wins(run, daemon):
+    """The mask must not swallow the failure hiding behind a `| head`.
+
+    `false | head -6` exits 1, not 141, so the mask never sees it. This is the case that would
+    be lost if the mask were applied to the pipeline's status instead of to a 141 alone.
+    """
+    assert _run(daemon, "false | head -6") == 1
+    assert _run(daemon, "sh -c 'exit 9' | head -5") == 9
 
 
 def test_the_door_builds_bash_with_pipefail(daemon):
