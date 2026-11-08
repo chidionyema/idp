@@ -13,7 +13,7 @@ LAWS = """laws:
     check: {type: grep_present, path: guard, pattern: fence}
     falsifier: {files: {guard: 'no fence'}}
 """
-AGENTS = '# One canonical entry\n'+chr(96)*3+'toml\n[capabilities]\nread=[]\n'+chr(96)*3+'\n'
+AGENTS = '# One canonical entry\n'+chr(96)*3+'toml\n[capabilities]\nread=[]\n[fsm]\n[budget.usd_per_day]\ntest=1\n[cost]\n[routing]\n[merge]\n[invariants]\n[jev]\n'+chr(96)*3+'\n'
 
 
 def tree(tmp_path):
@@ -117,3 +117,20 @@ def test_real_repository_fixes_the_superseded_directives():
     assert packet["status"] == "SOURCE_CONSISTENT_UNVERIFIED_RUNTIME", packet["problems"]
     assert packet["wrappers"]["CLAUDE.md"] == "POINTER_ONLY"
     assert packet["laws"], "No active GOV enforcement inventory"
+
+
+def test_malformed_toml_is_not_safe(tmp_path):
+    root = tree(tmp_path)
+    (root / "AGENTS.md").write_text(AGENTS.replace("read=[]", "read=["))
+    assert "MALFORMED_RUNTIME_POLICY" in [x["code"] for x in compile_packet(root)["problems"]]
+
+
+def test_symlinked_policy_source_not_accepted(tmp_path):
+    root = tree(tmp_path)
+    law = root / "platform/estate/governance/laws.yaml"
+    original = law.read_text()
+    law.unlink()
+    alternate = root.parent / "secret-source.yaml"
+    alternate.write_text(original)
+    law.symlink_to(alternate)
+    assert compile_packet(root)["status"] == "CONFLICTED"
