@@ -253,7 +253,9 @@ def test_symlinked_policy_source_not_accepted(tmp_path):
     assert compile_packet(root)["status"] == "CONFLICTED"
 
 
-def test_state_page_broadcasts_source_conflicts_without_claiming_authority(tmp_path, monkeypatch):
+def test_state_page_broadcasts_source_conflicts_without_claiming_authority(
+    tmp_path, monkeypatch
+):
     """Existing estate-state broadcast, not a new agent endpoint."""
     from governance import state_page
 
@@ -266,7 +268,10 @@ def test_state_page_broadcasts_source_conflicts_without_claiming_authority(tmp_p
         state_page.registry,
         "evaluate_all",
         lambda _root, falsify=False: {
-            "ok": True, "results": [], "failing": [], "warning": [],
+            "ok": True,
+            "results": [],
+            "failing": [],
+            "warning": [],
             "audit": {"count": 0},
         },
     )
@@ -299,7 +304,13 @@ def test_old_state_page_without_new_projection_renders_blind():
 
     facts = {
         "ts": "2026-11-08T12:00Z",
-        "law_gate": {"ok": True, "laws": 1, "failing": [], "warning": [], "audit_count": 0},
+        "law_gate": {
+            "ok": True,
+            "laws": 1,
+            "failing": [],
+            "warning": [],
+            "audit_count": 0,
+        },
         "specs": {"total": 0, "open": [], "done": []},
         "renewals": {},
         "claims": {"live": 0, "total": 0},
