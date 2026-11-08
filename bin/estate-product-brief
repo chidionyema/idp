@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+"""One-hop Genesis Assurance commercial/product proof briefing for any agent.
+
+The existing commercial catalogue is the only content source: no second
+product registry, no external provider, no token and no deployment authority.
+Read-only, safe on off-host GitHub runners, no founder laptop dependency.
+
+    python3 bin/estate-product-brief            concise onboarding packet
+    python3 bin/estate-product-brief --json     machine-readable source snapshot
+    python3 bin/estate-product-brief --full     full commercial roadmap
+    python3 bin/estate-product-brief --check    fail-closed readiness contract check
+
+Existing IDP #7794 admission/context compiler owns live injection and
+authentication; this tool is a source-only candidate until that integration
+is independently verified. NEVER interpret a roadmap as live service health.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+CATALOGUE = ROOT / "docs" / "marketing" / "index.md"
+START = "## Genesis Assurance — product-first commercial roadmap (pre-product)"
+END = "## Historical sales-entry plan"
+REQUIRED = (
+    "not for sale yet",
+    "P0 — operational foundation",
+    "P1 — commercial product wedge",
+    "P2 — independent comparative proof",
+    "P3 — independent customer deployment",
+    "P4 — commercial validation",
+    "P5 — funding / growth option",
+    "independent",
+    "founder",
+    "funding applications are subordinate",
+    "zero",
+    "unverified",
+)
+STAGES = ("P0", "P1", "P2", "P3", "P4", "P5")
+
+
+def source_packet(path: Path = CATALOGUE) -> dict:
+    raw = path.read_text(encoding="utf-8")
+    if raw.count(START) != 1 or raw.count(END) != 1:
+        raise ValueError("missing or duplicated canonical product roadmap boundaries")
+    s = raw.index(START)
+    e = raw.index(END, s)
+    section = raw[s:e].strip()
+    lower = section.lower()
+    missing = [s for s in REQUIRED if s.lower() not in lower]
+    if missing:
+        raise ValueError("commercial evidence contract incomplete: " + ", ".join(missing))
+    waves = {}
+    for line in section.splitlines():
+        if not line.startswith("| **P"):
+            continue
+        cols = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cols) != 3:
+            raise ValueError("malformed product maturity wave")
+        stage = cols[0].split(" — ", 1)[0].removeprefix("**")
+        if stage not in STAGES or stage in waves:
+            raise ValueError("duplicate or unknown product maturity stage")
+        waves[stage] = {"label": cols[0].strip("*"), "deliverable": cols[1],
+                        "required_evidence": cols[2]}
+    if tuple(waves) != STAGES:
+        raise ValueError("six ordered proof waves P0-P5 are required")
+    return {
+        "schema": "genesis.product-onboarding.v1",
+        "source_file": "docs/marketing/index.md",
+        "section_sha256": hashlib.sha256(section.encode("utf-8")).hexdigest(),
+        "product": "Genesis Assurance",
+        "status": "SOURCE_PROPOSAL_NOT_VERIFIED",
+        "release_authority": False,
+        "next_priority": "P0 then P1: off-host authentic execution and class prevention; P2 independent benchmark",
+        "funding_priority": "P5_AFTER_PRODUCT_PROOF",
+        "no_new_paid_infrastructure": True,
+        "no_local_infrastructure": True,
+        "retired_substrate": "OKE",
+        "waves": waves,
+        "source_text": section,
+    }
+
+
+def concise(packet: dict) -> str:
+    lines = [
+        "[GENESIS ONBOARDING / PRODUCT & PROOF / SOURCE-ONLY]",
+        "Product: Genesis Assurance (NOT FOR SALE; NOT independently verified).",
+        "Doctrine: build once, use in the estate, independently prove real effects,",
+        "prevent known failure classes, then package for other tenants.",
+        "Priority: real off-host FLOW yield → second-agent FCR prevention →",
+        "independent Science benchmark → customer portability → genuine revenue.",
+        "Funding/grants are OPTIONAL and must never displace delivery.",
+        "Absolute constraints: no founder-local infrastructure, no retired OKE,",
+        "no unapproved paid infrastructure, no false-green or self-review.",
+        "Source SHA256: " + packet["section_sha256"],
+        "Canonical source: " + packet["source_file"],
+        "Release authority: NONE. Live capacity / deployment / customer proof: UNKNOWN.",
+        "Current allowed next action: locate the existing P0 owner, inspect a real",
+        "remote execution receipt, and execute the next bounded, authorized work order.",
+        "Progress alone is not verified yield. No separate product tracker.",
+        "Waves and evidence gates:",
+    ]
+    for k, v in packet["waves"].items():
+        lines.append("  " + k + " " + v["label"].split(" — ", 1)[-1])
+    lines.append("Full proof rules: python3 bin/estate-product-brief --full")
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    flags = parser.add_mutually_exclusive_group()
+    flags.add_argument("--json", action="store_true")
+    flags.add_argument("--full", action="store_true")
+    flags.add_argument("--check", action="store_true")
+    args = parser.parse_args(argv)
+    try:
+        packet = source_packet()
+    except (OSError, ValueError) as exc:
+        print("GENESIS PRODUCT BRIEF: BLIND — " + str(exc), file=sys.stderr)
+        return 2
+    if args.check:
+        print("CONTRACT_OK: canonical roadmap parsed; product readiness NOT verified")
+    elif args.json:
+        item = dict(packet)
+        del item["source_text"]
+        print(json.dumps(item, sort_keys=True))
+    elif args.full:
+        print(packet["source_text"])
+    else:
+        print(concise(packet))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
