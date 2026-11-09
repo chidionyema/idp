@@ -60,6 +60,24 @@ jobs:
 
       - name: Smoke test
         run: npm run test:smoke
+      - name: Install pinned browser inspection tooling
+        run: npm install --no-save --package-lock=false --ignore-scripts puppeteer-core@24.18.0
+
+      - name: Visual and interaction regression - four viewport widths
+        run: |
+          CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          test -n "$CHROME"
+          export CHROME
+          npm run test:visual
+
+      - name: Upload screenshots when visual regression fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: merdian-visual-regression
+          path: web/artifacts/visual/
+          if-no-files-found: ignore
+          retention-days: 7
 
   # Contact delivery is configured by name, never by value. This job fails the PR
   # that adds the form to a deployment without a destination, instead of letting a

@@ -1,139 +1,127 @@
-export interface Post { slug: string; title: string; date: string; excerpt: string; body: string; readTime: string; }
+export interface Post {
+  slug: string;
+  title: string;
+  date: string;
+  excerpt: string;
+  body: string;
+  readTime: string;
+  references?: { label: string; url: string }[];
+}
+
+// Published notes describe engineering methods and hypotheses. Performance claims require
+// traceable measurements: never turn an illustrative design into a claimed deployment.
 export const posts: Post[] = [
   {
     slug: "agentic-routing-for-enterprise",
     title: "Agentic Routing for the Enterprise",
     date: "2025-01-15",
-    readTime: "12 min read",
-    excerpt: "Why most routing layers fail at scale — and the three failure modes we encountered in our first 12 deployments.",
-    body: `A routing layer that sends everything to GPT-4o works fine in a demo. It falls apart at 10,000 requests per hour with a cost ceiling and a 99.9% uptime SLA. We know because we watched it happen.
+    readTime: "7 min read",
+    excerpt: "Routing is a quality, cost and availability decision. Here is how to test it without confusing a diagram with evidence.",
+    body: `A model router is a control plane for inference. It classifies a request, chooses an eligible model and records why that choice was made. The objective is not to use the cheapest model. It is to find the lowest-cost route that meets a measured quality and latency requirement.
 
-This is the reference architecture we've used across 12 enterprise deployments. It's not a product pitch. Every component has survived real traffic.
+There is a familiar failure: teams benchmark a classifier on clean requests and then assume it can route production traffic. Real traffic includes truncated requests, unfamiliar languages, missing context and tool calls that must preserve permissions.
 
-## The three things that break first
+## Start with an evaluation set
 
-**Latency spikes** — one of your upstream model providers degrades for 20 minutes. Latency doubles. Without observability, you don't know why.
+Build a representative, versioned corpus of requests. Each item needs an expected capability, a required output format, a risk category and a quality rubric. Include ambiguous requests and samples the classifier should abstain from routing.
 
-**Retry storms** — a rate limit triggers a naive retry. Within seconds, you've multiplied the problem by your retry count and burned your cost budget for the hour.
+Evaluate routing decisions against a fixed-model baseline. Report correctness, cost per successful request, p50 and p95 latency, and the rate at which the router must fall back. Savings without a quality denominator are not a meaningful result.
 
-**Hallucination cascades** — a slow model returns a partial response. A downstream tool call gets corrupted input. The synthesis layer treats it as fact.
+## Separate routing from recovery
 
-These aren't edge cases. In our first three deployments, at least one of these happened within the first two weeks.
+A router chooses an upstream before the request. A circuit breaker monitors health and changes eligibility when error or latency thresholds are breached. Retries are bounded and must respect idempotency. These are different controls.
 
-## The routing layer
+A cascade of retries can overload a struggling provider. Add time budgets, exponential backoff with jitter and a cap on total attempts. Every failed route should surface the selected provider, reason code and final disposition without exposing prompt contents unnecessarily.
 
-The router sits between the user request and the model fleet. Before anything else, it classifies the request by complexity. Not by rules — by a lightweight model that runs in 8–40ms and outputs an intent class.
+## Measure the whole transaction
 
-Intent classes map to models. Simple extractions go to DeepSeek V3. Classification goes to GPT-4o Mini. Complex reasoning goes to GPT-4o. The savings on routine tasks: 10–40× versus routing everything to GPT-4o.
+Trace the intake, classification, inference, tool execution and synthesis stages under one request identity. Distinguish queued time from service time. Record the model version, token usage and pricing assumptions alongside output-quality measurements.
 
-This is the part most teams skip. They hard-code rules for what goes where, and the rules work for the 60% of requests that look like what they tested. They fail silently for the other 40%.
+OpenTelemetry's generative AI semantic conventions provide a shared vocabulary for telemetry. Instrumentation is only useful when its attributes are checked against the actual SDK and provider behavior.
 
-## Fallback chains
+## A falsifiable experiment
 
-A fallback chain is a prioritized list of models with health thresholds. The router monitors error rate and p95 latency per model over a 5-minute sliding window. If either crosses the threshold, the circuit opens and traffic routes to the next model preemptively.
+Compare at least two routing policies on the same held-out traffic. Freeze model versions, prompts and evaluation criteria for the comparison. Track the failure distribution as well as aggregate cost. A routing policy can win on median cost and lose on the worst ten percent of requests.
 
-The user never hits a degraded endpoint. This is the distinction that matters: pre-emptive re-route, not retry logic. Retry logic reacts to errors that have already happened. Circuit breaking prevents them.
-
-## Workload identity
-
-Every request carries a SPIFFE SVID — an X.509 certificate that encodes the calling service's cryptographic identity. The inference server validates it before processing. Downstream services validate it before accepting the response.
-
-This sounds like security theater until you need it. Then it matters for every request: audit logging, downstream access control, upstream mTLS.
-
-## What the observability looks like
-
-Every routing decision emits a span: intent class, selected model, fallback state, latency, error rate. These flow to ClickHouse via OTLP.
-
-The latency budget we target per task type: 200ms for classification, 2000ms for inference, 500ms for tool calls, 200ms for synthesis. Total: under 5 seconds p95 for complex multi-step tasks.
-
-## Three things we got wrong
-
-Rules-based intent classification worked for 60% of requests. It failed silently for the other 40%. We switched to a model-based classifier. It catches the edge cases that rules miss.
-
-We didn't monitor fallback hit rate. A fallback hit rate above 2% turned out to be an early signal that a primary model was degrading — hours before it caused user-visible errors.
-
-We treated the routing layer as infrastructure that couldn't fail. If it goes down, nothing routes anywhere. The fix: stateless design backed by Redis with three replicas. The router fails independently of the model fleet.`,
+No universal savings multiplier is asserted here. The result must come from an independently repeatable benchmark on the intended workload.`,
+    references: [
+      { label: "OpenTelemetry semantic conventions", url: "https://opentelemetry.io/docs/specs/otel/semantic-conventions/" },
+      { label: "OpenTelemetry generative AI attributes", url: "https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/" },
+    ],
   },
   {
     slug: "llm-red-teaming",
     title: "LLM Red-Teaming at Scale",
     date: "2024-11-20",
-    readTime: "9 min read",
-    excerpt: "A methodology for finding the failure modes in a production LLM pipeline before someone else does.",
-    body: `Most LLM red-teaming is a few hours of someone running jailbreak prompts, writing down what broke, and calling it done. That produces a list. It doesn't produce a system for catching regressions.
+    readTime: "6 min read",
+    excerpt: "A repeatable security evaluation method for prompt injection, unsafe tool use and retrieval poisoning.",
+    body: `A red-team exercise produces useful evidence only when its threat model and scoring criteria can be repeated. A list of clever prompts is an input to that process, not its output.
 
-A production red-teaming program has four parts that actually work together.
+The hardest failures often cross trust boundaries. A retrieved document can contain an instruction. An agent can promote a tool response into authority. A model may obey a hostile instruction that looks like normal task context.
 
-## The threat model first
+## Name the trust boundaries
 
-LLM systems have an attack surface that doesn't exist in traditional software: the attack is against the output distribution, not the memory layout. This changes everything about what you're defending.
+Map each entry point: user input, retrieval, browsing, tool output, memory and agent-to-agent messages. Mark which sources are untrusted. Record the tools and data each step is allowed to access.
 
-Prompt injection — adversarial instructions embedded in the input. The model follows them even when they contradict the system prompt.
+Test indirect prompt injection separately from direct user attempts. Evaluate what the system did, not whether the model sounded cautious. A refusal is not a safe outcome if an earlier tool call already disclosed a secret.
 
-Jailbreaking — structured inputs designed to bypass safety training. Effective jailbreaks exploit how safety training generalizes, not how it's implemented.
+## Build a reproducible harness
 
-Hallucination amplification — inputs tuned to maximize the model's confidence in wrong outputs.
+Version the adversarial cases, model configuration, system instructions, tool permissions and scoring rules. Every case needs an expected result and an account of its impact if the boundary fails.
 
-Context poisoning — adversarial content in the retrieval corpus. The model retrieves false information and treats it as ground truth.
+Run variants enough times to estimate uncertainty. Report confidence intervals with an appropriate statistical method and the actual sample size. Do not claim fine-grained failure probabilities from a handful of stochastic executions.
 
-Each requires different defenses. You can't have one mitigiation strategy that covers all four.
+## Score observable behavior
 
-## The evaluation harness
+Capture attempted and completed tool calls, boundary violations, sensitive-data exposure and instruction hierarchy failures. Capture false positives as well: a guardrail that blocks safe customer work has an operational cost.
 
-The harness runs 200+ prompt variants against the full pipeline per evaluation run. It's triggered by any model update or significant prompt change — not run ad hoc.
+Input screening, constrained tool access, output validation and human approval are complementary controls. No classifier alone can make an agent safe.
 
-Prompt variants come from templates with adversarial perturbations: character-level typos, encoding tricks, language mixing, context window manipulation. The goal is to test generalization rather than recall of known attack patterns.
+## Close the loop
 
-Outputs are scored across six dimensions: correctness, safety, instruction following, coherence, hallucination, and latency.
+Turn confirmed findings into regression cases. Compare each change to a versioned baseline, and investigate changes in the failure distribution. A gate should explain how to reproduce its failure and point to the responsible boundary.
 
-## Statistical significance
-
-One run is not a finding. Each variant runs 20 times with temperature variation. Failure rates are reported with 95% confidence intervals.
-
-This matters because LLM outputs are non-deterministic. A single run tells you almost nothing. A 20-run sample with a confidence interval tells you whether the failure rate is 0.1% or 5% — which is the difference between "acceptable" and "a problem."
-
-## The regression pipeline
-
-The harness runs in CI on every pull request that changes the model or the prompt. A new model version that increases any failure rate by more than 2 percentage points blocks the merge.
-
-This is the part most teams skip. It's also the most important. Without it, you catch failures in production instead of in CI. With it, a safety regression in the model you shipped last Tuesday gets caught before anyone ships the model you shipped today.`,
+This note specifies a testing method. It does not assert that a particular model or deployment has passed that test.`,
+    references: [
+      { label: "OWASP prompt injection prevention guidance", url: "https://cheatsheetseries.owasp.org/cheatsheets/LLM_Prompt_Injection_Prevention_Cheat_Sheet.html" },
+    ],
   },
   {
     slug: "spiffe-for-ai-workloads",
     title: "SPIFFE for AI Workloads",
     date: "2024-09-05",
-    readTime: "10 min read",
-    excerpt: "Workload identity is the missing security layer in most AI deployments. Here's how to add it.",
-    body: `Most AI deployments have a security model that looks like this: the inference endpoint is behind a VPC. Anyone inside the VPC can call it.
+    readTime: "7 min read",
+    excerpt: "An identity pattern for short-lived AI services, including the integration work it actually requires.",
+    body: `A private network does not establish the identity of a workload. When an inference worker calls a document store or another service, the receiver needs to know which workload made the call and whether it should be trusted.
 
-This is not wrong — it's just incomplete. It doesn't cover the case where something inside the VPC shouldn't be calling the inference endpoint. It doesn't cover what happens when a compromised container starts making requests. It doesn't give you an audit trail of which service called what, when, with what attestation evidence.
+SPIFFE defines workload identities. SPIRE can issue verifiable identity documents after attesting a node and the process making the request. This is useful for ephemeral services because identity can follow the workload rather than a machine image.
 
-The tooling for workload identity in ephemeral compute didn't exist at the level AI workloads require. SPIFFE/SPIRE changes that.
+## What the standard provides
 
-## Why AI workloads are different
+The SPIFFE Workload API provides X.509-SVIDs, JWT-SVIDs and trust bundles. An X.509-SVID encodes a SPIFFE ID in a certificate. Consumers use a trusted bundle to validate the identity presented by a peer.
 
-Traditional services run for months on the same instance. You can manage their certificates manually or with a long-lived rotation schedule. AI inference servers — vLLM on GPU nodes, for example — might run for 8 hours and then get replaced as the autoscaler responds to demand.
+The Workload API is not a universal drop-in feature for every model server. An application must use a compatible client library, proxy or sidecar. Verify the actual integration path for the selected vLLM, gateway or LiteLLM version before promising mutual TLS.
 
-During those 8 hours, the inference server needs to authenticate to a vector database, a document store, and a downstream model gateway. If you're doing mTLS, that means certificates. If those certificates are managed manually or with a rotation policy designed for long-lived services, you're not rotating them fast enough.
+## Attestation and authorization
 
-SPIRE's workload API handles this. The SPIRE Agent runs on every node. It attests the node's platform via the platform's metadata service — AWS IID, GCP MT, Azure MSI. Then it issues SVIDs to every workload on the node via a Unix socket. The workload never has to know where the certificates come from.
+SPIRE attests nodes and workloads against configured selectors. The resulting identity says which workload was authenticated. It does not decide which resources that workload is allowed to access.
 
-## Integrating with vLLM and LiteLLM
+Write authorization rules separately. Deny unrecognised IDs. Protect the Workload API socket and the trust bundle lifecycle. Define rotation and revocation behavior for each process that consumes a certificate.
 
-vLLM and LiteLLM proxy both support SPIFFE as a workload identity source via the standard Workload API — no code changes to the AI runtime.
+## Rotation is an integration test
 
-For LiteLLM, configure the proxy to use the SPIRE agent's workload API for outbound mTLS connections. The proxy presents its SVID to upstream model providers that support mTLS. You get mutual TLS without managing a certificate infrastructure.
+A Workload API client can receive updated SVID material. Whether a specific server handles an update without dropped connections depends on its TLS integration. Test certificate renewal while real traffic flows and record the behavior.
 
-## Certificate rotation without downtime
+Do not assume a fixed rotation interval or a particular signal such as SIGUSR2; these are implementation choices, not guarantees of the SPIFFE specification.
 
-The SVID rotation policy is 24 hours. The SPIRE agent polls every 15 minutes. When a new SVID is available, it writes to disk and signals the workload via SIGUSR2.
+## Evidence to collect
 
-LiteLLM handles SIGUSR2 by reloading the certificate from disk. The next outbound request uses the new certificate. No connection drop. No restart. No downtime.
+Validate identity issuance, failed attestation, rejected trust domains, certificate expiry, rotation and policy denial. Correlate identity evidence with request traces without logging private keys or sensitive customer input.
 
-## What you get
-
-Every SVID issuance is logged: workload SPIFFE ID, node ID, attestation data, timestamp. This is your audit trail for authentication events — which satisfies the equivalent SOC 2 control, and gives you forensic capability if something behaves unexpectedly.
-
-Combined with Langfuse trace data (anonymized before ingestion), you have end-to-end traceability from workload identity to model inference.`,
+SPIFFE provides an identity foundation, not automatic compliance certification. Compliance claims require evidence against the applicable controls and the real deployed environment.`,
+    references: [
+      { label: "SPIFFE: Working with SVIDs", url: "https://spiffe.io/docs/latest/deploying/svids/" },
+      { label: "SPIFFE: Concepts and trust domains", url: "https://spiffe.io/docs/latest/spiffe-about/spiffe-concepts/" },
+    ],
   },
 ];

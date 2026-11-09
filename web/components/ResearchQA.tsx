@@ -2,8 +2,8 @@
 
 import { useRef, useState } from "react";
 
-type ResearchSource = { id: string; section: string; relevance: number };
-type ResearchAnswer = { answer: string; sources: ResearchSource[]; mode: string };
+type ResearchSource = { id: string; section: string; relevance: number; url: string };
+type ResearchAnswer = { answer: string; sources: ResearchSource[]; mode: string; disclaimer?: string };
 
 const SUGGESTIONS = [
   "How does SPIFFE work with ephemeral AI containers?",
@@ -96,7 +96,7 @@ export function ResearchQA() {
               <span>Ask</span><span aria-hidden="true">↗</span>
             </button>
           </div>
-          <p className="mi-qa-hint">Search our research notes. Check the underlying evidence before relying on an answer.</p>
+          <p className="mi-qa-hint">Search the published notes. Results quote the articles; they do not verify their claims.</p>
         </form>
         <div className="mi-qa-prompts">
           <p className="mi-qa-label">EXPLORE A QUESTION</p>
@@ -125,9 +125,9 @@ export function ResearchQA() {
       <div className="mi-qa-panel" role="region" aria-label="Research answer" aria-live="polite" aria-busy={loading}>
         {!result && !loading && !error && (
           <div className="mi-qa-empty">
-            <div className="mi-qa-panel-kicker">THE RESEARCH DESK <span>001 / LIVE QUERY</span></div>
+            <div className="mi-qa-panel-kicker">THE RESEARCH DESK <span>001 / ARTICLE SEARCH</span></div>
             <h3>Start with a question.</h3>
-            <p>Explore the problems we study, the systems we test and the evidence behind our work.</p>
+            <p>Explore our written technical methods, design choices and open questions. Follow every result to its article.</p>
             <div className="mi-qa-themes">
               {THEMES.map(({ tag, description }) => (
                 <div className="mi-qa-theme" key={tag}>
@@ -140,7 +140,7 @@ export function ResearchQA() {
         {loading && (
           <div className="mi-qa-feedback" role="status" aria-live="polite">
             <span className="mi-qa-progress" aria-hidden="true" />
-            <p>Searching the research corpus…</p>
+            <p>Searching published research notes…</p>
           </div>
         )}
         {error && (
@@ -153,21 +153,22 @@ export function ResearchQA() {
         {result && (
           <div className="mi-qa-answer">
             <div className="mi-qa-panel-kicker">
-              <span>RESEARCH ANSWER</span>
-              <span>{result.mode === "gpt-enhanced" ? "MODEL-ASSISTED SYNTHESIS" : "RESEARCH CORPUS"}</span>
+              <span>MATCHED RESEARCH NOTE</span>
+              <span>{result.mode === "published-excerpts" ? "EXCERPT FROM PUBLISHED ARTICLE" : "ARTICLE SEARCH"}</span>
             </div>
             <div className="mi-qa-answer-copy">
               {result.answer.split("\n\n").filter(Boolean).map((paragraph, index) => <p key={index}>{paragraph}</p>)}
             </div>
+            {result.disclaimer && <p className="mi-qa-disclaimer">{result.disclaimer}</p>}
             {result.sources.length > 0 && (
               <div className="mi-qa-sources">
                 <h4>Source sections</h4>
-                <p>References identified in the research corpus. Verify the primary material before using these findings.</p>
+                <p>Read the article sections. Editorial notes do not establish independent experimental proof.</p>
                 <div className="mi-qa-sources-list">
                   {result.sources.map((source, index) => (
-                    <div className="mi-qa-source" key={source.id + "-" + index}>
-                      <strong>{source.section}</strong><span>{source.id}</span>
-                    </div>
+                    <a className="mi-qa-source" key={source.id + "-" + index} href={source.url.startsWith("/writing/") ? source.url : "/writing"}>
+                      <strong>{source.section}</strong><span>Read source ↗</span>
+                    </a>
                   ))}
                 </div>
               </div>
