@@ -192,6 +192,17 @@ def main(argv: list[str]) -> int:
         return check_onboarding()
     # This static context must arrive on the first turn even if memory or vault is down.
     print(architecture_section(), flush=True)
+    # Admission requires BOTH a verified local architecture snapshot AND a live
+    # authenticated memory brief. This check is a readiness SIGNAL, not a token
+    # of privileged authority: the existing action door still decides permissions.
+    pack_ok = False
+    try:
+        pack = _onboarding_module()
+        if pack is not None:
+            pack.load()
+            pack_ok = True
+    except Exception as exc:
+        print(f"estate-brief: CRITICAL_ONBOARDING_DEPENDENCY {type(exc).__name__}", file=sys.stderr)
     # The distributed memory system is a hard dependency for mission admission,
     # but a failed read must not prevent strictly read-only diagnosis/recovery.
     # --require-memory is the *existing* live door; there is no shadow memory
@@ -232,7 +243,7 @@ def main(argv: list[str]) -> int:
     text = render(brief)
     if text:
         print(text)
-    return 0 if (memory_ok or not args.require_memory) else 2
+    return 0 if (not args.require_memory or (memory_ok and pack_ok)) else 2
 
 
 if __name__ == "__main__":
