@@ -36,7 +36,7 @@ class RetiredOkeAdmissionTests(unittest.TestCase):
         self.assertNotIn("secrets.", retirement)
         self.assertNotIn("id-token: write", retirement)
         # Several legacy steps use always(); failing only an early step is unsafe.
-        self.assertRegex(legacy, r"(?m)^    if: \\$\\{\\{ false \\}\\}$")
+        self.assertIn("    if: ${{ false }}", legacy)
         self.assertIn("always()", legacy)
 
     def test_all_legacy_modes_refuse_before_oci_or_state_commands(self) -> None:
