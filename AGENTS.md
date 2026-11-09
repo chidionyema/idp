@@ -5,6 +5,16 @@ the gates and the hooks, which refuse.
 
 ---
 
+## Reusable software architecture — default for all model/harness contributors
+
+Reusable software is built from versioned components with stable contracts, not free-form duplicate implementations. **Before writing new code**, consult the canonical estate capability registry and identify reuse/adaptation options. For a new or materially modified component, adopt the code boundary defined in `architecture/fractal/v1/README.md`, describe its provided/required capabilities, owner, state, effects, contract tests and SemVer in `component.json`, and run `python3 bin/fractal-shape scan --root .`.
+
+Keep component internals private; integrate through published contract interfaces. Composites publish the same type of boundary as primitive modules. The harvesting lane and the component lab may experiment; the production assembly lane consumes qualified components. Architectural changes to public interfaces, state contracts, permissions or cross-component dependencies require an independently owned review, while ordinary internal refactoring follows automated tests.
+
+This is an incrementally adopted architecture: do not mass-migrate legacy code or block unrelated delivery before the conformance machinery is proved. The existing `bin/capability-index` / `bin/registry-gate` remain the single catalogue and operational evidence authority. A passing structural scan cannot claim a module is operating.
+
+---
+
 ## Programme of record and the tenets
 
 The estate's programme of record is `docs/epics/2026-10-25-estate-master-epic.md`. Every agent reads
