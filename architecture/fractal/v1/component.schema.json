@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://estate.example.invalid/schemas/fractal-component-v1.json",
+  "$id": "urn:meridian:fractal:component:v1",
   "title": "Fractal component manifest v1",
   "type": "object",
   "additionalProperties": false,
