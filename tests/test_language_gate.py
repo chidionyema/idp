@@ -165,3 +165,14 @@ def test_trailer_must_name_the_exact_path(tmp_path):
     result = _run_gate(tmp_path)
     assert result.returncode == 1, result.stderr
     assert "bin/newtool.py" in result.stderr
+
+
+def test_prepush_runs_the_gate_always_but_its_self_tests_only_when_the_gate_changes():
+    ci = (GATE.parents[1] / "bin/idp-ci").read_text()
+    assert "if touched bin/language-gate tests/test_language_gate.py; then" in ci
+    assert (
+        'lgp=$("$MPY" -m pytest'
+        not in ci.split(
+            "if touched bin/language-gate tests/test_language_gate.py; then", 1
+        )[0]
+    )

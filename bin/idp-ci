@@ -503,9 +503,20 @@ fi
 #      git itself calls Added in this diff, so the ~460 existing .py files under bin/ and
 #      platform/ are untouched. Proven by tests/test_language_gate.py against the real script.
 lg=$("$MPY" "$IDP/bin/language-gate" "${IDP_CI_BASE:-origin/main}" HEAD 2>&1); lg_rc=$?
-lgp=$("$MPY" -m pytest -q -p no:cacheprovider -o addopts="" "$IDP/tests/test_language_gate.py" 2>&1); lgp_rc=$?
-if [ "$lg_rc" -eq 0 ] && [ "$lgp_rc" -eq 0 ]; then
-  say "ok    language $(printf '%s' "$lg" | sed -n 's/^ok *//p') -- $(printf '%s' "$lgp" | grep -oE '[0-9]+ passed' | head -1) on the gate's own proof"
+gate_self_changed=0
+if touched bin/language-gate tests/test_language_gate.py; then
+  gate_self_changed=1
+  lgp=$("$MPY" -m pytest -q -p no:cacheprovider -o addopts="" "$IDP/tests/test_language_gate.py" 2>&1); lgp_rc=$?
+else
+  lgp=""
+  lgp_rc=0
+fi
+if [ "$lg_rc" -eq 0 ] && { [ "$gate_self_changed" -eq 0 ] || [ "$lgp_rc" -eq 0 ]; }; then
+  if [ "$gate_self_changed" -eq 0 ]; then
+    say "ok    language $(printf '%s' "$lg" | sed -n 's/^ok *//p') -- gate self-tests skipped (gate unchanged)"
+  else
+    say "ok    language $(printf '%s' "$lg" | sed -n 's/^ok *//p') -- $(printf '%s' "$lgp" | grep -oE '[0-9]+ passed' | head -1) on the gate's own proof"
+  fi
 else
   [ "$lg_rc" -eq 2 ] && say "FAIL  language BLIND: could not read the commit range" \
     || say "FAIL  language $(printf '%s' "$lg" | tail -1)"

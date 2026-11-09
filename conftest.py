@@ -51,8 +51,14 @@ def _sanitize_git_repository_environment() -> list[str]:
 
 REMOVED_GIT_LOCATION_VARS = _sanitize_git_repository_environment()
 
-if os.getpriority(os.PRIO_PROCESS, 0) < SUITE_NICE:
-    os.nice(SUITE_NICE - os.getpriority(os.PRIO_PROCESS, 0))
+_priority = os.getpriority(os.PRIO_PROCESS, 0)
+if _priority < SUITE_NICE:
+    try:
+        os.nice(SUITE_NICE - _priority)
+    except PermissionError:
+        # Sandboxed executors may forbid setpriority. Lowering background CPU
+        # priority is desirable, but it is not a prerequisite for correctness.
+        pass
 
 
 def _git_config_without_operator_hooks() -> Path:

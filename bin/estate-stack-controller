@@ -1,0 +1,1475 @@
+#!/usr/bin/env python3
+"""One cloud-first controller from an approved stack intent to a signed receipt.
+
+    bin/estate-stack-controller <intent.json> [--mode verify|apply]
+                                [--receipt PATH] [--verify-receipt PATH]
+
+The execution contract is versioned and machine-checkable.  Verify mode observes
+only.  Apply mode additionally requires GITHUB_ACTIONS=true, a founder-signed
+intent and a fresh idempotency reservation.  The yield closes only when every
+required stage was measured, all 14 estate doors are MEASURED_OK, the router and
+DSH user paths answer, the receipt was published, and the signed receipt verifies.
+
+No PASS is emitted for a stage the controller could not measure.  No local state
+is authoritative: the interaction is posted back to the claim issue when a token
+is available, and publication failure keeps yield OPEN.
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable, Sequence
+
+IDP = Path(__file__).resolve().parent.parent
+CLAIM_LAPSE_SECONDS = 2 * 60 * 60
+MAX_BUDGET_USD = 150.0
+INTENT_SCHEMA = "estate.stack-intent.v1"
+RECEIPT_SCHEMA = "estate.stack-receipt.v1"
+CONTRACT_SCHEMA = "estate.stack-controller-contract.v1"
+CONTROLLER_VERSION = "1.0.0"
+REQUIRED_STAGE_ORDER = (
+    "gate",
+    "plan",
+    "lease",
+    "cost",
+    "policy",
+    "apply",
+    "publish",
+    "router-deploy",
+    "dsh-deploy",
+    "verify-router",
+    "verify-dsh",
+    "verify-doors",
+    "publish-receipt",
+)
+VERIFY_STAGES = (
+    "gate",
+    "plan",
+    "lease",
+    "cost",
+    "policy",
+    "publish",
+    "verify-router",
+    "verify-dsh",
+    "verify-doors",
+    "publish-receipt",
+)
+APPLY_STAGES = REQUIRED_STAGE_ORDER
+_IDEMPOTENCY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$")
+_INTENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$")
+_FENCE = re.compile(r"^[0-9a-f]{64}$")
+_JWT = re.compile(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$")
+OIDC_AUDIENCE_PREFIX = "estate-stack-receipt:"
+GITHUB_OIDC_ISSUER = "https://token.actions.githubusercontent.com"
+GITHUB_OIDC_JWKS = GITHUB_OIDC_ISSUER + "/.well-known/jwks"
+CONTROLLER_WORKFLOW_REF = (
+    "chidionyema/idp/.github/workflows/estate-stack-controller.yml"
+)
+_CLAIM = re.compile(
+    r"CLAIM\s+agent=(?P<agent>\S+)\s+paths=(?P<paths>\S+)\s+"
+    r"heartbeat=(?P<heartbeat>\S+)",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True)
+class Outcome:
+    """What one primitive measured. `measured=False` is BLIND, never a pass."""
+
+    ok: bool
+    line: str
+    evidence: str = ""
+    measured: bool = True
+
+
+def _canonical(value: Any) -> bytes:
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    ).encode("utf-8")
+
+
+def _sha(data: bytes | str) -> str:
+    if isinstance(data, str):
+        data = data.encode("utf-8")
+    return hashlib.sha256(data).hexdigest()
+
+
+def _now_iso(clock: Callable[[], float] | None = None) -> str:
+    return time.strftime(
+        "%Y-%m-%dT%H:%M:%SZ", time.gmtime((clock or time.time)())
+    )
+
+
+def _parse_ts(value: str) -> float | None:
+    try:
+        return (
+            datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+            .replace(tzinfo=timezone.utc)
+            .timestamp()
+        )
+    except (TypeError, ValueError):
+        return None
+
+
+def redact(text: str) -> str:
+    """Remove credential-shaped material before any text enters a receipt."""
+    value = str(text or "")
+    patterns = (
+        re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S),
+        re.compile(r"\b(?:sk|rk|pk)-[A-Za-z0-9_-]{12,}\b"),
+        re.compile(r"\bgh[pousr]_[A-Za-z0-9_.-]{12,}\b"),
+        re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),
+        re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"),
+        re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+        re.compile(r"(?i)(authorization\s*:\s*bearer\s+)[^\s,]+"),
+        re.compile(r"(?i)\b(api[_-]?key|token|secret|password)\s*[=:]\s*([^\s,]+)"),
+    )
+    for pattern in patterns:
+        if pattern.groups >= 2 and pattern.pattern.startswith("(?i)"):
+            value = pattern.sub(r"\1<redacted>", value)
+        else:
+            value = pattern.sub("<redacted>", value)
+    return value
+
+
+def contract_payload() -> dict:
+    return {
+        "schema": CONTRACT_SCHEMA,
+        "controller_version": CONTROLLER_VERSION,
+        "intent_schema": INTENT_SCHEMA,
+        "receipt_schema": RECEIPT_SCHEMA,
+        "stage_order": list(REQUIRED_STAGE_ORDER),
+        "verify_stages": list(VERIFY_STAGES),
+        "door_service": "estate-doors",
+        "door_count": 14,
+        "claim_lapse_seconds": CLAIM_LAPSE_SECONDS,
+        "budget_ceiling_usd": MAX_BUDGET_USD,
+    }
+
+
+def contract_digest() -> str:
+    return _sha(_canonical(contract_payload()))
+
+
+def intent_digest(intent: dict) -> str:
+    safe = json.loads(json.dumps(intent))
+    safe.pop("intent_sha256", None)
+    approval = safe.get("approval")
+    if isinstance(approval, dict):
+        approval.pop("signature", None)
+    return _sha(_canonical(safe))
+
+
+def claim_fencing_token(
+    repo: str,
+    issue: int,
+    comment_id: int,
+    agent: str,
+    heartbeat: str,
+    paths: str,
+) -> str:
+    """The lease token is derived before, never inside, the intent digest."""
+    return _sha(
+        f"{repo}#{issue}\n{comment_id}\n{agent}\n{heartbeat}\n{paths}"
+    )
+
+
+def validate_intent(intent: dict) -> list[str]:
+    """The pre-execution contract. Every returned item is a refusal."""
+    if not isinstance(intent, dict):
+        return ["intent must be a JSON object"]
+    problems: list[str] = []
+    if intent.get("schema") != INTENT_SCHEMA:
+        problems.append(
+            f"schema must be {INTENT_SCHEMA!r}, got {intent.get('schema')!r}"
+        )
+    if not _INTENT_ID.fullmatch(str(intent.get("intent_id") or "")):
+        problems.append("intent_id must be a stable 3-128 character identifier")
+    claim = intent.get("claim")
+    if not isinstance(claim, dict):
+        problems.append("claim must name repo, issue, agent and fencing_token")
+    else:
+        if not re.fullmatch(r"[\w.-]+/[\w.-]+", str(claim.get("repo") or "")):
+            problems.append("claim.repo must be owner/repository")
+        issue = claim.get("issue")
+        if isinstance(issue, bool) or not isinstance(issue, int) or issue <= 0:
+            problems.append("claim.issue must be a positive integer")
+        if not re.fullmatch(r"[\w.-]{2,64}", str(claim.get("agent") or "")):
+            problems.append("claim.agent is missing or invalid")
+        if not _FENCE.fullmatch(str(claim.get("fencing_token") or "")):
+            problems.append("claim.fencing_token must be 64 lowercase hex characters")
+    if not _IDEMPOTENCY.fullmatch(str(intent.get("idempotency_key") or "")):
+        problems.append("idempotency_key must be 16-128 characters and path-safe")
+    mode = intent.get("mode")
+    if mode not in ("verify", "apply"):
+        problems.append("mode must be verify or apply")
+    scope = intent.get("scope")
+    if not isinstance(scope, list) or not scope or not set(scope) <= {
+        "stack",
+        "router",
+        "dsh",
+    }:
+        problems.append("scope must be a non-empty subset of stack, router, dsh")
+    resolves = intent.get("resolves")
+    if not isinstance(resolves, list) or any(
+        not isinstance(item, str) or not item for item in resolves
+    ):
+        problems.append("resolves must be a list of incident identifiers")
+    budget = intent.get("budget_usd")
+    if (
+        isinstance(budget, bool)
+        or not isinstance(budget, (int, float))
+        or budget < 0
+        or budget > MAX_BUDGET_USD
+    ):
+        problems.append(f"budget_usd must be between 0 and {MAX_BUDGET_USD:g}")
+    targets = intent.get("targets")
+    if not isinstance(targets, dict):
+        problems.append("targets must declare the substrate, router and DSH")
+    else:
+        for key in (
+            "substrate",
+            "router_url",
+            "router_models_url",
+            "dsh_health_url",
+            "opentofu_targets",
+        ):
+            if not str(targets.get(key) or "").strip():
+                problems.append(f"targets.{key} is required")
+        for key in ("router_url", "router_models_url", "dsh_health_url"):
+            if str(targets.get(key) or "") and not str(targets[key]).startswith("https://"):
+                problems.append(f"targets.{key} must be HTTPS")
+        tofu_targets = targets.get("opentofu_targets")
+        if not isinstance(tofu_targets, list) or not tofu_targets:
+            problems.append("targets.opentofu_targets must be a non-empty list")
+        elif any(
+            not re.fullmatch(r'[A-Za-z0-9_.\[\]"-]+', str(target))
+            for target in tofu_targets
+        ):
+            problems.append("targets.opentofu_targets contains an invalid address")
+    actual = intent.get("intent_sha256")
+    if not isinstance(actual, str) or actual != intent_digest(intent):
+        problems.append("intent_sha256 does not bind the intent content")
+    return problems
+
+
+def _outcome_stage(
+    name: str,
+    command: str,
+    outcome: Outcome | None,
+    *,
+    error: str = "",
+) -> dict:
+    if outcome is None:
+        state = Outcome(False, error or "no observation was produced", "", measured=False)
+    else:
+        state = outcome
+    verdict = (
+        "BLIND"
+        if not state.measured
+        else ("MEASURED_OK" if state.ok else "FAILED")
+    )
+    line = redact(state.line)[:400]
+    evidence = redact(state.evidence)
+    return {
+        "stage": name,
+        "command": redact(command),
+        "exit": 0 if verdict == "MEASURED_OK" else (2 if verdict == "BLIND" else 1),
+        "line": line,
+        "sha256": _sha(line + "\n" + evidence),
+        "measured": bool(state.measured),
+        "verdict": verdict,
+    }
+
+
+def _private_key(value: bytes | str):
+    from cryptography.hazmat.primitives import serialization
+
+    raw = value.encode("utf-8") if isinstance(value, str) else value
+    return serialization.load_pem_private_key(raw, password=None)
+
+
+def _public_key(value: bytes | str):
+    from cryptography.hazmat.primitives import serialization
+
+    raw = value.encode("utf-8") if isinstance(value, str) else value
+    return serialization.load_pem_public_key(raw)
+
+
+def _payload_without_signature(receipt: dict) -> bytes:
+    body = json.loads(json.dumps(receipt))
+    body.pop("signature", None)
+    return _canonical(body)
+
+
+def sign_receipt(receipt: dict, signing_key: bytes | str) -> dict:
+    from cryptography.hazmat.primitives import serialization
+
+    key = _private_key(signing_key)
+    body = json.loads(json.dumps(receipt))
+    body.pop("signature", None)
+    body.pop("payload_sha256", None)
+    body["payload_sha256"] = _sha(_canonical(body))
+    signature = key.sign(_canonical(body))
+    public_pem = key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    body["signature"] = {
+        "algorithm": "ed25519",
+        "public_key": public_pem.decode("ascii"),
+        "value": base64.b64encode(signature).decode("ascii"),
+    }
+    return body
+
+
+def _b64url_decode(value: str) -> bytes:
+    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+
+def sign_receipt_oidc(
+    receipt: dict, token_factory: Callable[[str], str]
+) -> dict:
+    """Sign with a GitHub OIDC token whose audience binds this exact payload."""
+    body = json.loads(json.dumps(receipt))
+    body.pop("signature", None)
+    body.pop("payload_sha256", None)
+    payload_sha = _sha(_canonical(body))
+    audience = OIDC_AUDIENCE_PREFIX + payload_sha
+    token = token_factory(audience)
+    if not _JWT.fullmatch(token):
+        raise ValueError("GitHub OIDC token has an invalid JWT shape")
+    body["payload_sha256"] = payload_sha
+    body["signature"] = {
+        "algorithm": "github-oidc",
+        "audience": audience,
+        "issuer": GITHUB_OIDC_ISSUER,
+        "token": token,
+    }
+    return body
+
+
+def actions_oidc_token(audience: str) -> str:
+    """Fetch this job's short-lived OIDC token. No static signing secret is read."""
+    base = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL", "")
+    bearer = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "")
+    if not base or not bearer:
+        raise RuntimeError("GitHub OIDC request variables are absent")
+    separator = "&" if "?" in base else "?"
+    request = urllib.request.Request(
+        base + separator + urllib.parse.urlencode({"audience": audience}),
+        headers={
+            "Authorization": f"Bearer {bearer}",
+            "User-Agent": "estate-stack-controller/1.0",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        body = json.load(response)
+    token = str(body.get("value") or "")
+    if not _JWT.fullmatch(token):
+        raise RuntimeError("GitHub OIDC endpoint returned no valid JWT")
+    return token
+
+
+def _github_jwks() -> dict:
+    request = urllib.request.Request(
+        GITHUB_OIDC_JWKS,
+        headers={"User-Agent": "estate-stack-controller/1.0"},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        body = json.load(response)
+    if not isinstance(body, dict) or not isinstance(body.get("keys"), list):
+        raise ValueError("GitHub OIDC JWKS has no keys")
+    return body
+
+
+def _verify_oidc_signature(
+    receipt: dict, signature: dict, jwks: dict | None = None
+) -> tuple[bool, str]:
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import padding, rsa
+
+    token = str(signature.get("token") or "")
+    if not _JWT.fullmatch(token):
+        return False, "GitHub OIDC proof is not a JWT"
+    encoded_header, encoded_claims, encoded_signature = token.split(".")
+    try:
+        header = json.loads(_b64url_decode(encoded_header))
+        claims = json.loads(_b64url_decode(encoded_claims))
+    except (ValueError, json.JSONDecodeError):
+        return False, "GitHub OIDC JWT payload is invalid"
+    if header.get("alg") != "RS256":
+        return False, "GitHub OIDC JWT is not RS256"
+    keys = (jwks or _github_jwks()).get("keys") or []
+    jwk = next((row for row in keys if row.get("kid") == header.get("kid")), None)
+    if not isinstance(jwk, dict) or jwk.get("kty") != "RSA":
+        return False, "GitHub OIDC signing key is absent"
+    try:
+        n = int.from_bytes(_b64url_decode(jwk["n"]), "big")
+        e = int.from_bytes(_b64url_decode(jwk["e"]), "big")
+        key = rsa.RSAPublicNumbers(e, n).public_key()
+        key.verify(
+            _b64url_decode(encoded_signature),
+            f"{encoded_header}.{encoded_claims}".encode("ascii"),
+            padding.PKCS1v15(),
+            hashes.SHA256(),
+        )
+    except Exception:
+        return False, "GitHub OIDC JWT signature is invalid"
+    expected_audience = OIDC_AUDIENCE_PREFIX + str(receipt.get("payload_sha256") or "")
+    if claims.get("iss") != GITHUB_OIDC_ISSUER:
+        return False, "GitHub OIDC issuer is not trusted"
+    if claims.get("aud") != expected_audience:
+        return False, "GitHub OIDC audience does not bind this receipt"
+    if claims.get("repository") != "chidionyema/idp":
+        return False, "GitHub OIDC token names another repository"
+    workflow = str(claims.get("workflow_ref") or "").split("@", 1)[0]
+    if workflow != CONTROLLER_WORKFLOW_REF:
+        return False, "GitHub OIDC token names another workflow"
+    generated = _parse_ts(str(receipt.get("generated_at") or ""))
+    try:
+        issued = int(claims.get("iat"))
+        expires = int(claims.get("exp"))
+    except (TypeError, ValueError):
+        return False, "GitHub OIDC token has no validity window"
+    if generated is None or issued > generated + 300 or expires < generated - 60:
+        return False, "GitHub OIDC validity window does not cover the receipt"
+    return True, "GitHub OIDC signature and audience verified"
+
+
+def verify_receipt(
+    receipt: dict, public_key: bytes | str, *, jwks: dict | None = None
+) -> dict:
+    """Verify the pinned signer, content hash and exact signed payload."""
+    from cryptography.exceptions import InvalidSignature
+
+    if not isinstance(receipt, dict):
+        return {"ok": False, "reason": "receipt is not an object"}
+    if receipt.get("schema") != RECEIPT_SCHEMA:
+        return {"ok": False, "reason": f"receipt schema is not {RECEIPT_SCHEMA}"}
+    sig = dict(receipt.get("signature") or {})
+    actual_payload = receipt.get("payload_sha256")
+    unsigned = json.loads(json.dumps(receipt))
+    unsigned.pop("signature", None)
+    unsigned.pop("payload_sha256", None)
+    if actual_payload != _sha(_canonical(unsigned)):
+        return {
+            "ok": False,
+            "reason": "receipt payload hash and signature do not match its content",
+        }
+    if sig.get("algorithm") == "ed25519":
+        embedded = sig.pop("public_key", "")
+        embedded_bytes = (
+            embedded.encode("ascii")
+            if isinstance(embedded, str) and embedded.startswith("-----BEGIN")
+            else base64.b64decode(embedded) if embedded else b""
+        )
+        pinned_bytes = (
+            public_key.encode("ascii") if isinstance(public_key, str) else public_key
+        )
+        try:
+            embedded_key = _public_key(embedded_bytes)
+            pinned = _public_key(pinned_bytes)
+        except Exception as exc:
+            return {"ok": False, "reason": f"receipt public key is invalid: {exc}"}
+        from cryptography.hazmat.primitives import serialization
+
+        if (
+            embedded_key.public_bytes(
+                serialization.Encoding.Raw, serialization.PublicFormat.Raw
+            )
+            != pinned.public_bytes(
+                serialization.Encoding.Raw, serialization.PublicFormat.Raw
+            )
+        ):
+            return {"ok": False, "reason": "receipt signer does not match the pinned key"}
+        try:
+            pinned.verify(
+                base64.b64decode(sig.get("value") or ""),
+                _payload_without_signature(receipt),
+            )
+        except (InvalidSignature, ValueError):
+            return {"ok": False, "reason": "receipt signature does not match its content"}
+    elif sig.get("algorithm") == "github-oidc":
+        ok, reason = _verify_oidc_signature(receipt, sig, jwks)
+        if not ok:
+            return {"ok": False, "reason": reason}
+    else:
+        return {"ok": False, "reason": "receipt has no supported signature"}
+    semantic = _receipt_semantics(receipt)
+    if semantic:
+        return {
+            "ok": False,
+            "reason": "receipt yield contradicts its measured stages: " + "; ".join(semantic),
+        }
+    return {"ok": True, "reason": "signature and payload hash verified"}
+
+
+def _receipt_semantics(receipt: dict) -> list[str]:
+    """A signer can sign a lie; the verifier must still refuse the lie."""
+    stages = receipt.get("stages")
+    if not isinstance(stages, list) or not stages:
+        return ["receipt has no stages"]
+    names = [str(stage.get("stage") or "") for stage in stages if isinstance(stage, dict)]
+    if len(names) != len(stages):
+        return ["receipt has a stage that is not an object"]
+    for stage in stages:
+        if stage.get("verdict") not in ("MEASURED_OK", "FAILED", "BLIND"):
+            return [f"stage {stage.get('stage')} has an invalid verdict"]
+        if stage.get("verdict") == "MEASURED_OK" and stage.get("measured") is not True:
+            return [f"stage {stage.get('stage')} claims OK without measurement"]
+    mode = receipt.get("mode")
+    required = VERIFY_STAGES if mode == "verify" else APPLY_STAGES if mode == "apply" else ()
+    if not required:
+        return ["receipt mode is invalid"]
+    yield_doc = receipt.get("yield")
+    if not isinstance(yield_doc, dict) or yield_doc.get("verdict") not in ("OPEN", "CLOSED"):
+        return ["receipt yield is missing or invalid"]
+    if yield_doc["verdict"] != "CLOSED":
+        return []
+    problems: list[str] = []
+    missing = [name for name in required if name not in names]
+    if missing:
+        problems.append("closed receipt is missing stages " + ",".join(missing))
+    not_ok = [
+        stage.get("stage", "")
+        for stage in stages
+        if stage.get("stage") in required and stage.get("verdict") != "MEASURED_OK"
+    ]
+    if not_ok:
+        problems.append("closed receipt contains non-OK stages " + ",".join(not_ok))
+    positions = [names.index(name) for name in required if name in names]
+    if positions != sorted(positions):
+        problems.append("closed receipt stages are out of contract order")
+    doors = (receipt.get("verification") or {}).get("doors") or {}
+    if doors != {"measured_ok": 14, "total": 14, "required": 14}:
+        problems.append(
+            "closed receipt door board is "
+            f"{doors.get('measured_ok')}/{doors.get('total')}, required 14/14"
+        )
+    return problems
+
+
+def _stage_ok(stages: Sequence[dict], name: str) -> bool:
+    return any(
+        stage.get("stage") == name and stage.get("verdict") == "MEASURED_OK"
+        for stage in stages
+    )
+
+
+def _first_refusal(stages: Sequence[dict]) -> str:
+    for stage in stages:
+        if stage.get("verdict") != "MEASURED_OK":
+            return f"{stage.get('stage')} {stage.get('verdict')}: {stage.get('line')}"
+    return ""
+
+
+def _door_summary(board: Sequence[dict]) -> tuple[dict, bool, str]:
+    lanes = [row for row in board if row.get("service") == "estate-doors"]
+    ok = sum(1 for row in lanes if row.get("verdict") == "MEASURED_OK")
+    summary = {"measured_ok": ok, "total": len(lanes), "required": 14}
+    if len(lanes) != 14:
+        return summary, False, f"estate-doors measured {len(lanes)} lanes, required 14"
+    if ok != 14:
+        return summary, False, f"estate-doors measured {ok}/14 healthy"
+    return summary, True, "estate-doors measured 14/14 healthy"
+
+
+def _receipt_id(intent: dict) -> str:
+    return _sha(
+        _canonical(
+            {
+                "intent_sha256": intent["intent_sha256"],
+                "idempotency_key": intent["idempotency_key"],
+                "mode": intent["mode"],
+            }
+        )
+    )
+
+
+def _write(receipt: dict, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _portable_path(path: Path | str) -> str:
+    resolved = Path(path).resolve()
+    try:
+        return str(resolved.relative_to(IDP))
+    except ValueError:
+        return str(resolved)
+
+
+def execute(
+    intent_path: Path | str,
+    *,
+    mode: str = "verify",
+    receipt_path: Path | str,
+    runtime: Any,
+    signing_key: bytes | str,
+    clock: Callable[[], float] | None = None,
+) -> dict:
+    """Run the contract. A refusal still produces a signed receipt."""
+    now = clock or time.time
+    stages: list[dict] = []
+    failure = ""
+    lease_meta: dict = {}
+    verification = {"doors": {"measured_ok": 0, "total": 0, "required": 14}}
+    path = Path(intent_path)
+    try:
+        intent = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        intent = {
+            "schema": "invalid",
+            "intent_id": "invalid-intent",
+            "claim": {},
+            "idempotency_key": "invalid-intent-000000",
+            "mode": mode,
+            "scope": [],
+            "resolves": [],
+            "budget_usd": -1,
+            "targets": {},
+            "intent_sha256": "",
+        }
+        failure = f"intent unreadable: {exc}"
+    intent["mode"] = mode
+    if failure:
+        problems = [failure]
+    else:
+        problems = validate_intent(intent)
+    if problems:
+        gate = _outcome_stage(
+            "gate",
+            "validate stack intent",
+            Outcome(False, "; ".join(problems), ",".join(problems)),
+            error="intent contract refused",
+        )
+        stages.append(gate)
+        failure = "; ".join(problems)
+    else:
+        claim = intent["claim"]
+        try:
+            lease_out = runtime.claim_lease(claim, intent["intent_sha256"])
+        except Exception as exc:
+            lease_out = Outcome(False, f"claim lease could not be read: {exc}", "", False)
+        if isinstance(lease_out, dict):
+            lease_meta = lease_out
+            lease_outcome = Outcome(
+                bool(lease_out.get("ok")),
+                str(lease_out.get("detail") or lease_out.get("line") or "claim lease measured"),
+                _canonical(lease_out).decode("utf-8"),
+                bool(lease_out.get("ok")),
+            )
+        else:
+            lease_outcome = lease_out
+        stages.append(
+            _outcome_stage(
+                "gate",
+                f"claim idp#{claim['issue']} fencing={claim['fencing_token']}",
+                lease_outcome,
+            )
+        )
+        if lease_outcome.ok:
+            if lease_meta.get("issue") not in (None, claim["issue"]):
+                failure = "claim lease issue does not match the intent"
+            elif lease_meta.get("agent") not in (None, claim["agent"]):
+                failure = "claim lease agent does not match the intent"
+            elif lease_meta.get("fencing_token") != claim["fencing_token"]:
+                failure = "stale fencing token: the live claim has moved"
+            else:
+                expires = _parse_ts(str(lease_meta.get("expires_at") or ""))
+                heartbeat = _parse_ts(str(lease_meta.get("heartbeat") or ""))
+                if expires is not None and expires <= now():
+                    failure = "claim lease expired"
+                elif heartbeat is not None and now() - heartbeat > CLAIM_LAPSE_SECONDS:
+                    failure = "claim heartbeat exceeded the two-hour lease"
+        else:
+            failure = lease_outcome.line
+        if failure:
+            stages[-1]["verdict"] = "FAILED"
+            stages[-1]["exit"] = 1
+            stages[-1]["line"] = redact(failure)
+
+    if not failure:
+        try:
+            plan_out = runtime.plan(intent)
+        except Exception as exc:
+            plan_out = Outcome(False, f"plan could not be measured: {exc}", "", False)
+        stages.append(_outcome_stage("plan", "OpenTofu plan through the estate primitive", plan_out))
+
+        try:
+            dof = runtime.dof_lease()
+        except Exception as exc:
+            dof = Outcome(False, f"degree-of-freedom lease unreadable: {exc}", "", False)
+        if not isinstance(dof, dict):
+            dof_out = dof
+        else:
+            level = str(dof.get("level") or "")
+            incidents = dof.get("open_incidents") or []
+            if not dof.get("ok", True) or level not in ("L0", "L2"):
+                dof_out = Outcome(False, "degree-of-freedom lease is not executable", _canonical(dof).decode())
+            elif mode == "apply" and incidents:
+                resolved = set(intent.get("resolves") or [])
+                open_ids = {str(row.get("id")) for row in incidents}
+                if not resolved.intersection(open_ids):
+                    dof_out = Outcome(
+                        False,
+                        "repair lease does not resolve any open incident",
+                        _canonical(dof).decode(),
+                    )
+                else:
+                    dof_out = Outcome(True, f"{level} repair lease scoped to {sorted(resolved)}", _canonical(dof).decode())
+            else:
+                dof_out = Outcome(True, f"{level} lease measured; open incidents={len(incidents)}", _canonical(dof).decode())
+        stages.append(_outcome_stage("lease", "bin/dof-gate --lease", dof_out))
+        stages.append(
+            _outcome_stage(
+                "cost",
+                f"budget gate ${intent['budget_usd']:.2f} <= ${MAX_BUDGET_USD:.2f}",
+                Outcome(
+                    float(intent["budget_usd"]) <= MAX_BUDGET_USD,
+                    f"${float(intent['budget_usd']):.2f} of ${MAX_BUDGET_USD:.2f}",
+                ),
+            )
+        )
+        try:
+            policy_out = runtime.policy(intent)
+        except Exception as exc:
+            policy_out = Outcome(False, f"policy could not be measured: {exc}", "", False)
+        stages.append(_outcome_stage("policy", "bin/idp-infra-inventory", policy_out))
+
+        prior_ok = all(
+            stage["verdict"] == "MEASURED_OK"
+            for stage in stages
+            if stage["stage"] in {"gate", "plan", "lease", "cost", "policy"}
+        )
+        if mode == "apply":
+            if os.environ.get("GITHUB_ACTIONS", "").lower() != "true":
+                failure = "apply is cloud-only: a GitHub Actions execution receipt is required"
+            elif not prior_ok:
+                failure = _first_refusal(stages)
+            else:
+                try:
+                    approve = getattr(runtime, "approve")
+                    approval = approve(intent)
+                except Exception as exc:
+                    approval = Outcome(False, f"founder approval refused: {exc}", "", False)
+                if not approval.ok:
+                    failure = approval.line
+                    stages.append(_outcome_stage("approval", "founder Ed25519 approval", approval))
+                else:
+                    stages.append(_outcome_stage("approval", "founder Ed25519 approval", approval))
+                    try:
+                        reserve = runtime.reserve(intent)
+                    except Exception as exc:
+                        reserve = Outcome(False, f"idempotency lease unavailable: {exc}", "", False)
+                    stages.append(_outcome_stage("idempotency", "durable idempotency lease", reserve))
+                    if not reserve.ok:
+                        failure = reserve.line
+
+            if not failure:
+                for operation, stage_name in (
+                    ("apply", "apply"),
+                    ("router-deploy", "router-deploy"),
+                    ("dsh-deploy", "dsh-deploy"),
+                ):
+                    try:
+                        result = runtime.mutate(operation, intent)
+                    except Exception as exc:
+                        result = Outcome(False, f"{operation} failed: {exc}", "", False)
+                    stages.append(_outcome_stage(stage_name, stage_name, result))
+                    if not result.ok:
+                        failure = result.line
+                        break
+        else:
+            if not prior_ok:
+                failure = _first_refusal(stages)
+
+        outputs = {
+            "substrate": intent["targets"]["substrate"],
+            "router_url": intent["targets"]["router_url"],
+            "dsh_health_url": intent["targets"]["dsh_health_url"],
+        }
+        stages.append(
+            _outcome_stage(
+                "publish",
+                "declared stack outputs",
+                Outcome(True, json.dumps(outputs, sort_keys=True), json.dumps(outputs, sort_keys=True)),
+            )
+        )
+
+        try:
+            router = runtime.probe_router(intent)
+        except Exception as exc:
+            router = Outcome(False, f"router user-path BLIND: {exc}", "", False)
+        stages.append(
+            _outcome_stage("verify-router", intent["targets"]["router_models_url"], router)
+        )
+        try:
+            dsh = runtime.probe_dsh(intent)
+        except Exception as exc:
+            dsh = Outcome(False, f"DSH user-path BLIND: {exc}", "", False)
+        stages.append(
+            _outcome_stage("verify-dsh", intent["targets"]["dsh_health_url"], dsh)
+        )
+        try:
+            board = runtime.doors()
+            summary, doors_ok, detail = _door_summary(board)
+            verification["doors"] = summary
+            stages.append(
+                _outcome_stage(
+                    "verify-doors",
+                    "bin/idp-estate-homes --json --no-file --service estate-doors",
+                    Outcome(doors_ok, detail, json.dumps(board, sort_keys=True)),
+                )
+            )
+        except Exception as exc:
+            stages.append(
+                _outcome_stage(
+                    "verify-doors",
+                    "bin/idp-estate-homes --json --no-file --service estate-doors",
+                    Outcome(False, f"door board BLIND: {exc}", "", False),
+                )
+            )
+
+    receipt_id = _receipt_id(intent)
+    provisional = {
+        "schema": RECEIPT_SCHEMA,
+        "receipt_id": receipt_id,
+        "controller": {
+            "version": CONTROLLER_VERSION,
+            "contract_schema": CONTRACT_SCHEMA,
+            "contract_sha256": contract_digest(),
+        },
+        "intent": {
+            "path": _portable_path(intent_path),
+            "id": intent.get("intent_id"),
+            "sha256": intent.get("intent_sha256"),
+            "claim": intent.get("claim"),
+            "idempotency_key": intent.get("idempotency_key"),
+            "resolves": intent.get("resolves"),
+        },
+        "mode": mode,
+        "lease": {
+            "fencing_token": (intent.get("claim") or {}).get("fencing_token"),
+            "heartbeat": lease_meta.get("heartbeat"),
+            "expires_at": lease_meta.get("expires_at"),
+            "dof_level": next(
+                (stage["line"] for stage in stages if stage["stage"] == "lease"),
+                "",
+            ),
+        },
+        "stages": stages,
+        "verification": verification,
+        "generated_at": _now_iso(now),
+    }
+    try:
+        published = runtime.publish(provisional)
+    except Exception as exc:
+        published = Outcome(False, f"receipt publication BLIND: {exc}", "", False)
+    stages.append(
+        _outcome_stage(
+            "publish-receipt",
+            f"claim issue {intent.get('claim', {}).get('issue')}",
+            published,
+        )
+    )
+
+    required = VERIFY_STAGES if mode == "verify" else APPLY_STAGES
+    failures = [
+        stage
+        for stage in stages
+        if stage["stage"] in required and stage["verdict"] != "MEASURED_OK"
+    ]
+    if failure and not failures:
+        reason = failure
+    elif failures:
+        reason = "; ".join(
+            f"{row['stage']}={row['verdict']} ({row['line']})" for row in failures
+        )
+    else:
+        reason = "all required stages measured and the real user path verified"
+    verdict = "CLOSED" if not failure and not failures else "OPEN"
+    receipt = {
+        **provisional,
+        "verification": verification,
+        "stages": stages,
+        "yield": {"verdict": verdict, "reason": redact(reason)},
+    }
+    if signing_key is None:
+        receipt = sign_receipt_oidc(receipt, actions_oidc_token)
+    else:
+        receipt = sign_receipt(receipt, signing_key)
+    _write(receipt, Path(receipt_path))
+    return receipt
+
+
+class RealRuntime:
+    """Cloud doors used by the CLI. Every method returns an observation."""
+
+    def __init__(self, plan_dir: Path | str | None = None) -> None:
+        self.repo = os.environ.get("GITHUB_REPOSITORY", "chidionyema/idp")
+        self.plan_dir = Path(
+            plan_dir
+            or os.environ.get("ESTATE_STACK_PLAN_DIR")
+            or tempfile.mkdtemp(prefix="estate-stack-plan.")
+        )
+        self._plan_path: Path | None = None
+
+    def _run(
+        self, argv: list[str], timeout: float = 300, cwd: Path | str | None = None
+    ) -> subprocess.CompletedProcess:
+        tools = Path.home() / ".cache/estate-tools"
+        env = dict(os.environ)
+        env["PATH"] = str(tools) + os.pathsep + env.get("PATH", "")
+        return subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=cwd,
+            env=env,
+        )
+
+    def _executor_api(self, path: str, params: str = "") -> tuple[int, Any]:
+        door = Path.home() / ".estate/bin/estate-execute"
+        if not door.is_file():
+            return 127, "no estate executor door"
+        argv = [str(door), "gh-api", f"path={path}"]
+        if params:
+            argv.append(f"params={params}")
+        result = self._run(argv, 90)
+        output = (result.stdout or "") + "\n" + (result.stderr or "")
+        marker = "[estate] status=ok"
+        if marker not in output:
+            return int(result.returncode or 1), output[-2000:]
+        tail = output.split(marker, 1)[1].strip()
+        try:
+            return 0, json.loads(tail)
+        except json.JSONDecodeError:
+            return 1, tail[-2000:]
+
+    def _github_json(self, path: str) -> tuple[int, Any]:
+        direct = self._run(["gh", "api", path], 60)
+        if direct.returncode == 0:
+            try:
+                return 0, json.loads(direct.stdout)
+            except json.JSONDecodeError:
+                pass
+        if path.startswith(f"repos/{self.repo}/"):
+            return self._executor_api(path.removeprefix(f"repos/{self.repo}/"))
+        return int(direct.returncode or 1), (direct.stderr or direct.stdout)[-2000:]
+
+    def claim_lease(self, claim: dict, intent_sha: str) -> dict:
+        repo, issue = claim["repo"], int(claim["issue"])
+        issue_code, issue_body = self._github_json(f"repos/{repo}/issues/{issue}")
+        if issue_code != 0 or not isinstance(issue_body, dict):
+            return {
+                "ok": False,
+                "detail": "claim issue is unreadable",
+                "line": f"GitHub API HTTP {issue_code}: {str(issue_body)[:200]}",
+            }
+        if issue_body.get("state") != "open":
+            return {"ok": False, "detail": "claim issue is not open"}
+        comments_code, comments = self._github_json(
+            f"repos/{repo}/issues/{issue}/comments?per_page=100"
+        )
+        if comments_code != 0 or not isinstance(comments, list):
+            return {
+                "ok": False,
+                "detail": "claim comments are unreadable",
+                "line": f"GitHub API HTTP {comments_code}: {str(comments)[:200]}",
+            }
+        newest = None
+        for row in comments:
+            match = _CLAIM.search(str(row.get("body") or ""))
+            if match and match.group("agent") == claim["agent"]:
+                newest = (row, match)
+        if newest is None:
+            return {"ok": False, "detail": "no live CLAIM comment for this agent"}
+        row, match = newest
+        heartbeat = match.group("heartbeat")
+        paths = match.group("paths")
+        fencing = claim_fencing_token(
+            repo,
+            issue,
+            int(row.get("id")),
+            claim["agent"],
+            heartbeat,
+            paths,
+        )
+        expires = time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ",
+            time.gmtime((_parse_ts(heartbeat) or 0) + CLAIM_LAPSE_SECONDS),
+        )
+        return {
+            "ok": True,
+            "issue": issue,
+            "agent": claim["agent"],
+            "heartbeat": heartbeat,
+            "expires_at": expires,
+            "fencing_token": fencing,
+            "paths": paths,
+            "comment_id": row.get("id"),
+            "detail": f"claim idp#{issue} heartbeat={heartbeat} paths={paths}",
+        }
+
+    def dof_lease(self) -> dict:
+        result = self._run([str(IDP / "bin/dof-gate"), "--lease"], 60)
+        try:
+            body = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return {"ok": False, "detail": "dof lease is unreadable", "line": result.stderr[-300:]}
+        body["ok"] = result.returncode in (0, 3)
+        return body
+
+    def plan(self, intent: dict) -> Outcome:
+        """Plan only the declared recovery targets; never invoke the retired OKE door."""
+        module = IDP / "platform/oci"
+        login = self._run([str(IDP / "bin/idp-oci-login"), "--check"], 180)
+        if login.returncode:
+            output = ((login.stdout or "") + "\n" + (login.stderr or "")).strip()
+            return Outcome(
+                False,
+                f"OpenTofu identity BLIND: {output.splitlines()[-1] if output else 'no line'}",
+                output[-4000:],
+                False,
+            )
+        guard = self._run([str(IDP / "bin/idp-state-guard"), str(module)], 120)
+        if guard.returncode:
+            output = ((guard.stdout or "") + "\n" + (guard.stderr or "")).strip()
+            return Outcome(False, "state guard refused", output[-4000:])
+        init = self._run(
+            ["tofu", "init", "-input=false", "-no-color", "-reconfigure"],
+            600,
+            cwd=module,
+        )
+        if init.returncode:
+            output = ((init.stdout or "") + "\n" + (init.stderr or "")).strip()
+            return Outcome(False, "tofu init failed", output[-4000:])
+        self.plan_dir.mkdir(parents=True, exist_ok=True)
+        self._plan_path = self.plan_dir / f"{intent['idempotency_key']}.tfplan"
+        targets = intent["targets"].get("opentofu_targets") or []
+        argv = [
+            "tofu",
+            "plan",
+            "-input=false",
+            "-no-color",
+            "-lock=false",
+            "-detailed-exitcode",
+            f"-out={self._plan_path}",
+            "-var",
+            "cluster_name=estate",
+            *[f"-target={target}" for target in targets],
+        ]
+        result = self._run(argv, 1800, cwd=module)
+        output = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()
+        line = next((row for row in reversed(output.splitlines()) if row.strip()), "")
+        measured = result.returncode in (0, 2) and self._plan_path.is_file()
+        if result.returncode == 2 and measured:
+            line = f"{line} (changes are this intent)"
+        return Outcome(
+            measured,
+            line or "targeted plan produced no line",
+            output[-4000:],
+            result.returncode in (0, 2),
+        )
+
+    def policy(self, intent: dict) -> Outcome:
+        result = self._run([str(IDP / "bin/idp-infra-inventory")], 180)
+        output = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()
+        line = next((row for row in reversed(output.splitlines()) if row.strip()), "")
+        return Outcome(result.returncode == 0, line or "policy produced no line", output[-4000:])
+
+    def approve(self, intent: dict) -> Outcome:
+        approval = intent.get("approval")
+        if not isinstance(approval, dict) or approval.get("scheme") != "ed25519-founder":
+            return Outcome(False, "apply requires an ed25519-founder approval", "", False)
+        signature = str(approval.get("signature") or "")
+        if not signature or signature == "not-needed-in-verify-mode":
+            return Outcome(False, "founder approval signature is missing", "", False)
+        try:
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+            key = _public_key((IDP / "docs/keys/founder.pub").read_bytes())
+            assert isinstance(key, Ed25519PublicKey)
+            key.verify(base64.b64decode(signature), intent["intent_sha256"].encode("ascii"))
+        except Exception:
+            return Outcome(False, "founder approval signature does not verify", "", True)
+        return Outcome(True, "founder approval signature verified", signature)
+
+    def reserve(self, intent: dict) -> Outcome:
+        key = _sha(
+            f"{intent['intent_sha256']}\n{intent['idempotency_key']}".encode()
+        )
+        state = Path.home() / ".estate" / "stack" / "idempotency"
+        marker = state / key
+        if marker.exists():
+            return Outcome(False, "replay refused: idempotency key already used", str(marker))
+        issue = int(intent["claim"]["issue"])
+        repo = intent["claim"]["repo"]
+        code, comments = self._github_json(
+            f"repos/{repo}/issues/{issue}/comments?per_page=100"
+        )
+        if code != 0 or not isinstance(comments, list):
+            return Outcome(False, "idempotency history is BLIND", "", False)
+        marker_text = f"ESTATE_STACK_IDEMPOTENCY `{intent['idempotency_key']}`"
+        if any(marker_text in str(row.get("body") or "") for row in comments):
+            return Outcome(False, "replay refused: idempotency key already appears on the claim", marker_text)
+        state.mkdir(parents=True, exist_ok=True)
+        marker.write_text(_now_iso() + "\n", encoding="utf-8")
+        return Outcome(True, "idempotency lease reserved", key)
+
+    def _dispatch(self, workflow: str, inputs: dict[str, str]) -> Outcome:
+        before = self._run(
+            [
+                "gh",
+                "run",
+                "list",
+                "--repo",
+                self.repo,
+                "--workflow",
+                workflow,
+                "--limit",
+                "1",
+                "--json",
+                "databaseId,createdAt",
+            ],
+            30,
+        )
+        try:
+            before_id = (json.loads(before.stdout or "[]") or [{}])[0].get("databaseId", 0)
+        except json.JSONDecodeError:
+            before_id = 0
+        argv = ["gh", "workflow", "run", workflow, "--repo", self.repo]
+        for key, value in inputs.items():
+            argv += ["-f", f"{key}={value}"]
+        dispatch = self._run(argv, 60)
+        if dispatch.returncode:
+            return Outcome(False, dispatch.stderr.strip().splitlines()[-1] if dispatch.stderr.strip() else "workflow dispatch failed")
+        run_id = 0
+        deadline = time.time() + 120
+        while time.time() < deadline:
+            listing = self._run(
+                [
+                    "gh",
+                    "run",
+                    "list",
+                    "--repo",
+                    self.repo,
+                    "--workflow",
+                    workflow,
+                    "--limit",
+                    "3",
+                    "--json",
+                    "databaseId,createdAt,status,conclusion",
+                ],
+                30,
+            )
+            try:
+                rows = json.loads(listing.stdout or "[]")
+            except json.JSONDecodeError:
+                rows = []
+            fresh = [row for row in rows if int(row.get("databaseId") or 0) > before_id]
+            if fresh:
+                run_id = int(fresh[0]["databaseId"])
+                break
+            time.sleep(5)
+        if not run_id:
+            return Outcome(False, f"{workflow} dispatch produced no run id", measured=False)
+        watched = self._run(
+            ["gh", "run", "watch", str(run_id), "--repo", self.repo, "--exit-status"],
+            3600,
+        )
+        output = ((watched.stdout or "") + "\n" + (watched.stderr or "")).strip()
+        line = next((row for row in reversed(output.splitlines()) if row.strip()), "")
+        return Outcome(watched.returncode == 0, f"{workflow} run {run_id}: {line}", output[-4000:])
+
+    def mutate(self, operation: str, intent: dict) -> Outcome:
+        if operation == "apply":
+            if self._plan_path is None or not self._plan_path.is_file():
+                return Outcome(
+                    False,
+                    "saved plan is absent: apply cannot bind to an unmeasured plan",
+                    measured=False,
+                )
+            module = IDP / "platform/oci"
+            targets = intent["targets"].get("opentofu_targets") or []
+            guard_argv = [
+                str(IDP / "bin/idp-recreate-guard"),
+                str(module),
+                "-input=false",
+                "-no-color",
+                "-lock=false",
+                "-var",
+                "cluster_name=estate",
+                *[f"-target={target}" for target in targets],
+            ]
+            guard = self._run(guard_argv, 600)
+            if guard.returncode:
+                output = ((guard.stdout or "") + "\n" + (guard.stderr or "")).strip()
+                return Outcome(False, "recreate guard refused the saved plan", output[-4000:])
+            applied = self._run(
+                [
+                    "tofu",
+                    "apply",
+                    "-input=false",
+                    "-no-color",
+                    "-auto-approve",
+                    str(self._plan_path),
+                ],
+                2400,
+                cwd=module,
+            )
+            output = ((applied.stdout or "") + "\n" + (applied.stderr or "")).strip()
+            line = next((row for row in reversed(output.splitlines()) if row.strip()), "")
+            return Outcome(applied.returncode == 0, line or "tofu apply produced no line", output[-4000:])
+        if operation == "router-deploy":
+            return self._dispatch("router-recovery.yml", {"cutover": "true"})
+        if operation == "dsh-deploy":
+            return self._dispatch("dsh-web-cloud.yml", {})
+        return Outcome(False, f"unknown mutation {operation}", measured=False)
+
+    def _get_json(self, url: str, timeout: float = 20) -> tuple[int, dict | str]:
+        request = urllib.request.Request(url, headers={"User-Agent": "estate-stack-controller/1.0"})
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                body = response.read(65536)
+                try:
+                    return int(response.status), json.loads(body)
+                except json.JSONDecodeError:
+                    return int(response.status), body.decode("utf-8", "replace")
+        except urllib.error.HTTPError as exc:
+            return int(exc.code), exc.read(4096).decode("utf-8", "replace")
+
+    def probe_router(self, intent: dict) -> Outcome:
+        base = intent["targets"]["router_url"].rstrip("/")
+        code, health = self._get_json(base + "/health/liveliness")
+        if code != 200:
+            return Outcome(False, f"router health HTTP {code}", str(health))
+        cat_code, catalog = self._get_json(intent["targets"]["router_models_url"])
+        models = catalog.get("data", []) if isinstance(catalog, dict) else []
+        if cat_code != 200 or not models:
+            return Outcome(False, f"router catalogue HTTP {cat_code} with {len(models)} models", str(catalog))
+        key = os.environ.get("LITELLM_API_KEY", "")
+        if not key:
+            return Outcome(
+                False,
+                f"router catalogue has {len(models)} models; authenticated completion BLIND",
+                json.dumps(health, sort_keys=True),
+                False,
+            )
+        payload = json.dumps(
+            {
+                "model": "estate.model-router",
+                "messages": [{"role": "user", "content": "Reply DSH_ROUTER_OK"}],
+                "max_tokens": 16,
+                "temperature": 0,
+            }
+        ).encode()
+        request = urllib.request.Request(
+            base + "/v1/chat/completions",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+                "User-Agent": "estate-stack-controller/1.0",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                body = json.load(response)
+            text = str(body["choices"][0]["message"]["content"])
+        except Exception as exc:
+            return Outcome(False, f"authenticated router completion failed: {exc}", "", False)
+        ok = "DSH_ROUTER_OK" in text
+        return Outcome(ok, "authenticated router completion measured", text)
+
+    def probe_dsh(self, intent: dict) -> Outcome:
+        code, health = self._get_json(intent["targets"]["dsh_health_url"])
+        if code != 200 or not isinstance(health, dict):
+            return Outcome(False, f"DSH health HTTP {code}", str(health))
+        release = health.get("release") or {}
+        contract_ok = (
+            health.get("service") == "estate-dsh-web"
+            and health.get("contractId") == "estate.dsh-web"
+            and health.get("schemaVersion") == "1.0.0"
+            and bool(release.get("id"))
+            and int(release.get("modelCount", 0)) > 0
+            and bool(release.get("defaultModel"))
+        )
+        if not contract_ok:
+            return Outcome(False, "DSH health contract is incomplete", json.dumps(health, sort_keys=True))
+        root = intent["targets"]["dsh_health_url"].split("/healthz", 1)[0] + "/"
+        root_code, _ = self._get_json(root)
+        if root_code != 401:
+            return Outcome(False, f"DSH auth boundary answered HTTP {root_code}, expected 401", json.dumps(health, sort_keys=True))
+        if not os.environ.get("DSH_LAUNCH_TOKEN"):
+            return Outcome(
+                False,
+                "DSH health and auth boundary measured; authenticated entry BLIND",
+                json.dumps(health, sort_keys=True),
+                False,
+            )
+        return Outcome(True, "DSH health, release contract and auth boundary measured", json.dumps(health, sort_keys=True))
+
+    def doors(self) -> list[dict]:
+        result = self._run(
+            [
+                str(IDP / "bin/idp-estate-homes"),
+                "--json",
+                "--no-file",
+                "--service",
+                "estate-doors",
+            ],
+            180,
+        )
+        if result.returncode not in (0, 1):
+            raise RuntimeError(result.stderr.strip()[-300:] or "door board failed")
+        return json.loads(result.stdout or "{}").get("lanes", [])
+
+    def publish(self, receipt: dict) -> Outcome:
+        issue = int((receipt.get("intent") or {}).get("claim", {}).get("issue") or 0)
+        repo = (receipt.get("intent") or {}).get("claim", {}).get("repo") or self.repo
+        if not issue:
+            return Outcome(False, "receipt has no claim issue for durable publication", measured=False)
+        body = (
+            f"ESTATE_STACK_IDEMPOTENCY `{receipt['intent']['idempotency_key']}`\n\n"
+            f"Stack receipt `{receipt['receipt_id']}`\n"
+            f"Intent: `{receipt['intent']['sha256']}`\n"
+            f"Mode: `{receipt['mode']}`\n"
+            "The signed receipt payload is the output of record; this comment is its durable pointer."
+        )
+        result = self._run(
+            [
+                "gh",
+                "api",
+                f"repos/{repo}/issues/{issue}/comments",
+                "-f",
+                f"body={body}",
+                "--jq",
+                "{id:.id,created_at:.created_at}",
+            ],
+            60,
+        )
+        if result.returncode == 0:
+            return Outcome(True, f"receipt {receipt['receipt_id']} published", result.stdout.strip())
+        if repo != self.repo:
+            return Outcome(False, "receipt publication failed", result.stderr[-300:], False)
+        self.plan_dir.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=self.plan_dir,
+            prefix="receipt-comment.",
+            delete=False,
+        ) as handle:
+            handle.write(body)
+            comment_path = Path(handle.name)
+        try:
+            code, published = self._executor_api(
+                f"issues/{issue}/comments",
+                f"-X POST -F body=@{comment_path} --jq {{id:.id,created_at:.created_at}}",
+            )
+        finally:
+            comment_path.unlink(missing_ok=True)
+        if code:
+            return Outcome(False, "receipt publication failed", str(published)[-300:], False)
+        return Outcome(
+            True,
+            f"receipt {receipt['receipt_id']} published",
+            json.dumps(published, sort_keys=True),
+        )
+
+
+def _signing_key() -> bytes | None:
+    value = os.environ.get("ESTATE_STACK_SIGNING_KEY") or os.environ.get("ESTATE_AGENT_KEY")
+    if not value:
+        path = Path.home() / ".estate/keys/agent.pem"
+        if path.is_file():
+            return path.read_bytes()
+        if os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL") and os.environ.get(
+            "ACTIONS_ID_TOKEN_REQUEST_TOKEN"
+        ):
+            return None
+        raise SystemExit(
+            "BLIND signing key: no Ed25519 key and no GitHub OIDC request identity"
+        )
+    candidate = Path(value).expanduser()
+    if candidate.is_file():
+        return candidate.read_bytes()
+    if value.startswith("-----BEGIN") or len(value) == 64:
+        return value.replace("\\n", "\n").encode()
+    raise SystemExit("BLIND signing key: configured value is neither a PEM nor a readable file")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("intent", nargs="?", help="approved stack intent JSON")
+    parser.add_argument("--mode", choices=("verify", "apply"), default="verify")
+    parser.add_argument(
+        "--receipt",
+        default=str(Path.home() / ".estate/stack/latest.json"),
+        help="signed receipt output path",
+    )
+    parser.add_argument(
+        "--verify-receipt",
+        metavar="PATH",
+        help="verify a receipt against docs/keys/estate-agent.pub",
+    )
+    parser.add_argument(
+        "--public-key",
+        default=str(IDP / "docs/keys/estate-agent.pub"),
+        help="pinned receipt verification key",
+    )
+    args = parser.parse_args(argv)
+    if args.verify_receipt:
+        try:
+            document = json.loads(Path(args.verify_receipt).read_text(encoding="utf-8"))
+            verdict = verify_receipt(document, Path(args.public_key).read_bytes())
+        except Exception as exc:
+            verdict = {"ok": False, "reason": f"receipt unreadable: {exc}"}
+        print(
+            f"{'ok' if verdict['ok'] else 'FAIL'} receipt "
+            f"{'verified' if verdict['ok'] else verdict['reason']}"
+        )
+        return 0 if verdict["ok"] else 1
+    if not args.intent:
+        parser.error("intent is required unless --verify-receipt is used")
+    receipt = execute(
+        args.intent,
+        mode=args.mode,
+        receipt_path=args.receipt,
+        runtime=RealRuntime(),
+        signing_key=_signing_key(),
+    )
+    for stage in receipt["stages"]:
+        print(
+            f"{stage['verdict']:<11} {stage['stage']:<15} "
+            f"rc={stage['exit']:<3} {stage['line']}"
+        )
+    print(
+        f"stack receipt {receipt['yield']['verdict']}: {receipt['yield']['reason']} "
+        f"-> {args.receipt}"
+    )
+    return 0 if receipt["yield"]["verdict"] == "CLOSED" else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
