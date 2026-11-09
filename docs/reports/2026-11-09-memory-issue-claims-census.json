@@ -1,0 +1,123 @@
+{
+  "schema": "estate.memory.claim_issue_sweep.v1",
+  "generated_at": "2026-11-09T03:03:55.668Z",
+  "evidence": "GitHub issue comments; text claims NOT authenticated current leases, includes non-memory matches and historical claims",
+  "source_census": "docs/reports/2026-11-09-memory-issues-census.json",
+  "total_issue_candidates": 144,
+  "processed": 12,
+  "issues": [
+    {
+      "repo": "chidionyema/argon",
+      "number": 7,
+      "state": "open",
+      "total_comments": 1,
+      "claim_lines": []
+    },
+    {
+      "repo": "chidionyema/argon",
+      "number": 20,
+      "state": "open",
+      "total_comments": 22,
+      "claim_lines": [
+        {
+          "raw": "CLAIM agent=chatgpt-github paths=server.ts,src/engine/genesisRelayMonitor.ts,src/engine/genesisRelayMonitor.test.ts,src/components/GenesisRelayObservatory.tsx,src/components/genesisRelay.css,src/App.tsx,src/lib/brainStream.ts,src/lib/omegaPage.ts,src/lib/omegaPage.test.ts,package.json,.github/workflows/relay-observatory-ci.yml heartbeat=2026-11-06T21:30:00Z",
+          "heartbeat": "2026-11-06T21:30:00Z",
+          "agent": "chatgpt-github"
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/argon",
+      "number": 35,
+      "state": "open",
+      "total_comments": 8,
+      "claim_lines": []
+    },
+    {
+      "repo": "chidionyema/argon",
+      "number": 46,
+      "state": "open",
+      "total_comments": 36,
+      "claim_lines": []
+    },
+    {
+      "repo": "chidionyema/argon",
+      "number": 47,
+      "state": "open",
+      "total_comments": 5,
+      "claim_lines": []
+    },
+    {
+      "repo": "chidionyema/argon",
+      "number": 51,
+      "state": "open",
+      "total_comments": 3,
+      "claim_lines": [
+        {
+          "raw": "CLAIM agent=chatgpt-genesis-domain paths=src/engine/instructionFlow.ts,src/engine/instructionFlow.test.ts,bin/genesis_prwatch.py,bin/genesis-pr-watch.py,tests/test_genesis_prwatch.py,package.json heartbeat=2026-11-07T15:44:00Z",
+          "heartbeat": "2026-11-07T15:44:00Z",
+          "agent": "chatgpt-genesis-domain"
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/argon",
+      "number": 62,
+      "state": "open",
+      "total_comments": 2,
+      "claim_lines": []
+    },
+    {
+      "repo": "chidionyema/estate-graph",
+      "number": 6,
+      "state": "open",
+      "total_comments": 11,
+      "claim_lines": [
+        {
+          "raw": "CLAIM W6-F — chatgpt-legion-release — propose/W6-memory-v2-integration-20261107",
+          "heartbeat": null,
+          "agent": null
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 165,
+      "state": "closed",
+      "total_comments": 5,
+      "claim_lines": [
+        {
+          "raw": "CLAIM agent=estate-agent paths=platform/backstage/overlays/oke/httproute.yaml,platform/guacamole/httproute.yaml,platform/healthchecks/httproute.yaml,platform/observability/httproute.yaml,platform/weave-gitops/httproute.yaml heartbeat=2026-10-22T22:55:58Z",
+          "heartbeat": "2026-10-22T22:55:58Z",
+          "agent": "estate-agent"
+        },
+        {
+          "raw": "CLAIM agent=estate-agent paths=platform/backstage/overlays/oke/httproute.yaml,platform/guacamole/httproute.yaml,platform/healthchecks/httproute.yaml,platform/observability/httproute.yaml,platform/weave-gitops/httproute.yaml,tests/test_image_builds.py heartbeat=2026-10-22T23:03:24Z",
+          "heartbeat": "2026-10-22T23:03:24Z",
+          "agent": "estate-agent"
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 547,
+      "state": "open",
+      "total_comments": 0,
+      "claim_lines": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 1782,
+      "state": "closed",
+      "total_comments": 7,
+      "claim_lines": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 1798,
+      "state": "closed",
+      "total_comments": 1,
+      "claim_lines": []
+    }
+  ]
+}
