@@ -46,6 +46,14 @@ except ImportError:
     def check_command_allowed(cmd):  # fail open, never closed, on an import problem
         return True, "OK"
 
+# A single upstream OPA decision point extends the EXISTING intent effect boundary.
+# The release converger ships all of platform/estate, including policy/fleet_opa.py.
+# Founder policy is distributed to OPA independently; agents cannot publish it.
+_POLICY_DIR = Path(__file__).resolve().parent.parent / "policy"
+if str(_POLICY_DIR) not in sys.path:
+    sys.path.insert(0, str(_POLICY_DIR))
+from fleet_opa import FleetPolicyRefusal, run_shell as _fleet_run_shell
+
 # The plan contract (platform/estate/memory/plan.py), loaded once. It is the ONE plan model:
 # this script asks it one question per command and never interprets a plan itself.
 _PLAN_CONTRACT = None
@@ -679,12 +687,36 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
                         return "halted"
                     continue
                 try:
-                    result = subprocess.run(  # noqa: S602
-                        cmd, shell=True, capture_output=True, text=True, timeout=step_timeout
+                    # OPA is a restrictive overlay ON TOP OF existing plan and FS gates.
+                    # An enrolled PEP refuses on deny, missing data, malformed policy,
+                    # timeout or outage. Never allow a denied effect to reach shell=True.
+                    opa_verdict, result = _fleet_run_shell(
+                        intent=str(intent.get("name", "")),
+                        step=str(step_name),
+                        command=cmd,
+                        session=_session,
+                        timeout=step_timeout,
                     )
+                    if opa_verdict.status != "UNENROLLED":
+                        _policy_event(
+                            _session, "allow", "opa:" + str(opa_verdict.revision),
+                            str(intent.get("name", "")), opa_verdict.reason,
+                            datetime.now(timezone.utc).isoformat(),
+                        )
+                    else:
+                        log("  FLEET_POLICY UNENROLLED: no OPA enforcement endpoint configured")
                     rc = result.returncode
                     stdout = result.stdout
                     stderr = result.stderr
+                except FleetPolicyRefusal as exc:
+                    log(f"  FLEET_POLICY REFUSED: {exc.verdict.status} {exc.verdict.reason}")
+                    _policy_event(
+                        _session, "refuse",
+                        "opa:" + str(exc.verdict.revision or exc.verdict.status),
+                        str(intent.get("name", "")), exc.verdict.reason,
+                        datetime.now(timezone.utc).isoformat(),
+                    )
+                    rc, stdout, stderr = 77, "", ""
                 except subprocess.TimeoutExpired as exc:
                     log(f"  TIMEOUT ({step_timeout}s of a {budget}s budget from {budget_from}); OPTIMISATION REQUIRED")
                     rc = 124
