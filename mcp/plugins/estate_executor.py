@@ -393,11 +393,11 @@ class Job:
     ceiling_sec: int
     cwd: Optional[str] = None
     accepted_at: float = field(default_factory=time.time)
-    policy_status: Optional[str] = None
-    policy_revision: Optional[str] = None
     state: str = "accepted"
     exit_code: Optional[int] = None
     log: Optional[str] = None
+    policy_status: Optional[str] = None
+    policy_revision: Optional[str] = None
 
 
 def _daemon_socket_path() -> str:
