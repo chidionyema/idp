@@ -1,10 +1,10 @@
 {
   "schema": "estate.memory.claim_issue_sweep.v1",
-  "generated_at": "2026-11-09T03:07:01.057Z",
+  "generated_at": "2026-11-09T03:07:26.372Z",
   "evidence": "GitHub issue comments; text claims NOT authenticated current leases, includes non-memory matches and historical claims",
   "source_census": "docs/reports/2026-11-09-memory-issues-census.json",
   "total_issue_candidates": 144,
-  "processed": 69,
+  "processed": 84,
   "issues": [
     {
       "repo": "chidionyema/argon",
@@ -1096,6 +1096,333 @@
       "total_comments": 1,
       "claim_line_count": 0,
       "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6543,
+      "state": "open",
+      "total_comments": 1,
+      "claim_line_count": 1,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=estate-agent paths=bin/estate-brief,tests/test_estate_brief_drops_stale_focus.py heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-18T23:39:30Z",
+          "last_heartbeat": "2026-10-18T23:39:30Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6568,
+      "state": "closed",
+      "total_comments": 1,
+      "claim_line_count": 0,
+      "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6581,
+      "state": "closed",
+      "total_comments": 4,
+      "claim_line_count": 2,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=estate-agent paths=backstage/app-config.container.yaml,backstage/app-config.yaml heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-19T11:44:54Z",
+          "last_heartbeat": "2026-10-19T11:44:54Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=mcp/plugins/estate_memory.py,tests/test_estate_memory_consolidate_body.py heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-19T12:01:35Z",
+          "last_heartbeat": "2026-10-19T12:01:35Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6588,
+      "state": "open",
+      "total_comments": 0,
+      "claim_line_count": 0,
+      "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6597,
+      "state": "open",
+      "total_comments": 10,
+      "claim_line_count": 10,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=claude paths=bin/estate-brief,bin/estate-memory-enforce,bin/estate-memory-install,bin/estate-memory-mcp,docs/specs/2026-10-19-active-memory-and-focus-vs-muse.md,platform/estate/memory/focus.py,platform/estate/memory/runtimes.json,tests/test_estate_brief_drops_stale_focus.py,tests/test_estate_memory_focus.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-19T17:33:37Z",
+          "last_heartbeat": "2026-10-19T17:33:37Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude paths=bin/estate-brief,bin/estate-memory-enforce,bin/estate-memory-install,bin/estate-memory-mcp,docs/specs/2026-10-19-active-memory-and-focus-vs-muse.md,platform/estate/memory/focus.py,platform/estate/memory/runtimes.json,platform/unified-memory-server/Dockerfile,platform/unified-memory-server/consolidation.py,platform/unified-memory-server/main.py,platform/unified-memory-server/oke-unified-memory.yaml,platform/unified-memory-server/ranking.py,platform/unified-memory-server/schema.sql,platform/unified-memory-server/tests/test_ranking_and_consolidation.py,tests/test_estate_brief_drops_stale_focus.py,tests/test_estate_memory_focus.py,tests/test_estate_memory_mcp.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-19T17:50:29Z",
+          "last_heartbeat": "2026-10-19T17:50:29Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude paths=bin/estate-brief,bin/estate-memory-enforce,bin/estate-memory-install,bin/estate-memory-mcp,bin/estate-runtime-sync,docs/specs/2026-10-19-active-memory-and-focus-vs-muse.md,platform/estate/memory/focus.py,platform/estate/memory/runtimes.json,platform/unified-memory-server/Dockerfile,platform/unified-memory-server/consolidation.py,platform/unified-memory-server/main.py,platform/unified-memory-server/oke-unified-memory.yaml,platform/unified-memory-server/ranking.py,platform/unified-memory-server/schema.sql,platform/unified-memory-server/tests/test_ranking_and_consolidation.py,tests/test_estate_brief_drops_stale_focus.py,tests/test_estate_memory_focus.py,tests/test_estate_memory_mcp.py,tests/test_runtime_sync_installs_estate_memory.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-19T18:12:19Z",
+          "last_heartbeat": "2026-10-19T18:12:19Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude paths=bin/estate-brief,bin/estate-memory-enforce,bin/estate-memory-install,bin/estate-memory-mcp,bin/estate-runtime-sync,docs/specs/2026-10-19-active-memory-and-focus-vs-muse.md,platform/estate/memory/focus.py,platform/estate/memory/runtimes.json,platform/unified-memory-server/Dockerfile,platform/unified-memory-server/consolidation.py,platform/unified-memory-server/main.py,platform/unified-memory-server/oke-unified-memory.yaml,platform/unified-memory-server/ranking.py,platform/unified-memory-server/schema.sql,platform/unified-memory-server/tests/test_ranking_and_consolidation.py,tests/test_estate_brief_drops_stale_focus.py,tests/test_estate_memory_focus.py,tests/test_estate_memory_mcp.py,tests/test_runtime_sync_installs_estate_memory.py,bin/claim-open,tests/test_claim_open.py,platform/unified-memory-server/harness.py,platform/unified-memory-server/tests/test_harness.py,platform/unified-memory-server/tests/test_harness_cortex_search.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-19T18:58:58Z",
+          "last_heartbeat": "2026-10-19T18:58:58Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude paths=bin/estate-brief,bin/estate-memory-enforce,bin/estate-memory-install,bin/estate-memory-mcp,bin/estate-runtime-sync,docs/specs/2026-10-19-active-memory-and-focus-vs-muse.md,platform/estate/memory/focus.py,platform/estate/memory/runtimes.json,platform/unified-memory-server/Dockerfile,platform/unified-memory-server/consolidation.py,platform/unified-memory-server/main.py,platform/unified-memory-server/oke-unified-memory.yaml,platform/unified-memory-server/ranking.py,platform/unified-memory-server/schema.sql,platform/unified-memory-server/tests/test_ranking_and_consolidation.py,tests/test_estate_brief_drops_stale_focus.py,tests/test_estate_memory_focus.py,tests/test_estate_memory_mcp.py,tests/test_runtime_sync_installs_estate_memory.py,bin/claim-open,tests/test_claim_open.py,platform/unified-memory-server/harness.py,platform/unified-memory-server/tests/test_harness.py,platform/unified-memory-server/tests/test_harness_cortex_search.py,mcp/plugins/estate_memory.py,tes",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-19T19:07:39Z",
+          "last_heartbeat": "2026-10-19T19:07:39Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude paths=bin/estate-brief,bin/estate-memory-enforce,bin/estate-memory-install,bin/estate-memory-mcp,docs/specs/2026-10-19-active-memory-and-focus-vs-muse.md,platform/estate/memory/focus.py,platform/estate/memory/runtimes.json,tests/test_estate_brief_drops_stale_focus.py,tests/test_estate_memory_focus.py,platform/unified-memory-server/Dockerfile,platform/unified-memory-server/consolidation.py,platform/unified-memory-server/main.py,platform/unified-memory-server/oke-unified-memory.yaml,platform/unified-memory-server/ranking.py,platform/unified-memory-server/schema.sql,platform/unified-memory-server/tests/test_ranking_and_consolidation.py,tests/test_estate_memory_mcp.py,bin/estate-runtime-sync,tests/test_runtime_sync_installs_estate_memory.py,bin/claim-open,tests/test_claim_open.py,platform/unified-memory-server/harness.py,platform/unified-memory-server/tests/test_harness.py,platform/unified-memory-server/tests/test_harness_cortex_search.py,mcp/plugins/estate_memory.py,tes",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-19T19:57:56Z",
+          "last_heartbeat": "2026-10-20T00:39:35Z",
+          "occurrences": 4
+        },
+        {
+          "statement": "CLAIM agent=claude paths=bin/estate-memory-enforce,mcp/plugins/estate_memory.py,platform/estate/memory/focus.py,platform/unified-memory-server/harness.py,platform/unified-memory-server/main.py,platform/unified-memory-server/tests/test_harness_cortex_search.py,tests/test_estate_memory_focus.py,tests/test_estate_memory_mcp.py,tests/test_estate_memory_prefetch_shape.py,tests/test_objective_miner_files_only_measured_objectives.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-20T00:38:51Z",
+          "last_heartbeat": "2026-10-20T00:38:51Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6645,
+      "state": "closed",
+      "total_comments": 5,
+      "claim_line_count": 5,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=claude paths=platform/llm/active_memory.py,platform/llm/config.yaml,platform/llm/config.base.yaml,platform/llm/config.local.yaml,llm/config.yaml,llm/config.base.yaml,platform/llm/kustomization.yaml,platform/llm/litellm.yaml,platform/llm/external-secret.yaml,bin/litellm-local,platform/ns-fences/allowances.yaml,platform/ns-fences/network/*.yaml,mcp/plugins/jev.py,tests/test_active_memory.py,bin/claim-open,bin/estate-memory-enforce,tests/test_claim_open*.py,tests/test_estate_memory_enforce*.py,tests/test_jev*.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-20T01:49:23Z",
+          "last_heartbeat": "2026-10-20T01:49:23Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude paths=bin/claim-open,bin/litellm-local,platform/llm/active_memory.py,platform/llm/config.base.yaml,platform/llm/config.yaml,platform/llm/external-secret.yaml,platform/llm/kustomization.yaml,platform/llm/litellm.yaml,platform/ns-fences/allowances.yaml,platform/ns-fences/network/llm.yaml,tests/test_active_memory.py,tests/test_estate_memory_focus.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-20T02:14:13Z",
+          "last_heartbeat": "2026-10-20T02:14:13Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude paths=bin/claim-open,bin/litellm-local,docs/diagnoses/2026-10-20-agents-other-than-claude-code-never-reach-unified-memory.yaml,platform/llm/active_memory.py,platform/llm/config.base.yaml,platform/llm/config.yaml,platform/llm/external-secret.yaml,platform/llm/kustomization.yaml,platform/llm/litellm.yaml,platform/ns-fences/allowances.yaml,platform/ns-fences/network/llm.yaml,tests/test_active_memory.py,tests/test_estate_memory_focus.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-20T02:21:05Z",
+          "last_heartbeat": "2026-10-20T02:22:10Z",
+          "occurrences": 2
+        },
+        {
+          "statement": "CLAIM agent=claude paths=platform/llm/active_memory.py,platform/llm/config.yaml,platform/llm/config.base.yaml,platform/llm/config.local.yaml,llm/config.yaml,llm/config.base.yaml,platform/llm/kustomization.yaml,platform/llm/litellm.yaml,platform/llm/external-secret.yaml,bin/litellm-local,platform/ns-fences/allowances.yaml,platform/ns-fences/network/*.yaml,mcp/plugins/jev.py,tests/test_active_memory.py,bin/claim-open,bin/estate-memory-enforce,tests/test_claim_open*.py,tests/test_estate_memory_enforce*.py,tests/test_jev*.py,platform/ns-fences/network/llm.yaml,tests/test_estate_memory_focus.py,docs/diagnoses/2026-10-20-agents-other-than-claude-code-never-reach-unified-memory.yaml heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-20T03:12:23Z",
+          "last_heartbeat": "2026-10-20T03:12:23Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6647,
+      "state": "closed",
+      "total_comments": 1,
+      "claim_line_count": 1,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=claude paths=platform/unified-memory-server/schema.sql,platform/unified-memory-server/tests/test_ranking_and_consolidation.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-20T02:09:35Z",
+          "last_heartbeat": "2026-10-20T02:09:35Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6656,
+      "state": "closed",
+      "total_comments": 3,
+      "claim_line_count": 2,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=claude paths=platform/unified-memory-server/Dockerfile,platform/unified-memory-server/hedge.py,platform/unified-memory-server/main.py,platform/unified-memory-server/tests/test_hedge.py,platform/unified-memory-server/tests/test_ranking_and_consolidation.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-20T03:59:47Z",
+          "last_heartbeat": "2026-10-20T04:02:22Z",
+          "occurrences": 2
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6666,
+      "state": "closed",
+      "total_comments": 4,
+      "claim_line_count": 3,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=claude paths=docs/diagnoses/2026-10-20-stdlib-callers-skipped-as-graph-drain.yaml,platform/llm/active_memory.py,platform/llm/graph_capture.py,tests/test_active_memory.py,tests/test_graph_capture.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-20T05:47:55Z",
+          "last_heartbeat": "2026-10-20T05:47:55Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude paths=docs/diagnoses/2026-10-20-stdlib-callers-skipped-as-graph-drain.yaml,platform/llm/action_ledger.py,platform/llm/active_memory.py,platform/llm/graph_capture.py,tests/test_action_ledger.py,tests/test_active_memory.py,tests/test_graph_capture.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-20T05:49:43Z",
+          "last_heartbeat": "2026-10-20T05:57:18Z",
+          "occurrences": 2
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6678,
+      "state": "open",
+      "total_comments": 5,
+      "claim_line_count": 5,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=claude paths=docs/diagnoses/2026-10-20-focus-read-waits-on-gh.yaml,platform/llm/active_memory.py,tests/test_active_memory.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-20T07:06:02Z",
+          "last_heartbeat": "2026-10-20T07:06:02Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude paths=docs/diagnoses/2026-10-20-focus-read-waits-on-gh.yaml,docs/diagnoses/2026-10-20-focus-timeouts-stall-or-slow-read.yaml,platform/llm/active_memory.py,tests/test_active_memory.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-20T12:58:14Z",
+          "last_heartbeat": "2026-10-20T12:58:14Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude paths=docs/diagnoses/2026-10-20-focus-read-waits-on-gh.yaml,docs/diagnoses/2026-10-20-focus-timeouts-stall-or-slow-read.yaml,docs/diagnoses/2026-10-20-focus-timeouts-in-window-base-rate.yaml,platform/llm/active_memory.py,tests/test_active_memory.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-20T13:59:17Z",
+          "last_heartbeat": "2026-10-20T13:59:17Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude paths=docs/diagnoses/2026-10-20-focus-read-waits-on-gh.yaml,platform/llm/active_memory.py,tests/test_active_memory.py,docs/diagnoses/2026-10-20-focus-timeouts-stall-or-slow-read.yaml,docs/diagnoses/2026-10-20-focus-timeouts-in-window-base-rate.yaml heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-20T14:48:20Z",
+          "last_heartbeat": "2026-10-20T15:38:59Z",
+          "occurrences": 2
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6776,
+      "state": "closed",
+      "total_comments": 1,
+      "claim_line_count": 0,
+      "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6789,
+      "state": "open",
+      "total_comments": 4,
+      "claim_line_count": 4,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=claude paths=platform/llm/active_memory.py,tests/test_active_memory.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-21T09:48:17Z",
+          "last_heartbeat": "2026-10-21T09:48:17Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude paths=docs/diagnoses/2026-10-21-active-memory-facts-render-as-none.yaml,platform/llm/active_memory.py,tests/test_active_memory.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-21T10:15:19Z",
+          "last_heartbeat": "2026-10-21T10:15:19Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude paths=platform/llm/active_memory.py,tests/test_active_memory.py,docs/diagnoses/2026-10-21-active-memory-facts-render-as-none.yaml heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-21T11:15:52Z",
+          "last_heartbeat": "2026-10-21T12:07:20Z",
+          "occurrences": 2
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6817,
+      "state": "closed",
+      "total_comments": 1,
+      "claim_line_count": 0,
+      "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6835,
+      "state": "closed",
+      "total_comments": 76,
+      "claim_line_count": 76,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=claude paths=platform/llm/active_memory.py,tests/test_active_memory.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-22T07:12:58Z",
+          "last_heartbeat": "2026-10-22T07:12:58Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude paths=platform/llm/active_memory.py,tests/test_active_memory.py,docs/diagnoses/2026-10-22-active-memory-failed-reads-carry-no-time-or-duration.yaml heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-22T07:51:57Z",
+          "last_heartbeat": "2026-10-25T06:23:09Z",
+          "occurrences": 75
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6876,
+      "state": "open",
+      "total_comments": 2,
+      "claim_line_count": 2,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=estate-agent paths=bin/estate-memory-install,tests/test_estate_memory_install.py heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-22T21:37:08Z",
+          "last_heartbeat": "2026-10-22T22:35:32Z",
+          "occurrences": 2
+        }
+      ]
     }
   ]
 }
