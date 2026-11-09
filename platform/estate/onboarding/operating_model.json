@@ -99,5 +99,9 @@
     "https://github.com/chidionyema/idp/issues/7334",
     "https://github.com/chidionyema/argon/blob/main/AGENTS.md",
     "https://github.com/chidionyema/argon/blob/main/genesis-agent-policy.json"
-  ]
+  ],
+  "canonical_source_blobs": {
+    "docs/decisions/0034-workloads-are-placed-by-the-free-tier-not-by-the-cluster.md": "b29b0758694181cd404d0e309c6f5c8d0ee5890b",
+    "docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md": "88a37011f047e89a0850c3b0ae5167e50c387af2"
+  }
 }
