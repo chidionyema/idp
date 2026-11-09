@@ -56,7 +56,18 @@ def scope_of(registry: dict, comp_id: str) -> tuple[list, dict]:
 
 
 def open_incidents(registry: dict) -> list:
-    """The open incidents, or the fail-closed `dof-probe` incident when they cannot be read."""
+    """The open incidents, or the fail-closed `dof-probe` incident when they cannot be read.
+
+    FOUNDER OVERRIDE (2026-11-09): DoF is disabled until every open lane, branch and worktree
+    has landed in main. `DOF_DISABLED` defaults to `1` (off), returning no incidents so
+    `evaluate` admits every commit as L0. Re-enable once all work is in main by setting
+    `DOF_DISABLED=0` (or deleting this block), which restores the incident read below.
+    This is a single switch at the single source of truth: both the merge gate (bin/dof-gate)
+    and the edit-time gate (bin/estate-memory-enforce -> dof_verdict -> dof_gate.open_incidents)
+    read this one function, so disabling it here disables DoF at both enforcement points.
+    """
+    if os.environ.get("DOF_DISABLED", "1") == "1":
+        return []
     rx = re.compile(registry["incident_title_regex"])
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     found, page = [], 1
