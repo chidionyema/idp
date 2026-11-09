@@ -75,5 +75,34 @@ class ComponentConformanceTests(unittest.TestCase):
         self.assertEqual(MODULE["classify"]("modules/memory/component.json"), "architecture-review")
         self.assertEqual(MODULE["classify"]("modules/memory/src/retrieval.py"), "normal-change")
 
+class ComponentScaffoldTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.contract = self.root / "real-interface.json"
+        self.contract.write_text('{"type": "object", "properties": {"query": {"type": "string"}}}')
+        self.new = runpy.run_path(str(Path(__file__).resolve().parents[1] / "bin" / "fractal-new-component"))["create"]
+
+    def test_contract_first_scaffold(self):
+        path = self.new(self.root / "modules", "memory/retrieval/lexical",
+                        "memory/retrieval", "memory-team", "0.1.0", self.contract)
+        self.assertTrue(path.exists())
+        self.assertEqual(MODULE["scan"](self.root)["invalid"], 0)
+        self.assertEqual(json.loads(path.read_text())["stage"], "experimental")
+
+    def test_never_overwrite_existing_component(self):
+        args = (self.root / "modules", "memory/retrieval/lexical",
+                "memory/retrieval", "memory-team", "0.1.0", self.contract)
+        self.new(*args)
+        with self.assertRaises(FileExistsError):
+            self.new(*args)
+
+    def test_missing_contract_refuses_scaffold(self):
+        with self.assertRaises(ValueError):
+            self.new(self.root / "modules", "memory/retrieval/lexical",
+                     "memory/retrieval", "memory-team", "0.1.0",
+                     self.root / "nonexistent.json")
+
 if __name__ == "__main__":
     unittest.main()
