@@ -168,3 +168,14 @@ def test_known_policy_refusal_is_not_silently_retired():
     engine._retire_stale_lanes()
     assert "lane/a" in state.lanes
     assert state.retired == {}
+
+
+def test_synthetic_blind_incident_never_suppresses_required_ci():
+    synthetic = json.dumps({
+        "gate": "dof", "ok": False,
+        "open_incidents": [{"id": "dof-probe", "issue": None,
+                            "evidence": "incident list unreadable: HTTP 403"}],
+        "commits": [denied("missing Genesis-Resolves")],
+    })
+    verdict = interpret(BASE, 1, synthetic)
+    assert verdict.state == "UNKNOWN" and verdict.admissible
