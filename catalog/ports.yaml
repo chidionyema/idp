@@ -87,6 +87,13 @@ ports:
   - {port: 8771, service: voice-loop,           compose: none, bind: 127.0.0.1}
   - {port: 8787, service: board_serve,          compose: none}
   - {port: 8788, service: sovereign-cockpit,    compose: none, bind: 127.0.0.1}
+  # The inboxd Worker: the drop store the review loop reads from and writes its
+  # verdicts to (inboxd-worker, started by LaunchAgent com.estate.inboxd-worker
+  # from ~/.estate/inboxd/bin/worker-start.sh). It binds the loopback only, on
+  # 8789 and not 8787 -- 8787 is board_serve's, and one port has one owner (R22
+  # mechanism 4). The credential is the shared inbox key, carried in the
+  # x-inbox-key header and never in the URL.
+  - {port: 8789, service: inboxd-worker,         compose: none, bind: 127.0.0.1}
   - {port: 9093, service: alertmanager,          compose: none, bind: 127.0.0.1}
   - {port: 11434, service: ollama,              compose: none}
   # The FleetView board backend (backstage/plugins/fleetview-backend/src/serve.py:730) and the
