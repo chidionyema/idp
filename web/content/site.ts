@@ -1,5 +1,5 @@
 export const site = {
-  name: "Merian Intelligence",
+  name: "Merdian Intelligence",
   tagline: "Independent AI laboratory, technology consultancy and venture builder.",
   email: "",
   nav: [

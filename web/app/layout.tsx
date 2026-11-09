@@ -31,15 +31,15 @@ const dmMono = localFont({
 // measured 9.1 s cold and 1.4-2.9 s on a repeat from the same laptop, on a 300m CPU pod. A value
 // known at build time keeps the pages static, which is what a brochure site wants; the canonical
 // link, the OpenGraph url and every relative OG image resolve against it.
-const SITE_URL = process.env.MERIAN_SITE_URL ?? process.env.MERIDIAN_SITE_URL ?? "http://localhost:3000";
+const SITE_URL = process.env.MERDIAN_SITE_URL ?? process.env.MERIAN_SITE_URL ?? process.env.MERIDIAN_SITE_URL ?? "http://localhost:3000";
 
 export function generateMetadata(): Metadata {
   const base = new URL(SITE_URL);
   return {
     metadataBase: base,
-    title: { default: "Merian Intelligence", template: "%s | Merian Intelligence" },
+    title: { default: "Merdian Intelligence", template: "%s | Merdian Intelligence" },
     description: "Applied AI research, prototypes and products for organisations and individuals.",
-    openGraph: { type: "website", locale: "en_US", url: base.href, siteName: "Merian Intelligence", images: [{ url: "/opengraph-image", width: 1200, height: 630 }] },
+    openGraph: { type: "website", locale: "en_US", url: base.href, siteName: "Merdian Intelligence", images: [{ url: "/opengraph-image", width: 1200, height: 630 }] },
     twitter: { card: "summary_large_image" },
     robots: { index: true, follow: true },
   };
@@ -48,9 +48,9 @@ export function generateMetadata(): Metadata {
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "Organization",
-  name: "Merian Intelligence",
+  name: "Merdian Intelligence",
   description: "AI research laboratory and product development business",
-  ...(process.env.MERIAN_SITE_URL ? {url: process.env.MERIAN_SITE_URL} : {}),
+  ...(process.env.MERDIAN_SITE_URL ? {url: process.env.MERDIAN_SITE_URL} : {}),
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

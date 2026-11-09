@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Merian Intelligence",
-    short_name: "Merian",
+    name: "Merdian Intelligence",
+    short_name: "Merdian",
     description:
       "AI research laboratory building and validating products for enterprises and individuals.",
     start_url: "/",

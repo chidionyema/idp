@@ -2,7 +2,7 @@ import Link from "next/link";
 import { site } from "@/content/site";
 import { Reveal } from "@/components/Reveal";
 import type { Metadata } from "next";
-export const metadata: Metadata = { title: "Tooling", description: "Merian Intelligence laboratory tools and experimental infrastructure." };
+export const metadata: Metadata = { title: "Tooling", description: "Merdian Intelligence laboratory tools and experimental infrastructure." };
 
 export default function ToolingPage() {
   return (

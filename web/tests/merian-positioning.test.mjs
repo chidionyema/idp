@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 const read = (p) => readFileSync(new URL("../" + p, import.meta.url), "utf8");
-test("Merian homepage explicitly offers consultancy, research and ventures", () => {
+test("Merdian homepage explicitly offers consultancy, research and ventures", () => {
   const page = read("app/page.tsx");
   for (const label of ["CONSULTANCY", "LABORATORY", "VENTURES", "Mumchimp", "Genesis", "Blabka"]) {
     assert.ok(page.includes(label), "missing positioning: "+label);
@@ -21,7 +21,7 @@ test("Consultancy describes paid service families, rather than only experiments"
   for (const label of ["technical advisory","Applied AI engineering","Autonomous operations","Research partnerships"]) assert.ok(c.includes(label));
 });
 test("Robots metadata uses the canonical deploy hostname", () => {
-  assert.ok(read("app/robots.ts").includes("MERIAN_SITE_URL"));
+  assert.ok(read("app/robots.ts").includes("MERDIAN_SITE_URL"));
   assert.ok(!read("app/robots.ts").includes("meridian.ai"));
 });
 test("The visual system includes responsive and reduced-motion handling", () => {

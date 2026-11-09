@@ -1,4 +1,4 @@
-# Merian Intelligence — web
+# Merdian Intelligence — web
 
 Next.js 14 App Router. Content lives in `content/`; pages in `app/`.
 
@@ -37,7 +37,7 @@ Payload shape:
 
 ```json
 {
-  "source": "merian-intelligence/contact",
+  "source": "merdian-intelligence/contact",
   "received_at": "<ISO 8601>",
   "name": "...",
   "email": "...",
@@ -55,8 +55,8 @@ Payload shape:
   spoofable if the app is reachable directly.
 
 ## Corporate identity and release model (founder 2026-11-09)
-Merian Intelligence is the parent AI laboratory and product company. Mumchimp is a group company; Genesis is a lab and operating product. Research and prototypes are not production proof.
+Merdian Intelligence is the parent AI laboratory and product company. Mumchimp is a group company; Genesis is a lab and operating product. Research and prototypes are not production proof.
 
-Legacy Meridian DNS / contact deployment settings remain compatibility inputs while Merian's canonical domain is verified. Do not claim meridian.ai belongs to Merian or invent an email address. The contact form fails closed if no delivery endpoint exists. Previously unsubstantiated numerical case studies remain in the source for evidence review but are no longer rendered as customer proof.
+Legacy Meridian DNS / contact deployment settings remain compatibility inputs while Merdian's canonical domain is verified. Do not claim meridian.ai belongs to Merdian or invent an email address. The contact form fails closed if no delivery endpoint exists. Previously unsubstantiated numerical case studies remain in the source for evidence review but are no longer rendered as customer proof.
 
 Release checks: web CI typecheck, voice, lint, unit, build, smoke; independent review of brand, DNS, provider configuration, accessibility and actual customer interaction.
