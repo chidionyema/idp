@@ -9,7 +9,7 @@ const portfolio = [
     label: "Group company",
     name: "Mumchimp",
     state: "Commercial storefront",
-    body: "Research-led business opportunity packs published through Mumchimp's own customer operation.",
+    body: "Source-backed business opportunity packs sold through Mumchimp's public website.",
     href: "https://mumchimp.com",
     link: "Visit Mumchimp",
   },
