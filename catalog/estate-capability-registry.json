@@ -6,8 +6,8 @@
     "intent": 118,
     "layer": 253,
     "service": 121,
-    "tool": 476,
-    "workflow": 95
+    "tool": 477,
+    "workflow": 96
   },
   "records": [
     {
@@ -39073,6 +39073,55 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/idp-greenlane-reactor",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "Single-shot Greenlane common-failure reaction, invoked only by real events.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:workflow/gha-greenlane-common-failure-reaction"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/idp-greenlane-reactor",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/idp-guarded-paths",
       "schema_version": 1,
       "kind": "tool",
@@ -57168,6 +57217,65 @@
         },
         {
           "id": "cap:tool/idp-greenlane-check-trigger",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:workflow/gha-greenlane-common-failure-reaction",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "greenlane-common-failure-reaction -- the GitHub Actions workflow greenlane-common-failure-reaction.yml.",
+      "contract": {
+        "inputs": [
+          "workflow_run",
+          "workflow_dispatch"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/greenlane-common-failure-reaction.yml",
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-greenlane-reactor",
           "edge": "invokes"
         }
       ],
