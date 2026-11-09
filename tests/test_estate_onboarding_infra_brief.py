@@ -45,7 +45,7 @@ def test_model_identifies_two_complementary_domains_and_current_infra(pack):
     assert "TARGET NOT PROOF" in model["infrastructure"]["target"]
     assert "E2.1.Micro" in model["infrastructure"]["recovery_candidate"]
     assert model["infrastructure"]["live_verdict"].startswith("UNKNOWN")
-    assert model["fleet_policy"]["state"] == "SOURCE_CANDIDATE_NOT_DEPLOYED"
+    assert model["fleet_policy"]["state"] == "UNVERIFIED_BY_STATIC_PACK"
     text = pack.render()
     assert "Genesis" in text and "IDP:" in text and "GENESIS:" in text
     assert "LIVE HEALTH: UNKNOWN" in text
