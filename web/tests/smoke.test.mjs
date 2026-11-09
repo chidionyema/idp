@@ -7,6 +7,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createServer } from "node:http";
 import { setTimeout as sleep } from "node:timers/promises";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -136,7 +137,9 @@ test("contact endpoint refuses malformed requests", async () => {
   assert.ok(body.errors.email && body.errors.name && body.errors.message);
 
   const get = await fetch(`${BASE}/api/contact`);
-  assert.equal(get.status, 405);
+  assert.equal(get.status, 200);
+  assert.equal(get.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await get.json(), { acceptingEnquiries: false });
 });
 
 test("a honeypot submission is accepted silently", async () => {
@@ -166,6 +169,72 @@ test("a valid submission with no delivery path configured fails loudly", async (
   // 503, not 200: an unconfigured deployment must not look like a successful one.
   assert.equal(res.status, 503);
   assert.equal((await res.json()).error, "delivery_not_configured");
+});
+
+test("a configured enquiry is delivered to a real local webhook before confirmation", async () => {
+  const received = [];
+  const hook = createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    received.push({ method: req.method, body: JSON.parse(body) });
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end('{"accepted":true}');
+  });
+  await new Promise((resolve) => hook.listen(0, "127.0.0.1", resolve));
+  const hookAddress = hook.address();
+  assert.ok(hookAddress && typeof hookAddress !== "string");
+  const webhookPort = hookAddress.port;
+  const secondPort = 3112;
+  const secondBase = `http://127.0.0.1:${secondPort}`;
+  const configuredServer = spawn(process.execPath,
+    ["node_modules/next/dist/bin/next", "start", "--port", String(secondPort)], {
+      cwd: root,
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        NODE_ENV: "production",
+        CONTACT_WEBHOOK_URL: `http://localhost:${webhookPort}/intake`,
+        CONTACT_WEBHOOK_TOKEN: "",
+        TELEGRAM_BOT_TOKEN: "",
+        TELEGRAM_CHAT_ID: "",
+        MERIDIAN_SECRETS_DIR: "/no-such-meridian-secrets-for-smoke-test",
+      },
+    });
+  try {
+    let ready = false;
+    for (let i = 0; i < 80; i++) {
+      try {
+        const res = await fetch(`${secondBase}/api/contact`, { signal: AbortSignal.timeout(1500) });
+        if (res.ok) { ready = true; break; }
+      } catch { /* second server still starting */ }
+      await sleep(350);
+    }
+    assert.ok(ready, "configured enquiry server did not start");
+    const status = await fetch(`${secondBase}/api/contact`);
+    assert.deepEqual(await status.json(), { acceptingEnquiries: true });
+    assert.equal(status.headers.get("cache-control"), "no-store");
+
+    const response = await fetch(`${secondBase}/api/contact`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Merdian Canary",
+        email: "synthetic@example.test",
+        company: "Synthetic Lab",
+        message: "A synthetic test enquiry, not a real customer record.",
+      }),
+    });
+    assert.equal(response.status, 200, "success must require webhook acceptance");
+    assert.equal(received.length, 1, "webhook must receive exactly one delivery");
+    assert.equal(received[0].method, "POST");
+    assert.equal(received[0].body.source, "merian-intelligence/contact");
+    assert.equal(received[0].body.email, "synthetic@example.test");
+    assert.equal(received[0].body.company, "Synthetic Lab");
+    assert.ok(received[0].body.received_at, "delivery needs provenance timestamp");
+  } finally {
+    configuredServer.kill("SIGTERM");
+    await new Promise((resolve) => hook.close(resolve));
+  }
 });
 
 test("the endpoint rate-limits a caller that keeps posting", async () => {
