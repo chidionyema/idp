@@ -207,53 +207,30 @@ def test_glob_is_anchored():
     assert gate.glob_match("bin/idp-oke-*", "bin/idp-oke-rebuild")
     assert not gate.glob_match("bin/idp-oke-*", "bin/x/idp-oke-rebuild")
 
-
-def test_founder_suspension_is_explicit_not_healthy():
+def test_founder_control_modes_and_explicit_suspension():
     assert gate.control_mode(REGISTRY) == "disabled"
-    snapshot = gate.suspended_result(REGISTRY)
-    assert snapshot["ok"] is True
-    assert snapshot["enforcement"] == "DISABLED"
-    assert snapshot["other_security_checks"] == "UNCHANGED"
-    assert snapshot["open_incidents"] is None
-
-
-def test_unknown_control_mode_never_disables_gate():
-    registry = {**REGISTRY, "control": {"mode": "unsupported"}}
-    assert gate.control_mode(registry) == "enforced"
-
-
-def test_expand_contract_modes_preserve_explicit_semantics():
-    for mode in ("enforced", "observe", "disabled"):
-        registry = {**REGISTRY, "control": {"mode": mode}}
-        assert gate.control_mode(registry) == mode
     assert gate.control_mode({}) == "enforced"
+    assert gate.control_mode({"control": {"mode": "unknown"}}) == "enforced"
+    for mode in ("disabled", "observe", "enforced"):
+        assert gate.control_mode({"control": {"mode": mode}}) == mode
+    result = gate.suspended_result(REGISTRY)
+    assert result["ok"] is True
+    assert result["enforcement"] == "DISABLED"
+    assert result["open_incidents"] is None
+    assert result["other_security_checks"] == "UNCHANGED"
 
 
-def test_component_contraction_preserves_other_incidents():
-    incidents = [
-        {"id": "llm-router", "issue": 7334},
-        {"id": "otto", "issue": 7333},
-    ]
-    registry = {
-        **REGISTRY,
-        "control": {"mode": "enforced", "suspendedComponents": ["otto"]},
-    }
-    assert gate.active_incidents(registry, incidents) == [incidents[0]]
-
-
-def test_component_contraction_never_ignores_blind_inventory():
-    blind = [{"id": "dof-probe", "issue": None}]
-    registry = {
-        **REGISTRY,
-        "control": {"mode": "enforced", "suspendedComponents": ["dof-probe"]},
-    }
-    assert gate.active_incidents(registry, blind) == blind
-
-
-def test_malformed_scope_is_not_an_exemption():
-    incidents = [{"id": "otto", "issue": 7333}]
-    registry = {
-        **REGISTRY,
-        "control": {"mode": "enforced", "suspendedComponents": "otto"},
-    }
+def test_scope_exemption_preserves_unaffected_incidents():
+    incidents = [{"id": "otto", "issue": 7333}, {"id": "llm-router", "issue": 7334}]
+    registry = dict(REGISTRY)
+    registry["control"] = {"suspendedComponents": ["otto"]}
+    assert gate.active_incidents(registry, incidents) == [incidents[1]]
+    registry["control"] = {"suspendedComponents": "otto"}
     assert gate.active_incidents(registry, incidents) == incidents
+
+
+def test_blind_inventory_remains_visible_during_scope_change():
+    blind = [{"id": "dof-probe", "issue": None}]
+    registry = dict(REGISTRY)
+    registry["control"] = {"suspendedComponents": ["dof-probe"]}
+    assert gate.active_incidents(registry, blind) == blind
