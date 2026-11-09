@@ -46,6 +46,14 @@ def interpret(base: str, returncode: int, stdout: str) -> Verdict:
         if returncode == 0 and ok and all(c["admitted"] for c in decisions):
             return Verdict("ADMIT", "trusted DoF accepted; full required CI remains mandatory")
         refusals = [c for c in decisions if c["admitted"] is False]
+        # A denied API read is the gate's synthetic dof-probe, not an actual
+        # healthy-authorized incident. We must NOT park otherwise valid work
+        # based on a credential/observer failure in this cost-only pass.
+        incidents = result.get("open_incidents")
+        if (not isinstance(incidents, list) or not incidents or
+                any(not isinstance(i, dict) or i.get("id") == "dof-probe" or
+                    not isinstance(i.get("issue"), int) for i in incidents)):
+            return Verdict("UNKNOWN", "incident observation unproved; run trusted CI")
         if returncode != 1 or ok or not refusals:
             return Verdict("UNKNOWN", "gate exit/result disagreement")
         reasons = sorted({str(c.get("reason", "")).strip() for c in refusals
@@ -69,7 +77,9 @@ def assess(base: str, candidate: str, repo: str, runner=None) -> Verdict:
         p = execute(
             [sys.executable, str(TRUSTED_DOF), base, candidate],
             capture_output=True, text=True, timeout=45, check=False,
-            env={**os.environ, "GITHUB_REPOSITORY": repo},
+            env={**os.environ, "GITHUB_REPOSITORY": repo,
+                 "GH_TOKEN": os.environ.get("GREENLANE_STATUS_TOKEN") or
+                             os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN", "")},
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return Verdict("UNKNOWN", f"trusted gate unavailable: {type(exc).__name__}")
