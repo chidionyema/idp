@@ -30,26 +30,26 @@ const dmMono = localFont({
 // measured 9.1 s cold and 1.4-2.9 s on a repeat from the same laptop, on a 300m CPU pod. A value
 // known at build time keeps the pages static, which is what a brochure site wants; the canonical
 // link, the OpenGraph url and every relative OG image resolve against it.
-const SITE_URL = process.env.MERIDIAN_SITE_URL ?? "http://localhost:3000";
+const SITE_URL = process.env.MERIAN_SITE_URL ?? process.env.MERIDIAN_SITE_URL ?? "http://localhost:3000";
 
 export function generateMetadata(): Metadata {
   const base = new URL(SITE_URL);
   return {
     metadataBase: base,
-    title: { default: "Meridian Intelligence", template: "%s | Meridian Intelligence" },
-    description: "We build the routing, tracing, workload identity and eval layers that put LLM features into production. Twelve deployments, with the numbers.",
-    openGraph: { type: "website", locale: "en_US", url: base.href, siteName: "Meridian Intelligence", images: [{ url: "/opengraph-image", width: 1200, height: 630 }] },
-    twitter: { card: "summary_large_image", creator: "@meridianai" },
+    title: { default: "Merian Intelligence", template: "%s | Merian Intelligence" },
+    description: "Applied AI research, prototypes and products for organisations and individuals.",
+    openGraph: { type: "website", locale: "en_US", url: base.href, siteName: "Merian Intelligence", images: [{ url: "/opengraph-image", width: 1200, height: 630 }] },
+    twitter: { card: "summary_large_image" },
     robots: { index: true, follow: true },
   };
 }
 
 const jsonLd = {
-  "@context": "https://schema.org", "@type": "Organization",
-  name: "Meridian Intelligence", url: "https://meridian.ai",
-  logo: "https://meridian.ai/favicon.svg", email: "hello@meridian.ai",
-  sameAs: ["https://github.com/meridian-intelligence", "https://linkedin.com/company/meridian-intelligence"],
-  contactPoint: { "@type": "ContactPoint", email: "hello@meridian.ai", contactType: "sales" },
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "Merian Intelligence",
+  description: "AI research laboratory and product development business",
+  ...(process.env.MERIAN_SITE_URL ? {url: process.env.MERIAN_SITE_URL} : {}),
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

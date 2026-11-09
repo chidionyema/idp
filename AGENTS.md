@@ -5,6 +5,16 @@ the gates and the hooks, which refuse.
 
 ---
 
+## Merian Intelligence: group-wide AI laboratory mandate (founder 2026-11-09)
+
+Merian Intelligence is the **parent AI research and product commercialisation business**. **Mumchimp is a group company**, with its own product and customer operation. **Genesis / the Autonomous Estate (including IDP)** is a product and laboratory operating capability, not the parent. Never confuse Merian with a legacy product demo called Meridian.
+
+Classify work as **RESEARCH** (controlled, reproducible experiments and negative findings), **PROTOTYPE** (working demos with measured limitations) or **COMMERCIAL** (independent end-to-end customer, security, reliability and rollback proof). Assess shared infrastructure by **actual effect and blast radius**, not by a blanket lab or production label. Falsifiable experiments are continuous, not ceremonial. Use existing evals and OpenFeature-compatible runtime flags for typed, reversible, short-lived lab configuration so every new hypothesis does not require another code release. Never use a lab flag to bypass production auth, protected delivery gates, customer data or financial controls.
+
+Canonical source and executable lab: `chidionyema/argon` main at `docs/decisions/2026-11-09-merian-lab-operating-model.md`, `ops/lab/README.md`, `ops/lab/feature-flags.md`. Agents must hydrate this purpose at onboarding and carry research evidence into products. Product-specific engineering standards still apply. Do not invent websites, legal claims, metrics, customers or contact details. A pushed branch is not a live product.
+
+---
+
 ## Programme of record and the tenets
 
 The estate's programme of record is `docs/epics/2026-10-25-estate-master-epic.md`. Every agent reads

@@ -1,88 +1,34 @@
 export const site = {
-  name: "Meridian Intelligence",
-  tagline: "AI infrastructure consulting for companies shipping production LLM systems.",
-  email: "hello@meridian.ai",
+  name: "Merian Intelligence",
+  tagline: "An applied AI laboratory developing research-led products for enterprise and personal markets.",
+  email: "",
   nav: [
     { href: "/research", label: "Research" },
-    { href: "/case-studies", label: "Case Studies" },
-    { href: "/tooling", label: "Tooling" },
-    { href: "/consulting", label: "Consulting" },
-    { href: "/writing", label: "Writing" },
+    { href: "/products", label: "Products" },
+    { href: "/consulting", label: "Enterprise" },
+    { href: "/writing", label: "Insights" },
   ],
   research: [
-    {
-      title: "Agentic Routing for Enterprise",
-      year: "2025",
-      kind: "Framework",
-      // href is the post that actually covers this work. A card without one gets no Read button:
-      // a CTA that lands on a page where the piece does not exist is worse than no CTA (founder,
-      // 2026-10-20, after a reviewer clicked all three and reached nothing).
-      href: "/writing/agentic-routing-for-enterprise",
-      blurb: "Your traffic isn't one shape. Most requests are classification or extraction that a cheap model handles at a fraction of the price. Route on that difference and spend drops by 60–80% with no movement in your quality metric. Here's the architecture, including the two failure modes we hit first.",
-    },
-    {
-      title: "SPIFFE/SPIRE in AI Workload Identity",
-      year: "2025",
-      kind: "Security",
-      href: "/writing/spiffe-for-ai-workloads",
-      blurb: "An inference server might live ninety seconds before it's replaced. You can't hand it a certificate. SPIFFE/SPIRE gives it a cryptographic identity it can prove in that window, and it works with vLLM and LiteLLM without touching your application code.",
-    },
-    {
-      title: "Observability for Agentic Pipelines",
-      year: "2025",
-      kind: "Observability",
-      blurb: "One user request can fan out into three tool calls, two model calls and a synthesis step. When it goes wrong you need to see the whole shape at once, not four dashboards. This is the span structure that makes that possible.",
-    },
+    { title: "Agentic routing experiments", year: "2026", kind: "Research", href: "/writing/agentic-routing-for-enterprise",
+      blurb: "How can a routing decision improve quality, cost and latency together? Our approach starts with comparable trials and explicit failure cases." },
+    { title: "AI workload identity", year: "2026", kind: "Security research", href: "/writing/spiffe-for-ai-workloads",
+      blurb: "Exploring trust boundaries and short-lived credentials in AI service infrastructure. Research is not proof of an accredited deployment." },
+    { title: "Agent observability and evaluation", year: "2026", kind: "Experimental method",
+      blurb: "Reproducible traces, controlled baselines and regression tests for multi-step agent work. Failed experiments become evidence for the next trial." },
   ],
   tooling: [
-    {
-      name: "agentgateway",
-      status: "stable",
-      desc: "The routing layer we deploy on every engagement. Classifies each request, opens a circuit when a provider degrades, and attributes every dollar to the team that spent it.",
-    },
-    {
-      name: "llm-benchmarking",
-      status: "stable",
-      desc: "An eval harness that runs your prompts against 40 benchmarks and tests whether a change moved the number. Blocks the merge when it made things worse.",
-    },
-    {
-      name: "spire-agent-ai",
-      status: "beta",
-      desc: "SPIRE workload API for AI runtimes. Rotates X.509 SVIDs without restarting the inference server, which is the part nobody wants to do at three in the morning.",
-    },
+    { name: "agentgateway", status: "research", desc: "Candidate tools for routing, circuit breaking and model-cost attribution. Commercial readiness is evaluated separately." },
+    { name: "llm-benchmarking", status: "research", desc: "Benchmark design and experiments comparing quality, time and cost against a fixed baseline." },
+    { name: "spire-agent-ai", status: "research", desc: "Workload identity research for short-lived AI services and agent infrastructure." },
   ],
   consulting: [
-    {
-      title: "AI Platform Architecture",
-      desc: "We read what you have, name the failure modes, then design the routing, tracing and identity layers around your real latency and cost ceilings. Not a reference architecture. Yours.",
-    },
-    {
-      title: "Security & Compliance",
-      desc: "SOC 2 Type II, HIPAA, data residency. Workload identity for servers that live for ninety seconds. We've had a lot of practice getting a security reviewer to sign off.",
-    },
-    {
-      title: "Evaluation & Fine-tuning",
-      desc: "Red-teaming that produces a regression suite instead of a document. Eval pipelines that stop a bad model change before a customer finds it.",
-    },
+    { title: "Research and feasibility", desc: "Investigate the hypothesis and find the evidence that would challenge it before committing to a large build." },
+    { title: "Product prototyping", desc: "Turn promising research into working demonstrations with transparent benchmarks and known limitations." },
+    { title: "Commercial AI engineering", desc: "Move validated capabilities into reliable enterprise use with independent security, performance and customer-path proof." },
   ],
   posts: [
-    {
-      slug: "agentic-routing-for-enterprise",
-      title: "Agentic Routing for the Enterprise",
-      date: "2025-01-15",
-      excerpt: "Most routing layers fail the same three ways. We hit all three in our first 12 deployments, and it took us two of them to notice.",
-    },
-    {
-      slug: "llm-red-teaming",
-      title: "LLM Red-Teaming at Scale",
-      date: "2024-11-20",
-      excerpt: "A weekend of jailbreak prompts produces a list. It doesn't produce anything that catches the next regression. Here's the difference.",
-    },
-    {
-      slug: "spiffe-for-ai-workloads",
-      title: "SPIFFE for AI Workloads",
-      date: "2024-09-05",
-      excerpt: "Short-lived inference servers can't hold a certificate. That's why most AI deployments have no workload identity at all.",
-    },
+    { slug: "agentic-routing-for-enterprise", title: "Agentic Routing for the Enterprise", date: "2025-01-15", excerpt: "Routing models by intent is one hypothesis. It needs quality, cost and latency comparisons to earn adoption." },
+    { slug: "llm-red-teaming", title: "LLM Red-Teaming at Scale", date: "2024-11-20", excerpt: "Why red-team findings belong in a repeatable regression suite." },
+    { slug: "spiffe-for-ai-workloads", title: "SPIFFE for AI Workloads", date: "2024-09-05", excerpt: "Identity trade-offs for short-lived inference services." },
   ],
 };
