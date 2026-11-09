@@ -85,9 +85,9 @@ if args[:3] == ["instance-agent", "command-execution", "list"]:
         sys.stderr.write("queue list requires raw OCI JSON\\n")
         sys.exit(3)
     if opt("--lifecycle-state") == "ACCEPTED":
-        print(os.environ.get("FAKE_ACCEPTED_COMMANDS", '{"data": []}'))
+        print(os.environ.get("FAKE_ACCEPTED_COMMANDS", '{{"data": []}}'))
     else:
-        print(os.environ.get("FAKE_IN_PROGRESS_COMMANDS", '{"data": []}'))
+        print(os.environ.get("FAKE_IN_PROGRESS_COMMANDS", '{{"data": []}}'))
     sys.exit(0)
 
 if args[:3] == ["instance-agent", "command", "create"]:
