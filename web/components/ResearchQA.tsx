@@ -122,7 +122,7 @@ export function ResearchQA() {
         )}
       </div>
 
-      <div className="mi-qa-panel" aria-label="Research answer">
+      <div className="mi-qa-panel" role="region" aria-label="Research answer" aria-live="polite" aria-busy={loading}>
         {!result && !loading && !error && (
           <div className="mi-qa-empty">
             <div className="mi-qa-panel-kicker">THE RESEARCH DESK <span>001 / LIVE QUERY</span></div>
