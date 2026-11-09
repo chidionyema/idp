@@ -1,0 +1,309 @@
+{
+  "schema": "estate.memory.claim_samples.v1",
+  "generated_at": "2026-11-09T02:59:41.346Z",
+  "limitation": "Selected 14 memory/continuity ownership issues only. CLAIM text is self-reported and not an alive-lease or production proof; other issues/PRs not covered.",
+  "record_count": 35,
+  "issues": [
+    {
+      "repo": "chidionyema/argon",
+      "issue": 47,
+      "comments": 5,
+      "claim_records": []
+    },
+    {
+      "repo": "chidionyema/argon",
+      "issue": 62,
+      "comments": 2,
+      "claim_records": []
+    },
+    {
+      "repo": "chidionyema/estate-graph",
+      "issue": 6,
+      "comments": 11,
+      "claim_records": [
+        {
+          "line": "CLAIM W6-F — chatgpt-legion-release — propose/W6-memory-v2-integration-20261107",
+          "heartbeat": null,
+          "agent": null,
+          "source_comment_id": 6707889050
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6156,
+      "comments": 4,
+      "claim_records": [
+        {
+          "line": "CLAIM agent=claude-code paths=AGENTS.md,bin/estate-brief,bin/estate-memory-install,bin/estate-memory-mcp,platform/estate/memory/door.py,platform/estate/memory/opencode-estate-memory.js,platform/estate/memory/pi-estate-memory.ts,platform/estate/memory/runtimes.json,tests/test_estate_memory_install.py heartbeat=2026-10-14T07:22:34Z",
+          "heartbeat": "2026-10-14T07:22:34Z",
+          "agent": "claude-code",
+          "source_comment_id": 6163149958
+        },
+        {
+          "line": "CLAIM agent=claude-code paths=bin/estate-memory-install,tests/test_estate_memory_install.py heartbeat=2026-10-14T07:56:57Z",
+          "heartbeat": "2026-10-14T07:56:57Z",
+          "agent": "claude-code",
+          "source_comment_id": 6163703003
+        },
+        {
+          "line": "CLAIM agent=chatgpt-context paths=platform/estate/memory/context_admission.py,mcp/plugins/estate_executor.py,tests/test_context_admission.py,tests/test_executor_mcp.py heartbeat=2026-11-07T13:46:35Z",
+          "heartbeat": "2026-11-07T13:46:35Z",
+          "agent": "chatgpt-context",
+          "source_comment_id": 6707737412
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6162,
+      "comments": 1,
+      "claim_records": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6163,
+      "comments": 1,
+      "claim_records": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6165,
+      "comments": 0,
+      "claim_records": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7344,
+      "comments": 9,
+      "claim_records": [
+        {
+          "line": "CLAIM agent=claude-science paths=platform/estate/context/**,bin/estate-context-compile,bin/estate-context-gate,tests/test_estate_context_*.py,platform/mcp/estate-context-broker.yaml heartbeat=2026-10-29T07:07:43Z",
+          "heartbeat": "2026-10-29T07:07:43Z",
+          "agent": "claude-science",
+          "source_comment_id": 6490359518
+        },
+        {
+          "line": "CLAIM agent=claude-science paths=platform/estate/context/**,bin/estate-context-compile,bin/estate-context-gate,tests/test_estate_context_*.py,platform/mcp/estate-context-broker.yaml,.github/workflows/context-index.yml,tests/test_context_index_workflow.py heartbeat=2026-10-29T07:15:03Z",
+          "heartbeat": "2026-10-29T07:15:03Z",
+          "agent": "claude-science",
+          "source_comment_id": 6490491270
+        },
+        {
+          "line": "CLAIM agent=claude-science paths=platform/estate/context/**,bin/estate-context-compile,bin/estate-context-gate,tests/test_estate_context_*.py,platform/mcp/estate-context-broker.yaml,.github/workflows/context-index.yml,tests/test_context_index_workflow.py heartbeat=2026-10-29T09:42:27Z",
+          "heartbeat": "2026-10-29T09:42:27Z",
+          "agent": "claude-science",
+          "source_comment_id": 6493292454
+        },
+        {
+          "line": "CLAIM agent=claude-science paths=platform/estate/context/**,bin/estate-context-compile,bin/estate-context-gate,tests/test_estate_context_*.py,platform/mcp/estate-context-broker.yaml,.github/workflows/context-index.yml,tests/test_context_index_workflow.py heartbeat=2026-10-29T10:15:09Z",
+          "heartbeat": "2026-10-29T10:15:09Z",
+          "agent": "claude-science",
+          "source_comment_id": 6493991057
+        },
+        {
+          "line": "CLAIM agent=gemini paths=artifacts/context-cert/baseline.json,artifacts/context-cert/baseline.md,artifacts/context-cert/pre-change-comparison.md,bin/estate-context-cert-baseline,bin/idp-ci,docs/runbooks/estate-context-substrate.md,eval/estate-context/README.md,eval/estate-context/grade_pilot.py,eval/estate-context/pilot/questions.pilot.json,platform/estate/context/contracts.py,platform/estate/context/tests/conftest.py,platform/estate/context/tests/fixtures/legacy_tool_responses.golden.json,platform/estate/context/tests/fixtures/tree/app/thing.py,platform/estate/context/tests/regenerate_golden.py,platform/estate/context/tests/test_baseline_collector.py,platform/estate/context/tests/test_contracts_schema.py,platform/estate/context/tests/test_legacy_backward_compat.py,platform/estate/context/",
+          "heartbeat": "2026-11-08T09:10:23Z",
+          "agent": "gemini",
+          "source_comment_id": 6719651630
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7351,
+      "comments": 2,
+      "claim_records": [
+        {
+          "line": "CLAIM agent=claude-architect paths=bin/estate-memory-enforce,tests/test_memory_enforce_fails_open.py heartbeat=2026-10-28T20:56:44Z",
+          "heartbeat": "2026-10-28T20:56:44Z",
+          "agent": "claude-architect",
+          "source_comment_id": 6480538446
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7397,
+      "comments": 7,
+      "claim_records": [
+        {
+          "line": "CLAIM agent=claude-memory paths=platform/estate/memory/snapshot.py,platform/estate/memory/focus.py,platform/llm/active_memory.py,bin/memory-snapshot,.github/workflows/memory-snapshot.yml,tests/test_memory_snapshot.py,tests/test_active_memory.py,tests/test_estate_memory_focus.py,docs/diagnoses/2026-10-28-unified-memory-had-one-home.yaml,docs/diagnoses/2026-10-28-active-memory-had-nothing-to-serve.yaml,docs/diagnoses/2026-10-28-active-focus-killed-by-its-own-deadline.yaml,docs/runbooks/memory-second-home.md heartbeat=2026-10-29T03:12:52Z",
+          "heartbeat": "2026-10-29T03:12:52Z",
+          "agent": "claude-memory",
+          "source_comment_id": 6486884473
+        },
+        {
+          "line": "CLAIM agent=claude-memory paths=.github/workflows/memory-snapshot.yml,catalog/estate-capability-registry.json,docs/scheduling/CLOCKS.md,platform/estate/intents/disk-reclaim.yaml,platform/estate/memory/focus.py,platform/estate/memory/snapshot.py,platform/llm/active_memory.py,tests/test_active_memory.py,tests/test_estate_memory_focus.py heartbeat=2026-10-29T03:51:41Z",
+          "heartbeat": "2026-10-29T03:51:41Z",
+          "agent": "claude-memory",
+          "source_comment_id": 6487441974
+        },
+        {
+          "line": "CLAIM agent=claude-memory paths=.github/workflows/memory-snapshot.yml,bin/memory-snapshot,docs/diagnoses/2026-10-28-active-focus-killed-by-its-own-deadline.yaml,docs/diagnoses/2026-10-28-active-focus-killed-by-its-own-deadline.yaml.verdicts.yaml,docs/diagnoses/2026-10-28-active-memory-had-nothing-to-serve.yaml,docs/diagnoses/2026-10-28-active-memory-had-nothing-to-serve.yaml.verdicts.yaml,docs/diagnoses/2026-10-28-unified-memory-had-one-home.yaml,docs/diagnoses/2026-10-28-unified-memory-had-one-home.yaml.verdicts.yaml,docs/runbooks/memory-second-home.md,docs/scheduling/CLOCKS.md,platform/estate/memory/focus.py,platform/estate/memory/snapshot.py,platform/llm/active_memory.py,tests/test_active_memory.py,tests/test_estate_memory_focus.py,tests/test_memory_snapshot.py heartbeat=2026-10-29T03:5",
+          "heartbeat": "2026-10-29T03:52:17Z",
+          "agent": "claude-memory",
+          "source_comment_id": 6487450217
+        },
+        {
+          "line": "CLAIM agent=claude-memory paths=platform/estate/memory/snapshot.py,platform/estate/memory/focus.py,platform/llm/active_memory.py,bin/memory-snapshot,.github/workflows/memory-snapshot.yml,tests/test_memory_snapshot.py,tests/test_active_memory.py,tests/test_estate_memory_focus.py,docs/diagnoses/2026-10-28-unified-memory-had-one-home.yaml,docs/diagnoses/2026-10-28-active-memory-had-nothing-to-serve.yaml,docs/diagnoses/2026-10-28-active-focus-killed-by-its-own-deadline.yaml,docs/runbooks/memory-second-home.md,catalog/estate-capability-registry.json,docs/scheduling/CLOCKS.md,platform/estate/intents/disk-reclaim.yaml,docs/diagnoses/2026-10-28-active-focus-killed-by-its-own-deadline.yaml.verdicts.yaml,docs/diagnoses/2026-10-28-active-memory-had-nothing-to-serve.yaml.verdicts.yaml,docs/diagnoses/2",
+          "heartbeat": "2026-10-29T04:48:07Z",
+          "agent": "claude-memory",
+          "source_comment_id": 6488220369
+        },
+        {
+          "line": "CLAIM agent=claude-memory paths=platform/estate/memory/snapshot.py,platform/estate/memory/focus.py,platform/llm/active_memory.py,bin/memory-snapshot,.github/workflows/memory-snapshot.yml,tests/test_memory_snapshot.py,tests/test_active_memory.py,tests/test_estate_memory_focus.py,docs/diagnoses/2026-10-28-unified-memory-had-one-home.yaml,docs/diagnoses/2026-10-28-active-memory-had-nothing-to-serve.yaml,docs/diagnoses/2026-10-28-active-focus-killed-by-its-own-deadline.yaml,docs/runbooks/memory-second-home.md,catalog/estate-capability-registry.json,docs/scheduling/CLOCKS.md,platform/estate/intents/disk-reclaim.yaml,docs/diagnoses/2026-10-28-active-focus-killed-by-its-own-deadline.yaml.verdicts.yaml,docs/diagnoses/2026-10-28-active-memory-had-nothing-to-serve.yaml.verdicts.yaml,docs/diagnoses/2",
+          "heartbeat": "2026-10-29T11:47:57Z",
+          "agent": "claude-memory",
+          "source_comment_id": 6495821077
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7480,
+      "comments": 13,
+      "claim_records": [
+        {
+          "line": "CLAIM agent=codex-lockdown-audit paths=docs/audits/2026-10-29-lockdown/**,platform/estate/intents/audit-read.yaml,platform/estate/intents/lockdown-audit.yaml heartbeat=2026-10-30T00:07:47Z",
+          "heartbeat": "2026-10-30T00:07:47Z",
+          "agent": "codex-lockdown-audit",
+          "source_comment_id": 6511541789
+        },
+        {
+          "line": "CLAIM agent=codex-lockdown-audit paths=docs/audits/2026-10-29-lockdown/**,mcp/plugins/estate_mcp.py,platform/estate/bin/estate-execute,platform/estate/intents/report.verify.yaml,platform/estate/libexec/instruction_boundary.py,tests/test_instruction_boundary.py heartbeat=2026-10-30T00:45:33Z",
+          "heartbeat": "2026-10-30T00:45:33Z",
+          "agent": "codex-lockdown-audit",
+          "source_comment_id": 6512091565
+        },
+        {
+          "line": "CLAIM agent=codex-lockdown-audit paths=docs/audits/2026-10-29-lockdown/**,mcp/plugins/estate_mcp.py,platform/estate/bin/estate-execute,platform/estate/intents/emergency.enforce.yaml,platform/estate/intents/report.verify.yaml,platform/estate/libexec/emergency_enforce.py,platform/estate/libexec/instruction_boundary.py,tests/test_instruction_boundary.py heartbeat=2026-10-30T01:21:05Z",
+          "heartbeat": "2026-10-30T01:21:05Z",
+          "agent": "codex-lockdown-audit",
+          "source_comment_id": 6512577964
+        },
+        {
+          "line": "CLAIM agent=codex-lockdown-audit paths=docs/audits/2026-10-29-lockdown/**,mcp/plugins/estate_mcp.py,platform/estate/bin/estate-execute,platform/estate/intents/emergency.enforce.yaml,platform/estate/intents/report.verify.yaml,platform/estate/libexec/emergency_enforce.py,platform/estate/libexec/instruction_boundary.py,platform/event-bus/contract/estate.agent.event.json,tests/test_instruction_boundary.py,tests/test_intent_engine.py heartbeat=2026-10-30T01:35:57Z",
+          "heartbeat": "2026-10-30T01:35:57Z",
+          "agent": "codex-lockdown-audit",
+          "source_comment_id": 6512779251
+        },
+        {
+          "line": "CLAIM agent=codex-lockdown-audit paths=docs/audits/2026-10-29-lockdown/**,mcp/plugins/estate_mcp.py,platform/estate/bin/estate-execute,platform/estate/intents/emergency.enforce.yaml,platform/estate/intents/report.verify.yaml,platform/estate/libexec/emergency_enforce.py,platform/estate/libexec/instruction_boundary.py,platform/event-bus/contract/estate.agent.event.json,tests/test_instruction_boundary.py,tests/test_intent_engine.py heartbeat=2026-10-30T04:20:43Z",
+          "heartbeat": "2026-10-30T04:20:43Z",
+          "agent": "codex-lockdown-audit",
+          "source_comment_id": 6514895657
+        },
+        {
+          "line": "CLAIM agent=codex-lockdown-audit paths=docs/audits/2026-10-29-lockdown/** heartbeat=2026-10-30T10:36:51Z",
+          "heartbeat": "2026-10-30T10:36:51Z",
+          "agent": "codex-lockdown-audit",
+          "source_comment_id": 6520661260
+        },
+        {
+          "line": "CLAIM agent=chatgpt-recovery-policy paths=platform/estate/governance/founder_recovery_policy.py,tests/estate/test_founder_recovery_policy.py heartbeat=2026-11-07T16:26:00Z",
+          "heartbeat": "2026-11-07T16:26:00Z",
+          "agent": "chatgpt-recovery-policy",
+          "source_comment_id": 6709960384
+        },
+        {
+          "line": "CLAIM agent=chatgpt-recovery-policy paths=platform/estate/governance/founder_recovery_policy.py,tests/estate/test_founder_recovery_policy.py heartbeat=2026-11-07T17:58:14Z",
+          "heartbeat": "2026-11-07T17:58:14Z",
+          "agent": "chatgpt-recovery-policy",
+          "source_comment_id": 6711001184
+        },
+        {
+          "line": "CLAIM agent=chatgpt-recovery-policy paths=platform/estate/intents/gh-api.yaml,tests/estate/test_gh_api_readonly.py heartbeat=2026-11-07T18:00:36Z",
+          "heartbeat": "2026-11-07T18:00:36Z",
+          "agent": "chatgpt-recovery-policy",
+          "source_comment_id": 6711033941
+        },
+        {
+          "line": "CLAIM agent=chatgpt-topology paths=docs/reports/2026-11-09-memory-topology-baseline.md,docs/reports/2026-11-09-memory-issues-census.json heartbeat=2026-11-09T03:00:00Z",
+          "heartbeat": "2026-11-09T03:00:00Z",
+          "agent": "chatgpt-topology",
+          "source_comment_id": 6731125349
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7693,
+      "comments": 0,
+      "claim_records": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7794,
+      "comments": 26,
+      "claim_records": [
+        {
+          "line": "CLAIM agent=gemini paths=artifacts/agent-admission/2026-11-07/01-canary-hold.json,artifacts/agent-admission/2026-11-07/02-canary-verdict.json,artifacts/agent-admission/2026-11-07/03-invalid-verdict.json,artifacts/agent-admission/2026-11-07/04-pytest-estate.txt,artifacts/agent-admission/2026-11-07/05-dof-lease.json,artifacts/agent-admission/2026-11-07/06-fleet-blind.txt,artifacts/agent-admission/2026-11-07/07-claim-attempt.txt,artifacts/agent-admission/2026-11-07/08-blockers.json,artifacts/agent-admission/2026-11-07/admission.patch,artifacts/agent-admission/2026-11-07/canary-candidate.json,artifacts/agent-admission/2026-11-07/invalid-candidate.json,bin/estate-agent-admit,catalog/estate-capability-registry.json,platform/estate/governance/agent_admission.py,platform/estate/governance/candidat",
+          "heartbeat": "2026-11-07T18:55:00Z",
+          "agent": "gemini",
+          "source_comment_id": 6711626740
+        },
+        {
+          "line": "CLAIM agent=chatgpt-github paths=bin/estate-brief,tests/test_2026_11_08_estate_bootstrap.py heartbeat=2026-11-08T08:40:41Z",
+          "heartbeat": "2026-11-08T08:40:41Z",
+          "agent": "chatgpt-github",
+          "source_comment_id": 6719381663
+        },
+        {
+          "line": "CLAIM agent=chatgpt-github paths=platform/estate/context/onboarding_proofs.py,platform/estate/context/server.py,tests/test_genesis_onboarding_proofs.py heartbeat=2026-11-08T09:25:00Z",
+          "heartbeat": "2026-11-08T09:25:00Z",
+          "agent": "chatgpt-github",
+          "source_comment_id": 6719926419
+        },
+        {
+          "line": "CLAIM agent=chatgpt-github paths=bin/estate-brief,tests/test_2026_11_08_estate_bootstrap.py,platform/estate/context/onboarding_proofs.py,platform/estate/context/server.py,tests/test_genesis_onboarding_proofs.py heartbeat=2026-11-08T10:36:39Z",
+          "heartbeat": "2026-11-08T10:36:39Z",
+          "agent": "chatgpt-github",
+          "source_comment_id": 6720432272
+        },
+        {
+          "line": "CLAIM agent=chatgpt-github paths=bin/estate-brief,tests/test_2026_11_08_estate_bootstrap.py,platform/estate/context/onboarding_proofs.py,platform/estate/context/server.py,tests/test_genesis_onboarding_proofs.py heartbeat=2026-11-08T11:27:09Z",
+          "heartbeat": "2026-11-08T11:27:09Z",
+          "agent": "chatgpt-github",
+          "source_comment_id": 6720903030
+        },
+        {
+          "line": "CLAIM agent=chatgpt-github paths=bin/estate-brief,tests/test_2026_11_08_estate_bootstrap.py,platform/estate/context/onboarding_proofs.py,platform/estate/context/server.py,tests/test_genesis_onboarding_proofs.py heartbeat=2026-11-08T12:18:00Z",
+          "heartbeat": "2026-11-08T12:18:00Z",
+          "agent": "chatgpt-github",
+          "source_comment_id": 6721386942
+        },
+        {
+          "line": "CLAIM agent=chatgpt-github paths=bin/estate-brief,tests/test_2026_11_08_estate_bootstrap.py,platform/estate/context/onboarding_proofs.py,platform/estate/context/server.py,tests/test_genesis_onboarding_proofs.py heartbeat=2026-11-08T13:08:18Z",
+          "heartbeat": "2026-11-08T13:08:18Z",
+          "agent": "chatgpt-github",
+          "source_comment_id": 6721883768
+        },
+        {
+          "line": "CLAIM agent=chatgpt-github paths=docs/decisions/0052-genesis-off-host-foundations.md,bin/idp-topology-policy,tests/test_genesis_offhost_topology.py heartbeat=2026-11-08T22:35:00Z",
+          "heartbeat": "2026-11-08T22:35:00Z",
+          "agent": "chatgpt-github",
+          "source_comment_id": 6728125889
+        },
+        {
+          "line": "CLAIM agent=chatgpt-github paths=bin/estate-brief,tests/test_2026_11_08_estate_bootstrap.py,platform/estate/context/onboarding_proofs.py,platform/estate/context/server.py,tests/test_genesis_onboarding_proofs.py,docs/decisions/0052-genesis-off-host-foundations.md,bin/idp-topology-policy,tests/test_genesis_offhost_topology.py heartbeat=2026-11-09T02:14:49Z",
+          "heartbeat": "2026-11-09T02:14:49Z",
+          "agent": "chatgpt-github",
+          "source_comment_id": 6730621274
+        },
+        {
+          "line": "CLAIM agent=chatgpt-github paths=bin/estate-brief,bin/estate-memory-install,platform/estate/onboarding/**,docs/onboarding/estate-idp-genesis-and-infrastructure.md,tests/test_estate_onboarding_infra_brief.py heartbeat=2026-11-09T02:20:00Z",
+          "heartbeat": "2026-11-09T02:20:00Z",
+          "agent": "chatgpt-github",
+          "source_comment_id": 6730624798
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7818,
+      "comments": 0,
+      "claim_records": []
+    }
+  ]
+}
