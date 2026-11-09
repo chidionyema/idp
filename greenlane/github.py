@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Optional
 
 from .engine import BOT_LANE, CONFLICT, LANDED, RED, TESTING
+from .ferrari import assess as ferrari_assess
 
 STATE_REF = "refs/greenlane/state"
 # The capability witness is derived from the tree (`bin/capability-index emit`) and the
@@ -1040,6 +1041,16 @@ class GitHubBackend:
             return self.checks(sha)[0] == "red"
         finally:
             self._verdict_only = False
+
+    def preflight(self, base: str, candidate: str) -> tuple[bool, str]:
+        """Only a proven denial avoids CI; UNKNOWN always runs all required checks.
+
+        This is NOT authorization for merging, which remains entirely in
+        checks() / land() / the protected GitHub ruleset. It is an execution
+        cost optimization for a candidate already rebased onto trusted main.
+        """
+        verdict = ferrari_assess(base, candidate, self.repo)
+        return verdict.admissible, verdict.reason
 
     CLAIM_GATE = Path(__file__).resolve().parent.parent / "bin" / "claim-gate"
 
