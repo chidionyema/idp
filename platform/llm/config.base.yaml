@@ -125,7 +125,22 @@ litellm_settings:
   # actually served, after the ceiling has judged it and the memory brief has ridden on it.
   # It is a no-op when the collector is not configured, and it fails open always: a telemetry
   # failure may never fail a request (LAW 38).
-  callbacks: ["otel", "efficiency_gateway.proxy_handler_instance", "request_ceiling.proxy_handler_instance", "active_memory.proxy_handler_instance", "no_handback.proxy_handler_instance", "graph_capture.proxy_handler_instance", "action_ledger.proxy_handler_instance", "aei_observer.proxy_handler_instance"]
+  # No prompt ends in the void (platform/llm/instruction_gate.py): a chat request whose
+  # metadata carries no instruction_id is refused at the front door, because the instruction
+  # ledger (catalog/census/instruction.py) can only link a prompt that names an instruction --
+  # and a prompt that cannot be linked is a row, never a lost message.
+  #
+  # The gate is named HERE, in the config the cluster router actually loads, and not only in
+  # bin/litellm-local: a callback the live router does not name is a callback that does not run
+  # (the same lesson as the zeroedge shim, which shipped and changed nothing because its
+  # enabling env var was unset). The module rides in the litellm-request-ceiling ConfigMap,
+  # which is mounted at /etc/litellm/ceilings -- a path on the router's PYTHONPATH -- so
+  # `instruction_gate.proxy_handler_instance` resolves at start.
+  #
+  # It ships env-gated (ESTATE_INSTRUCTION_GATE=1, default off): until the instrumentation that
+  # generates and carries an instruction_id on every real prompt has landed, an ungated gate
+  # would refuse 100% of traffic, and a gate that takes the estate down is not a gate.
+  callbacks: ["otel", "efficiency_gateway.proxy_handler_instance", "request_ceiling.proxy_handler_instance", "active_memory.proxy_handler_instance", "no_handback.proxy_handler_instance", "graph_capture.proxy_handler_instance", "action_ledger.proxy_handler_instance", "aei_observer.proxy_handler_instance", "instruction_gate.proxy_handler_instance"]
   # Every routed call lands in Langfuse (platform/observability) as a trace, whatever product made
   # it: tracing at the router is the one instrument, not one SDK per product (crew#325 showcase).
   # Keys arrive as env from the litellm-langfuse ExternalSecret; LANGFUSE_HOST is set in litellm.yaml.

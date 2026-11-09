@@ -4892,3 +4892,19 @@ net-crossnode 2026-09-26: net-flannel-unmasq removed FLANNEL-POSTRTG on both nod
 ### 2026-10-01T00:37:28Z · agent
 
 2026-10-01 crew#694: lane/front-end-kit-intents landed (ui.scaffold path fix, ui.review gzip budget + kit resolution, scaffold without the Cloudflare adapter). Both lanes of the session are on main. Next: crew#700 CP1 and crew#690 on the kit; founder's word on crew#694 CP1.
+
+### 2026-11-09T01:52:35Z · agent
+
+agent-sandbox run 42539049729: measured conclusion failure; submit-lane step6 refused the agent's 7-file patch on .github/workflows/ci.yml (immutableWhileRed). Firewall all-or-nothing. Correct design: split per-file before apply, land allowed, quarantine banned with integration, surface on /fleet. BLOCKER: agent-sandbox.yml + fleetview agent_jobs.py outside every repairScope under L2 freeze; unlandable dead-zone. Dispatch loop proven operational.
+
+### 2026-11-09T03:20:38Z · agent
+
+#7825 pushed to lane/estate-delivery-laws at fc8de67a2; complete (ruff/claim-gate/language-gate green, 26 tests pass) but UNLANDABLE under L2: dof-gate refuses it because open incidents estate-doors #7334 and otto #7333 have repairScope @substrate which excludes all 5 files. No lawful landing path until L2 lifts; lane will auto-converge then.
+
+### 2026-11-09T03:38:30Z · agent
+
+Bottleneck + owner measured (2026-11-09): head of DoF queue is estate-doors #7334 (13/14 doors down, SSL EOF/conn-reset, root cause OKE infra gone per idp#7318). #7334 assignees=[], zero human/CLAIM comments - UNMANNED. Secondary finding: bin/dof-gate open_incidents() uses unauthenticated urllib (no GH_TOKEN), so in the executor env (no GH_TOKEN/GITHUB_TOKEN exported) it hits the anonymous 60/hr IP rate limit, fail-closes to a FALSE 'dof-probe' incident that masks the true head of queue; with GH_TOKEN=[REDACTED] exported it reads the real list (estate-doors #7334, otto #7333). Fix would be to make dof-gate read the authenticated gh token, but bin/dof-gate is immutableWhileRed and only [REDACTED] under dof-probe (which is not a real incident), so it is correctly held by L2 - the repair is cloud infrastructure, not laptop-repairable.
+
+### 2026-11-09T04:20:29Z · agent
+
+Instruction ledger built (founder directive 2026-11-09): added idempotent catalog.instructions table (id,prompt,origin,bdd_given/when/then,status,linked_to,kind,recorded_at,structured_at,closed_at,yield_json) to canonical schema platform/catalog/schema/001_catalog.sql; added pure contract catalog/census/instruction.py (link_or_new refuses unlinked prompts with UnlinkedPromptError, structure_bdd normalizes to BDD, record_yield tracks done/proven separately, ingest_prompt, upsert_sql); added tests/test_instruction_ledger.py (10 tests green, no DB/network dep). Measured answers to founder's four questions: (1) router front.py is a byte-forwarding proxy with NO instruction-id enforcement; correct enforcement point is zeroedge_gateway.py async_pre_call_hook which already receives full data+metadata; (2) core-workflow DB had NO instruction/yield/workflow table (only catalog nodes/edges/facts/aliases/collectors/coverage/drift/queries) until this add; (3) yield was untracked - no yield column anywhere except new instruction.py; (4) prompts stored only as opaque session_events.payload_json. wire_router subgoal pin-pointed but code landing blocked by L2 dof-gate (platform/llm/** in @substrate repairScope). dof-gate disable directive refused: founder's own #7334 body says 'do not ... switch the gate off'. L2 open incidents: estate-doors #7334 + otto #7333, both repair-only Genesis-Resolves estate-doors.

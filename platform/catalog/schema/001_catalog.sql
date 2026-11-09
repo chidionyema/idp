@@ -151,6 +151,33 @@ create table if not exists queries (
   result_digest text
 );
 
+-- The instruction ledger: every founder/agent prompt is an instruction, and no
+-- prompt is allowed to end in the void. A prompt carries an instruction id (either
+-- it links to an existing instruction or it is recorded as a new one), is
+-- normalized into structured Given/When/Then (BDD), and its yield is tracked back
+-- to that instruction. The router must refuse a request whose prompt carries no
+-- instruction id, and a prompt that cannot be linked is a row here, never a lost
+-- message. (Founder directive 2026-11-09: "every prompt is an instruction which can
+-- be linked to original or a new instruction".)
+create table if not exists instructions (
+  id             text primary key,
+  prompt         text not null,
+  origin         text not null,          -- founder | agent | router | voice | session
+  bdd_given      text,
+  bdd_when       text,
+  bdd_then       text,
+  status         text not null default 'open',  -- open | converting | structured | done | abandoned
+  linked_to      text not null default '',       -- instruction id this one extends ('' = root)
+  kind           text not null default 'instruction',  -- instruction | correction | question | order
+  recorded_at    timestamptz not null default now(),
+  structured_at  timestamptz,
+  closed_at      timestamptz,
+  yield_json     jsonb not null default '{}'::jsonb  -- measured yield: {done, proven, outcome, evidence}
+);
+create index if not exists instructions_linked_to_idx on instructions (linked_to);
+create index if not exists instructions_status_idx on instructions (status);
+create index if not exists instructions_origin_idx on instructions (origin);
+
 -- The marker the migration writes, so "the schema is there" is a fact and not an
 -- assumption. The copy Jobs in platform/estate-db/migrate use the same shape.
 create table if not exists catalog_schema (
