@@ -86,6 +86,10 @@ def brief(status: dict[str, Any]) -> dict[str, Any]:
     ]
     for h in held_claims:
         stuck.append({"lane": h["lane"], "why": h["why"], "status": "claim-held"})
+    common_blockers = [
+        {"lane": entry["lane"], "reason": entry["why"]}
+        for entry in red if entry["why"].startswith("trusted DoF [")
+    ]
     # The record is a bounded 200-batch sample; it must not masquerade as a
     # production-wide or lifetime failure percentage.
     latency = (st.get("latency") or {})
@@ -153,6 +157,15 @@ def brief(status: dict[str, Any]) -> dict[str, Any]:
     elif held_claims:
         next_action = {"code": "renew-claim", "lane": held_claims[0]["lane"],
                        "why": held_claims[0]["why"]}
+    elif common_blockers:
+        next_action = {
+            "code": "operations-reaction",
+            "incident": "chidionyema/idp#7800",
+            "issue_url": "https://github.com/chidionyema/idp/issues/7800",
+            "blocked_lanes": [item["lane"] for item in common_blockers],
+            "why": common_blockers[0]["reason"],
+            "owner": "existing incident / R-14",
+        }
     elif red:
         next_action = {"code": "repair-red-lane", "lane": red[0]["lane"],
                        "owner": red[0]["owner"], "why": red[0]["why"]}
@@ -212,6 +225,12 @@ def brief(status: dict[str, Any]) -> dict[str, Any]:
             "pending_lanes": waiting,
             "oldest_pending_or_testing_age_min": max_queue_age,
             "held_claims": held_claims,
+            "common_mode_refusals": {
+                "count": len(common_blockers),
+                "lanes": [x["lane"] for x in common_blockers],
+                "canonical_incident": "chidionyema/idp#7800" if common_blockers else None,
+                "owner": "operations-reaction" if common_blockers else None,
+            },
             "candidate_blocking_checks": blocking_checks,
             "next_action": next_action,
             "batch_outcome_sample": {
