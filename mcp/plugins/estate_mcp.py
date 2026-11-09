@@ -166,6 +166,24 @@ def _plan_contract():
     return None
 
 
+def _session_is_live(session_id: str) -> bool:
+    """True when this session's runtime adapter is live (a ledger exists).
+
+    The PoBR action gate applies to LIVE agent sessions -- reasoning-capable callers that
+    should form and commit a structured hypothesis before changing state. Anonymous
+    automation (no ledger) is machine-triggered (the greenlane, scheduled jobs) and is
+    allowed through: a fence a correct machine cannot satisfy is an outage, the same
+    principle the plan gate's `ledger_exists` encodes.
+    """
+    module = _plan_contract()
+    if module is None:
+        return False
+    try:
+        return bool(module.ledger_exists(session_id))
+    except Exception:  # noqa: BLE001 - an unreadable ledger is no live session, never a crash
+        return False
+
+
 def _resolve_caller_session(explicit: str = "") -> tuple:
     """Who is calling, in order of trust: the stated session, the environment, the pointer file.
 
@@ -432,6 +450,30 @@ def _estate_invoke(args):
         session or "anonymous",
         session_source,
     )
+    # --- PoBR action gate: class: mutate requires an admitted reasoning receipt ---
+    # The deterministic verifier (pobr_gate.py) already exists and fails closed; this
+    # wiring is what ADR 0042 D6 flagged as missing ("no config loads any of them"). A
+    # mutate intent changes state, so a LIVE agent session must have produced an admitted
+    # PoBR receipt (hypotheses + counterfactual + calibrated posterior) first.
+    #
+    # Scope: LIVE sessions only. Anonymous automation is machine-triggered (the greenlane,
+    # scheduled jobs) and has no ledger; a fence a correct machine cannot satisfy is an
+    # outage, so anonymous work stays allowed and recorded -- the same principle the plan
+    # gate already enforces (ledger_exists). Reads stay open so the agent can investigate,
+    # and the receipt-building tools themselves stay open to avoid a reasoning deadlock.
+    if (
+        pobr_grant is not None
+        and d.get("class") == "mutate"
+        and name not in pobr_grant._NEVER_GATE
+        and session
+        and _session_is_live(session)
+    ):
+        check = pobr_grant.check_grant(session)
+        if not check.get("valid"):
+            return "ERROR: PoBR grant check failed: {}".format(
+                check.get("reason", "unknown")
+            )
+    # --- end PoBR action gate ---
     arg_items = []
     for k, v in (args.get("args") or {}).items():
         if not re.match(r"^[a-z_][a-z0-9_]*$", str(k)):
