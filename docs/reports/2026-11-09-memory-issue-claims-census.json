@@ -1,10 +1,10 @@
 {
   "schema": "estate.memory.claim_issue_sweep.v1",
-  "generated_at": "2026-11-09T03:08:54.364Z",
+  "generated_at": "2026-11-09T03:09:25.761Z",
   "evidence": "GitHub issue comments; text claims NOT authenticated current leases, includes non-memory matches and historical claims",
   "source_census": "docs/reports/2026-11-09-memory-issues-census.json",
   "total_issue_candidates": 144,
-  "processed": 129,
+  "processed": 144,
   "issues": [
     {
       "repo": "chidionyema/argon",
@@ -2600,6 +2600,354 @@
     {
       "repo": "chidionyema/idp",
       "number": 7626,
+      "state": "open",
+      "total_comments": 0,
+      "claim_line_count": 0,
+      "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7636,
+      "state": "open",
+      "total_comments": 2,
+      "claim_line_count": 1,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=claude paths=platform/estate/governance/self_audit.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-30T22:40:08Z",
+          "last_heartbeat": "2026-10-30T22:40:08Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7642,
+      "state": "open",
+      "total_comments": 4,
+      "claim_line_count": 4,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=estate-agent paths=catalog/truth-contract.json,platform/estate/intents/estate-truth.yaml,platform/estate/libexec/estate-truth.py,tests/test_estate_truth.py heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-30T23:00:48Z",
+          "last_heartbeat": "2026-10-30T23:00:48Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=catalog/truth-contract.json,catalog/truth-verdicts.json,platform/estate/intents/estate-truth.yaml,platform/estate/libexec/estate-truth.py,tests/test_estate_truth.py heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-30T23:01:08Z",
+          "last_heartbeat": "2026-10-30T23:01:08Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=catalog/truth-contract.json,catalog/truth-verdicts.json,docs/runbooks/truth-instrument.md,platform/estate/intents/estate-truth.yaml,platform/estate/libexec/estate-truth.py,tests/test_estate_truth.py heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-30T23:04:18Z",
+          "last_heartbeat": "2026-10-30T23:04:18Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=catalog/truth-contract.json,catalog/truth-verdicts.json,docs/runbooks/truth-instrument.md,platform/estate/libexec/estate-truth.py,tests/test_estate_truth.py heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-30T23:35:12Z",
+          "last_heartbeat": "2026-10-30T23:35:12Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7649,
+      "state": "open",
+      "total_comments": 4,
+      "claim_line_count": 1,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=pi paths=crates/sovereign-router/** heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-31T09:40:55Z",
+          "last_heartbeat": "2026-10-31T09:40:55Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7664,
+      "state": "open",
+      "total_comments": 7,
+      "claim_line_count": 3,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=cline-founder-experience paths=backstage/packages/app/src/modules/home/useVoiceRouter.test.ts,backstage/packages/app/src/modules/home/useVoiceRouter.ts,docs/specs/2026-10-31-founder-experience.md,platform/estate/intents/founder-experience-read.yaml heartbeat=<versioned>",
+          "agent": "cline-founder-experience",
+          "first_heartbeat": "2026-10-31T06:25:54Z",
+          "last_heartbeat": "2026-10-31T06:25:54Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=gemini paths=backstage/plugins/fleetview-backend/pyproject.toml,backstage/plugins/fleetview-backend/src/fleetview_backend/founder_command.py,backstage/plugins/fleetview-backend/src/fleetview_backend/routes.py,backstage/plugins/fleetview-backend/src/fleetview_backend/serve.py,backstage/plugins/fleetview-backend/tests/test_founder_command.py,backstage/plugins/fleetview-backend/tests/test_founder_command_http.py,docs/specs/2026-11-07-the-founder-command-surface.contract.json,docs/specs/2026-11-07-the-founder-command-surface.md,docs/specs/2026-11-07-the-founder-command-surface.p0-missing-capabilities.json heartbeat=<versioned>",
+          "agent": "gemini",
+          "first_heartbeat": "2026-11-07T20:31:40Z",
+          "last_heartbeat": "2026-11-07T20:31:40Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=gemini paths=backstage/plugins/fleetview-backend/schema/founder-command.json,backstage/plugins/fleetview-backend/src/fleetview_backend/founder_command.py,backstage/plugins/fleetview-backend/src/fleetview_backend/routes.py,backstage/plugins/fleetview-backend/src/fleetview_backend/serve.py,backstage/plugins/fleetview-backend/tests/test_founder_command.py,backstage/plugins/fleetview-backend/tests/test_founder_command_http.py,docs/incidents/2026-11-08-founder-command-door-blocked-by-the-dof-lease.md,docs/runbooks/founder-command-door.md heartbeat=<versioned>",
+          "agent": "gemini",
+          "first_heartbeat": "2026-11-07T20:54:08Z",
+          "last_heartbeat": "2026-11-07T20:54:08Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7665,
+      "state": "open",
+      "total_comments": 3,
+      "claim_line_count": 1,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=cline-architect paths=packages/aei/**,bin/estate-transcript-miner,platform/estate/intents/transcript-miner.yaml,tests/test_transcript_miner.py,.github/workflows/context-index.yml,tests/test_context_index_workflow.py,platform/estate/bin/estate-execute,platform/estate/memory/runtimes.json heartbeat=<versioned>",
+          "agent": "cline-architect",
+          "first_heartbeat": "2026-10-31T06:52:01Z",
+          "last_heartbeat": "2026-10-31T06:52:01Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7672,
+      "state": "open",
+      "total_comments": 0,
+      "claim_line_count": 0,
+      "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7693,
+      "state": "open",
+      "total_comments": 0,
+      "claim_line_count": 0,
+      "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7704,
+      "state": "open",
+      "total_comments": 0,
+      "claim_line_count": 0,
+      "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7751,
+      "state": "closed",
+      "total_comments": 2,
+      "claim_line_count": 1,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=claude-opus paths=platform/github/oidc-trust.json,bin/idp-oidc-trust,bin/idp-github-app,bin/idp-oci-bootstrap,.github/workflows/oidc-trust.yml,tests/test_oidc_trust_admits_only_reviewed_contexts.py,catalog/estate-capability-registry.json heartbeat=<versioned>",
+          "agent": "claude-opus",
+          "first_heartbeat": "2026-11-06T18:48:50Z",
+          "last_heartbeat": "2026-11-06T18:48:50Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7760,
+      "state": "open",
+      "total_comments": 14,
+      "claim_line_count": 2,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=chatgpt-github paths=.github/workflows/fast-gate.yml,.github/workflows/genesis-drive-intake.yml,bin/genesis_drive_intake.py,bin/genesis_drive_receipt_issue.py,catalog/estate-capability-registry.json,integrations/gemini-drive-relay/*,tests/test_genesis_drive_intake.py,tests/test_genesis_drive_receipt_issue.py,tests/test_genesis_drive_sender.mjs heartbeat=<versioned>",
+          "agent": "chatgpt-github",
+          "first_heartbeat": "2026-11-06T21:05:45Z",
+          "last_heartbeat": "2026-11-06T21:09:00Z",
+          "occurrences": 2
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7771,
+      "state": "open",
+      "total_comments": 15,
+      "claim_line_count": 7,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=chatgpt-flow paths=AGENTS.md,platform/estate/libexec/incident-loop.py,tests/test_flow_protocol.py,docs/protocols/FLOW.md heartbeat=<versioned>",
+          "agent": "chatgpt-flow",
+          "first_heartbeat": "2026-11-08T21:18:08Z",
+          "last_heartbeat": "2026-11-08T21:18:08Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=chatgpt-flow paths=AGENTS.md,platform/estate/libexec/incident-loop.py,tests/test_flow_protocol.py,docs/protocols/FLOW.md,docs/archive/AGENTS-pre-FLOW-2026-11-08.md heartbeat=<versioned>",
+          "agent": "chatgpt-flow",
+          "first_heartbeat": "2026-11-08T21:30:51Z",
+          "last_heartbeat": "2026-11-08T21:30:51Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=chatgpt-github paths=platform/estate/governance/entropy.py,platform/estate/governance/laws.yaml,platform/estate/governance/checks.py,bin/estate-brief,bin/estate-fleet,tests/test_entropy_doctrine.py,AGENTS.md heartbeat=<versioned>",
+          "agent": "chatgpt-github",
+          "first_heartbeat": "2026-11-08T23:12:00Z",
+          "last_heartbeat": "2026-11-09T03:03:45Z",
+          "occurrences": 5
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7789,
+      "state": "open",
+      "total_comments": 1,
+      "claim_line_count": 1,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=codex-root paths=estate-context-broker.Dockerfile,platform/estate/context/NODE_PROTOCOL.md,platform/estate/context/estate-node-protocol,platform/estate/context/node-protocol.schema.json,platform/estate/context/node_protocol.json,platform/estate/context/node_protocol.py,platform/estate/context/server.py,tests/test_estate_context_server.py,tests/test_estate_node_protocol.py heartbeat=<versioned>",
+          "agent": "codex-root",
+          "first_heartbeat": "2026-11-07T10:24:40Z",
+          "last_heartbeat": "2026-11-07T10:24:40Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7790,
+      "state": "open",
+      "total_comments": 18,
+      "claim_line_count": 11,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=chatgpt-continuity paths=platform/queue/continuity_admission.py,tests/test_continuity_admission.py heartbeat=<versioned>",
+          "agent": "chatgpt-continuity",
+          "first_heartbeat": "2026-11-07T11:40:17Z",
+          "last_heartbeat": "2026-11-07T11:40:17Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=chatgpt-continuity paths=platform/queue/continuity_admission.py,platform/queue/dispatcher.py,tests/test_continuity_admission.py,tests/test_queue_dispatcher.py heartbeat=<versioned>",
+          "agent": "chatgpt-continuity",
+          "first_heartbeat": "2026-11-07T12:08:28Z",
+          "last_heartbeat": "2026-11-07T12:08:28Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=chatgpt-continuity paths=platform/queue/continuity_admission.py,tests/test_continuity_admission.py,platform/queue/dispatcher.py,tests/test_queue_dispatcher.py heartbeat=<versioned>",
+          "agent": "chatgpt-continuity",
+          "first_heartbeat": "2026-11-07T12:57:24Z",
+          "last_heartbeat": "2026-11-07T12:57:24Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=chatgpt-continuity paths=platform/queue/continuity_admission.py,platform/queue/oci_checkpoint_store.py,platform/queue/dispatcher.py,tests/test_continuity_admission.py,tests/test_queue_dispatcher.py,tests/test_oci_checkpoint_store.py,sovereign/requirements.txt heartbeat=<versioned>",
+          "agent": "chatgpt-continuity",
+          "first_heartbeat": "2026-11-07T13:37:59Z",
+          "last_heartbeat": "2026-11-07T13:37:59Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=chatgpt-continuity paths=platform/queue/continuity_admission.py,tests/test_continuity_admission.py,platform/queue/dispatcher.py,tests/test_queue_dispatcher.py,platform/queue/oci_checkpoint_store.py,tests/test_oci_checkpoint_store.py,sovereign/requirements.txt heartbeat=<versioned>",
+          "agent": "chatgpt-continuity",
+          "first_heartbeat": "2026-11-08T11:04:52Z",
+          "last_heartbeat": "2026-11-08T11:04:52Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=chatgpt-continuity paths=platform/queue/morph_orchestrator.py,tests/test_continuity_morph.py,tests/test_morph_orchestrator.py heartbeat=<versioned>",
+          "agent": "chatgpt-continuity",
+          "first_heartbeat": "2026-11-08T11:46:16.898Z",
+          "last_heartbeat": "2026-11-08T11:46:16.898Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=chatgpt-continuity paths=platform/queue/continuity_admission.py,platform/queue/dispatcher.py,platform/queue/oci_checkpoint_store.py,platform/queue/morph_orchestrator.py,sovereign/requirements.txt,tests/test_continuity_admission.py,tests/test_continuity_morph.py,tests/test_morph_orchestrator.py,tests/test_oci_checkpoint_store.py,tests/test_queue_dispatcher.py heartbeat=<versioned>",
+          "agent": "chatgpt-continuity",
+          "first_heartbeat": "2026-11-08T11:51:18.060Z",
+          "last_heartbeat": "2026-11-08T11:51:18.060Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=chatgpt-continuity paths=platform/queue/continuity_admission.py,tests/test_continuity_admission.py,platform/queue/dispatcher.py,tests/test_queue_dispatcher.py,platform/queue/oci_checkpoint_store.py,tests/test_oci_checkpoint_store.py,sovereign/requirements.txt,platform/queue/morph_orchestrator.py,tests/test_continuity_morph.py,tests/test_morph_orchestrator.py heartbeat=<versioned>",
+          "agent": "chatgpt-continuity",
+          "first_heartbeat": "2026-11-08T12:50:37Z",
+          "last_heartbeat": "2026-11-08T15:22:46Z",
+          "occurrences": 4
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7794,
+      "state": "open",
+      "total_comments": 26,
+      "claim_line_count": 10,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=gemini paths=artifacts/agent-admission/2026-11-07/01-canary-hold.json,artifacts/agent-admission/2026-11-07/02-canary-verdict.json,artifacts/agent-admission/2026-11-07/03-invalid-verdict.json,artifacts/agent-admission/2026-11-07/04-pytest-estate.txt,artifacts/agent-admission/2026-11-07/05-dof-lease.json,artifacts/agent-admission/2026-11-07/06-fleet-blind.txt,artifacts/agent-admission/2026-11-07/07-claim-attempt.txt,artifacts/agent-admission/2026-11-07/08-blockers.json,artifacts/agent-admission/2026-11-07/admission.patch,artifacts/agent-admission/2026-11-07/canary-candidate.json,artifacts/agent-admission/2026-11-07/invalid-candidate.json,bin/estate-agent-admit,catalog/estate-capability-registry.json,platform/estate/governance/agent_admission.py,platform/estate/governance/candidates/z-ai-web.json,platform/estate/governance/web_adapter.py,platform/estate/intents/agent-admit.yaml,sovereign/cli.py,tests/estate/test_agent_admission.py heartbeat=<versioned>",
+          "agent": "gemini",
+          "first_heartbeat": "2026-11-07T18:55:00Z",
+          "last_heartbeat": "2026-11-07T18:55:00Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=chatgpt-github paths=bin/estate-brief,tests/test_2026_11_08_estate_bootstrap.py heartbeat=<versioned>",
+          "agent": "chatgpt-github",
+          "first_heartbeat": "2026-11-08T08:40:41Z",
+          "last_heartbeat": "2026-11-08T08:40:41Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=chatgpt-github paths=platform/estate/context/onboarding_proofs.py,platform/estate/context/server.py,tests/test_genesis_onboarding_proofs.py heartbeat=<versioned>",
+          "agent": "chatgpt-github",
+          "first_heartbeat": "2026-11-08T09:25:00Z",
+          "last_heartbeat": "2026-11-08T09:25:00Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=chatgpt-github paths=bin/estate-brief,tests/test_2026_11_08_estate_bootstrap.py,platform/estate/context/onboarding_proofs.py,platform/estate/context/server.py,tests/test_genesis_onboarding_proofs.py heartbeat=<versioned>",
+          "agent": "chatgpt-github",
+          "first_heartbeat": "2026-11-08T10:36:39Z",
+          "last_heartbeat": "2026-11-08T13:08:18Z",
+          "occurrences": 4
+        },
+        {
+          "statement": "CLAIM agent=chatgpt-github paths=docs/decisions/0052-genesis-off-host-foundations.md,bin/idp-topology-policy,tests/test_genesis_offhost_topology.py heartbeat=<versioned>",
+          "agent": "chatgpt-github",
+          "first_heartbeat": "2026-11-08T22:35:00Z",
+          "last_heartbeat": "2026-11-08T22:35:00Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=chatgpt-github paths=bin/estate-brief,tests/test_2026_11_08_estate_bootstrap.py,platform/estate/context/onboarding_proofs.py,platform/estate/context/server.py,tests/test_genesis_onboarding_proofs.py,docs/decisions/0052-genesis-off-host-foundations.md,bin/idp-topology-policy,tests/test_genesis_offhost_topology.py heartbeat=<versioned>",
+          "agent": "chatgpt-github",
+          "first_heartbeat": "2026-11-09T02:14:49Z",
+          "last_heartbeat": "2026-11-09T02:14:49Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=chatgpt-github paths=bin/estate-brief,bin/estate-memory-install,platform/estate/onboarding/**,docs/onboarding/estate-idp-genesis-and-infrastructure.md,tests/test_estate_onboarding_infra_brief.py heartbeat=<versioned>",
+          "agent": "chatgpt-github",
+          "first_heartbeat": "2026-11-09T02:20:00Z",
+          "last_heartbeat": "2026-11-09T02:20:00Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7818,
       "state": "open",
       "total_comments": 0,
       "claim_line_count": 0,
