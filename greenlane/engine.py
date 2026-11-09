@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from dataclasses import asdict, dataclass, field
 from typing import Optional, Protocol
 
@@ -304,6 +305,11 @@ class Engine:
                 lane.arrived = now
                 self.s.timed.setdefault(name, {}).setdefault(lane.head, now)
                 continue
+            # A known policy refusal remains actionable until the actual
+            # incident or trusted base changes. Aging must not silently erase
+            # the HEAD or demand a new agent push for an unrelated outage.
+            if lane.reason.startswith("trusted DoF ["):
+                continue
             age_min = now - lane.arrived
             if age_min < RETIRE_AFTER_MIN:
                 continue
@@ -344,9 +350,11 @@ class Engine:
             lane = self.s.lanes.get(name)
             if (lane is not None and lane.head == head and
                     lane.status == RED and lane.reason.startswith("trusted DoF [") and
-                    lane.judged_on and lane.judged_on != self.b.main()):
-                # A changed trusted base invalidates preflight denial. The same
-                # head is re-admitted without demanding an agent re-push.
+                    lane.judged_on and (lane.judged_on != self.b.main() or
+                    os.environ.get("GITHUB_EVENT_NAME") == "issues")):
+                # A changed main or incident issue event may invalidate DoF's
+                # proof. Re-evaluate in the normal admission path, never assume
+                # an issue change itself authorizes this lane. No re-push needed.
                 lane.status, lane.reason = PENDING, ""
                 lane.attempts = 0
                 lane.judged_on = ""
