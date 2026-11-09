@@ -4,9 +4,12 @@
     bin/estate-brief                      the newest decisions and incidents
     bin/estate-brief --task "fix the voice router's 502s"   plus the facts nearest that task
 
-Every runtime's session-start hook runs this; none has memory code of its own. It never blocks a
-session: an unreachable door, a missing key or a slow answer prints nothing and exits 0, with one
-line on stderr saying why. The key is read by name (MCP_GATEWAY_KEY, then the vault), never argv.
+Every runtime's session-start hook runs this; none has memory code of its own.
+The architecture packet is always rendered, independently of the live memory service.
+Memory unavailable/invalid is an EXPLICIT DEGRADED/UNKNOWN result, never silent success.
+The ordinary session-start hook preserves a diagnostic path; --require-memory is the
+nonzero, live dependency check for trusted privileged admission (not a self-attested gate).
+The key is read by name (MCP_GATEWAY_KEY, then vault), never argv.
 
 It also carries the estate-state page (founder, 2026-10-29: "broadcast to everyone ... we are all
 on the same page"): the measured state of the laws, the specs, the providers, the claims and the
@@ -181,30 +184,46 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--timeout", type=float, default=6)
     ap.add_argument("--check-onboarding", action="store_true",
                     help="validate versioned onboarding pack locally; never assert runtime health")
+    ap.add_argument("--require-memory", action="store_true",
+                    help="require a current live brief from the one memory door; deny admission if unavailable")
     args = ap.parse_args(argv)
 
     if args.check_onboarding:
         return check_onboarding()
     # This static context must arrive on the first turn even if memory or vault is down.
     print(architecture_section(), flush=True)
+    # The distributed memory system is a hard dependency for mission admission,
+    # but a failed read must not prevent strictly read-only diagnosis/recovery.
+    # --require-memory is the *existing* live door; there is no shadow memory
+    # server, silent fallback, new state store or agent-trusted green verdict.
     secret = door.key()
     brief: dict = {}
+    memory_ok = False
+    failure = ""
     if not secret:
-        print(
-            f"estate-brief: no {door.MANIFEST['door']['key_env']} and no vault entry; no brief",
-            file=sys.stderr,
-        )
+        failure = "NO_AUTHENTICATED_MEMORY_CREDENTIAL"
     else:
         try:
-            brief = door.call(
+            value = door.call(
                 "brief", {"task": args.task, "limit": args.limit}, secret, args.timeout
             )
-        except Exception as e:  # never block a session on memory
-            print(
-                f"estate-brief: no brief ({type(e).__name__}: {str(e)[:160]})",
-                file=sys.stderr,
-            )
-            brief = {}
+            if not isinstance(value, dict) or any(
+                not isinstance(value.get(k, []), list)
+                for k in ("recent", "relevant")
+            ):
+                failure = "INVALID_MEMORY_BRIEF"
+            else:
+                brief = value
+                memory_ok = True
+        except Exception as e:
+            failure = f"MEMORY_DOOR_UNAVAILABLE:{type(e).__name__}"
+    if memory_ok:
+        print('<estate-memory-status state="LIVE_READ_OK" proof="brief-through-authenticated-door" '
+              'scope="read-only; independent read-write-recall proof still required"/>')
+    else:
+        print(f'<estate-memory-status state="UNKNOWN" reason="{failure}" '
+              'privileged-admission="DENIED" safe-action="READ_ONLY_RECOVERY"/>')
+        print(f"estate-brief: CRITICAL_MEMORY_DEPENDENCY {failure}", file=sys.stderr)
     brief.setdefault("recent", [])
     brief.setdefault("relevant", [])
     brief["recent"], _ = drop_stale_focus(brief.get("recent", []))
@@ -213,7 +232,7 @@ def main(argv: list[str]) -> int:
     text = render(brief)
     if text:
         print(text)
-    return 0
+    return 0 if (memory_ok or not args.require_memory) else 2
 
 
 if __name__ == "__main__":
