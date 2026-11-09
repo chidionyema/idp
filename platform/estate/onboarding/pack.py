@@ -68,7 +68,7 @@ def load(path: Path = MODEL) -> tuple[dict, str]:
             data = source_path.read_bytes()
         except OSError as exc:
             raise OnboardingUnavailable("pinned ADR source unavailable") from exc
-        actual = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\\0" + data).hexdigest()
+        actual = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
         if actual != expected:
             raise OnboardingUnavailable("pinned ADR changed without refreshing onboarding pack")
     if model["infrastructure"].get("live_verdict") != "UNKNOWN until fresh independent caller/runtime probe":
