@@ -204,6 +204,11 @@ def brief(status: dict[str, Any]) -> dict[str, Any]:
         parts.append(
             f"{len(red)} red, first {r['lane'].removeprefix('lane/')}, owner {r['owner']}"
         )
+    if common_blockers:
+        parts.append(
+            f"{len(common_blockers)} affected by trusted DoF; "
+            "Operations Reaction owns existing incident idp#7800"
+        )
     if state_known and not (main_red or lost or stuck or red or blocking_checks):
         parts.append("all clear")
 
