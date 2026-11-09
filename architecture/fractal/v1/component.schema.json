@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://estate.example.invalid/schemas/fractal-component-v1.json",
+  "title": "Fractal component manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "version",
+    "kind",
+    "owner",
+    "stage",
+    "source",
+    "provides",
+    "requires",
+    "effects",
+    "state",
+    "verification"
+  ],
+  "properties": {
+    "schema": {
+      "const": "estate.fractal.component/v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9.-]*(/[a-z][a-z0-9.-]*)+$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$"
+    },
+    "kind": {
+      "enum": [
+        "primitive",
+        "composite"
+      ]
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stage": {
+      "enum": [
+        "experimental",
+        "candidate",
+        "current",
+        "deprecated"
+      ]
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provides": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "capability",
+          "version",
+          "interface"
+        ],
+        "properties": {
+          "capability": {
+            "type": "string",
+            "minLength": 3
+          },
+          "version": {
+            "type": "string"
+          },
+          "interface": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "requires": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "capability",
+          "version"
+        ],
+        "properties": {
+          "capability": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "effects": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "none",
+          "filesystem:read",
+          "filesystem:write",
+          "network",
+          "database:read",
+          "database:write",
+          "secrets:read",
+          "process:spawn",
+          "model:invoke",
+          "human:approve"
+        ]
+      }
+    },
+    "state": {
+      "enum": [
+        "stateless",
+        "stateful"
+      ]
+    },
+    "state_contract": {
+      "type": "string"
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_tests"
+      ],
+      "properties": {
+        "contract_tests": {
+          "type": "string"
+        },
+        "receipt": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "stateful"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "state_contract"
+        ]
+      }
+    }
+  ]
+}
