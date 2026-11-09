@@ -1,10 +1,10 @@
 {
   "schema": "estate.memory.claim_issue_sweep.v1",
-  "generated_at": "2026-11-09T03:07:56.185Z",
+  "generated_at": "2026-11-09T03:08:23.763Z",
   "evidence": "GitHub issue comments; text claims NOT authenticated current leases, includes non-memory matches and historical claims",
   "source_census": "docs/reports/2026-11-09-memory-issues-census.json",
   "total_issue_candidates": 144,
-  "processed": 99,
+  "processed": 114,
   "issues": [
     {
       "repo": "chidionyema/argon",
@@ -1909,6 +1909,332 @@
           "agent": "estate-agent",
           "first_heartbeat": "2026-10-30T04:04:01Z",
           "last_heartbeat": "2026-10-30T04:04:01Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7340,
+      "state": "closed",
+      "total_comments": 33,
+      "claim_line_count": 32,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=pi-otto-door paths=platform/estate/intents/founder.decision.yaml,sovereign/otto/decision.py,sovereign/otto/card.py,sovereign/otto/hermes_plugin/__init__.py,features/founder-decision/founder-decision.feature,tests/test_founder_decision_door.py,docs/runbooks/founder-decision-door.md heartbeat=<versioned>",
+          "agent": "pi-otto-door",
+          "first_heartbeat": "2026-10-28T14:36:00Z",
+          "last_heartbeat": "2026-10-28T14:36:00Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi-otto-door paths=platform/estate/intents/founder.decision.yaml,bin/founder-decision,sovereign/otto/decision.py,sovereign/otto/hermes_plugin/__init__.py,features/founder-decision/founder-decision.feature,tests/test_founder_decision_door.py,docs/runbooks/founder-decision-door.md,docs/decisions/2026-10-28-the-founder-decision-door-is-one-message-per-decision.md heartbeat=<versioned>",
+          "agent": "pi-otto-door",
+          "first_heartbeat": "2026-10-28T20:35:00Z",
+          "last_heartbeat": "2026-10-28T20:35:00Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi-otto-door paths=bin/founder-decision,catalog/estate-capability-registry.json,docs/decisions/2026-10-28-the-founder-decision-door-is-one-message-per-decision.md,docs/runbooks/founder-decision-door.md,features/founder-decision/founder-decision.feature,platform/estate/intents/founder.decision.yaml,sovereign/otto/decision.py,sovereign/otto/hermes_plugin/__init__.py,tests/test_founder_decision_door.py heartbeat=<versioned>",
+          "agent": "pi-otto-door",
+          "first_heartbeat": "2026-10-28T23:27:05Z",
+          "last_heartbeat": "2026-10-28T23:27:05Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi-otto-door paths=platform/estate/intents/founder.decision.yaml,sovereign/otto/decision.py,sovereign/otto/card.py,sovereign/otto/hermes_plugin/__init__.py,features/founder-decision/founder-decision.feature,tests/test_founder_decision_door.py,docs/runbooks/founder-decision-door.md,bin/founder-decision,docs/decisions/2026-10-28-the-founder-decision-door-is-one-message-per-decision.md,catalog/estate-capability-registry.json heartbeat=<versioned>",
+          "agent": "pi-otto-door",
+          "first_heartbeat": "2026-10-29T00:16:20Z",
+          "last_heartbeat": "2026-10-30T00:11:04Z",
+          "occurrences": 29
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7342,
+      "state": "open",
+      "total_comments": 12,
+      "claim_line_count": 9,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=pi-method-selector paths=packages/method_selector/**,features/assurance/method-selector.feature,bin/method-select,docs/decisions/2026-10-28-the-method-selector-is-a-library-beside-the-decision-layer.md,docs/runbooks/method-selector.md heartbeat=<versioned>",
+          "agent": "pi-method-selector",
+          "first_heartbeat": "2026-10-28T15:55:00Z",
+          "last_heartbeat": "2026-10-28T17:22:00Z",
+          "occurrences": 2
+        },
+        {
+          "statement": "CLAIM agent=pi-method-selector paths=packages/method_selector/**,features/assurance/method-selector.feature,bin/method-select,docs/decisions/2026-10-28-the-method-selector-is-a-library-beside-the-decision-layer.md,docs/runbooks/method-selector.md,catalog/estate-capability-registry.json heartbeat=<versioned>",
+          "agent": "pi-method-selector",
+          "first_heartbeat": "2026-10-28T18:05:00Z",
+          "last_heartbeat": "2026-10-28T18:05:00Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi-sf23-shadow paths=bin/estate-diagnose,docs/decisions/2026-10-30-the-method-selector-shadow-channel-is-read-only.md,docs/runbooks/method-selector.md,eval/method-selector/README.md,eval/method-selector/baseline.py,eval/method-selector/build_corpus.py,eval/method-selector/evaluator.py,eval/method-selector/fixtures/corpus_v1.json,eval/method-selector/report.md,eval/method-selector/results/heldout_v1.json,features/assurance/method-selector.feature,platform/estate/method_selector/method_shadow.py,tests/test_method_selector_eval.py,tests/test_method_selector_shadow.py heartbeat=<versioned>",
+          "agent": "pi-sf23-shadow",
+          "first_heartbeat": "2026-10-30T03:23:46Z",
+          "last_heartbeat": "2026-10-30T03:23:46Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi-sf23-shadow paths=bin/estate-diagnose,docs/decisions/2026-10-30-the-method-selector-shadow-channel-is-read-only.md,docs/runbooks/method-selector.md,eval/method-selector/README.md,eval/method-selector/audit.py,eval/method-selector/baseline.py,eval/method-selector/build_corpus.py,eval/method-selector/evaluator.py,eval/method-selector/fixtures/corpus_v1.json,eval/method-selector/report.md,eval/method-selector/results/heldout_v1.json,features/assurance/method-selector.feature,platform/estate/method_selector/method_shadow.py,tests/test_method_selector_eval.py,tests/test_method_selector_shadow.py heartbeat=<versioned>",
+          "agent": "pi-sf23-shadow",
+          "first_heartbeat": "2026-10-30T03:33:11Z",
+          "last_heartbeat": "2026-10-30T03:33:11Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi-sf23-shadow paths=bin/estate-diagnose,docs/decisions/2026-10-30-the-method-selector-shadow-channel-is-read-only.md,docs/runbooks/method-selector.md,eval/method-selector/README.md,eval/method-selector/audit.py,eval/method-selector/baseline.py,eval/method-selector/build_corpus.py,eval/method-selector/evaluator.py,eval/method-selector/fixtures/corpus_v1.json,eval/method-selector/report.md,eval/method-selector/results/corpus_v1_dev.json,eval/method-selector/results/corpus_v1_held_out.json,features/assurance/method-selector-shadow.feature,features/assurance/method-selector.feature,platform/estate/method_selector/method_shadow.py,tests/test_method_selector_eval.py,tests/test_method_selector_shadow.py,tests/test_method_selector_shadow_feature.py heartbeat=<versioned>",
+          "agent": "pi-sf23-shadow",
+          "first_heartbeat": "2026-10-30T03:57:08Z",
+          "last_heartbeat": "2026-10-30T04:05:10Z",
+          "occurrences": 2
+        },
+        {
+          "statement": "CLAIM agent=pi-sf23-shadow paths=bin/estate-diagnose,catalog/estate-capability-registry.json,docs/decisions/2026-10-30-the-method-selector-shadow-channel-is-read-only.md,docs/runbooks/method-selector.md,eval/method-selector/README.md,eval/method-selector/audit.py,eval/method-selector/baseline.py,eval/method-selector/build_corpus.py,eval/method-selector/evaluator.py,eval/method-selector/fixtures/corpus_v1.json,eval/method-selector/report.md,eval/method-selector/results/corpus_v1_dev.json,eval/method-selector/results/corpus_v1_held_out.json,features/assurance/method-selector-shadow.feature,features/assurance/method-selector.feature,platform/estate/method_selector/method_shadow.py,tests/test_method_selector_eval.py,tests/test_method_selector_shadow.py,tests/test_method_selector_shadow_feature.py heartbeat=<versioned>",
+          "agent": "pi-sf23-shadow",
+          "first_heartbeat": "2026-10-30T06:20:54Z",
+          "last_heartbeat": "2026-10-30T09:14:49Z",
+          "occurrences": 2
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7344,
+      "state": "open",
+      "total_comments": 9,
+      "claim_line_count": 5,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=claude-science paths=platform/estate/context/**,bin/estate-context-compile,bin/estate-context-gate,tests/test_estate_context_*.py,platform/mcp/estate-context-broker.yaml heartbeat=<versioned>",
+          "agent": "claude-science",
+          "first_heartbeat": "2026-10-29T07:07:43Z",
+          "last_heartbeat": "2026-10-29T07:07:43Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude-science paths=platform/estate/context/**,bin/estate-context-compile,bin/estate-context-gate,tests/test_estate_context_*.py,platform/mcp/estate-context-broker.yaml,.github/workflows/context-index.yml,tests/test_context_index_workflow.py heartbeat=<versioned>",
+          "agent": "claude-science",
+          "first_heartbeat": "2026-10-29T07:15:03Z",
+          "last_heartbeat": "2026-10-29T10:15:09Z",
+          "occurrences": 3
+        },
+        {
+          "statement": "CLAIM agent=gemini paths=artifacts/context-cert/baseline.json,artifacts/context-cert/baseline.md,artifacts/context-cert/pre-change-comparison.md,bin/estate-context-cert-baseline,bin/idp-ci,docs/runbooks/estate-context-substrate.md,eval/estate-context/README.md,eval/estate-context/grade_pilot.py,eval/estate-context/pilot/questions.pilot.json,platform/estate/context/contracts.py,platform/estate/context/tests/conftest.py,platform/estate/context/tests/fixtures/legacy_tool_responses.golden.json,platform/estate/context/tests/fixtures/tree/app/thing.py,platform/estate/context/tests/regenerate_golden.py,platform/estate/context/tests/test_baseline_collector.py,platform/estate/context/tests/test_contracts_schema.py,platform/estate/context/tests/test_legacy_backward_compat.py,platform/estate/context/tests/test_pilot_grader.py heartbeat=<versioned>",
+          "agent": "gemini",
+          "first_heartbeat": "2026-11-08T09:10:23Z",
+          "last_heartbeat": "2026-11-08T09:10:23Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7350,
+      "state": "closed",
+      "total_comments": 5,
+      "claim_line_count": 4,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=pi-aee-research paths=features/assurance/aee.feature,packages/aee/** heartbeat=<versioned>",
+          "agent": "pi-aee-research",
+          "first_heartbeat": "2026-10-28T20:01:38Z",
+          "last_heartbeat": "2026-10-28T20:01:38Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi-aee-research paths=features/assurance/aee.feature,packages/aee/**,packages/aee/src/aee/__init__.py,packages/aee/src/aee/contracts.py,packages/aee/src/aee/digest.py,packages/aee/src/aee/graph.py,packages/aee/tests/conftest.py,packages/aee/tests/test_aee_bdd.py,packages/aee/tests/test_contracts.py,packages/aee/tests/test_graph.py heartbeat=<versioned>",
+          "agent": "pi-aee-research",
+          "first_heartbeat": "2026-10-28T20:19:26Z",
+          "last_heartbeat": "2026-10-28T21:10:17Z",
+          "occurrences": 2
+        },
+        {
+          "statement": "CLAIM agent=pi-aee-research paths=features/assurance/aee.feature,packages/aee/**,packages/aee/pyproject.toml heartbeat=<versioned>",
+          "agent": "pi-aee-research",
+          "first_heartbeat": "2026-10-28T21:48:38Z",
+          "last_heartbeat": "2026-10-28T21:48:38Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7351,
+      "state": "open",
+      "total_comments": 2,
+      "claim_line_count": 1,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=claude-architect paths=bin/estate-memory-enforce,tests/test_memory_enforce_fails_open.py heartbeat=<versioned>",
+          "agent": "claude-architect",
+          "first_heartbeat": "2026-10-28T20:56:44Z",
+          "last_heartbeat": "2026-10-28T20:56:44Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7356,
+      "state": "closed",
+      "total_comments": 6,
+      "claim_line_count": 4,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=pi-aee-research paths=platform/estate/intents/disk-reclaim.yaml heartbeat=<versioned>",
+          "agent": "pi-aee-research",
+          "first_heartbeat": "2026-10-28T21:16:40Z",
+          "last_heartbeat": "2026-10-28T22:11:16Z",
+          "occurrences": 2
+        },
+        {
+          "statement": "CLAIM agent=pi-aee-research paths=platform/estate/intents/disk-reclaim.yaml,catalog/estate-capability-registry.json heartbeat=<versioned>",
+          "agent": "pi-aee-research",
+          "first_heartbeat": "2026-10-29T01:30:00Z",
+          "last_heartbeat": "2026-10-29T02:34:42Z",
+          "occurrences": 2
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7359,
+      "state": "open",
+      "total_comments": 4,
+      "claim_line_count": 0,
+      "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7369,
+      "state": "open",
+      "total_comments": 0,
+      "claim_line_count": 0,
+      "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7397,
+      "state": "open",
+      "total_comments": 7,
+      "claim_line_count": 5,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=claude-memory paths=platform/estate/memory/snapshot.py,platform/estate/memory/focus.py,platform/llm/active_memory.py,bin/memory-snapshot,.github/workflows/memory-snapshot.yml,tests/test_memory_snapshot.py,tests/test_active_memory.py,tests/test_estate_memory_focus.py,docs/diagnoses/2026-10-28-unified-memory-had-one-home.yaml,docs/diagnoses/2026-10-28-active-memory-had-nothing-to-serve.yaml,docs/diagnoses/2026-10-28-active-focus-killed-by-its-own-deadline.yaml,docs/runbooks/memory-second-home.md heartbeat=<versioned>",
+          "agent": "claude-memory",
+          "first_heartbeat": "2026-10-29T03:12:52Z",
+          "last_heartbeat": "2026-10-29T03:12:52Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude-memory paths=.github/workflows/memory-snapshot.yml,catalog/estate-capability-registry.json,docs/scheduling/CLOCKS.md,platform/estate/intents/disk-reclaim.yaml,platform/estate/memory/focus.py,platform/estate/memory/snapshot.py,platform/llm/active_memory.py,tests/test_active_memory.py,tests/test_estate_memory_focus.py heartbeat=<versioned>",
+          "agent": "claude-memory",
+          "first_heartbeat": "2026-10-29T03:51:41Z",
+          "last_heartbeat": "2026-10-29T03:51:41Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude-memory paths=.github/workflows/memory-snapshot.yml,bin/memory-snapshot,docs/diagnoses/2026-10-28-active-focus-killed-by-its-own-deadline.yaml,docs/diagnoses/2026-10-28-active-focus-killed-by-its-own-deadline.yaml.verdicts.yaml,docs/diagnoses/2026-10-28-active-memory-had-nothing-to-serve.yaml,docs/diagnoses/2026-10-28-active-memory-had-nothing-to-serve.yaml.verdicts.yaml,docs/diagnoses/2026-10-28-unified-memory-had-one-home.yaml,docs/diagnoses/2026-10-28-unified-memory-had-one-home.yaml.verdicts.yaml,docs/runbooks/memory-second-home.md,docs/scheduling/CLOCKS.md,platform/estate/memory/focus.py,platform/estate/memory/snapshot.py,platform/llm/active_memory.py,tests/test_active_memory.py,tests/test_estate_memory_focus.py,tests/test_memory_snapshot.py heartbeat=<versioned>",
+          "agent": "claude-memory",
+          "first_heartbeat": "2026-10-29T03:52:17Z",
+          "last_heartbeat": "2026-10-29T03:52:17Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude-memory paths=platform/estate/memory/snapshot.py,platform/estate/memory/focus.py,platform/llm/active_memory.py,bin/memory-snapshot,.github/workflows/memory-snapshot.yml,tests/test_memory_snapshot.py,tests/test_active_memory.py,tests/test_estate_memory_focus.py,docs/diagnoses/2026-10-28-unified-memory-had-one-home.yaml,docs/diagnoses/2026-10-28-active-memory-had-nothing-to-serve.yaml,docs/diagnoses/2026-10-28-active-focus-killed-by-its-own-deadline.yaml,docs/runbooks/memory-second-home.md,catalog/estate-capability-registry.json,docs/scheduling/CLOCKS.md,platform/estate/intents/disk-reclaim.yaml,docs/diagnoses/2026-10-28-active-focus-killed-by-its-own-deadline.yaml.verdicts.yaml,docs/diagnoses/2026-10-28-active-memory-had-nothing-to-serve.yaml.verdicts.yaml,docs/diagnoses/2026-10-28-unified-memory-had-one-home.yaml.verdicts.yaml heartbeat=<versioned>",
+          "agent": "claude-memory",
+          "first_heartbeat": "2026-10-29T04:48:07Z",
+          "last_heartbeat": "2026-10-29T11:47:57Z",
+          "occurrences": 2
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7407,
+      "state": "open",
+      "total_comments": 0,
+      "claim_line_count": 0,
+      "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7408,
+      "state": "closed",
+      "total_comments": 5,
+      "claim_line_count": 3,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=pi paths=docs/specs/2026-10-29-otto-is-the-estates-front-door.md,docs/decisions/0044-otto-is-the-estates-front-door-not-a-second-agent-platform.md,docs/epics/2026-10-28-otto-minimum-viable-programme.md heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-29T06:05:00Z",
+          "last_heartbeat": "2026-10-29T06:05:00Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi paths=docs/specs/2026-10-29-otto-is-the-estates-front-door.md,docs/decisions/0047-otto-is-the-estates-front-door-not-a-second-agent-platform.md,docs/epics/2026-10-28-otto-minimum-viable-programme.md heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-29T06:19:22Z",
+          "last_heartbeat": "2026-10-29T06:19:22Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi paths=docs/specs/2026-10-29-otto-is-the-estates-front-door.md,docs/decisions/0044-otto-is-the-estates-front-door-not-a-second-agent-platform.md,docs/epics/2026-10-28-otto-minimum-viable-programme.md,docs/decisions/0047-otto-is-the-estates-front-door-not-a-second-agent-platform.md heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-29T07:13:17Z",
+          "last_heartbeat": "2026-10-29T07:13:17Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7416,
+      "state": "open",
+      "total_comments": 0,
+      "claim_line_count": 0,
+      "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7421,
+      "state": "open",
+      "total_comments": 0,
+      "claim_line_count": 0,
+      "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7432,
+      "state": "closed",
+      "total_comments": 4,
+      "claim_line_count": 3,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=pi paths=bin/idp-ci,bin/otto-conformance-gate,bin/otto-readiness-gate,docs/runbooks/otto-onboarding.md,tests/test_otto_conformance_gate.py,tests/test_otto_readiness_gate.py heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-29T09:32:04Z",
+          "last_heartbeat": "2026-10-29T14:07:40Z",
+          "occurrences": 3
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7443,
+      "state": "open",
+      "total_comments": 2,
+      "claim_line_count": 1,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=chatgpt-instruction-lifecycle paths=platform/estate/governance/plan_links.py,bin/estate-plan-links,tests/estate/test_plan_links.py heartbeat=<versioned>",
+          "agent": "chatgpt-instruction-lifecycle",
+          "first_heartbeat": "2026-11-07T14:15:00Z",
+          "last_heartbeat": "2026-11-07T14:15:00Z",
           "occurrences": 1
         }
       ]
