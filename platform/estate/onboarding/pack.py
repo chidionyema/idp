@@ -73,7 +73,7 @@ def load(path: Path = MODEL) -> tuple[dict, str]:
             raise OnboardingUnavailable("pinned ADR changed without refreshing onboarding pack")
     if model["infrastructure"].get("live_verdict") != "UNKNOWN until fresh independent caller/runtime probe":
         raise OnboardingUnavailable("onboarding model must not assert live health from source")
-    if "SOURCE_CANDIDATE_NOT_DEPLOYED" != model.get("fleet_policy", {}).get("state"):
+    if "UNVERIFIED_BY_STATIC_PACK" != model.get("fleet_policy", {}).get("state"):
         raise OnboardingUnavailable("onboarding model's fleet policy state needs a governed revision")
     return model, hashlib.sha256(raw).hexdigest()
 
