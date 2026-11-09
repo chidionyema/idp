@@ -226,7 +226,7 @@ test("every internal link goes somewhere, and every anchor exists", async () => 
   // 18 distinct targets on this site today: the ten routes, the three tool anchors, and a few
   // fragments. The bound is a floor, not a target -- it fails if the crawl stopped finding links
   // at all, which is the failure mode of a crawler that silently matches nothing.
-  assert.ok(seen.size >= 15, `expected the pages to link to each other, found ${seen.size} distinct links`);
+  assert.ok(seen.size >= ROUTES.filter((route) => !/\.(xml|txt)$/.test(route)).length, `expected the pages to link to each other, found ${seen.size} distinct links`);
 });
 
 
