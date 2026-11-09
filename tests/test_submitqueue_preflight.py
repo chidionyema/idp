@@ -141,3 +141,30 @@ def test_unknown_preflight_always_falls_through_to_required_ci():
     state = State(lanes={"lane/a": Lane("lane/a", "candidate", seq=1)})
     Engine(backend, state)._start_batch()
     assert state.candidates == 1
+
+
+def test_incident_issue_callback_wakes_same_head_on_same_main(monkeypatch):
+    backend = TinyBackend({"bad"})
+    backend.heads = {"lane/a": "bad"}
+    state = State(lanes={"lane/a": Lane("lane/a", "bad", seq=1)})
+    engine = Engine(backend, state)
+    engine._start_batch()
+    assert state.lanes["lane/a"].status == RED
+    backend.blocked.clear()
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "issues")
+    engine._observe_lanes()
+    assert state.lanes["lane/a"].status == PENDING
+    engine._start_batch()
+    assert backend.pushed == [("b1", "bad")]
+
+
+def test_known_policy_refusal_is_not_silently_retired():
+    backend = TinyBackend()
+    state = State(lanes={"lane/a": Lane(
+        "lane/a", "bad", status=RED,
+        reason="trusted DoF [proof]: no authorized release",
+        arrived=-100000, judged_on=BASE)})
+    engine = Engine(backend, state)
+    engine._retire_stale_lanes()
+    assert "lane/a" in state.lanes
+    assert state.retired == {}
