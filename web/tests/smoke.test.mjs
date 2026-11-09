@@ -302,3 +302,36 @@ test("every internal link goes somewhere, and every anchor exists", async () => 
   }
   assert.ok(seen.size >= 12, `expected a connected public site, found ${seen.size} distinct links`);
 });
+
+test("research answers are excerpts from published notes with working section links", async () => {
+  const response = await fetch(`${BASE}/api/research/query`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ query: "How does SPIFFE workload identity work?" }),
+  });
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.mode, "published-excerpts", "research responses must describe the actual retrieval method");
+  assert.ok(data.sources?.length > 0, "the published note should be retrievable");
+  assert.match(data.answer, /published note/, "answer must disclose it is an excerpt");
+  for (const source of data.sources) {
+    assert.match(source.url, /^\/writing\/[a-z0-9-]+(?:#[a-z0-9-]+)?$/);
+    const [target, fragment] = source.url.split("#");
+    const article = await fetch(BASE + target);
+    assert.equal(article.status, 200, `cited article not found: ${target}`);
+    if (fragment) assert.ok((await article.text()).includes(`id="${fragment}"`), `missing section anchor: ${source.url}`);
+  }
+
+  const unrelated = await fetch(`${BASE}/api/research/query`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ query: "qzxflarb imaginary zeppelin" }),
+  });
+  assert.equal(unrelated.status, 200);
+  assert.deepEqual((await unrelated.json()).sources, [], "out-of-scope requests must not fabricate references");
+
+  const invalid = await fetch(`${BASE}/api/research/query`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ query: "   " }),
+  });
+  assert.equal(invalid.status, 400);
+});

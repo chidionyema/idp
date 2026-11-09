@@ -363,3 +363,52 @@
  .mi-qa-progress{animation:none}
  .mi-qa-suggestion,.mi-qa-input-row{transition:none}
 }
+
+
+/* Editorial research: one brand system across the index, article, and cited source. */
+.mi-article-hero{padding:68px 0 85px}
+.mi-article-back{display:inline-flex;align-items:center;gap:10px;color:#d8c099;font:650 13px/1.5 var(--sans);padding:9px 0;border-bottom:1px solid rgba(234,196,126,.35)}
+.mi-article-back:hover{color:#ffdb9e}
+.mi-article-meta{display:flex;flex-wrap:wrap;gap:12px 32px;color:#aebbc6;margin-top:58px;font:500 11px/1.6 var(--mono);letter-spacing:.1em}
+.mi-article-meta span:first-child{color:#eac47e}
+.mi-article-hero h1{max-width:21ch!important;margin:22px 0 45px!important;font-size:clamp(43px,6.6vw,99px)!important;letter-spacing:-.068em!important;line-height:1.04!important;overflow-wrap:normal!important}
+.mi-article-hero .mi-page-hero-bottom p{font-size:clamp(16px,1.5vw,20px);max-width:65ch}
+.mi-article-edition{font:500 11px var(--mono);letter-spacing:.1em;color:#d4ad71;white-space:nowrap}
+.mi-article-shell{padding-block:clamp(65px,8vw,118px);background:#f8f7f2}
+.mi-article-main{max-width:820px;margin-inline:auto;min-width:0}
+.mi-article-caveat{border-left:3px solid #bf965a;background:#ece9df;padding:19px 24px;color:#3d5365;font:550 13px/1.7 var(--sans);margin:0 0 44px;max-width:none}
+.mi-article-body{color:#243748}
+.mi-article-body h2{font:730 clamp(29px,3.15vw,43px)/1.15 var(--sans);letter-spacing:-.05em;color:#152639;margin:56px 0 18px;scroll-margin-top:120px}
+.mi-article-body p{font:400 clamp(16px,1.4vw,18px)/1.85 var(--sans);color:#354a5b;max-width:68ch;margin:0 0 23px;overflow-wrap:break-word}
+.mi-article-body p:first-child{font-size:clamp(18px,1.65vw,21px);line-height:1.75;color:#182f43}
+.mi-article-references{border-top:1px solid #ccd6d8;margin-top:72px;padding-top:40px}
+.mi-article-references h2{font:720 clamp(27px,3vw,36px)/1.2 var(--sans);color:#152639;letter-spacing:-.05em}
+.mi-article-references>p{font:400 14px/1.7 var(--sans);color:#526a7b;margin-top:11px;max-width:68ch}
+.mi-article-reference-list{display:grid;grid-template-columns:1fr;gap:0;margin-top:20px;border-top:1px solid #cdd6d8}
+.mi-article-reference-list a{padding:16px 0;display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid #cdd6d8;color:#15374f;font:650 15px/1.5 var(--sans)}
+.mi-article-reference-list a span{color:#9e733d;font-size:18px}
+.mi-article-reference-list a:hover{color:#966e32}
+.mi-article-end{margin-top:65px;padding:30px 0 0;border-top:1px solid #ced7d6;display:flex;justify-content:space-between;gap:20px;align-items:center}
+.mi-article-end p{font:500 15px/1.6 var(--sans);color:#4e6170}
+.mi-qa-disclaimer{font:450 13px/1.7 var(--sans);color:#566979;background:#f6f5f0;border-left:3px solid #ba955e;padding:13px 17px;margin-bottom:18px}
+.mi-qa-source{transition:background .15s,border-color .15s}
+.mi-qa-source:hover{background:#f0ede4;border-color:#bba079}
+.mi-qa-source:focus-visible{outline:3px solid #aa7b3b;outline-offset:3px}
+@media(max-width:620px){
+ .mi-article-hero{padding:45px 0 58px}
+ .mi-article-meta{margin-top:32px;gap:8px 16px;font-size:10px}
+ .mi-article-hero h1{font-size:clamp(36px,8.7vw,56px)!important;margin:22px 0 29px!important;overflow-wrap:break-word!important}
+ .mi-article-shell{padding-block:50px 65px}
+ .mi-article-caveat{padding:16px 18px;margin-bottom:34px}
+ .mi-article-body h2{margin:43px 0 15px;font-size:30px}
+ .mi-article-body p{font-size:16px;line-height:1.75}
+ .mi-article-references{margin-top:55px}
+ .mi-article-end{flex-direction:column;align-items:stretch}
+ .mi-article-end .mi-button{justify-content:center}
+}
+@media(prefers-reduced-motion:reduce){
+ .mi-qa-source{transition:none}
+}
+
+/* Mobile navigation is a touch control, not an ornamental micro-label. */
+@media(max-width:850px){.mi-menu-toggle{font-size:13px;letter-spacing:.035em}}

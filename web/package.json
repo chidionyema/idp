@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/contact.test.ts",
     "test:smoke": "node --test tests/smoke.test.mjs",
-    "verify": "npm run typecheck && npm run voice && npm run lint && npm test && npm run build && npm run test:smoke"
+    "verify": "npm run typecheck && npm run voice && npm run lint && npm test && npm run build && npm run test:smoke",
+    "test:visual": "node scripts/visual-regression.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",
