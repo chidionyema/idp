@@ -1,126 +1,147 @@
 "use client";
 import { useState } from "react";
-import { Reveal } from "@/components/Reveal";
+import { LIMITS, validateContact, type ContactErrors } from "@/lib/contact";
+
+type ContactFields = { name: string; email: string; company: string; message: string; website: string };
+const initialForm: ContactFields = { name: "", email: "", company: "", message: "", website: "" };
 
 export default function ContactPage() {
-  const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
-  const [form, setForm] = useState({ name: "", email: "", company: "", message: "", website: "" });
-  const [errors, setErrors] = useState<Partial<typeof form>>({});
+  const [form, setForm] = useState<ContactFields>(initialForm);
+  const [errors, setErrors] = useState<ContactErrors>({});
+  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [failure, setFailure] = useState<string | null>(null);
 
-  function validate() {
-    const e: Partial<typeof form> = {};
-    if (!form.name.trim()) e.name = "Required";
-    if (!form.email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) e.email = "Valid email required";
-    if (!form.message.trim() || form.message.length < 20) e.message = "Please describe your project (at least 20 characters)";
-    return e;
+  function update(field: keyof ContactFields, value: string) {
+    setForm((current) => ({ ...current, [field]: value }));
+    setErrors((current) => ({ ...current, [field]: undefined }));
+    if (status === "error") { setFailure(null); setStatus("idle"); }
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const errs = validate();
-    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (status === "sending") return;
+    const validation = validateContact(form);
+    if (!validation.ok) { setErrors(validation.errors); setStatus("idle"); return; }
+
     setErrors({});
     setFailure(null);
-    setState("sending");
-
+    setStatus("sending");
     try {
-      const res = await fetch("/api/contact", {
+      const response = await fetch("/api/contact", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(form),
       });
-
-      if (res.ok) { setState("sent"); return; }
-
-      const body = await res.json().catch(() => ({}));
-
-      // Field-level problems come back with a per-field map; anything else is a
-      // failure the visitor cannot fix by editing the form.
-      if (body?.errors) {
+      if (response.ok) { setStatus("sent"); return; }
+      const body = (await response.json().catch(() => ({}))) as { errors?: ContactErrors };
+      if (body.errors && Object.keys(body.errors).length > 0) {
         setErrors(body.errors);
-        setState("idle");
+        setStatus("idle");
         return;
       }
-
-      setFailure(
-        res.status === 429
-          ? `Too many messages from this network. Try again in ${Math.ceil(Number(res.headers.get("retry-after") || 60) / 60)} minutes.`
-          : "We could not deliver that message. Please try again later."
-      );
-      setState("error");
+      const retry = Math.max(1, Math.ceil(Number(response.headers.get("retry-after") || "60") / 60));
+      setFailure(response.status === 429
+        ? `Too many attempts from this network. Please try again in ${retry} minute${retry === 1 ? "" : "s"}.`
+        : "The enquiry service is unavailable at the moment. Your message has not been sent. Please try again later.");
+      setStatus("error");
     } catch {
-      setFailure("That did not reach us. Please try again later.");
-      setState("error");
+      setFailure("We couldn't connect to the enquiry service. Your message has not been sent. Please try again later.");
+      setStatus("error");
     }
   }
 
   return (
-    <div className="container section">
-      <div style={{ maxWidth: "640px", margin: "0 auto" }}>
-        <Reveal><div style={{ marginBottom: "48px" }}>
-          <span className="tag tag-accent" style={{ marginBottom: "16px", display: "inline-flex" }}>Contact</span>
-          <h1>Talk to us</h1>
-          <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "17px" }}>Tell us about the opportunity: strategic advice, AI engineering, autonomous operations, research partnership or a venture discussion.</p>
-        </div></Reveal>
-        <Reveal>
-          {state === "sent" ? (
-            <div style={{ border: "1px solid var(--ok)", background: "rgba(5,150,105,0.05)", padding: "32px", textAlign: "center" }}>
-              <p style={{ fontFamily: "var(--serif)", fontSize: "1.3rem", color: "var(--ok-text)", maxWidth: "none" }}>Message received.</p>
-              <p style={{ color: "var(--ink-3)", marginTop: "8px", maxWidth: "none" }}>Your message has been submitted to our enquiry service.</p>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} noValidate style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-              <fieldset style={{ border: "none", display: "flex", flexDirection: "column", gap: "20px" }}>
-                <div>
-                  <label htmlFor="name" style={{ display: "block", fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: "8px" }}>Name</label>
-                  <input id="name" type="text" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} autoComplete="name"
-                    style={{ width: "100%", border: `1px solid ${errors.name ? "#DC2626" : "var(--rule)"}`, background: "var(--white)", padding: "12px 16px", fontSize: "14px", color: "var(--ink)", outline: "none", fontFamily: "inherit" }}
-                    onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.outline = "none"; }}
-                    onBlur={(e) => e.target.style.borderColor = errors.name ? "#DC2626" : "var(--rule)"} />
-                  {errors.name && <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "#DC2626", marginTop: "4px" }}>{errors.name}</p>}
-                </div>
-                <div>
-                  <label htmlFor="email" style={{ display: "block", fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: "8px" }}>Work email</label>
-                  <input id="email" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} autoComplete="email"
-                    style={{ width: "100%", border: `1px solid ${errors.email ? "#DC2626" : "var(--rule)"}`, background: "var(--white)", padding: "12px 16px", fontSize: "14px", color: "var(--ink)", outline: "none", fontFamily: "inherit" }}
-                    onFocus={(e) => e.target.style.borderColor = "var(--accent)"}
-                    onBlur={(e) => e.target.style.borderColor = errors.email ? "#DC2626" : "var(--rule)"} />
-                  {errors.email && <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "#DC2626", marginTop: "4px" }}>{errors.email}</p>}
-                </div>
-                <div>
-                  <label htmlFor="company" style={{ display: "block", fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: "8px" }}>Company <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>(optional)</span></label>
-                  <input id="company" type="text" value={form.company} onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))} autoComplete="organization"
-                    style={{ width: "100%", border: "1px solid var(--rule)", background: "var(--white)", padding: "12px 16px", fontSize: "14px", color: "var(--ink)", outline: "none", fontFamily: "inherit" }}
-                    onFocus={(e) => e.target.style.borderColor = "var(--accent)"}
-                    onBlur={(e) => e.target.style.borderColor = "var(--rule)"} />
-                </div>
-                <div>
-                  <label htmlFor="message" style={{ display: "block", fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-3)", marginBottom: "8px" }}>What are you building?</label>
-                  <textarea id="message" value={form.message} onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))} rows={6}
-                    style={{ width: "100%", border: `1px solid ${errors.message ? "#DC2626" : "var(--rule)"}`, background: "var(--white)", padding: "12px 16px", fontSize: "14px", color: "var(--ink)", outline: "none", fontFamily: "inherit", resize: "vertical" }}
-                    onFocus={(e) => e.target.style.borderColor = "var(--accent)"}
-                    onBlur={(e) => e.target.style.borderColor = errors.message ? "#DC2626" : "var(--rule)"} />
-                  {errors.message && <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "#DC2626", marginTop: "4px" }}>{errors.message}</p>}
-                </div>
-              {/* Honeypot: positioned off-screen rather than display:none, so the
-                  automated fillers that skip hidden inputs still trip it. */}
-              <div aria-hidden="true" style={{ position: "absolute", left: "-9999px", width: "1px", height: "1px", overflow: "hidden" }}>
-                <label htmlFor="website">Website</label>
-                <input id="website" name="website" type="text" tabIndex={-1} autoComplete="off" value={form.website}
-                  onChange={(e) => setForm((f) => ({ ...f, website: e.target.value }))} />
+    <div className="mi-interior">
+      <section className="mi-page-hero mi-contact-hero" aria-labelledby="contact-heading">
+        <div className="mi-shell">
+          <span className="mi-eyebrow">MERDIAN / START A CONVERSATION</span>
+          <h1 id="contact-heading">LET&apos;S BUILD<br/><em>SOMETHING REAL.</em></h1>
+          <div className="mi-page-hero-bottom">
+            <p>Bring the challenge. An architecture decision, an AI system to build, or a research question worth testing. We&apos;ll start with what matters.</p>
+            <span className="mi-contact-hero-mark" aria-hidden="true">M / 004 ↗</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="mi-contact-section" aria-labelledby="enquiry-heading">
+        <div className="mi-shell mi-contact-grid">
+          <aside className="mi-contact-aside">
+            <span className="mi-eyebrow">01 / TELL US THE CHALLENGE</span>
+            <h2>Good work starts with a clear problem.</h2>
+            <p>What exists today? What needs to change? What would make the investment worthwhile?</p>
+            <div className="mi-contact-aside-rule" />
+            <span className="mi-contact-small-label">AREAS OF INTEREST</span>
+            <p className="mi-contact-topics">AI strategy <span>/</span> Engineering <span>/</span> Autonomous systems <span>/</span> Research partnerships <span>/</span> Ventures</p>
+            <p className="mi-contact-discretion">Please don&apos;t include passwords, customer records or sensitive credentials in your enquiry.</p>
+          </aside>
+
+          <div className="mi-contact-form-card">
+            {status === "sent" ? (
+              <div className="mi-contact-success" role="status" aria-live="polite">
+                <span className="mi-eyebrow">ENQUIRY RECEIVED</span>
+                <h2>Thank you for reaching out.</h2>
+                <p>Your message was accepted by our enquiry service. We&apos;ll review the details before taking the next step.</p>
               </div>
-              </fieldset>
-              <p role="status" aria-live="polite" style={{ maxWidth: "none", minHeight: "1.2em", fontFamily: "var(--mono)", fontSize: "12px", color: state === "error" ? "#B91C1C" : "var(--ink-3)" }}>
-                {failure ?? (state === "sending" ? "Sending…" : "")}
-              </p>
-              <button type="submit" disabled={state === "sending"} className="btn-primary" style={{ alignSelf: "flex-start" }}>
-                {state === "sending" ? <><span className="pulse-dot" />Sending…</> : "Send message →"}
-              </button>
-            </form>
-          )}
-        </Reveal>
-      </div>
+            ) : (
+              <>
+                <div className="mi-contact-form-intro">
+                  <span className="mi-eyebrow">PROJECT ENQUIRY / 001</span>
+                  <h2 id="enquiry-heading">Tell us what you&apos;re building.</h2>
+                  <p>Share enough context to make the first conversation useful.</p>
+                </div>
+                <form onSubmit={submit} noValidate aria-busy={status === "sending"} className="mi-contact-form">
+                  <fieldset disabled={status === "sending"} className="mi-contact-fields">
+                    <legend className="mi-visually-hidden">Project enquiry details</legend>
+                    <div className="mi-contact-field-row">
+                      <div className="mi-contact-field">
+                        <label htmlFor="contact-name">Your name <span aria-hidden="true">*</span></label>
+                        <input id="contact-name" name="name" type="text" autoComplete="name" required maxLength={LIMITS.name.max}
+                          value={form.name} onChange={(e) => update("name", e.target.value)}
+                          aria-invalid={Boolean(errors.name)} aria-describedby={errors.name ? "contact-name-error" : undefined} />
+                        {errors.name && <p id="contact-name-error" className="mi-contact-error">{errors.name}</p>}
+                      </div>
+                      <div className="mi-contact-field">
+                        <label htmlFor="contact-email">Work email <span aria-hidden="true">*</span></label>
+                        <input id="contact-email" name="email" type="email" autoComplete="email" inputMode="email" required maxLength={LIMITS.email.max}
+                          value={form.email} onChange={(e) => update("email", e.target.value)}
+                          aria-invalid={Boolean(errors.email)} aria-describedby={errors.email ? "contact-email-error" : undefined} />
+                        {errors.email && <p id="contact-email-error" className="mi-contact-error">{errors.email}</p>}
+                      </div>
+                    </div>
+                    <div className="mi-contact-field">
+                      <label htmlFor="contact-company">Company <span className="mi-contact-optional">(optional)</span></label>
+                      <input id="contact-company" name="company" type="text" autoComplete="organization" maxLength={LIMITS.company.max}
+                        value={form.company} onChange={(e) => update("company", e.target.value)}
+                        aria-invalid={Boolean(errors.company)} aria-describedby={errors.company ? "contact-company-error" : undefined} />
+                      {errors.company && <p id="contact-company-error" className="mi-contact-error">{errors.company}</p>}
+                    </div>
+                    <div className="mi-contact-field">
+                      <label htmlFor="contact-message">What are you trying to achieve? <span aria-hidden="true">*</span></label>
+                      <textarea id="contact-message" name="message" rows={6} required minLength={LIMITS.message.min}
+                        maxLength={LIMITS.message.max} value={form.message} onChange={(e) => update("message", e.target.value)}
+                        aria-invalid={Boolean(errors.message)} aria-describedby={errors.message ? "contact-message-error" : "contact-message-help"} />
+                      <p id="contact-message-help" className="mi-contact-field-hint">At least 20 characters. A few sentences are enough to begin.</p>
+                      {errors.message && <p id="contact-message-error" className="mi-contact-error">{errors.message}</p>}
+                    </div>
+                    <div className="mi-contact-honeypot" aria-hidden="true">
+                      <label htmlFor="contact-website">Website</label>
+                      <input id="contact-website" name="website" type="text" tabIndex={-1} autoComplete="off"
+                        value={form.website} onChange={(e) => update("website", e.target.value)} />
+                    </div>
+                  </fieldset>
+                  <p className="mi-contact-notice" role={failure ? "alert" : "status"} aria-live="polite">{failure ?? (status === "sending" ? "Sending your enquiry…" : "")}</p>
+                  <div className="mi-contact-form-footer">
+                    <button className="mi-button mi-button-gold mi-contact-submit" type="submit" disabled={status === "sending"}>
+                      {status === "sending" ? "Sending…" : "Send enquiry"} <span aria-hidden="true">↗</span>
+                    </button>
+                    <span className="mi-contact-required-note">* REQUIRED FIELDS</span>
+                  </div>
+                </form>
+              </>
+            )}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

@@ -57,7 +57,7 @@
 .mi-section{padding:110px 0}
 .mi-services{background:#f8f7f2}.mi-section-intro{display:flex;justify-content:space-between;align-items:center;padding-bottom:25px;border-bottom:1px solid #d4d9d8;gap:15px}
 .mi-section-intro>p{font:500 10px var(--mono);letter-spacing:.11em;color:#6d7884}
-.mi-split-heading{display:grid;grid-template-columns:1.25fr .65fr;align-items:end;gap:50px;margin:55px 0}
+.mi-split-heading{display:grid;grid-template-columns:1.25fr .65fr;align-items:flex-end;gap:50px;margin:55px 0}
 .mi-split-heading h2{font:720 clamp(42px,5.2vw,83px)/1.07 var(--sans);letter-spacing:-.068em;color:#111c2b}
 .mi-split-heading h2 span{color:#83909b}.mi-split-heading>div p{font-size:16px;line-height:1.8;color:#53616f}
 .mi-text-action{font-size:13px;font-weight:700;color:#16344c;display:inline-flex;justify-content:space-between;gap:36px;margin-top:24px;border-bottom:1px solid #708393;padding-bottom:13px}
@@ -95,7 +95,7 @@
 .mi-close{background:#0b1421;color:#fff;padding:105px 0 115px}
 .mi-close h2{font:780 clamp(66px,10vw,165px)/.96 var(--sans);letter-spacing:-.09em;color:#fff;margin:35px 0 40px}
 .mi-close h2 em{color:#eac47e;font-style:normal}
-.mi-close-bottom{display:flex;justify-content:space-between;gap:50px;align-items:end;border-top:1px solid rgba(255,255,255,.17);padding-top:34px}
+.mi-close-bottom{display:flex;justify-content:space-between;gap:50px;align-items:flex-end;border-top:1px solid rgba(255,255,255,.17);padding-top:34px}
 .mi-close-bottom p{color:#abbac9;font-size:17px;line-height:1.7;max-width:500px}
 .mi-footer{background:#070d16;color:#fff;border-top:1px solid rgba(255,255,255,.15)}
 .mi-footer-top{padding:85px 0 60px;display:flex;justify-content:space-between;gap:40px}
@@ -113,7 +113,7 @@
 .mi-page-hero .mi-shell{position:relative}
 .mi-page-hero h1{font:780 clamp(58px,8.8vw,140px)/.97 var(--sans);letter-spacing:-.078em;color:#fff;max-width:1200px;margin:48px 0}
 .mi-page-hero h1 em{font-style:normal;color:#eac47e}
-.mi-page-hero-bottom{display:flex;align-items:end;justify-content:space-between;gap:40px;border-top:1px solid rgba(255,255,255,.2);padding-top:30px}
+.mi-page-hero-bottom{display:flex;align-items:flex-end;justify-content:space-between;gap:40px;border-top:1px solid rgba(255,255,255,.2);padding-top:30px}
 .mi-page-hero-bottom p{color:#bdc7d2;line-height:1.8;max-width:680px;font-size:17px}
 .mi-service-detail-section{background:#f8f7f2}
 .mi-service-detail{display:grid;grid-template-columns:90px 1fr 40px;gap:30px;padding:43px 0;border-bottom:1px solid #d1d7d7;align-items:start}
@@ -197,4 +197,78 @@
 @media(forced-colors:active){
  .mi-button,.mi-nav-cta,.mi-menu-toggle{border:2px solid ButtonText}
  .mi-hero-outline{color:CanvasText;-webkit-text-stroke:0}
+}
+
+
+/* MERDIAN / Final-mile commercial journey: a cohesive editorial system for contact, insights and approach. */
+.mi-contact-hero .mi-page-hero-bottom{align-items:center}
+.mi-contact-hero-mark{font:500 12px var(--mono);letter-spacing:.13em;color:#eac47e;white-space:nowrap}
+.mi-contact-section{background:#f8f7f2;padding:clamp(70px,8vw,120px) 0}
+.mi-contact-grid{display:grid;grid-template-columns:minmax(0,.75fr) minmax(0,1.25fr);gap:clamp(36px,7vw,120px);align-items:start}
+.mi-contact-aside{padding-top:18px}
+.mi-contact-aside h2{font:730 clamp(32px,3.3vw,52px)/1.13 var(--sans);letter-spacing:-.055em;color:#142335;max-width:15ch;margin:22px 0}
+.mi-contact-aside>p:not(.mi-contact-topics):not(.mi-contact-discretion){font-size:16px;color:#4c5f6b;line-height:1.8}
+.mi-contact-aside-rule{height:1px;background:#c8cece;margin:38px 0 27px}
+.mi-contact-small-label{font:500 11px var(--mono);color:#8a6b3e;letter-spacing:.13em}
+.mi-contact-topics{font:620 15px/2 var(--sans);color:#172c40;margin-top:12px;max-width:430px}
+.mi-contact-topics span{color:#ad8246;padding-inline:5px}
+.mi-contact-discretion{font:400 13px/1.75 var(--sans);color:#64727e;margin-top:36px;max-width:430px}
+.mi-contact-form-card{border:1px solid #d6dcdb;background:#fff;padding:clamp(25px,4vw,56px);box-shadow:0 24px 65px rgba(16,39,57,.045);min-width:0}
+.mi-contact-form-intro h2,.mi-contact-success h2{font:730 clamp(32px,3vw,46px)/1.12 var(--sans);letter-spacing:-.05em;color:#142335;margin:16px 0}
+.mi-contact-form-intro>p,.mi-contact-success>p{font-size:15px;line-height:1.75;color:#536476}
+.mi-contact-form{margin-top:36px}
+.mi-contact-fields{border:0;min-width:0;display:grid;gap:22px}
+.mi-contact-field-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.mi-contact-field{min-width:0}
+.mi-contact-field label{display:block;margin-bottom:9px;font:650 12px var(--sans);color:#22374a}
+.mi-contact-field label>span:not(.mi-contact-optional){color:#9b723d}
+.mi-contact-optional{font-weight:400;color:#71808b}
+.mi-contact-field :is(input,textarea){display:block;width:100%;min-width:0;min-height:51px;border:1px solid #a8b6bd;border-radius:0;background:#fbfbf9;padding:13px 15px;color:#172738;font:450 16px/1.5 var(--sans);transition:border-color .15s,box-shadow .15s}
+.mi-contact-field textarea{resize:vertical;min-height:156px}
+.mi-contact-field :is(input,textarea):focus-visible{outline:3px solid #eac47e;outline-offset:2px;border-color:#294e65;box-shadow:0 0 0 1px #294e65}
+.mi-contact-field :is(input,textarea)[aria-invalid="true"]{border-color:#ab3030;background:#fffafb}
+.mi-contact-error{font:550 12px/1.6 var(--sans);color:#a72727;margin-top:7px}
+.mi-contact-field-hint{font:400 12px/1.6 var(--sans);color:#637381;margin-top:7px}
+.mi-contact-honeypot{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.mi-visually-hidden{position:absolute;width:1px;height:1px;clip:rect(0,0,0,0);white-space:nowrap;overflow:hidden}
+.mi-contact-notice{min-height:1.7em;color:#a72727;font:550 12px/1.65 var(--sans);margin-top:16px}
+.mi-contact-form-footer{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;margin-top:15px}
+.mi-contact-submit{min-width:205px;cursor:pointer}
+.mi-contact-submit:disabled{opacity:.6;cursor:wait;transform:none}
+.mi-contact-required-note{font:500 10px var(--mono);color:#657685;letter-spacing:.08em}
+.mi-contact-success{min-height:310px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center}
+.mi-insights-section{background:#f8f7f2}
+.mi-insights-row{display:grid;grid-template-columns:180px minmax(0,1fr) 125px;align-items:start;gap:32px;padding:43px 0;border-bottom:1px solid #d2d9d8}
+.mi-insights-meta{display:flex;align-items:center;gap:18px;font:500 11px var(--mono);letter-spacing:.06em;color:#647585;margin-bottom:13px}
+.mi-insights-row h2{font:730 clamp(28px,3.1vw,46px)/1.2 var(--sans);letter-spacing:-.045em;color:#172738}
+.mi-insights-row h2 a:hover{color:#90652b}
+.mi-insights-row>div>p:last-child{font-size:15px;color:#546677;margin-top:14px}
+.mi-insights-action{font:650 13px var(--sans);color:#234c66;border-bottom:1px solid #92a8af;padding-bottom:12px;white-space:nowrap;display:flex;justify-content:space-between;gap:10px}
+.mi-approach-close h2{font:730 clamp(43px,6vw,90px)/1.04 var(--sans);letter-spacing:-.065em;color:#142335;margin:30px 0}
+.mi-approach-close h2 em{font-style:normal;color:#b1854b}
+.mi-approach-close>p{font-size:16px;color:#536476;max-width:710px;line-height:1.8}
+.mi-button-dark{background:#142335;color:#fff;border:1px solid #142335}
+.mi-button-dark:hover{background:#233b52}
+.mi-contact-section :is(a,button):focus-visible,.mi-insights-section a:focus-visible,.mi-approach-close a:focus-visible{outline:3px solid #9a712f;outline-offset:4px}
+@media(max-width:850px){
+ .mi-contact-grid{grid-template-columns:minmax(0,1fr);gap:32px}
+ .mi-contact-aside h2{max-width:none}
+ .mi-contact-aside-rule{margin:25px 0 20px}
+ .mi-contact-discretion{margin-top:18px}
+ .mi-insights-row{grid-template-columns:85px minmax(0,1fr);gap:20px}
+ .mi-insights-action{grid-column:2;justify-self:start}
+}
+@media(max-width:620px){
+ .mi-contact-section{padding:65px 0 85px}
+ .mi-contact-field-row{grid-template-columns:minmax(0,1fr)}
+ .mi-contact-form-card{padding:25px 20px}
+ .mi-contact-hero-mark{display:none}
+ .mi-contact-form-footer{align-items:stretch;flex-direction:column}
+ .mi-contact-submit{width:100%}
+ .mi-insights-row{grid-template-columns:minmax(0,1fr);gap:12px}
+ .mi-insights-action{grid-column:1}
+ .mi-insights-meta{flex-wrap:wrap}
+}
+@media(prefers-reduced-motion:reduce){
+ .mi-contact-field :is(input,textarea){transition:none}
 }
