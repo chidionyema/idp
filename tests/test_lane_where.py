@@ -178,3 +178,65 @@ def test_a_lane_head_that_is_in_main_is_landed_by_ancestry(work: Path):
     assert receipt.get("landed_by") == "ancestry", (
         f"the door did not land the lane by ancestry\n{receipt}"
     )
+
+
+def _origin_of(work: Path) -> Path:
+    """The bare origin the fixture cloned from, read from the clone's own remote."""
+    return Path(_git(work, "remote", "get-url", "origin").strip())
+
+
+def test_a_branch_ls_remote_cannot_see_yet_is_pending_not_gone(work: Path):
+    """The measured false GONE: a read-after-write race on origin's ref advertisement.
+
+    2026-11-09: `lane-submit` pushed `lane/dof-freeze-falsifier` at 29156ad42, and `bin/lane-where`
+    called seconds later answered GONE -- while `git ls-remote --heads origin 'refs/heads/lane/
+    dof-freeze*'` listed the branch at that exact sha. origin's ref advertisement lags the push,
+    so `ls-remote` can answer "no such branch" about a branch that was just pushed.
+
+    GONE is the verdict that tells an agent its work never left the laptop. Answering it for a
+    successful push is expensive in a specific way: the agent re-pushes landed work, or re-opens it.
+    A local remote-tracking ref is evidence the push happened, so the honest verdict is PENDING --
+    known to be pushed, not yet observed on origin.
+
+    The race is reproduced by removing the branch from the bare origin while leaving the clone's
+    remote-tracking ref in place, which is exactly the state `ls-remote` lags into.
+    """
+    _commit(work, "one", "the base")
+    _git(work, "push", "-q", "origin", "main")
+
+    _git(work, "checkout", "-q", "-b", "lane/just-pushed")
+    _commit(work, "two", "work that was pushed")
+    _git(work, "push", "-q", "origin", "lane/just-pushed")
+    # The clone now holds refs/remotes/origin/lane/just-pushed, as it would right after a push.
+    assert (
+        work / ".git" / "refs" / "remotes" / "origin" / "lane" / "just-pushed"
+    ).exists() or "refs/remotes/origin/lane/just-pushed" in _git(work, "show-ref")
+
+    # Now hide it from ls-remote without touching the push that happened: drop it from the bare
+    # origin, leaving the local remote-tracking ref as the only evidence the push ever occurred.
+    _git(_origin_of(work), "update-ref", "-d", "refs/heads/lane/just-pushed")
+
+    code, out = _where(work, "lane/just-pushed")
+    assert code == 3, (
+        f"a branch we pushed and ls-remote has not caught up with is PENDING, not GONE\n{out}"
+    )
+    assert "PENDING" in out, out
+    assert "GONE" not in out, out
+    # It must be clear to the reader that this is a race, not a failed push.
+    assert "not a failed push" in out, out
+
+
+def test_a_branch_that_never_existed_is_still_gone(work: Path):
+    """The fix must not swallow the verdict it corrects: with no local evidence of a push at all,
+    GONE is still the answer, and GONE is what `--expect-landed` turns into a FAIL."""
+    _commit(work, "one", "the base")
+    _git(work, "push", "-q", "origin", "main")
+
+    code, out = _where(work, "lane/never-existed")
+    assert code == 5, out
+    assert "GONE" in out, out
+
+    code, out = _where(work, "lane/never-existed", "--expect-landed")
+    assert code == 1, (
+        f"--expect-landed must still refuse a branch that never existed\n{out}"
+    )

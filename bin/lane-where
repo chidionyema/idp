@@ -34,7 +34,9 @@ VERDICTS
   RED      exit 4   not in main, head status failure -- the reason and the URL are printed
   GONE     exit 5   no such branch on origin -- it was never pushed, or it was deleted after landing
                     (with `--expect-landed` this is a FAIL, because a deleted branch with no
-                    ancestor in main means the work is lost, not landed)
+                    ancestor in main means the work is lost, not landed). A branch that ls-remote
+                    has not caught up with yet but which has a local remote-tracking ref is
+                    PENDING, not GONE: origin's ref advertisement lags a push we just made.
   BLIND    exit 2   git or gh could not answer. "Could not check" must never print as "not landed".
 
 USAGE
@@ -146,6 +148,27 @@ def main() -> int:
 
     receipt: dict = {"branch": branch, "repo": a.repo, "main": main_sha}
     if not head:
+        # ls-remote is a read of origin's ref advertisement, and it LAGS a push we just made.
+        # Measured 2026-11-09: lane-submit pushed lane/dof-freeze-falsifier at 29156ad42 and
+        # lane-where, called seconds later, answered GONE -- while the branch was on origin
+        # (`git ls-remote --heads origin 'refs/heads/lane/dof-freeze*'` listed it). GONE is the
+        # verdict that tells an agent its work never left the laptop, so a race that produces it
+        # is expensive: the agent re-pushes landed work, or re-opens it. A local remote-tracking
+        # ref for this branch is evidence the push happened, so the honest answer is PENDING --
+        # known to have been pushed, not yet observed on origin -- and GONE is kept for a branch
+        # with no such evidence at all. This can only turn a false GONE into PENDING, never into
+        # a false LANDED, so it cannot make an agent stop working on unlanded work.
+        rc_track, track = run(["git", "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}"])
+        if rc_track == 0 and track.strip():
+            receipt.update(verdict="PENDING", head=track.strip(),
+                           note="pushed but not yet visible in origin's ref advertisement")
+            if a.json:
+                print(json.dumps(receipt, indent=1))
+            else:
+                print(f"PENDING lane-where  {branch}  {track.strip()[:12]} is pushed but origin's ref "
+                      f"advertisement does not list it yet; this is a read-after-write race, not a "
+                      f"failed push. Ask again later; do not re-push.")
+            return 1 if a.expect_landed else 3
         receipt.update(verdict="GONE")
         if a.json:
             print(json.dumps(receipt, indent=1))
