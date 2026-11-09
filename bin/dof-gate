@@ -13,12 +13,14 @@ cannot loosen the rules that judge it. An unreadable incident list is health unp
 gate fails closed to the `dof-probe` component, whose only admitted repair is the gate itself.
 Exit 0 admitted / full lease, 1 refused, 3 lease is repair-only.
 """
+
 from __future__ import annotations
 
 import fnmatch
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import urllib.request
@@ -28,7 +30,9 @@ REGISTRY = "catalog/dof-registry.json"
 
 
 def git(*args: str) -> str:
-    return subprocess.run(["git", *args], capture_output=True, text=True, timeout=20, check=True).stdout.strip()
+    return subprocess.run(
+        ["git", *args], capture_output=True, text=True, timeout=20, check=True
+    ).stdout.strip()
 
 
 def load_registry(base: str | None) -> tuple[dict, bool]:
@@ -48,37 +52,79 @@ def glob_match(pattern: str, path: str) -> bool:
 
 
 def scope_of(registry: dict, comp_id: str) -> tuple[list, dict]:
-    comp = registry["components"].get(comp_id) or {"repairScope": registry.get("defaultRepairScope", [])}
+    comp = registry["components"].get(comp_id) or {
+        "repairScope": registry.get("defaultRepairScope", [])
+    }
     out = []
     for p in comp["repairScope"]:
         out.extend(registry.get("substrateScope", []) if p == "@substrate" else [p])
     return out, comp
 
 
+def _auth_token() -> str:
+    """The token for the GitHub API, from the env or the `gh` keyring (never printed).
+
+    The estate authenticates through the `gh` CLI's keyring token, but dof-gate read only
+    GH_TOKEN/GITHUB_TOKEN env vars. In the executor daemon neither is set, so every incident
+    read made an UNAUTHENTICATED call, hit the 60/hr limit, and failed closed to a synthetic
+    `dof-probe` incident -- which locked every agent to "only repair the gate" during an outage.
+    Reading the same token the rest of the estate uses makes the lease reader see what `gh`
+    sees, instead of a fake perm-lock.
+    """
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if token:
+        return token
+    gh = shutil.which("gh")
+    if not gh:
+        return ""
+    try:
+        out = subprocess.run(  # noqa: S603 - fixed argv
+            [gh, "auth", "token"], capture_output=True, text=True, timeout=5
+        )
+    except Exception:
+        return ""
+    return out.stdout.strip() if out.returncode == 0 else ""
+
+
 def open_incidents(registry: dict) -> list:
     """The open incidents, or the fail-closed `dof-probe` incident when they cannot be read."""
     rx = re.compile(registry["incident_title_regex"])
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    token = _auth_token()
     found, page = [], 1
     try:
         while page <= 10:
             req = urllib.request.Request(
                 f"https://api.github.com/repos/{REPO}/issues?state=open&per_page=100&page={page}",
-                headers={"Accept": "application/vnd.github+json", "User-Agent": "idp-dof-gate",
-                         **({"Authorization": f"Bearer {token}"} if token else {})},
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": "idp-dof-gate",
+                    **({"Authorization": f"Bearer {token}"} if token else {}),
+                },
             )
             with urllib.request.urlopen(req, timeout=15) as res:
                 batch = json.load(res)
             for issue in batch:
                 m = rx.match(issue.get("title", ""))
                 if m and "pull_request" not in issue:
-                    found.append({"id": m.group("id"), "issue": issue["number"], "updated_at": issue["updated_at"]})
+                    found.append(
+                        {
+                            "id": m.group("id"),
+                            "issue": issue["number"],
+                            "updated_at": issue["updated_at"],
+                        }
+                    )
             if len(batch) < 100:
                 return found
             page += 1
         return found
     except Exception as exc:  # noqa: BLE001 -- any failure to see is health unproven
-        return [{"id": "dof-probe", "issue": None, "evidence": f"incident list unreadable: {exc}"}]
+        return [
+            {
+                "id": "dof-probe",
+                "issue": None,
+                "evidence": f"incident list unreadable: {exc}",
+            }
+        ]
 
 
 def trailers(message: str) -> dict:
@@ -98,22 +144,43 @@ def evaluate(registry: dict, incidents: list, message: str, changed: list) -> di
     resolves = trailers(message).get("Genesis-Resolves")
     first = incidents[0]
     refusal = {
-        "admitted": False, "refused": True, "level": "L2",
+        "admitted": False,
+        "refused": True,
+        "level": "L2",
         "open_incidents": [{"id": i["id"], "issue": i.get("issue")} for i in incidents],
         "required_trailer": f"Genesis-Resolves: {first['id']}",
     }
     if resolves not in failing:
-        reason = f"Genesis-Resolves '{resolves}' is not an open incident" if resolves else "missing Genesis-Resolves while a critical service is down"
+        reason = (
+            f"Genesis-Resolves '{resolves}' is not an open incident"
+            if resolves
+            else "missing Genesis-Resolves while a critical service is down"
+        )
         return {**refusal, "reason": reason}
     scope, comp = scope_of(registry, resolves)
     if not comp.get("selfRepair"):
-        frozen = [p for p in changed if any(glob_match(g, p) for g in registry.get("immutableWhileRed", []))]
+        frozen = [
+            p
+            for p in changed
+            if any(glob_match(g, p) for g in registry.get("immutableWhileRed", []))
+        ]
         if frozen:
-            return {**refusal, "reason": "the gate is immutable while a critical service is down", "files": frozen}
+            return {
+                **refusal,
+                "reason": "the gate is immutable while a critical service is down",
+                "files": frozen,
+            }
     stray = [p for p in changed if not any(glob_match(g, p) for g in scope)]
     if stray:
-        return {**refusal, "reason": f"files outside {resolves} repairScope", "files": stray}
-    return {"admitted": True, "reason": f"resolves {resolves} (issue #{failing[resolves].get('issue')}) within repairScope"}
+        return {
+            **refusal,
+            "reason": f"files outside {resolves} repairScope",
+            "files": stray,
+        }
+    return {
+        "admitted": True,
+        "reason": f"resolves {resolves} (issue #{failing[resolves].get('issue')}) within repairScope",
+    }
 
 
 def clean_merge(sha: str) -> bool:
@@ -121,7 +188,9 @@ def clean_merge(sha: str) -> bool:
     if len(parents) < 2:
         return False
     try:
-        return git("merge-tree", "--write-tree", *parents).splitlines()[0] == git("rev-parse", f"{sha}^{{tree}}")
+        return git("merge-tree", "--write-tree", *parents).splitlines()[0] == git(
+            "rev-parse", f"{sha}^{{tree}}"
+        )
     except subprocess.CalledProcessError:
         return False
 
@@ -131,8 +200,11 @@ def main(argv: list) -> int:
         registry, _ = load_registry(None)
         incidents = open_incidents(registry)
         lease = {
-            "repo": REPO, "level": "L2" if incidents else "L0",
-            "lease": f"repair-only: Genesis-Resolves: {incidents[0]['id']}" if incidents else "full",
+            "repo": REPO,
+            "level": "L2" if incidents else "L0",
+            "lease": f"repair-only: Genesis-Resolves: {incidents[0]['id']}"
+            if incidents
+            else "full",
             "open_incidents": incidents,
         }
         print(json.dumps(lease, indent=2))
@@ -141,25 +213,51 @@ def main(argv: list) -> int:
     registry, bootstrap = load_registry(base)
     incidents = open_incidents(registry)
     decisions = []
-    for sha in [s for s in git("rev-list", "--reverse", f"{base}..{head}").splitlines() if s]:
+    for sha in [
+        s for s in git("rev-list", "--reverse", f"{base}..{head}").splitlines() if s
+    ]:
         if bootstrap:
             d = {"admitted": True, "reason": "bootstrap: base has no DoF registry"}
         elif clean_merge(sha):
             d = {"admitted": True, "reason": "clean merge of judged parents"}
         else:
-            changed = [p for p in git("diff-tree", "--root", "--no-commit-id", "--name-only", "-r", sha).splitlines() if p]
-            d = evaluate(registry, incidents, git("log", "-1", "--format=%B", sha), changed)
+            changed = [
+                p
+                for p in git(
+                    "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", sha
+                ).splitlines()
+                if p
+            ]
+            d = evaluate(
+                registry, incidents, git("log", "-1", "--format=%B", sha), changed
+            )
         decisions.append({"sha": sha, **d})
     ok = all(d["admitted"] for d in decisions)
-    print(json.dumps({"gate": "dof", "ok": ok, "level": "L2" if incidents else "L0", "bootstrap": bootstrap,
-                      "open_incidents": incidents, "commits": decisions}, indent=2))
+    print(
+        json.dumps(
+            {
+                "gate": "dof",
+                "ok": ok,
+                "level": "L2" if incidents else "L0",
+                "bootstrap": bootstrap,
+                "open_incidents": incidents,
+                "commits": decisions,
+            },
+            indent=2,
+        )
+    )
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a") as fh:
-            fh.write(f"## DoF level: {'L2' if incidents else 'L0'}\n| incident | issue |\n|---|---|\n")
+            fh.write(
+                f"## DoF level: {'L2' if incidents else 'L0'}\n| incident | issue |\n|---|---|\n"
+            )
             fh.writelines(f"| {i['id']} | #{i.get('issue')} |\n" for i in incidents)
             fh.write("\n| commit | decision | reason |\n|---|---|---|\n")
-            fh.writelines(f"| {d['sha'][:9]} | {'admitted' if d['admitted'] else 'REFUSED'} | {d['reason']} |\n" for d in decisions)
+            fh.writelines(
+                f"| {d['sha'][:9]} | {'admitted' if d['admitted'] else 'REFUSED'} | {d['reason']} |\n"
+                for d in decisions
+            )
     return 0 if ok else 1
 
 
