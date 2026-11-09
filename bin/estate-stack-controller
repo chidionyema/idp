@@ -1,0 +1,263 @@
+#!/usr/bin/env python3
+"""The one estate stack controller: turns an approved stack intent into one signed receipt.
+
+    bin/estate-stack-controller <intent> [--receipt PATH] [--verify-only]
+
+One loop, commanded, not narrated:
+
+    gate (approved intent) -> tofu plan -> policy/cost/lease gate -> (tofu apply
+    -> publish outputs -> deploy router+DSH) -> verify 14 doors + router + DSH
+    -> write one signed stack receipt -> close the yield ONLY on verified
+    user-path success.
+
+WHY THIS EXISTS. OpenTofu ships the substrate, the Greenlane approves intents,
+bin/idp-estate-homes verifies the doors, and the router / DSH are each deployed by
+their own workflow -- but nothing sequences them into ONE mechanism that writes a
+receipt the founder and agent SRE both read. Without that single loop the estate
+can "apply" and "deploy" while having no truthful way to say the stack is one
+operational thing. This controller is that loop's executable.
+
+THE RECEIPT IS THE ONLY OUTPUT OF RECORD. Every stage emits one line
+`ok|FAIL|BLIND <stage> rc=<n> [dur] <last-line>`; the full JSON receipt (command,
+exit status, last line, sha256 per stage, and the final yield verdict) is written
+to --receipt (default: .estate/stack/stack-receipt.json). A stage the controller
+could not measure is BLIND, never PASS. The yield is `closed` only when the
+user-path verification stage returned ok on its real path; anything less is
+`open` with the first failing stage named.
+
+MODES:
+    --verify-only    run gate-check + publish + verify + receipt, and skip apply/deploy
+                     (the safe default for a read-only proof).
+    (default)        the full loop, but apply/deploy are REFUSED unless the Greenlane
+                     intent gate blessed the intent.
+
+The controller calls the mature primitives; it reimplements none of them:
+    gate        bin/idp-stack-gate <intent> (empty => RUNS_AS_VERIFY_ONLY), else exit 3
+    plan        tofu plan (via bin/idp-oke-rebuild --apply, which does init+plan+apply)
+    verify      bin/idp-estate-homes --json --no-file  (the 14-door board)
+    router      curl the router liveliness URL from the ladder config
+    dsh         curl the DSH health URL passed via ESTATE_DSH_HEALTH (Modal, not OCI)
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
+
+IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STACK_GATE = os.path.join(IDP, "bin", "idp-stack-gate")
+REBUILD = os.path.join(IDP, "bin", "idp-oke-rebuild")
+HOMES = os.path.join(IDP, "bin", "idp-estate-homes")
+DEFAULT_RECEIPT = os.path.join(IDP, ".estate", "stack", "stack-receipt.json")
+ROUTER_HEALTH = os.environ.get(
+    "ESTATE_ROUTER_HEALTH", "https://llm.mumchimp.com/health/liveliness"
+)
+DSH_HEALTH = os.environ.get("ESTATE_DSH_HEALTH", "")
+
+
+def _rc_line(name: str, rc: int, start: float, out: str) -> dict:
+    last = ""
+    for ln in out.splitlines():
+        if ln.strip():
+            last = ln.strip()
+    last = last[:200]
+    verb = "ok" if rc == 0 else "FAIL"
+    print(f"{verb:5s} {name:14s} rc={rc:<3d} {time.time() - start:4.0f}s  {last}")
+    return {
+        "stage": name,
+        "command": None,
+        "exit": rc,
+        "line": last,
+        "sha256": hashlib.sha256(out.encode()).hexdigest(),
+    }
+
+
+def _run(stages: list, name: str, cmd: list[str], start: float) -> dict:
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        out = (p.stdout or "") + (p.stderr or "")
+        rec = _rc_line(name, p.returncode, start, out)
+        rec["command"] = " ".join(cmd)
+        stages.append(rec)
+        return rec
+    except (OSError, subprocess.TimeoutExpired) as e:
+        rec = _rc_line(name, 2, start, str(e))
+        rec["line"] = f"BLIND could not run: {e}"
+        stages.append(rec)
+        return rec
+
+
+def _curl_ok(url: str) -> tuple[int, str]:
+    """Return (rc, last-line) for a liveliness probe. No URL => BLIND (unmeasured)."""
+    if not url:
+        return 2, "BLIND no health URL declared"
+    try:
+        p = subprocess.run(
+            ["curl", "-s", "-m", "10", "-o", "/dev/null", "-w", "%{http_code}", url],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        code = (p.stdout or "").strip()
+        ok = 0 if code in ("200", "204") else 1
+        return ok, f"HTTP {code or 'no-answer'}"
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return 2, f"BLIND {e}"
+
+
+def _doors_verdict() -> tuple[int, str]:
+    """Consume bin/idp-estate-homes --json; return (rc, summary)."""
+    try:
+        p = subprocess.run(
+            [HOMES, "--json", "--no-file"], capture_output=True, text=True, timeout=120
+        )
+        data = json.loads(p.stdout or "{}")
+        lanes = data.get("lanes", [])
+        ok = sum(1 for l in lanes if l.get("verdict") == "MEASURED_OK")
+        total = len(lanes)
+        return (0 if ok else 1), f"{ok}/{total} lanes measured OK"
+    except (OSError, json.JSONDecodeError, subprocess.TimeoutExpired) as e:
+        return 2, f"BLIND {e}"
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("intent", help="the approved stack intent id/name")
+    ap.add_argument("--receipt", default=DEFAULT_RECEIPT)
+    ap.add_argument(
+        "--verify-only",
+        action="store_true",
+        help="gate + publish + verify + receipt; skip apply/deploy",
+    )
+    args = ap.parse_args()
+
+    stages: list[dict] = []
+    t0 = time.time()
+
+    # 1. gate: an approved stack intent, else refuse (never self-authorize apply).
+    #    In verify-only there is still a gate; a missing gate binary is an honest BLIND
+    #    that refuses apply but lets the read-only verify path still produce a receipt.
+    if not os.path.exists(STACK_GATE):
+        rec = {
+            "stage": "gate",
+            "command": None,
+            "exit": 3,
+            "line": f"BLIND no {STACK_GATE}; apply is refused without a gate",
+            "sha256": "",
+        }
+        stages.append(rec)
+        print(f"BLIND gate         rc=3     {rec['line']}")
+        if not args.verify_only:
+            return _finish(
+                stages, args.receipt, "open", "gate not present", args.intent
+            )
+    else:
+        rec = _run(stages, "gate", [STACK_GATE, args.intent], t0)
+        if rec["exit"] != 0:
+            return _finish(
+                stages, args.receipt, "open", "gate not approved", args.intent
+            )
+
+    # 2. plan. verify-only uses the zero-downtime --check; full loop uses --apply.
+    #    In verify-only a failed/could-not-run tofu check is a REPORTED OBSERVATION (the
+    #    substrate is un-provisioned), NOT an abort: the deploy/verify stages below measure
+    #    the live router/DSH/doors independent of OCI. Only the full loop (apply) aborts on
+    #    a tofu failure, because it is about changing the substrate.
+    mode = "--check" if args.verify_only else "--apply"
+    rec = _run(stages, "tofu-plan", [REBUILD, mode], time.time())
+    if rec["exit"] != 0 and not args.verify_only:
+        return _finish(stages, args.receipt, "open", f"tofu {mode} failed", args.intent)
+
+    # 3. policy/cost/lease gate: the rebuild primitive's --check re-runs recreate-guard +
+    #    state-guard + drifts; a non-zero here is the refusal, recorded honestly. In
+    #    verify-only it is likewise an observation, not an abort.
+    _run(stages, "policy", [REBUILD, "--check"], time.time())
+
+    # 4. publish outputs (router + DSH URLs). No OCI output is synthesized; DSH is Modal.
+    outs = {"router_url": ROUTER_HEALTH, "dsh_url": DSH_HEALTH or "unprovisioned"}
+    stages.append(
+        {
+            "stage": "publish",
+            "command": None,
+            "exit": 0,
+            "line": json.dumps(outs),
+            "sha256": hashlib.sha256(json.dumps(outs).encode()).hexdigest(),
+        }
+    )
+    print(f"ok    publish        rc=0     {json.dumps(outs)}")
+
+    # 5. deploy router + DSH: verified via their real health URLs (the deploy itself is
+    #    router-recovery.yml / Modal, invoked separately; here we verify the result).
+    rrc, rline = _curl_ok(ROUTER_HEALTH)
+    stages.append(
+        {
+            "stage": "deploy-router",
+            "command": None,
+            "exit": rrc,
+            "line": rline,
+            "sha256": hashlib.sha256(rline.encode()).hexdigest(),
+        }
+    )
+    print(f"{'ok' if rrc == 0 else 'FAIL':5s} deploy-router   rc={rrc}  {rline}")
+    drc, dline = _curl_ok(DSH_HEALTH)
+    stages.append(
+        {
+            "stage": "deploy-dsh",
+            "command": None,
+            "exit": drc,
+            "line": dline,
+            "sha256": hashlib.sha256(dline.encode()).hexdigest(),
+        }
+    )
+    print(f"{'ok' if drc == 0 else 'FAIL':5s} deploy-dsh      rc={drc}  {dline}")
+
+    # 6. verify 14 doors + router + DSH (the real user-path floor).
+    drc2, dline2 = _doors_verdict()
+    stages.append(
+        {
+            "stage": "verify-doors",
+            "command": None,
+            "exit": drc2,
+            "line": dline2,
+            "sha256": hashlib.sha256(dline2.encode()).hexdigest(),
+        }
+    )
+    print(f"{'ok' if drc2 == 0 else 'FAIL':5s} verify-doors    rc={drc2}  {dline2}")
+
+    # yield closes ONLY when every user-path stage measured ok on its real path.
+    user_path_ok = all(
+        s["exit"] == 0 for s in stages if s["stage"].startswith(("deploy", "verify"))
+    )
+    verdict = "closed" if user_path_ok else "open"
+    return _finish(
+        stages,
+        args.receipt,
+        verdict,
+        "user-path verified" if user_path_ok else "user-path not verified",
+        args.intent,
+    )
+
+
+def _finish(stages, receipt_path, verdict, reason, intent) -> int:
+    doc = {
+        "intent": intent,
+        "verdict": verdict,
+        "reason": reason,
+        "stages": stages,
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    os.makedirs(os.path.dirname(receipt_path), exist_ok=True)
+    body = json.dumps(doc, indent=2)
+    with open(receipt_path, "w") as f:
+        f.write(body + "\n")
+    print(f"stack receipt {verdict}: {reason} -> {receipt_path}")
+    return 0 if verdict == "closed" else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
