@@ -6,10 +6,10 @@ mutation-capable OKE apply-targets after retirement. Tests do not call OCI.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -28,7 +28,8 @@ class RetiredOkeAdmissionTests(unittest.TestCase):
 
     def test_legacy_job_is_disabled_at_job_level_not_only_first_step(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
-        retirement = source.split("\n  retired-substrate:\n", 1)[1].split("\n  check:\n", 1)[0]
+        retirement = source.split("\n  retired-substrate:\n", 1)[1]
+        retirement = retirement.split("\n  check:\n", 1)[0]
         legacy = source.split("\n  check:\n", 1)[1]
         self.assertIn("RETIRED_SUBSTRATE", retirement)
         self.assertIn("exit 78", retirement)
@@ -52,7 +53,9 @@ class RetiredOkeAdmissionTests(unittest.TestCase):
             for name in ("oci", "tofu", "kubectl", "flux", "curl", "gh"):
                 command = fake_bin / name
                 command.write_text(
-                    "#!/bin/sh\nprintf 'attempt\\n' >> \"$OKE_EFFECT_MARKER\"\nexit 91\n",
+                    "#!/bin/sh\n"
+                    "printf 'attempt\\n' >> \"$OKE_EFFECT_MARKER\"\n"
+                    "exit 91\n",
                     encoding="utf-8",
                 )
                 command.chmod(0o755)
@@ -72,7 +75,9 @@ class RetiredOkeAdmissionTests(unittest.TestCase):
                     )
                     self.assertEqual(result.returncode, 78, result.stderr)
                     self.assertIn("RETIRED_SUBSTRATE", result.stderr)
-                    self.assertFalse(marker.exists(), "a retired OKE mode reached an effect tool")
+                    self.assertFalse(
+                        marker.exists(), "a retired OKE mode reached an effect tool"
+                    )
 
 
 if __name__ == "__main__":
