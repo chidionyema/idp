@@ -1,0 +1,40 @@
+name: Merian website acceptance
+on:
+  push:
+    branches:
+      - research/merian-group-website-20261109
+    paths:
+      - "web/**"
+      - "AGENTS.md"
+      - ".github/workflows/merian-website-acceptance.yml"
+
+permissions:
+  contents: read
+concurrency:
+  group: merian-website-acceptance
+  cancel-in-progress: true
+
+jobs:
+  verify-web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run voice
+      - run: npm run voice:self-test
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: npm run test:smoke
