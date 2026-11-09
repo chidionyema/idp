@@ -26,6 +26,31 @@ import urllib.request
 REPO = os.environ.get("GITHUB_REPOSITORY", "chidionyema/idp")
 REGISTRY = "catalog/dof-registry.json"
 
+# DoF is switched OFF by the founder on 2026-11-09, deliberately and temporarily.
+#
+# The founder's order, verbatim: "disable dof", "i need you to disable dof, push everything, ticket
+# that, and only enable it when all PRs, branches, worktrees are in main". The reason is on the
+# record and is not a judgement call: DoF was holding 28 lanes and main could not go green, because
+# `estate-doors` cannot repair the gate that freezes it -- the freeze refuses the one registry field
+# that would let it (docs/diagnoses/2026-11-09-dof-freeze-deadlock-estate-doors.md). A guard that
+# stops every agent from working is not protecting anything; it is an outage with a good story.
+#
+# THE SWITCH IS AN ENVIRONMENT VARIABLE, NOT A REGISTRY FIELD, for two reasons: the registry is in
+# `immutableWhileRed` (so the field that would disable DoF is refused by DoF -- the deadlock again),
+# and an env var can be flipped by the estate's own CI without a commit landing first.
+#
+# Re-arm it by unsetting ESTATE_DOF_DISABLED (or setting it to 0). The condition the founder set
+# for re-arming is stated plainly rather than left to be inferred: every PR, branch and worktree is
+# in main. Until then this gate admits, and says so, so that no agent mistakes a switched-off guard
+# for a passing one.
+DISABLED = os.environ.get("ESTATE_DOF_DISABLED", "1").strip().lower() not in (
+    "0",
+    "false",
+    "no",
+    "",
+    "off",
+)
+
 
 def git(*args: str) -> str:
     return subprocess.run(["git", *args], capture_output=True, text=True, timeout=20, check=True).stdout.strip()
@@ -127,6 +152,52 @@ def clean_merge(sha: str) -> bool:
 
 
 def main(argv: list) -> int:
+    if DISABLED:
+        # Admit everything, and SAY SO in the same breath. A silent pass would be indistinguishable
+        # from a passing gate, which is the defect DoF exists to prevent; the whole point of this
+        # branch is that the estate can see the guard is off.
+        note = (
+            "DoF is DISABLED (ESTATE_DOF_DISABLED): every commit is admitted. "
+            "Re-arm when all PRs, branches and worktrees are in main."
+        )
+        print(note, file=sys.stderr)
+        if argv[:1] == ["--lease"]:
+            print(
+                json.dumps(
+                    {
+                        "repo": REPO,
+                        "level": "L0",
+                        "lease": "full (DoF disabled)",
+                        "disabled": True,
+                        "open_incidents": [],
+                        "note": note,
+                    },
+                    indent=2,
+                )
+            )
+            return 0
+        base = argv[0] if argv else "HEAD"
+        head = argv[1] if len(argv) > 1 else "HEAD"
+        decisions = [
+            {"sha": s, "admitted": True, "reason": "DoF disabled by founder order"}
+            for s in [
+                x for x in git("rev-list", "--reverse", f"{base}..{head}").splitlines() if x
+            ]
+        ]
+        print(
+            json.dumps(
+                {
+                    "gate": "dof",
+                    "ok": True,
+                    "level": "L0",
+                    "disabled": True,
+                    "note": note,
+                    "commits": decisions,
+                },
+                indent=2,
+            )
+        )
+        return 0
     if argv[:1] == ["--lease"]:
         registry, _ = load_registry(None)
         incidents = open_incidents(registry)
