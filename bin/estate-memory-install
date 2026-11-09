@@ -126,6 +126,11 @@ def home_files() -> list[str]:
         # installed session-start release, not an agent-side optional file.
         "platform/estate/onboarding/pack.py",
         "platform/estate/onboarding/operating_model.json",
+        # Pinned ADRs and full explanation travel with the static pack.
+        # Their exact Git blob identities are checked by pack.load.
+        "docs/decisions/0034-workloads-are-placed-by-the-free-tier-not-by-the-cluster.md",
+        "docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md",
+        "docs/onboarding/estate-idp-genesis-and-infrastructure.md",
         *links,
         *tools,
     ]
