@@ -1,0 +1,84 @@
+# Upstream Uber BuildRunner's four sq_* inputs, not a PR-only green check.
+# This reconstructs dependency hypotheses and runs unprivileged tests.
+# ADVISORY ONLY: not a substitute for IDP's nine exact-SHA required checks.
+name: submitqueue-speculative-advisory
+on:
+  workflow_dispatch:
+    inputs:
+      sq_base_uris:
+        description: 'JSON array of PR heads assumed to land before this batch'
+        required: true
+        type: string
+      sq_head_uris:
+        description: 'JSON array of batch PR heads under test'
+        required: true
+        type: string
+      sq_queue:
+        description: 'SubmitQueue queue identity'
+        required: true
+        type: string
+      sq_metadata:
+        description: 'SubmitQueue metadata as JSON'
+        required: false
+        type: string
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: inputs.sq_queue == 'idp-ferrari'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Resolve and verify exact dependency and batch PR heads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          SQ_BASE_URIS: ${{ inputs.sq_base_uris }}
+          SQ_HEAD_URIS: ${{ inputs.sq_head_uris }}
+        run: |
+          set -euo pipefail
+          python3 platform/submitqueue/materialize.py \
+            --repo "$GITHUB_REPOSITORY" \
+            --bases "$SQ_BASE_URIS" --heads "$SQ_HEAD_URIS" \
+            > "$RUNNER_TEMP/sq-source-receipt.json"
+          cat "$RUNNER_TEMP/sq-source-receipt.json"
+      - name: Prove policy on materialized head without release authority
+        env:
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          base="$(python3 -c 'import json,os; print(json.load(open(os.environ["RUNNER_TEMP"]+"/sq-source-receipt.json"))["base_sha"])')"
+          head="$(git rev-parse HEAD)"
+          # Any DoF refusal is a real negative, never an inferred green.
+          python3 bin/dof-gate "$base" "$head"
+          # Jev may narrow advisory test work. It never changes required checks.
+          python3 platform/submitqueue/jev_plan.py --base "$base" --head "$head" \
+            > "$RUNNER_TEMP/sq-jev-plan.json"
+          cat "$RUNNER_TEMP/sq-jev-plan.json"
+      - name: One bounded unprivileged validation of the combined candidate
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q greenlane platform/submitqueue
+          python3 -m pip install --quiet pytest==8.4.2
+          python3 -m pytest -q tests/test_submitqueue_preflight.py \
+            tests/test_submitqueue_common_failure_reaction.py \
+            tests/test_submitqueue_materialize.py \
+            tests/test_submitqueue_jev_plan.py
+      - name: Publish evidence for independent downstream review
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: submitqueue-speculative-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/sq-source-receipt.json
+            ${{ runner.temp }}/sq-jev-plan.json
+          if-no-files-found: warn
+          retention-days: 14
