@@ -3,15 +3,15 @@ import { site } from "@/content/site";
 import { ResearchQA } from "@/components/ResearchQA";
 import { Reveal } from "@/components/Reveal";
 import type { Metadata } from "next";
-export const metadata: Metadata = { title: "Research", description: "Production-tested frameworks for agentic routing, workload identity, and LLM observability." };
+export const metadata: Metadata = { title: "Research", description: "Research themes in AI routing, workload identity and evaluation." };
 
 export default function ResearchPage() {
   return (
     <div className="container section">
       <Reveal><div style={{ marginBottom: "64px" }}>
         <span className="tag tag-accent" style={{ marginBottom: "16px", display: "inline-flex" }}>Research</span>
-        <h1>What we’ve actually shipped</h1>
-        <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "18px", maxWidth: "60ch" }}>Frameworks, architectures and operational playbooks, tested against production traffic.</p>
+        <h1>What we are testing</h1>
+        <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "18px", maxWidth: "60ch" }}>Hypotheses, experiments and real failure cases. Research evidence is not a claim of commercial readiness.</p>
       </div></Reveal>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "24px", marginBottom: "80px" }}>
         {site.research.map((r) => (
@@ -33,7 +33,7 @@ export default function ResearchPage() {
         ))}
       </div>
       <div style={{ borderTop: "1px solid var(--rule)", paddingTop: "64px" }}>
-        <Reveal><div style={{ marginBottom: "40px" }}><h2>Research Q&amp;A</h2><p style={{ color: "var(--ink-3)", marginTop: "12px" }}>Ask a question about our work. Answers are grounded in what we’ve actually shipped, with sources.</p></div></Reveal>
+        <Reveal><div style={{ marginBottom: "40px" }}><h2>Research Q&amp;A</h2><p style={{ color: "var(--ink-3)", marginTop: "12px" }}>Ask a question about our work. Review the source evidence for each claim; new hypotheses should remain testable.</p></div></Reveal>
         <ResearchQA />
       </div>
     </div>

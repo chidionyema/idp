@@ -15,12 +15,12 @@ export default function OpenGraphImage() {
             <div style={{ position: "absolute", top: "3px", left: "21px", width: "18px", height: "54px", border: "3px solid #0D0D0A", borderRadius: "12px" }} />
             <div style={{ position: "absolute", top: "0px", left: "26px", width: "8px", height: "8px", borderRadius: "4px", background: "#1A56DB" }} />
           </div>
-          <span style={{ fontFamily: "monospace", fontSize: "30px", fontWeight: 600, color: "#0D0D0A", letterSpacing: "-0.01em" }}>Meridian</span>
+          <span style={{ fontFamily: "monospace", fontSize: "30px", fontWeight: 600, color: "#0D0D0A", letterSpacing: "-0.01em" }}>Merian</span>
           <span style={{ fontFamily: "monospace", fontSize: "30px", fontWeight: 600, color: "#1A56DB" }}>.</span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <p style={{ fontFamily: "Georgia, serif", fontSize: "56px", fontWeight: 500, color: "#0D0D0A", lineHeight: 1.1, letterSpacing: "-0.02em" }}>AI infrastructure for the enterprises building what’s next.</p>
-          <p style={{ fontFamily: "monospace", fontSize: "20px", color: "#6B6B68" }}>Routing · Observability · Security · Evaluation</p>
+          <p style={{ fontFamily: "Georgia, serif", fontSize: "56px", fontWeight: 500, color: "#0D0D0A", lineHeight: 1.1, letterSpacing: "-0.02em" }}>Research boldly. Commercialise with proof.</p>
+          <p style={{ fontFamily: "monospace", fontSize: "20px", color: "#6B6B68" }}>Research · Experiments · Products · Proof</p>
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", height: "48px", background: "#0D0D0A", padding: "0 80px", gap: "24px" }}>
