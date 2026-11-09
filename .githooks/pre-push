@@ -224,7 +224,7 @@ while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
     # crate siblings are reached via `use crate::`. The real check is `cargo check` on the
     # nearest crate (the first ancestor holding a Cargo.toml). No cargo, or a crate that does
     # not type-check, is a REFUSAL -- never a silent pass. A single cargo check per crate is
-    # cheap, and the rustc result is the deterministic verdict (§9 R3).
+    # cheap, and the rustc result is the deterministic verdict (AGENTS.md section 9 R3).
     if [ "$kind" = "rust" ]; then
       cargo_bin="cargo"
       if ! command -v cargo >/dev/null 2>&1; then
