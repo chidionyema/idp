@@ -126,9 +126,36 @@ def clean_merge(sha: str) -> bool:
         return False
 
 
+def control_mode(registry: dict) -> str:
+    """Mode is versioned registry data; unknown values cannot weaken enforcement."""
+    mode = registry.get("control", {}).get("mode", "enforced")
+    return mode if mode in ("enforced", "observe", "disabled") else "enforced"
+
+
+def suspended_result(registry: dict, lease: bool = False) -> dict:
+    """Never represent a disabled control as healthy or fully enforced."""
+    control = registry.get("control") or {}
+    result = {
+        "gate": "dof",
+        "enforcement": control_mode(registry).upper(),
+        "mode": control_mode(registry),
+        "directive": control.get("directive"),
+        "reason": control.get("reason", "DoF enforcement suspension"),
+        "other_security_checks": "UNCHANGED",
+    }
+    if lease:
+        result.update({"level": "SUSPENDED", "lease": "full", "open_incidents": None})
+    else:
+        result.update({"ok": True, "level": "SUSPENDED", "commits": [], "open_incidents": None})
+    return result
+
+
 def main(argv: list) -> int:
     if argv[:1] == ["--lease"]:
         registry, _ = load_registry(None)
+        if control_mode(registry) == "disabled":
+            print(json.dumps(suspended_result(registry, lease=True), indent=2))
+            return 0
         incidents = open_incidents(registry)
         lease = {
             "repo": REPO, "level": "L2" if incidents else "L0",
@@ -139,6 +166,9 @@ def main(argv: list) -> int:
         return 3 if incidents else 0
     base, head = argv[0], argv[1] if len(argv) > 1 else "HEAD"
     registry, bootstrap = load_registry(base)
+    if control_mode(registry) == "disabled":
+        print(json.dumps(suspended_result(registry), indent=2))
+        return 0
     incidents = open_incidents(registry)
     decisions = []
     for sha in [s for s in git("rev-list", "--reverse", f"{base}..{head}").splitlines() if s]:
@@ -151,6 +181,11 @@ def main(argv: list) -> int:
             d = evaluate(registry, incidents, git("log", "-1", "--format=%B", sha), changed)
         decisions.append({"sha": sha, **d})
     ok = all(d["admitted"] for d in decisions)
+    if control_mode(registry) == "observe":
+        print(json.dumps({"gate": "dof", "mode": "observe", "enforcement": "OBSERVE_ONLY",
+                          "would_admit": ok, "other_security_checks": "UNCHANGED",
+                          "commits": decisions}, indent=2))
+        return 0
     print(json.dumps({"gate": "dof", "ok": ok, "level": "L2" if incidents else "L0", "bootstrap": bootstrap,
                       "open_incidents": incidents, "commits": decisions}, indent=2))
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
