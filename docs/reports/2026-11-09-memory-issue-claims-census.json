@@ -1,10 +1,10 @@
 {
   "schema": "estate.memory.claim_issue_sweep.v1",
-  "generated_at": "2026-11-09T03:03:55.668Z",
+  "generated_at": "2026-11-09T03:04:31.844Z",
   "evidence": "GitHub issue comments; text claims NOT authenticated current leases, includes non-memory matches and historical claims",
   "source_census": "docs/reports/2026-11-09-memory-issues-census.json",
   "total_issue_candidates": 144,
-  "processed": 12,
+  "processed": 24,
   "issues": [
     {
       "repo": "chidionyema/argon",
@@ -115,6 +115,90 @@
     {
       "repo": "chidionyema/idp",
       "number": 1798,
+      "state": "closed",
+      "total_comments": 1,
+      "claim_lines": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 1870,
+      "state": "closed",
+      "total_comments": 2,
+      "claim_lines": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 1981,
+      "state": "closed",
+      "total_comments": 101,
+      "claim_lines": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 2290,
+      "state": "closed",
+      "total_comments": 1,
+      "claim_lines": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 2423,
+      "state": "closed",
+      "total_comments": 74,
+      "claim_lines": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 2568,
+      "state": "closed",
+      "total_comments": 10,
+      "claim_lines": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 3309,
+      "state": "open",
+      "total_comments": 0,
+      "claim_lines": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 3378,
+      "state": "closed",
+      "total_comments": 1,
+      "claim_lines": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 3380,
+      "state": "closed",
+      "total_comments": 1,
+      "claim_lines": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 3439,
+      "state": "open",
+      "total_comments": 0,
+      "claim_lines": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 3825,
+      "state": "open",
+      "total_comments": 0,
+      "claim_lines": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 3905,
+      "state": "closed",
+      "total_comments": 1,
+      "claim_lines": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 4792,
       "state": "closed",
       "total_comments": 1,
       "claim_lines": []
