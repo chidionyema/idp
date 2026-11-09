@@ -37,7 +37,7 @@ Payload shape:
 
 ```json
 {
-  "source": "meridian.ai/contact",
+  "source": "merian-intelligence/contact",
   "received_at": "<ISO 8601>",
   "name": "...",
   "email": "...",
