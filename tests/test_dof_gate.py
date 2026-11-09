@@ -52,3 +52,24 @@ def test_glob_is_anchored():
     assert not gate.glob_match("clusters/**", "clustersx/a.yaml")
     assert gate.glob_match("bin/idp-oke-*", "bin/idp-oke-rebuild")
     assert not gate.glob_match("bin/idp-oke-*", "bin/x/idp-oke-rebuild")
+
+
+def test_founder_suspension_is_explicit_not_healthy():
+    assert gate.control_mode(REGISTRY) == "disabled"
+    snapshot = gate.suspended_result(REGISTRY)
+    assert snapshot["ok"] is True
+    assert snapshot["enforcement"] == "DISABLED"
+    assert snapshot["other_security_checks"] == "UNCHANGED"
+    assert snapshot["open_incidents"] is None
+
+
+def test_unknown_control_mode_never_disables_gate():
+    registry = {**REGISTRY, "control": {"mode": "unsupported"}}
+    assert gate.control_mode(registry) == "enforced"
+
+
+def test_expand_contract_modes_preserve_explicit_semantics():
+    for mode in ("enforced", "observe", "disabled"):
+        registry = {**REGISTRY, "control": {"mode": mode}}
+        assert gate.control_mode(registry) == mode
+    assert gate.control_mode({}) == "enforced"
