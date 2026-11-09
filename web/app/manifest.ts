@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Meridian Intelligence",
     short_name: "Meridian",
     description:
-      "We build the routing, tracing, workload identity and eval layers that put LLM features into production.",
+      "AI systems engineering for real operating environments.",
     start_url: "/",
     display: "standalone",
     background_color: "#FAFAF8",
