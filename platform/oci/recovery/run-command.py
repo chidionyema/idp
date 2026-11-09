@@ -276,6 +276,23 @@ def require_run_command_plugin(compartment: str, instance_id: str) -> None:
         )
 
 
+def _parse_command_ids(raw: str | None) -> list[str]:
+    """Read a `data[].id` query, where EMPTY is a verdict and not a fault.
+
+    OCI CLI answers a `--query data[].id` that selects nothing with no output at
+    all (not `[]`, not `null`), while the unfiltered list of the same endpoint
+    returns rows. `json.loads('')` raises, and the guard then reported the safe
+    state -- no command in flight -- as BLIND, which blocked every recovery run
+    on a host whose queue was in fact empty (measured 2026-11-09, idp#7334:
+    `--lifecycle-state ACCEPTED` returned 0 bytes, exit 0, while the unfiltered
+    list returned 8 commands). An empty answer is an empty queue. A non-empty
+    answer that is not JSON is still BLIND, because that is a real fault.
+    """
+    if raw is None or not raw.strip():
+        return []
+    return json.loads(raw)
+
+
 def require_idle_command_queue(compartment: str, instance_id: str) -> None:
     """Never fill OCI's five in-flight command slots with repeated dead probes.
 
@@ -295,7 +312,7 @@ def require_idle_command_queue(compartment: str, instance_id: str) -> None:
                 ],
                 what=f"reading {lifecycle} OCI commands for {instance_id}",
             )
-            commands = json.loads(raw)
+            commands = _parse_command_ids(raw)
         except (TransportError, json.JSONDecodeError, TypeError) as exc:
             raise TransportError(
                 f"BLIND unable to attest {lifecycle} OCI command queue on "
