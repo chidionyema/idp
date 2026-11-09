@@ -707,6 +707,10 @@ def main(argv: list[str]) -> int:
     )
     for p in problems:
         print(f"FAIL  claim-gate  {p}")
+    if problems:
+        # The fix, not just the finding: an agent that reads a refusal should have exactly one
+        # next move. bin/claim-open derives the paths from the diff, so it cannot under-cover.
+        print("      fix: bin/claim-open --issue <n> --agent <you>   (it derives paths from the diff)")
     if not problems:
         print("ok    claim-gate  no other live agent holds these files")
     return 1 if problems else 0
