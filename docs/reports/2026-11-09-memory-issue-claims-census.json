@@ -1,10 +1,10 @@
 {
   "schema": "estate.memory.claim_issue_sweep.v1",
-  "generated_at": "2026-11-09T03:06:28.951Z",
+  "generated_at": "2026-11-09T03:07:01.057Z",
   "evidence": "GitHub issue comments; text claims NOT authenticated current leases, includes non-memory matches and historical claims",
   "source_census": "docs/reports/2026-11-09-memory-issues-census.json",
   "total_issue_candidates": 144,
-  "processed": 54,
+  "processed": 69,
   "issues": [
     {
       "repo": "chidionyema/argon",
@@ -658,6 +658,444 @@
           "occurrences": 1
         }
       ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6183,
+      "state": "closed",
+      "total_comments": 2,
+      "claim_line_count": 1,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=claude-code paths=bin/idp-estate-seed,platform/unified-memory-server/oke-unified-memory.yaml,tests/test_memory_router_key_covers_its_lanes.py heartbeat=<versioned>",
+          "agent": "claude-code",
+          "first_heartbeat": "2026-10-14T08:25:51Z",
+          "last_heartbeat": "2026-10-14T08:25:51Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6188,
+      "state": "closed",
+      "total_comments": 1,
+      "claim_line_count": 1,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=claude-code paths=.github/workflows/vault-seed.yml,tests/test_memory_door_key_is_delivered_to_the_laptop.py heartbeat=<versioned>",
+          "agent": "claude-code",
+          "first_heartbeat": "2026-10-14T09:20:16Z",
+          "last_heartbeat": "2026-10-14T09:20:16Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6227,
+      "state": "open",
+      "total_comments": 56,
+      "claim_line_count": 49,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=deepseek paths=platform/unified-memory-server/**,mcp/plugins/estate_memory.py heartbeat=<versioned>",
+          "agent": "deepseek",
+          "first_heartbeat": "2026-10-14T19:24:04Z",
+          "last_heartbeat": "2026-10-15T05:15:13Z",
+          "occurrences": 3
+        },
+        {
+          "statement": "CLAIM agent=deepseek paths=platform/unified-memory-server/**,mcp/plugins/estate_memory.py,platform/active-runtime/** heartbeat=<versioned>",
+          "agent": "deepseek",
+          "first_heartbeat": "2026-10-14T19:26:34Z",
+          "last_heartbeat": "2026-10-14T22:50:31Z",
+          "occurrences": 4
+        },
+        {
+          "statement": "CLAIM agent=deepseek paths=platform/unified-memory-server/**,mcp/plugins/estate_memory.py,platform/active-runtime/**,bin/idp-ci heartbeat=<versioned>",
+          "agent": "deepseek",
+          "first_heartbeat": "2026-10-14T22:54:43Z",
+          "last_heartbeat": "2026-10-15T00:17:20Z",
+          "occurrences": 5
+        },
+        {
+          "statement": "CLAIM agent=deepseek paths=platform/unified-memory-server/**,mcp/plugins/estate_memory.py,platform/active-runtime/**,bin/idp-ci,.githooks/pre-push heartbeat=<versioned>",
+          "agent": "deepseek",
+          "first_heartbeat": "2026-10-15T00:21:35Z",
+          "last_heartbeat": "2026-10-15T04:51:39Z",
+          "occurrences": 7
+        },
+        {
+          "statement": "CLAIM agent=deepseek paths=backstage/plugins/fleetview-backend/src/fleetview_backend/harness.py,backstage/plugins/fleetview-backend/src/fleetview_backend/routes.py,backstage/plugins/fleetview-backend/src/fleetview_backend/serve.py,bin/idp-estate-seed,platform/backstage/overlays/oke/kustomization.yaml heartbeat=<versioned>",
+          "agent": "deepseek",
+          "first_heartbeat": "2026-10-15T05:44:48Z",
+          "last_heartbeat": "2026-10-15T05:44:48Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=deepseek paths=mcp/plugins/estate_memory.py,platform/unified-memory-server/main.py,platform/unified-memory-server/oke-unified-memory.yaml,backstage/plugins/fleetview-backend/src/fleetview_backend/harness.py,backstage/plugins/fleetview-backend/src/fleetview_backend/routes.py,backstage/plugins/fleetview-backend/src/fleetview_backend/serve.py,bin/idp-estate-seed,platform/backstage/overlays/oke/kustomization.yaml heartbeat=<versioned>",
+          "agent": "deepseek",
+          "first_heartbeat": "2026-10-15T05:46:41Z",
+          "last_heartbeat": "2026-10-15T16:46:21Z",
+          "occurrences": 14
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=.github/workflows/vault-seed.yml heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-15T17:29:42Z",
+          "last_heartbeat": "2026-10-15T18:32:06Z",
+          "occurrences": 3
+        },
+        {
+          "statement": "CLAIM agent=claude paths=.github/workflows/estate-dag-gen.yml,platform/oci/github-actions.tf heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-16T06:20:57Z",
+          "last_heartbeat": "2026-10-16T06:20:57Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude paths=bin/idp-estate-seed,greenlane/github.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-16T07:59:40Z",
+          "last_heartbeat": "2026-10-16T07:59:40Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude paths=bin/idp-estate-seed,.github/workflows/vault-seed.yml,greenlane/github.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-16T08:43:04Z",
+          "last_heartbeat": "2026-10-16T08:43:04Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude paths=.github/workflows/vault-seed.yml heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-16T08:57:05Z",
+          "last_heartbeat": "2026-10-16T09:18:19Z",
+          "occurrences": 2
+        },
+        {
+          "statement": "CLAIM agent=claude paths=.github/workflows/vault-seed.yml,tests/test_a_lane_older_than_a_day_is_retired.py heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-16T08:59:45Z",
+          "last_heartbeat": "2026-10-16T12:24:26Z",
+          "occurrences": 5
+        },
+        {
+          "statement": "CLAIM agent=claude paths=. heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-16T12:56:08Z",
+          "last_heartbeat": "2026-10-16T14:07:11Z",
+          "occurrences": 2
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6228,
+      "state": "open",
+      "total_comments": 49,
+      "claim_line_count": 48,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=otto paths=bin/fleetview-launchd,bin/voice-router-launchd,platform/voice-router/cmd/voice-router/main.go,platform/voice-router/internal/estatemem/estatemem.go,platform/voice-router/internal/estatemem/estatemem_test.go,platform/voice-router/internal/session/session.go,platform/voice-router/internal/session/session_test.go,tests/test_voice_router_launchd_estate_memory.py heartbeat=<versioned>",
+          "agent": "otto",
+          "first_heartbeat": "2026-10-14T19:24:30Z",
+          "last_heartbeat": "2026-10-14T19:24:30Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=otto paths=bin/fleetview-launchd,bin/voice-router-launchd,bin/claim-gate,platform/voice-router/cmd/voice-router/main.go,platform/voice-router/internal/estatemem/estatemem.go,platform/voice-router/internal/estatemem/estatemem_test.go,platform/voice-router/internal/session/session.go,platform/voice-router/internal/session/session_test.go,tests/test_voice_router_launchd_estate_memory.py heartbeat=<versioned>",
+          "agent": "otto",
+          "first_heartbeat": "2026-10-16T16:36:11Z",
+          "last_heartbeat": "2026-10-16T16:36:11Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=otto paths=bin/fleetview-launchd,bin/voice-router-launchd,bin/claim-gate,greenlane/engine.py,greenlane/github.py,greenlane/simulate.py,platform/voice-router/cmd/voice-router/main.go,platform/voice-router/deploy/kustomization.yaml,platform/voice-router/internal/estatemem/estatemem.go,platform/voice-router/internal/estatemem/estatemem_test.go,platform/voice-router/internal/session/session.go,platform/voice-router/internal/session/session_test.go,backstage/packages/app/e2e-tests/mobile-voice-turn.test.ts,tests/test_a_lane_older_than_a_day_is_retired.py,tests/test_greenlane_claim_admission.py,tests/test_voice_router_launchd_estate_memory.py heartbeat=<versioned>",
+          "agent": "otto",
+          "first_heartbeat": "2026-10-16T16:37:43Z",
+          "last_heartbeat": "2026-10-16T16:37:43Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=otto paths=bin/fleetview-launchd,bin/voice-router-launchd,bin/claim-gate,greenlane/engine.py,greenlane/github.py,greenlane/simulate.py,platform/voice-router/cmd/voice-router/main.go,platform/voice-router/deploy/kustomization.yaml,platform/voice-router/internal/estatemem/estatemem.go,platform/voice-router/internal/estatemem/estatemem_test.go,platform/voice-router/internal/session/session.go,platform/voice-router/internal/session/session_test.go,backstage/packages/app/e2e-tests/mobile-voice-turn.test.ts,tests/test_a_lane_older_than_a_day_is_retired.py,tests/test_greenlane_claim_admission.py,tests/test_voice_router_launchd_estate_memory.py,platform/backstage/overlays/oke/kustomization.yaml,platform/commerce/app/lago.yaml,platform/dagster/dagster.yaml,platform/epistemic-fabric/kustomization.yaml,platform/hindsight/hindsight.yaml,platform/jit/kustomization.yaml,platform/mcp/kustomization.yaml,platform/nodesoftware-operator/kustomization.yaml,platform/observability/kustomization.",
+          "agent": "otto",
+          "first_heartbeat": "2026-10-16T16:40:04Z",
+          "last_heartbeat": "2026-10-16T16:40:04Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=otto paths=bin/fleetview-launchd,bin/voice-router-launchd,bin/claim-gate,.github/workflows/demo-render.yml,greenlane/engine.py,greenlane/github.py,greenlane/simulate.py,platform/voice-router/cmd/voice-router/main.go,platform/voice-router/deploy/kustomization.yaml,platform/voice-router/internal/estatemem/estatemem.go,platform/voice-router/internal/estatemem/estatemem_test.go,platform/voice-router/internal/session/session.go,platform/voice-router/internal/session/session_test.go,backstage/packages/app/e2e-tests/mobile-voice-turn.test.ts,tests/test_a_lane_older_than_a_day_is_retired.py,tests/test_greenlane_claim_admission.py,tests/test_voice_router_launchd_estate_memory.py,platform/backstage/overlays/oke/kustomization.yaml,platform/commerce/app/lago.yaml,platform/dagster/dagster.yaml,platform/epistemic-fabric/kustomization.yaml,platform/hindsight/hindsight.yaml,platform/jit/kustomization.yaml,platform/mcp/kustomization.yaml,platform/nodesoftware-operator/kustomization.yaml,pla",
+          "agent": "otto",
+          "first_heartbeat": "2026-10-16T16:43:13Z",
+          "last_heartbeat": "2026-10-16T16:43:13Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=otto paths=bin/fleetview-launchd,bin/voice-router-launchd,bin/claim-gate,.github/workflows/demo-render.yml,.github/workflows/greenlane.yml,greenlane/engine.py,greenlane/github.py,greenlane/simulate.py,platform/voice-router/cmd/voice-router/main.go,platform/voice-router/deploy/kustomization.yaml,platform/voice-router/internal/estatemem/estatemem.go,platform/voice-router/internal/estatemem/estatemem_test.go,platform/voice-router/internal/session/session.go,platform/voice-router/internal/session/session_test.go,backstage/packages/app/e2e-tests/mobile-voice-turn.test.ts,tests/test_a_lane_older_than_a_day_is_retired.py,tests/test_greenlane_claim_admission.py,tests/test_voice_router_launchd_estate_memory.py,platform/backstage/overlays/oke/kustomization.yaml,platform/commerce/app/lago.yaml,platform/dagster/dagster.yaml,platform/epistemic-fabric/kustomization.yaml,platform/hindsight/hindsight.yaml,platform/jit/kustomization.yaml,platform/mcp/kustomization.yaml,platform/nodesoftware",
+          "agent": "otto",
+          "first_heartbeat": "2026-10-16T16:46:26Z",
+          "last_heartbeat": "2026-10-16T17:42:33Z",
+          "occurrences": 2
+        },
+        {
+          "statement": "CLAIM agent=otto paths=platform/voice-router/**,bin/voice-router-launchd,bin/fleetview-launchd,greenlane/engine.py,greenlane/github.py,greenlane/simulate.py,.github/workflows/greenlane.yml heartbeat=<versioned>",
+          "agent": "otto",
+          "first_heartbeat": "2026-10-16T18:31:24Z",
+          "last_heartbeat": "2026-10-17T16:44:31Z",
+          "occurrences": 27
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=platform/llm/graph_capture.py,bin/estate-graph-drain,bin/fleetview-launchd,bin/serve-fleetview,mcp/plugins/estate_memory.py heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-18T00:26:34Z",
+          "last_heartbeat": "2026-10-18T00:26:34Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=platform/llm/graph_capture.py,bin/estate-graph-drain,bin/fleetview-launchd,bin/serve-fleetview,mcp/plugins/estate_memory.py,launchd/ai.estate.memory-forward.plist.tmpl,launchd/ai.estate.fleetview-backend.plist.tmpl,bin/memory-forward-launchd,backstage/plugins/fleetview-backend/src/fleetview_backend/harness.py heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-18T00:45:43Z",
+          "last_heartbeat": "2026-10-18T00:45:43Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=platform/llm/graph_capture.py,tests/test_graph_capture.py,bin/estate-graph-drain,bin/fleetview-launchd,bin/serve-fleetview,mcp/plugins/estate_memory.py,launchd/ai.estate.memory-forward.plist.tmpl,launchd/ai.estate.fleetview-backend.plist.tmpl,bin/memory-forward-launchd,backstage/plugins/fleetview-backend/src/fleetview_backend/harness.py heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-18T01:21:43Z",
+          "last_heartbeat": "2026-10-18T01:48:12Z",
+          "occurrences": 2
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=platform/llm/graph_capture.py,tests/test_graph_capture.py,bin/estate-graph-drain,bin/fleetview-launchd,bin/serve-fleetview,mcp/plugins/estate_memory.py,launchd/ai.estate.memory-forward.plist.tmpl,launchd/ai.estate.fleetview-backend.plist.tmpl,bin/memory-forward-launchd,backstage/plugins/fleetview-backend/src/fleetview_backend/harness.py,docs/diagnoses/2026-10-18-graph-sources-carry-no-agent.yaml heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-18T01:52:33Z",
+          "last_heartbeat": "2026-10-18T03:54:44Z",
+          "occurrences": 3
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=platform/dns/external-dns.yaml,platform/edge/kustomization.yaml,platform/edge/prospector-gateway.yaml,platform/ns-fences/allowances.yaml,platform/ns-fences/network/cert-manager.yaml,platform/ns-fences/network/edge.yaml,platform/ns-fences/prospector.yaml,web/app/layout.tsx heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-18T16:34:44Z",
+          "last_heartbeat": "2026-10-18T16:34:44Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=platform/unified-memory-server/**,platform/llm/graph_capture.py,bin/estate-graph-drain,platform/active-runtime/** heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-18T16:38:35Z",
+          "last_heartbeat": "2026-10-18T16:38:35Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=backstage/packages/app/src/modules/home/EstateMemory.tsx,backstage/plugins/fleetview-backend/src/fleetview_backend/memory.py,backstage/plugins/fleetview-backend/tests/test_memory.py,bin/estate-graph-drain,mcp/plugins/estate_memory.py,platform/unified-memory-server/main.py,tests/test_estate_memory_attribution.py heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-18T18:05:38Z",
+          "last_heartbeat": "2026-10-18T18:05:38Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=platform/llm/graph_capture.py,bin/estate-graph-drain,bin/fleetview-launchd,bin/serve-fleetview,mcp/plugins/estate_memory.py,launchd/ai.estate.memory-forward.plist.tmpl,launchd/ai.estate.fleetview-backend.plist.tmpl,bin/memory-forward-launchd,backstage/plugins/fleetview-backend/src/fleetview_backend/harness.py,tests/test_graph_capture.py,docs/diagnoses/2026-10-18-graph-sources-carry-no-agent.yaml,platform/dns/external-dns.yaml,platform/edge/kustomization.yaml,platform/edge/prospector-gateway.yaml,platform/ns-fences/allowances.yaml,platform/ns-fences/network/cert-manager.yaml,platform/ns-fences/network/edge.yaml,platform/ns-fences/prospector.yaml,web/app/layout.tsx,platform/unified-memory-server/**,platform/active-runtime/**,backstage/packages/app/src/modules/home/EstateMemory.tsx,backstage/plugins/fleetview-backend/src/fleetview_backend/memory.py,backstage/plugins/fleetview-backend/tests/test_memory.py,platform/unified-memory-server/main.py,tests/test_esta",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-18T18:58:18Z",
+          "last_heartbeat": "2026-10-18T19:49:18Z",
+          "occurrences": 2
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=backstage/packages/app/src/modules/home/EstateHarness.tsx,backstage/packages/app/src/modules/home/EstateMemory.tsx,backstage/packages/app/src/modules/home/Fleet.tsx,backstage/plugins/fleetview-backend/src/fleetview_backend/memory.py,backstage/plugins/fleetview-backend/tests/test_memory.py,bin/estate-graph-drain,mcp/plugins/estate_memory.py,platform/unified-memory-server/main.py,platform/unified-memory-server/tests/test_harness_stats.py,tests/test_estate_memory_attribution.py heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-18T20:48:22Z",
+          "last_heartbeat": "2026-10-18T20:48:22Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=backstage/packages/app/src/modules/home/EstateHarness.tsx,backstage/packages/app/src/modules/home/EstateMemory.tsx,backstage/packages/app/src/modules/home/Fleet.tsx,backstage/plugins/fleetview-backend/src/fleetview_backend/memory.py,backstage/plugins/fleetview-backend/tests/test_memory.py,bin/estate-graph-drain,docs/specs/2026-10-18-active-focus-visibility-scope.md,mcp/plugins/estate_memory.py,platform/unified-memory-server/main.py,platform/unified-memory-server/tests/test_harness_stats.py,tests/test_estate_memory_attribution.py heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-18T21:34:18Z",
+          "last_heartbeat": "2026-10-18T21:34:18Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6229,
+      "state": "open",
+      "total_comments": 1,
+      "claim_line_count": 1,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=otto paths=platform/agent-workforce/cronjob.yaml,platform/agent-workforce/external-secret.yaml,platform/ns-fences/allowances.yaml,platform/ns-fences/network/agent-workforce.yaml,platform/ns-fences/network/mcp.yaml,platform/ns-fences/network/otto-golden.yaml,platform/otto-golden/deployment.yaml,platform/otto-golden/kustomization.yaml,platform/otto-golden/mcp-key.yaml,platform/voice-router/deploy/director.yaml,platform/voice-router/deploy/external-secret.yaml heartbeat=<versioned>",
+          "agent": "otto",
+          "first_heartbeat": "2026-10-14T19:24:41Z",
+          "last_heartbeat": "2026-10-14T19:24:41Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6260,
+      "state": "closed",
+      "total_comments": 4,
+      "claim_line_count": 2,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=deepseek paths=.github/workflows/vault-seed.yml heartbeat=<versioned>",
+          "agent": "deepseek",
+          "first_heartbeat": "2026-10-15T06:24:44Z",
+          "last_heartbeat": "2026-10-15T11:34:57Z",
+          "occurrences": 2
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6272,
+      "state": "open",
+      "total_comments": 2,
+      "claim_line_count": 2,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=otto paths=.github/workflows/vault-seed.yml,platform/unified-memory-server/Dockerfile heartbeat=<versioned>",
+          "agent": "otto",
+          "first_heartbeat": "2026-10-15T13:19:53Z",
+          "last_heartbeat": "2026-10-15T13:19:53Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=deepseek paths=.github/workflows/vault-seed.yml,platform/unified-memory-server/Dockerfile heartbeat=<versioned>",
+          "agent": "deepseek",
+          "first_heartbeat": "2026-10-15T13:20:45Z",
+          "last_heartbeat": "2026-10-15T13:20:45Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6275,
+      "state": "open",
+      "total_comments": 3,
+      "claim_line_count": 3,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=otto paths=backstage/packages/app/src/modules/home/browserKokoro.test.ts,backstage/packages/app/src/modules/home/browserKokoro.ts,backstage/packages/app/src/modules/home/useEstateVoice.kokoroSpeaker.test.tsx,backstage/packages/app/src/modules/home/useEstateVoice.ts,backstage/packages/app/src/modules/room/ui/FleetReactorApp.tsx,bin/idp-shadow,platform/estate/intents/git.commit-staged.yaml,tests/test_kokoro_browser_voices_match_the_model.py,tests/test_the_shadow_lays_the_estate_floor_before_any_path.py,tests/test_the_shadow_stands_in_a_json_key_with_json.py heartbeat=<versioned>",
+          "agent": "otto",
+          "first_heartbeat": "2026-10-15T13:58:19Z",
+          "last_heartbeat": "2026-10-15T13:58:19Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=otto paths=platform/unified-memory-server/schema.sql heartbeat=<versioned>",
+          "agent": "otto",
+          "first_heartbeat": "2026-10-15T13:58:43Z",
+          "last_heartbeat": "2026-10-15T14:48:36Z",
+          "occurrences": 2
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6285,
+      "state": "open",
+      "total_comments": 31,
+      "claim_line_count": 31,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=otto paths=backstage/packages/app/src/modules/home/browserKokoro.test.ts,backstage/packages/app/src/modules/home/browserKokoro.ts,backstage/packages/app/src/modules/home/useEstateVoice.kokoroSpeaker.test.tsx,backstage/packages/app/src/modules/home/useEstateVoice.ts,backstage/packages/app/src/modules/room/ui/FleetReactorApp.tsx,bin/idp-shadow,platform/estate/intents/git.commit-staged.yaml,platform/ns-fences/allowances.yaml,platform/ns-fences/network/backstage.yaml,platform/ns-fences/network/keda.yaml,platform/ns-fences/network/mcp.yaml,tests/test_kokoro_browser_voices_match_the_model.py,tests/test_the_shadow_lays_the_estate_floor_before_any_path.py,tests/test_the_shadow_stands_in_a_json_key_with_json.py heartbeat=<versioned>",
+          "agent": "otto",
+          "first_heartbeat": "2026-10-15T15:57:21Z",
+          "last_heartbeat": "2026-10-15T15:57:21Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude paths=greenlane/github.py,.github/workflows/greenlane.yml heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-16T00:33:26Z",
+          "last_heartbeat": "2026-10-16T00:33:26Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=claude paths=greenlane/github.py,.github/workflows/greenlane.yml,.github/workflows/greenlane-land.yml heartbeat=<versioned>",
+          "agent": "claude",
+          "first_heartbeat": "2026-10-16T01:33:31Z",
+          "last_heartbeat": "2026-10-17T01:41:30Z",
+          "occurrences": 29
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6293,
+      "state": "closed",
+      "total_comments": 1,
+      "claim_line_count": 0,
+      "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6348,
+      "state": "closed",
+      "total_comments": 1,
+      "claim_line_count": 0,
+      "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6352,
+      "state": "closed",
+      "total_comments": 1,
+      "claim_line_count": 0,
+      "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6403,
+      "state": "closed",
+      "total_comments": 5,
+      "claim_line_count": 4,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=otto paths=.githooks/pre-push,.github/workflows/greenlane.yml,bin/idp-bdd-proof-gate,bin/idp-greenlane,greenlane/engine.py,greenlane/github.py,greenlane/simulate.py,tests/test_a_lane_older_than_a_day_is_retired.py,tests/test_greenlane_lane_that_is_green_can_land.py,tests/test_greenlane_merges_a_head_it_proves.py,tests/test_greenlane_state_cas.py,tests/test_greenlane_stranded_lanes.py,tests/test_greenlane_verdicts_expire.py heartbeat=<versioned>",
+          "agent": "otto",
+          "first_heartbeat": "2026-10-17T15:33:36Z",
+          "last_heartbeat": "2026-10-17T15:33:36Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=otto paths=bin/estate-graph-drain heartbeat=<versioned> — supersedes the auto-derived paths above: this claim is the estate-graph-drain retry fix only; the greenlane paths belong to #6207.",
+          "agent": "otto",
+          "first_heartbeat": "2026-10-17T15:36:40Z",
+          "last_heartbeat": "2026-10-17T15:36:40Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=otto paths=bin/estate-graph-drain heartbeat=<versioned>",
+          "agent": "otto",
+          "first_heartbeat": "2026-10-17T15:44:10Z",
+          "last_heartbeat": "2026-10-17T16:39:54Z",
+          "occurrences": 2
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6440,
+      "state": "closed",
+      "total_comments": 1,
+      "claim_line_count": 0,
+      "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6482,
+      "state": "closed",
+      "total_comments": 1,
+      "claim_line_count": 0,
+      "claim_variants": []
     }
   ]
 }
