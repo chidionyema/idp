@@ -20,7 +20,7 @@ export function Nav() {
               </Link>
             </li>
           ))}
-          <li><Link href="/demo" className="nav-link" style={{ color: pathname === "/demo" ? "var(--accent)" : "var(--ink-3)", fontWeight: pathname === "/demo" ? 500 : 400 }}>Live Demo</Link></li>
+          <li><Link href="/demo" className="nav-link" style={{ color: pathname === "/demo" ? "var(--accent)" : "var(--ink-3)", fontWeight: pathname === "/demo" ? 500 : 400 }}>Lab Demo</Link></li>
           <li><Link href="/tools/cost-calculator" className="nav-link" style={{ color: pathname === "/tools/cost-calculator" ? "var(--accent)" : "var(--ink-3)", fontWeight: pathname === "/tools/cost-calculator" ? 500 : 400 }}>Cost Calculator</Link></li>
           <li><Link href="/tools/trace-explorer" className="nav-link" style={{ color: pathname === "/tools/trace-explorer" ? "var(--accent)" : "var(--ink-3)", fontWeight: pathname === "/tools/trace-explorer" ? 500 : 400 }}>Trace Explorer</Link></li>
           <li><Link href="/contact" className="btn-primary" style={{ padding: "8px 16px", fontSize: "12px" }}>Talk to us</Link></li>
@@ -39,7 +39,7 @@ export function Nav() {
             {site.nav.map((item) => (
               <li key={item.href}><Link href={item.href} onClick={() => setOpen(false)} className="nav-link" style={{ color: pathname === item.href ? "var(--accent)" : "var(--ink-3)" }}>{item.label}</Link></li>
             ))}
-            {[{ href: "/demo", label: "Live Demo" }, { href: "/tools/cost-calculator", label: "Cost Calculator" }, { href: "/tools/trace-explorer", label: "Trace Explorer" }].map((t) => (
+            {[{ href: "/demo", label: "Lab Demo" }, { href: "/tools/cost-calculator", label: "Cost Calculator" }, { href: "/tools/trace-explorer", label: "Trace Explorer" }].map((t) => (
               <li key={t.href}><Link href={t.href} onClick={() => setOpen(false)} className="nav-link" style={{ color: pathname === t.href ? "var(--accent)" : "var(--ink-3)" }}>{t.label}</Link></li>
             ))}
             <li><Link href="/contact" onClick={() => setOpen(false)} className="btn-primary" style={{ alignSelf: "flex-start", padding: "8px 16px", fontSize: "12px" }}>Talk to us</Link></li>

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { site } from "@/content/site";
 import { Reveal } from "@/components/Reveal";
 import type { Metadata } from "next";
-export const metadata: Metadata = { title: "Consulting", description: "AI platform architecture, security and compliance, evaluation and fine-tuning." };
+export const metadata: Metadata = { title: "Consulting", description: "Research-led AI architecture, experimental prototypes and commercial engineering." };
 
 export default function ConsultingPage() {
   return (
@@ -10,7 +10,7 @@ export default function ConsultingPage() {
       <Reveal><div style={{ marginBottom: "64px" }}>
         <span className="tag tag-accent" style={{ marginBottom: "16px", display: "inline-flex" }}>Consulting</span>
         <h1>What we do</h1>
-        <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "18px", maxWidth: "60ch" }}>A team of two or three who’ve done this before, working alongside your engineers.</p>
+        <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "18px", maxWidth: "60ch" }}>Research partnerships, prototype development and verified commercial AI systems.</p>
       </div></Reveal>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "24px", marginBottom: "64px" }}>
         {site.consulting.map((c, i) => (
@@ -28,8 +28,8 @@ export default function ConsultingPage() {
         <Reveal>
           <div style={{ border: "1px solid var(--rule)", background: "var(--ink)", padding: "64px", textAlign: "center" }}>
             <span className="tag tag-accent-ink" style={{ marginBottom: "24px", display: "inline-flex" }}>Talk to us</span>
-            <h2 style={{ fontFamily: "var(--serif)", color: "#fff", maxWidth: "none" }}>We take on a small number of projects each quarter.</h2>
-            <p style={{ color: "var(--on-ink)", marginTop: "20px", fontSize: "17px", maxWidth: "none" }}>If you’re working on production AI infrastructure and want people who’ve done it before, let’s talk.</p>
+            <h2 style={{ fontFamily: "var(--serif)", color: "#fff", maxWidth: "none" }}>Begin with the problem worth solving.</h2>
+            <p style={{ color: "var(--on-ink)", marginTop: "20px", fontSize: "17px", maxWidth: "none" }}>Bring a research question, product hypothesis or commercial system that needs independent verification.</p>
             <div style={{ display: "flex", gap: "12px", justifyContent: "center", marginTop: "32px", flexWrap: "wrap" }}>
               <Link href="/contact" className="btn-primary">Book a call →</Link>
               <Link href="/case-studies" className="btn-secondary" style={{ color: "#fff", borderColor: "rgba(255,255,255,0.2)" }}>See our work</Link>

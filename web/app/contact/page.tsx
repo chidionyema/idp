@@ -67,7 +67,7 @@ export default function ContactPage() {
           {state === "sent" ? (
             <div style={{ border: "1px solid var(--ok)", background: "rgba(5,150,105,0.05)", padding: "32px", textAlign: "center" }}>
               <p style={{ fontFamily: "var(--serif)", fontSize: "1.3rem", color: "var(--ok-text)", maxWidth: "none" }}>Message received.</p>
-              <p style={{ color: "var(--ink-3)", marginTop: "8px", maxWidth: "none" }}>A person reads every one of these. Expect a reply within two business days. If it is urgent, <a href="mailto:hello@meridian.ai" style={{ color: "var(--accent)" }}>email us directly</a>.</p>
+              <p style={{ color: "var(--ink-3)", marginTop: "8px", maxWidth: "none" }}>Describe your research or commercial challenge. If message delivery is unavailable, this form will report an error rather than claim success.</p>
             </div>
           ) : (
             <form onSubmit={handleSubmit} noValidate style={{ display: "flex", flexDirection: "column", gap: "24px" }}>

@@ -10,7 +10,7 @@ export default function WritingPage() {
       <Reveal><div style={{ marginBottom: "64px" }}>
         <span className="tag tag-accent" style={{ marginBottom: "16px", display: "inline-flex" }}>Writing</span>
         <h1>Essays</h1>
-        <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "18px", maxWidth: "60ch" }}>Long-form writing on production AI infrastructure. Based on what we’ve shipped, not what we’ve theorized.</p>
+        <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "18px", maxWidth: "60ch" }}>Research notes and engineering essays. Hypotheses, prototype results and independently verified commercial claims belong to different evidence classes.</p>
       </div></Reveal>
       <div style={{ display: "flex", flexDirection: "column", gap: "1px", background: "var(--rule)" }}>
         {posts.map((post) => (

@@ -53,3 +53,9 @@ Payload shape:
   billed. Move the counter to Redis or the platform edge before this protects a paid path.
 - `clientKey` trusts `x-forwarded-for`. That is correct behind a proxy that sets it and
   spoofable if the app is reachable directly.
+
+## Merian Intelligence laboratory identity, 2026-11-09
+
+The founder-confirmed group architecture is Merian Intelligence (parent AI laboratory), Mumchimp (group company), Genesis/Autonomous Estate (experimental product and operating capability). The public site must distinguish research, prototype and commercial evidence. Unsupported numerical claims have been withheld from public case-study pages pending independent verification. See the canonical [Merian operating model](https://github.com/chidionyema/argon/blob/main/docs/decisions/2026-11-09-merian-lab-operating-model.md).
+
+**Public release dependencies:** verify Merian's canonical domain and functioning contact delivery. The old `MERIDIAN_SITE_URL` environment variable remains supported, with `MERIAN_SITE_URL` taking precedence, but neither variable proves ownership. Do not invent new email accounts or domains. Run `npm run verify` and independent real URL/customer-path checks before describing the site as shipped.
