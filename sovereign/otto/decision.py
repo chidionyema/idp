@@ -216,6 +216,12 @@ def render(request: DecisionRequest) -> str:
 
     Plain text on purpose: the estate's card sends HTML, but a decision message must never
     fail to deliver because the question contains a `<` or an `&`.
+
+    This is the fallback text of record. The luxury HTML path is `render_lux()`, which the
+    door sends with parse_mode=HTML and an inline keyboard of one-tap buttons; when that
+    cannot be delivered, THIS text is what reaches the founder so a decision never fails to
+    land. Both renders share the same id and option keys, so a tap and a typed comment are
+    the same deterministic answer.
     """
     lines = [request.decision_id, request.question]
     if request.options:
@@ -234,6 +240,90 @@ def render(request: DecisionRequest) -> str:
         f"deadline: {request.deadline_min} min   requester: {request.requester or 'unknown'}"
     )
     return "\n".join(lines)
+
+
+def _esc(text: str) -> str:
+    """HTML-escape a user-supplied string so it can never break the message or inject markup."""
+    return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def render_lux(request: DecisionRequest) -> str:
+    """The premium decision message: HTML with hierarchy and one-tap buttons.
+
+    Founder protocol (2026-11-09): the founder feels the estate working for him -- rich
+    formatting, visual hierarchy, one-tap actions -- never a raw log stream. This is the
+    concierge surface. It is HTML (parse_mode=HTML) so a `<` in the question is escaped
+    rather than rendering the message undeliverable; the id is still the first line, so the
+    founder can always refer to the decision verbatim. The inline keyboard is built by
+    `render_keyboard()`, which pairs each option's key as the callback_data with its
+    escaped label -- so a tap routes through the SAME deterministic key match as a typed
+    comment.
+    """
+    lines = [
+        f"<b>{_esc(request.decision_id)}</b>",
+        "",
+        _esc(request.question),
+    ]
+    if request.options:
+        lines.extend(("", "<i>choose an option - one tap:</i>"))
+    lines.extend(("", "&#183; &#183; &#183;"))
+    if request.context:
+        lines.append("")
+        lines.append("<i>context</i>")
+        for link in request.context:
+            lines.append(f"&#8226; {_esc(link)}")
+    lines.append("")
+    lines.append(
+        f"<i>answer by tapping a button or replying: {_esc(request.decision_id)} &lt;key&gt;</i>"
+    )
+    lines.append(
+        f"<i>deadline: {request.deadline_min} min &#183; requester: "
+        f"{_esc(request.requester or 'unknown')}</i>"
+    )
+    return "\n".join(lines)
+
+
+def render_keyboard(request: DecisionRequest) -> dict:
+    """An inline keyboard of one-tap option buttons for the founder.
+
+    Each button's callback_data is the option key (already validated by `_KEY_RE`), so the
+    founder's tap and a typed comment are the same deterministic answer. No options -> no
+    keyboard (an empty reply_markup is omitted by the caller, never sent as `[]`).
+    """
+    buttons = [{"text": opt.label, "callback_data": opt.key} for opt in request.options]
+    # Cap at one row of MAX_OPTIONS buttons (validate() already refuses > MAX_OPTIONS).
+    return {"inline_keyboard": [buttons]} if buttons else {}
+
+
+def send_message_lux(
+    token: str,
+    chat_id: str,
+    request: DecisionRequest,
+    fallback_text: str,
+) -> Optional[int]:
+    """Send the luxury decision message; fall back to the plain text if HTML/buttons fail.
+
+    A premium surface must never cost delivery: if the HTML+keyboard send is refused (a
+    malformed escape, a Bot API rejection), the founder still gets the decision as plain
+    text. Returns the message id of whichever send succeeded.
+    """
+    result = telegram_call(
+        token,
+        "sendMessage",
+        {
+            "chat_id": chat_id,
+            "text": render_lux(request),
+            "parse_mode": "HTML",
+            "reply_markup": render_keyboard(request),
+            "disable_web_page_preview": True,
+        },
+    )
+    if not result.get("ok") or not isinstance(result.get("result"), dict):
+        return send_message(token, chat_id, fallback_text)
+    try:
+        return int(result["result"]["message_id"])
+    except (KeyError, TypeError, ValueError):
+        return send_message(token, chat_id, fallback_text)
 
 
 # --- the matcher ----------------------------------------------------------------------------------
@@ -493,6 +583,20 @@ def update_chat_id(update: dict) -> Optional[str]:
     return str(chat_id) if chat_id is not None else None
 
 
+def callback_query(update: dict) -> Optional[str]:
+    """The one-tap button answer: an inline-keyboard callback's data, or None.
+
+    A button's callback_data was set to the OPTION KEY, so the founder's tap is matched by
+    the SAME `match_comment` key logic as a typed comment -- a tap is a comment saying the
+    key, nothing more.
+    """
+    query = update.get("callback_query") if isinstance(update, dict) else None
+    if not isinstance(query, dict):
+        return None
+    data = query.get("data")
+    return str(data) if isinstance(data, str) else None
+
+
 # --- the bus (the durable record, when it is there) ------------------------------------------------
 
 
@@ -593,7 +697,8 @@ class Door:
                     "error": "no telegram credentials on this host",
                     "decision_id": request.decision_id,
                 }
-            sender = lambda text: send_message(token, chat, text)  # noqa: E731
+            fallback = render(request)
+            sender = lambda text: send_message_lux(token, chat, request, fallback)  # noqa: E731
         message_id = sender(render(request))
         if message_id is None:
             return {
@@ -762,6 +867,15 @@ class Door:
             if chat and update_chat_id(update) not in (None, chat):
                 continue
             record = self.absorb(text)
+            if record and record.get("state") == STATE_ANSWERED:
+                answered.append(record.get("decision_id"))
+        # One-tap buttons answer via callback_query, not message text: read them through
+        # the SAME deterministic key match so a tap and a typed comment cannot drift.
+        for update in updates:
+            callback = callback_query(update)
+            if not callback:
+                continue
+            record = self.absorb(callback)
             if record and record.get("state") == STATE_ANSWERED:
                 answered.append(record.get("decision_id"))
         # Expire first, then hand the estate its webhook back: a decision that closed by
