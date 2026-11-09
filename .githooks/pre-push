@@ -226,9 +226,17 @@ while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
     # not type-check, is a REFUSAL -- never a silent pass. A single cargo check per crate is
     # cheap, and the rustc result is the deterministic verdict (§9 R3).
     if [ "$kind" = "rust" ]; then
+      cargo_bin="cargo"
       if ! command -v cargo >/dev/null 2>&1; then
-        echo "pre-push REFUSED: $f is Rust and cargo is not installed, so it cannot be checked" >&2
-        exit 1
+        # The executor daemon's PATH omits ~/.cargo/bin even though the toolchain is
+        # installed there (measured on this machine). Look in the default rustup/cargo home
+        # before concluding the tool is absent. No cargo anywhere is still a REFUSAL.
+        if [ -x "$HOME/.cargo/bin/cargo" ]; then
+          cargo_bin="$HOME/.cargo/bin/cargo"
+        else
+          echo "pre-push REFUSED: $f is Rust and cargo is not installed, so it cannot be checked" >&2
+          exit 1
+        fi
       fi
       crate_dir="$(dirname "$f")"
       manifest=""
@@ -242,7 +250,7 @@ while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
         echo "pre-push REFUSED: $f is Rust but sits outside any crate (no Cargo.toml above it)" >&2
         exit 1
       fi
-      if ! cargo check --quiet --manifest-path "$manifest" >&2; then
+      if ! "$cargo_bin" check --quiet --manifest-path "$manifest" >&2; then
         echo "pre-push REFUSED: cargo check failed for $manifest; fix: cargo check --manifest-path $manifest" >&2
         exit 1
       fi
