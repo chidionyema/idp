@@ -306,30 +306,32 @@ def require_idle_command_queue(compartment: str, instance_id: str) -> None:
         try:
             raw = _oci(
                 [
-                    "instance-agent",
-                    "command-execution",
-                    "list",
-                    "--compartment-id",
-                    compartment,
-                    "--instance-id",
-                    instance_id,
-                    "--lifecycle-state",
-                    lifecycle,
-                    "--limit",
-                    str(COMMAND_QUEUE_LIMIT),
-                    "--query",
-                    "data[].id",
+                    "instance-agent", "command-execution", "list",
+                    "--compartment-id", compartment,
+                    "--instance-id", instance_id,
+                    "--lifecycle-state", lifecycle,
+                    "--limit", str(COMMAND_QUEUE_LIMIT),
+                    "--output", "json",
                 ],
                 what=f"reading {lifecycle} OCI commands for {instance_id}",
             )
-            commands = json.loads(raw)
+            response = json.loads(raw)
         except (TransportError, json.JSONDecodeError, TypeError) as exc:
             raise TransportError(
                 f"BLIND unable to attest {lifecycle} OCI command queue on "
                 f"{instance_id}: {exc}"
             ) from exc
-        if not isinstance(commands, list) or any(
-            not isinstance(item, str) or not item for item in commands
+        # Never accept projected output, blank stdout, or a missing data envelope.
+        if not isinstance(response, dict) or not isinstance(response.get("data"), list):
+            raise TransportError(
+                f"BLIND invalid {lifecycle} OCI command list for {instance_id}"
+            )
+        commands = response["data"]
+        if any(
+            not isinstance(item, dict)
+            or not isinstance(item.get("id"), str)
+            or not item["id"].strip()
+            for item in commands
         ):
             raise TransportError(
                 f"BLIND invalid {lifecycle} OCI command list for {instance_id}"
@@ -338,8 +340,15 @@ def require_idle_command_queue(compartment: str, instance_id: str) -> None:
             raise TransportError(
                 f"BLOCKED OCI Run Command on {instance_id}: "
                 f"{len(commands)} pre-existing {lifecycle} command(s) "
-                f"including {commands[0]}; no new script submitted. "
+                f"including {commands[0]['id']}; no new script submitted. "
                 "Inspect/resolve existing commands under recovery governance."
+            )
+        if any(
+            response.get(key) not in (None, "")
+            for key in ("opc-next-page", "next-page", "nextPage")
+        ):
+            raise TransportError(
+                f"BLIND ambiguous {lifecycle} OCI command pagination for {instance_id}"
             )
     say(f"ok      run-command  no pre-existing active commands on {instance_id}")
 
