@@ -122,16 +122,34 @@ def home_files() -> list[str]:
         f"{memory}/handback.py",
         f"{memory}/plan.py",
         f"{memory}/runtimes.json",
+        # The door's local origin (ADR 0037 ladder rung). It reuses the estate's write guard by
+        # importing it rather than copying its patterns, and the installed tree is under
+        # ~/.estate/memory, which cannot reach platform/unified-memory-server -- so the installer
+        # carries the guard's ONE source across (see HOME_SOURCE_OVERRIDES below). Without it the
+        # origin refuses to start, deliberately: a store with a weaker guard would be a laxer
+        # policy than the cloud one.
+        f"{memory}/local_store.py",
+        f"{memory}/vendor/security_core.py",
         *links,
         *tools,
     ]
+
+
+# Where an installed path comes from a repo path other than its own name. One source in the tree,
+# one copy on disk where the runtime needs it -- never a second committed copy that can drift
+# (AGENTS.md section 6). The vendored path is committed nowhere: it exists only under ~/.estate.
+HOME_SOURCE_OVERRIDES = {
+    "platform/estate/memory/vendor/security_core.py": (
+        "platform/unified-memory-server/security_core.py"
+    ),
+}
 
 
 def plan_home(root: Path) -> list[tuple[str, Path, object]]:
     """The copies the home needs so it matches this checkout, empty when in step."""
     changes = []
     for rel in home_files():
-        source, dest = HERE / rel, root / rel
+        source, dest = HERE / HOME_SOURCE_OVERRIDES.get(rel, rel), root / rel
         if dest.exists() and dest.read_bytes() == source.read_bytes():
             continue
 
