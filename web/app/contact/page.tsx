@@ -46,11 +46,11 @@ export default function ContactPage() {
       setFailure(
         res.status === 429
           ? `Too many messages from this network. Try again in ${Math.ceil(Number(res.headers.get("retry-after") || 60) / 60)} minutes.`
-          : "We could not send that. Email us directly and we will pick it up."
+          : "We could not deliver your message. It has not been submitted; please try again later."
       );
       setState("error");
     } catch {
-      setFailure("That did not reach us — check your connection, or email us directly.");
+      setFailure("Your message did not reach us. Check your connection and try again.");
       setState("error");
     }
   }
@@ -61,13 +61,13 @@ export default function ContactPage() {
         <Reveal><div style={{ marginBottom: "48px" }}>
           <span className="tag tag-accent" style={{ marginBottom: "16px", display: "inline-flex" }}>Contact</span>
           <h1>Talk to us</h1>
-          <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "17px" }}>We take on a small number of projects each quarter. Tell us what you’re building and we’ll be in touch within two business days.</p>
+          <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "17px" }}>Tell us what you are building, where the difficulty lies and what a useful outcome looks like.</p>
         </div></Reveal>
         <Reveal>
           {state === "sent" ? (
             <div style={{ border: "1px solid var(--ok)", background: "rgba(5,150,105,0.05)", padding: "32px", textAlign: "center" }}>
               <p style={{ fontFamily: "var(--serif)", fontSize: "1.3rem", color: "var(--ok-text)", maxWidth: "none" }}>Message received.</p>
-              <p style={{ color: "var(--ink-3)", marginTop: "8px", maxWidth: "none" }}>A person reads every one of these. Expect a reply within two business days. If it is urgent, <a href="mailto:hello@meridian.ai" style={{ color: "var(--accent)" }}>email us directly</a>.</p>
+              <p style={{ color: "var(--ink-3)", marginTop: "8px", maxWidth: "none" }}>Your message was delivered. We will review it and use your email to respond.</p>
             </div>
           ) : (
             <form onSubmit={handleSubmit} noValidate style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
