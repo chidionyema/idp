@@ -1,10 +1,10 @@
 {
   "schema": "estate.memory.claim_issue_sweep.v1",
-  "generated_at": "2026-11-09T03:07:26.372Z",
+  "generated_at": "2026-11-09T03:07:56.185Z",
   "evidence": "GitHub issue comments; text claims NOT authenticated current leases, includes non-memory matches and historical claims",
   "source_census": "docs/reports/2026-11-09-memory-issues-census.json",
   "total_issue_candidates": 144,
-  "processed": 84,
+  "processed": 99,
   "issues": [
     {
       "repo": "chidionyema/argon",
@@ -1421,6 +1421,495 @@
           "first_heartbeat": "2026-10-22T21:37:08Z",
           "last_heartbeat": "2026-10-22T22:35:32Z",
           "occurrences": 2
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6921,
+      "state": "open",
+      "total_comments": 43,
+      "claim_line_count": 41,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=claude-founder-gate paths=docs/specs/2026-10-23-founder-agent-gate.md,eval/founder-agent/** heartbeat=<versioned>",
+          "agent": "claude-founder-gate",
+          "first_heartbeat": "2026-10-23T07:06:04Z",
+          "last_heartbeat": "2026-10-23T07:49:05Z",
+          "occurrences": 3
+        },
+        {
+          "statement": "CLAIM agent=pi paths=eval/founder-agent/** heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-23T12:03:48Z",
+          "last_heartbeat": "2026-10-23T12:03:48Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi paths=eval/founder-agent/**,tests/test_founder_agent_gate.py heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-23T13:01:17Z",
+          "last_heartbeat": "2026-10-23T13:01:17Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi paths=eval/founder-agent/**,tests/test_founder_agent_gate.py,bin/idp-ci heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-23T13:03:43Z",
+          "last_heartbeat": "2026-10-23T13:03:43Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi paths=eval/founder-agent/**,tests/test_founder_agent_gate.py,bin/idp-ci,backstage/plugins/fleetview-backend/**,backstage/packages/app/src/modules/home/FounderEvalsPanel.tsx,backstage/packages/app/src/modules/room/ui/FleetReactorApp.tsx,jev-affected.yml heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-24T07:43:39Z",
+          "last_heartbeat": "2026-10-24T08:29:34Z",
+          "occurrences": 2
+        },
+        {
+          "statement": "CLAIM agent=pi paths=eval/founder-agent/**,tests/test_founder_agent_gate.py,bin/idp-ci,backstage/plugins/fleetview-backend/**,backstage/packages/app/src/modules/home/FounderEvalsPanel.tsx,backstage/packages/app/src/modules/room/ui/FleetReactorApp.tsx,jev-affected.yml,platform/hermes-agent/**,platform/otto-gateway/**,platform/otto-golden/** heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-24T11:57:42Z",
+          "last_heartbeat": "2026-10-24T18:07:12Z",
+          "occurrences": 3
+        },
+        {
+          "statement": "CLAIM agent=pi paths=backstage/packages/app/src/modules/home/FounderEvalsPanel.tsx,backstage/packages/app/src/modules/room/ui/FleetReactorApp.tsx,backstage/plugins/fleetview-backend/**,bin/idp-ci,eval/founder-agent/**,jev-affected.yml,platform/hermes-agent/**,platform/hermes-agent/kustomization.yaml,platform/otto-gateway/**,platform/otto-gateway/kustomization.yaml,platform/otto-golden/**,platform/otto-golden/kustomization.yaml,tests/test_founder_agent_gate.py heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-24T18:23:05Z",
+          "last_heartbeat": "2026-10-24T18:23:05Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi paths=eval/founder-agent/**,tests/test_founder_agent_gate.py,bin/idp-ci,backstage/plugins/fleetview-backend/**,backstage/packages/app/src/modules/home/FounderEvalsPanel.tsx,backstage/packages/app/src/modules/room/ui/FleetReactorApp.tsx,jev-affected.yml,platform/hermes-agent/**,platform/otto-gateway/**,platform/otto-golden/**,platform/hermes-agent/kustomization.yaml,platform/otto-gateway/kustomization.yaml,platform/otto-golden/kustomization.yaml heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-24T19:17:48Z",
+          "last_heartbeat": "2026-10-25T19:02:59Z",
+          "occurrences": 29
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6965,
+      "state": "closed",
+      "total_comments": 1,
+      "claim_line_count": 0,
+      "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 6987,
+      "state": "closed",
+      "total_comments": 5,
+      "claim_line_count": 2,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=pi-parity paths=bin/estate-memory-install,docs/diagnoses/2026-10-23-pi-had-no-unified-memory-tools.yaml,extensions/estate-memory-tools/bridge.ts,extensions/estate-memory-tools/index.ts,platform/estate/memory/runtimes.json,tests/test_estate_memory_pi_tools.py heartbeat=<versioned>",
+          "agent": "pi-parity",
+          "first_heartbeat": "2026-10-23T15:56:03Z",
+          "last_heartbeat": "2026-10-23T16:44:33Z",
+          "occurrences": 2
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7081,
+      "state": "open",
+      "total_comments": 2,
+      "claim_line_count": 2,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=zcode-kimi paths=docs/diagnoses/2026-10-25-cluster-capture-port.yaml,platform/llm/config.yaml,platform/llm/external-secret.yaml,platform/llm/kustomization.yaml,platform/llm/litellm.yaml heartbeat=<versioned>",
+          "agent": "zcode-kimi",
+          "first_heartbeat": "2026-10-25T00:14:17Z",
+          "last_heartbeat": "2026-10-25T02:57:12Z",
+          "occurrences": 2
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7110,
+      "state": "open",
+      "total_comments": 1,
+      "claim_line_count": 1,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=zcode-kimi paths=*,clusters/oke/bridge.yaml,clusters/oke/kustomization.yaml,web/app/case-studies/page.tsx,web/app/consulting/page.tsx,web/app/contact/page.tsx,web/app/globals.css,web/app/page.tsx,web/components/CostCalculator.tsx,web/components/Footer.tsx,web/components/HeroPlayground.tsx,web/components/ResearchQA.tsx,web/components/TraceExplorer.tsx,web/next.config.mjs,web/public/favicon.svg,web/scripts/render-audit.mjs heartbeat=<versioned>",
+          "agent": "zcode-kimi",
+          "first_heartbeat": "2026-10-25T02:59:58Z",
+          "last_heartbeat": "2026-10-25T02:59:58Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7184,
+      "state": "open",
+      "total_comments": 4,
+      "claim_line_count": 3,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=estate-agent paths=bin/memory-door-schema,bin/memory-gate,tests/test_memory_writes_earn_their_rung.py heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-26T00:21:29Z",
+          "last_heartbeat": "2026-10-26T01:33:47Z",
+          "occurrences": 3
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7188,
+      "state": "open",
+      "total_comments": 4,
+      "claim_line_count": 4,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=estate-agent paths=platform/mcp/kustomization.yaml,platform/unified-memory-server/kustomization.yaml heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-26T00:42:35Z",
+          "last_heartbeat": "2026-10-26T02:28:50Z",
+          "occurrences": 4
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7190,
+      "state": "open",
+      "total_comments": 3,
+      "claim_line_count": 3,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=estate-agent paths=docs/decisions/2026-10-26-a-memory-write-earns-its-rung-and-the-gate-asks-the-door-on-the-wire.md heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-26T00:51:29Z",
+          "last_heartbeat": "2026-10-26T01:46:21Z",
+          "occurrences": 3
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7233,
+      "state": "open",
+      "total_comments": 0,
+      "claim_line_count": 0,
+      "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7252,
+      "state": "closed",
+      "total_comments": 6,
+      "claim_line_count": 5,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=pi paths=bin/estate-surface-map,docs/decisions/0041-one-context-compiler-and-one-execution-gateway.md,docs/reference/estate-agent-surface-map.md,docs/specs/2026-10-26-context-compiler-and-execution-gateway.md heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-26T20:53:06Z",
+          "last_heartbeat": "2026-10-26T20:53:06Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi paths=bin/estate-surface-map,docs/decisions/2026-10-26-one-context-compiler-and-one-execution-gateway.md,docs/reference/estate-agent-surface-map.md,docs/specs/2026-10-26-context-compiler-and-execution-gateway.md heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-26T21:01:59Z",
+          "last_heartbeat": "2026-10-26T21:01:59Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=bin/estate-surface-map,catalog/estate-capability-registry.json,docs/decisions/2026-10-26-one-context-compiler-and-one-execution-gateway.md,docs/reference/estate-agent-surface-map.md,docs/specs/2026-10-26-context-compiler-and-execution-gateway.md heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-26T22:01:27Z",
+          "last_heartbeat": "2026-10-26T22:01:27Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi paths=bin/estate-surface-map,catalog/estate-capability-registry.json,docs/decisions/2026-10-26-one-context-compiler-and-one-execution-gateway.md,docs/reference/estate-agent-surface-map.md,docs/specs/2026-10-26-context-compiler-and-execution-gateway.md heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-26T22:02:23Z",
+          "last_heartbeat": "2026-10-26T22:10:39Z",
+          "occurrences": 2
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7259,
+      "state": "open",
+      "total_comments": 3,
+      "claim_line_count": 3,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=pi-repair-context paths=extensions/pi-plan-lock/**,bin/pi-plan-lock-install,platform/llm/request_ceiling.py,tests/test_request_ceiling.py,tests/test_pi_plan_lock.py,tests/test_pi_context_budget.py heartbeat=<versioned>",
+          "agent": "pi-repair-context",
+          "first_heartbeat": "2026-10-26T22:50:21Z",
+          "last_heartbeat": "2026-10-26T22:50:21Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=codex-context paths=bin/pi-plan-lock-install,docs/specs/2026-10-27-bounded-compaction-recovery.md,extensions/pi-plan-lock/compaction.ts,extensions/pi-plan-lock/index.ts,packages/estate-context/bounded-summary.test.ts,packages/estate-context/bounded-summary.ts,tests/test_pi_plan_lock.py heartbeat=<versioned>",
+          "agent": "codex-context",
+          "first_heartbeat": "2026-10-27T06:47:35Z",
+          "last_heartbeat": "2026-10-27T06:47:35Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=codex-context paths=bin/pi-plan-lock-install,docs/specs/2026-10-27-bounded-compaction-recovery.md,extensions/pi-plan-lock/compaction.ts,extensions/pi-plan-lock/index.ts,packages/estate-context/bounded-summary.test.ts,packages/estate-context/bounded-summary.ts,platform/llm/context-policy.json,tests/test_pi_plan_lock.py heartbeat=<versioned>",
+          "agent": "codex-context",
+          "first_heartbeat": "2026-10-27T08:58:33Z",
+          "last_heartbeat": "2026-10-27T08:58:33Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7261,
+      "state": "closed",
+      "total_comments": 3,
+      "claim_line_count": 2,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=pi paths=platform/estate/intents/work.discover.yaml,platform/estate/libexec/work-discover.py,tests/test_work_discover.py heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-26T22:56:39Z",
+          "last_heartbeat": "2026-10-26T23:43:59Z",
+          "occurrences": 2
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7262,
+      "state": "closed",
+      "total_comments": 35,
+      "claim_line_count": 32,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=pi paths=bin/estate-context-compile,bin/estate-pi-install,bin/estate-surface-map,catalog/estate-capability-registry.json,docs/decisions/2026-10-26-one-context-compiler-and-one-execution-gateway.md,docs/reference/estate-agent-surface-map.md,docs/specs/2026-10-26-context-compiler-and-execution-gateway.md,extensions/estate-capabilities/index.ts,platform/estate/pi/estate-commands.ts,tests/test_estate_context_compile.py heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-26T23:09:44Z",
+          "last_heartbeat": "2026-10-26T23:09:44Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi paths=.gortex.yaml,bin/estate-context-compile,bin/estate-context-gate,bin/estate-pi-install,bin/estate-surface-map,catalog/estate-capability-registry.json,docs/decisions/2026-10-26-adopt-gortex-as-the-estate-context-engine.md,docs/decisions/2026-10-26-one-context-compiler-and-one-execution-gateway.md,docs/reference/estate-agent-surface-map.md,docs/specs/2026-10-26-context-compiler-and-execution-gateway.md,extensions/estate-capabilities/index.ts,platform/estate/pi/estate-commands.ts,tests/test_estate_context_compile.py,tests/test_estate_context_gate.py heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-26T23:55:18Z",
+          "last_heartbeat": "2026-10-26T23:55:18Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi paths=.gortex.yaml,bin/estate-context-compile,bin/estate-context-gate,bin/estate-pi-install,bin/estate-surface-map,catalog/estate-capability-registry.json,docs/specs/2026-10-26-context-compiler-and-execution-gateway.md,docs/decisions/2026-10-26-one-context-compiler-and-one-execution-gateway.md,docs/reference/estate-agent-surface-map.md,extensions/estate-capabilities/index.ts,platform/estate/pi/estate-commands.ts,platform/estate/context/__init__.py,platform/estate/context/broker.py,tests/test_estate_context_broker.py,docs/decisions/2026-10-27-the-estate-context-broker-is-the-only-door.md heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-27T02:39:57Z",
+          "last_heartbeat": "2026-10-27T02:39:57Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi paths=.gortex.yaml,bin/estate-context-compile,bin/estate-context-gate,bin/estate-pi-install,bin/estate-surface-map,catalog/estate-capability-registry.json,docs/specs/2026-10-26-context-compiler-and-execution-gateway.md,docs/decisions/2026-10-26-one-context-compiler-and-one-execution-gateway.md,docs/reference/estate-agent-surface-map.md,extensions/estate-capabilities/index.ts,platform/estate/pi/estate-commands.ts,platform/estate/context/__init__.py,platform/estate/context/broker.py,platform/estate/context/claims.py,platform/estate/context/server.py,tests/test_estate_context_broker.py,tests/test_estate_context_claims.py,tests/test_estate_context_server.py,platform/mcp/estate-context-broker.yaml,platform/mcp/gortex-engine.yaml,platform/mcp/kustomization.yaml,platform/mcp/agentgateway.yaml,.github/workflows/context-index.yml,estate-context-broker.Dockerfile,gortex-engine.Dockerfile,docs/decisions/2026-10-27-the-estate-context-broker-is-the-only-door.md heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-27T03:29:24Z",
+          "last_heartbeat": "2026-10-27T03:29:24Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi paths=.github/workflows/context-index.yml,.gortex.yaml,bin/estate-context-compile,bin/estate-context-gate,bin/estate-pi-install,bin/estate-surface-map,catalog/estate-capability-registry.json,docs/decisions/2026-10-26-one-context-compiler-and-one-execution-gateway.md,docs/decisions/2026-10-27-the-estate-context-broker-is-the-only-door.md,docs/reference/estate-agent-surface-map.md,docs/specs/2026-10-26-context-compiler-and-execution-gateway.md,estate-context-broker.Dockerfile,extensions/estate-capabilities/index.ts,gortex-engine.Dockerfile,platform/estate/context/__init__.py,platform/estate/context/broker.py,platform/estate/context/claims.py,platform/estate/context/server.py,platform/estate/pi/estate-commands.ts,platform/mcp/agentgateway.yaml,platform/mcp/estate-context-broker.yaml,platform/mcp/gortex-engine.yaml,platform/mcp/kustomization.yaml,tests/test_estate_context_broker.py,tests/test_estate_context_claims.py,tests/test_estate_context_server.py heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-27T03:31:47Z",
+          "last_heartbeat": "2026-10-27T03:31:47Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi paths=.github/workflows/context-index.yml,.gortex.yaml,bin/estate-context-compile,bin/estate-context-gate,bin/estate-pi-install,bin/estate-surface-map,catalog/estate-capability-registry.json,docs/decisions/2026-10-26-one-context-compiler-and-one-execution-gateway.md,docs/decisions/2026-10-27-the-estate-context-broker-is-the-only-door.md,docs/reference/estate-agent-surface-map.md,docs/specs/2026-10-26-context-compiler-and-execution-gateway.md,estate-context-broker.Dockerfile,extensions/estate-capabilities/index.ts,gortex-engine.Dockerfile,platform/estate/context/__init__.py,platform/estate/context/broker.py,platform/estate/context/claims.py,platform/estate/context/server.py,platform/estate/pi/estate-commands.ts,platform/image-automation/estate-context-broker.yaml,platform/image-automation/gortex-engine.yaml,platform/mcp/agentgateway.yaml,platform/mcp/estate-context-broker.yaml,platform/mcp/gortex-engine.yaml,platform/mcp/kustomization.yaml,tests/test_estate_context_broker",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-27T04:57:19Z",
+          "last_heartbeat": "2026-10-27T04:57:19Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi paths=.github/workflows/context-index.yml,.gortex.yaml,bin/dockerfiles,bin/estate-context-compile,bin/estate-context-gate,bin/estate-pi-install,bin/estate-surface-map,catalog/estate-capability-registry.json,docs/decisions/2026-10-26-one-context-compiler-and-one-execution-gateway.md,docs/decisions/2026-10-27-the-estate-context-broker-is-the-only-door.md,docs/reference/estate-agent-surface-map.md,docs/specs/2026-10-26-context-compiler-and-execution-gateway.md,estate-context-broker.Dockerfile,extensions/estate-capabilities/index.ts,gortex-engine.Dockerfile,platform/estate/context/__init__.py,platform/estate/context/broker.py,platform/estate/context/claims.py,platform/estate/context/server.py,platform/estate/pi/estate-commands.ts,platform/image-automation/estate-context-broker.yaml,platform/image-automation/gortex-engine.yaml,platform/image-automation/kustomization.yaml,platform/mcp/agentgateway.yaml,platform/mcp/estate-context-broker.yaml,platform/mcp/gortex-engine.yaml,pla",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-27T04:59:52Z",
+          "last_heartbeat": "2026-10-27T06:45:00Z",
+          "occurrences": 3
+        },
+        {
+          "statement": "CLAIM agent=pi paths=.github/workflows/context-index.yml,.gortex.yaml,bin/dockerfiles,bin/estate-context-compile,bin/estate-context-gate,bin/estate-surface-map,docs/decisions/2026-10-27-the-estate-context-broker-is-the-only-door.md,estate-context-broker.Dockerfile,gortex-engine.Dockerfile,platform/estate/context/,platform/image-automation/estate-context-broker.yaml,platform/image-automation/gortex-engine.yaml,platform/image-automation/kustomization.yaml,platform/mcp/agentgateway.yaml,platform/mcp/estate-context-broker.yaml,platform/mcp/kustomization.yaml,tests/test_estate_context_broker.py,tests/test_estate_context_claims.py,tests/test_estate_context_compile.py,tests/test_estate_context_gate.py,tests/test_estate_context_server.py heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-27T06:53:20Z",
+          "last_heartbeat": "2026-10-27T06:53:20Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi paths=.github/workflows/context-index.yml,.gortex.yaml,bin/dockerfiles,bin/estate-context-compile,bin/estate-context-gate,bin/estate-surface-map,docs/decisions/2026-10-27-the-estate-context-broker-is-the-only-door.md,estate-context-broker.Dockerfile,gortex-engine.Dockerfile,platform/estate/context/*,platform/image-automation/estate-context-broker.yaml,platform/image-automation/gortex-engine.yaml,platform/image-automation/kustomization.yaml,platform/mcp/agentgateway.yaml,platform/mcp/estate-context-broker.yaml,platform/mcp/kustomization.yaml,tests/test_estate_context_broker.py,tests/test_estate_context_claims.py,tests/test_estate_context_compile.py,tests/test_estate_context_gate.py,tests/test_estate_context_server.py heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-27T07:03:06Z",
+          "last_heartbeat": "2026-10-27T07:03:06Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=pi paths=.github/workflows/context-index.yml,.gortex.yaml,bin/dockerfiles,bin/estate-context-compile,bin/estate-context-gate,bin/estate-surface-map,catalog/estate-capability-registry.json,docs/decisions/2026-10-27-the-estate-context-broker-is-the-only-door.md,estate-context-broker.Dockerfile,gortex-engine.Dockerfile,platform/estate/context/*,platform/image-automation/estate-context-broker.yaml,platform/image-automation/gortex-engine.yaml,platform/image-automation/kustomization.yaml,platform/mcp/agentgateway.yaml,platform/mcp/estate-context-broker.yaml,platform/mcp/kustomization.yaml,tests/test_estate_context_broker.py,tests/test_estate_context_claims.py,tests/test_estate_context_compile.py,tests/test_estate_context_gate.py,tests/test_estate_context_server.py heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-27T08:15:51Z",
+          "last_heartbeat": "2026-10-27T08:15:51Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=.github/workflows/context-index.yml,.gortex.yaml,bin/estate-context-compile,estate-context-broker.Dockerfile,gortex-engine.Dockerfile,platform/estate/context/**,platform/image-automation/estate-context-broker.yaml,platform/image-automation/gortex-engine.yaml,platform/image-automation/kustomization.yaml,platform/mcp/agentgateway.yaml,platform/mcp/estate-context-broker.yaml,platform/mcp/kustomization.yaml,tests/test_estate_context_broker.py,tests/test_estate_context_claims.py,tests/test_estate_context_compile.py,tests/test_estate_context_gate.py,tests/test_estate_context_server.py heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-27T10:23:21Z",
+          "last_heartbeat": "2026-10-27T10:23:21Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=.github/workflows/context-index.yml,.gortex.yaml,bin/estate-context-compile,bin/estate-context-gate,estate-context-broker.Dockerfile,gortex-engine.Dockerfile,platform/estate/context/**,platform/image-automation/estate-context-broker.yaml,platform/image-automation/gortex-engine.yaml,platform/image-automation/kustomization.yaml,platform/mcp/agentgateway.yaml,platform/mcp/estate-context-broker.yaml,platform/mcp/kustomization.yaml,tests/test_estate_context_broker.py,tests/test_estate_context_claims.py,tests/test_estate_context_compile.py,tests/test_estate_context_gate.py,tests/test_estate_context_server.py heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-27T10:48:33Z",
+          "last_heartbeat": "2026-10-27T10:48:33Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=.github/workflows/estate-context-index.yaml,bin/estate-context-compile,bin/estate-context-gate,catalog/estate-capability-registry.json,docs/decisions/2026-10-27-the-estate-context-broker-is-the-only-door.md,docs/reference/estate-context-plane.md,platform/estate/context/__init__.py,platform/estate/context/broker.py,platform/estate/context/compiler.py,platform/estate/context/local_engine.py,platform/estate/context/plan.py,platform/estate/context/server.py,platform/estate/context/server.yaml,platform/mcp/estate-context-broker-server.py,platform/mcp/estate-context-broker.yaml,tests/test_estate_context_gate.py heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-27T10:54:40Z",
+          "last_heartbeat": "2026-10-27T10:54:40Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=.github/workflows/context-index.yml,.gortex.yaml,bin/estate-context-compile,bin/estate-context-gate,catalog/estate-capability-registry.json,docs/decisions/2026-10-27-the-estate-context-broker-is-the-only-door.md,docs/reference/estate-context-plane.md,estate-context-broker.Dockerfile,gortex-engine.Dockerfile,platform/estate/context/__init__.py,platform/estate/context/broker.py,platform/estate/context/broker_client.py,platform/estate/context/claims.py,platform/estate/context/local_engine.py,platform/estate/context/plan.py,platform/estate/context/server.py,platform/image-automation/estate-context-broker.yaml,platform/image-automation/gortex-engine.yaml,platform/image-automation/kustomization.yaml,platform/mcp/agentgateway.yaml,platform/mcp/estate-context-broker.yaml,platform/mcp/kustomization.yaml,tests/test_estate_context_broker.py,tests/test_estate_context_claims.py,tests/test_estate_context_compile.py,tests/test_estate_context_gate.py,tests/test_estate_co",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-27T10:58:34Z",
+          "last_heartbeat": "2026-10-27T10:58:34Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=.github/workflows/context-index.yml,.gortex.yaml,bin/estate-context-compile,bin/estate-context-gate,bin/idp-ci,catalog/estate-capability-registry.json,docs/decisions/2026-10-27-the-estate-context-broker-is-the-only-door.md,docs/reference/estate-context-plane.md,estate-context-broker.Dockerfile,gortex-engine.Dockerfile,platform/estate/context/__init__.py,platform/estate/context/broker.py,platform/estate/context/broker_client.py,platform/estate/context/claims.py,platform/estate/context/local_engine.py,platform/estate/context/plan.py,platform/estate/context/server.py,platform/image-automation/estate-context-broker.yaml,platform/image-automation/gortex-engine.yaml,platform/image-automation/kustomization.yaml,platform/mcp/agentgateway.yaml,platform/mcp/estate-context-broker.yaml,platform/mcp/kustomization.yaml,tests/test_estate_context_broker.py,tests/test_estate_context_claims.py,tests/test_estate_context_compile.py,tests/test_estate_context_gate.py,tests/tes",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-27T11:06:05Z",
+          "last_heartbeat": "2026-10-28T01:05:30Z",
+          "occurrences": 3
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=.github/workflows/context-index.yml,.gortex.yaml,bin/estate-context-compile,bin/estate-context-gate,bin/idp-ci,catalog/estate-capability-registry.json,catalog/ports.yaml,docs/decisions/2026-10-27-the-estate-context-broker-is-the-only-door.md,docs/reference/estate-context-plane.md,estate-context-broker.Dockerfile,gortex-engine.Dockerfile,platform/estate/context/__init__.py,platform/estate/context/broker.py,platform/estate/context/broker_client.py,platform/estate/context/claims.py,platform/estate/context/local_engine.py,platform/estate/context/plan.py,platform/estate/context/server.py,platform/image-automation/estate-context-broker.yaml,platform/image-automation/gortex-engine.yaml,platform/image-automation/kustomization.yaml,platform/mcp/agentgateway.yaml,platform/mcp/estate-context-broker.yaml,platform/mcp/kustomization.yaml,tests/test_estate_context_broker.py,tests/test_estate_context_claims.py,tests/test_estate_context_compile.py,tests/test_estate_contex",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-28T01:11:47Z",
+          "last_heartbeat": "2026-10-28T01:11:47Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=.github/workflows/context-index.yml,.gortex.yaml,bin/estate-context-compile,bin/estate-context-gate,bin/idp-ci,catalog/estate-capability-registry.json,catalog/ports.yaml,docs/decisions/2026-10-27-the-estate-context-broker-is-the-only-door.md,docs/reference/estate-context-plane.md,estate-context-broker.Dockerfile,gortex-engine.Dockerfile,platform/estate/context/__init__.py,platform/estate/context/broker.py,platform/estate/context/broker_client.py,platform/estate/context/claims.py,platform/estate/context/local_engine.py,platform/estate/context/plan.py,platform/estate/context/server.py,platform/estate/intents/disk-reclaim.yaml,platform/image-automation/estate-context-broker.yaml,platform/image-automation/gortex-engine.yaml,platform/image-automation/kustomization.yaml,platform/mcp/agentgateway.yaml,platform/mcp/estate-context-broker.yaml,platform/mcp/kustomization.yaml,tests/test_estate_context_broker.py,tests/test_estate_context_claims.py,tests/test_estate_c",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-28T01:23:54Z",
+          "last_heartbeat": "2026-10-28T05:13:15Z",
+          "occurrences": 5
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=.github/workflows/context-index.yml,.gortex.yaml,bin/estate-context-compile,estate-context-broker.Dockerfile,gortex-engine.Dockerfile,platform/estate/context/**,platform/image-automation/estate-context-broker.yaml,platform/image-automation/gortex-engine.yaml,platform/image-automation/kustomization.yaml,platform/mcp/agentgateway.yaml,platform/mcp/estate-context-broker.yaml,platform/mcp/kustomization.yaml,tests/test_estate_context_broker.py,tests/test_estate_context_claims.py,tests/test_estate_context_compile.py,tests/test_estate_context_gate.py,tests/test_estate_context_server.py,bin/estate-context-gate,.github/workflows/estate-context-index.yaml,catalog/estate-capability-registry.json,docs/decisions/2026-10-27-the-estate-context-broker-is-the-only-door.md,docs/reference/estate-context-plane.md,platform/estate/context/__init__.py,platform/estate/context/broker.py,platform/estate/context/compiler.py,platform/estate/context/local_engine.py,platform/estate/co",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-28T03:54:45Z",
+          "last_heartbeat": "2026-10-28T09:16:57Z",
+          "occurrences": 6
+        },
+        {
+          "statement": "CLAIM agent=pi paths=platform/estate/context/**,bin/estate-context-gate,bin/estate-context-compile,platform/mcp/estate-context-broker.yaml,gortex-engine.Dockerfile,catalog/ports.yaml,platform/estate/intents/disk-reclaim.yaml,.github/workflows/context-index.yml,.gortex.yaml,tests/test_estate_context_*.py heartbeat=<versioned>",
+          "agent": "pi",
+          "first_heartbeat": "2026-10-28T09:43:05Z",
+          "last_heartbeat": "2026-10-28T09:43:05Z",
+          "occurrences": 1
+        }
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7284,
+      "state": "closed",
+      "total_comments": 1,
+      "claim_line_count": 0,
+      "claim_variants": []
+    },
+    {
+      "repo": "chidionyema/idp",
+      "number": 7298,
+      "state": "closed",
+      "total_comments": 26,
+      "claim_line_count": 22,
+      "claim_variants": [
+        {
+          "statement": "CLAIM agent=estate-agent paths=docs/decisions/0045-nsvee-verification-is-enforced-at-the-commit-boundary.md,platform/estate/intents/jev.decide.yaml,platform/estate/libexec/jev-decide.py,platform/estate/nsvee_enforcement.py,tests/test_jev_decide_context_contract.py,tests/test_nsvee_estate_enforcement.py heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-27T06:33:24Z",
+          "last_heartbeat": "2026-10-28T16:10:16Z",
+          "occurrences": 4
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=docs/decisions/0045-nsvee-verification-is-enforced-at-the-commit-boundary.md,platform/estate/nsvee_enforcement.py,platform/estate/intents/jev.decide.yaml,platform/estate/libexec/jev-decide.py,tests/test_nsvee_estate_enforcement.py,tests/test_jev_decide_context_contract.py,facts/estate.jsonl heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-28T16:50:00Z",
+          "last_heartbeat": "2026-10-28T16:50:00Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=docs/decisions/0046-nsvee-verification-is-enforced-at-the-commit-boundary.md,platform/estate/nsvee_enforcement.py,platform/estate/intents/jev.decide.yaml,platform/estate/libexec/jev-decide.py,tests/test_nsvee_estate_enforcement.py,tests/test_jev_decide_context_contract.py heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-28T17:25:00Z",
+          "last_heartbeat": "2026-10-28T17:25:00Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=docs/decisions/0045-nsvee-verification-is-enforced-at-the-commit-boundary.md,platform/estate/intents/jev.decide.yaml,platform/estate/libexec/jev-decide.py,platform/estate/nsvee_enforcement.py,tests/test_jev_decide_context_contract.py,tests/test_nsvee_estate_enforcement.py,facts/estate.jsonl,docs/decisions/0046-nsvee-verification-is-enforced-at-the-commit-boundary.md heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-28T18:12:19Z",
+          "last_heartbeat": "2026-10-28T18:12:19Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=docs/decisions/0046-nsvee-verification-is-enforced-at-the-commit-boundary.md,platform/estate/intents/jev.decide.yaml,platform/estate/libexec/jev-decide.py,platform/estate/nsvee_enforcement.py,tests/test_jev_decide_context_contract.py,tests/test_nsvee_estate_enforcement.py,.github/workflows/registry-snapshot.yml heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-28T18:35:00Z",
+          "last_heartbeat": "2026-10-28T21:20:00Z",
+          "occurrences": 3
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=docs/decisions/0045-nsvee-verification-is-enforced-at-the-commit-boundary.md,platform/estate/intents/jev.decide.yaml,platform/estate/libexec/jev-decide.py,platform/estate/nsvee_enforcement.py,tests/test_jev_decide_context_contract.py,tests/test_nsvee_estate_enforcement.py,facts/estate.jsonl,docs/decisions/0046-nsvee-verification-is-enforced-at-the-commit-boundary.md,.github/workflows/registry-snapshot.yml heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-28T20:41:37Z",
+          "last_heartbeat": "2026-10-29T01:54:58Z",
+          "occurrences": 6
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=.github/workflows/registry-snapshot.yml,docs/decisions/0046-nsvee-verification-is-enforced-at-the-commit-boundary.md,platform/estate/intents/jev.decide.yaml,platform/estate/libexec/jev-decide.py,platform/estate/nsvee_enforcement.py,tests/test_jev_decide_context_contract.py,tests/test_nsvee_estate_enforcement.py heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-28T22:35:00Z",
+          "last_heartbeat": "2026-10-28T22:35:00Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=docs/decisions/0046-nsvee-verification-is-enforced-at-the-commit-boundary.md,platform/estate/nsvee_enforcement.py,platform/estate/intents/jev.decide.yaml,platform/estate/libexec/jev-decide.py,tests/test_nsvee_estate_enforcement.py,tests/test_jev_decide_context_contract.py,.github/workflows/registry-snapshot.yml heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-28T23:40:00Z",
+          "last_heartbeat": "2026-10-28T23:40:00Z",
+          "occurrences": 1
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=docs/decisions/0046-nsvee-verification-is-enforced-at-the-commit-boundary.md,platform/estate/intents/nsvee.verify.yaml,platform/estate/libexec/nsvee-verify.py,platform/estate/nsvee_enforcement.py,tests/test_nsvee_verify_door.py,tests/test_jev_decide_context_contract.py,tests/test_nsvee_estate_enforcement.py,catalog/estate-capability-registry.json heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-30T03:09:51Z",
+          "last_heartbeat": "2026-10-30T05:25:00Z",
+          "occurrences": 3
+        },
+        {
+          "statement": "CLAIM agent=estate-agent paths=docs/decisions/0045-nsvee-verification-is-enforced-at-the-commit-boundary.md,platform/estate/intents/jev.decide.yaml,platform/estate/libexec/jev-decide.py,platform/estate/nsvee_enforcement.py,tests/test_jev_decide_context_contract.py,tests/test_nsvee_estate_enforcement.py,facts/estate.jsonl,docs/decisions/0046-nsvee-verification-is-enforced-at-the-commit-boundary.md,.github/workflows/registry-snapshot.yml,platform/estate/intents/nsvee.verify.yaml,platform/estate/libexec/nsvee-verify.py,tests/test_nsvee_verify_door.py,catalog/estate-capability-registry.json heartbeat=<versioned>",
+          "agent": "estate-agent",
+          "first_heartbeat": "2026-10-30T04:04:01Z",
+          "last_heartbeat": "2026-10-30T04:04:01Z",
+          "occurrences": 1
         }
       ]
     }
