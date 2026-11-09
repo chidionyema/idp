@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import "./globals.css";
+import "./merian.css";
 
 // The woff2 files in ./fonts are the latin subsets of these three families, vendored from
 // Google Fonts. `next/font/google` downloads at build time, and the image build was failing on

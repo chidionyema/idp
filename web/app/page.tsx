@@ -1,69 +1,113 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { site } from "@/content/site";
-import { HeroPlayground } from "@/components/HeroPlayground";
-import { Reveal } from "@/components/Reveal";
 
-export const metadata: Metadata = { description: site.tagline };
+export const metadata: Metadata = {
+  title: "Merian Intelligence | AI laboratory, consultancy and ventures",
+  description: "Merian Intelligence researches artificial intelligence, engineers systems for organisations, and develops commercial AI ventures.",
+};
 
-const work = [
-  { n: "01", title: "Hypothesise", detail: "Find the question worth answering. Name the baseline and what would disprove the idea." },
-  { n: "02", title: "Experiment", detail: "Run repeatable trials. Preserve the controls, parameters, costs and negative findings." },
-  { n: "03", title: "Prototype", detail: "Build only what the evidence supports. Show what works and where it fails." },
-  { n: "04", title: "Commercialise", detail: "Independent checks come before production claims: security, reliability, customer outcomes and rollback." },
+const disciplines = [
+  { n: "01", title: "AI strategy & architecture", text: "Find the right problem, choose the right systems and turn technical uncertainty into a credible investment decision.", marker: "ADVISE" },
+  { n: "02", title: "AI engineering & delivery", text: "From intelligent applications to secure, observable platforms. We design, build, integrate and operate what matters.", marker: "BUILD" },
+  { n: "03", title: "Autonomous systems", text: "Agent orchestration, workflow automation and human oversight designed for real operating environments.", marker: "AUTOMATE" },
+  { n: "04", title: "Research & experimentation", text: "Test frontier capabilities against meaningful baselines. Capture the evidence, including what does not work.", marker: "DISCOVER" },
 ];
 
 export default function HomePage() {
   return (
     <>
-      <section style={{ borderBottom: "1px solid var(--rule)" }}>
-        <div className="container section hero-grid">
-          <div className="hero-copy">
-            <span className="tag tag-accent">Merian Intelligence · Applied AI Laboratory</span>
-            <h1 style={{ fontFamily: "var(--serif)" }}>Research first.<br /><em style={{ fontStyle: "normal", color: "var(--accent)" }}>Products that earn their place.</em></h1>
-            <p style={{ fontSize: "18px", lineHeight: 1.75, color: "var(--ink-3)", maxWidth: "55ch" }}>
-              We investigate AI, test new capabilities and develop useful products for businesses and individuals.
-              Our lab is free to experiment. Commercial work has to stand up to a much harder standard of proof.
-            </p>
-            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-              <Link href="/research" className="btn-primary">Explore our research</Link>
-              <Link href="/products" className="btn-secondary">Products and companies</Link>
+      <section className="mi-hero" aria-labelledby="mi-hero-title">
+        <div className="mi-hero-grid" aria-hidden="true" />
+        <div className="mi-hero-glow" aria-hidden="true" />
+        <div className="mi-shell mi-hero-shell">
+          <div className="mi-hero-topline"><span><i className="mi-live-dot" /> MERIAN INTELLIGENCE</span><span>INDEPENDENT AI LABORATORY + CONSULTANCY</span><span>UK / GLOBAL</span></div>
+          <div className="mi-hero-composition">
+            <div className="mi-hero-content">
+              <div className="mi-hero-overline">RESEARCH THE UNKNOWN. ENGINEER THE POSSIBLE.</div>
+              <h1 id="mi-hero-title" className="mi-hero-title">
+                INTELLIGENCE<span className="mi-hero-comma">,</span><br/>
+                <span className="mi-hero-outline">MADE</span> REAL<span className="mi-gold-stop">.</span>
+              </h1>
+              <p className="mi-hero-intro">We are an AI research laboratory, technology consultancy and company builder. We turn new intelligence into systems people can use, businesses can trust and ventures that can grow.</p>
+              <div className="mi-hero-actions">
+                <Link href="/consulting" className="mi-button mi-button-gold">Work with us <span aria-hidden="true">↗</span></Link>
+                <Link href="/research" className="mi-button mi-button-outline">Enter the laboratory <span aria-hidden="true">↗</span></Link>
+              </div>
+            </div>
+            <div className="mi-hero-art" aria-hidden="true">
+              <div className="mi-art-label mi-art-label-top">M / 001 — INTELLIGENCE IN MOTION</div>
+              <div className="mi-orbit mi-orbit-outer"/>
+              <div className="mi-orbit mi-orbit-mid"/>
+              <div className="mi-orbit mi-orbit-inner"/>
+              <div className="mi-orbit-axis mi-orbit-axis-a"/>
+              <div className="mi-orbit-axis mi-orbit-axis-b"/>
+              <div className="mi-orbit-center"><div className="mi-orbit-core"/><div className="mi-orbit-coreline"/></div>
+              <span className="mi-orbit-node mi-node-one"/><span className="mi-orbit-node mi-node-two"/><span className="mi-orbit-node mi-node-three"/>
+              <div className="mi-art-label mi-art-label-bottom">OBSERVE <span>→</span> EXPERIMENT <span>→</span> ENGINEER</div>
             </div>
           </div>
-          <div className="hero-demo">
-            <p style={{ fontFamily: "var(--mono)", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-3)", marginBottom: "20px" }}>Illustrative LLM routing demo · not a live deployment claim</p>
-            <HeroPlayground />
+          <div className="mi-hero-bottom"><span>01 / A NEW KIND OF AI COMPANY</span><span>SCROLL TO EXPLORE <b aria-hidden="true">↓</b></span></div>
+        </div>
+      </section>
+
+      <section className="mi-manifesto" aria-labelledby="mi-manifesto-title">
+        <div className="mi-shell mi-manifesto-grid">
+          <p className="mi-eyebrow">WHAT MAKES US DIFFERENT / 001</p>
+          <div>
+            <h2 id="mi-manifesto-title">Not another AI pitch.<br/><em>Real intelligence. Real work.</em></h2>
+            <p>Merian exists at the intersection of science and commerce. We experiment continuously, build for real-world constraints and develop our own companies. The laboratory creates the advantage. Consulting brings it to clients. Products take it into new markets.</p>
+          </div>
+          <div className="mi-manifesto-symbol" aria-hidden="true">M<span>↗</span></div>
+        </div>
+      </section>
+
+      <section className="mi-services mi-section" aria-labelledby="mi-services-heading">
+        <div className="mi-shell">
+          <div className="mi-section-intro"><span className="mi-eyebrow">01 / CONSULTANCY</span><p>FOR ORGANISATIONS BUILDING WITH AI</p></div>
+          <div className="mi-split-heading"><h2 id="mi-services-heading">Serious ambition.<br/><span>Serious engineering.</span></h2><div><p>From boardroom decisions to production architecture. We work with organisations that need more than prototypes and promises.</p><Link className="mi-text-action" href="/consulting">Explore our consultancy <span aria-hidden="true">↗</span></Link></div></div>
+          <div className="mi-services-grid">
+            {disciplines.map(d => <Link key={d.n} href="/consulting" className="mi-service-card">
+              <div className="mi-service-top"><span>{d.n} / {d.marker}</span><span aria-hidden="true">↗</span></div>
+              <div><h3>{d.title}</h3><p>{d.text}</p></div>
+              <div className="mi-service-rule"/>
+            </Link>)}
           </div>
         </div>
       </section>
-      <section style={{ background: "var(--ink)", padding: "30px 0" }}>
-        <div className="container" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: "36px" }}>
-          {[
-            { title: "Research", detail: "Test hypotheses with reproducible observations." },
-            { title: "Prototype", detail: "Demonstrate what works and name the gaps." },
-            { title: "Commercial", detail: "Demand reliable, independently verified user outcomes." },
-          ].map(x => <div key={x.title}><p style={{ fontFamily: "var(--serif)", fontSize: "24px", color: "#fff" }}>{x.title}</p><p style={{ marginTop: "8px", fontSize: "13px", lineHeight: 1.7, color: "var(--on-ink)" }}>{x.detail}</p></div>)}
+
+      <section className="mi-lab mi-section" aria-labelledby="mi-lab-heading">
+        <div className="mi-shell mi-lab-layout">
+          <div className="mi-lab-copy">
+            <span className="mi-eyebrow">02 / THE LABORATORY</span>
+            <h2 id="mi-lab-heading">Curiosity<br/>is an <em>operating</em><br/>principle.</h2>
+            <p>Our lab tests emerging models, agent architectures and new ways to automate work. Hypotheses become controlled trials. Results become knowledge. Promising discoveries become products or client capabilities.</p>
+            <Link href="/research" className="mi-button mi-button-gold">Explore research <span aria-hidden="true">↗</span></Link>
+          </div>
+          <div className="mi-lab-board">
+            <div className="mi-lab-board-head"><span><i className="mi-live-dot"/> RESEARCH PROGRAMMES</span><span>MERIAN / LAB</span></div>
+            <div className="mi-lab-programme"><span>01</span><div><h3>Autonomous intelligence</h3><p>Agents, orchestration, recovery and human direction</p></div><b>↗</b></div>
+            <div className="mi-lab-programme"><span>02</span><div><h3>AI systems & evaluation</h3><p>Quality, cost, latency and repeatable model experiments</p></div><b>↗</b></div>
+            <div className="mi-lab-programme"><span>03</span><div><h3>Trust & infrastructure</h3><p>Identity, reliability, observability and operational proof</p></div><b>↗</b></div>
+            <div className="mi-lab-board-foot"><span>METHOD / HYPOTHESIS → EXPERIMENT → EVIDENCE</span><span>↗</span></div>
+          </div>
         </div>
       </section>
-      <section className="section"><div className="container">
-        <Reveal><h2 style={{ fontFamily: "var(--serif)", marginBottom: "14px" }}>Research never stops.</h2><p style={{ color: "var(--ink-3)", marginBottom: "40px" }}>Each experiment gives us a result worth keeping, even when the hypothesis fails. Research is not a marketing synonym for delivered software.</p></Reveal>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(280px,100%),1fr))", gap: "24px" }}>
-          {site.research.map(r => <Reveal key={r.title}><article className="card" style={{ display: "flex", flexDirection: "column", gap: "15px" }}><span className="tag">{r.kind}</span><h3 style={{ fontFamily: "var(--serif)", fontSize: "22px" }}>{r.title}</h3><p style={{ color: "var(--ink-3)", fontSize: "14px", lineHeight: 1.8 }}>{r.blurb}</p>{r.href && <Link href={r.href} className="text-link">Research notes →</Link>}</article></Reveal>)}
+
+      <section className="mi-ventures mi-section" aria-labelledby="mi-ventures-heading">
+        <div className="mi-shell">
+          <div className="mi-section-intro"><span className="mi-eyebrow">03 / VENTURES + PRODUCTS</span><p>FROM THE LABORATORY TO THE MARKET</p></div>
+          <div className="mi-split-heading"><h2 id="mi-ventures-heading">We don&apos;t only advise.<br/><span>We build businesses.</span></h2><div><p>Merian is the parent company. Our ventures and products tackle different markets, each at its own stage of maturity.</p><Link className="mi-text-action" href="/products">Discover the portfolio <span aria-hidden="true">↗</span></Link></div></div>
+          <div className="mi-venture-grid">
+            <article className="mi-venture mi-venture-mumchimp"><div className="mi-venture-top"><span>GROUP COMPANY / COMMERCE</span><span>01</span></div><div><div className="mi-venture-mark">m<span>.</span></div><h3>Mumchimp</h3><p>Research-backed business opportunities, built for people ready to act.</p></div><a href="https://mumchimp.com" target="_blank" rel="noopener noreferrer">Visit Mumchimp <span aria-hidden="true">↗</span></a></article>
+            <article className="mi-venture mi-venture-genesis"><div className="mi-venture-top"><span>LABORATORY PRODUCT / AUTONOMY</span><span>02</span></div><div><div className="mi-venture-mark mi-genesis-mark">G<span>•</span></div><h3>Genesis</h3><p>The Autonomous Estate: an experimental operating system for coordinated AI agents and work.</p></div><Link href="/products">Explore the vision <span aria-hidden="true">↗</span></Link></article>
+            <article className="mi-venture mi-venture-blabka"><div className="mi-venture-top"><span>PORTFOLIO PRODUCT / IN DEVELOPMENT</span><span>03</span></div><div><div className="mi-venture-mark">b<span>⁎</span></div><h3>Blabka</h3><p>Part of the Merian product portfolio. More information will be shared as the product develops.</p></div><Link href="/products">View the portfolio <span aria-hidden="true">↗</span></Link></article>
+          </div>
         </div>
-      </div></section>
-      <section className="section" style={{ background: "var(--panel)" }}><div className="container">
-        <Reveal><h2 style={{ fontFamily: "var(--serif)", marginBottom: "40px" }}>How the lab works</h2></Reveal>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: "32px" }}>
-          {work.map(x => <Reveal key={x.n}><div><span style={{ color: "var(--accent)", fontFamily: "var(--mono)", fontSize: "12px" }}>{x.n}</span><h3 style={{ marginTop: "12px", marginBottom: "12px", fontSize: "21px" }}>{x.title}</h3><p style={{ color: "var(--ink-3)", lineHeight: 1.7, fontSize: "14px" }}>{x.detail}</p></div></Reveal>)}
-        </div>
-      </div></section>
-      <section className="section" style={{ background: "var(--ink)", color: "#fff" }}><div className="container">
-        <Reveal><h2 style={{ fontFamily: "var(--serif)", color: "#fff" }}>One laboratory. Different businesses and products.</h2><p style={{ color: "var(--on-ink)", marginTop: "16px", maxWidth: "75ch" }}>Merian Intelligence is the parent lab. Mumchimp is a group company serving its own customers. Genesis, the Autonomous Estate, is an experimental product and operating capability.</p></Reveal>
-        <div style={{ marginTop: "36px" }}><Link href="/products" className="btn-secondary" style={{ color: "#fff", borderColor: "rgba(255,255,255,0.2)" }}>View the portfolio →</Link></div>
-      </div></section>
-      <section className="section"><div className="container" style={{ textAlign: "center", maxWidth: "680px" }}>
-        <Reveal><h2 style={{ fontFamily: "var(--serif)" }}>What problem would you like to solve?</h2><p style={{ color: "var(--ink-3)", fontSize: "17px", lineHeight: 1.8, marginTop: "18px" }}>Bring a research question, an AI product hypothesis or a commercial system that needs proper validation.</p><div style={{ marginTop: "28px" }}><Link href="/contact" className="btn-primary">Start a conversation →</Link></div></Reveal>
-      </div></section>
+      </section>
+
+      <section className="mi-close" aria-labelledby="mi-close-heading">
+        <div className="mi-shell mi-close-inner"><span className="mi-eyebrow">NEXT / WORK WITH MERIAN</span><h2 id="mi-close-heading">THE NEXT<br/>MOVE IS <em>YOURS.</em></h2><div className="mi-close-bottom"><p>Have an AI problem worth solving, a platform worth building or an idea worth testing? Bring it to Merian.</p><Link href="/contact" className="mi-button mi-button-gold">Start a conversation <span aria-hidden="true">↗</span></Link></div></div>
+      </section>
     </>
   );
 }

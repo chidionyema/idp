@@ -2,50 +2,31 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { site } from "@/content/site";
 import { Logo } from "@/components/Logo";
-
+const links = [
+  { href: "/consulting", label: "Consultancy" },
+  { href: "/research", label: "Laboratory" },
+  { href: "/products", label: "Ventures" },
+  { href: "/writing", label: "Insights" },
+];
 export function Nav() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   return (
-    <header style={{ position: "sticky", top: 0, zIndex: 50, borderBottom: "1px solid var(--rule)", background: "rgba(250,250,248,0.95)", backdropFilter: "blur(8px)" }}>
-      <nav style={{ display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: "1152px", margin: "0 auto", padding: "16px 24px" }}>
+    <header className="mi-header">
+      <nav className="mi-nav mi-shell" aria-label="Main navigation">
         <Logo />
-        <ul style={{ display: "flex", alignItems: "center", gap: "32px", listStyle: "none" }} className="nav-links">
-          {site.nav.map((item) => (
-            <li key={item.href}>
-              <Link href={item.href} className="nav-link" style={{ fontWeight: pathname === item.href ? 500 : 400, color: pathname === item.href ? "var(--accent)" : "var(--ink-3)" }}>
-                {item.label}
-              </Link>
-            </li>
-          ))}
-          <li><Link href="/demo" className="nav-link" style={{ color: pathname === "/demo" ? "var(--accent)" : "var(--ink-3)", fontWeight: pathname === "/demo" ? 500 : 400 }}>Live Demo</Link></li>
-          <li><Link href="/tools/cost-calculator" className="nav-link" style={{ color: pathname === "/tools/cost-calculator" ? "var(--accent)" : "var(--ink-3)", fontWeight: pathname === "/tools/cost-calculator" ? 500 : 400 }}>Cost Calculator</Link></li>
-          <li><Link href="/tools/trace-explorer" className="nav-link" style={{ color: pathname === "/tools/trace-explorer" ? "var(--accent)" : "var(--ink-3)", fontWeight: pathname === "/tools/trace-explorer" ? 500 : 400 }}>Trace Explorer</Link></li>
-          <li><Link href="/contact" className="btn-primary" style={{ padding: "8px 16px", fontSize: "12px" }}>Talk to us</Link></li>
-        </ul>
-        <button onClick={() => setOpen((o) => !o)} className="nav-mobile" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-3)" }} aria-label="Toggle menu">
-          {open ? (
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><line x1="4" y1="4" x2="16" y2="16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><line x1="16" y1="4" x2="4" y2="16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-          ) : (
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><line x1="3" y1="6" x2="17" y2="6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><line x1="3" y1="10" x2="17" y2="10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><line x1="3" y1="14" x2="17" y2="14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-          )}
-        </button>
-      </nav>
-      {open && (
-        <div style={{ borderTop: "1px solid var(--rule)", padding: "16px 24px" }} className="nav-mobile">
-          <ul style={{ display: "flex", flexDirection: "column", gap: "16px", listStyle: "none" }}>
-            {site.nav.map((item) => (
-              <li key={item.href}><Link href={item.href} onClick={() => setOpen(false)} className="nav-link" style={{ color: pathname === item.href ? "var(--accent)" : "var(--ink-3)" }}>{item.label}</Link></li>
-            ))}
-            {[{ href: "/demo", label: "Live Demo" }, { href: "/tools/cost-calculator", label: "Cost Calculator" }, { href: "/tools/trace-explorer", label: "Trace Explorer" }].map((t) => (
-              <li key={t.href}><Link href={t.href} onClick={() => setOpen(false)} className="nav-link" style={{ color: pathname === t.href ? "var(--accent)" : "var(--ink-3)" }}>{t.label}</Link></li>
-            ))}
-            <li><Link href="/contact" onClick={() => setOpen(false)} className="btn-primary" style={{ alignSelf: "flex-start", padding: "8px 16px", fontSize: "12px" }}>Talk to us</Link></li>
-          </ul>
+        <div className="mi-nav-links">
+          {links.map(item => <Link key={item.href} className={pathname === item.href ? "mi-nav-link mi-nav-active" : "mi-nav-link"} href={item.href}>{item.label}</Link>)}
         </div>
-      )}
+        <div className="mi-nav-actions"><Link href="/contact" className="mi-nav-cta">Start a project <span aria-hidden="true">↗</span></Link>
+          <button className="mi-menu-toggle" type="button" aria-label={open ? "Close navigation" : "Open navigation"} aria-expanded={open} aria-controls="mi-mobile-nav" onClick={() => setOpen(s => !s)}>{open ? "CLOSE ×" : "MENU ☰"}</button>
+        </div>
+      </nav>
+      {open && <div id="mi-mobile-nav" className="mi-mobile-panel"><div className="mi-shell">
+        {links.map(item => <Link href={item.href} key={item.href} onClick={() => setOpen(false)}>{item.label}<span aria-hidden="true">↗</span></Link>)}
+        <Link href="/contact" onClick={() => setOpen(false)}>Start a project <span aria-hidden="true">↗</span></Link>
+      </div></div>}
     </header>
   );
 }

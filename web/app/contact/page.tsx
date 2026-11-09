@@ -50,7 +50,7 @@ export default function ContactPage() {
       );
       setState("error");
     } catch {
-      setFailure("That did not reach us — check your connection, or email us directly.");
+      setFailure("That did not reach us. Please try again later.");
       setState("error");
     }
   }
@@ -61,13 +61,13 @@ export default function ContactPage() {
         <Reveal><div style={{ marginBottom: "48px" }}>
           <span className="tag tag-accent" style={{ marginBottom: "16px", display: "inline-flex" }}>Contact</span>
           <h1>Talk to us</h1>
-          <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "17px" }}>We take on a small number of projects each quarter. Tell us what you’re building and we’ll be in touch within two business days.</p>
+          <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "17px" }}>Tell us about the opportunity: strategic advice, AI engineering, autonomous operations, research partnership or a venture discussion.</p>
         </div></Reveal>
         <Reveal>
           {state === "sent" ? (
             <div style={{ border: "1px solid var(--ok)", background: "rgba(5,150,105,0.05)", padding: "32px", textAlign: "center" }}>
               <p style={{ fontFamily: "var(--serif)", fontSize: "1.3rem", color: "var(--ok-text)", maxWidth: "none" }}>Message received.</p>
-              <p style={{ color: "var(--ink-3)", marginTop: "8px", maxWidth: "none" }}>We review project enquiries. If the delivery service is not connected, the form will report that your message was not sent.</p>
+              <p style={{ color: "var(--ink-3)", marginTop: "8px", maxWidth: "none" }}>Your message has been submitted to our enquiry service.</p>
             </div>
           ) : (
             <form onSubmit={handleSubmit} noValidate style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
