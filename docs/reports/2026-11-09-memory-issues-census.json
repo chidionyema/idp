@@ -1,0 +1,2498 @@
+{
+  "schema": "estate.memory.issue_census.v1",
+  "generated_at_utc": "2026-11-09T02:59:02.512Z",
+  "caveat": "Keyword issue search, not exhaustive semantic work graph or proof all claims are live. Titles and body indexed by GitHub; excludes PRs by type:issue.",
+  "searches": [
+    {
+      "query": "repo:chidionyema/idp memory in:title,body type:issue",
+      "total": 120,
+      "returned": 120
+    },
+    {
+      "query": "repo:chidionyema/idp context in:title type:issue",
+      "total": 13,
+      "returned": 13
+    },
+    {
+      "query": "repo:chidionyema/idp graph in:title type:issue",
+      "total": 5,
+      "returned": 5
+    },
+    {
+      "query": "repo:chidionyema/idp focus in:title type:issue",
+      "total": 6,
+      "returned": 6
+    },
+    {
+      "query": "repo:chidionyema/argon memory in:title,body type:issue",
+      "total": 7,
+      "returned": 7
+    },
+    {
+      "query": "repo:chidionyema/estate-graph memory in:title,body type:issue",
+      "total": 1,
+      "returned": 1
+    }
+  ],
+  "counts": {
+    "chidionyema/argon": {
+      "open": 7,
+      "closed": 0
+    },
+    "chidionyema/estate-graph": {
+      "open": 1,
+      "closed": 0
+    },
+    "chidionyema/idp": {
+      "open": 81,
+      "closed": 55
+    }
+  },
+  "unique": 144,
+  "issues": [
+    {
+      "repo": "chidionyema/argon",
+      "issue": 7,
+      "title": "I-0026 acceptance: real React UX proof, approval correctness and continuous regression gate",
+      "state": "open",
+      "url": "https://github.com/chidionyema/argon/issues/7",
+      "created": "2026-11-06T11:43:49Z",
+      "updated": "2026-11-07T21:19:39Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/argon",
+      "issue": 20,
+      "title": "Genesis Relay Observatory — live founder 2100 surface with evidence-bound state",
+      "state": "open",
+      "url": "https://github.com/chidionyema/argon/issues/20",
+      "created": "2026-11-06T21:27:25Z",
+      "updated": "2026-11-08T20:50:39Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 22,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/argon",
+      "issue": 35,
+      "title": "CREW CALL: leave the Mac tonight (claim one item, plan first, steps of 100 s or less)",
+      "state": "open",
+      "url": "https://github.com/chidionyema/argon/issues/35",
+      "created": "2026-11-07T00:06:45Z",
+      "updated": "2026-11-07T20:40:51Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 8,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/argon",
+      "issue": 46,
+      "title": "P0 ChatGPT operator self-audit: unfinished ownership and continuity ledger",
+      "state": "open",
+      "url": "https://github.com/chidionyema/argon/issues/46",
+      "created": "2026-11-07T09:34:39Z",
+      "updated": "2026-11-09T01:51:29Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 36,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/argon",
+      "issue": 47,
+      "title": "Genesis instruction aggregate: enforce complete delivery lifecycle and 10-minute flow recovery",
+      "state": "open",
+      "url": "https://github.com/chidionyema/argon/issues/47",
+      "created": "2026-11-07T14:54:17Z",
+      "updated": "2026-11-09T02:20:36Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 5,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/argon",
+      "issue": 51,
+      "title": "P0 Genesis instruction flow: canonical work graph, 10-minute stagnation detection and autonomous recovery",
+      "state": "open",
+      "url": "https://github.com/chidionyema/argon/issues/51",
+      "created": "2026-11-07T15:45:01Z",
+      "updated": "2026-11-07T16:08:03Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 3,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/argon",
+      "issue": 62,
+      "title": "P0: Founder visibility completeness — catalogue-to-live coverage, blind-spot alarms and autonomous repair",
+      "state": "open",
+      "url": "https://github.com/chidionyema/argon/issues/62",
+      "created": "2026-11-08T20:47:57Z",
+      "updated": "2026-11-08T21:32:52Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 2,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/estate-graph",
+      "issue": 6,
+      "title": "LEGION W6 P0: rescue memory PRs #1–#5 with hermetic tests, trust-boundary fixes and CI",
+      "state": "open",
+      "url": "https://github.com/chidionyema/estate-graph/issues/6",
+      "created": "2026-11-07T02:32:45Z",
+      "updated": "2026-11-08T13:15:00Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 11,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 165,
+      "title": "Traefik: unbounded response body size on backstage-login-forward-auth (DoS/memory exhaustion risk)",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/165",
+      "created": "2026-08-26T02:23:15Z",
+      "updated": "2026-10-23T06:00:13Z",
+      "closed": "2026-10-23T06:00:13Z",
+      "assignees": [],
+      "labels": [
+        "bug"
+      ],
+      "comment_count": 5,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 547,
+      "title": "hermes-agent-gateway is a single-writer singleton: bound the outage or make it two",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/547",
+      "created": "2026-08-28T07:21:33Z",
+      "updated": "2026-08-28T07:21:33Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 0,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 1782,
+      "title": "P0: Flux cannot reconcile Kustomization/otto-gateway.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/1782",
+      "created": "2026-09-05T11:06:46Z",
+      "updated": "2026-09-05T12:10:23Z",
+      "closed": "2026-09-05T12:10:23Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 7,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 1798,
+      "title": "P0: Flux cannot reconcile Kustomization/otto-gateway.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/1798",
+      "created": "2026-09-05T12:33:23Z",
+      "updated": "2026-09-05T12:45:17Z",
+      "closed": "2026-09-05T12:45:17Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 1870,
+      "title": "P0: Flux cannot reconcile Kustomization/otto-gateway.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/1870",
+      "created": "2026-09-05T20:07:25Z",
+      "updated": "2026-09-05T20:17:39Z",
+      "closed": "2026-09-05T20:17:39Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 2,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 1981,
+      "title": "P0: Flux cannot reconcile Kustomization/otto-gateway.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/1981",
+      "created": "2026-09-06T04:15:21Z",
+      "updated": "2026-09-06T22:44:55Z",
+      "closed": "2026-09-06T22:44:55Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 101,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 2290,
+      "title": "matrix-review red: FAIL  evidence https://docs.oracle.com/en-us/iaas/Content/ContEng/Concepts/contengsecurity.htm",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/2290",
+      "created": "2026-09-07T13:33:27Z",
+      "updated": "2026-10-22T22:08:16Z",
+      "closed": "2026-10-22T22:08:16Z",
+      "assignees": [],
+      "labels": [
+        "P1"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 2423,
+      "title": "P0: Flux cannot reconcile Kustomization/otto-gateway.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/2423",
+      "created": "2026-09-07T23:52:04Z",
+      "updated": "2026-09-08T09:40:21Z",
+      "closed": "2026-09-08T09:40:21Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 74,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 2568,
+      "title": "P0: Flux cannot reconcile Kustomization/otto-gateway.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/2568",
+      "created": "2026-09-08T12:05:04Z",
+      "updated": "2026-09-08T19:04:49Z",
+      "closed": "2026-09-08T19:04:49Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 10,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 3309,
+      "title": "signdoz ClickHouse is OOMKilled every ~30m and dropping all traces and logs",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/3309",
+      "created": "2026-09-13T02:22:09Z",
+      "updated": "2026-09-13T02:22:09Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 0,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 3378,
+      "title": "P0: Flux cannot reconcile Kustomization/estate-db-migrate.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/3378",
+      "created": "2026-09-13T14:07:55Z",
+      "updated": "2026-10-12T16:55:44Z",
+      "closed": "2026-10-12T16:55:44Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 3380,
+      "title": "P0: Flux cannot reconcile Kustomization/estate-db-migrate.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/3380",
+      "created": "2026-09-13T14:18:00Z",
+      "updated": "2026-10-12T16:55:46Z",
+      "closed": "2026-10-12T16:55:46Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 3439,
+      "title": "matrix-review red: FAIL  evidence https://apps.apple.com/app/moonlight-game-streaming/id1000551566",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/3439",
+      "created": "2026-09-14T14:12:40Z",
+      "updated": "2026-09-14T14:12:40Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "P1"
+      ],
+      "comment_count": 0,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 3825,
+      "title": "matrix-review red: FAIL  evidence https://docs.oracle.com/en-us/iaas/Content/ContEng/Concepts/contengsecurity.htm",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/3825",
+      "created": "2026-09-21T14:18:40Z",
+      "updated": "2026-09-21T14:18:40Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "P1"
+      ],
+      "comment_count": 0,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 3905,
+      "title": "P0: Flux cannot reconcile Kustomization/sandbox-launch.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/3905",
+      "created": "2026-09-23T04:35:14Z",
+      "updated": "2026-10-12T16:56:51Z",
+      "closed": "2026-10-12T16:56:50Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 4792,
+      "title": "matrix-review red: FAIL  matrix-gate: money-layer/stripe-billing-only/operability: evidence must be a URL, a repo path that exists, or `cmd: …`; got 'bin/idp-portability-drill'",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/4792",
+      "created": "2026-09-28T15:36:51Z",
+      "updated": "2026-10-22T22:08:12Z",
+      "closed": "2026-10-22T22:08:12Z",
+      "assignees": [],
+      "labels": [
+        "P1"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 5130,
+      "title": "P0: Flux cannot reconcile Kustomization/estate-db-migrate.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/5130",
+      "created": "2026-09-30T00:37:26Z",
+      "updated": "2026-10-12T16:55:51Z",
+      "closed": "2026-10-12T16:55:51Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 493,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 5323,
+      "title": "P0: Flux cannot reconcile Kustomization/estate-db-migrate.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/5323",
+      "created": "2026-10-03T10:04:08Z",
+      "updated": "2026-10-12T16:55:53Z",
+      "closed": "2026-10-12T16:55:53Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 5324,
+      "title": "P0: Flux cannot reconcile Kustomization/estate-db-migrate.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/5324",
+      "created": "2026-10-03T10:06:28Z",
+      "updated": "2026-10-12T16:55:56Z",
+      "closed": "2026-10-12T16:55:56Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 5437,
+      "title": "matrix-review red: FAIL  matrix-gate: money-layer/stripe-billing-only/operability: evidence must be a URL, a repo path that exists, or `cmd: …`; got 'bin/idp-portability-drill'",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/5437",
+      "created": "2026-10-05T16:10:00Z",
+      "updated": "2026-10-22T22:07:52Z",
+      "closed": "2026-10-22T22:07:52Z",
+      "assignees": [],
+      "labels": [
+        "P1"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 5522,
+      "title": "agent-workforce emptyDir + stop the embed lane's retries burning the Cohere trial key",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/5522",
+      "created": "2026-10-08T17:05:07Z",
+      "updated": "2026-10-17T01:07:45Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "in-progress"
+      ],
+      "comment_count": 160,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 5631,
+      "title": "Recover the work stranded in the Greenlane (2026-10-09 triage)",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/5631",
+      "created": "2026-10-09T19:41:54Z",
+      "updated": "2026-10-09T20:09:48Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "in-progress"
+      ],
+      "comment_count": 6,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 5720,
+      "title": "shadow-verify: stand in for estate-db — a plain Postgres at estate-rw, so DB-backed paths converge",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/5720",
+      "created": "2026-10-10T21:39:06Z",
+      "updated": "2026-10-11T08:31:41Z",
+      "closed": "2026-10-11T08:31:41Z",
+      "assignees": [
+        "chidionyema"
+      ],
+      "labels": [
+        "in-progress"
+      ],
+      "comment_count": 8,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 5756,
+      "title": "lane-submit doubles the lane/ prefix when the branch is already named lane/*, stranding the work",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/5756",
+      "created": "2026-10-11T11:29:09Z",
+      "updated": "2026-10-11T11:29:09Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 0,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 5882,
+      "title": "matrix-review red: FAIL  matrix-gate: money-layer/stripe-billing-only/operability: evidence must be a URL, a repo path that exists, or `cmd: …`; got 'bin/idp-portability-drill'",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/5882",
+      "created": "2026-10-12T16:49:05Z",
+      "updated": "2026-10-22T22:07:49Z",
+      "closed": "2026-10-22T22:07:49Z",
+      "assignees": [],
+      "labels": [
+        "P1"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 5914,
+      "title": "P0: Flux cannot reconcile Kustomization/unified-memory.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/5914",
+      "created": "2026-10-12T17:52:29Z",
+      "updated": "2026-10-12T18:10:50Z",
+      "closed": "2026-10-12T18:10:50Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 5956,
+      "title": "Fleet: flat backend memory, one bus connection, panel rail, research on the laptop",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/5956",
+      "created": "2026-10-12T22:35:16Z",
+      "updated": "2026-10-12T22:35:20Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 5983,
+      "title": "P0: Flux cannot reconcile Kustomization/unified-memory.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/5983",
+      "created": "2026-10-12T23:34:00Z",
+      "updated": "2026-10-13T03:55:37Z",
+      "closed": "2026-10-13T03:55:37Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6023,
+      "title": "memory: the unified memory server writes the vector on every remember (Cortex step 0, embed write path)",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6023",
+      "created": "2026-10-13T08:20:40Z",
+      "updated": "2026-10-14T06:43:38Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 2,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6026,
+      "title": "memory: recall searches by meaning; backfill vectorises existing facts",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6026",
+      "created": "2026-10-13T08:42:29Z",
+      "updated": "2026-10-14T06:43:40Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 2,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6048,
+      "title": "fix(ns-fences): let unified-memory reach the llm embed lane",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6048",
+      "created": "2026-10-13T10:56:52Z",
+      "updated": "2026-10-14T06:43:47Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 2,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6066,
+      "title": "memory recall: embed the query as a question (embed-query lane)",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6066",
+      "created": "2026-10-13T12:30:31Z",
+      "updated": "2026-10-13T20:56:08Z",
+      "closed": "2026-10-13T20:56:08Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 8,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6086,
+      "title": "memory-gate: write the probe to its own namespace, not estate",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6086",
+      "created": "2026-10-13T15:53:31Z",
+      "updated": "2026-10-14T06:43:44Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 4,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6140,
+      "title": "storage: crew memory claim Pending on OCI block-storage limit; restore local-path",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6140",
+      "created": "2026-10-14T04:29:34Z",
+      "updated": "2026-10-14T04:29:36Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6155,
+      "title": "memory 1/10: brief endpoint + brief tool, runtime provenance, memory server always on",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6155",
+      "created": "2026-10-14T06:02:08Z",
+      "updated": "2026-10-14T07:19:30Z",
+      "closed": "2026-10-14T07:19:30Z",
+      "assignees": [],
+      "labels": [
+        "enhancement"
+      ],
+      "comment_count": 3,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6156,
+      "title": "memory 2/10: every agent runtime gets memory at session start -- one manifest, one installer (Claude Code, Cursor, Gemini, opencode, pi)",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6156",
+      "created": "2026-10-14T06:02:11Z",
+      "updated": "2026-11-07T13:46:37Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "enhancement"
+      ],
+      "comment_count": 4,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6157,
+      "title": "memory 3/10: Otto and hermes on the shared memory (estate MemoryProvider)",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6157",
+      "created": "2026-10-14T06:02:13Z",
+      "updated": "2026-10-14T06:03:32Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "enhancement"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6158,
+      "title": "memory 4/10: growmos syncs one way into the memory server",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6158",
+      "created": "2026-10-14T06:02:21Z",
+      "updated": "2026-10-14T06:03:35Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "enhancement"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6159,
+      "title": "memory 5/10: Cortex sidecar -- vendor, build, deploy, amend ADR 0036",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6159",
+      "created": "2026-10-14T06:02:29Z",
+      "updated": "2026-10-14T06:03:38Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "enhancement"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6160,
+      "title": "memory 6/10: memory server uses Cortex for recall, pgvector fallback, rebuild from Postgres",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6160",
+      "created": "2026-10-14T06:02:32Z",
+      "updated": "2026-10-19T19:00:44Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "enhancement"
+      ],
+      "comment_count": 3,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6161,
+      "title": "memory 7/10: estate events become memory automatically (NATS ingest)",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6161",
+      "created": "2026-10-14T06:02:34Z",
+      "updated": "2026-10-14T06:03:43Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "enhancement"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6162,
+      "title": "memory 8/10: import Hindsight, then retire it",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6162",
+      "created": "2026-10-14T06:02:36Z",
+      "updated": "2026-10-14T06:03:46Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "enhancement"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6163,
+      "title": "memory 9/10: delete the duplicate memory layers",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6163",
+      "created": "2026-10-14T06:02:39Z",
+      "updated": "2026-10-14T06:03:49Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "enhancement"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6164,
+      "title": "memory 10/10: memory-gate proves spec §6 done",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6164",
+      "created": "2026-10-14T06:02:46Z",
+      "updated": "2026-10-14T06:03:52Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "enhancement"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6165,
+      "title": "epic: one shared memory for every agent, any model",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6165",
+      "created": "2026-10-14T06:03:16Z",
+      "updated": "2026-10-14T06:43:34Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "enhancement"
+      ],
+      "comment_count": 0,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6179,
+      "title": "shadow-verify: the floor has no Flux image CRDs, so platform/unified-memory-server is red on every change",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6179",
+      "created": "2026-10-14T07:57:59Z",
+      "updated": "2026-10-14T08:30:21Z",
+      "closed": "2026-10-14T08:30:21Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6183,
+      "title": "memory: every recall 503s -- the server's router key cannot call embed-query",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6183",
+      "created": "2026-10-14T08:24:57Z",
+      "updated": "2026-10-14T09:07:51Z",
+      "closed": "2026-10-14T08:46:02Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 2,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6188,
+      "title": "memory: the Mac's estate-memory door has no key -- vault-seed never delivers dev/MCP_GATEWAY_KEY",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6188",
+      "created": "2026-10-14T09:19:26Z",
+      "updated": "2026-10-14T09:34:30Z",
+      "closed": "2026-10-14T09:34:30Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6227,
+      "title": "active-runtime: port DefaultActiveAgentHarness to Python, wire into unified-memory-server",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6227",
+      "created": "2026-10-14T19:25:04Z",
+      "updated": "2026-10-16T14:07:11Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "enhancement"
+      ],
+      "comment_count": 56,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6228,
+      "title": "feat(voice-router): ground answers in unified estate memory and remember each exchange",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6228",
+      "created": "2026-10-14T19:25:41Z",
+      "updated": "2026-10-18T21:35:57Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 49,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6229,
+      "title": "Wire unified estate memory into Otto numun, fleetview voice and agent-workforce",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6229",
+      "created": "2026-10-14T19:25:52Z",
+      "updated": "2026-10-14T19:25:55Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6260,
+      "title": "fix(vault-seed): deliver backstage-env/MEMORY_SURFACE_TOKEN to estate-secrets",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6260",
+      "created": "2026-10-15T06:25:47Z",
+      "updated": "2026-10-15T12:06:30Z",
+      "closed": "2026-10-15T12:06:30Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 4,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6272,
+      "title": "fix(unified-memory): add harness.py to Dockerfile",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6272",
+      "created": "2026-10-15T13:21:07Z",
+      "updated": "2026-10-15T13:22:02Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 2,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6275,
+      "title": "unified-memory: partial unique constraint syntax error",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6275",
+      "created": "2026-10-15T13:59:26Z",
+      "updated": "2026-10-15T14:48:37Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "bug"
+      ],
+      "comment_count": 3,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6285,
+      "title": "fix network fence so backstage can reach unified-memory for /fleet harness telemetry",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6285",
+      "created": "2026-10-15T15:58:36Z",
+      "updated": "2026-10-17T01:41:30Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 31,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6293,
+      "title": "P0: Flux cannot reconcile Kustomization/unified-memory.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6293",
+      "created": "2026-10-15T18:32:17Z",
+      "updated": "2026-10-15T21:49:13Z",
+      "closed": "2026-10-15T21:49:13Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6348,
+      "title": "P0: Flux cannot reconcile Kustomization/unified-memory.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6348",
+      "created": "2026-10-16T14:09:53Z",
+      "updated": "2026-10-16T18:06:05Z",
+      "closed": "2026-10-16T18:06:05Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6352,
+      "title": "P0: Flux cannot reconcile Kustomization/otto-gateway.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6352",
+      "created": "2026-10-16T15:08:38Z",
+      "updated": "2026-10-16T18:05:57Z",
+      "closed": "2026-10-16T18:05:57Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6403,
+      "title": "fix(estate-graph-drain): retry transient extraction failures so the 857-source backlog drains",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6403",
+      "created": "2026-10-17T15:35:08Z",
+      "updated": "2026-10-17T16:56:01Z",
+      "closed": "2026-10-17T16:56:01Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 5,
+      "discovered_by": [
+        "graph in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6440,
+      "title": "P0: Flux cannot reconcile Kustomization/unified-memory.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6440",
+      "created": "2026-10-17T19:29:12Z",
+      "updated": "2026-10-17T21:41:26Z",
+      "closed": "2026-10-17T21:41:26Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6482,
+      "title": "P0: Flux cannot reconcile Kustomization/unified-memory.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6482",
+      "created": "2026-10-18T06:31:48Z",
+      "updated": "2026-10-18T11:45:59Z",
+      "closed": "2026-10-18T11:45:59Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6543,
+      "title": "Muse gap analysis: estate memory has no scoring, no consolidation, no focus maintenance (measured)",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6543",
+      "created": "2026-10-18T23:36:35Z",
+      "updated": "2026-10-18T23:41:10Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body",
+        "focus in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6568,
+      "title": "P0: Flux cannot reconcile Kustomization/unified-memory.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6568",
+      "created": "2026-10-19T00:33:11Z",
+      "updated": "2026-10-19T05:23:55Z",
+      "closed": "2026-10-19T05:23:55Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6581,
+      "title": "estate_memory plugin posts object body to /harness/memory/consolidate; server wants bare list + query run_id — every MCP remember's consolidate 422s",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6581",
+      "created": "2026-10-19T11:46:33Z",
+      "updated": "2026-10-19T17:43:43Z",
+      "closed": "2026-10-19T12:41:04Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 4,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6588,
+      "title": "matrix-review red: FAIL  matrix-gate: money-layer/stripe-billing-only/operability: evidence must be a URL, a repo path that exists, or `cmd: …`; got 'bin/idp-portability-drill'",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6588",
+      "created": "2026-10-19T14:46:17Z",
+      "updated": "2026-10-19T14:46:17Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "P1"
+      ],
+      "comment_count": 0,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6597,
+      "title": "memory: Active Focus read from the claim ledger, ghosts retired at the bridge, hooks enforce brief + claim + write-back (follows #6543)",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6597",
+      "created": "2026-10-19T17:35:15Z",
+      "updated": "2026-10-20T00:40:33Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 10,
+      "discovered_by": [
+        "memory in:title,body",
+        "focus in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6645,
+      "title": "Active Memory + Active Focus on every model call: one router callback for all estate agents",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6645",
+      "created": "2026-10-20T01:51:05Z",
+      "updated": "2026-10-20T03:21:49Z",
+      "closed": "2026-10-20T03:21:49Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 5,
+      "discovered_by": [
+        "memory in:title,body",
+        "focus in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6647,
+      "title": "unified-memory: memory_access has no grant; brief 500s on every semantic search",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6647",
+      "created": "2026-10-20T02:11:16Z",
+      "updated": "2026-10-20T02:18:16Z",
+      "closed": "2026-10-20T02:18:16Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6656,
+      "title": "unified-memory: hedge the brief's query embed so a NIM hang costs 1s, not 20s and the whole brief",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6656",
+      "created": "2026-10-20T04:01:28Z",
+      "updated": "2026-10-20T04:35:26Z",
+      "closed": "2026-10-20T04:35:26Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 3,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6666,
+      "title": "router: stdlib-Python agents (fleetview-voice) silently skipped as the graph drain -- no memory, no graph",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6666",
+      "created": "2026-10-20T05:49:35Z",
+      "updated": "2026-10-20T06:59:11Z",
+      "closed": "2026-10-20T06:59:11Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 4,
+      "discovered_by": [
+        "memory in:title,body",
+        "graph in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6678,
+      "title": "router: active focus waits on a 3.6s gh search past its 3.5s deadline, every cache expiry",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6678",
+      "created": "2026-10-20T07:07:42Z",
+      "updated": "2026-10-20T15:38:59Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 5,
+      "discovered_by": [
+        "focus in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6776,
+      "title": "P0: Flux cannot reconcile Kustomization/unified-memory.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6776",
+      "created": "2026-10-21T06:04:36Z",
+      "updated": "2026-10-21T11:53:43Z",
+      "closed": "2026-10-21T11:53:43Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6789,
+      "title": "Active Memory renders every fact as '(None)': render() reads content/key/provenance, the brief sends text/metadata",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6789",
+      "created": "2026-10-21T09:50:00Z",
+      "updated": "2026-10-21T12:07:21Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 4,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6817,
+      "title": "P0: Flux cannot reconcile Kustomization/unified-memory.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6817",
+      "created": "2026-10-21T20:29:46Z",
+      "updated": "2026-10-21T23:35:19Z",
+      "closed": "2026-10-21T23:35:19Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6835,
+      "title": "router: Active Memory reads fail ~2,100 times unexplained -- log elapsed per leg, serve last good brief/focus on a stall",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6835",
+      "created": "2026-10-22T07:14:43Z",
+      "updated": "2026-10-25T06:32:53Z",
+      "closed": "2026-10-25T06:32:53Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 76,
+      "discovered_by": [
+        "memory in:title,body",
+        "focus in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6876,
+      "title": "memory: estate-memory-install --check names a stale checkout as the cause of DRIFT",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6876",
+      "created": "2026-10-22T21:38:52Z",
+      "updated": "2026-10-22T22:35:33Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 2,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6921,
+      "title": "founder-agent gate: spec, BDD and eval harness for omni Otto (beat Muse)",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/6921",
+      "created": "2026-10-23T07:07:49Z",
+      "updated": "2026-10-25T19:03:00Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 43,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6965,
+      "title": "P0: Flux cannot reconcile Kustomization/unified-memory.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6965",
+      "created": "2026-10-23T09:49:09Z",
+      "updated": "2026-10-23T14:47:25Z",
+      "closed": "2026-10-23T14:47:24Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 6987,
+      "title": "pi: the estate's memory tools (brief, recall, remember) reach pi through the estate's own bridge",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/6987",
+      "created": "2026-10-23T15:57:49Z",
+      "updated": "2026-10-23T17:26:27Z",
+      "closed": "2026-10-23T17:26:27Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 5,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7081,
+      "title": "llm: cluster router captures graph + signs ledger (P2.T2 port)",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7081",
+      "created": "2026-10-25T00:15:48Z",
+      "updated": "2026-10-25T02:57:13Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 2,
+      "discovered_by": [
+        "graph in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7110,
+      "title": "salvage: preserve tmp/active-memory-repair (1 commits unpushed)",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7110",
+      "created": "2026-10-25T03:01:42Z",
+      "updated": "2026-10-25T03:01:47Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7184,
+      "title": "feat(memory-gate): ask the door on the wire whether a write can carry evidence",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7184",
+      "created": "2026-10-26T00:23:16Z",
+      "updated": "2026-10-26T01:33:47Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 4,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7188,
+      "title": "roll the door: pin estate-mcp and unified-memory-server to the tags that carry the memory grading",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7188",
+      "created": "2026-10-26T00:44:23Z",
+      "updated": "2026-10-26T02:28:50Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 4,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7190,
+      "title": "record the decision: a memory write earns its rung, and the gate asks the door on the wire",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7190",
+      "created": "2026-10-26T00:53:17Z",
+      "updated": "2026-10-26T01:46:21Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 3,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7233,
+      "title": "matrix-review red: FAIL  matrix-gate: money-layer/stripe-billing-only/operability: evidence must be a URL, a repo path that exists, or `cmd: …`; got 'bin/idp-portability-drill'",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7233",
+      "created": "2026-10-26T14:23:53Z",
+      "updated": "2026-10-26T14:23:53Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "P1"
+      ],
+      "comment_count": 0,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7252,
+      "title": "docs(surface): the estate agent surface map + the context-compiler and execution-gateway spec",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/7252",
+      "created": "2026-10-26T20:54:54Z",
+      "updated": "2026-10-26T22:35:58Z",
+      "closed": "2026-10-26T22:35:58Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 6,
+      "discovered_by": [
+        "context in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7259,
+      "title": "fix(context): bounded Pi compaction and complete router request accounting",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7259",
+      "created": "2026-10-26T22:52:11Z",
+      "updated": "2026-10-27T09:00:26Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 3,
+      "discovered_by": [
+        "context in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7261,
+      "title": "work.discover: one intent that finds any work in the estate by topic, across tickets, claims, branches, salvage and memory",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/7261",
+      "created": "2026-10-26T22:58:27Z",
+      "updated": "2026-10-27T00:06:21Z",
+      "closed": "2026-10-27T00:06:21Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 3,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7262,
+      "title": "estate context compiler and intelligence broker, and the Pi surface doors it feeds",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/7262",
+      "created": "2026-10-26T23:11:32Z",
+      "updated": "2026-10-28T19:19:50Z",
+      "closed": "2026-10-28T07:11:59Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 35,
+      "discovered_by": [
+        "context in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7284,
+      "title": "P0: Flux cannot reconcile Kustomization/unified-memory.flux-system",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/7284",
+      "created": "2026-10-27T01:18:47Z",
+      "updated": "2026-10-27T06:42:10Z",
+      "closed": "2026-10-27T06:42:10Z",
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7298,
+      "title": "ADR: mandatory estate-wide NSVEE verification (commit-boundary enforcement) + jev.decide context contract",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/7298",
+      "created": "2026-10-27T06:35:13Z",
+      "updated": "2026-10-30T05:48:17Z",
+      "closed": "2026-10-30T05:48:17Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 26,
+      "discovered_by": [
+        "context in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7340,
+      "title": "feat(decision): a founder-decision door any agent can use - Otto asks, the founder answers with a comment, the build continues\n",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/7340",
+      "created": "2026-10-28T14:33:39Z",
+      "updated": "2026-10-30T00:11:05Z",
+      "closed": "2026-10-29T01:31:15Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 33,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7342,
+      "title": "feat(methods): an adaptive problem-solving method selector - a pure library beside the decision layer, shadow first\n",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7342",
+      "created": "2026-10-28T15:53:52Z",
+      "updated": "2026-11-09T00:05:03Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 12,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7344,
+      "title": "feat(context): the estate context substrate - a federated read-only context API on the existing broker (RFC + production certification, P0 first)\n",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7344",
+      "created": "2026-10-28T16:29:47Z",
+      "updated": "2026-11-08T11:02:41Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 9,
+      "discovered_by": [
+        "memory in:title,body",
+        "context in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7350,
+      "title": "feat(aee): the shared contracts and the work graph (G1)",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/7350",
+      "created": "2026-10-28T20:03:29Z",
+      "updated": "2026-10-29T04:16:31Z",
+      "closed": "2026-10-29T04:16:31Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 5,
+      "discovered_by": [
+        "graph in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7351,
+      "title": "fix(memory-gate): edit-time brief gate deadlocks every write when the memory door is down (docstring says fail OPEN)",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7351",
+      "created": "2026-10-28T20:11:54Z",
+      "updated": "2026-10-28T20:58:42Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 2,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7356,
+      "title": "feat(estate): the disk-reclaim door reclaims the estate's own weight, and lets the estate's cleaner finish\n",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/7356",
+      "created": "2026-10-28T21:17:54Z",
+      "updated": "2026-10-29T03:08:57Z",
+      "closed": "2026-10-29T03:08:57Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 6,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7359,
+      "title": "Tracker: estate recovery, prioritised open items (2026-10-28)",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7359",
+      "created": "2026-10-28T21:33:47Z",
+      "updated": "2026-10-30T18:42:58Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 4,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7369,
+      "title": "reliability S1: memory write gate independent of any one harness transcript",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7369",
+      "created": "2026-10-28T22:10:21Z",
+      "updated": "2026-10-28T22:10:21Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 0,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7397,
+      "title": "reliability S4: memory has a second home (unified memory, Active Memory, Active Focus survive the cluster and the laptop disk)",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7397",
+      "created": "2026-10-29T03:05:17Z",
+      "updated": "2026-10-30T11:01:28Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 7,
+      "discovered_by": [
+        "memory in:title,body",
+        "focus in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7407,
+      "title": "Hard-coded timeouts as correctness gates: replace with measured, adaptive deadlines",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7407",
+      "created": "2026-10-29T05:51:41Z",
+      "updated": "2026-10-29T05:51:41Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 0,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7408,
+      "title": "feat(otto): Otto is the estate's front door -- the wish-map, the architectural judgement, and an unambiguous architecture",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/7408",
+      "created": "2026-10-29T06:04:56Z",
+      "updated": "2026-10-29T08:09:40Z",
+      "closed": "2026-10-29T08:09:40Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 5,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7416,
+      "title": "P0: context-index failed on main",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7416",
+      "created": "2026-10-29T07:30:20Z",
+      "updated": "2026-10-29T07:30:20Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 0,
+      "discovered_by": [
+        "context in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7421,
+      "title": "P0: context-index failed on main",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7421",
+      "created": "2026-10-29T07:54:20Z",
+      "updated": "2026-10-29T07:54:20Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 0,
+      "discovered_by": [
+        "context in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7432,
+      "title": "gate(otto): make ADR 0047 enforceable, and answer \"is Otto onboarded into the estate?\" in one command",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/7432",
+      "created": "2026-10-29T09:32:56Z",
+      "updated": "2026-10-29T15:41:35Z",
+      "closed": "2026-10-29T15:41:35Z",
+      "assignees": [],
+      "labels": [
+        "P2"
+      ],
+      "comment_count": 4,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7443,
+      "title": "feat(estate): proof-bearing completions -- one deterministic verifier, proof required at every completion seam, and a durable plan ledger",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7443",
+      "created": "2026-10-29T11:03:57Z",
+      "updated": "2026-11-07T14:42:11Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 2,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7446,
+      "title": "wave 3 (otto): the shell runs in a secretless sandbox, and the secret-holding container keeps no shell toolset",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7446",
+      "created": "2026-10-29T11:21:23Z",
+      "updated": "2026-10-29T11:21:23Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 0,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7447,
+      "title": "wave 4 (otto): the parity tick asks the doctor for the Telegram rows, so there is one set of rows and one verdict",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7447",
+      "created": "2026-10-29T11:22:16Z",
+      "updated": "2026-10-29T11:22:16Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 0,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7448,
+      "title": "reliability: one shared public ingress takes the door, the memory gateway and the router down together",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7448",
+      "created": "2026-10-29T11:23:11Z",
+      "updated": "2026-10-31T08:55:33Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 1,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7452,
+      "title": "feat(estate): decision assurance and loop engineering -- mandatory stochastic assurance, one failure-class authority, and a correction the fleet inherits",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7452",
+      "created": "2026-10-29T12:28:05Z",
+      "updated": "2026-11-09T02:34:35Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 19,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7457,
+      "title": "Timeouts require optimisation proof or a founder waiver; repair graph recovery query",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7457",
+      "created": "2026-10-29T14:50:46Z",
+      "updated": "2026-10-29T17:02:10Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 8,
+      "discovered_by": [
+        "graph in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7480,
+      "title": "Estate lockdown: recover founder requests and audit memory operational contracts",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7480",
+      "created": "2026-10-30T00:08:05Z",
+      "updated": "2026-11-09T02:55:49Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 13,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7481,
+      "title": "fleet comms: real-time broadcast + durable per-agent inbox on NATS, founder directives recorded once",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7481",
+      "created": "2026-10-30T00:13:06Z",
+      "updated": "2026-11-09T00:43:02Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 14,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7518,
+      "title": "bug: goal/subgoal declaration is not enforced across protocols and runtimes — the estate's one door accepts work with no plan",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7518",
+      "created": "2026-10-30T04:16:31Z",
+      "updated": "2026-10-30T19:51:53Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "bug"
+      ],
+      "comment_count": 17,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7568,
+      "title": "feat(lane): the standing lane-liveness rule — a dead lane is handed to a live agent with its context",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7568",
+      "created": "2026-10-30T14:34:48Z",
+      "updated": "2026-10-30T14:34:51Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 1,
+      "discovered_by": [
+        "context in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7576,
+      "title": "The intent door must present the session that calls it, and reads must stay available",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/7576",
+      "created": "2026-10-30T16:02:58Z",
+      "updated": "2026-10-30T16:47:15Z",
+      "closed": "2026-10-30T16:47:15Z",
+      "assignees": [],
+      "labels": [
+        "bug"
+      ],
+      "comment_count": 2,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7579,
+      "title": "The production intent path is not the governed door: the pod ships intents but not the executor, and the laptop's voice path runs intents with no session identity",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7579",
+      "created": "2026-10-30T17:18:56Z",
+      "updated": "2026-10-31T01:28:21Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "bug"
+      ],
+      "comment_count": 6,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7589,
+      "title": "debt: port bin/estate-read and bin/estate-patch to Rust",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7589",
+      "created": "2026-10-30T18:23:35Z",
+      "updated": "2026-10-30T18:23:35Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 0,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7602,
+      "title": "P0: context-index failed on main",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7602",
+      "created": "2026-10-30T19:34:58Z",
+      "updated": "2026-11-07T02:10:40Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "context in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7609,
+      "title": "P0: context-index failed on main",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7609",
+      "created": "2026-10-30T20:10:37Z",
+      "updated": "2026-11-07T02:10:54Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "P0"
+      ],
+      "comment_count": 1,
+      "discovered_by": [
+        "context in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7626,
+      "title": "P1: portal-app failed on lane/memory-second-home",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7626",
+      "created": "2026-10-30T21:46:04Z",
+      "updated": "2026-10-30T21:46:04Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "P1"
+      ],
+      "comment_count": 0,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7636,
+      "title": "RECORD: claude agent performance 2026-10-30 -- SUPERVISED, self-limit contract (read before giving claude estate work)",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7636",
+      "created": "2026-10-30T22:34:36Z",
+      "updated": "2026-10-31T01:55:49Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "policy"
+      ],
+      "comment_count": 2,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7642,
+      "title": "fix(truth): the truth instrument measures the founder's real path -- a ledger it can read, a credentialed lane, the canonical memory manifest, and loud runtime staleness",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7642",
+      "created": "2026-10-30T23:01:07Z",
+      "updated": "2026-10-30T23:35:34Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 4,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7649,
+      "title": "HANDOVER to Z.ai: claude session 2026-10-30 -- choke points, landed work, open lanes, unenforced founder rules",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7649",
+      "created": "2026-10-30T23:37:21Z",
+      "updated": "2026-10-31T09:41:22Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "policy"
+      ],
+      "comment_count": 4,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7664,
+      "title": "Founder experience: unified surface map and remote-safe voice routing",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7664",
+      "created": "2026-10-31T06:26:13Z",
+      "updated": "2026-11-08T20:50:41Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "legion-run"
+      ],
+      "comment_count": 7,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7665,
+      "title": "feat(aei,context,estate): multi-harness transcript miner (pi/cline/codex), single-pass oracle & compositional intent DAG",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7665",
+      "created": "2026-10-31T06:52:21Z",
+      "updated": "2026-11-08T08:49:42Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 3,
+      "discovered_by": [
+        "memory in:title,body",
+        "context in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7672,
+      "title": "feat(estate): close the plan-link gaps -- bind the founder prompt at intake, and make the claim/lane choke points refuse an unlinked plan",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7672",
+      "created": "2026-10-31T11:36:59Z",
+      "updated": "2026-10-31T11:36:59Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 0,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7693,
+      "title": "memory: the estate memory door is unreachable for every agent (edge TLS terminator and OKE control plane down)",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7693",
+      "created": "2026-10-31T16:28:51Z",
+      "updated": "2026-10-31T16:28:51Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 0,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7704,
+      "title": "matrix-review red: FAIL  matrix-gate: money-layer/stripe-billing-only/operability: evidence must be a URL, a repo path that exists, or `cmd: …`; got 'bin/idp-portability-drill'",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7704",
+      "created": "2026-11-02T17:12:06Z",
+      "updated": "2026-11-02T17:12:06Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "P1"
+      ],
+      "comment_count": 0,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7751,
+      "title": "security(oidc): the estate's cloud identity admits only reviewed contexts, never a lane",
+      "state": "closed",
+      "url": "https://github.com/chidionyema/idp/issues/7751",
+      "created": "2026-11-06T18:48:50Z",
+      "updated": "2026-11-06T19:28:42Z",
+      "closed": "2026-11-06T19:28:42Z",
+      "assignees": [],
+      "labels": [],
+      "comment_count": 2,
+      "discovered_by": [
+        "context in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7760,
+      "title": "P0: Complete Gemini Web → Google Drive/Apps Script → governed GitHub relay, then prove Genesis release end-to-end",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7760",
+      "created": "2026-11-06T20:22:40Z",
+      "updated": "2026-11-08T06:04:00Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "estate-run",
+        "legion-run"
+      ],
+      "comment_count": 14,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7771,
+      "title": "P0: Enforce founder-zero-touch autonomous execution and recovery across estate agents",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7771",
+      "created": "2026-11-06T23:24:51Z",
+      "updated": "2026-11-09T02:13:31Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 14,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7789,
+      "title": "feat(context): enforce estate node protocol at broker",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7789",
+      "created": "2026-11-07T10:25:25Z",
+      "updated": "2026-11-07T10:25:26Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 1,
+      "discovered_by": [
+        "context in:title"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7790,
+      "title": "P0 SPECIAL PROJECT: Agent continuity, cross-surface heartbeats and capacity-aware takeover after cloud migration",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7790",
+      "created": "2026-11-07T11:13:17Z",
+      "updated": "2026-11-08T15:22:46Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 18,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7794,
+      "title": "[LEGION] Universal agent admission: topology + Quad + memory + patch-only Z.ai Web canary",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7794",
+      "created": "2026-11-07T18:23:16Z",
+      "updated": "2026-11-09T02:20:19Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [
+        "estate-run",
+        "legion-run"
+      ],
+      "comment_count": 26,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    },
+    {
+      "repo": "chidionyema/idp",
+      "issue": 7818,
+      "title": "[LEGION] P0 failure atlas B — memory, model router and spend safety",
+      "state": "open",
+      "url": "https://github.com/chidionyema/idp/issues/7818",
+      "created": "2026-11-08T18:57:45Z",
+      "updated": "2026-11-08T18:57:45Z",
+      "closed": null,
+      "assignees": [],
+      "labels": [],
+      "comment_count": 0,
+      "discovered_by": [
+        "memory in:title,body"
+      ]
+    }
+  ]
+}
