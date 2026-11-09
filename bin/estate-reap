@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""estate-reap: the standing rule that keeps the estate from silting up.
+
+    bin/estate-reap --repo chidionyema/idp --dry-run     # what it would do
+    bin/estate-reap --repo chidionyema/idp               # do it
+
+Two TTLs, both reversible, both measured rather than judged:
+
+  branch  no commit in 14 days and no open PR  -> refs/archive/<name>, then delete the branch
+  PR      open 7 days, no commit, not mergeable -> comment naming its branch, close
+
+Every deletion is preceded by an archive ref, so nothing is lost and the decision can be undone
+by recreating the branch from `refs/archive/<name>`. This is the automation behind the founder's
+law that no artefact lives forever by neglect. Exit 0 clean, 1 something failed.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import subprocess
+import sys
+
+BRANCH_TTL_DAYS = 14
+PR_TTL_DAYS = 7
+
+
+def gh(*args: str) -> tuple[int, str]:
+    env = dict(os.environ)
+    env["PATH"] = os.path.expanduser("~/.local/bin") + ":" + env.get("PATH", "")
+    p = subprocess.run(  # noqa: S603 - fixed argv
+        ["gh", *args], capture_output=True, text=True, timeout=120, env=env
+    )
+    return p.returncode, (p.stdout if p.returncode == 0 else p.stderr)
+
+
+def days_since(iso: str) -> float:
+    t = dt.datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    return (dt.datetime.now(dt.timezone.utc) - t).total_seconds() / 86400
+
+
+def reap_branches(repo: str, dry: bool) -> tuple[int, int]:
+    rc, out = gh("api", f"repos/{repo}/branches?per_page=100", "--paginate",
+                 "--jq", '.[]|"\\(.name)\\t\\(.commit.sha)"')
+    if rc != 0:
+        print(f"  cannot list branches: {out.strip()[:120]}", file=sys.stderr)
+        return 0, 1
+    archived = failed = 0
+    for line in out.splitlines():
+        name, _, sha = line.partition("\t")
+        if not name or name in {"main", "master"} or name.startswith("refs/archive/"):
+            continue
+        rc, info = gh("api", f"repos/{repo}/commits/{sha}", "--jq",
+                      '.commit.committer.date')
+        if rc != 0 or days_since(info.strip()) < BRANCH_TTL_DAYS:
+            continue
+        rc, prs = gh("api", f"repos/{repo}/pulls?state=open&head=chidionyema:{name}", "--jq", "length")
+        if rc == 0 and prs.strip() not in ("", "0"):
+            continue
+        if dry:
+            print(f"  WOULD archive+delete {name} (last commit {info.strip()[:10]})")
+            archived += 1
+            continue
+        rc, _ = gh("api", "-X", "POST", f"repos/{repo}/git/refs", "-f",
+                   f"ref=refs/archive/{name}", "-f", f"sha={sha}")
+        if rc != 0:
+            print(f"  ARCHIVE-FAIL {name}")
+            failed += 1
+            continue
+        rc, _ = gh("api", "-X", "DELETE", f"repos/{repo}/git/refs/heads/{name}")
+        if rc == 0:
+            print(f"  archived {name}")
+            archived += 1
+        else:
+            print(f"  DELETE-FAIL {name}")
+            failed += 1
+    return archived, failed
+
+
+def reap_prs(repo: str, dry: bool) -> tuple[int, int]:
+    rc, out = gh("pr", "list", "--repo", repo, "--state", "open", "--limit", "100",
+                 "--json", "number,updatedAt,mergeable,headRefName,isDraft")
+    if rc != 0:
+        return 0, 1
+    closed = failed = 0
+    for pr in json.loads(out or "[]"):
+        age = days_since(pr["updatedAt"])
+        if age < PR_TTL_DAYS or pr.get("isDraft"):
+            continue
+        if pr.get("mergeable") == "MERGEABLE":
+            continue  # a ready PR is not stale, it is waiting
+        if dry:
+            print(f"  WOULD close #{pr['number']} {pr['headRefName']} (idle {age:.0f}d)")
+            closed += 1
+            continue
+        rc, _ = gh("pr", "close", str(pr["number"]), "--repo", repo, "--comment",
+                   "Reaped by bin/estate-reap: idle {:.0f} days and not mergeable. The work is kept "
+                   "on `{}`; push it as a lane to continue.".format(age, pr["headRefName"]))
+        if rc == 0:
+            print(f"  closed #{pr['number']} {pr['headRefName']}")
+            closed += 1
+        else:
+            failed += 1
+    return closed, failed
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--repo", required=True)
+    ap.add_argument("--dry-run", action="store_true")
+    a = ap.parse_args(argv)
+    print(f"estate-reap {a.repo}{' (dry run)' if a.dry_run else ''}")
+    b, bf = reap_branches(a.repo, a.dry_run)
+    p, pf = reap_prs(a.repo, a.dry_run)
+    print(f"  branches {b}, prs {p}, failures {bf + pf}")
+    return 1 if bf + pf else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
