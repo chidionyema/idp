@@ -117,11 +117,12 @@ def check() -> int:
         return 1
     x = IDP / "mcp/plugins/estate_executor.py"
     y = IDP / "platform/executor/daemon.py"
-    for path in (x, y):
+    z = IDP / "platform/estate/policy/fleet_opa.py"
+    for path in (x, y, z):
         if not path.is_file():
             say(f"FAIL the executor source is missing: {path}")
             return 1
-    say("ok   both executor sources are where this installer will copy them from")
+    say("ok   executor, daemon and OPA guard sources are available for root-owned installation")
     say(
         f"ok   idp-executor-install --check (prefix {PREFIX}, service uid {SERVICE_USER})"
     )
@@ -130,7 +131,8 @@ def check() -> int:
 
 def status() -> int:
     service = user_exists()
-    installed = (PREFIX / "daemon.py").is_file()
+    installed = all((PREFIX / name).is_file()
+                    for name in ("daemon.py", "estate_executor.py", "fleet_opa.py"))
     has_plist = PLIST_DEST.is_file()
     say(f"service uid:   {'present' if service else 'ABSENT'} ({SERVICE_USER})")
     say(f"installed copy:{'present' if installed else 'ABSENT'} ({PREFIX})")
@@ -216,6 +218,7 @@ def install_files() -> None:
     for src, dest_name in (
         (IDP / "platform/executor/daemon.py", "daemon.py"),
         (IDP / "mcp/plugins/estate_executor.py", "estate_executor.py"),
+        (IDP / "platform/estate/policy/fleet_opa.py", "fleet_opa.py"),
         (runner_src, "run"),
     ):
         dest = PREFIX / dest_name
@@ -250,7 +253,13 @@ def install_files() -> None:
 
 
 def write_plist() -> None:
-    """A LaunchDaemon, not a LaunchAgent: it runs at boot under its own UserName."""
+    """A LaunchDaemon, not a LaunchAgent: it runs at boot under its own UserName.
+
+    The OPA endpoint is captured only during this founder-authorized root
+    installation. Agent job requests cannot replace or disable the PDP URL.
+    """
+    from xml.sax.saxutils import escape
+    opa_endpoint = escape(os.environ.get("ESTATE_OPA_DECISION_URL", ""))
     plist = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -276,6 +285,8 @@ def write_plist() -> None:
     <string>{STATE_DIR}</string>
     <key>IDP_ROOT</key>
     <string>{IDP}</string>
+    <key>ESTATE_OPA_DECISION_URL</key>
+    <string>{opa_endpoint}</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>
