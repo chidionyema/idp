@@ -115,10 +115,14 @@ def test_the_same_issue_is_looked_up_once_however_many_commits_name_it():
 def test_two_distinct_issues_are_each_looked_up_once():
     g = _gate()
     calls: list[int] = []
+    # Each issue claims a DISJOINT file, so the fetch-once dedup is exercised without the
+    # same-agent self-overlap check (2026-11-08) flagging two claims over one file. The two
+    # issues are merely the test's data for 'distinct refs are fetched once each'.
+    per_issue = {12: ["bin/voice-doctor"], 13: ["tests/test_voice_doctor.py"]}
 
     def fetch(repo, n):
         calls.append(n)
-        return _issue(claim=_claim())
+        return _issue(claim=_claim(paths=",".join(per_issue[n])))
 
     text = "".join(
         f"fix(voice): a thing\n\nClaim: Mumchimp/crew#{n}\nAgent: idp-60\n"
@@ -549,3 +553,48 @@ def test_the_contract_in_this_repo_is_well_formed():
     for path, wanted in contract["paths"].items():
         for pid in wanted:
             assert pid in ids, "%s names an unknown predicate %s" % (path, pid)
+
+
+def test_a_same_agent_holding_two_live_claims_over_one_file_is_refused():
+    # 2026-11-08: three live estate-agent claims (#7822/#7801/#7821) all covered AGENTS.md at
+    # once, and claim-gate reported 'no other live agent holds these files' - it never checked
+    # whether the SAME agent had opened a second claim on a file it already held. This test is
+    # the falsifier: an agent holding two live claims over one file must be refused, because
+    # the only way to be in that state is to have opened claim B without releasing claim A.
+    g = _gate()
+    claims = {
+        12: _claim(agent="idp-60", paths="bin/voice-doctor"),
+        13: _claim(agent="idp-60", paths="bin/voice-doctor"),
+    }
+
+    def fetch(repo, n):
+        return _issue(claim=claims[n])
+
+    text = (
+        "fix(voice): first\n\nClaim: Mumchimp/crew#12\nAgent: idp-60\n\n"
+        "fix(voice): second\n\nClaim: Mumchimp/crew#13\nAgent: idp-60\n"
+    )
+    out = g.verdict(text, ["bin/voice-doctor"], "Mumchimp/idp", fetch, NOW)
+    assert out, "a same-agent duplicate claim must be refused"
+    assert "claimed by 2 live claims from the same agent" in out[0]
+
+
+def test_two_disjoint_files_claimed_across_two_issues_by_one_agent_still_pass():
+    # The check is PER FILE: one agent may claim many files across many issues, as long as no
+    # single file is claimed by two of that agent's live claims. Two DISJOINT files, each held by
+    # its own claim, is the ordinary case and must stay green.
+    g = _gate()
+    claims = {
+        12: _claim(agent="idp-60", paths="bin/voice-doctor"),
+        13: _claim(agent="idp-60", paths="tests/test_voice_doctor.py"),
+    }
+
+    def fetch(repo, n):
+        return _issue(claim=claims[n])
+
+    text = (
+        "fix(voice): first\n\nClaim: Mumchimp/crew#12\nAgent: idp-60\n\n"
+        "fix(voice): second\n\nClaim: Mumchimp/crew#13\nAgent: idp-60\n"
+    )
+    files = ["bin/voice-doctor", "tests/test_voice_doctor.py"]
+    assert g.verdict(text, files, "Mumchimp/idp", fetch, NOW) == []
