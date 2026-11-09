@@ -65,7 +65,7 @@ export function ResearchQA() {
     }
   }
 
-  function useSuggestion(question: string, answer?: ResearchAnswer) {
+  function selectSuggestion(question: string, answer?: ResearchAnswer) {
     setQuery(question);
     if (answer) {
       setResult(answer);
@@ -102,7 +102,7 @@ export function ResearchQA() {
           <p className="mi-qa-label">EXPLORE A QUESTION</p>
           <div className="mi-qa-suggestion-list">
             {SUGGESTIONS.map((question) => (
-              <button type="button" className="mi-qa-suggestion" key={question} onClick={() => useSuggestion(question)}>
+              <button type="button" className="mi-qa-suggestion" key={question} onClick={() => selectSuggestion(question)}>
                 <span>{question}</span><span aria-hidden="true">↗</span>
               </button>
             ))}
@@ -113,7 +113,7 @@ export function ResearchQA() {
             <p className="mi-qa-label">RECENT QUESTIONS</p>
             <div className="mi-qa-suggestion-list">
               {history.map(({ question, answer }) => (
-                <button type="button" key={question} className="mi-qa-suggestion mi-qa-history" onClick={() => useSuggestion(question, answer)}>
+                <button type="button" key={question} className="mi-qa-suggestion mi-qa-history" onClick={() => selectSuggestion(question, answer)}>
                   <span>{question}</span><span aria-hidden="true">↗</span>
                 </button>
               ))}
