@@ -1,4 +1,4 @@
-"""dx_harness_v5 — VoI controller (C) vs fixed ladders (A/B), regimes V5a/b/c.
+"""dx_harness_v5 - VoI controller (C) vs fixed ladders (A/B), regimes V5a/b/c.
 Single typed-probe contract; deterministic controller; evidence-backed termination.
 Operational Python product. Deterministic, LLM-free, stdlib-only.
 

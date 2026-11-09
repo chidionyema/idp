@@ -1,4 +1,4 @@
-//! DX — the HTTP probe.
+//! DX - the HTTP probe.
 //!
 //! Read-only by default: a single `GET` that never mutates the target. It
 //! reads `(status, latency, body)` and maps it into a typed observation the
@@ -89,7 +89,7 @@ impl Probe for HttpProbe {
             200 if empty_body => (
                 "degraded",
                 Severity::Warning,
-                "200 with empty body — degraded".into(),
+                "200 with empty body - degraded".into(),
             ),
             200 => ("ok", Severity::Ok, "service healthy".into()),
             s if s >= 400 => (

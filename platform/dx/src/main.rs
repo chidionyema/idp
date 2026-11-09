@@ -1,4 +1,4 @@
-//! DX — stack-agnostic agent diagnostics (Rust-first, greenfield).
+//! DX - stack-agnostic agent diagnostics (Rust-first, greenfield).
 //!
 //! Two commands:
 //!   dx sweep --targets host:port,... --max-probes N

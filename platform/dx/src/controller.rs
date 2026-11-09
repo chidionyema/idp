@@ -1,11 +1,11 @@
-//! DX — the Value-of-Information controller.
+//! DX - the Value-of-Information controller.
 //!
 //! A VoI policy over an explicit belief state: a hypothesis graph with
 //! posteriors. The controller picks the next probe that maximises the
 //! expected reduction in entropy over the fault classes it discriminates,
 //! then folds the resulting evidence into the belief state (log-space
 //! Bayesian update). Termination: a class holds posterior >= 0.95 AND is
-//! evidence-backed — a prior-only victory is banned, and HEALTHY requires
+//! evidence-backed - a prior-only victory is banned, and HEALTHY requires
 //! every fault class actively suppressed below the risk floor EPS = 0.002.
 
 use std::collections::HashMap;
@@ -65,7 +65,7 @@ impl BeliefState {
             let lp = h.posterior.max(1e-12);
             logu.push(lp.ln() + (l.max(1e-12)).ln());
         }
-        // Log-sum-exp normalisation — never under/overflows a float product.
+        // Log-sum-exp normalisation - never under/overflows a float product.
         let m = logu.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
         let denom = logu
             .iter()

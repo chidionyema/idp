@@ -1,4 +1,4 @@
-//! DX — typed probe model.
+//! DX - typed probe model.
 //!
 //! Everything is a PROBE. A probe is a deterministic, read-only check that
 //! discriminates among a declared set of hypothesis classes, carries a cost
@@ -8,7 +8,7 @@
 use serde::Serialize;
 
 /// Every check carries a stable id, a severity, a verdict, evidence, and a
-/// remediation hint (spec §1.7).
+/// remediation hint (spec section 1.7).
 #[derive(Debug, Clone, Serialize)]
 pub struct Evidence {
     /// Stable probe id, e.g. "http.status".
@@ -25,7 +25,7 @@ pub struct Evidence {
     pub remediation: String,
 }
 
-/// A typed observation — one probe reads one signal.
+/// A typed observation - one probe reads one signal.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Observation {

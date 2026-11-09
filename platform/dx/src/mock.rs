@@ -1,4 +1,4 @@
-//! DX — the mock target service.
+//! DX - the mock target service.
 //!
 //! Reads a state file `state_<port>.json` of the form
 //! `{"mode":"ok|http500|corrupt|degraded"}` (or no file -> healthy) and serves

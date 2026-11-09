@@ -2,7 +2,7 @@
 name = "dx"
 version = "0.1.0"
 edition = "2021"
-description = "DX — stack-agnostic agent diagnostics. Typed probes, VoI controller, read-only by default."
+description = "DX - stack-agnostic agent diagnostics. Typed probes, VoI controller, read-only by default."
 
 [[bin]]
 name = "dx"
