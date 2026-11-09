@@ -5,9 +5,9 @@ the gates and the hooks, which refuse.
 
 ---
 
-## Merian Intelligence: group-wide AI laboratory mandate (founder 2026-11-09)
+## Merdian Intelligence: group-wide AI laboratory mandate (founder 2026-11-09)
 
-Merian Intelligence is the **parent AI research and product commercialisation business**. **Mumchimp is a group company**, with its own product and customer operation. **Genesis / the Autonomous Estate (including IDP)** is a product and laboratory operating capability, not the parent. Never confuse Merian with a legacy product demo called Meridian.
+Merdian Intelligence is the **parent AI research and product commercialisation business**. **Mumchimp is a group company**, with its own product and customer operation. **Genesis / the Autonomous Estate (including IDP)** is a product and laboratory operating capability, not the parent. Never confuse Merdian with a legacy product demo called Meridian.
 
 Classify work as **RESEARCH** (controlled, reproducible experiments and negative findings), **PROTOTYPE** (working demos with measured limitations) or **COMMERCIAL** (independent end-to-end customer, security, reliability and rollback proof). Assess shared infrastructure by **actual effect and blast radius**, not by a blanket lab or production label. Falsifiable experiments are continuous, not ceremonial. Use existing evals and OpenFeature-compatible runtime flags for typed, reversible, short-lived lab configuration so every new hypothesis does not require another code release. Never use a lab flag to bypass production auth, protected delivery gates, customer data or financial controls.
 
@@ -610,3 +610,7 @@ could not be measured says so, never PASS.
 The live surfaces are the estate graph (`growmos context` — every row above is a node there),
 `crew/STATE.md` (the generated snapshot; regenerate it, never trust it), and `/fleet` (the live
 board). This block is dated **2026-10-28**: when it disagrees with those, they are right.
+
+
+### Founder commercial identity correction (2026-11-09)
+The canonical parent company is **Merdian Intelligence**. It runs a continuously experimenting AI laboratory, a **paid AI and technology consultancy** (strategy, architecture, engineering, autonomous operations and research partnerships), and a portfolio of ventures/products including Mumchimp, Genesis and Blabka. Consultancy is a first-class revenue channel. Public web journeys must explain services and commercial engagement, not send clients to developer repositories. Preserve customer-safe evidence, accurate maturity labels and the corrected name across agents and website deployments.
