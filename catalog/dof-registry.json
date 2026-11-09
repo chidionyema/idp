@@ -1,7 +1,7 @@
 {
   "spec": "chidionyema/argon-sync docs/DOF-GOVERNANCE-v1.md (cloud layer)",
-  "revision": "2026-11-09-founder-temporary-suspension",
-  "why": "Degree of freedom: while a critical service is down, every agent's landing rights narrow to repairing it. The incidents are not probed here a second time (AGENTS.md section 6): they are the open issues the cloud drill (estate-homes-drill.yml -> bin/idp-estate-homes) files every 30 minutes and closes when the lane is back. bin/dof-gate, a needs of ci-success (the ruleset's required context), refuses every commit that does not carry `Genesis-Resolves: <failing id>` and stay inside that id's repairScope.",
+  "revision": "2026-11-09-founder-temporary-suspension-v2",
+  "why": "An open critical incident constrains changes that DEPEND on it; unrelated low-effect docs and non-protected tests may proceed only under explicit safeWorkScope.allowPatterns. Unknown or privileged effects require incident-scoped repairs with authenticated authority. Incident visibility failure cannot mint authority from commit trailers.",
   "incident_title_regex": "^\\[lane\\] (?P<id>[a-z0-9-]+): a lane is down$",
   "immutableWhileRed": [
     "bin/dof-gate",
@@ -32,31 +32,57 @@
     "llm-router": {
       "repairProtocol": "issue body of the open [lane] llm-router incident",
       "repairScope": [
-        "@substrate"
+        "llm/**",
+        "platform/llm/**",
+        "clusters/**",
+        "deploy/**",
+        "flux/**",
+        "docs/diagnoses/**"
       ]
     },
     "otto": {
       "repairProtocol": "issue body of the open [lane] otto incident",
       "repairScope": [
-        "@substrate"
+        "platform/otto-gateway/**",
+        "platform/otto-golden/**",
+        "platform/otto-golden-secret/**",
+        "bin/idp-otto-homes",
+        "docs/diagnoses/**"
       ]
     },
     "estate-doors": {
       "repairProtocol": "issue body of the open [lane] estate-doors incident",
       "repairScope": [
-        "@substrate"
+        "bin/idp-oke-*",
+        "bin/idp-estate-homes",
+        "clusters/**",
+        "deploy/**",
+        "flux/**",
+        ".github/workflows/oke-*.yml",
+        ".github/workflows/estate-homes-drill.yml",
+        "docs/diagnoses/**"
       ]
     },
     "dof-probe": {
-      "repairProtocol": "the gate could not read the incident list: fix the gate",
-      "selfRepair": true,
-      "repairScope": [
-        "bin/dof-gate",
-        "catalog/dof-registry.json",
-        "tests/test_dof_gate.py",
-        ".github/workflows/ci.yml"
-      ]
+      "repairProtocol": "BLIND incident inventory is not a real repair ticket. Restore independently authenticated incident visibility or obtain an independently signed, patch-bound trusted recovery permit; never treat Genesis-Resolves:dof-probe as approval.",
+      "selfRepair": false,
+      "repairScope": []
     }
+  },
+  "safeWorkScope": {
+    "why": "Only reviewed, explicitly listed low-effect paths are eligible while a different service is unavailable. Outside substrateScope alone is NOT proof of independence; protected controls and mixes with unknown effects are always blocked.",
+    "rule": "EVERY changed path must match allowPatterns and NO changed path may match substrateScope, immutableWhileRed or neverSafe; no trailer may bootstrap an unreadable incident inventory.",
+    "allowPatterns": [
+      "README.md",
+      "docs/specs/**",
+      "tests/**"
+    ],
+    "neverSafe": [
+      "bin/dof-gate",
+      "catalog/dof-registry.json",
+      "tests/test_dof_gate.py",
+      ".github/workflows/ci.yml"
+    ]
   },
   "defaultRepairScope": [
     "@substrate"
@@ -65,7 +91,7 @@
     "mode": "disabled",
     "directive": "founder-directive-2026-11-09",
     "scope": "global-dof-only",
-    "reason": "Temporarily disable the blanket incident-driven DoF freeze to unblock legitimate estate delivery; preserve all other independent authorization, CI, provenance, signing and deployment controls.",
+    "reason": "Founder-directed temporary removal of only DoF global incident freeze; all other policies unchanged",
     "reenableOnlyAfter": "independently reconciled backlog of accepted tickets, branches, worktrees and reviewed changes, verified against main and runtime yield",
     "lastVerifiedBacklog": null,
     "suspendedComponents": []
