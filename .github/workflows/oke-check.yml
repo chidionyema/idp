@@ -16,13 +16,14 @@
 # four of them red, none of them about the thing being recovered. A recovery door that drags a
 # daily audit behind it is not a door. Do not re-add an audit to this file.
 name: oke-check
+# RETIRED_SUBSTRATE: historical OKE execution is prohibited. This is a refusal-only
+# door; use the separately governed read-only OCI forensics or capacity-verified k3s route.
+# No schedule: repeated obsolete OKE runs are not useful incident recovery.
 on:
-  schedule:
-    - cron: "17 6 * * *"   # daily; crew#220 drill row
   workflow_dispatch:
     inputs:
       mode:
-        description: "check (compare and report drift), apply (apply the declared state and seed the vault), or probe (read-only dump of the identity domain's sign-on policies -- the one knob an API-key laptop cannot read)"
+        description: "RETIRED_SUBSTRATE: all legacy OKE modes are refused before OCI credential exchange"
         type: choice
         options: [check, apply, probe, surge-node, surge-finish, break-glass, replace-cluster, apply-targets]
         default: check
@@ -42,8 +43,7 @@ on:
   pull_request:
     paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "platform/oci/**", "platform/state/**"]
 permissions:
-  id-token: write   # the OIDC token this job trades for OCI access
-  contents: read
+  contents: read   # no OCI credential or state access at this retired door
 # crew#516 CP4: one group per event. GitHub keeps one PENDING run per group, so every pull_request
 # push displaced the queued apply dispatch (33089051005, 33091098027 both cancelled, never ran).
 # check runs are read-only plans; the apply dispatch serialises only against other dispatches.
@@ -51,11 +51,28 @@ concurrency:
   group: "oke-check-${{ github.event_name }}"
   cancel-in-progress: false
 jobs:
+  retired-substrate:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: RETIRED_SUBSTRATE admission refusal
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = pull_request ]; then
+            echo 'ok RETIRED_SUBSTRATE: PR checks cannot execute legacy OKE jobs'
+            exit 0
+          fi
+          echo '::error title=RETIRED_SUBSTRATE::OKE is retired; no OCI token exchange, state mutation, apply, or break-glass is authorized here'
+          exit 78
   check:
     # A dependabot pull request gets no repository secrets, so OIDC_CLIENT_IDENTIFIER is empty and
     # the job fails at the credentials step (run 32979902578, PR #113). The plan is graded on the
     # next human pull request; the scheduled run grades drift either way.
-    if: github.actor != 'dependabot[bot]'
+    # A job-level refusal is essential: downstream steps use always(), so a
+    # failing first step would NOT prevent later credential-bearing side effects.
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     # 25 for check/apply; surge-node waits up to ~65 min for the new node to be ACTIVE then Ready in the receipt (crew#516)
     timeout-minutes: ${{ inputs.mode == 'surge-node' && 90 || inputs.mode == 'break-glass' && 45 || inputs.mode == 'replace-cluster' && 60 || 25 }}
