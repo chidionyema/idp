@@ -42,6 +42,8 @@ async function inspect(page, route, width) {
       failures.push("document horizontal overflow: " + document.documentElement.scrollWidth + " > " + innerWidth);
     }
     for (const element of document.querySelectorAll("h1,h2,h3,p,a,button,input,textarea,.mi-qa-panel,.mi-qa-theme,.mi-footer-links")) {
+      // Skip links are correctly positioned off-screen until keyboard focus.
+      if (element.classList.contains("skip-link") && document.activeElement !== element) continue;
       if (!visible(element)) continue;
       const box = element.getBoundingClientRect();
       const style = getComputedStyle(element);
@@ -85,7 +87,11 @@ async function inspect(page, route, width) {
       if (!body || !visible(body)) failures.push("article content missing");
       else if (parseFloat(getComputedStyle(body.querySelector("p")).fontSize) < 16) failures.push("article body text below 16px");
     }
-    if (route === "/contact" && !document.querySelector(".mi-contact-form input[type=email]")) failures.push("email enquiry control missing");
+    if (route === "/contact" && !document.querySelector(".mi-contact-form input[type=email]")) {
+      if (!document.body.textContent?.includes("Online enquiries are paused.")) {
+        failures.push("contact must show a form or an explicit delivery-unavailable state");
+      }
+    }
     return { route, width, failures };
   }, { route, width });
 }
@@ -116,6 +122,9 @@ try {
         continue;
       }
       await page.evaluate(() => document.fonts.ready);
+      if (route === "/contact") {
+        await page.waitForFunction(() => !document.body.textContent?.includes("Checking availability."), { timeout: 6000 });
+      }
       const report = await inspect(page, route, width);
       failures.push(...report.failures.map(f => `${width}px ${route}: ${f}`));
       await page.screenshot({

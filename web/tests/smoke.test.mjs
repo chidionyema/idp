@@ -303,7 +303,6 @@ test("every internal link goes somewhere, and every anchor exists", async () => 
   assert.ok(seen.size >= 12, `expected a connected public site, found ${seen.size} distinct links`);
 });
 
-
 test("research answers are excerpts from published notes with working section links", async () => {
   const response = await fetch(`${BASE}/api/research/query`, {
     method: "POST",

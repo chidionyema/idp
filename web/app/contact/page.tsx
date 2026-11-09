@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { LIMITS, validateContact, type ContactErrors } from "@/lib/contact";
 
 type ContactFields = { name: string; email: string; company: string; message: string; website: string };
@@ -10,6 +10,27 @@ export default function ContactPage() {
   const [errors, setErrors] = useState<ContactErrors>({});
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [failure, setFailure] = useState<string | null>(null);
+  const [availability, setAvailability] = useState<"checking" | "available" | "unavailable" | "unknown">("checking");
+
+  // Read-only readiness probe; no customer details are sent. If it fails, we
+  // don't guess: keep the form available and let POST report delivery failure.
+  const checkAvailability = useCallback(async () => {
+    setAvailability("checking");
+    try {
+      const response = await fetch("/api/contact", { method: "GET", cache: "no-store" });
+      const data: unknown = await response.json();
+      if (!response.ok || !data || typeof data !== "object" ||
+          !("acceptingEnquiries" in data) || typeof data.acceptingEnquiries !== "boolean") {
+        setAvailability("unknown");
+        return;
+      }
+      setAvailability(data.acceptingEnquiries ? "available" : "unavailable");
+    } catch {
+      setAvailability("unknown");
+    }
+  }, []);
+
+  useEffect(() => { void checkAvailability(); }, [checkAvailability]);
 
   function update(field: keyof ContactFields, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -40,6 +61,7 @@ export default function ContactPage() {
         return;
       }
       const retry = Math.max(1, Math.ceil(Number(response.headers.get("retry-after") || "60") / 60));
+      if (response.status === 503) setAvailability("unavailable");
       setFailure(response.status === 429
         ? `Too many attempts from this network. Please try again in ${retry} minute${retry === 1 ? "" : "s"}.`
         : "The enquiry service is unavailable at the moment. Your message has not been sent. Please try again later.");
@@ -81,6 +103,21 @@ export default function ContactPage() {
                 <span className="mi-eyebrow">ENQUIRY RECEIVED</span>
                 <h2>Thank you for reaching out.</h2>
                 <p>Your message was accepted by our enquiry service. We&apos;ll review the details before taking the next step.</p>
+              </div>
+            ) : availability === "unavailable" ? (
+              <div className="mi-contact-success" role="status" aria-live="polite">
+                <span className="mi-eyebrow">ENQUIRY SERVICE / TEMPORARILY UNAVAILABLE</span>
+                <h2>Online enquiries are paused.</h2>
+                <p>We cannot accept a message while the delivery service is unavailable. Nothing has been sent. Please check again shortly.</p>
+                <button type="button" className="mi-button mi-button-dark" onClick={() => void checkAvailability()}>
+                  Check again <span aria-hidden="true">↗</span>
+                </button>
+              </div>
+            ) : availability === "checking" ? (
+              <div className="mi-contact-success" role="status" aria-live="polite">
+                <span className="mi-eyebrow">ENQUIRY SERVICE</span>
+                <h2>Checking availability.</h2>
+                <p>Confirming the enquiry destination before collecting your details.</p>
               </div>
             ) : (
               <>

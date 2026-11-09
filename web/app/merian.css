@@ -409,3 +409,6 @@
 @media(prefers-reduced-motion:reduce){
  .mi-qa-source{transition:none}
 }
+
+/* Mobile navigation is a touch control, not an ornamental micro-label. */
+@media(max-width:850px){.mi-menu-toggle{font-size:13px;letter-spacing:.035em}}
