@@ -1,0 +1,103 @@
+{
+  "schema_version": "estate.onboarding.v1",
+  "status": "DECLARATIVE_CONTRACT_NOT_FLEET_CERTIFIED",
+  "ownership_issues": [
+    "chidionyema/idp#7794",
+    "chidionyema/idp#7771",
+    "chidionyema/argon#47"
+  ],
+  "systems": {
+    "idp": {
+      "repo": "chidionyema/idp",
+      "purpose": "Infrastructure and execution substrate: identity, capability registry, memory/context, model routing, Greenlane, trusted effect doors, measured capacity and runtime recovery."
+    },
+    "genesis": {
+      "repo": "chidionyema/argon",
+      "purpose": "Founder-facing instruction and agent coordination, FLOW lifecycle, governance protocols, independent reviews, Founder Surface/Otto, evidence-backed yield. Consumes actual IDP execution and receipts, never replaces the executor."
+    }
+  },
+  "authority": {
+    "founder": "Only independently authenticated founder may create, activate, revoke or except fleet policy; agents cannot self-authorize.",
+    "agents": "Agents are governed subjects. They may propose but cannot self-certify or grant privileged rights.",
+    "effects": "Trusted runtime effect doors enforce permissions outside models; prompts, issue comments, Git authors and model ACKs never confer authority.",
+    "precedence": "Authenticated founder/protected governing policy decides permission. Independent time-stamped probes decide health. Historic documentation, simulated metrics and unmerged code are NOT operational evidence."
+  },
+  "lifecycle": "Instruction -> authenticated admission/context -> owned FLOW plan -> bounded execution -> independent verification -> deployed effect -> founder-visible operational yield. 600s with no real phase progress triggers bounded recovery; a PR, CI or agent ACK is not completion.",
+  "placement": [
+    [
+      "delete-unused",
+      "Remove unused workloads",
+      1
+    ],
+    [
+      "github-actions",
+      "Scheduled and batch workloads",
+      2
+    ],
+    [
+      "grafana-cloud-free",
+      "Telemetry within checked free allowance",
+      3
+    ],
+    [
+      "cloudflare-workers",
+      "Small stateless edge/webhook/status work",
+      4
+    ],
+    [
+      "mac-on-demand",
+      "Interactive development or emergency fallback, never mandatory production authority",
+      5
+    ],
+    [
+      "scale-to-zero",
+      "Idle HTTP on an actually provisioned and measured node",
+      6
+    ],
+    [
+      "oci-essential",
+      "Required always-on state within live OCI budgets",
+      7
+    ]
+  ],
+  "infrastructure": {
+    "placement_policy": "docs/decisions/0034-workloads-are-placed-by-the-free-tier-not-by-the-cluster.md",
+    "target_decision": "docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md",
+    "target": "One OCI Always Free A1 4 OCPU/24GB VM, 200GB boot, k3s; TARGET NOT PROOF OF DEPLOYMENT.",
+    "recovery_incident": "https://github.com/chidionyema/idp/issues/7334",
+    "recovery_candidate": "E2.1.Micro was recorded as emergency recovery host; remeasure OCI availability/capacity before workload placement.",
+    "old_oke": "OKE control plane entitlement lost 2026-10-29; OKE manifest paths or features.yaml defaults do not prove live services.",
+    "data_custody": "https://github.com/chidionyema/idp/issues/7391",
+    "capacity_admission": "platform/infra-budget.yaml",
+    "live_probes": [
+      "bin/idp-estate-homes --json --no-file",
+      "bin/idp-estate-capacity --json"
+    ],
+    "desired_state_probe": "bin/idp-infra-inventory --no-gate",
+    "live_verdict": "UNKNOWN until fresh independent caller/runtime probe"
+  },
+  "fleet_policy": {
+    "upstream": "OPA decision engine; OPAL is distribution candidate",
+    "owner": "chidionyema/idp#7452",
+    "state": "SOURCE_CANDIDATE_NOT_DEPLOYED",
+    "activation": "Founder-authorised publication and actual PEP evidence required"
+  },
+  "session_contract": {
+    "entrypoint": "bin/estate-brief",
+    "first_turn": "Obtain trusted versioned model before planning and verify fresh authority, host and effects before privileged actions.",
+    "missing_or_conflicting": "UNKNOWN; safe diagnosis continues but affected privileged effects are withheld.",
+    "freshness": "This pack is decision/context, NOT current live OCI, service or model health."
+  },
+  "sources": [
+    "AGENTS.md",
+    "docs/epics/2026-10-25-estate-master-epic.md",
+    "docs/decisions/0034-workloads-are-placed-by-the-free-tier-not-by-the-cluster.md",
+    "docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md",
+    "platform/ladder/critical-lanes.json",
+    "platform/infra-budget.yaml",
+    "https://github.com/chidionyema/idp/issues/7794",
+    "https://github.com/chidionyema/idp/issues/7334",
+    "https://github.com/chidionyema/argon/blob/main/AGENTS.md",
+    "https://github.com/chidionyema/argon/blob/main/genesis-agent-policy.json"
+  ]
+}
