@@ -37,6 +37,9 @@ class TinyBackend:
     def main(self):
         return self.base
 
+    def now(self):
+        return 1.0
+
     def rebase(self, head, onto, lane=""):
         return head
 
