@@ -128,6 +128,15 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true });
 }
 
+// A non-sensitive readiness signal for the customer form. No credentials, delivery
+// target, inbox address or customer data are exposed, and this GET never consumes
+// rate-limit budget. The answer follows the same destination resolution as POST.
 export async function GET() {
-  return NextResponse.json({ ok: false, error: "method_not_allowed" }, { status: 405 });
+  const acceptingEnquiries = Boolean(
+    deliveryTarget(process.env, readSecret) || telegramTarget(process.env, readSecret)
+  );
+  return NextResponse.json(
+    { acceptingEnquiries },
+    { status: 200, headers: { "Cache-Control": "no-store" } }
+  );
 }
