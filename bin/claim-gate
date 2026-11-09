@@ -441,6 +441,15 @@ def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> lis
     agent = named[0]
     problems: list[str] = []
     covered: set[str] = set()
+    # The same-agent self-overlap check (2026-11-08): a single agent may hold only ONE live
+    # claim over a given file at a time. Two distinct live claims by the SAME agent that both
+    # cover one file means the agent opened a second claim without releasing the first - the
+    # exact 'three live claims on AGENTS.md' state that lets work fan out into overlapping edits
+    # while claim-gate reports 'no other live agent holds these files'. `covered_by_issue` maps
+    # each file to the distinct issue refs that claim it; any file with two or more refs is a
+    # same-agent self-overlap, because every surviving claim here already passed the
+    # `c["agent"] != agent` early-return and so belongs to THIS agent.
+    covered_by_issue: dict[str, set[str]] = {}
     for ref_repo, num in refs:
         where = f"{ref_repo or repo}#{num}"
         issue, comments = fetch(ref_repo or repo, int(num))
@@ -474,7 +483,20 @@ def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> lis
             problems.append(f"{where} heartbeat {c['hb']!r} is in the future")
             continue
         globs = [g for g in c["paths"].split(",") if g]
-        covered |= {f for f in files if any(covered_by(f, g) for g in globs)}
+        hit = {f for f in files if any(covered_by(f, g) for g in globs)}
+        covered |= hit
+        for f in hit:
+            covered_by_issue.setdefault(f, set()).add(where)
+    # Refuse a file the same agent holds via two or more distinct live claims. A lapsed
+    # heartbeat does NOT exempt this: the newest claim is still this agent's (the 2026-10-14
+    # ruling), so the second claim should have released the first, not piled on top of it.
+    for f, refs_for_f in sorted(covered_by_issue.items()):
+        if len(refs_for_f) > 1:
+            problems.append(
+                f"{f} is claimed by {len(refs_for_f)} live claims from the same agent "
+                f"({agent}): {', '.join(sorted(refs_for_f))}. One agent holds one claim per "
+                f"file; release the earlier claim (or extend it) before opening another."
+            )
     # demo-render pushes updated demo GIFs onto every lane branch whenever main advances.
     # They are auto-generated infrastructure, not product changes, and do not belong to any agent's
     # claim. Like runner-pins they require no claim: they are the platform's own housekeeping.
