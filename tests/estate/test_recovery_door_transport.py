@@ -81,10 +81,13 @@ if args[:3] == ["instance-agent", "plugin", "list"]:
     sys.exit(0)
 
 if args[:3] == ["instance-agent", "command-execution", "list"]:
+    if "--query" in args or opt("--output") != "json":
+        sys.stderr.write("queue list requires raw OCI JSON\\n")
+        sys.exit(3)
     if opt("--lifecycle-state") == "ACCEPTED":
-        print(os.environ.get("FAKE_ACCEPTED_COMMANDS", "[]"))
+        print(os.environ.get("FAKE_ACCEPTED_COMMANDS", '{"data": []}'))
     else:
-        print(os.environ.get("FAKE_IN_PROGRESS_COMMANDS", "[]"))
+        print(os.environ.get("FAKE_IN_PROGRESS_COMMANDS", '{"data": []}'))
     sys.exit(0)
 
 if args[:3] == ["instance-agent", "command", "create"]:
@@ -618,7 +621,7 @@ def test_outstanding_accepted_oci_command_blocks_new_dispatch(
     script = tmp_path / "identify.sh"
     script.write_text("#!/bin/sh\necho must-not-run\n")
     monkeypatch.setenv("FAKE_PLUGIN_STATUS", "RUNNING")
-    monkeypatch.setenv("FAKE_ACCEPTED_COMMANDS", json.dumps(["cmd-unfinished-1"]))
+    monkeypatch.setenv("FAKE_ACCEPTED_COMMANDS", json.dumps({"data": [{"id": "cmd-unfinished-1"}]}))
     code, output, sandbox = _run_helper(tmp_path, script, mode="identify")
     assert code == 70, output
     assert "pre-existing ACCEPTED command" in output
@@ -633,7 +636,7 @@ def test_outstanding_running_oci_command_also_blocks_dispatch(
     script = tmp_path / "identify.sh"
     script.write_text("#!/bin/sh\necho must-not-run\n")
     monkeypatch.setenv("FAKE_PLUGIN_STATUS", "RUNNING")
-    monkeypatch.setenv("FAKE_IN_PROGRESS_COMMANDS", json.dumps(["cmd-running-2"]))
+    monkeypatch.setenv("FAKE_IN_PROGRESS_COMMANDS", json.dumps({"data": [{"id": "cmd-running-2"}]}))
     code, output, sandbox = _run_helper(tmp_path, script, mode="identify")
     assert code == 70, output
     assert "pre-existing IN_PROGRESS command" in output
@@ -656,7 +659,7 @@ def test_idle_oci_queue_preflight_uses_exact_instance_and_read_only_list(monkeyp
 
     def empty(args, *, what):
         calls.append(args)
-        return "[]"
+        return '{"data": []}'
 
     monkeypatch.setattr(helper, "_oci", empty)
     helper.require_idle_command_queue("compartment-7", "instance-7")
@@ -672,3 +675,55 @@ def test_idle_oci_queue_preflight_uses_exact_instance_and_read_only_list(monkeyp
         assert "--all" not in argv
         assert argv[argv.index("--limit") + 1] == str(helper.COMMAND_QUEUE_LIMIT)
         assert "create" not in argv and "cancel" not in argv
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "", "null", "[]", "{}", "{not-json",
+        '{"data": null}', '{"data": {}}', '{"data": [{}]}',
+        '{"data": [{"id": ""}]}', '{"data": [{"id": 42}]}',
+        '{"data": [], "opc-next-page": "more"}',
+        '{"data": [], "next-page": "more"}',
+    ],
+)
+def test_queue_malformed_or_ambiguous_never_attests_idle(monkeypatch, raw):
+    calls = []
+
+    def fake(args, *, what):
+        calls.append(args)
+        return raw
+
+    monkeypatch.setattr(helper, "_oci", fake)
+    with pytest.raises(helper.TransportError, match="BLIND"):
+        helper.require_idle_command_queue("compartment", "instance")
+    assert len(calls) == 1
+    assert all("create" not in argv and "cancel" not in argv for argv in calls)
+
+
+def test_second_queue_blind_never_attests_idle(monkeypatch):
+    states = iter(['{"data": []}', ""])
+
+    def fake(args, *, what):
+        return next(states)
+
+    monkeypatch.setattr(helper, "_oci", fake)
+    with pytest.raises(helper.TransportError, match="BLIND.*IN_PROGRESS"):
+        helper.require_idle_command_queue("compartment", "instance")
+
+
+def test_raw_queue_requires_no_projection_and_both_lifecycles(monkeypatch):
+    calls = []
+
+    def fake(args, *, what):
+        calls.append(args)
+        return '{"data": []}'
+
+    monkeypatch.setattr(helper, "_oci", fake)
+    helper.require_idle_command_queue("compartment", "instance")
+    assert len(calls) == 2
+    assert [args[args.index("--lifecycle-state") + 1] for args in calls] == [
+        "ACCEPTED", "IN_PROGRESS"
+    ]
+    assert all("--query" not in args and "--raw-output" not in args for args in calls)
+    assert all(args[args.index("--output") + 1] == "json" for args in calls)
