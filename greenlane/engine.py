@@ -348,10 +348,17 @@ class Engine:
             if name in self.s.retired:
                 del self.s.retired[name]  # a different head is a new claim
             lane = self.s.lanes.get(name)
-            if (lane is not None and lane.head == head and
-                    lane.status == RED and lane.reason.startswith("trusted DoF [") and
-                    lane.judged_on and (lane.judged_on != self.b.main() or
-                    os.environ.get("GITHUB_EVENT_NAME") == "issues")):
+            if (
+                lane is not None
+                and lane.head == head
+                and lane.status == RED
+                and lane.reason.startswith("trusted DoF [")
+                and lane.judged_on
+                and (
+                    lane.judged_on != self.b.main()
+                    or os.environ.get("GITHUB_EVENT_NAME") == "issues"
+                )
+            ):
                 # A changed main or incident issue event may invalidate DoF's
                 # proof. Re-evaluate in the normal admission path, never assume
                 # an issue change itself authorizes this lane. No re-push needed.

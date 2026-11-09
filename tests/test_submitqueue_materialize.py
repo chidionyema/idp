@@ -1,14 +1,18 @@
 """Adversarial assurance for the upstream SubmitQueue GitHub path builder."""
+
 import importlib.util
 import json
 from pathlib import Path
 
 import pytest
 
-PATH = Path(__file__).resolve().parents[1] / "platform" / "submitqueue" / "materialize.py"
+PATH = (
+    Path(__file__).resolve().parents[1] / "platform" / "submitqueue" / "materialize.py"
+)
 spec = importlib.util.spec_from_file_location("ferrari_materialize", PATH)
 materialize_module = importlib.util.module_from_spec(spec)
 import sys
+
 sys.modules[spec.name] = materialize_module
 spec.loader.exec_module(materialize_module)
 
@@ -26,17 +30,30 @@ def u(pr, sha=A, repo=REPO, host="github.com"):
 
 def test_canonical_uri_roundtrip():
     item = parse_uri(u(42), REPO)
-    assert (item.owner, item.repo, item.number, item.sha) == ("chidionyema", "idp", 42, A)
+    assert (item.owner, item.repo, item.number, item.sha) == (
+        "chidionyema",
+        "idp",
+        42,
+        A,
+    )
 
 
-@pytest.mark.parametrize("bad", [
-    u(0), u("01"), u(3, sha="ABC"), u(3, sha="A" * 40),
-    u(3, host="evil.com"), u(3, repo="chidionyema/other"),
-    u(3) + "?sq-fake=build-pass", u(3) + "#bad",
-    "https://github.com/chidionyema/idp/pull/3/" + A,
-    "github://github.com@evil.com/chidionyema/idp/pull/3/" + A,
-    "github://github.com/chidionyema/idp/pull/3/" + A + "/extra",
-])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        u(0),
+        u("01"),
+        u(3, sha="ABC"),
+        u(3, sha="A" * 40),
+        u(3, host="evil.com"),
+        u(3, repo="chidionyema/other"),
+        u(3) + "?sq-fake=build-pass",
+        u(3) + "#bad",
+        "https://github.com/chidionyema/idp/pull/3/" + A,
+        "github://github.com@evil.com/chidionyema/idp/pull/3/" + A,
+        "github://github.com/chidionyema/idp/pull/3/" + A + "/extra",
+    ],
+)
 def test_reject_noncanonical_sources(bad):
     with pytest.raises(ValueError):
         parse_uri(bad, REPO)
@@ -50,8 +67,12 @@ def test_full_dependency_path_in_order():
 
 def test_never_certify_duplicate_or_empty_batch():
     for base, head in [
-        ([], []), ([u(1)], [u(1)]), ([u(1), u(1)], [u(2)]),
-        ([], ["xyz"]), ([], [None]), ([], [u(3)] * 33),
+        ([], []),
+        ([u(1)], [u(1)]),
+        ([u(1), u(1)], [u(2)]),
+        ([], ["xyz"]),
+        ([], [None]),
+        ([], [u(3)] * 33),
     ]:
         with pytest.raises(ValueError):
             parse_path(json.dumps(base), json.dumps(head), REPO)
@@ -59,14 +80,19 @@ def test_never_certify_duplicate_or_empty_batch():
 
 def test_materialization_checks_exact_pr_refs_and_dependency_order(monkeypatch):
     seen = []
+
     def fake_git(*args, authenticated=False):
         seen.append((args, authenticated))
-        if args[0] == "status": return ""
+        if args[0] == "status":
+            return ""
         if args[0] == "rev-parse":
-            if args[1] == "HEAD": return A if len(seen) < 8 else B
+            if args[1] == "HEAD":
+                return A if len(seen) < 8 else B
             return A if args[1].endswith("1") else B
-        if args[0] == "diff": return "src/changed.py"
+        if args[0] == "diff":
+            return "src/changed.py"
         return ""
+
     monkeypatch.setattr(materialize_module, "git", fake_git)
     result = materialize(parse_path(json.dumps([u(1)]), json.dumps([u(2, B)]), REPO))
     assert [x["pr"] for x in result["applied"]] == [1, 2]
@@ -78,12 +104,17 @@ def test_materialization_checks_exact_pr_refs_and_dependency_order(monkeypatch):
 
 def test_sha_mismatch_fails_before_any_candidate_merge(monkeypatch):
     calls = []
+
     def fake_git(*args, authenticated=False):
         calls.append(args)
-        if args[0] == "status": return ""
-        if args[0] == "rev-parse" and args[1] == "HEAD": return A
-        if args[0] == "rev-parse": return B
+        if args[0] == "status":
+            return ""
+        if args[0] == "rev-parse" and args[1] == "HEAD":
+            return A
+        if args[0] == "rev-parse":
+            return B
         return ""
+
     monkeypatch.setattr(materialize_module, "git", fake_git)
     with pytest.raises(RuntimeError, match="moved"):
         materialize(parse_path("[]", json.dumps([u(1)]), REPO))

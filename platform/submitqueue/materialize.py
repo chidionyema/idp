@@ -8,6 +8,7 @@ moved refs. No PR source code executes until credentials have been dropped.
 The candidate is provisional: production proof must still match the SHA
 the protected-main promoter actually evaluates.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -33,21 +34,33 @@ class Change:
 def parse_uri(uri: str, expected_repo: str) -> Change:
     parsed = urlsplit(uri)
     parts = parsed.path.strip("/").split("/")
-    if (parsed.scheme != "github" or parsed.hostname != "github.com" or
-            parsed.username or parsed.password or parsed.port or
-            parsed.query or parsed.fragment or len(parts) != 5 or
-            parts[2] != "pull" or not NAME.fullmatch(parts[0]) or
-            not NAME.fullmatch(parts[1]) or
-            f"{parts[0]}/{parts[1]}" != expected_repo or
-            not re.fullmatch(r"[1-9][0-9]*", parts[3]) or
-            not SHA.fullmatch(parts[4])):
+    if (
+        parsed.scheme != "github"
+        or parsed.hostname != "github.com"
+        or parsed.username
+        or parsed.password
+        or parsed.port
+        or parsed.query
+        or parsed.fragment
+        or len(parts) != 5
+        or parts[2] != "pull"
+        or not NAME.fullmatch(parts[0])
+        or not NAME.fullmatch(parts[1])
+        or f"{parts[0]}/{parts[1]}" != expected_repo
+        or not re.fullmatch(r"[1-9][0-9]*", parts[3])
+        or not SHA.fullmatch(parts[4])
+    ):
         raise ValueError("untrusted/noncanonical GitHub change URI")
     return Change(parts[0], parts[1], int(parts[3]), parts[4])
 
 
 def parse_input(value: str, expected_repo: str, allow_empty: bool) -> list[Change]:
     values = json.loads(value)
-    if not isinstance(values, list) or len(values) > 32 or (not allow_empty and not values):
+    if (
+        not isinstance(values, list)
+        or len(values) > 32
+        or (not allow_empty and not values)
+    ):
         raise ValueError("invalid speculative build path length")
     if not all(isinstance(v, str) for v in values):
         raise ValueError("change URI must be a string")
@@ -72,18 +85,23 @@ def git(*args: str, authenticated: bool = False) -> str:
         token = env.pop("GH_TOKEN", "")
         if not token:
             raise RuntimeError("GH_TOKEN absent; cannot verify private PR refs")
-        env.update({
-            "GIT_CONFIG_COUNT": "1",
-            "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
-            "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: bearer {token}",
-        })
+        env.update(
+            {
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
+                "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: bearer {token}",
+            }
+        )
     else:
         env.pop("GH_TOKEN", None)
-    proc = subprocess.run(["git", *args], env=env, text=True,
-                          capture_output=True, timeout=90, check=False)
+    proc = subprocess.run(
+        ["git", *args], env=env, text=True, capture_output=True, timeout=90, check=False
+    )
     if proc.returncode:
         # Never include environment/token in an exception.
-        raise RuntimeError(f"git {args[0]} failed ({proc.returncode}): {proc.stderr[:200]}")
+        raise RuntimeError(
+            f"git {args[0]} failed ({proc.returncode}): {proc.stderr[:200]}"
+        )
     return proc.stdout.strip()
 
 
@@ -98,20 +116,37 @@ def materialize(changes: list[Change]) -> dict:
     applied = []
     for change in changes:
         ref = f"refs/remotes/origin/sq-verified-{change.number}"
-        git("fetch", "--no-tags", "origin",
-            f"+refs/pull/{change.number}/head:{ref}", authenticated=True)
+        git(
+            "fetch",
+            "--no-tags",
+            "origin",
+            f"+refs/pull/{change.number}/head:{ref}",
+            authenticated=True,
+        )
         got = git("rev-parse", ref)
         if got != change.sha:
-            raise RuntimeError(f"PR #{change.number} moved: expected {change.sha}, got {got}")
+            raise RuntimeError(
+                f"PR #{change.number} moved: expected {change.sha}, got {got}"
+            )
         git("merge", "--squash", "--no-commit", got)
         if not git("diff", "--cached", "--name-only"):
             raise RuntimeError(f"PR #{change.number} contributed no staged diff")
-        git("-c", "user.name=submitqueue-verifier", "-c",
+        git(
+            "-c",
+            "user.name=submitqueue-verifier",
+            "-c",
             "user.email=submitqueue-verifier@users.noreply.github.com",
-            "commit", "-m", f"sq-verify PR #{change.number} ({got[:12]})")
+            "commit",
+            "-m",
+            f"sq-verify PR #{change.number} ({got[:12]})",
+        )
         applied.append({"pr": change.number, "head": got})
-    return {"base_sha": base, "candidate_sha": git("rev-parse", "HEAD"),
-            "applied": applied, "materialization": "speculative-not-release-certification"}
+    return {
+        "base_sha": base,
+        "candidate_sha": git("rev-parse", "HEAD"),
+        "applied": applied,
+        "materialization": "speculative-not-release-certification",
+    }
 
 
 def main() -> int:
@@ -125,8 +160,11 @@ def main() -> int:
         parser.error("repository mismatch")
     try:
         path = parse_path(args.bases, args.heads, args.repo)
-        result = ({"path": [vars(x) for x in path], "state": "PLAN_ONLY"}
-                  if args.plan else materialize(path))
+        result = (
+            {"path": [vars(x) for x in path], "state": "PLAN_ONLY"}
+            if args.plan
+            else materialize(path)
+        )
         print(json.dumps(result, sort_keys=True))
         return 0
     except (ValueError, RuntimeError, json.JSONDecodeError) as e:

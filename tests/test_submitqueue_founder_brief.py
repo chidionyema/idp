@@ -1,21 +1,30 @@
 """Founder display must distinguish one common policy block from many bad changes."""
+
 from greenlane.brief import brief
 
 
 def snapshot(lanes):
     return {
-        "state": {"available": True, "lanes": lanes,
-                  "batch": None, "latency": {"outcomes": {}}},
-        "open_prs": [], "main": {"required": {}}, "now_min": 29903300.0,
+        "state": {
+            "available": True,
+            "lanes": lanes,
+            "batch": None,
+            "latency": {"outcomes": {}},
+        },
+        "open_prs": [],
+        "main": {"required": {}},
+        "now_min": 29903300.0,
         "invariants": {"work_lost": 0},
     }
 
 
 def test_common_policy_blocker_names_operations_reaction_not_founder_pr_triage():
-    status = snapshot({
-        "lane/a": {"status": "red", "reason": "trusted DoF [abcdef]: denied"},
-        "lane/b": {"status": "red", "reason": "trusted DoF [abcdef]: denied"},
-    })
+    status = snapshot(
+        {
+            "lane/a": {"status": "red", "reason": "trusted DoF [abcdef]: denied"},
+            "lane/b": {"status": "red", "reason": "trusted DoF [abcdef]: denied"},
+        }
+    )
     b = brief(status)
     a = b["assurance"]
     assert a["state"] == "RED"

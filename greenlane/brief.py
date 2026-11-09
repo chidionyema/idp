@@ -51,9 +51,9 @@ def brief(status: dict[str, Any]) -> dict[str, Any]:
         {"lane": name, "why": lane.get("reason") or "claim missing"}
         for name, lane in lanes.items()
         if lane.get("status") == "pending"
-        and (lane.get("reason") or "").lower().startswith(
-            ("no live claim", "claim refused", "missing claim")
-        )
+        and (lane.get("reason") or "")
+        .lower()
+        .startswith(("no live claim", "claim refused", "missing claim"))
     ]
 
     stuck = [
@@ -88,11 +88,12 @@ def brief(status: dict[str, Any]) -> dict[str, Any]:
         stuck.append({"lane": h["lane"], "why": h["why"], "status": "claim-held"})
     common_blockers = [
         {"lane": entry["lane"], "reason": entry["why"]}
-        for entry in red if entry["why"].startswith("trusted DoF [")
+        for entry in red
+        if entry["why"].startswith("trusted DoF [")
     ]
     # The record is a bounded 200-batch sample; it must not masquerade as a
     # production-wide or lifetime failure percentage.
-    latency = (st.get("latency") or {})
+    latency = st.get("latency") or {}
     outcomes = latency.get("outcomes") or {}
     sample = sum(v for v in outcomes.values() if isinstance(v, int) and v >= 0)
     landed_sample = outcomes.get("landed", 0)
@@ -106,7 +107,8 @@ def brief(status: dict[str, Any]) -> dict[str, Any]:
             for lane in lanes.values()
             if lane.get("status") in ("pending", "testing")
             and _mins(now, lane.get("arrived")) is not None
-        ), default=None
+        ),
+        default=None,
     )
     candidate_checks = status.get("candidate_checks") or {}
     blocking_checks = [
@@ -118,45 +120,68 @@ def brief(status: dict[str, Any]) -> dict[str, Any]:
     # explicitly sets it false when state cannot be read.
     state_known = st.get("available") is not False
     visibility_blind = not state_known or any(
-        str(c.get("result", "")).startswith("unreadable")
-        for c in blocking_checks
+        str(c.get("result", "")).startswith("unreadable") for c in blocking_checks
     )
     service_state = (
-        "UNKNOWN" if visibility_blind else
-        "RED" if (status.get("alarm") or red or stuck) else
-        "TESTING" if landing else
-        "WAITING" if waiting else "IDLE"
+        "UNKNOWN"
+        if visibility_blind
+        else "RED"
+        if (status.get("alarm") or red or stuck)
+        else "TESTING"
+        if landing
+        else "WAITING"
+        if waiting
+        else "IDLE"
     )
 
     required = (status.get("main") or {}).get("required") or {}
     main_red = [k for k, v in required.items() if v not in GREEN]
     lost = (status.get("invariants") or {}).get("work_lost") or 0
     loud = bool(
-        not state_known or status.get("alarm") or main_red or lost
-        or red or stuck or (batch_age is not None and batch_age >= 90)
-        or any(str(b.get("result", "")).startswith("unreadable") for b in blocking_checks)
+        not state_known
+        or status.get("alarm")
+        or main_red
+        or lost
+        or red
+        or stuck
+        or (batch_age is not None and batch_age >= 90)
+        or any(
+            str(b.get("result", "")).startswith("unreadable") for b in blocking_checks
+        )
     )
 
     # Founder cockpit gets one executable next action and the evidence link
     # from the check-run response, rather than a generic red light.
     next_action = None
     if not state_known:
-        next_action = {"code": "restore-state-read", "why": "Greenlane state unavailable"}
+        next_action = {
+            "code": "restore-state-read",
+            "why": "Greenlane state unavailable",
+        }
     elif main_red:
         next_action = {"code": "repair-required-main-check", "check": main_red[0]}
     elif blocking_checks and (
-        batch_age is not None and batch_age >= LONG_TESTING_MIN
-        or any(c.get("result") in ("failure", "timed_out", "cancelled")
-               for c in blocking_checks)
+        batch_age is not None
+        and batch_age >= LONG_TESTING_MIN
+        or any(
+            c.get("result") in ("failure", "timed_out", "cancelled")
+            for c in blocking_checks
+        )
         or visibility_blind
     ):
         target = blocking_checks[0]
-        next_action = {"code": "inspect-candidate-check",
-                       "check": target["name"], "result": target["result"],
-                       "url": target.get("url")}
+        next_action = {
+            "code": "inspect-candidate-check",
+            "check": target["name"],
+            "result": target["result"],
+            "url": target.get("url"),
+        }
     elif held_claims:
-        next_action = {"code": "renew-claim", "lane": held_claims[0]["lane"],
-                       "why": held_claims[0]["why"]}
+        next_action = {
+            "code": "renew-claim",
+            "lane": held_claims[0]["lane"],
+            "why": held_claims[0]["why"],
+        }
     elif common_blockers:
         next_action = {
             "code": "operations-reaction",
@@ -167,11 +192,18 @@ def brief(status: dict[str, Any]) -> dict[str, Any]:
             "owner": "existing incident / R-14",
         }
     elif red:
-        next_action = {"code": "repair-red-lane", "lane": red[0]["lane"],
-                       "owner": red[0]["owner"], "why": red[0]["why"]}
+        next_action = {
+            "code": "repair-red-lane",
+            "lane": red[0]["lane"],
+            "owner": red[0]["owner"],
+            "why": red[0]["why"],
+        }
     elif stuck:
-        next_action = {"code": "investigate-stuck-lane",
-                       "lane": stuck[0]["lane"], "why": stuck[0]["why"]}
+        next_action = {
+            "code": "investigate-stuck-lane",
+            "lane": stuck[0]["lane"],
+            "why": stuck[0]["why"],
+        }
 
     parts = []
     if landing and landing["lanes"]:
@@ -233,14 +265,19 @@ def brief(status: dict[str, Any]) -> dict[str, Any]:
             "common_mode_refusals": {
                 "count": len(common_blockers),
                 "lanes": [x["lane"] for x in common_blockers],
-                "canonical_incident": "chidionyema/idp#7800" if common_blockers else None,
+                "canonical_incident": "chidionyema/idp#7800"
+                if common_blockers
+                else None,
                 "owner": "operations-reaction" if common_blockers else None,
             },
             "candidate_blocking_checks": blocking_checks,
             "next_action": next_action,
             "batch_outcome_sample": {
-                "n": sample, "landed": landed_sample, "timeouts": timeouts,
-                "bisected": bisected, "landed_batch_pct": rate,
+                "n": sample,
+                "landed": landed_sample,
+                "timeouts": timeouts,
+                "bisected": bisected,
+                "landed_batch_pct": rate,
                 "caveat": "last 200 recorded batches; not a lifetime promotion rate",
             },
             "queue_to_land_min": latency.get("queue_to_land_min") or {},
@@ -252,7 +289,9 @@ def brief(status: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def candidate_check_index(payload: dict | None, required: list[str], error: str = "") -> dict:
+def candidate_check_index(
+    payload: dict | None, required: list[str], error: str = ""
+) -> dict:
     """One bounded candidate check read, never inventing green on API failure.
 
     Workflows generate many optional check-runs. The first page suffices when
@@ -264,8 +303,10 @@ def candidate_check_index(payload: dict | None, required: list[str], error: str 
         return {name: {"result": why, "url": None} for name in required}
     runs = payload.get("check_runs")
     if not isinstance(runs, list):
-        return {name: {"result": "unreadable: malformed GitHub check response", "url": None}
-                for name in required}
+        return {
+            name: {"result": "unreadable: malformed GitHub check response", "url": None}
+            for name in required
+        }
     latest: dict[str, dict] = {}
     for item in runs:
         if not isinstance(item, dict) or not isinstance(item.get("name"), str):
@@ -281,11 +322,15 @@ def candidate_check_index(payload: dict | None, required: list[str], error: str 
     for name in required:
         item = latest.get(name)
         if not item:
-            state = "unreadable: result pagination incomplete" if incomplete else "absent"
+            state = (
+                "unreadable: result pagination incomplete" if incomplete else "absent"
+            )
             result[name] = {"result": state, "url": None}
         else:
             result[name] = {
-                "result": item.get("conclusion") or item.get("status") or "unreadable: no check status",
+                "result": item.get("conclusion")
+                or item.get("status")
+                or "unreadable: no check status",
                 "url": item.get("html_url") or item.get("details_url"),
             }
     return result

@@ -1,4 +1,5 @@
 """Ferrari preflight acceptance tests: unsafe skips and queue starvation fail."""
+
 from __future__ import annotations
 
 import json
@@ -13,9 +14,14 @@ NEW_BASE = "b" * 40
 
 
 def payload(ok, commitments):
-    return json.dumps({"gate": "dof", "ok": ok,
-                       "open_incidents": [{"id": "estate-doors", "issue": 7334}],
-                       "commits": commitments})
+    return json.dumps(
+        {
+            "gate": "dof",
+            "ok": ok,
+            "open_incidents": [{"id": "estate-doors", "issue": 7334}],
+            "commits": commitments,
+        }
+    )
 
 
 def denied(reason="missing Genesis-Resolves while a critical service is down"):
@@ -66,16 +72,30 @@ def test_explicit_doctor_deny_has_stable_fingerprint():
     two = interpret(BASE, 1, payload(False, [denied()]))
     assert one.state == "REFUSE" and not one.admissible
     assert one.fingerprint == two.fingerprint
-    assert interpret(NEW_BASE, 1, payload(False, [denied()])).fingerprint != one.fingerprint
+    assert (
+        interpret(NEW_BASE, 1, payload(False, [denied()])).fingerprint
+        != one.fingerprint
+    )
 
 
 def test_preflight_never_certifies_or_skips_without_real_denial():
     invalid = [
-        (0, ""), (1, "not-json"), (2, payload(False, [denied()])),
-        (1, payload(True, [denied()])), (1, payload(False, [accepted()])),
+        (0, ""),
+        (1, "not-json"),
+        (2, payload(False, [denied()])),
+        (1, payload(True, [denied()])),
+        (1, payload(False, [accepted()])),
         (1, payload(False, [])),
-        (1, json.dumps({"gate": "dof", "ok": False,
-                        "commits": [{"admitted": "false", "reason": "bad"}]})),
+        (
+            1,
+            json.dumps(
+                {
+                    "gate": "dof",
+                    "ok": False,
+                    "commits": [{"admitted": "false", "reason": "bad"}],
+                }
+            ),
+        ),
         (1, payload(False, [{"admitted": False}])),
     ]
     assert all(interpret(BASE, rc, text).admissible for rc, text in invalid)
@@ -85,9 +105,11 @@ def test_preflight_never_certifies_or_skips_without_real_denial():
 
 def test_assess_executes_only_trusted_main_file_not_candidate_code():
     called = []
+
     def runner(argv, **kwargs):
         called.append((argv, kwargs))
         return SimpleNamespace(returncode=1, stdout=payload(False, [denied()]))
+
     verdict = assess(BASE, "c" * 40, "chidionyema/idp", runner=runner)
     assert verdict.state == "REFUSE"
     assert Path(called[0][0][1]).name == "dof-gate"
@@ -98,8 +120,11 @@ def test_assess_executes_only_trusted_main_file_not_candidate_code():
 def test_all_unadmittable_candidates_consume_zero_ci_builds():
     heads = [f"h{i}" for i in range(100)]
     backend = TinyBackend(heads)
-    state = State(lanes={f"lane/{i}": Lane(f"lane/{i}", h, seq=i + 1)
-                         for i, h in enumerate(heads)})
+    state = State(
+        lanes={
+            f"lane/{i}": Lane(f"lane/{i}", h, seq=i + 1) for i, h in enumerate(heads)
+        }
+    )
     engine = Engine(backend, state, batch_size=100)
     engine._start_batch()
     assert backend.pushed == [] and state.candidates == 0
@@ -109,10 +134,12 @@ def test_all_unadmittable_candidates_consume_zero_ci_builds():
 
 def test_independent_admissible_lane_progresses_despite_common_blocker():
     backend = TinyBackend({"bad"})
-    state = State(lanes={
-        "lane/a": Lane("lane/a", "bad", seq=1),
-        "lane/b": Lane("lane/b", "good", seq=2),
-    })
+    state = State(
+        lanes={
+            "lane/a": Lane("lane/a", "bad", seq=1),
+            "lane/b": Lane("lane/b", "good", seq=2),
+        }
+    )
     Engine(backend, state)._start_batch()
     assert state.lanes["lane/a"].status == RED
     assert state.lanes["lane/b"].status == "testing"
@@ -160,10 +187,18 @@ def test_incident_issue_callback_wakes_same_head_on_same_main(monkeypatch):
 
 def test_known_policy_refusal_is_not_silently_retired():
     backend = TinyBackend()
-    state = State(lanes={"lane/a": Lane(
-        "lane/a", "bad", status=RED,
-        reason="trusted DoF [proof]: no authorized release",
-        arrived=-100000, judged_on=BASE)})
+    state = State(
+        lanes={
+            "lane/a": Lane(
+                "lane/a",
+                "bad",
+                status=RED,
+                reason="trusted DoF [proof]: no authorized release",
+                arrived=-100000,
+                judged_on=BASE,
+            )
+        }
+    )
     engine = Engine(backend, state)
     engine._retire_stale_lanes()
     assert "lane/a" in state.lanes
@@ -171,11 +206,19 @@ def test_known_policy_refusal_is_not_silently_retired():
 
 
 def test_synthetic_blind_incident_never_suppresses_required_ci():
-    synthetic = json.dumps({
-        "gate": "dof", "ok": False,
-        "open_incidents": [{"id": "dof-probe", "issue": None,
-                            "evidence": "incident list unreadable: HTTP 403"}],
-        "commits": [denied("missing Genesis-Resolves")],
-    })
+    synthetic = json.dumps(
+        {
+            "gate": "dof",
+            "ok": False,
+            "open_incidents": [
+                {
+                    "id": "dof-probe",
+                    "issue": None,
+                    "evidence": "incident list unreadable: HTTP 403",
+                }
+            ],
+            "commits": [denied("missing Genesis-Resolves")],
+        }
+    )
     verdict = interpret(BASE, 1, synthetic)
     assert verdict.state == "UNKNOWN" and verdict.admissible

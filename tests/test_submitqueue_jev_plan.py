@@ -1,4 +1,5 @@
 """Risk-based delivery may accelerate tests but must never authorize a merge."""
+
 import importlib.util
 import sys
 from pathlib import Path
@@ -15,23 +16,33 @@ REQUIRED = ["bdd", "ci-success", "guarded-paths", "greenlane"]
 
 
 def test_low_risk_may_skip_redundant_tests_but_not_required_check():
-    a = {"tasks": [
-        {"name": "fast-gate", "run": True, "probability": 1.0},
-        {"name": "voice", "run": False, "probability": 0.05},
-    ]}
+    a = {
+        "tasks": [
+            {"name": "fast-gate", "run": True, "probability": 1.0},
+            {"name": "voice", "run": False, "probability": 0.05},
+        ]
+    }
     result = module.consolidate(a, {"tier": "low"}, REQUIRED)
     assert result["impacted_tasks"] == ["fast-gate"]
     assert result["mandatory_required_checks"] == sorted(REQUIRED)
     assert result["authorizes_merge"] is False
 
 
-@pytest.mark.parametrize("bad", [
-    {"escalated": True}, {"diff_error": "unreadable"},
-    {"config_error": "no config"},
-])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"escalated": True},
+        {"diff_error": "unreadable"},
+        {"config_error": "no config"},
+    ],
+)
 def test_jev_uncertainty_forces_all_tests(bad):
-    a = {"tasks": [{"name": "voice", "run": False, "probability": 0.01},
-                   {"name": "fast-gate", "run": True, "probability": 1.0}]}
+    a = {
+        "tasks": [
+            {"name": "voice", "run": False, "probability": 0.01},
+            {"name": "fast-gate", "run": True, "probability": 1.0},
+        ]
+    }
     result = module.consolidate({**a, **bad}, {"tier": "low"}, REQUIRED)
     assert result["jev_state"] == "ESCALATED"
     assert set(result["impacted_tasks"]) == {"voice", "fast-gate"}

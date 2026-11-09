@@ -24,7 +24,9 @@ def test_no_incident_admits_anything():
 def test_unrelated_low_effect_work_keeps_an_authorised_path_during_outage():
     """Explicit safe docs/tests can progress, but unknown source effects cannot."""
     d = gate.evaluate(
-        REGISTRY, ROUTER_DOWN, "docs: no runtime effect",
+        REGISTRY,
+        ROUTER_DOWN,
+        "docs: no runtime effect",
         ["docs/specs/instruction-flow.md", "tests/test_accounting.py"],
     )
     assert d["admitted"], f"safe work has no admissible path: {d.get('reason')}"
@@ -85,10 +87,16 @@ def test_blind_inventory_cannot_mint_self_repair_authority_from_trailers():
 
 
 def test_mixed_safe_and_unsafe_commit_must_not_use_truthy_partial_safe_list():
-    for unsafe in (".github/workflows/ci.yml", "web/app.tsx",
-                   "bin/dof-gate", "platform/otto-gateway/deploy.yaml"):
+    for unsafe in (
+        ".github/workflows/ci.yml",
+        "web/app.tsx",
+        "bin/dof-gate",
+        "platform/otto-gateway/deploy.yaml",
+    ):
         result = gate.evaluate(
-            REGISTRY, ROUTER_DOWN, "docs: partly safe",
+            REGISTRY,
+            ROUTER_DOWN,
+            "docs: partly safe",
             ["docs/specs/safe.md", unsafe],
         )
         assert not result["admitted"], (unsafe, result)
