@@ -147,3 +147,54 @@
 /* Brand lockup: gold signal on every dark surface, including the footer. */
 .mi-header .logo-dot,.mi-footer .logo-dot{color:#eac47e}
 .mi-header .logo-mark circle:last-child,.mi-footer .logo-mark circle:last-child{fill:#eac47e}
+
+/* Merdian production UI quality pass: interaction clarity, scaling and accessibility. */
+:root{--mi-accent:#eac47e;--mi-focus:#ffdd9e}
+.mi-shell,.mi-hero-content,.mi-hero-art,.mi-lab-layout>*,.mi-split-heading>*{min-width:0}
+.mi-header :is(a,button):focus-visible,.mi-hero :is(a,button):focus-visible,
+.mi-lab :is(a,button):focus-visible,.mi-close :is(a,button):focus-visible,
+.mi-footer :is(a,button):focus-visible,.mi-page-hero :is(a,button):focus-visible{
+ outline:3px solid var(--mi-focus);outline-offset:5px;border-radius:2px}
+.mi-nav-link{min-height:44px;display:inline-flex;align-items:center}
+.mi-nav-link[aria-current="page"]{color:#fff}
+.mi-menu-toggle{min-height:44px;min-width:44px}
+.mi-mobile-panel a{min-height:48px}
+.mi-service-card:focus-within,.mi-venture:focus-within{outline:2px solid #b98d4c;outline-offset:3px}
+.mi-hero .mi-hero-title{font-size:clamp(3.15rem,7.45vw,8.25rem);letter-spacing:-.075em}
+.mi-hero-intro{max-width:58ch}
+.mi-hero-art{isolation:isolate}
+.mi-footer-giant{font-size:clamp(5.5rem,19.5vw,20rem);line-height:.85}
+.mi-hero-bottom,.mi-footer-bottom{line-height:1.65}
+@media(max-width:1150px){
+ .mi-hero-composition{grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr)}
+ .mi-hero .mi-hero-title{font-size:clamp(3.7rem,7.1vw,7rem)}
+}
+@media(max-width:850px){
+ .mi-hero-composition{grid-template-columns:minmax(0,1fr)}
+ .mi-hero .mi-hero-title{font-size:clamp(3.4rem,10vw,6.5rem)}
+ .mi-nav-actions{gap:12px}
+}
+@media(max-width:620px){
+ .mi-hero .mi-hero-title{font-size:clamp(2.65rem,10.5vw,4.5rem);letter-spacing:-.075em}
+ .mi-hero-topline,.mi-hero-bottom{letter-spacing:.045em}
+ .mi-hero-bottom{flex-wrap:wrap;gap:12px}
+ .mi-hero-art{max-width:100%;overflow:hidden}
+ .mi-button{gap:15px}
+ .mi-close h2{overflow-wrap:normal}
+ .mi-footer-links{flex-wrap:wrap;gap:24px}
+ .mi-page-hero h1{overflow-wrap:break-word}
+}
+@media(max-width:360px){
+ .mi-shell{padding-inline:16px}
+ .mi-hero .mi-hero-title{font-size:clamp(2.3rem,10.3vw,3rem)}
+ .mi-hero-actions>.mi-button{width:100%}
+}
+@media(prefers-reduced-motion:reduce){
+ .mi-orbit,.pulse-dot{animation:none!important}
+ .mi-button,.mi-nav-cta,.mi-service-card,.mi-nav-link,.mi-venture{transition:none!important}
+ .mi-button:hover,.mi-nav-cta:hover,.mi-service-card:hover{transform:none}
+}
+@media(forced-colors:active){
+ .mi-button,.mi-nav-cta,.mi-menu-toggle{border:2px solid ButtonText}
+ .mi-hero-outline{color:CanvasText;-webkit-text-stroke:0}
+}
