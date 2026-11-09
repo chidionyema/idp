@@ -226,5 +226,10 @@ test("every internal link goes somewhere, and every anchor exists", async () => 
   // 18 distinct targets on this site today: the ten routes, the three tool anchors, and a few
   // fragments. The bound is a floor, not a target -- it fails if the crawl stopped finding links
   // at all, which is the failure mode of a crawler that silently matches nothing.
-  assert.ok(seen.size >= 15, `expected the pages to link to each other, found ${seen.size} distinct links`);
+  // The founder-facing navigation is deliberately focused; removing legacy demo and
+  // tool links must not be mistaken for a crawler failure. Judge the actual journeys.
+  for (const route of ["/", "/consulting", "/research", "/products", "/contact"]) {
+    assert.ok([...seen.keys()].some(key => key === route + "#"), `core customer journey missing: ${route}`);
+  }
+  assert.ok(seen.size >= 12, `expected a connected public site, found ${seen.size} distinct links`);
 });
