@@ -58,7 +58,7 @@
    "read": "UNKNOWN"
   }
  },
- "generated_at": "2026-11-07T08:53:05Z",
+ "generated_at": "2026-11-09T09:54:34Z",
  "rows": [
   {
    "declared_in": "",
@@ -323,8 +323,8 @@
   },
   {
    "declared_in": "",
-   "id": "15071099f084b9160e8b04fcdcbe8f11",
-   "name": "mumchimp.com MX",
+   "id": "86e33f954f96a1860a5631f0d2d55275",
+   "name": "mumchimp.com TXT",
    "plane": "cloudflare",
    "type": "dns_record",
    "verdict": "ORPHAN",
@@ -350,8 +350,8 @@
   },
   {
    "declared_in": "",
-   "id": "86e33f954f96a1860a5631f0d2d55275",
-   "name": "mumchimp.com TXT",
+   "id": "15071099f084b9160e8b04fcdcbe8f11",
+   "name": "mumchimp.com MX",
    "plane": "cloudflare",
    "type": "dns_record",
    "verdict": "ORPHAN",

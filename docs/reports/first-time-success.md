@@ -1,6 +1,6 @@
 # Delivery: right first time
 
-Generated 2026-11-07T08:53:45Z, window since 2026-10-24 (14 days). Two measures per repository: how many merged pull requests were green on the first push (one commit, every check passed), and how many runs on main passed on the first attempt.
+Generated 2026-11-09T09:55:18Z, window since 2026-10-26 (14 days). Two measures per repository: how many merged pull requests were green on the first push (one commit, every check passed), and how many runs on main passed on the first attempt.
 
 ## chidionyema/idp
 
@@ -12,24 +12,12 @@ Runs on main, completed, passed on the first attempt (workflows with three or mo
 
 | Workflow | First-attempt pass | Runs | Rate | Re-runs |
 |---|---|---|---|---|
-| greenlane | 314 | 757 | 41% | 0 |
-| merge-when-green | 50 | 51 | 98% | 0 |
-| deploy-when-green | 48 | 51 | 94% | 0 |
-| lane-feedback | 25 | 50 | 50% | 0 |
-| factory-ci | 5 | 5 | 100% | 0 |
-| ticket-verification | 0 | 4 | 0% | 0 |
-| no-harness-folders | 4 | 4 | 100% | 0 |
-| ruff-required | 4 | 4 | 100% | 0 |
-| scorecard | 4 | 4 | 100% | 0 |
-| context-index | 4 | 4 | 100% | 0 |
-| guarded-paths | 4 | 4 | 100% | 0 |
-| portal-app | 4 | 4 | 100% | 0 |
-| build-multiarch | 0 | 4 | 0% | 0 |
-| ci | 4 | 4 | 100% | 0 |
-| agent (gemini): LEGION #7777 | 0 | 3 | 0% | 0 |
-| estate-watch | 1 | 3 | 33% | 0 |
+| greenlane | 321 | 786 | 41% | 0 |
+| merge-when-green | 59 | 59 | 100% | 0 |
+| deploy-when-green | 58 | 58 | 100% | 0 |
+| lane-feedback | 56 | 57 | 98% | 0 |
 
-**All runs on main: 471/956 = 49% passed on the first attempt; 0 re-runs.**
+**All runs on main: 494/960 = 51% passed on the first attempt; 0 re-runs.**
 
 ## chidionyema/prospector
 
@@ -40,10 +28,10 @@ Runs on main, completed, passed on the first attempt (workflows with three or mo
 
 | Workflow | First-attempt pass | Runs | Rate | Re-runs |
 |---|---|---|---|---|
-| PR keeper | 69 | 78 | 88% | 0 |
-| Approve parked runs | 68 | 68 | 100% | 0 |
+| PR keeper | 64 | 73 | 88% | 0 |
+| Approve parked runs | 63 | 63 | 100% | 0 |
 | Live storefront smoke | 0 | 22 | 0% | 0 |
 | stale | 14 | 14 | 100% | 0 |
 | DNS drift drill | 0 | 14 | 0% | 0 |
 
-**All runs on main: 151/196 = 77% passed on the first attempt; 0 re-runs.**
+**All runs on main: 141/186 = 76% passed on the first attempt; 0 re-runs.**
