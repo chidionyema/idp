@@ -79,7 +79,7 @@
   "fleet_policy": {
     "upstream": "OPA decision engine; OPAL is distribution candidate",
     "owner": "chidionyema/idp#7452",
-    "state": "SOURCE_CANDIDATE_NOT_DEPLOYED",
+    "state": "UNVERIFIED_BY_STATIC_PACK",
     "activation": "Founder-authorised publication and actual PEP evidence required"
   },
   "session_contract": {
