@@ -228,3 +228,33 @@ test("every internal link goes somewhere, and every anchor exists", async () => 
   // at all, which is the failure mode of a crawler that silently matches nothing.
   assert.ok(seen.size >= 15, `expected the pages to link to each other, found ${seen.size} distinct links`);
 });
+
+
+test("homepage contains an evidence-led offer without unverified customer metrics", async () => {
+  const res = await fetch(BASE + "/");
+  const html = await res.text();
+  assert.equal(res.status, 200);
+  assert.match(html, /Intelligence is only useful/);
+  assert.match(html, /REFERENCE ARCHITECTURE/);
+  assert.match(html, /ILLUSTRATIVE FORMAT/);
+  assert.match(html, /id="capabilities"/);
+  assert.match(html, /id="approach"/);
+  assert.doesNotMatch(html, /\$1\.1M|73% bill reduction|SOC 2 in 4 months|Twelve deployments/);
+  assert.doesNotMatch(html, /hello@meridian\.ai|github\.com\/meridian-intelligence/);
+});
+
+test("engineering references do not impersonate client success stories", async () => {
+  const res = await fetch(BASE + "/case-studies");
+  const html = await res.text();
+  assert.equal(res.status, 200);
+  assert.match(html, /not client case studies/);
+  assert.doesNotMatch(html, /Tier-1 Payment Processor|Series-C SaaS Platform|Clinical Decision Support Startup/);
+});
+
+test("sitemap and robots are derived from the same configured site origin", async () => {
+  const sitemap = await (await fetch(BASE + "/sitemap.xml")).text();
+  const robots = await (await fetch(BASE + "/robots.txt")).text();
+  assert.match(sitemap, /\/case-studies<\/loc>/);
+  assert.doesNotMatch(sitemap, /https:\/\/meridian\.ai/);
+  assert.doesNotMatch(robots, /https:\/\/meridian\.ai/);
+});
