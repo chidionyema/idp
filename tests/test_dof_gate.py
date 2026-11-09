@@ -207,6 +207,7 @@ def test_glob_is_anchored():
     assert gate.glob_match("bin/idp-oke-*", "bin/idp-oke-rebuild")
     assert not gate.glob_match("bin/idp-oke-*", "bin/x/idp-oke-rebuild")
 
+
 def test_founder_control_modes_and_explicit_suspension():
     assert gate.control_mode(REGISTRY) == "disabled"
     assert gate.control_mode({}) == "enforced"
