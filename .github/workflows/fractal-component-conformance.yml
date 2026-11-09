@@ -1,0 +1,37 @@
+name: Fractal component conformance (adoption)
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'modules/**'
+      - 'packages/**/component.json'
+      - 'architecture/fractal/**'
+      - 'bin/fractal-shape'
+      - 'tests/test_fractal_shape.py'
+  push:
+    branches: ['lane/**']
+    paths:
+      - 'modules/**'
+      - 'packages/**/component.json'
+      - 'architecture/fractal/**'
+      - 'bin/fractal-shape'
+      - 'tests/test_fractal_shape.py'
+permissions:
+  contents: read
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Reject malformed component boundaries
+        run: python3 bin/fractal-shape scan --root .
+      - name: Prove checker can reject bad declarations
+        run: python3 -m unittest discover -s tests -p test_fractal_shape.py -v
+      - name: Classify architecture changes for independent review
+        if: github.event_name == 'pull_request'
+        run: |
+          python3 bin/fractal-shape review --base origin/${{ github.base_ref }} | tee /tmp/fractal-review.json
+          cat /tmp/fractal-review.json >> "$GITHUB_STEP_SUMMARY"
