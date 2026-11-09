@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+"""Fractal component boundary checker; source-only, no second registry."""
+from __future__ import annotations
+import argparse
+import json
+import re
+import subprocess
+from pathlib import Path
+
+SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$")
+IDENT = re.compile(r"^[a-z][a-z0-9.-]*(?:/[a-z][a-z0-9.-]*)+$")
+EFFECTS = {"none", "filesystem:read", "filesystem:write", "network",
+           "database:read", "database:write", "secrets:read", "process:spawn",
+           "model:invoke", "human:approve"}
+SKIP = {".git", ".next", ".venv", "node_modules", "target", "dist", "build", "vendor"}
+
+def path_is_local(base: Path, value: object) -> bool:
+    return (isinstance(value, str) and bool(value) and
+            not Path(value).is_absolute() and
+            (base / value).resolve().is_relative_to(base.resolve()) and
+            (base / value).exists())
+
+def check(path: Path) -> tuple[dict | None, list[str]]:
+    errors = []
+    try:
+        x = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError) as exc:
+        return None, [f"invalid JSON: {exc}"]
+    if not isinstance(x, dict):
+        return None, ["manifest must be a JSON object"]
+    required = ("schema", "id", "version", "kind", "owner", "stage", "source",
+                "provides", "requires", "effects", "state", "verification")
+    errors += [f"missing {key}" for key in required if key not in x]
+    if x.get("schema") != "estate.fractal.component/v1":
+        errors.append("invalid component schema")
+    if not IDENT.fullmatch(str(x.get("id", ""))):
+        errors.append("invalid namespaced component id")
+    if not SEMVER.fullmatch(str(x.get("version", ""))):
+        errors.append("invalid SemVer component version")
+    if x.get("kind") not in {"primitive", "composite"}:
+        errors.append("kind must be primitive or composite")
+    if x.get("stage") not in {"experimental", "candidate", "current", "deprecated"}:
+        errors.append("invalid lifecycle stage")
+    if not isinstance(x.get("owner"), str) or not x.get("owner", "").strip():
+        errors.append("missing owner")
+    for name in ("source",):
+        if not path_is_local(path.parent, x.get(name)):
+            errors.append(f"invalid or missing local path: {name}")
+    provided = x.get("provides")
+    if not isinstance(provided, list) or not provided:
+        errors.append("provides must be nonempty")
+        provided = []
+    for i, p in enumerate(provided):
+        if not isinstance(p, dict) or not IDENT.fullmatch(str(p.get("capability", ""))):
+            errors.append(f"provides[{i}] invalid capability")
+            continue
+        if not SEMVER.fullmatch(str(p.get("version", ""))):
+            errors.append(f"provides[{i}] invalid interface version")
+        if not path_is_local(path.parent, p.get("interface")):
+            errors.append(f"provides[{i}] interface missing or escapes boundary")
+    requirements = x.get("requires")
+    if not isinstance(requirements, list):
+        errors.append("requires must be an array")
+    else:
+        for i, r in enumerate(requirements):
+            if not isinstance(r, dict) or not IDENT.fullmatch(str(r.get("capability", ""))):
+                errors.append(f"requires[{i}] invalid capability")
+            elif not re.fullmatch(r"[\^~]?\d+\.\d+\.\d+", str(r.get("version", ""))):
+                errors.append(f"requires[{i}] requires explicit SemVer range")
+    effects = x.get("effects")
+    if not isinstance(effects, list) or not effects or any(e not in EFFECTS for e in effects):
+        errors.append("effects must be an explicit list of known effects")
+    elif "none" in effects and len(effects) > 1:
+        errors.append("'none' effect cannot be combined")
+    if x.get("state") not in {"stateless", "stateful"}:
+        errors.append("state must be stateless or stateful")
+    if x.get("state") == "stateful" and not path_is_local(path.parent, x.get("state_contract")):
+        errors.append("stateful component requires a local state_contract")
+    v = x.get("verification")
+    if not isinstance(v, dict) or not path_is_local(path.parent, v.get("contract_tests")):
+        errors.append("verification.contract_tests must reference existing tests")
+    return x, errors
+
+def scan(root: Path) -> dict:
+    results, ids, provided = [], {}, {}
+    for path in sorted(root.rglob("component.json")):
+        if any(part in SKIP for part in path.relative_to(root).parts):
+            continue
+        data, errors = check(path)
+        rel = str(path.relative_to(root))
+        if data and isinstance(data.get("id"), str):
+            if data["id"] in ids:
+                errors.append(f"duplicate component id also at {ids[data['id']]}")
+            ids[data["id"]] = rel
+            for p in data.get("provides", []):
+                if isinstance(p, dict) and isinstance(p.get("capability"), str):
+                    provided.setdefault(p["capability"], []).append(data["id"])
+        results.append({"path": rel, "data": data, "errors": errors})
+    # Only check internal cycles where exactly one matching local provider exists.
+    edges = {}
+    for item in results:
+        x = item["data"]
+        if not x or not isinstance(x.get("requires"), list):
+            continue
+        edges[x.get("id")] = [provided[r["capability"]][0] for r in x["requires"]
+                              if isinstance(r, dict) and r.get("capability") in provided
+                              and len(provided[r["capability"]]) == 1]
+    active, visited = set(), set()
+    def walk(node: str, chain: list[str]) -> None:
+        if node in active:
+            for item in results:
+                if item["data"] and item["data"].get("id") == node:
+                    item["errors"].append("dependency cycle: " + " -> ".join(chain + [node]))
+            return
+        if node in visited:
+            return
+        active.add(node)
+        for child in edges.get(node, []):
+            walk(child, chain + [node])
+        active.remove(node)
+        visited.add(node)
+    for node in edges:
+        walk(node, [])
+    errors = [{"path": item["path"], "reason": err}
+              for item in results for err in item["errors"]]
+    return {"inspected": len(results), "invalid": len({x["path"] for x in errors}),
+            "errors": errors,
+            "scope": "structural conformance only; operational receipts remain in canonical capability registry"}
+
+def classify(path: str) -> str:
+    p = path.replace("\\", "/")
+    if p.endswith("/component.json") or "/contracts/" in p or "/migrations/" in p or "/policies/" in p:
+        return "architecture-review"
+    return "normal-change"
+
+def review(base: str) -> dict:
+    r = subprocess.run(["git", "diff", "--name-only", f"{base}...HEAD"],
+                       capture_output=True, text=True, check=False)
+    if r.returncode:
+        return {"error": r.stderr.strip()}
+    flagged = [p for p in r.stdout.splitlines() if classify(p) == "architecture-review"]
+    return {"base": base, "review_required": bool(flagged), "files": flagged,
+            "review_must_be_independent": True}
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("command", choices=("scan", "review"))
+    parser.add_argument("--root", default=str(Path(__file__).resolve().parent.parent))
+    parser.add_argument("--base", default="origin/main")
+    args = parser.parse_args()
+    result = scan(Path(args.root).resolve()) if args.command == "scan" else review(args.base)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return int(bool(result.get("errors")) or bool(result.get("error")))
+
+if __name__ == "__main__":
+    raise SystemExit(main())
