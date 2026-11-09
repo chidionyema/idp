@@ -92,7 +92,7 @@ def scan(root: Path) -> dict:
             if data["id"] in ids:
                 errors.append(f"duplicate component id also at {ids[data['id']]}")
             ids[data["id"]] = rel
-            for p in data.get("provides", []):
+            for p in (data.get("provides") if isinstance(data.get("provides"), list) else []):
                 if isinstance(p, dict) and isinstance(p.get("capability"), str):
                     provided.setdefault(p["capability"], []).append(data["id"])
         results.append({"path": rel, "data": data, "errors": errors})
