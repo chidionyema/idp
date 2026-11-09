@@ -73,3 +73,30 @@ def test_expand_contract_modes_preserve_explicit_semantics():
         registry = {**REGISTRY, "control": {"mode": mode}}
         assert gate.control_mode(registry) == mode
     assert gate.control_mode({}) == "enforced"
+
+
+def test_component_contraction_preserves_other_incidents():
+    incidents = [
+        {"id": "llm-router", "issue": 7334},
+        {"id": "otto", "issue": 7333},
+    ]
+    registry = {**REGISTRY, "control": {
+        "mode": "enforced", "suspendedComponents": ["otto"]
+    }}
+    assert gate.active_incidents(registry, incidents) == [incidents[0]]
+
+
+def test_component_contraction_never_ignores_blind_inventory():
+    blind = [{"id": "dof-probe", "issue": None}]
+    registry = {**REGISTRY, "control": {
+        "mode": "enforced", "suspendedComponents": ["dof-probe"]
+    }}
+    assert gate.active_incidents(registry, blind) == blind
+
+
+def test_malformed_scope_is_not_an_exemption():
+    incidents = [{"id": "otto", "issue": 7333}]
+    registry = {**REGISTRY, "control": {
+        "mode": "enforced", "suspendedComponents": "otto"
+    }}
+    assert gate.active_incidents(registry, incidents) == incidents
