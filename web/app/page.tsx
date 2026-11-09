@@ -1,145 +1,74 @@
 import Link from "next/link";
-import { site } from "@/content/site";
-import { HeroPlayground } from "@/components/HeroPlayground";
-import { Reveal } from "@/components/Reveal";
 import type { Metadata } from "next";
-export const metadata: Metadata = { description: site.tagline };
+
+export const metadata: Metadata = {
+  title: "AI systems engineering",
+  description: "Meridian Intelligence engineers accountable AI systems for real operating environments.",
+};
+
+const disciplines = [
+  { id: "01", title: "Infrastructure", text: "Model routing, retrieval and orchestration engineered around the workload, its cost and its failure modes.", focus: "ROUTING / RETRIEVAL / IDENTITY" },
+  { id: "02", title: "Autonomous operations", text: "Durable workflows with owned state, bounded recovery and explicit authority for consequential decisions.", focus: "EXECUTION / RECOVERY / OVERSIGHT" },
+  { id: "03", title: "Assurance", text: "Instrument the decision path, test failure conditions and independently verify the result against the original objective.", focus: "EVALUATION / TRACING / EVIDENCE" },
+];
+
+const method = [
+  { n: "01", title: "Define the outcome", desc: "Understand the operating problem and the constraints. Decide what success must prove." },
+  { n: "02", title: "Engineer the system", desc: "Integrate with the environment you already own. Design for actual workload and risk." },
+  { n: "03", title: "Exercise failure", desc: "Test timeouts, dependency loss, manual intervention and recovery before release." },
+  { n: "04", title: "Verify and hand over", desc: "Deliver working interfaces, operational evidence and a maintainable system." },
+];
 
 export default function HomePage() {
   return (
-    <>
-      {/* Hero */}
-      <section style={{ borderBottom: "1px solid var(--rule)" }}>
-        <div className="container section hero-grid">
-          <div className="hero-copy">
-            <span className="tag tag-accent">AI Infrastructure Consulting</span>
-            <h1 style={{ fontFamily: "var(--serif)" }}>AI infrastructure consulting for companies<br /><em style={{ fontStyle: "normal", color: "var(--accent)" }}>shipping production LLM systems</em>.</h1>
-            <p style={{ fontSize: "18px", lineHeight: 1.7, color: "var(--ink-3)", maxWidth: "52ch" }}>
-              We build the routing, the traces, the workload identity and the eval suite a production LLM feature needs. Most teams get the demo working. The gap between that and ten thousand requests an hour is the job.
-            </p>
-            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-              <Link href="/contact" className="btn-primary">Talk to us →</Link>
-              <Link href="/case-studies" className="btn-secondary">See our work</Link>
+    <div className="mi-home">
+      <section className="mi-hero" aria-labelledby="mi-hero-title">
+        <div className="container mi-hero-grid">
+          <div className="mi-hero-copy">
+            <p className="mi-eyebrow"><span aria-hidden="true" /> MERIDIAN INTELLIGENCE <small>/ ENGINEERING PRACTICE</small></p>
+            <h1 id="mi-hero-title">Intelligence is only useful <em>when it runs.</em></h1>
+            <p className="mi-hero-lead">We engineer AI systems for real operating environments. From architecture to autonomous execution, important outcomes need a way to be observed, challenged and recovered.</p>
+            <div className="mi-actions"><Link className="mi-primary" href="/contact">Discuss your project <span aria-hidden="true">↗</span></Link><Link className="mi-secondary" href="#approach">How we work <span aria-hidden="true">↓</span></Link></div>
+            <p className="mi-hero-note">◇ &nbsp; Designed for ownership, not dependency.</p>
+          </div>
+          <div className="mi-workflow" aria-label="Illustrative execution architecture; not live telemetry">
+            <div className="mi-workflow-top"><span>REFERENCE ARCHITECTURE / 001</span><span className="mi-workflow-status">ILLUSTRATIVE</span></div>
+            <div className="mi-workflow-body">
+              <div className="mi-workflow-heading"><span>From instruction</span><span aria-hidden="true">→</span><span>to evidence</span></div>
+              {[
+                ["01", "Intent", "Outcome and operating constraints", "◎"],
+                ["02", "Decision", "Capability, policy and authority", "◇"],
+                ["03", "Execution", "State, observation and recovery", "↗"],
+                ["04", "Verification", "Evidence against the original goal", "✓"],
+              ].map(([n, name, description, glyph], index) => (
+                <div key={n}>{index > 0 && <div className="mi-connector" aria-hidden="true" />}<div className={"mi-workflow-step" + (index === 3 ? " mi-workflow-final" : "")}><span className="mi-step-number">{n}</span><div><strong>{name}</strong><small>{description}</small></div><span className="mi-step-glyph" aria-hidden="true">{glyph}</span></div></div>
+              ))}
             </div>
-          </div>
-          <div className="hero-demo">
-            <p style={{ fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-3)", marginBottom: "20px" }}>LLM routing demo</p>
-            <HeroPlayground />
+            <div className="mi-workflow-bottom"><small>THE PRINCIPLE</small><strong>A system is accountable when its results can be verified.</strong></div>
           </div>
         </div>
       </section>
-      {/* Stats */}
-      <section style={{ background: "var(--ink)", padding: "28px 0" }}>
-        <div className="container" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "32px" }}>
-          {[
-            { value: "12", label: "deployments" },
-            { value: "$1.1M", label: "monthly spend removed" },
-            { value: "73%", label: "bill reduction, largest" },
-            { value: "0.3/mo", label: "incidents, down from 3" },
-          ].map((s) => (
-            <div key={s.label} className="metric" style={{ textAlign: "center" }}>
-              <span className="metric-value" style={{ color: "#fff" }}>{s.value}</span>
-              <span className="metric-label" style={{ color: "rgba(255,255,255,0.6)" }}>{s.label}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-      {/* Research */}
-      <section className="section">
+      <div className="mi-strip"><div className="container"><span><b>01</b> Defined constraints</span><span><b>02</b> Human authority</span><span><b>03</b> Inspectable results</span></div></div>
+      <section className="mi-section" id="capabilities" aria-labelledby="mi-capabilities-title">
         <div className="container">
-          <Reveal><div style={{ marginBottom: "48px" }}><h2>Research</h2><p style={{ color: "var(--ink-3)", marginTop: "12px" }}>Written from our engagements.</p></div></Reveal>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: "24px" }}>
-            {site.research.map((r) => (
-              <Reveal key={r.title}>
-                <div className="card" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                    <span className="tag">{r.kind}</span><span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)" }}>{r.year}</span>
-                  </div>
-                  <h3 style={{ fontSize: "1.3rem", fontWeight: 500 }}>{r.title}</h3>
-                  <p style={{ fontSize: "14px", color: "var(--ink-3)", lineHeight: 1.7 }}>{r.blurb}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
+          <div className="mi-heading"><div><p className="mi-kicker">01 / CAPABILITIES</p><h2 id="mi-capabilities-title">Engineering beyond <em>the demonstration.</em></h2></div><p>We work on the systems behind AI features: how they operate, what happens when something breaks and what the business can prove afterwards.</p></div>
+          <div className="mi-disciplines">{disciplines.map((d) => <article key={d.id} className="mi-discipline"><span className="mi-kicker">{d.id}</span><h3>{d.title}</h3><p>{d.text}</p><div className="mi-discipline-foot"><span>{d.focus}</span><span aria-hidden="true">↗</span></div></article>)}</div>
+          <div className="mi-more"><Link href="/consulting">Explore our services <span aria-hidden="true">↗</span></Link></div>
         </div>
       </section>
-      {/* Process */}
-      <section className="section" style={{ background: "var(--panel)", borderTop: "1px solid var(--rule)", borderBottom: "1px solid var(--rule)" }}>
+      <section className="mi-section mi-method" id="approach" aria-labelledby="mi-method-title">
         <div className="container">
-          <Reveal><h2 style={{ marginBottom: "48px" }}>How we work</h2></Reveal>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "32px" }}>
-            {[
-              { n: "01", title: "Audit", desc: "We read what you have and find where it breaks. Then we put a number on what the current setup costs you every month." },
-              { n: "02", title: "Design", desc: "We design against your ceilings, not a reference architecture. If the routing layer cannot hold your p95, we find that out on paper." },
-              { n: "03", title: "Build", desc: "We build it with you. The eval harness and the regression pipeline ship in the same week as the feature, because after that nobody goes back for them." },
-              { n: "04", title: "Hand over", desc: "We stay ninety days, tune thresholds with your team, then leave you the runbooks and go quiet." },
-            ].map((step) => (
-              <Reveal key={step.n}>
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  <span style={{ fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 500, color: "var(--accent)" }}>{step.n}</span>
-                  <h3 style={{ fontSize: "1.2rem", fontWeight: 500 }}>{step.title}</h3>
-                  <p style={{ fontSize: "14px", color: "var(--ink-3)", lineHeight: 1.7 }}>{step.desc}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
+          <div className="mi-heading"><div><p className="mi-kicker">02 / METHOD</p><h2 id="mi-method-title">Built to work. <em>Built to be understood.</em></h2></div><p>Architecture is a means, not the result. Our work begins with what the operation needs and finishes with a result the team can inspect.</p></div>
+          <div className="mi-method-grid">{method.map((m) => <article key={m.n}><span className="mi-kicker">{m.n} / 04</span><h3>{m.title}</h3><p>{m.desc}</p></article>)}</div>
         </div>
       </section>
-      {/* Tooling */}
-      <section className="section">
-        <div className="container">
-          <Reveal><div style={{ marginBottom: "48px" }}><h2>Open-source tooling</h2><p style={{ color: "var(--ink-3)", marginTop: "12px" }}>Every library here came out of a client’s problem. We kept them because the next client had the same one.</p></div></Reveal>
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {site.tooling.map((t) => (
-              <Reveal key={t.name}>
-                <div style={{ border: "1px solid var(--rule)", background: "var(--white)", padding: "20px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                    <code style={{ fontFamily: "var(--mono)", fontSize: "14px", fontWeight: 500, color: "var(--ink)" }}>{t.name}</code>
-                    <span className={`tag ${t.status === "stable" ? "tag-ok" : t.status === "beta" ? "tag-beta" : ""}`}>{t.status}</span>
-                  </div>
-                  <p style={{ fontSize: "14px", color: "var(--ink-3)", flex: 1, minWidth: "200px" }}>{t.desc}</p>
-                  <Link href={`/tooling#${t.name}`} className="text-link">Details →</Link>
-                </div>
-              </Reveal>
-            ))}
-          </div>
+      <section className="mi-section" aria-labelledby="mi-evidence-title">
+        <div className="container mi-evidence-grid">
+          <div><p className="mi-kicker">03 / ASSURANCE</p><h2 id="mi-evidence-title">A claim is a starting point. <em>Evidence is the standard.</em></h2><p>Architecture diagrams are useful. A working endpoint is better. The operating result, constraints and failure record should be available for inspection.</p><Link className="mi-secondary" href="/case-studies">Explore engineering work <span aria-hidden="true">↗</span></Link></div>
+          <div className="mi-evidence"><div className="mi-evidence-title"><span>DELIVERY RECORD</span><span>ILLUSTRATIVE FORMAT</span></div>{[["Expected result","Defined before execution"],["System boundary","Owned and documented"],["Recovery","Exercised in failure tests"],["Verification","Independent of the claim"]].map(([label,value]) => <div className="mi-evidence-row" key={label}><span>{label}</span><strong>{value}</strong></div>)}<p>Example evidence structure, not a live customer report.</p></div>
         </div>
       </section>
-      {/* Case Studies teaser */}
-      <section className="section" style={{ background: "var(--ink)", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-        <div className="container">
-          <Reveal><div style={{ marginBottom: "48px" }}><span className="tag tag-accent-ink" style={{ marginBottom: "16px", display: "inline-flex" }}>Case studies</span><h2 style={{ color: "#fff", fontFamily: "var(--serif)" }}>What we’ve shipped</h2></div></Reveal>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: "24px" }}>
-            {[
-              { industry: "Fintech", result: "73% bill reduction", detail: "$1.1M a month down to $297K. LiteLLM routing and SPIFFE identity across three regions." },
-              { industry: "SaaS", result: "6 weeks to production", detail: "A full AI platform for a 400-engineer company, built by eight of their own people." },
-              { industry: "Healthcare", result: "SOC 2 in 4 months", detail: "HIPAA-grade inference with residency enforced in three jurisdictions." },
-            ].map((c) => (
-              <Reveal key={c.industry}>
-                <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.04)", padding: "24px" }}>
-                  <span style={{ fontFamily: "var(--mono)", fontSize: "10px", color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{c.industry}</span>
-                  <p style={{ fontFamily: "var(--serif)", fontSize: "1.4rem", fontWeight: 500, color: "#fff", marginTop: "12px" }}>{c.result}</p>
-                  <p style={{ fontFamily: "var(--mono)", fontSize: "12px", color: "var(--on-ink)", marginTop: "8px", lineHeight: 1.6, maxWidth: "none" }}>{c.detail}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-          <div style={{ marginTop: "40px", textAlign: "center" }}><Link href="/case-studies" className="btn-secondary" style={{ color: "#fff", borderColor: "rgba(255,255,255,0.2)" }}>Read the full case studies →</Link></div>
-        </div>
-      </section>
-      {/* CTA */}
-      <section className="section">
-        <div className="container" style={{ textAlign: "center", maxWidth: "640px", margin: "0 auto" }}>
-          <Reveal>
-            <h2 style={{ fontFamily: "var(--serif)" }}>We take on a handful of projects each quarter.</h2>
-            <p style={{ marginTop: "20px", color: "var(--ink-3)", fontSize: "17px" }}>If you’re staring at an LLM bill you can’t explain, that’s usually where the conversation starts.</p>
-            <div style={{ display: "flex", gap: "12px", justifyContent: "center", marginTop: "32px", flexWrap: "wrap" }}>
-              <Link href="/contact" className="btn-primary">Schedule a call</Link>
-              <Link href="/research" className="btn-secondary">Read our research</Link>
-            </div>
-          </Reveal>
-        </div>
-      </section>
-    </>
+      <section className="mi-close" aria-labelledby="mi-close-title"><div className="container mi-close-inner"><div><p className="mi-kicker">04 / START A CONVERSATION</p><h2 id="mi-close-title">Bring us the hard problem.</h2><p>Tell us what needs to run, where it breaks today and what a successful result must prove.</p></div><Link href="/contact" className="mi-primary">Start a technical conversation <span aria-hidden="true">↗</span></Link></div></section>
+    </div>
   );
 }
