@@ -8,8 +8,8 @@ export default function manifest(): MetadataRoute.Manifest {
       "AI research laboratory building and validating products for enterprises and individuals.",
     start_url: "/",
     display: "standalone",
-    background_color: "#FAFAF8",
-    theme_color: "#0D0D0A",
+    background_color: "#0B1421",
+    theme_color: "#0B1421",
     icons: [{ src: "/favicon.svg", sizes: "any", type: "image/svg+xml" }],
   };
 }
