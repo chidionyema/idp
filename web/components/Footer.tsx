@@ -3,34 +3,35 @@ import { site } from "@/content/site";
 import { Logo } from "@/components/Logo";
 
 export function Footer() {
-  const year = new Date().getFullYear();
   return (
-    <footer style={{ background: "var(--ink)", color: "rgba(255,255,255,0.85)", marginTop: "auto" }}>
-      <div style={{ maxWidth: "1152px", margin: "0 auto", padding: "64px 24px 48px" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "48px" }}>
-          <div style={{ gridColumn: "span 2", maxWidth: "280px" }}>
+    <footer style={{ background: "var(--ink)", color: "#fff", marginTop: "auto" }}>
+      <div className="container" style={{ maxWidth: 1248, paddingBlock: "65px 47px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 46 }}>
+          <div style={{ maxWidth: 340 }}>
             <Logo tone="light" />
-            <p style={{ marginTop: "12px", fontSize: "13px", lineHeight: 1.65, color: "var(--on-ink)", maxWidth: "none" }}>{site.tagline}</p>
-            <a href="mailto:hello@meridian.ai" className="footer-link-muted" style={{ display: "inline-block", marginTop: "20px" }}>hello@meridian.ai</a>
+            <p style={{ color: "var(--on-ink)", marginTop: 18, fontSize: 14, lineHeight: 1.8 }}>{site.tagline}</p>
+            <Link href="/contact" className="footer-link" style={{ display: "inline-flex", marginTop: 20 }}>Start a conversation →</Link>
           </div>
           <div>
-            <p className="footer-heading">Work</p>
-            <ul style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "16px", listStyle: "none" }}>
+            <p className="footer-heading">Company</p>
+            <ul style={{ listStyle: "none", display: "grid", gap: 11, marginTop: 18 }}>
               {site.nav.map((item) => <li key={item.href}><Link href={item.href} className="footer-link">{item.label}</Link></li>)}
             </ul>
           </div>
           <div>
-            <p className="footer-heading">Tools</p>
-            <ul style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "16px", listStyle: "none" }}>
-              {[{ href: "/demo", label: "LLM Playground" }, { href: "/tools/cost-calculator", label: "Cost Calculator" }, { href: "/tools/trace-explorer", label: "Trace Explorer" }].map((t) => <li key={t.href}><Link href={t.href} className="footer-link">{t.label}</Link></li>)}
+            <p className="footer-heading">Engineering references</p>
+            <ul style={{ listStyle: "none", display: "grid", gap: 11, marginTop: 18 }}>
+              <li><Link href="/demo" className="footer-link">Routing simulation</Link></li>
+              <li><Link href="/tools/trace-explorer" className="footer-link">Trace explorer</Link></li>
+              <li><Link href="/tooling" className="footer-link">Reference tooling</Link></li>
             </ul>
           </div>
         </div>
       </div>
-      <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-        <div style={{ maxWidth: "1152px", margin: "0 auto", padding: "20px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
-          <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--on-ink-muted)" }}>© {year} {site.name}</p>
-          <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--on-ink-muted)" }}>AI infrastructure consulting</p>
+      <div style={{ borderTop: "1px solid rgba(255,255,255,.1)" }}>
+        <div className="container" style={{ maxWidth: 1248, paddingBlock: 22, display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 12 }}>
+          <span style={{ font: "400 11px/1.5 var(--mono)", color: "var(--on-ink-muted)" }}>© {new Date().getFullYear()} Meridian Intelligence</span>
+          <span style={{ font: "400 11px/1.5 var(--mono)", color: "var(--on-ink-muted)" }}>AI systems engineering · Delivery with evidence</span>
         </div>
       </div>
     </footer>
