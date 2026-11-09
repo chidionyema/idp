@@ -1,26 +1,73 @@
 {
   "spec": "chidionyema/argon-sync docs/DOF-GOVERNANCE-v1.md (cloud layer)",
-  "revision": "2026-11-07.1",
+  "revision": "2026-11-09-founder-temporary-suspension",
   "why": "Degree of freedom: while a critical service is down, every agent's landing rights narrow to repairing it. The incidents are not probed here a second time (AGENTS.md section 6): they are the open issues the cloud drill (estate-homes-drill.yml -> bin/idp-estate-homes) files every 30 minutes and closes when the lane is back. bin/dof-gate, a needs of ci-success (the ruleset's required context), refuses every commit that does not carry `Genesis-Resolves: <failing id>` and stay inside that id's repairScope.",
   "incident_title_regex": "^\\[lane\\] (?P<id>[a-z0-9-]+): a lane is down$",
-  "immutableWhileRed": ["bin/dof-gate", "catalog/dof-registry.json", "tests/test_dof_gate.py", ".github/workflows/ci.yml"],
+  "immutableWhileRed": [
+    "bin/dof-gate",
+    "catalog/dof-registry.json",
+    "tests/test_dof_gate.py",
+    ".github/workflows/ci.yml"
+  ],
   "substrateScope": [
-    "clusters/**", "deploy/**", "infra/**", "flux/**",
-    "platform/llm/**", "llm/**", "platform/ladder/**",
-    "platform/otto-gateway/**", "platform/otto-golden/**", "platform/otto-golden-secret/**",
-    "bin/idp-oke-*", "bin/idp-estate-homes", "bin/idp-otto-homes",
-    ".github/workflows/oke-*.yml", ".github/workflows/estate-homes-drill.yml",
-    "docs/diagnoses/**", ".growmos/**"
+    "clusters/**",
+    "deploy/**",
+    "infra/**",
+    "flux/**",
+    "platform/llm/**",
+    "llm/**",
+    "platform/ladder/**",
+    "platform/otto-gateway/**",
+    "platform/otto-golden/**",
+    "platform/otto-golden-secret/**",
+    "bin/idp-oke-*",
+    "bin/idp-estate-homes",
+    "bin/idp-otto-homes",
+    ".github/workflows/oke-*.yml",
+    ".github/workflows/estate-homes-drill.yml",
+    "docs/diagnoses/**",
+    ".growmos/**"
   ],
   "components": {
-    "llm-router": { "repairProtocol": "issue body of the open [lane] llm-router incident", "repairScope": ["@substrate"] },
-    "otto": { "repairProtocol": "issue body of the open [lane] otto incident", "repairScope": ["@substrate"] },
-    "estate-doors": { "repairProtocol": "issue body of the open [lane] estate-doors incident", "repairScope": ["@substrate"] },
+    "llm-router": {
+      "repairProtocol": "issue body of the open [lane] llm-router incident",
+      "repairScope": [
+        "@substrate"
+      ]
+    },
+    "otto": {
+      "repairProtocol": "issue body of the open [lane] otto incident",
+      "repairScope": [
+        "@substrate"
+      ]
+    },
+    "estate-doors": {
+      "repairProtocol": "issue body of the open [lane] estate-doors incident",
+      "repairScope": [
+        "@substrate"
+      ]
+    },
     "dof-probe": {
       "repairProtocol": "the gate could not read the incident list: fix the gate",
       "selfRepair": true,
-      "repairScope": ["bin/dof-gate", "catalog/dof-registry.json", "tests/test_dof_gate.py", ".github/workflows/ci.yml"]
+      "repairScope": [
+        "bin/dof-gate",
+        "catalog/dof-registry.json",
+        "tests/test_dof_gate.py",
+        ".github/workflows/ci.yml"
+      ]
     }
   },
-  "defaultRepairScope": ["@substrate"]
+  "defaultRepairScope": [
+    "@substrate"
+  ],
+  "control": {
+    "mode": "disabled",
+    "directive": "founder-directive-2026-11-09",
+    "scope": "global-dof-only",
+    "reason": "Temporarily disable the blanket incident-driven DoF freeze to unblock legitimate estate delivery; preserve all other independent authorization, CI, provenance, signing and deployment controls.",
+    "reenableOnlyAfter": "independently reconciled backlog of accepted tickets, branches, worktrees and reviewed changes, verified against main and runtime yield",
+    "lastVerifiedBacklog": null,
+    "status": "CANDIDATE_NOT_ACTIVE_UNTIL_MERGED"
+  }
 }
