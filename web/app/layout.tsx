@@ -37,19 +37,18 @@ export function generateMetadata(): Metadata {
   return {
     metadataBase: base,
     title: { default: "Meridian Intelligence", template: "%s | Meridian Intelligence" },
-    description: "We build the routing, tracing, workload identity and eval layers that put LLM features into production. Twelve deployments, with the numbers.",
+    description: "Meridian Intelligence engineers accountable AI systems for real operating environments.",
     openGraph: { type: "website", locale: "en_US", url: base.href, siteName: "Meridian Intelligence", images: [{ url: "/opengraph-image", width: 1200, height: 630 }] },
-    twitter: { card: "summary_large_image", creator: "@meridianai" },
+    twitter: { card: "summary_large_image" },
     robots: { index: true, follow: true },
   };
 }
 
 const jsonLd = {
   "@context": "https://schema.org", "@type": "Organization",
-  name: "Meridian Intelligence", url: "https://meridian.ai",
-  logo: "https://meridian.ai/favicon.svg", email: "hello@meridian.ai",
-  sameAs: ["https://github.com/meridian-intelligence", "https://linkedin.com/company/meridian-intelligence"],
-  contactPoint: { "@type": "ContactPoint", email: "hello@meridian.ai", contactType: "sales" },
+  name: "Meridian Intelligence", url: SITE_URL,
+  logo: new URL("/favicon.svg", SITE_URL).href,
+  contactPoint: { "@type": "ContactPoint", url: new URL("/contact", SITE_URL).href, contactType: "sales" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
