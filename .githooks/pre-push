@@ -145,6 +145,7 @@ while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
       *.sh|*.bash) echo shell ;;
       *.ts) echo typescript ;;
       *.js|*.mjs|*.cjs) echo javascript ;;
+      *.rs) echo rust ;;
       *) echo unknown ;;
     esac
   }
@@ -215,6 +216,34 @@ while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
       fi
       if ! node --experimental-strip-types --check "$f" >&2; then
         echo "pre-push REFUSED: TypeScript syntax error in $f" >&2
+        exit 1
+      fi
+      continue
+    fi
+    # Rust (the estate's own DX / native layers). A .rs file cannot be parsed in isolation:
+    # crate siblings are reached via `use crate::`. The real check is `cargo check` on the
+    # nearest crate (the first ancestor holding a Cargo.toml). No cargo, or a crate that does
+    # not type-check, is a REFUSAL -- never a silent pass. A single cargo check per crate is
+    # cheap, and the rustc result is the deterministic verdict (§9 R3).
+    if [ "$kind" = "rust" ]; then
+      if ! command -v cargo >/dev/null 2>&1; then
+        echo "pre-push REFUSED: $f is Rust and cargo is not installed, so it cannot be checked" >&2
+        exit 1
+      fi
+      crate_dir="$(dirname "$f")"
+      manifest=""
+      while [ "$crate_dir" != "." ] && [ "$crate_dir" != "/" ]; do
+        if [ -f "$crate_dir/Cargo.toml" ]; then
+          manifest="$crate_dir/Cargo.toml"; break
+        fi
+        crate_dir="$(dirname "$crate_dir")"
+      done
+      if [ -z "$manifest" ]; then
+        echo "pre-push REFUSED: $f is Rust but sits outside any crate (no Cargo.toml above it)" >&2
+        exit 1
+      fi
+      if ! cargo check --quiet --manifest-path "$manifest" >&2; then
+        echo "pre-push REFUSED: cargo check failed for $manifest; fix: cargo check --manifest-path $manifest" >&2
         exit 1
       fi
       continue
