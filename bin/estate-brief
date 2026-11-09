@@ -11,6 +11,11 @@ line on stderr saying why. The key is read by name (MCP_GATEWAY_KEY, then the va
 It also carries the estate-state page (founder, 2026-10-29: "broadcast to everyone ... we are all
 on the same page"): the measured state of the laws, the specs, the providers, the claims and the
 lockdowns, so every session starts from the same picture and nobody repeats a question.
+
+A static, versioned IDP/Genesis architecture and infra placement packet is printed BEFORE
+the remote memory request. The packet never claims operational health from source code.
+--check-onboarding is the deterministic admission preflight; a failing read is UNKNOWN,
+not a fictitious green session.
 """
 
 from __future__ import annotations
@@ -65,6 +70,59 @@ def state_section() -> str:
     except Exception as exc:  # never block a session on the page
         print(f"estate-brief: no state page ({type(exc).__name__}: {str(exc)[:120]})", file=sys.stderr)
         return ""
+
+
+def _onboarding_module():
+    """Resolve the ONE checked-in pack from checkout or installed estate release."""
+    import importlib.util
+    from pathlib import Path
+
+    here = Path(__file__).resolve().parent.parent
+    paths = (
+        here / "platform/estate/onboarding/pack.py",
+        Path.home() / ".estate/runtime/idp/platform/estate/onboarding/pack.py",
+    )
+    for p in paths:
+        if not p.is_file():
+            continue
+        spec = importlib.util.spec_from_file_location("estate_onboarding_pack", p)
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    return None
+
+
+def architecture_section() -> str:
+    """Never silently omit foundation context when memory is offline."""
+    try:
+        pack = _onboarding_module()
+        if pack is not None:
+            return pack.render()
+    except Exception as exc:
+        return ("<estate-operating-model status=\"UNKNOWN\" privileged-admission=\"UNVERIFIED\">"
+                f"Onboarding pack unreadable ({type(exc).__name__}); read-only recovery only."
+                "</estate-operating-model>")
+    return ("<estate-operating-model status=\"UNKNOWN\" privileged-admission=\"UNVERIFIED\">"
+            "Onboarding pack absent; no claim of architecture compliance or deployment."
+            "</estate-operating-model>")
+
+
+def check_onboarding() -> int:
+    """Exit nonzero if no versioned architecture model is available. No network."""
+    try:
+        pack = _onboarding_module()
+        if pack is None:
+            print("ONBOARDING_UNKNOWN: pack absent", file=sys.stderr)
+            return 2
+        _, digest = pack.load()
+        print(f"ONBOARDING_SOURCE_OK sha256={digest} (NOT runtime admission)")
+        return 0
+    except Exception as exc:
+        print(f"ONBOARDING_UNKNOWN: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 2
+
 
 # The focus rules live in platform/estate/memory/focus.py, shared with bin/estate-memory-mcp:
 # the hook alone retired ghosts and the tools agents call mid-session did not (idp#6543).
@@ -121,8 +179,14 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--task", default="")
     ap.add_argument("--limit", type=int, default=8)
     ap.add_argument("--timeout", type=float, default=6)
+    ap.add_argument("--check-onboarding", action="store_true",
+                    help="validate versioned onboarding pack locally; never assert runtime health")
     args = ap.parse_args(argv)
 
+    if args.check_onboarding:
+        return check_onboarding()
+    # This static context must arrive on the first turn even if memory or vault is down.
+    print(architecture_section(), flush=True)
     secret = door.key()
     brief: dict = {}
     if not secret:
