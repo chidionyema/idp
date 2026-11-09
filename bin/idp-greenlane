@@ -107,7 +107,7 @@ def _tick_once(judge_only: bool = False) -> int:
     st = State.loads(b.load_state_text())
     eng = Engine(b, st)
     try:
-        landed_before = st.landed
+        batch_before = st.batch.id if st.batch else None
         eng.tick(judge_only=judge_only)
     finally:
         b.save_state_text(st.dumps())
@@ -124,7 +124,14 @@ def _tick_once(judge_only: bool = False) -> int:
     # them would dispatch a mutate tick per completion. Re-arm only when the judge actually
     # collected a verdict, so a landing is followed by the next batch within seconds (the
     # re-arm dispatch lands in the `greenlane` group and queues there like any other tick).
-    if not judge_only or st.landed > landed_before:
+    # Ferrari: only a real batch resolution warrants a new formation tick.
+    # A full tick that merely observes a held lane must NOT dispatch another
+    # full tick forever: on the measured outage those self-wakeups churned
+    # expensive privileged runners with zero change. Queue CI and lane pushes
+    # already provide native callbacks; a completed batch needs one full
+    # formation tick, even when the verdict was RED/bisected rather than landed.
+    resolved = bool(batch_before and (st.batch is None or st.batch.id != batch_before))
+    if resolved:
         rearm(st)
     return 0
 
