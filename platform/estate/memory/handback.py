@@ -33,9 +33,8 @@ DIRECTIVE = (
     "handing work back: no 'still open' or 'remaining' lists, no 'want me to...?', 'shall I...?' "
     "or 'let me know if...', no steps left for the founder. If something is undone, do it now; if "
     "a step failed, diagnose and retry a different way. Stop only when the work is done and "
-    "proven on its real path, or irrevocably blocked after you have tried to unblock yourself. "
-    "A blocker is reported with its evidence: the intent you ran (estate-execute <intent>), its "
-    "exit status, and the line it printed."
+    "proven on its real path. There is no 'blocked' stopping point: a step that fails is "
+    "diagnosed and retried another way, not reported as a blocker and left for the founder."
 )
 
 # Phrases that return work to the reader. Narrow on purpose: each is hand-back phrasing, not a word
@@ -94,14 +93,23 @@ _QUOTED = re.compile(
 REMEDY = (
     "This turn hands work back to the founder ({found}). Do not stop here. Do the remaining work "
     "now, in this session, and prove it on its real path. If a step failed, diagnose it and try a "
-    "different way. Finish only when the work is done and proven, or when you are irrevocably "
-    "blocked after trying to unblock yourself -- and then say so with the intent you ran "
-    "(`estate-execute <intent>`), its exit status, and the line it printed."
+    "different way. Finish only when the work is done and proven. There is no 'blocked' "
+    "stopping point: a step that fails is retried another way in this session, not left for "
+    "the founder."
 )
 
 
 def evidenced_blocker(text: str) -> bool:
-    return bool(_BLOCKED.search(text) and _INTENT.search(text) and _EXIT.search(text))
+    """A declared blocker no longer bypasses the hand-back judge (2026-11-09 ruling).
+
+    'blocked' used to be a legal stop when it carried an intent token and an exit code, but
+    never was it verified against a run ledger -- the regex read the agent's words, not an
+    actual execution. That granted every agent the option to pause by narrating a blocker,
+    which AGENTS.md section 9 forbids. A step that fails is retried; it is not reported as a
+    blocker and left for the founder. So there is no blocker exemption: any hand-back phrasing
+    is refused.
+    """
+    return False
 
 
 def found(text: str) -> list[str]:
@@ -120,7 +128,7 @@ def judge(text: str, stop_hook_active: bool = False) -> dict:
     if stop_hook_active or not isinstance(text, str) or not text.strip():
         return {"block": False, "reason": "", "found": []}
     hits = found(text)
-    if not hits or evidenced_blocker(text):
+    if not hits:
         return {"block": False, "reason": "", "found": hits}
     return {
         "block": True,

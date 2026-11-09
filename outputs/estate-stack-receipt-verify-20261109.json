@@ -1,0 +1,141 @@
+{
+  "controller": {
+    "contract_schema": "estate.stack-controller-contract.v1",
+    "contract_sha256": "36467609699c2db861410b6b8ec0e7238ea4652f01cf8835eca824cd20c5045e",
+    "version": "1.0.0"
+  },
+  "generated_at": "2026-11-09T04:01:10Z",
+  "intent": {
+    "claim": {
+      "agent": "estate-agent",
+      "fencing_token": "92e5bda56cc8b44cc2bd7c1a98e021666ce924cf66e64172f88c0d28396a504c",
+      "issue": 7826,
+      "repo": "chidionyema/idp"
+    },
+    "id": "stack-recovery-20261109",
+    "idempotency_key": "estate-stack-verify-20261109-0328-001",
+    "path": "platform/estate/stack-intents/stack-recovery-20261109.json",
+    "resolves": [
+      "estate-doors"
+    ],
+    "sha256": "d1d0c8349abd9bec58eb6db3462ca29123ea63a43386e9d88b2f42689799bd0c"
+  },
+  "lease": {
+    "dof_level": "L0 lease measured; open incidents=0",
+    "expires_at": "2026-11-09T05:46:01Z",
+    "fencing_token": "92e5bda56cc8b44cc2bd7c1a98e021666ce924cf66e64172f88c0d28396a504c",
+    "heartbeat": "2026-11-09T03:46:01Z"
+  },
+  "mode": "verify",
+  "payload_sha256": "e0a873ac8f14305ce113cec7ff5f64b56f9b13c69fad796fd0cf36029dae7dcc",
+  "receipt_id": "11207e895baec518be9fdae0e3ce3ada02876368cfb99d72248ebfe5adefd9eb",
+  "schema": "estate.stack-receipt.v1",
+  "signature": {
+    "algorithm": "ed25519",
+    "public_key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA95WDLXBZmr0SvEG/GoVbk28DYcX0/HHVdXXhMReaVB0=\n-----END PUBLIC KEY-----\n",
+    "value": "P987Hj473bLWa2gA4dQchlqu/SqpUYkKfLDMhINAm2+41YckXA3vbyGMZNGX4aqGj14QmZh44ftiEirk1H8YAg=="
+  },
+  "stages": [
+    {
+      "command": "claim idp#7826 fencing=92e5bda56cc8b44cc2bd7c1a98e021666ce924cf66e64172f88c0d28396a504c",
+      "exit": 0,
+      "line": "claim idp#7826 heartbeat=2026-11-09T03:46:01Z paths=.github/workflows/estate-stack-controller.yml,bin/estate-stack-controller,tests/test_estate_stack_controller.py,tests/bdd/estate_stack_controller.feature,catalog/schemas/estate.stack-intent.v1.schema.json,catalog/schemas/estate.stack-receipt.v1.schema.json,docs/keys/estate-agent.pub,platform/estate/stack-intents/stack-recovery-20261109.json,docs/",
+      "measured": true,
+      "sha256": "6377fab567dc854df3dc913c9a060f9164661194e89afcbe03af397645ae4eb3",
+      "stage": "gate",
+      "verdict": "MEASURED_OK"
+    },
+    {
+      "command": "OpenTofu plan through the estate primitive",
+      "exit": 2,
+      "line": "OpenTofu identity BLIND: BLIND oci     this is not an interactive terminal, so it is an agent or a script: run the platform from Actions (gh workflow run oke-check.yml -f mode=check|apply). The founder's own terminal renders the key with no flag.",
+      "measured": false,
+      "sha256": "71c300f1c18374b3e4301221a9660ca5cf6e5a48da7d35d1642db81910c11e93",
+      "stage": "plan",
+      "verdict": "BLIND"
+    },
+    {
+      "command": "bin/dof-gate --lease",
+      "exit": 0,
+      "line": "L0 lease measured; open incidents=0",
+      "measured": true,
+      "sha256": "6bff7b71687445087a407c1ae4f58b9fc65374708e0c9471383c10165ea9175d",
+      "stage": "lease",
+      "verdict": "MEASURED_OK"
+    },
+    {
+      "command": "budget gate $0.00 <= $150.00",
+      "exit": 0,
+      "line": "$0.00 of $150.00",
+      "measured": true,
+      "sha256": "e645895071572820e3ac3191ac379c368323c34cf502ceeafe8dc0414e8930c3",
+      "stage": "cost",
+      "verdict": "MEASURED_OK"
+    },
+    {
+      "command": "bin/idp-infra-inventory",
+      "exit": 0,
+      "line": "ok  the declared infrastructure fits the node budget and every workload is justified",
+      "measured": true,
+      "sha256": "8a42baca1b29e77a099ea51996946210f745bc326b1b26e901e21746a14d09c1",
+      "stage": "policy",
+      "verdict": "MEASURED_OK"
+    },
+    {
+      "command": "declared stack outputs",
+      "exit": 0,
+      "line": "{\"dsh_health_url\": \"https://chidionyema--estate-dsh-web-web.us-east.modal.run/healthz\", \"router_url\": \"https://llm.mumchimp.com\", \"substrate\": \"oracle-always-free\"}",
+      "measured": true,
+      "sha256": "bfeb6458dc9c9c96777a6ad73ea5309630e20c82b7b1b1ca83138f6ced6c5dfb",
+      "stage": "publish",
+      "verdict": "MEASURED_OK"
+    },
+    {
+      "command": "https://llm.mumchimp.com/v1/models",
+      "exit": 2,
+      "line": "router catalogue has 13 models; authenticated completion BLIND",
+      "measured": false,
+      "sha256": "f65f8eb0bb0c8b97f2189bec19839ab5070f337f91604a672e33d109cd2f2ca2",
+      "stage": "verify-router",
+      "verdict": "BLIND"
+    },
+    {
+      "command": "https://chidionyema--estate-dsh-web-web.us-east.modal.run/healthz",
+      "exit": 2,
+      "line": "DSH health and auth boundary measured; authenticated entry BLIND",
+      "measured": false,
+      "sha256": "a9dffbf12bc97ee90c1ac25da6af23cb77effbfd175156eae5e76383200cf5ac",
+      "stage": "verify-dsh",
+      "verdict": "BLIND"
+    },
+    {
+      "command": "bin/idp-estate-homes --json --no-file --service estate-doors",
+      "exit": 1,
+      "line": "estate-doors measured 1/14 healthy",
+      "measured": true,
+      "sha256": "a1e4cb08e48bc445eda13a412b8c09a1a9fc140ca9da5df023059cb7adf98cec",
+      "stage": "verify-doors",
+      "verdict": "FAILED"
+    },
+    {
+      "command": "claim issue 7826",
+      "exit": 0,
+      "line": "receipt 11207e895baec518be9fdae0e3ce3ada02876368cfb99d72248ebfe5adefd9eb published",
+      "measured": true,
+      "sha256": "13ff74e352a1749d12f4c484d4aa3348ff7273455f3ac2f127d0cf0f881d0ed1",
+      "stage": "publish-receipt",
+      "verdict": "MEASURED_OK"
+    }
+  ],
+  "verification": {
+    "doors": {
+      "measured_ok": 1,
+      "required": 14,
+      "total": 14
+    }
+  },
+  "yield": {
+    "reason": "plan=BLIND (OpenTofu identity BLIND: BLIND oci     this is not an interactive terminal, so it is an agent or a script: run the platform from Actions (gh workflow run oke-check.yml -f mode=check|apply). The founder's own terminal renders the key with no flag.); verify-router=BLIND (router catalogue has 13 models; authenticated completion BLIND); verify-dsh=BLIND (DSH health and auth boundary measured; authenticated entry BLIND); verify-doors=FAILED (estate-doors measured 1/14 healthy)",
+    "verdict": "OPEN"
+  }
+}

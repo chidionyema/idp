@@ -40,6 +40,13 @@ configMapGenerator:
       - active_memory.py
       # Every model told to drive the work to done, not hand it back (no_handback.py).
       - no_handback.py
+      # The instruction gate: no prompt ends in the void (platform/llm/instruction_gate.py).
+      # It is named in platform/llm/config.base.yaml's callbacks list, so the router that
+      # loads /etc/litellm/config.yaml imports it at start; this ConfigMap is what puts the
+      # file on that path (/etc/litellm/ceilings, on PYTHONPATH). A callback named in the
+      # config whose module does not exist in the image is a router that fails every request,
+      # so the module ships in the same pull request as the config line that names it.
+      - instruction_gate.py
   # PoBR enforcement callback: pobr_enforce.py + gate modules, mounted at /etc/litellm/callbacks.
   # PYTHONPATH is patched below to include this path so the router imports pobr_enforce.PoBREnforcer.
   # Keys are expected at /etc/litellm/keys/agent.pub.pem (mounted separately or baked into the image).

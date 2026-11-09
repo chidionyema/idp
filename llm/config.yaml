@@ -853,7 +853,14 @@ litellm_settings:
   # efficiency_gateway runs first so the ceiling measures the request it actually sends. On the
   # claude-* lane it is append-stable (prompt cache intact) and records per call what each step
   # did and what Anthropic billed: `bin/estate-efficiency-report --follow`.
-  callbacks: ["otel", "efficiency_gateway.proxy_handler_instance", "request_ceiling.proxy_handler_instance", "anthropic_beta_passthrough.proxy_handler_instance", "lane_registry.proxy_handler_instance", "route_table.proxy_handler_instance"]
+  # No prompt ends in the void (platform/llm/instruction_gate.py): a chat request whose
+  # metadata carries no instruction_id is refused at the front door, because the instruction
+  # ledger (catalog/census/instruction.py) can only link a prompt that names an instruction.
+  # The laptop router names it here for the same reason the cluster config names it there:
+  # one rule, both routers, so a prompt cannot be linkable on one surface and lost on another.
+  # The module is copied into the staged modules directory by bin/litellm-local's MODULES list,
+  # and that directory is the laptop router's PYTHONPATH.
+  callbacks: ["otel", "efficiency_gateway.proxy_handler_instance", "request_ceiling.proxy_handler_instance", "anthropic_beta_passthrough.proxy_handler_instance", "lane_registry.proxy_handler_instance", "route_table.proxy_handler_instance", "instruction_gate.proxy_handler_instance"]
   drop_params: true
   # Never log the prompt or the completion body. Spans carry model, latency, tokens and
   # cost — which is what an audit trail needs — and not the content of a customer's
