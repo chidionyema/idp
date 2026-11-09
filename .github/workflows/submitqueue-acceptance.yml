@@ -18,3 +18,15 @@ jobs:
       - run: python3 -m pip install --quiet pytest==8.4.2
       - run: python3 -m compileall -q greenlane/ferrari.py greenlane/engine.py greenlane/github.py greenlane/common_failure_reaction.py bin/idp-greenlane-reactor tests/test_submitqueue_preflight.py platform/submitqueue/materialize.py platform/submitqueue/jev_plan.py tests/test_submitqueue_materialize.py tests/test_submitqueue_jev_plan.py
       - run: python3 -m pytest -q tests/test_submitqueue_preflight.py tests/test_submitqueue_common_failure_reaction.py tests/test_submitqueue_materialize.py tests/test_submitqueue_jev_plan.py tests/test_submitqueue_founder_brief.py tests/test_submitqueue_tick_economy.py tests/test_greenlane_rearms_a_lost_lane.py tests/test_greenlane_brief.py tests/test_greenlane_spends_no_cycle_twice.py tests/test_a_retry_waits_its_turn_in_the_queue.py tests/test_dof_gate.py
+
+      - name: Generate canonical release formatting evidence (read-only GitHub token)
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet ruff==0.15.18
+          files=("greenlane/brief.py" "greenlane/common_failure_reaction.py" "greenlane/engine.py" "greenlane/ferrari.py" "platform/submitqueue/jev_plan.py" "platform/submitqueue/materialize.py" "tests/test_dof_gate.py" "tests/test_greenlane_founder_assurance.py" "tests/test_submitqueue_common_failure_reaction.py" "tests/test_submitqueue_founder_brief.py" "tests/test_submitqueue_jev_plan.py" "tests/test_submitqueue_materialize.py" "tests/test_submitqueue_preflight.py" "tests/test_submitqueue_tick_economy.py")
+          ruff format "${files[@]}"
+          for file in "${files[@]}"; do
+            printf 'FERRARI_FORMATTED_BEGIN:%s\n' "$file"
+            base64 -w0 "$file"
+            printf '\nFERRARI_FORMATTED_END:%s\n' "$file"
+          done
