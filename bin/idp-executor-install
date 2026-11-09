@@ -149,7 +149,8 @@ def status() -> int:
         say(f"system socket: {SOCKET} mode {mode} owner {SOCKET.stat().st_uid}")
     # The question this whole file exists to answer: can the AGENT rewrite what answers?
     reachable = []
-    for path in (PREFIX / "daemon.py", PREFIX / "estate_executor.py", PLIST_DEST):
+    for path in (PREFIX / "daemon.py", PREFIX / "estate_executor.py",
+                 PREFIX / "fleet_opa.py", PLIST_DEST):
         if path.exists() and path.stat().st_uid == os.getuid():
             reachable.append(str(path))
     if reachable and not is_root():
@@ -160,7 +161,7 @@ def status() -> int:
         return 1
     if installed and has_plist:
         say(
-            "boundary:      MEASURED_OK   neither the executor copy nor its plist is owned by the agent"
+            "boundary:      MEASURED_OK   executor, OPA guard and plist are not agent-owned"
         )
         return 0
     say(
