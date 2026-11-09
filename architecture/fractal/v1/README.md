@@ -6,7 +6,7 @@ The architecture is **one shared component boundary**, not one repository layout
 
 A component declares an ID, implementation version, owner, lifecycle stage, provided capability + interface version + interface file, required capabilities + compatible versions, permitted effects, state semantics and contract tests. Stateful components declare a state contract. The checker flags duplicate IDs, missing contracts, unversioned dependencies, unauthorised effect names and locally resolvable dependency cycles.
 
-Run `python3 bin/fractal-shape scan --root .` and `python3 -m unittest tests.test_fractal_shape -v`.
+For a genuinely new capability, start from a real interface contract, not a blank repository: `python3 bin/fractal-new-component --id memory/retrieval/lexical --capability memory/retrieval --owner memory-team --contract path/to/retrieval.interface.json`. The scaffold writes a versioned `component.json`, local contract and source/test boundaries, with `stage: experimental`. It deliberately does not manufacture a fake implementation or passing test.\n\nRun `python3 bin/fractal-shape scan --root .` and `python3 -m unittest discover -s tests -p test_fractal_shape.py -v`.
 
 The existing `bin/capability-index` and `bin/registry-gate` remain the **single discovery and verification system of record**. This profile is an authored component contract to be projected into that registry, **not a second catalogue**. This initial checker establishes code-shape conformance; it does *not* prove a component operates in production, nor validate external contracts against a remote registry.
 
