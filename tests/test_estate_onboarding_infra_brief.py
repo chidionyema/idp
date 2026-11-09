@@ -68,6 +68,9 @@ def test_real_installer_copies_pack_and_model_with_brief():
     assert "bin/estate-brief" in files
     assert "platform/estate/onboarding/pack.py" in files
     assert "platform/estate/onboarding/operating_model.json" in files
+    assert "docs/decisions/0034-workloads-are-placed-by-the-free-tier-not-by-the-cluster.md" in files
+    assert "docs/decisions/0048-the-estate-runs-on-one-node-with-an-admission-list.md" in files
+    assert "docs/onboarding/estate-idp-genesis-and-infrastructure.md" in files
 
 
 def test_memory_unavailable_is_explicit_and_refuses_mission_admission(brief, monkeypatch, capsys):
@@ -124,3 +127,22 @@ def test_versioned_model_lists_no_agent_provisioning_rights():
     assert "Agents are governed subjects" in data["authority"]["agents"]
     assert data["session_contract"]["missing_or_conflicting"].startswith("UNKNOWN")
     assert "AGENTS.md" in data["sources"]
+
+
+def test_stale_or_missing_authoritative_adr_blocks_pack_admission(pack, tmp_path):
+    model_file = tmp_path / "platform/estate/onboarding/operating_model.json"
+    model_file.parent.mkdir(parents=True)
+    model_file.write_bytes(MODEL.read_bytes())
+    meta = json.loads(MODEL.read_text())
+    for source in meta["canonical_source_blobs"]:
+        source_file = tmp_path / source
+        source_file.parent.mkdir(parents=True, exist_ok=True)
+        source_file.write_bytes((ROOT / source).read_bytes())
+    assert pack.load(model_file)[0]["schema_version"] == "estate.onboarding.v1"
+    first = next(iter(meta["canonical_source_blobs"]))
+    (tmp_path / first).write_text("obsolete infrastructure assumption")
+    with pytest.raises(pack.OnboardingUnavailable, match="changed"):
+        pack.load(model_file)
+    (tmp_path / first).unlink()
+    with pytest.raises(pack.OnboardingUnavailable, match="unavailable"):
+        pack.load(model_file)
