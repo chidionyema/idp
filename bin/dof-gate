@@ -132,6 +132,16 @@ def control_mode(registry: dict) -> str:
     return mode if mode in ("enforced", "observe", "disabled") else "enforced"
 
 
+def active_incidents(registry: dict, incidents: list) -> list:
+    """Explicitly scoped exemptions never turn an unreadable inventory into permission."""
+    if any(i.get("id") == "dof-probe" or i.get("issue") is None for i in incidents):
+        return incidents
+    chosen = registry.get("control", {}).get("suspendedComponents", [])
+    if not isinstance(chosen, list) or any(not isinstance(v, str) for v in chosen):
+        return incidents
+    return [i for i in incidents if i["id"] not in chosen]
+
+
 def suspended_result(registry: dict, lease: bool = False) -> dict:
     """Never represent a disabled control as healthy or fully enforced."""
     control = registry.get("control") or {}
@@ -156,7 +166,7 @@ def main(argv: list) -> int:
         if control_mode(registry) == "disabled":
             print(json.dumps(suspended_result(registry, lease=True), indent=2))
             return 0
-        incidents = open_incidents(registry)
+        incidents = active_incidents(registry, open_incidents(registry))
         lease = {
             "repo": REPO, "level": "L2" if incidents else "L0",
             "lease": f"repair-only: Genesis-Resolves: {incidents[0]['id']}" if incidents else "full",
@@ -169,7 +179,7 @@ def main(argv: list) -> int:
     if control_mode(registry) == "disabled":
         print(json.dumps(suspended_result(registry), indent=2))
         return 0
-    incidents = open_incidents(registry)
+    incidents = active_incidents(registry, open_incidents(registry))
     decisions = []
     for sha in [s for s in git("rev-list", "--reverse", f"{base}..{head}").splitlines() if s]:
         if bootstrap:
