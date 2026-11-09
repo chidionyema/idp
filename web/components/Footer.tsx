@@ -11,7 +11,7 @@ export function Footer() {
           <div style={{ gridColumn: "span 2", maxWidth: "280px" }}>
             <Logo tone="light" />
             <p style={{ marginTop: "12px", fontSize: "13px", lineHeight: 1.65, color: "var(--on-ink)", maxWidth: "none" }}>{site.tagline}</p>
-            <a href="mailto:hello@meridian.ai" className="footer-link-muted" style={{ display: "inline-block", marginTop: "20px" }}>hello@meridian.ai</a>
+            <Link href="/contact" className="footer-link-muted" style={{ display: "inline-block", marginTop: "20px" }}>Discuss a project</Link>
           </div>
           <div>
             <p className="footer-heading">Work</p>
@@ -30,7 +30,7 @@ export function Footer() {
       <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
         <div style={{ maxWidth: "1152px", margin: "0 auto", padding: "20px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
           <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--on-ink-muted)" }}>© {year} {site.name}</p>
-          <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--on-ink-muted)" }}>AI infrastructure consulting</p>
+          <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--on-ink-muted)" }}>AI laboratory and product company</p>
         </div>
       </div>
     </footer>
