@@ -31,14 +31,14 @@ const dmMono = localFont({
 // measured 9.1 s cold and 1.4-2.9 s on a repeat from the same laptop, on a 300m CPU pod. A value
 // known at build time keeps the pages static, which is what a brochure site wants; the canonical
 // link, the OpenGraph url and every relative OG image resolve against it.
-const SITE_URL = process.env.MERDIAN_SITE_URL ?? process.env.MERIAN_SITE_URL ?? process.env.MERIDIAN_SITE_URL ?? "http://localhost:3000";
+const SITE_URL = process.env.MERDIAN_SITE_URL ?? process.env.MERIAN_SITE_URL ?? process.env.MERIDIAN_SITE_URL ?? "https://meridian-intelligence-uk.vercel.app";
 
 export function generateMetadata(): Metadata {
   const base = new URL(SITE_URL);
   return {
     metadataBase: base,
     title: { default: "Merdian Intelligence", template: "%s | Merdian Intelligence" },
-    description: "Applied AI research, prototypes and products for organisations and individuals.",
+    description: "Independent AI laboratory, technology consultancy and venture builder. Research, engineering and commercially useful AI systems.",
     openGraph: { type: "website", locale: "en_US", url: base.href, siteName: "Merdian Intelligence", images: [{ url: "/opengraph-image", width: 1200, height: 630 }] },
     twitter: { card: "summary_large_image" },
     robots: { index: true, follow: true },
