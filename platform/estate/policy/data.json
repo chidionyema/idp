@@ -1,0 +1,7 @@
+{
+  "fleet": {
+    "schema_version": "fleet.v1",
+    "active_revision": "baseline-source-only-not-deployed",
+    "denials": []
+  }
+}
