@@ -134,15 +134,20 @@ class FounderAssuranceTests(unittest.TestCase):
         # branch. A privileged lane-push event is therefore a code-injection
         # path even when it initially checks out main.
         self.assertNotIn("  push:\n    branches: [lane/**", workflow)
-        self.assertIn("  workflow_run:\n    workflows: [no-harness-folders]", workflow)
+        self.assertIn("  workflow_run:", workflow)
+        self.assertIn("workflows: [no-harness-folders, ci]", workflow)
+        self.assertIn("startsWith(github.event.workflow_run.head_branch || '', 'queue/')", workflow)
+        self.assertIn("  check_run:", workflow)
+        self.assertIn("  issues:", workflow)
         self.assertIn("github.event.workflow_run.head_branch", workflow)
         self.assertIn("          ref: main", workflow)
         self.assertNotIn("git reset --hard", workflow)
         self.assertNotIn("git checkout", workflow)
         self.assertIn('trusted_main_sha="$(git rev-parse HEAD)"', workflow)
-        # The fallback schedule and explicit founder dispatch must survive
-        # a malicious or broken lane-side wakeup.
-        self.assertIn('cron: "*/15 * * * *"', workflow)
+        # Both lane-arrival and queue CI provide independent native triggers;
+        # the founder forbids schedule-driven queue polling. Explicit recovery
+        # dispatch survives a lost event, without executing untrusted YAML.
+        self.assertNotIn('cron:', workflow)
         self.assertIn("  workflow_dispatch:", workflow)
 
     def test_event_filter_is_before_app_token_in_live_workflow(self):
