@@ -49,6 +49,28 @@ def load(path: Path = MODEL) -> tuple[dict, str]:
         src in model["sources"] for src in REQUIRED_SOURCES
     ):
         raise OnboardingUnavailable("onboarding model missing authoritative source pointers")
+    # The context describes the CURRENT canonical ADRs. Pin their exact Git
+    # blob identities and ship those source copies through the existing
+    # installer, so a changed or missing ADR yields UNKNOWN, never stale
+    # architectural certainty. Runtime *health* still needs independent probes.
+    blobs = model.get("canonical_source_blobs")
+    if not isinstance(blobs, dict) or not all(
+        isinstance(blobs.get(src), str) and len(blobs[src]) == 40
+        for src in REQUIRED_SOURCES[:2]
+    ):
+        raise OnboardingUnavailable("pinned canonical ADR blobs missing")
+    root = path.resolve().parents[3]
+    for source, expected in blobs.items():
+        if not isinstance(source, str) or not source.startswith("docs/decisions/"):
+            raise OnboardingUnavailable("invalid pinned ADR source")
+        source_path = root / source
+        try:
+            data = source_path.read_bytes()
+        except OSError as exc:
+            raise OnboardingUnavailable("pinned ADR source unavailable") from exc
+        actual = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\\0" + data).hexdigest()
+        if actual != expected:
+            raise OnboardingUnavailable("pinned ADR changed without refreshing onboarding pack")
     if model["infrastructure"].get("live_verdict") != "UNKNOWN until fresh independent caller/runtime probe":
         raise OnboardingUnavailable("onboarding model must not assert live health from source")
     if "SOURCE_CANDIDATE_NOT_DEPLOYED" != model.get("fleet_policy", {}).get("state"):
@@ -81,6 +103,7 @@ def render(path: Path = MODEL) -> str:
         "SOURCE OF CURRENT RECOVERY: " + infra["recovery_incident"],
         "FLEET POLICY: " + model["fleet_policy"]["state"] + "; " + model["fleet_policy"]["activation"],
         "REQUIRED: " + model["session_contract"]["first_turn"],
+        "FULL PACK: docs/onboarding/estate-idp-genesis-and-infrastructure.md (shipped from pinned repository).",
         "MISSING OR CONFLICTING: " + model["session_contract"]["missing_or_conflicting"],
         "This is trusted *source context* only; policy effect doors must independently enforce action authority.",
         "</estate-operating-model>",
