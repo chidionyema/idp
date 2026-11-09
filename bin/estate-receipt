@@ -4,7 +4,7 @@
     estate-receipt -- python3 bin/estate-law-gate
     estate-receipt --json -- python3 bin/estate-law-gate
     estate-receipt --save -- python3 bin/estate-law-gate
-    estate-receipt --verify ~/.estate/state/receipts/<sha256>.json
+    estate-receipt --verify ~/.estate/state/receipts/<sha256>.json  # LOCAL consistency, NEVER executes
     estate-receipt --has-receipt --file /path/to/report.md
     estate-receipt --self-test
 
@@ -13,6 +13,8 @@ report without proof is blocked". So the currency of a report is a receipt: the 
 exit status, the line it printed, and the sha256 of the output, re-runnable by anyone.
 
 Exit 0 when the command passed, the same status as the command when it failed, 2 on a bad call.
+Historical --verify checks local integrity only; it is not a cryptographic signature check.
+Independent Aevum validation requires a separately pinned public key.
 HARNESS AGNOSTIC: it runs a command and prints a receipt; no runtime is named here.
 """
 
@@ -52,12 +54,41 @@ def _self_test() -> int:
     """The gate this launcher owes the founder: it must be able to fail."""
     good = receipt.run_receipt(["true"], cwd=os.getcwd())
     bad = receipt.run_receipt(["false"], cwd=os.getcwd())
+    # Regression: the old verifier replayed the original command, including writes.
+    # This self-test is a known-bad mutating probe and MUST stay at one execution.
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory(prefix="estate-receipt-safety-") as folder:
+        marker = Path(folder) / "mutations"
+        once = receipt.run_receipt(
+            [
+                sys.executable,
+                "-c",
+                "from pathlib import Path; p=Path('mutations'); "
+                "p.write_text(p.read_text()+'x' if p.exists() else 'x')",
+            ],
+            cwd=folder,
+        )
+        consistent = receipt.verify(once)
+        checked_again = receipt.verify(once)
+        no_replay = marker.read_text() == "x"
+        poisoned = dict(once)
+        poisoned["exit"] = 42
+        rejects_tamper = not receipt.verify(poisoned)["ok"]
+        legacy = dict(once)
+        legacy.pop("observation_sha256", None)
+        rejects_legacy = not receipt.verify(legacy)["ok"]
     checks = [
         good["exit"] == 0,
         bad["exit"] != 0,
         len(good["sha256"]) == 64,
         bool(good["line"]) or good["exit"] == 0,
         receipt.verify(good)["ok"],
+        consistent["ok"] and checked_again["ok"] and no_replay,
+        rejects_tamper,
+        rejects_legacy,
+        not consistent["authenticated"] and not consistent["replayed"],
         receipt.has_receipt(receipt.format_receipt(good)),
         not receipt.has_receipt("it is all fine, trust me"),
         not receipt.has_receipt("receipt"),
@@ -71,7 +102,11 @@ def _self_test() -> int:
             "a failing command keeps its status",
             "the receipt carries a sha256",
             "the receipt carries the line it printed",
-            "the receipt re-verifies",
+            "the receipt is locally consistent without replay",
+            "verification never executes a mutating command",
+            "tampered observation is refused",
+            "legacy unattested observation is refused",
+            "local verification does not claim Aevum authenticity",
             "a formatted receipt is recognised",
             "narration is not a receipt",
             "the bare word 'receipt' is not a receipt",
@@ -116,8 +151,10 @@ def main(argv: list[str]) -> int:
             print(json.dumps(result, indent=2, default=str))
         else:
             print(
-                f"{'ok  ' if result['ok'] else 'FAIL'}  receipt  {path}: "
-                f"exit {stored.get('exit')} sha256 {stored.get('sha256')}"
+                f"{'LOCAL-ONLY' if result['ok'] else 'FAIL'}  receipt  {path}: "
+                f"exit {stored.get('exit')} sha256 {stored.get('sha256')}; "
+                f"replayed={result['replayed']} authenticated={result['authenticated']}; "
+                f"{result['reason']}"
             )
         return 0 if result["ok"] else 1
 
