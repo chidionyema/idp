@@ -1,0 +1,39 @@
+# No polling. A completed trusted Greenlane run causes one reaction decision.
+# This uses canonical refs/greenlane/state and existing incident #7800 only.
+name: greenlane-common-failure-reaction
+on:
+  workflow_run:
+    workflows: [greenlane]
+    types: [completed]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: greenlane-common-failure-reaction
+  cancel-in-progress: false
+jobs:
+  react:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+      - name: Read exact Greenlane state under canonical ref
+        run: |
+          set -euo pipefail
+          git fetch -q origin +refs/greenlane/state:refs/greenlane/state
+          git show refs/greenlane/state:state.json > "$RUNNER_TEMP/greenlane-state.json"
+          test -s "$RUNNER_TEMP/greenlane-state.json"
+      - name: One event, one fingerprint, one incident owner
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          policy_sha="$(git rev-parse HEAD:catalog/dof-registry.json)"
+          python3 bin/idp-greenlane-reactor --state "$RUNNER_TEMP/greenlane-state.json" \
+            --policy-sha "$policy_sha" --repo "$GH_REPO" --apply
