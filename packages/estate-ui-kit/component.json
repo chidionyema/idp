@@ -1,0 +1,29 @@
+{
+  "schema": "estate.fractal.component/v1",
+  "id": "ui/estate-kit",
+  "version": "0.2.0",
+  "kind": "composite",
+  "owner": "platform-ui",
+  "stage": "candidate",
+  "source": "src",
+  "provides": [
+    {
+      "capability": "ui/estate-kit",
+      "version": "0.2.0",
+      "interface": "package.json"
+    }
+  ],
+  "requires": [
+    {
+      "capability": "ui/react",
+      "version": "^19.0.0"
+    }
+  ],
+  "effects": [
+    "none"
+  ],
+  "state": "stateless",
+  "verification": {
+    "contract_tests": "guards"
+  }
+}
