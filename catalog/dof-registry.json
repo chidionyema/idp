@@ -68,6 +68,6 @@
     "reason": "Temporarily disable the blanket incident-driven DoF freeze to unblock legitimate estate delivery; preserve all other independent authorization, CI, provenance, signing and deployment controls.",
     "reenableOnlyAfter": "independently reconciled backlog of accepted tickets, branches, worktrees and reviewed changes, verified against main and runtime yield",
     "lastVerifiedBacklog": null,
-    "status": "CANDIDATE_NOT_ACTIVE_UNTIL_MERGED"
+    "suspendedComponents": []
   }
 }
