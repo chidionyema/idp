@@ -344,7 +344,7 @@
  .mi-qa-empty>p{font-size:15px}
  .mi-page-hero h1{font-size:clamp(34px,9vw,52px);overflow-wrap:anywhere;line-height:1.06}
  .mi-page-hero-bottom p{font-size:16px}
- .mi-research-qa.mi-section{padding:60px 0}
+ .mi-research-section{padding:60px 0}
  .mi-footer-top{padding:55px 0 38px;gap:36px}
  .mi-footer-top .logo-word{font-size:24px}
  .mi-footer-top p{font-size:15px;line-height:1.7;max-width:34ch}
