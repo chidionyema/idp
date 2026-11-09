@@ -16,6 +16,7 @@ lockdowns, so every session starts from the same picture and nobody repeats a qu
 from __future__ import annotations
 
 import argparse
+import pathlib
 import os
 import sys
 
@@ -149,6 +150,22 @@ def main(argv: list[str]) -> int:
     text = render(brief)
     if text:
         print(text)
+    # The red lanes this session is walking into. A lane that went red is a ticket
+    # (.github/workflows/lane-feedback.yml opens it), so this reads tickets, not the pipeline:
+    # one call, ten-second ceiling, and silence when nothing is red.
+    try:
+        import subprocess as _sp
+
+        _p = _sp.run(  # noqa: S603 - fixed argv, never a shell string
+            [str(pathlib.Path(__file__).resolve().parent / "lane-red")],
+            capture_output=True,
+            text=True,
+            timeout=12,
+        )
+        if _p.stdout.strip():
+            print(_p.stdout.strip())
+    except Exception:  # a brief never blocks a session
+        pass
     return 0
 
 

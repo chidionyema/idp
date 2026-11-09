@@ -6,7 +6,7 @@
     "intent": 118,
     "layer": 253,
     "service": 121,
-    "tool": 476,
+    "tool": 478,
     "workflow": 95
   },
   "records": [
@@ -27907,6 +27907,10 @@
         {
           "id": "cap:tool/estate-memory-mcp",
           "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/lane-red",
+          "edge": "invokes"
         }
       ],
       "metrics": [],
@@ -49616,6 +49620,108 @@
           "edge": "invokes"
         }
       ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/lane-recovery",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "lane-recovery: how long a branch took to go from red back to green.",
+      "contract": {
+        "inputs": [
+          "--branch",
+          "--json",
+          "--limit",
+          "--repo",
+          "--workflow"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/lane-recovery",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/lane-red",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env bash",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-brief"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/lane-red",
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",

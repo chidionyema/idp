@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# lane-red -- the red lanes an agent should know about before it starts.
+#
+# A session that arrives during a red lane spends its first minutes rediscovering it. One issue
+# per branch is opened by .github/workflows/lane-feedback.yml, so this reads the tickets rather
+# than the pipeline: one API call, newest first, and it prints nothing when the estate is quiet.
+set -uo pipefail
+export PATH="$HOME/.local/bin:$PATH"
+repo="${1:-chidionyema/idp}"
+out=$(timeout 8 gh issue list --repo "$repo" --state open --search '"[lane]" in:title' \
+  --limit 10 --json number,title,updatedAt \
+  --jq '.[]|"#\(.number)  \(.updatedAt[0:16])  \(.title)"' 2>/dev/null || true)
+[ -n "$out" ] && printf 'red lanes (open tickets, newest first):\n%s\n' "$out"
