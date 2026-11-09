@@ -6,6 +6,12 @@ on:
     workflows: [greenlane]
     types: [completed]
   workflow_dispatch: {}
+  push:
+    paths:
+      - 'greenlane/common_failure_reaction.py'
+      - 'bin/idp-greenlane-reactor'
+      - 'tests/test_greenlane_common_failure_reaction.py'
+      - '.github/workflows/greenlane-common-failure-reaction.yml'
 permissions:
   contents: read
   issues: write
@@ -13,6 +19,16 @@ concurrency:
   group: greenlane-common-failure-reaction
   cancel-in-progress: false
 jobs:
+  acceptance:
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run no-network adversarial reactor tests
+        run: python3 -W error -m unittest discover -s tests -p 'test_greenlane_common_failure_reaction.py' -v
   react:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-24.04

@@ -57237,7 +57237,8 @@
       "contract": {
         "inputs": [
           "workflow_run",
-          "workflow_dispatch"
+          "workflow_dispatch",
+          "push"
         ],
         "outputs": [
           "job verdicts",
