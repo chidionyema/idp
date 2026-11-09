@@ -48,6 +48,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  issues: read  # trusted DoF preflight observes canonical incidents with runner token
   pull-requests: write
   statuses: write
   checks: write
