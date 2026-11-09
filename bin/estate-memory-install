@@ -122,6 +122,10 @@ def home_files() -> list[str]:
         f"{memory}/handback.py",
         f"{memory}/plan.py",
         f"{memory}/runtimes.json",
+        # The static IDP/Genesis architecture packet is part of the same
+        # installed session-start release, not an agent-side optional file.
+        "platform/estate/onboarding/pack.py",
+        "platform/estate/onboarding/operating_model.json",
         *links,
         *tools,
     ]
