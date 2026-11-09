@@ -8,43 +8,25 @@ import { Logo } from "@/components/Logo";
 export function Nav() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const links = site.nav.filter((item) => item.href !== "/contact");
   return (
-    <header style={{ position: "sticky", top: 0, zIndex: 50, borderBottom: "1px solid var(--rule)", background: "rgba(250,250,248,0.95)", backdropFilter: "blur(8px)" }}>
-      <nav style={{ display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: "1152px", margin: "0 auto", padding: "16px 24px" }}>
+    <header className="mi-site-header">
+      <nav className="mi-site-nav" aria-label="Main navigation">
         <Logo />
-        <ul style={{ display: "flex", alignItems: "center", gap: "32px", listStyle: "none" }} className="nav-links">
-          {site.nav.map((item) => (
-            <li key={item.href}>
-              <Link href={item.href} className="nav-link" style={{ fontWeight: pathname === item.href ? 500 : 400, color: pathname === item.href ? "var(--accent)" : "var(--ink-3)" }}>
-                {item.label}
-              </Link>
-            </li>
+        <ul className="mi-site-links">
+          {links.map((item) => (
+            <li key={item.href}><Link href={item.href} aria-current={pathname === item.href ? "page" : undefined}>{item.label}</Link></li>
           ))}
-          <li><Link href="/demo" className="nav-link" style={{ color: pathname === "/demo" ? "var(--accent)" : "var(--ink-3)", fontWeight: pathname === "/demo" ? 500 : 400 }}>Live Demo</Link></li>
-          <li><Link href="/tools/cost-calculator" className="nav-link" style={{ color: pathname === "/tools/cost-calculator" ? "var(--accent)" : "var(--ink-3)", fontWeight: pathname === "/tools/cost-calculator" ? 500 : 400 }}>Cost Calculator</Link></li>
-          <li><Link href="/tools/trace-explorer" className="nav-link" style={{ color: pathname === "/tools/trace-explorer" ? "var(--accent)" : "var(--ink-3)", fontWeight: pathname === "/tools/trace-explorer" ? 500 : 400 }}>Trace Explorer</Link></li>
-          <li><Link href="/contact" className="btn-primary" style={{ padding: "8px 16px", fontSize: "12px" }}>Talk to us</Link></li>
         </ul>
-        <button onClick={() => setOpen((o) => !o)} className="nav-mobile" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-3)" }} aria-label="Toggle menu">
-          {open ? (
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><line x1="4" y1="4" x2="16" y2="16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><line x1="16" y1="4" x2="4" y2="16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-          ) : (
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><line x1="3" y1="6" x2="17" y2="6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><line x1="3" y1="10" x2="17" y2="10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><line x1="3" y1="14" x2="17" y2="14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-          )}
+        <Link href="/contact" className="mi-site-contact">Start a conversation <span aria-hidden="true">↗</span></Link>
+        <button type="button" className="mi-site-toggle" aria-label={open ? "Close navigation" : "Open navigation"} aria-expanded={open} aria-controls="mi-site-mobile-nav" onClick={() => setOpen((value) => !value)}>
+          {open ? "Close" : "Menu"} <span aria-hidden="true">{open ? "×" : "+"}</span>
         </button>
       </nav>
       {open && (
-        <div style={{ borderTop: "1px solid var(--rule)", padding: "16px 24px" }} className="nav-mobile">
-          <ul style={{ display: "flex", flexDirection: "column", gap: "16px", listStyle: "none" }}>
-            {site.nav.map((item) => (
-              <li key={item.href}><Link href={item.href} onClick={() => setOpen(false)} className="nav-link" style={{ color: pathname === item.href ? "var(--accent)" : "var(--ink-3)" }}>{item.label}</Link></li>
-            ))}
-            {[{ href: "/demo", label: "Live Demo" }, { href: "/tools/cost-calculator", label: "Cost Calculator" }, { href: "/tools/trace-explorer", label: "Trace Explorer" }].map((t) => (
-              <li key={t.href}><Link href={t.href} onClick={() => setOpen(false)} className="nav-link" style={{ color: pathname === t.href ? "var(--accent)" : "var(--ink-3)" }}>{t.label}</Link></li>
-            ))}
-            <li><Link href="/contact" onClick={() => setOpen(false)} className="btn-primary" style={{ alignSelf: "flex-start", padding: "8px 16px", fontSize: "12px" }}>Talk to us</Link></li>
-          </ul>
-        </div>
+        <nav id="mi-site-mobile-nav" className="mi-site-mobile" aria-label="Mobile navigation">
+          {[...links, { href: "/contact", label: "Contact" }].map((item) => <Link key={item.href} href={item.href} onClick={() => setOpen(false)}>{item.label} <span aria-hidden="true">↗</span></Link>)}
+        </nav>
       )}
     </header>
   );
