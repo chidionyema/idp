@@ -1,0 +1,17 @@
+{
+  "upstream": "https://github.com/uber/submitqueue",
+  "license": "Apache-2.0",
+  "revision": "694373f380bb405d562dd359f27832d6bdb120f0",
+  "integration": "upstream-service-not-reimplementation",
+  "buildBudget": 4,
+  "conflictAnalyzer": "pathoverlap-by-directory",
+  "admission": "existing-idp-trusted-promotion",
+  "release": "shadow-until-exact-SHA-and-protected-main-contract-proved",
+  "outstanding": [
+    "upstream-GitHub-provider-requires-pull-request-not-lane-branch",
+    "upstream-runway-does-direct-push-not-IdP-PR-merge",
+    "upstream-GitHub-Actions-builder-polls-status-violating-event-only-mandate",
+    "native-GitHub-required-checks-have-nine-contexts"
+  ],
+  "proof": "tests/test_submitqueue_preflight.py"
+}
