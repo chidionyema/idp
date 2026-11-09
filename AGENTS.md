@@ -15,6 +15,18 @@ Canonical source and executable lab: `chidionyema/argon` main at `docs/decisions
 
 ---
 
+## P0 architectural direction — Modular Fractal Engineering (founder, 2026-11-09)
+
+**Strategic architecture decision, applicable across every model and engineering surface.** The estate must stop producing incompatible, overlapping implementations with no stable boundaries. A 20+ model fleet operates as ONE engineering organisation: shared, versioned and recursively composable capability contracts, while allowing language-appropriate private implementation structures. The component, not the repo, is the reusable unit. A composite must expose the same outward contract shape as a primitive. This is a risk-reduction engineering decision, not a new product, registry, agent persona or permission to trigger a big-bang rewrite.
+
+**Default decision order:** discover what the estate already owns and what is proven; reuse unchanged; adapt at the boundary; refactor minimally; build new only for a demonstrated capability gap. Each reusable module must have a stable identity and owner, explicit versioned provided/required interfaces, permissions/effects, state and migration semantics, contract verification and independently observed operating evidence. Version and review public interface, authority, dependency topology and persistent-state changes; ordinary private implementation changes remain fast. Introduce an independent impact/review owner for high-blast-radius changes, with automated, actionable remediation—not blanket gate friction. Test substitution in real consumers before claiming composability.
+
+**Three distinct paths:** Harvesting discovers and evaluates external or existing candidates (experimental); the Component Lab continually prototypes, adapts and tests implementations (experimental); Production Assembly selects qualified components and composes operational products. Research findings do not become production truth by declaration. Preserve the canonical capability inventory and FLOW instruction-to-verified-yield lifecycle; do not create a parallel registry or replace the delivery machinery. A component that is superseded is withdrawn only after compatibility, state migration and affected consumers are proved safe.
+
+**Execution priority:** finish and independently verify the Merdian Intelligence commercial website FIRST. Do not let the estate-wide architectural transition delay this launch. After launch, resume the component topology/overlap audit and the first verified substitution in a real memory or delivery capability. Candidate implementation: `architecture/fractal/v1/` and `bin/fractal-shape` on the architecture lane; not yet a claim of universal enforcement.
+
+---
+
 ## Programme of record and the tenets
 
 The estate's programme of record is `docs/epics/2026-10-25-estate-master-epic.md`. Every agent reads
