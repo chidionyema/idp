@@ -393,6 +393,8 @@ class Job:
     ceiling_sec: int
     cwd: Optional[str] = None
     accepted_at: float = field(default_factory=time.time)
+    policy_status: Optional[str] = None
+    policy_revision: Optional[str] = None
     state: str = "accepted"
     exit_code: Optional[int] = None
     log: Optional[str] = None
@@ -515,6 +517,8 @@ class Executor:
                 command=command,
                 ceiling_sec=reply.get("ceiling_sec", ceiling_sec),
                 cwd=cwd,
+                policy_status=reply.get("policy_status"),
+                policy_revision=reply.get("policy_revision"),
             )
             self._jobs[job.job_id] = job
         return job
@@ -1083,6 +1087,8 @@ def execute_command(
         "accepted": True,
         "job_id": job.job_id,
         "ceiling_sec": effective,
+        "policy_status": job.policy_status,
+        "policy_revision": job.policy_revision,
         "note": "the turn ends here; read the outcome with read_job or the jobs page",
     }
 
