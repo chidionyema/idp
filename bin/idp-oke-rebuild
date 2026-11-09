@@ -23,6 +23,11 @@ export SUPPRESS_LABEL_WARNING=True
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 TF="$IDP/platform/oci"
 MODE="${1:---check}"
+# OKE was retired by the founder on 2026-11-07. This historical script must
+# never exchange credentials, forget state, plan/apply resources, or touch volumes.
+# Read-only OCI forensics and replacement k3s use separately governed doors.
+printf '%s\n' "RETIRED_SUBSTRATE: refusing legacy OKE mode ${MODE} before OCI/state access" >&2
+exit 78
 export OCI_CLUSTER_NAME="${OCI_CLUSTER_NAME:-estate}"
 # no product hostname or pack count in this script. Each cluster's expectations live in
 # platform/oci/clusters/<name>.env; env vars override; nothing known means the row is BLIND, never a
