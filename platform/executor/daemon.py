@@ -91,6 +91,18 @@ from estate_executor import (  # noqa: E402
     simulate_command,
 )
 
+# OPA decisions are evaluated IN THE SEPARATE-UID DAEMON, immediately before
+# the real effect. The installed daemon and fleet_opa.py are root-owned copies;
+# neither the untrusted agent nor its MCP/CLI adapter can replace the guard.
+# In the source checkout both files remain available for guarded testing.
+_FLEET_SOURCE = os.path.abspath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "estate", "policy"
+))
+if os.path.isdir(_FLEET_SOURCE):
+    sys.path.insert(0, _FLEET_SOURCE)
+from fleet_opa import evaluate as _fleet_evaluate  # noqa: E402
+
+
 # The daemon's own job registry, in-process on purpose: this handler IS the far side, so its
 # `submit()` must not open a second connection to the socket it is currently serving. Using the
 # socket-backed `Executor` here recursed until the caller timed out (measured 2026-09-20).
@@ -597,6 +609,31 @@ class Handler(socketserver.StreamRequestHandler):
     def _execute(self, request: dict) -> dict:
         import subprocess  # local: kept out of the pure import path used by the tests
 
+        # This is the actual separate-UID EFFECT boundary, not an agent prompt
+        # or a client-side check. Client-supplied policy URLs, permissions and
+        # policy revision claims are ignored. The protected daemon environment
+        # owns the OPA endpoint. A denied/unknown OPA verdict mints NO job ID
+        # and starts NO process. Existing rights may only be narrowed by OPA.
+        command = request.get("command", "")
+        if not isinstance(command, str):
+            return {"ok": False, "refused": True, "fatal": True,
+                    "reason": "invalid_command", "error": "command must be a string"}
+        policy_verdict = _fleet_evaluate(
+            intent="execute_command",
+            step="daemon-submit",
+            command=command,
+            session=str(request.get("session_id") or ""),
+        )
+        if not policy_verdict.allowed:
+            return {
+                "ok": False, "refused": True, "fatal": True,
+                "reason": "fleet_policy_denied" if policy_verdict.status == "ENFORCED"
+                          else "fleet_policy_unavailable",
+                "error": policy_verdict.reason,
+                "policy_status": policy_verdict.status,
+                "policy_revision": policy_verdict.revision,
+            }
+
         # The door decides. This handler does not re-check the ceiling -- one check, one answer.
         #
         # `mutates_live_worktree` is forwarded verbatim and is NEVER defaulted to False here. A
@@ -650,7 +687,12 @@ class Handler(socketserver.StreamRequestHandler):
                 "ok": False,
                 "error": f"the detached runner could not be started: {exc}",
             }
-        return {"ok": True, "job_id": job_id, "ceiling_sec": verdict["ceiling_sec"]}
+        return {
+            "ok": True, "job_id": job_id,
+            "ceiling_sec": verdict["ceiling_sec"],
+            "policy_status": policy_verdict.status,
+            "policy_revision": policy_verdict.revision,
+        }
 
     def _propose_patch(self, request: dict) -> dict:
         """Rule 2: a patch lands in an ephemeral ledger, never in the live tree.
