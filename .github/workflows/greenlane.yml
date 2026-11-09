@@ -29,6 +29,10 @@ on:
     types: [completed]
   pull_request_target:
     types: [opened, reopened, ready_for_review]
+  issues:
+    # Reconsider DoF-held heads when the actual incident changes; no polling
+    # and no assumption that an issue closure is a privileged release.
+    types: [closed, reopened, edited]
   # workflow_run removed: guarded-paths fires on every main push, creating workflow_run events that
   # queue and cancel push-event and scheduled-tick greenlane runs. CI completions on lane/** are
   # covered by lane push signals. Queue CI completion is event-driven through
@@ -81,7 +85,8 @@ jobs:
         github.event.workflow_run.head_branch == 'flux/image-updates')) ||
       (github.event_name == 'check_run' &&
        startsWith(github.event.check_run.check_suite.head_branch || '', 'queue/')) ||
-      (github.event_name != 'workflow_run' && github.event_name != 'check_run')
+      (github.event_name == 'issues' && startsWith(github.event.issue.title, '[lane] ')) ||
+      (github.event_name != 'workflow_run' && github.event_name != 'check_run' && github.event_name != 'issues')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
