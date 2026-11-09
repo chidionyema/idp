@@ -2,7 +2,7 @@ import { MetadataRoute } from "next";
 import { site } from "@/content/site";
 import { posts } from "@/content/posts";
 export default function sitemap(): MetadataRoute.Sitemap {
-  const base = "https://meridian.ai";
+  const base = (process.env.MERIDIAN_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "");
   const staticRoutes: MetadataRoute.Sitemap = [
     { url: base, lastModified: new Date(), changeFrequency: "weekly", priority: 1 },
     { url: `${base}/research`, lastModified: new Date(), changeFrequency: "weekly", priority: 0.9 },
