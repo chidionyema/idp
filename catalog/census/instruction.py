@@ -246,24 +246,31 @@ def ingest_prompt(
     return instr
 
 
+# The upsert is a module constant, not a runtime f-string. Every character of the
+# statement is fixed here, and the values arrive through the driver's parameter
+# binding, so there is nothing for S608 to find and nothing for it to miss: the
+# column list and the placeholder list are written once, side by side, where a
+# reader can check they line up.
+_UPSERT_SQL = (
+    "insert into catalog.instructions ("
+    "id,prompt,origin,bdd_given,bdd_when,bdd_then,status,linked_to,kind,"
+    "recorded_at,structured_at,closed_at,yield_json"
+    ") values ("
+    "%(id)s,%(prompt)s,%(origin)s,%(bdd_given)s,%(bdd_when)s,%(bdd_then)s,"
+    "%(status)s,%(linked_to)s,%(kind)s,%(recorded_at)s,%(structured_at)s,"
+    "%(closed_at)s,%(yield_json)s) "
+    "on conflict (id) do update set "
+    "status=excluded.status, bdd_given=excluded.bdd_given, "
+    "bdd_when=excluded.bdd_when, bdd_then=excluded.bdd_then, "
+    "structured_at=excluded.structured_at, closed_at=excluded.closed_at, "
+    "yield_json=excluded.yield_json"
+)
+
+
 def upsert_sql(instruction: Instruction) -> str:
     """The INSERT ... ON CONFLICT DO UPDATE statement for one instruction.
 
     Idempotent, matching the schema's ``if not exists`` convention: applying twice
     is a no-op on the id, and an update on the mutable fields.
     """
-    cols = (
-        "id,prompt,origin,bdd_given,bdd_when,bdd_then,status,linked_to,kind,"
-        "recorded_at,structured_at,closed_at,yield_json"
-    )
-    return (
-        f"insert into catalog.instructions ({cols}) values ("
-        f"%(id)s,%(prompt)s,%(origin)s,%(bdd_given)s,%(bdd_when)s,%(bdd_then)s,"
-        f"%(status)s,%(linked_to)s,%(kind)s,%(recorded_at)s,%(structured_at)s,"
-        f"%(closed_at)s,%(yield_json)s) "
-        f"on conflict (id) do update set "
-        f"status=excluded.status, bdd_given=excluded.bdd_given, "
-        f"bdd_when=excluded.bdd_when, bdd_then=excluded.bdd_then, "
-        f"structured_at=excluded.structured_at, closed_at=excluded.closed_at, "
-        f"yield_json=excluded.yield_json"
-    )
+    return _UPSERT_SQL
