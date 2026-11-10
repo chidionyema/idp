@@ -56264,7 +56264,9 @@
         "latency_class": "batch",
         "uses": [
           "actions/checkout@v7",
-          "actions/upload-artifact@v7"
+          "actions/setup-python@v6",
+          "actions/upload-artifact@v7",
+          "gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40"
         ]
       },
       "owner": "@chidionyema",

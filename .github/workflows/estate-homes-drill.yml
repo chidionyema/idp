@@ -27,7 +27,34 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+      # A leg's secret is resolved by bin/idp-estate-homes -> vault_get -> `bin/idp-cloud secret
+      # get <entry>`, which authenticates with the OCI CLI. The CLI needs a session before any
+      # read works, and on a cloud runner the session comes from the GitHub OIDC token -- this is
+      # the same two-step preamble vault-reads.yml and vault-seed.yml already use, kept identical
+      # on purpose (AGENTS.md section 9 R7: a duplicated contract is one that drifts).
+      #
+      # Without the session `vault_get` returns "" for every entry, so every lane that needs a
+      # secret is UNKNOWN. UNKNOWN is not down, but the board cannot tell the two apart, and a
+      # lane nobody can ask held llm-router open (#7844) while groq was answering all along.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
+      - name: oci cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
       - name: grade every lane and file what is down
+        # A leg that needs a secret resolves it through bin/idp-estate-homes -> vault_get ->
+        # `bin/idp-cloud secret get <entry>`. These three variables are what make that read
+        # possible once the session above exists, and they are the same three every other
+        # vault-reading workflow passes -- one contract, not a fourth copy (AGENTS.md 9 R7).
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
@@ -35,25 +62,11 @@ jobs:
           # These references yield empty values if the repo/org secrets are absent.
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           LIFEBOAT_KEY: ${{ secrets.LIFEBOAT_KEY }}
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
         run: |
           python3 bin/idp-estate-homes | tee drill.txt
-      # What the Cloudflare credential can actually see. One call, names and counts only — no
-      # token, no record values. This is the measurement that decides whether the doors can be
-      # repointed from CI at all, and it costs a line instead of a session spent guessing at
-      # account ownership.
-      - name: what the cloudflare token can see
-        env:
-          CLOUDFLARE_ROOT_TOKEN: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
-          ESTATE_ZONE: ${{ vars.ESTATE_ZONE || 'mumchimp.com' }}
-        run: |
-          set -uo pipefail
-          if [ -z "${CLOUDFLARE_ROOT_TOKEN:-}" ]; then
-            echo "BLIND: no SEED_CLOUDFLARE_ROOT_TOKEN"; exit 0
-          fi
-          curl -sS -H "Authorization: Bearer $CLOUDFLARE_ROOT_TOKEN" \
-            "https://api.cloudflare.com/client/v4/zones?per_page=50" \
-            | python3 -c 'import json,sys; d=json.load(sys.stdin); print("zones visible:", ",".join(z["name"] for z in d.get("result") or []) or "NONE", "| success:", d.get("success"))' \
-            || echo "could not list zones"
       - name: keep the board
         uses: actions/upload-artifact@v7
         with:
