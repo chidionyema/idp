@@ -104,16 +104,58 @@ def test_one_refused_ref_costs_only_its_own_branch(remote):
     assert deleted >= 2, (deleted, refused)
 
 
-def test_a_tag_already_on_the_remote_means_already_archived(remote):
-    """The 33 tags the dead run landed are progress, not a trap: beta is deleted, not
-    re-tagged and refused forever."""
+def test_wrong_sha_archive_tag_never_deletes_live_work(remote):
+    """A same-named archive tag at a different SHA is NOT preservation proof."""
     work, shas = remote
     fence = load_fence()
     rows = [("beta", shas["beta"], "test", "archive/beta")]
     deleted, refused = fence.apply("origin", rows)
-    assert refused == {}, refused
-    assert deleted == 1, deleted
+    assert deleted == 0, (deleted, refused)
+    assert "archive tag collision" in refused["beta"]
+    assert "refs/heads/beta" in remote_refs(work, "heads")
+    assert fence.remote_archive_tags("origin")["archive/beta"] != shas["beta"]
+
+
+def test_matching_sha_remote_tag_is_an_idempotent_receipt(remote):
+    """A verified pre-existing tag allows deletion; a wrong tag never does."""
+    work, shas = remote
+    run("git", "push", "origin", "--delete", "refs/tags/archive/beta", cwd=work)
+    run("git", "push", "origin", f"{shas['beta']}:refs/tags/archive/beta", cwd=work)
+    fence = load_fence()
+    rows = [("beta", shas["beta"], "test", "archive/beta")]
+    deleted, refused = fence.apply("origin", rows)
+    assert deleted == 1, (deleted, refused)
+    assert refused == {}
     assert "refs/heads/beta" not in remote_refs(work, "heads")
+
+
+def test_advanced_branch_is_not_deleted_under_old_sha_lease(remote):
+    """A branch modified after the snapshot must retain its newer commit."""
+    work, shas = remote
+    run("git", "checkout", "-q", "alpha", cwd=work)
+    (work / "next").write_text("new work must survive")
+    run("git", "add", "next", cwd=work)
+    run("git", "commit", "-qm", "new work", cwd=work)
+    run("git", "push", "-q", "origin", "alpha", cwd=work)
+    run("git", "checkout", "-q", "main", cwd=work)
+    fence = load_fence()
+    rows = [("alpha", shas["alpha"], "test", "archive/alpha")]
+    deleted, refused = fence.apply("origin", rows)
+    assert deleted == 0, (deleted, refused)
+    assert "branch changed during archival" in refused["alpha"]
+    assert "refs/heads/alpha" in remote_refs(work, "heads")
+    assert fence.remote_archive_tags("origin")["archive/alpha"] == shas["alpha"]
+
+
+def test_unmerged_old_branches_remain_live_flow_obligations(remote, monkeypatch):
+    """Elapsed time cannot turn unmerged work into a completed instruction."""
+    work, _shas = remote
+    fence = load_fence()
+    monkeypatch.setattr(fence, "repo_slug", lambda: "example/repo")
+    monkeypatch.setattr(fence, "open_pull_request_heads", lambda _repo: set())
+    rows, kept = fence.plan("origin", age_days=0, now=4_102_444_800)
+    assert not [row for row in rows if row[0] in ("alpha", "beta", "gamma")]
+    assert kept["unmerged work awaiting FLOW reconciliation"] == 3
 
 
 def test_the_fence_never_pushes_atomically():
