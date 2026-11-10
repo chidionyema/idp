@@ -23,3 +23,7 @@ loop:
 
 reconcile:
 	python -m factory.reconcile --once --verbose
+
+.PHONY: diagrams
+diagrams:
+	bash architecture/render

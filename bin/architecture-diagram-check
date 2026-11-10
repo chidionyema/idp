@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# architecture-diagram-check: the committed page must be what the model says.
+#
+# WHY THIS EXISTS. The architecture page is generated from architecture/workspace.dsl.
+# Between 2026-08-28 and 2026-11-10 nobody could tell that the committed page had
+# drifted from the model: it still claimed Kanboard was the board (retired 2026-08-26,
+# crew#282), and every closing mermaid fence was glued to the last line, so GitHub read
+# the whole page as one unterminated code block and rendered nothing at all. A published
+# diagram that is quietly wrong is worse than no diagram, because it is read as current.
+#
+# WHAT IT CHECKS. Three things, all decided from BYTES -- no docker, no network, and no
+# rendering, so it runs in seconds on every pull request:
+#
+#   1. FENCES. Every mermaid block opens and closes, and no fence is glued to other text.
+#      (structurizr writes each .mmd with NO trailing newline, so a renderer that does
+#      `cat "$f"; echo '```'` produces "  end```" -- and the page stops rendering.)
+#   2. VIEWS. The set of views on the page is exactly the set the model declares. A view
+#      added to the model and not regenerated is drift; a view deleted from the model and
+#      still on the page is drift.
+#   3. BOXES. Every box on the page is a box the model declares. The page is a RENDERING
+#      of the model, so any label, description or technology on the page that is not in
+#      the model is a claim the model does not make -- which is exactly how a retired
+#      component keeps showing up as the live one.
+#
+# `architecture/render --check` is the byte-exact check (it re-renders and diffs) and
+# needs the structurizr image. This one needs nothing, so it can run everywhere.
+#
+# Usage: bash bin/architecture-diagram-check
+# Exit 0 = the page is what the model says. Exit 1 = it is not. Exit 2 = cannot be read.
+set -uo pipefail
+
+root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+model="$root/architecture/workspace.dsl"
+page="$root/docs/explanation/architecture/index.md"
+fail=0
+
+fail() { echo "FAIL  architecture-diagram-check: $*" >&2; fail=1; }
+
+[ -f "$model" ] || { echo "FAIL  architecture-diagram-check: $model is missing" >&2; exit 2; }
+[ -f "$page" ]  || { echo "FAIL  architecture-diagram-check: $page is missing" >&2; exit 2; }
+
+# --- 1. fences ---------------------------------------------------------------
+opened=$(grep -c '```mermaid' "$page" || true)
+closed=$(grep -cE '^[[:space:]]*```[[:space:]]*$' "$page" || true)
+glued=$(grep -n '```' "$page" | grep -vE ':[[:space:]]*```mermaid[[:space:]]*$' \
+                                             | grep -vE ':[[:space:]]*```[[:space:]]*$' || true)
+if [ "${opened:-0}" -ne "${closed:-0}" ]; then
+  fail "$page opens $opened mermaid blocks and closes $closed -- the page will not render"
+fi
+if [ -n "$glued" ]; then
+  fail "a mermaid fence is not alone on its line:"
+  echo "$glued" >&2
+fi
+
+# --- 2. views ----------------------------------------------------------------
+# The view key is the LAST quoted string on a view declaration line.
+model_views=$(grep -oE '^[[:space:]]*(systemContext|container|component|deployment|dynamic)[[:space:]].*"[^"]*"[[:space:]]*\{' "$model" \
+  | grep -oE '"[^"]*"[[:space:]]*\{$' | sed 's/"[[:space:]]*{$//; s/^"//; s/"$//' | sort -u)
+page_views=$(grep -E '^## ' "$page" | sed 's/^## //' | sort -u)
+if [ "$model_views" != "$page_views" ]; then
+  fail "the page's views and the model's views differ."
+  echo "  only in the model: $(comm -23 <(echo "$model_views") <(echo "$page_views") | tr '\n' ' ')" >&2
+  echo "  only on the page:  $(comm -13 <(echo "$model_views") <(echo "$page_views") | tr '\n' ' ')" >&2
+fi
+
+# --- 3. boxes ----------------------------------------------------------------
+# The model's text, whitespace-collapsed, so a description that wraps in the DSL still
+# matches the single line the renderer produced.
+model_text=$(tr '\n' ' ' < "$model" | tr -s ' ' | sed 's/^ //')
+# Every rendered node: the text between > and </div>, with <br /> turned into a space.
+page_text=$(grep -oE '^[[:space:]]+[0-9]+\["' "$page" | grep -c . >/dev/null 2>&1; \
+            grep -E '^[[:space:]]+[0-9]+\["' "$page" \
+            | sed 's/.*\["//; s/"\]$//' \
+            | sed 's#</div>#\n#g; s#<br /># #g; s#<[^>]*>##g' \
+            | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+            | grep -v '^$')
+missing=0
+while IFS= read -r fragment; do
+  # Strip the renderer's own type marker, then look for the fragment in the model.
+  probe=$(printf '%s' "$fragment" | sed 's/^\[[^]]*\] *//')
+  [ -z "$probe" ] && continue
+  case "$probe" in
+    *"["*) probe=$(printf '%s' "$probe" | sed 's/^\[[^]]*\]//; s/^ *//') ;;
+  esac
+  [ -z "$probe" ] && continue
+  collapsed=$(printf '%s' "$probe" | tr '\n' ' ' | tr -s ' ')
+  case "$model_text" in
+    *"$collapsed"*) ;;
+    *) echo "  not in the model: $collapsed" >&2; missing=1 ;;
+  esac
+done <<EOF
+$page_text
+EOF
+[ "$missing" -eq 1 ] && fail "the page states something the model does not."
+
+if [ "$fail" -ne 0 ]; then
+  echo "  run 'make diagrams' to regenerate the page from architecture/workspace.dsl" >&2
+  exit 1
+fi
+echo "ok    architecture-diagram-check: $page is what $model says"
+exit 0
