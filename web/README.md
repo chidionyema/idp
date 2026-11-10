@@ -46,6 +46,33 @@ Payload shape:
 }
 ```
 
+### Pre-domain email activation
+
+Merdian can accept enquiries **before incorporation and before a dedicated domain is purchased**.
+The contact route now supports native Mailjet Send API v3.1 without an intermediary
+webhook service. Configure `MAILJET_API_KEY`, `MAILJET_SECRET_KEY`,
+`MERDIAN_ENQUIRIES_FROM`, and `MERDIAN_ENQUIRIES_TO` as Vercel secrets
+in Production. Mailjet must verify the exact sender address first; for the
+pre-domain period this can be an existing address the founder controls.
+Do not publish fictional `@merdian...` addresses. No public code or DNS changes
+are needed to activate this delivery path.
+
+Priority: existing `CONTACT_WEBHOOK_URL` if configured, otherwise Mailjet,
+otherwise the existing dedicated Telegram bot + chat configuration.
+On non-2xx responses or a Mailjet per-message rejection the endpoint fails closed.
+A successful Mailjet API response means provider acceptance, **not inbox delivery**.
+`GET /api/contact` reports configured transport, not verified inbox receipt.
+After the Vercel environment variables are configured, redeploy the approved
+premium artefact, submit a real test enquiry and inspect its arrival in the
+target inbox. This verification is mandatory before calling lead capture live.
+
+When the registered domain is acquired: connect it to this same Vercel project,
+verify ownership and DNS, provision the real inbox, set SPF/DKIM/DMARC, verify
+the new Mailjet sender, replace only `MERDIAN_ENQUIRIES_FROM` and
+`MERDIAN_ENQUIRIES_TO`, then switch the canonical site URL and redirect aliases.
+Update the legal footer and company number only once Companies House issues
+the certificate of incorporation.
+
 ### Known limits
 
 - The rate limiter (5 per 10 min per IP) is **per process**. Behind N instances a caller gets
