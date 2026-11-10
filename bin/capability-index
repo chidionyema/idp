@@ -932,8 +932,9 @@ def enrich_completeness(ctx: Context, records):
 def state_from_proof(record, when=None):
     """The declared-vs-operating law (spec I-2 and I-4).
 
-    A record is `operating` only with a receipt inside its window. Past the window it is
-    `declared` and the read is marked stale -- a stale read is a finding, never a silence.
+    A record is `operating` only with a correctly signed, timestamp-bound receipt
+    inside its window. Invalid and future-dated proof is BLIND, never operational;
+    expired valid proof becomes `declared` and stale.
     """
     when = when or now_utc()
     proof = record.get("proof") or {}
@@ -941,12 +942,22 @@ def state_from_proof(record, when=None):
     proven_at = parse_iso(proof.get("proven_at"))
     window = proof.get("window_s") or DEFAULT_WINDOW_S
     health = dict(record.get("health") or {})
-    if not receipt or not proven_at:
+    # A timestamp alone is not proof. Verify the MAC AND bind the record's
+    # claimed time to the timestamp inside the signed receipt.
+    signed_at = parse_iso(receipt_parts(receipt)[2])
+    if not receipt_ok(receipt) or not proven_at or signed_at != proven_at:
         health["state"] = "declared"
         health["stale"] = False
         health["blind"] = True
+        health["proof_failure"] = "invalid-or-unbound-receipt"
         return health
     age = (when - proven_at).total_seconds()
+    if age < 0:
+        health["state"] = "declared"
+        health["stale"] = False
+        health["blind"] = True
+        health["proof_failure"] = "future-dated-receipt"
+        return health
     if age <= float(window):
         if health.get("state") in (None, "", "declared"):
             health["state"] = "operating"
@@ -3592,7 +3603,9 @@ def main(argv=None) -> int:
                     if args.json
                     else "{}: {}".format(verdict["verdict"], verdict.get("detail", ""))
                 )
-                return 0 if verdict["verdict"] in {"OK", "BLIND"} else 1
+                if verdict["verdict"] == "OK":
+                    return 0
+                return 2 if verdict["verdict"] == "BLIND" else 1
         print("BLIND   no record for {}".format(args.id), file=sys.stderr)
         return 1
 

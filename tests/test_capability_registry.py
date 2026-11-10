@@ -129,6 +129,59 @@ def test_i4_a_fresh_receipt_reads_operating_and_is_not_stale(door):
     assert read["stale"] is False
 
 
+def test_i2_forged_recent_receipt_never_becomes_operating(door):
+    now = door.now_utc()
+    record = a_record(door)
+    record["proof"] = {
+        "receipt": "test|tool:example|{}|deadbeef".format(door.iso(now)),
+        "proven_at": door.iso(now),
+        "window_s": 3600,
+    }
+    read = door.read_record(record)
+    assert read["receipt_valid"] is False
+    assert read["health"]["state"] == "declared"
+    assert read["health"]["blind"] is True
+    assert read["health"]["proof_failure"] == "invalid-or-unbound-receipt"
+
+
+def test_i2_valid_old_receipt_cannot_claim_a_new_verification_time(door):
+    old = door.now_utc() - timedelta(days=90)
+    now = door.now_utc()
+    record = a_record(door)
+    record["proof"] = {
+        "receipt": door.make_receipt("test", "tool:example", old),
+        "proven_at": door.iso(now),
+        "window_s": 3600,
+    }
+    read = door.read_record(record)
+    assert read["receipt_valid"] is True
+    assert read["health"]["state"] == "declared"
+    assert read["health"]["blind"] is True
+    assert read["health"]["proof_failure"] == "invalid-or-unbound-receipt"
+
+
+def test_i2_future_dated_signed_receipt_cannot_claim_operating(door):
+    future = door.now_utc() + timedelta(days=7)
+    record = a_record(door)
+    record["proof"] = {
+        "receipt": door.make_receipt("test", "tool:example", future),
+        "proven_at": door.iso(future),
+        "window_s": 3600,
+    }
+    read = door.read_record(record)
+    assert read["receipt_valid"] is True
+    assert read["health"]["state"] == "declared"
+    assert read["health"]["blind"] is True
+    assert read["health"]["proof_failure"] == "future-dated-receipt"
+
+
+def test_prove_blind_is_a_failing_exit_not_a_success(door, monkeypatch, capsys):
+    record = a_record(door)
+    monkeypatch.setattr(door, "load_records", lambda _ctx: ([record], "test"))
+    assert door.main(["prove", record["id"]]) == 2
+    assert "BLIND" in capsys.readouterr().out
+
+
 # --------------------------------------------------------------------------------------
 # I-3: one writer per plane
 
