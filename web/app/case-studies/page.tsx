@@ -1,67 +1,43 @@
 import Link from "next/link";
-import { caseStudies } from "@/content/case-studies";
-import { Reveal } from "@/components/Reveal";
 import type { Metadata } from "next";
-export const metadata: Metadata = { title: "Case Studies", description: "Real numbers from three production deployments: 73% cost reduction, 99.97% uptime, SOC 2 in 4 months." };
+
+export const metadata: Metadata = {
+  title: "Our approach",
+  description: "How Merdian Intelligence distinguishes experiments, prototypes and customer-ready engineering.",
+};
 
 export default function CaseStudiesPage() {
-  return (
-    <div className="container section">
-      <Reveal><div style={{ marginBottom: "64px" }}>
-        <span className="tag tag-accent" style={{ marginBottom: "16px", display: "inline-flex" }}>Case Studies</span>
-        <h1>What we’ve shipped</h1>
-        <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "18px", maxWidth: "60ch" }}>The problem, what we changed, what it cost, and what broke on the way.</p>
-      </div></Reveal>
-      <div style={{ display: "flex", flexDirection: "column", gap: "48px" }}>
-        {caseStudies.map((cs) => (
-          <Reveal key={cs.id}>
-            <article style={{ border: "1px solid var(--rule)", background: "var(--white)", overflow: "hidden" }}>
-              <div style={{ padding: "40px" }}>
-                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "20px" }}>
-                  <span className="tag">{cs.industry}</span>
-                  <span className="tag">{cs.companyType}</span>
-                  <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)" }}>{cs.published}</span>
-                </div>
-                <h2 style={{ fontFamily: "var(--serif)", fontSize: "clamp(1.5rem, 3vw, 2.2rem)", marginBottom: "16px" }}>{cs.company}</h2>
-                <p style={{ color: "var(--ink-3)", lineHeight: 1.75, maxWidth: "none" }}>{cs.challenge}</p>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "16px", margin: "32px 0" }}>
-                  {cs.metrics.map((m) => (
-                    <div key={m.label} style={{ border: "1px solid var(--rule)", background: "var(--panel)", padding: "20px" }}>
-                      <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px" }}>{m.label}</p>
-                      <p style={{ fontFamily: "var(--mono)", fontSize: "28px", fontWeight: 600, color: m.value === "✓" ? "var(--ok-text)" : "var(--accent)", lineHeight: 1 }}>{m.value}</p>
-                      <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)", marginTop: "6px" }}>{m.detail}</p>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ borderLeft: "3px solid var(--accent)", paddingLeft: "20px", margin: "32px 0" }}>
-                  <p style={{ fontFamily: "var(--serif)", fontSize: "1.1rem", fontStyle: "italic", color: "var(--ink-2)", lineHeight: 1.7, maxWidth: "none" }}>“{cs.quote.text}”</p>
-                  <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)", marginTop: "12px" }}>— {cs.quote.author}, {cs.quote.company}</p>
-                </div>
-                <div style={{ border: "1px solid var(--rule)", background: "var(--panel)", padding: "24px", margin: "0 0 32px" }}>
-                  <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "12px" }}>What went wrong</p>
-                  <p style={{ color: "var(--ink-2)", lineHeight: 1.75, maxWidth: "none" }}>{cs.friction}</p>
-                </div>
-                <div style={{ paddingTop: "32px", borderTop: "1px solid var(--rule)" }}>
-                  <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "16px" }}>Stack</p>
-                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                    {cs.stack.map((s) => <span key={s} className="tag tag-accent">{s}</span>)}
-                  </div>
-                </div>
-              </div>
-            </article>
-          </Reveal>
-        ))}
+  return <div className="mi-interior">
+    <section className="mi-page-hero" aria-labelledby="approach-heading">
+      <div className="mi-shell">
+        <span className="mi-eyebrow">MERDIAN / HOW WE WORK</span>
+        <h1 id="approach-heading">SHOW THE WORK.<br/><em>PROVE THE RESULT.</em></h1>
+        <div className="mi-page-hero-bottom">
+          <p>Claims are easy. Evidence takes work. We keep research findings, prototypes and operating products distinct, so decisions are based on what has been demonstrated.</p>
+          <Link href="/contact" className="mi-button mi-button-gold">Discuss a project <span aria-hidden="true">↗</span></Link>
+        </div>
       </div>
-      <div style={{ textAlign: "center", marginTop: "80px", paddingTop: "64px", borderTop: "1px solid var(--rule)" }}>
-        <Reveal>
-          <h2 style={{ fontFamily: "var(--serif)" }}>Working on something similar?</h2>
-          <p style={{ color: "var(--ink-3)", marginTop: "16px" }}>We take on a small number of projects each quarter.</p>
-          <div style={{ display: "flex", gap: "12px", justifyContent: "center", marginTop: "32px", flexWrap: "wrap" }}>
-            <Link href="/contact" className="btn-primary">Schedule a call →</Link>
-            <Link href="/consulting" className="btn-secondary">Our consulting practice</Link>
-          </div>
-        </Reveal>
+    </section>
+    <section className="mi-proof-band">
+      <div className="mi-shell">
+        <span className="mi-eyebrow">THREE DIFFERENT LEVELS OF PROOF</span>
+        <div className="mi-proof-grid">
+          <div><h3>Research.</h3><p>A clear hypothesis, a control or baseline, repeatable methods and results that include negative findings.</p></div>
+          <div><h3>Prototype.</h3><p>A working demonstration with visible limitations. A prototype does not establish operational readiness.</p></div>
+          <div><h3>Commercial.</h3><p>Customer use, security, reliability and independently checked results before performance claims are published.</p></div>
+        </div>
       </div>
-    </div>
-  );
+    </section>
+    <section className="mi-section mi-services">
+      <div className="mi-shell mi-approach-close">
+        <span className="mi-eyebrow">NEXT / FROM EVIDENCE TO ACTION</span>
+        <h2>START WITH THE<br/><em>RIGHT QUESTION.</em></h2>
+        <p>We only publish commercial case-study figures when we can verify the baseline, the measurement and permission to disclose. Until then, we show the method.</p>
+        <div className="mi-hero-actions">
+          <Link href="/research" className="mi-button mi-button-gold">See the research <span aria-hidden="true">↗</span></Link>
+          <Link href="/consulting" className="mi-button mi-button-dark">Explore consultancy <span aria-hidden="true">↗</span></Link>
+        </div>
+      </div>
+    </section>
+  </div>;
 }

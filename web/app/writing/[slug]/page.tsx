@@ -1,60 +1,84 @@
 import { posts } from "@/content/posts";
 import Link from "next/link";
-import { Reveal } from "@/components/Reveal";
+import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 
-// Next.js 15 hands `params` to a page as a Promise, and the generated route types enforce it
-// (`Type 'Props' does not satisfy the constraint 'PageProps'`). Await it; do not read it synchronously.
 interface Props { params: Promise<{ slug: string }> }
-export async function generateStaticParams() { return posts.map((p) => ({ slug: p.slug })); }
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { slug } = await params;
-  const post = posts.find((p) => p.slug === slug);
-  if (!post) return {};
-  return { title: post.title, description: post.excerpt, openGraph: { type: "article", publishedTime: post.date, authors: ["Meridian Intelligence"] } };
+
+const slugify = (value: string) => value.toLowerCase()
+  .replace(/[^a-z0-9\s-]/g, "")
+  .trim()
+  .replace(/\s+/g, "-");
+
+export async function generateStaticParams() {
+  return posts.map(post => ({ slug: post.slug }));
 }
 
-function renderBody(body: string) {
-  return body.split("\n\n").map((block, i) => {
-    if (block.startsWith("## ")) return <h2 key={i} style={{ fontFamily: "var(--serif)", fontSize: "1.6rem", fontWeight: 500, marginTop: "40px", marginBottom: "16px" }}>{block.slice(3)}</h2>;
-    if (block.startsWith("**") && block.includes("**\n")) {
-      const [title, ...rest] = block.split("\n");
-      return (
-        <div key={i} style={{ marginTop: "24px", marginBottom: "8px" }}>
-          <p style={{ fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 500, color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "12px" }}>{title.replace(/\*\*/g, "")}</p>
-          {rest.map((line, j) => <p key={j} style={{ marginBottom: "8px" }}>{line.replace(/\*\*(.*?)\*\*/g, "$1")}</p>)}
-        </div>
-      );
-    }
-    return <p key={i} style={{ marginBottom: "16px", lineHeight: 1.8, color: "var(--ink-2)", fontSize: "16px" }}>{block.replace(/\*\*(.*?)\*\*/g, (_, m) => m)}</p>;
-  });
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { slug } = await params;
+  const post = posts.find(item => item.slug === slug);
+  if (!post) return {};
+  return {
+    title: post.title,
+    description: post.excerpt,
+    openGraph: { type: "article", publishedTime: post.date, authors: ["Merdian Intelligence"] },
+  };
+}
+
+function Body({ body }: { body: string }) {
+  return (
+    <div className="mi-article-body">
+      {body.split("\n\n").filter(Boolean).map((block, index) => (
+        block.startsWith("## ")
+          ? <h2 key={index} id={slugify(block.slice(3))}>{block.slice(3)}</h2>
+          : <p key={index}>{block.replace(/\*\*(.*?)\*\*/g, "$1")}</p>
+      ))}
+    </div>
+  );
 }
 
 export default async function PostPage({ params }: Props) {
   const { slug } = await params;
-  const post = posts.find((p) => p.slug === slug);
-  if (!post) return null;
+  const post = posts.find(item => item.slug === slug);
+  if (!post) notFound();
+
   return (
-    <div className="container section">
-      <div style={{ maxWidth: "768px", margin: "0 auto" }}>
-        <Reveal>
-          <div style={{ marginBottom: "48px" }}>
-            <Link href="/writing" style={{ fontFamily: "var(--mono)", fontSize: "12px", color: "var(--ink-3)", textDecoration: "none" }}>← Writing</Link>
+    <div className="mi-interior">
+      <section className="mi-article-hero mi-page-hero" aria-labelledby="mi-article-title">
+        <div className="mi-shell">
+          <Link className="mi-article-back" href="/writing">← All research notes</Link>
+          <div className="mi-article-meta"><span>MERDIAN / RESEARCH NOTES</span><time dateTime={post.date}>{post.date}</time><span>{post.readTime}</span></div>
+          <h1 id="mi-article-title">{post.title}</h1>
+          <div className="mi-page-hero-bottom">
+            <p>{post.excerpt}</p>
+            <span className="mi-article-edition" aria-hidden="true">FIELD NOTE / 001</span>
           </div>
-          <div style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "24px", flexWrap: "wrap" }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: "12px", color: "var(--ink-3)" }}>{post.date}</span>
-            <span className="tag">{post.readTime}</span>
-          </div>
-          <h1 style={{ fontFamily: "var(--serif)", fontSize: "clamp(2rem, 4vw, 3rem)", marginBottom: "24px" }}>{post.title}</h1>
-          <p style={{ fontSize: "18px", color: "var(--ink-3)", lineHeight: 1.7, marginBottom: "48px", borderBottom: "1px solid var(--rule)", paddingBottom: "48px" }}>{post.excerpt}</p>
-        </Reveal>
-        <Reveal>
-          <div>{renderBody(post.body)}</div>
-        </Reveal>
-        <div style={{ marginTop: "64px", paddingTop: "32px", borderTop: "1px solid var(--rule)" }}>
-          <Link href="/writing" className="btn-secondary">← More essays</Link>
         </div>
-      </div>
+      </section>
+
+      <article className="mi-article-shell mi-shell">
+        <div className="mi-article-main">
+          <p className="mi-article-caveat">TECHNICAL FIELD NOTE · Methods and design hypotheses. Measured results require independently traceable evidence.</p>
+          <Body body={post.body} />
+          {post.references && post.references.length > 0 && (
+            <section className="mi-article-references" aria-labelledby="mi-references-heading">
+              <h2 id="mi-references-heading">Primary references</h2>
+              <p>Specifications and guidance relevant to the methods discussed. These links are not endorsements or evidence of a deployed implementation.</p>
+              <div className="mi-article-reference-list">
+                {post.references.map(reference => (
+                  <a href={reference.url} key={reference.url} target="_blank" rel="noopener noreferrer">
+                    {reference.label}<span aria-hidden="true">↗</span>
+                  </a>
+                ))}
+              </div>
+            </section>
+          )}
+          <div className="mi-article-end">
+            <p>Question the assumptions. Test the implementation.</p>
+            <Link href="/research" className="mi-button mi-button-dark">Explore the laboratory <span aria-hidden="true">↗</span></Link>
+          </div>
+        </div>
+      </article>
     </div>
   );
 }

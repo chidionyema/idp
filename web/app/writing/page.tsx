@@ -1,36 +1,36 @@
 import Link from "next/link";
-import { posts } from "@/content/posts";
-import { Reveal } from "@/components/Reveal";
 import type { Metadata } from "next";
-export const metadata: Metadata = { title: "Writing", description: "Essays on agentic routing, LLM red-teaming, and SPIFFE for AI workloads." };
+import { posts } from "@/content/posts";
+
+export const metadata: Metadata = {
+  title: "Insights",
+  description: "Research notes and technical thinking from Merdian Intelligence on agent systems, AI evaluation and secure engineering.",
+};
 
 export default function WritingPage() {
-  return (
-    <div className="container section">
-      <Reveal><div style={{ marginBottom: "64px" }}>
-        <span className="tag tag-accent" style={{ marginBottom: "16px", display: "inline-flex" }}>Writing</span>
-        <h1>Essays</h1>
-        <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "18px", maxWidth: "60ch" }}>Long-form writing on production AI infrastructure. Based on what we’ve shipped, not what we’ve theorized.</p>
-      </div></Reveal>
-      <div style={{ display: "flex", flexDirection: "column", gap: "1px", background: "var(--rule)" }}>
-        {posts.map((post) => (
-          <Reveal key={post.slug}>
-            <div style={{ background: "var(--white)", padding: "32px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "24px", flexWrap: "wrap" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px", flex: 1 }}>
-                  <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)" }}>{post.date}</span>
-                    <span className="tag">{post.readTime}</span>
-                  </div>
-                  <h2 style={{ fontSize: "1.5rem", fontFamily: "var(--serif)", fontWeight: 500 }}>{post.title}</h2>
-                  <p style={{ fontSize: "15px", color: "var(--ink-3)", lineHeight: 1.75, maxWidth: "72ch" }}>{post.excerpt}</p>
-                </div>
-                <Link href={`/writing/${post.slug}`} className="btn-secondary" style={{ flexShrink: 0 }}>Read →</Link>
-              </div>
-            </div>
-          </Reveal>
-        ))}
+  return <div className="mi-interior">
+    <section className="mi-page-hero" aria-labelledby="insights-heading">
+      <div className="mi-shell">
+        <span className="mi-eyebrow">MERDIAN / INSIGHTS</span>
+        <h1 id="insights-heading">IDEAS NEED<br/><em>EVIDENCE.</em></h1>
+        <div className="mi-page-hero-bottom"><p>Notes from the laboratory. Methods, trade-offs and technical arguments. A written hypothesis is a starting point for testing.</p><Link href="/research" className="mi-button mi-button-gold">Explore the laboratory <span aria-hidden="true">↗</span></Link></div>
       </div>
-    </div>
-  );
+    </section>
+    <section className="mi-section mi-insights-section" aria-labelledby="insights-list-heading">
+      <div className="mi-shell">
+        <div className="mi-section-intro"><span className="mi-eyebrow" id="insights-list-heading">FIELD NOTES / THE ARCHIVE</span><p>QUESTIONS, METHODS, EVIDENCE</p></div>
+        <div className="mi-insights-list">
+          {posts.map((post, index) => <article className="mi-insights-row" key={post.slug}>
+            <span className="mi-portfolio-number">{String(index + 1).padStart(2, "0")} / NOTE</span>
+            <div>
+              <p className="mi-insights-meta"><time dateTime={post.date}>{post.date}</time><span>{post.readTime}</span></p>
+              <h2><Link href={`/writing/${post.slug}`}>{post.title}</Link></h2>
+              <p>{post.excerpt}</p>
+            </div>
+            <Link className="mi-insights-action" href={`/writing/${post.slug}`} aria-label={`Read ${post.title}`}>Read note <span aria-hidden="true">↗</span></Link>
+          </article>)}
+        </div>
+      </div>
+    </section>
+  </div>;
 }

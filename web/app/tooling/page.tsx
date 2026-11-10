@@ -2,15 +2,15 @@ import Link from "next/link";
 import { site } from "@/content/site";
 import { Reveal } from "@/components/Reveal";
 import type { Metadata } from "next";
-export const metadata: Metadata = { title: "Tooling", description: "Open-source AI infrastructure tools: routing layer, eval harness, and workload identity integration." };
+export const metadata: Metadata = { title: "Tooling", description: "Merdian Intelligence laboratory tools and experimental infrastructure." };
 
 export default function ToolingPage() {
   return (
     <div className="container section">
       <Reveal><div style={{ marginBottom: "64px" }}>
-        <span className="tag tag-accent" style={{ marginBottom: "16px", display: "inline-flex" }}>Open Source</span>
+        <span className="tag tag-accent" style={{ marginBottom: "16px", display: "inline-flex" }}>Research tools</span>
         <h1>Tooling</h1>
-        <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "18px", maxWidth: "60ch" }}>The infrastructure we build for clients gets open-sourced. Everything here is production-tested.</p>
+        <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "18px", maxWidth: "60ch" }}>Tools and methods under investigation. Maturity varies; experimental work is not represented as commercially ready.</p>
       </div></Reveal>
       <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
         {site.tooling.map((t) => (
@@ -25,7 +25,7 @@ export default function ToolingPage() {
                   <p style={{ fontSize: "15px", color: "var(--ink-3)", lineHeight: 1.75, maxWidth: "60ch" }}>{t.desc}</p>
                 </div>
                 <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
-                  <Link href="https://github.com/meridian-intelligence" className="btn-secondary" style={{ padding: "8px 16px", fontSize: "11px" }}>GitHub →</Link>
+                  <Link href="/contact" className="btn-secondary" style={{ padding: "8px 16px", fontSize: "11px" }}>Discuss access →</Link>
                   <Link href="/demo" className="btn-primary" style={{ padding: "8px 16px", fontSize: "11px" }}>Demo</Link>
                 </div>
               </div>
