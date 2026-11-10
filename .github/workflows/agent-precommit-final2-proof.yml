@@ -1,0 +1,43 @@
+name: Genesis fail-closed commit boundary final safety proof
+
+on:
+  push:
+    branches: [proof/agent-precommit-final2-20261110]
+
+permissions:
+  contents: read
+
+jobs:
+  exact-source-matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.12']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Source equality to governed lane
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "5c141d642296e6bc2966e77acd39051187d0f19b"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/agent-precommit-final2-proof.yml"
+          git diff --quiet HEAD^ HEAD -- bin/idp-agent-patch-preflight.py tests/test_agent_patch_preflight.py .githooks/pre-commit .github/workflows/agent-sandbox.yml
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Enforce literal syntax and index/receipt regression suite
+        run: |
+          set -euo pipefail
+          bash -n .githooks/pre-commit
+          python -m py_compile bin/idp-agent-patch-preflight.py tests/test_agent_patch_preflight.py
+          python -m unittest discover -s tests -p test_agent_patch_preflight.py -v
+      - name: Enforce pinned production lint and format
+        run: |
+          set -euo pipefail
+          python -m pip install -q 'ruff==0.15.18'
+          ruff check --select E9,F,B bin/idp-agent-patch-preflight.py tests/test_agent_patch_preflight.py
+          ruff format --check bin/idp-agent-patch-preflight.py tests/test_agent_patch_preflight.py
