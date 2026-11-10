@@ -94,6 +94,7 @@ class State:
     seq: int = 0
     landed: int = 0
     candidates: int = 0
+    dof_suspension_recovered: str = ""  # trusted control revision; one-shot recovery lease
     retired: dict[str, str] = field(
         default_factory=dict
     )  # lane name -> the head sha that was retired; a different head is a new claim (idp#5953)
@@ -129,6 +130,7 @@ class State:
             seq=d.get("seq", 0),
             landed=d.get("landed", 0),
             candidates=d.get("candidates", 0),
+            dof_suspension_recovered=str(d.get("dof_suspension_recovered", "")),
             conflicts=d.get("conflicts", 0),
         )
         st.lanes = {k: Lane(**v) for k, v in d.get("lanes", {}).items()}
@@ -260,6 +262,7 @@ class Engine:
                 f"refused hand-raised PR #{pr.get('number')} -> lane {pr.get('lane')}"
             )
         self._observe_lanes()
+        self._recover_suspended_dof_lanes()
         self._retire_stale_lanes()
         if self.s.batch is not None:
             self._judge_batch()
@@ -267,6 +270,45 @@ class Engine:
             self._start_batch()
         self._heartbeat_lanes()
         return self.s
+
+    def _recover_suspended_dof_lanes(self) -> None:
+        """Re-admit historically red DoF-only work once per trusted disabled revision.
+
+        Old ci-success failures had judged_on="" and attempts=3, making them final
+        even after the founder disabled DoF. Other failures remain red. The epoch
+        persists with State so repeated ticks cannot turn a genuine red into
+        an infinite recheck loop.
+        """
+        read_epoch = getattr(self.b, "dof_suspension_epoch", None)
+        if not callable(read_epoch):
+            return
+        try:
+            epoch = read_epoch()
+        except (OSError, ValueError, KeyError, TypeError):
+            return
+        if not isinstance(epoch, str) or not epoch or epoch == self.s.dof_suspension_recovered:
+            return
+        self.s.dof_suspension_recovered = epoch
+        revived = 0
+        for lane in self.s.lanes.values():
+            if lane.status != RED:
+                continue
+            prior_dof_only = lane.reason.startswith("trusted DoF [") or (
+                lane.reason.startswith(("ci-success failure ", "bdd failure "))
+                and " -- dof-gate >" in lane.reason
+            )
+            if not prior_dof_only:
+                continue
+            self.s.seq += 1
+            lane.seq = self.s.seq  # behind fresh work, not ahead of never-tested lanes
+            lane.status = PENDING
+            lane.reason = f"trusted DoF suspended ({epoch}); queued for independent CI"
+            lane.attempts = 0
+            lane.judged_on = ""
+            self.b.report(lane.name, lane.head, TESTING, lane.reason)
+            revived += 1
+        if revived:
+            self.log.append(f"DoF recovery epoch {epoch}: requeued {revived} old red lane(s)")
 
     def _retire_stale_lanes(self) -> None:
         """A lane held past RETIRE_AFTER_MIN without moving is parked (idp#5953).
