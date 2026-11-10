@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn every finished or abandoned branch into a tag, then delete the branch. Nothing is lost.
+"""Archive proven-finished work; never abandon unyielded work or delete an unverified tip.
 
 Founder, 2026-09-09: "if branches have been merged into main then they should be deleted, we need
 better cleanup mechanism without risk of losing work and all this constant admin and stress".
@@ -11,10 +11,11 @@ open pull request. The clutter is abandoned work, and deleting abandoned work by
 stress the founder named: every sweep before this one moved tips to `backup/<date>/` branches,
 which is a branch list that only grows.
 
-The mechanism: a branch that is finished (every patch on main), named as a backup, or untouched
-for `--age-days` with no open pull request becomes a tag `archive/<branch>` at its tip and the
-branch is deleted. A tag keeps every commit reachable, so nothing is lost and the branch list
-only holds live work. Restore is one command:
+The mechanism: a branch whose patches are already on main, or an explicitly named backup,
+can be archived at its exact SHA. An aged branch with unmerged patches is NOT finished:
+it stays reachable and requires existing FLOW instruction recovery (#7771 / Argon #47),
+not a silent archive/retirement transition. Archive tag SHA, live branch SHA and actual
+remote readback must agree before a branch may be deleted. Restore is one command:
 
     git push origin refs/tags/archive/<branch>:refs/heads/<branch>
 
@@ -95,14 +96,22 @@ def plan(remote: str, age_days: int, now: float) -> tuple[list[tuple[str, str, s
             kept["open pull request"] += 1
             continue
         if branch.startswith(ARCHIVE_BY_NAME):
+            # Explicit backup/rescue branches are retention copies, not live delivery lanes.
             reason = "named as a backup"
         else:
-            unmerged = sum(1 for c in git("cherry", f"{remote}/main", ref).splitlines() if c.startswith("+"))
+            unmerged = sum(
+                1 for c in git("cherry", f"{remote}/main", ref).splitlines()
+                if c.startswith("+")
+            )
             age = int((now - int(ts)) // 86400)
             if unmerged == 0:
                 reason = "every patch is on main"
             elif age >= age_days:
-                reason = f"{unmerged} patch(es) not on main, untouched {age} days"
+                # Archiving the bits alone is not an instruction-to-yield transition.
+                # An unmerged branch keeps its live recovery door and issue ownership;
+                # never disguise work that did not land as ordinary branch hygiene.
+                kept["unmerged work awaiting FLOW reconciliation"] += 1
+                continue
             else:
                 kept[f"live, touched under {age_days} days ago"] += 1
                 continue
@@ -146,52 +155,115 @@ def push(remote: str, *refspecs: str) -> dict[str, str]:
     return refused
 
 
-def remote_archive_tags(remote: str) -> set[str]:
-    """The archive tags ORIGIN holds. The runner's checkout is not the authority: a tag the
-    remote already has is a branch already archived, and re-pushing it is the refusal that
-    used to kill the run."""
+def remote_archive_tags(remote: str) -> dict[str, str]:
+    """Read actual remote archive tag names AND peeled commit SHAs, not names alone."""
     out = git("ls-remote", "--tags", remote, "refs/tags/archive/*")
-    names = set()
+    tags: dict[str, str] = {}
     for line in out.splitlines():
-        if "refs/tags/" not in line:
+        parts = line.split()
+        if len(parts) != 2 or not parts[1].startswith("refs/tags/"):
             continue
-        name = line.split("refs/tags/", 1)[1].strip()
-        names.add(name[:-3] if name.endswith("^{}") else name)
-    return names
+        sha, ref = parts
+        peeled = ref.endswith("^{}")
+        tag = ref[len("refs/tags/"):]
+        if peeled:
+            tag = tag[:-3]
+        if peeled or tag not in tags:
+            tags[tag] = sha
+    return tags
+
+
+def remote_branch_heads(remote: str) -> dict[str, str]:
+    """Read real remote tips before and after conditional deletion."""
+    out = git("ls-remote", "--heads", remote)
+    return {
+        ref[len("refs/heads/"):]: sha
+        for line in out.splitlines()
+        for sha, ref in [line.split()]
+        if ref.startswith("refs/heads/")
+    }
 
 
 def apply(remote: str, rows: list[tuple[str, str, str, str]]) -> tuple[int, dict[str, str]]:
-    """Tag then delete, in batches, skipping whatever the remote refuses.
+    """Tag+verify exact SHA, then delete with an expected-head lease; no false success.
 
-    Returns (branches deleted, {branch: why it was skipped}).
+    A tag with the right name but WRONG SHA is a collision, NEVER a proof.
+    A remote branch that moved after plan() is not ours to delete.
     """
     refused: dict[str, str] = {}
-    on_remote = remote_archive_tags(remote)
+    existing = remote_archive_tags(remote)
+    todo: list[tuple[str, str, str]] = []
+    for branch, sha, _reason, tag in rows:
+        actual = existing.get(tag)
+        if actual is None:
+            todo.append((branch, sha, tag))
+        elif actual != sha:
+            refused[branch] = (
+                f"archive tag collision: {tag} points at {actual}, expected {sha}; "
+                "live branch retained"
+            )
 
-    # Pre-filter: only tags origin does not already hold.
-    todo = [(b, sha, tag) for b, sha, _r, tag in rows if tag not in on_remote]
-    tagged = {b for b, _sha, _r, tag in rows if tag in on_remote}
     for i in range(0, len(todo), BATCH):
         chunk = todo[i:i + BATCH]
-        bad = push(remote, *[f"{sha}:refs/tags/{tag}" for _b, sha, tag in chunk])
-        for b, sha, tag in chunk:
-            why = bad.get(f"refs/tags/{tag}") or bad.get(f"{sha}:refs/tags/{tag}")
+        failed = push(remote, *[f"{sha}:refs/tags/{tag}" for _, sha, tag in chunk])
+        for branch, sha, tag in chunk:
+            why = failed.get(f"refs/tags/{tag}") or failed.get(
+                f"{sha}:refs/tags/{tag}"
+            )
             if why:
-                refused[b] = f"tag refused: {why}"
-            else:
-                tagged.add(b)
+                refused[branch] = f"tag refused: {why}"
 
-    # A branch goes only once its tag is on the remote. A refused tag costs that branch
-    # nothing; it is simply carried to the next run.
-    deletable = [b for b, *_ in rows if b in tagged]
+    # Independently fetch remote refs. No optimistic success from a push exit code.
+    verified = remote_archive_tags(remote)
+    safe = []
+    for branch, sha, _reason, tag in rows:
+        if branch in refused:
+            continue
+        actual = verified.get(tag)
+        if actual != sha:
+            refused[branch] = (
+                f"archive not verified: {tag} points at {actual or 'ABSENT'}, "
+                f"expected {sha}; live branch retained"
+            )
+        else:
+            safe.append((branch, sha))
+
     deleted = 0
-    for i in range(0, len(deletable), BATCH):
-        chunk = deletable[i:i + BATCH]
-        bad = push(remote, "--delete", *chunk)
-        for b in chunk:
-            why = bad.get(f"refs/heads/{b}") or bad.get(b)
+    for i in range(0, len(safe), BATCH):
+        chunk = safe[i:i + BATCH]
+        heads = remote_branch_heads(remote)
+        eligible = []
+        for branch, sha in chunk:
+            if heads.get(branch) != sha:
+                refused[branch] = (
+                    f"branch changed during archival: got {heads.get(branch) or 'ABSENT'}, "
+                    f"expected {sha}; live branch retained"
+                )
+            else:
+                eligible.append((branch, sha))
+        if not eligible:
+            continue
+
+        # Server-enforced CAS: even a force-push between readback and delete
+        # must not let us delete a newer commit by mistake.
+        failed = push(
+            remote,
+            *[f"--force-with-lease=refs/heads/{branch}:{sha}" for branch, sha in eligible],
+            *[f":refs/heads/{branch}" for branch, _sha in eligible],
+        )
+        after = remote_branch_heads(remote)
+        for branch, sha in eligible:
+            why = (
+                failed.get(f":refs/heads/{branch}")
+                or failed.get(f"refs/heads/{branch}")
+                or failed.get(branch)
+            )
             if why:
-                refused[b] = f"delete refused: {why}"
+                refused[branch] = f"delete refused: {why}"
+            elif branch in after:
+                refused[branch] = (
+                    f"delete not proven: live remote branch remains at {after[branch]}"
+                )
             else:
                 deleted += 1
     return deleted, refused
@@ -204,7 +276,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--remote", default="origin")
     a = ap.parse_args(argv)
     rows, kept = plan(a.remote, a.age_days, time.time())
-    by_reason = collections.Counter(r.split(",")[0] if "patch(es)" not in r else "unmerged and untouched" for _b, _s, r, _t in rows)
+    by_reason = collections.Counter(r for _b, _s, r, _t in rows)
     verb = "archived" if a.apply else "would archive"
     lines = [f"branch-archive  {verb} {len(rows)} branch(es); kept {sum(kept.values())}"]
     lines += [f"  {verb}: {n} {why}" for why, n in sorted(by_reason.items())]

@@ -34158,12 +34158,12 @@
       "id": "cap:tool/idp-branch-archive",
       "schema_version": 1,
       "kind": "tool",
-      "summary": "Turn every finished or abandoned branch into a tag, then delete the branch. Nothing is lost.",
+      "summary": "Archive proven-finished work; never abandon unyielded work or delete an unverified tip.",
       "contract": {
         "inputs": [
           "--age-days",
           "--apply",
-          "--delete",
+          "--heads",
           "--jq",
           "--json",
           "--list",
