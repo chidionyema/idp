@@ -83,6 +83,6 @@ in_container='
 exec "$RT" run --rm -i \
   -v "$IDP:/repo" \
   -w /repo \
-  "${ENV_ARGS[@]}" \
+  ${ENV_ARGS[@]+"${ENV_ARGS[@]}"} \
   "$IMAGE" \
   bash -c "$in_container" -- "$@"

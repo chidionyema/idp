@@ -200,7 +200,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
           oci)
             command -v oci >/dev/null || blind "oci CLI is not installed"
             ns=(); [ -n "${OCI_OS_NAMESPACE:-}" ] && ns=(--namespace-name "$OCI_OS_NAMESPACE")
-            exec oci os object head "${ns[@]}" --bucket-name "$BUCKET" --name "$NAME"
+            exec oci os object head ${ns[@]+"${ns[@]}"} --bucket-name "$BUCKET" --name "$NAME"
             ;;
           *) blind "unknown backend $BACKEND";;
         esac
@@ -218,7 +218,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             ns=(); [ -n "${OCI_OS_NAMESPACE:-}" ] && ns=(--namespace-name "$OCI_OS_NAMESPACE")
             # crew#163: a machine with no OCI identity (a Mac, crew#345) still reads one object through
             # the S3 door with the envelope's state-backend keys; the oci CLI is asked first.
-            if command -v oci >/dev/null && oci os object get "${ns[@]}" --bucket-name "$BUCKET" --name "$NAME" --file - 2>/dev/null; then exit 0; fi
+            if command -v oci >/dev/null && oci os object get ${ns[@]+"${ns[@]}"} --bucket-name "$BUCKET" --name "$NAME" --file - 2>/dev/null; then exit 0; fi
             exec "$IDP/bin/idp-oci-s3" get "$BUCKET" "$NAME"
             ;;
           *) blind "unknown backend $BACKEND";;
@@ -235,7 +235,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
           oci)
             command -v oci >/dev/null || blind "oci CLI is not installed"
             ns=(); [ -n "${OCI_OS_NAMESPACE:-}" ] && ns=(--namespace-name "$OCI_OS_NAMESPACE")
-            exec oci os object put "${ns[@]}" --bucket-name "$BUCKET" --name "$NAME" --file "$FILE" --force
+            exec oci os object put ${ns[@]+"${ns[@]}"} --bucket-name "$BUCKET" --name "$NAME" --file "$FILE" --force
             ;;
           *) blind "unknown backend $BACKEND";;
         esac
@@ -257,7 +257,7 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
           oci)
             command -v oci >/dev/null || blind "oci CLI is not installed"
             ns=(); [ -n "${OCI_OS_NAMESPACE:-}" ] && ns=(--namespace-name "$OCI_OS_NAMESPACE")
-            oci os object list "${ns[@]}" --bucket-name "$BUCKET" --all ${PREFIX:+--prefix "$PREFIX"} --query 'data[].name' --raw-output | python3 -c 'import json,sys; [print(n) for n in json.load(sys.stdin)]'
+            oci os object list ${ns[@]+"${ns[@]}"} --bucket-name "$BUCKET" --all ${PREFIX:+--prefix "$PREFIX"} --query 'data[].name' --raw-output | python3 -c 'import json,sys; [print(n) for n in json.load(sys.stdin)]'
             ;;
           *) blind "unknown backend $BACKEND";;
         esac

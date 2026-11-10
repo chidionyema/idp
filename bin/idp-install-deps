@@ -28,6 +28,14 @@ KUSTOMIZE_VER="5.7.1"
 KUBECONFORM_VER="0.8.0"
 SOPS_VER="3.13.3"
 TEMPORAL_VER="1.9.1"
+# nats-server -- the laptop estate bus (JetStream on loopback, ai.estate.nats.plist). It was NOT
+# in this list and nothing else provisioned it, so when ~/.cache/estate-tools was refreshed on
+# 2026-11-10 every other tool was re-fetched and nats-server silently vanished. ai.estate.nats
+# has KeepAlive, so launchd retried forever and every retry exited 126 'cannot execute'; the
+# estate-bus critical entry then read 127.0.0.1:4222 refused and the estate went blind on its
+# bus while the board still showed a loaded job. The pin matches ai.estate.nats.plist,
+# platform/messaging/go.mod and the chart, all on 2.14.6.
+NATS_VER="2.14.6"
 YAMLLINT_VER="1.37.1"   # pip, not a release binary; .github/workflows/ci.yml and fast-gate.yml pin the same
 
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -174,6 +182,22 @@ else
   URL="https://github.com/temporalio/cli/releases/download/v${TEMPORAL_VER}/temporal_cli_${TEMPORAL_VER}_${OS}_${ARCH}.tar.gz"
   if _fetch temporal "$URL"; then _ok "temporal $TEMPORAL_VER installed"
   else _fail "temporal install failed (url: $URL)"; fi
+fi
+
+# nats-server -- the loopback estate bus that ai.estate.nats.plist supervises (JetStream is what
+# carries voice steers and every agent event). The plist execs $TOOLS_DIR/nats-server, so the
+# binary and the supervisor are two halves of one contract; while only the plist existed,
+# KeepAlive restarted a missing binary every few seconds, each attempt exited 126, and nothing
+# said so: the job showed as loaded while 127.0.0.1:4222 refused every client (estate-bus FAIL).
+# `nats-server --version` prints "nats-server: v2.14.6", which _ver_ok's version/--version probe
+# matches. The release ships an archive under a nested dir, so it needs the strip=1 form.
+if _ver_ok nats-server "v$NATS_VER"; then
+  _ok "nats-server $NATS_VER"
+else
+  _inst "nats-server $NATS_VER"
+  URL="https://github.com/nats-io/nats-server/releases/download/v${NATS_VER}/nats-server-v${NATS_VER}-${OS}-${ARCH}.tar.gz"
+  if _fetch nats-server "$URL" 1; then _ok "nats-server $NATS_VER installed"
+  else _fail "nats-server install failed (url: $URL)"; fi
 fi
 
 # yamllint -- the yamllint rung in bin/idp-ci and .githooks/pre-commit refuse when it is missing,
