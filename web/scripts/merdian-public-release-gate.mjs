@@ -8,7 +8,12 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+let root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+// Explicit fixture mode exists only for tests; Vercel never supplies this flag.
+if (process.argv.includes('--fixture') && process.env.NODE_ENV === 'test' &&
+    process.env.MERDIAN_RELEASE_TEST_ROOT) {
+  root = resolve(process.env.MERDIAN_RELEASE_TEST_ROOT);
+}
 const failures = [];
 function source(file) {
   const abs = resolve(root, file);
