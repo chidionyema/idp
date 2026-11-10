@@ -13,10 +13,35 @@ They fail before the fix (no ``instruction_gate`` module existed) and pass after
 from __future__ import annotations
 
 import asyncio
+import importlib.util
+from pathlib import Path
 
 import pytest
 
-from platform.llm import instruction_gate as gate
+# Loaded by path, the way every other test here loads a platform/ module: platform/ is
+# not an importable package (no __init__.py), and adding one would change the tree for a
+# reason that has nothing to do with this gate.
+_SOURCE = (
+    Path(__file__).resolve().parents[1] / "platform" / "llm" / "instruction_gate.py"
+)
+
+# Loaded by path, the way every other test here loads a platform/ module: platform/ is
+# not an importable package (it has no __init__.py, and adding one would change the tree
+# for a reason that has nothing to do with this gate).
+_SOURCE = (
+    Path(__file__).resolve().parents[1] / "platform" / "llm" / "instruction_gate.py"
+)
+
+
+def _load():
+    spec = importlib.util.spec_from_file_location("instruction_gate", _SOURCE)
+    assert spec and spec.loader, f"cannot load {_SOURCE}"
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+gate = _load()
 
 
 @pytest.fixture(autouse=True)
