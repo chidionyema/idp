@@ -1186,6 +1186,52 @@ else
 fi
 fi  # IDP_CI_SKIP_PYTEST
 
+# 8c. Every Rust crate in the tree builds and its tests pass. Before this rung, idp had
+#     Rust and the gate could not see it: platform/dx and platform/intercloud were compiled
+#     only by whichever workflow happened to name one path
+#     (concierge-deploy.yml runs cargo on code/ephemeral/cdp-vault-proxy and nothing else).
+#     A crate that no gate builds is a crate that rots -- the intercloud bundle as shipped
+#     declared `pub mod controller` with no controller.rs and still "existed".
+#
+#     A missing cargo is FAIL, never BLIND: "cannot judge" is how a gate fails open (R1).
+#     Discovery is by Cargo.toml so a new crate is covered the moment it lands, with no
+#     second list to drift from the first.
+if ! touched platform/dx platform/intercloud bin/idp-ci; then
+  say "ok    rust       no Rust change against $IDP_CI_BASE"
+else
+  cargo_bin="$(command -v cargo 2>/dev/null || true)"
+  [ -n "$cargo_bin" ] || for c in "$HOME/.cargo/bin/cargo" /usr/local/bin/cargo /opt/homebrew/bin/cargo; do
+    [ -x "$c" ] && { cargo_bin="$c"; break; }
+  done
+  if [ -z "$cargo_bin" ]; then
+    say "FAIL  rust       cargo is not installed; the Rust crates were not built or tested"
+    say "      fix: curl https://sh.rustup.rs -sSf | sh -s -- -y  (then re-run)"
+    fail=1
+  else
+    rust_n=0; rust_ok=0
+    while IFS= read -r manifest; do
+      rust_n=$((rust_n + 1))
+      crate_dir="$(dirname "$manifest")"
+      crate_rel="${crate_dir#$IDP/}"
+      # --offline is deliberately NOT set: a crate with dependencies must fetch once.
+      rt_out="$( cd "$crate_dir" && CARGO_TERM_COLOR=never "$cargo_bin" test --quiet 2>&1 )"; rt_rc=$?
+      passed="$(printf '%s' "$rt_out" | grep -oE '[0-9]+ passed' | head -1)"
+      if [ "$rt_rc" -eq 0 ]; then
+        rust_ok=$((rust_ok + 1))
+        say "ok    rust       $crate_rel ($passed)"
+      else
+        say "FAIL  rust       $crate_rel cargo test rc=$rt_rc"
+        printf '%s\n' "$rt_out" | grep -E '^(error|test result)' | head -8 | sed 's/^/      /'
+        fail=1
+      fi
+    done < <(find "$IDP/platform" -maxdepth 2 -name Cargo.toml -not -path '*/target/*' 2>/dev/null | sort)
+    if [ "$rust_n" -eq 0 ]; then
+      say "BLIND rust       no Cargo.toml under platform/ was found to build"
+      fail=1
+    fi
+  fi
+fi
+
 # 8d. The face route keeps identity in front (ADR 0003). `backstage/app-config.container.yaml`
 #     names the rule in its own words -- "The PR that adds the public route must put identity in
 #     front of it in the same change (ADR 0003, OIDC at the gateway) or turn this flag off;
