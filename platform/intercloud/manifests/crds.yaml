@@ -1,0 +1,37 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata: {name: lanes.intercloud.estate.internal}
+spec:
+  group: intercloud.estate.internal
+  versions: [{name: v1, served: true, storage: true, schema: {openAPIV3Schema: {type: object, properties: {
+    spec: {type: object, properties: {
+      class: {type: string, enum: [free, paid, forbidden]},
+      provider: {type: string}, cores: {type: number}, memGb: {type: number},
+      costMo: {type: number}, recoveryHome: {type: string}}, required: [class, provider, cores, memGb]},
+    status: {type: object, properties: {health: {type: string}, verdict: {type: string}}}}}}}]
+  scope: Cluster
+  names: {kind: Lane, plural: lanes}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata: {name: workloadspecs.intercloud.estate.internal}
+spec:
+  group: intercloud.estate.internal
+  versions: [{name: v1, served: true, storage: true, schema: {openAPIV3Schema: {type: object, properties: {
+    spec: {type: object, properties: {
+      cores: {type: number}, memGb: {type: number}, prefer: {type: string},
+      slo: {type: string}}, required: [cores, memGb]}}}}}]
+  scope: Namespaced
+  names: {kind: WorkloadSpec, plural: workloadspecs}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata: {name: approvals.intercloud.estate.internal}
+spec:
+  group: intercloud.estate.internal
+  versions: [{name: v1, served: true, storage: true, schema: {openAPIV3Schema: {type: object, properties: {
+    spec: {type: object, properties: {
+      lane: {type: string}, costMo: {type: number}, via: {type: string, enum: [telegram]},
+      sig: {type: string}}, required: [lane, costMo, via, sig]}}}}}]
+  scope: Namespaced
+  names: {kind: Approval, plural: approvals}
