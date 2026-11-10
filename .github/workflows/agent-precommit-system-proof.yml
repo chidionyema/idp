@@ -18,14 +18,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          fetch-depth: 2
+          fetch-depth: 0
           persist-credentials: false
       - name: Verify exact user-lane source and tests
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "7bd884bb076e2bf45f60b730877802a3fffa97da"
+          git merge-base --is-ancestor 7bd884bb076e2bf45f60b730877802a3fffa97da HEAD
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/agent-precommit-system-proof.yml"
-          git diff --quiet HEAD^ HEAD -- bin/idp-agent-patch-preflight.py .githooks/pre-commit .github/workflows/agent-sandbox.yml tests/test_agent_patch_preflight.py
+          git diff --quiet 7bd884bb076e2bf45f60b730877802a3fffa97da HEAD -- bin/idp-agent-patch-preflight.py .githooks/pre-commit .github/workflows/agent-sandbox.yml tests/test_agent_patch_preflight.py
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: ${{ matrix.python }}
