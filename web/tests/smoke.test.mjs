@@ -7,6 +7,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createServer } from "node:http";
 import { setTimeout as sleep } from "node:timers/promises";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -136,7 +137,9 @@ test("contact endpoint refuses malformed requests", async () => {
   assert.ok(body.errors.email && body.errors.name && body.errors.message);
 
   const get = await fetch(`${BASE}/api/contact`);
-  assert.equal(get.status, 405);
+  assert.equal(get.status, 200);
+  assert.equal(get.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await get.json(), { acceptingEnquiries: false });
 });
 
 test("a honeypot submission is accepted silently", async () => {
@@ -166,6 +169,72 @@ test("a valid submission with no delivery path configured fails loudly", async (
   // 503, not 200: an unconfigured deployment must not look like a successful one.
   assert.equal(res.status, 503);
   assert.equal((await res.json()).error, "delivery_not_configured");
+});
+
+test("a configured enquiry is delivered to a real local webhook before confirmation", async () => {
+  const received = [];
+  const hook = createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    received.push({ method: req.method, body: JSON.parse(body) });
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end('{"accepted":true}');
+  });
+  await new Promise((resolve) => hook.listen(0, "127.0.0.1", resolve));
+  const hookAddress = hook.address();
+  assert.ok(hookAddress && typeof hookAddress !== "string");
+  const webhookPort = hookAddress.port;
+  const secondPort = 3112;
+  const secondBase = `http://127.0.0.1:${secondPort}`;
+  const configuredServer = spawn(process.execPath,
+    ["node_modules/next/dist/bin/next", "start", "--port", String(secondPort)], {
+      cwd: root,
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        NODE_ENV: "production",
+        CONTACT_WEBHOOK_URL: `http://localhost:${webhookPort}/intake`,
+        CONTACT_WEBHOOK_TOKEN: "",
+        TELEGRAM_BOT_TOKEN: "",
+        TELEGRAM_CHAT_ID: "",
+        MERIDIAN_SECRETS_DIR: "/no-such-meridian-secrets-for-smoke-test",
+      },
+    });
+  try {
+    let ready = false;
+    for (let i = 0; i < 80; i++) {
+      try {
+        const res = await fetch(`${secondBase}/api/contact`, { signal: AbortSignal.timeout(1500) });
+        if (res.ok) { ready = true; break; }
+      } catch { /* second server still starting */ }
+      await sleep(350);
+    }
+    assert.ok(ready, "configured enquiry server did not start");
+    const status = await fetch(`${secondBase}/api/contact`);
+    assert.deepEqual(await status.json(), { acceptingEnquiries: true });
+    assert.equal(status.headers.get("cache-control"), "no-store");
+
+    const response = await fetch(`${secondBase}/api/contact`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Merdian Canary",
+        email: "synthetic@example.test",
+        company: "Synthetic Lab",
+        message: "A synthetic test enquiry, not a real customer record.",
+      }),
+    });
+    assert.equal(response.status, 200, "success must require webhook acceptance");
+    assert.equal(received.length, 1, "webhook must receive exactly one delivery");
+    assert.equal(received[0].method, "POST");
+    assert.equal(received[0].body.source, "merian-intelligence/contact");
+    assert.equal(received[0].body.email, "synthetic@example.test");
+    assert.equal(received[0].body.company, "Synthetic Lab");
+    assert.ok(received[0].body.received_at, "delivery needs provenance timestamp");
+  } finally {
+    configuredServer.kill("SIGTERM");
+    await new Promise((resolve) => hook.close(resolve));
+  }
 });
 
 test("the endpoint rate-limits a caller that keeps posting", async () => {
@@ -226,5 +295,43 @@ test("every internal link goes somewhere, and every anchor exists", async () => 
   // 18 distinct targets on this site today: the ten routes, the three tool anchors, and a few
   // fragments. The bound is a floor, not a target -- it fails if the crawl stopped finding links
   // at all, which is the failure mode of a crawler that silently matches nothing.
-  assert.ok(seen.size >= 15, `expected the pages to link to each other, found ${seen.size} distinct links`);
+  // The founder-facing navigation is deliberately focused; removing legacy demo and
+  // tool links must not be mistaken for a crawler failure. Judge the actual journeys.
+  for (const route of ["/", "/consulting", "/research", "/products", "/contact"]) {
+    assert.ok([...seen.keys()].some(key => key === route + "#"), `core customer journey missing: ${route}`);
+  }
+  assert.ok(seen.size >= 12, `expected a connected public site, found ${seen.size} distinct links`);
+});
+
+test("research answers are excerpts from published notes with working section links", async () => {
+  const response = await fetch(`${BASE}/api/research/query`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ query: "How does SPIFFE workload identity work?" }),
+  });
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.mode, "published-excerpts", "research responses must describe the actual retrieval method");
+  assert.ok(data.sources?.length > 0, "the published note should be retrievable");
+  assert.match(data.answer, /published note/, "answer must disclose it is an excerpt");
+  for (const source of data.sources) {
+    assert.match(source.url, /^\/writing\/[a-z0-9-]+(?:#[a-z0-9-]+)?$/);
+    const [target, fragment] = source.url.split("#");
+    const article = await fetch(BASE + target);
+    assert.equal(article.status, 200, `cited article not found: ${target}`);
+    if (fragment) assert.ok((await article.text()).includes(`id="${fragment}"`), `missing section anchor: ${source.url}`);
+  }
+
+  const unrelated = await fetch(`${BASE}/api/research/query`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ query: "qzxflarb imaginary zeppelin" }),
+  });
+  assert.equal(unrelated.status, 200);
+  assert.deepEqual((await unrelated.json()).sources, [], "out-of-scope requests must not fabricate references");
+
+  const invalid = await fetch(`${BASE}/api/research/query`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ query: "   " }),
+  });
+  assert.equal(invalid.status, 400);
 });

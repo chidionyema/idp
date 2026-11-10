@@ -2,13 +2,12 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Contact",
-  description:
-    "Tell us what you are running and what it costs. We reply within one business day, and the first call is a diagnosis rather than a pitch.",
+  description: "Discuss AI strategy, engineering, autonomous systems, research partnerships or ventures with Merdian Intelligence.",
   alternates: { canonical: "/contact" },
   openGraph: {
     type: "website",
-    title: "Contact | Meridian Intelligence",
-    description: "Tell us what you are running and what it costs. We reply within one business day.",
+    title: "Contact | Merdian Intelligence",
+    description: "Tell Merdian Intelligence about the engineering challenge or research question you want to tackle.",
     url: "/contact",
   },
 };

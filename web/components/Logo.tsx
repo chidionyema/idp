@@ -33,16 +33,16 @@ export function LogoMark({ size = 22, tone = "ink" }: { size?: number; tone?: To
     >
       <circle cx="12" cy="12" r={RING_R} stroke="currentColor" strokeWidth={STROKE} />
       <ellipse cx="12" cy="12" rx={LENS_RX} ry={RING_R} stroke="currentColor" strokeWidth={STROKE} />
-      <circle cx="12" cy={12 - RING_R} r={BEAD_R} fill={tone === "light" ? "var(--accent-on-ink)" : "var(--accent)"} />
+      <circle cx="12" cy={12 - RING_R} r={BEAD_R} fill={tone === "light" ? "#F2CB87" : "#EAC47E"} />
     </svg>
   );
 }
 
 export function Logo({ tone = "ink", size = 22 }: { tone?: Tone; size?: number }) {
   return (
-    <Link href="/" className={`logo${tone === "light" ? " logo-light" : ""}`} aria-label="Meridian Intelligence — home">
+    <Link href="/" className={`logo${tone === "light" ? " logo-light" : ""}`} aria-label="Merdian Intelligence — home">
       <LogoMark size={size} tone={tone} />
-      <span className="logo-word">Meridian<span className="logo-dot">.</span></span>
+      <span className="logo-word">Merdian<span className="logo-dot">.</span></span>
     </Link>
   );
 }

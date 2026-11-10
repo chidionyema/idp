@@ -192,7 +192,7 @@ export function telegramPayload(
   receivedAt: string,
 ) {
   const lines = [
-    "New enquiry via meridian.ai/contact",
+    "New enquiry via merian-intelligence/contact",
     `Name: ${value.name}`,
     `Email: ${value.email}`,
     ...(value.company ? [`Company: ${value.company}`] : []),
@@ -210,7 +210,7 @@ export function telegramPayload(
 
 export function deliveryPayload(value: NonNullable<ValidationResult["value"]>, receivedAt: string) {
   return {
-    source: "meridian.ai/contact",
+    source: "merian-intelligence/contact",
     received_at: receivedAt,
     ...value,
   };

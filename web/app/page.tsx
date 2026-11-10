@@ -1,144 +1,112 @@
 import Link from "next/link";
-import { site } from "@/content/site";
-import { HeroPlayground } from "@/components/HeroPlayground";
-import { Reveal } from "@/components/Reveal";
 import type { Metadata } from "next";
-export const metadata: Metadata = { description: site.tagline };
+
+export const metadata: Metadata = {
+  title: "Merdian Intelligence | AI laboratory, consultancy and ventures",
+  description: "Merdian Intelligence researches artificial intelligence, engineers systems for organisations, and develops commercial AI ventures.",
+};
+
+const disciplines = [
+  { n: "01", title: "AI strategy & architecture", text: "Find the right problem, choose the right systems and turn technical uncertainty into a credible investment decision.", marker: "ADVISE" },
+  { n: "02", title: "AI engineering & delivery", text: "From intelligent applications to secure, observable platforms. We design, build, integrate and operate what matters.", marker: "BUILD" },
+  { n: "03", title: "Autonomous systems", text: "Agent orchestration, workflow automation and human oversight designed for real operating environments.", marker: "AUTOMATE" },
+  { n: "04", title: "Research & experimentation", text: "Test frontier capabilities against meaningful baselines. Capture the evidence, including what does not work.", marker: "DISCOVER" },
+];
 
 export default function HomePage() {
   return (
     <>
-      {/* Hero */}
-      <section style={{ borderBottom: "1px solid var(--rule)" }}>
-        <div className="container section hero-grid">
-          <div className="hero-copy">
-            <span className="tag tag-accent">AI Infrastructure Consulting</span>
-            <h1 style={{ fontFamily: "var(--serif)" }}>AI infrastructure consulting for companies<br /><em style={{ fontStyle: "normal", color: "var(--accent)" }}>shipping production LLM systems</em>.</h1>
-            <p style={{ fontSize: "18px", lineHeight: 1.7, color: "var(--ink-3)", maxWidth: "52ch" }}>
-              We build the routing, the traces, the workload identity and the eval suite a production LLM feature needs. Most teams get the demo working. The gap between that and ten thousand requests an hour is the job.
-            </p>
-            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-              <Link href="/contact" className="btn-primary">Talk to us →</Link>
-              <Link href="/case-studies" className="btn-secondary">See our work</Link>
+      <section className="mi-hero" aria-labelledby="mi-hero-title">
+        <div className="mi-hero-grid" aria-hidden="true" />
+        <div className="mi-hero-glow" aria-hidden="true" />
+        <div className="mi-shell mi-hero-shell">
+          <div className="mi-hero-topline"><span><i className="mi-live-dot" /> MERDIAN INTELLIGENCE</span><span>INDEPENDENT AI LABORATORY + CONSULTANCY</span><span>UK / GLOBAL</span></div>
+          <div className="mi-hero-composition">
+            <div className="mi-hero-content">
+              <div className="mi-hero-overline">RESEARCH THE UNKNOWN. ENGINEER THE POSSIBLE.</div>
+              <h1 id="mi-hero-title" className="mi-hero-title">
+                INTELLIGENCE<span className="mi-hero-comma">,</span><br/>
+                <span className="mi-hero-outline">MADE</span> REAL<span className="mi-gold-stop">.</span>
+              </h1>
+              <p className="mi-hero-intro">We are an AI research laboratory, technology consultancy and company builder. We turn new intelligence into systems people can use, businesses can trust and ventures that can grow.</p>
+              <div className="mi-hero-actions">
+                <Link href="/consulting" className="mi-button mi-button-gold">Work with us <span aria-hidden="true">↗</span></Link>
+                <Link href="/research" className="mi-button mi-button-outline">Enter the laboratory <span aria-hidden="true">↗</span></Link>
+              </div>
+            </div>
+            <div className="mi-hero-art" aria-hidden="true">
+              <div className="mi-art-label mi-art-label-top">M / 001 — INTELLIGENCE IN MOTION</div>
+              <div className="mi-orbit mi-orbit-outer"/>
+              <div className="mi-orbit mi-orbit-mid"/>
+              <div className="mi-orbit mi-orbit-inner"/>
+              <div className="mi-orbit-axis mi-orbit-axis-a"/>
+              <div className="mi-orbit-axis mi-orbit-axis-b"/>
+              <div className="mi-orbit-center"><div className="mi-orbit-core"/><div className="mi-orbit-coreline"/></div>
+              <span className="mi-orbit-node mi-node-one"/><span className="mi-orbit-node mi-node-two"/><span className="mi-orbit-node mi-node-three"/>
+              <div className="mi-art-label mi-art-label-bottom">OBSERVE <span>→</span> EXPERIMENT <span>→</span> ENGINEER</div>
             </div>
           </div>
-          <div className="hero-demo">
-            <p style={{ fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-3)", marginBottom: "20px" }}>LLM routing demo</p>
-            <HeroPlayground />
+          <div className="mi-hero-bottom"><span>01 / A NEW KIND OF AI COMPANY</span><span>SCROLL TO EXPLORE <b aria-hidden="true">↓</b></span></div>
+        </div>
+      </section>
+
+      <section className="mi-manifesto" aria-labelledby="mi-manifesto-title">
+        <div className="mi-shell mi-manifesto-grid">
+          <p className="mi-eyebrow">WHAT MAKES US DIFFERENT / 001</p>
+          <div>
+            <h2 id="mi-manifesto-title">Not another AI pitch.<br/><em>Real intelligence. Real work.</em></h2>
+            <p>Merdian exists at the intersection of science and commerce. We experiment continuously, build for real-world constraints and develop our own companies. The laboratory creates the advantage. Consulting brings it to clients. Products take it into new markets.</p>
+          </div>
+          <div className="mi-manifesto-symbol" aria-hidden="true">M<span>↗</span></div>
+        </div>
+      </section>
+
+      <section className="mi-services mi-section" aria-labelledby="mi-services-heading">
+        <div className="mi-shell">
+          <div className="mi-section-intro"><span className="mi-eyebrow">01 / CONSULTANCY</span><p>FOR ORGANISATIONS BUILDING WITH AI</p></div>
+          <div className="mi-split-heading"><h2 id="mi-services-heading">Serious ambition.<br/><span>Serious engineering.</span></h2><div><p>From boardroom decisions to production architecture. We work with organisations that need more than prototypes and promises.</p><Link className="mi-text-action" href="/consulting">Explore our consultancy <span aria-hidden="true">↗</span></Link></div></div>
+          <div className="mi-services-grid">
+            {disciplines.map(d => <Link key={d.n} href="/consulting" className="mi-service-card">
+              <div className="mi-service-top"><span>{d.n} / {d.marker}</span><span aria-hidden="true">↗</span></div>
+              <div><h3>{d.title}</h3><p>{d.text}</p></div>
+              <div className="mi-service-rule"/>
+            </Link>)}
           </div>
         </div>
       </section>
-      {/* Stats */}
-      <section style={{ background: "var(--ink)", padding: "28px 0" }}>
-        <div className="container" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "32px" }}>
-          {[
-            { value: "12", label: "deployments" },
-            { value: "$1.1M", label: "monthly spend removed" },
-            { value: "73%", label: "bill reduction, largest" },
-            { value: "0.3/mo", label: "incidents, down from 3" },
-          ].map((s) => (
-            <div key={s.label} className="metric" style={{ textAlign: "center" }}>
-              <span className="metric-value" style={{ color: "#fff" }}>{s.value}</span>
-              <span className="metric-label" style={{ color: "rgba(255,255,255,0.6)" }}>{s.label}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-      {/* Research */}
-      <section className="section">
-        <div className="container">
-          <Reveal><div style={{ marginBottom: "48px" }}><h2>Research</h2><p style={{ color: "var(--ink-3)", marginTop: "12px" }}>Written from our engagements.</p></div></Reveal>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: "24px" }}>
-            {site.research.map((r) => (
-              <Reveal key={r.title}>
-                <div className="card" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                    <span className="tag">{r.kind}</span><span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)" }}>{r.year}</span>
-                  </div>
-                  <h3 style={{ fontSize: "1.3rem", fontWeight: 500 }}>{r.title}</h3>
-                  <p style={{ fontSize: "14px", color: "var(--ink-3)", lineHeight: 1.7 }}>{r.blurb}</p>
-                </div>
-              </Reveal>
-            ))}
+
+      <section className="mi-lab mi-section" aria-labelledby="mi-lab-heading">
+        <div className="mi-shell mi-lab-layout">
+          <div className="mi-lab-copy">
+            <span className="mi-eyebrow">02 / THE LABORATORY</span>
+            <h2 id="mi-lab-heading">Curiosity<br/>is an <em>operating</em><br/>principle.</h2>
+            <p>Our lab tests emerging models, agent architectures and new ways to automate work. Hypotheses become controlled trials. Results become knowledge. Promising discoveries become products or client capabilities.</p>
+            <Link href="/research" className="mi-button mi-button-gold">Explore research <span aria-hidden="true">↗</span></Link>
+          </div>
+          <div className="mi-lab-board">
+            <div className="mi-lab-board-head"><span><i className="mi-live-dot"/> RESEARCH PROGRAMMES</span><span>MERDIAN / LAB</span></div>
+            <div className="mi-lab-programme"><span>01</span><div><h3>Autonomous intelligence</h3><p>Agents, orchestration, recovery and human direction</p></div><b>↗</b></div>
+            <div className="mi-lab-programme"><span>02</span><div><h3>AI systems & evaluation</h3><p>Quality, cost, latency and repeatable model experiments</p></div><b>↗</b></div>
+            <div className="mi-lab-programme"><span>03</span><div><h3>Trust & infrastructure</h3><p>Identity, reliability, observability and operational proof</p></div><b>↗</b></div>
+            <div className="mi-lab-board-foot"><span>METHOD / HYPOTHESIS → EXPERIMENT → EVIDENCE</span><span>↗</span></div>
           </div>
         </div>
       </section>
-      {/* Process */}
-      <section className="section" style={{ background: "var(--panel)", borderTop: "1px solid var(--rule)", borderBottom: "1px solid var(--rule)" }}>
-        <div className="container">
-          <Reveal><h2 style={{ marginBottom: "48px" }}>How we work</h2></Reveal>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "32px" }}>
-            {[
-              { n: "01", title: "Audit", desc: "We read what you have and find where it breaks. Then we put a number on what the current setup costs you every month." },
-              { n: "02", title: "Design", desc: "We design against your ceilings, not a reference architecture. If the routing layer cannot hold your p95, we find that out on paper." },
-              { n: "03", title: "Build", desc: "We build it with you. The eval harness and the regression pipeline ship in the same week as the feature, because after that nobody goes back for them." },
-              { n: "04", title: "Hand over", desc: "We stay ninety days, tune thresholds with your team, then leave you the runbooks and go quiet." },
-            ].map((step) => (
-              <Reveal key={step.n}>
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  <span style={{ fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 500, color: "var(--accent)" }}>{step.n}</span>
-                  <h3 style={{ fontSize: "1.2rem", fontWeight: 500 }}>{step.title}</h3>
-                  <p style={{ fontSize: "14px", color: "var(--ink-3)", lineHeight: 1.7 }}>{step.desc}</p>
-                </div>
-              </Reveal>
-            ))}
+
+      <section className="mi-ventures mi-section" aria-labelledby="mi-ventures-heading">
+        <div className="mi-shell">
+          <div className="mi-section-intro"><span className="mi-eyebrow">03 / VENTURES + PRODUCTS</span><p>FROM THE LABORATORY TO THE MARKET</p></div>
+          <div className="mi-split-heading"><h2 id="mi-ventures-heading">We don&apos;t only advise.<br/><span>We build businesses.</span></h2><div><p>Merdian is the parent company. Our ventures and products tackle different markets, each at its own stage of maturity.</p><Link className="mi-text-action" href="/products">Discover the portfolio <span aria-hidden="true">↗</span></Link></div></div>
+          <div className="mi-venture-grid">
+            <article className="mi-venture mi-venture-mumchimp"><div className="mi-venture-top"><span>GROUP COMPANY / COMMERCE</span><span>01</span></div><div><div className="mi-venture-mark">m<span>.</span></div><h3>Mumchimp</h3><p>Research-backed business opportunities, built for people ready to act.</p></div><a href="https://mumchimp.com" target="_blank" rel="noopener noreferrer">Visit Mumchimp <span aria-hidden="true">↗</span></a></article>
+            <article className="mi-venture mi-venture-genesis"><div className="mi-venture-top"><span>LABORATORY PRODUCT / AUTONOMY</span><span>02</span></div><div><div className="mi-venture-mark mi-genesis-mark">G<span>•</span></div><h3>Genesis</h3><p>The Autonomous Estate: an experimental operating system for coordinated AI agents and work.</p></div><Link href="/products">Explore the vision <span aria-hidden="true">↗</span></Link></article>
+            <article className="mi-venture mi-venture-blabka"><div className="mi-venture-top"><span>PORTFOLIO PRODUCT / IN DEVELOPMENT</span><span>03</span></div><div><div className="mi-venture-mark">b<span>⁎</span></div><h3>Blabka</h3><p>Part of the Merdian product portfolio. More information will be shared as the product develops.</p></div><Link href="/products">View the portfolio <span aria-hidden="true">↗</span></Link></article>
           </div>
         </div>
       </section>
-      {/* Tooling */}
-      <section className="section">
-        <div className="container">
-          <Reveal><div style={{ marginBottom: "48px" }}><h2>Open-source tooling</h2><p style={{ color: "var(--ink-3)", marginTop: "12px" }}>Every library here came out of a client’s problem. We kept them because the next client had the same one.</p></div></Reveal>
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {site.tooling.map((t) => (
-              <Reveal key={t.name}>
-                <div style={{ border: "1px solid var(--rule)", background: "var(--white)", padding: "20px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                    <code style={{ fontFamily: "var(--mono)", fontSize: "14px", fontWeight: 500, color: "var(--ink)" }}>{t.name}</code>
-                    <span className={`tag ${t.status === "stable" ? "tag-ok" : t.status === "beta" ? "tag-beta" : ""}`}>{t.status}</span>
-                  </div>
-                  <p style={{ fontSize: "14px", color: "var(--ink-3)", flex: 1, minWidth: "200px" }}>{t.desc}</p>
-                  <Link href={`/tooling#${t.name}`} className="text-link">Details →</Link>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
-      {/* Case Studies teaser */}
-      <section className="section" style={{ background: "var(--ink)", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-        <div className="container">
-          <Reveal><div style={{ marginBottom: "48px" }}><span className="tag tag-accent-ink" style={{ marginBottom: "16px", display: "inline-flex" }}>Case studies</span><h2 style={{ color: "#fff", fontFamily: "var(--serif)" }}>What we’ve shipped</h2></div></Reveal>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: "24px" }}>
-            {[
-              { industry: "Fintech", result: "73% bill reduction", detail: "$1.1M a month down to $297K. LiteLLM routing and SPIFFE identity across three regions." },
-              { industry: "SaaS", result: "6 weeks to production", detail: "A full AI platform for a 400-engineer company, built by eight of their own people." },
-              { industry: "Healthcare", result: "SOC 2 in 4 months", detail: "HIPAA-grade inference with residency enforced in three jurisdictions." },
-            ].map((c) => (
-              <Reveal key={c.industry}>
-                <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.04)", padding: "24px" }}>
-                  <span style={{ fontFamily: "var(--mono)", fontSize: "10px", color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{c.industry}</span>
-                  <p style={{ fontFamily: "var(--serif)", fontSize: "1.4rem", fontWeight: 500, color: "#fff", marginTop: "12px" }}>{c.result}</p>
-                  <p style={{ fontFamily: "var(--mono)", fontSize: "12px", color: "var(--on-ink)", marginTop: "8px", lineHeight: 1.6, maxWidth: "none" }}>{c.detail}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-          <div style={{ marginTop: "40px", textAlign: "center" }}><Link href="/case-studies" className="btn-secondary" style={{ color: "#fff", borderColor: "rgba(255,255,255,0.2)" }}>Read the full case studies →</Link></div>
-        </div>
-      </section>
-      {/* CTA */}
-      <section className="section">
-        <div className="container" style={{ textAlign: "center", maxWidth: "640px", margin: "0 auto" }}>
-          <Reveal>
-            <h2 style={{ fontFamily: "var(--serif)" }}>We take on a handful of projects each quarter.</h2>
-            <p style={{ marginTop: "20px", color: "var(--ink-3)", fontSize: "17px" }}>If you’re staring at an LLM bill you can’t explain, that’s usually where the conversation starts.</p>
-            <div style={{ display: "flex", gap: "12px", justifyContent: "center", marginTop: "32px", flexWrap: "wrap" }}>
-              <Link href="/contact" className="btn-primary">Schedule a call</Link>
-              <Link href="/research" className="btn-secondary">Read our research</Link>
-            </div>
-          </Reveal>
-        </div>
+
+      <section className="mi-close" aria-labelledby="mi-close-heading">
+        <div className="mi-shell mi-close-inner"><span className="mi-eyebrow">NEXT / WORK WITH MERDIAN</span><h2 id="mi-close-heading">THE NEXT<br/>MOVE IS <em>YOURS.</em></h2><div className="mi-close-bottom"><p>Have an AI problem worth solving, a platform worth building or an idea worth testing? Bring it to Merdian.</p><Link href="/contact" className="mi-button mi-button-gold">Start a conversation <span aria-hidden="true">↗</span></Link></div></div>
       </section>
     </>
   );

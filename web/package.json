@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 3000",
-    "build": "node scripts/voice-lint.mjs && next build",
+    "build": "node scripts/merdian-public-release-gate.mjs && node scripts/voice-lint.mjs && next build",
     "start": "next start --port 3000",
     "voice": "node scripts/voice-lint.mjs",
     "voice:report": "node scripts/voice-lint.mjs --report",
@@ -13,7 +13,10 @@
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/contact.test.ts",
     "test:smoke": "node --test tests/smoke.test.mjs",
-    "verify": "npm run typecheck && npm run voice && npm run lint && npm test && npm run build && npm run test:smoke"
+    "verify": "npm run typecheck && npm run voice && npm run lint && npm test && npm run test:public && npm run build && npm run test:smoke",
+    "test:visual": "node scripts/visual-regression.mjs",
+    "release:contract": "node scripts/merdian-public-release-gate.mjs",
+    "test:public": "node --test tests/merian-positioning.test.mjs tests/merdian-release-gate.test.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

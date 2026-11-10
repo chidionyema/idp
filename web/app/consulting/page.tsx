@@ -1,42 +1,17 @@
 import Link from "next/link";
-import { site } from "@/content/site";
-import { Reveal } from "@/components/Reveal";
 import type { Metadata } from "next";
-export const metadata: Metadata = { title: "Consulting", description: "AI platform architecture, security and compliance, evaluation and fine-tuning." };
-
+export const metadata: Metadata = { title: "AI consultancy and engineering", description: "Merdian Intelligence provides AI strategy, technical consultancy, implementation, autonomous systems and applied AI R&D." };
+const services = [
+  { n:"01", title:"AI strategy & technical advisory", desc:"AI opportunity mapping, architecture and vendor decisions, feasibility studies, technical diligence and implementation roadmaps.", outputs:["AI strategy","Architecture reviews","Technical diligence"] },
+  { n:"02", title:"Applied AI engineering", desc:"Design and build production-grade AI platforms, model integrations, data pipelines, intelligent interfaces and secure services.", outputs:["End-to-end builds","Modernisation","Integration"] },
+  { n:"03", title:"Autonomous operations", desc:"Agentic workflows, orchestrated systems, automation and operational intelligence, with explicit oversight and recovery.", outputs:["Agent systems","Workflow automation","Operational controls"] },
+  { n:"04", title:"Research partnerships", desc:"Run experiments, benchmark frontier capabilities, assess constraints and validate prototypes against business outcomes.", outputs:["Feasibility trials","Evaluation programmes","Prototypes"] },
+];
 export default function ConsultingPage() {
-  return (
-    <div className="container section">
-      <Reveal><div style={{ marginBottom: "64px" }}>
-        <span className="tag tag-accent" style={{ marginBottom: "16px", display: "inline-flex" }}>Consulting</span>
-        <h1>What we do</h1>
-        <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "18px", maxWidth: "60ch" }}>A team of two or three who’ve done this before, working alongside your engineers.</p>
-      </div></Reveal>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "24px", marginBottom: "64px" }}>
-        {site.consulting.map((c, i) => (
-          <Reveal key={i}>
-            <div className="card" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-              <span style={{ fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 500, color: "var(--accent)" }}>0{i + 1}</span>
-              <h3 style={{ fontSize: "1.3rem" }}>{c.title}</h3>
-              <p style={{ fontSize: "14px", color: "var(--ink-3)", lineHeight: 1.75, flex: 1 }}>{c.desc}</p>
-              <Link href="/contact" className="text-link">Discuss this →</Link>
-            </div>
-          </Reveal>
-        ))}
-      </div>
-      <div style={{ borderTop: "1px solid var(--rule)", paddingTop: "64px" }}>
-        <Reveal>
-          <div style={{ border: "1px solid var(--rule)", background: "var(--ink)", padding: "64px", textAlign: "center" }}>
-            <span className="tag tag-accent-ink" style={{ marginBottom: "24px", display: "inline-flex" }}>Talk to us</span>
-            <h2 style={{ fontFamily: "var(--serif)", color: "#fff", maxWidth: "none" }}>We take on a small number of projects each quarter.</h2>
-            <p style={{ color: "var(--on-ink)", marginTop: "20px", fontSize: "17px", maxWidth: "none" }}>If you’re working on production AI infrastructure and want people who’ve done it before, let’s talk.</p>
-            <div style={{ display: "flex", gap: "12px", justifyContent: "center", marginTop: "32px", flexWrap: "wrap" }}>
-              <Link href="/contact" className="btn-primary">Book a call →</Link>
-              <Link href="/case-studies" className="btn-secondary" style={{ color: "#fff", borderColor: "rgba(255,255,255,0.2)" }}>See our work</Link>
-            </div>
-          </div>
-        </Reveal>
-      </div>
-    </div>
-  );
+ return <div className="mi-interior">
+   <section className="mi-page-hero"><div className="mi-shell"><span className="mi-eyebrow">MERDIAN / CONSULTANCY</span><h1>FROM BIG IDEAS<br/>TO <em>REAL SYSTEMS.</em></h1><div className="mi-page-hero-bottom"><p>We advise, architect and build AI systems for organisations that expect technology to make a measurable difference. Deep engineering expertise. Research-led decisions. Commercial focus.</p><Link href="/contact" className="mi-button mi-button-gold">Discuss an engagement <span aria-hidden="true">↗</span></Link></div></div></section>
+   <section className="mi-section mi-service-detail-section"><div className="mi-shell"><div className="mi-section-intro"><span className="mi-eyebrow">WHAT WE DO / 01–04</span><p>STRATEGY TO IMPLEMENTATION</p></div><div className="mi-service-detail-list">{services.map(s=><article key={s.n} className="mi-service-detail"><span>{s.n}</span><div><h2>{s.title}</h2><p>{s.desc}</p><div className="mi-chip-list">{s.outputs.map(v=><span key={v}>{v}</span>)}</div></div><Link href="/contact" aria-label={"Discuss "+s.title}>↗</Link></article>)}</div></div></section>
+   <section className="mi-proof-band"><div className="mi-shell"><span className="mi-eyebrow">HOW WE ENGAGE</span><div className="mi-proof-grid"><div><h3>Understand first.</h3><p>We start by clarifying constraints, outcomes and what would make an investment worthwhile.</p></div><div><h3>Prove what matters.</h3><p>Small controlled engagements test value before committing to a larger programme.</p></div><div><h3>Deliver for reality.</h3><p>Security, maintainability, cost and day-two operations are part of engineering, not an afterthought.</p></div></div></div></section>
+   <section className="mi-page-cta mi-shell"><span className="mi-eyebrow">YOUR NEXT MOVE</span><h2>LET&apos;S MAKE IT <em>WORK.</em></h2><p>Whether you need strategic direction, a senior engineering partner or a complete AI capability, start with a concrete problem.</p><Link href="/contact" className="mi-button mi-button-gold">Talk to Merdian <span aria-hidden="true">↗</span></Link></section>
+ </div>;
 }
