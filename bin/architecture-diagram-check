@@ -7,7 +7,7 @@ as current: a page that still names a retired component, or whose mermaid fences
 close, looks exactly like a page that is current. GitHub renders a page whose fences do
 not close as ONE unterminated code block, so the diagrams do not render at all.
 
-WHAT IT CHECKS. Eight things, all decided from BYTES -- no docker, no network, and no
+WHAT IT CHECKS. Nine things, all decided from BYTES -- no docker, no network, and no
 rendering, so it runs in seconds on every push and on a laptop:
 
   1. FENCES. Every mermaid block opens and closes, and no fence is glued to other text.
@@ -16,9 +16,10 @@ rendering, so it runs in seconds on every push and on a laptop:
   2. VIEWS. The set of views on the page is exactly the set the model declares. A view
      added to the model and not regenerated is drift; a view deleted from the model and
      still on the page is drift.
-  3. ELEMENTS, PER VIEW. The elements drawn in each view are exactly the elements the
-     model puts in that view. This is the OTHER direction of the box check: without it,
-     a page that simply DROPS a declared element -- the guardian, the gate -- is "ok".
+  3. ELEMENTS, PER VIEW, WITH MULTIPLICITY. The elements drawn in each view are exactly
+     the elements the model puts in that view -- and each of them ONCE. A page that
+     simply DROPS a declared element -- the guardian, the gate -- is drift, and so is a
+     page that draws the same box twice.
   4. NODE TEXT, PER ELEMENT. Every node is compared against THE DECLARATION OF THAT ONE
      ELEMENT -- not against the model file as a bag of words. The renderer presents an
      element as
@@ -37,20 +38,42 @@ rendering, so it runs in seconds on every push and on a laptop:
      the difference between "is this the model's claim about THIS box" and "is this
      sentence somewhere in the model" -- and only the first one catches a page that
      swaps two elements' bodies, or relabels a person as a container.
-  5. NOTHING MISSING. A description or technology that the model states and the page
-     omits is drift: an element drawn with an empty body, or a container drawn with no
-     description in its marker, fails.
-  6. EDGE LABELS AND TOPOLOGY. Every relationship on the page is compared against the
-     relationships the model declares: a label that is not the model's is drift, a
-     declared relationship that is missing from the page is drift, a relationship the
-     model does not declare is drift, and an edge re-pointed at a different element is
-     drift.
-  7. NAMES. Every element name the model declares is drawn, and every name on the page
+  5. THE SYSTEM BOUNDARY. In a container view the renderer nests the software system's
+     own containers in a subgraph named after that system. A page that moves a software
+     system INSIDE that boundary -- or a container OUTSIDE it -- draws a C4 boundary
+     the model does not declare, and no per-box text check can see it.
+  6. THE VIEW'S OWN TITLE. Each view's mermaid block opens with a subgraph labelled
+     "<Kind> View: <the system the view is of>". A page that relabels that subgraph
+     claims the diagram is a view of something else.
+  7. EDGE LABELS AND TOPOLOGY. The renderer draws ONE edge per pair of elements, and
+     when several relationships project onto the same pair it draws that pair once,
+     labelled with the FIRST of them the model declares. So the page must draw exactly
+     one edge per projected pair, with that label: a label that is not the model's is
+     drift, a declared relationship that is missing from the page is drift, a
+     relationship the model does not declare is drift, an edge re-pointed at a
+     different element is drift, and a second edge for one pair is drift.
+  8. NAMES. Every element name the model declares is drawn, and every name on the page
      is declared -- so a renamed element cannot leave half the page talking about the
      old name.
-  8. NO SILENCE. A view whose membership this file has no rule for is reported as
-     UNCHECKED and the run FAILS. A check that says "ok" about something it did not
-     look at is not a check.
+  9. NO SILENCE. A line inside a mermaid block that this file has no rule for is
+     reported as UNCHECKED and the run FAILS. So is a view kind with no rule here, a
+     node this file cannot read, and a page whose header this file cannot derive from
+     architecture/render. A check that says "ok" about something it did not look at is
+     not a check: a parser that DROPS what it does not understand turns "the page says
+     something I cannot read" into "the page says nothing", and that is how a box for
+     an element that does not exist sails through.
+
+WHAT THIS CHECK DOES NOT COMPARE, STATED PLAINLY SO IT IS NOT A HIDDEN CLAIM:
+  - The SECOND string of a person or of a software system. The renderer DROPS it (the
+    marker carries no description for those kinds), so the page cannot show it and no
+    page could satisfy a check that demanded it. A model that puts a description there
+    is relying on a string nobody can read.
+  - Node COLOURS. The renderer derives a style line per node from the model's styles
+    block; this file does not re-derive structurizr's colour maths. The node's KIND is
+    already compared, in the marker text.
+  - Edge SHAPE and direction, beyond the endpoints and the label.
+  - Whether the .mmd files the renderer produces still match the model. That is what
+    `architecture/render --check` is for, and it needs the structurizr image.
 
 `architecture/render --check` is the byte-exact check (it re-renders and diffs) and
 needs the structurizr image. This one needs nothing, so it can run everywhere.
@@ -102,6 +125,15 @@ KIND_LABEL = {
 # Which kind carries its second string (its description) inside the marker.
 CARRIES_MARKER_DESCRIPTION = {"container": True, "person": False, "softwareSystem": False}
 
+# The label the renderer puts on the subgraph that opens a view, per view kind. The
+# label names the SYSTEM the view is of, not the view's key -- which is why two views
+# of the same system carry the same label.
+VIEW_LABEL_PREFIX = {
+    "systemContext": "System Context View",
+    "container": "Container View",
+    "deployment": "Deployment View",
+}
+
 
 def _collapse(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
@@ -150,7 +182,9 @@ class Model:
         self.parent: dict[str, str] = {}           # alias -> enclosing alias
         self.children: dict[str, list[str]] = {}    # software system alias -> child aliases
         self.views: list[dict] = []
-        self.relationships: set[tuple[str, str, str]] = set()
+        # DECLARATION ORDER matters: when several relationships project onto one pair,
+        # the renderer draws that pair ONCE, labelled with the FIRST of them.
+        self.relationships: list[tuple[str, str, str]] = []
         self.unparsed_relationships: list[str] = []
         self.deployments: dict[str, list[str]] = {}   # environment title -> element aliases
         self.deployment_opaque: list[str] = []        # environments this file cannot read
@@ -215,7 +249,7 @@ class Model:
                             if from_name is None or to_name is None:
                                 self.unparsed_relationships.append(line.strip())
                             else:
-                                self.relationships.add((from_name, to_name, _collapse(label)))
+                                self.relationships.append((from_name, to_name, _collapse(label)))
             else:
                 vm = VIEW_RE.match(line)
                 if vm:
@@ -272,6 +306,17 @@ class Model:
                 return parent.name
             alias = parent_alias
         return None
+
+    def descendants_of(self, alias: str) -> set[str]:
+        """The names of every element inside `alias` in the model's own hierarchy."""
+        out: set[str] = set()
+        for child_alias in self.children.get(alias, []):
+            element = self.elements.get(child_alias)
+            if element is None:
+                continue
+            out.add(element.name)
+            out |= self.descendants_of(child_alias)
+        return out
 
     def projected_relationships(self, visible: set[str]) -> set[tuple[str, str, str]]:
         """The relationships the renderer can draw in a view that draws `visible`."""
@@ -334,12 +379,38 @@ class Model:
             return names, ""
         return None, "a %s view with include * is not a rule this check knows" % view["kind"]
 
+    def view_label(self, view: dict) -> str | None:
+        """The label the renderer puts on the subgraph that opens this view."""
+        prefix = VIEW_LABEL_PREFIX.get(view["kind"])
+        owner = view["ident"].split(".")[-1]
+        element = self.elements.get(owner)
+        if prefix is None or element is None:
+            return None
+        if view["kind"] == "deployment":
+            title = view.get("title") or ""
+            return "%s: %s - %s" % (prefix, element.name, title)
+        return "%s: %s" % (prefix, element.name)
+
 
 # ----------------------------------------------------------------- the page ---
 
 FENCE_OPEN = re.compile(r"^## (.+)$")
-NODE_RE = re.compile(r'^\s*(\d+)\["(.*)"\]\s*$')
-EDGE_RE = re.compile(r'^\s*(\d+)-\.?\s*"(.*)"\s*(?:\.-+>|-->|-.+->)\s*(\d+)\s*$')
+FENCE_CLOSE = re.compile(r"^[ \t]*```[ \t]*$")
+
+# The renderer's whole vocabulary inside a mermaid block, measured from the committed
+# pages. The id shape is the renderer's: nodes are numbered, but the view's own
+# subgraph is called `diagram`, so ids are not numeric.
+ID = r"[A-Za-z0-9_][A-Za-z0-9_]*"
+NODE_RE = re.compile(r'^\s*(' + ID + r')\["([^"]*)"\]\s*$')
+EDGE_RE = re.compile(
+    r'^\s*(' + ID + r')-\.?\s*"([^"]*)"\s*(?:\.-+>|-->|-.+->)\s*(' + ID + r')\s*$'
+)
+GRAPH_RE = re.compile(r"^\s*(?:graph|flowchart)\s+[A-Za-z]{1,3}\s*$")
+LINKSTYLE_RE = re.compile(r"^\s*linkStyle\s+\S+.*$")
+SUBGRAPH_RE = re.compile(r'^\s*subgraph\s+(' + ID + r')\s*\["(.*)"\]\s*$')
+STYLE_RE = re.compile(r"^\s*style\s+(" + ID + r")\s+.*$")
+END_RE = re.compile(r"^\s*end\s*$")
+
 DIV_RE = re.compile(r"<div\b[^>]*>(.*?)</div>", re.S)
 MARKER_RE = re.compile(r"^\[(.*)\]$", re.S)
 
@@ -378,40 +449,158 @@ class Node:
 
 
 class Page:
-    """The page: per view, the nodes drawn and the edges between them."""
+    """The page: per view, the nodes drawn, the edges between them, and the subgraphs.
+
+    The parser knows the renderer's WHOLE vocabulary. A line it does not recognise is
+    not dropped: it is recorded as unreadable, and an unreadable line makes the run
+    UNCHECKED rather than ok. A parser that drops what it does not understand turns
+    "the page says something I cannot read" into "the page says nothing".
+    """
 
     def __init__(self, text: str) -> None:
         self.view_names: list[str] = []
         self.nodes: dict[str, dict[str, Node]] = {}   # view -> id -> Node
         self.edges: dict[str, list[tuple[str, str, str]]] = {}  # view -> (from, to, label)
+        self.subgraphs: dict[str, list[dict]] = {}    # view -> {id, label, members}
         self.unreadable: list[str] = []
-        current = None
+        self.duplicates: list[str] = []
+        current: str | None = None
+        in_block = False
+        orphan = False
+        open_subgraphs: list[dict] = []
         for line in text.split("\n"):
             fm = FENCE_OPEN.match(line)
             if fm:
                 current = fm.group(1).strip()
-                if current in self.nodes:
-                    continue
-                self.view_names.append(current)
-                self.nodes[current] = {}
-                self.edges[current] = []
+                if current not in self.nodes:
+                    self.view_names.append(current)
+                    self.nodes[current] = {}
+                    self.edges[current] = []
+                    self.subgraphs[current] = []
+                open_subgraphs = []
+                in_block = False
                 continue
-            if current is None:
+            if not in_block:
+                if line.strip() == "```mermaid":
+                    in_block = True
+                    if current is None:
+                        # A block with no view heading: there is nothing to compare it
+                        # against, so it is reported and its lines are not read.
+                        self.unreadable.append(
+                            "a mermaid block appears before any view heading"
+                        )
+                        orphan = True
+                continue
+            if FENCE_CLOSE.match(line):
+                in_block = False
+                orphan = False
+                if open_subgraphs:
+                    self.unreadable.append(
+                        "a subgraph is still open when the mermaid block closes"
+                    )
+                    open_subgraphs = []
+                continue
+            if orphan:
+                continue
+
+            stripped = line.strip()
+            if not stripped:
                 continue
             nm = NODE_RE.match(line)
             if nm:
                 node = Node(nm.group(1), nm.group(2))
                 if not node.readable:
-                    self.unreadable.append("%s: node %s -- %s" % (current, nm.group(1), node.reason))
+                    self.unreadable.append(
+                        "%s: node %s -- %s" % (current, nm.group(1), node.reason)
+                    )
+                if nm.group(1) in self.nodes[current]:
+                    # Two node lines with the SAME id: mermaid draws the box twice, so
+                    # the page shows the element twice. Keeping only the last one would
+                    # make that invisible.
+                    self.duplicates.append(
+                        "%s: the page draws node %s twice" % (current, nm.group(1))
+                    )
                 self.nodes[current][nm.group(1)] = node
+                for subgraph in open_subgraphs:
+                    subgraph["members"].add(nm.group(1))
                 continue
             em = EDGE_RE.match(line)
             if em:
                 label = _collapse(_plain(em.group(2)))
                 self.edges[current].append((em.group(1), em.group(3), label))
+                continue
+            sm = SUBGRAPH_RE.match(line)
+            if sm:
+                subgraph = {"id": sm.group(1), "label": sm.group(2), "members": set()}
+                self.subgraphs[current].append(subgraph)
+                open_subgraphs.append(subgraph)
+                continue
+            if END_RE.match(stripped):
+                if not open_subgraphs:
+                    self.unreadable.append(
+                        "%s: an `end` closes a subgraph that was never opened" % current
+                    )
+                else:
+                    open_subgraphs.pop()
+                continue
+            if GRAPH_RE.match(stripped) or LINKSTYLE_RE.match(stripped) or STYLE_RE.match(stripped):
+                continue
+            self.unreadable.append(
+                "%s: a line inside the mermaid block that this check has no rule for: %s"
+                % (current, stripped[:80])
+            )
 
-    def names_in(self, view: str) -> set[str]:
-        return {node.name for node in self.nodes.get(view, {}).values()}
+    def names_in(self, view: str) -> list[str]:
+        """The names drawn in a view, WITH multiplicity: a box drawn twice is drift."""
+        return [node.name for node in self.nodes.get(view, {}).values()]
+
+    def subgraph_labelled(self, view: str, label: str) -> dict | None:
+        for subgraph in self.subgraphs.get(view, []):
+            if subgraph["label"] == label:
+                return subgraph
+        return None
+
+
+def expected_header(render_path: str) -> tuple[list[str] | None, str]:
+    """The header architecture/render writes, read FROM architecture/render.
+
+    The header is a promise the render makes on every line of the page. Deriving the
+    expected text from the render itself keeps ONE source of truth: change the render
+    and this check compares against the new text, instead of against a second copy
+    that can drift away from the first.
+    """
+    try:
+        with open(render_path, encoding="utf-8") as handle:
+            text = handle.read()
+    except OSError:
+        return None, "architecture/render is missing, so the page's header cannot be checked"
+    block = re.search(r"render_page\(\)\s*\{(.*?)\n\}", text, re.S)
+    if not block:
+        return None, "architecture/render has no render_page() block"
+    lines: list[str] = []
+    started = False
+    for raw in block.group(1).split("\n"):
+        stripped = raw.strip()
+        if not started:
+            # The block opens with blank lines -- and, in some renders, a `{` that
+            # groups the writes -- before the header writes themselves.
+            if not stripped or stripped == "{":
+                continue
+            if not stripped.startswith("echo"):
+                return None, "architecture/render does not start the page with a header"
+            started = True
+        if stripped.startswith("echo "):
+            argument = stripped[5:].strip()
+            if not (argument.startswith('"') and argument.endswith('"')):
+                return None, "architecture/render echoes something that is not a quoted string"
+            lines.append(argument[1:-1].replace("\\`", "`"))
+        elif stripped == "echo":
+            lines.append("")
+        else:
+            break
+    if not lines:
+        return None, "architecture/render writes no header"
+    return lines, ""
 
 
 def main() -> int:
@@ -420,6 +609,7 @@ def main() -> int:
     ).stdout.strip() or os.getcwd()
     model_path = os.path.join(root, "architecture", "workspace.dsl")
     page_path = os.path.join(root, "docs", "explanation", "architecture", "index.md")
+    render_path = os.path.join(root, "architecture", "render")
 
     for path in (model_path, page_path):
         if not os.path.isfile(path):
@@ -461,22 +651,32 @@ def main() -> int:
             % (" ".join(only_model), " ".join(only_page))
         )
 
-    # --- 3. elements, per view --------------------------------------------
+    # --- 3. elements, per view, with multiplicity ---------------------------
     for view in model.views:
         expected, why = model.expected_for(view)
         if expected is None:
             undecided.append("%s -- %s" % (view["name"], why))
             continue
         drawn = page.names_in(view["name"])
-        if expected != drawn:
+        drawn_counts: dict[str, int] = {}
+        for name in drawn:
+            drawn_counts[name] = drawn_counts.get(name, 0) + 1
+        expected_set = set(expected)
+        if set(drawn_counts) != expected_set:
             problems.append(
                 "the elements drawn in %s are not the model's: only in the model: %s | only on the page: %s"
                 % (
                     view["name"],
-                    " ".join(sorted(expected - drawn)),
-                    " ".join(sorted(drawn - expected)),
+                    " ".join(sorted(expected_set - set(drawn_counts))),
+                    " ".join(sorted(set(drawn_counts) - expected_set)),
                 )
             )
+        for name, count in sorted(drawn_counts.items()):
+            if count > 1:
+                problems.append(
+                    "the page draws %r %d times in %s; the model puts it there once"
+                    % (name, count, view["name"])
+                )
 
     # --- 4/5. node text, against THAT element's own declaration -----------
     for view_name, nodes in page.nodes.items():
@@ -500,14 +700,25 @@ def main() -> int:
                     % (node.name, node.body, element.first)
                 )
             if element.carries_marker_description:
-                if not node.marker_description:
+                # Only a model that DECLARES a description can be missing one. A
+                # container declared with a single string has no description to draw,
+                # and demanding one would make every page for such a model fail --
+                # a check that can never be satisfied is not a check.
+                if element.second:
+                    if not node.marker_description:
+                        problems.append(
+                            "%s is drawn with no description but the model declares one"
+                            % node.name
+                        )
+                    elif node.marker_description != element.second:
+                        problems.append(
+                            "%s shows the description %r but the model says %r"
+                            % (node.name, node.marker_description, element.second)
+                        )
+                elif node.marker_description:
                     problems.append(
-                        "%s is drawn with no description but the model declares one" % node.name
-                    )
-                elif node.marker_description != element.second:
-                    problems.append(
-                        "%s shows the description %r but the model says %r"
-                        % (node.name, node.marker_description, element.second)
+                        "%s is drawn with the description %r, but the model declares none"
+                        % (node.name, node.marker_description)
                     )
             elif node.marker_description:
                 problems.append(
@@ -515,18 +726,17 @@ def main() -> int:
                     % (node.name, node.marker_description, element.label)
                 )
 
-    # --- 6. edge labels and topology, per view -----------------------------
+    # --- 6. edges: one per projected pair, with the label the renderer picks ---
     for view in model.views:
         visible, why = model.expected_for(view)
         if visible is None:
             continue
         view_name = view["name"]
-        # The relationships the model projects into this view. A relationship whose two
-        # endpoints project onto the SAME element is internal to it and the renderer
-        # draws no edge for it; several relationships that project onto the SAME PAIR
-        # are drawn as ONE edge, so the pair is what is compared and the label is
-        # compared against the labels the model declares for that pair.
-        model_labels: dict[tuple[str, str], set[str]] = {}
+        # The relationships the model projects into this view, IN DECLARATION ORDER. A
+        # relationship whose two endpoints project onto the SAME element is internal to
+        # it and the renderer draws no edge for it; several relationships that project
+        # onto the SAME PAIR are drawn as ONE edge, labelled with the FIRST of them.
+        model_labels: dict[tuple[str, str], str] = {}
         expected_pairs: set[tuple[str, str]] = set()
         for source, target, label in model.relationships:
             near_source = model.nearest_visible(source, visible)
@@ -535,8 +745,8 @@ def main() -> int:
                 continue
             pair = (near_source, near_target)
             expected_pairs.add(pair)
-            model_labels.setdefault(pair, set()).add(label)
-        drawn_pairs: set[tuple[str, str]] = set()
+            model_labels.setdefault(pair, label)
+        drawn_pairs: dict[tuple[str, str], list[str]] = {}
         for source_id, target_id, label in page.edges.get(view_name, []):
             source = page.nodes.get(view_name, {}).get(source_id)
             target = page.nodes.get(view_name, {}).get(target_id)
@@ -547,26 +757,99 @@ def main() -> int:
                 )
                 continue
             pair = (source.name, target.name)
-            drawn_pairs.add(pair)
-            if label not in model_labels.get(pair, set()):
-                problems.append(
-                    "the page draws %s -> %s %r, which the model does not declare"
-                    % (pair[0], pair[1], label)
-                )
-        for pair in sorted(expected_pairs - drawn_pairs):
+            drawn_pairs.setdefault(pair, []).append(label)
+        for pair in sorted(expected_pairs - set(drawn_pairs)):
             problems.append(
                 "the model declares a relationship the page does not draw in %s: %s -> %s"
                 % (view_name, pair[0], pair[1])
             )
-        for pair in sorted(drawn_pairs - expected_pairs):
+        for pair in sorted(set(drawn_pairs) - expected_pairs):
             problems.append(
                 "the page draws a relationship the model does not declare in %s: %s -> %s"
                 % (view_name, pair[0], pair[1])
             )
+        for pair in sorted(set(drawn_pairs) & expected_pairs):
+            labels = drawn_pairs[pair]
+            if len(labels) > 1:
+                problems.append(
+                    "the page draws %d edges for %s -> %s in %s; the renderer draws one"
+                    % (len(labels), pair[0], pair[1], view_name)
+                )
+            elif labels[0] != model_labels[pair]:
+                problems.append(
+                    "the page draws %s -> %s %r, but the model declares %r"
+                    % (pair[0], pair[1], labels[0], model_labels[pair])
+                )
     for line in model.unparsed_relationships:
         undecided.append("a relationship the model declares that this check cannot resolve: %s" % line)
 
-    # --- 7. element names, globally ----------------------------------------
+    # --- 7. the system boundary, per container view -------------------------
+    for view in model.views:
+        if view["kind"] != "container":
+            continue
+        expected, why = model.expected_for(view)
+        if expected is None:
+            continue
+        owner_alias = view["ident"].split(".")[-1]
+        owner = model.elements.get(owner_alias)
+        if owner is None:
+            continue
+        view_name = view["name"]
+        subgraph = page.subgraph_labelled(view_name, owner.name)
+        if subgraph is None:
+            problems.append(
+                "the page does not draw the boundary of %s in %s" % (owner.name, view_name)
+            )
+            continue
+        nodes = page.nodes.get(view_name, {})
+        inside = {nodes[i].name for i in subgraph["members"] if i in nodes}
+        descendants = model.descendants_of(owner_alias)
+        for name in sorted(expected):
+            if name == owner.name:
+                continue
+            drawn_inside = name in inside
+            should_be_inside = name in descendants
+            if drawn_inside != should_be_inside:
+                problems.append(
+                    "the page draws %s %s the boundary of %s in %s, but the model says %s"
+                    % (
+                        name,
+                        "inside" if drawn_inside else "outside",
+                        owner.name,
+                        view_name,
+                        "inside" if should_be_inside else "outside",
+                    )
+                )
+
+    # --- 8. the view's own title ------------------------------------------
+    for view in model.views:
+        expected_label = model.view_label(view)
+        if expected_label is None:
+            undecided.append(
+                "%s -- this check has no rule for the title of a %s view"
+                % (view["name"], view["kind"])
+            )
+            continue
+        labels = [s["label"] for s in page.subgraphs.get(view["name"], [])]
+        if expected_label not in labels:
+            problems.append(
+                "the page draws %s as %r, but the renderer titles that view %r"
+                % (view["name"], labels[0] if labels else "", expected_label)
+            )
+
+    # --- 9. the header the render writes ------------------------------------
+    header, why = expected_header(render_path)
+    if header is None:
+        undecided.append(why)
+    else:
+        page_lines = raw_page.split("\n")
+        actual = page_lines[: len(header)]
+        if actual != header:
+            problems.append(
+                "the page's header is not what architecture/render writes: %r" % (actual[:2],)
+            )
+
+    # --- 10. element names, globally ----------------------------------------
     model_names = set(model.by_name)
     drawn_names = {name for view in page.nodes for name in page.names_in(view)}
     if model_names != drawn_names:
@@ -578,7 +861,9 @@ def main() -> int:
             )
         )
 
-    # --- 8. nothing left undecided -----------------------------------------
+    # --- 11. nothing left undecided -----------------------------------------
+    for note in page.duplicates:
+        problems.append(note)
     for note in page.unreadable:
         undecided.append(note)
 
