@@ -25,7 +25,7 @@ test("Robots metadata uses the canonical deploy hostname", () => {
   assert.ok(!read("app/robots.ts").includes("meridian.ai"));
 });
 test("The visual system includes responsive and reduced-motion handling", () => {
-  const css = read("app/merian.css");
+  const css = read("app/merdian.css");
   assert.ok(css.includes("prefers-reduced-motion"));
   assert.ok(css.includes("max-width:620px"));
 });
