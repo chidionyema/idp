@@ -310,6 +310,14 @@ jobs:
             echo "::error::an agent patch may not change CI or hooks:"; echo "$refused"; exit 1
           fi
 
+      - name: Validate and safely repair staged patch before issuing CLAIM
+        run: |
+          set -euo pipefail
+          # The index contains untrusted model work. Execute ONLY main's trusted
+          # preflight source; a model may not edit its own acceptance verifier.
+          git show HEAD:bin/idp-agent-patch-preflight.py > "$RUNNER_TEMP/trusted-agent-preflight.py"
+          python3 "$RUNNER_TEMP/trusted-agent-preflight.py" --repair-evidence-docs
+
       - name: Install what the estate's commit hooks run (the fast gate's own pins)
         run: |
           set -euo pipefail
