@@ -1,4 +1,5 @@
 """Actual Git index adversarial tests for cloud agent staged-patch acceptance."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -30,8 +31,7 @@ class AgentPatchPreflightTests(unittest.TestCase):
         self.cmd("commit", "-q", "--allow-empty", "-m", "baseline")
 
     def cmd(self, *args):
-        return subprocess.run(["git", *args], check=True,
-                              capture_output=True).stdout
+        return subprocess.run(["git", *args], check=True, capture_output=True).stdout
 
     def add(self, path, content):
         p = Path(path)
@@ -77,15 +77,18 @@ class AgentPatchPreflightTests(unittest.TestCase):
         self.assertEqual(self.cmd("show", ":src/example.py"), p.read_bytes())
 
     def test_new_evidence_markdown_typography_repaired_in_index(self):
-        p = self.add("docs/evidence/test/README.md",
-                     "# Evidence \u2014 verified\n\u201cValue\u201d \u2192 \u2713\n")
+        p = self.add(
+            "docs/evidence/test/README.md",
+            "# Evidence \u2014 verified\n\u201cValue\u201d \u2192 \u2713\n",
+        )
         original = p.read_bytes()
         rc, out = self.inspect(repair=True)
         self.assertEqual(rc, 0, out)
         self.assertEqual(len(out["repairs"]), 1)
         self.assertEqual(p.read_bytes(), b'# Evidence -- verified\n"Value" -> [PASS]\n')
-        self.assertEqual(self.cmd("show", ":docs/evidence/test/README.md"),
-                         p.read_bytes())
+        self.assertEqual(
+            self.cmd("show", ":docs/evidence/test/README.md"), p.read_bytes()
+        )
         self.assertNotEqual(original, p.read_bytes())
         self.assertEqual(len(out["repairs"][0]["before_sha256"]), 64)
 
@@ -97,9 +100,10 @@ class AgentPatchPreflightTests(unittest.TestCase):
         self.assertIn(b"\xe2\x80\x94", p.read_bytes())
 
     def test_code_fence_never_rewritten(self):
-        p = self.add("docs/evidence/x/README.md",
-                     "# Evidence\n" + chr(96) * 3 + "python\nx='\u2014'\n" +
-                     chr(96) * 3 + "\n")
+        p = self.add(
+            "docs/evidence/x/README.md",
+            "# Evidence\n" + chr(96) * 3 + "python\nx='\u2014'\n" + chr(96) * 3 + "\n",
+        )
         rc, out = self.inspect(repair=True)
         self.assertEqual(rc, 3)
         self.assertEqual(out["repairs"], [])
@@ -156,8 +160,7 @@ class AgentPatchPreflightTests(unittest.TestCase):
         self.add("docs/evidence/x/README.md", "Trailing whitespace   \n")
         rc, out = self.inspect(repair=True)
         self.assertEqual(rc, 3)
-        self.assertIn("GIT_DIFF_CHECK",
-                      {e["class"] for e in out["failed_paths"]})
+        self.assertIn("GIT_DIFF_CHECK", {e["class"] for e in out["failed_paths"]})
 
     def test_filename_with_spaces_handled_as_one_index_entry(self):
         self.add("docs/evidence/some space/README.md", "One \u2192 two\n")
@@ -172,8 +175,10 @@ class AgentPatchPreflightTests(unittest.TestCase):
         rc, out = self.inspect(repair=True)
         self.assertEqual(rc, 3)
         self.assertEqual(len(out["repairs"]), 1)
-        self.assertEqual({x["class"] for x in out["failed_paths"]},
-                         {"ADDED_NON_ASCII", "PROTECTED_PATH"})
+        self.assertEqual(
+            {x["class"] for x in out["failed_paths"]},
+            {"ADDED_NON_ASCII", "PROTECTED_PATH"},
+        )
 
     def test_subsequent_inspection_idempotent(self):
         self.add("docs/evidence/x/README.md", "Hello \u2026\n")
@@ -193,7 +198,6 @@ class AgentPatchPreflightTests(unittest.TestCase):
         self.assertEqual(rc, 0, out)
         self.assertEqual(out["repairs"], [])
 
-
     def test_authorized_governance_is_not_blocked_by_untrusted_runner_rule(self):
         self.add(".github/workflows/valid.yml", "name: valid\n")
         rc, out = self.inspect(repair=True, allow_governance=True)
@@ -212,12 +216,16 @@ class AgentPatchPreflightTests(unittest.TestCase):
         hook = (ROOT / ".githooks" / "pre-commit").read_text()
         workflow = (ROOT / ".github/workflows" / "agent-sandbox.yml").read_text()
         self.assertIn('git show "HEAD:bin/idp-agent-patch-preflight.py"', hook)
-        self.assertIn('--allow-governance-paths', hook)
-        self.assertLess(hook.index('git show "HEAD:bin/idp-agent-patch-preflight.py"'),
-                        hook.index("staged_py=$("))
+        self.assertIn("--allow-governance-paths", hook)
+        self.assertLess(
+            hook.index('git show "HEAD:bin/idp-agent-patch-preflight.py"'),
+            hook.index("staged_py=$("),
+        )
         self.assertIn("git show HEAD:bin/idp-agent-patch-preflight.py", workflow)
-        self.assertLess(workflow.index("Validate and safely repair staged patch"),
-                        workflow.index("Claim the work on an issue"))
+        self.assertLess(
+            workflow.index("Validate and safely repair staged patch"),
+            workflow.index("Claim the work on an issue"),
+        )
 
     def test_explicit_control_code_not_rewritten(self):
         self.add("src/lib.js", "const s='\u201cno\u201d';\n")
