@@ -166,7 +166,7 @@ test("client key prefers the first forwarded address", () => {
 test("delivery payload is the validated value plus provenance", () => {
   const payload = deliveryPayload({ name: "A", email: "a@b.co", company: "", message: "hello there friend" }, "2026-01-01T00:00:00.000Z");
   assert.deepEqual(payload, {
-    source: "merian-intelligence/contact",
+    source: "merdian-intelligence/contact",
     received_at: "2026-01-01T00:00:00.000Z",
     name: "A",
     email: "a@b.co",
