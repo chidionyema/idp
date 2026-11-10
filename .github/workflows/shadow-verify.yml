@@ -58,7 +58,7 @@ jobs:
       head: ${{ steps.scope.outputs.head }}
       base: ${{ steps.scope.outputs.base }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           # The scope is the diff of the commit under test, so it is read from that commit.
           ref: ${{ github.event.inputs.head || github.event.pull_request.head.sha || github.sha }}
@@ -101,7 +101,7 @@ jobs:
       matrix:
         side: [head, base]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           # The grader: the PR's own head, or the dispatched ref. The commit it proves is cloned
           # beside it below, so a dispatch can grade any commit with this ref's tool.
@@ -204,7 +204,7 @@ jobs:
     if: always()
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.pull_request.head.sha }}
 
