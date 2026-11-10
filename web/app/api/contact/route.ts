@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { mailjetTarget, mailjetPayload, mailjetAccepted } from "@/lib/mailjet";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -84,40 +85,57 @@ export async function POST(req: NextRequest) {
   // An explicit webhook wins; otherwise Telegram. Either is "a delivery path", and with neither
   // the submission is refused rather than accepted and dropped.
   const webhook = deliveryTarget(process.env, readSecret);
-  const telegram = webhook ? null : telegramTarget(process.env, readSecret);
-  if (!webhook && !telegram) {
+  const mailjet = webhook ? null : mailjetTarget(process.env, readSecret);
+  const telegram = webhook || mailjet ? null : telegramTarget(process.env, readSecret);
+  if (!webhook && !mailjet && !telegram) {
     // Refuse loudly rather than accept a lead and drop it. An unconfigured
     // deployment should look broken, not successful.
-    console.error("[contact] no delivery path (CONTACT_WEBHOOK_URL or TELEGRAM_BOT_TOKEN+TELEGRAM_CHAT_ID); refusing the submission");
+    console.error("[contact] no delivery path (CONTACT_WEBHOOK_URL, Mailjet credentials+verified sender+recipient or TELEGRAM_BOT_TOKEN+TELEGRAM_CHAT_ID); refusing the submission");
     return NextResponse.json({ ok: false, error: "delivery_not_configured" }, { status: 503 });
   }
 
   const receivedAt = new Date(now).toISOString();
-  const request = webhook
-    ? {
-        url: webhook.url,
-        headers: {
-          "content-type": "application/json",
-          ...(webhook.token ? { authorization: `Bearer ${webhook.token}` } : {}),
-        },
-        body: JSON.stringify(deliveryPayload(result.value, receivedAt)),
-      }
-    : {
-        url: telegram!.url,
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(telegramPayload(telegram!.chatId, result.value, receivedAt)),
-      };
+  let provider: "webhook" | "mailjet" | "telegram";
+  let url: string;
+  let headers: Record<string, string>;
+  let body: string;
+  if (webhook) {
+    provider = "webhook";
+    url = webhook.url;
+    headers = {
+      "content-type": "application/json",
+      ...(webhook.token ? { authorization: `Bearer ${webhook.token}` } : {}),
+    };
+    body = JSON.stringify(deliveryPayload(result.value, receivedAt));
+  } else if (mailjet) {
+    provider = "mailjet";
+    url = "https://api.mailjet.com/v3.1/send";
+    headers = {
+      "content-type": "application/json",
+      authorization: `Basic ${Buffer.from(`${mailjet.apiKey}:${mailjet.secretKey}`).toString("base64")}`,
+    };
+    body = JSON.stringify(mailjetPayload(mailjet, result.value, receivedAt));
+  } else {
+    provider = "telegram";
+    url = telegram!.url;
+    headers = { "content-type": "application/json" };
+    body = JSON.stringify(telegramPayload(telegram!.chatId, result.value, receivedAt));
+  }
 
   try {
-    const res = await fetch(request.url, {
+    const res = await fetch(url, {
       method: "POST",
-      headers: request.headers,
-      body: request.body,
+      headers,
+      body,
       signal: AbortSignal.timeout(8000),
     });
 
     if (!res.ok) {
       console.error(`[contact] delivery failed: upstream returned ${res.status}`);
+      return NextResponse.json({ ok: false, error: "delivery_failed" }, { status: 502 });
+    }
+    if (provider === "mailjet" && !mailjetAccepted(await res.json().catch(() => null))) {
+      console.error("[contact] Mailjet did not accept the message");
       return NextResponse.json({ ok: false, error: "delivery_failed" }, { status: 502 });
     }
   } catch (err) {
@@ -133,7 +151,7 @@ export async function POST(req: NextRequest) {
 // rate-limit budget. The answer follows the same destination resolution as POST.
 export async function GET() {
   const acceptingEnquiries = Boolean(
-    deliveryTarget(process.env, readSecret) || telegramTarget(process.env, readSecret)
+    deliveryTarget(process.env, readSecret) || mailjetTarget(process.env, readSecret) || telegramTarget(process.env, readSecret)
   );
   return NextResponse.json(
     { acceptingEnquiries },
