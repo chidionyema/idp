@@ -94,7 +94,8 @@ polls → `image-automation` writes `flux/image-updates` → `deploy-when-green`
 **An agent never raises a pull request and never pushes main** (founder 2026-09-29: "a PR that
 can fail should never be allowed to be raised", "main must never go red, never"). Work reaches
 main through the Greenlane only: push the branch to `lane/<name>` (`estate-execute lane-submit`),
-then STOP. The lane (`greenlane/engine.py`, `.github/workflows/greenlane.yml`) proves it green on
+then operationalise what can safely run from that exact pushed SHA. The lane
+(`greenlane/engine.py`, `.github/workflows/greenlane.yml`) proves it green on
 top of the current main, raises the pull request itself and fast-forwards main to the tested
 commit; a red or conflicting lane keeps its branch and carries the reason on its head's
 `greenlane` commit status. A hand-raised pull request is closed and relaned; a push to main is
@@ -104,6 +105,18 @@ hangs, that is a flaky network path to report and a missing door to add — not 
 founder through manual re-runs. `git` over SSH and `curl` to the GitHub API keep working; use those,
 or add a governed capability, but never convert a pipeline the estate already runs into a
 founder-manned procedure.
+
+### 2a. Yield before ceremony
+
+Founder, 2026-11-10: once work is pushed, anything that can be operationalised immediately without
+waiting for the Greenlane MUST be. Greenlane is convergence, not a waiting room. A local runtime,
+preview, diagnostics path, registry refresh, or cloud-side capability that can safely run from the
+exact pushed SHA is activated in the same turn, with its receipt, rollback and owner recorded.
+
+This does not authorise direct pushes to `main`, skipping a gate, or deploying an unverified or
+unpushed tree. Where production promotion depends on `main`, ship the safe operational path now
+and let Greenlane perform the protected promotion. "Pushed" is the condition for immediate
+operationalisation; "merged" is not.
 
 ---
 

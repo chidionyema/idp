@@ -20,19 +20,34 @@ def git(cwd: Path, *a: str) -> subprocess.CompletedProcess:
 def worktree(tmp_path: Path) -> Path:
     main = tmp_path / "main"
     git(tmp_path, "init", "-q", str(main))
+    for k, v in [
+        ("user.email", "t@t"),
+        ("user.name", "t"),
+    ]:
+        git(main, "config", k, v)
+    (main / "a").write_text("a\n")
+    (main / "bin").mkdir()
+    (main / "bin" / "language-gate").write_bytes(
+        (ROOT / "bin" / "language-gate").read_bytes()
+    )
+    (main / "bin" / "language-gate").chmod(0o755)
+    git(main, "add", "a", "bin/language-gate")
+    assert (
+        git(
+            main,
+            "commit",
+            "-q",
+            "-m",
+            "base\n\nLanguage-Exception: bin/language-gate -- test fixture",
+        ).returncode
+        == 0
+    )
+
     hooks = tmp_path / "hooks"
     hooks.mkdir()
     (hooks / "commit-msg").write_bytes(HOOK.read_bytes())
     (hooks / "commit-msg").chmod(0o755)
-    for k, v in [
-        ("user.email", "t@t"),
-        ("user.name", "t"),
-        ("core.hooksPath", str(hooks)),
-    ]:
-        git(main, "config", k, v)
-    (main / "a").write_text("a\n")
-    git(main, "add", "a")
-    assert git(main, "commit", "-q", "-m", "base").returncode == 0
+    git(main, "config", "core.hooksPath", str(hooks))
     wt = tmp_path / "wt"
     git(main, "worktree", "add", "-q", "-b", "w", str(wt))
     return wt

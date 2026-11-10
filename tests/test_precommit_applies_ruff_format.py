@@ -37,6 +37,11 @@ def repo(tmp_path: Path) -> Path:
     git(tmp_path, "init", "-q")
     (tmp_path / ".githooks").mkdir()
     shutil.copy(HOOK, tmp_path / ".githooks" / "pre-commit")
+    (tmp_path / "bin").mkdir()
+    shutil.copy(
+        REPO / "bin" / "idp-python-strict", tmp_path / "bin" / "idp-python-strict"
+    )
+    (tmp_path / "bin" / "idp-python-strict").chmod(0o755)
     return tmp_path
 
 
@@ -70,3 +75,30 @@ def test_a_partly_staged_file_is_refused_and_its_unstaged_edit_kept_out(
     assert "partly staged" in r.stderr
     assert staged(repo, "b.py") == UGLY
     assert (repo / "b.py").read_text() == UGLY + "y   = 2\n"
+
+
+def test_an_unused_import_is_refused_before_the_commit_exists(repo: Path) -> None:
+    (repo / "unused.py").write_text("import json\n\nvalue = 1\n")
+    git(repo, "add", "unused.py")
+    r = run_hook(repo)
+    assert r.returncode == 1
+    assert "ruff check E9,F,B,S" in r.stderr, r.stderr
+    assert staged(repo, "unused.py") == "import json\n\nvalue = 1\n"
+
+
+@pytest.mark.parametrize(
+    ("name", "body"),
+    [
+        ("bad.json", "{"),
+        ("bad.toml", "value = ["),
+        ("bad.plist", "<plist><dict>"),
+    ],
+)
+def test_invalid_config_is_refused_before_the_commit_exists(
+    repo: Path, name: str, body: str
+) -> None:
+    (repo / name).write_text(body)
+    git(repo, "add", name)
+    r = run_hook(repo)
+    assert r.returncode == 1
+    assert f"{name}: parse failed" in r.stderr, r.stderr

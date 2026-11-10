@@ -27,6 +27,13 @@ fi
 secret="$(cat "$secret_path")"
 [ -n "$secret" ] || { echo "REFUSE: hook secret at $secret_path is empty" >&2; exit 1; }
 
+repo_root="$(git rev-parse --show-toplevel)"
+[ -x "$repo_root/bin/language-gate" ] || {
+  echo "REFUSE: bin/language-gate is missing; the commit cannot prove its language choice" >&2
+  exit 1
+}
+python3 "$repo_root/bin/language-gate" --message-file "$msg_file" || exit 1
+
 # Do not stamp merge commits produced by git itself; the parent commits already carry stamps.
 # Do not double-stamp if the trailer is already present (idempotent for amend flows).
 if grep -qE '^X-Idp-Signed: ' "$msg_file"; then
