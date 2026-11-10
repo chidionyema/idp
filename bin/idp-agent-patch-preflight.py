@@ -112,14 +112,14 @@ def deterministic_doc_repair(status: str, path: str):
     }
 
 
-def preflight(*, repair_docs: bool = False) -> dict:
+def preflight(*, repair_docs: bool = False, allow_governance_paths: bool = False) -> dict:
     paths = staged_paths()
     if not paths:
         return {"ok": False, "reason": "EMPTY_PATCH", "repairs": [], "failed_paths": []}
     repairs = []
     failed = []
     for status, path in paths:
-        if path.startswith((".github/", ".githooks/")):
+        if path.startswith((".github/", ".githooks/")) and not allow_governance_paths:
             failed.append({"path": path, "class": "PROTECTED_PATH"})
             continue
         if added_non_ascii(path):
@@ -139,9 +139,12 @@ def preflight(*, repair_docs: bool = False) -> dict:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repair-evidence-docs", action="store_true")
+    parser.add_argument("--allow-governance-paths", action="store_true",
+                        help="precommit-only: protected authorization still enforced by external gates")
     args = parser.parse_args()
     try:
-        report = preflight(repair_docs=args.repair_evidence_docs)
+        report = preflight(repair_docs=args.repair_evidence_docs,
+                           allow_governance_paths=args.allow_governance_paths)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         report = {"ok": False, "reason": "UNKNOWN_PREFLIGHT_ERROR",
                   "detail": type(error).__name__, "authority": "PREFLIGHT_ONLY"}
