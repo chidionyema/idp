@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+"""Single existing-GitHub-event reaction; never polls for a changed verdict."""
+import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from greenlane.common_failure_reaction import main  # noqa: E402
+if __name__ == "__main__":
+    raise SystemExit(main())

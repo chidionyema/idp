@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from dataclasses import asdict, dataclass, field
 from typing import Optional, Protocol
 
@@ -304,6 +305,11 @@ class Engine:
                 lane.arrived = now
                 self.s.timed.setdefault(name, {}).setdefault(lane.head, now)
                 continue
+            # A known policy refusal remains actionable until the actual
+            # incident or trusted base changes. Aging must not silently erase
+            # the HEAD or demand a new agent push for an unrelated outage.
+            if lane.reason.startswith("trusted DoF ["):
+                continue
             age_min = now - lane.arrived
             if age_min < RETIRE_AFTER_MIN:
                 continue
@@ -342,6 +348,23 @@ class Engine:
             if name in self.s.retired:
                 del self.s.retired[name]  # a different head is a new claim
             lane = self.s.lanes.get(name)
+            if (
+                lane is not None
+                and lane.head == head
+                and lane.status == RED
+                and lane.reason.startswith("trusted DoF [")
+                and lane.judged_on
+                and (
+                    lane.judged_on != self.b.main()
+                    or os.environ.get("GITHUB_EVENT_NAME") == "issues"
+                )
+            ):
+                # A changed main or incident issue event may invalidate DoF's
+                # proof. Re-evaluate in the normal admission path, never assume
+                # an issue change itself authorizes this lane. No re-push needed.
+                lane.status, lane.reason = PENDING, ""
+                lane.attempts = 0
+                lane.judged_on = ""
             if lane is None or lane.head != head:
                 # idp#5819: publish the lane before the work. This tick shares the single
                 # `greenlane` concurrency slot with every completion on main, so it is usually
@@ -822,7 +845,8 @@ class Engine:
             # The lane's NAME goes with the head, because the name carries the class: a
             # generated flux/* lane is projected onto main from its image tags (idp#7140), and
             # a lane whose history carries anything else would otherwise never apply at all.
-            if self.b.rebase(lane.head, base, n) is None:
+            on_main = self.b.rebase(lane.head, base, n)
+            if on_main is None:
                 # Genuine conflict with main. Charge the retry HERE, where the grade actually
                 # failed, so the count is consecutive failures against successive mains and not
                 # merely the number of times main happened to move past the lane.
@@ -837,6 +861,19 @@ class Engine:
                 # move would fill the ring (167 of 200 records in a 500-lane simulation)
                 self.s.conflicts += 1
                 continue
+            # Ferrari / #7738: the existing trusted-base DoF gate can prove this
+            # exact on-main candidate CANNOT pass before expensive CI begins.
+            # No model inference or untrusted candidate script decides admission.
+            # An unreadable preflight is UNKNOWN and goes through full CI.
+            preflight = getattr(self.b, "preflight", None)
+            if preflight is not None:
+                admitted, why = preflight(base, on_main)
+                if not admitted:
+                    lane.status, lane.reason = RED, why
+                    lane.judged_on = base
+                    self.b.report(n, lane.head, RED, why)
+                    self.log.append(f"preflight held {n} against {base[:12]}: {why}")
+                    continue
             new = self.b.rebase(lane.head, tip, n)
             if new is None:
                 # batch-order collision: main would take it, a batch-mate would not. Not a

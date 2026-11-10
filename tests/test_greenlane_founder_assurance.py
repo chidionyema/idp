@@ -3,6 +3,7 @@
 These tests exercise the existing shared /fleet brief and candidate check reader.
 No generated telemetry or GitHub credentials enter the fixtures.
 """
+
 from __future__ import annotations
 
 import sys
@@ -29,7 +30,8 @@ def snapshot(**overrides):
                 "outcomes": {"landed": 2, "timeout/retried": 1, "red/bisected": 1},
             },
         },
-        "open_prs": [], "invariants": {"work_lost": 0},
+        "open_prs": [],
+        "invariants": {"work_lost": 0},
         "candidate_checks": {},
     }
     s.update(overrides)
@@ -61,8 +63,11 @@ class FounderAssuranceTests(unittest.TestCase):
     def test_claim_held_lane_is_visible_and_actionable(self):
         s = snapshot()
         s["state"]["lanes"] = {
-            "lane/a": {"status": "pending", "reason": "no live claim: issue not open",
-                       "arrived": 990}
+            "lane/a": {
+                "status": "pending",
+                "reason": "no live claim: issue not open",
+                "arrived": 990,
+            }
         }
         b = brief(s)
         self.assertTrue(b["loud"])
@@ -108,25 +113,43 @@ class FounderAssuranceTests(unittest.TestCase):
         payload = {
             "total_count": 3,
             "check_runs": [
-                {"name": "test", "id": 100, "status": "completed",
-                 "conclusion": "failure", "html_url": "https://example.test/old"},
-                {"name": "test", "id": 101, "status": "completed",
-                 "conclusion": "success", "html_url": "https://example.test/new"},
-                {"name": "optional", "id": 102, "status": "completed",
-                 "conclusion": "success"},
-            ]
+                {
+                    "name": "test",
+                    "id": 100,
+                    "status": "completed",
+                    "conclusion": "failure",
+                    "html_url": "https://example.test/old",
+                },
+                {
+                    "name": "test",
+                    "id": 101,
+                    "status": "completed",
+                    "conclusion": "success",
+                    "html_url": "https://example.test/new",
+                },
+                {
+                    "name": "optional",
+                    "id": 102,
+                    "status": "completed",
+                    "conclusion": "success",
+                },
+            ],
         }
         out = candidate_check_index(payload, ["test", "ci-success"])
         self.assertEqual(out["test"]["result"], "success")
         self.assertEqual(out["test"]["url"], "https://example.test/new")
         self.assertEqual(out["ci-success"]["result"], "absent")
 
-    def test_candidate_check_reader_fails_closed_on_unreadable_or_truncated_evidence(self):
-        self.assertIn("unreadable", candidate_check_index(None, ["test"], "403")
-                      ["test"]["result"])
+    def test_candidate_check_reader_fails_closed_on_unreadable_or_truncated_evidence(
+        self,
+    ):
+        self.assertIn(
+            "unreadable", candidate_check_index(None, ["test"], "403")["test"]["result"]
+        )
         truncated = {"total_count": 180, "check_runs": []}
-        self.assertIn("unreadable", candidate_check_index(truncated, ["test"])
-                      ["test"]["result"])
+        self.assertIn(
+            "unreadable", candidate_check_index(truncated, ["test"])["test"]["result"]
+        )
 
     def test_unreviewed_lane_cannot_replace_privileged_engine_source(self):
         workflow = (ROOT / ".github/workflows/greenlane.yml").read_text()
@@ -134,15 +157,23 @@ class FounderAssuranceTests(unittest.TestCase):
         # branch. A privileged lane-push event is therefore a code-injection
         # path even when it initially checks out main.
         self.assertNotIn("  push:\n    branches: [lane/**", workflow)
-        self.assertIn("  workflow_run:\n    workflows: [no-harness-folders]", workflow)
+        self.assertIn("  workflow_run:", workflow)
+        self.assertIn("workflows: [no-harness-folders, ci]", workflow)
+        self.assertIn(
+            "startsWith(github.event.workflow_run.head_branch || '', 'queue/')",
+            workflow,
+        )
+        self.assertIn("  check_run:", workflow)
+        self.assertIn("  issues:", workflow)
         self.assertIn("github.event.workflow_run.head_branch", workflow)
         self.assertIn("          ref: main", workflow)
         self.assertNotIn("git reset --hard", workflow)
         self.assertNotIn("git checkout", workflow)
         self.assertIn('trusted_main_sha="$(git rev-parse HEAD)"', workflow)
-        # The fallback schedule and explicit founder dispatch must survive
-        # a malicious or broken lane-side wakeup.
-        self.assertIn('cron: "*/15 * * * *"', workflow)
+        # Both lane-arrival and queue CI provide independent native triggers;
+        # the founder forbids schedule-driven queue polling. Explicit recovery
+        # dispatch survives a lost event, without executing untrusted YAML.
+        self.assertNotIn("cron:", workflow)
         self.assertIn("  workflow_dispatch:", workflow)
 
     def test_event_filter_is_before_app_token_in_live_workflow(self):
@@ -151,7 +182,9 @@ class FounderAssuranceTests(unittest.TestCase):
         app = workflow.index("uses: ./.github/actions/github-app-token")
         tick = workflow.index("- name: one tick of the lane")
         self.assertTrue(check < app < tick)
-        self.assertEqual(workflow.count("if: steps.check_relevance.outputs.needs_judge == 'true'"), 2)
+        self.assertEqual(
+            workflow.count("if: steps.check_relevance.outputs.needs_judge == 'true'"), 2
+        )
         self.assertIn("python3 bin/idp-greenlane-check-trigger", workflow)
 
 

@@ -23,16 +23,20 @@ on:
   # A lane push runs no-harness-folders (read-only); its workflow_run completion
   # wakes this trusted-main workflow without executing candidate-supplied YAML.
   workflow_run:
-    workflows: [no-harness-folders]
+    # Both lane arrival and queue CI proof wake the existing trusted-main engine.
+    # No 15-minute polling. Cancelled/failed CI also emits completed and is judged.
+    workflows: [no-harness-folders, ci]
     types: [completed]
   pull_request_target:
     types: [opened, reopened, ready_for_review]
-  schedule:
-    - cron: "*/15 * * * *"  # every 15 minutes: judge queue batches when CI completes
+  issues:
+    # Reconsider DoF-held heads when the actual incident changes; no polling
+    # and no assumption that an issue closure is a privileged release.
+    types: [closed, reopened, edited]
   # workflow_run removed: guarded-paths fires on every main push, creating workflow_run events that
   # queue and cancel push-event and scheduled-tick greenlane runs. CI completions on lane/** are
-  # covered by the lane push trigger. CI completions on queue/** are judged twice now: by this
-  # schedule as the backstop, and within seconds by the check_run trigger below (idp#6520).
+  # covered by lane push signals. Queue CI completion is event-driven through
+  # check_run and workflow_run (idp#6520), not a scheduled backstop.
   # A completed check run on a queue/* tip is the batch's verdict arriving. Measured 2026-10-18:
   # candidates b3129/b3120/b2967 sat green on their shas for 3h40m, 4h45m and ~20h because the
   # judge shares one concurrency slot with batch formation and kept losing it. The check_run
@@ -44,6 +48,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  issues: read  # trusted DoF preflight observes canonical incidents with runner token
   pull-requests: write
   statuses: write
   checks: write
@@ -77,10 +82,12 @@ jobs:
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.event == 'push' &&
        (startsWith(github.event.workflow_run.head_branch || '', 'lane/') ||
+        startsWith(github.event.workflow_run.head_branch || '', 'queue/') ||
         github.event.workflow_run.head_branch == 'flux/image-updates')) ||
       (github.event_name == 'check_run' &&
        startsWith(github.event.check_run.check_suite.head_branch || '', 'queue/')) ||
-      (github.event_name != 'workflow_run' && github.event_name != 'check_run')
+      (github.event_name == 'issues' && startsWith(github.event.issue.title, '[lane] ')) ||
+      (github.event_name != 'workflow_run' && github.event_name != 'check_run' && github.event_name != 'issues')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -137,7 +144,9 @@ jobs:
           # A check_run trigger means a batch's verdict may have arrived: collect it (judge-only
           # tick -- lands, bisects or requeues the candidate the state names, forms nothing).
           # Every other trigger is a full tick: observe, judge, form, retire, heartbeat.
-          if [ "${{ github.event_name }}" = "check_run" ]; then
+          if [ "${{ github.event_name }}" = "check_run" ] || \
+             { [ "${{ github.event_name }}" = "workflow_run" ] && \
+               [[ "${{ github.event.workflow_run.head_branch }}" == queue/* ]]; }; then
             python3 bin/idp-greenlane tick --judge-only
           else
             python3 bin/idp-greenlane tick
