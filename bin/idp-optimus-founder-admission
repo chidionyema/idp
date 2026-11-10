@@ -11,6 +11,7 @@ import datetime as dt
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -83,7 +84,7 @@ def validate_check(run, *, name, app_id, sha, now):
     return proof, parse_entries(proof.get("instructions"))
 
 
-def verdict(checks, *, sha, optimus_app_id, founder_app_id, now=None):
+def verdict(checks, *, sha, optimus_app_id, founder_app_id, now=None, candidate_instruction_ids=None):
     if not SHA.fullmatch(sha):
         raise ValueError("invalid candidate SHA")
     now = now or dt.datetime.now(dt.timezone.utc)
@@ -120,8 +121,30 @@ def verdict(checks, *, sha, optimus_app_id, founder_app_id, now=None):
         raise ValueError("Founder Surface has no live event cursor")
     if not isinstance(view.get("url"), str) or not view["url"].startswith("https://"):
         raise ValueError("Founder Surface has no HTTPS operating URL")
+    if candidate_instruction_ids is not None and set(candidate_instruction_ids) != set(metric_entries):
+        raise ValueError("candidate commits and observed permission/yield receipts cover different instructions")
     return {"candidate_sha": sha, "instruction_count": len(metric_entries), "metrics_event_count": observed,
             "founder_surface_url": view["url"], "state": "ADMITTED_TO_GREENLANE_CI_NOT_YIELD"}
+
+
+def candidate_instructions(sha, run=subprocess.run):
+    """Every candidate commit is bound to a founder instruction before admission."""
+    if not SHA.fullmatch(sha):
+        raise ValueError("invalid candidate SHA")
+    result = run(["git", "log", "--format=%B%x00", f"origin/main..{sha}"],
+                 capture_output=True, text=True, timeout=20, check=False)
+    if result.returncode != 0:
+        raise ValueError("cannot read candidate commit history")
+    messages = [m.strip() for m in result.stdout.split("\x00") if m.strip()]
+    if not messages:
+        raise ValueError("no instruction-bearing commits in candidate")
+    instruction_ids = set()
+    for message in messages:
+        found = re.findall(r"^Genesis-Instruction-Id:\s*([A-Za-z0-9._:/#-]{3,160})\s*$", message, re.M)
+        if not found:
+            raise ValueError("candidate commit has no Genesis-Instruction-Id")
+        instruction_ids.update(found)
+    return instruction_ids
 
 
 def list_check_runs(repo, sha, token, fetch=None):
@@ -157,8 +180,10 @@ def main():
         repo = os.environ.get("GITHUB_REPOSITORY", "")
         app_o = int(os.environ.get("OPTIMUS_CHECK_APP_ID", "0"))
         app_f = int(os.environ.get("FOUNDER_CHECK_APP_ID", "0"))
+        ids = candidate_instructions(sha)
         checked = verdict(list_check_runs(repo, sha, os.environ.get("GH_TOKEN", "")),
-                          sha=sha, optimus_app_id=app_o, founder_app_id=app_f)
+                          sha=sha, optimus_app_id=app_o, founder_app_id=app_f,
+                          candidate_instruction_ids=ids)
         print("ADMITTED (not deployed or yielded): " + json.dumps(checked, sort_keys=True))
         return 0
     except (ValueError, KeyError, TypeError, urllib.error.URLError, TimeoutError) as error:
