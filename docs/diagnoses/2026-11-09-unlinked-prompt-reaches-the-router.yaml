@@ -2,112 +2,143 @@ description: 'Every model call the estate makes through the router arrives as a 
   instruction id, so no call can be traced back to the instruction that caused it and no yield
   can be attributed to an instruction at all. The instruction ledger exists
   (catalog/census/instruction.py, 10 tests green) and nothing in the serving path ever writes
-  to it. Question: is the fault (H1) that the intake never creates or binds an instruction id,
-  so there is nothing to carry, or (H2) that the id exists but the router drops the metadata
-  before any hook sees it, or (H3) that the metadata survives but no hook is registered to
-  refuse an unlinkable prompt, so the ledger binds nothing, or (H4) that the ledger is simply
-  not the store the router reaches -- a different database, so even a correct hook would write
-  nowhere. The fix under test binds an id at intake, carries it in request metadata, and
-  registers a LiteLLM pre-call hook that refuses a chat call whose metadata lacks it.
+  to it. Four mutually exclusive sites could be the first point of failure, and the question is
+  which one it actually is: (H1) intake never creates or binds an instruction id, so the carrier
+  is empty before the router is reached; (H2) the id is bound but the router strips request
+  metadata before any hook sees it; (H3) the metadata survives and no hook inspects it, so the
+  carrier is never read; (H4) metadata survives and a hook runs, but the ledger lives in a
+  Postgres the router process cannot open, so a correct hook writes nowhere. The fix under test
+  binds an id at intake, carries it in request metadata through the contract, and registers a
+  LiteLLM pre-call hook that refuses a chat call whose metadata lacks it.
 
   '
 hypotheses:
 - name: H1
-  description: intake never creates or binds an instruction id, so every call legitimately has
-    none and the carrier is empty before the router is reached
+  description: intake never creates or binds an instruction id, so the carrier is empty before
+    the router is reached and there is nothing for any hook to check
   prior: 0.25
 - name: H2
   description: the id is set by the caller and the router strips request metadata before any
     plugin hook is invoked
   prior: 0.25
 - name: H3
-  description: the metadata survives, but the router has no hook registered that inspects it,
-    so unlinkable prompts are served silently
+  description: the metadata survives and the router has no hook registered that inspects it,
+    so unlinkable prompts are served silently -- an id would be bound at intake and reach the
+    router in metadata, and nothing would look at it
   prior: 0.25
 - name: H4
-  description: a correct hook cannot reach the ledger because the ledger is a different store
-    (Postgres) from anything the router process can open
+  description: a correct hook cannot reach the ledger because the ledger is a Postgres the
+    router process has no client for
   prior: 0.25
 evidence:
-- name: whether any router module imports the instruction contract
+- name: the callers of the instruction contract across the whole tree (rg -l 'ingest_prompt|link_or_new',
+    excluding the contract itself and tests) -- observed is that the only caller is the new gate
   observed:
-    modules_importing_the_contract: 0
-    router_python_modules: 4
+    only_the_new_gate_calls_it: 1
+    an_intake_path_also_calls_it: 0
   likelihoods:
     H1:
-      modules_importing_the_contract: 0.9
-      router_python_modules: 0.5
+      only_the_new_gate_calls_it: 0.99
+      an_intake_path_also_calls_it: 0.01
     H2:
-      modules_importing_the_contract: 1.0
-      router_python_modules: 0.5
+      only_the_new_gate_calls_it: 0.1
+      an_intake_path_also_calls_it: 0.9
     H3:
-      modules_importing_the_contract: 0.95
-      router_python_modules: 0.5
+      only_the_new_gate_calls_it: 0.02
+      an_intake_path_also_calls_it: 0.98
     H4:
-      modules_importing_the_contract: 0.6
-      router_python_modules: 0.5
-- name: whether the contract exists on origin/main
+      only_the_new_gate_calls_it: 0.1
+      an_intake_path_also_calls_it: 0.9
+- name: whether active_memory.py and request_ceiling.py read data['metadata'] at the pre-call
+    position and are served in production
   observed:
-    present_on_main: 0
-    present_in_tree: 1
+    read_metadata_and_served: 1
+    metadata_unreachable: 0
   likelihoods:
     H1:
-      present_on_main: 0.5
-      present_in_tree: 0.5
+      read_metadata_and_served: 0.5
+      metadata_unreachable: 0.5
     H2:
-      present_on_main: 0.5
-      present_in_tree: 0.5
+      read_metadata_and_served: 0.005
+      metadata_unreachable: 0.995
     H3:
-      present_on_main: 0.5
-      present_in_tree: 0.5
+      read_metadata_and_served: 0.5
+      metadata_unreachable: 0.5
     H4:
-      present_on_main: 0.5
-      present_in_tree: 0.5
-- name: whether the router process can open the ledger's store
+      read_metadata_and_served: 0.5
+      metadata_unreachable: 0.5
+- name: whether the router process holds a Postgres client for the ledger's store
   observed:
-    postgres_client_in_router: 0
-    sqlite_outbox_present: 1
+    postgres_client_present: 0
+    absent: 1
   likelihoods:
     H1:
-      postgres_client_in_router: 0.5
-      sqlite_outbox_present: 0.5
+      postgres_client_present: 0.5
+      absent: 0.5
     H2:
-      postgres_client_in_router: 0.5
-      sqlite_outbox_present: 0.5
+      postgres_client_present: 0.5
+      absent: 0.5
     H3:
-      postgres_client_in_router: 0.5
-      sqlite_outbox_present: 0.5
+      postgres_client_present: 0.5
+      absent: 0.5
     H4:
-      postgres_client_in_router: 0.02
-      sqlite_outbox_present: 0.98
-- name: the pattern an existing hook uses to read request metadata
+      postgres_client_present: 0.01
+      absent: 0.99
+- name: whether the router already owns a durable store it can write a binding to (the SQLite
+    outbox on its capture volume, already used for other record kinds)
   observed:
-    existing_hooks_reading_metadata: 2
-    metadata_absent_by_convention: 0
+    outbox_reachable: 1
+    no_store_reachable: 0
   likelihoods:
     H1:
-      existing_hooks_reading_metadata: 0.5
-      metadata_absent_by_convention: 0.5
+      outbox_reachable: 0.5
+      no_store_reachable: 0.5
     H2:
-      existing_hooks_reading_metadata: 0.97
-      metadata_absent_by_convention: 0.03
+      outbox_reachable: 0.5
+      no_store_reachable: 0.5
     H3:
-      existing_hooks_reading_metadata: 0.5
-      metadata_absent_by_convention: 0.5
+      outbox_reachable: 0.5
+      no_store_reachable: 0.5
     H4:
-      existing_hooks_reading_metadata: 0.5
-      metadata_absent_by_convention: 0.5
-outcome: H3 (and H1 upstream of it) -- the estate has a ledger and no hook, so the carrier may
-  or may not be populated but nothing inspects it either way; H2 is refuted because
-  platform/llm/active_memory.py and platform/llm/request_ceiling.py both read
-  data["metadata"] from the same pre-call position and are served, so metadata survives to the
-  hook; H4 is refuted as a blocker because the router already has a SQLite outbox on its
-  capture volume and can record the binding there for the estate's writer to drain, so no new
-  database path is invented.
-fix: platform/llm/instruction_gate.py registers an async_pre_call_hook on the router that calls
-  link_or_new for a chat call and refuses one it cannot link, gated by
-  ESTATE_INSTRUCTION_GATE=1 so it ships dormant; it logs only the prompt fingerprint, never the
-  body, and exempts internal, non-chat and drain traffic the way active_memory.py does.
+      outbox_reachable: 0.02
+      no_store_reachable: 0.98
+- name: whether a hook registered in config.base.yaml is also shipped to the pod (request_ceiling
+    is named in a ConfigMap as well as the config; a callback named only in config is silent)
+  observed:
+    module_shipped_to_pod: 0
+    only_named_in_config: 1
+  likelihoods:
+    H1:
+      module_shipped_to_pod: 0.5
+      only_named_in_config: 0.5
+    H2:
+      module_shipped_to_pod: 0.5
+      only_named_in_config: 0.5
+    H3:
+      module_shipped_to_pod: 0.5
+      only_named_in_config: 0.5
+    H4:
+      module_shipped_to_pod: 0.5
+      only_named_in_config: 0.5
+outcome: 'H1, decisively: rg finds exactly one caller of ingest_prompt/link_or_new anywhere in
+  the tree and it is the gate this change adds -- no intake path binds an id, so the carrier is
+  empty before the router is reached and no hook, present or absent, could have anything to
+  check. H2 is refuted by measurement, not by argument: active_memory.py and request_ceiling.py
+  both read data["metadata"] from the same pre-call position and are served in production, so
+  metadata is not stripped. H4 is refuted as a blocker: the router already owns a SQLite outbox
+  on its capture volume, so a binding can be recorded there and drained by the estate''s writer
+  without inventing a new database path. H3 remains true as a second link -- registering a
+  callback in config does nothing unless the module is also on the pod, which is why
+  request_ceiling is named in a ConfigMap too -- but it is downstream of H1 and fixing it alone
+  would ship a hook that refuses every call for lacking an id nobody ever set. The fix closes
+  H1 and H3 together.'
+fix: bind an instruction id at intake, carry it in request metadata through
+  catalog/census/instruction.py''s link_or_new/ingest_prompt contract, and register
+  platform/llm/instruction_gate.py as an async_pre_call_hook that calls link_or_new for a chat
+  call and refuses one it cannot link. The gate is gated by ESTATE_INSTRUCTION_GATE=1 so it ships
+  dormant, logs only the prompt fingerprint and never the body, exempts internal, non-chat and
+  drain traffic the way active_memory.py does, and the module is added to the request-ceiling
+  ConfigMap so a registered callback is also importable.
 falsifier: the gate must refuse a chat payload whose metadata lacks instruction_id and accept
   one that carries it; tests/test_instruction_gate.py proves both directions.
 bounded_by: the gate refuses; it never logs a prompt body, and a refusal names the caller and
