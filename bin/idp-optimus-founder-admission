@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""Root Greenlane proof: independently published Optimus and Founder Surface receipts.
+
+This is a CI admission verifier, not a new collector or tracker. The two independently
+managed GitHub Check Apps produce exact-SHA, freshness-bounded structured receipts.
+No checks, unknown issuer, missing metrics, or absent founder projection => refuse.
+"""
+from __future__ import annotations
+
+import datetime as dt
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.request
+
+SCHEMA = "estate-operational-proof.v1"
+MAX_AGE_SECONDS = 600
+MAX_CHECK_RUNS = 1000
+SHA = re.compile(r"[0-9a-f]{40}\Z")
+ID = re.compile(r"[A-Za-z0-9._:/#-]{3,160}\Z")
+
+
+def stamp(value):
+    if not isinstance(value, str):
+        raise ValueError("missing or invalid timestamp")
+    parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        raise ValueError("timestamp missing timezone")
+    return parsed.astimezone(dt.timezone.utc)
+
+
+def fresh(value, now):
+    age = (now - stamp(value)).total_seconds()
+    return -30 <= age <= MAX_AGE_SECONDS
+
+
+def parse_entries(value):
+    if not isinstance(value, list) or not value:
+        raise ValueError("empty instruction/permission/yield linkage")
+    entries = {}
+    for e in value:
+        if not isinstance(e, dict):
+            raise ValueError("malformed instruction linkage")
+        ident = e.get("instruction_id")
+        receipt = e.get("permission_receipt")
+        state = e.get("yield_tracking")
+        if not isinstance(ident, str) or not ID.fullmatch(ident):
+            raise ValueError("missing instruction ID")
+        if not isinstance(receipt, str) or not ID.fullmatch(receipt):
+            raise ValueError("missing permission receipt")
+        if state not in ("pending", "verified", "failed"):
+            raise ValueError("yield is not tracked")
+        if e.get("permission") != "allowed":
+            raise ValueError("release lacks permitted instruction")
+        if ident in entries:
+            raise ValueError("duplicate instruction ID")
+        entries[ident] = (receipt, state)
+    return entries
+
+
+def validate_check(run, *, name, app_id, sha, now):
+    if run.get("name") != name or run.get("status") != "completed":
+        raise ValueError(f"{name}: missing completed verdict")
+    if run.get("conclusion") != "success":
+        raise ValueError(f"{name}: not successful")
+    if run.get("head_sha") != sha or (run.get("app") or {}).get("id") != app_id:
+        raise ValueError(f"{name}: wrong source SHA or untrusted Check App")
+    if not fresh(run.get("completed_at"), now):
+        raise ValueError(f"{name}: stale check run")
+    raw = (run.get("output") or {}).get("text")
+    if not isinstance(raw, str) or len(raw) > 16000:
+        raise ValueError(f"{name}: missing or oversized receipt")
+    try:
+        proof = json.loads(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name}: receipt is not JSON") from exc
+    if not isinstance(proof, dict) or proof.get("schema") != SCHEMA:
+        raise ValueError(f"{name}: unsupported proof schema")
+    if proof.get("subject_sha") != sha or not fresh(proof.get("observed_at"), now):
+        raise ValueError(f"{name}: wrong or stale observation")
+    return proof, parse_entries(proof.get("instructions"))
+
+
+def verdict(checks, *, sha, optimus_app_id, founder_app_id, now=None):
+    if not SHA.fullmatch(sha):
+        raise ValueError("invalid candidate SHA")
+    now = now or dt.datetime.now(dt.timezone.utc)
+    if not isinstance(checks, list):
+        raise ValueError("unreadable check-run inventory")
+    required = (("optimus-metrics", optimus_app_id), ("founder-surface-visibility", founder_app_id))
+    result = {}
+    for name, app_id in required:
+        if not isinstance(app_id, int) or app_id <= 0:
+            raise ValueError(f"{name}: trusted Check App identity not configured")
+        matches = [r for r in checks if r.get("name") == name]
+        if not matches:
+            raise ValueError(f"{name}: absent for exact candidate SHA")
+        recent = max(matches, key=lambda r: r.get("id", 0))
+        result[name] = validate_check(recent, name=name, app_id=app_id, sha=sha, now=now)
+    metrics, metric_entries = result["optimus-metrics"]
+    surface, surface_entries = result["founder-surface-visibility"]
+    if metric_entries != surface_entries:
+        raise ValueError("Optimus/Founder instruction, permission and yield state disagree")
+    counters = metrics.get("metrics") or {}
+    if not isinstance(counters, dict):
+        raise ValueError("missing Optimus metrics")
+    total, observed, dropped = (counters.get(k) for k in ("required_events", "observed_events", "dropped_events"))
+    if any(type(v) is not int for v in (total, observed, dropped)):
+        raise ValueError("Optimus counters missing or not integers")
+    if total < len(metric_entries) or observed < total or dropped != 0:
+        raise ValueError("Optimus cannot account for all required events")
+    view = surface.get("founder_surface") or {}
+    if not isinstance(view, dict) or view.get("live") is not True or view.get("instructions_visible") is not True:
+        raise ValueError("Founder Surface does not show live instruction state")
+    if view.get("permission_visible") is not True or view.get("yield_tracking_visible") is not True:
+        raise ValueError("Founder Surface cannot show permission and yield tracking")
+    if not isinstance(view.get("event_cursor"), str) or not view["event_cursor"].strip():
+        raise ValueError("Founder Surface has no live event cursor")
+    if not isinstance(view.get("url"), str) or not view["url"].startswith("https://"):
+        raise ValueError("Founder Surface has no HTTPS operating URL")
+    return {"candidate_sha": sha, "instruction_count": len(metric_entries), "metrics_event_count": observed,
+            "founder_surface_url": view["url"], "state": "ADMITTED_TO_GREENLANE_CI_NOT_YIELD"}
+
+
+def list_check_runs(repo, sha, token, fetch=None):
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
+        raise ValueError("invalid repository")
+    if not token:
+        raise ValueError("missing read-only GitHub token")
+    if fetch is None:
+        def fetch(url):
+            req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json",
+                                                       "Authorization": f"Bearer {token}",
+                                                       "X-GitHub-Api-Version": "2022-11-28"})
+            with urllib.request.urlopen(req, timeout=20) as response:
+                return json.load(response)
+    runs = []
+    for page in range(1, 12):
+        data = fetch(f"https://api.github.com/repos/{repo}/commits/{sha}/check-runs?per_page=100&page={page}")
+        if not isinstance(data, dict) or not isinstance(data.get("check_runs"), list):
+            raise ValueError("unreadable GitHub checks; no release")
+        runs.extend(data["check_runs"])
+        if len(runs) > MAX_CHECK_RUNS:
+            raise ValueError("check-run inventory too large to certify")
+        if len(runs) >= data.get("total_count", 0):
+            return runs
+        if len(data["check_runs"]) != 100:
+            raise ValueError("GitHub returned truncated check-run inventory")
+    raise ValueError("check-run pagination exceeds safe bound")
+
+
+def main():
+    try:
+        sha = os.environ.get("ESTATE_CANDIDATE_SHA", "")
+        repo = os.environ.get("GITHUB_REPOSITORY", "")
+        app_o = int(os.environ.get("OPTIMUS_CHECK_APP_ID", "0"))
+        app_f = int(os.environ.get("FOUNDER_CHECK_APP_ID", "0"))
+        checked = verdict(list_check_runs(repo, sha, os.environ.get("GH_TOKEN", "")),
+                          sha=sha, optimus_app_id=app_o, founder_app_id=app_f)
+        print("ADMITTED (not deployed or yielded): " + json.dumps(checked, sort_keys=True))
+        return 0
+    except (ValueError, KeyError, TypeError, urllib.error.URLError, TimeoutError) as error:
+        print(f"REFUSED greenlane: Optimus/Founder Surface operational proof: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
