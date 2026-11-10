@@ -16,6 +16,27 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
+# Shift the existing pre-push introduced-line policy to the commit boundary.
+# Invoke the committed HEAD verifier, NEVER the staged candidate's copy:
+# a model must not be able to disable its own acceptance check by editing it.
+# The authoritative pre-push and required GitHub checks remain in place.
+if git cat-file -e "HEAD:bin/idp-agent-patch-preflight.py" 2>/dev/null; then
+  trusted_preflight="$(mktemp)"
+  git show "HEAD:bin/idp-agent-patch-preflight.py" > "$trusted_preflight"
+  preflight_rc=0
+  python3 "$trusted_preflight" --repair-evidence-docs || preflight_rc=$?
+  rm -f "$trusted_preflight"
+  if [ "$preflight_rc" -ne 0 ]; then
+    echo "pre-commit REFUSED: staged patch fails the existing added-line/protected-path policy" >&2
+    exit 1
+  fi
+else
+  # Transitional bootstrap while this verifier is being introduced on its
+  # first guarded commit. This is BLIND, never a positive acceptance receipt.
+  echo "BLIND pre-commit staged-patch preflight: trusted HEAD lacks verifier; pre-push and required CI still enforce" >&2
+fi
+
+
 staged_py=$(git diff --cached --name-only --diff-filter=ACM -- '*.py' || true)
 # ruff format cannot parse intentionally-invalid Python (tests/fixtures/projection/broken.py
 # is the SyntaxError test case for bin/catalog-projection). Exclude it from formatting.
