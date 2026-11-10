@@ -33,6 +33,23 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           python3 bin/idp-estate-homes | tee drill.txt
+      # What the Cloudflare credential can actually see. One call, names and counts only — no
+      # token, no record values. This is the measurement that decides whether the doors can be
+      # repointed from CI at all, and it costs a line instead of a session spent guessing at
+      # account ownership.
+      - name: what the cloudflare token can see
+        env:
+          CLOUDFLARE_ROOT_TOKEN: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+          ESTATE_ZONE: ${{ vars.ESTATE_ZONE || 'mumchimp.com' }}
+        run: |
+          set -uo pipefail
+          if [ -z "${CLOUDFLARE_ROOT_TOKEN:-}" ]; then
+            echo "BLIND: no SEED_CLOUDFLARE_ROOT_TOKEN"; exit 0
+          fi
+          curl -sS -H "Authorization: Bearer $CLOUDFLARE_ROOT_TOKEN" \
+            "https://api.cloudflare.com/client/v4/zones?per_page=50" \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); print("zones visible:", ",".join(z["name"] for z in d.get("result") or []) or "NONE", "| success:", d.get("success"))' \
+            || echo "could not list zones"
       - name: keep the board
         uses: actions/upload-artifact@v7
         with:
