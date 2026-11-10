@@ -112,7 +112,7 @@ while IFS= read -r f; do
   if [ "$b" = Dockerfile ]; then n=$(basename "$d"); [ "$n" = "." ] && n=idp; else n=${b%.Dockerfile}; fi
   touched "$f" "$d" || continue
   rows+=("$n $f $d")
-done < <(find . "${_prune[@]}" \( -name Dockerfile -o -name '*.Dockerfile' \) \
+done < <(find . ${_prune[@]+"${_prune[@]}"} \( -name Dockerfile -o -name '*.Dockerfile' \) \
             -not -path '*/node_modules/*' \
             -not -path './.git/*' \
             -not -path './tests/*' \
