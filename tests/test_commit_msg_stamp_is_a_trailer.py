@@ -19,6 +19,7 @@ hook as it was written before that date.
 from __future__ import annotations
 
 import pathlib
+import shutil
 import subprocess
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -30,6 +31,9 @@ def _run(tmp_path, message: str) -> list[str]:
     repo = tmp_path / "r"
     subprocess.run(["git", "init", "-q", str(repo)], check=True)  # noqa: S603,S607 -- argv list, no shell; the estate's tool-invocation idiom / partial path is deliberate -- the tool is resolved from the operator's PATH
     (repo / ".git" / "idp-hook-secret").write_text("testsecret\n")
+    (repo / "bin").mkdir(exist_ok=True)
+    shutil.copy(REPO / "bin" / "language-gate", repo / "bin" / "language-gate")
+    (repo / "bin" / "language-gate").chmod(0o755)
 
     msg = tmp_path / "COMMIT_EDITMSG"
     msg.write_text(message)

@@ -113,6 +113,24 @@ def test_verdict_needs_every_required_check_and_the_latest_run_wins():
     assert verdict == "red" and reason.startswith("bdd failure u/9")
 
 
+def test_an_optional_vercel_failure_cannot_red_a_workflow_only_lane():
+    """Vercel is not in the live required-check ruleset; it is evidence, not a gate."""
+    b = Recorded(
+        {
+            "commits/vercel-rate-limited/check-runs": {
+                "check_runs": [
+                    *[
+                        _run(name, "success", rid=i)
+                        for i, name in enumerate(REQUIRED, 1)
+                    ],
+                    _run("Vercel - idp", "failure", rid=99),
+                ]
+            }
+        }
+    )
+    assert b.checks("vercel-rate-limited") == ("green", "")
+
+
 def test_only_the_engines_own_pull_requests_are_not_foreign():
     prs = [
         {
