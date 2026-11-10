@@ -85,7 +85,9 @@ class AgentPatchPreflightTests(unittest.TestCase):
         rc, out = self.inspect(repair=True)
         self.assertEqual(rc, 0, out)
         self.assertEqual(len(out["repairs"]), 1)
-        self.assertEqual(p.read_bytes(), b'# Evidence -- verified\n"Value" -> complete\n')
+        self.assertEqual(
+            p.read_bytes(), b'# Evidence -- verified\n"Value" -> complete\n'
+        )
         self.assertEqual(
             self.cmd("show", ":docs/evidence/test/README.md"), p.read_bytes()
         )
