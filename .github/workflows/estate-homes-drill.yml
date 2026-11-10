@@ -67,6 +67,26 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
         run: |
           python3 bin/idp-estate-homes | tee drill.txt
+      # The two checks that catch the recurring failures before an agent spends a session on
+      # them: does the token still see the zone, and does every door still answer. Both are
+      # non-fatal here on purpose -- the drill's own grading files the incident, and a canary that
+      # fails must not stop the drill from reporting what it measured.
+      - name: credential canary
+        env:
+          SEED_CLOUDFLARE_ROOT_TOKEN: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+          ESTATE_ZONE: ${{ vars.ESTATE_ZONE || 'mumchimp.com' }}
+        run: |
+          set -uo pipefail
+          python3 infra/recovery/credential-canary.py || true
+      - name: repair the doors when a target is configured
+        if: ${{ vars.ESTATE_DOOR_TARGET != '' }}
+        env:
+          CLOUDFLARE_ROOT_TOKEN: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+          ESTATE_ZONE: ${{ vars.ESTATE_ZONE || 'mumchimp.com' }}
+          TARGET: ${{ vars.ESTATE_DOOR_TARGET }}
+        run: |
+          set -uo pipefail
+          python3 infra/recovery/doors.py --repair --target "$TARGET" || true
       - name: keep the board
         uses: actions/upload-artifact@v7
         with:
