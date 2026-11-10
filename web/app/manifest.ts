@@ -2,14 +2,14 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Meridian Intelligence",
-    short_name: "Meridian",
+    name: "Merdian Intelligence",
+    short_name: "Merdian",
     description:
-      "We build the routing, tracing, workload identity and eval layers that put LLM features into production.",
+      "AI research laboratory building and validating products for enterprises and individuals.",
     start_url: "/",
     display: "standalone",
-    background_color: "#FAFAF8",
-    theme_color: "#0D0D0A",
+    background_color: "#0B1421",
+    theme_color: "#0B1421",
     icons: [{ src: "/favicon.svg", sizes: "any", type: "image/svg+xml" }],
   };
 }

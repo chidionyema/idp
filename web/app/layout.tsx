@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import "./globals.css";
+import "./merian.css";
 
 // The woff2 files in ./fonts are the latin subsets of these three families, vendored from
 // Google Fonts. `next/font/google` downloads at build time, and the image build was failing on
@@ -30,26 +31,26 @@ const dmMono = localFont({
 // measured 9.1 s cold and 1.4-2.9 s on a repeat from the same laptop, on a 300m CPU pod. A value
 // known at build time keeps the pages static, which is what a brochure site wants; the canonical
 // link, the OpenGraph url and every relative OG image resolve against it.
-const SITE_URL = process.env.MERIDIAN_SITE_URL ?? "http://localhost:3000";
+const SITE_URL = process.env.MERDIAN_SITE_URL ?? process.env.MERIAN_SITE_URL ?? process.env.MERIDIAN_SITE_URL ?? "https://meridian-intelligence-uk.vercel.app";
 
 export function generateMetadata(): Metadata {
   const base = new URL(SITE_URL);
   return {
     metadataBase: base,
-    title: { default: "Meridian Intelligence", template: "%s | Meridian Intelligence" },
-    description: "We build the routing, tracing, workload identity and eval layers that put LLM features into production. Twelve deployments, with the numbers.",
-    openGraph: { type: "website", locale: "en_US", url: base.href, siteName: "Meridian Intelligence", images: [{ url: "/opengraph-image", width: 1200, height: 630 }] },
-    twitter: { card: "summary_large_image", creator: "@meridianai" },
+    title: { default: "Merdian Intelligence", template: "%s | Merdian Intelligence" },
+    description: "Independent AI laboratory, technology consultancy and venture builder. Research, engineering and commercially useful AI systems.",
+    openGraph: { type: "website", locale: "en_US", url: base.href, siteName: "Merdian Intelligence", images: [{ url: "/opengraph-image", width: 1200, height: 630 }] },
+    twitter: { card: "summary_large_image" },
     robots: { index: true, follow: true },
   };
 }
 
 const jsonLd = {
-  "@context": "https://schema.org", "@type": "Organization",
-  name: "Meridian Intelligence", url: "https://meridian.ai",
-  logo: "https://meridian.ai/favicon.svg", email: "hello@meridian.ai",
-  sameAs: ["https://github.com/meridian-intelligence", "https://linkedin.com/company/meridian-intelligence"],
-  contactPoint: { "@type": "ContactPoint", email: "hello@meridian.ai", contactType: "sales" },
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "Merdian Intelligence",
+  description: "AI research laboratory and product development business",
+  ...(process.env.MERDIAN_SITE_URL ? {url: process.env.MERDIAN_SITE_URL} : {}),
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
