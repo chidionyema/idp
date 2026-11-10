@@ -112,6 +112,47 @@ def gh_json(path: str) -> dict | list | None:
         return None
 
 
+def split_verdict(status: dict) -> tuple:
+    """Separate the lane's own verdict from a vendor's advisory status.
+
+    THE LANE'S VERDICT IS THE `greenlane` CONTEXT. A status posted by a DEPLOYMENT
+    provider is not a gate on the lane and must never be what reports it RED.
+
+    Measured 2026-11-10 on lane/prepush-toml-classifier: the lane was code-green
+    (`ci.status` on d62a3a83 = 1 passed, 0 failed, merge_ready true) and this door still
+    answered RED, because Vercel had posted `error` with "Deployment rate limited --
+    retry in 24 hours" on a change that is one shell script and one pytest file. A rate
+    limit is not a verdict on the change: it is a vendor quota, it clears by itself, and
+    reporting it as a FAILURE tells the agent to redo work that is already correct -- the
+    defect class R10 names (wait and poll instead of diagnosing) and R11 (a claim made
+    without measuring).
+
+    So a failing status on a context the estate does not gate on is kept and NAMED as
+    `advisory`; only a failing `greenlane` makes the lane RED. Nothing is hidden: the
+    context, url and description are still reported.
+
+    Returns (greenlane_landed, failing, advisory, status_context, status_url).
+    """
+    greenlane_landed = None
+    failing = []
+    for s in status.get("statuses") or []:
+        if s.get("context") == "greenlane" and s.get("state") == "success":
+            desc = (s.get("description") or "").strip()
+            if desc.startswith("landed in"):
+                greenlane_landed = desc
+        if s.get("state") in ("failure", "error"):
+            failing.append({"context": s.get("context"), "url": s.get("target_url"),
+                            "description": s.get("description")})
+    advisory = [f for f in failing if f.get("context") != "greenlane"]
+    red = [f for f in failing if f.get("context") == "greenlane"]
+    ctx, url = None, None
+    if advisory:
+        ctx, url = advisory[0]["context"], advisory[0]["url"]
+    if red:
+        ctx, url = red[0]["context"], red[0]["url"]
+    return greenlane_landed, red, advisory, ctx, url
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(prog="lane-where", description="Where is this branch? One observation.")
     ap.add_argument("branch", nargs="?", help="branch name; default: the one checked out here")
@@ -166,16 +207,8 @@ def main() -> int:
     greenlane_landed = None
     if isinstance(status, dict):
         st_state = status.get("state") or "absent"
-        for s in status.get("statuses") or []:
-            if s.get("context") == "greenlane" and s.get("state") == "success":
-                desc = (s.get("description") or "").strip()
-                if desc.startswith("landed in"):
-                    greenlane_landed = desc
-            if s.get("state") in ("failure", "error"):
-                failing.append({"context": s.get("context"), "url": s.get("target_url"),
-                                "description": s.get("description")})
-        if failing:
-            st_ctx, st_url = failing[0]["context"], failing[0]["url"]
+        greenlane_landed, failing, advisory, st_ctx, st_url = split_verdict(status)
+        receipt.update(advisory=advisory)
     receipt.update(status=st_state, status_url=st_url, status_context=st_ctx, failing=failing)
 
     rc, _ = run(["git", "merge-base", "--is-ancestor", head, f"origin/main"])
@@ -213,7 +246,12 @@ def main() -> int:
 
     if landed:
         verdict, code = "LANDED", 0
-    elif st_state == "failure":
+    elif failing or (st_state == "failure" and not advisory):
+        # `failing` is the greenlane-only list from split_verdict; `advisory` is everything
+        # else that failed. GitHub's aggregate `st_state` is "failure" when ANY context
+        # failed -- including a deployment provider's rate limit -- so it is honoured only
+        # when no advisory explains it. A lane whose only failure is a vendor's rate limit
+        # is not RED: it is pending its own gate's verdict.
         verdict, code = "RED", 4
     else:
         verdict, code = "PENDING", 3
