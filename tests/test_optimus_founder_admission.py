@@ -99,6 +99,24 @@ class OperationalReleaseProofTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'not configured'):
             gate.verdict(runs(),sha=SHA,optimus_app_id=0,founder_app_id=22,now=NOW)
 
+    def test_candidate_commit_without_instruction_is_refused(self):
+        class Result:
+            returncode = 0
+            stdout = "Claim: chidionyema/idp#7771\x00"
+        with self.assertRaisesRegex(ValueError, 'no Genesis-Instruction-Id'):
+            gate.candidate_instructions(SHA, run=lambda *a, **kw: Result())
+
+    def test_telemetry_must_cover_every_candidate_instruction(self):
+        with self.assertRaisesRegex(ValueError, 'different instructions'):
+            gate.verdict(runs(), sha=SHA, optimus_app_id=11, founder_app_id=22, now=NOW,
+                         candidate_instruction_ids={'GEN-0001', 'GEN-0002'})
+
+    def test_candidate_history_extracts_exact_instruction_ids(self):
+        class Result:
+            returncode = 0
+            stdout = "Subject\n\nGenesis-Instruction-Id: GEN-0001\x00"
+        self.assertEqual(gate.candidate_instructions(SHA, run=lambda *a, **kw: Result()), {'GEN-0001'})
+
     def test_pagination_and_unreadable_checks_block(self):
         data=[{'total_count':101,'check_runs':[{'name':'x'}]*100},
               {'total_count':101,'check_runs':[{'name':'last'}]}]
