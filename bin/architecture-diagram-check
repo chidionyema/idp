@@ -7,7 +7,7 @@ as current: a page that still names a retired component, or whose mermaid fences
 close, looks exactly like a page that is current. GitHub renders a page whose fences do
 not close as ONE unterminated code block, so the diagrams do not render at all.
 
-WHAT IT CHECKS. Nine things, all decided from BYTES -- no docker, no network, and no
+WHAT IT CHECKS. Ten things, all decided from BYTES -- no docker, no network, and no
 rendering, so it runs in seconds on every push and on a laptop:
 
   1. FENCES. Every mermaid block opens and closes, and no fence is glued to other text.
@@ -55,7 +55,10 @@ rendering, so it runs in seconds on every push and on a laptop:
   8. NAMES. Every element name the model declares is drawn, and every name on the page
      is declared -- so a renamed element cannot leave half the page talking about the
      old name.
-  9. NO SILENCE. A line inside a mermaid block that this file has no rule for is
+  9. THE HEADER. The page's header is exactly what architecture/render writes, read
+     FROM the render, so there is one source of truth and the render cannot change it
+     silently.
+  10. NO SILENCE. A line inside a mermaid block that this file has no rule for is
      reported as UNCHECKED and the run FAILS. So is a view kind with no rule here, a
      node this file cannot read, and a page whose header this file cannot derive from
      architecture/render. A check that says "ok" about something it did not look at is
@@ -74,6 +77,8 @@ WHAT THIS CHECK DOES NOT COMPARE, STATED PLAINLY SO IT IS NOT A HIDDEN CLAIM:
   - Edge SHAPE and direction, beyond the endpoints and the label.
   - Whether the .mmd files the renderer produces still match the model. That is what
     `architecture/render --check` is for, and it needs the structurizr image.
+  - The page's PROSE after the header (the renderer's own trailing line). Only the
+    header is compared; the trailer is not.
 
 `architecture/render --check` is the byte-exact check (it re-renders and diffs) and
 needs the structurizr image. This one needs nothing, so it can run everywhere.
@@ -116,8 +121,16 @@ DEPLOYMENT_ENV_RE = re.compile(r'^\s*deploymentEnvironment\s+"([^"]*)"\s*\{')
 # -- so the shape alone cannot be an error. But a line that assigns something is a
 # declaration, and a declaration this file cannot read is an element it will silently
 # leave out of every comparison.
-DECLARATION_RE = re.compile(r'^\s*[A-Za-z_][A-Za-z0-9_.-]*\s*=\s*\S+')
+DECLARATION_RE = re.compile(r'^\s*[^\s=]+\s*=\s*\S+')
+# The alias charset above is deliberately wider than the one ELEMENT_RE accepts:
+# a declaration this file cannot read must still be REPORTED, not dropped.  Structurizr
+# accepts identifiers that start with a digit, so `1ghost = container "X"` is a real
+# model, and dropping it silently left the element out of every comparison.
 INSTANCE_RE = re.compile(r'^\s*(containerInstance|instanceOf)\s+([A-Za-z0-9_.]+)\s*$')
+# A deployment node is a NESTED box in a deployment view: the model declares it, and the
+# renderer draws it as a subgraph named after it. A check that says "every subgraph must
+# be the view title or the system boundary" would reject a correct deployment view.
+DEPLOYMENT_NODE_RE = re.compile(r'^\s*deploymentNode\s+"([^"]*)"')
 
 # The kind label the renderer puts in a node's marker. This is the renderer's own
 # vocabulary, keyed by the element's OWN kind -- not a set of words that happen to
@@ -195,6 +208,7 @@ class Model:
         self.duplicate_names: list[str] = []
         self.unreadable_declarations: list[str] = []
         self.deployments: dict[str, list[str]] = {}   # environment title -> element aliases
+        self.deployment_nodes: dict[str, list[str]] = {}  # environment title -> node names
         self.deployment_opaque: list[str] = []        # environments this file cannot read
         self._parse()
 
@@ -224,6 +238,19 @@ class Model:
                     self.deployments.setdefault(dem.group(1), [])
                     push = "#deployment:" + dem.group(1)
                 else:
+                    dnode = DEPLOYMENT_NODE_RE.match(line)
+                    if dnode:
+                        env = next(
+                            (s for s in reversed(stack) if s.startswith("#deployment:")), None
+                        )
+                        if env is not None:
+                            self.deployment_nodes.setdefault(env[len("#deployment:"):], []).append(
+                                dnode.group(1)
+                            )
+                        # NOT a `continue`: the line ends with `{`, and the generic push
+                        # below must open the node's block -- skipping it would leave the
+                        # closing `}` to pop the ENVIRONMENT's marker instead, and every
+                        # instance after it would land in the wrong environment.
                     inst = INSTANCE_RE.match(line)
                     if inst:
                         # The instance may sit inside nested deploymentNode blocks, so
@@ -239,7 +266,7 @@ class Model:
                         alias, kind, name, first, second = m.groups()
                         element = Element(alias, kind, name, first or "", second or "")
                         self.elements[alias] = element
-                        if name in self.by_name and self.by_name[name].alias != alias:
+                        if name in self.by_name:
                             self.duplicate_names.append(name)
                         self.by_name.setdefault(name, element)
                         self.alias_of.setdefault(name, alias)
@@ -648,34 +675,48 @@ def main() -> int:
 
     # --- 1. fences ---------------------------------------------------------
     raw_page = open(page_path, encoding="utf-8").read()
-    # Fence accounting, done IN ORDER. A page may carry plain code blocks as well as
-    # mermaid blocks, and a plain block's closing fence is not a mermaid block's
-    # closer: counting every bare fence against the mermaid opens rejects a page for
-    # having an ordinary ```bash block in it.
+    # Fence accounting, done IN ORDER and by BACKTICK WIDTH. A page may carry plain
+    # code blocks as well as mermaid blocks, and a plain block's closing fence is not a
+    # mermaid block's closer: counting every bare fence against the mermaid opens
+    # rejects a page for having an ordinary ```bash block in it. And a block written
+    # with FOUR backticks is a legal block, closed by four backticks -- so the width is
+    # part of the rule, not an afterthought.
+    FENCE_RUN_RE = re.compile(r"(`{3,})")
     mermaid_opens = 0
     mermaid_closes = 0
     block_opens = 0
     block_closes = 0
-    in_mermaid = False
+    open_block = None
+    glued: list[str] = []
     for line in raw_page.split("\n"):
-        stripped = line.strip()
-        if not stripped.startswith("```"):
+        run_match = FENCE_RUN_RE.search(line)
+        if not run_match:
             continue
-        if stripped == "```mermaid":
-            mermaid_opens += 1
+        run = run_match.group(1)
+        before = line[: run_match.start()].strip()
+        after = line[run_match.end():]
+        if open_block is None:
             block_opens += 1
-            in_mermaid = True
-        elif stripped == "```":
+            info = after.rstrip()
+            if len(info.split()) > 1:
+                # The renderer never writes an info string with a space in it.
+                glued.append(line)
+            open_block = {"width": len(run), "mermaid": info.strip() == "mermaid"}
+            if open_block["mermaid"]:
+                mermaid_opens += 1
+            continue
+        if len(run) >= open_block["width"] and not before and not after.strip():
             block_closes += 1
-            if in_mermaid:
+            if open_block["mermaid"]:
                 mermaid_closes += 1
-                in_mermaid = False
-        else:
-            # A fence with a language opens a plain block, closed by the next bare fence.
-            block_opens += 1
-    if in_mermaid:
+            open_block = None
+            continue
+        if before:
+            # A fence glued to text -- "  end```" -- never closes the block.
+            glued.append(line)
+    if open_block is not None:
         problems.append(
-            "%s opens a mermaid block it never closes -- the page will not render" % page_path
+            "%s opens a code block it never closes -- the page will not render" % page_path
         )
     if mermaid_opens != mermaid_closes:
         problems.append(
@@ -687,16 +728,6 @@ def main() -> int:
             "%s opens %d code blocks and closes %d -- the page will not render"
             % (page_path, block_opens, block_closes)
         )
-    glued = [
-        line
-        for line in raw_page.split("\n")
-        if "```" in line
-        and not re.match(r"^[ \t]*```mermaid[ \t]*$", line)
-        and not re.match(r"^[ \t]*```[ \t]*$", line)
-        and not re.match(r"^[ \t]*```[A-Za-z0-9_+-]*[ \t]*$", line)
-    ]
-    if glued:
-        problems.append("a mermaid fence is not alone on its line: " + " | ".join(glued))
     if glued:
         problems.append("a mermaid fence is not alone on its line: " + " | ".join(glued))
 
@@ -920,6 +951,32 @@ def main() -> int:
                         "the page draws a second view title %r in %s; the renderer titles "
                         "that view %r" % (other, view["name"], expected_label)
                     )
+
+    # --- 8b. every OTHER subgraph in the view -------------------------------
+    # The renderer draws exactly two subgraphs in a container view -- the view's own
+    # title and the system boundary -- and exactly one in a system context view.  Any
+    # OTHER subgraph is a C4 boundary the model does not declare, whatever it is
+    # labelled: a decoy named after another system, an extra grouping, a nested level
+    # of nesting.  Comparing only the owner's own label let all of those through.
+    for view in model.views:
+        view_name = view["name"]
+        owner_alias = view["ident"].split(".")[-1]
+        owner = model.elements.get(owner_alias)
+        declared = set()
+        title = model.view_label(view)
+        if title is not None:
+            declared.add(title)
+        if owner is not None and view["kind"] == "container":
+            declared.add(owner.name)
+        if view["kind"] == "deployment":
+            # A deployment view nests the environment's own NODES as subgraphs.
+            declared.update(model.deployment_nodes.get(view.get("title") or "", []))
+        for s in page.subgraphs.get(view_name, []):
+            if s["label"] not in declared:
+                problems.append(
+                    "the page draws a subgraph %r in %s; the model declares no such boundary"
+                    % (s["label"], view_name)
+                )
 
     # --- 9. the header the render writes ------------------------------------
     header, why = expected_header(render_path)

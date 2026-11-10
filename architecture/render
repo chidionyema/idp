@@ -41,8 +41,20 @@ if [ -d "$out" ]; then
   mv "$out" "$backup"
 fi
 mkdir -p "$out"
+# ONE exit trap, installed once, that does EVERYTHING: it removes the temp files, it
+# restores the previous .mmd output when the render did not finish, and it leaves no
+# out.previous.* behind. A later `trap ... EXIT` would REPLACE this one and lose the
+# restore -- that is how a failing `--check` used to strand a backup in the tree.
+# The signal traps turn a TERM/INT/HUP into an exit with a NON-ZERO status: bash runs
+# the EXIT trap with $? = 0 when it dies from a signal while a foreground child is
+# still running, and $? = 0 reads as "the render succeeded", which deleted the
+# previous output instead of restoring it.
+tmp=""
+diff_file=""
 restore_output() {
   status=$?
+  [ -n "$tmp" ] && rm -f "$tmp"
+  [ -n "$diff_file" ] && rm -f "$diff_file"
   if [ "$status" -ne 0 ] && [ -d "$backup" ]; then
     rm -rf "$out"
     mv "$backup" "$out"
@@ -51,6 +63,9 @@ restore_output() {
   exit "$status"
 }
 trap restore_output EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+trap 'exit 129' HUP
 
 # The model contains non-ASCII characters (em dashes). Structurizr parses the workspace with
 # the JVM's default charset, so a host whose locale is not UTF-8 fails with
@@ -64,8 +79,6 @@ docker run --rm -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 -v "$here":/work -w /work stru
 
 test -n "$(ls -A "$out"/*.mmd 2>/dev/null)" || { echo "render produced no diagrams"; exit 1; }
 
-rm -rf "$backup"
-trap - EXIT
 
 # The views, in the order THE MODEL DECLARES THEM -- the C4 reading order (Context, then
 # Containers, then the deployment views). A hand-written list is a promise about the bytes;
@@ -125,4 +138,11 @@ if [ "$mode" = "--check" ]; then
 fi
 
 render_page > "$page"
+# The previous .mmd output is dropped ONLY now: until the whole render has succeeded --
+# the view set matches the model, and the page has been written -- the backup is what a
+# partial render falls back to.
+rm -rf "$backup"
+backup=""
+trap - EXIT
+
 echo "rendered $(echo "$model_views" | wc -w | tr -d ' ') views -> $page"
