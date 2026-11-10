@@ -1,0 +1,43 @@
+name: Genesis commit-contract verified exact-source suite
+
+on:
+  push:
+    branches: [proof/agent-precommit-verified-20261110]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.12']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Verify audited candidate source and unchanged protected scripts
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "6b04343817fd8e9bede02fafca4f41675584aa66"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/agent-precommit-verified-proof.yml"
+          git diff --quiet HEAD^ HEAD -- bin/idp-agent-patch-preflight.py tests/test_agent_patch_preflight.py .githooks/pre-commit .github/workflows/agent-sandbox.yml
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Run indexed and signed-receipt falsifiers
+        run: |
+          set -euo pipefail
+          bash -n .githooks/pre-commit
+          python -m py_compile bin/idp-agent-patch-preflight.py tests/test_agent_patch_preflight.py
+          python -m unittest discover -s tests -p test_agent_patch_preflight.py -v
+      - name: Enforce pinned Ruff lint and format
+        run: |
+          set -euo pipefail
+          python -m pip install -q 'ruff==0.15.18'
+          ruff check --select E9,F,B bin/idp-agent-patch-preflight.py tests/test_agent_patch_preflight.py
+          ruff format --check bin/idp-agent-patch-preflight.py tests/test_agent_patch_preflight.py
