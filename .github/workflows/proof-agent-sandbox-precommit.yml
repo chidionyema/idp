@@ -27,7 +27,7 @@ jobs:
           test "$(git rev-parse HEAD^)" = "035c0733530ced08f7c0f5492f3c9d12f27dfe1e"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/proof-agent-sandbox-precommit.yml"
           git diff --quiet HEAD^ HEAD -- bin/idp-agent-patch-preflight.py tests/test_agent_patch_preflight.py .github/workflows/agent-sandbox.yml
-      - uses: actions/setup-python@949feb2413d6458794dcd2491c4babbbce0c15c1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: ${{ matrix.python }}
       - name: Reproduce real git index adversarial corpus
