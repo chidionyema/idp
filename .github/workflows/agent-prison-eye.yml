@@ -1,0 +1,61 @@
+name: agent-prison-eye
+# Isolated, low-cost live eye-test; no production write privileges.
+on:
+  push:
+    branches: ['lane/agent-prison-live-eye-20261110']
+    paths:
+      - .github/workflows/agent-prison-eye.yml
+      - tests/agent_prison_eyetest.py
+      - tests/agent_prison_relay_eye.py
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  eye:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Exercise signed offline continuity, revoked effect and live founder readback
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 tests/agent_prison_eyetest.py
+      - name: Preserve experiment telemetry
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: agent-prison-eye
+          path: agent-prison-eye.json
+          if-no-files-found: warn
+  offline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Sign instruction while disconnected from estate authority
+        run: python3 tests/agent_prison_relay_eye.py offline
+      - name: Transfer ONLY public identity and signed instruction across hosts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: offline-envelope
+          path: offline-envelope.json
+          if-no-files-found: error
+  reconnect:
+    needs: offline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Recover offline signed instruction from independent host
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: offline-envelope
+      - name: Re-evaluate revoked permission and prove no protected stale effect
+        run: python3 tests/agent_prison_relay_eye.py reconnect
+      - name: Publish independently generated reconnect receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: reconnect-receipt
+          path: reconnect-receipt.json
+          if-no-files-found: warn
