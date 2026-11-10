@@ -2,7 +2,7 @@ import { MetadataRoute } from "next";
 import { site } from "@/content/site";
 import { posts } from "@/content/posts";
 export default function sitemap(): MetadataRoute.Sitemap {
-  const base = process.env.MERDIAN_SITE_URL ?? process.env.MERIAN_SITE_URL ?? process.env.MERIDIAN_SITE_URL ?? "http://localhost:3000";
+  const base = process.env.MERDIAN_SITE_URL ?? process.env.MERIAN_SITE_URL ?? "https://merdian-intelligence.vercel.app";
   const staticRoutes: MetadataRoute.Sitemap = [
     { url: base, lastModified: new Date(), changeFrequency: "weekly", priority: 1 },
     { url: `${base}/research`, lastModified: new Date(), changeFrequency: "weekly", priority: 0.9 },
