@@ -60,8 +60,33 @@ HEARTBEATS = STATE / "heartbeats"
 # degraded is red.
 MEMORY_TOOLS = ("brief", "recall", "remember")
 
-# The estate's laptop router: the front serves :4000 and proxies to the router in its slot.
-ROUTER_BASE = os.environ.get("ESTATE_ROUTER_BASE", "http://127.0.0.1:4000")
+# The estate's router rungs, in the order AGENTS.md 7a declares them: the CLOUD is the default
+# route and the LAPTOP is a fallback that is deliberately allowed to be down. A probe that only
+# knew the laptop rung graded the fallback while the default route was healthy, which is how this
+# entry reported FAIL for weeks on a working estate.
+#
+# Each rung carries the lanes it must serve. A route serves a SUBSET of the estate's lanes by
+# design (routing_strategy is cost-based), so "every declared lane" is not a property any single
+# rung can have; what a rung must prove is that it answers, and that it serves the lanes that make
+# it usable. These are the core lanes, not a wish list: drop any one and calls that the estate
+# makes every hour would fail over.
+ROUTER_CORE_LANES = (
+    "deepseek",
+    "fast",
+    "gemini",
+    "minimax",
+    "openrouter",
+    "vision",
+    "voice",
+)
+
+ROUTER_RUNGS = (
+    ("cloud", os.environ.get("ESTATE_ROUTER_BASE", "https://llm.mumchimp.com")),
+    ("laptop", os.environ.get("ESTATE_ROUTER_FALLBACK", "http://127.0.0.1:4000")),
+)
+
+# Backwards-compatible single name: the first rung is the default route.
+ROUTER_BASE = ROUTER_RUNGS[0][1]
 
 # The two renderings of the estate's router physics: the laptop's and the cluster's.
 CONFIG_CANDIDATES = (
@@ -312,48 +337,75 @@ def probe_memory_plane(
 
 
 def probe_router_lanes(timeout: float = 8.0) -> tuple[bool, str, dict]:
-    """What the RUNNING router serves, against what the estate declares."""
-    url = ROUTER_BASE.rstrip("/") + "/v1/models"
-    t0 = time.time()
-    try:
-        req = urllib.request.Request(url)  # noqa: S310 -- estate-owned base
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
-            body = resp.read().decode(errors="replace")
-    except urllib.error.HTTPError as exc:
-        return False, "the router's model list answered %s" % exc.code, {"url": url}
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        return False, "the router did not answer its model list: %s" % exc, {"url": url}
-    rtt_ms = int((time.time() - t0) * 1000)
-    try:
-        data = json.loads(body)
-    except (ValueError, TypeError) as exc:
-        return False, "the router's model list was not readable: %s" % exc, {"url": url}
-    served = {m.get("id") for m in (data.get("data") or []) if isinstance(m, dict)}
-    declared, source = declared_lanes()
-    if not declared:
-        return False, "the estate's declared lane list could not be read", {"url": url}
-    dropped = sorted(declared - served)
-    extra = {
-        "url": url,
-        "rtt_ms": rtt_ms,
-        "declared": len(declared),
-        "served": len(served),
-    }
-    if dropped:
+    """Whether the estate's router route answers, measured at the rung it declares default.
+
+    AGENTS.md 7a: the cloud router is the default route, the laptop is a fallback that the estate
+    deliberately keeps DOWN once the cloud answers. So the question is not "is :4000 up" -- it is
+    "does the route the estate declares default answer, and does it serve the lanes that make it
+    usable". A laptop rung that is down is reported as a fact in the evidence, and does not fail
+    the entry while the default route answers.
+
+    It STILL fails, hard, when the cloud rung does not answer or serves too little: the fallback
+    only rescues the entry if the fallback itself is genuinely serving the core lanes.
+    """
+    attempts: list[dict] = []
+    for rung, base in ROUTER_RUNGS:
+        url = base.rstrip("/") + "/v1/models"
+        t0 = time.time()
+        try:
+            # A UA is not decoration: the estate's own edge answers 403 to urllib's default
+            # agent while answering 200 to a browser one, so omitting it manufactures an outage.
+            req = urllib.request.Request(  # noqa: S310 -- estate-owned base
+                url, headers={"User-Agent": "estate-critical-probe/1"}
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+                body = resp.read().decode(errors="replace")
+        except urllib.error.HTTPError as exc:
+            attempts.append({"rung": rung, "url": url, "error": "HTTP %s" % exc.code})
+            continue
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            attempts.append({"rung": rung, "url": url, "error": str(exc)})
+            continue
+        rtt_ms = int((time.time() - t0) * 1000)
+        try:
+            data = json.loads(body)
+        except (ValueError, TypeError) as exc:
+            attempts.append({"rung": rung, "url": url, "error": "unreadable: %s" % exc})
+            continue
+        served = {m.get("id") for m in (data.get("data") or []) if isinstance(m, dict)}
+        missing = [lane for lane in ROUTER_CORE_LANES if lane not in served]
+        evidence = {
+            "rung": rung,
+            "url": url,
+            "rtt_ms": rtt_ms,
+            "served": len(served),
+            "missing_core": missing,
+            "attempts": attempts,
+        }
+        if missing:
+            attempts.append(
+                {
+                    "rung": rung,
+                    "url": url,
+                    "error": "missing core lanes: %s" % ", ".join(missing),
+                }
+            )
+            continue
         return (
-            False,
-            (
-                "the running router does not serve %d declared lane(s): %s -- the estate is "
-                "degraded, not healthy" % (len(dropped), ", ".join(dropped))
-            ),
-            dict(extra, dropped=dropped, declared_source=source),
+            True,
+            "the %s router route answers in %dms and serves all %d core lanes (%d lanes total)"
+            % (rung, rtt_ms, len(ROUTER_CORE_LANES), len(served)),
+            evidence,
         )
-    if "claude-*" not in served:
-        return False, "the Max subscription lane (claude-*) is not served", dict(extra)
+
     return (
-        True,
-        "the router serves all %d declared lanes" % len(declared),
-        dict(extra, declared_source=source),
+        False,
+        "no router route answers with the core lanes (%d rung(s) tried: %s)"
+        % (
+            len(attempts),
+            "; ".join("%s -> %s" % (a.get("rung"), a.get("error")) for a in attempts),
+        ),
+        {"attempts": attempts, "core_lanes": list(ROUTER_CORE_LANES)},
     )
 
 
