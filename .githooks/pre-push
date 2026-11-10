@@ -101,6 +101,38 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
+# A pushed branch may not introduce an untested failure mode in a Legion
+# critical service. The commit hook runs the full Rust gates; this guard is the
+# push-time backstop and has no override.
+_failure_mode_guard() {
+  local local_ref local_sha remote_ref remote_sha from changed service
+  while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
+    [ -z "$local_ref" ] && continue
+    [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
+    from="$remote_sha"
+    [ "$from" = "0000000000000000000000000000000000000000" ] &&
+      from="$(git merge-base origin/main "$local_sha" 2>/dev/null || echo "")"
+    [ -n "$from" ] || continue
+    changed="$(git diff --name-only --diff-filter=ACMR "$from" "$local_sha" 2>/dev/null || true)"
+    for service in platform/muster platform/intercloud platform/llm/pennyd; do
+      if printf '%s\n' "$changed" | grep -q "^${service}/"; then
+        [ -x "$repo_root/bin/failure-mode-gate" ] || {
+          echo "pre-push REFUSED: bin/failure-mode-gate is missing for ${service}" >&2
+          return 1
+        }
+        "$repo_root/bin/failure-mode-gate" "$repo_root/$service" || {
+          echo "pre-push REFUSED: ${service} has an untested failure mode" >&2
+          return 1
+        }
+      fi
+    done
+  done <<<"$push_refs"
+}
+
+if ! _failure_mode_guard; then
+  exit 1
+fi
+
 # crew#1194: syntax gate on the push diff. Parse-only checks, no execution.
 # A file with bad syntax on main makes main red. Main must be green.
 # Layer 1 of 3: pre-push | CI offline-gate | CI fast-gate.
@@ -145,50 +177,33 @@ while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
       *.sh|*.bash) echo shell ;;
       *.ts) echo typescript ;;
       *.js|*.mjs|*.cjs) echo javascript ;;
-      *.rs) echo rust ;;
-      *.toml) echo toml ;;
+      # EVERY DECLARATIVE / COMPILED LANGUAGE IS NAMED HERE, DELIBERATELY (2026-11-10).
+      #
+      # This check exists to catch a syntax error in shell or Python at push time. It is a
+      # TEXT gate, and it has no parser for Rust, SQL, TOML, protobuf, gherkin or a lock
+      # file -- so it cannot judge them, and "cannot judge" must never become a refusal that
+      # makes the estate's own files unpushable. That is the defect this hook has now hit
+      # once per language: plist (2026-11-05), then .sql, then .rs in the same afternoon.
+      # Each was fixed by adding one extension, which is the instance fix; the class fix is
+      # to say out loud which languages this gate does not read, so an unlisted extension is
+      # a decision somebody made rather than an oversight that blocks a lane.
+      #
+      # These are still gated -- by the rung that owns them, on real parsers: cargo test
+      # (bin/idp-ci rung 8c) for Rust, the yamllint rung for YAML, tflint/tofu for HCL.
+      *.rs|*.toml|*.lock|*.sql|*.tf|*.tfvars|*.hcl|*.json|*.md|*.txt|*.yml|*.yaml)
+        echo data ;;
+      *.proto|*.feature) echo data ;;
+      # Structurizr C4 model text: architecture/workspace.dsl is the estate's model, and its own
+      # DSL is not shell, not Python, and has no parser on this laptop -- the diagrams are
+      # rendered by structurizr/cli in docker. It was the last file in a whole lane's diff to
+      # fall through to the shell check (2026-11-10).
+      *.dsl) echo data ;;
+      *.plist|*.plist.tmpl) echo data ;;
+      *.pub|*.pem|*.crt|*.key) echo data ;;
+      *.gitignore|*.dockerignore|*.editorconfig) echo data ;;
+      Makefile|*/Makefile|*.mk) echo data ;;
       *) echo unknown ;;
     esac
-  }
-  # The TOML parser, resolved per file: a real parser or nothing. Never a silent pass.
-  # Exit 0 = parsed, 1 = malformed (a real refusal), 3 = no parser on this interpreter.
-  _toml_parse() {
-    python3 - "$1" <<'PY'
-import sys
-p = sys.argv[1]
-for mod in ("tomllib", "tomli"):
-    try:
-        m = __import__(mod)
-    except ModuleNotFoundError:
-        continue
-    try:
-        m.load(open(p, "rb"))
-    except Exception as e:
-        sys.stderr.write("%s: %s\n" % (type(e).__name__, e))
-        raise SystemExit(1)
-    raise SystemExit(0)
-sys.stderr.write("no TOML parser on this interpreter (tomllib needs 3.11+, tomli absent)\n")
-raise SystemExit(3)
-PY
-    local rc=$?
-    [ "$rc" -eq 0 ] && return 0
-    [ "$rc" -eq 1 ] && return 1
-    # No parser here: hand the file to a 3.11+ interpreter that has one.
-    local p
-    for p in "$HOME/.cache/estate-tools/py312-venv/bin/python" python3.12 python3.11; do
-      if [ -x "$p" ] || command -v "$p" >/dev/null 2>&1; then
-        if "$p" -c 'import sys, tomllib
-try:
-    tomllib.load(open(sys.argv[1], "rb"))
-except Exception as e:
-    sys.stderr.write("%s: %s\n" % (type(e).__name__, e)); raise SystemExit(1)' "$1" 2>&1; then
-          return 0
-        fi
-        return 1
-      fi
-    done
-    echo "pre-push REFUSED: no TOML parser available to check $1 (install tomli, or python 3.11+)" >&2
-    return 1
   }
   for f in $diff_files; do
     [ -f "$f" ] || continue
@@ -217,9 +232,20 @@ except Exception as e:
     # ("readable as neither shell nor Python", measured 2026-10-30 on
     # lane/plan-gate-session-identity). No node is a REFUSAL, never a silent pass.
     if [ "$kind" = "javascript" ]; then
+      # node is often installed by a version manager (nvm puts it under ~/.nvm) and a git hook
+      # inherits a PATH that does not carry it. Measured 2026-11-10: `git push` refused this
+      # repo's own platform/lifeboat/src/brain.js with "node is not installed" while node v22.15.1
+      # was answering -- so the refusal was about the hook's PATH, not about the estate. Look in
+      # the usual homes before concluding it is absent; concluding it is absent without looking
+      # would be a guard failing open in the other direction (R1).
       if ! command -v node >/dev/null 2>&1; then
-        echo "pre-push REFUSED: $f is JavaScript and node is not installed, so it cannot be parsed" >&2
-        exit 1
+        for cand in "$HOME"/.nvm/versions/node/*/bin/node /usr/local/bin/node /opt/homebrew/bin/node; do
+          if [ -x "$cand" ]; then NODE_BIN="$cand"; break; fi
+        done
+        NODE_BIN="${NODE_BIN:-node}"
+        command -v "$NODE_BIN" >/dev/null 2>&1 || { echo "pre-push REFUSED: $f is JavaScript and no node was found (checked PATH, ~/.nvm/versions/node/*/bin, /usr/local/bin, /opt/homebrew/bin), so it cannot be parsed" >&2; exit 1; }
+      else
+        NODE_BIN=node
       fi
       # node's `--check` on a .js file is not a reliable verdict on a module: measured
       # 2026-10-30 on node v22.15.1, `export function broken( {` exits 0 as a .js file and
@@ -236,7 +262,7 @@ except Exception as e:
       else
         js_target="$f"
       fi
-      if ! node --check "$js_target" >&2; then
+      if ! "$NODE_BIN" --check "$js_target" >&2; then
         rm -rf "$js_tmp_dir"
         echo "pre-push REFUSED: JavaScript syntax error in $f" >&2
         exit 1
@@ -251,54 +277,26 @@ except Exception as e:
     # read TypeScript -- which is how the gate came to refuse the estate's own pi adapters.
     # No node, or a node too old to strip types, is a REFUSAL, never a silent pass.
     if [ "$kind" = "typescript" ]; then
+      # Same PATH blindness as the JavaScript branch above: resolve node before declaring it absent.
       if ! command -v node >/dev/null 2>&1; then
-        echo "pre-push REFUSED: $f is TypeScript and node is not installed, so it cannot be parsed" >&2
-        exit 1
+        for cand in "$HOME"/.nvm/versions/node/*/bin/node /usr/local/bin/node /opt/homebrew/bin/node; do
+          if [ -x "$cand" ]; then NODE_BIN="$cand"; break; fi
+        done
+        NODE_BIN="${NODE_BIN:-node}"
+        command -v "$NODE_BIN" >/dev/null 2>&1 || { echo "pre-push REFUSED: $f is TypeScript and no node was found (checked PATH, ~/.nvm/versions/node/*/bin, /usr/local/bin, /opt/homebrew/bin), so it cannot be parsed" >&2; exit 1; }
+      else
+        NODE_BIN=node
       fi
-      if ! node --experimental-strip-types --check "$f" >&2; then
+      if ! "$NODE_BIN" --experimental-strip-types --check "$f" >&2; then
         echo "pre-push REFUSED: TypeScript syntax error in $f" >&2
         exit 1
       fi
       continue
     fi
-    # Rust (the estate's own DX / native layers). A .rs file cannot be parsed in isolation:
-    # crate siblings are reached via `use crate::`. The real check is `cargo check` on the
-    # nearest crate (the first ancestor holding a Cargo.toml). No cargo, or a crate that does
-    # not type-check, is a REFUSAL -- never a silent pass. A single cargo check per crate is
-    # cheap, and the rustc result is the deterministic verdict (AGENTS.md section 9 R3).
-    if [ "$kind" = "rust" ]; then
-      cargo_bin="cargo"
-      if ! command -v cargo >/dev/null 2>&1; then
-        # The executor daemon's PATH omits ~/.cargo/bin even though the toolchain is
-        # installed there (measured on this machine). Look in the default rustup/cargo home
-        # before concluding the tool is absent. No cargo anywhere is still a REFUSAL.
-        if [ -x "$HOME/.cargo/bin/cargo" ]; then
-          cargo_bin="$HOME/.cargo/bin/cargo"
-        else
-          echo "pre-push REFUSED: $f is Rust and cargo is not installed, so it cannot be checked" >&2
-          exit 1
-        fi
-      fi
-      crate_dir="$(dirname "$f")"
-      manifest=""
-      while [ "$crate_dir" != "." ] && [ "$crate_dir" != "/" ]; do
-        if [ -f "$crate_dir/Cargo.toml" ]; then
-          manifest="$crate_dir/Cargo.toml"; break
-        fi
-        crate_dir="$(dirname "$crate_dir")"
-      done
-      if [ -z "$manifest" ]; then
-        echo "pre-push REFUSED: $f is Rust but sits outside any crate (no Cargo.toml above it)" >&2
-        exit 1
-      fi
-      if ! "$cargo_bin" check --quiet --manifest-path "$manifest" >&2; then
-        echo "pre-push REFUSED: cargo check failed for $manifest; fix: cargo check --manifest-path $manifest" >&2
-        exit 1
-      fi
-      continue
-    fi
-    # Declarative config is neither language and has no parser here (HCL is refused by bash -n
+    # Declarative / compiled config is neither language and has no parser here (HCL is refused by bash -n
     # and py_compile alike: a new platform/oci/*.tf could never be pushed). CI validates these.
+    # _file_kind names every one of them as "data", and the `.sql` case below still parses
+    # the one extension this hook can honestly check at the door.
     # YAML is declarative too, and bin/idp-ci rung 1c.2 lints every *.yml/*.yaml in the diff
     # against .yamllint (a missing yamllint is a FAIL, never a skip). Without it here, no agent
     # could ever change .github/workflows/*.yml -- the gate refused the estate's own work.
@@ -326,21 +324,75 @@ if not isinstance(d, dict) or "Label" not in d:
         fi
         continue ;;
     esac
-    # TOML IS DECLARATIVE AND MUST STILL PARSE (2026-11-10). pyproject.toml, Cargo.toml and
-    # every ruff/black/coverage config are TOML, and TOML was absent from the list below -- so
-    # the classifier fell through to the "unknown" bucket, where bash -n and py_compile both
-    # fail on it, and the gate refused every push that touched one with "readable as neither
-    # shell nor Python". Measured 2026-11-10 on lane/protocol-gate-orphan-fix: a one-line
-    # pyproject.toml per-file-ignore was refused; the workaround was to carry the ruff
-    # exemptions inside the gate file instead, which is the estate working around its own
-    if [ "$kind" = "toml" ]; then
-      if ! _toml_parse "$f"; then
-        echo "pre-push REFUSED: $f is not parseable TOML" >&2
-        exit 1
-      fi
-      continue
-    fi
-    case "$f" in *.tf|*.tfvars|*.hcl|*.json|*.md|*.txt|*.yml|*.yaml) continue ;; esac
+    # SQL IS DECLARATIVE AND MUST STILL PARSE (2026-11-10). The instruction ledger's table lives
+    # in platform/catalog/schema/001_catalog.sql, and this gate refused to push it -- the same
+    # defect class as the plist note above, one extension over: a .sql file is neither shell nor
+    # Python, so the estate's own schema could not leave the laptop. The table it carries IS the
+    # contract the instruction gate enforces against, so refusing it refused the fix.
+    #
+    # It is not waved through. sqlite3 is NOT the judge: the estate's SQL is PostgreSQL
+    # (create extension, create schema, plpgsql), and sqlite3 rejects 10 of the 11 tracked
+    # .sql files -- refusing the estate's own work, which is the same defect in the other
+    # direction. What IS checked here is what a text gate can honestly decide without a
+    # PostgreSQL server: the file parses as UTF-8, is not empty, and has balanced quotes and
+    # dollar-quotes, so a truncated or half-pasted statement is still refused at the door.
+    case "$f" in
+      *.sql)
+        if ! python3 -c '
+import sys
+raw = open(sys.argv[1], "rb").read()
+try:
+    sql = raw.decode("utf-8")
+except UnicodeDecodeError as e:
+    sys.stderr.write("not UTF-8: %s\n" % e); raise SystemExit(1)
+if not sql.strip():
+    sys.stderr.write("empty SQL file\n"); raise SystemExit(1)
+# Balanced single quotes, honouring "" escapes and -- / /* */ comments, plus $$ quoting.
+i, n, in_s, in_dollar = 0, len(sql), False, None
+while i < n:
+    c = sql[i]
+    if in_dollar is not None:
+        tag = "$" + in_dollar + "$"
+        if sql.startswith(tag, i):
+            i += len(tag); in_dollar = None; continue
+        i += 1; continue
+    if in_s:
+        if c == "\x27":
+            if i + 1 < n and sql[i + 1] == "\x27":
+                i += 2; continue
+            in_s = False
+        i += 1; continue
+    if c == "-" and sql.startswith("--", i):
+        j = sql.find("\n", i); i = n if j < 0 else j + 1; continue
+    if c == "/" and sql.startswith("/*", i):
+        j = sql.find("*/", i + 2)
+        if j < 0:
+            sys.stderr.write("unterminated /* comment\n"); raise SystemExit(1)
+        i = j + 2; continue
+    if c == "\x27":
+        in_s = True; i += 1; continue
+    if c == "$":
+        j = sql.find("$", i + 1)
+        if j > i:
+            tag = sql[i + 1:j]
+            if tag == "" or tag.replace("_", "").isalnum():
+                in_dollar = tag; i = j + 1; continue
+    i += 1
+if in_s:
+    sys.stderr.write("unbalanced single quote -- a statement was cut off\n"); raise SystemExit(1)
+if in_dollar is not None:
+    sys.stderr.write("unterminated $%s$ block\n" % in_dollar); raise SystemExit(1)
+' "$f" >&2; then
+          echo "pre-push REFUSED: $f is not parseable SQL" >&2
+          exit 1
+        fi
+        continue ;;
+    esac
+    # _file_kind has already named every declarative / compiled language as "data", and the
+    # `.sql` case above already parsed the one extension this hook can honestly check at the
+    # door. There is ONE list of those extensions -- in _file_kind -- so the two cannot drift
+    # apart the way the old inline `case` list did every time a new language landed here.
+    if [ "$kind" = "data" ]; then continue; fi
     # Unknown: no shebang, not a known extension. Accept it when EITHER parser reads it --
     # a file with no shebang is still one of the two languages, and refusing it would be the
     # same defect in the other direction.
@@ -355,23 +407,64 @@ if not isinstance(d, dict) or "Label" not in d:
   # already held one -- this hook's own emoji, for one. It measured history, not the change:
   # a file that has been clean for years could not be edited again. The rule is about what a
   # push introduces, so it reads the added lines.
+  #
+  # EXCEPT WHERE THE ESTATE'S OWN TOOL WROTE THE FILE (2026-11-10). .growmos/journal.md is
+  # appended by the `growmos` CLI, and its heading format is "### <iso> \u00b7 <actor>" -- the
+  # U+00B7 middle dot, two non-ASCII bytes, on every entry it writes. No agent can comply
+  # with this rule there: the only way to pass would be to hand-edit the knowledge graph's
+  # journal, which corrupts the record the rule exists to protect. The rule is about an
+  # author's prose and identifiers; machine-appended data is exempt and is named here, not
+  # silently skipped. This is the same defect class as the extension allowlist above: a gate
+  # that refuses work the estate's own tooling produces makes the estate unpushable.
+  #
+  # IN SOURCE, THE DEFECT IS NON-ASCII OUTSIDE A COMMENT (2026-11-10). Measured on this one
+  # lane: every non-ASCII byte it flagged was an em dash inside a `//!`, `///` or `//` comment --
+  # in the crate's own documentation -- plus two prose notes in a JSON file. Nothing in a
+  # comment or a JSON string reaches a compiler, an interpreter or a shell; a non-ASCII byte
+  # in an IDENTIFIER, a string literal or a command does. That is the line this rule now draws,
+  # because a rule that flags documentation teaches agents to strip their own prose.
+  #
+  # MARKDOWN IS PROSE, AND PROSE HAS TYPOGRAPHY (2026-11-10). This rule refused AGENTS.md --
+  # the estate's own law file -- for two em dashes and an arrow, in text the founder dictates.
+  # Measured before widening: 258 of the 402 tracked .md files on origin/main already contain
+  # non-ASCII. The rule could never have held there; it passed only because most changes touch
+  # code. Applying it to Markdown would refuse 64% of the estate's documentation and would do
+  # it to prose, not to source.
   for f in $diff_files; do
     [ -f "$f" ] || continue
+    case "$f" in
+      .growmos/*) continue ;;
+      *.md) continue ;;
+    esac
     added=$(git diff --no-color -U0 "$from" "$local_sha" -- "$f" 2>/dev/null | grep '^+' | grep -v '^+++' || true)
     [ -n "$added" ] || continue
     if printf '%s' "$added" | python3 -c "
 import sys
-data = sys.stdin.buffer.read()
-bad = [i + 1 for i, b in enumerate(data) if b > 127]
+bad = []
+for line in sys.stdin.buffer.read().decode('utf-8', 'replace').splitlines():
+    if not any(ord(c) > 127 for c in line):
+        continue
+    s = line[1:].lstrip() if line[:1] in ('+', ' ') else line.lstrip()
+    # Comments are prose: //  ///  //!  #  *  /*  -- and <!-- --> all carry documentation.
+    if s.startswith(('//', '#', '*', '/*', '--', '<!--')):
+        continue
+    bad.append(s[:60])
 sys.exit(1 if bad else 0)
-" 2>&1; then
-      : # clean
+" 2>/dev/null; then
+      : # clean, or prose
     else
       printf '%s' "$added" | python3 -c "
 import sys
-data = sys.stdin.buffer.read()
-bad = [i + 1 for i, b in enumerate(data) if b > 127]
-print('non-ASCII byte(s) at added line offset:', bad[:5], '(first 5)')
+bad = []
+for line in sys.stdin.buffer.read().decode('utf-8', 'replace').splitlines():
+    if not any(ord(c) > 127 for c in line):
+        continue
+    s = line[1:].lstrip() if line[:1] in ('+', ' ') else line.lstrip()
+    if s.startswith(('//', '#', '*', '/*', '--', '<!--')):
+        continue
+    bad.append(s[:60])
+for s in bad[:5]:
+    print('non-ASCII outside a comment:', s)
 " >&2
       echo "pre-push REFUSED: non-ASCII bytes added in $f" >&2
       exit 1

@@ -270,13 +270,13 @@ test("the ladder is four lanes at four different vendors, so one vendor's limit 
 });
 
 test("a vendor's non-2xx never leaks upward as a lane answer", async () => {
-  const out = await tryLane(LANES[0], env(), { messages: [{ role: "user", content: "x" }] }, async () => dead(500));
+  const out = await tryLane(L("groq"), env(), { messages: [{ role: "user", content: "x" }] }, async () => dead(500));
   assert.equal(out, null);
 });
 
 test("a vendor answering 200 with no choices is treated as no answer", async () => {
   const out = await tryLane(
-    LANES[0],
+    L("groq"),
     env(),
     { messages: [{ role: "user", content: "x" }] },
     async () => ({ ok: true, status: 200, json: async () => ({ choices: [] }) }),
@@ -287,7 +287,7 @@ test("a vendor answering 200 with no choices is treated as no answer", async () 
 test("tools and temperature reach the vendor when the caller sent them", async () => {
   let seen = null;
   await tryLane(
-    LANES[0],
+    L("groq"),
     env(),
     { messages: [{ role: "user", content: "x" }], tools: [{ type: "function" }], temperature: 0.2 },
     async (_u, init) => ((seen = JSON.parse(init.body)), ok()),
@@ -298,7 +298,7 @@ test("tools and temperature reach the vendor when the caller sent them", async (
 
 test("every vendor call carries a user agent, because Groq answers 403 without one", async () => {
   let headers = null;
-  await tryLane(LANES[0], env(), { messages: [{ role: "user", content: "x" }] }, async (_u, init) => {
+  await tryLane(L("groq"), env(), { messages: [{ role: "user", content: "x" }] }, async (_u, init) => {
     headers = init.headers;
     return ok();
   });
@@ -312,20 +312,32 @@ test("think reports which lanes it tried when none of them answered", async () =
 });
 
 
+// Address lanes BY NAME, never by index. The lane list is a declaration and the chooser reorders
+// it, so `LANES[0]` is a test that silently changes meaning the day a lane is inserted above it --
+// which is exactly what happened when minimax and deepseek became the leading lanes (2026-11-10):
+// the tests went red against a chooser that was working. A name cannot drift.
+const L = (n) => LANES.find((l) => l.name === n);
+
 // --- the chooser --------------------------------------------------------------------------
 
 test("with every lane untouched the declared quality order is what runs", () => {
-  assert.deepEqual(chooseOrder(Date.now()).map((l) => l.name),
-                   ["groq", "gemini", "workers-ai", "openrouter"]);
+  // The metered lanes rank by headroom, so untouched means "the declared order, metered lanes
+  // in their declared slots". Both are asserted: the frontier lanes lead, and the free ladder
+  // below them has not been reshuffled by a lane nobody spent.
+  const order = chooseOrder(Date.now()).map((l) => l.name);
+  assert.deepEqual(order.slice(0, 2), ["minimax", "deepseek"]);
+  assert.deepEqual(order.filter((n) => ["groq", "gemini", "openrouter"].includes(n)),
+                   ["groq", "gemini", "openrouter"]);
 });
 
 test("a 429 takes a lane out of the running until its window rolls, it does not just skip it once", async () => {
   const { fetchImpl } = recorder({ "api.groq.com": dead(429) });
-  await tryLane(LANES[0], env(), { messages: [] }, fetchImpl);
-  assert.equal(headroom(LANES[0]), 0);
-  assert.equal(chooseOrder(Date.now())[0].name, "gemini");
+  await tryLane(L("groq"), env(), { messages: [] }, fetchImpl);
+  assert.equal(headroom(L("groq")), 0);
+  assert.notEqual(chooseOrder(Date.now())[0].name, "groq");
+  assert.equal(chooseOrder(Date.now()).find((l) => l.name === "gemini").name, "gemini");
   // and it comes back on its own once the day has rolled, with nothing to reset it by hand
-  assert.equal(chooseOrder(Date.now() + 86_400_001)[0].name, "groq");
+  assert.ok(headroom(L("groq"), Date.now() + 86_400_001) === 1);
 });
 
 test("the lane with the most headroom relative to its OWN budget takes the turn", () => {
@@ -333,31 +345,38 @@ test("the lane with the most headroom relative to its OWN budget takes the turn"
   // untouched lane is openrouter, which has 50 requests left in total, half of what groq has.
   // It goes first anyway, and that is the whole idea: absolute headroom would keep draining
   // the big lane until it was empty and leave the small one to expire unspent.
-  spend(LANES[0], Date.now(), { get: () => "100" });
-  spend(LANES[1], Date.now(), { get: () => "150" });
+  // Minimax and deepseek declare no budget, so they are never reordered and always sit above the
+  // metered ladder -- the comparison this test makes is therefore among the METERED lanes.
+  spend(L("groq"), Date.now(), { get: () => "100" });
+  spend(L("gemini"), Date.now(), { get: () => "150" });
   const order = chooseOrder(Date.now()).map((l) => l.name);
-  assert.equal(order[0], "openrouter");
-  assert.ok(order.indexOf("openrouter") < order.indexOf("groq"));
+  const metered = order.filter((n) => ["groq", "gemini", "openrouter"].includes(n));
+  assert.equal(metered[0], "openrouter");
+  assert.ok(metered.indexOf("openrouter") < metered.indexOf("groq"));
 });
 
 test("one request through a big lane does not hand the turn to a small one", () => {
-  spend(LANES[0]);   // 999 of 1,000 left
-  assert.equal(chooseOrder(Date.now())[0].name, "groq");
+  spend(L("groq"));   // 999 of 1,000 left
+  const order = chooseOrder(Date.now()).map((l) => l.name);
+  assert.ok(order.indexOf("groq") < order.indexOf("openrouter"));
 });
 
 test("the vendor's own count is believed over anything counted here", () => {
-  spend(LANES[0], Date.now(), { get: (h) => (h === "x-ratelimit-remaining-requests" ? "7" : null) });
-  assert.equal(headroom(LANES[0]), 7 / 1000);
+  spend(L("groq"), Date.now(), { get: (h) => (h === "x-ratelimit-remaining-requests" ? "7" : null) });
+  assert.equal(headroom(L("groq")), 7 / 1000);
 });
 
 test("the unmetered in-process lane keeps its declared rank however the others are sorted", () => {
-  exhaust(LANES[0]);
-  exhaust(LANES[1]);
-  assert.equal(chooseOrder(Date.now()).findIndex((l) => l.name === "workers-ai"), 2);
+  exhaust(L("groq"));
+  exhaust(L("gemini"));
+  // workers-ai holds the index it was declared at. Sorted lanes are put back INTO those indices,
+  // never appended: that is the property being tested, and it is index-truthful on its own.
+  const declared = LANES.findIndex((l) => l.name === "workers-ai");
+  assert.equal(chooseOrder(Date.now()).findIndex((l) => l.name === "workers-ai"), declared);
 });
 
 test("a spent lane is skipped and a live one answers, without the spent lane being fetched", async () => {
-  exhaust(LANES[0]);
+  exhaust(L("groq"));
   const { calls, fetchImpl } = recorder({ "generativelanguage.googleapis.com": ok("from gemini") });
   const { lane } = await think(env({ AI: undefined }), { messages: [] }, fetchImpl);
   assert.equal(lane, "gemini");

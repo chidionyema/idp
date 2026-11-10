@@ -72,7 +72,9 @@ if ! OCI_CLI_PROFILE=$("$IDP/bin/idp-oci-whoami" 2>/dev/null); then
   oci session authenticate --region "$region" --tenancy-name "$tenancy" --profile-name estate-bootstrap >/dev/null || bl oci "session sign-in did not complete"
   OCI_CLI_PROFILE=$("$IDP/bin/idp-oci-whoami") || bl oci "signed in, but no session profile is live"
 fi
-export OCI_CLI_PROFILE OCI_CLI_AUTH=security_token
+OCI_AUTH=$("$IDP/bin/idp-oci-auth" "$OCI_CLI_PROFILE") ||
+  bl oci "profile '$OCI_CLI_PROFILE' is not declared in ~/.oci/config"
+export OCI_CLI_PROFILE OCI_CLI_AUTH="$OCI_AUTH"
 VAULT_PUT_PREFLIGHT=1 "$IDP/bin/idp-vault-put" cloudflare-api-token --preflight | sed 's/^/        /' || bl vault "not reachable as $OCI_CLI_PROFILE"
 
 # 2. idempotent: both credentials already verify -> kept
@@ -89,7 +91,20 @@ if [ "$MODE" = mint ]; then
 fi
 if [ "$MODE" = --preflight ]; then
   code=$(curl -sS -o /dev/null -w '%{http_code}' "$CONSOLE") || code=curl-failed
-  case "$code" in 200|301|302|303) say ok console "$CONSOLE answers $code";; *) fail console "$CONSOLE answers $code";; esac
+  # THE CONSOLE CHECK IS CONDITIONED ON THE ROAD BEING TAKEN, and getting this wrong refused the
+  # cutover's own credential for the wrong reason (measured 2026-11-10, run 42887839457: `FAIL
+  # console https://dash.cloudflare.com/profile/api-tokens answers 403`). The dashboard answers 403
+  # to a caller with no session -- that is Cloudflare working, not Cloudflare being unreachable.
+  # Road a (R52, CLOUDFLARE_ROOT_TOKEN present) drives NO browser, so the dashboard's answer is
+  # irrelevant to it; requiring a 2xx there makes the check depend on exactly the hand R52 removed.
+  # It also ran BEFORE the scope's own checks, so a 403 from a page nobody would open masked the
+  # real question: does the vault answer, does the root verify, does the Workers scope mint. A gate
+  # that fails for a reason unrelated to the work is a gate that blocks correct work (R14).
+  if [ -n "${CLOUDFLARE_ROOT_TOKEN:-}" ]; then
+    say ok console "not required: road a (CLOUDFLARE_ROOT_TOKEN from SEED_CLOUDFLARE_ROOT_TOKEN) drives no browser; dashboard answered $code and is not consulted"
+  else
+    case "$code" in 200|301|302|303|403) say ok console "$CONSOLE answers $code (403 is the unauthenticated answer and the browser session supplies the auth)";; *) fail console "$CONSOLE answers $code";; esac
+  fi
   say ok preflight "vault, driver and dashboard reachable; nothing written"; exit 0
 fi
 

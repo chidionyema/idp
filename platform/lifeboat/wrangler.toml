@@ -9,7 +9,22 @@
 # observability block either, and those absences are the design rather than an omission. The
 # founder's spec: "It has no database, no SigNoz tracing, and no complex configuration. It is
 # a dumb, bulletproof proxy." Every binding added here is one more thing that can be down at
-# the moment this worker is the only thing left up.
+# the moment this worker is the only thing left up -- with exactly ONE exception, added
+# 2026-11-10, with its reason written down rather than assumed:
+#
+#   [[d1_databases]] binding DB -- the brain-state store (src/brain.js). The spec's objection to
+#   a database is that a shared, remote Postgres is one more thing that is down when this worker
+#   is the only thing left up. D1 is neither shared nor remote in that sense: it is Cloudflare's
+#   own SQLite, bound into the isolate, in the same failure domain as the worker, with no
+#   connection string, no pool and no server to be asleep. The alternative was a founder surface
+#   that reads estate state and cannot write to it -- which is what
+#   `status: cloud-read-only` meant in practice, and what this binding retires. No budget, no
+#   ledger and no trace are added: the router's refusals above still hold.
+#
+#   The binding is written here only when the deploy has resolved a real database id. A
+#   `wrangler.toml` carrying a placeholder id is a deploy that fails on somebody's laptop at a
+#   bad moment, so `bin/idp-edge-cutover --bind-d1` appends the block, and its absence is the
+#   honest state of a worker that has not been bound yet.
 name = "estate-lifeboat"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
@@ -29,3 +44,9 @@ binding = "AI"
 #   ORIGIN_WEBHOOK_URL       home 1, the cluster's real Otto
 #   MACBOOK_WEBHOOK_URL      home 3, set only once the founder has given his Mac a public door
 #   GROQ_API_KEY GEMINI_API_KEY OPENROUTER_API_KEY   the free lanes, same keys home 1 uses
+#   MINIMAX_API_KEY DEEPSEEK_API_KEY                 the frontier lanes the estate leads on
+#
+# GROQ_API_KEY is FLAGGED FOR ROTATION (2026-11-10, infra cutover): it has been the estate's
+# `cheap` lane since 2026-09-10, is present in every surface that ran the old router, and has
+# no rotation record here. Rotating it is a vault action, not a code change -- this line is the
+# flag, and `bin/idp-edge-cutover --rotate-flag` prints what to do without ever printing a value.

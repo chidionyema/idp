@@ -1,0 +1,218 @@
+{
+  "$comment": "DEBUGGING PACKS -- every failure mode measured during the 2026-11-10 infra cutover (INS-20261110-1750-INFRA-PERMANENT), written as data so the next agent diagnoses in seconds instead of re-deriving over hours. Each pack names the defect, the EXACT symptom text it prints, its root cause, the falsifier in tests/ that goes red on it and green on the fix, and the remedy. tests/test_debugging_packs.py proves every falsifier that exists is claimed by exactly one pack, so a defect can never be fixed without its pack. Founder instruction, 2026-11-10: 'all edge cases all known and reached failure modes must be addressed and used as debugging packs for any future issues.'",
+  "version": 1,
+  "packs": [
+    {
+      "id": "DBG-001",
+      "title": "vault_get demanded JSON and turned a present credential into a false absence",
+      "symptom": "BLIND the vault holds no cloudflare-api-token",
+      "cause": "vault_get() parsed the vault reader's stdout as JSON and returned \"\" when the entry was a bare value. The credential was present the whole time; the reader turned it into a BLIND, and a BLIND dressed as an absence sends the next agent to mint a duplicate.",
+      "falsifier": "tests/test_edge_cutover.py::test_vault_get_returns_a_bare_value_not_only_json",
+      "remedy": "Return the banner-stripped raw stdout when no field is asked for or the entry is not JSON (matching bin/idp-otto-homes:vault_get).",
+      "status": "fixed",
+      "law": "AGENTS.md section 3 (proof not assertion) / R11"
+    },
+    {
+      "id": "DBG-002",
+      "title": "bin/idp-cloud secret get hangs without a pinned OCI profile",
+      "symptom": "exit 142 (SIGALRM) at 40s, or exit 124 at the 100s executor ceiling",
+      "cause": "Without OCI_CLI_PROFILE the backend sources bin/idp-oci-whoami and probes for a live session on every read; the probe waits. 11.5s pinned vs >=40s unpinned, measured.",
+      "falsifier": "tests/test_edge_cutover.py::test_vault_get_pins_the_oci_profile",
+      "remedy": "bin/idp-edge-cutover's vault_get() calls env.setdefault(\"OCI_CLI_PROFILE\", \"DEFAULT\") before subprocess.run, and bounds it with timeout=60. tests/test_edge_cutover.py::test_vault_get_pins_the_oci_profile holds it; never remove the pin to \"inherit the shell\".",
+      "status": "fixed",
+      "law": "AGENTS.md section 9 R5 (every loop has a budget) / R10 (waiting instead of diagnosing)"
+    },
+    {
+      "id": "DBG-003",
+      "title": "__file__ trusted, so a copied script resolved the repository root to /private",
+      "symptom": "FileNotFoundError: /private/bin/idp-cloud",
+      "cause": "IDP = Path(__file__).resolve().parent.parent. Copied to /tmp/cut.py, that is /private, and every later path was wrong. A wrong path that raises a FileNotFoundError about an unrelated file is the most expensive kind of wrong: it names nothing.",
+      "falsifier": "tests/test_edge_cutover.py::test_idp_root_names_itself_when_it_is_not_in_a_checkout",
+      "remedy": "Probe for bin/idp-cloud and platform/lifeboat/wrangler.toml; when neither exists, exit loudly naming that the script is not inside an idp checkout.",
+      "status": "fixed",
+      "law": "AGENTS.md section 3a (a gap must never look like a fact)"
+    },
+    {
+      "id": "DBG-004",
+      "title": "stale focus cache refused every write as unclaimed while the claim was live",
+      "symptom": "REFUSED: no live claim covers <path>",
+      "cause": "~/.estate/memory/focus-register.json held a stale claim (FOCUS_TTL_S=300, LAPSE_S=2h01). The gate failed CLOSED on a cache it could not refresh, and the root cause was the cache, not the claim or the regex.",
+      "falsifier": "tests/test_claim_gate.py",
+      "remedy": "Delete ~/.estate/memory/focus-register.json and let focus re-derive from the GitHub claim; never edit the regex first.",
+      "status": "fixed",
+      "law": "AGENTS.md section 9 R1 (a gate answering from a stale cache fails open or shut for the wrong reason)"
+    },
+    {
+      "id": "DBG-005",
+      "title": "tests addressed lanes and roles by list index, so inserting a lane broke a correct chooser",
+      "symptom": "9 assertions failing in platform/lifeboat/test/lifeboat.test.mjs against code that was working",
+      "cause": "LANES[0] was written when groq was the first lane. Adding minimax and deepseek above it silently changed what LANES[0] meant, so the tests graded a different lane than the one their names described. A test that grades a proxy (AGENTS.md section 10) goes red on a correct change and green on an incorrect one.",
+      "falsifier": "platform/lifeboat/test/lifeboat.test.mjs",
+      "remedy": "platform/lifeboat/test/lifeboat.test.mjs addresses lanes through the `L(name)` helper (LANES.find by name). Never write LANES[0] / LANES[1] in a test: chooseOrder() reorders the list, so a position silently changes meaning when a lane is inserted. tests/test_debugging_packs_fire.py greps the file for any surviving \\bLANES[\\d] outside a comment.",
+      "status": "fixed",
+      "law": "AGENTS.md section 10 (never grade a proxy -- grade the thing itself)"
+    },
+    {
+      "id": "DBG-006",
+      "title": "the Cloudflare bootstrap preflight failed closed on the dashboard, in the configuration that needs no browser",
+      "symptom": "FAIL    console              https://dash.cloudflare.com/profile/api-tokens answers 403",
+      "cause": "The preflight required a 2xx from the Cloudflare dashboard before the scope's real checks ran. Cloudflare answers 403 to a caller with no session -- that is the dashboard WORKING. Road a (R52) drives no browser at all because CLOUDFLARE_ROOT_TOKEN is in the environment, so the dashboard's answer was irrelevant to the road being taken, and a 403 from a page nobody would open masked the real question for the whole run.",
+      "falsifier": "bin/idp-bootstrap-cloudflare",
+      "remedy": "bin/idp-bootstrap-cloudflare's --preflight gates the console check on the road: road a (CLOUDFLARE_ROOT_TOKEN set) says the dashboard is not consulted; road b accepts 200|301|302|303|403. tests/test_debugging_packs_fire.py::test_dbg_006 holds both halves.",
+      "status": "fixed",
+      "law": "AGENTS.md section 9 R14 (a guard that refuses the estate's own correct work) / R1 (fails closed on the wrong signal)"
+    },
+    {
+      "id": "DBG-007",
+      "title": "a D1 binding written with a placeholder id is a deploy that fails later, on somebody else's laptop",
+      "symptom": "wrangler deploy fails after jq-resolved binding; [[d1_databases]] absent from the committed file",
+      "cause": "database_id cannot be known before the database is created. Committing a placeholder moves the failure from the cutover door (which can explain it) to an arbitrary deploy (which cannot). Held by two falsifiers: the toml must carry no placeholder binding (DBG-014), and the door must write the real id only after it resolves one (this pack).",
+      "falsifier": "tests/test_edge_cutover.py::test_d1_binding_is_written_only_after_a_real_database_id_resolves",
+      "remedy": "bin/idp-edge-cutover --bind-d1 appends the block only once a real id resolves; the absence of the block IS the honest state.",
+      "status": "fixed",
+      "law": "AGENTS.md section 3 (an unproven value must not be written as if proven)"
+    },
+    {
+      "id": "DBG-008",
+      "title": "the estate-memory door answers TLS EOF, and its gate fails open",
+      "symptom": "URLError: <urlopen error EOF occurred in violation of protocol (_ssl.c:1129)>",
+      "cause": "The memory plane's upstream (unified-memory.estate.internal) is in-cluster and the cluster is not up; remember/recall cannot reach it. door_unreachable() fails open by design (idp#7351) so the estate keeps working, which means a dead memory door looks quiet rather than loud.",
+      "falsifier": "platform/estate/memory/door.py",
+      "remedy": "Read the brief from the graph instead: run `growmos context` (or `growmos --root ~/Documents/code/estate-graph context --brief`). The memory door returns when its host does; tracked as idp#7351.",
+      "status": "external",
+      "external_ref": "idp#7351",
+      "law": "AGENTS.md section 13 (a row that cannot be measured says so, never PASS)"
+    },
+    {
+      "id": "DBG-009",
+      "title": "fs_guard refuses the estate's own intents, so the estate's doors are taxed as if they were agents",
+      "symptom": "REFUSED: RAW_WRITE_REDIRECT_BANNED  /  REFUSED: RAW_READ_BANNED",
+      "cause": "check_command_allowed judges the command text, and 34 steps across 22 estate intents use shell redirects that must move into Python. The guard is right about the pattern and wrong about the caller: an estate-authored step has been through a claim and a lane.",
+      "falsifier": "tests/test_edge_cutover.py",
+      "remedy": "Move the write or read INTO the script (python), never around the guard. The refusal text names the class; track it against idp#7681 rather than fixing one instance. platform/estate/governance/fs_guard.py is the guard.",
+      "status": "external",
+      "external_ref": "idp#7681",
+      "law": "AGENTS.md section 9 R14"
+    },
+    {
+      "id": "DBG-010",
+      "title": "spawnSync python3 ETIMEDOUT -- a subprocess that outlives the door's ceiling",
+      "symptom": "Error: spawnSync python3 ETIMEDOUT",
+      "cause": "A python3 helper subprocess exceeded the bounded wait the caller gave it (the executor's 100s ceiling or a step timeout). The spawn is refused, not crashed: ETIMEDOUT is the parent's bound firing on a child that has not returned.",
+      "falsifier": "platform/estate/bin/estate-execute",
+      "remedy": "Do not raise the bound. Move the work to a door that reports progress (lane-submit / the session plane) or bound the child's own work (pin OCI_CLI_PROFILE, page the API, cache). The bound is the diagnosis, not the fault.",
+      "status": "diagnosed",
+      "law": "AGENTS.md section 9 P7 (every loop has a budget and a breaker) / R5"
+    },
+    {
+      "id": "DBG-011",
+      "title": "the local gate ran on the laptop while the laptop was serving the founder",
+      "symptom": "run: exec-... exceeded the 100s ceiling and was SIGTERMed (bin/idp-ci)",
+      "cause": "bin/idp-ci is deterministic work with no laptop affinity, and it was being run on the founder's Mac under load. On Darwin this is now guarded: free disk < 10 GB or load > 16 shunts it to `gh workflow run ci.yml`.",
+      "falsifier": "tests/test_thin_client.py#rule 2: no clone into temp storage",
+      "remedy": "platform/estate/governance/thin_client.py, enforced in platform/estate/bin/estate-execute for every step.",
+      "status": "fixed",
+      "law": "AGENTS.md section 9 P2 (deterministic work at the earliest cheap layer, not on the founder's machine)"
+    },
+    {
+      "id": "DBG-012",
+      "title": "a git worktree per attempt is the ENOSPC loop, and nothing refused it",
+      "symptom": "ENOSPC / free disk falling by GB per hour; 0 worktrees is the founder's budget",
+      "cause": "A worktree is a full checkout with node_modules. A retrying agent that adds one per attempt filled 5 GB in under two hours (AGENTS.md section 9 R5). Nothing in the door refused it.",
+      "falsifier": "tests/test_thin_client.py#rule 1: no worktrees",
+      "remedy": "platform/estate/governance/thin_client.py refuses `git worktree add` and a clone into /tmp or $TMPDIR on Darwin outside CI; branch in the one checkout and push to lane/<name>.",
+      "status": "fixed",
+      "law": "AGENTS.md section 9 R5 and P7"
+    },
+    {
+      "id": "DBG-013",
+      "title": "the zone came from a second source, so a door and its config could drift apart",
+      "symptom": "a door resolving a zone different from the one clusters/*/estate-config.yaml declares",
+      "cause": "LAW 46 declares the zone exactly once. My first falsifier assumed the door read $ESTATE_ZONE and went red against a door that correctly read the config file -- a test that asserts a second opinion is a test that manufactures drift.",
+      "falsifier": "tests/test_edge_cutover.py#the zone comes from the ONE file that defines it, never from the environment",
+      "remedy": "bin/idp-edge-cutover zone() reads clusters/*/estate-config.yaml, ignores the environment, and exits 2 naming the absence when no config declares it.",
+      "status": "fixed",
+      "law": "LAW 46, and AGENTS.md section 10 (never grade a proxy)"
+    },
+    {
+      "id": "DBG-014",
+      "title": "wrangler.toml must carry no placeholder binding and no literal zone",
+      "symptom": "a committed wrangler.toml with database_id = \"REPLACE_ME\" or route/zone_name literals",
+      "cause": "A committed placeholder is a deploy that parses and fails later, and a literal zone in the file is a second copy of the value clusters/*/estate-config.yaml owns (LAW 46). Both are absences that are the design, so both are tested as such.",
+      "falsifier": "tests/test_edge_cutover.py::test_wrangler_toml_keeps_the_route_out_and_says_why",
+      "remedy": "bin/idp-edge-cutover --d1 resolves or creates the database, then appends the [[d1_databases]] block with the real id; wrangler.toml documents the absence and names the door that fills it.",
+      "status": "fixed",
+      "law": "AGENTS.md section 3 (a green deploy is not a working route)"
+    },
+    {
+      "id": "DBG-015",
+      "title": "the cutover could place the wrong thing and still look complete",
+      "symptom": "the door exits 0 while the route serves lanes the estate never routes to, or a brain route with no state keys",
+      "cause": "A deploy that succeeds is not a deploy that is correct. The edge must serve the estate's actual routing defaults (minimax, deepseek) and the brain must carry the three state keys the founder surface reads and writes, or `status: live` would be a lie about an empty store.",
+      "falsifier": "tests/test_edge_cutover.py#the file's DECLARED absences are the design",
+      "remedy": "Asserted directly: the frontier lanes are in PROVIDER_SECRETS and the schema carries founder_instructions, active_claims and fencing_tokens.",
+      "status": "fixed",
+      "law": "AGENTS.md section 3 (built and correct are different facts)"
+    },
+    {
+      "id": "DBG-016",
+      "title": "a falsifier that is a document is not a falsifier",
+      "symptom": "a door committed non-executable, or a copy that does not parse",
+      "cause": "Every gate in this estate is a script. One that lost its executable bit, or was committed with a syntax error, fails silently in the direction of looking present. The gate has to prove it can run before anything else is believed about it.",
+      "falsifier": "tests/test_edge_cutover.py#the door exists and is runnable",
+      "remedy": "test_the_door_is_committed_and_executable and test_the_door_parses_as_python, run on every CI.",
+      "status": "fixed",
+      "law": "AGENTS.md section 9 P1 (a gate that cannot fail is not a gate)"
+    },
+    {
+      "id": "DBG-017",
+      "title": "the guard that protects the fleet taxed the fleet, so its own tests prove it silent",
+      "symptom": "correct work refused (THIN CLIENT) inside CI or on the Linux runner, where a worktree IS the isolation primitive",
+      "cause": "A guard written for the founder's laptop is a defect everywhere else. The guard is only correct if it is silent where its own premise does not hold, and the narrow platform pivot is the easiest thing to get wrong and the hardest to notice, because it fails by over-refusing.",
+      "falsifier": "tests/test_thin_client.py#the platform pivot",
+      "remedy": "thin_client.applies() returns False under GITHUB_ACTIONS and on non-Darwin; test_does_nothing_in_ci and test_does_nothing_on_linux hold it there.",
+      "status": "fixed",
+      "law": "AGENTS.md section 9 R14 (a guard that refuses the estate's own scripts taxes every agent)"
+    },
+    {
+      "id": "DBG-018",
+      "title": "the pack index itself can rot into a comforting fiction",
+      "symptom": "docs/debugging-packs.json names a falsifier that was deleted, renamed, or never existed",
+      "cause": "An index of defects is only worth the mechanism behind it. Prose drifts; a path to a real test does not, because the filesystem answers. A pack whose falsifier is gone looks like coverage and is none -- the silent-gap failure of AGENTS.md section 3a.",
+      "falsifier": "tests/test_debugging_packs.py",
+      "remedy": "test_every_pack_falsifier_really_exists (filesystem), test_no_two_packs_claim_the_same_falsifier, test_every_cutover_falsifier_is_claimed_by_a_pack, and test_no_pack_carries_a_secret_value.",
+      "status": "fixed",
+      "law": "AGENTS.md section 3a (a silent gap must never look like coverage)"
+    },
+    {
+      "id": "DBG-019",
+      "title": "llm.<zone> answers HTTP 530 / Cloudflare 1033 because the route points at a host that is gone",
+      "symptom": "curl -I https://llm.mumchimp.com/v1/models -> HTTP/2 530 (error 1033, Argo Tunnel error), or 502 from an origin that no longer exists",
+      "cause": "The DNS record for llm.<zone> is a proxied CNAME aimed at a tunnel or origin that was decommissioned (the OKE substrate, idp#7787). Cloudflare keeps serving the DNS record and has nothing to forward to, so the edge answers 530 and the route looks like a Cloudflare problem while it is a dead origin. The fix is to move the hostname's SERVE path to the edge (a Worker route on llm.<zone>/*), not to repair the dead origin.",
+      "falsifier": "tests/test_edge_cutover.py::the file's DECLARED absences are the design",
+      "remedy": "Run `bin/idp-edge-cutover --all`, which binds D1, applies platform/lifeboat/schema/brain.sql, sets the provider secrets from the vault and deploys the estate-lifeboat Worker on route llm.<zone>/*. The zone name comes from clusters/*/estate-config.yaml, never from $ESTATE_ZONE.",
+      "status": "fixed",
+      "law": "AGENTS.md section 2 (merge and let the platform converge, do not hand-apply) / section 3 (a green deploy is not a working route)"
+    },
+    {
+      "id": "DBG-020",
+      "title": "a gate names a remedy the estate never shipped, so every commit is refused",
+      "symptom": "REFUSE: no passing research-first receipt in the last 4 hours. / bash: bin/research-first: No such file or directory",
+      "cause": "The gate half and the door half of a capability were committed separately and only the gate half landed (.githooks/commit-msg has refused commits since 2026-10-30 while bin/research-first was never committed). The guard is not wrong about what it wants; the estate is wrong to ship a refusal whose remedy does not exist. This is R14 and it taxes every agent, because the refusal arrives at the last step of a commit that was otherwise complete.",
+      "falsifier": "tests/test_research_first.py::test_the_gate_named_in_the_hook_is_satisfied_by_a_real_receipt",
+      "remedy": "Run `bin/research-first start --task \"<the task>\"`, note one internal finding with `--source path:line` and one external with `--source <url>`, then `bin/research-first done`. tests/test_research_first.py runs the hook's own predicate against the door's output, so the two cannot drift apart again.",
+      "status": "fixed",
+      "law": "AGENTS.md section 9 R14 (a guard that refuses the estate's own scripts) / section 3 (a rule nobody can satisfy is not enforcement)"
+    },
+    {
+      "id": "DBG-021",
+      "title": "a git hook refuses a file as unparseable because the hook's PATH cannot see the interpreter",
+      "symptom": "pre-push REFUSED: platform/lifeboat/src/brain.js is JavaScript and node is not installed, so it cannot be parsed",
+      "cause": "A git hook runs with a PATH that does not carry a version manager's shims (nvm lives under ~/.nvm and is exported by the interactive shell, which a hook never sources). `command -v node` then answers 'absent' while node is installed and answering, so the hook refuses the estate's own correct file. It is R14 with a PATH-shaped disguise: the guard is right that an unparsed file must not land, and wrong about whether it could parse it.",
+      "falsifier": "tests/test_pre_push_resolves_node.py::test_a_stripped_path_still_finds_node",
+      "remedy": "Resolve the interpreter before declaring it absent: the hook checks PATH, then ~/.nvm/versions/node/*/bin/node, /usr/local/bin/node and /opt/homebrew/bin/node, and fails only after all of them. The same resolution covers the TypeScript branch. Reproduce with `env -i HOME=\"$HOME\" PATH=\"/usr/bin:/bin\" bash -c '\"'\"'command -v node'\"'\"'`, which answers nothing while node is installed.",
+      "status": "fixed",
+      "law": "AGENTS.md section 9 R14 (a guard that refuses the estate's own scripts) and R1 (a guard that cannot judge must look, not refuse by default)"
+    }
+  ]
+}

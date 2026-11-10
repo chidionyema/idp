@@ -46,6 +46,18 @@ except ImportError:
     def check_command_allowed(cmd):  # fail open, never closed, on an import problem
         return True, "OK"
 
+# The Darwin thin-client guard (platform/estate/governance/thin_client.py): a laptop is a thin
+# client, not a build farm. Loaded the same way and with the same fail-open rule as the write
+# boundary above -- a guard that cannot load must not take the estate down, but it must also not
+# pretend it judged anything.
+_GOVERNANCE = Path(__file__).resolve().parent.parent / "governance"
+if _GOVERNANCE.is_dir() and str(_GOVERNANCE) not in sys.path:
+    sys.path.insert(0, str(_GOVERNANCE))
+try:
+    import thin_client
+except ImportError:
+    thin_client = None
+
 # The plan contract (platform/estate/memory/plan.py), loaded once. It is the ONE plan model:
 # this script asks it one question per command and never interprets a plan itself.
 _PLAN_CONTRACT = None
@@ -678,6 +690,28 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
                         close_ticket(conn, ticket_id, "halted", f"step {idx+1} ({step_name}) refused: {fs_reason}")
                         return "halted"
                     continue
+                # THE THIN-CLIENT GUARD, on the whole step text: a laptop may not add worktrees,
+                # clone into temp storage, or run the local gate while out of room or crushed.
+                # Unlike fs_guard (which judges only agent-supplied text) this judges the estate's
+                # own step too, because the estate's own doors are what opened the worktree loop.
+                if thin_client is not None:
+                    tc_ok, tc_reason, tc_replacement = thin_client.verdict(cmd, cwd=None)
+                    if tc_reason == "OK":
+                        pass
+                    elif not tc_ok:
+                        log(f"  REFUSED: {tc_reason}")
+                        if not tc_replacement:
+                            rc, stdout = 2, ""
+                            log_step(conn, ticket_id, idx, cmd, rc, 0)
+                            failed += 1
+                            if on_fail == "halt":
+                                close_ticket(conn, ticket_id, "halted",
+                                             f"step {idx+1} ({step_name}) refused: {tc_reason}")
+                                return "halted"
+                            continue
+                        # A shunt is not a refusal: the work still happens, in the cloud.
+                        log(f"  SHUNT: {tc_replacement}")
+                        cmd = tc_replacement
                 try:
                     result = subprocess.run(  # noqa: S602
                         cmd, shell=True, capture_output=True, text=True, timeout=step_timeout

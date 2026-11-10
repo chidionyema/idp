@@ -32,7 +32,33 @@ export const HOMES = ["cluster", "cloudflare-edge", "founder-macbook"];
 //   groq openai/gpt-oss-120b     200 in 0.48s, tool calls work
 //   gemini-2.5-flash-lite        200 in 0.82s, tool calls work
 //   openrouter nemotron-3.5      200 in 8.68s, no tool call
+// A LANE IS A MODEL, NOT A VENDOR -- and `alias` is the one place that distinction is written
+// down. Every lane below names the estate router alias it stands in for (llm/config.yaml's
+// `model_name`), because the estate's own clients send `model: "minimax"` and `model: "cheap"`,
+// and a router that answered with a lane other than the one asked for -- and said nothing --
+// would be the silent degradation this file exists to oppose. A lane with no alias is reached by
+// its own lane name, which is how Otto's door has always addressed them.
+//
+// What is NOT changed by that: a vendor outage is still answered by the next lane. A requested
+// alias that cannot answer degrades, and the answer names the lane that did answer.
 export const LANES = [
+  {
+    // The estate router's own frontier lane (routing.default = minimax), first because it is the
+    // model the estate actually runs when it is healthy.
+    name: "minimax",
+    alias: "minimax",
+    secret: "MINIMAX_API_KEY",
+    url: "https://api.minimax.io/v1/text/chatcompletion_v2",
+    model: "MiniMax-M3.1-Flash",
+  },
+  {
+    // The second frontier lane the estate names as solid (AGENTS.md section 7b, founder 2026-10-28).
+    name: "deepseek",
+    alias: "deepseek",
+    secret: "DEEPSEEK_API_KEY",
+    url: "https://api.deepseek.com/chat/completions",
+    model: "deepseek-chat",
+  },
   {
     name: "groq",
     // Measured on 2026-09-10 by reading the vendor's own x-ratelimit-limit-requests header,
@@ -75,10 +101,19 @@ export const LANES = [
     url: "https://openrouter.ai/api/v1/chat/completions",
     // Last, and never counted on. Of four free models asked in one run on 2026-09-10, one
     // timed out at 45s, one returned 403, one returned 429, and this one answered in 8.68s.
-    // It is here because something beats silence.
+    // It is here because something beats silence. It is also the estate's `cheap` floor: what
+    // `routing.cheap` means when the router in the cluster is the thing that is down.
     model: "nvidia/nemotron-3.5-lightning:free",
+    alias: "cheap",
   },
 ];
+
+/** The lane a caller's requested model name resolves to, or null when no lane stands in for it. */
+export function laneForModel(model) {
+  const asked = String(model ?? "").trim().toLowerCase();
+  if (!asked) return null;
+  return LANES.find((l) => String(l.alias || l.name).toLowerCase() === asked) || null;
+}
 
 // ---------------------------------------------------------------------------------------
 // HEADROOM, NOT A CHAIN.
@@ -267,14 +302,21 @@ export async function tryLane(lane, env, body, fetchImpl = fetch) {
 // with nobody home.
 export async function think(env, body, fetchImpl = fetch) {
   const tried = [];
-  for (const lane of chooseOrder(Date.now())) {
+  const order = chooseOrder(Date.now());
+  // `body.model` is honoured by PREFERENCE, never by refusal: the requested lane is tried first,
+  // and when it is spent or down the ladder carries on, which is the whole point of a router
+  // that runs at the edge of a dead cluster. What it may not do is stay silent about it.
+  const asked = typeof body?.model === "string" ? body.model.trim() : "";
+  const preferred = laneForModel(asked);
+  const ladder = preferred ? [preferred, ...order.filter((l) => l !== preferred)] : order;
+  for (const lane of ladder) {
     try {
       const out = await tryLane(lane, env, body, fetchImpl);
-      if (out) return { out, lane: lane.name, tried };
+      if (out) return { out, lane: lane.name, alias: lane.alias ?? null, tried, asked };
       tried.push(lane.name);
     } catch (e) {
       tried.push(`${lane.name}(${e?.name || "error"})`);
     }
   }
-  return { tried };
+  return { tried, asked };
 }

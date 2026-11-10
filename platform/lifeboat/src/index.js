@@ -29,6 +29,15 @@
 // cannot stop it answering. That last one is not hypothetical -- on 2026-09-09 a single
 // telemetry misconfiguration paralysed the estate.
 //
+// THE ROUTE IS THE THIRD JOB (2026-11-10). The cluster's router answered `llm.<zone>`, and
+// when the cluster went the name answered Cloudflare 1033 -- the name was fine, the origin
+// behind it was gone. So the SAME worker now holds the name: the same five lanes, in the
+// same OpenAI shape, one DNS record, no tunnel, no origin machine to be down. This is not
+// the second router the paragraph above refuses: it keeps no ledger and no budget, which is
+// exactly why it is still answering when the one that does keep them is not. The estate's
+// position is AGENTS.md section 7a read literally -- the cloud is the default and the laptop
+// is the fallback -- with the edge as the floor beneath both.
+//
 // WHY NOT CLOUDFLARE AI GATEWAY, WHICH DOES FALLBACK NATIVELY. It was the first thing
 // considered and the founder's spec names it. It is one more service that can be having a
 // bad day, and a lifeboat whose failover is performed by a dependency has precisely the
@@ -37,7 +46,8 @@
 // global network, the runtime, the secret store, the TLS, the routing, the inference
 // silicon, is all Cloudflare's.
 
-import { HOMES, ORIGIN_TIMEOUT_MS, keyMatches, think } from "./homes.js";
+import { HOMES, LANES, ORIGIN_TIMEOUT_MS, keyMatches, think } from "./homes.js";
+import { handleBrain } from "./brain.js";
 
 function json(body, status = 200, extra = {}) {
   return new Response(JSON.stringify(body), {
@@ -194,21 +204,33 @@ export default {
       return handleTelegram(request, env, rawBody);
     }
 
+    // The brain state door. BEFORE the key check: `genesis-founder-surface` reads this
+    // unauthenticated today (it answered `cloud-read-only` with no credential), and a founder
+    // surface that goes 401 the moment the estate gives it real state would be a regression
+    // wearing a security badge. The D1 binding is the only thing it needs.
+    if (url.pathname.startsWith("/api/brain/state")) {
+      return handleBrain(request, env, url);
+    }
+
     // Everything below is the brain, and the brain is behind a key.
     if (!keyMatches(bearer(request), env.LIFEBOAT_KEY || "")) {
       return json({ error: { message: "Unauthorized", type: "invalid_request_error" } }, 401);
     }
 
-    // Callers list models before they use them. Lane names are returned rather than the
-    // model ids behind them, because which model is behind a lane is this worker's business
-    // and it changes when a vendor churns a slug -- which both Groq and OpenRouter did
+    // Lane names ARE returned, and a lane also advertises the router alias it stands in for,
+    // because the estate's own clients ask for `minimax` and `cheap` and this worker is now
+    // the thing answering at `llm.<zone>`. Which model is behind a lane stays this worker's
+    // business: it changes when a vendor churns a slug, which both Groq and OpenRouter did
     // inside one week in September 2026.
     if (url.pathname === "/v1/models") {
-      const { LANES } = await import("./homes.js");
-      return json({
-        object: "list",
-        data: LANES.map((l) => ({ id: l.name, object: "model", owned_by: "estate-lifeboat" })),
-      });
+      const data = [];
+      for (const l of LANES) {
+        data.push({ id: l.name, object: "model", owned_by: "estate-lifeboat" });
+        if (l.alias && l.alias !== l.name) {
+          data.push({ id: l.alias, object: "model", owned_by: "estate-lifeboat" });
+        }
+      }
+      return json({ object: "list", data });
     }
 
     if (url.pathname !== "/v1/chat/completions" || request.method !== "POST") {
@@ -228,13 +250,18 @@ export default {
       );
     }
 
-    // The caller's `model` is deliberately ignored. It asked for a lane the estate router
-    // knows -- `minimax`, `judgment`, `cheap` -- and this is not that router and has none of
-    // them. It is a lifeboat: it answers with whatever is still floating. Honouring the
-    // requested model would mean refusing the call at precisely the moment refusing is fatal.
-    const { out, lane, tried } = await think(env, body);
+    // The caller's `model` is honoured by PREFERENCE and never by refusal (homes.js think()).
+    // It asked for a lane this router knows -- `minimax`, `deepseek`, `cheap` -- and when that
+    // lane is answering it gets it. When it is spent or its vendor is down the ladder carries
+    // on, and the answer says which lane really answered, on the body and on the wire.
+    const { out, lane, alias, asked, tried } = await think(env, body);
     if (out) {
-      return json({ ...out, _lifeboat_lane: lane }, 200, { "x-lifeboat-lane": lane });
+      const served = typeof out === "object" && out !== null ? out : { choices: [] };
+      return json(
+        { ...served, _lifeboat_lane: lane, _lifeboat_alias: alias, _lifeboat_asked: asked || null },
+        200,
+        { "x-lifeboat-lane": lane, "x-lifeboat-asked": asked || "" },
+      );
     }
 
     // Every lane at every vendor silent. Say which were tried, because the next thing that
