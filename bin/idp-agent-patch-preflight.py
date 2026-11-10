@@ -5,6 +5,7 @@ Mirrors the existing .githooks/pre-push added-line ASCII invariant earlier.
 Only deterministic punctuation in NEW docs/evidence/*.md is repairable.
 Never rewrite code, configuration, modified evidence, non-UTF8, or code fences.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -16,25 +17,38 @@ import subprocess
 import sys
 
 PUNCTUATION = {
-    "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
-    "\u2013": "-", "\u2014": "--", "\u2026": "...",
-    "\u2192": "->", "\u2190": "<-", "\u00a0": " ",
-    "\u2022": "*", "\u00b7": "*",
-    "\u2713": "[PASS]", "\u2714": "[PASS]", "\u2717": "[FAIL]",
+    "\u2018": "'",
+    "\u2019": "'",
+    "\u201c": '"',
+    "\u201d": '"',
+    "\u2013": "-",
+    "\u2014": "--",
+    "\u2026": "...",
+    "\u2192": "->",
+    "\u2190": "<-",
+    "\u00a0": " ",
+    "\u2022": "*",
+    "\u00b7": "*",
+    "\u2713": "[PASS]",
+    "\u2714": "[PASS]",
+    "\u2717": "[FAIL]",
     "\u2718": "[FAIL]",
 }
 
 
 def git(*args: str, check: bool = True):
     return subprocess.run(
-        ["git", *args], stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, check=check,
+        ["git", *args],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=check,
     )
 
 
 def staged_paths() -> list[tuple[str, str]]:
-    raw = git("diff", "--cached", "--name-status", "-z",
-              "--no-renames", "--diff-filter=ACMR").stdout
+    raw = git(
+        "diff", "--cached", "--name-status", "-z", "--no-renames", "--diff-filter=ACMR"
+    ).stdout
     parts = raw.split(b"\0")
     if parts[-1] != b"":
         raise ValueError("incomplete NUL-delimited staged paths")
@@ -50,8 +64,9 @@ def staged_paths() -> list[tuple[str, str]]:
 
 
 def added_non_ascii(path: str) -> bool:
-    patch = git("diff", "--cached", "--no-ext-diff", "--no-color",
-                "--unified=0", "--", path).stdout
+    patch = git(
+        "diff", "--cached", "--no-ext-diff", "--no-color", "--unified=0", "--", path
+    ).stdout
     in_hunk = False
     for line in patch.splitlines():
         if line.startswith(b"@@ "):
@@ -64,7 +79,11 @@ def added_non_ascii(path: str) -> bool:
 
 
 def deterministic_doc_repair(status: str, path: str):
-    if status != "A" or not path.startswith("docs/evidence/") or not path.endswith(".md"):
+    if (
+        status != "A"
+        or not path.startswith("docs/evidence/")
+        or not path.endswith(".md")
+    ):
         return None
     stage = git("ls-files", "--stage", "-z", "--", path).stdout
     if not stage.startswith((b"100644 ", b"100755 ")):
@@ -112,12 +131,21 @@ def deterministic_doc_repair(status: str, path: str):
     }
 
 
-def preflight(*, repair_docs: bool = False, allow_governance_paths: bool = False,
-              allow_empty: bool = False) -> dict:
+def preflight(
+    *,
+    repair_docs: bool = False,
+    allow_governance_paths: bool = False,
+    allow_empty: bool = False,
+) -> dict:
     paths = staged_paths()
     if not paths:
-        return {"ok": allow_empty, "reason": "EMPTY_COMMIT_ALLOWED" if allow_empty else "EMPTY_PATCH",
-                "repairs": [], "failed_paths": [], "authority": "PREFLIGHT_ONLY"}
+        return {
+            "ok": allow_empty,
+            "reason": "EMPTY_COMMIT_ALLOWED" if allow_empty else "EMPTY_PATCH",
+            "repairs": [],
+            "failed_paths": [],
+            "authority": "PREFLIGHT_ONLY",
+        }
     repairs = []
     failed = []
     for status, path in paths:
@@ -133,26 +161,43 @@ def preflight(*, repair_docs: bool = False, allow_governance_paths: bool = False
     check = git("diff", "--cached", "--check", check=False)
     if check.returncode != 0:
         failed.append({"path": "<index>", "class": "GIT_DIFF_CHECK"})
-    return {"ok": not failed, "reason": "PASS" if not failed else "STAGED_PATCH_REFUSED",
-            "repairs": repairs, "failed_paths": failed,
-            "staged_files": len(paths), "authority": "PREFLIGHT_ONLY"}
+    return {
+        "ok": not failed,
+        "reason": "PASS" if not failed else "STAGED_PATCH_REFUSED",
+        "repairs": repairs,
+        "failed_paths": failed,
+        "staged_files": len(paths),
+        "authority": "PREFLIGHT_ONLY",
+    }
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repair-evidence-docs", action="store_true")
-    parser.add_argument("--allow-empty", action="store_true",
-                        help="general precommit only: keep existing empty-commit behavior")
-    parser.add_argument("--allow-governance-paths", action="store_true",
-                        help="precommit-only: protected authorization still enforced by external gates")
+    parser.add_argument(
+        "--allow-empty",
+        action="store_true",
+        help="general precommit only: keep existing empty-commit behavior",
+    )
+    parser.add_argument(
+        "--allow-governance-paths",
+        action="store_true",
+        help="precommit-only: protected authorization still enforced by external gates",
+    )
     args = parser.parse_args()
     try:
-        report = preflight(repair_docs=args.repair_evidence_docs,
-                           allow_governance_paths=args.allow_governance_paths,
-                           allow_empty=args.allow_empty)
+        report = preflight(
+            repair_docs=args.repair_evidence_docs,
+            allow_governance_paths=args.allow_governance_paths,
+            allow_empty=args.allow_empty,
+        )
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
-        report = {"ok": False, "reason": "UNKNOWN_PREFLIGHT_ERROR",
-                  "detail": type(error).__name__, "authority": "PREFLIGHT_ONLY"}
+        report = {
+            "ok": False,
+            "reason": "UNKNOWN_PREFLIGHT_ERROR",
+            "detail": type(error).__name__,
+            "authority": "PREFLIGHT_ONLY",
+        }
     print(json.dumps(report, sort_keys=True))
     return 0 if report["ok"] else 3
 
