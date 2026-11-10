@@ -164,10 +164,15 @@ def list_check_runs(repo, sha, token, fetch=None):
         data = fetch(f"https://api.github.com/repos/{repo}/commits/{sha}/check-runs?per_page=100&page={page}")
         if not isinstance(data, dict) or not isinstance(data.get("check_runs"), list):
             raise ValueError("unreadable GitHub checks; no release")
+        total_count = data.get("total_count")
+        if type(total_count) is not int or total_count < 0:
+            raise ValueError("GitHub check-run count is missing or invalid")
         runs.extend(data["check_runs"])
+        if len(runs) > total_count:
+            raise ValueError("GitHub check-run count is inconsistent")
         if len(runs) > MAX_CHECK_RUNS:
             raise ValueError("check-run inventory too large to certify")
-        if len(runs) >= data.get("total_count", 0):
+        if len(runs) == total_count:
             return runs
         if len(data["check_runs"]) != 100:
             raise ValueError("GitHub returned truncated check-run inventory")
@@ -186,7 +191,7 @@ def main():
                           candidate_instruction_ids=ids)
         print("ADMITTED (not deployed or yielded): " + json.dumps(checked, sort_keys=True))
         return 0
-    except (ValueError, KeyError, TypeError, urllib.error.URLError, TimeoutError) as error:
+    except (ValueError, KeyError, TypeError, urllib.error.URLError, TimeoutError, subprocess.TimeoutExpired) as error:
         print(f"REFUSED greenlane: Optimus/Founder Surface operational proof: {error}", file=sys.stderr)
         return 1
 
