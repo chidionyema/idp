@@ -1,11 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- A bounded tick, not a resident process. The watcher performs one free-space
-     measurement and, only below its floor, one allow-listed cleaner step. -->
+     measurement and, only below its floor, one allow-listed cleaner step.
+     WHY THE SCRIPT IS ProgramArguments[0] AND NOT `/bin/sh <script>`: measured 2026-11-10, the
+     installed job sat in launchd's xpcproxy state (`runs = 1`, heartbeat 1671s stale against a
+     180s max) for hours: the launcher never exec'd the program, so the guardian was loaded and
+     dead at the same time, and estate_health read disk-guardian FAIL. The script carries a
+     #!/bin/sh shebang and is executable, so naming it directly removes the extra launcher.
+     Measured after the change: the heartbeat advanced on three consecutive 60s intervals
+     (21:45:52Z -> 21:46:53Z -> 21:47:52Z -> 21:48:53Z). Unlike critical-watch, this script
+     reads no repo path (no git, no ~/Documents), so the TCC reason that makes those templates
+     name python3 does not apply, and python3 must NOT be named here: the script is shell, so
+     passing it to `python3 -c subprocess.call` makes python parse bash
+     (`SyntaxError: unmatched ')'` at the `case` line). -->
 <plist version="1.0"><dict>
   <key>Label</key><string>ai.estate.disk-watch</string>
   <key>ProgramArguments</key><array>
-    <string>/bin/sh</string>
     <string>${HOME}/.estate/bin/idp-disk-watch</string>
   </array>
   <key>EnvironmentVariables</key><dict>
