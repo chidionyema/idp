@@ -111,6 +111,12 @@ RELATIONSHIP_RE = re.compile(
 # INSTANCES an environment declares, so the elements a deployment view draws are the
 # ones the model instantiates there.
 DEPLOYMENT_ENV_RE = re.compile(r'^\s*deploymentEnvironment\s+"([^"]*)"\s*\{')
+# A line that LOOKS like a declaration (`alias = ...`) but that this parser cannot read.
+# The model is full of DSL this file has no rule for -- views, styles, tags, properties
+# -- so the shape alone cannot be an error. But a line that assigns something is a
+# declaration, and a declaration this file cannot read is an element it will silently
+# leave out of every comparison.
+DECLARATION_RE = re.compile(r'^\s*[A-Za-z_][A-Za-z0-9_.-]*\s*=\s*\S+')
 INSTANCE_RE = re.compile(r'^\s*(containerInstance|instanceOf)\s+([A-Za-z0-9_.]+)\s*$')
 
 # The kind label the renderer puts in a node's marker. This is the renderer's own
@@ -186,6 +192,8 @@ class Model:
         # the renderer draws that pair ONCE, labelled with the FIRST of them.
         self.relationships: list[tuple[str, str, str]] = []
         self.unparsed_relationships: list[str] = []
+        self.duplicate_names: list[str] = []
+        self.unreadable_declarations: list[str] = []
         self.deployments: dict[str, list[str]] = {}   # environment title -> element aliases
         self.deployment_opaque: list[str] = []        # environments this file cannot read
         self._parse()
@@ -231,6 +239,8 @@ class Model:
                         alias, kind, name, first, second = m.groups()
                         element = Element(alias, kind, name, first or "", second or "")
                         self.elements[alias] = element
+                        if name in self.by_name and self.by_name[name].alias != alias:
+                            self.duplicate_names.append(name)
                         self.by_name.setdefault(name, element)
                         self.alias_of.setdefault(name, alias)
                         if stack and not stack[-1].startswith("#"):
@@ -250,6 +260,8 @@ class Model:
                                 self.unparsed_relationships.append(line.strip())
                             else:
                                 self.relationships.append((from_name, to_name, _collapse(label)))
+                        elif DECLARATION_RE.match(line):
+                            self.unreadable_declarations.append(line.strip())
             else:
                 vm = VIEW_RE.match(line)
                 if vm:
@@ -270,6 +282,10 @@ class Model:
                     if im and self.views:
                         self.views[-1]["includes"].append(im.group(1))
                         continue
+                    if DECLARATION_RE.match(line):
+                        # A declaration inside the views block is not a view, a view
+                        # include, or a relationship: this file cannot read it.
+                        self.unreadable_declarations.append(line.strip())
 
             if push is None and stripped.endswith("{"):
                 push = "#block"
@@ -470,6 +486,15 @@ class Page:
         open_subgraphs: list[dict] = []
         for line in text.split("\n"):
             fm = FENCE_OPEN.match(line)
+            if fm and in_block:
+                # A heading INSIDE a mermaid block is not a heading: the fence is
+                # still open, so the line is part of the diagram.  It has no rule
+                # here, so it is reported -- and the block is NOT ended, so the
+                # lines after it are still read.
+                self.unreadable.append(
+                    "%s: a heading inside a mermaid block: %s" % (current, fm.group(1).strip())
+                )
+                continue
             if fm:
                 current = fm.group(1).strip()
                 if current not in self.nodes:
@@ -623,20 +648,55 @@ def main() -> int:
 
     # --- 1. fences ---------------------------------------------------------
     raw_page = open(page_path, encoding="utf-8").read()
-    opened = raw_page.count("```mermaid")
-    closed = len(re.findall(r"^[ \t]*```[ \t]*$", raw_page, re.M))
+    # Fence accounting, done IN ORDER. A page may carry plain code blocks as well as
+    # mermaid blocks, and a plain block's closing fence is not a mermaid block's
+    # closer: counting every bare fence against the mermaid opens rejects a page for
+    # having an ordinary ```bash block in it.
+    mermaid_opens = 0
+    mermaid_closes = 0
+    block_opens = 0
+    block_closes = 0
+    in_mermaid = False
+    for line in raw_page.split("\n"):
+        stripped = line.strip()
+        if not stripped.startswith("```"):
+            continue
+        if stripped == "```mermaid":
+            mermaid_opens += 1
+            block_opens += 1
+            in_mermaid = True
+        elif stripped == "```":
+            block_closes += 1
+            if in_mermaid:
+                mermaid_closes += 1
+                in_mermaid = False
+        else:
+            # A fence with a language opens a plain block, closed by the next bare fence.
+            block_opens += 1
+    if in_mermaid:
+        problems.append(
+            "%s opens a mermaid block it never closes -- the page will not render" % page_path
+        )
+    if mermaid_opens != mermaid_closes:
+        problems.append(
+            "%s opens %d mermaid blocks and closes %d -- the page will not render"
+            % (page_path, mermaid_opens, mermaid_closes)
+        )
+    if block_opens != block_closes:
+        problems.append(
+            "%s opens %d code blocks and closes %d -- the page will not render"
+            % (page_path, block_opens, block_closes)
+        )
     glued = [
         line
         for line in raw_page.split("\n")
         if "```" in line
         and not re.match(r"^[ \t]*```mermaid[ \t]*$", line)
         and not re.match(r"^[ \t]*```[ \t]*$", line)
+        and not re.match(r"^[ \t]*```[A-Za-z0-9_+-]*[ \t]*$", line)
     ]
-    if opened != closed:
-        problems.append(
-            "%s opens %d mermaid blocks and closes %d -- the page will not render"
-            % (page_path, opened, closed)
-        )
+    if glued:
+        problems.append("a mermaid fence is not alone on its line: " + " | ".join(glued))
     if glued:
         problems.append("a mermaid fence is not alone on its line: " + " | ".join(glued))
 
@@ -780,6 +840,15 @@ def main() -> int:
                     "the page draws %s -> %s %r, but the model declares %r"
                     % (pair[0], pair[1], labels[0], model_labels[pair])
                 )
+    for name in sorted(set(model.duplicate_names)):
+        undecided.append(
+            "the model declares %r more than once; this check cannot tell those "
+            "elements apart, so it cannot say which one the page draws" % name
+        )
+    for line in model.unreadable_declarations:
+        undecided.append(
+            "a declaration the model makes that this check cannot read: %s" % line
+        )
     for line in model.unparsed_relationships:
         undecided.append("a relationship the model declares that this check cannot resolve: %s" % line)
 
@@ -795,14 +864,21 @@ def main() -> int:
         if owner is None:
             continue
         view_name = view["name"]
-        subgraph = page.subgraph_labelled(view_name, owner.name)
-        if subgraph is None:
+        boundaries = [
+            s for s in page.subgraphs.get(view_name, []) if s["label"] == owner.name
+        ]
+        if not boundaries:
             problems.append(
                 "the page does not draw the boundary of %s in %s" % (owner.name, view_name)
             )
             continue
+        if len(boundaries) > 1:
+            problems.append(
+                "the page draws %d boundaries labelled %s in %s; the model declares one"
+                % (len(boundaries), owner.name, view_name)
+            )
         nodes = page.nodes.get(view_name, {})
-        inside = {nodes[i].name for i in subgraph["members"] if i in nodes}
+        inside = {nodes[i].name for s in boundaries for i in s["members"] if i in nodes}
         descendants = model.descendants_of(owner_alias)
         for name in sorted(expected):
             if name == owner.name:
@@ -831,11 +907,19 @@ def main() -> int:
             )
             continue
         labels = [s["label"] for s in page.subgraphs.get(view["name"], [])]
-        if expected_label not in labels:
+        if not labels or labels[0] != expected_label:
             problems.append(
                 "the page draws %s as %r, but the renderer titles that view %r"
                 % (view["name"], labels[0] if labels else "", expected_label)
             )
+        else:
+            prefix = expected_label.split(":")[0] + ":"
+            for other in labels[1:]:
+                if other.startswith(prefix):
+                    problems.append(
+                        "the page draws a second view title %r in %s; the renderer titles "
+                        "that view %r" % (other, view["name"], expected_label)
+                    )
 
     # --- 9. the header the render writes ------------------------------------
     header, why = expected_header(render_path)

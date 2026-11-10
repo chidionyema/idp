@@ -1,20 +1,19 @@
 #!/usr/bin/env bash
-# Render every C4 view in workspace.dsl and assemble the page the portal serves.
+# Render every C4 view in workspace.dsl and assemble the page GitHub serves.
 #
 # No local install. structurizr/cli is EOL -- its own banner says so, and it exits 0
 # while writing nothing, which is why this uses the consolidated image it points at.
 #
-# Two rules, both learned the hard way:
+# RENDER_CMD may be overridden to render with a local structurizr CLI instead of the
+# docker image. The default is the docker image: the founder never installs anything.
 #
-#   1. The closing fence goes on its OWN line. structurizr writes each .mmd WITHOUT a
-#      trailing newline, so `cat "$f"` ends on "  end" and a bare `echo '```'` lands
-#      glued to it -- "  end```". GitHub then reads the whole page as ONE unterminated
-#      mermaid block and renders nothing. That is the bug this script's own output used
-#      to have, on every view.
-#   2. The view list is read FROM THE RENDER, never written out by hand. A hand-written
-#      list is a promise about the bytes; a directory listing is a fact about them. A new
-#      view in the model now appears on the page without anyone editing this script, and
-#      a renamed view can never be silently dropped from the page.
+# The .mmd files structurizr writes have NO trailing newline, so `cat` is followed by an
+# explicit newline before the closing fence. Without it the fence lands glued to the last
+# line (`  end```), the mermaid block never closes, and the whole page renders as one
+# broken block. Every fence below is alone on its line.
+#
+# View keys are restricted by the Structurizr DSL to [a-zA-Z0-9_-], so the control-path
+# view is keyed "Control-Path" and lands in structurizr-Control-Path.mmd.
 #
 # Usage:
 #   architecture/render            render and write the page
@@ -25,13 +24,19 @@ out="$here/out"
 page="$here/../docs/explanation/architecture/index.md"
 mode="${1:-write}"
 
-# Clear the previous render first. The view list below is read from this directory, so a
-# .mmd left behind by a view that no longer exists would otherwise be embedded on the page
-# as a ghost -- a diagram of something the model stopped declaring. This has to happen
-# BEFORE the render, because the render writes into the same directory.
-#
-# But a FAILED render must not destroy the previous .mmd output: `rm -rf "$out"` before
-# the render wiped it, so a render that could not run at all -- no docker, no image, no
+render_cmd="${RENDER_CMD:-docker run --rm -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 -v "$here":/work -w /work structurizr/structurizr export -workspace workspace.dsl -format mermaid -output /work/out}"
+
+cd "$here"
+
+# The model contains non-ASCII characters (em dashes). Structurizr parses the workspace with
+# the JVM's default charset, so a host whose locale is not UTF-8 fails with
+# "StructurizrDslParserException: Input length = 1" -- which reads like a broken DSL and is
+# not. Pin the locale for the render, and pass it INTO the container, so the page renders
+# the same way on a laptop, in CI and in the cloud.
+export LANG=C.UTF-8 LC_ALL=C.UTF-8
+
+# A FAILED render must not destroy the previous .mmd output. `rm -rf "$out"` before the
+# render wiped it, so a render that could not run at all -- no docker, no image, no
 # network -- left the tree with NO diagrams and the next reader saw an empty page
 # instead of the last good one. The old output is kept until the new one exists, and it
 # is restored if the render fails.
@@ -52,34 +57,43 @@ restore_output() {
 }
 trap restore_output EXIT
 
-# The model contains non-ASCII characters (em dashes). Structurizr parses the workspace with
-# the JVM's default charset, so a host whose locale is not UTF-8 fails with
-# "StructurizrDslParserException: Input length = 1" -- which reads like a broken DSL and is
-# not. Pin the locale for the render, and pass it INTO the container, so the page renders
-# the same way on a laptop, in CI and in the cloud.
-export LANG=C.UTF-8 LC_ALL=C.UTF-8
-
-docker run --rm -e LANG=C.UTF-8 -e LC_ALL=C.UTF-8 -v "$here":/work -w /work structurizr/structurizr \
-  export -workspace workspace.dsl -format mermaid -output /work/out >/dev/null
+bash -c "$render_cmd" >/dev/null
 
 test -n "$(ls -A "$out"/*.mmd 2>/dev/null)" || { echo "render produced no diagrams"; exit 1; }
 
-rm -rf "$backup"
-trap - EXIT
-
 # The views, in the order THE MODEL DECLARES THEM -- the C4 reading order (Context, then
-# Containers, then the deployment views). A hand-written list is a promise about the bytes;
-# the model's own declaration order is a fact about them. A new view in the model now
-# reaches the page without anyone editing this script, and a renamed view can no longer be
-# silently dropped from the page.
-model_views=$(grep -oE '^[[:space:]]*(systemContext|container|component|deployment|dynamic)[[:space:]].*"[^"]*"[[:space:]]*\{' "$here/workspace.dsl" \
-  | grep -oE '"[^"]*"[[:space:]]*\{$' | sed 's/"[[:space:]]*{$//; s/^"//; s/"$//' | tr '\n' ' ')
+# Containers, then the control path). A hand-written list is a promise about the bytes;
+# the model's own declaration order is a fact about them.
+#
+# The view NAME is the FIRST quoted string on the declaration line, not the last. The DSL is
+# `<keyword> <identifier> "<name>" ["<description>"] {`, so a view that carries a description
+# has two quoted strings and the old extraction read the DESCRIPTION as the name -- it then
+# word-split into "the model declares view Who but the render produced no Who.mmd" and took
+# the whole render down over a view that was perfectly valid.
+model_views=$(awk '
+  /^[[:space:]]*(systemContext|container|component|deployment|dynamic)[[:space:]]/ {
+    kw = $0; sub(/^[[:space:]]*/, "", kw); split(kw, a, /[[:space:]]+/); kw = a[1]
+    n = 0; first = ""; last = ""
+    rest = $0
+    while (match(rest, /"[^"]*"/)) {
+      s = substr(rest, RSTART + 1, RLENGTH - 2)
+      rest = substr(rest, RSTART + RLENGTH)
+      n++
+      if (n == 1) first = s
+      last = s
+    }
+    if (n == 0) next
+    # A deployment view is `deployment <id> "<title>" "<key>"` -- the key is the LAST string.
+    # Every other view is `<keyword> <id> "<key>"` -- the key is the FIRST string.
+    if (kw == "deployment") print (n >= 2 ? last : first)
+    else print first
+  }
+' "$here/workspace.dsl" | tr '\n' ' ')
 test -n "$model_views" || { echo "the model declares no views"; exit 1; }
 for name in $model_views; do
   test -f "$out/structurizr-$name.mmd" || { echo "the model declares view $name but the render produced no $name.mmd"; exit 1; }
 done
-# And nothing may be on the page that the model does not declare.
-for f in "$out"/structurizr-*.mmd; do
+for f in $(ls -1 "$out"/structurizr-*.mmd | sort); do
   name="$(basename "$f" .mmd)"; name="${name#structurizr-}"
   case " $model_views " in
     *" $name "*) ;;
@@ -87,15 +101,26 @@ for f in "$out"/structurizr-*.mmd; do
   esac
 done
 
+# The page is assembled into a TEMP file and MOVED into place.
+#
+# Why not `{ ... } > "$page"`: bash truncates the target the moment the compound command
+# STARTS, so every guard inside the block runs against a page that has already been
+# emptied. A render that failed its second guard left the committed page holding the error
+# string instead of the diagrams -- 36866 bytes became 384 -- and the failed render was
+# reported as if nothing had been lost. The page is now built in a temp file and moved with
+# `mv`, so the committed page is either the old one or the new one, never a corpse.
+tmp="$page.tmp.$$"
+trap 'rm -f "$tmp"' EXIT
+
 render_page() {
   {
     echo "# Architecture"
     echo
     echo "Generated by \`architecture/render\` from \`architecture/workspace.dsl\`. Do not edit this"
-    echo "file. Edit the model and run \`make diagrams\`."
+    echo "file. Edit the model and run \`architecture/render\`."
     echo
     echo "The model is C4. Each heading below is one view of the same model, so the boxes cannot"
-    echo "disagree with each other the way four hand-drawn pictures do."
+    echo "disagree with each other the way three hand-drawn pictures do."
     echo
     for name in $model_views; do
       f="$out/structurizr-$name.mmd"
@@ -107,7 +132,7 @@ render_page() {
       echo '```'
       echo
     done
-    echo "Decision: [0002 - documentation is code and the portal renders it](../decisions/0002-documentation-is-code-and-the-portal-renders-it.md)"
+    echo "Decision: [map-once protocol taxonomy](../../decisions/2026-11-04-map-once-protocol-taxonomy.md)"
   }
 }
 
@@ -115,14 +140,26 @@ if [ "$mode" = "--check" ]; then
   if [ ! -f "$page" ]; then
     echo "FAIL architecture/render: $page is missing; run architecture/render"; exit 1
   fi
-  if render_page | diff -u "$page" - > /tmp/architecture-render.diff 2>&1; then
+  # The diff goes to a file of its own: a fixed path in /tmp is shared between two runs on
+  # the same machine, and the second one reads the first one's diff.
+  diff_file="$(mktemp "${TMPDIR:-/tmp}/architecture-render.diff.XXXXXX")"
+  trap 'rm -f "$diff_file"' EXIT
+  if render_page | diff -u "$page" - > "$diff_file" 2>&1; then
     echo "ok    architecture/render: $page matches the model"
     exit 0
   fi
   echo "FAIL architecture/render: $page is not what architecture/workspace.dsl says; run architecture/render"
-  sed -n '1,40p' /tmp/architecture-render.diff
+  sed -n '1,40p' "$diff_file"
   exit 1
 fi
 
-render_page > "$page"
+render_page > "$tmp"
+mv "$tmp" "$page"
+
+# The previous .mmd output is dropped ONLY now: until the whole render has succeeded --
+# the view set matches the model, and the page has been written -- the backup is what a
+# partial render falls back to.
+rm -rf "$backup"
+trap - EXIT
+
 echo "rendered $(echo "$model_views" | wc -w | tr -d ' ') views -> $page"
