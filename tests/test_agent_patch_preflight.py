@@ -79,18 +79,28 @@ class AgentPatchPreflightTests(unittest.TestCase):
     def test_new_evidence_markdown_typography_repaired_in_index(self):
         p = self.add(
             "docs/evidence/test/README.md",
-            "# Evidence \u2014 verified\n\u201cValue\u201d \u2192 \u2713\n",
+            "# Evidence \u2014 verified\n\u201cValue\u201d \u2192 complete\n",
         )
         original = p.read_bytes()
         rc, out = self.inspect(repair=True)
         self.assertEqual(rc, 0, out)
         self.assertEqual(len(out["repairs"]), 1)
-        self.assertEqual(p.read_bytes(), b'# Evidence -- verified\n"Value" -> [PASS]\n')
+        self.assertEqual(p.read_bytes(), b'# Evidence -- verified\n"Value" -> complete\n')
         self.assertEqual(
             self.cmd("show", ":docs/evidence/test/README.md"), p.read_bytes()
         )
         self.assertNotEqual(original, p.read_bytes())
         self.assertEqual(len(out["repairs"][0]["before_sha256"]), 64)
+
+    def test_semantic_checkmark_cannot_be_forged_into_pass(self):
+        p = self.add("docs/evidence/x/README.md", "Canary \u2713\n")
+        original = p.read_bytes()
+        rc, out = self.inspect(repair=True)
+        self.assertEqual(rc, 3)
+        self.assertEqual(out["repairs"], [])
+        self.assertEqual(p.read_bytes(), original)
+        self.assertNotIn(b"[PASS]", p.read_bytes())
+        self.assertEqual(out["failed_paths"][0]["class"], "ADDED_NON_ASCII")
 
     def test_no_repairs_without_explicit_flag(self):
         p = self.add("docs/evidence/test/README.md", "Evidence \u2014 incomplete\n")
