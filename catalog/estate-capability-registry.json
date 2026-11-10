@@ -4,7 +4,7 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 118,
-    "layer": 256,
+    "layer": 257,
     "service": 121,
     "tool": 476,
     "workflow": 100
@@ -6342,6 +6342,7 @@
       },
       "consumers": [
         "cap:layer/platform-estate-context-server",
+        "cap:layer/platform-estate-memory-local_store",
         "cap:layer/platform-jit-broker-serve",
         "cap:layer/platform-mcp-idp_server"
       ],
@@ -7082,6 +7083,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:layer/platform-estate-memory-local_store",
         "cap:layer/platform-jit-broker-serve",
         "cap:layer/platform-mcp-idp_server"
       ],
@@ -10504,7 +10506,12 @@
         ],
         "cost_class": "cheap",
         "latency_class": "interactive",
-        "depends_on": []
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-estate-memory-local_store",
+            "edge": "imports"
+          }
+        ]
       },
       "owner": "@chidionyema",
       "plane": "idp",
@@ -10639,6 +10646,82 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/memory/handback.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-memory-local_store",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "The memory door's declared local origin: the same contract, backed by one SQLite file.",
+      "contract": {
+        "inputs": [
+          "--db",
+          "--host",
+          "--port",
+          "--selftest"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": [
+          {
+            "id": "cap:layer/platform-edge-runtime-src-server",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-estate-context-server",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-llm-spire-key-broker-server",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-unified-memory-server-security_core",
+            "edge": "imports"
+          },
+          {
+            "id": "cap:layer/platform-voice-gate-src-server",
+            "edge": "imports"
+          }
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:layer/platform-estate-memory-door"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/memory/local_store.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -14496,6 +14579,7 @@
       },
       "consumers": [
         "cap:layer/platform-estate-context-server",
+        "cap:layer/platform-estate-memory-local_store",
         "cap:layer/platform-jit-broker-serve",
         "cap:layer/platform-mcp-idp_server"
       ],
@@ -17333,6 +17417,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:layer/platform-estate-memory-local_store",
         "cap:layer/platform-unified-memory-server-curation_worker",
         "cap:layer/platform-unified-memory-server-main"
       ],
@@ -17739,6 +17824,7 @@
       },
       "consumers": [
         "cap:layer/platform-estate-context-server",
+        "cap:layer/platform-estate-memory-local_store",
         "cap:layer/platform-jit-broker-serve",
         "cap:layer/platform-mcp-idp_server"
       ],
