@@ -1,0 +1,50 @@
+name: agent-sandbox precommit exact-source adversarial proof
+
+on:
+  push:
+    branches: [proof/agent-sandbox-precommit-20261110]
+
+permissions:
+  contents: read
+
+jobs:
+  index-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.12']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Exact source and runner parity with original lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "035c0733530ced08f7c0f5492f3c9d12f27dfe1e"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/proof-agent-sandbox-precommit.yml"
+          git diff --quiet HEAD^ HEAD -- bin/idp-agent-patch-preflight.py tests/test_agent_patch_preflight.py .github/workflows/agent-sandbox.yml
+      - uses: actions/setup-python@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Reproduce real git index adversarial corpus
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_agent_patch_preflight.py' -v
+      - name: Validate workflow placement and trusted main source
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('.github/workflows/agent-sandbox.yml').read_text()
+          pre=p.index('      - name: Validate and safely repair staged patch before issuing CLAIM')
+          claim=p.index('      - name: Claim the work on an issue')
+          commit=p.index('      - name: Commit through the estate')
+          assert pre<claim<commit
+          assert 'git show HEAD:bin/idp-agent-patch-preflight.py' in p
+          assert 'python3 "$RUNNER_TEMP/trusted-agent-preflight.py" --repair-evidence-docs' in p
+          assert p.index('      - name: Apply the patch to main')<pre
+          print('TRUSTED_MAIN_BEFORE_CLAIM_CONFIRMED')
+          PY
