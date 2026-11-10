@@ -310,7 +310,7 @@ laws:
     severity: block
     check:
       type: command
-      argv: ["bash", "bin/architecture-diagram-check"]
+      argv: ["python3", "bin/architecture-diagram-check"]
     falsifier:
       files:
         architecture/workspace.dsl: |
@@ -340,4 +340,4 @@ laws:
           end```
       check:
         type: command
-        argv: ["bash", "bin/architecture-diagram-check"]
+        argv: ["python3", "bin/architecture-diagram-check"]
