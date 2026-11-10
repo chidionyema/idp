@@ -10,8 +10,13 @@
       "selectors": [
         {
           "name": "laptop front :4000",
-          "fate": ["host:laptop"],
-          "reaches": ["cloud (OKE LiteLLM)", "laptop front"],
+          "fate": [
+            "host:laptop"
+          ],
+          "reaches": [
+            "cloud (OKE LiteLLM)",
+            "laptop front"
+          ],
           "note": "every local agent's base URL (bin/litellm-status). platform/llm/front.py dials the cloud and its own slots only: not the lifeboat, not the floor."
         }
       ],
@@ -19,37 +24,55 @@
         {
           "name": "cloud (OKE LiteLLM)",
           "provider": "oracle-oke",
-          "fate": ["provider:oracle-oke"],
+          "fate": [
+            "provider:oracle-oke"
+          ],
           "role": "default",
           "url": "https://llm.{zone}/health/liveliness",
-          "expect": [200]
+          "expect": [
+            200
+          ]
         },
         {
           "name": "lifeboat (Cloudflare edge)",
           "provider": "cloudflare",
-          "fate": ["provider:cloudflare"],
+          "fate": [
+            "provider:cloudflare"
+          ],
           "role": "cross-provider",
           "state": "planned",
           "url": "https://lifeboat-llm.{zone}/health",
-          "expect": [200]
+          "expect": [
+            200
+          ]
         },
         {
           "name": "groq free tier",
           "provider": "groq",
-          "fate": ["provider:groq"],
+          "fate": [
+            "provider:groq"
+          ],
           "role": "floor",
           "url": "https://api.groq.com/openai/v1/models",
           "secret": "GROQ_API_KEY",
-          "headers": {"Authorization": "Bearer ${GROQ_API_KEY}"},
-          "expect": [200]
+          "headers": {
+            "Authorization": "Bearer ${GROQ_API_KEY}"
+          },
+          "expect": [
+            200
+          ]
         },
         {
           "name": "laptop front",
           "provider": "laptop",
-          "fate": ["host:laptop"],
+          "fate": [
+            "host:laptop"
+          ],
           "role": "in-house fallback",
           "url": "http://127.0.0.1:4000/health/liveliness",
-          "expect": [200]
+          "expect": [
+            200
+          ]
         }
       ]
     },
@@ -62,7 +85,9 @@
           "provider": "oracle-oke",
           "role": "default",
           "url": "https://otto.{zone}/healthz",
-          "expect": [200]
+          "expect": [
+            200
+          ]
         },
         {
           "name": "lifeboat (Cloudflare edge)",
@@ -70,7 +95,9 @@
           "role": "cross-provider",
           "state": "planned",
           "url": "https://lifeboat-llm.{zone}/health",
-          "expect": [200]
+          "expect": [
+            200
+          ]
         },
         {
           "name": "groq free tier",
@@ -78,8 +105,12 @@
           "role": "floor",
           "url": "https://api.groq.com/openai/v1/models",
           "secret": "GROQ_API_KEY",
-          "headers": {"Authorization": "Bearer ${GROQ_API_KEY}"},
-          "expect": [200]
+          "headers": {
+            "Authorization": "Bearer ${GROQ_API_KEY}"
+          },
+          "expect": [
+            200
+          ]
         }
       ]
     },
@@ -88,20 +119,90 @@
       "what_breaks": "every published hostname: the portal, the catalogue, the API, identity, traces, the voice router",
       "note": "These doors are asked with expect_any: the question is only 'does this name answer at all'. A door that answers 404 is up; a door that does not answer is a hole in the estate's surface.",
       "legs": [
-        {"name": "api", "provider": "oracle-oke", "url": "https://api.{zone}/", "expect_any": true},
-        {"name": "auth", "provider": "oracle-oke", "url": "https://auth.{zone}/", "expect_any": true},
-        {"name": "catalogue", "provider": "oracle-oke", "url": "https://catalogue.{zone}/", "expect_any": true},
-        {"name": "cyrus", "provider": "oracle-oke", "url": "https://cyrus.{zone}/", "expect_any": true},
-        {"name": "hc", "provider": "oracle-oke", "url": "https://hc.{zone}/", "expect_any": true},
-        {"name": "langfuse", "provider": "oracle-oke", "url": "https://langfuse.{zone}/", "expect_any": true},
-        {"name": "llm", "provider": "oracle-oke", "url": "https://llm.{zone}/", "expect_any": true},
-        {"name": "mcp", "provider": "oracle-oke", "url": "https://mcp.{zone}/", "expect_any": true},
-        {"name": "meridian", "provider": "oracle-oke", "url": "https://meridian.{zone}/", "expect_any": true},
-        {"name": "otto", "provider": "oracle-oke", "url": "https://otto.{zone}/", "expect_any": true},
-        {"name": "sandbox", "provider": "oracle-oke", "url": "https://sandbox.{zone}/", "expect_any": true},
-        {"name": "signoz", "provider": "oracle-oke", "url": "https://signoz.{zone}/", "expect_any": true},
-        {"name": "superset", "provider": "oracle-oke", "url": "https://superset.{zone}/", "expect_any": true},
-        {"name": "www", "provider": "oracle-oke", "url": "https://www.{zone}/", "expect_any": true}
+        {
+          "name": "api",
+          "provider": "oracle-oke",
+          "url": "https://api.{zone}/",
+          "expect_any": true
+        },
+        {
+          "name": "auth",
+          "provider": "oracle-oke",
+          "url": "https://auth.{zone}/",
+          "expect_any": true
+        },
+        {
+          "name": "catalogue",
+          "provider": "oracle-oke",
+          "url": "https://catalogue.{zone}/",
+          "expect_any": true
+        },
+        {
+          "name": "cyrus",
+          "provider": "oracle-oke",
+          "url": "https://cyrus.{zone}/",
+          "expect_any": true
+        },
+        {
+          "name": "hc",
+          "provider": "oracle-oke",
+          "url": "https://hc.{zone}/",
+          "expect_any": true
+        },
+        {
+          "name": "langfuse",
+          "provider": "oracle-oke",
+          "url": "https://langfuse.{zone}/",
+          "expect_any": true
+        },
+        {
+          "name": "llm",
+          "provider": "oracle-oke",
+          "url": "https://llm.{zone}/",
+          "expect_any": true
+        },
+        {
+          "name": "mcp",
+          "provider": "oracle-oke",
+          "url": "https://mcp.{zone}/",
+          "expect_any": true
+        },
+        {
+          "name": "meridian",
+          "provider": "oracle-oke",
+          "url": "https://meridian.{zone}/",
+          "expect_any": true
+        },
+        {
+          "name": "otto",
+          "provider": "oracle-oke",
+          "url": "https://otto.{zone}/",
+          "expect_any": true
+        },
+        {
+          "name": "sandbox",
+          "provider": "oracle-oke",
+          "url": "https://sandbox.{zone}/",
+          "expect_any": true
+        },
+        {
+          "name": "signoz",
+          "provider": "oracle-oke",
+          "url": "https://signoz.{zone}/",
+          "expect_any": true
+        },
+        {
+          "name": "superset",
+          "provider": "oracle-oke",
+          "url": "https://superset.{zone}/",
+          "expect_any": true
+        },
+        {
+          "name": "www",
+          "provider": "oracle-oke",
+          "url": "https://www.{zone}/",
+          "expect_any": true
+        }
       ]
     }
   ]
