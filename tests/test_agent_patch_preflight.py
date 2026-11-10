@@ -40,10 +40,12 @@ class AgentPatchPreflightTests(unittest.TestCase):
         self.cmd("add", "--", path)
         return p
 
-    def inspect(self, repair=False):
+    def inspect(self, repair=False, allow_governance=False):
         args = [sys.executable, str(SCRIPT)]
         if repair:
             args.append("--repair-evidence-docs")
+        if allow_governance:
+            args.append("--allow-governance-paths")
         completed = subprocess.run(args, capture_output=True, text=True)
         return completed.returncode, json.loads(completed.stdout)
 
@@ -182,6 +184,32 @@ class AgentPatchPreflightTests(unittest.TestCase):
         rc, out = self.inspect(repair=True)
         self.assertEqual(rc, 0, out)
         self.assertEqual(out["repairs"], [])
+
+
+    def test_authorized_governance_is_not_blocked_by_untrusted_runner_rule(self):
+        self.add(".github/workflows/valid.yml", "name: valid\n")
+        rc, out = self.inspect(repair=True, allow_governance=True)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(out["authority"], "PREFLIGHT_ONLY")
+        # Authorization is established by the separate existing signed gate,
+        # not by a pre-commit syntax/encoding acceptance.
+
+    def test_governance_unicode_remains_rejected_even_with_scope_flag(self):
+        self.add(".github/workflows/y.yml", "name: \u2014\n")
+        rc, out = self.inspect(repair=True, allow_governance=True)
+        self.assertEqual(rc, 3)
+        self.assertEqual(out["failed_paths"][0]["class"], "ADDED_NON_ASCII")
+
+    def test_global_commit_and_cloud_submit_use_committed_head_source(self):
+        hook = (ROOT / ".githooks" / "pre-commit").read_text()
+        workflow = (ROOT / ".github/workflows" / "agent-sandbox.yml").read_text()
+        self.assertIn('git show "HEAD:bin/idp-agent-patch-preflight.py"', hook)
+        self.assertIn('--allow-governance-paths', hook)
+        self.assertLess(hook.index('git show "HEAD:bin/idp-agent-patch-preflight.py"'),
+                        hook.index("staged_py=$("))
+        self.assertIn("git show HEAD:bin/idp-agent-patch-preflight.py", workflow)
+        self.assertLess(workflow.index("Validate and safely repair staged patch"),
+                        workflow.index("Claim the work on an issue"))
 
     def test_explicit_control_code_not_rewritten(self):
         self.add("src/lib.js", "const s='\u201cno\u201d';\n")
