@@ -31,10 +31,15 @@ if [ "${1:-}" = --check ]; then
     exit 1
 fi
 
-# Founder directives and peer messages (estate-fleet, #7481): print and ack the durable inbox so
-# an instruction given once reaches every session. Never fatal: a dead bus must not block start.
+# Receiving a message is not applying it. The inbox's --ack records "applied" and removes
+# the message from redelivery; bootstrap cannot attest that an agent acted on it. The
+# explicit estate-fleet --pipe consumer owns acknowledgement after successful processing.
+# Do not truncate pending messages: an instruction beyond line 40 would disappear from the
+# agent's view even though the old bootstrap acknowledged it.
 if [ -x "$(dirname "$0")/estate-fleet" ]; then
-    ESTATE_AGENT=${ESTATE_AGENT:-claude-code} timeout 45 "$(dirname "$0")/estate-fleet" inbox --ack 2>&1 | tail -n 40 || true
+    if ! ESTATE_AGENT=${ESTATE_AGENT:-claude-code} timeout 45 "$(dirname "$0")/estate-fleet" inbox; then
+        echo "BLIND   idp-session-bootstrap  fleet inbox unreadable; no messages acknowledged" >&2
+    fi
 fi
 
 # Guards already present — nothing to do

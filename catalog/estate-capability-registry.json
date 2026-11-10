@@ -46578,10 +46578,6 @@
         {
           "id": "cap:tool/estate-fleet",
           "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/start",
-          "edge": "invokes"
         }
       ],
       "metrics": [],
@@ -53565,7 +53561,6 @@
         "cap:tool/idp-room-prove",
         "cap:tool/idp-science-facts",
         "cap:tool/idp-script-compiles",
-        "cap:tool/idp-session-bootstrap",
         "cap:tool/idp-shadow",
         "cap:tool/idp-simulate-gate",
         "cap:tool/idp-sleep-ban",

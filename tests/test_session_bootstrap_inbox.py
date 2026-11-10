@@ -1,4 +1,4 @@
-"""idp-session-bootstrap prints the fleet inbox and never fails because of it (#7481)."""
+"""Session-start inbox viewing must not impersonate an applied-effect receipt."""
 
 import os
 import subprocess
@@ -27,12 +27,26 @@ def _run(fleet_body):
         )
 
 
-def test_inbox_printed_with_ack():
+def test_inbox_read_does_not_ack_unprocessed_instructions():
     r = _run('#!/bin/sh\necho "directive: $ESTATE_AGENT $*"\n')
     assert r.returncode == 0
-    assert "directive: claude-code inbox --ack" in r.stdout
+    assert "directive: claude-code inbox" in r.stdout
+    assert "--ack" not in r.stdout
 
 
-def test_dead_bus_does_not_block_start():
-    r = _run("#!/bin/sh\nexit 3\n")
+def test_inbox_is_not_truncated_beyond_40_lines():
+    r = _run(
+        '#!/bin/sh\ni=1; while [ "$i" -le 75 ]; '
+        'do echo "directive-$i"; i=$((i+1)); done\n'
+    )
     assert r.returncode == 0
+    assert "directive-1\n" in r.stdout
+    assert "directive-75\n" in r.stdout
+    assert sum(line.startswith("directive-") for line in r.stdout.splitlines()) == 75
+
+
+def test_dead_bus_marks_blind_without_claiming_application():
+    r = _run("#!/bin/sh\nexit 3\n")
+    assert r.returncode == 0  # Read-only startup; effect doors gate privilege.
+    assert "BLIND   idp-session-bootstrap  fleet inbox unreadable" in r.stderr
+    assert "no messages acknowledged" in r.stderr
