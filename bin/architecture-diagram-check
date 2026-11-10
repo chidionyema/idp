@@ -7,7 +7,7 @@ as current: a page that still names a retired component, or whose mermaid fences
 close, looks exactly like a page that is current. GitHub renders a page whose fences do
 not close as ONE unterminated code block, so the diagrams do not render at all.
 
-WHAT IT CHECKS. Six things, all decided from BYTES -- no docker, no network, and no
+WHAT IT CHECKS. Eight things, all decided from BYTES -- no docker, no network, and no
 rendering, so it runs in seconds on every push and on a laptop:
 
   1. FENCES. Every mermaid block opens and closes, and no fence is glued to other text.
@@ -19,30 +19,45 @@ rendering, so it runs in seconds on every push and on a laptop:
   3. ELEMENTS, PER VIEW. The elements drawn in each view are exactly the elements the
      model puts in that view. This is the OTHER direction of the box check: without it,
      a page that simply DROPS a declared element -- the guardian, the gate -- is "ok".
-  4. NODE TEXT. Every node's label, description and technology is a claim the model
-     makes. The renderer writes an element's description inside the type marker
-     ("[Container: <description>]"), so the marker is taken apart by TYPE, not by
-     bracket: stripping the whole bracket silently discarded every container
-     description, which is most of what the page says about that container.
-  5. EDGE LABELS. Every relationship label on the page is a claim the model makes.
-     Relationship text is the model's own prose about who does what, and a page that
-     keeps a stale relationship label is lying in the same way a stale node is.
-  6. NAMES. Every element name the model declares is drawn, and every name on the page
+  4. NODE TEXT, PER ELEMENT. Every node is compared against THE DECLARATION OF THAT ONE
+     ELEMENT -- not against the model file as a bag of words. The renderer presents an
+     element as
+         <div style='font-weight: bold'>NAME</div>
+         <div style='font-size: 70%; ...'>[Kind] or [Kind: description]</div>
+         <div style='font-size: 80%; ...'>body</div>
+     and the model's declaration for an element is
+         alias = kind "Name" "first string" ["second string"]
+     so, measured against the committed page and the committed model:
+       - the BODY div carries the element's FIRST string after its name;
+       - the MARKER carries the element's SECOND string only for a CONTAINER
+         (a container's description is its identity in a container view); for a person
+         and for a software system the marker carries no description;
+       - the marker's KIND label is the element's own kind.
+     Comparing against the whole model file instead of the element's own declaration is
+     the difference between "is this the model's claim about THIS box" and "is this
+     sentence somewhere in the model" -- and only the first one catches a page that
+     swaps two elements' bodies, or relabels a person as a container.
+  5. NOTHING MISSING. A description or technology that the model states and the page
+     omits is drift: an element drawn with an empty body, or a container drawn with no
+     description in its marker, fails.
+  6. EDGE LABELS AND TOPOLOGY. Every relationship on the page is compared against the
+     relationships the model declares: a label that is not the model's is drift, a
+     declared relationship that is missing from the page is drift, a relationship the
+     model does not declare is drift, and an edge re-pointed at a different element is
+     drift.
+  7. NAMES. Every element name the model declares is drawn, and every name on the page
      is declared -- so a renamed element cannot leave half the page talking about the
      old name.
+  8. NO SILENCE. A view whose membership this file has no rule for is reported as
+     UNCHECKED and the run FAILS. A check that says "ok" about something it did not
+     look at is not a check.
 
 `architecture/render --check` is the byte-exact check (it re-renders and diffs) and
 needs the structurizr image. This one needs nothing, so it can run everywhere.
 
-WHAT IT DOES NOT DECIDE. The membership of a view the model writes as `include *` is
-Structurizr's scope rule, not the model's text: this check derives it (the system
-itself plus everything outside it for a systemContext view; everything except the
-system for a container view) and verifies the page against THAT. A view kind this file
-has no rule for is reported as UNCHECKED rather than silently passed, so a check can
-never report "ok" about something it did not look at.
-
-Usage: bash bin/architecture-diagram-check
-Exit 0 = the page is what the model says. Exit 1 = it is not. Exit 2 = cannot be read.
+Usage: python3 bin/architecture-diagram-check
+Exit 0 = the page is what the model says. Exit 1 = it is not. Exit 2 = it could not be
+decided (something could not be read, or a view kind has no rule here).
 """
 
 from __future__ import annotations
@@ -54,98 +69,220 @@ import sys
 
 # ---------------------------------------------------------------- the model ---
 
+# An element declaration: `alias = kind "Name" ["first string"] ["second string"]`.
+# The match is a PREFIX match on purpose: a block declaration ends with `{`.
 ELEMENT_RE = re.compile(
-    r'^\s*([a-z_][A-Za-z0-9_]*)\s*=\s*(person|softwareSystem|container)\s+"([^"]+)"'
+    r'^\s*([a-z_][A-Za-z0-9_]*)\s*=\s*(person|softwareSystem|container)\s+"([^"]*)"'
+    r'(?:\s+"([^"]*)")?(?:\s+"([^"]*)")?'
 )
 VIEW_RE = re.compile(
     r'^\s*(systemContext|container|component|deployment|dynamic)\s+'
     r'([A-Za-z0-9_.-]+)\s+"([^"]+)"(?:\s+"([^"]+)")?\s*\{'
 )
 INCLUDE_RE = re.compile(r'^\s*include\s+(\S+)\s*$')
+RELATIONSHIP_RE = re.compile(
+    r'^\s*([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)\s*->\s*'
+    r'([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)\s+"([^"]*)"\s*$'
+)
+# A deployment environment and the instances it declares. A deployment view draws the
+# INSTANCES an environment declares, so the elements a deployment view draws are the
+# ones the model instantiates there.
+DEPLOYMENT_ENV_RE = re.compile(r'^\s*deploymentEnvironment\s+"([^"]*)"\s*\{')
+INSTANCE_RE = re.compile(r'^\s*(containerInstance|instanceOf)\s+([A-Za-z0-9_.]+)\s*$')
 
-# The elements the model declares, with the alias they are declared under.
-ELEMENT_KINDS = ("person", "softwareSystem", "container")
+# The kind label the renderer puts in a node's marker. This is the renderer's own
+# vocabulary, keyed by the element's OWN kind -- not a set of words that happen to
+# appear somewhere in the model file.
+KIND_LABEL = {
+    "person": "Person",
+    "softwareSystem": "Software System",
+    "container": "Container",
+}
 
-
-def _strip_tags(text: str) -> str:
-    """The page's HTML to plain text.
-
-    ONLY the renderer's own tags go. Angle brackets that are TEXT -- a description that
-    names a path template like `secrets/<env>/<name>.yaml` -- are not tags, and eating
-    them turns a claim the model makes into one the model does not, which is the exact
-    failure this check exists to catch.
-    """
-    text = re.sub(r"</?div[^>]*>", "\n", text)
-    text = text.replace("<br />", " ")
-    return text
+# Which kind carries its second string (its description) inside the marker.
+CARRIES_MARKER_DESCRIPTION = {"container": True, "person": False, "softwareSystem": False}
 
 
 def _collapse(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _plain(text: str) -> str:
+    """The renderer's HTML to plain text.
+
+    ONLY the renderer's own tags go. Angle brackets that are TEXT -- a description that
+    names a path template like `secrets/<env>/<name>.yaml` -- are not tags, and eating
+    them turns a claim the model makes into one the model does not, which is the exact
+    failure this check exists to catch.
+    """
+    text = text.replace("<br />", " ")
+    text = re.sub(r"</?div[^>]*>", " ", text)
+    return text
+
+
+class Element:
+    """One element the model declares."""
+
+    def __init__(self, alias: str, kind: str, name: str, first: str, second: str) -> None:
+        self.alias = alias
+        self.kind = kind
+        self.name = name
+        self.first = first          # the first string after the name: the body the renderer shows
+        self.second = second        # the second string after the name: a container's description
+
+    @property
+    def label(self) -> str:
+        return KIND_LABEL.get(self.kind, self.kind)
+
+    @property
+    def carries_marker_description(self) -> bool:
+        return CARRIES_MARKER_DESCRIPTION.get(self.kind, False)
+
+
 class Model:
-    """The model: its elements, their parents, and the membership of each view."""
+    """The model: its elements, their parents, its relationships, and each view."""
 
     def __init__(self, text: str) -> None:
         self.text = text
-        self.flat = _collapse(text)
-        self.elements: dict[str, str] = {}      # alias -> name
-        self.kinds: dict[str, str] = {}          # alias -> kind
-        self.children: dict[str, list[str]] = {}  # software system alias -> child aliases
+        self.elements: dict[str, Element] = {}     # alias -> Element
+        self.by_name: dict[str, Element] = {}      # name  -> Element
+        self.alias_of: dict[str, str] = {}         # name  -> alias
+        self.parent: dict[str, str] = {}           # alias -> enclosing alias
+        self.children: dict[str, list[str]] = {}    # software system alias -> child aliases
         self.views: list[dict] = []
+        self.relationships: set[tuple[str, str, str]] = set()
+        self.unparsed_relationships: list[str] = []
+        self.deployments: dict[str, list[str]] = {}   # environment title -> element aliases
+        self.deployment_opaque: list[str] = []        # environments this file cannot read
         self._parse()
 
     def _parse(self) -> None:
         lines = self.text.split("\n")
-        # --- elements, and which software system each one sits inside ---
-        stack: list[str] = []          # aliases of the blocks we are inside
+        stack: list[str] = []          # what each open block is (an alias, or a marker)
         in_views = False
         for raw in lines:
             line = raw.rstrip()
             stripped = line.strip()
 
-            if re.match(r"^views\s*\{", stripped):
+            if not stripped or stripped.startswith("//") or stripped.startswith("*"):
+                continue
+            if stripped == "}":
+                if stack:
+                    stack.pop()
+                continue
+            if stripped.startswith("views") and stripped.endswith("{"):
                 in_views = True
+                stack.append("#block")
+                continue
 
+            push: str | None = None
             if not in_views:
-                m = ELEMENT_RE.match(line)
-                if m:
-                    alias, kind, name = m.group(1), m.group(2), m.group(3)
-                    self.elements[alias] = name
-                    self.kinds[alias] = kind
-                    for owner in stack:
-                        self.children.setdefault(owner, []).append(alias)
-                # track block nesting by alias-qualified declaration
-                decl = re.match(
-                    r"^\s*([a-z_][A-Za-z0-9_]*)\s*=\s*\w+\s+\"[^\"]*\"(?:\s+\"[^\"]*\")*\s*\{",
-                    line,
-                )
-                if decl:
-                    stack.append(decl.group(1))
-                    continue
+                dem = DEPLOYMENT_ENV_RE.match(line)
+                if dem:
+                    self.deployments.setdefault(dem.group(1), [])
+                    push = "#deployment:" + dem.group(1)
+                else:
+                    inst = INSTANCE_RE.match(line)
+                    if inst:
+                        # The instance may sit inside nested deploymentNode blocks, so
+                        # the environment it belongs to is the nearest one on the stack.
+                        env = next(
+                            (s for s in reversed(stack) if s.startswith("#deployment:")), None
+                        )
+                        if env is not None:
+                            self.deployments[env[len("#deployment:"):]].append(inst.group(2))
+                        continue
+                    m = ELEMENT_RE.match(line)
+                    if m:
+                        alias, kind, name, first, second = m.groups()
+                        element = Element(alias, kind, name, first or "", second or "")
+                        self.elements[alias] = element
+                        self.by_name.setdefault(name, element)
+                        self.alias_of.setdefault(name, alias)
+                        if stack and not stack[-1].startswith("#"):
+                            self.parent[alias] = stack[-1]
+                        for owner in stack:
+                            if not owner.startswith("#"):
+                                self.children.setdefault(owner, []).append(alias)
+                        if stripped.endswith("{"):
+                            push = alias
+                    else:
+                        rm = RELATIONSHIP_RE.match(line)
+                        if rm:
+                            source, target, label = rm.groups()
+                            from_name = self.resolve(source)
+                            to_name = self.resolve(target)
+                            if from_name is None or to_name is None:
+                                self.unparsed_relationships.append(line.strip())
+                            else:
+                                self.relationships.add((from_name, to_name, _collapse(label)))
             else:
                 vm = VIEW_RE.match(line)
                 if vm:
                     kind, ident, title, key = vm.groups()
                     name = key if kind == "deployment" and key else title
                     self.views.append(
-                        {"kind": kind, "ident": ident, "name": name, "includes": []}
+                        {
+                            "kind": kind,
+                            "ident": ident,
+                            "name": name,
+                            "title": title,
+                            "includes": [],
+                        }
                     )
-                    continue
-                im = INCLUDE_RE.match(line)
-                if im and self.views:
-                    self.views[-1]["includes"].append(im.group(1))
-                    continue
+                    push = "#block"
+                else:
+                    im = INCLUDE_RE.match(line)
+                    if im and self.views:
+                        self.views[-1]["includes"].append(im.group(1))
+                        continue
 
-            if stripped == "}":
-                if stack:
-                    stack.pop()
+            if push is None and stripped.endswith("{"):
+                push = "#block"
+            if push is not None:
+                stack.append(push)
 
     def resolve(self, ident: str) -> str | None:
         """`genesis.guardian` -> the name of the element declared as `guardian`."""
         alias = ident.split(".")[-1]
-        return self.elements.get(alias)
+        element = self.elements.get(alias)
+        return element.name if element else None
+
+    def nearest_visible(self, name: str, visible: set[str]) -> str | None:
+        """The element the renderer draws for `name` in a view that draws `visible`.
+
+        A view that does not draw an element draws the nearest ancestor that it DOES
+        draw: a systemContext view draws the software system itself and not its
+        containers, so a relationship to one of those containers is drawn against the
+        system. That is the renderer's projection, and the page is compared against the
+        projection -- otherwise every container relationship in the context view would
+        read as drift, and a check that cries wolf is a check nobody runs.
+        """
+        if name in visible:
+            return name
+        alias = self.alias_of.get(name)
+        while alias:
+            parent_alias = self.parent.get(alias)
+            if not parent_alias:
+                return None
+            parent = self.elements.get(parent_alias)
+            if parent is None:
+                return None
+            if parent.name in visible:
+                return parent.name
+            alias = parent_alias
+        return None
+
+    def projected_relationships(self, visible: set[str]) -> set[tuple[str, str, str]]:
+        """The relationships the renderer can draw in a view that draws `visible`."""
+        projected: set[tuple[str, str, str]] = set()
+        for source, target, label in self.relationships:
+            near_source = self.nearest_visible(source, visible)
+            near_target = self.nearest_visible(target, visible)
+            if near_source is None or near_target is None:
+                continue
+            projected.add((near_source, near_target, label))
+        return projected
 
     def expected_for(self, view: dict) -> tuple[set[str] | None, str]:
         """The elements the model puts in this view, or (None, why) if unknowable."""
@@ -170,14 +307,31 @@ class Model:
         if view["kind"] == "container":
             # `container S` with include * draws S's children and the elements they touch,
             # but not S itself.
-            return set(self.elements.values()) - {self.elements[owner]}, ""
+            return {e.name for e in self.elements.values()} - {self.elements[owner].name}, ""
         if view["kind"] == "systemContext":
             # `systemContext S` with include * draws S and everything OUTSIDE it.
-            inside = {self.elements[a] for a in self.children.get(owner, [])}
+            inside = {self.elements[a].name for a in self.children.get(owner, [])}
             if not inside:
                 return None, "the model does not say which elements are inside %r" % ident
-            outside = set(self.elements.values()) - inside
-            return outside | {self.elements[owner]}, ""
+            outside = {e.name for e in self.elements.values()} - inside
+            return outside | {self.elements[owner].name}, ""
+        if view["kind"] == "deployment":
+            # A deployment view draws the INSTANCES its environment declares, so the
+            # elements it draws are the ones the model instantiates in that environment.
+            title = view.get("title") or ""
+            aliases = self.deployments.get(title)
+            if aliases is None:
+                return None, "the model declares no deployment environment titled %r" % title
+            names = set()
+            for alias in aliases:
+                element = self.elements.get(alias.split(".")[-1])
+                if element is None:
+                    return None, (
+                        "the deployment environment %r instantiates %r, which the model "
+                        "does not declare" % (title, alias)
+                    )
+                names.add(element.name)
+            return names, ""
         return None, "a %s view with include * is not a rule this check knows" % view["kind"]
 
 
@@ -186,25 +340,78 @@ class Model:
 FENCE_OPEN = re.compile(r"^## (.+)$")
 NODE_RE = re.compile(r'^\s*(\d+)\["(.*)"\]\s*$')
 EDGE_RE = re.compile(r'^\s*(\d+)-\.?\s*"(.*)"\s*(?:\.-+>|-->|-.+->)\s*(\d+)\s*$')
-BOLD_RE = re.compile(r"font-weight: bold'>([^<]*)</div>")
-MARKER_RE = re.compile(r"^\[(.+)\]$")
+DIV_RE = re.compile(r"<div\b[^>]*>(.*?)</div>", re.S)
+MARKER_RE = re.compile(r"^\[(.*)\]$", re.S)
 
 
-def _views_of(page: str) -> dict[str, list[str]]:
-    """Per view: the element names drawn (the renderer's bold labels) and their lines."""
-    out: dict[str, list[str]] = {}
-    current = None
-    for line in page.split("\n"):
-        fm = FENCE_OPEN.match(line)
-        if fm:
-            current = fm.group(1).strip()
-            out.setdefault(current, [])
-            continue
-        if current is None:
-            continue
-        for bm in BOLD_RE.finditer(line):
-            out[current].append(bm.group(1))
-    return out
+class Node:
+    """One element drawn on the page."""
+
+    def __init__(self, ident: str, raw: str) -> None:
+        self.ident = ident
+        self.name = ""
+        self.marker = ""       # the marker text without its brackets, e.g. "Container: ..."
+        self.marker_label = ""  # the kind label, e.g. "Container"
+        self.marker_description = ""  # the description inside the marker, if any
+        self.body = ""
+        self.readable = True
+        self.reason = ""
+
+        divs = DIV_RE.findall(raw)
+        if len(divs) != 3:
+            self.readable = False
+            self.reason = "the node has %d divs, not the 3 the renderer writes" % len(divs)
+            return
+        name_div, marker_div, body_div = divs
+        self.name = _collapse(_plain(name_div))
+        marker_text = _collapse(_plain(marker_div))
+        mm = MARKER_RE.match(marker_text)
+        if not mm:
+            self.readable = False
+            self.reason = "the node's marker %r is not a [Kind] marker" % marker_text
+            return
+        self.marker = mm.group(1)
+        self.marker_label, _, description = self.marker.partition(":")
+        self.marker_label = self.marker_label.strip()
+        self.marker_description = _collapse(description)
+        self.body = _collapse(_plain(body_div))
+
+
+class Page:
+    """The page: per view, the nodes drawn and the edges between them."""
+
+    def __init__(self, text: str) -> None:
+        self.view_names: list[str] = []
+        self.nodes: dict[str, dict[str, Node]] = {}   # view -> id -> Node
+        self.edges: dict[str, list[tuple[str, str, str]]] = {}  # view -> (from, to, label)
+        self.unreadable: list[str] = []
+        current = None
+        for line in text.split("\n"):
+            fm = FENCE_OPEN.match(line)
+            if fm:
+                current = fm.group(1).strip()
+                if current in self.nodes:
+                    continue
+                self.view_names.append(current)
+                self.nodes[current] = {}
+                self.edges[current] = []
+                continue
+            if current is None:
+                continue
+            nm = NODE_RE.match(line)
+            if nm:
+                node = Node(nm.group(1), nm.group(2))
+                if not node.readable:
+                    self.unreadable.append("%s: node %s -- %s" % (current, nm.group(1), node.reason))
+                self.nodes[current][nm.group(1)] = node
+                continue
+            em = EDGE_RE.match(line)
+            if em:
+                label = _collapse(_plain(em.group(2)))
+                self.edges[current].append((em.group(1), em.group(3), label))
+
+    def names_in(self, view: str) -> set[str]:
+        return {node.name for node in self.nodes.get(view, {}).values()}
 
 
 def main() -> int:
@@ -220,15 +427,17 @@ def main() -> int:
             return 2
 
     model = Model(open(model_path, encoding="utf-8").read())
-    page = open(page_path, encoding="utf-8").read()
+    page = Page(open(page_path, encoding="utf-8").read())
     problems: list[str] = []
+    undecided: list[str] = []
 
     # --- 1. fences ---------------------------------------------------------
-    opened = page.count("```mermaid")
-    closed = len(re.findall(r"^[ \t]*```[ \t]*$", page, re.M))
+    raw_page = open(page_path, encoding="utf-8").read()
+    opened = raw_page.count("```mermaid")
+    closed = len(re.findall(r"^[ \t]*```[ \t]*$", raw_page, re.M))
     glued = [
         line
-        for line in page.split("\n")
+        for line in raw_page.split("\n")
         if "```" in line
         and not re.match(r"^[ \t]*```mermaid[ \t]*$", line)
         and not re.match(r"^[ \t]*```[ \t]*$", line)
@@ -243,9 +452,7 @@ def main() -> int:
 
     # --- 2. views ----------------------------------------------------------
     model_view_names = sorted({view["name"] for view in model.views})
-    page_view_names = sorted(
-        m.group(1).strip() for m in (FENCE_OPEN.match(l) for l in page.split("\n")) if m
-    )
+    page_view_names = sorted(set(page.view_names))
     if model_view_names != page_view_names:
         only_model = [v for v in model_view_names if v not in page_view_names]
         only_page = [v for v in page_view_names if v not in model_view_names]
@@ -255,17 +462,12 @@ def main() -> int:
         )
 
     # --- 3. elements, per view --------------------------------------------
-    page_views = _views_of(page)
     for view in model.views:
         expected, why = model.expected_for(view)
         if expected is None:
-            print(
-                "UNCHECKED  architecture-diagram-check: %s -- %s"
-                % (view["name"], why),
-                file=sys.stderr,
-            )
+            undecided.append("%s -- %s" % (view["name"], why))
             continue
-        drawn = set(page_views.get(view["name"], []))
+        drawn = page.names_in(view["name"])
         if expected != drawn:
             problems.append(
                 "the elements drawn in %s are not the model's: only in the model: %s | only on the page: %s"
@@ -276,44 +478,97 @@ def main() -> int:
                 )
             )
 
-    # --- 4. node text ------------------------------------------------------
-    node_text: list[str] = []
-    for line in page.split("\n"):
-        nm = NODE_RE.match(line)
-        if not nm:
-            continue
-        for fragment in _strip_tags(nm.group(2)).split("\n"):
-            fragment = _collapse(fragment)
-            if fragment:
-                node_text.append(fragment)
-    model_flat = re.sub(r"\s+", "", model.flat).lower()
-    for fragment in node_text:
-        marker = MARKER_RE.match(fragment)
-        if marker:
-            inner = marker.group(1)
-            typ, _, desc = inner.partition(":")
-            typ_flat = re.sub(r"\s+", "", typ).lower()
-            if typ_flat and typ_flat not in model_flat:
-                problems.append("type not in the model: %s" % typ)
-            fragment = _collapse(desc)
-            if not fragment:
+    # --- 4/5. node text, against THAT element's own declaration -----------
+    for view_name, nodes in page.nodes.items():
+        for node in nodes.values():
+            if not node.readable:
                 continue
-        if fragment and fragment not in model.flat:
-            problems.append("not in the model: %s" % fragment)
+            element = model.by_name.get(node.name)
+            if element is None:
+                problems.append(
+                    "the page draws %r, which the model does not declare" % node.name
+                )
+                continue
+            if node.marker_label != element.label:
+                problems.append(
+                    "%s is drawn as [%s] but the model declares it a %s"
+                    % (node.name, node.marker_label, element.label)
+                )
+            if node.body != element.first:
+                problems.append(
+                    "%s shows %r but the model says %r"
+                    % (node.name, node.body, element.first)
+                )
+            if element.carries_marker_description:
+                if not node.marker_description:
+                    problems.append(
+                        "%s is drawn with no description but the model declares one" % node.name
+                    )
+                elif node.marker_description != element.second:
+                    problems.append(
+                        "%s shows the description %r but the model says %r"
+                        % (node.name, node.marker_description, element.second)
+                    )
+            elif node.marker_description:
+                problems.append(
+                    "%s is drawn with the description %r, which the model does not put on a %s"
+                    % (node.name, node.marker_description, element.label)
+                )
 
-    # --- 5. edge labels ----------------------------------------------------
-    for line in page.split("\n"):
-        em = EDGE_RE.match(line)
-        if not em:
+    # --- 6. edge labels and topology, per view -----------------------------
+    for view in model.views:
+        visible, why = model.expected_for(view)
+        if visible is None:
             continue
-        for fragment in _strip_tags(em.group(2)).split("\n"):
-            fragment = _collapse(fragment)
-            if fragment and fragment not in model.flat:
-                problems.append("relationship label not in the model: %s" % fragment)
+        view_name = view["name"]
+        # The relationships the model projects into this view. A relationship whose two
+        # endpoints project onto the SAME element is internal to it and the renderer
+        # draws no edge for it; several relationships that project onto the SAME PAIR
+        # are drawn as ONE edge, so the pair is what is compared and the label is
+        # compared against the labels the model declares for that pair.
+        model_labels: dict[tuple[str, str], set[str]] = {}
+        expected_pairs: set[tuple[str, str]] = set()
+        for source, target, label in model.relationships:
+            near_source = model.nearest_visible(source, visible)
+            near_target = model.nearest_visible(target, visible)
+            if near_source is None or near_target is None or near_source == near_target:
+                continue
+            pair = (near_source, near_target)
+            expected_pairs.add(pair)
+            model_labels.setdefault(pair, set()).add(label)
+        drawn_pairs: set[tuple[str, str]] = set()
+        for source_id, target_id, label in page.edges.get(view_name, []):
+            source = page.nodes.get(view_name, {}).get(source_id)
+            target = page.nodes.get(view_name, {}).get(target_id)
+            if source is None or target is None:
+                problems.append(
+                    "an edge in %s refers to a node that is not drawn there (%s -> %s)"
+                    % (view_name, source_id, target_id)
+                )
+                continue
+            pair = (source.name, target.name)
+            drawn_pairs.add(pair)
+            if label not in model_labels.get(pair, set()):
+                problems.append(
+                    "the page draws %s -> %s %r, which the model does not declare"
+                    % (pair[0], pair[1], label)
+                )
+        for pair in sorted(expected_pairs - drawn_pairs):
+            problems.append(
+                "the model declares a relationship the page does not draw in %s: %s -> %s"
+                % (view_name, pair[0], pair[1])
+            )
+        for pair in sorted(drawn_pairs - expected_pairs):
+            problems.append(
+                "the page draws a relationship the model does not declare in %s: %s -> %s"
+                % (view_name, pair[0], pair[1])
+            )
+    for line in model.unparsed_relationships:
+        undecided.append("a relationship the model declares that this check cannot resolve: %s" % line)
 
-    # --- 6. element names, globally ----------------------------------------
-    model_names = set(model.elements.values())
-    drawn_names = {name for names in page_views.values() for name in names}
+    # --- 7. element names, globally ----------------------------------------
+    model_names = set(model.by_name)
+    drawn_names = {name for view in page.nodes for name in page.names_in(view)}
     if model_names != drawn_names:
         problems.append(
             "the page's elements and the model's elements differ. only in the model: %s | only on the page: %s"
@@ -323,6 +578,18 @@ def main() -> int:
             )
         )
 
+    # --- 8. nothing left undecided -----------------------------------------
+    for note in page.unreadable:
+        undecided.append(note)
+
+    if undecided:
+        for note in undecided:
+            print(
+                "UNCHECKED  architecture-diagram-check: %s -- this check has no rule that "
+                "decides it, so it cannot say the page is what the model says"
+                % note,
+                file=sys.stderr,
+            )
     if problems:
         for problem in problems:
             print("FAIL  architecture-diagram-check: %s" % problem, file=sys.stderr)
@@ -331,6 +598,8 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+    if undecided:
+        return 2
     print("ok    architecture-diagram-check: %s is what %s says" % (page_path, model_path))
     return 0
 
