@@ -1,0 +1,28 @@
+# Reproducible evidence only. No secrets, write tokens, deployment or governance mutation.
+name: causal-finality-research
+on:
+  push:
+    branches:
+      - research/causal-finality-proof-20261110
+  pull_request:
+    paths:
+      - architecture/research/agent-prison/**
+      - tests/test_agent_prison_falsification.py
+      - .github/workflows/causal-finality-research.yml
+permissions:
+  contents: read
+jobs:
+  bounded-model-and-real-boundary-falsifiers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Explore model, including three-replica reconciliation and counterexamples
+        run: node architecture/research/agent-prison/model-check.mjs
+      - name: Install isolated verifier dependencies
+        run: python -m pip install 'pytest==8.3.5' 'cryptography==44.0.3'
+      - name: Falsify current production-module guarantees (strict expected failures)
+        run: python -m pytest -q -rx tests/test_agent_prison_falsification.py
