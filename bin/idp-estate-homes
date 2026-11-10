@@ -64,6 +64,9 @@ OK, FAIL, UNKNOWN, NOT_HERE = "MEASURED_OK", "MEASURED_FAIL", "UNKNOWN", "NOT_HE
 # keeps the narrow case narrow: an `active` home that loses its DNS is still MEASURED_FAIL.
 NOT_PROVISIONED = "NOT_PROVISIONED"
 DEFAULT_TIMEOUT = 10.0
+VAULT_LOOKUP_TIMEOUT = (
+    6.0  # an unavailable vault cannot consume the entire executor budget
+)
 ISSUE_PREFIX = "[lane]"
 # Every probe names itself. MEASURED 2026-09-10 (bin/idp-otto-homes): api.groq.com answers
 # HTTP 403 with body "error code: 1010" to Python's default User-Agent -- Cloudflare's
@@ -73,7 +76,10 @@ USER_AGENT = "idp-estate-homes/1 (+bin/idp-estate-homes)"
 # Where a secret may live, in the order it is asked for. The estate's vault is read through
 # bin/idp-cloud, which never prints a value it returns into a log line or an argument.
 SECRET_SOURCES = {
-    "GROQ_API_KEY": [("human-groq", "GROQ_API_KEY"), ("litellm-upstream", "GROQ_API_KEY")],
+    "GROQ_API_KEY": [
+        ("human-groq", "GROQ_API_KEY"),
+        ("litellm-upstream", "GROQ_API_KEY"),
+    ],
     "LIFEBOAT_KEY": [("otto-lifeboat", "LIFEBOAT_KEY")],
 }
 
@@ -159,7 +165,10 @@ def probe(
         if isinstance(reason, socket.timeout):
             return FAIL, f"no answer: timed out after {timeout:.0f}s"
         if planned and _name_missing(reason):
-            return NOT_PROVISIONED, f"declared, never provisioned: no such name ({reason})"
+            return (
+                NOT_PROVISIONED,
+                f"declared, never provisioned: no such name ({reason})",
+            )
         return FAIL, f"no answer: {reason}"
     except (TimeoutError, socket.timeout):
         return FAIL, f"no answer: timed out after {timeout:.0f}s"
@@ -242,7 +251,9 @@ def grade_service(service: dict, env: dict, timeout: float, zone: str = "") -> l
     if tasks:
         with ThreadPoolExecutor(max_workers=min(8, len(tasks))) as pool:
             futures = {
-                pool.submit(probe, url, headers, timeout, expect, expect_any, planned): index
+                pool.submit(
+                    probe, url, headers, timeout, expect, expect_any, planned
+                ): index
                 for index, _base, url, headers, expect, expect_any, planned in tasks
             }
             for future in as_completed(futures):
@@ -261,7 +272,7 @@ def vault_get(entry: str, field: str = "") -> str:
             [str(IDP / "bin/idp-cloud"), "secret", "get", entry],
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=VAULT_LOOKUP_TIMEOUT,
             check=False,
         )
     except (OSError, subprocess.SubprocessError):
@@ -290,23 +301,29 @@ def resolve_secret(name: str, env: dict) -> str:
     return ""
 
 
-def grade(config: dict, env: dict, timeout: float = DEFAULT_TIMEOUT, only: str = "") -> list:
+def grade(
+    config: dict, env: dict, timeout: float = DEFAULT_TIMEOUT, only: str = ""
+) -> list:
     zone = _zone(config, env)
     resolved = dict(env)
-    needed = set()
-    for service in config["services"]:
-        for leg in service.get("legs") or []:
-            if leg.get("secret"):
-                needed.add(leg["secret"])
+    # Filter BEFORE lookup: previously --service still fetched unrelated
+    # secrets with up to three sequential 60s calls, hitting the 100s ceiling.
+    services = [
+        svc for svc in config["services"] if not only or svc.get("service") == only
+    ]
+    needed = {
+        leg["secret"]
+        for svc in services
+        for leg in svc.get("legs") or []
+        if leg.get("secret")
+    }
     for name in sorted(needed):
         value = resolve_secret(name, env)
         if value:
             resolved[name] = value
     results = []
-    for service in config["services"]:
-        if only and service.get("service") != only:
-            continue
-        results.extend(grade_service(service, resolved, timeout, zone))
+    for svc in services:
+        results.extend(grade_service(svc, resolved, timeout, zone))
     return results
 
 
@@ -383,7 +400,9 @@ def prove(service: dict) -> dict | None:
     for sel in selectors:
         for home in sel.get("reaches") or []:
             if home not in fate:
-                raise ValueError(f"{name}: selector {sel.get('name')} reaches unknown home {home}")
+                raise ValueError(
+                    f"{name}: selector {sel.get('name')} reaches unknown home {home}"
+                )
     domains = sorted(set().union(*fate.values(), *(set(s["fate"]) for s in selectors)))
 
     def survivors(lost: str) -> set:
@@ -408,14 +427,18 @@ def prove(service: dict) -> dict | None:
 
 
 def render_proofs(proofs: list) -> str:
-    lines = ["Topology proof (no network): after the loss of any one failure domain, can a client "
-             "still reach a home?"]
+    lines = [
+        "Topology proof (no network): after the loss of any one failure domain, can a client "
+        "still reach a home?"
+    ]
     for got in proofs:
         text = f"  {got['verdict']:<10} {got['service']}"
         if got["verdict"] == "FAILS":
             text += f": single point(s) of failure: {', '.join(got['single_points'])}"
         elif got["verdict"] == "UNDECLARED":
-            text += f": no fate declared for {', '.join(str(m) for m in got['missing'])}"
+            text += (
+                f": no fate declared for {', '.join(str(m) for m in got['missing'])}"
+            )
         else:
             text += f": {len(got['domains'])} domain(s) checked, none empties it"
         lines.append(text)
@@ -493,8 +516,9 @@ def _closing_note(service: str, rows: list) -> str:
             str(r.get("leg")) for r in unasked
         )
     if planned:
-        note += "; declared and never provisioned (not down, not counted): " + ", ".join(
-            str(r.get("leg")) for r in planned
+        note += (
+            "; declared and never provisioned (not down, not counted): "
+            + ", ".join(str(r.get("leg")) for r in planned)
         )
     return note
 
@@ -560,7 +584,9 @@ def file_issues(results: list, dry_run: bool = False) -> list:
             if dry_run:
                 actions.append(f"would open an issue for {service}")
                 continue
-            code, out, err = _gh(["issue", "create", "--title", title_prefix, "--body", body])
+            code, out, err = _gh(
+                ["issue", "create", "--title", title_prefix, "--body", body]
+            )
             actions.append(
                 f"opened an issue for {service}"
                 if code == 0
@@ -590,11 +616,118 @@ def file_issues(results: list, dry_run: bool = False) -> list:
     return actions
 
 
+def diagnostic_rows(config: dict, rows: list) -> list:
+    """Explain observable failure classes without inventing causes or logging secrets."""
+    legs = {
+        (svc["service"], leg["name"]): leg
+        for svc in config["services"]
+        for leg in svc.get("legs") or []
+    }
+    diagnosis = []
+    for row in rows:
+        verdict = row["verdict"]
+        if verdict == OK:
+            continue
+        leg = legs.get((row["service"], row["leg"]), {})
+        secret = (
+            leg.get("secret")
+            if verdict == UNKNOWN and "secret" in row["detail"]
+            else None
+        )
+        if secret:
+            why = f"{secret} absent from this runner; provider not queried"
+            remedy = f"Provision existing {secret} in runner secrets or approved vault, then retry; never log its value."
+        elif verdict == NOT_PROVISIONED:
+            why = "planned origin has no resolvable name"
+            remedy = (
+                "Provision the home and DNS, then prove its response independently."
+            )
+        elif verdict == NOT_HERE:
+            why = "loopback origin belongs to another host"
+            remedy = (
+                "Run the probe where that origin runs; do not label it down remotely."
+            )
+        elif verdict == UNKNOWN:
+            why = "probe never reached the origin; availability unknown"
+            remedy = "Inspect proxy/egress and retry from an independent network."
+        elif "no answer" in row["detail"]:
+            why = "no HTTP response; root cause not yet proven"
+            remedy = "Inspect origin logs, DNS, TLS and connectivity before attributing a cause."
+        else:
+            why = "HTTP response differs from declared expectation"
+            remedy = "Inspect HTTP response, contract and origin logs."
+        diagnosis.append(
+            {
+                "service": row["service"],
+                "leg": row["leg"],
+                "verdict": verdict,
+                "why": why,
+                "remedy": remedy,
+            }
+        )
+    for result in ladders(rows):
+        if result["state"] == "REDUNDANT":
+            continue
+        diagnosis.append(
+            {
+                "service": result["service"],
+                "leg": "ladder",
+                "verdict": result["state"],
+                "why": _LADDER_WHY[result["state"]] or "independence unproven",
+                "remedy": "Restore or prove another reachable provider and an independent selector.",
+            }
+        )
+    return diagnosis
+
+
+def offline_inventory(config: dict, env: dict, only: str = "") -> list:
+    """Local configuration only: no network, vault, subprocess or GitHub access."""
+    return [
+        {
+            "service": svc["service"],
+            "legs": [
+                {
+                    "name": leg.get("name"),
+                    "provider": leg.get("provider"),
+                    "provisioning": leg.get("state", "active"),
+                    "secret_name": leg.get("secret"),
+                    "secret_in_environment": bool(env.get(leg["secret"]))
+                    if leg.get("secret")
+                    else None,
+                }
+                for leg in svc.get("legs") or []
+            ],
+        }
+        for svc in config["services"]
+        if not only or svc["service"] == only
+    ]
+
+
+def render_diagnostics(rows: list, show_remedy: bool = False) -> str:
+    lines = ["Diagnostics (observations are not root-cause proofs):"]
+    for row in rows:
+        lines.extend(
+            [
+                f"  {row['service']} / {row['leg']} [{row['verdict']}]",
+                f"    WHY: {row['why']}",
+            ]
+        )
+        if show_remedy:
+            lines.append(f"    REMEDY: {row['remedy']}")
+    if not rows:
+        lines.append(
+            "  No failures observed. This does not guarantee future availability."
+        )
+    return "\n".join(lines)
+
+
 def main(argv: list) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default=str(DEFAULT_CONFIG))
     parser.add_argument("--json", action="store_true", help="print the board as data")
-    parser.add_argument("--no-file", action="store_true", help="do not open or close issues")
+    parser.add_argument(
+        "--no-file", action="store_true", help="do not open or close issues"
+    )
     parser.add_argument("--service", default="", help="grade one service only")
     parser.add_argument(
         "--prove",
@@ -607,6 +740,19 @@ def main(argv: list) -> int:
         help="exit 1 when a ladder is DOWN or SPOF, 2 when one is UNPROVEN, else 0",
     )
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
+    parser.add_argument(
+        "--why", action="store_true", help="explain verdicts without filing issues"
+    )
+    parser.add_argument(
+        "--remedy",
+        action="store_true",
+        help="suggest specific safe next actions without filing issues",
+    )
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="inspect declared homes and topology without network or vault",
+    )
     args = parser.parse_args(argv)
 
     env = dict(os.environ)
@@ -615,6 +761,74 @@ def main(argv: list) -> int:
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"BLIND  estate-homes  cannot read the ladder: {exc}", file=sys.stderr)
         return 2
+
+    if args.service and not any(
+        svc.get("service") == args.service for svc in config["services"]
+    ):
+        print(f"BLIND  estate-homes  unknown service: {args.service}", file=sys.stderr)
+        return 2
+
+    if args.offline and not args.prove:
+        inventory = offline_inventory(config, env, args.service)
+        try:
+            proofs = [
+                got
+                for svc in config["services"]
+                if (not args.service or svc.get("service") == args.service)
+                and (got := prove(svc))
+            ]
+        except ValueError as exc:
+            print(f"BLIND  estate-homes  invalid topology: {exc}", file=sys.stderr)
+            return 2
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "mode": "offline",
+                        "availability": "NOT_MEASURED",
+                        "inventory": inventory,
+                        "proofs": proofs,
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            print(
+                "OFFLINE: availability NOT_MEASURED; no network, vault or GitHub operations."
+            )
+            for svc in inventory:
+                print(f"  {svc['service']}")
+                for leg in svc["legs"]:
+                    line = (
+                        f"    {leg['name']} ({leg['provider']}; {leg['provisioning']})"
+                    )
+                    if leg["secret_name"]:
+                        state = (
+                            "present, not checked"
+                            if leg["secret_in_environment"]
+                            else "absent here; vault not checked"
+                        )
+                        line += f"; {leg['secret_name']}: {state}"
+                    print(line)
+            if proofs:
+                print(render_proofs(proofs))
+            if args.why or args.remedy:
+                for item in proofs:
+                    if item["verdict"] == "FAILS":
+                        print(
+                            f"  WHY: {item['service']} loses all paths when {', '.join(item['single_points'])} fails"
+                        )
+                        if args.remedy:
+                            print(
+                                "  REMEDY: declare and prove an independently reachable selector and home."
+                            )
+                if args.remedy:
+                    print(
+                        "  REMEDY: a credential-dependent origin needs a live probe after provisioning."
+                    )
+        if args.gate:
+            return 1 if any(p["verdict"] == "FAILS" for p in proofs) else 2
+        return 0
 
     if args.prove:
         try:
@@ -625,13 +839,21 @@ def main(argv: list) -> int:
                 and (got := prove(svc))
             ]
         except ValueError as exc:
-            print(f"BLIND  estate-homes  the topology is malformed: {exc}", file=sys.stderr)
+            print(
+                f"BLIND  estate-homes  the topology is malformed: {exc}",
+                file=sys.stderr,
+            )
             return 2
-        print(json.dumps({"proofs": proofs}, indent=2) if args.json else render_proofs(proofs))
+        print(
+            json.dumps({"proofs": proofs}, indent=2)
+            if args.json
+            else render_proofs(proofs)
+        )
         verdicts = {got["verdict"] for got in proofs}
         return 1 if "FAILS" in verdicts else 2 if "UNDECLARED" in verdicts else 0
 
     results = grade(config, env, timeout=args.timeout, only=args.service)
+    details = diagnostic_rows(config, results) if args.why or args.remedy else []
     if args.json:
         print(
             json.dumps(
@@ -649,6 +871,7 @@ def main(argv: list) -> int:
                         ),
                     },
                     "ladders": ladders(results),
+                    **({"diagnostics": details} if args.why or args.remedy else {}),
                 },
                 indent=2,
             )
@@ -656,8 +879,10 @@ def main(argv: list) -> int:
     else:
         print(f"Estate lanes, {_now()}")
         print(render(results))
+        if args.why or args.remedy:
+            print(render_diagnostics(details, show_remedy=args.remedy))
 
-    if not args.no_file:
+    if not (args.no_file or args.why or args.remedy):
         for action in file_issues(results):
             print(f"  filed  {action}")
     if args.gate:

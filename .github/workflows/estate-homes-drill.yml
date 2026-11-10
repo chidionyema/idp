@@ -31,6 +31,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
+          # The floor is UNKNOWN without its credential; do not misgrade it as down.
+          # These references yield empty values if the repo/org secrets are absent.
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          LIFEBOAT_KEY: ${{ secrets.LIFEBOAT_KEY }}
         run: |
           python3 bin/idp-estate-homes | tee drill.txt
       # What the Cloudflare credential can actually see. One call, names and counts only — no
