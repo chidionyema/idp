@@ -28,9 +28,23 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: grade every lane and file what is down
+        # A leg that needs a secret resolves it through bin/idp-estate-homes -> vault_get ->
+        # `bin/idp-cloud secret get <entry>`, which authenticates with the OCI CLI. These three
+        # variables are what make that read possible, and they are the same three every other
+        # vault-reading workflow passes (vault-reads.yml, vault-seed.yml) -- one contract, not a
+        # fourth copy (AGENTS.md section 9 R7: contracts duplicated, so they drift).
+        #
+        # Without them `vault_get` returned "" for every entry and the groq leg reported "secret
+        # not in this environment" on every scheduled run by construction: the drill was not
+        # measuring whether groq answers, it was measuring that CI had no credential. That is a
+        # lane that could never pass, which is indistinguishable from a lane that is down -- and
+        # it held llm-router open (#7844).
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
         run: |
           python3 bin/idp-estate-homes | tee drill.txt
       - name: keep the board
