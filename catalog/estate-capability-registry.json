@@ -37533,12 +37533,15 @@
           "--json",
           "--limit",
           "--no-file",
+          "--offline",
           "--prove",
+          "--remedy",
           "--search",
           "--service",
           "--state",
           "--timeout",
-          "--title"
+          "--title",
+          "--why"
         ],
         "outputs": [
           "stdout",
