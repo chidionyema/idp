@@ -112,10 +112,12 @@ def deterministic_doc_repair(status: str, path: str):
     }
 
 
-def preflight(*, repair_docs: bool = False, allow_governance_paths: bool = False) -> dict:
+def preflight(*, repair_docs: bool = False, allow_governance_paths: bool = False,
+              allow_empty: bool = False) -> dict:
     paths = staged_paths()
     if not paths:
-        return {"ok": False, "reason": "EMPTY_PATCH", "repairs": [], "failed_paths": []}
+        return {"ok": allow_empty, "reason": "EMPTY_COMMIT_ALLOWED" if allow_empty else "EMPTY_PATCH",
+                "repairs": [], "failed_paths": [], "authority": "PREFLIGHT_ONLY"}
     repairs = []
     failed = []
     for status, path in paths:
@@ -139,12 +141,15 @@ def preflight(*, repair_docs: bool = False, allow_governance_paths: bool = False
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repair-evidence-docs", action="store_true")
+    parser.add_argument("--allow-empty", action="store_true",
+                        help="general precommit only: keep existing empty-commit behavior")
     parser.add_argument("--allow-governance-paths", action="store_true",
                         help="precommit-only: protected authorization still enforced by external gates")
     args = parser.parse_args()
     try:
         report = preflight(repair_docs=args.repair_evidence_docs,
-                           allow_governance_paths=args.allow_governance_paths)
+                           allow_governance_paths=args.allow_governance_paths,
+                           allow_empty=args.allow_empty)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         report = {"ok": False, "reason": "UNKNOWN_PREFLIGHT_ERROR",
                   "detail": type(error).__name__, "authority": "PREFLIGHT_ONLY"}
