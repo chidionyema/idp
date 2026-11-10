@@ -1,101 +1,339 @@
-#!/usr/bin/env bash
-# architecture-diagram-check: the committed page must be what the model says.
-#
-# WHY THIS EXISTS. The architecture page is generated from architecture/workspace.dsl.
-# Between 2026-08-28 and 2026-11-10 nobody could tell that the committed page had
-# drifted from the model: it still claimed Kanboard was the board (retired 2026-08-26,
-# crew#282), and every closing mermaid fence was glued to the last line, so GitHub read
-# the whole page as one unterminated code block and rendered nothing at all. A published
-# diagram that is quietly wrong is worse than no diagram, because it is read as current.
-#
-# WHAT IT CHECKS. Three things, all decided from BYTES -- no docker, no network, and no
-# rendering, so it runs in seconds on every pull request:
-#
-#   1. FENCES. Every mermaid block opens and closes, and no fence is glued to other text.
-#      (structurizr writes each .mmd with NO trailing newline, so a renderer that does
-#      `cat "$f"; echo '```'` produces "  end```" -- and the page stops rendering.)
-#   2. VIEWS. The set of views on the page is exactly the set the model declares. A view
-#      added to the model and not regenerated is drift; a view deleted from the model and
-#      still on the page is drift.
-#   3. BOXES. Every box on the page is a box the model declares. The page is a RENDERING
-#      of the model, so any label, description or technology on the page that is not in
-#      the model is a claim the model does not make -- which is exactly how a retired
-#      component keeps showing up as the live one.
-#
-# `architecture/render --check` is the byte-exact check (it re-renders and diffs) and
-# needs the structurizr image. This one needs nothing, so it can run everywhere.
-#
-# Usage: bash bin/architecture-diagram-check
-# Exit 0 = the page is what the model says. Exit 1 = it is not. Exit 2 = cannot be read.
-set -uo pipefail
+#!/usr/bin/env python3
+"""architecture-diagram-check: the committed page must be what the model says.
 
-root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-model="$root/architecture/workspace.dsl"
-page="$root/docs/explanation/architecture/index.md"
-fail=0
+WHY THIS EXISTS. The architecture page is generated from architecture/workspace.dsl.
+A published diagram that is quietly wrong is worse than no diagram, because it is read
+as current: a page that still names a retired component, or whose mermaid fences never
+close, looks exactly like a page that is current. GitHub renders a page whose fences do
+not close as ONE unterminated code block, so the diagrams do not render at all.
 
-fail() { echo "FAIL  architecture-diagram-check: $*" >&2; fail=1; }
+WHAT IT CHECKS. Six things, all decided from BYTES -- no docker, no network, and no
+rendering, so it runs in seconds on every push and on a laptop:
 
-[ -f "$model" ] || { echo "FAIL  architecture-diagram-check: $model is missing" >&2; exit 2; }
-[ -f "$page" ]  || { echo "FAIL  architecture-diagram-check: $page is missing" >&2; exit 2; }
+  1. FENCES. Every mermaid block opens and closes, and no fence is glued to other text.
+     (structurizr writes each .mmd with NO trailing newline, so a renderer that does
+     `cat "$f"; echo '```'` produces "  end```" -- and the page stops rendering.)
+  2. VIEWS. The set of views on the page is exactly the set the model declares. A view
+     added to the model and not regenerated is drift; a view deleted from the model and
+     still on the page is drift.
+  3. ELEMENTS, PER VIEW. The elements drawn in each view are exactly the elements the
+     model puts in that view. This is the OTHER direction of the box check: without it,
+     a page that simply DROPS a declared element -- the guardian, the gate -- is "ok".
+  4. NODE TEXT. Every node's label, description and technology is a claim the model
+     makes. The renderer writes an element's description inside the type marker
+     ("[Container: <description>]"), so the marker is taken apart by TYPE, not by
+     bracket: stripping the whole bracket silently discarded every container
+     description, which is most of what the page says about that container.
+  5. EDGE LABELS. Every relationship label on the page is a claim the model makes.
+     Relationship text is the model's own prose about who does what, and a page that
+     keeps a stale relationship label is lying in the same way a stale node is.
+  6. NAMES. Every element name the model declares is drawn, and every name on the page
+     is declared -- so a renamed element cannot leave half the page talking about the
+     old name.
 
-# --- 1. fences ---------------------------------------------------------------
-opened=$(grep -c '```mermaid' "$page" || true)
-closed=$(grep -cE '^[[:space:]]*```[[:space:]]*$' "$page" || true)
-glued=$(grep -n '```' "$page" | grep -vE ':[[:space:]]*```mermaid[[:space:]]*$' \
-                                             | grep -vE ':[[:space:]]*```[[:space:]]*$' || true)
-if [ "${opened:-0}" -ne "${closed:-0}" ]; then
-  fail "$page opens $opened mermaid blocks and closes $closed -- the page will not render"
-fi
-if [ -n "$glued" ]; then
-  fail "a mermaid fence is not alone on its line:"
-  echo "$glued" >&2
-fi
+`architecture/render --check` is the byte-exact check (it re-renders and diffs) and
+needs the structurizr image. This one needs nothing, so it can run everywhere.
 
-# --- 2. views ----------------------------------------------------------------
-# The view key is the LAST quoted string on a view declaration line.
-model_views=$(grep -oE '^[[:space:]]*(systemContext|container|component|deployment|dynamic)[[:space:]].*"[^"]*"[[:space:]]*\{' "$model" \
-  | grep -oE '"[^"]*"[[:space:]]*\{$' | sed 's/"[[:space:]]*{$//; s/^"//; s/"$//' | sort -u)
-page_views=$(grep -E '^## ' "$page" | sed 's/^## //' | sort -u)
-if [ "$model_views" != "$page_views" ]; then
-  fail "the page's views and the model's views differ."
-  echo "  only in the model: $(comm -23 <(echo "$model_views") <(echo "$page_views") | tr '\n' ' ')" >&2
-  echo "  only on the page:  $(comm -13 <(echo "$model_views") <(echo "$page_views") | tr '\n' ' ')" >&2
-fi
+WHAT IT DOES NOT DECIDE. The membership of a view the model writes as `include *` is
+Structurizr's scope rule, not the model's text: this check derives it (the system
+itself plus everything outside it for a systemContext view; everything except the
+system for a container view) and verifies the page against THAT. A view kind this file
+has no rule for is reported as UNCHECKED rather than silently passed, so a check can
+never report "ok" about something it did not look at.
 
-# --- 3. boxes ----------------------------------------------------------------
-# The model's text, whitespace-collapsed, so a description that wraps in the DSL still
-# matches the single line the renderer produced.
-model_text=$(tr '\n' ' ' < "$model" | tr -s ' ' | sed 's/^ //')
-# Every rendered node: the text between > and </div>, with <br /> turned into a space.
-page_text=$(grep -oE '^[[:space:]]+[0-9]+\["' "$page" | grep -c . >/dev/null 2>&1; \
-            grep -E '^[[:space:]]+[0-9]+\["' "$page" \
-            | sed 's/.*\["//; s/"\]$//' \
-            | sed 's#</div>#\n#g; s#<br /># #g; s#<[^>]*>##g' \
-            | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
-            | grep -v '^$')
-missing=0
-while IFS= read -r fragment; do
-  # Strip the renderer's own type marker, then look for the fragment in the model.
-  probe=$(printf '%s' "$fragment" | sed 's/^\[[^]]*\] *//')
-  [ -z "$probe" ] && continue
-  case "$probe" in
-    *"["*) probe=$(printf '%s' "$probe" | sed 's/^\[[^]]*\]//; s/^ *//') ;;
-  esac
-  [ -z "$probe" ] && continue
-  collapsed=$(printf '%s' "$probe" | tr '\n' ' ' | tr -s ' ')
-  case "$model_text" in
-    *"$collapsed"*) ;;
-    *) echo "  not in the model: $collapsed" >&2; missing=1 ;;
-  esac
-done <<EOF
-$page_text
-EOF
-[ "$missing" -eq 1 ] && fail "the page states something the model does not."
+Usage: bash bin/architecture-diagram-check
+Exit 0 = the page is what the model says. Exit 1 = it is not. Exit 2 = cannot be read.
+"""
 
-if [ "$fail" -ne 0 ]; then
-  echo "  run 'make diagrams' to regenerate the page from architecture/workspace.dsl" >&2
-  exit 1
-fi
-echo "ok    architecture-diagram-check: $page is what $model says"
-exit 0
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+import sys
+
+# ---------------------------------------------------------------- the model ---
+
+ELEMENT_RE = re.compile(
+    r'^\s*([a-z_][A-Za-z0-9_]*)\s*=\s*(person|softwareSystem|container)\s+"([^"]+)"'
+)
+VIEW_RE = re.compile(
+    r'^\s*(systemContext|container|component|deployment|dynamic)\s+'
+    r'([A-Za-z0-9_.-]+)\s+"([^"]+)"(?:\s+"([^"]+)")?\s*\{'
+)
+INCLUDE_RE = re.compile(r'^\s*include\s+(\S+)\s*$')
+
+# The elements the model declares, with the alias they are declared under.
+ELEMENT_KINDS = ("person", "softwareSystem", "container")
+
+
+def _strip_tags(text: str) -> str:
+    """The page's HTML to plain text.
+
+    ONLY the renderer's own tags go. Angle brackets that are TEXT -- a description that
+    names a path template like `secrets/<env>/<name>.yaml` -- are not tags, and eating
+    them turns a claim the model makes into one the model does not, which is the exact
+    failure this check exists to catch.
+    """
+    text = re.sub(r"</?div[^>]*>", "\n", text)
+    text = text.replace("<br />", " ")
+    return text
+
+
+def _collapse(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+class Model:
+    """The model: its elements, their parents, and the membership of each view."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.flat = _collapse(text)
+        self.elements: dict[str, str] = {}      # alias -> name
+        self.kinds: dict[str, str] = {}          # alias -> kind
+        self.children: dict[str, list[str]] = {}  # software system alias -> child aliases
+        self.views: list[dict] = []
+        self._parse()
+
+    def _parse(self) -> None:
+        lines = self.text.split("\n")
+        # --- elements, and which software system each one sits inside ---
+        stack: list[str] = []          # aliases of the blocks we are inside
+        in_views = False
+        for raw in lines:
+            line = raw.rstrip()
+            stripped = line.strip()
+
+            if re.match(r"^views\s*\{", stripped):
+                in_views = True
+
+            if not in_views:
+                m = ELEMENT_RE.match(line)
+                if m:
+                    alias, kind, name = m.group(1), m.group(2), m.group(3)
+                    self.elements[alias] = name
+                    self.kinds[alias] = kind
+                    for owner in stack:
+                        self.children.setdefault(owner, []).append(alias)
+                # track block nesting by alias-qualified declaration
+                decl = re.match(
+                    r"^\s*([a-z_][A-Za-z0-9_]*)\s*=\s*\w+\s+\"[^\"]*\"(?:\s+\"[^\"]*\")*\s*\{",
+                    line,
+                )
+                if decl:
+                    stack.append(decl.group(1))
+                    continue
+            else:
+                vm = VIEW_RE.match(line)
+                if vm:
+                    kind, ident, title, key = vm.groups()
+                    name = key if kind == "deployment" and key else title
+                    self.views.append(
+                        {"kind": kind, "ident": ident, "name": name, "includes": []}
+                    )
+                    continue
+                im = INCLUDE_RE.match(line)
+                if im and self.views:
+                    self.views[-1]["includes"].append(im.group(1))
+                    continue
+
+            if stripped == "}":
+                if stack:
+                    stack.pop()
+
+    def resolve(self, ident: str) -> str | None:
+        """`genesis.guardian` -> the name of the element declared as `guardian`."""
+        alias = ident.split(".")[-1]
+        return self.elements.get(alias)
+
+    def expected_for(self, view: dict) -> tuple[set[str] | None, str]:
+        """The elements the model puts in this view, or (None, why) if unknowable."""
+        includes = view["includes"]
+        if includes and includes != ["*"]:
+            names = set()
+            for ident in includes:
+                resolved = self.resolve(ident)
+                if resolved is None:
+                    return None, "an include names %r, which the model does not declare" % ident
+                names.add(resolved)
+            return names, ""
+        if includes != ["*"]:
+            return None, "the view declares no include"
+        ident = view["ident"]
+        owner = ident.split(".")[-1]
+        if owner not in self.elements:
+            return None, "the view names %r, which the model does not declare" % ident
+        # The rule is the VIEW's kind, not the element's: `container genesis` is a view of
+        # the software system's children, and `systemContext genesis` is a view of the
+        # system plus everything outside it.
+        if view["kind"] == "container":
+            # `container S` with include * draws S's children and the elements they touch,
+            # but not S itself.
+            return set(self.elements.values()) - {self.elements[owner]}, ""
+        if view["kind"] == "systemContext":
+            # `systemContext S` with include * draws S and everything OUTSIDE it.
+            inside = {self.elements[a] for a in self.children.get(owner, [])}
+            if not inside:
+                return None, "the model does not say which elements are inside %r" % ident
+            outside = set(self.elements.values()) - inside
+            return outside | {self.elements[owner]}, ""
+        return None, "a %s view with include * is not a rule this check knows" % view["kind"]
+
+
+# ----------------------------------------------------------------- the page ---
+
+FENCE_OPEN = re.compile(r"^## (.+)$")
+NODE_RE = re.compile(r'^\s*(\d+)\["(.*)"\]\s*$')
+EDGE_RE = re.compile(r'^\s*(\d+)-\.?\s*"(.*)"\s*(?:\.-+>|-->|-.+->)\s*(\d+)\s*$')
+BOLD_RE = re.compile(r"font-weight: bold'>([^<]*)</div>")
+MARKER_RE = re.compile(r"^\[(.+)\]$")
+
+
+def _views_of(page: str) -> dict[str, list[str]]:
+    """Per view: the element names drawn (the renderer's bold labels) and their lines."""
+    out: dict[str, list[str]] = {}
+    current = None
+    for line in page.split("\n"):
+        fm = FENCE_OPEN.match(line)
+        if fm:
+            current = fm.group(1).strip()
+            out.setdefault(current, [])
+            continue
+        if current is None:
+            continue
+        for bm in BOLD_RE.finditer(line):
+            out[current].append(bm.group(1))
+    return out
+
+
+def main() -> int:
+    root = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True
+    ).stdout.strip() or os.getcwd()
+    model_path = os.path.join(root, "architecture", "workspace.dsl")
+    page_path = os.path.join(root, "docs", "explanation", "architecture", "index.md")
+
+    for path in (model_path, page_path):
+        if not os.path.isfile(path):
+            print("FAIL  architecture-diagram-check: %s is missing" % path, file=sys.stderr)
+            return 2
+
+    model = Model(open(model_path, encoding="utf-8").read())
+    page = open(page_path, encoding="utf-8").read()
+    problems: list[str] = []
+
+    # --- 1. fences ---------------------------------------------------------
+    opened = page.count("```mermaid")
+    closed = len(re.findall(r"^[ \t]*```[ \t]*$", page, re.M))
+    glued = [
+        line
+        for line in page.split("\n")
+        if "```" in line
+        and not re.match(r"^[ \t]*```mermaid[ \t]*$", line)
+        and not re.match(r"^[ \t]*```[ \t]*$", line)
+    ]
+    if opened != closed:
+        problems.append(
+            "%s opens %d mermaid blocks and closes %d -- the page will not render"
+            % (page_path, opened, closed)
+        )
+    if glued:
+        problems.append("a mermaid fence is not alone on its line: " + " | ".join(glued))
+
+    # --- 2. views ----------------------------------------------------------
+    model_view_names = sorted({view["name"] for view in model.views})
+    page_view_names = sorted(
+        m.group(1).strip() for m in (FENCE_OPEN.match(l) for l in page.split("\n")) if m
+    )
+    if model_view_names != page_view_names:
+        only_model = [v for v in model_view_names if v not in page_view_names]
+        only_page = [v for v in page_view_names if v not in model_view_names]
+        problems.append(
+            "the page's views and the model's views differ. only in the model: %s | only on the page: %s"
+            % (" ".join(only_model), " ".join(only_page))
+        )
+
+    # --- 3. elements, per view --------------------------------------------
+    page_views = _views_of(page)
+    for view in model.views:
+        expected, why = model.expected_for(view)
+        if expected is None:
+            print(
+                "UNCHECKED  architecture-diagram-check: %s -- %s"
+                % (view["name"], why),
+                file=sys.stderr,
+            )
+            continue
+        drawn = set(page_views.get(view["name"], []))
+        if expected != drawn:
+            problems.append(
+                "the elements drawn in %s are not the model's: only in the model: %s | only on the page: %s"
+                % (
+                    view["name"],
+                    " ".join(sorted(expected - drawn)),
+                    " ".join(sorted(drawn - expected)),
+                )
+            )
+
+    # --- 4. node text ------------------------------------------------------
+    node_text: list[str] = []
+    for line in page.split("\n"):
+        nm = NODE_RE.match(line)
+        if not nm:
+            continue
+        for fragment in _strip_tags(nm.group(2)).split("\n"):
+            fragment = _collapse(fragment)
+            if fragment:
+                node_text.append(fragment)
+    model_flat = re.sub(r"\s+", "", model.flat).lower()
+    for fragment in node_text:
+        marker = MARKER_RE.match(fragment)
+        if marker:
+            inner = marker.group(1)
+            typ, _, desc = inner.partition(":")
+            typ_flat = re.sub(r"\s+", "", typ).lower()
+            if typ_flat and typ_flat not in model_flat:
+                problems.append("type not in the model: %s" % typ)
+            fragment = _collapse(desc)
+            if not fragment:
+                continue
+        if fragment and fragment not in model.flat:
+            problems.append("not in the model: %s" % fragment)
+
+    # --- 5. edge labels ----------------------------------------------------
+    for line in page.split("\n"):
+        em = EDGE_RE.match(line)
+        if not em:
+            continue
+        for fragment in _strip_tags(em.group(2)).split("\n"):
+            fragment = _collapse(fragment)
+            if fragment and fragment not in model.flat:
+                problems.append("relationship label not in the model: %s" % fragment)
+
+    # --- 6. element names, globally ----------------------------------------
+    model_names = set(model.elements.values())
+    drawn_names = {name for names in page_views.values() for name in names}
+    if model_names != drawn_names:
+        problems.append(
+            "the page's elements and the model's elements differ. only in the model: %s | only on the page: %s"
+            % (
+                " ".join(sorted(model_names - drawn_names)),
+                " ".join(sorted(drawn_names - model_names)),
+            )
+        )
+
+    if problems:
+        for problem in problems:
+            print("FAIL  architecture-diagram-check: %s" % problem, file=sys.stderr)
+        print(
+            "  run 'architecture/render' to regenerate the page from architecture/workspace.dsl",
+            file=sys.stderr,
+        )
+        return 1
+    print("ok    architecture-diagram-check: %s is what %s says" % (page_path, model_path))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

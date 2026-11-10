@@ -48,8 +48,38 @@ test -n "$(ls -A "$out"/*.mmd 2>/dev/null)" || { echo "render produced no diagra
 # the model's own declaration order is a fact about them. A new view in the model now
 # reaches the page without anyone editing this script, and a renamed view can no longer be
 # silently dropped from the page.
-model_views=$(grep -oE '^[[:space:]]*(systemContext|container|component|deployment|dynamic)[[:space:]].*"[^"]*"[[:space:]]*\{' "$here/workspace.dsl" \
-  | grep -oE '"[^"]*"[[:space:]]*\{$' | sed 's/"[[:space:]]*{$//; s/^"//; s/"$//' | tr '\n' ' ')
+#
+#
+# The view KEY is read by the view's own KIND, because the DSL has two forms:
+#   deployment <id> "<title>" "<key>"   -- the key is the LAST quoted string
+#   <keyword> <id> "<key>"              -- the key is the FIRST (and only) quoted string
+# Reading one rule for both is how a view ends up named "Laptop - backup environment"
+# instead of "Laptop", or how a description is read as the name. The kind decides.
+# The view NAME is the FIRST quoted string on the declaration line, not the last. The DSL is
+# `<keyword> <identifier> "<name>" ["<description>"] {`, so a view that carries a description
+# has two quoted strings, and reading the LAST one took the description for the name. It then
+# word-split into "the model declares view Who but the render produced no Who.mmd" and refused
+# a view that was perfectly valid. Reading the FIRST quoted string is the name in both cases.
+model_views=$(awk '
+  /^[[:space:]]*(systemContext|container|component|deployment|dynamic)[[:space:]]/ {
+    kw = $0; sub(/^[[:space:]]*/, "", kw); split(kw, a, /[[:space:]]+/); kw = a[1]
+    n = 0; first = ""; last = ""
+    rest = $0
+    while (match(rest, /"[^"]*"/)) {
+      s = substr(rest, RSTART + 1, RLENGTH - 2)
+      rest = substr(rest, RSTART + RLENGTH)
+      n++
+      if (n == 1) first = s
+      last = s
+    }
+    if (n == 0) next
+    # A deployment view is `deployment <id> "<title>" "<key>"` -- the KEY is the LAST string.
+    # Every other view is `<keyword> <id> "<key>"` -- the KEY is the FIRST string, and a
+    # second string (a description) is not part of that form and is ignored by structurizr.
+    if (kw == "deployment") print (n >= 2 ? last : first)
+    else print first
+  }
+' "$here/workspace.dsl" | tr '\n' ' ')
 test -n "$model_views" || { echo "the model declares no views"; exit 1; }
 for name in $model_views; do
   test -f "$out/structurizr-$name.mmd" || { echo "the model declares view $name but the render produced no $name.mmd"; exit 1; }
@@ -91,14 +121,29 @@ if [ "$mode" = "--check" ]; then
   if [ ! -f "$page" ]; then
     echo "FAIL architecture/render: $page is missing; run architecture/render"; exit 1
   fi
-  if render_page | diff -u "$page" - > /tmp/architecture-render.diff 2>&1; then
+  # The diff goes to a file of its own: a fixed path in /tmp is shared between two runs on
+  # the same machine, and the second one reads the first one's diff.
+  diff_file="$(mktemp "${TMPDIR:-/tmp}/architecture-render.diff.XXXXXX")"
+  trap 'rm -f "$diff_file"' EXIT
+  if render_page | diff -u "$page" - > "$diff_file" 2>&1; then
     echo "ok    architecture/render: $page matches the model"
     exit 0
   fi
   echo "FAIL architecture/render: $page is not what architecture/workspace.dsl says; run architecture/render"
-  sed -n '1,40p' /tmp/architecture-render.diff
+  sed -n '1,40p' "$diff_file"
   exit 1
 fi
 
-render_page > "$page"
+# The page is assembled into a TEMP file and MOVED into place.
+#
+# Why: bash truncates the target the moment the compound command STARTS, so writing the page
+# directly means a failure inside the block leaves the committed page holding a corpse. The move
+# is atomic, so the committed page is either the old one or the new one, never a half-written
+# one -- the same rule the sibling repository's renderer learned the hard way.
+tmp="$page.tmp.$$"
+trap 'rm -f "$tmp"' EXIT
+
+render_page > "$tmp"
+mv "$tmp" "$page"
+
 echo "rendered $(echo "$model_views" | wc -w | tr -d ' ') views -> $page"
