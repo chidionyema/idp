@@ -248,6 +248,70 @@ if not isinstance(d, dict) or "Label" not in d:
         fi
         continue ;;
     esac
+    # SQL IS DECLARATIVE AND MUST STILL PARSE (2026-11-10). The instruction ledger's table lives
+    # in platform/catalog/schema/001_catalog.sql, and this gate refused to push it -- the same
+    # defect class as the plist note above, one extension over: a .sql file is neither shell nor
+    # Python, so the estate's own schema could not leave the laptop. The table it carries IS the
+    # contract the instruction gate enforces against, so refusing it refused the fix.
+    #
+    # It is not waved through. sqlite3 is NOT the judge: the estate's SQL is PostgreSQL
+    # (create extension, create schema, plpgsql), and sqlite3 rejects 10 of the 11 tracked
+    # .sql files -- refusing the estate's own work, which is the same defect in the other
+    # direction. What IS checked here is what a text gate can honestly decide without a
+    # PostgreSQL server: the file parses as UTF-8, is not empty, and has balanced quotes and
+    # dollar-quotes, so a truncated or half-pasted statement is still refused at the door.
+    case "$f" in
+      *.sql)
+        if ! python3 -c '
+import sys
+raw = open(sys.argv[1], "rb").read()
+try:
+    sql = raw.decode("utf-8")
+except UnicodeDecodeError as e:
+    sys.stderr.write("not UTF-8: %s\n" % e); raise SystemExit(1)
+if not sql.strip():
+    sys.stderr.write("empty SQL file\n"); raise SystemExit(1)
+# Balanced single quotes, honouring "" escapes and -- / /* */ comments, plus $$ quoting.
+i, n, in_s, in_dollar = 0, len(sql), False, None
+while i < n:
+    c = sql[i]
+    if in_dollar is not None:
+        tag = "$" + in_dollar + "$"
+        if sql.startswith(tag, i):
+            i += len(tag); in_dollar = None; continue
+        i += 1; continue
+    if in_s:
+        if c == "\x27":
+            if i + 1 < n and sql[i + 1] == "\x27":
+                i += 2; continue
+            in_s = False
+        i += 1; continue
+    if c == "-" and sql.startswith("--", i):
+        j = sql.find("\n", i); i = n if j < 0 else j + 1; continue
+    if c == "/" and sql.startswith("/*", i):
+        j = sql.find("*/", i + 2)
+        if j < 0:
+            sys.stderr.write("unterminated /* comment\n"); raise SystemExit(1)
+        i = j + 2; continue
+    if c == "\x27":
+        in_s = True; i += 1; continue
+    if c == "$":
+        j = sql.find("$", i + 1)
+        if j > i:
+            tag = sql[i + 1:j]
+            if tag == "" or tag.replace("_", "").isalnum():
+                in_dollar = tag; i = j + 1; continue
+    i += 1
+if in_s:
+    sys.stderr.write("unbalanced single quote -- a statement was cut off\n"); raise SystemExit(1)
+if in_dollar is not None:
+    sys.stderr.write("unterminated $%s$ block\n" % in_dollar); raise SystemExit(1)
+' "$f" >&2; then
+          echo "pre-push REFUSED: $f is not parseable SQL" >&2
+          exit 1
+        fi
+        continue ;;
+    esac
     case "$f" in *.tf|*.tfvars|*.hcl|*.json|*.md|*.txt|*.yml|*.yaml) continue ;; esac
     # Unknown: no shebang, not a known extension. Accept it when EITHER parser reads it --
     # a file with no shebang is still one of the two languages, and refusing it would be the
