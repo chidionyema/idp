@@ -294,3 +294,50 @@ laws:
               }
       check:
         type: executor_permission
+
+  - id: GOV-014
+    law: >-
+      A published architecture diagram must be what its model says. The page is generated
+      from architecture/workspace.dsl, so the page and the model cannot be allowed to
+      disagree: a diagram that is quietly out of date is worse than no diagram, because
+      it is read as current.
+    source: >-
+      founder, 2026-11-10 ("give all components architecture diagrams in GitHub").
+      Measured the same day: the shipped page opened 4 mermaid blocks and closed 0 (every
+      closing fence was glued to the last line, so GitHub rendered the whole page as one
+      broken block), and it still claimed Kanboard was the board two months after the
+      model retired it (crew#282).
+    severity: block
+    check:
+      type: command
+      argv: ["bash", "bin/architecture-diagram-check"]
+    falsifier:
+      files:
+        architecture/workspace.dsl: |
+          workspace "Estate" "The known-bad fixture: a model that says the board is GitHub Issues." {
+              model {
+                  founder = person "Founder" "Reads the board, ticks the box."
+                  platform = softwareSystem "idp — the platform" "One of each layer." {
+                      board = container "Board" "GitHub Issues, chidionyema/crew" "STANDARDS row 27."
+                  }
+              }
+              views {
+                  systemContext platform "Context" {
+                      include *
+                      autolayout lr
+                  }
+              }
+          }
+        docs/explanation/architecture/index.md: |
+          # Architecture
+
+          ## Context
+
+          ```mermaid
+          graph LR
+            1["<div style='font-weight: bold'>Board</div><div style='font-size: 70%; margin-top: 0px'>[Container: STANDARDS row 27.]</div><div style='font-size: 80%; margin-top:10px'>Kanboard 1.2.46, SQLite</div>"]
+            style 1 fill:#438dd5,stroke:#2e6295,color:#ffffff
+          end```
+      check:
+        type: command
+        argv: ["bash", "bin/architecture-diagram-check"]

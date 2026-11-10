@@ -31,6 +31,20 @@ workspace "Estate" "The platform, the products under it, and the substrate under
             ci       = container "CI" "GitHub Actions" "The gate. A repo with no CI gets a gate before it gets a merge."
             catalog  = container "Catalog source" "idp/bin/catalog-gen" "Generates catalog-info.yaml from the LAW 39 inventory. Never hand-edited."
             docs     = container "Docs tree" "Markdown, Diataxis, MkDocs" "Lives beside the code it describes. Rendered by the portal."
+
+            // --- The control plane: the parts that decide, gate and deliver. -----------
+            // Every container below names the source it is derived from, so the diagram is
+            // traceable to repository bytes rather than to a hand-drawn picture.
+            greenlane = container "Greenlane" "greenlane/engine.py" "The gated trunk: a serial trunk that batches, bisects and lands a PR only when its required checks passed at that exact sha (I1)."
+            spine     = container "Event spine" "spine/, spine/bridge.py" "The environment emits facts and an agent responds: Flux -> NATS JetStream -> the bridge -> Temporal -> a receipt."
+            factory   = container "Factory" "factory/" "Collects the estate's capabilities into the registry the catalogue reads."
+            census    = container "Census" "catalog/census/" "Runs the collectors, joins what they saw, and says what is missing: MANAGED or UNCATALOGUED with a reason."
+            policy    = container "Operating model policy" "policy/operating_model.rego" "The estate-as-platform rules as a gate rather than a paragraph: the founder approves, agents implement."
+            executor  = container "Executor" "catalog/critical-functions.json (executor)" "The executor daemon. Every agent's tool calls go through this door; without it no agent can run a command."
+            bus       = container "Estate bus" "catalog/critical-functions.json (estate-bus)" "The event bus. State is streamed over it; without it the surfaces go stale and agents cannot be told what happened."
+            memory    = container "Memory plane" "catalog/critical-functions.json (memory-plane)" "The estate's single memory plane: brief, recall, remember."
+            lanes     = container "Critical lanes" "platform/ladder/critical-lanes.json" "The estate's critical lanes as data. A home is a failure domain: a place the service runs that can die without taking the others with it."
+            probes    = container "Probes" "probes/" "What the drills assert, as code: the front door, the catalogue, Langfuse, Signoz, the backstages."
         }
 
         prospector = softwareSystem "prospector" "The product. Stays the product. Lives outside idp on purpose."
@@ -53,6 +67,21 @@ workspace "Estate" "The platform, the products under it, and the substrate under
         platform.routing -> platform.secrets "reads provider keys"
         platform.sched   -> platform.ci      "triggers"
         platform.ci      -> platform.secrets "reads, never prints"
+
+        // The control plane reads the catalog and the policy, and writes to the board.
+        platform.greenlane -> platform.ci      "grades the PR; lands by squash only when green"
+        platform.greenlane -> platform.board  "writes the observation, never the approval"
+        platform.spine     -> platform.bus     "the fabric between the environment and the agent's clock"
+        platform.factory   -> platform.catalog "collects the capabilities the catalogue publishes"
+        platform.census    -> platform.catalog "joins what it saw against the catalogue"
+        platform.policy    -> platform.greenlane "the rules the gated trunk enforces"
+        platform.probes    -> platform.lanes   "measures each lane; the drill decides health"
+        platform.lanes     -> platform.gateway "the published hostnames"
+        platform.executor  -> platform.secrets "runs a command under scoped authority"
+        platform.memory    -> platform.bus     "state is streamed, not polled"
+
+        // The estate's own critical functions, as the registry names them.
+        platform.routing -> platform.lanes "the lanes the running router serves"
 
         prospector -> platform.routing "every model call goes through the one gateway"
         prospector -> platform.traces  "every trace lands in the one collector"
@@ -106,6 +135,27 @@ workspace "Estate" "The platform, the products under it, and the substrate under
             include *
             autolayout lr
             description "Where it goes. Nothing here has been booted, and the diagram says so."
+        }
+
+        container platform "Control-path" {
+            include platform.greenlane
+            include platform.policy
+            include platform.ci
+            include platform.board
+            include platform.executor
+            include platform.bus
+            include platform.memory
+            include platform.spine
+            include platform.factory
+            include platform.census
+            include platform.catalog
+            include platform.probes
+            include platform.lanes
+            include platform.secrets
+            include platform.gateway
+            include platform.sched
+            autolayout lr
+            description "How one change reaches the board and the founder: the gated trunk, the rules it enforces, the gate it waits on, and the observation it may write. Every box names the source it came from."
         }
 
         styles {

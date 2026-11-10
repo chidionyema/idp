@@ -36,7 +36,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 CATALOG = ROOT / "catalog" / "catalog-info.yaml"
-OUT = ROOT / "docs" / "architecture" / "live.md"
+OUT = ROOT / "docs" / "explanation" / "architecture" / "live.md"
 
 
 def mermaid_id(name: str) -> str:
