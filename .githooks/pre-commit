@@ -30,11 +30,16 @@ staged_ts=$(git diff --cached --name-only --diff-filter=ACM -- '*.ts' '*.tsx' ||
 # flailing as the only ways to land a change. bin/idp-ts-owner answers "which of these does this
 # project own?" so the guard keeps its full strength for its own files and says out loud what it
 # is not checking. Detection lives in one testable place rather than in the hook's control flow.
-staged_ts_owned=$(printf '%s\n' "$staged_ts" | "$repo_root/bin/idp-ts-owner" || true)
-if [ -n "$staged_ts_owned" ]; then
-  staged_ts_other=$(printf '%s\n' "$staged_ts" | grep -vxF -f <(printf '%s\n' "$staged_ts_owned") || true)
+if [ -n "$staged_ts" ]; then
+  staged_ts_owned=$(printf '%s\n' "$staged_ts" | "$repo_root/bin/idp-ts-owner" || true)
+  if [ -n "$staged_ts_owned" ]; then
+    staged_ts_other=$(printf '%s\n' "$staged_ts" | grep -vxF -f <(printf '%s\n' "$staged_ts_owned") || true)
+  else
+    staged_ts_other="$staged_ts"
+  fi
 else
-  staged_ts_other="$staged_ts"
+  staged_ts_owned=""
+  staged_ts_other=""
 fi
 staged_all=$(git diff --cached --name-only --diff-filter=ACM || true)
 # bin/idp-always-on-guard etc: extensionless files under bin/ or .githooks/ are not all shell
@@ -86,16 +91,19 @@ if [ -n "$staged_py" ]; then
   fi
 fi
 
-# 2. ruff check on staged .py — uses pyproject.toml's [tool.ruff.lint] select via
-# bin/idp-ruff (the same binary bin/idp-ci runs). One rule set, not two.
+# 2. python-strict on staged .py -- the same E9,F,B,S rung pre-push and CI run.
+# The narrower pyproject select omitted F401, so an unused import passed commit and
+# was first refused after the lane push. The shared strict helper closes that gap.
 if [ -n "$staged_py" ]; then
-  if [ -x "$repo_root/bin/idp-ruff" ]; then
-    echo "  ruff check (pyproject.toml select)"
-    echo "$staged_py" | xargs "$repo_root/bin/idp-ruff" || {
-      echo "pre-commit: ruff check failed (pyproject.toml rule set)" >&2
-      exit 1
-    }
-  fi
+  [ -x "$repo_root/bin/idp-python-strict" ] || {
+    echo "pre-commit: bin/idp-python-strict is missing; Python cannot be admitted without it" >&2
+    exit 1
+  }
+  echo "  python strict (E9,F,B,S on staged files)"
+  "$repo_root/bin/idp-python-strict" || {
+    echo "pre-commit: python strict failed; fix: ruff check --select E9,F,B,S --fix" >&2
+    exit 1
+  }
 fi
 
 # 3. tsc --noEmit on staged .ts/.tsx that backstage's project owns. Use the project tsconfig so
@@ -163,6 +171,41 @@ if [ -n "$staged_yaml" ]; then
     echo "pre-commit: yamllint is not installed. fix: bin/idp-install-deps" >&2
     exit 1
   fi
+fi
+
+# 6. Parse machine-readable config at commit time. These formats fail cheaply
+# and otherwise consume a PR/CI round trip for a missing delimiter.
+staged_config=$(printf '%s\n' "$staged_all" | grep -E '\.(json|toml|plist)$|\.plist\.tmpl$' || true)
+config_files=()
+while IFS= read -r f; do
+  [ -n "$f" ] && [ -f "$f" ] && config_files+=("$f")
+done <<<"$staged_config"
+if [ "${#config_files[@]}" -gt 0 ]; then
+  python3 - "${config_files[@]}" <<'PY'
+import json
+import pathlib
+import plistlib
+import sys
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
+
+for name in sys.argv[1:]:
+    path = pathlib.Path(name)
+    try:
+        if name.endswith(".json"):
+            json.loads(path.read_text())
+        elif name.endswith(".toml"):
+            tomllib.loads(path.read_text())
+        else:
+            plistlib.loads(path.read_bytes())
+    except Exception as exc:
+        print(f"pre-commit: {name}: parse failed: {exc}", file=sys.stderr)
+        raise SystemExit(1)
+print(f"  config parse: {' '.join(sys.argv[1:])}")
+PY
 fi
 
 exit 0

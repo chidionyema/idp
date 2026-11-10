@@ -28071,7 +28071,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-disk-watch",
         "cap:tool/idp-epistemic",
         "cap:tool/idp-reasoning-gateway-hook",
         "cap:tool/idp-trajectory",
@@ -36839,12 +36838,9 @@
       "id": "cap:tool/idp-disk-watch",
       "schema_version": 1,
       "kind": "tool",
-      "summary": "idp-disk-watch -- the estate's resident reclaim guardian, with the firewall's third leg.",
+      "summary": "!/bin/sh",
       "contract": {
-        "inputs": [
-          "--json",
-          "--print-gate"
-        ],
+        "inputs": [],
         "outputs": [
           "stdout",
           "exit code"
@@ -36877,20 +36873,7 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/idp-disk-watch",
-      "depends_on": [
-        {
-          "id": "cap:tool/epistemic_firewall.py",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/start",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/trajectory_lock.py",
-          "edge": "invokes"
-        }
-      ],
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",
@@ -50264,6 +50247,8 @@
       "summary": "bin/language-gate -- the founder's ruling (2026-10-30) made mechanical: Rust over Python",
       "contract": {
         "inputs": [
+          "--cached",
+          "--message-file",
           "--name-only",
           "--no-tags",
           "--reverse"
@@ -53614,7 +53599,6 @@
         "cap:tool/idp-clickhouse-system-log-ttl",
         "cap:tool/idp-cluster-state",
         "cap:tool/idp-disk-guard",
-        "cap:tool/idp-disk-watch",
         "cap:tool/idp-dispatch-install",
         "cap:tool/idp-door-heartbeat",
         "cap:tool/idp-epistemic",
@@ -54190,7 +54174,6 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/idp-disk-watch",
         "cap:tool/idp-reasoning-gateway-hook",
         "cap:tool/idp-trajectory",
         "cap:tool/reasoning_gateway_hook.py"

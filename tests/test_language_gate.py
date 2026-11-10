@@ -93,6 +93,41 @@ def test_modifying_an_existing_python_file_needs_no_trailer(tmp_path):
     assert result.returncode == 0, result.stderr
 
 
+def test_staged_new_python_file_is_judged_before_the_commit_exists(tmp_path):
+    _init(tmp_path)
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "newtool.py").write_text("print('hi')\n")
+    _git(tmp_path, "add", "bin/newtool.py")
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text("add newtool\n")
+    result = subprocess.run(
+        [sys.executable, str(GATE), "--message-file", str(message)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "bin/newtool.py" in result.stderr
+
+
+def test_staged_python_exception_is_read_from_the_pending_message(tmp_path):
+    _init(tmp_path)
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "newtool.py").write_text("print('hi')\n")
+    _git(tmp_path, "add", "bin/newtool.py")
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text(
+        "add newtool\n\nLanguage-Exception: bin/newtool.py -- test fixture\n"
+    )
+    result = subprocess.run(
+        [sys.executable, str(GATE), "--message-file", str(message)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_a_new_test_file_is_exempt(tmp_path):
     _init(tmp_path)
     (tmp_path / "tests").mkdir()

@@ -75,11 +75,33 @@ def _added_python_files(base: str, head: str) -> list[str]:
     ]
 
 
-HEAD_TRAILER = re.compile(r"^Greenlane-Head:\s*([0-9a-f]{7,40})\s*$", re.MULTILINE)
-
-
 def _git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     return subprocess.run(["git", *args], capture_output=True, text=True, check=check)
+
+
+def _index_is_python(path: str) -> bool:
+    if path.endswith(".py"):
+        return True
+    shown = _git("show", f":{path}", check=False)
+    if shown.returncode != 0:
+        return False
+    first_line = shown.stdout.splitlines()[0] if shown.stdout else ""
+    return first_line.startswith("#!") and "python" in first_line
+
+
+def _staged_added_python_files() -> list[str]:
+    out = _git("diff", "--cached", "--diff-filter=A", "--name-only")
+    return [
+        path
+        for path in out.stdout.splitlines()
+        if path
+        and not path.startswith("tests/")
+        and "/tests/" not in path
+        and _index_is_python(path)
+    ]
+
+
+HEAD_TRAILER = re.compile(r"^Greenlane-Head:\s*([0-9a-f]{7,40})\s*$", re.MULTILINE)
 
 
 def _lane_messages(base: str, lane_head: str, squash_msg: str) -> str:
@@ -114,25 +136,9 @@ def _exempted_paths(messages: str) -> set[str]:
     return {m.group(1) for m in TRAILER_RE.finditer(messages)}
 
 
-def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("base", nargs="?", default="origin/main")
-    ap.add_argument("head", nargs="?", default="HEAD")
-    args = ap.parse_args(argv)
-
-    try:
-        added = _added_python_files(args.base, args.head)
-        messages = _commit_messages(args.base, args.head)
-    except subprocess.CalledProcessError as exc:
-        print(
-            f"BLIND language-gate: could not read {args.base}..{args.head}: {exc}",
-            file=sys.stderr,
-        )
-        return 2
-
+def _judge(added: list[str], messages: str) -> int:
     exempted = _exempted_paths(messages)
-    unjustified = [p for p in added if p not in exempted]
-
+    unjustified = [path for path in added if path not in exempted]
     if not unjustified:
         if added:
             print(
@@ -141,19 +147,45 @@ def main(argv: list[str]) -> int:
         else:
             print("ok    language-gate: no new Python file in this range")
         return 0
-
     print(
         f"FAIL  language-gate: {len(unjustified)} new Python file(s) with no documented reason",
         file=sys.stderr,
     )
-    for p in unjustified:
-        print(f"      {p}", file=sys.stderr)
+    for path in unjustified:
+        print(f"      {path}", file=sys.stderr)
     print(
         "      Either write it in Rust, or add one commit-message trailer per file:\n"
         "      Language-Exception: <path> -- <the compelling reason>",
         file=sys.stderr,
     )
     return 1
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("base", nargs="?", default="origin/main")
+    ap.add_argument("head", nargs="?", default="HEAD")
+    ap.add_argument(
+        "--message-file",
+        help="judge staged additions against this commit message before the commit exists",
+    )
+    args = ap.parse_args(argv)
+
+    try:
+        if args.message_file:
+            added = _staged_added_python_files()
+            messages = Path(args.message_file).read_text()
+        else:
+            added = _added_python_files(args.base, args.head)
+            messages = _commit_messages(args.base, args.head)
+    except subprocess.CalledProcessError as exc:
+        print(
+            f"BLIND language-gate: could not read {args.base}..{args.head}: {exc}",
+            file=sys.stderr,
+        )
+        return 2
+
+    return _judge(added, messages)
 
 
 if __name__ == "__main__":

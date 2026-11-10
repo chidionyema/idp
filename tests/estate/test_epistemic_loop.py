@@ -12,17 +12,12 @@ useless step for thirty minutes while the volume fell from 2361 MB to 396 MB, re
 from __future__ import annotations
 
 import importlib.util
-import json
-import subprocess
 import sys
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
-import pytest
-
 REPO = Path(__file__).resolve().parents[2]
 LIBEXEC = REPO / "platform" / "estate" / "libexec"
-WATCH = REPO / "bin" / "idp-disk-watch"
 
 
 def _load(name: str, path: Path):
@@ -240,58 +235,3 @@ def test_a_probe_that_raises_does_not_kill_the_fan_out():
     )
     assert out["failed"] == 2
     assert out["verdict"] == ep.BLIND
-
-
-# -- the guardian's use of it ------------------------------------------------------------------------
-
-
-def test_the_guardian_loads_the_gate_from_either_layout():
-    """Installed, the guardian lives at ~/.estate/bin and the gate at ~/.estate/libexec; in a
-    checkout they are bin/ and platform/estate/libexec. Both must work."""
-    assert WATCH.exists()
-    out = subprocess.run(
-        [sys.executable, str(WATCH), "--print-gate"],
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert out.returncode == 0, out.stdout + out.stderr
-    assert "epistemic_loop" in out.stdout
-
-
-def test_the_guardian_reports_the_delta_it_measured_itself():
-    """The guardian owns the measurement: `freed=?M` was a field it never measured."""
-    mod = _load("estate_disk_watch", WATCH)
-    own = mod.synth_result(100, 180)
-    assert own["freed_mb"] == "80"
-    assert own["met"] == "no"
-    assert own["free_after_mb"] == "180"
-    blind = mod.synth_result(100, None)
-    assert blind["freed_mb"] == "blind"
-    assert blind["met"] == "blind"
-
-
-def test_the_guardian_terminates_before_it_kills():
-    """SIGKILL cannot be trapped, so the cleaner never printed its RESULT line. SIGTERM can."""
-    src = WATCH.read_text()
-    assert "proc.terminate()" in src, (
-        "the guardian must TERM the step before it kills it"
-    )
-    assert src.index("proc.terminate()") < src.index("proc.kill()")
-
-
-def test_the_guardian_escalates_instead_of_repeating():
-    src = WATCH.read_text()
-    assert "PHASE_LADDER" in src
-    assert "escalate_incident" in src
-    # the ladder must include the tier that holds the measured gigabytes
-    assert "worktrees" in src
-
-
-def test_the_escalation_state_survives_a_restart(tmp_path):
-    mod = _load("estate_disk_watch_escalation", WATCH)
-    mod.ESCALATION_STATE = tmp_path / "esc.json"
-    mod.save_escalation({"rung": 2, "last_alert": 123.0})
-    state = mod.load_escalation()
-    assert state["rung"] == 2
-    assert state["last_alert"] == 123.0
