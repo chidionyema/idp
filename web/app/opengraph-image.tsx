@@ -25,7 +25,7 @@ export default function OpenGraphImage() {
       </div>
       <div style={{ display: "flex", alignItems: "center", height: "48px", background: "#F5F2E9", padding: "0 80px", gap: "24px" }}>
         {["Research", "Products", "Enterprise", "Lab", "Writing"].map((item) => (
-          <span key={item} style={{ fontFamily: "monospace", fontSize: "11px", color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{item}</span>
+          <span key={item} style={{ fontFamily: "monospace", fontSize: "11px", color: "#34544E", textTransform: "uppercase", letterSpacing: "0.08em" }}>{item}</span>
         ))}
       </div>
     </div>),
