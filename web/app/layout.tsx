@@ -31,7 +31,7 @@ const dmMono = localFont({
 // measured 9.1 s cold and 1.4-2.9 s on a repeat from the same laptop, on a 300m CPU pod. A value
 // known at build time keeps the pages static, which is what a brochure site wants; the canonical
 // link, the OpenGraph url and every relative OG image resolve against it.
-const SITE_URL = process.env.MERDIAN_SITE_URL ?? process.env.MERIAN_SITE_URL ?? process.env.MERIDIAN_SITE_URL ?? "https://meridian-intelligence-uk.vercel.app";
+const SITE_URL = process.env.MERDIAN_SITE_URL ?? process.env.MERIAN_SITE_URL ?? "https://merdian-intelligence.vercel.app";
 
 export function generateMetadata(): Metadata {
   const base = new URL(SITE_URL);
