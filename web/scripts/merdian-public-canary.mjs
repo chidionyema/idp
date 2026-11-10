@@ -78,6 +78,18 @@ for (const [path, marker] of [
   ['/products', 'mi-interior'],
   ['/contact', 'mi-interior'],
 ]) await checkRoute(path, marker);
+// Customer conversion must be operational, not just a pretty contact page.
+// Read-only probe: does not submit PII or create a synthetic sales enquiry.
+try {
+  const { html, status } = await read(PRIMARY + '/api/contact');
+  const statusBody = JSON.parse(html);
+  const accepting = statusBody && statusBody.acceptingEnquiries === true;
+  assert(accepting, PRIMARY + '/api/contact: enquiry delivery unavailable (acceptingEnquiries != true)');
+  audit.push({ origin: PRIMARY + '/api/contact', status, accepting });
+} catch (error) {
+  failures.push(PRIMARY + '/api/contact: ' + (error instanceof Error ? error.message : String(error)));
+}
+
 for (const path of ['/robots.txt', '/sitemap.xml']) {
   try {
     const { html, status } = await read(PRIMARY + path);
