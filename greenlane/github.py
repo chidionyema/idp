@@ -32,6 +32,7 @@ from .engine import BOT_LANE, CONFLICT, LANDED, RED, TESTING
 from .ferrari import assess as ferrari_assess
 
 STATE_REF = "refs/greenlane/state"
+DOF_REGISTRY = Path(__file__).resolve().parents[1] / "catalog/dof-registry.json"
 # The capability witness is derived from the tree (`bin/capability-index emit`) and the
 # offline-gate's registry rung needs it byte-identical to what the tree emits. It used to be
 # regenerated only on pull requests (registry-snapshot.yml), and a lane has no pull request until
@@ -207,6 +208,22 @@ class GitHubBackend:
         self.refused: dict[str, str] = {}  # lane -> why it is not a lane this tick
         self._work_age_cache: Optional[dict[str, float]] = None
         self._state_lease = ""  # remote state sha seen at load; CAS anchor for save
+
+    def dof_suspension_epoch(self) -> str:
+        """Trusted main control revision; no candidate can invent a recovery lease."""
+        try:
+            registry = json.loads(DOF_REGISTRY.read_text())
+            control = registry.get("control")
+            if not isinstance(control, dict) or control.get("mode") != "disabled":
+                return ""
+            revision, directive = registry.get("revision"), control.get("directive")
+            if not isinstance(revision, str) or not revision:
+                return ""
+            if not isinstance(directive, str) or not directive:
+                return ""
+            return f"{revision}:{directive}"
+        except (OSError, ValueError, TypeError, AttributeError):
+            return ""
 
     # -- plumbing ----------------------------------------------------------------------------
     def git(self, *args: str, check: bool = True) -> str:
