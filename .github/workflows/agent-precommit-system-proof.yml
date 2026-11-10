@@ -43,4 +43,13 @@ jobs:
           set -euo pipefail
           python -m pip install -q 'ruff==0.15.18'
           ruff check --select E9,F,B bin/idp-agent-patch-preflight.py tests/test_agent_patch_preflight.py
-          ruff format --check bin/idp-agent-patch-preflight.py tests/test_agent_patch_preflight.py
+          if ! ruff format --check bin/idp-agent-patch-preflight.py tests/test_agent_patch_preflight.py; then
+            ruff format bin/idp-agent-patch-preflight.py tests/test_agent_patch_preflight.py
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          for name in ('bin/idp-agent-patch-preflight.py', 'tests/test_agent_patch_preflight.py'):
+              print('GENESIS_FORMAT_RESULT ' + json.dumps({'path':name,'content':Path(name).read_text()},separators=(',',':')))
+          PY
+            exit 1
+          fi
