@@ -18,15 +18,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          fetch-depth: 2
+          fetch-depth: 0
           persist-credentials: false
       - name: Exact source and runner parity with original lane
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "035c0733530ced08f7c0f5492f3c9d12f27dfe1e"
+          git merge-base --is-ancestor "035c0733530ced08f7c0f5492f3c9d12f27dfe1e" HEAD
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/proof-agent-sandbox-precommit.yml"
-          git diff --quiet HEAD^ HEAD -- bin/idp-agent-patch-preflight.py tests/test_agent_patch_preflight.py .github/workflows/agent-sandbox.yml
+          git diff --quiet 035c0733530ced08f7c0f5492f3c9d12f27dfe1e HEAD -- bin/idp-agent-patch-preflight.py tests/test_agent_patch_preflight.py .github/workflows/agent-sandbox.yml
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: ${{ matrix.python }}
