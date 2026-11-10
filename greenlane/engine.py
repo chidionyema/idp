@@ -286,7 +286,11 @@ class Engine:
             epoch = read_epoch()
         except (OSError, ValueError, KeyError, TypeError):
             return
-        if not isinstance(epoch, str) or not epoch or epoch == self.s.dof_suspension_recovered:
+        if (
+            not isinstance(epoch, str)
+            or not epoch
+            or epoch == self.s.dof_suspension_recovered
+        ):
             return
         self.s.dof_suspension_recovered = epoch
         revived = 0
@@ -308,7 +312,9 @@ class Engine:
             self.b.report(lane.name, lane.head, TESTING, lane.reason)
             revived += 1
         if revived:
-            self.log.append(f"DoF recovery epoch {epoch}: requeued {revived} old red lane(s)")
+            self.log.append(
+                f"DoF recovery epoch {epoch}: requeued {revived} old red lane(s)"
+            )
 
     def _retire_stale_lanes(self) -> None:
         """A lane held past RETIRE_AFTER_MIN without moving is parked (idp#5953).
