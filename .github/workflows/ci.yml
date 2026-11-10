@@ -655,6 +655,26 @@ jobs:
           # judged by BASE's gate when it has one, so a change cannot rewrite its own judge
           if git show "$base:bin/dof-gate" > /tmp/dof-gate 2>/dev/null; then python3 /tmp/dof-gate "$base" "$HEAD"; else python3 bin/dof-gate "$base" "$HEAD"; fi
 
+  # Founder 2026-11-10: the existing required ci-success context must refuse
+  # Greenlane promotion until the exact candidate has independent Optimus metrics,
+  # a live Founder Surface observation, and matching instruction/permission/yield
+  # tracking. No reported check means BLIND -> FAIL, never a skipped success.
+  # Check Apps are pinned by repository configuration, not candidate commits.
+  operational-visibility:
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || startsWith(github.ref, 'refs/heads/queue/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    permissions: { contents: read, checks: read }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Refuse without real Optimus and Founder Surface proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ESTATE_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+          OPTIMUS_CHECK_APP_ID: ${{ vars.OPTIMUS_CHECK_APP_ID }}
+          FOUNDER_CHECK_APP_ID: ${{ vars.FOUNDER_CHECK_APP_ID }}
+        run: python3 bin/idp-optimus-founder-admission
+
   ci-success:
     if: always()
     # security-scan is judged here since 2026-10-12. It sat outside this list for as long as the
@@ -676,7 +696,7 @@ jobs:
     # greenlane status read "success proven", and main fast-forwarded red -- four pushes in a row.
     # The loop now judges every key of `needs`, so this is the one list, and
     # tests/test_ci_success_judges_every_job.py fails if a job in this file is missing from it.
-    needs: [fast-gate, verifier, offline-gate, bdd, bdd-suites, messaging-demo, migrate-domain, executes-gate, feature-request-plan, ui-kit, claim-gate, security-scan, law-gate, dof-gate]
+    needs: [fast-gate, verifier, offline-gate, bdd, bdd-suites, messaging-demo, migrate-domain, executes-gate, feature-request-plan, ui-kit, claim-gate, security-scan, law-gate, dof-gate, operational-visibility]
     runs-on: ubuntu-24.04
     steps:
       - name: every required job in this workflow is success or skipped
