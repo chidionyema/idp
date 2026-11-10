@@ -126,6 +126,8 @@ class OperationalReleaseProofTests(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         with self.assertRaisesRegex(ValueError,'unreadable'):
             gate.list_check_runs('chidionyema/idp',SHA,'token',fetch=lambda _:{})
+        with self.assertRaisesRegex(ValueError,'count is missing'):
+            gate.list_check_runs('chidionyema/idp',SHA,'token',fetch=lambda _:{'check_runs':[]})
 
     def test_ci_success_is_bound_to_observability_job(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text()
