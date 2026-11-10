@@ -40,14 +40,22 @@ class AgentPatchPreflightTests(unittest.TestCase):
         self.cmd("add", "--", path)
         return p
 
-    def inspect(self, repair=False, allow_governance=False):
+    def inspect(self, repair=False, allow_governance=False, allow_empty=False):
         args = [sys.executable, str(SCRIPT)]
         if repair:
             args.append("--repair-evidence-docs")
         if allow_governance:
             args.append("--allow-governance-paths")
+        if allow_empty:
+            args.append("--allow-empty")
         completed = subprocess.run(args, capture_output=True, text=True)
         return completed.returncode, json.loads(completed.stdout)
+
+    def test_universal_precommit_retains_deliberate_empty_commit(self):
+        rc, out = self.inspect(allow_empty=True)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(out["reason"], "EMPTY_COMMIT_ALLOWED")
+        self.assertEqual(out["authority"], "PREFLIGHT_ONLY")
 
     def test_ascii_source_passes(self):
         self.add("bin/source.py", "print('hello')\n")
