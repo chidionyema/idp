@@ -145,6 +145,31 @@ while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
       *.sh|*.bash) echo shell ;;
       *.ts) echo typescript ;;
       *.js|*.mjs|*.cjs) echo javascript ;;
+      # EVERY DECLARATIVE / COMPILED LANGUAGE IS NAMED HERE, DELIBERATELY (2026-11-10).
+      #
+      # This check exists to catch a syntax error in shell or Python at push time. It is a
+      # TEXT gate, and it has no parser for Rust, SQL, TOML, protobuf, gherkin or a lock
+      # file -- so it cannot judge them, and "cannot judge" must never become a refusal that
+      # makes the estate's own files unpushable. That is the defect this hook has now hit
+      # once per language: plist (2026-11-05), then .sql, then .rs in the same afternoon.
+      # Each was fixed by adding one extension, which is the instance fix; the class fix is
+      # to say out loud which languages this gate does not read, so an unlisted extension is
+      # a decision somebody made rather than an oversight that blocks a lane.
+      #
+      # These are still gated -- by the rung that owns them, on real parsers: cargo test
+      # (bin/idp-ci rung 8c) for Rust, the yamllint rung for YAML, tflint/tofu for HCL.
+      *.rs|*.toml|*.lock|*.sql|*.tf|*.tfvars|*.hcl|*.json|*.md|*.txt|*.yml|*.yaml)
+        echo data ;;
+      *.proto|*.feature) echo data ;;
+      # Structurizr C4 model text: architecture/workspace.dsl is the estate's model, and its own
+      # DSL is not shell, not Python, and has no parser on this laptop -- the diagrams are
+      # rendered by structurizr/cli in docker. It was the last file in a whole lane's diff to
+      # fall through to the shell check (2026-11-10).
+      *.dsl) echo data ;;
+      *.plist|*.plist.tmpl) echo data ;;
+      *.pub|*.pem|*.crt|*.key) echo data ;;
+      *.gitignore|*.dockerignore|*.editorconfig) echo data ;;
+      Makefile|*/Makefile|*.mk) echo data ;;
       *) echo unknown ;;
     esac
   }
@@ -219,8 +244,10 @@ while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
       fi
       continue
     fi
-    # Declarative config is neither language and has no parser here (HCL is refused by bash -n
+    # Declarative / compiled config is neither language and has no parser here (HCL is refused by bash -n
     # and py_compile alike: a new platform/oci/*.tf could never be pushed). CI validates these.
+    # _file_kind names every one of them as "data", and the `.sql` case below still parses
+    # the one extension this hook can honestly check at the door.
     # YAML is declarative too, and bin/idp-ci rung 1c.2 lints every *.yml/*.yaml in the diff
     # against .yamllint (a missing yamllint is a FAIL, never a skip). Without it here, no agent
     # could ever change .github/workflows/*.yml -- the gate refused the estate's own work.
@@ -312,7 +339,11 @@ if in_dollar is not None:
         fi
         continue ;;
     esac
-    case "$f" in *.tf|*.tfvars|*.hcl|*.json|*.md|*.txt|*.yml|*.yaml) continue ;; esac
+    # _file_kind has already named every declarative / compiled language as "data", and the
+    # `.sql` case above already parsed the one extension this hook can honestly check at the
+    # door. There is ONE list of those extensions -- in _file_kind -- so the two cannot drift
+    # apart the way the old inline `case` list did every time a new language landed here.
+    if [ "$kind" = "data" ]; then continue; fi
     # Unknown: no shebang, not a known extension. Accept it when EITHER parser reads it --
     # a file with no shebang is still one of the two languages, and refusing it would be the
     # same defect in the other direction.
