@@ -1,0 +1,114 @@
+description: 'Every model call the estate makes through the router arrives as a prompt with no
+  instruction id, so no call can be traced back to the instruction that caused it and no yield
+  can be attributed to an instruction at all. The instruction ledger exists
+  (catalog/census/instruction.py, 10 tests green) and nothing in the serving path ever writes
+  to it. Question: is the fault (H1) that the intake never creates or binds an instruction id,
+  so there is nothing to carry, or (H2) that the id exists but the router drops the metadata
+  before any hook sees it, or (H3) that the metadata survives but no hook is registered to
+  refuse an unlinkable prompt, so the ledger binds nothing, or (H4) that the ledger is simply
+  not the store the router reaches -- a different database, so even a correct hook would write
+  nowhere. The fix under test binds an id at intake, carries it in request metadata, and
+  registers a LiteLLM pre-call hook that refuses a chat call whose metadata lacks it.
+
+  '
+hypotheses:
+- name: H1
+  description: intake never creates or binds an instruction id, so every call legitimately has
+    none and the carrier is empty before the router is reached
+  prior: 0.25
+- name: H2
+  description: the id is set by the caller and the router strips request metadata before any
+    plugin hook is invoked
+  prior: 0.25
+- name: H3
+  description: the metadata survives, but the router has no hook registered that inspects it,
+    so unlinkable prompts are served silently
+  prior: 0.25
+- name: H4
+  description: a correct hook cannot reach the ledger because the ledger is a different store
+    (Postgres) from anything the router process can open
+  prior: 0.25
+evidence:
+- name: whether any router module imports the instruction contract
+  observed:
+    modules_importing_the_contract: 0
+    router_python_modules: 4
+  likelihoods:
+    H1:
+      modules_importing_the_contract: 0.9
+      router_python_modules: 0.5
+    H2:
+      modules_importing_the_contract: 1.0
+      router_python_modules: 0.5
+    H3:
+      modules_importing_the_contract: 0.95
+      router_python_modules: 0.5
+    H4:
+      modules_importing_the_contract: 0.6
+      router_python_modules: 0.5
+- name: whether the contract exists on origin/main
+  observed:
+    present_on_main: 0
+    present_in_tree: 1
+  likelihoods:
+    H1:
+      present_on_main: 0.5
+      present_in_tree: 0.5
+    H2:
+      present_on_main: 0.5
+      present_in_tree: 0.5
+    H3:
+      present_on_main: 0.5
+      present_in_tree: 0.5
+    H4:
+      present_on_main: 0.5
+      present_in_tree: 0.5
+- name: whether the router process can open the ledger's store
+  observed:
+    postgres_client_in_router: 0
+    sqlite_outbox_present: 1
+  likelihoods:
+    H1:
+      postgres_client_in_router: 0.5
+      sqlite_outbox_present: 0.5
+    H2:
+      postgres_client_in_router: 0.5
+      sqlite_outbox_present: 0.5
+    H3:
+      postgres_client_in_router: 0.5
+      sqlite_outbox_present: 0.5
+    H4:
+      postgres_client_in_router: 0.02
+      sqlite_outbox_present: 0.98
+- name: the pattern an existing hook uses to read request metadata
+  observed:
+    existing_hooks_reading_metadata: 2
+    metadata_absent_by_convention: 0
+  likelihoods:
+    H1:
+      existing_hooks_reading_metadata: 0.5
+      metadata_absent_by_convention: 0.5
+    H2:
+      existing_hooks_reading_metadata: 0.97
+      metadata_absent_by_convention: 0.03
+    H3:
+      existing_hooks_reading_metadata: 0.5
+      metadata_absent_by_convention: 0.5
+    H4:
+      existing_hooks_reading_metadata: 0.5
+      metadata_absent_by_convention: 0.5
+outcome: H3 (and H1 upstream of it) -- the estate has a ledger and no hook, so the carrier may
+  or may not be populated but nothing inspects it either way; H2 is refuted because
+  platform/llm/active_memory.py and platform/llm/request_ceiling.py both read
+  data["metadata"] from the same pre-call position and are served, so metadata survives to the
+  hook; H4 is refuted as a blocker because the router already has a SQLite outbox on its
+  capture volume and can record the binding there for the estate's writer to drain, so no new
+  database path is invented.
+fix: platform/llm/instruction_gate.py registers an async_pre_call_hook on the router that calls
+  link_or_new for a chat call and refuses one it cannot link, gated by
+  ESTATE_INSTRUCTION_GATE=1 so it ships dormant; it logs only the prompt fingerprint, never the
+  body, and exempts internal, non-chat and drain traffic the way active_memory.py does.
+falsifier: the gate must refuse a chat payload whose metadata lacks instruction_id and accept
+  one that carries it; tests/test_instruction_gate.py proves both directions.
+bounded_by: the gate refuses; it never logs a prompt body, and a refusal names the caller and
+  the missing key, never the content.
