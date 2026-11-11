@@ -6,9 +6,11 @@ on:
     branches:
       - research/helm-*
     paths:
-      - experiments/helm/**
-      - .github/workflows/helm-research.yml
+      - experiments/helm/TRIAL_TRIGGER
   workflow_dispatch:
+concurrency:
+  group: helm-research-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
