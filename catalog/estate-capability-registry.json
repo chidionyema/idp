@@ -6,7 +6,7 @@
     "intent": 118,
     "layer": 257,
     "service": 121,
-    "tool": 481,
+    "tool": 483,
     "workflow": 102
   },
   "records": [
@@ -29370,7 +29370,8 @@
         "cap:tool/estate-fleet-telegram",
         "cap:tool/estate-fleet-voice",
         "cap:tool/estate-wait",
-        "cap:tool/idp-session-bootstrap"
+        "cap:tool/idp-session-bootstrap",
+        "cap:tool/uncalled-gate"
       ],
       "cost": {
         "estimate": null,
@@ -31582,7 +31583,8 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/estate-runtime-sync"
+        "cap:tool/estate-runtime-sync",
+        "cap:tool/uncalled-gate"
       ],
       "cost": {
         "estimate": null,
@@ -42721,6 +42723,57 @@
           "edge": "invokes"
         }
       ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/idp-machine-submit",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env bash",
+      "contract": {
+        "inputs": [
+          "--exclude-standard",
+          "--name-only",
+          "--others"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/idp-machine-submit",
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",
@@ -54619,6 +54672,65 @@
         },
         {
           "id": "cap:tool/port-gate",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/uncalled-gate",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "uncalled-gate -- refuse a mechanism that was built and that nothing calls.",
+      "contract": {
+        "inputs": [
+          "--fixture",
+          "--json"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/uncalled-gate",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-fleet",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-supervisor",
           "edge": "invokes"
         }
       ],
