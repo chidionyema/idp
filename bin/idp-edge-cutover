@@ -1,0 +1,389 @@
+#!/usr/bin/env python3
+"""bin/idp-edge-cutover, move `llm.<zone>` and the brain state off the dead cluster, onto the
+edge, in one command that can be re-run safely.
+
+THE DEFECT IT RETIRES (2026-11-10). The cluster's router answered `llm.<zone>`. The cluster is
+retired (founder order idp#7787: NO OKE), the Cloudflare Tunnel went with it, and the name now
+answers Cloudflare 1033: the DNS is fine and there is no origin behind it. Every agent in the
+estate whose base URL is `https://llm.<zone>` has been talking to a hole.
+
+Meanwhile `genesis-founder-surface.pages.dev/api/brain/state` answered
+
+    {"status": "cloud-read-only", "authority": "github-canonical"}
+
+so the founder could read the estate's state from the edge and record nothing into it.
+
+WHAT THIS DOES. It deploys the SAME worker the estate already has (`platform/lifeboat`, named
+`estate-lifeboat`) with two things it did not have before:
+
+  --d1            create (or find) the D1 database `estate-brain`, apply the schema
+                  (platform/lifeboat/schema/brain.sql), and bind it to the worker as DB.
+  --secrets       set each provider key ON the worker, read from the estate vault by name and
+                  piped on stdin. No value is ever an argument, an env var or a line of output.
+  --route         attach `llm.<zone>/*` to the worker. The zone is read from
+                  clusters/<cluster>/estate-config.yaml, never written here (LAW 46).
+  --all           the three above, in that order. This is what a cutover is.
+  --verify        fetch the three real paths and print the verdict. 0 ok, 4 red, 2 BLIND.
+  --rotate-flag   print what to rotate and where, having read no secret value.
+
+CREDENTIALS, AND WHY THIS MAY REFUSE RATHER THAN FAIL OBSCURELY. Two Cloudflare tokens are two
+jobs: `cloudflare-api-token` reads the zone (which is how the account id is derived) and
+`cloudflare-workers-token` uploads the script, attaches the route and writes D1. The reader
+being the only one present is a refusal with a remedy, never a 403 halfway through a deploy:
+that is the "two-account stitch" the estate already has a diagnosis for (idp#7814).
+
+Everything is idempotent: a second `--all` creates no second database, sets the same secrets,
+and re-attaches the same route.
+
+Exit: 0 everything asked for is done and (with --verify) proven; 2 BLIND (a credential or a
+zone could not be read, so nothing was attempted); 4 the deploy ran and a path is still wrong.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+DB_NAME = "estate-brain"
+
+# The provider keys the edge router serves, by the env name the worker reads. The vault entry
+# and field are the second half of each pair; a key the vault does not hold is SKIPPED and
+# named, because a router with four lanes is still a router and a deploy that dies on the fifth
+# is a deploy that never happened. Every candidate list is a ladder, tried in order.
+PROVIDER_SECRETS = [
+    ("MINIMAX_API_KEY", [("MINIMAX_API_KEY", ""), ("estate-llm", "MINIMAX_API_KEY")]),
+    ("DEEPSEEK_API_KEY", [("DEEPSEEK_API_KEY", ""), ("estate-llm", "DEEPSEEK_API_KEY")]),
+    ("GROQ_API_KEY", [("GROQ_API_KEY", ""), ("estate-llm", "GROQ_API_KEY")]),
+    ("OPENROUTER_API_KEY", [("OPENROUTER_API_KEY", ""), ("human-openrouter", "OPENROUTER_API_KEY")]),
+    ("GEMINI_API_KEY", [("GEMINI_API_KEY", ""), ("estate-llm", "GEMINI_API_KEY")]),
+]
+
+# Flagged for rotation, and the flag is a fact about the estate rather than a request: the key
+# has been the `cheap` lane since 2026-09-10, is present in every surface that ran the old
+# router, and has no rotation record. Rotating it is a vault action; this file only says so.
+ROTATE = ["GROQ_API_KEY"]
+
+
+def say(line):
+    print(line, flush=True)
+
+
+def idp_root():
+    """The checkout this file belongs to, resolved ONCE and never trusted blindly.
+
+    The first version of this file derived the root from `__file__` and asserted it, and a copy of
+    this script outside the checkout (`/tmp/cut.py`, loaded to unit-test `vault_get`) resolved
+    IDP to `/private` -- every vault read then answered "the vault holds no cloudflare-api-token"
+    for a token that was in the vault, and the cutover reported BLIND against a live credential.
+    A path that is wrong must NAME itself, not masquerade as an absent secret: this checks for
+    the two things the root must contain and refuses loudly if they are not there.
+    """
+    root = Path(__file__).resolve().parent.parent
+    for probe in (root / "bin" / "idp-cloud", root / "platform" / "lifeboat" / "wrangler.toml"):
+        if not probe.exists():
+            sys.exit("BLIND  this script is not inside an idp checkout (it looked for " + str(probe)
+                     + "), so the vault reader and the worker cannot be found. Nothing was changed.")
+    return root
+
+
+IDP = idp_root()
+LIFEBOAT = IDP / "platform" / "lifeboat"
+CLOUD = IDP / "bin" / "idp-cloud"
+SCHEMA = LIFEBOAT / "schema" / "brain.sql"
+
+
+def zone():
+    """The estate's DNS zone, read from the one file that defines it (LAW 46)."""
+    for cfg in sorted((IDP / "clusters").glob("*/estate-config.yaml")):
+        for line in cfg.read_text().splitlines():
+            m = re.match(r"\s*ESTATE_ZONE\s*:\s*([^\s#]+)\s*$", line)
+            if m:
+                return m.group(1)
+    say("BLIND  no clusters/*/estate-config.yaml declares ESTATE_ZONE; refusing to guess a zone")
+    sys.exit(2)
+
+
+def vault_get(entry, field=""):
+    """Read a value out of the estate's vault without it reaching a terminal, a log line or this
+    process's argv (LAW 21, R52). `bin/idp-cloud` is the estate's one vault reader -- the same
+    call `bin/idp-otto-homes:vault_get` makes. An entry is either a bare value or a JSON object;
+    a field name picks a key out of the second shape and is IGNORED for the first.
+
+    Getting this wrong is silent: the first version of this file required JSON and so answered
+    "the vault holds no cloudflare-api-token" for a token that was right there, bare, in the
+    vault -- a BLIND dressed as an absence. The bare-entry branch is not a fallback; it is the
+    shape most of the estate's entries actually have.
+    """
+    if not CLOUD.exists():
+        return ""
+    # OCI_CLI_PROFILE is PINNED. Left unset, bin/idp-cloud sources bin/idp-oci-whoami, which probes
+    # for a live session before every single read; a probe that stalls takes the whole door with it
+    # -- measured 2026-11-10: the same read answered in 11 s with the profile pinned and did not
+    # return at all inside a 40 s ceiling without it. A vault read is not a place to discover that
+    # an identity is slow, and an agent's 100 s budget is not there to be spent on it.
+    env = dict(os.environ)
+    env.setdefault("OCI_CLI_PROFILE", "DEFAULT")
+    try:
+        p = subprocess.run([str(CLOUD), "secret", "get", entry],
+                           capture_output=True, text=True, timeout=60, env=env)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    raw = p.stdout.strip()
+    if not raw or p.returncode != 0:
+        return ""
+    if not field:
+        return raw
+    try:
+        return str(json.loads(raw).get(field) or "")
+    except (ValueError, AttributeError):
+        return raw  # a non-JSON entry is the bare value, not a missing key
+
+
+def wrangler(args, stdin=None, capture=False):
+    """npx wrangler in the lifeboat directory. With `stdin` the child's output is discarded so a
+    piped secret cannot reach this session's scrollback (LAW 21)."""
+    cmd = ["npx", "--yes", "wrangler@latest", *args]
+    p = subprocess.run(
+        cmd, cwd=str(LIFEBOAT), input=stdin, text=True,
+        stdout=subprocess.PIPE if (capture or stdin) else None,
+        stderr=subprocess.PIPE if capture else None,
+    )
+    if capture:
+        return (p.stdout or "") + (p.stderr or "")
+    return ""
+
+
+def credentials():
+    """(reader, writer, account). Refuses with a remedy rather than failing at 403 mid-deploy."""
+    reader = os.environ.get("CLOUDFLARE_API_TOKEN") or vault_get("cloudflare-api-token")
+    if not reader:
+        sys.exit("BLIND  the vault holds no cloudflare-api-token, so the zone cannot be read. "
+                 "Remedy: run the estate bootstrap (bin/idp-bootstrap-cloudflare), which mints it "
+                 "from the one root (R52).")
+    writer = vault_get("cloudflare-workers-token")
+    if not writer:
+        sys.exit("BLIND  the vault holds no cloudflare-workers-token, so the Worker cannot be "
+                 "deployed, the route cannot be attached and D1 cannot be written. This is the "
+                 "two-account stitch (idp#7814): the reader token reads DNS and answers 403 to the "
+                 "Workers API. Remedy: bin/idp-bootstrap-cloudflare with the Workers scope, then "
+                 "re-run this command. Nothing was changed.")
+    z = zone()
+    req = urllib.request.Request(
+        "https://api.cloudflare.com/client/v4/zones?name=" + z,
+        headers={"authorization": "Bearer " + reader},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            result = (json.load(resp).get("result") or [{}])[0]
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        sys.exit("BLIND  the zone " + z + " could not be read: " + str(e) + ". Nothing was changed.")
+    account = (result.get("account") or {}).get("id", "")
+    if not account:
+        sys.exit("BLIND  cloudflare-api-token cannot read zone " + z + ", so the account id cannot "
+                 "be derived. Nothing was changed.")
+    return reader, writer, account
+
+
+def with_env(writer, account):
+    os.environ["CLOUDFLARE_API_TOKEN"] = writer
+    os.environ["CLOUDFLARE_ACCOUNT_ID"] = account
+
+
+def bind_toml(db_id):
+    """Bind DB in wrangler.toml, idempotently."""
+    toml = LIFEBOAT / "wrangler.toml"
+    text = toml.read_text()
+    block = (
+        "\n# Bound by bin/idp-edge-cutover --d1. The id is a real database id, resolved from the\n"
+        "# Cloudflare API -- never a placeholder, because a placeholder is a deploy that fails on\n"
+        "# somebody's laptop at a bad moment.\n"
+        "[[d1_databases]]\n"
+        'binding = "DB"\n'
+        'database_name = "' + DB_NAME + '"\n'
+        'database_id = "' + db_id + '"\n'
+    )
+    if "[[d1_databases]]" in text:
+        text = re.sub(r'\n\[\[d1_databases\]\][\s\S]*?database_id = "[^"]*"\n', block, text, count=1)
+    else:
+        text = text.rstrip("\n") + "\n" + block
+    toml.write_text(text)
+
+
+def apply_schema(db_id):
+    bind_toml(db_id)
+    say("ok      d1        bound DB -> " + DB_NAME + " (" + db_id[:8] + "...)")
+    sql = SCHEMA.read_text()
+    out = wrangler(["d1", "execute", DB_NAME, "--remote", "--file", "-"], stdin=sql, capture=True)
+    low = out.lower()
+    if "error" in low and "already exists" not in low:
+        say("warn    d1        schema apply reported: " + out.strip().splitlines()[-1][:160])
+    else:
+        say("ok      d1        schema applied (idempotent: CREATE TABLE IF NOT EXISTS)")
+
+
+def bind_d1():
+    """Create (or find) the database and bind it. Returns the id."""
+    out = wrangler(["d1", "list", "--json"], capture=True)
+    db_id = ""
+    try:
+        start = out[out.index("["):]
+        for row in json.loads(start):
+            if row.get("name") == DB_NAME:
+                db_id = row.get("uuid") or row.get("id") or ""
+                break
+    except (ValueError, KeyError):
+        pass
+    if not db_id:
+        out = wrangler(["d1", "create", DB_NAME], capture=True)
+        m = re.search(r'"?(?:uuid|database_id)"?\s*[:=]\s*"?([0-9a-f]{8}-[0-9a-f-]{27})', out)
+        if not m:
+            tail = out.strip().splitlines()[-1][:200] if out.strip() else "(no output)"
+            say("FAIL    d1        could not create " + DB_NAME + ": " + tail)
+            sys.exit(4)
+        db_id = m.group(1)
+        say("ok      d1        created " + DB_NAME)
+    else:
+        say("ok      d1        found existing " + DB_NAME)
+    apply_schema(db_id)
+    return db_id
+
+
+def set_secrets():
+    """Every provider key, from the vault, on stdin. A missing one is SKIPped and named."""
+    missing = []
+    for name, candidates in PROVIDER_SECRETS:
+        value = ""
+        for entry, field in candidates:
+            value = vault_get(entry, field)
+            if value:
+                break
+        if not value:
+            missing.append(name)
+            say("SKIP    secret    " + name + " (the vault holds none of: "
+                + ", ".join(e + "/" + f for e, f in candidates) + ")")
+            continue
+        wrangler(["secret", "put", name], stdin=value)
+        say("ok      secret    " + name + " set on the worker (value never printed)")
+    return 1 if missing else 0
+
+
+def deploy_route(z):
+    wrangler(["deploy", "--route", "llm." + z + "/*"])
+    say("ok      route     estate-lifeboat attached to llm." + z + "/*")
+
+
+def _get(url):
+    req = urllib.request.Request(url, headers={"user-agent": "idp-edge-cutover"})
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return resp.status, json.load(resp)
+
+
+def verify(z):
+    """The three real paths, graded. A 200 is not proof; the SHAPE of the answer is."""
+    base = "https://llm." + z
+    verdict = 0
+    try:
+        status, body = _get(base + "/health")
+        say("ok      health    " + base + "/health -> " + str(status) + " status="
+            + str(body.get("status")))
+    except Exception as e:
+        say("FAIL    health    " + base + "/health -> " + str(e))
+        verdict = 4
+
+    try:
+        status, body = _get(base + "/v1/models")
+        ids = [m.get("id") for m in (body.get("data") or [])]
+        say("ok      models    " + base + "/v1/models -> " + str(status) + " lanes=" + str(ids))
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            say("ok      models    " + base + "/v1/models -> HTTP " + str(e.code)
+                + " (router alive and gated)")
+        else:
+            say("FAIL    models    " + base + "/v1/models -> HTTP " + str(e.code))
+            verdict = 4
+    except Exception as e:
+        say("FAIL    models    " + base + "/v1/models -> " + str(e))
+        verdict = 4
+
+    try:
+        status, body = _get(base + "/api/brain/state")
+        st, ro = body.get("status"), body.get("readOnly")
+        if st == "live" and ro is False:
+            say("ok      brain     " + base + "/api/brain/state -> live, readOnly=false, "
+                "authority=" + str(body.get("authority")) + ", instructions="
+                + str(body.get("instructions")))
+        else:
+            say("FAIL    brain     " + base + "/api/brain/state -> status=" + str(st)
+                + " readOnly=" + str(ro))
+            verdict = 4
+    except Exception as e:
+        say("FAIL    brain     " + base + "/api/brain/state -> " + str(e))
+        verdict = 4
+
+    return verdict
+
+
+def rotate_flag():
+    """Say what to rotate and where, having read nothing."""
+    say("ROTATE  the following keys are flagged. This command reads no value and prints none.\n")
+    for name in ROTATE:
+        say("  " + name)
+        say("    why     the estate's `cheap` lane since 2026-09-10; present on every surface that")
+        say("            ran the old router (llm/config.yaml, llm/litellm.yml, the worker); no")
+        say("            rotation record exists.")
+        say("    where   1. mint the new key at the provider's console")
+        say("            2. put it in the vault:   bin/idp-cloud secret put <entry> "
+            + name + "=<value>")
+        say("            3. push it to the worker: bin/idp-edge-cutover --secrets")
+        say("            4. revoke the old key at the provider, then re-run --verify")
+    return 0
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="idp-edge-cutover",
+                                 description="Move llm.<zone> and the brain state onto the edge.")
+    ap.add_argument("--all", action="store_true", help="d1 + secrets + route")
+    ap.add_argument("--d1", action="store_true", help="create/find D1, bind it, apply schema")
+    ap.add_argument("--secrets", action="store_true", help="set every provider key from the vault")
+    ap.add_argument("--route", action="store_true", help="deploy the worker on llm.<zone>/*")
+    ap.add_argument("--verify", action="store_true", help="grade the three real paths")
+    ap.add_argument("--rotate-flag", action="store_true", help="print what to rotate, read nothing")
+    a = ap.parse_args()
+
+    if a.rotate_flag:
+        return rotate_flag()
+    if not any((a.all, a.d1, a.secrets, a.route, a.verify)):
+        ap.print_help()
+        return 2
+    if a.verify and not any((a.all, a.d1, a.secrets, a.route)):
+        return verify(zone())
+
+    z = zone()
+    say("      zone      " + z)
+    reader, writer, account = credentials()
+    with_env(writer, account)
+
+    if a.all or a.d1:
+        bind_d1()
+    if a.all or a.secrets:
+        if set_secrets():
+            say("warn    secrets   some provider lanes are absent; the router serves the rest")
+    if a.all or a.route:
+        deploy_route(z)
+
+    if a.all:
+        say("\nGrading the real paths:")
+        return verify(z)
+    say("\nDone. Prove it with: bin/idp-edge-cutover --verify")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

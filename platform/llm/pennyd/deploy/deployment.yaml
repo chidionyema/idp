@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pennyd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pennyd
+  template:
+    metadata:
+      labels:
+        app: pennyd
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: pennyd
+          image: ghcr.io/chidionyema/pennyd:v0.2.0
+          imagePullPolicy: IfNotPresent
+          # no args: the image ENTRYPOINT already supplies /app/config.toml,
+          # which the config volume mounts at that exact path
+          ports: [{containerPort: 4000}]
+          volumeMounts:
+            - {name: providers, mountPath: /etc/pennyd/providers, readOnly: true}
+            - {name: config, mountPath: /app/config.toml, subPath: config.toml}
+            - {name: keys, mountPath: /etc/pennyd/keys.toml, subPath: keys.toml, readOnly: true}
+            - {name: zai-key, mountPath: /run/secrets/pennyd/zai, readOnly: true}
+            - {name: minimax-key, mountPath: /run/secrets/pennyd/minimax, readOnly: true}
+            - {name: deepseek-key, mountPath: /run/secrets/pennyd/deepseek, readOnly: true}
+            - {name: log, mountPath: /var/lib/pennyd}
+          readinessProbe:
+            httpGet: {path: /health, port: 4000}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: "50m", memory: "64Mi"}
+            limits: {cpu: "500m", memory: "256Mi"}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+      volumes:
+        - name: providers
+          configMap: {name: pennyd-providers}
+        - name: config
+          configMap: {name: pennyd-config}
+        - name: log
+          persistentVolumeClaim: {claimName: pennyd-log}
+        - name: keys
+          secret: {secretName: pennyd-edge-keys}
+        - name: zai-key
+          secret: {secretName: human-zai, optional: true}
+        - name: minimax-key
+          secret: {secretName: human-minimax, optional: true}
+        - name: deepseek-key
+          secret: {secretName: human-deepseek, optional: true}

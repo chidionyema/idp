@@ -1,0 +1,18 @@
+#!/usr/bin/python3
+"""Render Pennyd's edge-key file from the environment without putting the key in argv."""
+
+import json
+import os
+from pathlib import Path
+
+key = os.environ.get("ESTATE_LOCAL_CALLER_KEY", "").strip()
+if not key:
+    raise SystemExit("ESTATE_LOCAL_CALLER_KEY is absent")
+
+path = Path("/etc/pennyd/keys.toml")
+path.parent.mkdir(parents=True, exist_ok=True)
+fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "w") as handle:
+    handle.write("[[keys]]\n")
+    handle.write(f"key = {json.dumps(key)}\n")
+    handle.write("daily_budget_usd = 20.0\n")

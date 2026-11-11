@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""Build and optionally pin the authenticated local + cloud DSH links."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import subprocess
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+HOME = Path.home()
+ENV_FILE = Path(os.environ.get("ESTATE_ENV", HOME / ".config/estate/estate.env"))
+LOCAL_LOG = Path(os.environ.get("DSH_LOG", HOME / ".dsh/logs/web.out.log"))
+STATE = Path(os.environ.get("DSH_LINK_STATE", HOME / ".estate/state/dsh-links.json"))
+MESSAGE_ID = Path(
+    os.environ.get("DSH_LINK_MESSAGE_ID", HOME / ".estate/state/dsh-links-message-id")
+)
+SECRET_LOADER = Path(
+    os.environ.get("ESTATE_SECRET_LOADER", HOME / ".estate/bin/mac-door-secret")
+)
+CLOUD_BASE = "https://chidionyema--estate-dsh-web-web.us-east.modal.run/"
+
+
+def dotenv(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return values
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        values[key.strip()] = value.strip().strip("'\"")
+    return values
+
+
+def secret(name: str, field: str) -> str:
+    proc = subprocess.run(
+        [str(SECRET_LOADER), "dev", name, field],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    if proc.returncode != 0 or not proc.stdout.strip():
+        raise RuntimeError(f"{name} is unavailable")
+    return proc.stdout.strip()
+
+
+def local_url() -> str:
+    explicit = os.environ.get("DSH_LOCAL_URL", "").strip()
+    if explicit:
+        return explicit
+    try:
+        lines = LOCAL_LOG.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError as exc:
+        raise RuntimeError(f"local DSH log is unreadable: {LOCAL_LOG}") from exc
+    for line in reversed(lines):
+        if line.startswith("dsh web: http://127.0.0.1:"):
+            return line.split("dsh web: ", 1)[1].strip()
+    raise RuntimeError("no local DSH URL has been printed")
+
+
+def cloud_url() -> str:
+    deepseek = secret("DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY")
+    token = hashlib.sha256(
+        (deepseek + "\nchidionyema/idp:estate-dsh-web:v1").encode()
+    ).hexdigest()
+    return f"{CLOUD_BASE}?token={token}"
+
+
+def links() -> dict[str, str]:
+    result = {
+        "local": local_url(),
+        "cloud": cloud_url(),
+        "local_base": "http://127.0.0.1:3080/",
+        "cloud_base": CLOUD_BASE,
+    }
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    STATE.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    STATE.chmod(0o600)
+    return result
+
+
+def telegram(values: dict[str, str]) -> str:
+    dashboard = HOME / ".estate/bin/otto-concierge.py"
+    if dashboard.is_file():
+        proc = subprocess.run(
+            [sys.executable, str(dashboard), "--telegram-ui-selftest"],
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+        if proc.returncode == 0:
+            try:
+                state = json.loads((HOME / ".estate/state/otto-dashboard.json").read_text())
+                return str(state.get("message_id") or "dashboard")
+            except Exception:
+                return "dashboard"
+    env = dotenv(ENV_FILE)
+    token = env.get("TELEGRAM_BOT_TOKEN", "")
+    chat = env.get("TELEGRAM_HOME_CHANNEL", "")
+    if not token or not chat:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN / TELEGRAM_HOME_CHANNEL are unavailable")
+    text = (
+        "DSH HOMES\n"
+        f"Local · this Mac\n{values['local']}\n\n"
+        f"Cloud · Modal\n{values['cloud']}\n\n"
+        "Same work surface. Local is the fast working copy; cloud is the fallback."
+    )
+
+    def call(method: str, **payload):
+        data = urllib.parse.urlencode({"chat_id": chat, **payload}).encode()
+        proc = subprocess.run(
+            [
+                "curl",
+                "-fsS",
+                "--retry",
+                "3",
+                "--retry-all-errors",
+                "--max-time",
+                "60",
+                "--data-binary",
+                "@-",
+                f"https://api.telegram.org/bot{token}/{method}",
+            ],
+            input=data,
+            capture_output=True,
+            timeout=75,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f"Telegram {method} failed")
+        return json.loads(proc.stdout.decode()).get("result") or {}
+
+    try:
+        remembered = int(MESSAGE_ID.read_text().strip())
+    except (OSError, ValueError):
+        remembered = 0
+    if remembered:
+        try:
+            call("editMessageText", message_id=remembered, text=text)
+            return str(remembered)
+        except Exception:
+            pass
+    pinned = call("getChat").get("pinned_message") or {}
+    if str(pinned.get("text") or "").startswith("DSH HOMES"):
+        call("editMessageText", message_id=pinned["message_id"], text=text)
+        message_id = str(pinned["message_id"])
+    else:
+        sent = call("sendMessage", text=text, disable_web_page_preview="true")
+        message_id = str(sent["message_id"])
+        call("pinChatMessage", message_id=message_id, disable_notification="true")
+    MESSAGE_ID.parent.mkdir(parents=True, exist_ok=True)
+    MESSAGE_ID.write_text(message_id, encoding="utf-8")
+    MESSAGE_ID.chmod(0o600)
+    return message_id
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--telegram", action="store_true", help="edit/pin the one DSH message")
+    parser.add_argument("--json", action="store_true", help="print the link record")
+    args = parser.parse_args()
+    values = links()
+    if args.telegram:
+        message_id = telegram(values)
+        print(f"DSH Telegram message {message_id} pinned/updated")
+    elif args.json:
+        print(json.dumps(values, indent=2))
+    else:
+        print(f"Local DSH: {values['local']}")
+        print(f"Cloud DSH: {values['cloud']}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

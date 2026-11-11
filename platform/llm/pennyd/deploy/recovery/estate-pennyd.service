@@ -1,0 +1,25 @@
+[Unit]
+Description=Estate Rust model router (Pennyd)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/estate/router.env
+ExecStartPre=/opt/pennyd/prepare-keys
+ExecStart=/opt/pennyd/pennyd /opt/pennyd/pennyd.toml
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+MemoryMax=450M
+TasksMax=256
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pennyd /etc/pennyd
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

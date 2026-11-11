@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""Refuse a service whose FAILURE_MODES.md names no real executable test.
+
+Usage:
+    bin/failure-mode-gate [SERVICE_DIR ...]
+    bin/failure-mode-gate --all
+
+There are deliberately no ignore, force, allow-missing or skip flags.
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+ID_RE = re.compile(r"^(?:F|FP)-[A-Za-z0-9.-]+$")
+TEST_RE = re.compile(r"`([a-zA-Z_][a-zA-Z0-9_]*)`")
+BARE_TEST_RE = re.compile(r"\b[a-zA-Z][a-zA-Z0-9]*(?:_[a-zA-Z0-9]+)+\b")
+SOURCE_GLOBS = ("*.rs", "*.py", "*.js", "*.mjs", "*.ts", "*.tsx", "*.sh")
+
+
+def service_dirs(args: list[str]) -> list[Path]:
+    unknown = [arg for arg in args if arg.startswith("--") and arg != "--all"]
+    if unknown:
+        print(f"failure-mode-gate: unknown argument {unknown[0]}", file=sys.stderr)
+        raise SystemExit(2)
+    if "--all" in args:
+        if len(args) != 1:
+            print("failure-mode-gate: --all cannot be combined with paths", file=sys.stderr)
+            raise SystemExit(2)
+        return sorted(
+            path.parent
+            for path in Path("platform").glob("**/FAILURE_MODES.md")
+            if path.is_file()
+        )
+    if not args:
+        print("failure-mode-gate: at least one service directory is required", file=sys.stderr)
+        raise SystemExit(2)
+    return [Path(arg).resolve() for arg in args]
+
+
+def test_sources(service: Path) -> list[tuple[Path, str]]:
+    rows = []
+    for pattern in SOURCE_GLOBS:
+        for path in service.rglob(pattern):
+            if path.is_file() and path.name != "FAILURE_MODES.md":
+                try:
+                    rows.append((path, path.read_text(encoding="utf-8")))
+                except UnicodeDecodeError:
+                    continue
+    return rows
+
+
+def names_test(name: str, sources: list[tuple[Path, str]]) -> bool:
+    patterns = (
+        re.compile(rf"\bfn\s+{re.escape(name)}\s*\("),
+        re.compile(rf"\bdef\s+{re.escape(name)}\s*\("),
+        re.compile(rf"\btest\s*\(\s*['\"]{re.escape(name)}['\"]"),
+        re.compile(rf"\b{re.escape(name)}\s*\("),
+    )
+    return any(pattern.search(text) for _, text in sources for pattern in patterns)
+
+
+def parse_rows(manifest: Path):
+    test_column: int | None = None
+    for line_number, line in enumerate(manifest.read_text(encoding="utf-8").splitlines(), 1):
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            test_column = None
+            continue
+        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+        if not cells:
+            continue
+        if all(set(cell) <= {"-", ":"} for cell in cells):
+            continue
+        lowered = [cell.lower() for cell in cells]
+        if "test" in lowered:
+            test_column = lowered.index("test")
+            continue
+        if not ID_RE.match(cells[0]):
+            continue
+        if test_column is None or test_column >= len(cells):
+            yield line_number, cells[0], "", "failure table has no Test column"
+            continue
+        yield line_number, cells[0], cells[test_column], ""
+
+
+def check_service(service: Path) -> list[str]:
+    manifest = service / "FAILURE_MODES.md"
+    if not manifest.is_file():
+        return [f"{service}: FAILURE_MODES.md is missing"]
+    sources = test_sources(service)
+    failures = []
+    checked = 0
+    for line_number, row_id, cell, structural_error in parse_rows(manifest):
+        checked += 1
+        if structural_error:
+            failures.append(f"{manifest}:{line_number}: {row_id}: {structural_error}")
+            continue
+        names = TEST_RE.findall(cell) or BARE_TEST_RE.findall(cell)
+        if not names:
+            failures.append(f"{manifest}:{line_number}: {row_id} has no test")
+            continue
+        for name in names:
+            if not names_test(name, sources):
+                failures.append(
+                    f"{manifest}:{line_number}: {row_id}: missing test {name}"
+                )
+    if checked == 0:
+        failures.append(f"{manifest}: no failure-mode rows found")
+    else:
+        print(f"ok failure-modes {service} rows={checked}")
+    return failures
+
+
+def main(argv: list[str]) -> int:
+    failures = []
+    for service in service_dirs(argv[1:]):
+        failures.extend(check_service(service))
+    if failures:
+        for failure in failures:
+            print(f"FAIL failure-mode-gate: {failure}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

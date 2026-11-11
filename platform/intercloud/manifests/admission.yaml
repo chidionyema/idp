@@ -1,0 +1,13 @@
+# Defense-in-depth (C3): reject ANY Claim targeting a paid lane without a matching valid Approval.
+# The controller ALSO verifies; this webhook stops non-controller writers too.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata: {name: intercloud-paid-gate}
+webhooks:
+- name: paidgate.intercloud.estate.internal
+  admissionReviewVersions: [v1]
+  sideEffects: None
+  failurePolicy: Fail  # closed: if the gate is down, nothing provisions
+  rules: [{apiGroups: [estate.estate.internal], apiVersions: [v1], operations: [CREATE, UPDATE], resources: [claims]}]
+  clientConfig:
+    service: {name: intercloud-admission, namespace: intercloud, path: /validate-claim}

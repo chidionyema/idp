@@ -1,0 +1,8 @@
+[package]
+name = "intercloud"
+version = "0.1.0"
+edition = "2021"
+description = "Intercloud placement core: free-lane-first, Telegram-gated paid lanes, hysteresis, churn drills (design 2026-11-09)"
+license = "proprietary"
+[dependencies]
+# zero dependencies by design: std only

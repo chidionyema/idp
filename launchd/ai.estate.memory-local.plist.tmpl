@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The memory door's local fallback origin. It is a critical service: launchd treats it as
+     Interactive so a disk-building renderer cannot make its health check wait behind background
+     I/O. The cloud origin remains the primary when reachable; this is the local rung. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>ai.estate.memory-local</string>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>@HOME@/.estate/memory/bin/local-origin-start.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>ESTATE_MEMORY_LOCAL_PORT</key><string>8002</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>1</integer>
+  <key>StandardOutPath</key><string>@HOME@/.estate/memory/logs/local-origin.out.log</string>
+  <key>StandardErrorPath</key><string>@HOME@/.estate/memory/logs/local-origin.err.log</string>
+</dict>
+</plist>

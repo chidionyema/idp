@@ -1,0 +1,18 @@
+== PROOF 1: complete run, dual-chain verify ==
+yield: {"report": {"checked": true, "findings": ["alpha", "beta"]}}
+VERIFY: True - 4 receipts verified | 8 events verified | all pennyd req-ids anchored
+  f4fe265fb02356cb  root/scout/scout                   exit=0 reqs=[1]
+  3567f7fd595e9aee  root/pipeline/extract/extract      exit=0 reqs=[]
+  74be02e3473e2a52  root/pipeline/check/check          exit=0 reqs=[]
+  e960f6972b62d340  root/report/report                 exit=0 reqs=[]
+
+== PROOF 2: tamper detection (flip exit 0->1) ==
+detected: True - receipt tampered at step root/pipeline/extract/extract
+
+== PROOF 3: crash at 'check', Castra snapshot, reconstitute + resume ==
+crash injected: crash
+snapshot sealed, head: 7d23d5c5016a5ad8
+resumed (not re-run): ['root/scout', 'root/pipeline/extract']
+ran after recovery: ['root/pipeline/check', 'root/report']
+final yield matches: True
+VERIFY across interruption: True - 4 receipts verified | 12 events verified | all pennyd req-ids anchored

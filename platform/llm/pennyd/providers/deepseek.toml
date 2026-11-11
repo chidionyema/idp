@@ -1,0 +1,36 @@
+id = "deepseek"
+dialect = "openai"
+base_url = "https://api.deepseek.com"
+request_path = "/v1/chat/completions"
+api_key_file = "/run/secrets/pennyd/deepseek/DEEPSEEK_API_KEY"
+
+[auth]
+kind = "bearer"
+key_env = "DEEPSEEK_API_KEY"
+
+[[models]]
+id = "deepseek-flash"
+class = "paid"
+price_in_per_mtok = 0.30
+price_out_per_mtok = 1.20
+context_window = 1000000
+min_output_tokens = 256
+aliases = [
+    "cheap-chat",
+    "deepseek",
+    "deepseek-flash",
+    "deepseek-v4-flash",
+    "fast",
+    "claude-sonnet-secondary",
+]
+fallbacks = ["minimax/MiniMax-M3.1-Flash"]
+
+[[models]]
+id = "deepseek-v4-pro"
+class = "paid"
+price_in_per_mtok = 1.32
+price_out_per_mtok = 3.96
+context_window = 1000000
+min_output_tokens = 256
+aliases = ["deepseek-v4-pro", "claude-opus-primary"]
+fallbacks = ["deepseek/deepseek-flash"]

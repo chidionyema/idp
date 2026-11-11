@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: intercloud-controller, namespace: intercloud}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: intercloud-controller}
+rules:
+- {apiGroups: [intercloud.estate.internal], resources: [lanes, workloadspecs], verbs: [get, list, watch]}
+- {apiGroups: [intercloud.estate.internal], resources: [approvals], verbs: [get, list, watch]}  # READ ONLY
+- {apiGroups: [estate.estate.internal], resources: [claims], verbs: [get, list, watch, create, update, patch, delete]}
+- {apiGroups: [policy.karmada.io], resources: [propagationpolicies], verbs: [get, list, watch, create, update, patch, delete]}
+- {apiGroups: [""], resources: [events], verbs: [create]}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: spooler-approver}  # ONLY this identity may create Approvals
+rules:
+- {apiGroups: [intercloud.estate.internal], resources: [approvals], verbs: [create]}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: intercloud-controller}
+subjects: [{kind: ServiceAccount, name: intercloud-controller, namespace: intercloud}]
+roleRef: {kind: ClusterRole, name: intercloud-controller, apiGroup: rbac.authorization.k8s.io}

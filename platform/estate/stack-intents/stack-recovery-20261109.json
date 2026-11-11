@@ -1,0 +1,38 @@
+{
+  "schema": "estate.stack-intent.v1",
+  "intent_id": "stack-recovery-20261109",
+  "claim": {
+    "repo": "chidionyema/idp",
+    "issue": 7826,
+    "agent": "estate-agent",
+    "fencing_token": "7bf11f8bbf32e21c358551f0d1f8b9c9ab6a8a793edce0de11e7a96a342db614"
+  },
+  "idempotency_key": "estate-stack-verify-20261109-0328-001",
+  "mode": "verify",
+  "scope": [
+    "stack",
+    "router",
+    "dsh"
+  ],
+  "resolves": [
+    "estate-doors"
+  ],
+  "budget_usd": 0,
+  "targets": {
+    "substrate": "oracle-always-free",
+    "router_url": "https://llm.mumchimp.com",
+    "router_models_url": "https://llm.mumchimp.com/v1/models",
+    "dsh_health_url": "https://chidionyema--estate-dsh-web-web.us-east.modal.run/healthz",
+    "opentofu_targets": [
+      "oci_core_instance.recovery",
+      "oci_core_volume_attachment.surviving",
+      "oci_identity_policy.recovery",
+      "oci_core_network_security_group_security_rule.recovery_egress"
+    ]
+  },
+  "approval": {
+    "scheme": "ed25519-founder",
+    "signature": "not-authorized-for-apply"
+  },
+  "intent_sha256": "b340ea7e37c75b1b9c3d62d59faea05ef041651ac221e20d22be99e2f05ef946"
+}

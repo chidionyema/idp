@@ -1,0 +1,193 @@
+#!/usr/bin/env python3
+"""bin/research-first -- the door .githooks/commit-msg names and that did not exist.
+
+The hook has refused commits with `REFUSE: no passing research-first receipt in the last 4 hours`
+and told the reader to run `bin/research-first start ...` since 2026-10-30. The gate was committed;
+the door was not. That is AGENTS.md section 9 R14 exactly -- a guard that refuses the estate's own
+correct work and names a remedy the estate does not have -- and it cost every agent a commit to
+discover. This file is the missing half; .githooks/commit-msg is unchanged, because the gate was
+right about what it wanted and the estate simply never shipped the way to satisfy it.
+
+The contract the hook enforces (read from .githooks/commit-msg, not assumed):
+  * the newest *.json in ~/.estate/receipts/research-first/ has "pass": true
+  * it is at most 4 hours old
+  * it passes inside a 300 s window (measured from `start`)
+
+What this door adds on top: a finding with no source is REFUSED, and a source must be real -- an
+internal source is `path:line` naming a file that EXISTS, an external source is an http(s) URL.
+The receipts already in the store carry findings with no source at all and still read `pass: true`,
+so the earlier writer would have accepted a claim about nothing. A receipt that can be written by
+assertion is not a record of research, it is a diary.
+
+Usage
+  bin/research-first start --task "<the task>"      open the window (300 s)
+  bin/research-first note --kind internal --finding "<what>" --source path:line
+  bin/research-first note --kind external --finding "<what>" --source https://...
+  bin/research-first status                          where the window stands
+  bin/research-first done                            write the receipt; exit 1 if it does not pass
+
+Exit codes: 0 pass (or the command succeeded), 1 the receipt does not pass (the reason is named),
+2 BLIND (no window open, or a source that cannot be checked).
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+import time
+from pathlib import Path
+
+STORE = (
+    Path(os.environ.get("ESTATE_RECEIPTS", str(Path.home() / ".estate" / "receipts")))
+    / "research-first"
+)
+STATE = STORE / ".window.json"
+BUDGET_S = 300
+KINDS = ("internal", "external")
+EXIT_FAIL, EXIT_BLIND = 1, 2
+
+
+def blind(msg):
+    print(f"BLIND  {msg}", file=sys.stderr)
+    sys.exit(EXIT_BLIND)
+
+
+def read_window():
+    if not STATE.exists():
+        blind(
+            'no research window is open. Run: bin/research-first start --task "<the task>"'
+        )
+    try:
+        return json.loads(STATE.read_text())
+    except ValueError as exc:
+        blind(f"the window at {STATE} is not readable JSON ({exc}). Start a new one.")
+
+
+def write_window(w):
+    STORE.mkdir(parents=True, exist_ok=True)
+    STATE.write_text(json.dumps(w, indent=1))
+
+
+def check_source(kind, source, root):
+    """A source is checked, never trusted. This is the tightening the earlier writer lacked."""
+    if not source:
+        return "a finding with no source is an assertion, not a finding"
+    if kind == "internal":
+        path, _, line = source.rpartition(":")
+        if not path or not line.isdigit():
+            return f"internal source {source!r} is not `path:line`"
+        if not (Path(root) / path).exists():
+            return f"internal source {source!r} names a file that does not exist"
+        if int(line) < 1:
+            return f"internal source {source!r} names line 0"
+        return None
+    if kind == "external":
+        if not re.match(r"^https?://[^\s/]+\.[^\s]+", source):
+            return f"external source {source!r} is not an http(s) URL"
+        return None
+    return f"unknown kind {kind!r}"
+
+
+def repo_root():
+    """The checkout, probed -- never trusted from __file__ (DBG-003)."""
+    here = Path(__file__).resolve().parent.parent
+    return here if (here / "bin" / "idp-edge-cutover").exists() else Path.cwd()
+
+
+def cmd_start(args):
+    write_window(
+        {"task": args.task, "started": time.time(), "notes": [], "budget_s": BUDGET_S}
+    )
+    print(f"research window open for {BUDGET_S}s: {args.task}")
+    print(
+        "  note internal findings with --source <path>:<line>, external with --source <url>"
+    )
+    print("  then: bin/research-first done")
+
+
+def cmd_note(args):
+    w = read_window()
+    if args.kind not in KINDS:
+        blind(f"--kind must be one of {KINDS}, got {args.kind!r}")
+    problem = check_source(args.kind, args.source, repo_root())
+    if problem:
+        blind(problem)
+    w["notes"].append(
+        {
+            "kind": args.kind,
+            "finding": args.finding,
+            "source": args.source,
+            "at": time.time(),
+        }
+    )
+    write_window(w)
+    seen = {n["kind"] for n in w["notes"]}
+    print(f"noted {args.kind}: {args.finding}  (kinds seen: {','.join(sorted(seen))})")
+
+
+def cmd_status(args):
+    w = read_window()
+    seen = {n["kind"] for n in w["notes"]}
+    print(f"task     {w['task']}")
+    print(f"elapsed  {time.time() - w['started']:.0f}s of {w['budget_s']}s")
+    print(f"kinds    {','.join(sorted(seen)) or '(none)'}")
+    print(f"missing  {','.join(sorted(set(KINDS) - seen)) or '(none)'}")
+
+
+def cmd_done(args):
+    w = read_window()
+    elapsed = time.time() - w["started"]
+    seen = {n["kind"] for n in w["notes"]}
+    missing = sorted(set(KINDS) - seen)
+    within = elapsed <= w["budget_s"]
+    rec = {
+        "task": w["task"],
+        "elapsed_s": round(elapsed, 1),
+        "budget_s": w["budget_s"],
+        "internal": "internal" in seen,
+        "external": "external" in seen,
+        "within_budget": within,
+        "pass": (not missing) and within,
+        "missing": missing if missing else ([] if within else ["within_budget"]),
+        "kinds_seen": sorted(seen),
+        "at": time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()),
+        "notes": w["notes"],
+    }
+    STORE.mkdir(parents=True, exist_ok=True)
+    path = STORE / f"{rec['at']}.json"
+    path.write_text(json.dumps(rec, indent=1))
+    STATE.unlink()
+    if rec["pass"]:
+        print(
+            f"PASS  receipt {path.name}: internal and external findings, inside {rec['elapsed_s']}s"
+        )
+        return 0
+    print(
+        f"FAIL  receipt {path.name} does not pass: missing {','.join(rec['missing'])}\n"
+        "      The gate will refuse a commit until a passing receipt exists. Nothing is wrong\n"
+        "      with the gate; this window simply did not record both kinds of finding.",
+        file=sys.stderr,
+    )
+    return EXIT_FAIL
+
+
+def main(argv):
+    ap = argparse.ArgumentParser()
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("start")
+    s.add_argument("--task", required=True)
+    s.set_defaults(fn=cmd_start)
+    n = sub.add_parser("note")
+    n.add_argument("--kind", required=True)
+    n.add_argument("--finding", required=True)
+    n.add_argument("--source", required=True)
+    n.set_defaults(fn=cmd_note)
+    sub.add_parser("status").set_defaults(fn=cmd_status)
+    sub.add_parser("done").set_defaults(fn=cmd_done)
+    args = ap.parse_args(argv)
+    return args.fn(args) or 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

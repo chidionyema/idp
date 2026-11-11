@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""List or edit Pennyd's model catalogue through its authenticated admin API."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+
+def _key(path: Path) -> str:
+    value = os.environ.get("LITELLM_API_KEY", "").strip()
+    if value:
+        return value
+    if not path.is_file():
+        raise SystemExit(f"no LITELLM_API_KEY and no key file at {path}")
+    match = re.search(r'^key\s*=\s*"((?:[^"\\]|\\.)*)"', path.read_text(), re.M)
+    if not match:
+        raise SystemExit(f"{path} carries no [[keys]] key")
+    return json.loads(f'"{match.group(1)}"')
+
+
+def _call(base: str, key: str, method: str, path: str, body=None):
+    data = None if body is None else json.dumps(body).encode()
+    request = urllib.request.Request(
+        base.rstrip("/") + path,
+        data=data,
+        method=method,
+        headers={
+            "authorization": f"Bearer {key}",
+            "content-type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode(errors="replace")
+        raise SystemExit(f"HTTP {exc.code}: {detail}") from exc
+
+
+def _csv(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--base", default=os.environ.get("PENNYD_URL", "http://127.0.0.1:4200"))
+    parser.add_argument(
+        "--key-file",
+        type=Path,
+        default=Path("~/.estate/pennyd/keys.toml").expanduser(),
+    )
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("list", help="list every live model and alias")
+
+    set_parser = commands.add_parser("set", help="add or replace one model")
+    set_parser.add_argument("provider")
+    set_parser.add_argument("model")
+    set_parser.add_argument("--class", dest="lane_class", choices=("local", "free", "paid"), required=True)
+    set_parser.add_argument("--price-in", type=float, default=0.0)
+    set_parser.add_argument("--price-out", type=float, default=0.0)
+    set_parser.add_argument("--context", type=int, default=0)
+    set_parser.add_argument("--min-output", type=int, default=256)
+    set_parser.add_argument("--aliases", default="")
+    set_parser.add_argument("--fallbacks", default="")
+
+    remove = commands.add_parser("remove", help="remove one model")
+    remove.add_argument("provider")
+    remove.add_argument("model")
+
+    args = parser.parse_args()
+    key = _key(args.key_file)
+    if args.command == "list":
+        result = _call(args.base, key, "GET", "/admin/models")
+        for model in result["models"]:
+            aliases = ",".join(model["aliases"]) or "-"
+            print(
+                f'{model["canonical"]:<48} {model["class"]:<7} '
+                f'ctx={model["context_window"]:<8} aliases={aliases}'
+            )
+        return 0
+    if args.command == "remove":
+        result = _call(
+            args.base,
+            key,
+            "DELETE",
+            f"/admin/models/{args.provider}/{args.model}",
+        )
+    else:
+        result = _call(
+            args.base,
+            key,
+            "PUT",
+            f"/admin/models/{args.provider}/{args.model}",
+            {
+                "id": args.model,
+                "class": args.lane_class,
+                "price_in_per_mtok": args.price_in,
+                "price_out_per_mtok": args.price_out,
+                "context_window": args.context,
+                "min_output_tokens": args.min_output,
+                "aliases": _csv(args.aliases),
+                "fallbacks": _csv(args.fallbacks),
+            },
+        )
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
