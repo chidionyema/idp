@@ -1,4 +1,4 @@
-# Merdian Intelligence — web
+# Meridian Intelligence — web
 
 Next.js 14 App Router. Content lives in `content/`; pages in `app/`.
 
@@ -54,9 +54,11 @@ Payload shape:
 - `clientKey` trusts `x-forwarded-for`. That is correct behind a proxy that sets it and
   spoofable if the app is reachable directly.
 
-## Corporate identity and release model (founder 2026-11-09)
-Merdian Intelligence is the parent AI laboratory and product company. Mumchimp is a group company; Genesis is a lab and operating product. Research and prototypes are not production proof.
+## Corporate identity and release model (updated founder instruction 2026-11-11)
+Meridian Intelligence is the parent AI laboratory and product company. Mumchimp is a group company; Genesis is a lab and operating product. Research and prototypes are not production proof.
 
-Legacy Meridian DNS / contact deployment settings remain compatibility inputs while Merdian's canonical domain is verified. Do not claim meridian.ai belongs to Merdian or invent an email address. The contact form fails closed if no delivery endpoint exists. Previously unsubstantiated numerical case studies remain in the source for evidence review but are no longer rendered as customer proof.
+Legacy Meridian DNS / contact deployment settings remain compatibility inputs while Meridian's canonical domain is verified. Do not claim meridian.ai belongs to Meridian or invent an email address. The contact form fails closed if no delivery endpoint exists. Previously unsubstantiated numerical case studies remain in the source for evidence review but are no longer rendered as customer proof.
 
 Release checks: web CI typecheck, voice, lint, unit, build, smoke; independent review of brand, DNS, provider configuration, accessibility and actual customer interaction.
+
+Public brand spelling: **Meridian Intelligence**. The older Merdian public spelling is deprecated. Existing `MERDIAN_SITE_URL` and `MERIAN_SITE_URL` env names remain backward-compatibility inputs; set `MERIDIAN_SITE_URL` for new deployments. The canonical currently configured Vercel alias is `meridian-intelligence-uk.vercel.app`, pending a verified owned domain.
