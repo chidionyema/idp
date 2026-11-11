@@ -57,3 +57,53 @@ Do not train on the oracle file or copy task-specific labels into the prompt. St
 ## Reproducibility counterexample
 
 HELM-001 initially scored 2/3 joint passes against memory's 1/3, but the next independent run scored 0/3 against memory's 2/3. Model-provider errors and brittle lexical/opcode grading made this unstable. Source run IDs: 42951727380 and 42952186577. HELM-002 preregisters separate factual, opcode, schema, and joint metrics and introduces a previously unseen operations task. **None of these tiny experiments demonstrates a fleet-level effect or credible commercial uplift.**
+
+## Live agent adapter: opt-in, source-aligned, no authority promotion
+
+An existing estate agent may **opt into HELM** through `experiments/helm/agent-adapter.mjs`.
+It consumes the real C1 ContextPlan (`items[]`, `plan_hash`, `provenance.commit`),
+preserves the context engine's ordering, rejects a mismatched indexed commit, and emits
+`helm.agent-proposal.v1`. It never executes the proposed action and always states
+`independentlyVerified:false`. Authorized machine actions still go through the existing
+YAML intent executor, and operational verification stays out-of-process.
+
+```bash
+# An authorized estate agent requests a ContextPlan from the existing compiler:
+bin/estate-context-compile --task "inspect system task" --json > /tmp/helm-context-plan.json
+# task.json contains { "id": "INS-...", "question": "...", "patchTarget": "...", "language": "python" }
+# Internal model credentials must come from existing managed environment/secret infrastructure.
+node experiments/helm/agent-adapter.mjs task.json /tmp/helm-proposal.json /tmp/helm-context-plan.json
+```
+
+**Critical data boundary:** an unauthenticated free provider is for public synthetic cases
+only. The agent adapter explicitly refuses to send a real ContextPlan to that provider.
+Never move actual private estate code, work instructions, or credentials to free models.
+A response is a proposal, not an instruction grant, deployment, claim, or evidence of yield.
+
+## Executable-code evaluation and robustness
+
+`experiments/helm/functional-bench.mjs` compares **baseline, generic skills, memory,
+memory+repair, and HELM**. Model-generated code is graded against Python unit tests,
+not keyword matches, in a `--network none --read-only --cap-drop ALL` container with
+memory, CPU, process and user limits. The oracle source is not sent to the model.
+
+The `helm-verify` workflow is short and independent of third-party model availability:
+23/23 runtime/adapter tests and all 24 reference/empty-patch two-sided grader checks
+passed on 2026-11-11 in GitHub Actions run 42957465830. This proves that the research
+harness is working; it does not prove HELM improves coding agents.
+
+`helm-functional` is the slower model-evaluation workflow. Free-model availability,
+rate limits, over-long internal reasoning, token budgets and provider errors are recorded
+as failed or inconclusive attempts, never silently relabelled successful. A reference
+solution passing and an empty patch failing each test suite is a necessary floor, not
+a substitute for independent, larger, contamination-resistant benchmarks.
+
+## Additional reviewed methodology
+
+- SWE-Bench Pro V2 (2026-09-22): https://labs.scale.com/leaderboard/swe_bench_pro_public_v2
+  — executable graders need both positive reference and negative empty-patch controls.
+- OpenAI coding benchmark audit (2026-07-08):
+  https://openai.com/index/separating-signal-from-noise-coding-evaluations/
+  — strict/underspecified/low-coverage test sets distort agent performance estimates.
+- TAME (EMNLP 2026): https://aclanthology.org/2026.emnlp-main.2100/
+  — memory can degrade trustworthiness during evolution; independently evaluate reuse.
