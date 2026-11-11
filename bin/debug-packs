@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""bin/debug-packs -- read and grade the estate's debugging-pack catalogue.
+
+A debugging pack is the durable record of one failure class: what you SAW, why it really
+happened, the falsifier that proves it is closed, the remedy, and the law that was broken.
+The catalogue is `docs/debugging-packs.json`. This door is the only supported way to read it,
+because a catalogue read by ad-hoc `jq` drifts from the contract and nobody notices until a
+pack points at a test that no longer exists.
+
+Exit contract (a door that could not look never reports "nothing recorded"):
+
+  0  ok          -- the requested read succeeded
+  2  BLIND       -- the catalogue could not be read or parsed; nothing was graded
+  3  none        -- the catalogue was read and holds nothing matching
+  4  refused     -- the catalogue is present and readable but violates its own contract
+
+Usage:
+  debug-packs                 list every pack id, status and title
+  debug-packs --check         grade the catalogue against its contract (ci rung)
+  debug-packs --show <id>     print one pack in full
+  debug-packs --search <text> match text in any field
+  debug-packs --status <s>    only packs with this status
+  debug-packs --json          machine-readable
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+# ESTATE_DEBUG_PACKS lets a falsifier point this door at a broken or absent catalogue and
+# prove it exits BLIND rather than 'nothing recorded'. Without it the BLIND branch is
+# unreachable in a test, and an unreachable branch is an unproven one.
+CATALOGUE = Path(
+    os.environ.get("ESTATE_DEBUG_PACKS") or (REPO / "docs" / "debugging-packs.json")
+)
+
+EXIT_OK = 0
+EXIT_BLIND = 2
+EXIT_NONE = 3
+EXIT_REFUSED = 4
+
+REQUIRED = ("id", "title", "symptom", "cause", "falsifier", "remedy", "status", "law")
+KNOWN_STATUS = {"fixed", "diagnosed", "external", "unrecoverable"}
+# A falsifier is runnable when it names a check a machine can execute -- a python, shell or
+# node test, a binary under a bin/ directory, or this door's own --check. Recognising only
+# some of those would make the gate reject a pack whose proof is real, which trains agents
+# to route around it (R14).
+RUNNABLE = (".py", ".sh", ".mjs", ".js", ".ts", "bin/", "--check", "debug-packs")
+
+
+def blind(msg: str) -> int:
+    """A BLIND is a measured inability to look -- never a pass, never 'nothing recorded'."""
+    print(f"BLIND debug-packs: {msg}", file=sys.stderr)
+    return EXIT_BLIND
+
+
+def load() -> tuple[list[dict] | None, int]:
+    if not CATALOGUE.exists():
+        return None, blind(f"{CATALOGUE} does not exist, so no pack was read")
+    try:
+        data = json.loads(CATALOGUE.read_text())
+    except (OSError, ValueError) as exc:
+        return None, blind(f"{CATALOGUE} could not be parsed: {exc}")
+    packs = data.get("packs")
+    if not isinstance(packs, list):
+        return None, blind(f"{CATALOGUE} has no `packs` list")
+    return packs, EXIT_OK
+
+
+def check(packs: list[dict]) -> int:
+    """Grade the catalogue against its contract. A gate that cannot fail is not a gate."""
+    problems: list[str] = []
+
+    ids = [p.get("id") for p in packs]
+    dupes = {i for i in ids if ids.count(i) > 1}
+    if dupes:
+        problems.append(f"duplicate ids: {sorted(dupes)}")
+    if ids != sorted(ids):
+        problems.append("ids are not ordered")
+
+    for p in packs:
+        pid = p.get("id", "<no id>")
+        missing = [k for k in REQUIRED if not p.get(k)]
+        if missing:
+            problems.append(f"{pid}: missing {missing}")
+        status = p.get("status")
+        if status and status not in KNOWN_STATUS:
+            problems.append(f"{pid}: unknown status {status!r}")
+        # A pack claiming `fixed` must name an executable falsifier, not a paragraph.
+        fals = str(p.get("falsifier") or "")
+        if status == "fixed" and not any(token in fals for token in RUNNABLE):
+            problems.append(
+                f"{pid}: status fixed but falsifier names no runnable check"
+            )
+
+    if problems:
+        print(
+            f"FAIL debug-packs: {len(problems)} contract violation(s)", file=sys.stderr
+        )
+        for item in problems:
+            print(f"  {item}", file=sys.stderr)
+        return EXIT_REFUSED
+
+    print(f"ok {len(packs)} packs")
+    return EXIT_OK
+
+
+def show(packs: list[dict], pid: str) -> int:
+    for p in packs:
+        if p.get("id") == pid:
+            print(json.dumps(p, indent=2, ensure_ascii=False))
+            return EXIT_OK
+    print(f"debug-packs: no pack with id {pid!r}", file=sys.stderr)
+    return EXIT_NONE
+
+
+def matches(packs: list[dict], needle: str) -> list[dict]:
+    n = needle.lower()
+    return [p for p in packs if any(n in str(v).lower() for v in p.values())]
+
+
+def main(argv: list[str]) -> int:
+    packs, rc = load()
+    if packs is None:
+        return rc
+
+    if not argv:
+        for p in packs:
+            print(f"{p['id']}  {p['status']:<13} {p['title']}")
+        return EXIT_OK
+
+    cmd = argv[0]
+    if cmd == "--check":
+        return check(packs)
+    if cmd == "--json":
+        print(json.dumps({"version": 1, "packs": packs}, indent=2, ensure_ascii=False))
+        return EXIT_OK
+    if cmd == "--show" and len(argv) > 1:
+        return show(packs, argv[1])
+    if cmd == "--search" and len(argv) > 1:
+        found = matches(packs, argv[1])
+        if not found:
+            print(f"debug-packs: nothing matches {argv[1]!r}", file=sys.stderr)
+            return EXIT_NONE
+        for p in found:
+            print(f"{p['id']}  {p['status']:<13} {p['title']}")
+        return EXIT_OK
+    if cmd == "--status" and len(argv) > 1:
+        found = [p for p in packs if p.get("status") == argv[1]]
+        if not found:
+            print(f"debug-packs: no pack has status {argv[1]!r}", file=sys.stderr)
+            return EXIT_NONE
+        for p in found:
+            print(f"{p['id']}  {p['title']}")
+        return EXIT_OK
+
+    print(
+        "usage: debug-packs [--check|--json|--show ID|--search TEXT|--status S]",
+        file=sys.stderr,
+    )
+    return EXIT_REFUSED
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
