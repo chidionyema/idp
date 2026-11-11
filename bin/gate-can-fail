@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+"""bin/gate-can-fail -- prove a gate is able to reject before trusting it to accept.
+
+THE CLASS THIS CLOSES (2026-11-10). In one session a falsifier passed 7/7 against deliberately
+broken code, and a protocol gate's budget layer answered "allow" when it could not evaluate
+itself. Both are R1: a gate that cannot fail is not a gate. The two are the same defect at
+different layers, and both were found by a human pushing back, not by the estate.
+
+The repair is structural rather than a fixed instance: a gate may not be trusted to PASS until it
+has been shown to FAIL on a known-bad input. This door performs that proof and writes a receipt,
+so "the gate is green" is never a claim without evidence that the gate can be red.
+
+WHAT IT CHECKS, for each gate it is given:
+
+  1. KNOWN-BAD must be rejected. A gate that accepts a known-bad fixture is disqualified.
+  2. KNOWN-GOOD must be accepted. A gate that rejects everything is also broken -- refusing
+     correct work is an outage (AGENTS.md section 12).
+  3. A gate that cannot RUN is neither: it is BLIND, and BLIND is not a pass (R1).
+
+Exit codes are the verdict, so this door composes:
+  0  every gate proved able to fail, and able to pass
+  1  a gate accepted known-bad input, or rejected known-good input -- it is disqualified
+  2  BLIND: a gate could not be run at all. Not a pass, not a failure of the gate.
+
+Usage:
+    bin/gate-can-fail --gate <name> --bad-cmd '<cmd>' --good-cmd '<cmd>'
+    bin/gate-can-fail --self-test
+
+A gate is any command whose exit code is its verdict (0 = accept, non-zero = reject). That is the
+estate's own definition of a gate (AGENTS.md section 7: exit codes, not vendor hooks), so this
+door needs no per-gate adapter and no second copy of any gate's logic.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+EXIT_OK = 0
+EXIT_DISQUALIFIED = 1
+EXIT_BLIND = 2
+
+DEFAULT_RECEIPTS = Path.home() / ".estate" / "receipts" / "gate-can-fail"
+
+
+def blind(msg):
+    """BLIND is a measurement failure, never 'no match' and never a pass.
+
+    `sys.exit("string")` exits 1, not the declared code, so a blind verdict must print and then
+    call sys.exit(EXIT_BLIND) explicitly -- an exit-code contract carried only by a string is a
+    contract that silently becomes 1.
+    """
+    print("BLIND: %s" % msg, file=sys.stderr)
+    sys.exit(EXIT_BLIND)
+
+
+def run(cmd, timeout=60):
+    """Run one gate invocation. Returns (exit code, combined output)."""
+    try:
+        r = subprocess.run(  # noqa: S602 -- the gate command IS the input, by design
+            cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return r.returncode, (r.stdout or "") + (r.stderr or "")
+    except subprocess.TimeoutExpired:
+        return -2, "timed out after %ss" % timeout
+    except OSError as e:
+        return -1, str(e)
+
+
+def judge(name, bad_cmd, good_cmd, timeout=60):
+    """Decide whether one gate is able to fail. Returns the findings, never exits."""
+    bad_rc, bad_out = run(bad_cmd, timeout)
+    good_rc, good_out = run(good_cmd, timeout)
+
+    findings = []
+    if bad_rc in (-1, -2):
+        findings.append(
+            "BLIND on known-bad: the gate could not run (%s). "
+            "A gate that cannot run has not passed and has not failed."
+            % bad_out.strip()[:120]
+        )
+    elif bad_rc in (126, 127):
+        # THE BUG THIS DOOR HAD (2026-11-10, found by its own self-test). `/bin/sh -c` does not
+        # raise OSError for a missing binary: it exits 127. A non-zero code therefore LOOKED like
+        # "the gate rejected the known-bad input", and a gate that never ran was certified as a
+        # gate that can fail. That is BLIND promoted to a pass -- R1 in its purest form, inside
+        # the door built to detect R1. 126 = not executable, 127 = not found: both are "could not
+        # run", never "rejected".
+        findings.append(
+            "BLIND on known-bad: the gate could not be executed (exit %s: %s). "
+            "A command that never started has not rejected anything."
+            % (bad_rc, bad_out.strip()[:120])
+        )
+    elif bad_rc == 0:
+        findings.append(
+            "ACCEPTED KNOWN-BAD: the gate returned 0 on input it must reject. "
+            "This is R1 -- a gate that cannot fail is not a gate."
+        )
+
+    if good_rc in (-1, -2):
+        findings.append(
+            "BLIND on known-good: the gate could not run (%s)." % good_out.strip()[:120]
+        )
+    elif good_rc in (126, 127):
+        findings.append(
+            "BLIND on known-good: the gate could not be executed (exit %s)." % good_rc
+        )
+    elif good_rc != 0:
+        findings.append(
+            "REJECTED KNOWN-GOOD (exit %s): refusing correct work is an outage "
+            "(AGENTS.md section 12), not a stronger gate." % good_rc
+        )
+
+    return {
+        "gate": name,
+        "ok": not findings,
+        "bad_exit": bad_rc,
+        "good_exit": good_rc,
+        "findings": findings,
+        "bad_output_head": bad_out.strip()[:400],
+        "good_output_head": good_out.strip()[:400],
+    }
+
+
+def write_receipt(result):
+    """A receipt is the artifact a later session checks. Machine-generated, hashable."""
+    DEFAULT_RECEIPTS.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    body = json.dumps(result, sort_keys=True, indent=2)
+    digest = hashlib.sha256(body.encode()).hexdigest()
+    path = DEFAULT_RECEIPTS / ("%s-%s.json" % (stamp, digest[:12]))
+    path.write_text(json.dumps(dict(result, sha256=digest, at=stamp), indent=2) + "\n")
+    return path
+
+
+def self_test():
+    """Prove THIS door can fail, using fixtures whose verdict is not in doubt.
+
+    The self-test is itself a gate, so it is subject to the same law: it must show a gate that
+    accepts known-bad being disqualified, and a gate that rejects known-bad being accepted.
+    """
+    cases = [
+        ("a gate that accepts known-bad is disqualified", "true", "true", False),
+        ("a gate that rejects known-bad is accepted", "false", "true", True),
+        ("a gate that rejects known-good is disqualified", "false", "false", False),
+        # A gate that CANNOT RUN must not be read as a pass. `exit 7` is not that fixture: it is
+        # the shell's own builtin, so it runs and returns 7 -- a real rejection, and the door was
+        # right to accept it. The fixture must fail to spawn at all.
+        (
+            "a gate that cannot run is not a pass",
+            "/nonexistent/gate-binary-that-cannot-run",
+            "true",
+            False,
+        ),
+    ]
+    bad = 0
+    for label, badc, goodc, expect_ok in cases:
+        r = judge("self-test", badc, goodc, timeout=10)
+        ok = r["ok"] is expect_ok
+        print(
+            "%s %s -> ok=%s (wanted %s)"
+            % ("ok  " if ok else "FAIL", label, r["ok"], expect_ok)
+        )
+        if not ok:
+            bad += 1
+            for f in r["findings"]:
+                print("       %s" % f)
+    print("VERDICT: %s" % ("PASS" if bad == 0 else "FAIL (%d case(s))" % bad))
+    return EXIT_OK if bad == 0 else EXIT_DISQUALIFIED
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument("--self-test", action="store_true")
+    ap.add_argument("--gate", default="")
+    ap.add_argument("--bad-cmd", default="")
+    ap.add_argument("--good-cmd", default="")
+    ap.add_argument("--timeout", type=int, default=60)
+    a = ap.parse_args(argv)
+
+    if a.self_test:
+        return self_test()
+
+    if not a.gate:
+        blind("no --gate named, so there is nothing to prove and nothing was looked at")
+    if not a.bad_cmd or not a.good_cmd:
+        blind(
+            "a gate is proved by BOTH a known-bad and a known-good input; "
+            "--gate %r supplied only one, so neither direction was measured" % a.gate
+        )
+
+    result = judge(a.gate, a.bad_cmd, a.good_cmd, timeout=a.timeout)
+    path = write_receipt(result)
+    print("receipt: %s" % path)
+    for f in result["findings"]:
+        print("  %s" % f)
+    if result["ok"]:
+        print(
+            "ok    %s: rejected known-bad (exit %s), accepted known-good"
+            % (a.gate, result["bad_exit"])
+        )
+        return EXIT_OK
+    print("FAIL  %s: this gate is disqualified" % a.gate, file=sys.stderr)
+    return EXIT_DISQUALIFIED
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
