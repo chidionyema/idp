@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# GitHub-hosted Legion runner: install the exact audited age binary without apt mirrors.
+# Azure's Ubuntu mirror DNS failed in agent-sandbox 43035799443 before the worker ran.
+set -euo pipefail
+
+if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
+  echo '::error::age bootstrap supports only the pinned Ubuntu x86_64 runner' >&2
+  exit 1
+fi
+
+scratch="$(mktemp -d "${RUNNER_TEMP:?RUNNER_TEMP must be set}/age-bootstrap.XXXXXXXX")"
+trap 'rm -rf "$scratch"' EXIT
+archive="$scratch/age.tar.gz"
+url='https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz'
+expected='cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10'
+curl --fail --silent --show-error --location --retry 3 --connect-timeout 10 --max-time 120 --output "$archive" "$url"
+if ! printf '%s  %s\n' "$expected" "$archive" | sha256sum --check --status; then
+  echo '::error::age bootstrap SHA-256 mismatch; refusing untrusted executable' >&2
+  exit 1
+fi
+tar -xzf "$archive" -C "$scratch" age/age
+sudo install -m 0755 "$scratch/age/age" /usr/local/bin/age
+age --version
