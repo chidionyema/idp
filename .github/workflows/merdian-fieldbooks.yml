@@ -1,0 +1,70 @@
+name: Merdian Fieldbooks commercial acceptance
+
+on:
+  pull_request:
+    paths:
+      - "web/app/fieldbooks/**"
+      - "web/app/page.tsx"
+      - "web/components/Nav.tsx"
+      - "web/components/Footer.tsx"
+      - "web/content/**"
+      - "web/lib/commercialStorefront.ts"
+      - "web/scripts/commerce-browser-qa.mjs"
+      - "web/tests/knowledge-commerce.test.mjs"
+      - "web/tests/commercial-storefront.test.ts"
+      - "web/package.json"
+      - ".github/workflows/merdian-fieldbooks.yml"
+  push:
+    branches: [main]
+    paths:
+      - "web/app/fieldbooks/**"
+      - "web/app/page.tsx"
+      - "web/components/Nav.tsx"
+      - "web/components/Footer.tsx"
+      - "web/lib/commercialStorefront.ts"
+      - "web/scripts/commerce-browser-qa.mjs"
+      - ".github/workflows/merdian-fieldbooks.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publishing-quality:
+    name: Source / real checkout safety / 12 browser renders
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install locked site dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Prove company site retains approved premium brand and merchant safety
+        run: npm run release:contract && npm run test:public && npm test
+      - name: Typecheck editorial and publishing routes
+        run: npm run typecheck
+      - name: Build actual production website without a merchant account
+        run: npm run build
+      - name: Install isolated browser runner
+        run: npm install --no-save --package-lock=false --ignore-scripts puppeteer-core@24.24.1
+      - name: Exercise real home, fieldbook and free chapter at four sizes
+        env:
+          CHROME: /usr/bin/google-chrome
+        run: node scripts/commerce-browser-qa.mjs
+      - name: Retain customer evidence even if a test fails
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: merdian-fieldbooks-visual-proof
+          path: web/artifacts/commerce/*.png
+          retention-days: 14
+          if-no-files-found: ignore
