@@ -28,11 +28,11 @@ try {
     const token = process.env.HELM_TOKEN;
     const model = process.env.HELM_MODEL || "minimax/minimax-m3.1-flash:free";
     if (!url) throw new Error("HELM_INFERENCE_URL required; live trial not run");
-    // Three task pairs, four configurations = 12 first-round model calls.
-    const chosen = tasks.slice(0, 3);
+    // Five estate-derived task pairs, four configurations = 20 first-round model calls.
+    const chosen = tasks.slice(0, 5);
     const result = await evaluate({ tasks: chosen, evidence,
       arms: ["baseline", "skills", "memory", "helm"], url, token, model,
-      sha256: process.env.GITHUB_SHA || "local-unpinned", maxCalls: 24 });
+      sha256: process.env.GITHUB_SHA || "local-unpinned", maxCalls: 40 });
     write("live-trial.json", result);
     console.log(JSON.stringify({ status: "LIVE_TRIAL_FINISHED", model, summary: result.summary,
       source: result.sourceSha, firstError: result.results.flatMap(r => r.attempts.filter(a=>a.error)).map(a=>a.error)[0] || null, failedCalls: result.results.reduce((n,r) =>
