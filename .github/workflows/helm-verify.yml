@@ -20,7 +20,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Validate research engine and agent adapter
-        run: node --test experiments/helm/helm.test.mjs experiments/helm/functional-bench.test.mjs experiments/helm/agent-adapter.test.mjs experiments/helm/operational-memory.test.mjs experiments/helm/transfer-bench.test.mjs
+        run: node --test experiments/helm/helm.test.mjs experiments/helm/functional-bench.test.mjs experiments/helm/agent-adapter.test.mjs experiments/helm/operational-memory.test.mjs experiments/helm/transfer-bench.test.mjs experiments/helm/research-eval.test.mjs
       - name: Compile and verify portable context seal
         run: node experiments/helm/cli.mjs compile
       - name: Pull sandbox image for independent functional graders
