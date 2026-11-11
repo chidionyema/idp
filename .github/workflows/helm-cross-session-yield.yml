@@ -1,0 +1,81 @@
+# HELM cross-session operational yield: one model run's verified code is
+# independently re-established on a different workflow and different runner.
+name: helm-cross-session-yield
+on:
+  push:
+    branches: [research/helm-*]
+    paths: [experiments/helm/HANDOFF_TRIGGER]
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Model generation run with immutable trial artifact"
+        required: false
+        default: "42960717398"
+concurrency:
+  group: helm-handoff-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  actions: read
+  contents: read
+jobs:
+  ingest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify HELM memory contracts and independent grader
+        run: node --test experiments/helm/operational-memory.test.mjs experiments/helm/functional-bench.test.mjs
+      - name: Start independently isolated Python grader
+        run: docker pull python:3.12-alpine
+      - name: Fetch actual previously generated model program from a distinct workflow run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.source_run_id || '42960717398' }}
+        run: |
+          mkdir -p experiments/helm/out
+          gh run download "$SOURCE_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name "helm-closed-loop-$SOURCE_RUN" \
+            --dir experiments/helm/out
+          test -s experiments/helm/out/yield-trial.json
+          node -e 'const x=require("./experiments/helm/out/yield-trial.json");if(x.kind!=="real-model"||x.records.length!==1||x.records[0].passed!==true)process.exit(1);console.log("RECEIVED_VERIFIED_AGENT_TRAJECTORY",x.codeSha,x.records[0].verifiedProgram.sha256)'
+      - name: Revalidate prior model output and produce portable experience artifact
+        run: node experiments/helm/operational-memory.mjs harvest experiments/helm/out/yield-trial.json
+      - name: Publish machine-readable experience for another runner
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: helm-verified-experience-${{ github.run_id }}
+          path: experiments/helm/out/verified-program-memory.json
+          retention-days: 14
+          if-no-files-found: error
+  consumer:
+    needs: ingest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Prepare fresh independent Python execution environment
+        run: docker pull python:3.12-alpine
+      - name: Obtain persisted experience from previous runner (not from a model)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p experiments/helm/out
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "helm-verified-experience-$GITHUB_RUN_ID" \
+            --dir experiments/helm/out
+          test -s experiments/helm/out/verified-program-memory.json
+      - name: Execute remembered agent-generated code against independent tests, zero model calls
+        run: |
+          node experiments/helm/operational-memory.mjs replay experiments/helm/out/verified-program-memory.json
+          node -e 'const fs=require("node:fs");const x=JSON.parse(fs.readFileSync("experiments/helm/out/verified-program-replay.json","utf8"));if(x.passed!==1||x.total!==1||x.independentTestsPassed!==8||x.modelCalls!==0)process.exit(1);console.log("CROSS_SESSION_HELM_YIELD",JSON.stringify({passed:x.passed,independentTestsPassed:x.independentTestsPassed,modelCalls:x.modelCalls}))'
+      - name: Publish independent cross-session evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: helm-cross-session-proof-${{ github.run_id }}
+          path: experiments/helm/out/verified-program-replay.json
+          retention-days: 14
+          if-no-files-found: error
