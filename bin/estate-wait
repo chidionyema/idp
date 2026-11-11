@@ -1,0 +1,339 @@
+#!/usr/bin/env python3
+"""estate-wait -- block until a real event arrives, instead of polling for one.
+
+The estate's agents were spending their turns polling: `estate-fleet inbox` is a one-second
+`fetch(100, timeout=1)` that returns whatever happened to be waiting and exits, so an agent that
+wanted to know "has my lane landed yet" called it again, and again. Measured 2026-11-11
+(`docs/diagnoses/2026-11-11-reactive-wakeup-signaling-gap.md`): `ci-poll-loop` 60, `ci-poll-gh-run`
+40, `ci-poll-gh-api` 33 in 24h. That is a poll, not a pace.
+
+This is the join that closes it. The agent launches its work, then blocks HERE, in one door call,
+on its own event subjects. A durable subscription wakes it the moment a producer publishes, and the
+runtime re-invokes it with the payload. No loop, no sleep, no repeated fetch.
+
+Exit codes are verdicts (they match bin/lane-where, so an agent reads one alphabet everywhere):
+  0  an event arrived; the payload is on stdout
+  3  PENDING  -- the budget expired with no event. NEVER silent: a wait that expires quietly
+                 reads as a healthy idle agent and hides an outage behind false dormancy (R1).
+  2  BLIND    -- the bus could not be reached: "could not check" is not "nothing happened"
+  1  FAIL     -- misuse (no agent identity, bad budget); nothing was waited on
+
+A wait always has a budget. `ESTATE_WAIT_DEFAULT_S` (300) when none is given, capped by
+`ESTATE_WAIT_MAX_S` (3600): an unbounded wait is a hung process, and every loop needs a budget
+and a breaker (AGENTS.md section 9, R5).
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import os
+import sys
+import time
+
+STREAM = "ESTATE_FLEET"
+URL = os.environ.get("ESTATE_NATS_URL", "nats://127.0.0.1:4222")
+ACK_WAIT = int(os.environ.get("ESTATE_FLEET_ACK_WAIT", "60"))
+DEFAULT_S = float(os.environ.get("ESTATE_WAIT_DEFAULT_S", "300"))
+MAX_S = float(os.environ.get("ESTATE_WAIT_MAX_S", "3600"))
+
+EXIT_OK, EXIT_FAIL, EXIT_BLIND, EXIT_PENDING = 0, 1, 2, 3
+
+
+class BusUnreachable(Exception):
+    """Raised by a waiting task when the bus goes away mid-wait. Handled once, in run(), so the
+    verdict for a wait is decided in one place and can never be overridden by a task exiting."""
+
+
+_closing = False  # set once run() has its answer and is cancelling the losing waiters
+
+
+def _set_closing() -> None:
+    global _closing
+    _closing = True
+
+
+def me() -> str:
+    agent = os.environ.get("ESTATE_AGENT", "").strip()
+    if not agent:
+        sys.exit(
+            "FAIL    estate-wait  ESTATE_AGENT is not set: a wait with no identity would "
+            "block on subjects nobody publishes to"
+        )
+    return agent
+
+
+def subjects_for(agent: str, only: str | None) -> dict[str, str]:
+    """The subjects that wake this agent. `--subject` narrows to one exact subject, which is
+    what a lane waiter uses: it is not interested in broadcast chatter."""
+    if only:
+        return {"explicit": only}
+    return {
+        "broadcast": "estate.fleet.broadcast",
+        "directive": "estate.fleet.directive",
+        "to": f"estate.fleet.to.{agent}",
+    }
+
+
+async def connect():
+    import nats
+    from nats.js.api import RetentionPolicy, StorageType
+
+    try:
+        nc = await nats.connect(URL, connect_timeout=3, max_reconnect_attempts=1)
+    except Exception as exc:  # an unreachable bus is BLIND, never an empty inbox
+        print(
+            f"BLIND   estate-wait  cannot reach {URL}: {type(exc).__name__}",
+            file=sys.stderr,
+        )
+        sys.exit(EXIT_BLIND)
+    js = nc.jetstream()
+    try:
+        await js.add_stream(
+            name=STREAM,
+            subjects=["estate.fleet.>"],
+            storage=StorageType.FILE,
+            retention=RetentionPolicy.LIMITS,
+        )
+    except Exception:
+        await js.stream_info(STREAM)  # already exists: fine
+    return nc, js
+
+
+def durable_name(agent: str, kind: str) -> str:
+    """Deterministic, so repeated waits reuse one consumer instead of leaking one per call."""
+    safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in agent)
+    return f"{safe}-wait-{kind}"
+
+
+def signal_ready() -> None:
+    """Touch the readiness file once every subscription exists, so a test can measure the WAKE
+    rather than the interpreter's startup. Absent the variable this is a no-op."""
+    path = os.environ.get("ESTATE_WAIT_READY_FILE")
+    if not path:
+        return
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(str(time.monotonic()))
+    except OSError:
+        pass
+
+
+def _message_time(msg) -> float | None:
+    """The publisher's own `at` timestamp as epoch seconds, when it has one. The estate's fleet
+    messages carry `at` in ISO-8601 Z; anything unparseable is treated as fresh so an event is
+    never silently dropped."""
+    try:
+        payload = json.loads(msg.data)
+        raw = payload.get("at")
+        if not raw:
+            return None
+        import calendar
+        import time as _t
+
+        return calendar.timegm(
+            _t.strptime(str(raw).replace("Z", ""), "%Y-%m-%dT%H:%M:%S")
+        )
+    except Exception:
+        return None
+
+
+async def wait_on(
+    js, agent: str, kind: str, subject: str, budget_s: float, started_at: float
+) -> dict | None:
+    """Block on ONE subject until a message arrives or the budget expires.
+
+    A durable pull subscription plus a bounded fetch loop: each fetch slice is short so a
+    KeyboardInterrupt and the deadline are both honoured promptly, and the loop re-checks the
+    remaining budget rather than busy-spinning.
+    """
+    from nats.js.api import ConsumerConfig
+
+    try:
+        sub = await js.pull_subscribe(
+            subject,
+            durable=durable_name(agent, kind),
+            stream=STREAM,
+            config=ConsumerConfig(ack_wait=ACK_WAIT),
+        )
+    except Exception:
+        # A pre-existing consumer with a different config is not a reason to fail a wait: the
+        # default subscribe is the same durable identity, ordered by the broker.
+        sub = await js.pull_subscribe(
+            subject, durable=durable_name(agent, kind), stream=STREAM
+        )
+
+    deadline = time.monotonic() + budget_s
+    signal_ready()  # every subscription this wait owns now exists
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None
+        slice_s = min(remaining, 5.0)
+        try:
+            msgs = await sub.fetch(1, timeout=slice_s)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            continue  # no event in this slice: the deadline check above ends the wait
+        except Exception as exc:
+            # Cancelling a sibling closes its fetch as ConnectionClosedError. Check cancellation
+            # FIRST: losing the race is normal and must never be reported as the bus going away,
+            # which would both print a traceback and turn a good wake into a false BLIND.
+            if (
+                asyncio.current_task() is not None
+                and asyncio.current_task().cancelled()
+            ):
+                raise asyncio.CancelledError() from exc
+            if type(exc).__name__ in ("ConnectionClosedError", "ConnectionClosed"):
+                if _closing:
+                    raise asyncio.CancelledError() from exc
+                raise BusUnreachable(str(exc)) from exc
+            continue
+        for m in msgs:
+            # A durable consumer replays whatever is still unacked in the stream. An agent that
+            # asked to WAIT for the next event must not be handed a months-old directive and told
+            # it has been woken: that is a false wake, the exact failure a poller has. So a message
+            # is delivered only if it was published after THIS wait started; older ones are acked
+            # and skipped, which also stops them being redelivered to every future wait.
+            published_at = _message_time(m)
+            if published_at is not None and published_at < started_at:
+                try:
+                    await m.ack()
+                except Exception:
+                    # The message was seen and is being skipped; a failed ack only means the
+                    # broker may redeliver it later, which is not a reason to fail this wait.
+                    _ = None
+                continue
+            try:
+                payload = json.loads(m.data)
+            except Exception:
+                payload = {
+                    "raw": m.data.decode("utf-8", "replace")
+                }  # never lose an event
+            try:
+                await m.ack()
+            except Exception:
+                # The event has been received and is about to be returned to the caller; a failed
+                # ack may mean a redelivery later, which is cheaper than losing the wake.
+                _ = None
+            payload.setdefault("kind", kind)
+            payload.setdefault("subject", subject)
+            return payload
+        # msgs empty without a timeout: loop re-checks the deadline
+
+
+async def run(args) -> int:
+    agent = me()
+    budget = args.timeout if args.timeout is not None else DEFAULT_S
+    if budget <= 0:
+        print("FAIL    estate-wait  the budget must be positive", file=sys.stderr)
+        return EXIT_FAIL
+    if budget > MAX_S:
+        print(
+            f"NOTE    estate-wait  budget {budget:g}s capped to {MAX_S:g}s "
+            f"(ESTATE_WAIT_MAX_S): every wait has a ceiling",
+            file=sys.stderr,
+        )
+        budget = MAX_S
+
+    nc, js = await connect()
+    try:
+        subjects = subjects_for(agent, args.subject)
+        started_at = time.time()  # wall clock, comparable to the publisher's `at`
+        tasks = {
+            asyncio.create_task(
+                wait_on(js, agent, kind, subj, budget, started_at)
+            ): kind
+            for kind, subj in subjects.items()
+        }
+        started = time.monotonic()
+        # First message on ANY subject wins: an agent waits on its inbox, not on one lane.
+        done, pending = await asyncio.wait(
+            tasks.keys(), timeout=budget, return_when=asyncio.FIRST_COMPLETED
+        )
+        for t in pending:
+            t.cancel()
+        _set_closing()
+        # Let the cancelled waiters unwind through ONE event-loop turn. `gather` here is what hung:
+        # a fetch that has already been issued can outlive the gather and block shutdown. Awaiting
+        # a single sleep yields to the loop, which is all that is needed to retrieve the
+        # cancellations without holding the exit open.
+        if pending:
+            await asyncio.sleep(0)
+            for t in pending:
+                if t.done():
+                    try:
+                        t.exception()
+                    except BaseException:
+                        # Retrieving a cancelled task's exception is the whole point of this call:
+                        # the CancelledError it raises here is the value being consumed, not an
+                        # error. Nothing is logged because losing the race is expected.
+                        _ = None
+        elapsed = time.monotonic() - started
+
+        for t in done:
+            if t.cancelled():
+                continue
+            exc = t.exception()
+            if isinstance(exc, BusUnreachable):
+                print(
+                    f"BLIND   estate-wait  bus lost while waiting: {exc}",
+                    file=sys.stderr,
+                )
+                return EXIT_BLIND
+            if exc is not None:
+                continue  # a failed sibling is not the verdict: the wait is decided below
+            payload = t.result()
+            if payload is not None:
+                print(json.dumps(payload, sort_keys=True))
+                print(
+                    f"ok      estate-wait  woke on {payload.get('subject')} "
+                    f"after {elapsed:.2f}s ({agent})",
+                    file=sys.stderr,
+                )
+                return EXIT_OK
+        # Nothing woke us inside the budget. Say so; never exit 0 on an empty result.
+        print(
+            f"PENDING estate-wait  no event for {agent} within {budget:g}s "
+            f"(subjects: {', '.join(subjects.values())})",
+            file=sys.stderr,
+        )
+        return EXIT_PENDING
+    finally:
+        try:
+            await nc.close()
+        except Exception:
+            # Closing a connection that is already gone is not a failure of the wait: the verdict
+            # has been decided above, and a cleanup error must not replace it.
+            _ = None
+
+
+def main(argv: list[str]) -> int:
+    p = argparse.ArgumentParser(
+        description="Block until a real event arrives on this agent's subjects. "
+        "Exits 0 event, 3 PENDING (budget expired), 2 BLIND (bus down), 1 FAIL."
+    )
+    p.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help=f"budget in seconds (default {DEFAULT_S:g}, max {MAX_S:g})",
+    )
+    p.add_argument(
+        "--subject",
+        default=None,
+        help="wait on exactly this subject instead of the agent's fleet subjects",
+    )
+    args = p.parse_args(argv)
+    try:
+        return asyncio.run(run(args))
+    except KeyboardInterrupt:
+        # An interrupted wait is PENDING, not success: the event did not arrive.
+        print(
+            "PENDING estate-wait  interrupted before any event arrived", file=sys.stderr
+        )
+        return EXIT_PENDING
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
