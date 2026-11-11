@@ -144,7 +144,7 @@ export async function runOneArm({task,arm,evidence=[],model,url,token,
     schema:"helm.shot-arm-result.v1",taskId:task.id,
     taskDigest:helmDigest(task.question),instructionId,
     arm,profile:a.profile,model,sourceSha,
-    status:report.status,
+    status:calls.at(-1)?.providerError?"PROVIDER_BLOCKED_RETRYABLE":report.status,
     passedFixtureOracle:report.passedFixtureOracle,
     liveExecutionVerified:false,
     independentRuntimeEvidence:false,
@@ -213,7 +213,7 @@ export async function runShotMatrix({tasks,evidence=[],model,url,token,
     const ordered=t%2===0?names:[...names].reverse();
     for(const arm of ordered){
       const result=await runOneArm({
-        task:{...task,classification:"public-synthetic"},
+        task,
         arm,evidence,model,url,token,sourceSha,infer,grade
       });
       results.push(result);
@@ -267,7 +267,11 @@ function parseLimits(raw) {
 export async function shotTrialMain({env=process.env}={}){
   const corpus=JSON.parse(readFileSync(new URL("./fixtures/tasks.json",import.meta.url),"utf8"));
   const limits=parseLimits(env.HELM_SHOT_LIMITS||"1,2,3,5");
-  const tasks=corpus.tasks.slice(0,Number(env.HELM_SHOT_TASKS||1));
+  // Only this hardcoded repository-owned public corpus may be explicitly classified
+  // synthetic. Never relabel arbitrary user or private tasks in runShotMatrix.
+  const tasks=corpus.tasks.slice(0,Number(env.HELM_SHOT_TASKS||1)).map(
+    t=>({...t,classification:"public-synthetic"})
+  );
   const sourceSha=env.GITHUB_SHA||
     spawnSync("git",["rev-parse","HEAD"],{encoding:"utf8",timeout:3000}).stdout?.trim();
   const path=env.HELM_SHOT_RECEIPT||"experiments/helm/out/shot-matrix.json";
