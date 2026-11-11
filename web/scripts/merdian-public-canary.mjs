@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Independent public readback for the Merdian company site.
+ * Independent public readback for the Meridian company site.
  *
  * The canary reads the visitor-facing origins, not Vercel READY or a source
  * commit. It never submits contact forms or posts customer information.
@@ -51,7 +51,8 @@ async function checkHome(origin) {
       html.includes('REAL');
     assert(identity, origin + ': public homepage is NOT the approved premium company design');
     assert(!html.includes(OLD), origin + ': retired consulting-only homepage resurfaced');
-    assert(!html.includes('Blabka'), origin + ': unsubstantiated placeholder venture shown to visitors');\n    assert(!html.includes('MERDIAN INTELLIGENCE'), origin + ': uppercase legacy spelling survived');
+    assert(!html.includes('Blabka'), origin + ': unsubstantiated placeholder venture shown to visitors');
+    assert(!html.includes('MERDIAN INTELLIGENCE'), origin + ': uppercase legacy spelling survived');
     assert(!html.includes('More information will be shared'), origin + ': content-debt promise published');
     assert(html.includes('01 / MANIFESTO') && html.includes('02 / CONSULTANCY') &&
       html.includes('03 / THE LABORATORY') && html.includes('04 / VENTURES + PRODUCTS'),
