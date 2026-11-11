@@ -16,7 +16,7 @@
     "verify": "npm run typecheck && npm run voice && npm run lint && npm test && npm run test:public && npm run build && npm run test:smoke",
     "test:visual": "node scripts/visual-regression.mjs",
     "release:contract": "node scripts/merdian-public-release-gate.mjs",
-    "test:public": "node --test tests/merian-positioning.test.mjs tests/merdian-release-gate.test.mjs"
+    "test:public": "node --test tests/merian-positioning.test.mjs tests/merdian-release-gate.test.mjs tests/public-readiness.test.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",
