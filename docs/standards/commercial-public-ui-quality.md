@@ -1,12 +1,12 @@
 # Commercial public UI release standard — agent-executable
-Status: REQUIRED for public/customer-facing surfaces. Established 2026-11-11 from an independently observed Merdian credibility incident.
+Status: REQUIRED for public/customer-facing surfaces. Established 2026-11-11 from an independently observed Meridian credibility incident.
 Scope: every estate agent that builds, reviews, tests, or releases commercial web UI. Internal research surfaces continue their rapid experiment loop; this standard applies when work is actually visitor-facing.
 
 ## The failure pattern
-A release can be technically READY while publicly self-discrediting. In the 2026-11-11 Merdian readback, an unsubstantiated portfolio placeholder, ambiguous arrow semantics, overlapping mobile orbit labels, low-contrast eyebrows, crushed display word spacing, generic copy, and inconsistent hierarchy were compatible with the existing technical release contract. The previous release canary checked the approved hero/design signature, not the experience, content, and semantics. Existing browser regression code was not run by the release workflow.
+A release can be technically READY while publicly self-discrediting. In the 2026-11-11 Meridian readback, an unsubstantiated portfolio placeholder, ambiguous arrow semantics, overlapping mobile orbit labels, low-contrast eyebrows, crushed display word spacing, generic copy, and inconsistent hierarchy were compatible with the existing technical release contract. The previous release canary checked the approved hero/design signature, not the experience, content, and semantics. Existing browser regression code was not run by the release workflow.
 
 ## Truth and provenance before cosmetic correction
-- Canonical corporate identity must come from the founder-approved brand authority, not domain spelling, spellcheck, or an external critique. As of the 2026-11-09 approved recovery, the brand was **Merdian Intelligence**; `meridian-intelligence-uk.vercel.app` was an alias, not naming authority. Any later rebrand requires an explicit authoritative update to the single identity record, visible UI, metadata, and tests together.
+- **Current customer-facing identity: Meridian Intelligence**, as specified in the founder's 2026-11-11 QA and remediation instruction, superseding the 2026-11-09 Merdian spelling. The canonical active Vercel alias is `meridian-intelligence-uk.vercel.app`; other assigned aliases are compatibility routes that must serve the identical identity. Any subsequent change must update the identity record, rendered UI, metadata, canary, and release negative tests together. Domain spelling alone never substitutes for authoritative brand approval.
 - Categorise external QA claims as VERIFIED (reproduced on live/rendered UI), DISPUTED (conflicts with brand or product authority), or UNVERIFIED (requires measured contrast/layout/reputation). Never silently transform a disputed assertion into a production change.
 - Do not invent product maturity, benchmark values, customer adoption, partner names, compliance certifications, deployed systems, contact channels, or commercial claims. Prefer omission over "coming soon" theatre.
 
@@ -34,3 +34,6 @@ release/promotion state | independent live evidence | remaining caveats | incide
 ```
 
 Do not claim VERIFIED_YIELD from a PR, READY build, screenshot existence, or source-only assertion. The visitor-facing origin and relevant customer journey must be demonstrably correct.
+
+## Brand-regression falsifier (specific 2026-11-11 incident)
+A candidate fails if any visible page or metadata retains `Merdian` or `MERDIAN INTELLIGENCE`, even if headings, layout, and CI are otherwise healthy. Check all aliases, Open Graph, manifest, JSON-LD, portfolio, footer, and secondary journeys. Preserve obsolete configuration key names only for backward-compatible service deployment while migrating to `MERIDIAN_SITE_URL`; do not leak old spelling into rendered copy. This falsifier was added to the release contract and unit tests.
