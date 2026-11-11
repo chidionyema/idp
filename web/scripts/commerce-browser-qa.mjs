@@ -70,7 +70,7 @@ try {
             if(!document.body.textContent?.includes("Revoked-authority test")) errors.push("technical free chapter truncated");
             if(!document.body.textContent?.includes("Release-regression test")) errors.push("chapter acceptance suite missing");
           }
-          return {errors,heading:title?.textContent?.replace(/\\s+/g," ").slice(0,100)};
+          return {errors,heading:title?.textContent?.replace(/\s+/g," ").slice(0,100)};
         },{route});
         failures.push(...result.errors.map(x=>route+" "+width+"px "+x));
         if(route==="/fieldbooks"&&width===390) {
