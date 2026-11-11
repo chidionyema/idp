@@ -41,7 +41,12 @@ _TMP_ROOTS = (
     "/var/folders/",
 )
 
-_WORKTREE_ADD = re.compile(r"(^|[;&|]\s*|\b)(git\s+worktree\s+add)\b")
+# The rule is matched on the command WORDS, including the `-C <path>` and `--git-dir` forms --
+# MEASURED: a door that only knew `git worktree add` missed `git -C /path worktree add`, which is
+# the form the estate's own scripts use. A guard one shape short is a guard with a hole in it.
+_WORKTREE_ADD = re.compile(
+    r"(^|[;&|]\s*|\b)(git\s+(?:(?:-C|--git-dir)[=\s]\S+\s+)?worktree\s+add)\b"
+)
 _CLONE = re.compile(r"(^|[;&|]\s*|\b)(git\s+clone)\b")
 _IDP_CI = re.compile(r"(?:^|[;&|]\s*)(?:\S*/)?bin/idp-ci\b")
 
@@ -70,6 +75,42 @@ _QUOTED = re.compile(r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"")
 def _unquoted(command: str) -> str:
     """The command with quoted argument spans blanked, so a flag word in prose is not a command."""
     return _QUOTED.sub(" " * 8, command)
+
+
+# --- the cap, and the instant off-switch ----------------------------------------------------
+#
+# The founder's directive on this machine is a BAN: a laptop is a thin client, so the local
+# worktree cap is ZERO. The cap is the policy, not a number to tune -- so the default is zero and
+# the override is an emergency lever, named so that a lever can be pulled without reading code.
+#
+# There are two off-switches and they are different kinds of thing. ESTATE_MAX_LOCAL_WORKTREES
+# raises the cap (needs a restart to take effect), and the fence file lifts the ban entirely
+# (takes effect on the next command, because a rule that can only be changed by a restart is a
+# rule that can wedge a machine nobody can restart).
+CAP_ENV = "ESTATE_MAX_LOCAL_WORKTREES"
+DEFAULT_SPAWN_CAP = 0
+FENCE_PATH = os.path.join(os.path.expanduser("~"), ".estate", "NO_SPAWN_FENCE")
+
+
+def spawn_cap() -> int:
+    """The configured local-worktree cap. Zero unless the founder raises it.
+
+    A malformed override falls back to the ban, not to no ban: an unreadable knob must not widen
+    the hole the guard closed.
+    """
+    raw = (os.environ.get(CAP_ENV) or "").strip()
+    if not raw:
+        return DEFAULT_SPAWN_CAP
+    try:
+        cap = int(raw)
+    except ValueError:
+        return DEFAULT_SPAWN_CAP
+    return max(0, cap)
+
+
+def fence_lifted() -> bool:
+    """True when the operator has lifted the ban by creating the fence file."""
+    return os.path.isfile(FENCE_PATH)
 
 
 def applies() -> bool:
@@ -130,6 +171,68 @@ def _tmp_literal(command: str) -> str:
     return ""
 
 
+def creates_local_checkout(command: str) -> bool:
+    """True when this command would create a local checkout on this machine.
+
+    Rules 1 and 2 only, and judged on the command WORDS: a quoted span is prose (a commit
+    message, a grep pattern), so `rg "git worktree add" docs/` is a read and not a spawn. A
+    substring test would refuse it, and a false positive is worse than a narrow guard because it
+    teaches agents to route around the guard (R14).
+    """
+    if not applies() or not command:
+        return False
+    text = _unquoted(command)
+    if _WORKTREE_ADD.search(text):
+        return True
+    return bool(_CLONE.search(text) and _tmp_literal(command))
+
+
+def spawn_verdict(command: str, count: int | None = None) -> tuple[bool, str]:
+    """Would this command create a local checkout, and is there room for it?
+
+    `count` is the caller's measurement of the worktrees that already exist, or None when it
+    could not be measured. It matters only when the cap has been raised above zero: with the
+    cap at zero the ban is unconditional, and an unmeasurable count cannot prove that anything
+    fits, so the answer is the ban.
+
+    This is the narrow question the executor door asks, so the door does not have to hold a
+    second copy of the rule (AGENTS.md section 6: one of each layer). It answers no BLIND state
+    of its own -- the only unknown is `count`, and it is resolved to the ban.
+
+    Returns (allowed, reason).
+    """
+    if not applies() or not command:
+        return True, "OK"
+    if fence_lifted():
+        return True, "OK"
+    cap = spawn_cap()
+    if cap > 0 and count is not None and count < cap:
+        return True, "OK"
+    text = _unquoted(command)
+    if _WORKTREE_ADD.search(text):
+        return (
+            False,
+            (
+                "THIN CLIENT: `git worktree add` is refused on this laptop. Worktrees are full "
+                "checkouts, and a loop that adds one per attempt is how the disk fills (AGENTS.md "
+                "section 9 R5: 5 GB in <2 h). Branch in the one checkout and push to lane/<name>; "
+                "the Greenlane does the rest. The local worktree cap here is "
+                + str(cap)
+                + "."
+            ),
+        )
+    if _CLONE.search(text) and _tmp_literal(command):
+        return (
+            False,
+            (
+                "THIN CLIENT: cloning into temp storage is refused on this laptop. A clone in /tmp is "
+                "a worktree with extra steps and dies with the boot. Branch in the one checkout and "
+                "push to lane/<name>."
+            ),
+        )
+    return True, "OK"
+
+
 def verdict(command: str, cwd: str | None = None) -> tuple[bool, str, str]:
     """Judge one command. Returns (allowed, reason, replacement).
 
@@ -144,28 +247,11 @@ def verdict(command: str, cwd: str | None = None) -> tuple[bool, str, str]:
     ].lower() in ("0", "false", "off"):
         return True, "OK", ""
 
-    if _WORKTREE_ADD.search(command):
-        return (
-            False,
-            (
-                "THIN CLIENT: `git worktree add` is refused on this laptop. Worktrees are full "
-                "checkouts, and a loop that adds one per attempt is how the disk fills (AGENTS.md "
-                "section 9 R5: 5 GB in <2 h). Branch in the one checkout and push to lane/<name>; "
-                "the Greenlane does the rest."
-            ),
-            "",
-        )
-
-    if _CLONE.search(command) and _tmp_literal(command):
-        return (
-            False,
-            (
-                "THIN CLIENT: cloning into temp storage is refused on this laptop. A clone in /tmp is "
-                "a worktree with extra steps and dies with the boot. Branch in the one checkout and "
-                "push to lane/<name>."
-            ),
-            "",
-        )
+    # Rules 1 and 2 are decided in ONE place -- spawn_verdict -- so this verdict and the narrow
+    # question the executor door asks can never disagree about what a local checkout is.
+    allowed, reason = spawn_verdict(command)
+    if not allowed:
+        return False, reason, ""
 
     m = _IDP_CI.search(command)
     if m:
@@ -214,4 +300,6 @@ def probe() -> dict:
         "load_1m": load_average(),
         "min_free_gb": MIN_FREE_GB,
         "max_load": MAX_LOAD,
+        "spawn_cap": spawn_cap(),
+        "fence_lifted": fence_lifted(),
     }
