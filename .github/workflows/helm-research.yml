@@ -1,0 +1,75 @@
+# Internal Merdian research. Free Kilo endpoint; only synthetic/public fixtures.
+# No deployments, source modification, external secrets, or production permissions.
+name: helm-research
+on:
+  push:
+    branches:
+      - research/helm-*
+    paths:
+      - experiments/helm/TRIAL_TRIGGER
+  workflow_dispatch:
+concurrency:
+  group: helm-research-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  research:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify executable HELM invariants
+        run: node --test experiments/helm/helm.test.mjs
+      - name: Compile and verify HELM seal
+        run: node experiments/helm/cli.mjs compile
+      - name: Select a currently listed public-free model (one fixed ID per trial)
+        run: |
+          node --input-type=module <<'NODE'
+          import {appendFileSync} from "node:fs";
+          const r = await fetch("https://ai-gateway.kilo.ai/api/v1/models");
+          if (!r.ok) throw new Error("model catalog HTTP " + r.status);
+          const json = await r.json();
+          const ids = (json.data || []).map(x => x.id).filter(x => typeof x === "string");
+          const free = ids.filter(x => x.endsWith(":free"));
+          console.log(JSON.stringify({freeCount:free.length, sample:free.slice(0,20)}));
+          const wanted = [
+            "cohere/north-mini-code:free",
+            "liquid/lfm-3-1.7b:free",
+            "thinkingmachines/inkling-2-small:free",
+            "nvidia/nemotron-3.5-lightning:free",
+            "nvidia/nemotron-3.5-super-vl:free",
+          ];
+          const candidates = [...new Set([...wanted.filter(x=>free.includes(x)),...free])].slice(0,7);
+          let selected = null;
+          for (const id of candidates) {
+            const r = await fetch("https://ai-gateway.kilo.ai/api/v1/chat/completions",{
+              method:"POST",
+              headers:{"Content-Type":"application/json"},
+              body:JSON.stringify({model:id,messages:[{role:"user",content:"Respond with the single word READY."}],max_tokens:1536,temperature:0}),
+            });
+            let j = null;
+            try { j = await r.json(); } catch {}
+            const choice = j?.choices?.[0] || {};
+            const content = choice.message?.content;
+            console.log(JSON.stringify({model:id,http:r.status,outputChars:typeof content==="string"?content.length:0,
+              finish:choice.finish_reason || null,tokens:j?.usage?.completion_tokens || null}));
+            if (r.ok && typeof content==="string" && content.trim()) { selected=id; break; }
+          }
+          if (!selected) throw new Error("No listed public-free model returned usable text");
+          appendFileSync(process.env.GITHUB_ENV,"HELM_MODEL="+selected+"\n");
+          console.log("Selected model:",selected);
+          NODE
+      - name: Execute actual model calls with four comparative arms
+        env:
+          HELM_INFERENCE_URL: https://ai-gateway.kilo.ai/api/v1/chat/completions
+          GITHUB_SHA: ${{ github.sha }}
+        run: node experiments/helm/cli.mjs live
+      - name: Preserve experiment and negative-result receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: helm-research-${{ github.run_id }}
+          path: experiments/helm/out/*.json
+          if-no-files-found: warn
+          retention-days: 7
