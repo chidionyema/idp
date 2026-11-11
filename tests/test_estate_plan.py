@@ -78,6 +78,79 @@ def test_a_plan_carries_its_instruction_and_its_founder_prompt():
     assert again["plan"]["prompt"] == "prompt-20261030T101500Z-abc123"
 
 
+def test_a_plan_carries_the_instruction_id_used_by_its_claim():
+    linked = dict(
+        GOAL,
+        instruction="lane-submit",
+        instruction_id="INS-00004",
+        prompt="prompt-20261030T101500Z-abc123",
+    )
+    r = plan.apply(None, "declare_plan", linked)
+    assert r["ok"] is True
+    assert r["plan"]["instruction_id"] == "INS-00004"
+    revised = plan.apply(r["plan"], "revise_plan", GOAL)
+    assert revised["plan"]["instruction_id"] == "INS-00004"
+
+
+def test_a_bad_instruction_id_is_refused():
+    r = plan.apply(
+        None,
+        "declare_plan",
+        dict(GOAL, instruction_id="not an instruction id"),
+    )
+    assert r["ok"] is False
+    assert "instruction id" in r["reason"]
+
+
+def test_claim_contract_requires_every_subgoal_to_be_fully_mapped():
+    declared = plan.apply(
+        None,
+        "declare_plan",
+        dict(
+            GOAL,
+            instruction_id="INS-00004",
+            prompt="prompt-20261030T101500Z-abc123",
+        ),
+    )["plan"]
+    problems = plan.claim_contract_problems(declared, "INS-00004")
+    assert any("BDD" in problem for problem in problems)
+    assert any("edge case" in problem for problem in problems)
+    assert any("second-order" in problem for problem in problems)
+
+
+def test_a_complete_plan_has_a_stable_content_digest():
+    declared = plan.apply(
+        None,
+        "declare_plan",
+        dict(
+            GOAL,
+            instruction_id="INS-00004",
+            prompt="prompt-20261030T101500Z-abc123",
+        ),
+    )["plan"]
+    with_bdd = plan.apply(declared, "add_bdd", BDD)["plan"]
+    with_edges = plan.apply(
+        with_bdd,
+        "address_edgecases",
+        {"goal_id": "g1", "edgecases": ["input is empty: refuse"]},
+    )["plan"]
+    complete = plan.apply(
+        with_edges,
+        "address_2nd_order_effects",
+        {"goal_id": "g1", "effects": ["no downstream consumer changes"]},
+    )["plan"]
+    assert plan.claim_contract_problems(complete, "INS-00004") == []
+    digest = plan.plan_digest(complete)
+    done = plan.apply(complete, "complete_goal", {"goal_id": "g1"})["plan"]
+    assert plan.plan_digest(done) == digest
+    changed = plan.apply(
+        done,
+        "address_edgecases",
+        {"goal_id": "g1", "edgecases": ["a second edge changes the contract"]},
+    )["plan"]
+    assert plan.plan_digest(changed) != digest
+
+
 def test_a_link_that_is_present_and_wrong_is_refused():
     for bad in (
         {"instruction": ""},

@@ -36,6 +36,7 @@ the reason: measure the claim against the thing, not against what the author rem
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -44,6 +45,11 @@ import sys
 from datetime import datetime, timezone
 
 IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PLATFORM_ESTATE = os.path.join(IDP, "platform", "estate")
+if PLATFORM_ESTATE not in sys.path:
+    sys.path.insert(0, PLATFORM_ESTATE)
+
+from context.claim_contract import ClaimContractError, format_claim  # noqa: E402
 
 
 def resolve_repo() -> str:
@@ -66,7 +72,10 @@ def resolve_repo() -> str:
     if explicit:
         return os.path.abspath(explicit)
     p = subprocess.run(  # noqa: S603, S607 -- fixed argv, no shell
-        ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        timeout=SUBPROCESS_BUDGET_S,
     )
     root = p.stdout.strip()
     # Only a tree that can prove a claim is usable: a cwd inside some other repository (or no
@@ -76,6 +85,13 @@ def resolve_repo() -> str:
     return IDP
 
 
+# Every subprocess below reaches the network (gh) or another script, and an unbounded
+# subprocess.run turns a stalled dependency into a door that never returns: the session sees no
+# output, no exit and no reason, so it hand-solves the claim -- exactly the duplication the claim
+# exists to prevent. Measured 2026-11-10: this script blocked in select() for 45s and answered
+# only when an external alarm killed it, at which point the real error ("no such instruction")
+# surfaced. A stall must become a verdict inside the budget, naming the command that stalled.
+SUBPROCESS_BUDGET_S = 20
 REPO = resolve_repo()
 GATE = os.path.join(REPO, "bin", "claim-gate")
 
@@ -85,16 +101,146 @@ GATE = os.path.join(REPO, "bin", "claim-gate")
 # the diff shows that.
 CLAIM_REF = re.compile(r"^Claim:\s*(?:([\w.-]+/[\w.-]+))?#(\d+)\s*$", re.M)
 AGENT = re.compile(r"^Agent:\s*(\S+)\s*$", re.M)
+INSTRUCTION_TRAILER = re.compile(r"^Instruction:\s*(INS-[A-Za-z0-9-]+)\s*$", re.M)
+PLAN_TRAILER = re.compile(r"^Plan:\s*([0-9a-fA-F]{64})\s*$", re.M)
+
+
+class ClaimPreconditionError(ValueError):
+    """The instruction or plan cannot lawfully back a claim."""
+
+
+def _plan_contract():
+    source = os.path.join(REPO, "platform", "estate", "memory", "plan.py")
+    if not os.path.isfile(source):
+        raise ClaimPreconditionError(f"the plan contract is missing at {source}")
+    spec = importlib.util.spec_from_file_location("claim_open_plan_contract", source)
+    if spec is None or spec.loader is None:
+        raise ClaimPreconditionError(f"the plan contract cannot be loaded at {source}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def claim_plan(
+    session: str, instruction: str, *, ledger_dir: str | os.PathLike[str] | None = None
+) -> tuple[dict, str]:
+    """Load and validate the exact plan a claim is allowed to execute."""
+    plan_contract = _plan_contract()
+    plan_contract.PLAN_LEDGER_DIR = str(
+        ledger_dir
+        or os.environ.get(
+            "ESTATE_PLAN_LEDGER_DIR", os.path.expanduser("~/.estate/plans")
+        )
+    )
+    plan = plan_contract.ledger_plan(session)
+    if not plan:
+        raise ClaimPreconditionError(f"session {session} declared no plan")
+    problems = plan_contract.claim_contract_problems(plan, instruction)
+    if problems:
+        raise ClaimPreconditionError("; ".join(problems))
+    return plan, plan_contract.plan_digest(plan)
+
+
+def collect_current_session(session: str) -> None:
+    """Refresh the machine-owned prompts and import this session before claiming."""
+    env = {**os.environ, "IDP_ROOT": IDP}
+    collector = os.path.join(REPO, "bin", "founder-prompt-collector")
+    tracker = os.path.join(REPO, "bin", "instruction")
+    for command, label in (
+        ([sys.executable, collector, "collect"], "prompt collector"),
+        (
+            [sys.executable, tracker, "import-prompts", "--session", session],
+            "instruction import",
+        ),
+    ):
+        proc = run(command, env=env)
+        if proc.returncode != 0:
+            raise ClaimPreconditionError(
+                proc.stderr.strip() or f"{label} failed with exit {proc.returncode}"
+            )
+
+
+def claim_body(
+    *,
+    agent: str,
+    instruction: str,
+    plan: dict,
+    digest: str,
+    paths: list[str],
+    heartbeat: str,
+) -> str:
+    """The canonical machine line followed by the complete plan for human review."""
+    lines = [
+        format_claim(
+            agent=agent,
+            instruction=instruction,
+            plan=digest,
+            paths=paths,
+            heartbeat=heartbeat,
+        ),
+        f"Goal: {plan.get('goal', '')}",
+    ]
+    for subgoal in plan.get("subgoals") or []:
+        sid = subgoal.get("id", "")
+        lines.append(f"Subgoal {sid}: {subgoal.get('text', '')}")
+        scenario = (plan.get("bdd") or {}).get(sid) or {}
+        lines.append(
+            "BDD: Given {given}; When {when}; Then {then}".format(
+                given=scenario.get("given", ""),
+                when=scenario.get("when", ""),
+                then=scenario.get("then", ""),
+            )
+        )
+        for edge in (plan.get("edgecases") or {}).get(sid) or []:
+            lines.append(f"Edge case: {edge}")
+        for effect in (plan.get("effects") or {}).get(sid) or []:
+            lines.append(f"Second-order effect: {effect}")
+    return "\n".join(lines)
+
+
+def with_trailers(
+    message: str, *, num: int, agent: str, instruction: str, digest: str
+) -> str:
+    """Bind the commit to the same three records the claim comment names."""
+    body = message.rstrip("\n")
+    if not CLAIM_REF.search(body):
+        body += f"\n\nClaim: #{num}"
+    if not AGENT.search(body):
+        body += f"\nAgent: {agent}"
+    if not INSTRUCTION_TRAILER.search(body):
+        body += f"\nInstruction: {instruction}"
+    if not PLAN_TRAILER.search(body):
+        body += f"\nPlan: {digest}"
+    return body
 
 
 def run(cmd: list[str], **kw: object) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 -- caller passes a fixed argv, never a shell string
-        cmd,  # noqa: S607
-        capture_output=True,
-        text=True,
-        cwd=REPO,
-        **kw,  # type: ignore[arg-type]
-    )
+    """Run a fixed argv under a hard time budget (see SUBPROCESS_BUDGET_S).
+
+    A stall becomes a ClaimPreconditionError naming the command, so the caller prints a verdict
+    instead of hanging. ClaimPreconditionError is caught in main() and exits non-zero, which is
+    the same path as every other precondition refusal -- one refusal shape, not two.
+    """
+    budget = kw.pop("timeout", None) or SUBPROCESS_BUDGET_S
+    try:
+        return subprocess.run(  # noqa: S603 -- caller passes a fixed argv, never a shell string
+            cmd,  # noqa: S607
+            capture_output=True,
+            text=True,
+            cwd=REPO,
+            timeout=budget,
+            **kw,  # type: ignore[arg-type]
+        )
+    except subprocess.TimeoutExpired:
+        raise ClaimPreconditionError(
+            f"{' '.join(cmd[:2])} did not answer within {budget}s: the dependency is stalled, "
+            f"so no claim was posted (ran {' '.join(cmd[:3])!r}). "
+            "Run that command directly to see why."
+        ) from None
+    except OSError as exc:
+        raise ClaimPreconditionError(
+            f"could not run {' '.join(cmd[:2])!r}: {exc}"
+        ) from None
 
 
 def git(*a: str) -> str:
@@ -139,7 +285,14 @@ def globs_for(files: list[str], declared: list[str] = ()) -> list[str]:
     return globs
 
 
-def find_issue(title: str | None, issue: int | None) -> int:
+def find_issue(
+    title: str | None,
+    issue: int | None,
+    *,
+    instruction: str,
+    plan: dict,
+    digest: str,
+) -> int:
     if issue:
         return issue
     assert title, "argparse guarantees one of --issue/--title"
@@ -156,6 +309,7 @@ def find_issue(title: str | None, issue: int | None) -> int:
         "This issue is the claim the change lands on (AGENTS.md \u00a75): claim-gate requires it to be\n"
         "open and to carry a live CLAIM comment covering the files the change touches.\n"
         "bin/claim-open makes both of those true in one command.\n"
+        f"\nInstruction: {instruction}\nPlan: {digest}\nGoal: {plan.get('goal', '')}\n"
     )
     url = gh("issue", "create", "--title", title, "--body", body).strip()
     num = int(url.rstrip("/").split("/")[-1])
@@ -169,36 +323,83 @@ def ensure_open(num: int) -> None:
         sys.exit(f"FAIL    claim-open  issue #{num} is not open: a claim-gate claim must be open")
 
 
-def post_claim(num: int, agent: str, paths: list[str]) -> None:
+def post_claim(
+    num: int,
+    agent: str,
+    paths: list[str],
+    *,
+    instruction: str,
+    plan: dict,
+    digest: str,
+) -> None:
     hb = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    body = f"CLAIM agent={agent} paths={','.join(paths)} heartbeat={hb}"
+    try:
+        body = claim_body(
+            agent=agent,
+            instruction=instruction,
+            plan=plan,
+            digest=digest,
+            paths=paths,
+            heartbeat=hb,
+        )
+    except ClaimContractError as exc:
+        sys.exit(f"FAIL    claim-open  invalid claim contract: {exc}")
     gh("issue", "comment", str(num), "--body", body)
-    print(f"ok      claim-open  claimed #{num} as {agent} ({len(paths)} path{'s' if len(paths)!=1 else ''})")
+    print(
+        f"ok      claim-open  claimed #{num} as {agent} for {instruction} "
+        f"({len(paths)} path{'s' if len(paths)!=1 else ''})"
+    )
 
 
-def stamp_trailers(num: int, agent: str) -> None:
+def stamp_trailers(
+    num: int,
+    agent: str,
+    *,
+    instruction: str,
+    digest: str,
+) -> None:
     msg = git("log", "-1", "--format=%B")
     have_claim = CLAIM_REF.search(msg)
     have_agent = AGENT.search(msg)
-    if have_claim and have_agent:
+    have_instruction = INSTRUCTION_TRAILER.search(msg)
+    have_plan = PLAN_TRAILER.search(msg)
+    if have_claim and have_agent and have_instruction and have_plan:
         if have_claim.group(2) != str(num) or have_agent.group(1) != agent:
             sys.exit(
                 f"FAIL    claim-open  this commit already claims #{have_claim.group(2)} as "
                 f"{have_agent.group(1)}, not #{num} as {agent}.\n"
                 "                    Amend deliberately; do not silently re-point a commit's claim."
             )
-        print(f"ok      claim-open  commit already carries Claim: #{num} and Agent: {agent}")
+        if (
+            have_instruction.group(1) != instruction
+            or have_plan.group(1).lower() != digest.lower()
+        ):
+            sys.exit(
+                "FAIL    claim-open  this commit is already bound to another instruction "
+                "or plan; revise the plan and amend deliberately"
+            )
+        print(
+            f"ok      claim-open  commit already carries Claim: #{num}, Agent: {agent}, "
+            f"Instruction: {instruction}, Plan: {digest[:12]}"
+        )
         return
     body = msg.rstrip("\n")
     if not have_claim:
         body += f"\n\nClaim: #{num}"
     if not have_agent:
         body += f"\nAgent: {agent}"
+    if not have_instruction:
+        body += f"\nInstruction: {instruction}"
+    if not have_plan:
+        body += f"\nPlan: {digest}"
     # --amend rewrites the message only; the tree is untouched, so this cannot lose work.
     p = run(["git", "commit", "--amend", "-q", "-m", body])
     if p.returncode != 0:
         sys.exit(f"FAIL    claim-open  could not stamp trailers: {p.stderr.strip()[:200]}")
-    print(f"ok      claim-open  stamped Claim: #{num} and Agent: {agent} into the commit")
+    print(
+        f"ok      claim-open  stamped Claim: #{num}, Agent: {agent}, "
+        f"Instruction: {instruction}, Plan: {digest[:12]} into the commit"
+    )
 
 
 def note_claim(num: int) -> None:
@@ -216,12 +417,91 @@ def note_claim(num: int) -> None:
         print(f"warn    claim-open  focus note not written ({e}): the hook sees it next poll")
 
 
+def instruction_payload(instruction: str) -> dict:
+    binary = os.path.join(REPO, "bin", "instruction")
+    if not os.path.isfile(binary):
+        raise ClaimPreconditionError(f"the instruction tracker is missing at {binary}")
+    proc = run([sys.executable, binary, "show", instruction, "--json"])
+    if proc.returncode != 0:
+        raise ClaimPreconditionError(
+            proc.stderr.strip() or f"instruction {instruction} does not exist"
+        )
+    try:
+        payload = json.loads(proc.stdout)
+    except ValueError as exc:
+        raise ClaimPreconditionError(
+            f"instruction {instruction} did not return JSON"
+        ) from exc
+    if payload.get("state") in {"verified", "abandoned"}:
+        raise ClaimPreconditionError(
+            f"instruction {instruction} is already {payload.get('state')}"
+        )
+    return payload
+
+
+def bind_instruction(instruction: str, *, session: str) -> None:
+    binary = os.path.join(REPO, "bin", "instruction")
+    proc = run(
+        [
+            sys.executable,
+            binary,
+            "sync-plan",
+            instruction,
+            "--session",
+            session,
+        ]
+    )
+    if proc.returncode != 0:
+        raise ClaimPreconditionError(
+            proc.stderr.strip() or "the instruction could not store the plan"
+        )
+
+
+def link_claim(
+    instruction: str,
+    *,
+    num: int,
+    agent: str,
+    repo_slug: str,
+    digest: str,
+) -> None:
+    binary = os.path.join(REPO, "bin", "instruction")
+    proc = run(
+        [
+            sys.executable,
+            binary,
+            "link",
+            instruction,
+            "--owner",
+            agent,
+            "--claim",
+            f"{repo_slug}#{num}",
+            "--note",
+            f"claim opened against plan {digest}",
+        ]
+    )
+    if proc.returncode != 0:
+        raise ClaimPreconditionError(
+            proc.stderr.strip() or "the claim could not be linked to the instruction"
+        )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(prog="claim-open", description=__doc__.split("\n")[0])
     ap.add_argument("--issue", type=int, help="claim an existing issue")
     ap.add_argument("--title", help="open (or reuse) an issue with this title")
     ap.add_argument("--agent", default=os.environ.get("ESTATE_AGENT", ""),
                     help="claiming agent; default: $ESTATE_AGENT, else refuse")
+    ap.add_argument(
+        "--session",
+        default=os.environ.get("ESTATE_SESSION_ID", ""),
+        help="the session whose plan is claimed; default: $ESTATE_SESSION_ID",
+    )
+    ap.add_argument(
+        "--instruction",
+        required=True,
+        help="the INS-* instruction this claim executes",
+    )
     ap.add_argument("--base", default="origin/main", help="the range the claim covers")
     ap.add_argument("--paths", default="",
                     help="comma-separated paths to declare before they change (new files)")
@@ -235,9 +515,29 @@ def main() -> int:
     # and claim-gate could not tell agents apart. No default is honest — refuse.
     if not a.agent:
         sys.exit("FAIL    claim-open  no agent identity: pass --agent <name> or set ESTATE_AGENT")
+    if not a.session:
+        sys.exit(
+            "FAIL    claim-open  no session identity: pass --session <id> or set "
+            "ESTATE_SESSION_ID"
+        )
 
     if not os.path.exists(GATE):
         sys.exit(f"FAIL    claim-open  no bin/claim-gate at {GATE}: cannot prove the claim here")
+
+    try:
+        if not a.check_only:
+            collect_current_session(a.session)
+        tracked = instruction_payload(a.instruction)
+        if tracked.get("session") and tracked["session"] != a.session:
+            raise ClaimPreconditionError(
+                f"instruction {a.instruction} belongs to session {tracked['session']}, "
+                f"not {a.session}"
+            )
+        plan, digest = claim_plan(a.session, a.instruction)
+        if not a.check_only:
+            bind_instruction(a.instruction, session=a.session)
+    except ClaimPreconditionError as exc:
+        sys.exit(f"FAIL    claim-open  {exc}")
 
     base = git("merge-base", a.base, "HEAD").strip()
     files = changed_files(base)
@@ -246,12 +546,41 @@ def main() -> int:
           + (f" (+{len(files)-5} more)" if len(files) > 5 else ""))
 
     if not a.check_only:
-        num = find_issue(a.title, a.issue)
+        num = find_issue(
+            a.title,
+            a.issue,
+            instruction=a.instruction,
+            plan=plan,
+            digest=digest,
+        )
         ensure_open(num)
-        post_claim(num, a.agent, paths)
+        post_claim(
+            num,
+            a.agent,
+            paths,
+            instruction=a.instruction,
+            plan=plan,
+            digest=digest,
+        )
         # With nothing committed yet, HEAD is main's commit: there is no commit of ours to stamp.
         if files:
-            stamp_trailers(num, a.agent)
+            stamp_trailers(
+                num,
+                a.agent,
+                instruction=a.instruction,
+                digest=digest,
+            )
+        repo_slug = repo()
+        try:
+            link_claim(
+                a.instruction,
+                num=num,
+                agent=a.agent,
+                repo_slug=repo_slug,
+                digest=digest,
+            )
+        except ClaimPreconditionError as exc:
+            sys.exit(f"FAIL    claim-open  {exc}")
         note_claim(num)
 
     repo_slug = repo()

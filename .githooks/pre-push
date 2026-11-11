@@ -487,4 +487,8 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 	esac
 done
 
+if [ -x "$repo_root/bin/operationalise-reminder" ]; then
+  "$repo_root/bin/operationalise-reminder" --stage pre-push || true
+fi
+
 exit 0

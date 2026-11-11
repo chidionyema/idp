@@ -14,6 +14,8 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent.parent / "bin" / "claim-gate"
 NOW = datetime(2026, 9, 30, 20, 0, tzinfo=timezone.utc)
+PLAN = "a" * 64
+INSTRUCTION = "INS-00004"
 
 
 def _gate():
@@ -30,13 +32,23 @@ def _issue(state="open", labels=("in-progress",), claim=None):
 
 
 def _claim(
-    agent="idp-60", paths="bin/voice-*,tests/test_voice*", age=timedelta(minutes=10)
+    agent="idp-60",
+    paths="bin/voice-*,tests/test_voice*",
+    age=timedelta(minutes=10),
+    instruction=INSTRUCTION,
+    plan=PLAN,
 ):
     hb = (NOW - age).strftime("%Y-%m-%dT%H:%M:%SZ")
-    return f"CLAIM agent={agent} model=claude-opus paths={paths} heartbeat={hb}"
+    return (
+        f"CLAIM agent={agent} instruction={instruction} plan={plan} "
+        f"model=claude-opus paths={paths} heartbeat={hb}"
+    )
 
 
-MSG = "fix(voice): a thing\n\nClaim: Mumchimp/crew#12\nAgent: idp-60\n"
+MSG = (
+    "fix(voice): a thing\n\nClaim: Mumchimp/crew#12\nAgent: idp-60\n"
+    f"Instruction: {INSTRUCTION}\nPlan: {PLAN}\n"
+)
 FILES = ["bin/voice-doctor", "tests/test_voice_doctor.py"]
 
 
@@ -60,7 +72,10 @@ def test_an_unlabelled_issue_is_no_longer_a_reason_to_refuse():
 def test_a_claim_comment_without_the_model_field_still_passes():
     # model= was read by nothing; it is now optional rather than required.
     hb = NOW.strftime("%Y-%m-%dT%H:%M:%SZ")
-    bare = f"CLAIM agent=idp-60 paths=bin/voice-*,tests/test_voice* heartbeat={hb}"
+    bare = (
+        f"CLAIM agent=idp-60 instruction={INSTRUCTION} plan={PLAN} "
+        f"paths=bin/voice-*,tests/test_voice* heartbeat={hb}"
+    )
     assert run(issue=_issue(claim=bare)) == []
 
 
@@ -70,6 +85,26 @@ def test_no_claim_line_is_refused():
 
 def test_no_agent_line_is_refused():
     assert "no `Agent:" in run(text="fix\n\nClaim: #12\n")[0]
+
+
+def test_no_instruction_trailer_is_refused():
+    out = run(text="fix\n\nClaim: #12\nAgent: idp-60\n" + f"Plan: {PLAN}\n")
+    assert "no `Instruction:" in out[0]
+
+
+def test_no_plan_trailer_is_refused():
+    out = run(text=(f"fix\n\nClaim: #12\nAgent: idp-60\nInstruction: {INSTRUCTION}\n"))
+    assert "no `Plan:" in out[0]
+
+
+def test_claim_instruction_must_match_the_commit_trailer():
+    out = run(issue=_issue(claim=_claim(instruction="INS-00005")))
+    assert "claim names instruction INS-00005" in out[0]
+
+
+def test_claim_plan_must_match_the_commit_trailer():
+    out = run(issue=_issue(claim=_claim(plan="b" * 64)))
+    assert "claim names plan bbbbbbbbbbbb" in out[0]
 
 
 def test_another_agents_claim_is_refused():
@@ -84,7 +119,9 @@ def test_a_range_naming_two_agents_is_refused():
     # against a claim held by idp-99, while idp-60 wrote to files only idp-99 had claimed.
     two = (
         "fix(voice): the newer commit\n\nClaim: Mumchimp/crew#12\nAgent: idp-60\n"
+        f"Instruction: {INSTRUCTION}\nPlan: {PLAN}\n"
         "\nfix(voice): the older commit\n\nClaim: Mumchimp/crew#12\nAgent: idp-99\n"
+        f"Instruction: {INSTRUCTION}\nPlan: {PLAN}\n"
     )
     out = run(text=two, issue=_issue(claim=_claim(agent="idp-99")))
     assert "names 2 agents" in out[0]
@@ -106,6 +143,7 @@ def test_the_same_issue_is_looked_up_once_however_many_commits_name_it():
 
     text = "".join(
         "fix(voice): a thing\n\nClaim: Mumchimp/crew#12\nAgent: idp-60\n"
+        f"Instruction: {INSTRUCTION}\nPlan: {PLAN}\n"
         for _ in range(16)
     )
     assert g.verdict(text, FILES, "Mumchimp/idp", fetch, NOW) == []
@@ -122,6 +160,7 @@ def test_two_distinct_issues_are_each_looked_up_once():
 
     text = "".join(
         f"fix(voice): a thing\n\nClaim: Mumchimp/crew#{n}\nAgent: idp-60\n"
+        f"Instruction: {INSTRUCTION}\nPlan: {PLAN}\n"
         for n in (12, 13, 12, 13, 12)
     )
     assert g.verdict(text, FILES, "Mumchimp/idp", fetch, NOW) == []
@@ -133,7 +172,9 @@ def test_a_range_naming_one_agent_twice_still_passes():
     # One agent's multi-commit lane is the ordinary case and must not be refused.
     two = (
         "fix(voice): the newer commit\n\nClaim: Mumchimp/crew#12\nAgent: idp-60\n"
+        f"Instruction: {INSTRUCTION}\nPlan: {PLAN}\n"
         "\nfix(voice): the older commit\n\nClaim: Mumchimp/crew#12\nAgent: idp-60\n"
+        f"Instruction: {INSTRUCTION}\nPlan: {PLAN}\n"
     )
     assert run(text=two) == []
 
@@ -233,7 +274,8 @@ def test_a_squash_whose_lane_head_is_gone_is_judged_on_its_own_message(
         "commit",
         "-q",
         "-m",
-        f"fix(voice): a thing\n\nGreenlane-Head: {gone}\n\nClaim: Mumchimp/crew#12\nAgent: idp-60\n",
+        f"fix(voice): a thing\n\nGreenlane-Head: {gone}\n\nClaim: Mumchimp/crew#12\n"
+        f"Agent: idp-60\nInstruction: {INSTRUCTION}\nPlan: {PLAN}\n",
     )
     head = _sh(tmp_path, "rev-parse", "HEAD")
     monkeypatch.chdir(tmp_path)

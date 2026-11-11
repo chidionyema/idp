@@ -85,6 +85,7 @@ from governance import founder_intake  # noqa: E402
 NON_SESSION_LEDGERS = frozenset({"intents.jsonl", "observe.jsonl", "refusals.jsonl"})
 
 INSTRUCTION_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{1,63}$")
+INSTRUCTION_ID_RE = re.compile(r"^INS-[A-Za-z0-9-]{3,120}$")
 PROMPT_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{3,120}$")
 
 
@@ -107,6 +108,10 @@ def prompts_path() -> str:
 
 def intents_path() -> str:
     return os.path.join(plans_dir(), "intents.jsonl")
+
+
+def instructions_path() -> str:
+    return os.path.join(estate_home(), "instructions", "ledger.jsonl")
 
 
 def read_jsonl(path: str) -> List[Dict[str, Any]]:
@@ -180,7 +185,13 @@ def session_ledgers() -> Dict[str, List[Dict[str, Any]]]:
 
 def declared_plan(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     """The plan the session last declared: goal, sub-goals, and the links it claimed."""
-    plan: Dict[str, Any] = {"goal": "", "subgoals": [], "instruction": "", "prompt": ""}
+    plan: Dict[str, Any] = {
+        "goal": "",
+        "subgoals": [],
+        "instruction": "",
+        "instruction_id": "",
+        "prompt": "",
+    }
     for e in events:
         if e.get("tool") not in ("declare_plan", "revise_plan"):
             continue
@@ -193,8 +204,18 @@ def declared_plan(events: List[Dict[str, Any]]) -> Dict[str, Any]:
             else []
         )
         plan["instruction"] = str(args.get("instruction") or "")
+        plan["instruction_id"] = str(args.get("instruction_id") or "")
         plan["prompt"] = str(args.get("prompt") or "")
     return plan
+
+
+def instruction_records() -> Dict[str, Dict[str, Any]]:
+    """Current instruction rows by id; only instruction records define existence."""
+    out: Dict[str, Dict[str, Any]] = {}
+    for row in read_jsonl(instructions_path()):
+        if row.get("type") == "instruction" and row.get("id"):
+            out[str(row["id"])] = row
+    return out
 
 
 def session_intents(session: str) -> List[str]:
@@ -278,12 +299,14 @@ def link_rows(session: Optional[str] = None) -> List[Dict[str, Any]]:
     and the protocol that prompt is bound to."""
     rows: List[Dict[str, Any]] = []
     intents = known_intents()
+    instructions = instruction_records()
     for sid, events in sorted(session_ledgers().items()):
         if session and sid != session:
             continue
         plan = declared_plan(events)
         observed = session_intents(sid)
         declared_instruction = plan["instruction"]
+        declared_instruction_id = plan["instruction_id"]
         declared_prompt = plan["prompt"]
         prompt = prompt_by_id(declared_prompt) if declared_prompt else None
         if prompt is None and not declared_prompt:
@@ -295,6 +318,8 @@ def link_rows(session: Optional[str] = None) -> List[Dict[str, Any]]:
                 "goal": plan["goal"],
                 "subgoals": plan["subgoals"],
                 "declared_instruction": declared_instruction,
+                "instruction_id": declared_instruction_id,
+                "instruction_record": instructions.get(declared_instruction_id),
                 "observed_instructions": observed,
                 "declared_prompt": declared_prompt,
                 "founder_prompt": prompt,
@@ -316,6 +341,16 @@ def row_violations(row: Dict[str, Any]) -> List[str]:
             out.append(f"{sid}: instruction '{declared}' is not an intent name")
         elif declared not in row["known_intents"]:
             out.append(f"{sid}: instruction '{declared}' resolves to no known intent")
+    instruction_id = row["instruction_id"]
+    if instruction_id:
+        if not INSTRUCTION_ID_RE.match(instruction_id):
+            out.append(
+                f"{sid}: instruction id '{instruction_id}' is not an INS-* instruction id"
+            )
+        elif not row["instruction_record"]:
+            out.append(
+                f"{sid}: instruction id '{instruction_id}' resolves to no instruction"
+            )
     if row["declared_prompt"]:
         if not PROMPT_ID_RE.match(row["declared_prompt"]):
             out.append(
@@ -338,6 +373,8 @@ def row_gaps(row: Dict[str, Any]) -> List[str]:
     sid = row["session"]
     if not row["declared_instruction"] and not row["observed_instructions"]:
         out.append(f"{sid}: no instruction linked to this plan")
+    if not row["instruction_id"]:
+        out.append(f"{sid}: no instruction id linked to this plan")
     if not row["founder_prompt"]:
         out.append(f"{sid}: no founder prompt linked to this plan")
     return out

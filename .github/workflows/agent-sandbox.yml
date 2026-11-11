@@ -64,6 +64,14 @@ on:
         required: false
         default: ""
         type: string
+      instruction:
+        description: "INS-* instruction this run executes"
+        required: true
+        type: string
+      plan:
+        description: "SHA-256 of the complete plan bound to that instruction"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -323,6 +331,8 @@ jobs:
           HARNESS: ${{ github.event_name == 'issues' && 'gemini' || inputs.harness }}
           TASK: ${{ github.event_name == 'issues' && format('{0} -- {1}', github.event.issue.title, github.event.issue.body) || inputs.task }}
           ISSUE: ${{ github.event_name == 'issues' && github.event.issue.number || inputs.issue }}
+          INSTRUCTION: ${{ github.event_name == 'issues' && '' || inputs.instruction }}
+          PLAN: ${{ github.event_name == 'issues' && '' || inputs.plan }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -337,9 +347,25 @@ jobs:
             url=$(gh issue create --title "$title" --body "Opened by agent-sandbox to claim this run's work. Run: ${RUN_URL}")
             num="${url##*/}"
           fi
+          if [ -z "${INSTRUCTION:-}" ] || [ -z "${PLAN:-}" ]; then
+            body=$(gh issue view "$num" --json body -q .body)
+            INSTRUCTION=$(printf '%s\n' "$body" | sed -n 's/^Instruction:[[:space:]]*//p' | head -1)
+            PLAN=$(printf '%s\n' "$body" | sed -n 's/^Plan:[[:space:]]*//p' | head -1)
+          fi
+          [[ "$INSTRUCTION" =~ ^INS-[A-Za-z0-9-]+$ ]] || {
+            echo "::error::claim requires an INS-* instruction id"; exit 1;
+          }
+          [[ "$PLAN" =~ ^[0-9a-fA-F]{64}$ ]] || {
+            echo "::error::claim requires the 64-character plan digest"; exit 1;
+          }
           hb=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          gh issue comment "$num" --body "CLAIM agent=${agent} paths=${paths} heartbeat=${hb}"
-          { echo "num=$num"; echo "agent=$agent"; } >> "$GITHUB_OUTPUT"
+          gh issue comment "$num" --body "CLAIM agent=${agent} instruction=${INSTRUCTION} plan=${PLAN} paths=${paths} heartbeat=${hb}"
+          {
+            echo "num=$num"
+            echo "agent=$agent"
+            echo "instruction=$INSTRUCTION"
+            echo "plan=$PLAN"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Commit through the estate's own hooks and push the lane
         env:
@@ -348,6 +374,8 @@ jobs:
           TASK: ${{ github.event_name == 'issues' && format('{0} -- {1}', github.event.issue.title, github.event.issue.body) || inputs.task }}
           NUM: ${{ steps.claim.outputs.num }}
           AGENT: ${{ steps.claim.outputs.agent }}
+          INSTRUCTION: ${{ steps.claim.outputs.instruction }}
+          PLAN: ${{ steps.claim.outputs.plan }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -357,7 +385,8 @@ jobs:
           git config core.hooksPath .githooks
           git checkout -q -b "$branch"
           subject="agent-sandbox (${HARNESS}): $(printf '%s' "$TASK" | head -1 | cut -c1-72)"
-          printf '%s\n\nRun: %s\n\nClaim: #%s\nAgent: %s\n' "$subject" "$RUN_URL" "$NUM" "$AGENT" > "$RUNNER_TEMP/msg"
+          printf '%s\n\nRun: %s\n\nClaim: #%s\nAgent: %s\nInstruction: %s\nPlan: %s\n' \
+            "$subject" "$RUN_URL" "$NUM" "$AGENT" "$INSTRUCTION" "$PLAN" > "$RUNNER_TEMP/msg"
           git commit -q -F "$RUNNER_TEMP/msg"
           git log -1 --format=%B | grep -q '^X-Idp-Signed: ' || { echo "::error::the commit-msg hook did not stamp the commit"; exit 1; }
           git push -q origin "$branch"

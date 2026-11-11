@@ -111,6 +111,22 @@ test("a plan carries its instruction and its founder prompt, and a revision keep
   assert.equal((revised as any).plan.prompt, "prompt-20261030T101500Z-abc123");
 });
 
+test("a plan carries the instruction id used by its claim and keeps it on revision", () => {
+  const r = apply(undefined, "declare_plan", {
+    ...good,
+    instruction_id: "INS-00004",
+    prompt: "prompt-20261030T101500Z-abc123",
+  });
+  assert.equal(r.ok, true);
+  assert.equal((r as any).plan.instruction_id, "INS-00004");
+  const revised = apply((r as any).plan, "revise_plan", good);
+  assert.equal((revised as any).plan.instruction_id, "INS-00004");
+  assert.equal(
+    apply(undefined, "declare_plan", { ...good, instruction_id: "not an id" }).ok,
+    false,
+  );
+});
+
 test("a link that is present and wrong is refused", () => {
   for (const bad of [{ instruction: "" }, { instruction: "not an intent" }, { prompt: "" }, { prompt: "no such id" }]) {
     const r = apply(undefined, "declare_plan", { ...good, ...bad });

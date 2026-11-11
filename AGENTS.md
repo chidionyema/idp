@@ -142,6 +142,32 @@ a green check is not news; do not announce it. A claim of "blocked" carries its 
 that was run (`estate-execute <intent>` or `estate_invoke`), its exit status, and the line it
 printed. A blocker without an intent run behind it is a guess, and is not reported.
 
+### 3b. Instruction, plan, claim and proof are one chain — binding
+
+Every prompt is captured by the machine-owned founder prompt collector. Every unit of work has one
+`INS-*` instruction. Before it can be claimed, its plan must name that instruction id and the
+founder prompt id and must map every subgoal to a BDD scenario, at least one edge case and at least
+one second-order effect.
+
+A claim is one GitHub issue comment with this binding:
+
+```text
+CLAIM agent=<agent> instruction=<INS-id> plan=<sha256> paths=<paths> heartbeat=<UTC>
+```
+
+The commit repeats `Claim:`, `Agent:`, `Instruction:` and `Plan:` trailers with the same ids and
+digest. `bin/claim-open` is the writer; `bin/claim-gate` and the context broker consume the same
+typed parser.
+
+An instruction may move to `verified` only when it has a stored plan snapshot, at least one claim
+and at least one evidence row. Missing inputs are `BLIND` and are refusals, never zeroes. A plan
+revision changes the digest and therefore requires a fresh claim; an old digest may not be replayed.
+
+No text, override flag, alternate claim format or local-only path bypasses these checks. The finite
+contract state space is enumerated in `tests/test_instruction_claim_failure_matrix.py`; every known
+failure class has an entry in `docs/debugging-packs.json`. Unknown external failures remain
+`BLIND`; they are never reported as green.
+
 ---
 
 ## 4. Secrets — by name only, from the vault

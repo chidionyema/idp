@@ -58,24 +58,87 @@ def _prompt(home, **rec):
         fh.write(json.dumps(rec) + "\n")
 
 
+def _instruction(home, instruction_id="INS-00004"):
+    path = home / "instructions" / "ledger.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "type": "instruction",
+                "id": instruction_id,
+                "text": "link the plan to the instruction",
+                "session": "s1",
+                "state": "received",
+            }
+        )
+        + "\n"
+    )
+
+
 def test_a_plan_with_an_instruction_and_a_founder_prompt_links_all_three(
     tmp_path, monkeypatch
 ):
     home = _home(tmp_path, monkeypatch)
-    _plan(home, "s1", instruction="lane-submit", prompt="prompt-0001")
+    _plan(
+        home,
+        "s1",
+        instruction="lane-submit",
+        instruction_id="INS-00004",
+        prompt="prompt-0001",
+    )
     _intent(home, "s1", "lane-submit")
     _prompt(home, id="prompt-0001", session="s1", text="land it and prove it")
+    _instruction(home, "INS-00004")
 
     result = plan_links.audit()
     assert result["sessions"] == 1
     row = result["rows"][0]
     assert row["session"] == "s1"
     assert row["declared_instruction"] == "lane-submit"
+    assert row["instruction_id"] == "INS-00004"
     assert row["observed_instructions"] == ["lane-submit"]
     assert row["prompt_id"] == "prompt-0001"
     assert row["protocol"] == "execution"
     assert result["violations"] == []
     assert result["gaps"] == []
+
+
+def test_a_plan_links_to_the_instruction_ledger_by_instruction_id(
+    tmp_path, monkeypatch
+):
+    home = _home(tmp_path, monkeypatch)
+    _plan(
+        home,
+        "s1",
+        instruction_id="INS-00004",
+        prompt="prompt-0001",
+    )
+    _prompt(home, id="prompt-0001", session="s1", text="land it and prove it")
+    _instruction(home, "INS-00004")
+
+    result = plan_links.audit()
+    row = result["rows"][0]
+    assert row["instruction_id"] == "INS-00004"
+    assert row["instruction_record"]["id"] == "INS-00004"
+    assert result["violations"] == []
+
+
+def test_an_instruction_id_that_resolves_to_no_instruction_is_a_violation(
+    tmp_path, monkeypatch
+):
+    home = _home(tmp_path, monkeypatch)
+    _plan(home, "s1", instruction_id="INS-99999")
+
+    result = plan_links.audit()
+    assert any("resolves to no instruction" in v for v in result["violations"])
+
+
+def test_a_missing_instruction_id_is_a_gap(tmp_path, monkeypatch):
+    home = _home(tmp_path, monkeypatch)
+    _plan(home, "s1")
+
+    result = plan_links.audit()
+    assert any("no instruction id linked" in g for g in result["gaps"])
 
 
 def test_an_instruction_that_resolves_to_no_known_intent_is_a_violation(

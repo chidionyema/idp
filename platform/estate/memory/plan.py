@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import hashlib
 import json
 import os
 import re
@@ -42,6 +43,7 @@ MIN_SUBGOAL_CHARS = 4
 # contract, so the two cannot drift; whether the names RESOLVE is checked by the governance
 # layer (platform/estate/governance/plan_links.py), which is where the ledgers live.
 INSTRUCTION_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{1,63}$")
+INSTRUCTION_ID_RE = re.compile(r"^INS-[A-Za-z0-9-]{3,120}$")
 PROMPT_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{3,120}$")
 
 PLAN_TOOLS = (
@@ -185,6 +187,7 @@ def validate_plan(args) -> dict:
         seen.add(sid)
         subgoals.append({"id": sid, "text": text})
     instruction = _s(a.get("instruction"))
+    instruction_id = _s(a.get("instruction_id"))
     prompt = _s(a.get("prompt"))
     if "instruction" in a and not instruction:
         return _refuse("instruction must name the intent this plan serves")
@@ -192,6 +195,14 @@ def validate_plan(args) -> dict:
         return _refuse("prompt must name the founder prompt this plan answers")
     if instruction and not INSTRUCTION_RE.match(instruction):
         return _refuse(f'instruction "{instruction}" is not an intent name')
+    if "instruction_id" in a and not instruction_id:
+        return _refuse(
+            "instruction_id must name the founder instruction this plan serves"
+        )
+    if instruction_id and not INSTRUCTION_ID_RE.match(instruction_id):
+        return _refuse(
+            f'instruction id "{instruction_id}" is not an INS-* instruction id'
+        )
     if prompt and not PROMPT_ID_RE.match(prompt):
         return _refuse(f'prompt "{prompt}" is not a founder prompt id')
     return {
@@ -199,6 +210,7 @@ def validate_plan(args) -> dict:
         "goal": goal,
         "subgoals": subgoals,
         "instruction": instruction,
+        "instruction_id": instruction_id,
         "prompt": prompt,
     }
 
@@ -226,6 +238,7 @@ def apply(plan: dict | None, tool: str, args) -> dict:
             "effects": keep(old.get("effects")),
             # A revision keeps the links it does not restate: the work is still the same work.
             "instruction": v["instruction"] or old.get("instruction", ""),
+            "instruction_id": v["instruction_id"] or old.get("instruction_id", ""),
             "prompt": v["prompt"] or old.get("prompt", ""),
         }
         first = next(
@@ -241,6 +254,8 @@ def apply(plan: dict | None, tool: str, args) -> dict:
         links = []
         if nxt["instruction"]:
             links.append(f"instruction {nxt['instruction']}")
+        if nxt["instruction_id"]:
+            links.append(f"instruction id {nxt['instruction_id']}")
         if nxt["prompt"]:
             links.append(f"founder prompt {nxt['prompt']}")
         if links:
@@ -322,6 +337,76 @@ def apply(plan: dict | None, tool: str, args) -> dict:
         else f"{gid} done. All sub-goals complete."
     )
     return {"ok": True, "plan": nxt, "message": msg}
+
+
+def plan_digest(plan: dict | None) -> str:
+    """Stable digest of the plan content a claim is allowed to execute."""
+    p = plan or {}
+    subgoals = []
+    for subgoal in p.get("subgoals") or []:
+        sid = _s(subgoal.get("id")) if isinstance(subgoal, dict) else ""
+        subgoals.append(
+            {
+                "id": sid,
+                "text": _s(subgoal.get("text")) if isinstance(subgoal, dict) else "",
+                "bdd": (p.get("bdd") or {}).get(sid) or {},
+                "edge_cases": (p.get("edgecases") or {}).get(sid) or [],
+                "second_order_effects": (p.get("effects") or {}).get(sid) or [],
+            }
+        )
+    canonical = {
+        "goal": _s(p.get("goal")),
+        "instruction": _s(p.get("instruction")),
+        "instruction_id": _s(p.get("instruction_id")),
+        "prompt": _s(p.get("prompt")),
+        "subgoals": subgoals,
+    }
+    body = json.dumps(
+        canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def claim_contract_problems(plan: dict | None, instruction_id: str) -> list[str]:
+    """Every finite precondition for binding this plan to a claim."""
+    p = plan or {}
+    problems: list[str] = []
+    if not _s(p.get("goal")):
+        problems.append("the plan has no goal")
+    raw_subgoals = p.get("subgoals")
+    if not isinstance(raw_subgoals, list) or not raw_subgoals:
+        problems.append("the plan has no subgoals")
+        raw_subgoals = []
+    linked = _s(p.get("instruction_id"))
+    if not linked:
+        problems.append("the plan has no instruction_id")
+    elif linked != instruction_id:
+        problems.append(
+            f"the plan is linked to {linked}, not the claimed instruction {instruction_id}"
+        )
+    if not _s(p.get("prompt")):
+        problems.append("the plan has no founder prompt id")
+    bdd = p.get("bdd") if isinstance(p.get("bdd"), dict) else {}
+    edges = p.get("edgecases") if isinstance(p.get("edgecases"), dict) else {}
+    effects = p.get("effects") if isinstance(p.get("effects"), dict) else {}
+    for subgoal in raw_subgoals:
+        sid = _s(subgoal.get("id")) if isinstance(subgoal, dict) else ""
+        if not sid:
+            problems.append("a subgoal has no id")
+            continue
+        scenario = bdd.get(sid) if isinstance(bdd.get(sid), dict) else {}
+        missing_bdd = [
+            part for part in ("given", "when", "then") if not _s(scenario.get(part))
+        ]
+        if missing_bdd:
+            problems.append(
+                f"{sid} has no complete BDD scenario ({', '.join(missing_bdd)})"
+            )
+        if not edges.get(sid):
+            problems.append(f"{sid} has no recorded edge case")
+        if not effects.get(sid):
+            problems.append(f"{sid} has no recorded second-order effect")
+    return problems
 
 
 def replay(calls) -> dict | None:
