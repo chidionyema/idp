@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -34,6 +35,9 @@ DEFAULT_REPOS = [
 # disk-sentinel tree) was DELETED by founder order on 2026-11-11. The sentinel path is kept as a
 # constant only so the .exists() guard below stays false; nothing is restored from it.
 DISK_SENTINEL = HOME / ".local/share/disk-sentinel/sentinel.sh"
+# Restored: an edit that removed the disk-sentinel line also took this one with it, leaving
+# lines 225-231 using an undefined name -- the sweep would have crashed at its write step.
+RECEIPT_DIR = Path(os.environ.get("OTTO_SWEEP_DIR", HOME / ".estate/otto/sweep"))
 
 
 def run(argv: list[str], cwd: Path | None = None, timeout: int = 10) -> tuple[int, str]:
