@@ -1,0 +1,70 @@
+{
+  "schema": "merdian.research-status.v1",
+  "id": "HELM",
+  "asOf": "2026-11-11T05:03:00Z",
+  "class": "internal-research",
+  "headline": "Verified agent-generated program inherited across independent sessions",
+  "status": "VERIFIED_NARROW_YIELD",
+  "evidence": {
+    "sourceRun": "https://github.com/chidionyema/idp/actions/runs/42960717398",
+    "crossSessionRun": "https://github.com/chidionyema/idp/actions/runs/42961030014",
+    "continuousVerificationRun": "https://github.com/chidionyema/idp/actions/runs/42962146528",
+    "sourceProgramSha256": "c1551546f8344521976037faed29d5b42f7fd06c7aab710b23c5a2993e3b1a56",
+    "sourceRevision": "b8fb103970e0cf66b75f37d298709bfc432db899",
+    "continuousVerificationRevision": "7ff9c37d6cd7a02a4ef46d17491666e5278922f5",
+    "researchLedger": "https://github.com/chidionyema/idp/blob/research/helm-exocortex-20261111/experiments/helm/RESEARCH_LEDGER.md",
+    "repoPR": "https://github.com/chidionyema/idp/pull/7919",
+    "trackingIssue": "https://github.com/chidionyema/idp/issues/7908"
+  },
+  "metrics": {
+    "initialModelCalls": 1,
+    "initialFunctionalTestsPassed": 8,
+    "initialFunctionalTestsTotal": 8,
+    "crossSessionIngestTestsPassed": 8,
+    "crossSessionReplayTestsPassed": 8,
+    "crossSessionReplayModelCalls": 0,
+    "automatedInvariantTestsPassed": 31,
+    "automatedInvariantTestsTotal": 31,
+    "twoSidedOracleCases": 24
+  },
+  "capabilities": {
+    "exactTaskPersistentReplay": {
+      "state": "verified",
+      "evidence": "crossSessionRun"
+    },
+    "crossTaskGeneralisation": {
+      "state": "unproven",
+      "lastComparison": {
+        "baselinePassed": 1,
+        "baselineTotal": 2,
+        "experiencePassed": 0,
+        "experienceTotal": 2,
+        "baselineProviderErrors": 1,
+        "experienceProviderErrors": 2
+      },
+      "evidence": "https://github.com/chidionyema/idp/actions/runs/42961560399"
+    },
+    "modelWeightAdaptation": {
+      "state": "not_attempted"
+    },
+    "fleetWideRuntimeAdoption": {
+      "state": "not_verified"
+    },
+    "commercialReadiness": {
+      "state": "not_evaluated"
+    },
+    "publicDisclosure": {
+      "state": "editorial-only"
+    },
+    "founderTelegramDelivery": {
+      "state": "not_sent",
+      "reason": "no authorized Telegram send or pin action connected to assistant"
+    }
+  },
+  "policy": {
+    "evidenceStatusRequiresReceipt": true,
+    "staleEvidenceIsNotPass": true,
+    "evaluationOrder": "Chesed first, Geburah second",
+    "publicSecrecy": "Do not expose internal source, secrets, or agent execution controls"
+  }
+}
