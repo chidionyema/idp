@@ -63,9 +63,54 @@ sys.path.insert(
     ),
 )
 import focus  # noqa: E402
-import door  # noqa: E402
 import handback  # noqa: E402
 import plan  # noqa: E402
+
+# The memory door is imported DEFENSIVELY (founder order, 2026-11-10).
+#
+# It used to be a bare `import door`. On 2026-11-10 `local_store.py` was deleted uncommitted, so
+# `door` died on import -- and this hook, the thing that exists to make agents use memory, died
+# with it: a traceback and exit 1 on every call. A gate that can be killed by the very failure it
+# polices enforces nothing, and a crashed hook is indistinguishable from a permissive one.
+#
+# So: a door that will not import is not a crash, it is a VERDICT -- memory is inaccessible, and
+# every durable edit is refused with the repair named. The failure mode of this file must never be
+# "no gate".
+door = None
+door_error = ""
+try:
+    import door  # noqa: E402
+except Exception as _door_exc:  # noqa: BLE001 - a broken door is a refusal, never a crash
+    door_error = f"{type(_door_exc).__name__}: {_door_exc}"
+
+# The DoF repair lock, decided HERE (edit time) instead of only at merge. dof-gate is a
+# standalone script whose pure functions (open_incidents, scope_of, glob_match, load_registry)
+# are importable; this hook sits in bin/, so the module resolves by name. Why a second reader
+# and not a second rule: the rule is dof-gate's, loaded from the same registry, so the write
+# gate and the merge gate cannot disagree about what 'repair-only' means.
+_BIN_ROOT = os.path.dirname(os.path.realpath(__file__))
+try:
+    import importlib.util as _ilu
+    from importlib.machinery import SourceFileLoader as _SFL
+
+    _dof_spec = _ilu.spec_from_file_location(
+        "dof_gate",
+        os.path.join(_BIN_ROOT, "dof-gate"),
+        loader=_SFL("dof_gate", os.path.join(_BIN_ROOT, "dof-gate")),
+    )
+    dof_gate = _ilu.module_from_spec(_dof_spec)
+    _dof_spec.loader.exec_module(dof_gate)
+    _DOF = (
+        dof_gate.open_incidents,
+        dof_gate.scope_of,
+        dof_gate.glob_match,
+        dof_gate.load_registry,
+    )
+except (
+    Exception
+):  # the rule cannot be read here: nothing to decide, and never deadlock a write
+    dof_gate = None  # type: ignore
+    _DOF = None
 
 # The founder's governance: frozen paths and session lockdown. Harness-agnostic on purpose --
 # this hook is what pi and Claude Code both go through, so the rule is the same everywhere.
@@ -226,6 +271,100 @@ def focus_verdict(path: str, rows, agent: str):
     )
 
 
+PIN_DOOR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pin-open")
+
+
+def pin_verdict():
+    """(ok, reason): may this session start any work other than its open issue?
+
+    Founder, 2026-11-10: "any agent that tried to report an issue already logged once must be
+    forced to resolve it, not getting swarm until the issue moves" and "they cant work on
+    anything else - pin the agent session down to that issue".
+
+    Why a refusal HERE and not a line in a lawbook: five agents hit one failure, all five file a
+    note, the founder reads the same complaint five times and nothing moves. The pin has to bite
+    before the first durable edit of the session or it is advice. This is the same door the
+    verdict comes from (bin/pin-open), read at edit time -- a second reader of one rule, never a
+    second rule.
+
+    ok=None means BLIND (the ledger could not be read): fail OPEN here, because the merge gate and
+    the pin door itself still judge, and a hook that refuses on an unreadable file is R14.
+    """
+    if not os.path.exists(PIN_DOOR):
+        return None, "pin-open door absent: nothing to decide"
+    try:
+        r = subprocess.run(  # noqa: S603 - fixed argv, our own door
+            [sys.executable, PIN_DOOR, "--json"], capture_output=True, text=True, timeout=20
+        )
+    except Exception as exc:  # BLIND is not a refusal
+        return None, f"pin-open unreachable: {type(exc).__name__}: {exc}"
+    if r.returncode == 0:
+        return True, "no open pin"
+    if r.returncode != 3:
+        return None, f"pin-open unreadable (exit {r.returncode}): nothing to decide"
+    try:
+        d = json.loads(r.stdout)
+    except Exception:
+        return None, "pin-open verdict was not JSON: nothing to decide"
+    open_e = d.get("open") or []
+    if not open_e:
+        return True, "no open pin"
+    e = open_e[0]
+    return False, (
+        f"issue {e.get('issue') or e.get('id')} is open and is now your only work. "
+        f"THE ERROR: {str(e.get('error', ''))[:300]} "
+        f"WHAT TO DO: {str(e.get('do', ''))[:300]} "
+        f"Close it with proof: bin/pin-open resolve {e.get('id')} --proof \"<command and output>\". "
+        "Logging it again is the swarm the founder banned."
+    )
+
+
+def dof_verdict(path: str):
+    """(ok, reason): may this file be edited under the current critical-service lease?
+
+    The DoF lock used to fire only at merge (dof-gate is a needs of ci-success): an agent under
+    an open `[lane] <service> down` incident did a whole session's work and learned it was
+    outside the repair scope only when CI refused the lane. That is the exact 'break every
+    agent session' the founder named. The decision is the same here as at merge because it is
+    the SAME registry and the SAME scope_of/glob_match -- this is a second reader, not a second
+    rule. ok=None means unknown (no open incidents read; fail open like every other gate).
+    """
+    if _DOF is None:
+        return None, "DoF registry unreadable: nothing to decide"
+    open_inc, scope_of, glob_match, load_registry = _DOF
+    root = git_root_if_idp(path)
+    if root is None:
+        return True, "not in the idp checkout"
+    rel = os.path.relpath(real(path), root)
+    try:
+        registry, _ = load_registry(None)
+    except Exception:
+        return None, "DoF registry unreadable: nothing to decide"
+    try:
+        incidents = open_inc(registry)
+    except Exception:
+        return None, "incident list unreadable: fail open, merge gate still judges"
+    if not incidents:
+        return True, "L0: no critical incident open"
+    first = incidents[0]
+    # An edit happens before any commit exists, so there is no Genesis-Resolves trailer to read.
+    # The edit-time rule is therefore: while an incident is open, a write is admitted only when the
+    # path sits inside SOME open incident's repairScope -- the agent must then carry the trailer at
+    # commit (dof-gate still enforces that at merge). A path in no repairScope is refused now.
+    for inc in incidents:
+        scope, comp = scope_of(registry, inc["id"])
+        if any(glob_match(g, rel) for g in scope):
+            return (
+                True,
+                f"inside {inc['id']} repairScope (carry `Genesis-Resolves: {inc['id']}`)",
+            )
+    return False, (
+        f"{rel} is outside every open incident's repairScope while a critical service is down. "
+        f"Fix the estate first: carry `Genesis-Resolves: {first['id']}` on a commit whose paths "
+        f"stay inside {first['id']}'s repairScope (bin/dof-gate)."
+    )
+
+
 def governance_verdict(path: str, sid: str):
     """(verdict, reason): may this session touch this path at all?
 
@@ -269,8 +408,39 @@ def deny_pre(reason: str) -> None:
     )
 
 
+def _in_repair_window(path: str) -> bool:
+    """True only for a memory repair path while the bounded repair window is open.
+
+    The single exception to "memory unreachable refuses work". It exists so a broken memory plane
+    can be repaired by an agent that is itself refused; it can never be used to work around it.
+    """
+    try:
+        required = os.path.join(os.path.dirname(os.path.realpath(__file__)), "estate-memory-required")
+        r = subprocess.run(
+            [sys.executable, required, "--json"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            env={**os.environ, "ESTATE_MEMORY_TARGET": path},
+        )
+        if "repairs memory and a window is open" in (r.stdout or ""):
+            return True
+    except Exception:  # noqa: BLE001 - if the repair check cannot run, there is no exception
+        return False
+    return False
+
+
 def door_unreachable() -> bool:
-    """True when a brief cannot be had at all: the refusal would then be a deadlock, not a gate."""
+    """True when a brief cannot be had at all.
+
+    This used to justify failing open (idp#7351). It no longer does: see `pre`. Memory that does not
+    answer now refuses the session, and the only way through is the bounded repair window.
+
+    A door that never imported is unreachable by definition -- that is the 2026-11-10 case, and it
+    is the one this must never miss.
+    """
+    if door is None:
+        return True
     try:
         door.call("brief", {"task": "enforce probe"}, door.key(), timeout=4)
         return False
@@ -287,7 +457,35 @@ def pre(data: dict) -> int:
         return 0
     text = transcript_text(data)
     if text is not None and not BRIEFED.search(text) and door_unreachable():
-        record("pre", "pass", "door unreachable: failing open (idp#7351)", session=sid, tool=tool, path=path)
+        # FOUNDER ORDER, 2026-11-10: "no session may ever work again without memory, machine
+        # enforced, unbreakable." This used to pass (fail open, idp#7351). It cannot: a memory
+        # door that does not answer is the violation itself, not an excuse. On 2026-11-10 the
+        # door died on import (local_store.py deleted uncommitted) and this branch let the whole
+        # fleet work blind, so every session started blank and the founder repeated himself.
+        #
+        # The deadlock that fail-open was guarding against is now handled by the repair window:
+        # bin/estate-memory-required --open-repair opens a bounded window in which ONLY the memory
+        # repair files may be edited. That is the capability to fix memory, not to work without it.
+        if _in_repair_window(path):
+            record(
+                "pre",
+                "pass",
+                "door unreachable, but this path repairs memory inside an open repair window",
+                session=sid,
+                tool=tool,
+                path=path,
+            )
+        else:
+            record("pre", "refuse", "memory door unreachable", session=sid, tool=tool, path=path)
+            deny_pre(
+                "Estate memory is unreachable, so this session cannot be briefed and may not "
+                "work. Memory is required, not optional (founder order 2026-11-10).\n\n"
+                "Repair it, then retry:\n"
+                "  bin/estate-memory-required                  # says what is broken\n"
+                "  bin/estate-memory-required --open-repair    # bounded window to fix memory only\n"
+                "  git restore platform/estate/memory/         # the usual cause\n"
+            )
+            return 0
     elif text is not None and not BRIEFED.search(text):
         reason = (
             "Estate memory has not been read this session. Call the estate-memory `brief` tool "
@@ -302,6 +500,16 @@ def pre(data: dict) -> int:
     if verdict is False:
         record("pre", "refuse", why, session=sid, tool=tool, path=path)
         deny_pre(f"Refused by the founder's governance. {why}")
+        return 0
+    dof_ok, dof_why = dof_verdict(path)
+    if dof_ok is False:
+        record("pre", "refuse", dof_why, session=sid, tool=tool, path=path)
+        deny_pre(f"Refused by the DoF repair lock. {dof_why}")
+        return 0
+    pin_ok, pin_why = pin_verdict()
+    if pin_ok is False:
+        record("pre", "refuse", pin_why, session=sid, tool=tool, path=path)
+        deny_pre(pin_why)
         return 0
     agent = os.environ.get("ESTATE_AGENT", "")
     rows = focus.live_focus()
@@ -388,11 +596,18 @@ def handback_gate(text: str, sid: str) -> bool:
     try:
         verdict = handback.judge_transcript(text)
     except Exception as e:
-        record("stop", "unknown", f"handback: {type(e).__name__}: {str(e)[:100]}", session=sid)
+        record(
+            "stop",
+            "unknown",
+            f"handback: {type(e).__name__}: {str(e)[:100]}",
+            session=sid,
+        )
         return False
     if not verdict["block"]:
         return False
-    record("stop", "refuse", "handed work back", session=sid, found=verdict["found"][:3])
+    record(
+        "stop", "refuse", "handed work back", session=sid, found=verdict["found"][:3]
+    )
     print(json.dumps({"decision": "block", "reason": verdict["reason"]}))
     return True
 

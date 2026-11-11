@@ -62,6 +62,24 @@ def run(argv: list[str], timeout: float = 30.0) -> tuple[int, str]:
         return 127, f"{type(exc).__name__}: {exc}"
 
 
+def _local_head(branch: str) -> str | None:
+    """The lane's head sha as this checkout last saw it, or None if it was never seen here.
+
+    The greenlane deletes a lane ref on origin once the lane lands, so the ref is the least
+    durable witness of the work and the LOCAL record is the most: the branch itself, the
+    remote-tracking ref left by the fetch before deletion, then the reflog. Only when all three
+    are silent was the branch truly never pushed from this checkout.
+    """
+    for ref in (f"refs/heads/{branch}", f"refs/remotes/origin/{branch}", branch):
+        rc, out = run(["git", "rev-parse", "--verify", "--quiet", ref])
+        if rc == 0 and out.strip():
+            return out.strip()
+    rc, out = run(["git", "reflog", "show", "--format=%H", branch])
+    if rc == 0 and out.strip():
+        return out.strip().splitlines()[0].strip()
+    return None
+
+
 def landed_by_content(head: str) -> tuple[bool, str | None]:
     """Is the lane's work in main -- judged by CONTENT, never by a subject line?
 
@@ -187,11 +205,42 @@ def main() -> int:
 
     receipt: dict = {"branch": branch, "repo": a.repo, "main": main_sha}
     if not head:
+        # THE REF IS GONE. That is not a verdict, it is a missing witness, and the greenlane
+        # deletes a lane ref AFTER it lands -- so the very branch that succeeded is the one that
+        # disappears. Measured 2026-11-10: `lane/disk-watch-plist` read GONE with exit 5 while its
+        # content was byte-identical to landed main (squash 166c9dc88), an answer that reads as
+        # failure for work that succeeded and that makes an agent redo it and raise a second PR.
+        # So before answering, ask the only question that decides it: did this lane's content land?
+        # The head sha survives locally (branch, remote-tracking ref or reflog) even when origin
+        # dropped the ref, and a lane that was never pushed anywhere leaves no such sha -- which is
+        # the one case that is genuinely GONE.
+        local_head = _local_head(branch)
+        if local_head:
+            receipt["head"] = local_head
+            landed, landed_by = landed_by_content(local_head)
+            if landed:
+                receipt.update(landed=True, landed_by=landed_by, verdict="LANDED")
+                if a.json:
+                    print(json.dumps(receipt, indent=1))
+                else:
+                    print(f"LANDED  lane-where  {branch}  {local_head[:12]} is in main "
+                          f"({main_sha[:12]}) -- {landed_by}; the ref is gone because it landed")
+                return 0
+            # The work is not in main and the ref is gone: the lane was abandoned or its branch
+            # was deleted while red. Honest answer, with the surviving head named.
+            receipt.update(verdict="GONE", head_in_main=False)
+            if a.json:
+                print(json.dumps(receipt, indent=1))
+            else:
+                print(f"GONE    lane-where  {branch}  no such branch on origin and {local_head[:12]} "
+                      "is NOT in main (never landed, or deleted while red)")
+            return 1 if a.expect_landed else 5
         receipt.update(verdict="GONE")
         if a.json:
             print(json.dumps(receipt, indent=1))
         else:
-            print(f"GONE    lane-where  {branch}  no such branch on origin (never pushed, or deleted)")
+            print(f"GONE    lane-where  {branch}  no such branch on origin and it was "
+                  "never seen locally either (never pushed)")
         return 1 if a.expect_landed else 5
 
     receipt["head"] = head

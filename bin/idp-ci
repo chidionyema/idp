@@ -35,12 +35,25 @@ esac
 
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 fail=0
+# TOOLS_DIR is where `bin/idp-install-deps` puts every binary it downloads (yamllint, kubeconform,
+# kustomize, helm, flux, sops...). It was NEVER on PATH, so the gate that demands those tools could
+# not find the tools the estate had already installed: `command -v yamllint` failed, the rung
+# skipped, and the gate went green without linting a single YAML file. Measured 2026-11-10:
+# ~/.cache/estate-tools held kubeconform + kustomize + yamllint, and all three read MISSING.
+# This MUST run before any rung tests for a tool -- putting it below them (where the venv lookup
+# lives) left the rungs asking a PATH that did not have the answer yet.
+if [ -d "$HOME/.cache/estate-tools" ]; then
+  PATH="$HOME/.cache/estate-tools:$PATH"
+  export PATH
+fi
 # crew#584 (founder 2026-08-28, "we should already have diagnostics"): every line carries the
 # seconds the rung before it took, and the run ends with the slowest rungs -- in the log, and in
 # the GitHub step summary when there is one. Where the time goes is read, never dug out of a log.
-_T_LAST=$SECONDS; _T_ROWS=""
+_T_LAST=$SECONDS; _T_ROWS=""; _T_FAILS=0
 say() {
   local now=$SECONDS; local d=$((now - _T_LAST)); _T_LAST=$now
+  # Counted here, at the one place a rung reports, so the number is measured and not guessed.
+  case "$*" in FAIL*) _T_FAILS=$((_T_FAILS + 1));; esac
   if [ "$d" -ge 3 ]; then _T_ROWS+="$d $*"$'\n'; printf '%s  (%ss)\n' "$*" "$d"; else printf '%s\n' "$*"; fi
 }
 timing_summary() {
@@ -48,6 +61,85 @@ timing_summary() {
   [ -n "$rows" ] || return 0
   printf 'timing   %ss total; slowest rungs:\n' "$SECONDS"; printf '%s\n' "$rows" | sed 's/^/         /'
   if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then printf '## bin/idp-ci %ss\n\n```\n%s\n```\n' "$SECONDS" "$rows" >> "$GITHUB_STEP_SUMMARY"; fi
+}
+# crew#584 / RISK-2026-11-10: a rung whose NON-EXECUTION is indistinguishable from its success
+# is not a gate. Measured on this file before this block existed: 8 rungs decided for themselves
+# whether to run (`if command -v X`), one swallowed its own verdict (`py_compile "$f" 2>/dev/null`),
+# and the whole run could be SIGTERMed at the ceiling before reaching the file that was broken.
+# `platform/efficiency/token_killer.py` therefore never compiled in ANY commit and sat on main for
+# 10 days, landed by the same commit (ebfe3cb95) that put unparseable YAML in ci.yml.
+#
+# So there are THREE verdicts, not two, and every rung must record one:
+#   ok    -- the rung ran and found nothing
+#   FAIL  -- the rung ran and found a defect
+#   BLIND -- the rung could not observe (tool absent, its own deadline expired, no files matched).
+# BLIND blocks exactly like FAIL. "unknown" is never a synonym for "fine" (AGENTS.md section 9 R1).
+# A rung that is declared but never records a verdict is itself a BLIND -- that is the check that
+# catches the entire class, because silence stops being the pass condition.
+#
+# Escape hatch: ESTATE_CI_ALLOW_BLIND=1 converts BLIND back to a pass for one run, and the fact
+# that it was used is recorded in the ledger and printed. Replacing fail-open with fail-stuck
+# would be the same defect wearing the opposite mask.
+_LEDGER=""; _RUNG_DEADLINE=0; _RUNG_START=0; _L_RUNG=""; _L_DONE=1; _LEDGER_USED=0
+rung() {  # rung <name> <deadline-seconds> -- declares a rung as REQUIRED this run
+  _L_RUNG=$1; _RUNG_DEADLINE=$2; _RUNG_START=$SECONDS; _L_DONE=0
+}
+rung_done() {  # rung_done <ok|FAIL|BLIND> [reason]
+  _L_DONE=1
+  local v=$1 why=${2:-} d=$((SECONDS - _RUNG_START))
+  _LEDGER+='{"rung":"'$_L_RUNG'","verdict":"'$v'","seconds":'$d',"reason":"'"$(printf '%s' "$why" | tr -d '"' | cut -c1-120)"'"}'$'\n'
+  [ "$v" = ok ] || { _LEDGER_USED=1; }
+}
+# A rung that was declared and never finished (crash, early exit, ceiling) is BLIND, not absent.
+ledger_close() {
+  if [ "${_L_DONE:-1}" = 0 ] && [ -n "${_L_RUNG:-}" ]; then
+    _LEDGER+='{"rung":"'$_L_RUNG'","verdict":"BLIND","seconds":'$((SECONDS - _RUNG_START))',"reason":"declared but never recorded a verdict"}'$'\n'
+    _LEDGER_USED=1
+  fi
+}
+# The one place BLIND is decided: a rung that could not observe blocks unless the founder-facing
+# escape is explicitly set for this run, and then the escape itself is printed and ledgered.
+rung_blind() {  # rung_blind <name> <reason>
+  local why=$2
+  if [ "${ESTATE_CI_ALLOW_BLIND:-0}" = 1 ]; then
+    say "BLIND $1  $why [ALLOWED by ESTATE_CI_ALLOW_BLIND=1 -- this run did not observe it]"
+    rung_done ok "allowed-blind: $why"
+  else
+    say "BLIND $1  $why"
+    say "         (BLIND is not a pass: a rung that cannot observe blocks like a failure)"
+    rung_done BLIND "$why"
+    fail=1
+  fi
+}
+# AGENTS.md section 3a is binding: every operational capability publishes optimus.metric.v1.
+# Until 2026-11-10 idp-ci published nothing, so the gate that decides whether anything may land
+# was invisible to the estate's own measurement plane -- optimus held 859 rows and every one was
+# pennyd-local. These are the gate's real numbers: how long it took, how many rungs failed, and
+# which rung was slowest. BLIND is a measured inability to observe, never a zero (R6: the emitter
+# degrades, it never blocks the gate -- a missing brain must not fail a passing push).
+emit_optimus() {
+  local emitter="$IDP/platform/estate/libexec/optimus-emit.py" status="OK"
+  [ -x "$emitter" ] || [ -f "$emitter" ] || return 0
+  [ "$fail" -eq 0 ] || status="FAILED"
+  _opt() { "$MPY" "$emitter" "$@" >/dev/null 2>&1 || true; }
+  _opt --source idp-ci --subject "gate:idp-ci" --metric "gate.duration" \
+       --value "$SECONDS" --unit s --status "$status" \
+       --evidence "bin/idp-ci ${MODE:-check} finished in ${SECONDS}s; FAIL lines: ${_T_FAILS:-0}; gate fail=$fail" \
+       --label mode="${MODE:-check}" --label revision="$(git -C "$IDP" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  _opt --source idp-ci --subject "gate:idp-ci" --metric "gate.failed_rungs" \
+       --value "${_T_FAILS:-0}" --unit rungs --status "$status" \
+       --evidence "rungs reporting FAIL in this run; total wall ${SECONDS}s" \
+       --label mode="${MODE:-check}"
+  # The slowest rung is the optimisation target -- the number that says where the 30s budget
+  # (AGENTS.md section 9) is actually being spent, instead of guessing. _T_ROWS is
+  # "<seconds> <line>", so the rung name is everything after the first two fields.
+  local slowest; slowest=$(printf '%s' "$_T_ROWS" | sort -rn | head -1)
+  if [ -n "$slowest" ]; then
+    _opt --source idp-ci --subject "gate:idp-ci" --metric "gate.slowest_rung.seconds" \
+         --value "${slowest%% *}" --unit s --status "$status" \
+         --evidence "slowest rung in this run: $(printf '%s' "$slowest" | cut -d' ' -f2- | cut -c1-120)" \
+         --label rung="$(printf '%s' "$slowest" | awk '{print $3}')"
+  fi
 }
 need() { command -v "$1" >/dev/null || { say "FAIL  $1 is not installed -- run bin/idp-install-deps"; exit 2; }; }
 # Does this change touch any of these paths? IDP_CI_BASE is the merge base on a pull request and
@@ -72,21 +164,63 @@ if [ "$CHECK" = 1 ]; then
   set -uo pipefail
   echo "idp-ci --check: syntax gate"
   fail=0
-  # Non-ASCII guard on all tracked files
-  while IFS= read -r f; do
-    pos=$(python3 -c "
-import sys
-with open('$f','rb') as fh:
-    for i,b in enumerate(fh.read()):
-        if b>127:
-            print(i+1, b)
-            sys.exit(1)
-" 2>&1) || true
-    if [ -n "$pos" ]; then
-      echo "  FAIL non-ASCII in $f: $pos"
-      fail=1
-    fi
-  done < <(git ls-files | grep -v '^\.git/')
+  # Non-ASCII guard on ADDED LINES, not on the whole repo. Measured 2026-11-10: 2,057 tracked
+  # files legitimately contain non-ASCII -- em-dashes, section signs, accented names in docs, 807
+  # under docs/ and 342 under platform/. A repo-wide ban was therefore never a law the estate could
+  # keep, which is exactly why this rung lived as one python process per file (~0.39s x 6,614 files
+  # ~ 43 min, so it never finished inside the ceiling), and then, once it was made fast, reported
+  # "clean" while its own scanner failed to launch. The defect this rung exists to catch is an
+  # invisible character smuggled into CODE by a change -- a homoglyph identifier, a zero-width space
+  # breaking a comparison, a smart quote in a shell script. That is a property of the diff, so it is
+  # checked on the diff, and a finding names the file and line.
+  #
+  # Detector is `grep -l '[^(printable)]'`, falsifier-proven in both directions: it flags a file
+  # with a byte above 0x7E and does not flag a plain-ASCII file. One native pass, 0.25s over all
+  # 278.8 MB / 6,614 tracked files. Three traps, each found by falsifying it, each a fail-open:
+  #  1. `grep -P` does not exist in BSD grep on macOS; it exits with a usage error, which the
+  #     `2>/dev/null` then reads as "no matches" -- every file reported clean.
+  #  2. `xargs -0 LC_ALL=C grep ...` treats LC_ALL=C as the COMMAND NAME (exit 127), same fail-open.
+  #  3. NUL-separated input cannot be filtered with a `^`-anchored grep; filter first, then NUL it.
+  # A scope that examined nothing reads BLIND, never green (GOV-016).
+  # Scope, in this order, because each is a real way the gate is called:
+  #  1. STAGED content -- the pre-commit/pre-push case. `git diff --cached` is the only view that
+  #     sees a file the developer just added. Testing against HEAD alone passed a planted known-bad
+  #     file here, because a staged-but-uncommitted file is not in HEAD yet (found by falsifying).
+  #  2. IDP_CI_BASE...HEAD -- the lane/PR case, what this change adds on top of its base.
+  #  3. HEAD's own diff -- last resort when there is no base.
+  _na_base="${IDP_CI_BASE:-}"
+  if [ -n "$(git -C "$IDP" diff --cached --name-only 2>/dev/null)" ]; then
+    _na_hits=$(git -C "$IDP" diff --cached --unified=0 2>/dev/null \
+      | grep -a '^+[^+]' | grep -a '[^ -~]' | head -20 || true)
+    _na_mode="added lines staged for this commit"
+    _na_checked=$(git -C "$IDP" diff --cached --numstat 2>/dev/null | awk '{a+=$1} END {print a+0}')
+  elif [ -n "$_na_base" ]; then
+    _na_hits=$(git -C "$IDP" diff --unified=0 "$_na_base"...HEAD 2>/dev/null \
+      | grep -a '^+[^+]' | grep -a '[^ -~]' | head -20 || true)
+    _na_mode="added lines vs $(printf '%s' "$_na_base" | cut -c1-8)"
+    _na_checked=$(git -C "$IDP" diff --numstat "$_na_base"...HEAD 2>/dev/null \
+      | awk '{a+=$1} END {print a+0}')
+  else
+    _na_hits=$(git -C "$IDP" show --format= --unified=0 HEAD 2>/dev/null \
+      | grep -a '^+[^+]' | grep -a '[^ -~]' | head -20 || true)
+    _na_mode="the last commit (nothing staged, no base)"
+    _na_checked=$(git -C "$IDP" show --numstat --format= HEAD 2>/dev/null \
+      | awk '{a+=$1} END {print a+0}')
+  fi
+  _na_checked="${_na_checked:-0}"
+  if [ -n "$_na_hits" ]; then
+    printf '%s\n' "$_na_hits" | while IFS= read -r _nl; do
+      echo "  FAIL non-ASCII on an added line: $(printf '%s' "$_nl" | cut -c2-160)"
+    done
+    say "FAIL  non-ASCII  $(printf '%s\n' "$_na_hits" | grep -c .) added line(s) carry non-ASCII ($_na_mode)"
+    fail=1
+    rung_done FAIL "non-ASCII on an added line ($_na_mode)"
+  elif [ "$_na_checked" -eq 0 ]; then
+    rung_blind "non-ASCII" "0 added lines examined -- scope matched nothing ($_na_mode)"
+  else
+    say "ok    non-ASCII  $_na_checked added line(s) examined, all printable ASCII ($_na_mode)"
+    rung_done ok ""
+  fi
   # bin/idp-always-on-guard etc: an extensionless file under bin/ or .githooks/ is not
   # necessarily a shell script (a Python file with no .py extension used to be bash -n'd
   # and linted as bash here -- SC1071). *.sh/*.bash are trivially shell; anything under
@@ -124,23 +258,60 @@ with open('$f','rb') as fh:
       fi
     done
   fi
-  # python3 -m py_compile on Python files
-  for f in $(git ls-files | grep -v '^\.git/'); do
-    case "$f" in
-    *.py)
-      [ -f "$f" ] || continue
-      if python3 -m py_compile "$f" 2>/dev/null; then
-        : # clean
-      else
-        echo "  FAIL py_compile $f"
-        fail=1
-      fi
-      ;;
+  # py_compile, ONE interpreter for all files. Measured 2026-11-10: one `python3 -m py_compile`
+  # per file costs ~190ms, almost entirely interpreter startup, so 1,325 files needed ~250s and
+  # the gate was SIGTERMed at the 100s ceiling before reaching the broken file. Same check in a
+  # single process: 11.4s for all 1,325. The per-file FAIL line is preserved, so a failure still
+  # names the file -- and a file that is exempted is COUNTED, never silently dropped.
+  rung "py_compile" 60
+  _py_out=$(git ls-files | grep -v '^\.git/' | python3 -c '
+import sys, os, py_compile, tempfile
+bad = []
+d = tempfile.mkdtemp()
+n = 0
+for line in sys.stdin:
+    f = line.strip()
+    if not f or not f.endswith(".py") or not os.path.isfile(f):
+        continue
+    n += 1
+    try:
+        py_compile.compile(f, cfile=os.path.join(d, "x.pyc"), doraise=True)
+    except Exception as e:
+        first = str(e).strip().splitlines()
+        bad.append((f, first[-1][:100] if first else type(e).__name__))
+for f, why in bad:
+    print(f"{f}\t{why}")
+print(f"#CHECKED\t{n}")
+')
+  _py_checked=$(printf '%s\n' "$_py_out" | sed -n 's/^#CHECKED\t//p')
+  _py_bad=$(printf '%s\n' "$_py_out" | grep -v '^#CHECKED' | grep -v '^$')
+  # Declared exemptions: fixtures whose whole purpose is to be unparseable. Counted in the
+  # evidence, never silently skipped -- an exemption nobody can see is a rung nobody can trust.
+  _py_exempt=0; _py_real=""
+  while IFS="$(printf '\t')" read -r _pf _pwhy; do
+    [ -n "$_pf" ] || continue
+    case "$_pf" in tests/fixtures/*) _py_exempt=$((_py_exempt + 1)) ;;
+      *) _py_real="$_py_real$_pf  $_pwhy"$'\n' ;;
     esac
-  done
-  # yamllint on YAML files, against the shared .yamllint. Missing is a FAIL, not a skip.
-  command -v yamllint >/dev/null 2>&1 || { echo "  FAIL yamllint is not installed -- run bin/idp-install-deps"; fail=1; }
+  done <<EOF
+$_py_bad
+EOF
+  if [ -n "$_py_real" ]; then
+    printf '%s' "$_py_real" | while IFS= read -r _l; do [ -n "$_l" ] && say "FAIL  py_compile  $_l"; done
+    rung_done FAIL "$(printf '%s' "$_py_real" | head -1)"
+    fail=1
+  elif [ "${_py_checked:-0}" -eq 0 ]; then
+    # Zero files checked is NOT a pass. This is the edge case that lets a scope bug claim green.
+    rung_blind "py_compile" "checked 0 python files -- the scope matched nothing"
+  else
+    say "ok    py_compile  $_py_checked file(s), ${_py_exempt} declared fixture exemption(s)"
+    rung_done ok ""
+  fi
+  # yamllint on YAML files, against the shared .yamllint. A missing tool is BLIND, not a skip:
+  # before 2026-11-10 this printed FAIL and then skipped the lint entirely, so the gate said
+  # "failure" and linted nothing -- the verdict and the work disagreed.
   if command -v yamllint >/dev/null 2>&1; then
+    rung "yamllint" 30
     # Diff-scoped when a base exists (2026-10-25 audit: whole-repo here failed every lane
     # on pre-existing drift, same class as the ruff-fmt defect #7086 fixed). Whole-repo
     # belongs on the weekly sweep workflow, not in every lane's way.
@@ -157,6 +328,17 @@ with open('$f','rb') as fh:
           : # clean
         else
           echo "  FAIL yamllint $f"
+          fail=1
+        fi
+        # PyYAML-parseable too, because the estate's own gates (platform/estate/governance,
+        # estate-law-gate, claim-gate) READ these files with PyYAML, and PyYAML is STRICTER
+        # than both yamllint and GitHub Actions. 2026-11-10: .github/workflows/ci.yml carried
+        # `run: "a" "b"` -- legal to GitHub (it is just a shell string), legal to yamllint,
+        # rejected by PyYAML -- so estate-law-gate crashed on every run and reported no law at
+        # all. Two parsers, one file, no gate reconciling them. This is that gate: if the file
+        # cannot be loaded by the parser our own gates use, it cannot land.
+        if ! python3 -c "import sys,yaml;yaml.safe_load(open(sys.argv[1],'rb'))" "$f" 2>/dev/null; then
+          echo "  FAIL pyyaml $f  (unparseable by the estate's own gates)"
           fail=1
         fi
         ;;
@@ -182,8 +364,12 @@ fi
   # kubeconform: schema-validates every clusters/oke/ manifest.
   # Catches: orphan apiVersion without kind, missing required fields, wrong types.
   # Skipped (return 0) if no clusters/oke/ files changed -- zero false positives
-  # on touch-unrelated PRs.
+  # on touch-unrelated PRs. A missing kubeconform is BLIND, never a silent skip.
+  if ! command -v kubeconform >/dev/null 2>&1; then
+    rung_blind "kubeconform" "tool is not installed -- run bin/idp-install-deps"
+  fi
   if command -v kubeconform >/dev/null 2>&1; then
+    rung "kubeconform" 30
     if touched clusters/oke/; then
       echo "  kubeconform schema validation (clusters/oke/)..."
       if kubeconform \
@@ -495,6 +681,22 @@ else
   fi
 fi
 
+# 1c.6 memory is REQUIRED, not advisory (founder order, 2026-11-10: "no session may ever work again
+#      without memory, machine enforced, unbreakable"). This rung is deliberately NOT path-scoped:
+#      a broken memory plane is a fleet-wide condition, not a property of the diff, so every push
+#      proves memory works. On 2026-11-10 local_store.py was deleted uncommitted, the door died on
+#      import, estate-memory-enforce died with it, and the whole fleet ran blind while every session
+#      started blank. Proved able to fail by tests/test_estate_memory_required.py (the must-refuse
+#      set: door unimportable -> BROKEN and the hook DENIES instead of raising; a healthy door -> OK).
+mem=$("$MPY" -m pytest -q -p no:cacheprovider "$IDP/tests/test_estate_memory_required.py" 2>&1); mem_rc=$?
+if [ "$mem_rc" -eq 0 ]; then
+  say "ok    memreq   $(printf '%s' "$mem" | grep -oE '[0-9]+ passed' | head -1) -- memory is required and can fail"
+else
+  say "FAIL  memreq   tests/test_estate_memory_required.py (rc=$mem_rc)"
+  printf '%s\n' "$mem" | tail -20 | sed 's/^/      /'
+  fail=1
+fi
+
 # 1c.5 language: the founder's ruling (2026-10-30) made mechanical -- Rust over Python for new
 #      estate capability code, unless the reason is compelling and written down. bin/language-gate
 #      refuses a *new* Python file (anywhere, tests/ exempt -- a test mirrors the language already
@@ -503,9 +705,20 @@ fi
 #      git itself calls Added in this diff, so the ~460 existing .py files under bin/ and
 #      platform/ are untouched. Proven by tests/test_language_gate.py against the real script.
 lg=$("$MPY" "$IDP/bin/language-gate" "${IDP_CI_BASE:-origin/main}" HEAD 2>&1); lg_rc=$?
-lgp=$("$MPY" -m pytest -q -p no:cacheprovider -o addopts="" "$IDP/tests/test_language_gate.py" 2>&1); lgp_rc=$?
-if [ "$lg_rc" -eq 0 ] && [ "$lgp_rc" -eq 0 ]; then
-  say "ok    language $(printf '%s' "$lg" | sed -n 's/^ok *//p') -- $(printf '%s' "$lgp" | grep -oE '[0-9]+ passed' | head -1) on the gate's own proof"
+gate_self_changed=0
+if touched bin/language-gate tests/test_language_gate.py; then
+  gate_self_changed=1
+  lgp=$("$MPY" -m pytest -q -p no:cacheprovider -o addopts="" "$IDP/tests/test_language_gate.py" 2>&1); lgp_rc=$?
+else
+  lgp=""
+  lgp_rc=0
+fi
+if [ "$lg_rc" -eq 0 ] && { [ "$gate_self_changed" -eq 0 ] || [ "$lgp_rc" -eq 0 ]; }; then
+  if [ "$gate_self_changed" -eq 0 ]; then
+    say "ok    language $(printf '%s' "$lg" | sed -n 's/^ok *//p') -- gate self-tests skipped (gate unchanged)"
+  else
+    say "ok    language $(printf '%s' "$lg" | sed -n 's/^ok *//p') -- $(printf '%s' "$lgp" | grep -oE '[0-9]+ passed' | head -1) on the gate's own proof"
+  fi
 else
   [ "$lg_rc" -eq 2 ] && say "FAIL  language BLIND: could not read the commit range" \
     || say "FAIL  language $(printf '%s' "$lg" | tail -1)"
@@ -1175,6 +1388,52 @@ else
 fi
 fi  # IDP_CI_SKIP_PYTEST
 
+# 8c. Every Rust crate in the tree builds and its tests pass. Before this rung, idp had
+#     Rust and the gate could not see it: platform/dx and platform/intercloud were compiled
+#     only by whichever workflow happened to name one path
+#     (concierge-deploy.yml runs cargo on code/ephemeral/cdp-vault-proxy and nothing else).
+#     A crate that no gate builds is a crate that rots -- the intercloud bundle as shipped
+#     declared `pub mod controller` with no controller.rs and still "existed".
+#
+#     A missing cargo is FAIL, never BLIND: "cannot judge" is how a gate fails open (R1).
+#     Discovery is by Cargo.toml so a new crate is covered the moment it lands, with no
+#     second list to drift from the first.
+if ! touched platform/dx platform/intercloud bin/idp-ci; then
+  say "ok    rust       no Rust change against $IDP_CI_BASE"
+else
+  cargo_bin="$(command -v cargo 2>/dev/null || true)"
+  [ -n "$cargo_bin" ] || for c in "$HOME/.cargo/bin/cargo" /usr/local/bin/cargo /opt/homebrew/bin/cargo; do
+    [ -x "$c" ] && { cargo_bin="$c"; break; }
+  done
+  if [ -z "$cargo_bin" ]; then
+    say "FAIL  rust       cargo is not installed; the Rust crates were not built or tested"
+    say "      fix: curl https://sh.rustup.rs -sSf | sh -s -- -y  (then re-run)"
+    fail=1
+  else
+    rust_n=0; rust_ok=0
+    while IFS= read -r manifest; do
+      rust_n=$((rust_n + 1))
+      crate_dir="$(dirname "$manifest")"
+      crate_rel="${crate_dir#$IDP/}"
+      # --offline is deliberately NOT set: a crate with dependencies must fetch once.
+      rt_out="$( cd "$crate_dir" && CARGO_TERM_COLOR=never "$cargo_bin" test --quiet 2>&1 )"; rt_rc=$?
+      passed="$(printf '%s' "$rt_out" | grep -oE '[0-9]+ passed' | head -1)"
+      if [ "$rt_rc" -eq 0 ]; then
+        rust_ok=$((rust_ok + 1))
+        say "ok    rust       $crate_rel ($passed)"
+      else
+        say "FAIL  rust       $crate_rel cargo test rc=$rt_rc"
+        printf '%s\n' "$rt_out" | grep -E '^(error|test result)' | head -8 | sed 's/^/      /'
+        fail=1
+      fi
+    done < <(find "$IDP/platform" -maxdepth 2 -name Cargo.toml -not -path '*/target/*' 2>/dev/null | sort)
+    if [ "$rust_n" -eq 0 ]; then
+      say "BLIND rust       no Cargo.toml under platform/ was found to build"
+      fail=1
+    fi
+  fi
+fi
+
 # 8d. The face route keeps identity in front (ADR 0003). `backstage/app-config.container.yaml`
 #     names the rule in its own words -- "The PR that adds the public route must put identity in
 #     front of it in the same change (ADR 0003, OIDC at the gateway) or turn this flag off;
@@ -1520,7 +1779,20 @@ else
   fi
 fi
 
+# A rung that CRASHES is a rung that could not observe, so it must fail closed. Found by running
+# this gate on itself (2026-11-10): a rung touched an unset variable under `set -u`, bash aborted
+# the whole script at that line, and the process still exited 0 -- so a gate that died halfway
+# through read as a pass to every caller. `set -u` without `-e` makes an abort look like success.
+# This trap converts "the script stopped early" into an explicit refusal.
+_idp_ci_finished=0
+trap 'if [ "${_idp_ci_finished:-0}" != 1 ] && [ "$?" -eq 0 ]; then
+  printf "\nFAIL  idp-ci  the gate aborted before reaching its verdict (a rung crashed, so this run observed nothing after it)\n" >&2
+  printf "FAIL  idp-ci  aborted early -- refusing rather than passing (AGENTS.md section 9 R1)\n"
+  exit 1
+fi' EXIT
+
 timing_summary
+emit_optimus
 [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
 # --full: write sentinel on success so the pre-push hook proceeds without re-running.
 if [ "$FULL" = 1 ] && [ "$fail" -eq 0 ]; then
@@ -1529,4 +1801,5 @@ if [ "$FULL" = 1 ] && [ "$fail" -eq 0 ]; then
   touch "$HOME/.cache/idp-ci-verified/$_sha"
   say "ok    verified  sentinel written for $_sha"
 fi
+_idp_ci_finished=1
 exit "$fail"
