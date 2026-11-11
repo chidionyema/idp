@@ -1,0 +1,78 @@
+# Held-out cross-task experience transfer. New tests never appear in model prompts.
+name: helm-transfer
+on:
+  push:
+    branches: [research/helm-*]
+    paths: [experiments/helm/TRANSFER_TRIGGER]
+  workflow_dispatch:
+concurrency:
+  group: helm-transfer-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  actions: read
+  contents: read
+jobs:
+  transfer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify transfer protocol and oracle isolation
+        run: node --test experiments/helm/transfer-bench.test.mjs experiments/helm/operational-memory.test.mjs
+      - name: Prepare independently isolated Python grader
+        run: docker pull python:3.12-alpine
+      - name: Retrieve last independently verified model program
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p experiments/helm/out
+          gh run download 42961030014 --repo "$GITHUB_REPOSITORY" \
+            --name helm-verified-experience-42961030014 --dir experiments/helm/out
+          test -s experiments/helm/out/verified-program-memory.json
+      - name: Choose current free code-producing model without publishing private context
+        run: |
+          node --input-type=module <<'NODE'
+          import {appendFileSync} from "node:fs";
+          const api="https://ai-gateway.kilo.ai/api/v1";
+          const r=await fetch(api+"/models");
+          if(!r.ok)throw Error("provider catalog failed");
+          const live=new Set((await r.json()).data?.map(x=>x.id)||[]);
+          const preferred=["cohere/north-mini-code:free","liquid/lfm-3-1.7b:free",
+            "nvidia/nemotron-3.5-lightning:free","thinkingmachines/inkling-2-small:free"];
+          let selected=null;
+          for(const model of preferred.filter(x=>live.has(x))){
+            const controller=new AbortController();
+            const timer=setTimeout(()=>controller.abort(),16000);
+            try{
+              const request=await fetch(api+"/chat/completions",{
+                method:"POST",signal:controller.signal,headers:{"Content-Type":"application/json"},
+                body:JSON.stringify({model,max_tokens:3072,temperature:0,
+                  messages:[{role:"user",content:"Return JSON with opcode EMIT_PATCH and complete Python source for def double(n): return n*2."}]})
+              });
+              const j=await request.json().catch(()=>null);
+              const content=j?.choices?.[0]?.message?.content||"";
+              console.log(JSON.stringify({model,status:request.status,chars:content.length}));
+              if(request.ok&&content.includes("def double")){selected=model;break;}
+            }catch(e){console.log(model+": "+String(e.message).slice(0,100))}
+            finally{clearTimeout(timer)}
+          }
+          if(!selected)throw Error("No free model answered executable code preflight");
+          appendFileSync(process.env.GITHUB_ENV,"HELM_MODEL="+selected+"\n");
+          console.log("Selected model: "+selected);
+          NODE
+      - name: Compare baseline and verified-experience on held-out executable tasks
+        env:
+          HELM_INFERENCE_URL: https://ai-gateway.kilo.ai/api/v1/chat/completions
+          HELM_MAX_OUTPUT_TOKENS: "4096"
+          GITHUB_SHA: ${{ github.sha }}
+        run: node experiments/helm/transfer-bench.mjs live experiments/helm/out/verified-program-memory.json
+      - name: Preserve complete evidence and negative results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: helm-transfer-${{ github.run_id }}
+          path: experiments/helm/out/transfer-trial.json
+          retention-days: 14
+          if-no-files-found: warn
