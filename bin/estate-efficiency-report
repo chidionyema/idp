@@ -45,8 +45,10 @@ STEPS = [
     ("m1", "CacheGuardian", "prefix re-sent byte-identical, so the cache hits"),
     (
         "m2",
-        "TokenKiller",
-        "adjacent repeated lines in tool results -> one line + count",
+        "CollapseRuns",
+        "adjacent repeated lines in tool results -> one line + count (owned by _collapse_runs in "
+        "platform/llm/efficiency_gateway.py; the old token_killer module never called rtk and "
+        "fabricated its savings, so it was removed)",
     ),
     ("m3", "MCPAdapter", "tool-description trimming"),
     ("m5", "SoLPi", "exact repeat of an earlier tool result -> pointer"),

@@ -9,7 +9,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tests.verification.harness import VerificationHarness
 from platform.efficiency import (
     CacheGuardian,
-    TokenKiller,
     MCPAdapter,
     TokenBudgetOrchestrator,
     SoLPi,
@@ -42,10 +41,14 @@ def test_9_layer_stack():
 
 
 def test_token_efficiency_layer():
-    """Layer 2: Token efficiency (all 8 mechanisms)."""
+    """Layer 2: Token efficiency (7 mechanisms).
+
+    TokenKiller was the 8th and was removed: it never called rtk, truncated to 10 lines and
+    fabricated its savings. Real output compression is _collapse_runs in
+    platform/llm/efficiency_gateway.py, which is on the real path.
+    """
     mechanisms = {
         "CacheGuardian": CacheGuardian(),
-        "TokenKiller": TokenKiller(),
         "MCPAdapter": MCPAdapter(),
         "TokenBudgetOrchestrator": TokenBudgetOrchestrator(),
         "SoLPi": SoLPi(),
@@ -54,8 +57,8 @@ def test_token_efficiency_layer():
         "GistingSimulator": GistingSimulator(),
     }
 
-    if len(mechanisms) != 8:
-        raise ValueError(f"Expected 8 mechanisms, got {len(mechanisms)}")
+    if len(mechanisms) != 7:
+        raise ValueError(f"Expected 7 mechanisms, got {len(mechanisms)}")
     for name, mech in mechanisms.items():
         if mech is None:
             raise ValueError(f"Mechanism {name} is None")

@@ -1,0 +1,111 @@
+description: >
+  platform/efficiency/token_killer.py sat on main for 10 days and was counted as
+  mechanism "m2" (8 of 8) in the efficiency stack. It never invoked `rtk` at all:
+  `_check_rtk` ran `which rtk`, and the compressor returned input untouched when
+  rtk was absent and truncated to 10 lines when present, reporting
+  `estimated_tokens_saved` from a hardcoded guess of 5 tokens per output line
+  against 1. The file never compiled in any commit (bin/idp-ci:69, landed by
+  ebfe3cb95) and the gate could not reach it.
+
+  The estate already owns output compression on the real path: `_collapse_runs`
+  in platform/llm/efficiency_gateway.py, covered by
+  features/gates/efficiency-gateway.feature. Two implementations of one layer,
+  one fabricating its result, is a stitch (AGENTS.md section 6).
+
+  This record exists because the removal touches platform/llm/*.py (a one-line
+  comment rename pointing `[2]` at collapse-runs), which bin/diagnosis-gate
+  requires to carry a diagnosis. Router behaviour is unchanged.
+
+  Question: did the fabricated saving reach the money lane -- the efficiency
+  ledger and any spend/cost figure the founder reads -- or was it confined to
+  an in-memory validator that wrote nothing?
+
+hypotheses:
+  - name: H1
+    description: >
+      The fabricated number reached the efficiency ledger or a founder-facing saving
+      figure, so the estate reported a saving it never made and money was decided on
+      a number with no measurement behind it.
+    prior: 0.5
+  - name: H2
+    description: >
+      The fabricated number never left an in-memory validator: the ledger is written
+      only by the gateway from a measured byte delta, and no path connects the fake
+      mechanism to it. A section 3 defect, but not a money defect.
+    prior: 0.5
+n_eff_divisor: 1
+evidence:
+  - name: >
+      the efficiency ledger's saving column is a measured byte delta, computed in the
+      gateway, not an estimate (platform/llm/efficiency_gateway.py:1533
+      `bytes_saved = max(0, before - after)`; :1541 `_ledger_write(row)`)
+    observed:
+      saving_is_measured_delta: 1
+      saving_is_a_guess: 0
+    likelihoods:
+      H1:
+        saving_is_measured_delta: 0.1
+        saving_is_a_guess: 0.9
+      H2:
+        saving_is_measured_delta: 0.995
+        saving_is_a_guess: 0.005
+  - name: >
+      rg finds no reference to token_killer in the gateway, bin/estate-efficiency-report,
+      bin/estate-token-proof or the executor -- only a comment. The gateway cannot call
+      it, so it cannot contribute to a ledger row.
+    observed:
+      gateway_references_token_killer: 0
+      gateway_references_token_killer_absent: 1
+    likelihoods:
+      H1:
+        gateway_references_token_killer: 0.08
+        gateway_references_token_killer_absent: 0.92
+      H2:
+        gateway_references_token_killer: 0.005
+        gateway_references_token_killer_absent: 0.995
+  - name: >
+      the gateway's own comment (efficiency_gateway.py:1362) records that the module was
+      "imported only by platform/execution/n10_validator.py; this lane never ran it",
+      and n10_validator writes 0 files (grep for json.dump / open(...,'w') / write_text
+      returns 0). The fabricated number was logged and returned in memory.
+    observed:
+      validator_writes_files: 0
+      validator_persists_result: 0
+    likelihoods:
+      H1:
+        validator_writes_files: 0.1
+        validator_persists_result: 0.12
+      H2:
+        validator_writes_files: 0.002
+        validator_persists_result: 0.004
+  - name: >
+      the ledger on disk contains no row attributable to the fake mechanism: the row
+      schema has no `estimated_tokens_saved` field at all, only bytes_before,
+      bytes_after, bytes_saved and est_tokens_cut (efficiency_gateway.py:1529-1535).
+      A number from the stub therefore has no column to occupy.
+    observed:
+      ledger_has_estimated_field: 0
+      ledger_has_only_measured_fields: 1
+    likelihoods:
+      H1:
+        ledger_has_estimated_field: 0.4
+        ledger_has_only_measured_fields: 0.6
+      H2:
+        ledger_has_estimated_field: 0.005
+        ledger_has_only_measured_fields: 0.995
+  - name: >
+      the live ledger on disk was grepped directly: 1062 rows, and
+      `grep -c estimated_tokens_saved ~/.estate/efficiency-ledger.jsonl` returns 0.
+      The fake mechanism's field name appears in the estate's real money record zero
+      times. This is the observation that decides the question, not an inference from
+      the code.
+    observed:
+      ledger_rows_with_estimated_field: 0
+      ledger_rows_exist: 1
+    likelihoods:
+      H1:
+        ledger_rows_with_estimated_field: 0.3
+        ledger_rows_exist: 0.7
+      H2:
+        ledger_rows_with_estimated_field: 0.002
+        ledger_rows_exist: 0.998
