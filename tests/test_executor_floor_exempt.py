@@ -14,7 +14,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO = Path("/Users/roseonyema/Documents/code/idp")
+# The repo this test ships in -- anchored to the test file, never to a laptop path. A hardcoded
+# /Users/... path made this gate assert against the WRONG tree on CI (where the checkout is
+# elsewhere) and against a stranger's dirty checkout on the laptop: both are a gate that cannot
+# fail on the machine that runs it.
+REPO = Path(__file__).resolve().parents[1]
 PLUGIN = REPO / "mcp" / "plugins" / "estate_executor.py"
 
 
@@ -38,8 +42,12 @@ MOD = _load()
 def test_the_module_ships_the_exemption_and_the_reclaimer():
     """The three pieces the fix needs are in the shipped file, not just in this test."""
     assert hasattr(MOD, "_floor_exempt"), "no _floor_exempt in the shipped executor"
-    assert hasattr(MOD, "_emergency_reclaim"), "no _emergency_reclaim in the shipped executor"
-    assert hasattr(MOD, "_FLOOR_EXEMPT_RES"), "no exemption list in the shipped executor"
+    assert hasattr(MOD, "_emergency_reclaim"), (
+        "no _emergency_reclaim in the shipped executor"
+    )
+    assert hasattr(MOD, "_FLOOR_EXEMPT_RES"), (
+        "no exemption list in the shipped executor"
+    )
 
 
 def test_diagnostics_and_kills_are_exempt():
@@ -81,7 +89,9 @@ def test_real_work_is_still_refused():
         "wrangler deploy",
         "docker build -t x .",
     ):
-        assert not MOD._floor_exempt(cmd), f"{cmd!r} must still wait for real free space"
+        assert not MOD._floor_exempt(cmd), (
+            f"{cmd!r} must still wait for real free space"
+        )
 
 
 def test_the_guard_still_refuses_rather_than_passing_when_reclaim_cannot_help():
@@ -91,8 +101,12 @@ def test_the_guard_still_refuses_rather_than_passing_when_reclaim_cannot_help():
     bounded cleaner subprocess. If the space is still not there after BOTH, the door must refuse.
     """
     src = PLUGIN.read_text()
-    assert "_emergency_reclaim()" in src, "the deterministic reclaim is not wired into the gate"
-    assert "_reclaim_before_refusing()" in src, "the bounded cleaner was dropped from the gate"
+    assert "_emergency_reclaim()" in src, (
+        "the deterministic reclaim is not wired into the gate"
+    )
+    assert "_reclaim_before_refusing()" in src, (
+        "the bounded cleaner was dropped from the gate"
+    )
     body = src.split("not _floor_exempt(command)", 1)
     assert len(body) == 2, "the gate does not consult the exemption list"
     tail = body[1][:4000]
@@ -106,7 +120,9 @@ def test_the_reclaimer_never_eats_a_worktree(tmp_path=None):
     src = PLUGIN.read_text()
     body = src.split("def _emergency_reclaim", 1)[1].split("\ndef ", 1)[0]
     assert '".git"' in body, "the reclaimer no longer checks for .git before removing"
-    assert "worktree" in body.lower(), "the reclaimer does not document that worktrees are spared"
+    assert "worktree" in body.lower(), (
+        "the reclaimer does not document that worktrees are spared"
+    )
 
 
 def test_the_reclaimer_runs_and_returns_a_number():

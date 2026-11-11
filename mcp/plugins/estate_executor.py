@@ -171,37 +171,112 @@ def _free_mb(path: str = "/") -> Optional[int]:
 #   1. A READ IS NEVER REFUSED. Refusing the measurement of the problem is refusing correct work
 #      (R38), and it is exactly what made the retired disk guardians a liability: they held the
 #      floor closed against `df`, so no agent could see the disk to fix it (#7914).
-#   2. DENY IS THE DEFAULT FOR A NON-READ. A table of forbidden shapes is always one shape short;
-#      measured the same day, `bin/greenlane-lane build --all` was not in the table and sailed
-#      through a fence that only knew the usual verbs.
+#   2. THE DOOR REFUSES ONLY WHAT IT CAN PROVE. "Deny is the default for a non-read" was the
+#      first shape of this and it was MEASURED WRONG: refusing every unclassified command turned
+#      18 of tests/test_executor_mcp.py's 43 red, because `pytest -q`, `make` and `git status` are
+#      unclassified and they are the estate's actual work (R38).
+#
+# THE POLICY IS ONE LAYER, AND IT IS NOT HERE. platform/estate/governance/thin_client.py owns the
+# rule: it is on main since #7911, it has falsifiers proved both ways, and it knows the platform
+# pivot (in CI and on Linux a worktree IS the isolation primitive, so the guard stands down
+# there). The door below ASKS it the narrow question and holds no table of its own.
+#
+# The table this door used to hold is deleted, for the two reasons that are one reason: two tables
+# drift, and the table that was here had no platform pivot, so it would have refused
+# `git worktree add` in CI -- the R14 class, taxing the estate's own pipeline.
+#
+# AND THE ROOT CAUSE, MEASURED: thin_client.py was on main, proved, and NOTHING CALLED IT. A guard
+# that cannot fire is not a guard. The worktree bomb was never a missing rule; it was a rule with
+# no caller. The fix for that is a caller, and a caller is what this change is.
 _ZERO_ALLOW = 0
 _ZERO_BLIND = 2
 _ZERO_REFUSED = 78
 
-_READ_SHAPES = tuple(
-    re.compile(p, re.IGNORECASE)
-    for p in (
-        r"^\s*(?:/bin/|/usr/bin/|/usr/local/bin/)?(?:df|du|ls|stat|wc|head|tail|cat|ps|pgrep)\b",
-        r"^\s*(?:rg|grep|find|awk|sed\s+-n)\b",
-        r"^\s*(?:/usr/bin/)?(?:vm_stat|sysctl|uptime|top)\b",
-        r"git\s+(?:-C\s+\S+\s+)?(?:show|cat-file|log|diff|status|rev-parse|ls-remote|ls-tree"
-        r"|rev-list|worktree\s+list|branch|remote\s+-v|describe|show-ref|for-each-ref)\b",
-    )
-)
+_TC_MODULE = None
 
-_SPAWN_SHAPES = tuple(
-    re.compile(p, re.IGNORECASE)
-    for p in (
-        r"git\s+(?:-C\s+\S+\s+)?worktree\s+add\b",
-        r"git\s+(?:-C\s+\S+\s+)?clone\b",
-        r"^\s*(?:npm|pnpm|yarn|bun)\s+(?:install|i|ci|add)\b",
-        r"^\s*(?:cargo|rustc)\s+(?:build|check|test|run|install)\b",
-        r"^\s*(?:docker|podman|nerdctl)\s+(?:build|compose\s+up)\b",
-        r"^\s*(?:make|cmake|ninja)\b",
-        r"^\s*go\s+(?:build|mod\s+download|install)\b",
-    )
-)
 
+def _thin_client():
+    """The one policy layer, loaded from this tree. None when it cannot be loaded (BLIND).
+
+    Loaded by path, not by package, because the governance directory is a package whose other
+    modules import their siblings relatively -- and this door must not drag a package in to ask one
+    question. thin_client.py imports only the standard library, so it stands alone.
+    """
+    global _TC_MODULE
+    if _TC_MODULE is not None:
+        return _TC_MODULE
+    import importlib.util
+
+    path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "platform",
+        "estate",
+        "governance",
+        "thin_client.py",
+    )
+    try:
+        spec = importlib.util.spec_from_file_location("estate_thin_client", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except (OSError, ImportError, AttributeError, SyntaxError, ValueError):
+        return None
+    _TC_MODULE = module
+    return _TC_MODULE
+
+
+def _spawn_verdict(command: str) -> tuple[int, str]:
+    """Ask the thin-client layer whether this command creates a local checkout here.
+
+    One shape test, and a count measured ONLY when the command is a checkout at all: a
+    `git worktree list` on every door call would tax every command to serve a rare one.
+    """
+    if not command or not command.strip():
+        return _ZERO_BLIND, "empty command: nothing to classify, so nothing runs"
+    tc = _thin_client()
+    if tc is None:
+        # BLIND, and BLIND is NOT a refusal at the door: an unloadable guard must not stop the
+        # estate (R38). The tap records it, so the blindness is visible rather than silent.
+        return _ZERO_BLIND, (
+            "the thin-client guard could not be loaded, so this command is unclassified"
+        )
+    count = _worktree_count() if tc.creates_local_checkout(command) else None
+    allowed, reason = tc.spawn_verdict(command, count)
+    if allowed:
+        return _ZERO_ALLOW, "not a proven spawn: the door allows it"
+    return _ZERO_REFUSED, reason
+
+
+def _worktree_cap() -> int:
+    """The configured local-worktree cap. The policy layer owns it; this only reads it."""
+    tc = _thin_client()
+    if tc is None:
+        return 0
+    return tc.spawn_cap()
+
+
+def _spawn_refusal(command: str, why: str) -> dict:
+    """The refusal the door returns for a local checkout. It NAMES the cap and the count.
+
+    A refusal a caller cannot act on is friction by construction, so the number the founder
+    configured is in the text, not only in a field nobody reads -- and the numeric code travels
+    as `exit_code` so a machine can gate on it and a human can see it.
+    """
+    cap = _worktree_cap()
+    count = _worktree_count()
+    record_friction(
+        "refuse-spawn",
+        command,
+        detail=f"{why} (cap {cap}, registered {count})",
+    )
+    return _refusal(
+        f"refused (exit {_ZERO_REFUSED}): {why} The local worktree cap on this laptop is {cap},"
+        f" and {count if count is not None else 'an unmeasurable number of'} worktrees are already"
+        " registered. Fourteen local worktrees took this machine under the executor's disk floor on"
+        " 2026-11-11, and every door then refused every agent. Read from the object store instead;"
+        " it checks out nothing.",
+        detail="run: git show origin/main:<path>   (0 bytes checked out)",
+        exit_code=_ZERO_REFUSED,
+    )
 
 
 # THE FLOOR IS A THROTTLE, NOT A LOCK (#7918/#7950). Founder, 2026-11-11: with 1013 MB free the
@@ -264,47 +339,6 @@ def _emergency_reclaim() -> int:
         except Exception:  # noqa: S112 - an unreadable root costs that root, not the reclaim
             continue
     return _free_mb() or 0
-
-def _spawn_verdict(command: str) -> tuple[int, str]:
-    """Classify one command against ZERO_LOCAL_WORKTREES. Pure: no subprocess, no disk read.
-
-    Cheap enough to run on every door call: it is three regex passes, and it buys the refusal that
-    stops the machine filling up rather than the reclaim that arrives after it.
-    """
-    if not command or not command.strip():
-        return _ZERO_BLIND, "empty command: nothing to classify, so nothing runs"
-    for rx in _READ_SHAPES:
-        if rx.search(command):
-            return _ZERO_ALLOW, "a read-only probe: it creates no checkout"
-    for rx in _SPAWN_SHAPES:
-        if rx.search(command):
-            return (
-                _ZERO_REFUSED,
-                "a local checkout or local build; the estate audits from the object store"
-                " (git show, cat-file --batch) and needs no checked-out files to review a change",
-            )
-    # DENY IS NOT THE DEFAULT AT THE DOOR. A narrow REFUSAL is.
-    #
-    # The first version of this returned BLIND here, and `tests/test_executor_mcp.py` measured the
-    # consequence: 18 of its 43 tests went red, because `pytest -q`, `make`, `false`, `git status`
-    # and every other ordinary verb the estate runs came back refused. That is R38 in its purest
-    # form -- a guard that refuses correct work is worse than the hole it closed -- and it is the
-    # exact failure that made the retired disk guardians a liability (#7914).
-    #
-    # So the door refuses ONLY what it can prove spawns. Everything else is allowed, and the
-    # spawn-shaped things that slip past this table are caught by `bin/estate-zero-worktree`, where
-    # BLIND is safe because it is asked a narrower question on a narrower set of callers. A door
-    # that stops the machine (REFUSED) is worth a door that lets an unknown through; a door that
-    # stops the estate is not.
-    return _ZERO_ALLOW, "not a proven spawn: the door allows it"
-
-
-def _worktree_cap() -> int:
-    """The concurrent-worktree cap. Four, because the measured failure was fourteen."""
-    try:
-        return int(os.environ.get("ESTATE_MAX_LOCAL_WORKTREES", "4"))
-    except ValueError:
-        return 4
 
 
 def _worktree_count() -> Optional[int]:
@@ -1243,17 +1277,13 @@ def execute_command(
     #     volume is low, so an agent can still see the disk it is being asked to free.
     spawn_verdict, spawn_why = _spawn_verdict(command)
     if spawn_verdict == _ZERO_REFUSED:
-        record_friction("refuse-spawn", command, detail=spawn_why)
-        return _refusal(
-            f"refused: {spawn_why}. Fourteen local worktrees took this machine under the executor's"
-            " disk floor on 2026-11-11, and every door then refused every agent. Read from the"
-            " object store instead; it checks out nothing.",
-            detail="run: git show origin/main:<path>   (0 bytes checked out)",
-        )
-    # NOTE: BLIND is NOT refused here. Measured 2026-11-11: refusing an unclassified command at the
-    # door turned 18 of tests/test_executor_mcp.py's 43 red, because `pytest -q` and `make` are
-    # unclassified and are the estate's actual work. The door's job is to refuse the spawn it can
-    # prove; proving is `bin/estate-zero-worktree`'s job, on a narrower question.
+        return _spawn_refusal(command, spawn_why)
+    if spawn_verdict == _ZERO_BLIND:
+        # BLIND is NOT refused here. Measured 2026-11-11: refusing an unclassified command at the
+        # door turned 18 of tests/test_executor_mcp.py's 43 red, because `pytest -q` and `make` are
+        # unclassified and are the estate's actual work. The door's job is to refuse the spawn it
+        # can prove; proving is `bin/estate-zero-worktree`'s job, on a narrower question.
+        record_friction("refuse-spawn-blind", command, detail=spawn_why)
 
     free_mb = _free_mb()
     if free_mb is not None and free_mb < MIN_FREE_MB and not _floor_exempt(command):

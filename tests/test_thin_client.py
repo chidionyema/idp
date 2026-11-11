@@ -35,6 +35,13 @@ def roomy(monkeypatch):
     monkeypatch.setattr(thin_client, "load_average", lambda *a: 1.2)
 
 
+@pytest.fixture
+def no_fence(monkeypatch):
+    """The ban is in force: no fence file, no cap override."""
+    monkeypatch.setattr(thin_client, "fence_lifted", lambda: False)
+    monkeypatch.delenv("ESTATE_MAX_LOCAL_WORKTREES", raising=False)
+
+
 # ---- rule 1: no worktrees --------------------------------------------------
 @pytest.mark.parametrize(
     "cmd",
@@ -42,6 +49,7 @@ def roomy(monkeypatch):
         "git worktree add /tmp/wt-42 main",
         "cd /Users/x/code/idp && git worktree add ../wt",
         "make thing; git worktree add /tmp/x",
+        "git -C /Users/x/code/idp worktree add /tmp/wt -b lane/x",
     ],
 )
 def test_refuses_worktree_add(darwin, roomy, cmd):
@@ -131,6 +139,8 @@ def test_probe_reports_what_it_measured(darwin):
         "load_1m",
         "min_free_gb",
         "max_load",
+        "spawn_cap",
+        "fence_lifted",
     }
     assert p["applies"] is True
     assert p["min_free_gb"] == 10.0 and p["max_load"] == 16.0
@@ -140,3 +150,100 @@ def test_thresholds_are_the_stated_ones(darwin):
     """The founder's numbers, pinned: a silent change to either is a change to the policy."""
     assert darwin.MIN_FREE_GB == 10.0
     assert darwin.MAX_LOAD == 16.0
+
+
+# ---- the narrow question the executor door asks ----------------------------
+#
+# The door used to hold a table of forbidden shapes of its own. That table was a SECOND COPY of
+# this rule (AGENTS.md section 6) and it had no platform pivot, so it would have refused
+# `git worktree add` in CI -- where a worktree IS the isolation primitive. The table is deleted and
+# the door asks these functions instead. Every one is proved BOTH ways.
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "git worktree add /tmp/wt-42 main",
+        "cd /Users/x/code/idp && git worktree add ../wt",
+        "make thing; git worktree add /tmp/x",
+        "git -C /Users/x/code/idp worktree add /tmp/wt -b lane/x",
+        "git clone https://github.com/x/y /tmp/y",
+    ],
+)
+def test_spawn_verdict_refuses_a_local_checkout(darwin, no_fence, cmd):
+    allowed, reason = darwin.spawn_verdict(cmd)
+    assert allowed is False
+    assert "THIN CLIENT" in reason
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "git switch -c lane/my-change",
+        "git worktree list",
+        "git show origin/main:AGENTS.md",
+        "df -m /",
+        "git push origin HEAD:refs/heads/lane/x",
+    ],
+)
+def test_spawn_verdict_allows_everything_else(darwin, no_fence, cmd):
+    allowed, _ = darwin.spawn_verdict(cmd)
+    assert allowed is True, (
+        f"{cmd!r} was refused; this guard refuses a checkout and nothing else"
+    )
+
+
+def test_a_quoted_spawn_verb_is_prose_not_a_spawn(darwin, no_fence):
+    """R14: a false positive teaches agents to route around the guard."""
+    assert darwin.spawn_verdict('rg -n "git worktree add" docs/')[0] is True
+    assert darwin.creates_local_checkout('rg -n "git worktree add" docs/') is False
+
+
+def test_creates_local_checkout_is_the_shape_test_alone(darwin, no_fence):
+    assert darwin.creates_local_checkout("git worktree add /tmp/x") is True
+    assert darwin.creates_local_checkout("git clone https://x/y /tmp/y") is True
+    assert darwin.creates_local_checkout("git worktree list") is False
+    assert darwin.creates_local_checkout("git clone https://x/y ~/code/y") is False
+
+
+def test_the_cap_is_zero_and_a_checkout_is_refused(darwin, no_fence):
+    assert darwin.spawn_cap() == 0
+    assert darwin.spawn_verdict("git worktree add /tmp/x")[0] is False
+
+
+def test_a_raised_cap_allows_exactly_that_many(darwin, no_fence, monkeypatch):
+    monkeypatch.setenv("ESTATE_MAX_LOCAL_WORKTREES", "2")
+    assert darwin.spawn_cap() == 2
+    assert darwin.spawn_verdict("git worktree add /tmp/x", count=1)[0] is True
+    assert darwin.spawn_verdict("git worktree add /tmp/x", count=2)[0] is False
+
+
+def test_an_unmeasurable_count_proves_no_room(darwin, no_fence, monkeypatch):
+    """R1: a count that cannot be read is BLIND, and BLIND proves no headroom."""
+    monkeypatch.setenv("ESTATE_MAX_LOCAL_WORKTREES", "4")
+    assert darwin.spawn_verdict("git worktree add /tmp/x", count=None)[0] is False
+
+
+def test_a_malformed_cap_falls_back_to_the_ban(darwin, no_fence, monkeypatch):
+    """An unreadable knob must not widen the hole the guard closed."""
+    monkeypatch.setenv("ESTATE_MAX_LOCAL_WORKTREES", "not-a-number")
+    assert darwin.spawn_cap() == 0
+    assert darwin.spawn_verdict("git worktree add /tmp/x")[0] is False
+
+
+def test_the_fence_lifts_the_ban_instantly(darwin, no_fence, monkeypatch, tmp_path):
+    """The instant off-switch: a rule that can only be changed by a restart can wedge a machine
+    nobody can restart."""
+    fence = tmp_path / "NO_SPAWN_FENCE"
+    monkeypatch.setattr(thin_client, "FENCE_PATH", str(fence))
+    monkeypatch.setattr(thin_client, "fence_lifted", lambda: fence.is_file())
+    assert darwin.spawn_verdict("git worktree add /tmp/x")[0] is False
+    fence.write_text("lifted by the operator\n")
+    assert darwin.fence_lifted() is True
+    assert darwin.spawn_verdict("git worktree add /tmp/x")[0] is True
+
+
+def test_the_layer_stands_down_where_it_does_not_apply(darwin, no_fence, monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    assert darwin.spawn_verdict("git worktree add /tmp/x")[0] is True
+    assert darwin.creates_local_checkout("git worktree add /tmp/x") is False
