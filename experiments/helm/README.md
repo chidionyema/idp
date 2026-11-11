@@ -21,13 +21,13 @@ bin/estate-context-compile ... > /tmp/estate-context.json
 node experiments/helm/cli.mjs from-compiler /tmp/estate-context.json
 
 # Explicitly provisioned model route (GitHub Actions uses built-in models:read):
-export HELM_INFERENCE_URL=https://models.github.ai/inference/chat/completions
-export HELM_TOKEN=...      # supply via a managed secret; never commit or echo it
-export HELM_MODEL=openai/gpt-4.1-mini
+export HELM_INFERENCE_URL=https://ai-gateway.kilo.ai/api/v1/chat/completions
+export HELM_MODEL=minimax/minimax-m3.1-flash:free
+# For an authenticated estate model route, provide HELM_TOKEN via managed secrets.
 node experiments/helm/cli.mjs live
 ```
 
-The GitHub Actions `helm-research` workflow runs those tests and a bounded 12-call, 3-task × 4-arm trial on the research branch using its ephemeral `GITHUB_TOKEN`. It writes the candidate and baseline outputs, per-call timings, schema/semantic decisions, token counts when provided and source SHA as a JSON artifact. A provider refusal or missing token is reported, not counted as a successful trial.
+The GitHub Actions `helm-research` workflow runs a bounded 12-call, 3-task × 4-arm trial via Kilo's anonymous free-model route. Send public/synthetic benchmarks only: the free inference provider may record prompts and outputs. It writes the candidate and baseline outputs, per-call timings, schema/semantic decisions, token counts when provided and source SHA as a JSON artifact. A provider refusal or missing token is reported, not counted as a successful trial.
 
 **Arms:** baseline; generic skills; evidence-only memory; HELM (bounded context + constrained action contract + syntax verification + one repair attempt). Prompt order alternates by task. Initial tasks are **known synthetic/replayed estate incidents**, not freshly executed fleet actions. This trial can establish the value of evidence injection on independently graded tasks, not production/fleet uplift or causal proof at scale.
 
@@ -43,6 +43,8 @@ Do not train on the oracle file or copy task-specific labels into the prompt. St
 
 ## Literature independently checked (11 November 2026)
 
+- GitHub Models retired 2026-07-30: https://github.blog/changelog/2026-07-30-github-models-is-now-retired/ — its dead endpoint may return HTTP 200 with body OK.
+- Kilo public free endpoint: https://kilo.ai/docs/gateway/authentication — anonymous free-model research traffic; rate limited, third-party data handling applies.
 - Proxy-Tuning: https://arxiv.org/abs/2401.08565 — requires output-vocabulary predictions/logits; ordinary text-only closed endpoints do not provide this boundary.
 - GEPA (ICLR 2026): https://proceedings.iclr.cc/paper_files/paper/2026/hash/0e9e708b6f48e14fd0ac29e167413f76-Abstract-Conference.html — reflection and prompt search as a sample-efficient learning candidate.
 - Agent Lightning: https://arxiv.org/abs/2508.03680 — separates agent runtime and training, relevant to providers and frameworks.
