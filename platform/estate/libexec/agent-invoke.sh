@@ -58,7 +58,7 @@ TEMPORAL="${CRITICAL_WATCH_TEMPORAL:-127.0.0.1:16223}"
 LOGDIR="$HOME/.estate/incidents"
 mkdir -p "$LOGDIR"
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
-LOG="$LOGDIR/agent-$STAMP.log"
+LOG=$(mktemp "$LOGDIR/agent-$STAMP.XXXXXX") || exit 2
 
 # --- a bounded run, without `timeout` ---------------------------------------
 # `timeout` is NOT on launchd's PATH (/usr/bin:/bin): /usr/local/bin/timeout exists on the
@@ -71,7 +71,9 @@ bounded() {
 	local secs="$1"
 	shift
 	/usr/bin/perl -e '
+		use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 		my $timeout = shift @ARGV;
+		my $deadline = clock_gettime(CLOCK_MONOTONIC) + $timeout;
 		my $pid = fork();
 		die "fork failed: $!" unless defined $pid;
 		if ($pid == 0) {
@@ -79,11 +81,10 @@ bounded() {
 			exec { $ARGV[0] } @ARGV;
 			exit 127;
 		}
-		my $deadline = time + $timeout;
 		while (1) {
 			my $r = waitpid($pid, 1);
 			last if $r == $pid;
-			if (time >= $deadline) {
+			if (clock_gettime(CLOCK_MONOTONIC) >= $deadline) {
 				kill "TERM", -$pid;
 				select(undef, undef, undef, 0.5);
 				kill "KILL", -$pid;
@@ -92,7 +93,7 @@ bounded() {
 			}
 			select(undef, undef, undef, 0.1);
 		}
-		exit($? >> 8);
+		exit(($? & 127) ? 128 + ($? & 127) : $? >> 8);
 	' "$secs" "$@"
 }
 
@@ -139,6 +140,16 @@ if [ -z "$CLAUDE" ] || [ ! -x "$CLAUDE" ]; then
 	exit 3
 fi
 
+CLAUDE_CONFIG_DIR="$HOME/.estate/harness/cc"
+FLEET_GATE="$HOME/.estate/libexec/fleet-task-budget.py"
+FLEET_SETTINGS="$LOG.settings.json"
+if ! FLEET_SECONDS=$(/usr/bin/python3 "$FLEET_GATE" init \
+  --harness "$CLAUDE_CONFIG_DIR/settings.json" --settings "$FLEET_SETTINGS" \
+  --state "$LOG.budget.json" 2>>"$LOG"); then
+    printf '{"invoked": false, "invoked_via": "local-claude", "error": "fleet budget initialization failed"}\n'
+    exit 4
+fi
+
 PROMPT="$TASK
 
 Here is the structured incident record. Resolve it with what is in here, measure the result, and
@@ -155,7 +166,9 @@ $INCIDENT"
 # agent cannot wait on a terminal that will never answer.
 (
 	cd "$REPO" 2>/dev/null || cd "$HOME" || exit 1
-	"$CLAUDE" -p "$PROMPT" --permission-mode acceptEdits
+	export CLAUDE_CONFIG_DIR
+	bounded "$FLEET_SECONDS" "$CLAUDE" -p "$PROMPT" --permission-mode acceptEdits \
+		--max-turns 21 --settings "$FLEET_SETTINGS"
 	echo "exit=$?" >>"$LOG"
 ) >>"$LOG" 2>&1 </dev/null &
 PID=$!
