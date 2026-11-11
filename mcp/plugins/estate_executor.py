@@ -220,6 +220,67 @@ _PARKING_SLEEP_SEC = 60
 _SLEEP = re.compile(r"(?:^|[;&|(\n])\s*sleep\s+([^\s;&|)]+)")
 
 
+
+# THE FLOOR IS A THROTTLE, NOT A LOCK (#7918). Founder, 2026-11-11: with 1013 MB free the door
+# refused every command -- including `df`, `pkill` and the `git push` carrying a finished fix off
+# the machine -- while the commands that could have relieved the pressure were refused in the same
+# breath. The only path left was a 90 s cleaner sweep that itself timed out, five times running.
+#
+# A command is FLOOR-EXEMPT when it cannot make a low-disk machine worse: it reads, it kills a
+# runaway process, it unlinks, or it evacuates work already committed. A build or a test run still
+# waits for real space, because those are what consume it. Exemption is by SHAPE and never by a
+# caller's assertion -- a caller able to exempt an arbitrary payload would be the hole.
+_FLOOR_EXEMPT_RES = tuple(
+    re.compile(p, re.IGNORECASE)
+    for p in (
+        r"^\s*(?:/bin/|/usr/bin/)?(?:df|du|ps|pgrep)\b",
+        r"^\s*(?:/bin/|/usr/bin/)?(?:echo|printf|ls|stat|wc|head|tail|cat)\b",
+        r"^\s*(?:/bin/|/usr/bin/)?(?:pkill|kill|killall)\b",
+        r"^\s*(?:/bin/|/usr/bin/)?rm\b",
+        r"^\s*(?:/usr/bin/)?(?:vm_stat|sysctl|uptime|top)\b",
+        # Evacuation: a finished fix must be able to leave a dying machine.
+        r"git\s+(?:push|ls-remote|fetch|status|rev-parse|log)\b",
+        r"git\s+-C\s+\S+\s+(?:push|ls-remote|fetch|status|rev-parse|log)\b",
+        r"git\s+worktree\s+(?:list|prune)\b",
+        r"disk-(?:cleanup|free|reclaim|check)",
+    )
+)
+
+
+def _floor_exempt(command: str) -> bool:
+    """True when running this command cannot make a low-disk machine worse (#7918)."""
+    return any(rx.search(command) for rx in _FLOOR_EXEMPT_RES)
+
+
+def _emergency_reclaim() -> int:
+    """Deterministic, in-process reclaim. No model, no agent loop, no subprocess.
+
+    Measured cost is milliseconds -- three orders below the cleaner sweep it backstops. It removes
+    only scratch that is definitionally disposable (pytest trees, the estate's own tmp dirs) and
+    NEVER a git worktree: a worktree holds unlanded work, so reaping one is lost work
+    (AGENTS.md 3a). Returns free MB after.
+    """
+    import shutil
+    import tempfile
+
+    # "/tmp" is the scratch root being swept, not a misplaced temp file (ruff S108).
+    roots = ["/tmp", tempfile.gettempdir()]  # noqa: S108
+    for root in roots:
+        try:
+            base_dir = os.path.abspath(root)
+            if not os.path.isdir(base_dir):
+                continue
+            for name in os.listdir(base_dir):
+                item = os.path.join(base_dir, name)
+                if not (name.startswith("pytest-") or name.startswith("estate-tmp-")):
+                    continue
+                if os.path.exists(os.path.join(item, ".git")):
+                    continue  # a worktree is never scratch, whatever it is called
+                shutil.rmtree(item, ignore_errors=True)
+        except Exception:  # noqa: S112 - an unreadable root costs that root, not the reclaim
+            continue
+    return _free_mb() or 0
+
 def parking_sleep(command: str) -> Optional[str]:
     """The sleep argument if this command parks, else None."""
     for match in _SLEEP.finditer(unquoted(command)):
@@ -1055,9 +1116,16 @@ def execute_command(
     #     failures -- they are "someone is doing it" and "some is owed" -- so the door re-measures
     #     and reports the measured number rather than dressing either up as an error.
     free_mb = _free_mb()
-    if free_mb is not None and free_mb < MIN_FREE_MB and "disk-cleanup" not in command:
+    if free_mb is not None and free_mb < MIN_FREE_MB and not _floor_exempt(command):
         before_mb = free_mb
-        cleaner_rc = _reclaim_before_refusing()
+        # Deterministic first (#7918): milliseconds, in process, no cleaner subprocess.
+        _emergency_reclaim()
+        free_mb = _free_mb()
+        # Only if the fast reclaim was not enough do we spend the slow bounded cleaner.
+        if free_mb is not None and free_mb < MIN_FREE_MB:
+            cleaner_rc = _reclaim_before_refusing()
+        else:
+            cleaner_rc = "skipped: deterministic reclaim was enough"
         free_mb = _free_mb()
         if free_mb is not None and free_mb >= MIN_FREE_MB:
             record_friction(
