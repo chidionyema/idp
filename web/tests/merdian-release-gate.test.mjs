@@ -12,6 +12,7 @@ const sources = [
   'app/page.tsx', 'app/layout.tsx', 'app/merian.css',
   'components/Nav.tsx', 'components/Footer.tsx',
   'app/products/page.tsx', 'app/consulting/page.tsx',
+  'app/fieldbooks/page.tsx', 'app/fieldbooks/from-prompt-to-proof/page.tsx', 'lib/commercialStorefront.ts',
   'app/contact/page.tsx', 'app/robots.ts', 'app/sitemap.ts',
 ];
 function fixture() {
