@@ -368,12 +368,41 @@ def _find(query):
     return "\n".join(lines)
 
 
-def _estate_list(args):
-    query = (args or {}).get("query", "")
-    if query:
-        return _find(query)
-    intents = _load_intents()
-    lines = ["# {} intents available:".format(len(intents))]
+# A full estate_list is every intent with its description and args. Measured 2026-11-11: 381
+# intents = 7,576 chars, about 1,894 tokens, on a call that mostly answers "is there a door for
+# this?" and mostly gets no. The routed view below serves the few that answer the question and
+# keeps the full list reachable, so a missing route is never read as a missing capability.
+LIST_DEFAULT = int(os.environ.get("ESTATE_LIST_DEFAULT", "12"))
+
+
+def _route(query, limit):
+    """The intents a task actually needs, best first, reusing the one scorer `_find` uses.
+
+    Deliberately NOT a second matcher: `_words`, `_covered` and the rarity weighting already
+    exist for `estate_list query=`, and two scorers would drift (AGENTS.md section 6)."""
+    q = _words(query)
+    cands = []
+    for i in _load_intents():
+        in_name = _covered(q, _words(i["name"]))
+        cands.append((in_name | _covered(q, _words(i["description"])), in_name, i))
+    n = len(cands) or 1
+    weight = {
+        w: math.log((n + 1) / (1 + sum(1 for c in cands if w in c[0]))) for w in q
+    }
+    scored = []
+    for cover, in_name, i in cands:
+        if not cover:
+            continue
+        score = sum(weight.get(w, 0.0) for w in cover) + 0.5 * sum(
+            weight.get(w, 0.0) for w in in_name
+        )
+        scored.append((score, i["name"], i))
+    scored.sort(key=lambda t: (-t[0], t[1]))
+    return [i for _s, _n, i in scored[:limit]], len(scored)
+
+
+def _render(intents, header):
+    lines = [header]
     for i in intents:
         lines.append("## {}".format(i["name"]))
         lines.append(i["description"][:120])
@@ -381,6 +410,61 @@ def _estate_list(args):
             lines.append("args: {}".format(", ".join(i["args"].keys())))
         lines.append("")
     return "\n".join(lines)
+
+
+def _estate_list(args):
+    args = args or {}
+    query = args.get("query", "")
+    if query:
+        return _find(query)
+    intents = _load_intents()
+    if args.get("full"):
+        return _render(intents, "# {} intents available:".format(len(intents)))
+    try:
+        limit = int(args.get("limit", LIST_DEFAULT))
+    except (TypeError, ValueError):
+        limit = LIST_DEFAULT
+    # Without a query there is nothing to rank on, so the routed view is the intents an agent
+    # most often needs to start a piece of work, in that order, and it says how to see the rest.
+    routed = _first_contact(intents)[:limit]
+    lines = _render(
+        routed,
+        "# {} of {} intents (the ones work usually starts with):".format(
+            len(routed), len(intents)
+        ),
+    )
+    return (
+        lines
+        + '\nAll {} are reachable: `estate_list query="<what you need>"` to find the right '
+        "one, or `estate_list full=true` for every intent.".format(len(intents))
+    )
+
+
+# The intents a session reaches for before anything else, in the order the estate's own laws name
+# them: declare the work, then look at what exists, then run it. Kept short on purpose -- this is
+# a starting point, not a catalogue, and `query=` is the real router.
+FIRST_CONTACT = (
+    "lane-submit",
+    "ci.status",
+    "pr-state",
+    "git-status",
+    "work-audit",
+    "code-review",
+    "explore",
+    "search-text",
+    "disk-free",
+    "host-pressure",
+    "hypotheses.race",
+    "claim-open",
+)
+
+
+def _first_contact(intents):
+    by_name = {i["name"]: i for i in intents}
+    out = [by_name[n] for n in FIRST_CONTACT if n in by_name]
+    seen = set(i["name"] for i in out)
+    out.extend(i for i in intents if i["name"] not in seen)
+    return out
 
 
 def _estate_show(args):
@@ -615,7 +699,8 @@ TOOL_DEFS = [
             "Find what the estate already has before building anything. Pass `query` in plain "
             'words ("base64 encode", "ci status for a pr") to get the matching intents and '
             "harv parts (tested, sealed functions from open-source libraries), best first, "
-            "each with the exact estate_invoke call. Without `query`: every intent."
+            "each with the exact estate_invoke call. Without `query`: the intents work usually "
+            "starts with, and how to see the rest (a full list is ~1,894 tokens on 381 intents)."
         ),
         "inputSchema": {
             "type": "object",
@@ -623,6 +708,14 @@ TOOL_DEFS = [
                 "query": {
                     "type": "string",
                     "description": "What you need, in plain words",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "How many intents the routed view returns (default 12)",
+                },
+                "full": {
+                    "type": "boolean",
+                    "description": "Return every intent, unbounded (the pre-2026-11-11 view)",
                 },
             },
         },
