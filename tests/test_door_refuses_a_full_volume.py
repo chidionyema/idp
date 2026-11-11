@@ -88,7 +88,9 @@ def test_the_reclaim_door_is_never_refused_or_the_refusal_is_unsatisfiable(tmp_p
     # it is the one that must never be refused while the floor is closed.
     door, ex = _door(tmp_path, free_mb=200)
 
-    out = door.execute_command("estate-execute disk-reclaim", cwd=str(tmp_path), executor=ex)
+    out = door.execute_command(
+        "estate-execute disk-reclaim", cwd=str(tmp_path), executor=ex
+    )
 
     assert "MB free" not in out.get("error", "")
     assert len(ex.calls) == 1
@@ -242,7 +244,9 @@ def test_the_reclaim_hook_resurrects_nothing():
         "the door must not invoke the deleted cleaner: it was the cause of the full disk, not"
         " the cure (113 steps to do what one rm does)"
     )
-    assert "return None" in source, "the hook is a named no-op so the floor block still runs"
+    assert "return None" in source, (
+        "the hook is a named no-op so the floor block still runs"
+    )
 
 
 def test_the_only_way_out_of_the_floor_is_a_command_that_frees_space():
@@ -252,5 +256,7 @@ def test_the_only_way_out_of_the_floor_is_a_command_that_frees_space():
     start = text.index("_SPACE_FREE_VERBS = re.compile")
     source = text[start : text.index("\n)\n", start)]
     for verb in ("df", "du", "rm", "launchctl", "find"):
-        assert verb in source, f"{verb} must stay exempt or the floor blocks its own way out"
+        assert verb in source, (
+            f"{verb} must stay exempt or the floor blocks its own way out"
+        )
     assert "disk-cleanup" not in source, "the deleted door is not a way out"

@@ -404,17 +404,26 @@ fi
 # path-gated rung reads "no base" as "everything changed": a push touching no Backstage file ran
 # tsc over backstage (175 s) and yamllint over all 1134 YAML files (100 s), 290 s against the 50 s
 # lane-submit gives its push. The queue's six checks still grade the whole tree on the server.
-base=$(git -C "$repo_root" merge-base HEAD origin/main 2>/dev/null || true)
+# 2026-11-11: this graded AMBIENT HEAD, never the commit being pushed. Measured: pushing a
+# one-commit extension branch from a shared checkout whose HEAD was another agent's
+# lane/disk-delete-only made the range include infra/macos/tools/otto/otto-background-sweep.py
+# (that agent's in-flight edit, ruff F821) and py-strict refused a commit that does not touch
+# it. `local_sha` is the ref this hook was handed; grade that. HEAD stays the fallback so a
+# hook invoked outside the per-ref loop behaves exactly as before.
+_graded_head="${local_sha:-}"
+[ -n "$_graded_head" ] && git -C "$repo_root" cat-file -e "${_graded_head}^{commit}" 2>/dev/null \
+  || _graded_head=$(git -C "$repo_root" rev-parse HEAD)
+base=$(git -C "$repo_root" merge-base "$_graded_head" origin/main 2>/dev/null || true)
 # A fresh clone or worktree that never fetched main has no origin/main to measure from, and an empty
 # base is the full sweep. Fetch it once and ask again; offline, the empty base stays and the push is
 # graded whole -- slow, never wrong.
 if [ -z "$base" ]; then
   git -C "$repo_root" fetch -q origin main 2>/dev/null \
-    && base=$(git -C "$repo_root" merge-base HEAD origin/main 2>/dev/null || true)
+    && base=$(git -C "$repo_root" merge-base "$_graded_head" origin/main 2>/dev/null || true)
 fi
 # A worktree checked out from main (fresh feature branch at origin/main) has no diff to gate.
 # Skip the gate in that case: nothing to lint, nothing to type-check.
-local_head=$(git -C "$repo_root" rev-parse HEAD)
+local_head="$_graded_head"
 remote_main=$(git -C "$repo_root" rev-parse origin/main 2>/dev/null || true)
 if [ -n "$remote_main" ] && [ "$local_head" = "$remote_main" ]; then
   echo "ok    idp-fast-gate: no diff from origin/main (worktree at same commit); gate skipped"

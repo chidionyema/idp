@@ -35,7 +35,10 @@ import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-HOOKS = [REPO / "hooks" / "pre-push", REPO / ".githooks" / "pre-push"]
+# The git hook is `.githooks/pre-push` (installed at .git/hooks/pre-push). `hooks/pre-push` is a
+# DIFFERENT, unrelated file -- a mutation-testing PR shim that always exits 0 -- so it is not
+# asserted on here; demanding the fast-gate contract from it would be a false requirement.
+HOOKS = [REPO / ".githooks" / "pre-push"]
 IDP_CI = REPO / "bin" / "idp-ci"
 
 
@@ -51,10 +54,21 @@ def test_the_hook_passes_the_head_it_grades_to_idp_ci() -> None:
     would have passed against the broken file.
     """
     for hook in HOOKS:
-        if not hook.exists():  # pragma: no cover - a sparse checkout may carry only one copy
+        if (
+            not hook.exists()
+        ):  # pragma: no cover - a sparse checkout may carry only one copy
             continue
         src = _read(hook)
-        calls = [ln for ln in src.splitlines() if "bin/idp-ci" in ln and "IDP_CI_FAST" in ln]
+        # The real invocation, not the help text further down (`2) re-run IDP_CI_FAST=1 bin/idp-ci`),
+        # which mentions the same words but pushes nothing. A test that matched the help text would
+        # fail a correct fix -- and did, on first run, before this was tightened.
+        calls = [
+            ln
+            for ln in src.splitlines()
+            if "bin/idp-ci" in ln
+            and "IDP_CI_FAST=1" in ln
+            and ln.lstrip().startswith(("if ", "if !"))
+        ]
         assert calls, f"{hook}: no idp-ci invocation found"
         for line in calls:
             assert "IDP_CI_HEAD" in line, (
@@ -92,7 +106,9 @@ def test_the_py_strict_range_is_not_a_bare_head() -> None:
 def test_the_graded_head_falls_back_to_head() -> None:
     """A bare `bin/idp-ci` (no hook, no IDP_CI_HEAD) must still work, not grade an empty range."""
     src = _read(IDP_CI)
-    assert re.search(r"_graded_head\s*=\s*\$\{?IDP_CI_HEAD", src), (
-        "IDP_CI_HEAD must be read with HEAD as its fallback, or a direct bin/idp-ci run grades "
-        "nothing at all"
+    # The head is defined once, near the top, and must read IDP_CI_HEAD with HEAD as its fallback.
+    m = re.search(r'^GRADED_HEAD="\$\{IDP_CI_HEAD:-HEAD\}"', src, re.MULTILINE)
+    assert m, (
+        "IDP_CI_HEAD must be read once with HEAD as its fallback (GRADED_HEAD="
+        '"${IDP_CI_HEAD:-HEAD}"), or a direct bin/idp-ci run grades nothing at all'
     )
