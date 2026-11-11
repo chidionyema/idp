@@ -47,7 +47,7 @@ try {
           const header = document.querySelector('.mi-header');
           const footer = document.querySelector('.mi-footer');
           const main = document.querySelector('main#main');
-          const label = h1?.textContent?.replace(/\\s+/g, ' ').trim() ?? '';
+          const label = h1?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
           const visible = el => {
             if (!el) return false;
             const r = el.getBoundingClientRect();
