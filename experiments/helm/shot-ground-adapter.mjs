@@ -24,6 +24,12 @@ function safeName(value) {
 const DELIVER_PHASES=["BUILD","TEST","COMMIT","PUSH","GREENLANE","VERIFY"];
 
 export class HelmGroundGateway {
+  // Private capability references prevent bypass by overriding public fields.
+  #policy;
+  #store;
+  #contextProbe;
+  #dispatchRegisteredIntent;
+  #permitted;
   constructor({policy,store,contextProbe,dispatchRegisteredIntent,permittedIntents}={}){
     if(!policy || policy.schema!=="helm.shot-policy.v1")
       no("founder-issued policy required");
@@ -34,36 +40,36 @@ export class HelmGroundGateway {
     if(!Array.isArray(permittedIntents) || !permittedIntents.length ||
       permittedIntents.some(x=>!safeName(x)))
       no("explicit allowlisted estate intents required");
-    this.policy=policy;
-    this.store=store;
-    this.contextProbe=contextProbe;
-    this.dispatchRegisteredIntent=dispatchRegisteredIntent;
-    this.permitted=new Set(permittedIntents);
+    this.#policy=policy;
+    this.#store=store;
+    this.#contextProbe=contextProbe;
+    this.#dispatchRegisteredIntent=dispatchRegisteredIntent;
+    this.#permitted=new Set(permittedIntents);
   }
 
   async snapshot(){
-    const events=await this.store.read(this.policy.instructionId);
+    const events=await this.#store.read(this.#policy.instructionId);
     if(!Array.isArray(events))no("authoritative ledger unavailable");
-    const state=replayShots(this.policy,events);
-    return shotReport(this.policy,state);
+    const state=replayShots(this.#policy,events);
+    return shotReport(this.#policy,state);
   }
 
   async commitEvent(event){
     // Admission is NOT an in-memory counter. The existing DB must atomically
     // compare journal head, insert the event, and commit BEFORE this returns.
-    const journal=await this.store.read(this.policy.instructionId);
+    const journal=await this.#store.read(this.#policy.instructionId);
     if(!Array.isArray(journal))no("authoritative ledger unavailable");
-    const before=replayShots(this.policy,journal);
-    const after=advanceShot(this.policy,before,event);
+    const before=replayShots(this.#policy,journal);
+    const after=advanceShot(this.#policy,before,event);
     if(after.head===before.head)return after; // idempotent readback
-    const saved=await this.store.append({
-      policy:this.policy,instructionId:this.policy.instructionId,
+    const saved=await this.#store.append({
+      policy:this.#policy,instructionId:this.#policy.instructionId,
       previousHead:before.head,event,
       expectedNextHead:after.head
     });
     if(saved!==after.head)no("ledger commit/readback mismatch");
-    const witnessed=await this.store.read(this.policy.instructionId);
-    const recovered=replayShots(this.policy,witnessed);
+    const witnessed=await this.#store.read(this.#policy.instructionId);
+    const recovered=replayShots(this.#policy,witnessed);
     if(recovered.head!==after.head)no("commit not visible from authoritative store");
     return recovered;
   }
@@ -71,21 +77,21 @@ export class HelmGroundGateway {
   /** Exactly one read-only probe per instruction. Reserve BEFORE calling it. */
   async probeOnce(request){
     if(!request || request.opcode!=="CONTEXT_PROBE" ||
-      request.taskDigest!==this.policy.taskDigest ||
-      request.sourceSha!==this.policy.sourceSha)
+      request.taskDigest!==this.#policy.taskDigest ||
+      request.sourceSha!==this.#policy.sourceSha)
       no("unrecognised or stale context request");
     const current=await this.snapshot();
     if(current.status!=="NEEDS_PROBE")no("probe budget spent");
     const event={
       kind:"PROBE",eventId:"PROBE-001",
-      instructionId:this.policy.instructionId,
+      instructionId:this.#policy.instructionId,
       // Hash the requested context, not a result obtained before admission.
-      probeDigest:helmDigest(request),sourceSha:this.policy.sourceSha
+      probeDigest:helmDigest(request),sourceSha:this.#policy.sourceSha
     };
     await this.commitEvent(event);
     // Never retry automatically on an exception; an I/O failure consumes the
     // probe so the "one probe" rule survives an interrupted worker process.
-    return this.contextProbe(Object.freeze({...request}));
+    return this.#contextProbe(Object.freeze({...request}));
   }
 
   /**
@@ -95,7 +101,7 @@ export class HelmGroundGateway {
    * build/test/commit/push/Greenlane and actual CI/prod readback.
    */
   async deliver(candidate){
-    if(!candidate || !this.permitted.has(candidate.intent) ||
+    if(!candidate || !this.#permitted.has(candidate.intent) ||
       !candidate.args || typeof candidate.args!=="object" ||
       Array.isArray(candidate.args) ||
       !Array.isArray(candidate.declaredPhases) ||
@@ -109,14 +115,14 @@ export class HelmGroundGateway {
     });
     const reservation={
       kind:"SHOT",eventId:"SHOT-"+attempt,
-      instructionId:this.policy.instructionId,
-      candidateDigest,opcode:"DISPATCH_LEGION",model:this.policy.model
+      instructionId:this.#policy.instructionId,
+      candidateDigest,opcode:"DISPATCH_LEGION",model:this.#policy.model
     };
     await this.commitEvent(reservation);
     // A crash or timeout HERE is indeterminate, not permission to rerun.
     // The caller must use reconcile() with proof from a distinct observer.
-    return this.dispatchRegisteredIntent(Object.freeze({
-      instructionId:this.policy.instructionId,
+    return this.#dispatchRegisteredIntent(Object.freeze({
+      instructionId:this.#policy.instructionId,
       intent:candidate.intent,args:structuredClone(candidate.args),
       candidateDigest,attempt
     }));
@@ -124,14 +130,14 @@ export class HelmGroundGateway {
 
   /** Grade an already-reserved shot without replaying its side effects. */
   async reconcile({candidateDigest,evidenceDigest,passed,verifier}={}){
-    const journal=await this.store.read(this.policy.instructionId);
+    const journal=await this.#store.read(this.#policy.instructionId);
     if(!Array.isArray(journal))no("journal unavailable");
-    const state=replayShots(this.policy,journal);
+    const state=replayShots(this.#policy,journal);
     if(state.phase!=="AWAITING_GRADE")
       no("no pending candidate; NEVER resubmit the original execution");
     if(candidateDigest!==state.currentShot?.digest)
       no("verdict for wrong candidate");
-    if(!safeName(verifier) || verifier!==this.policy.verifier)
+    if(!safeName(verifier) || verifier!==this.#policy.verifier)
       no("independent verifier identity mismatch");
     if(typeof passed!=="boolean" ||
       typeof evidenceDigest!=="string" ||
@@ -139,10 +145,10 @@ export class HelmGroundGateway {
       no("external evidence digest and explicit verdict required");
     const after=await this.commitEvent({
       kind:"GRADE",eventId:"GRADE-"+state.shots,
-      instructionId:this.policy.instructionId,
+      instructionId:this.#policy.instructionId,
       candidateDigest,passed,verifier,evidenceDigest
     });
-    return shotReport(this.policy,after);
+    return shotReport(this.#policy,after);
   }
 }
 
