@@ -1619,11 +1619,12 @@ class GitHubBackend:
             )
             try:
                 js = nc.jetstream()
-                for subject in (
-                    f"estate.lane.{lane}.{status}",
-                    "estate.fleet.broadcast",
-                ):
-                    await js.publish(subject, body)
+                # Only subjects inside the ESTATE_FLEET stream's own filter (estate.fleet.>, set in
+                # bin/estate-fleet) are persisted. A subject outside it is REJECTED by JetStream --
+                # measured 2026-11-11: publishing estate.lane.<x> returned NoStreamResponseError,
+                # so the verdict never reached the bus at all and the waiter never woke. One
+                # subject, inside the stream the waiter already reads.
+                await js.publish("estate.fleet.broadcast", body)
             finally:
                 await nc.close()
 

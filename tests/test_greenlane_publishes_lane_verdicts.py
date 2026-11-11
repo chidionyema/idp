@@ -90,10 +90,15 @@ def test_a_dead_bus_does_not_fail_the_landing(reporter, monkeypatch):
 
 def test_the_producer_publishes_on_the_subject_the_waiter_subscribes_to():
     source = (REPO / "greenlane" / "github.py").read_text()
-    assert "estate.lane." in source, "the producer does not name a lane subject"
-    assert "estate.fleet.broadcast" in source, (
-        "the producer does not reach a waiter subscribed to the fleet broadcast"
-    )
+    # The stream's own filter is estate.fleet.> (bin/estate-fleet). A subject outside it is
+    # rejected by JetStream, which is how the first version of this producer returned
+    # NoStreamResponseError and published nothing. Read the CALL, not the prose around it.
+    publishes = [ln.strip() for ln in source.splitlines() if "js.publish(" in ln]
+    assert publishes, "the producer publishes nothing"
+    for line in publishes:
+        assert "estate.fleet." in line, (
+            f"the producer publishes to a subject outside the ESTATE_FLEET stream: {line}"
+        )
     wait = (REPO / "bin" / "estate-wait").read_text()
     assert "estate.fleet.broadcast" in wait, (
         "the waiter and the producer no longer share a subject: the wake can never fire"
