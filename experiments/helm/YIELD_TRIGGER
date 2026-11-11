@@ -1,0 +1,7 @@
+HELM closed-loop live experiment 2026-11-11.
+Target: FUNC-INTENT-AUTHORITY (8 independent Python tests).
+Production-safe synthetic task. Single HELM arm. External model generated
+program must pass isolated Docker execution, be retained, and pass independent
+replay with 0 additional model requests. Reject fabricated or stale receipts.
+Purpose: demonstrate actual repeatable operational knowledge, NOT cross-task
+generalisation, neural learning, or commercial product readiness.
