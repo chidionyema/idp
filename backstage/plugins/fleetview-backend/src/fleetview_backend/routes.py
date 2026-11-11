@@ -497,7 +497,7 @@ def trace_envelope(session_id: str) -> tuple[dict[str, Any], int]:
 
 def ledger_tail_envelope(session_id: str) -> tuple[dict[str, Any], int]:
     # ledger_tail is contractually soft: it returns [] on any error and never raises, so the
-    # envelope is always 200 — the log pane renders an empty fold, not an error, for a session
+    # envelope is always 200 -- the log pane renders an empty fold, not an error, for a session
     # with no ledger. Rows under "rows", the key the Fleet Log fold reads.
     return {
         "available": True,
@@ -506,7 +506,7 @@ def ledger_tail_envelope(session_id: str) -> tuple[dict[str, Any], int]:
     }, 200
 
 
-# ── agent jobs (agent_jobs.py): give an agent a task from Fleet, watch it become a merged PR ──
+# -- agent jobs (agent_jobs.py): give an agent a task from Fleet, watch it become a merged PR --
 AGENT_JOBS_PATH = "/agent-jobs"
 
 
@@ -522,7 +522,27 @@ def submit_agent_job(body: Any) -> tuple[dict[str, Any], int]:
     return agent_jobs.handle_post(body)
 
 
-# ── concierge tasks (concierge_tasks.py): a browser task for the founder, watched as it happens ──
+# -- mission receipt (agent_jobs.py): one dispatched cloud mission, honestly projected --
+MISSION_RECEIPT_PATH = "/mission-receipt"
+
+
+def mission_receipt_envelope(
+    run_id: str | None = None, instruction_id: str | None = None
+) -> tuple[dict[str, Any], int]:
+    """The receipt for one mission, or a refusal the surface shows as it is.
+
+    A refusal keeps its machine-readable code, so a consumer can tell "no such mission" from
+    "the credential is missing" from "the evidence conflicts" without reading prose.
+    """
+    from fleetview_backend import agent_jobs
+
+    try:
+        return agent_jobs.receipt(run_id=run_id, instruction_id=instruction_id)
+    except agent_jobs.ReceiptRefused as exc:
+        return {"error": str(exc), "code": exc.code}, exc.status
+
+
+# -- concierge tasks (concierge_tasks.py): a browser task for the founder, watched as it happens --
 CONCIERGE_TASKS_PATH = "/concierge-tasks"
 
 
@@ -538,7 +558,7 @@ def submit_concierge_task(body: Any) -> tuple[dict[str, Any], int]:
     return concierge_tasks.handle_post(body)
 
 
-# ── key sync (key_sync.py): is every key the estate expects arriving from Bitwarden ──
+# -- key sync (key_sync.py): is every key the estate expects arriving from Bitwarden --
 KEY_SYNC_PATH = "/key-sync"
 
 

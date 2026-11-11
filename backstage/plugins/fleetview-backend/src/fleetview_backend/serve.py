@@ -142,7 +142,7 @@ async def lifespan(app: FastAPI):
     nats_url = os.environ.get("NATS_URL", "")
     if nats_url:
         # crew#1013: ensure all three estate streams exist before any adapter starts publishing.
-        # Idempotent — safe to call every startup; the bus already knows streams that exist.
+        # Idempotent -- safe to call every startup; the bus already knows streams that exist.
         try:
             await nats_adapter.ensure_estate_streams(nats_url)
         except Exception:  # noqa: BLE001, S110 -- bus may be down; adapters retry on publish
@@ -587,13 +587,13 @@ def build_app() -> FastAPI:
             content=body, media_type="text/plain; version=0.0.4; charset=utf-8"
         )
 
-    # ── voice routes ────────────────────────────────────────────────────────────
+    # -- voice routes ------------------------------------------------------------
     # Lazy imports: voice and voice_media load Kokoro (~90s) on first use.
     # Keeping them out of module-level imports means the service starts immediately.
 
     @app.post("/voice/say")
     async def voice_say(request: Request):
-        """Text → PCM streaming via Cartesia Sonic. One clause, immediate."""
+        """Text -> PCM streaming via Cartesia Sonic. One clause, immediate."""
         from fleetview_backend import voice_media as vm
 
         body = await request.json()
@@ -604,7 +604,7 @@ def build_app() -> FastAPI:
 
     @app.post("/voice/hear")
     async def voice_hear(request: Request, session_id: str = "", author: str = ""):
-        """PCM → transcript via Deepgram. Author required (estate law: no unattributed steer)."""
+        """PCM -> transcript via Deepgram. Author required (estate law: no unattributed steer)."""
         from fleetview_backend import voice_media as vm
 
         pcm = await request.body()
@@ -613,7 +613,7 @@ def build_app() -> FastAPI:
 
     @app.post("/voice/stream")
     async def voice_stream(request: Request):
-        """Question → SSE clauses. Full conversation with fleet context + history."""
+        """Question -> SSE clauses. Full conversation with fleet context + history."""
         from fleetview_backend import voice as voice_module
 
         body = await request.json()
@@ -828,7 +828,7 @@ def build_app() -> FastAPI:
 
     @app.post("/voice/steer")
     async def voice_steer(request: Request):
-        """Validated JSON intent from browser → outbox → NATS. Author required."""
+        """Validated JSON intent from browser -> outbox -> NATS. Author required."""
         from fleetview_backend import voice_media as vm
 
         body = await request.json()
@@ -854,6 +854,18 @@ def build_app() -> FastAPI:
         loop = asyncio.get_running_loop()
         result, status = await loop.run_in_executor(None, routes.submit_agent_job, body)
         return JSONResponse(content=result, status_code=status)
+
+    @app.get(routes.MISSION_RECEIPT_PATH)
+    def mission_receipt_get(run_id: str = "", instruction_id: str = ""):
+        """One dispatched cloud mission, projected into a truthful receipt.
+
+        Sync handler on purpose, like /claims: the reads are urllib calls against GitHub and
+        FastAPI runs sync handlers in its threadpool, so the event loop is never blocked.
+        """
+        body, status = routes.mission_receipt_envelope(
+            run_id=run_id or None, instruction_id=instruction_id or None
+        )
+        return JSONResponse(content=body, status_code=status)
 
     @app.get(routes.CONCIERGE_TASKS_PATH)
     async def concierge_tasks_get():
