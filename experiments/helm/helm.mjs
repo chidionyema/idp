@@ -208,18 +208,27 @@ export function messagesFor(arm, task, evidence) {
 
 /** Existing router or GitHub Models: API and model are explicit, never hardcoded to a vendor. */
 export async function inference({ url, token, model, messages, timeoutMs = 25000 }) {
-  if (!/^https:\/\//.test(url) || !token || !model) throw new Error("endpoint/token/model required");
+  if (!/^https:\/\//.test(url) || !model) throw new Error("HTTPS endpoint and model required");
+  const publicFree = url === "https://ai-gateway.kilo.ai/api/v1/chat/completions" &&
+    (model.endsWith(":free") || model === "kilo-auto/free");
+  if (!token && !publicFree)
+    throw new Error("unauthenticated inference only available on approved public free-model route");
   const started = performance.now();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, { method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+      headers: { "Content-Type": "application/json",
+        ...(token ? { "Authorization": "Bearer " + token } : {}) },
       body: JSON.stringify({ model, messages, temperature: 0, max_tokens: 320 }),
       signal: controller.signal });
     const txt = await response.text();
     if (!response.ok) throw new Error("provider HTTP " + response.status + " " + txt.slice(0, 140));
-    const json = JSON.parse(txt);
+    let json;
+    try { json = JSON.parse(txt); }
+    catch { throw new Error("non-JSON provider response HTTP " + response.status +
+      " content-type=" + response.headers.get("content-type") +
+      " body=" + JSON.stringify(txt.slice(0, 48))); }
     const answer = json.choices?.[0]?.message?.content;
     if (typeof answer !== "string" || !answer.trim()) throw new Error("no text answer");
     return { answer, latencyMs: Math.round(performance.now() - started),
@@ -270,6 +279,6 @@ export async function evaluate({ tasks, evidence, arms, model, url, token, sha25
       failures: rows.filter(row => row.attempts.some(a => a.error)).length,
       calls: rows.reduce((n, r) => n + r.attempts.length, 0) };
   }
-  return { schema: "helm.trial.v1", experiment: "real-llm" ,
+  return { schema: "helm.trial.v1", experiment: infer === inference ? "real-llm" : "fixture-only",
     model, sourceSha: sha256 || "unspecified", summary, results };
 }
