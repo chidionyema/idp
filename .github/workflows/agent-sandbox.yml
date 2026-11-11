@@ -285,6 +285,8 @@ jobs:
         with:
           ref: main
           token: ${{ steps.app.outputs.token }}
+          # Sealed agent patch is relative to its original base, not HEAD at submission.
+          fetch-depth: 0
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -302,7 +304,11 @@ jobs:
           age -d -i "$RUNNER_TEMP/key" "$RUNNER_TEMP/sealed/work.tar.age" | tar -C "$work" -xf - patch base
           rm -f "$RUNNER_TEMP/key"
           [ -s "$work/patch" ] || { echo "::error::the agent changed nothing; there is no PR to open"; exit 1; }
-          git apply --index --3way "$work/patch"
+          # Trust the original SHA recorded by the agent job only after validating
+          # ancestry against current main. The agent's work must not disappear when
+          # another lane advances main while the model is working.
+          # The Greenlane, not this stage, rebases and independently proves promotion.
+          python3 bin/idp-agent-base-apply.py --base-file "$work/base" --patch "$work/patch"
           # Read back what the index now holds, both sides of every rename included, rather than
           # parse the patch text.
           refused=$(git diff --cached --name-only --no-renames HEAD | grep -E '^(\.github|\.githooks)/' || true)
