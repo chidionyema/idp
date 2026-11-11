@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { classifyContactReadiness } from './public-readiness.mjs';
 /**
  * Independent public readback for the Merdian company site.
  *
@@ -84,10 +85,10 @@ for (const [path, marker] of [
 try {
   const { html, status } = await read(PRIMARY + '/api/contact');
   const statusBody = JSON.parse(html);
-  const accepting = statusBody && statusBody.acceptingEnquiries === true;
+  const accepting = classifyContactReadiness(statusBody) === 'configured';
   // A deliberately unavailable inbox before company/domain setup is a commercial
   // readiness blocker, not evidence the premium visual identity regressed.
-  if (typeof statusBody?.acceptingEnquiries !== 'boolean') {
+  if (classifyContactReadiness(statusBody) === 'invalid') {
     failures.push(PRIMARY + '/api/contact: readiness endpoint returned an invalid contract');
   } else if (!accepting) {
     commercialBlockers.push(PRIMARY + '/api/contact: verified enquiry delivery still unavailable');
