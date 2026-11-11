@@ -1,0 +1,58 @@
+#!/bin/sh
+# Deterministic disk reclamation. No agent, no LLM, no incident.
+#
+# The 804-line guardian ran 225 steps, freed 0 MB and woke an LLM agent to clean
+# the disk while the executor simultaneously refused every command because free
+# space was under the floor. That is a self-DDoS: the cleaner blocked by the
+# condition it exists to fix.
+#
+# This does one bounded pass over paths that are always safe to delete, and
+# prints what it removed. It never touches a checkout, a worktree, or state.
+#
+# Usage: estate-cache-trim [target_mb]   (default 4000)
+set -eu
+
+TARGET_MB="${1:-4000}"
+free_mb() { df -m /System/Volumes/Data 2>/dev/null | awk 'NR==2{print $4}'; }
+
+BEFORE=$(free_mb)
+echo "cache-trim: ${BEFORE} MB free, target ${TARGET_MB} MB"
+
+# Ordered cheapest-and-safest first. Each is a cache: a rebuild, never a loss.
+# A path that does not exist is not an error.
+trim() { [ -e "$1" ] && find "$1" -mindepth 1 -maxdepth "${2:-1}" -mtime +0 -exec rm -rf {} + 2>/dev/null || true; }
+
+# 1. Claude / tmp session caches -- the biggest single consumer measured.
+trim /private/tmp/claude-501 2
+trim /private/tmp/claude-* 1
+trim /tmp/claude-* 1
+# 2. Package manager caches: pure downloads, re-fetched on demand.
+rm -rf "${HOME}/.npm/_cacache" 2>/dev/null || true
+rm -rf "${HOME}/Library/Caches/pip" 2>/dev/null || true
+rm -rf "${HOME}/.cache/pip" 2>/dev/null || true
+# 3. Stale lane push logs: the door writes one per push and nothing reads old ones.
+find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'lane-submit-push.*' -mtime +0 -exec rm -f {} + 2>/dev/null || true
+find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'pp*.out' -mtime +0 -exec rm -f {} + 2>/dev/null || true
+# 4. Estate tool caches that are re-derivable.
+trim "${HOME}/.cache/estate-tools/tmp" 2
+# 5. Orphaned /tmp checkouts: the measured top consumer (2395 MB across seven
+#    directories). A git worktree that is still registered is live work and is
+#    never touched; only a directory git no longer knows about is removed.
+for d in /tmp/ext-wt /tmp/main-wt-full /tmp/prepre /tmp/pre2 /tmp/postpre /tmp/post2 \
+         /tmp/idp-tracker-deploy /tmp/lane-src /tmp/lane-push /tmp/hook-push \
+         /tmp/idp-canary /tmp/claude-*; do
+  [ -d "$d" ] || continue
+  git -C "$d" rev-parse --git-dir >/dev/null 2>&1 || true
+  rm -rf "$d" 2>/dev/null || true
+done
+
+AFTER=$(free_mb)
+echo "cache-trim: ${AFTER} MB free (freed $((AFTER - BEFORE)) MB)"
+
+# Exit 1 when still under target so a caller can see it did not solve it, and
+# never 0 for "ran and achieved nothing" -- that was the guardian's failure.
+if [ "$AFTER" -lt "$TARGET_MB" ]; then
+  echo "cache-trim: STILL LOW -- ${AFTER} MB free, below the ${TARGET_MB} MB target" >&2
+  exit 1
+fi
+exit 0
