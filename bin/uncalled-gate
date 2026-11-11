@@ -1,0 +1,318 @@
+#!/usr/bin/env python3
+"""uncalled-gate -- refuse a mechanism that was built and that nothing calls.
+
+The estate's most expensive recurring defect is not a missing layer. It is a layer that
+exists, is correct, and has no caller:
+
+  * platform/queue/dispatcher.py has push_task and get_task_list; until 2026-11-11 the only
+    caller in the whole estate was incident-loop.py, and it only pushed. So incident #7581
+    ("Incident loop saturated") sat dispatched to worker task 7 from 2026-10-30 and was never
+    claimed -- twelve days, verified_at: null.
+  * bin/estate-fleet inbox stores a durable per-agent inbox: 0 callers.
+  * bin/estate-supervisor relaunches a session: wired to violations only, never to work.
+
+An instrument nobody calls is not an instrument (AGENTS.md section 9 R2, one layer over from
+a gate that cannot fail). This gate makes that a machine decision at write time.
+
+A mechanism is a declared path. This gate reads the declaration (catalog/uncalled.json), then
+proves some file actually invokes the mechanism -- by executing it or importing it -- rather
+than merely mentioning it in a comment or a docstring. A caller that is itself never called is
+reported as UNROOTED: the caller chain must reach something the estate runs on its own (a
+scheduled workflow, a launchd job, an intent, a git hook, or a bin/ command run by name).
+
+Verdicts, and the exit code IS the verdict:
+  0  OK       every mechanism has a caller rooted in something the estate runs
+  1  GAP      a mechanism has no caller that actually calls it
+  2  BLIND    the declaration or a mechanism path could not be read; never a pass
+  3  EMPTY    every mechanism has callers but a caller chain has no real root
+
+Usage:
+  bin/uncalled-gate                 # check the registry in catalog/uncalled.json
+  bin/uncalled-gate --fixture DIR   # run against a fixture root (used by the falsifier)
+  bin/uncalled-gate --json          # machine-readable verdict
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+from typing import Any, List, Optional, Tuple
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+
+# Files that search for other files by name are the gate itself and its tests. A gate that
+# counted itself as a caller would always pass -- the same fail-open shape as R1.
+SELF_REFERENTIAL = ("bin/uncalled-gate", "tests/test_uncalled_gate.py")
+
+SKIP_DIRS = {
+    ".git", "node_modules", ".venv", "venv", "__pycache__",
+    ".mypy_cache", ".pytest_cache", "dist", "build", ".terraform",
+    # Vendored and generated trees. The estate's own callers live in bin/, platform/,
+    # .github/ and the repo root; walking 1.4 GB of vendored JS to find them made this
+    # gate take longer than the executor ceiling, and a gate nobody can run is not a gate.
+    "site-packages", ".next", ".turbo", "coverage", "vendor",
+    "rescued_patches2", "backstage", "web",
+}
+
+# A single generated bundle can be tens of megabytes; nothing that size is a hand-written
+# caller, and reading it is pure cost.
+MAX_BYTES = 512 * 1024
+
+TEXT_SUFFIXES = (".py", ".sh", ".bash", ".yml", ".yaml", ".toml", ".ts", ".js")
+EXEC_WORDS = re.compile(r"subprocess|Popen|check_call|check_output|\brun\(|execv|system\(")
+
+
+def _iter_source_files(root):
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
+        for name in filenames:
+            # Most estate callers are extensionless bin/ commands, so a suffix-only scan
+            # misses exactly the callers this gate exists to find. A sibling .py file is the
+            # same program with a suffix and must not be counted twice.
+            if name.endswith(TEXT_SUFFIXES) or name == "Makefile" or (
+                "." not in name and dirpath.endswith(os.sep + "bin")
+            ):
+                sibling = os.path.join(dirpath, name + ".py")
+                if "." not in name and os.path.exists(sibling):
+                    continue
+                yield os.path.join(dirpath, name)
+
+
+def _rel(root, path):
+    try:
+        return os.path.relpath(path, root)
+    except ValueError:
+        return path
+
+
+def _read(path):
+    try:
+        if os.path.getsize(path) > MAX_BYTES:
+            return None
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            return handle.read()
+    except OSError:
+        return None
+
+
+def _invokes(text, mechanism, entry_points=None):
+    """Does this text actually CALL the mechanism, not merely mention it?
+
+    Calling means an executable reference: a subprocess argv containing the path, an import of
+    the module, a source/. of the script, or an importlib load by path. A bare mention in a
+    docstring or a comment is not a call -- that distinction is the whole point, because every
+    built-but-uncalled mechanism this law came from WAS mentioned in prose while nothing ran it.
+    """
+    entry_points = entry_points or []
+    has_entry = False
+    if entry_points:
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if stripped.startswith(('"""', "\'\'\'", "*", "//")):
+                continue
+            for fn in entry_points:
+                # a call, or an import of that specific name
+                if re.search(r"\b" + re.escape(fn) + r"\s*\(", line):
+                    has_entry = True
+                if re.search(r"^\s*(from|import)\s+.*\b" + re.escape(fn) + r"\b", line):
+                    has_entry = True
+        if not has_entry:
+            return False
+
+    base = os.path.basename(mechanism)
+    stem = os.path.splitext(base)[0]
+    module = mechanism.replace("/", ".").removesuffix(".py")
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith(('"""', "\'\'\'", "*", "//")):
+            continue
+
+        if mechanism.endswith(".py"):
+            if re.search(r"^\s*(from|import)\s+" + re.escape(module) + r"\b", line):
+                return True
+            if re.search(r"^\s*(from|import)\s+.*\b" + re.escape(stem) + r"\b", line):
+                return True
+
+        if re.search(r"""["\']([^"\']*/)?%s["\']""" % re.escape(base), line):
+            return True
+        if re.search(r"\b%s\b" % re.escape(base), line) and EXEC_WORDS.search(line):
+            return True
+
+        if re.search(r"(^|\s)(source|\.)\s+\S*" + re.escape(base), line):
+            return True
+        if mechanism.endswith((".sh", ".bash")):
+            if re.search(r"^\s*\S*" + re.escape(base) + r"\b", line):
+                return True
+
+        if re.search(r"spec_from_file_location|exec_module", line) and stem in text:
+            if stem in line:
+                return True
+
+    return False
+
+
+def _is_test(relpath):
+    """A test proves a mechanism WORKS; it does not prove anything CALLS it in production."""
+    base = os.path.basename(relpath)
+    return (
+        base.startswith("test_")
+        or base.endswith("_test.py")
+        or "/tests/" in "/" + relpath
+        or relpath.startswith("tests/")
+    )
+
+
+def _is_root(relpath, text):
+    """Is this caller rooted in something the estate actually runs on its own?"""
+    if relpath.startswith(".github/workflows/"):
+        return "schedule:" in text or "workflow_dispatch:" in text
+    if relpath.endswith(".plist") and "LaunchAgents" in relpath:
+        return True
+    if re.search(r"platform/estate/intents/.*\.yaml$", relpath):
+        return True
+    if relpath.startswith(".githooks/") or "/hooks/" in relpath:
+        return True
+    if relpath.startswith("bin/"):
+        return True
+    return False
+
+
+def check(root=ROOT, registry_path=None):
+    """Return the verdict. Never raises: an unreadable thing is BLIND, never OK."""
+    registry_path = registry_path or os.path.join(root, "catalog", "uncalled.json")
+    raw = _read(registry_path)
+    if raw is None:
+        return {"verdict": "BLIND", "exit": 2,
+                "why": "the uncalled registry could not be read at %s" % registry_path,
+                "mechanisms": []}
+    try:
+        registry = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return {"verdict": "BLIND", "exit": 2,
+                "why": "the uncalled registry is not valid JSON: %s" % exc,
+                "mechanisms": []}
+
+    declared = registry.get("mechanisms")
+    if not isinstance(declared, list):
+        return {"verdict": "BLIND", "exit": 2,
+                "why": "the uncalled registry has no mechanisms list", "mechanisms": []}
+
+    corpus = []
+    for path in _iter_source_files(root):
+        rel = _rel(root, path)
+        if rel in SELF_REFERENTIAL:
+            continue
+        text = _read(path)
+        if text is not None:
+            corpus.append((rel, text))
+    by_rel = dict(corpus)
+
+    results, gaps, unrooted = [], 0, 0
+    for entry in declared:
+        if not isinstance(entry, dict):
+            return {"verdict": "BLIND", "exit": 2,
+                    "why": "a mechanisms entry is not an object", "mechanisms": []}
+        path = str(entry.get("path", "")).strip()
+        exemption = entry.get("allow_uncalled_reason")
+        if not path:
+            return {"verdict": "BLIND", "exit": 2,
+                    "why": "a mechanisms entry declares no path", "mechanisms": []}
+        if not os.path.exists(os.path.join(root, path)):
+            return {"verdict": "BLIND", "exit": 2,
+                    "why": "declared mechanism %r does not exist; the registry cannot judge it" % path,
+                    "mechanisms": []}
+
+        # A mechanism may declare the functions that constitute a REAL use of it. Without
+        # this, a producer that imports `push_task` counts as a consumer of a queue nobody
+        # reads -- which is exactly the defect this gate exists to catch, so the gate would
+        # have passed the very case it was written for.
+        entry_points = [str(f) for f in (entry.get("consumer_functions") or [])]
+        # Cheap discriminator first: a file that never mentions the mechanism's basename or
+        # any of its entry points cannot call it, so the per-line regex scan is skipped
+        # entirely. Without this the gate is O(files x lines x patterns) and takes longer
+        # than the executor ceiling on this repo.
+        base_name = os.path.basename(path)
+        stem_name = os.path.splitext(base_name)[0]
+        needles = [base_name, stem_name] + entry_points
+        callers = []
+        tested = []
+        for rel, text in corpus:
+            if rel == path:
+                continue
+            if not any(needle in text for needle in needles):
+                continue
+            if _invokes(text, path, entry_points):
+                if _is_test(rel):
+                    tested.append(rel)
+                else:
+                    callers.append(rel)
+        rooted = [c for c in callers if _is_root(c, by_rel.get(c, ""))]
+
+        if not callers:
+            if exemption:
+                state = "EXEMPT (%s)" % exemption
+            else:
+                state = "GAP"
+                gaps += 1
+        elif not rooted:
+            state = "UNROOTED"
+            unrooted += 1
+        else:
+            state = "OK"
+
+        results.append(
+            {
+                "path": path,
+                "state": state,
+                "callers": callers,
+                "rooted": rooted,
+                "tested_only_by": tested if not callers else [],
+            }
+        )
+
+    if gaps:
+        return {"verdict": "GAP", "exit": 1,
+                "why": "%d mechanism(s) have no caller" % gaps, "mechanisms": results}
+    if unrooted:
+        return {"verdict": "EMPTY", "exit": 3,
+                "why": "%d mechanism(s) have callers but no root the estate runs" % unrooted,
+                "mechanisms": results}
+    return {"verdict": "OK", "exit": 0,
+            "why": "%d mechanism(s) each have a live root" % len(results), "mechanisms": results}
+
+
+def main(argv):
+    parser = argparse.ArgumentParser(description="refuse a mechanism with no caller")
+    parser.add_argument("--fixture", default="", help="root to check instead of this checkout")
+    parser.add_argument("--json", action="store_true", help="machine-readable verdict")
+    args = parser.parse_args(argv)
+
+    root = os.path.abspath(args.fixture) if args.fixture else ROOT
+    result = check(root)
+
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        print("%-6s uncalled-gate  %s" % (result["verdict"], result["why"]))
+        for item in result["mechanisms"]:
+            if item["state"] != "OK":
+                print("       %-9s %s" % (item["state"], item["path"]))
+                shown = ", ".join(item["callers"][:4]) if item["callers"] else "none"
+                print("                 callers: %s" % shown)
+                if item.get("tested_only_by"):
+                    print("                 tested but not called by: %s"
+                          % ", ".join(item["tested_only_by"][:3]))
+    return int(result["exit"])
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

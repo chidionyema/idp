@@ -1,0 +1,23 @@
+{
+  "comment": "Mechanisms the estate has built and that must have a live caller. GOV-015 refuses a mechanism with no caller (AGENTS.md section 9, R2). Seeded 2026-11-11 with the three built-but-uncalled mechanisms named in docs/diagnoses/2026-11-11-reactive-wakeup-signaling-gap.md, plus the worker queue whose consumer lifecycle had zero callers for 13 days.",
+  "mechanisms": [
+    {
+      "path": "platform/queue/dispatcher.py",
+      "consumer_functions": [
+        "claim_task",
+        "load_task",
+        "complete_task",
+        "get_task_list"
+      ],
+      "why": "incident-loop.py calls only push_task. Measured 2026-11-11: 56 tasks, 0 ever claimed, oldest 13.2 days. The consumer lifecycle must be reached by the incident squad or this mechanism is dead weight."
+    },
+    {
+      "path": "bin/estate-fleet",
+      "why": "The durable per-agent inbox (NATS JetStream, pull_subscribe) had 0 callers when the reactive-wakeup gap was diagnosed."
+    },
+    {
+      "path": "bin/estate-wait",
+      "why": "The blocking primitive that replaces polling. It is the join the squad uses to wake on a real work event instead of a loop."
+    }
+  ]
+}

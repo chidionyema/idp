@@ -1,12 +1,25 @@
 name: work-audit
 description: >-
-  Find work done in the last N days that never reached main. For every closed-unmerged PR, every
-  worktree's uncommitted/untracked changes, every local branch commit on no remote and every stash
-  in the window, it measures how many of the lines that work added are in the same file on
-  origin/main now: LOST (<30%), PARTIAL (<90%), LANDED (hidden unless all=true). Also lists
-  unticked "- [ ]" checkpoints in open issues updated in the window. Scans every repo under
-  ~/Documents/code and the GitHub repos named in `github`. Read-only apart from `git fetch` and
-  refs/work-audit/pr/* refs; full result in ~/.estate/work-audit/latest.json.
+  Find work done in the last N days that never reached main, and say why it died. For every
+  closed-unmerged PR, every pushed `lane/*` branch main never took, every worktree's
+  uncommitted/untracked changes, every local branch commit on no remote and every stash in the
+  window, it measures how many of the lines that work added are in the same file on origin/main
+  now: LOST (<30%), PARTIAL (<90%), LANDED (hidden unless all=true), plus UNMEASURED when the
+  clone is shallow (a truncated history answers "not an ancestor" for everything, so unreachable
+  work is reported UNMEASURED, never LOST). Every PR row also carries `failing_checks`, `kill`
+  (MECHANICAL = every failing check is cosmetic, so a normalizer could have fixed it; GENUINE =
+  at least one substantive check failed, e.g. claim-gate/dof-gate/ci-success, so the change
+  itself was refused; UNKNOWN = the checks could not be read) and, for LOST/PARTIAL/UNKNOWN, a
+  `recover` command that fetches the head and diffs it against main. Also lists unticked "- [ ]"
+  checkpoints in open issues updated in the window. Scans every repo under ~/Documents/code and
+  the GitHub repos named in `github`. Read-only apart from `git fetch` and refs/work-audit/pr/*
+  refs; full result in ~/.estate/work-audit/latest.json.
+  BOUNDED, AND IT SAYS SO. Every source runs against a share of this door's real ceiling (local
+  26s, fetch 8s, PR 38s, checkpoints 9s), so the door always ends with a census instead of a
+  100s timeout. Whatever a budget cut off is named in `errors` -- "N not examined, so they are
+  not in this census" -- because an absent row must never read as "no work was lost". A history
+  walk cut short makes the affected row UNKNOWN, never LOST: the door refuses to accuse work of
+  being lost on evidence it did not finish collecting.
 class: read
 args:
   days: {type: int, default: 28}

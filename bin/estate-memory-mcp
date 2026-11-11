@@ -21,6 +21,8 @@ import json
 import os
 import sys
 import time
+import types
+from pathlib import Path
 
 sys.path.insert(
     0,
@@ -38,6 +40,50 @@ import plan  # noqa: E402
 
 TOOLS = set(door.MANIFEST["tools"])
 TIMEOUT_S = 30
+
+# A bridge is one process per session and lives for hours, so a module imported once at start is
+# a repair that never reaches any agent already running. Measured 2026-11-10: the door on disk was
+# repaired and proved answering, while nine bridge processes 2.5 to 8.5 hours old kept serving the
+# pre-repair code and returned "URLError EOF" to every remember. A fix that needs every process
+# restarted is not a fix that lands (AGENTS.md section 9 R6: the recovery path must not depend on
+# what it recovers). So the door is re-imported when, and only when, its file on disk changes.
+_DOOR_STAMP = None
+
+
+def _fresh_door():
+    """Return the door module, reloading it if door.py changed on disk since it was imported.
+
+    Reloading is done from the file itself rather than with `importlib.reload`, because a module
+    loaded by a loader without a spec (and this door is loaded several ways across the estate)
+    raises `ModuleNotFoundError: spec not found` there -- which would be swallowed by the guard
+    below and leave the stale door being served, a fail-open in the very place this fixes.
+    """
+    global _DOOR_STAMP
+    try:
+        stamp = os.stat(door.__file__).st_mtime_ns
+    except OSError:
+        return door  # cannot stat it: serve what is loaded rather than fail the tool call
+    if _DOOR_STAMP is None:
+        _DOOR_STAMP = stamp
+        return door
+    if stamp == _DOOR_STAMP:
+        return door
+    try:
+        source = Path(door.__file__).read_text(encoding="utf-8")
+        fresh = types.ModuleType(door.__name__)
+        fresh.__file__ = door.__file__
+        exec(compile(source, door.__file__, "exec"), fresh.__dict__)  # noqa: S102 - the door's own file
+    except Exception as exc:  # noqa: BLE001 - a half-written file must not break the session
+        # Do not advance the stamp: the file is still the changed one, so the next call retries.
+        # Serving the stale module is the safe fallback, but it must not be silent forever.
+        print(
+            f"estate-memory-mcp: door.py changed but could not be reloaded "
+            f"({type(exc).__name__}: {exc}); serving the loaded copy",
+            file=sys.stderr,
+        )
+        return door
+    _DOOR_STAMP = stamp
+    return fresh
 
 
 class Bridge:
@@ -214,7 +260,7 @@ class Bridge:
                 f"no {env}: export it, or add the vault entry dev/{env} (AGENTS.md section 4)",
             )
         try:
-            reply, _ = door.post(msg, secret, TIMEOUT_S)
+            reply, _ = _fresh_door().post(msg, secret, TIMEOUT_S)
         except Exception as e:
             return refuse(
                 mid, f"memory door unreachable: {type(e).__name__}: {str(e)[:200]}"

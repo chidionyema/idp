@@ -5,6 +5,11 @@ on:
     branches: ['lane/**', 'queue/**']
     paths:
       - greenlane/brief.py
+      - greenlane/engine.py
+      - greenlane/learning.py
+      - greenlane/simulate.py
+      - greenlane/tournament.py
+      - tests/test_greenlane_learning_controller.py
       - greenlane/event_filter.py
       - bin/idp-greenlane
       - bin/idp-greenlane-check-trigger
@@ -15,6 +20,11 @@ on:
   pull_request:
     paths:
       - greenlane/brief.py
+      - greenlane/engine.py
+      - greenlane/learning.py
+      - greenlane/simulate.py
+      - greenlane/tournament.py
+      - tests/test_greenlane_learning_controller.py
       - greenlane/event_filter.py
       - bin/idp-greenlane
       - bin/idp-greenlane-check-trigger
@@ -48,3 +58,5 @@ jobs:
         run: |
           python -W error -m unittest discover -s tests -p test_greenlane_event_filter.py -v
           python -W error -m unittest discover -s tests -p test_greenlane_founder_assurance.py -v
+      - name: Head-to-head policy tournament (no GitHub write credentials)
+        run: python3 -m greenlane.tournament --lanes 100 --seeds 0 1 2 3 4 5 6 7

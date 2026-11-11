@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+# Deterministic Machine Boundary: heals what a gate already knows how to fix, so no
+# token is spent on it. It HEALS and never bypasses: the healed tree still goes
+# through bin/lane-submit and the pre-push gate, which remain the verdict.
+#
+# Three things this door deliberately does NOT do, each because it would break a law:
+#   - no --no-verify: the gate is the verdict (AGENTS.md section 3).
+#   - no rewriting a range that names 2+ agents: that reassigns one agent's work to
+#     another's claim (section 5, one owner one claim). It refuses and says why.
+#   - no touching the shared harness (extensions, locks): section 5 forbids it.
+set -euo pipefail
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REPO_ROOT"
+DRY="${DRY:-0}"
+say() { printf '%s\n' "$*"; }
+
+# ---- 0. Preconditions -------------------------------------------------------
+if [ "$(git rev-parse --abbrev-ref HEAD)" = "HEAD" ]; then
+  say "REFUSED  detached HEAD -- name the lane first: git checkout -B lane/<name>"
+  exit 2
+fi
+
+git fetch -q origin main
+BASE_SHA=$(git merge-base origin/main HEAD)
+
+if [ -z "$(git status --porcelain)" ] && [ "$(git rev-parse HEAD)" = "$BASE_SHA" ]; then
+  say "NO-DIFF nothing to submit against origin/main"
+  exit 0
+fi
+
+# A range naming 2+ agents is refused HERE, deterministically, before any rewrite.
+AGENTS=$(git log --format='%(trailers:key=Agent,valueonly)' "$BASE_SHA"..HEAD 2>/dev/null \
+         | awk 'NF' | sort -u | tr '\n' ' ' | sed 's/ *$//')
+N_AGENTS=$(printf '%s' "$AGENTS" | wc -w | tr -d ' ')
+if [ "${N_AGENTS:-0}" -gt 1 ]; then
+  say "REFUSED  the range names ${N_AGENTS} agents: ${AGENTS}"
+  say "         one claim covers one agent. Rebase onto origin/main so the range is yours;"
+  say "         this door will not rewrite another agent's commits under your claim."
+  exit 3
+fi
+
+# ---- 0b. Local lease check (1.1ms, no network) ------------------------------
+# claim-gate spends ~8.8s of its 8.84s wall in one gh API round trip (measured
+# 2026-11-11, `time bin/claim-gate origin/main ffb5be4a4`: real 8.84 / user 0.69).
+# What git already knows -- which files this lane touches -- needs no network at
+# all, and ~/.estate/memory/focus-register.json holds every live claim's paths.
+# This refuses an overlap locally in ~1ms so the slow, authoritative gate is only
+# reached by a lane that has a chance of passing it. It cannot replace claim-gate:
+# it reads a cached register, so a MISS here is not permission, only a HIT is a
+# refusal. That asymmetry is deliberate -- a stale cache must never block work.
+python3 - "$BASE_SHA" "${ESTATE_AGENT_NAME:-estate-agent}" <<'PY'
+import fnmatch, json, os, pathlib, subprocess, sys
+
+base, me = sys.argv[1], sys.argv[2]
+files = subprocess.check_output(
+    ["git", "diff", "--name-only", f"{base}...HEAD"], text=True
+).splitlines()
+files += subprocess.check_output(["git", "diff", "--name-only"], text=True).splitlines()
+files += subprocess.check_output(
+    ["git", "ls-files", "--others", "--exclude-standard"], text=True
+).splitlines()
+files = [f for f in dict.fromkeys(files) if f]
+
+reg = pathlib.Path.home() / ".estate/memory/focus-register.json"
+if not reg.is_file():
+    print("lease: BLIND no focus-register.json -- the authoritative gate decides")
+    sys.exit(0)
+try:
+    rows = json.loads(reg.read_text()).get("rows") or []
+except (OSError, ValueError):
+    print("lease: BLIND focus-register.json unreadable -- the authoritative gate decides")
+    sys.exit(0)
+
+hits = []
+for r in rows:
+    if not isinstance(r, dict) or r.get("agent") == me:
+        continue
+    pats = [p for p in (r.get("paths") or "").split(",") if p]
+    for f in files:
+        for p in pats:
+            if fnmatch.fnmatch(f, p) or f == p:
+                hits.append((r.get("claim", "?"), r.get("agent", "?"), f))
+                break
+
+if hits:
+    print(f"lease: REFUSED {len(hits)} file(s) held by another live agent")
+    for claim, agent, f in hits[:10]:
+        print(f"         {f}  <- {agent} {claim}")
+    sys.exit(4)
+print(f"lease: {len(files)} file(s), no overlap with {len(rows)} live claim(s)")
+PY
+LEASE_RC=$?
+if [ "$LEASE_RC" = "4" ]; then
+  say ""
+  say "Do not start: comment on the holder's issue and pick other work (AGENTS.md 5.3)."
+  exit 4
+fi
+
+# ---- 0c. Trailers the gate will demand, computed before it asks ----------------
+# Pin 4: the gate refuses a push for a missing Language-Exception, costing an
+# amend-and-push cycle. Git already knows which files are new, so the door says
+# so now, with the exact path the gate names, instead of after a refusal.
+NEW_PY=$(git diff --diff-filter=A --name-only "$BASE_SHA"...HEAD -- '*.py' 2>/dev/null \
+         | grep -v '^tests/' || true)
+if [ -n "$NEW_PY" ]; then
+  say "TRAILER  this commit adds Python file(s); the gate will want one line each:"
+  printf '%s\n' "$NEW_PY" | while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    say "         Language-Exception: $f -- <the compelling reason>"
+  done
+fi
+if ! git log -1 --format='%(trailers:key=Claim,valueonly)' "$BASE_SHA"..HEAD 2>/dev/null | grep -q .; then
+  CLAIM_ANY=$(git log --format='%(trailers:key=Claim,valueonly)' "$BASE_SHA"..HEAD 2>/dev/null | grep -m1 . || true)
+  if [ -z "$CLAIM_ANY" ]; then
+    say "TRAILER  no Claim: trailer in this range; the gate will refuse. Run bin/claim-open."
+  fi
+fi
+
+# ---- 1. ASCII normalizer (em-dash, smart quotes) ----------------------------
+python3 - "$BASE_SHA" "$DRY" <<'PY'
+import pathlib, subprocess, sys
+base, dry = sys.argv[1], sys.argv[2] == "1"
+files = subprocess.check_output(["git", "diff", "--name-only", f"{base}...HEAD"], text=True).splitlines()
+files += subprocess.check_output(["git", "diff", "--name-only"], text=True).splitlines()
+files += subprocess.check_output(["git", "ls-files", "--others", "--exclude-standard"], text=True).splitlines()
+REPL = {"\u2014": "--", "\u2013": "-", "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
+        "\u2026": "...", "\u00a0": " "}
+OK = {".py", ".sh", ".bash", ".md", ".yaml", ".yml", ".ts", ".js", ".json", ".txt"}
+n = 0
+for f in dict.fromkeys(files):
+    p = pathlib.Path(f)
+    if not p.is_file() or p.suffix not in OK:
+        continue
+    try:
+        raw = p.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        continue
+    out = raw
+    for k, v in REPL.items():
+        out = out.replace(k, v)
+    if out != raw:
+        n += 1
+        print(f"  ascii  {f}")
+        if not dry:
+            p.write_text(out, encoding="utf-8")
+print(f"ascii: {n} file(s)")
+PY
+
+if [ "$DRY" = "1" ]; then
+  say "DRY=1: nothing written, nothing pushed"
+  exit 0
+fi
+
+# ---- 2. Formatter before linter (this ordering is the noqa-stranding fix) ---
+PY_FILES=$(git diff --name-only "$BASE_SHA"...HEAD -- '*.py'; git ls-files --others --exclude-standard -- '*.py')
+if [ -n "${PY_FILES//[[:space:]]/}" ] && command -v ruff >/dev/null 2>&1; then
+  # shellcheck disable=SC2086
+  ruff format $PY_FILES >/dev/null 2>&1 || true
+  # shellcheck disable=SC2086
+  ruff check --fix $PY_FILES >/dev/null 2>&1 || true
+fi
+
+git add -A
+say "healed: ascii normalized, ruff format then check, staged"
+say "next:   git commit -m ...  &&  bin/lane-submit   (the gate still decides)"
