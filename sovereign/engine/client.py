@@ -23,7 +23,8 @@ WORKFLOW = "SessionWorkflow"
 # An instruction ID comes from authenticated ingress, never from a model or
 # a new UUID minted on each delivery retry. Temporal is the existing durable
 # workflow database; do not build a competing instruction table here.
-_INSTRUCTION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$")
+# Match Argon's existing ProvenanceLedger.openInstruction() ID contract.
+_INSTRUCTION_ID = re.compile(r"^[A-Za-z0-9._-]{3,100}$")
 _FOUNDER_INGRESS = frozenset({"founder", "genesis", "telegram"})
 
 
@@ -36,8 +37,8 @@ def _checked_instruction_id(value: str | None, *, by: str) -> str | None:
         return None  # legacy ad-hoc CLI sessions are not founder instructions
     if not isinstance(value, str) or not _INSTRUCTION_ID.fullmatch(value):
         raise ValueError(
-            "instruction_id must be 8-128 ASCII letters, digits, '.', '_', ':', '-' "
-            "and start with a letter or digit"
+            "instruction_id must match Argon instruction_ledger: 3-100 ASCII letters, "
+            "digits, '.', '_', '-'"
         )
     return value
 
@@ -183,6 +184,7 @@ def _to_row(state: dict[str, Any] | None, session_id: str) -> dict[str, Any]:
     if state is None:
         return {
             "session_id": session_id,
+            "instruction_id": None,
             "repo": None,
             "task": "",
             "step": 0,
@@ -214,6 +216,7 @@ async def list_sessions() -> list[dict[str, Any]]:
         out.append(
             {
                 "session_id": row.get("session_id", wf.id),
+                "instruction_id": row.get("instruction_id"),
                 "repo": row.get("repo"),
                 "task": row.get("task", ""),
                 "step": row.get("step", 0),
