@@ -14,6 +14,7 @@ second fast-forward of main to the same sha is a no-op.
 
 from __future__ import annotations
 
+import asyncio
 import importlib.machinery
 import importlib.util
 import json
@@ -24,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -1575,6 +1577,61 @@ class GitHubBackend:
             # is said, not swallowed: the silent `pass` here hid a permanent 403 for weeks.
             print(
                 f"WARN    greenlane  status for {lane} not written: {e}",
+                file=sys.stderr,
+            )
+        self._announce(lane, head, status, text or status)
+
+    _announced: set = set()
+
+    def _announce(self, lane: str, head: str, status: str, reason: str) -> None:
+        """Publish the lane's verdict to the bus, so a waiting agent wakes instead of polling.
+
+        The waiter (bin/estate-wait) blocks on `estate.fleet.to.<agent>`; this is the producer it
+        needs to make that wake real. It publishes ON CHANGE ONLY -- the same (lane, head, status)
+        is sent once, so a lane pending for an hour does not fill the stream with identical events
+        and call it progress. A publish failure is reported and never fails the tick: the lane's
+        own state is the verdict, this is the notification.
+        """
+        key = (lane, head, status)
+        if key in self._announced:
+            return
+        self._announced.add(key)
+        body = json.dumps(
+            {
+                "id": uuid.uuid4().hex,
+                "from": "greenlane",
+                "kind": f"lane.{status}",
+                "text": f"{lane} {status}: {reason}",
+                "lane": lane,
+                "head": head,
+                "status": status,
+                "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+        ).encode()
+
+        async def _pub() -> None:
+            import nats
+
+            nc = await nats.connect(
+                os.environ.get("ESTATE_NATS_URL", "nats://127.0.0.1:4222"),
+                connect_timeout=2,
+                max_reconnect_attempts=0,
+            )
+            try:
+                js = nc.jetstream()
+                for subject in (
+                    f"estate.lane.{lane}.{status}",
+                    "estate.fleet.broadcast",
+                ):
+                    await js.publish(subject, body)
+            finally:
+                await nc.close()
+
+        try:
+            asyncio.run(_pub())
+        except Exception as e:  # a missing bus must not fail a landing
+            print(
+                f"WARN    greenlane  verdict for {lane} not published: {type(e).__name__}",
                 file=sys.stderr,
             )
 
