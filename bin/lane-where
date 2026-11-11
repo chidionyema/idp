@@ -32,7 +32,10 @@ VERDICTS
   LANDED   exit 0   the branch head is an ancestor of origin/main -- it is in main, with the sha
   PENDING  exit 3   not in main yet, head status pending/absent, lane still working or not yet picked up
   RED      exit 4   not in main, head status failure -- the reason and the URL are printed
-  GONE     exit 5   no such branch on origin -- it was never pushed, or it was deleted after landing
+  GONE     exit 5   no such branch on origin. THIS IS AMBIGUOUS and the message says so: the
+                    common reading is that it LANDED and the greenlane deleted the ref; the other
+                    is that it was never pushed or was deleted while red. Check main before you
+                    redo or re-push anything.
                     (with `--expect-landed` this is a FAIL, because a deleted branch with no
                     ancestor in main means the work is lost, not landed)
   BLIND    exit 2   git or gh could not answer. "Could not check" must never print as "not landed".
@@ -239,8 +242,21 @@ def main() -> int:
         if a.json:
             print(json.dumps(receipt, indent=1))
         else:
-            print(f"GONE    lane-where  {branch}  no such branch on origin and it was "
-                  "never seen locally either (never pushed)")
+            # THE WORD IS THE TRAP. "GONE" has two opposite meanings -- never pushed, or pushed
+            # and deleted because it LANDED -- and the second is the common one: the greenlane
+            # deletes the ref after it lands. Measured 2026-11-11: an agent read GONE here as
+            # "my work is lost", re-pushed a lane already in main, and recorded a defect against
+            # this door. The door was right; the word lied. So the answer names BOTH readings and
+            # the reason it cannot choose between them. Exit code unchanged (5 / 1 with
+            # --expect-landed) so every existing caller keeps its contract.
+            print(f"REF-GONE  lane-where  {branch}  no such ref on origin")
+            print("          this does NOT mean the work was lost. It means one of two things:")
+            print("            1) it LANDED, and the greenlane deleted the ref after merging it")
+            print("               (the common case -- check main before redoing or re-pushing):")
+            print(f"                 git log {main_sha[:12]} --oneline -- <your files>")
+            print("            2) it was never pushed, or deleted while red (the work is lost)")
+            print("          nothing local refs this branch, so this door cannot tell which.")
+            print(f"          confirm with: git log origin/main --oneline --grep='{branch.split('/')[-1]}'")
         return 1 if a.expect_landed else 5
 
     receipt["head"] = head

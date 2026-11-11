@@ -85,8 +85,12 @@ def test_the_step_is_not_empty():
     """
     body = _step2_shell()
     assert "git rev-parse HEAD" in body, body
-    assert "ls-remote" in body, "no ls-remote pre-check in the step: this is the defect, restored"
-    assert "push_pid=$!" in body, "the slice does not reach the push launch; it cannot fail"
+    assert "ls-remote" in body, (
+        "no ls-remote pre-check in the step: this is the defect, restored"
+    )
+    assert "push_pid=$!" in body, (
+        "the slice does not reach the push launch; it cannot fail"
+    )
     assert len(body) > 500, f"the step body looks truncated: {body!r}"
 
 
@@ -130,8 +134,18 @@ def sandbox(tmp_path):
     _git(seed, "remote", "add", "origin", str(origin))
     _git(seed, "push", "-q", "origin", "lane/subject-of-the-test")
 
-    subprocess.run(["git", "clone", "-q", "-b", "lane/subject-of-the-test",
-                    str(origin), str(work)], check=True)
+    subprocess.run(
+        [
+            "git",
+            "clone",
+            "-q",
+            "-b",
+            "lane/subject-of-the-test",
+            str(origin),
+            str(work),
+        ],
+        check=True,
+    )
     _git(work, "config", "user.email", "test@example.invalid")
     _git(work, "config", "user.name", "test")
 

@@ -42,6 +42,14 @@ description: >
 args:
   lane:    {type: string, default: "", description: "lane name; default lane/<current branch>"}
   cwd:     {type: string, default: "."}
+  # THE CALLER NAMES THE WORK (2026-11-11). Before these existed this intent read the ambient
+  # HEAD and branch, so on a checkout another agent had switched it graded and pushed THEIR
+  # branch: the door answered `the change names 2 agents (estate-agent, pi)` for a one-commit
+  # change that was not in that range, and the caller's own commit was never pushed. Naming the
+  # sha makes the door report on the work it was handed. Both fall back to HEAD, which is what a
+  # human running this by hand in their own checkout means.
+  sha:     {type: string, default: "", description: "the commit to hand over; default HEAD of this checkout"}
+  branch:  {type: string, default: "", description: "the lane name for that commit; default the current branch"}
 # the door this intent needs, so a caller can be told instead of guessing (and so the test below
 # can refuse a step that outlives the door it is run through). It is the executor's ceiling, not a
 # larger number: see 2026-10-25 in the description.
@@ -78,8 +86,17 @@ steps:
       # call: the API was the difference between fitting the door and being killed by it. The
       # remote is local and answers the same question.
       repo=$(git config --get remote.origin.url | python3 -c 'import re,sys; u=sys.stdin.read().strip(); m=re.search(r"[:/]([^/:]+/[^/:]+?)(?:\.git)?$", u); print(m.group(1) if m else "")')
+      # THE SHA THE CALLER NAMED, NOT HEAD (2026-11-11). This read `git merge-base origin/main HEAD`
+      # and HEAD, and on a checkout another agent had switched the range was three of THEIR commits
+      # naming two agents -- so the door refused a one-commit, one-agent change that was not in the
+      # range at all, with `the change names 2 agents (estate-agent, pi)`. The same sha was green
+      # the moment `bin/claim-gate origin/main <sha>` was run by hand. A door that grades ambient
+      # state instead of the argument it was handed reports on the checkout and blames the change.
+      # `{{sha}}` is authoritative; HEAD is the documented fallback for a caller that names none.
+      head="{{sha}}"
+      if [ -z "$head" ]; then head=HEAD; else git cat-file -e "${head}^{commit}" 2>/dev/null || { echo "BLIND   lane-submit  the sha named is not a commit here: $head" >&2; exit 2; }; fi
       GITHUB_REPOSITORY="${repo:-chidionyema/idp}" \
-        bin/claim-gate "$(git merge-base origin/main HEAD)" HEAD
+        bin/claim-gate "$(git merge-base origin/main "$head")" "$head"
   - name: push the lane
     # 2026-10-12 (#5814): guard + push costs ~35s on a quiet laptop and crossed the 60s cap with
     # ~10 agents live -- `estate_invoke lane-submit` answered TIMEOUT exit 124 while the lane ref
@@ -104,8 +121,17 @@ steps:
       # the engine then queued as a second lane of the same commit. Prepend only when the
       # prefix is missing (#5756). The fix belongs here, in the file estate-runtime-sync reads:
       # patching ~/.estate/intents/lane-submit.yaml alone is reverted by the next sync.
+      # THE LANE AND THE SHA COME FROM THE CALLER, NOT THE CHECKOUT (2026-11-11, same class as
+      # step 1). `$lane` fell back to the ambient HEAD branch and `$sha` was `HEAD`, so on a
+      # checkout another agent had switched this pushed THEIR branch -- `lane/fix/doors-find-gh-off-path`
+      # -- while grading the claim on it, and the caller's own commit was never pushed at all. The
+      # door reported on the checkout and blamed the change. `{{sha}}`/`{{branch}}` are
+      # authoritative; HEAD is the fallback when none is named, which is what a human running this
+      # by hand in their own checkout means.
       case "$lane" in lane/*) ;; *) lane="lane/$lane" ;; esac
-      sha=$(git rev-parse HEAD)
+      sha="{{sha}}"
+      [ -n "$sha" ] || sha=$(git rev-parse HEAD)
+      git cat-file -e "${sha}^{commit}" 2>/dev/null || { echo "BLIND   lane-submit  the sha named is not a commit here: $sha" >&2; exit 2; }
       # ASK BEFORE YOU PUSH (2026-11-11). Measured on this estate: `git push --dry-run` -- which sends
       # NO objects -- still ran the pre-push hook (bin/idp-ci, 40-60s) and exceeded the executor's
       # 100s ceiling in a single job (exit 124). So on a branch that is ALREADY on origin, which is
@@ -150,7 +176,7 @@ steps:
       except OSError: os.setpgrp()
       fd=os.open(sys.argv[2], os.O_WRONLY|os.O_CREAT|os.O_TRUNC, 0o600)
       os.dup2(fd,1); os.dup2(fd,2)
-      os.execvp("git",["git","push","-q","origin",sys.argv[1]])' "HEAD:refs/heads/$lane" "$pushlog" &
+      os.execvp("git",["git","push","-q","origin",sys.argv[1]])' "$sha:refs/heads/$lane" "$pushlog" &
       push_pid=$!
       # Is the push still running? `kill -0` cannot tell: a finished child that has not been
       # waited for is a ZOMBIE, and kill -0 succeeds on a zombie -- so a poll on it would spin
