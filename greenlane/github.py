@@ -30,7 +30,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from .engine import BOT_LANE, CONFLICT, LANDED, RED, TESTING
+from .engine import BOT_LANE, CONFLICT, LANDED, RED, TESTING, UnavailableLaneObject
 from .ferrari import assess as ferrari_assess
 
 STATE_REF = "refs/greenlane/state"
@@ -453,7 +453,7 @@ class GitHubBackend:
         commits are a stack of edits to one value, and squashing them onto main is what the
         projection replaces.
         """
-        mb = self.git("merge-base", onto, head)
+        mb = self._merge_base_exact(onto, head, BOT_LANE)
         kept: list[str] = []
         dropped: list[str] = []
         wt = tempfile.mkdtemp(prefix="greenlane-")
@@ -696,6 +696,52 @@ class GitHubBackend:
             if home:
                 shutil.rmtree(home, ignore_errors=True)
 
+    def _merge_base_exact(self, onto: str, head: str, lane: str) -> str:
+        """Recover an advertised OID missing locally without guessing a new head.
+
+        Strict exact-OID, pre/post remote-ref equality and two bounded attempts
+        protect the whole queue against a late lane push (idp#7777). Main/candidate
+        object corruption remains fatal. No acceptance verdict is created here.
+        """
+        try:
+            return self.git("merge-base", onto, head)
+        except RuntimeError as original:
+            markers = ("not a valid commit name", "bad object", "invalid object name",
+                       "unknown revision", "not a valid object name")
+            if not any(s in str(original).lower() for s in markers):
+                raise
+            if not self.git("rev-parse", "-q", "--verify", f"{onto}^{{commit}}", check=False):
+                raise  # broken trusted base, not an isolated lane failure
+            if not re.fullmatch(r"[0-9a-f]{40}", head) or not (
+                lane.startswith("lane/") or lane == BOT_LANE
+            ):
+                raise UnavailableLaneObject("invalid lane/OID; reobserve") from original
+            ref = f"refs/heads/{lane}"
+            for _ in range(2):
+                observed = self.git("ls-remote", "--heads", "origin", ref)
+                remote = observed.split()[0] if observed.strip() else ""
+                if remote != head:
+                    raise UnavailableLaneObject(
+                        f"{lane}: remote moved or deleted; expected {head[:12]}, "
+                        f"now {remote[:12] or 'absent'}"
+                    ) from original
+                try:
+                    self.git("fetch", "-q", "--no-tags", "origin", head)
+                except RuntimeError:
+                    pass  # one further bounded attempt; do not switch to a new head
+                local = self.git("rev-parse", "-q", "--verify", f"{head}^{{commit}}", check=False)
+                observed = self.git("ls-remote", "--heads", "origin", ref)
+                remote = observed.split()[0] if observed.strip() else ""
+                if remote != head:
+                    raise UnavailableLaneObject(
+                        f"{lane}: remote moved during exact-object recovery"
+                    ) from original
+                if local == head:
+                    return self.git("merge-base", onto, head)
+            raise UnavailableLaneObject(
+                f"{lane}: exact {head[:12]} unavailable after two fetch attempts"
+            ) from original
+
     def rebase(self, head: str, onto: str, lane: str = "") -> Optional[str]:
         """One squashed commit of the lane's work on top of `onto`, or None when it does not apply."""
         if lane.startswith("flux/") and self.image_only_diff is not None:
@@ -703,7 +749,7 @@ class GitHubBackend:
             # history carries commits that are not image bumps, and squashing them in is what
             # froze every deploy in 2026-10 (idp#7140).
             return self._image_candidate(head, onto)
-        mb = self.git("merge-base", onto, head)
+        mb = self._merge_base_exact(onto, head, lane)
         new = [
             line.split()[1]
             for line in self.git("cherry", onto, head, mb).splitlines()
