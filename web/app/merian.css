@@ -457,3 +457,12 @@
   .mi-art-label-top{top:8px;left:0;right:auto}
   .mi-art-label-bottom{bottom:10px;left:0;right:auto}
 }
+
+/* A full-width venture row cannot inherit the desktop 56px wordmark at 320px. */
+.mi-portfolio-row>*{min-width:0;max-width:100%}
+.mi-portfolio-row p{overflow-wrap:anywhere}
+@media(max-width:620px){
+  .mi-portfolio-row{grid-template-columns:minmax(0,1fr)}
+  .mi-portfolio-row h2{font-size:clamp(30px,8vw,48px);letter-spacing:-.035em;overflow-wrap:anywhere}
+  .mi-portfolio-row>a{white-space:normal;overflow-wrap:anywhere;justify-self:start}
+}
