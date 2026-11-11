@@ -62,7 +62,9 @@ def test_a_build_is_refused_on_a_full_volume_with_the_number_the_floor_and_the_w
     # disk), so the refusal has to be proved on a command that genuinely writes.
     door, ex = _door(tmp_path, free_mb=200)
 
-    out = door.execute_command("python3 -m pytest tests/", cwd=str(tmp_path), executor=ex)
+    out = door.execute_command(
+        "python3 -m pytest tests/", cwd=str(tmp_path), executor=ex
+    )
 
     assert out["accepted"] is False
     assert "200 MB free" in out["error"]
@@ -104,7 +106,9 @@ def test_the_reclaim_door_is_never_refused_or_the_refusal_is_unsatisfiable(tmp_p
     # it is the one that must never be refused while the floor is closed.
     door, ex = _door(tmp_path, free_mb=200)
 
-    out = door.execute_command("estate-execute disk-reclaim", cwd=str(tmp_path), executor=ex)
+    out = door.execute_command(
+        "estate-execute disk-reclaim", cwd=str(tmp_path), executor=ex
+    )
 
     assert "MB free" not in out.get("error", "")
     assert len(ex.calls) == 1
@@ -204,7 +208,9 @@ def test_the_door_refuses_and_names_the_measurement(tmp_path):
     # to say what is true and name a command that frees space.
     door, ex, calls = _door_tracking_reclaim(tmp_path, free_readings=[200, 200])
 
-    out = door.execute_command("python3 -m pytest tests/", cwd=str(tmp_path), executor=ex)
+    out = door.execute_command(
+        "python3 -m pytest tests/", cwd=str(tmp_path), executor=ex
+    )
 
     assert out["accepted"] is False
     assert ex.calls == [], "a refused command must not run"
@@ -219,9 +225,13 @@ def test_a_command_that_frees_space_runs_while_the_floor_is_closed(tmp_path):
     # or the machine cannot recover and the guard has become the outage (R38, #7918).
     door, ex, calls = _door_tracking_reclaim(tmp_path, free_readings=[200, 200])
 
-    door.execute_command("/bin/df -m /System/Volumes/Data", cwd=str(tmp_path), executor=ex)
+    door.execute_command(
+        "/bin/df -m /System/Volumes/Data", cwd=str(tmp_path), executor=ex
+    )
 
-    assert len(ex.calls) == 1, "df is how you find out what to free; refusing it is a catch-22"
+    assert len(ex.calls) == 1, (
+        "df is how you find out what to free; refusing it is a catch-22"
+    )
     assert calls == []
 
 
@@ -256,7 +266,9 @@ def test_the_reclaim_hook_resurrects_nothing():
         "the door must not invoke the deleted cleaner: it was the cause of the full disk, not"
         " the cure (113 steps to do what one rm does)"
     )
-    assert "return None" in source, "the hook is a named no-op so the floor block still runs"
+    assert "return None" in source, (
+        "the hook is a named no-op so the floor block still runs"
+    )
 
 
 def test_the_only_way_out_of_the_floor_is_a_command_that_frees_space():
