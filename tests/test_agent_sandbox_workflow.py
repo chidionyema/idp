@@ -8,7 +8,10 @@ real git repository.
 
 from __future__ import annotations
 
+import json
+import importlib.util
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -193,7 +196,10 @@ FAKE = {
 
 
 def _agent_step(
-    tmp_path: Path, harness: str, fake: str | None, overrides: dict[str, str] | None = None
+    tmp_path: Path,
+    harness: str,
+    fake: str | None,
+    overrides: dict[str, str] | None = None,
 ) -> tuple[subprocess.CompletedProcess, Path]:
     r = _repo(tmp_path)
     (r / "a.txt").write_text("hi\n")
@@ -297,12 +303,13 @@ esac
 """
 
 
-def _claim_gate_regex():
-    src = (ROOT / "bin/claim-gate").read_text()
-    start = src.index("CLAIM = re.compile(")
-    ns: dict = {"re": re}
-    exec(src[start : src.index(")\n", start) + 2], ns)  # noqa: S102 -- the gate's own regex
-    return ns["CLAIM"]
+def _claim_parser():
+    path = ROOT / "platform" / "estate" / "context" / "claim_contract.py"
+    spec = importlib.util.spec_from_file_location("sandbox_claim_contract", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.parse_claim_line
 
 
 def _submit(tmp_path: Path, issue: str):
@@ -318,6 +325,8 @@ def _submit(tmp_path: Path, issue: str):
     ):  # the stamp; pre-commit's linters are installed in the job
         (r / ".githooks" / hook).write_text((ROOT / ".githooks" / hook).read_text())
         (r / ".githooks" / hook).chmod(0o755)
+    (r / "bin").mkdir()
+    shutil.copy2(ROOT / "bin/language-gate", r / "bin/language-gate")
     subprocess.run(["git", "-C", str(r), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(r), "commit", "-qm", "hooks"], check=True)
     (r / "app.py").write_text("x = 2\n")
@@ -338,8 +347,15 @@ def _submit(tmp_path: Path, issue: str):
         "HARNESS": "gemini",
         "TASK": "fix the router\nsecond line",
         "ISSUE": issue,
+        "INSTRUCTION": "INS-00004",
+        "PLAN": "a" * 64,
         "RUN_URL": "https://example/run",
     }
+    receipts = tmp_path / ".estate/receipts/research-first"
+    receipts.mkdir(parents=True)
+    (receipts / "fixture.json").write_text(
+        json.dumps({"pass": True, "findings": ["fixture"]}) + "\n"
+    )
     claim = _step("submit-lane", "Claim the work")["run"]
     p1 = subprocess.run(
         ["bash", "-c", claim], cwd=r, env=env, capture_output=True, text=True
@@ -362,9 +378,11 @@ def test_the_lane_carries_a_claim_the_gate_accepts_and_the_hooks_stamp(tmp_path,
     num = issue or "77"
     assert ("issue create" in gh) is (not issue)
     claim = next(ln for ln in gh.splitlines() if "CLAIM agent=" in ln)
-    m = _claim_gate_regex().search(claim[claim.index("CLAIM") :])
-    assert m and m["agent"] == "gemini"
-    assert set(m["paths"].split(",")) == {
+    parsed = _claim_parser()(claim[claim.index("CLAIM") :])
+    assert parsed.agent == "gemini"
+    assert parsed.instruction == "INS-00004"
+    assert parsed.plan == "a" * 64
+    assert set(parsed.paths) == {
         "app.py",
         "lib.py",
     }  # both sides of the rename
@@ -383,6 +401,8 @@ def test_the_lane_carries_a_claim_the_gate_accepts_and_the_hooks_stamp(tmp_path,
         check=True,
     ).stdout
     assert f"Claim: #{num}" in msg and "Agent: gemini" in msg
+    assert "Instruction: INS-00004" in msg
+    assert "Plan: " + "a" * 64 in msg
     assert "X-Idp-Signed: " in msg
     assert msg.splitlines()[0] == "agent-sandbox (gemini): fix the router"
 
@@ -407,9 +427,7 @@ fi
 echo '{"provider":"minimax","status":"success"}' > "$d/minimax.jsonl"
 echo 'SECOND_PROVIDER_EDIT' >> a.txt
 """
-    result, out = _agent_step(
-        tmp_path, "gemini", body, {"LEGION_FAILOVER": "1"}
-    )
+    result, out = _agent_step(tmp_path, "gemini", body, {"LEGION_FAILOVER": "1"})
     assert result.returncode == 0, result.stdout + result.stderr
     assert "fallback=minimax exit=0" in result.stdout
     assert "private-authentication-secret-sentinel" not in result.stdout
@@ -418,13 +436,18 @@ echo 'SECOND_PROVIDER_EDIT' >> a.txt
     assert "SECOND_PROVIDER_EDIT" in (out / "patch").read_text()
     assert '"provider":"minimax"' in (out / "transcript.jsonl").read_text()
     assert '"provider":"google"' in (out / "google.failed.transcript.jsonl").read_text()
-    assert "private-authentication-secret-sentinel" in (out / "google.failed.stdout").read_text()
+    assert (
+        "private-authentication-secret-sentinel"
+        in (out / "google.failed.stdout").read_text()
+    )
 
 
 def test_legion_fallback_is_not_used_without_a_second_provider_key(tmp_path):
     body = FAKE["pi"] + 'echo "private-rate-limit-sentinel 429"\\nexit 1\\n'
     result, out = _agent_step(
-        tmp_path, "gemini", body,
+        tmp_path,
+        "gemini",
+        body,
         {"LEGION_FAILOVER": "1", "MINIMAX_API_KEY": ""},
     )
     assert result.returncode == 1
@@ -445,7 +468,9 @@ def test_manual_gemini_failure_does_not_silently_switch_providers(tmp_path):
 
 def test_legion_failover_disabled_for_manual_workflow_dispatch():
     step = _step("agent", "Run the agent")
-    assert "github.event_name == 'issues' && '1' || '0'" in step["env"]["LEGION_FAILOVER"]
+    assert (
+        "github.event_name == 'issues' && '1' || '0'" in step["env"]["LEGION_FAILOVER"]
+    )
     assert JOBS["agent"]["permissions"] == {"contents": "read"}
     # The firewall is still mandatory after the cloud provider switch.
     assert "firewall" in JOBS["submit-lane"]["needs"]

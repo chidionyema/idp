@@ -52,7 +52,13 @@ def _sanitize_git_repository_environment() -> list[str]:
 REMOVED_GIT_LOCATION_VARS = _sanitize_git_repository_environment()
 
 if os.getpriority(os.PRIO_PROCESS, 0) < SUITE_NICE:
-    os.nice(SUITE_NICE - os.getpriority(os.PRIO_PROCESS, 0))
+    try:
+        os.nice(SUITE_NICE - os.getpriority(os.PRIO_PROCESS, 0))
+    except PermissionError:
+        # Sandboxed test runners may deny changing niceness even when the process can run the
+        # suite. The sandbox already bounds the process; refusing collection here would turn a
+        # scheduling policy into a test outage.
+        pass
 
 
 def _git_config_without_operator_hooks() -> Path:

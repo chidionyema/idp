@@ -1,0 +1,715 @@
+#!/usr/bin/env python3
+"""instruction -- founder instructions, their links, status and proof.
+
+The append-only ledger is the source of truth. A founder-facing board is derived from it and
+links every unit of work to its claim, ticket, pull request and evidence. A state of
+``verified`` is refused unless at least one evidence row exists first.
+
+    instruction new --text "<verbatim instructions>" --session <id> --owner <agent>
+    instruction link <id> --claim idp#7844 --ticket <url> --pr <url> --test <path>
+    instruction move <id> --state executing --note "<latest update>"
+    instruction evidence <id> --kind test --ref <path-or-url>
+    instruction board [--json] [--all] [--limit 25]
+    instruction import-prompts [--file PATH]
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib.util
+import json
+import os
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+LEDGER = Path(
+    os.environ.get(
+        "ESTATE_INSTRUCTIONS", Path.home() / ".estate/instructions/ledger.jsonl"
+    )
+)
+PROMPT_LEDGER = Path(
+    os.environ.get(
+        "ESTATE_FOUNDER_PROMPTS", Path.home() / ".estate/state/founder-prompts.jsonl"
+    )
+)
+PLAN_LEDGER_DIR = Path(
+    os.environ.get("ESTATE_PLAN_LEDGER_DIR", Path.home() / ".estate/plans")
+)
+STATES = (
+    "received",
+    "planned",
+    "executing",
+    "blocked",
+    "verified",
+    "failed",
+    "abandoned",
+)
+LINK_FIELDS = (
+    "owner",
+    "claim",
+    "ticket",
+    "pr",
+    "branch",
+    "commit",
+    "test",
+    "metric",
+    "doc",
+)
+LINK_LABELS = {
+    "owner": "owners",
+    "claim": "claims",
+    "ticket": "tickets",
+    "pr": "prs",
+    "branch": "branches",
+    "commit": "commits",
+    "test": "tests",
+    "metric": "metrics",
+    "doc": "docs",
+}
+
+
+def now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def append(rec: dict[str, Any]) -> None:
+    LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    with LEDGER.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(rec, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def load(path: Path | None = None) -> list[dict[str, Any]]:
+    path = path or LEDGER
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
+def _unique_append(values: list[str], value: str) -> None:
+    if value and value not in values:
+        values.append(value)
+
+
+def _plan_module():
+    """Load the estate's one plan contract from a checkout or the installed runtime."""
+    here = Path(__file__).resolve()
+    candidates = [
+        Path(os.environ.get("ESTATE_CODE_ROOT", "")),
+        here.parent.parent,
+        Path.home() / ".estate/runtime/idp",
+        Path.home() / "Documents/code/idp",
+    ]
+    for root in candidates:
+        source = root / "platform/estate/memory/plan.py"
+        if not source.is_file():
+            continue
+        spec = importlib.util.spec_from_file_location("estate_plan_contract", source)
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    raise RuntimeError("the plan contract cannot be found")
+
+
+def current(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Derive current state without mutating the append-only source rows."""
+    state: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        instruction_id = str(row.get("id") or "")
+        if not instruction_id:
+            continue
+        kind = row.get("type")
+        if kind == "instruction":
+            item = dict(row)
+            item.update(
+                {
+                    "events": [],
+                    "evidence": [],
+                    "last_at": row.get("at") or "",
+                    "last_note": "",
+                    "machine_imported": bool(row.get("machine_imported")),
+                    "plan": {},
+                    "plan_digest": "",
+                    "plan_problems": ["PLAN BLIND"],
+                }
+            )
+            for field in LINK_FIELDS:
+                item[LINK_LABELS[field]] = []
+            for field in LINK_FIELDS:
+                _unique_append(item[LINK_LABELS[field]], str(row.get(field) or ""))
+            state[instruction_id] = item
+            continue
+        if instruction_id not in state:
+            continue
+        item = state[instruction_id]
+        at = str(row.get("at") or "")
+        if kind == "state":
+            item["state"] = row.get("state", item.get("state"))
+            note = str(row.get("note") or "")
+            item["events"].append({"at": at, "state": item["state"], "note": note})
+            item["last_at"] = at or item["last_at"]
+            item["last_note"] = note or item["last_note"]
+        elif kind == "evidence":
+            item["evidence"].append(
+                {
+                    "at": at,
+                    "kind": str(row.get("kind") or ""),
+                    "ref": str(row.get("ref") or ""),
+                }
+            )
+            item["last_at"] = at or item["last_at"]
+        elif kind == "link":
+            for field in LINK_FIELDS:
+                _unique_append(item[LINK_LABELS[field]], str(row.get(field) or ""))
+            note = str(row.get("note") or "")
+            item["last_at"] = at or item["last_at"]
+            item["last_note"] = note or item["last_note"]
+        elif kind == "plan":
+            item["plan"] = row.get("plan") or {}
+            item["plan_digest"] = str(row.get("digest") or "")
+            item["plan_problems"] = list(row.get("problems") or [])
+            item["last_at"] = at or item["last_at"]
+        elif kind == "instruction_revision":
+            item["text"] = row.get("text", item.get("text", ""))
+            item["raw_sha256"] = row.get("raw_sha256", item.get("raw_sha256", ""))
+            item["last_at"] = at or item["last_at"]
+    return state
+
+
+def _next_id(rows: list[dict[str, Any]]) -> str:
+    highest = 0
+    for row in rows:
+        if row.get("type") != "instruction":
+            continue
+        instruction_id = str(row.get("id") or "")
+        if not instruction_id.startswith("INS-"):
+            continue
+        try:
+            highest = max(highest, int(instruction_id[4:]))
+        except ValueError:
+            continue
+    return f"INS-{highest + 1:05d}"
+
+
+def _verification(item: dict[str, Any]) -> str:
+    if item.get("state") == "verified":
+        return "PROVEN" if item.get("evidence") else "UNPROVEN"
+    return "UNPROVEN"
+
+
+def verification_problems(item: dict[str, Any]) -> list[str]:
+    """The complete finite precondition set for moving an instruction to verified."""
+    missing = []
+    if not item.get("plan_digest"):
+        missing.append("PLAN BLIND")
+    if not item.get("claims"):
+        missing.append("CLAIM BLIND")
+    if not item.get("evidence"):
+        missing.append("EVIDENCE BLIND")
+    return missing
+
+
+def _board_row(item: dict[str, Any]) -> dict[str, Any]:
+    links = {LINK_LABELS[field]: list(item.get(LINK_LABELS[field], [])) for field in LINK_FIELDS}
+    return {
+        "id": item["id"],
+        "state": item.get("state", "received"),
+        "verification": _verification(item),
+        "text": item.get("text", ""),
+        "session": item.get("session", ""),
+        "source_id": item.get("source_id", ""),
+        "priority": item.get("priority", ""),
+        "created_at": item.get("at", ""),
+        "last_update": item.get("last_at", ""),
+        "last_note": item.get("last_note", ""),
+        "plan": item.get("plan") or {},
+        "plan_digest": item.get("plan_digest", ""),
+        "plan_problems": item.get("plan_problems", []),
+        **links,
+        "evidence": list(item.get("evidence", [])),
+        "machine_imported": bool(item.get("machine_imported")),
+    }
+
+
+def _link_summary(row: dict[str, Any]) -> str:
+    parts = []
+    for label in ("claims", "tickets", "prs"):
+        values = row.get(label) or []
+        if values:
+            parts.append(f"{label.upper()}={', '.join(values)}")
+        else:
+            parts.append(f"{label[:-1].upper()} BLIND")
+    parts.append(
+        f"PLAN={row['plan_digest']}" if row.get("plan_digest") else "PLAN BLIND"
+    )
+    evidence = row.get("evidence") or []
+    if evidence:
+        parts.append(f"EVIDENCE={len(evidence)}")
+    else:
+        parts.append("EVIDENCE BLIND")
+    return " · ".join(parts)
+
+
+def _print_board(rows: list[dict[str, Any]], limit: int) -> None:
+    groups = (
+        ("NEEDS ATTENTION", {"blocked", "failed"}),
+        ("ACTIVE", {"planned", "executing"}),
+        ("NOT STARTED", {"received"}),
+        ("VERIFIED", {"verified"}),
+        ("ABANDONED", {"abandoned"}),
+    )
+    counts = {group: 0 for group, states in groups}
+    for row in rows:
+        for group, states in groups:
+            if row["state"] in states:
+                counts[group] += 1
+                break
+    print("FOUNDER INSTRUCTION TRACKER")
+    print(
+        "  "
+        + " · ".join(f"{group.lower().replace(' ', '_')}={counts[group]}" for group, _ in groups)
+    )
+    shown = 0
+    for group, states in groups:
+        selected = [row for row in rows if row["state"] in states]
+        if not selected:
+            continue
+        print(f"\n{group}")
+        for row in selected:
+            if shown >= limit:
+                continue
+            shown += 1
+            owner = ", ".join(row.get("owners") or []) or "OWNER BLIND"
+            print(
+                f"  {row['id']}  {row['state']:10}  {row['verification']:10}  {owner}"
+            )
+            print(f"    ask: {row['text']}")
+            print(f"    links: {_link_summary(row)}")
+            plan = row.get("plan") or {}
+            if plan:
+                print(f"    goal: {plan.get('goal', '')}")
+                for subgoal in plan.get("subgoals") or []:
+                    sid = subgoal.get("id", "")
+                    edges = len((plan.get("edgecases") or {}).get(sid) or [])
+                    effects = len((plan.get("effects") or {}).get(sid) or [])
+                    print(
+                        f"    {sid}: {subgoal.get('text', '')} "
+                        f"(edge cases={edges}, effects={effects})"
+                    )
+            if row.get("last_note"):
+                print(f"    update: {row['last_update']} · {row['last_note']}")
+            else:
+                print(f"    update: {row['last_update'] or 'BLIND'}")
+    if len(rows) > limit:
+        print(f"\n  {len(rows) - limit} more instruction(s); use --limit or --json")
+
+
+def _markdown_board(rows: list[dict[str, Any]]) -> str:
+    out = [
+        "# Founder instruction tracker",
+        "",
+        "Generated from the append-only instruction ledger. A verified row needs an evidence reference.",
+        "",
+        "| ID | State | Proof | Owner | Claim | Ticket | PR | Latest update |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for row in rows:
+        owners = ", ".join(row.get("owners") or []) or "OWNER BLIND"
+        claim_values = row.get("claims") or []
+        ticket_values = row.get("tickets") or []
+        claims = ", ".join(f"`{value}`" for value in claim_values) or "CLAIM BLIND"
+        if len(claim_values) == 1 and len(ticket_values) == 1:
+            ticket = ticket_values[0]
+            tickets = (
+                f"[{claim_values[0]}]({ticket})"
+                if ticket.startswith(("https://", "http://"))
+                else ticket
+            )
+        else:
+            tickets = (
+                ", ".join(
+                    f"[ticket]({value})" if value.startswith(("https://", "http://")) else value
+                    for value in ticket_values
+                )
+                or "TICKET BLIND"
+            )
+        prs = (
+            ", ".join(
+                f"[PR]({value})" if value.startswith(("https://", "http://")) else value
+                for value in row.get("prs") or []
+            )
+            or "PR BLIND"
+        )
+        evidence = row.get("evidence") or []
+        proof = row["verification"]
+        if not evidence:
+            proof += " · EVIDENCE BLIND"
+        update = row.get("last_update") or "BLIND"
+        if row.get("last_note"):
+            update += f" · {row['last_note']}"
+        text = str(row.get("text") or "").replace("|", "/").replace("\n", " ")
+        out.append(
+            f"| {row['id']} | {row['state']} | {proof} | {owners} | {claims} | "
+            f"{tickets} | {prs} | {update} |"
+        )
+        out.append(
+            f"|  | **Ask** | {text} |  |  |  |  |  |"
+        )
+    if not rows:
+        out.append("| — | — | — | — | — | — | — | No tracked instructions |")
+    return "\n".join(out) + "\n"
+
+
+def _filtered(rows: list[dict[str, Any]], include_imported: bool) -> list[dict[str, Any]]:
+    selected = rows if include_imported else [row for row in rows if not row["machine_imported"]]
+    selected.sort(
+        key=lambda row: (
+            row["state"] == "verified",
+            row["state"] == "abandoned",
+            row.get("last_update", ""),
+        ),
+        reverse=True,
+    )
+    return selected
+
+
+def _link(args: argparse.Namespace) -> int:
+    item = current(load()).get(args.id)
+    if not item:
+        print("no such instruction", file=sys.stderr)
+        return 2
+    rec: dict[str, Any] = {"type": "link", "id": args.id, "at": now(), "note": args.note}
+    changed = False
+    for field in LINK_FIELDS:
+        value = str(getattr(args, field, "") or "").strip()
+        if value:
+            rec[field] = value
+            changed = True
+    if not changed:
+        print("link needs at least one reference", file=sys.stderr)
+        return 2
+    append(rec)
+    print(f"{args.id} linked")
+    return 0
+
+
+def _import_prompts(path: Path, session: str = "") -> int:
+    rows = load()
+    known_ids = {str(row.get("id") or "") for row in rows if row.get("type") == "instruction"}
+    by_source = {
+        str(row.get("source_id") or ""): row
+        for row in rows
+        if row.get("type") == "instruction" and row.get("source_id")
+    }
+    imported = 0
+    updated = 0
+    skipped = 0
+    for prompt in load(path):
+        if session and str(prompt.get("session") or "") != session:
+            skipped += 1
+            continue
+        source_id = str(prompt.get("id") or "")
+        digest = str(prompt.get("raw_sha256") or "")
+        text = str(prompt.get("text") or "")
+        if not source_id or not digest or not text.strip():
+            skipped += 1
+            continue
+        instruction_id = f"INS-P-{digest[:12].upper()}"
+        existing = by_source.get(source_id)
+        if existing:
+            digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+            if (
+                existing.get("text") != text
+                or existing.get("raw_sha256") != digest
+            ):
+                append(
+                    {
+                        "type": "instruction_revision",
+                        "id": existing["id"],
+                        "text": text,
+                        "raw_sha256": digest,
+                        "at": str(prompt.get("occurred_at") or now()),
+                    }
+                )
+                updated += 1
+            else:
+                skipped += 1
+            continue
+        if instruction_id in known_ids:
+            skipped += 1
+            continue
+        rec = {
+            "type": "instruction",
+            "id": instruction_id,
+            "source_id": source_id,
+            "raw_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "text": text,
+            "session": str(prompt.get("session") or ""),
+            "surface": str(prompt.get("source") or "prompt-ledger"),
+            "at": str(prompt.get("occurred_at") or ""),
+            "state": "received",
+            "machine_imported": True,
+        }
+        append(rec)
+        known_ids.add(instruction_id)
+        by_source[source_id] = rec
+        imported += 1
+    print(f"imported {imported}; updated {updated}; skipped {skipped}")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    new = sub.add_parser("new")
+    new.add_argument("--text", required=True)
+    new.add_argument("--session", default="")
+    new.add_argument("--surface", default="cli")
+    new.add_argument("--owner", default="")
+    new.add_argument("--priority", default="")
+
+    listing = sub.add_parser("list")
+    listing.add_argument("--state", default="", choices=("", *STATES))
+    listing.add_argument("--json", action="store_true")
+
+    show = sub.add_parser("show")
+    show.add_argument("id")
+    show.add_argument("--json", action="store_true")
+
+    move = sub.add_parser("move")
+    move.add_argument("id")
+    move.add_argument("--state", required=True, choices=STATES)
+    move.add_argument("--note", default="")
+
+    evidence = sub.add_parser("evidence")
+    evidence.add_argument("id")
+    evidence.add_argument("--kind", required=True)
+    evidence.add_argument("--ref", required=True)
+
+    link = sub.add_parser("link")
+    link.add_argument("id")
+    for field in LINK_FIELDS:
+        link.add_argument(f"--{field}", default="")
+    link.add_argument("--note", default="")
+
+    sync_plan = sub.add_parser("sync-plan")
+    sync_plan.add_argument("id")
+    sync_plan.add_argument("--session", default="")
+
+    board = sub.add_parser("board")
+    board.add_argument("--json", action="store_true")
+    board.add_argument("--markdown", action="store_true")
+    board.add_argument("--out", default="")
+    board.add_argument("--all", action="store_true")
+    board.add_argument("--session", default="")
+    board.add_argument("--limit", type=int, default=25)
+
+    importer = sub.add_parser("import-prompts")
+    importer.add_argument("--file", default="")
+    importer.add_argument("--session", default="")
+
+    args = parser.parse_args(argv)
+
+    if args.cmd == "new":
+        rows = load()
+        rec = {
+            "type": "instruction",
+            "id": _next_id(rows),
+            "text": args.text,
+            "session": args.session,
+            "surface": args.surface,
+            "at": now(),
+            "state": "received",
+            "owner": args.owner,
+            "priority": args.priority,
+            "managed": True,
+        }
+        append(rec)
+        print(rec["id"])
+        return 0
+
+    state = current(load())
+
+    if args.cmd == "list":
+        rows = [row for row in state.values() if not args.state or row.get("state") == args.state]
+        rows.sort(key=lambda row: str(row.get("at") or ""), reverse=True)
+        if args.json:
+            print(json.dumps([_board_row(row) for row in rows], indent=2))
+            return 0
+        for row in rows:
+            print(
+                f"  {row['id']}  {row.get('state', '?'):10} "
+                f"{row.get('at', '')}  {str(row.get('text', ''))[:90]}"
+            )
+        print(f"  {len(rows)} instruction(s)")
+        return 0
+
+    if args.cmd == "show":
+        item = state.get(args.id)
+        if not item:
+            print("no such instruction", file=sys.stderr)
+            return 2
+        row = _board_row(item)
+        if args.json:
+            print(json.dumps(row, indent=2))
+            return 0
+        print(f"{row['id']}  {row['state']}  {row['verification']}")
+        print(f"  ask: {row['text']}")
+        print(f"  links: {_link_summary(row)}")
+        print(f"  created: {row['created_at']}  updated: {row['last_update']}")
+        if row["last_note"]:
+            print(f"  update: {row['last_note']}")
+        for event in item["events"]:
+            print(f"  -> {event['at']} {event['state']}: {event['note']}")
+        for ev in item["evidence"]:
+            print(f"  evidence {ev['kind']}: {ev['ref']}")
+        return 0
+
+    if args.cmd == "move":
+        item = state.get(args.id)
+        if not item:
+            print("no such instruction", file=sys.stderr)
+            return 2
+        if args.state == "verified":
+            missing = verification_problems(item)
+            if missing:
+                print(
+                    f"REFUSED {args.id}: UNPROVEN -- verified requires "
+                    + ", ".join(missing),
+                    file=sys.stderr,
+                )
+                return 2
+        append({"type": "state", "id": args.id, "state": args.state, "note": args.note, "at": now()})
+        print(f"{args.id} -> {args.state}")
+        return 0
+
+    if args.cmd == "evidence":
+        if args.id not in state:
+            print("no such instruction", file=sys.stderr)
+            return 2
+        append(
+            {
+                "type": "evidence",
+                "id": args.id,
+                "kind": args.kind,
+                "ref": args.ref,
+                "at": now(),
+            }
+        )
+        print(f"{args.id} evidence {args.kind} {args.ref}")
+        return 0
+
+    if args.cmd == "link":
+        return _link(args)
+
+    if args.cmd == "sync-plan":
+        item = state.get(args.id)
+        if not item:
+            print("no such instruction", file=sys.stderr)
+            return 2
+        session = args.session or str(item.get("session") or "")
+        if not session:
+            print("REFUSED: no session to load a plan from", file=sys.stderr)
+            return 2
+        try:
+            plan_contract = _plan_module()
+            plan_ledger = Path(
+                os.environ.get(
+                    "ESTATE_PLAN_LEDGER_DIR",
+                    str(Path.home() / ".estate/plans"),
+                )
+            )
+            plan_contract.PLAN_LEDGER_DIR = str(plan_ledger)
+            plan = plan_contract.ledger_plan(session)
+        except Exception as exc:
+            print(f"REFUSED {args.id}: PLAN BLIND -- {exc}", file=sys.stderr)
+            return 2
+        if not plan:
+            print(
+                f"REFUSED {args.id}: PLAN BLIND -- session {session} declared no plan",
+                file=sys.stderr,
+            )
+            return 2
+        problems = plan_contract.claim_contract_problems(plan, args.id)
+        if problems:
+            print(
+                f"REFUSED {args.id}: UNPROVEN plan -- " + "; ".join(problems),
+                file=sys.stderr,
+            )
+            return 2
+        digest = plan_contract.plan_digest(plan)
+        append(
+            {
+                "type": "plan",
+                "id": args.id,
+                "session": session,
+                "plan": plan,
+                "digest": digest,
+                "problems": [],
+                "at": now(),
+            }
+        )
+        print(f"{args.id} plan {digest}")
+        return 0
+
+    if args.cmd == "board":
+        selected = [
+            row
+            for row in state.values()
+            if not args.session or str(row.get("session") or "") == args.session
+        ]
+        rows = _filtered(
+            [_board_row(row) for row in selected],
+            include_imported=args.all or bool(args.session),
+        )
+        if args.markdown:
+            rendered = _markdown_board(rows)
+            if args.out:
+                destination = Path(args.out)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                temporary = destination.with_name(f".{destination.name}.tmp")
+                temporary.write_text(rendered, encoding="utf-8")
+                os.replace(temporary, destination)
+            else:
+                print(rendered)
+        elif args.json:
+            print(
+                json.dumps(
+                    {
+                        "generated_at": now(),
+                        "total": len(rows),
+                        "instructions": rows,
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            _print_board(rows, max(args.limit, 0))
+        return 0
+
+    if args.cmd == "import-prompts":
+        return _import_prompts(
+            Path(args.file) if args.file else PROMPT_LEDGER,
+            session=args.session,
+        )
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

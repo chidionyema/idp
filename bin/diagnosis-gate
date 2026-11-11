@@ -28,6 +28,11 @@ from pathlib import Path
 
 MIN_POSTERIOR = 0.95
 
+# A refusal must not flood a log: name the files that actually tripped the gate, up to this many,
+# then say how many more there were. The number is small because a router change that touches
+# dozens of router files is one change, and the reader needs the first few to recognise it.
+MAX_NAMED_FILES = 12
+
 ROUTER_PATTERNS = (
     re.compile(r"^llm/config\.yaml$"),
     re.compile(r"^platform/llm/config\.yaml$"),
@@ -40,8 +45,18 @@ DIAGNOSIS_RE = re.compile(
 )
 
 
+def router_hits(changed_files: list[str]) -> list[str]:
+    """The files that made this a router change, de-duplicated and in a stable order.
+
+    A refusal that names no file cannot be audited: the reader has to guess which of a possibly
+    huge diff tripped the gate, against a base that has already moved on. main() prints both the
+    base and these files, so any verdict can be replayed with --base.
+    """
+    return sorted({f for f in changed_files for p in ROUTER_PATTERNS if p.match(f)})
+
+
 def touches_router(changed_files: list[str]) -> bool:
-    return any(p.match(f) for f in changed_files for p in ROUTER_PATTERNS)
+    return bool(router_hits(changed_files))
 
 
 def is_docs_tests_only(changed_files: list[str]) -> bool:
@@ -92,9 +107,14 @@ def evaluate(
 
     ref = find_diagnosis_ref(commit_messages)
     if ref is None:
+        hits = router_hits(changed_files)
+        shown = ", ".join(hits[:MAX_NAMED_FILES])
+        if len(hits) > MAX_NAMED_FILES:
+            shown += f" (+{len(hits) - MAX_NAMED_FILES} more)"
         return 1, (
             "FAIL  diagnosis-gate  router change with no `Diagnosis: docs/diagnoses/<file>.yaml` "
-            "commit-message line; write a record (docs/runbooks/diagnosis.md) and reference it"
+            "commit-message line; write a record (docs/runbooks/diagnosis.md) and reference it. "
+            f"Router file(s) judged: {shown}"
         )
 
     record_path = repo_root / ref
@@ -119,6 +139,35 @@ def _git(repo_root: Path, *args: str) -> str:
     ).stdout
 
 
+def _git_or_blind(
+    repo_root: Path, *args: str
+) -> tuple[str, str]:
+    """Run git, and on failure return the error instead of raising it out of the gate.
+
+    GOV-016: a check whose non-execution is indistinguishable from its success is not a check.
+    An uncaught CalledProcessError prints a traceback and exits non-zero, so the exit code was
+    right -- but the line said ``Traceback ...`` rather than what could not be judged, and the
+    caller had to read a Python stack to learn that its base was unknown. Unknown is BLIND, and
+    BLIND must be said in the gate's own voice.
+    """
+    try:
+        return _git(repo_root, *args), ""
+    except subprocess.CalledProcessError as exc:
+        # git follows its real reason with a usage banner, so take the fatal:/error: line, not
+        # the last line -- `Use '--' to separate paths...` explains git, not this failure.
+        lines = [
+            ln.strip()
+            for ln in (exc.stderr or exc.stdout or "").splitlines()
+            if ln.strip()
+        ]
+        why = next(
+            (ln for ln in lines if ln.startswith(("fatal:", "error:"))), None
+        )
+        return "", (why or (lines[0] if lines else f"git {' '.join(args)} exited {exc.returncode}"))
+    except OSError as exc:
+        return "", str(exc)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         prog="diagnosis-gate", description=__doc__.splitlines()[0]
@@ -130,19 +179,40 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     repo_root = Path(args.repo_root).resolve()
-    base = args.base or _git(repo_root, "merge-base", "origin/main", "HEAD").strip()
-    changed = [
-        line
-        for line in _git(
-            repo_root, "diff", "--name-only", f"{base}...HEAD"
-        ).splitlines()
-        if line
-    ]
-    raw = _git(repo_root, "log", "--format=%B%x00", f"{base}..HEAD")
+    # The base is the gate's entire evidence and it MOVES (origin/main advances as lanes land).
+    # Printing it on every verdict is what makes a refusal replayable: --base <printed> re-runs
+    # the exact judgement. Without it a FAIL at push time dies with the push log.
+    base = args.base or ""
+    if not base:
+        base, err = _git_or_blind(repo_root, "merge-base", "origin/main", "HEAD")
+        base = base.strip()
+        if not base:
+            print(
+                f"BLIND diagnosis-gate  cannot resolve a base (merge-base origin/main HEAD: "
+                f"{err}); nothing was judged, so nothing is certified"
+            )
+            return 2
+    diff_out, err = _git_or_blind(repo_root, "diff", "--name-only", f"{base}...HEAD")
+    if err:
+        print(
+            f"BLIND diagnosis-gate  base {base[:12]} is not a commit this checkout can diff "
+            f"({err}); nothing was judged, so nothing is certified"
+        )
+        return 2
+    changed = [line for line in diff_out.splitlines() if line]
+    raw, err = _git_or_blind(repo_root, "log", "--format=%B%x00", f"{base}..HEAD")
+    if err:
+        print(
+            f"BLIND diagnosis-gate  base {base[:12]} has no readable log ({err}); "
+            "nothing was judged, so nothing is certified"
+        )
+        return 2
     commit_messages = [m for m in raw.split("\x00") if m.strip()]
 
     rc, msg = evaluate(changed, commit_messages, repo_root)
-    print(msg)
+    # The base rides on every verdict, so a FAIL and a skip are both replayable: copy the printed
+    # sha into `--base` and the identical judgement runs again, even after origin/main has moved.
+    print(f"{msg} [base {base[:12]}, {len(changed)} file(s) judged]")
     return rc
 
 

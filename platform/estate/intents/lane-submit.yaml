@@ -213,3 +213,9 @@ steps:
       rc=${rc:-1}; [ "$rc" -ne 0 ] || rc=1
       echo "FAIL    lane-submit  $lane on origin is '${on:-absent}', not $sha (push rc=$rc): $out" >&2
       exit "$rc"
+  - name: operationalise the proven yield now
+    cmd: |
+      cd {{cwd}} || exit 2
+      if [ -x bin/operationalise-reminder ]; then
+        bin/operationalise-reminder --stage push || true
+      fi
