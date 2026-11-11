@@ -1,11 +1,11 @@
-// pi-governance/index.ts - the pi-side wiring for the estate's end-of-turn gates.
+// pi-governance/index.ts — the pi-side wiring for the estate's end-of-turn gates.
 //
 // WHY THIS EXISTS. bin/reasoning_gateway_hook.py grades a finished session with the PRM
 // (bin/idp-prm --grade) and the budget governor (bin/idp-budget --run) and writes the verdict to
 // ~/.pi/agent/reasoning-gateway/<session_id>.json. It is correct and its self-test passes. It was
 // also not wired to anything: measured 2026-09-23, all 16 verdicts on this machine read
 // `prm_exit=1 budget_exit=1` and not one of them had ever been shown to a human or an agent. A
-// gate whose verdict nobody reads is not a gate (LAW: a gate that cannot fail is not a gate) - so
+// gate whose verdict nobody reads is not a gate (LAW: a gate that cannot fail is not a gate) — so
 // this file is the missing caller, not a second gate.
 //
 // REPORT, DON'T BLOCK. This is the hook's own documented contract, and it is deliberate: PRM and
@@ -14,7 +14,7 @@
 // therefore never denies a turn, never throws at the caller, and never delays a session: it fires
 // the grade, and it puts the FAIL verdict where a person and the agent will both see it.
 //
-// FAIL OPEN, LOUDLY. Every error path here returns without blocking (LAW 38 - a fence a correct
+// FAIL OPEN, LOUDLY. Every error path here returns without blocking (LAW 38 — a fence a correct
 // machine cannot satisfy is an outage): a missing hook script, an unreadable transcript, a spawn
 // failure. Fail-open is not silence, though; the failure is reported, never swallowed.
 
@@ -30,7 +30,7 @@ type Gate = { exit: number; stdout: string };
 type Verdict = { prm?: Gate; budget?: Gate; blind?: string; session_id?: string };
 
 /** Fire the hook with the transcript path on stdin. Resolves to the hook's own exit code and
- *  stdout; never rejects - a governor that can take a session down is an outage, not a governor. */
+ *  stdout; never rejects — a governor that can take a session down is an outage, not a governor. */
 function grade(transcriptPath: string, sessionId: string): Promise<Verdict | null> {
   return new Promise((resolve) => {
     let proc;
@@ -88,7 +88,7 @@ function verdictFor(sessionId: string): Verdict | null {
 /** One line a human can act on. The hook already writes the actionable text ("no plan declared.
  *  Call declare_plan first"), so quote it rather than re-deriving it. */
 function summarise(v: Verdict): { text: string; level: "info" | "warning" | "error" } {
-  if (v.blind) return { text: `Governance: BLIND - ${v.blind}`, level: "warning" };
+  if (v.blind) return { text: `Governance: BLIND — ${v.blind}`, level: "warning" };
   const fail: string[] = [];
   if (v.prm && v.prm.exit !== 0) fail.push("PRM");
   if (v.budget && v.budget.exit !== 0) fail.push("budget");
@@ -122,7 +122,7 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  // A visible way to read the ledger back from inside a session - the same data the founder had
+  // A visible way to read the ledger back from inside a session — the same data the founder had
   // to ask for, now one command away.
   pi.registerCommand("governance", {
     description: "Show the last governance verdicts (PRM + budget) recorded on this machine",

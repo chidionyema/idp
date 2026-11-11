@@ -1,9 +1,9 @@
-// epistemic-firewall-hook.ts - the one forced hook: no agent session proceeds unless the
+// epistemic-firewall-hook.ts — the one forced hook: no agent session proceeds unless the
 // epistemic firewall clears it.
 //
 // WHY THIS EXISTS. bin/epistemic_firewall.py grades a session transcript: a first-person claim of
 // completed work is refused unless THREE independent pieces of evidence back it, one reading state
-// the agent did not author. Before this hook, the firewall was on-demand only - it fired when
+// the agent did not author. Before this hook, the firewall was on-demand only — it fired when
 // someone remembered to call it, and nothing stopped a session from working without it.
 //
 // WHAT THIS IS. A single `session_start` handler that runs the firewall's `--gate` mode against
@@ -107,7 +107,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     // No transcript to grade. This fires on every fresh machine and every first launch, so it
-    // must not strip tools - there is nothing to enforce against and nothing to compare to.
+    // must not strip tools — there is nothing to enforce against and nothing to compare to.
     console.log("[epistemic-firewall] no prior transcript to grade; allowing session.");
   });
 }

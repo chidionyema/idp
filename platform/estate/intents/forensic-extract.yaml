@@ -24,7 +24,8 @@ halt_on_failure: false
 steps:
   # 2026-10-31: every write in this door is made by the extractor itself. The estate's fs_guard
   # bans shell redirects (`> file`), so `echo "$OUT" > pointer` would be REFUSED at run time --
-  # which is exactly what happens to the estate's own disk-free intent. The extractor takes the
+  # which is exactly what used to happen to the estate's own disk-free intent (deleted 2026-11-11).
+  # The extractor takes the
   # log path, the pid path and the pointer path as arguments and writes them in Python.
   - name: launch
     on_fail: continue

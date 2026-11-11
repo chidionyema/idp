@@ -1,8 +1,0 @@
-#!/bin/sh
-# DISABLED 2026-11-11 by founder order -- see bin/idp-disk-watch's header for the full record.
-#
-# A second, older disk guard on the same layer. The estate's law is one of each layer
-# (AGENTS.md section 6); two guards watching one volume is a stitch, and a stitch is deleted
-# in the same change, not left to rot.
-echo "BLIND idp-disk-guard disabled 2026-11-11 (founder order): one disk layer, and it is not a resident daemon." >&2
-exit 1

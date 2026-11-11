@@ -38,9 +38,10 @@ from datetime import datetime, timezone
 DEFAULT_DB_PATH = "state/queue.db"
 DEFAULT_WORKTREE_BASE = ".wt-agents"
 
-# The estate's own quarantine: the same place the estate's cleaner archives a worktree
-# it removes (bin/disk-cleanup.sh), so there is ONE place a removed worktree's leftovers
-# can be, and one convention for finding them again.
+# The estate's own quarantine: the same place a removed worktree's leftovers are archived, so
+# there is ONE place a removed worktree's leftovers can be, and one convention for finding them
+# again. (The cleaner script that used to do the archiving was deleted 2026-11-11; the
+# convention and this path outlive it.)
 DEFAULT_ARCHIVE_ROOT = os.path.expanduser("~/.estate/quarantine/worktrees")
 DEFAULT_ARCHIVE_MAX_BYTES = 64 * 1024 * 1024
 
