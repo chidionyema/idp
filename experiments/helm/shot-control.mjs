@@ -126,7 +126,7 @@ function apply(policy, state, event) {
       refuse("complete candidate digest required");
     if (event.model !== policy.model)
       refuse("unregistered model substituted");
-    if (!["EMIT_PATCH","RUN_FALSIFIER","DISPATCH_LEGION","SUBMIT_YIELD"].includes(event.opcode))
+    if (!["EMIT_PATCH","RUN_FALSIFIER","DISPATCH_LEGION","SUBMIT_YIELD","INVALID_PROPOSAL"].includes(event.opcode))
       refuse("model asked for unregistered executor operation");
     return {
       ...state, phase: "AWAITING_GRADE", shots: state.shots + 1,
