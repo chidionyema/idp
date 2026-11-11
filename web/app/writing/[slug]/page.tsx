@@ -21,7 +21,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: post.title,
     description: post.excerpt,
-    openGraph: { type: "article", publishedTime: post.date, authors: ["Merdian Intelligence"] },
+    openGraph: { type: "article", publishedTime: post.date, authors: ["Meridian Intelligence"] },
   };
 }
 
@@ -47,7 +47,7 @@ export default async function PostPage({ params }: Props) {
       <section className="mi-article-hero mi-page-hero" aria-labelledby="mi-article-title">
         <div className="mi-shell">
           <Link className="mi-article-back" href="/writing">← All research notes</Link>
-          <div className="mi-article-meta"><span>MERDIAN / RESEARCH NOTES</span><time dateTime={post.date}>{post.date}</time><span>{post.readTime}</span></div>
+          <div className="mi-article-meta"><span>MERIDIAN / RESEARCH NOTES</span><time dateTime={post.date}>{post.date}</time><span>{post.readTime}</span></div>
           <h1 id="mi-article-title">{post.title}</h1>
           <div className="mi-page-hero-bottom">
             <p>{post.excerpt}</p>
