@@ -34,6 +34,22 @@ case "${1:-}" in
 esac
 
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
+# WHICH COMMIT THIS RUN GRADES (2026-11-11). Every path-gated rung below asks
+# `git diff "$IDP_CI_BASE"...HEAD`, and on a shared checkout HEAD is whatever another agent has
+# checked out -- not the commit being pushed. Measured: pushing 8c8043522 (three files, all clean)
+# from ~/Documents/code/idp was refused for `F821 Undefined name RECEIPT_DIR` in
+# infra/macos/tools/otto/otto-background-sweep.py, a file absent from that commit and clean in its
+# committed bytes, dirty only in one working tree. Same command, same minute, only the revision
+# differing: `<base>...HEAD` -> rc=1, 4x F821; `<base>...8c8043522` -> rc=0. CI grades the pushed
+# commit; this must ask the same question or it protects nothing (LAW 38: a check that fails for
+# code you did not write is a stopped pipeline, not a stricter gate).
+#
+# Defined ONCE here rather than repaired at each of the five call sites: the copies would drift,
+# and R7 is exactly that failure. `IDP_CI_HEAD` is set by .githooks/pre-push from the ref it was
+# handed; HEAD remains the fallback so a direct `bin/idp-ci` run behaves as before.
+GRADED_HEAD="${IDP_CI_HEAD:-HEAD}"
+git -C "$IDP" rev-parse --verify -q "${GRADED_HEAD}^{commit}" >/dev/null 2>&1 || GRADED_HEAD=HEAD
+export GRADED_HEAD
 fail=0
 # TOOLS_DIR is where `bin/idp-install-deps` puts every binary it downloads (yamllint, kubeconform,
 # kustomize, helm, flux, sops...). It was NEVER on PATH, so the gate that demands those tools could
@@ -148,7 +164,7 @@ need() { command -v "$1" >/dev/null || { say "FAIL  $1 is not installed -- run b
 # this way since crew#584; this makes the same test available to every other rung.
 touched() {
   [ -n "${IDP_CI_BASE:-}" ] || return 0
-  local changed; changed=$(cd "$IDP" && git diff --name-only "$IDP_CI_BASE...HEAD" 2>/dev/null) || return 0
+  local changed; changed=$(cd "$IDP" && git diff --name-only "$IDP_CI_BASE...$GRADED_HEAD" 2>/dev/null) || return 0
   local p
   for p in "$@"; do printf '%s\n' "$changed" | grep -q "^$p" && return 0; done
   return 1
@@ -579,7 +595,7 @@ fi
 #      missing yamllint is a FAIL, never a skip: a rung that cannot fail is not a rung.
 if command -v yamllint >/dev/null 2>&1; then
   if [ -n "${IDP_CI_BASE:-}" ]; then
-    ylf=$(cd "$IDP" && git diff --name-only --diff-filter=d "$IDP_CI_BASE...HEAD" -- '*.yaml' '*.yml')
+    ylf=$(cd "$IDP" && git diff --name-only --diff-filter=d "$IDP_CI_BASE...$GRADED_HEAD" -- '*.yaml' '*.yml')
   else
     ylf=$(cd "$IDP" && git ls-files -- '*.yaml' '*.yml')
   fi
@@ -731,7 +747,38 @@ fi
 #     In the fast gate it runs first, so an undefined name is red in under a minute.
 if [ "$FAST" = 1 ]; then
   if "$MPY" -m ruff --version >/dev/null 2>&1; then RUFF=("$MPY" -m ruff); else RUFF=(ruff); fi
-  (cd "$IDP" && "${RUFF[@]}" check --quiet .) && say "ok    ruff     pyproject rule set" || { say "FAIL  ruff"; fail=1; }
+  # Grade the COMMIT, not the checkout (2026-11-11). `.` read the working tree, so on a shared
+  # checkout this rung linted whatever another agent had half-written, and refused a push whose own
+  # content was clean. Measured: a push of 4cbd00e59 (4 files, no .py in the diff) was refused for
+  # `F821 Undefined name RECEIPT_DIR` in infra/macos/tools/otto/otto-background-sweep.py -- staged
+  # dirty in one agent's tree at that moment and clean in every committed byte (`ruff check` on
+  # origin/main's copy: no findings). A minute later it was unstaged and the same rung passed.
+  # A gate that depends on who else is typing is not a gate. Extract the graded commit and lint THAT:
+  # it is the same question CI asks, and it costs one worktree-free tar of the tracked tree.
+  _ruff_target="."
+  _ruff_tmp=""
+  _ruff_blind=0
+  if _g=$(git -C "$IDP" rev-parse --verify -q "${GRADED_HEAD}^{commit}" 2>/dev/null); then
+    _ruff_tmp=$(mktemp -d 2>/dev/null) || _ruff_tmp=""
+    if [ -n "$_ruff_tmp" ] && git -C "$IDP" archive "$_g" 2>/dev/null | tar -x -C "$_ruff_tmp" 2>/dev/null; then
+      _ruff_target="$_ruff_tmp"
+    elif [ -n "$_ruff_tmp" ]; then
+      rm -rf "$_ruff_tmp"; _ruff_tmp=""; _ruff_blind=1
+    fi
+  fi
+  # BLIND, not a pass. Lane R1: a gate that cannot judge must refuse. Falling back to the live
+  # checkout when the commit is unreadable is exactly the defect -- it passes or fails on someone
+  # else's half-written file. "Cannot read the commit" is the estate telling the truth.
+  if [ "$_ruff_blind" -eq 1 ]; then
+    say "FAIL  ruff  BLIND: could not extract the graded commit ${_g:-$GRADED_HEAD}"
+    fail=1
+  # pyproject.toml comes from the extracted tree, so the rule set is the graded commit's own.
+  elif (cd "$_ruff_target" && "${RUFF[@]}" check --quiet .); then
+    say "ok    ruff     pyproject rule set (at ${_g:0:12})"
+  else
+    say "FAIL  ruff  at ${_g:0:12}"; fail=1
+  fi
+  # The extracted tree is reused by the ruff-fmt rung below and removed after it, not here.
   # 1d.2: tsc --noEmit on the backstage app package. A build failure in CI for an unused
   # identifier is a 1950-pattern embarrassment; refuse it locally with the same compiler.
   # Locally blind is red. In Actions this job installs no node_modules; portal-app (a required
@@ -752,7 +799,7 @@ if [ "$FAST" = 1 ]; then
   # base...HEAD, and tests/test_prepush_grades_only_what_the_push_changes.py holds the hook to it.
   # A gate that fails for code you did not write is not a stricter gate, it is a stopped pipeline.
   if [ -n "${IDP_CI_BASE:-}" ]; then
-    pyf=$(cd "$IDP" && git diff --name-only --diff-filter=d "$IDP_CI_BASE...HEAD" -- '*.py')
+    pyf=$(cd "$IDP" && git diff --name-only --diff-filter=d "$IDP_CI_BASE...$GRADED_HEAD" -- '*.py')
     pyn=$(printf '%s' "$pyf" | grep -c .)
     if [ "$pyn" = 0 ]; then say "ok    ruff-fmt no Python in the diff against $IDP_CI_BASE"
     else
@@ -763,10 +810,14 @@ if [ "$FAST" = 1 ]; then
       else say "ok    ruff-fmt $pyn file(s) in the diff against $IDP_CI_BASE"; fi
     fi
   else
-    (cd "$IDP" && "${RUFF[@]}" format --check --quiet .) \
-      && say "ok    ruff-fmt whole repo" \
+    # No base means this is a hand run, not a push -- but "no base" is not "no commit": grading
+    # the live checkout still answers a question about whoever else is typing in it. Use the tree
+    # the first rung extracted, falling back to the checkout only if the commit cannot be read.
+    (cd "${_ruff_target:-$IDP}" && "${RUFF[@]}" format --check --quiet .) \
+      && say "ok    ruff-fmt whole repo (at ${_g:0:12})" \
       || { say "FAIL  ruff-fmt  whole repo; fix: ruff format <files>"; fail=1; }
   fi
+  [ -n "$_ruff_tmp" ] && rm -rf "$_ruff_tmp" || true
   # 1d.4: python-strict (estate standard, one copy) on the range base...HEAD, the same rung
   # fast-gate.yml runs in CI. Mirrors .github/workflows/fast-gate.yml lines 41-45 verbatim so a
   # format-dirty or B/S-class Python file can never reach the remote CI round trip. Vendored copy
@@ -790,7 +841,7 @@ if [ "$FAST" = 1 ]; then
   # cannot fail on the machine that runs it is not a check).
   base_local="${IDP_CI_BASE:-$(git merge-base origin/main HEAD 2>/dev/null || git rev-parse HEAD~1)}"
   export IDP_CI_BASE="$base_local"
-  PYTHON_STRICT_RANGE="${base_local}...HEAD" "$IDP/bin/idp-python-strict" \
+  PYTHON_STRICT_RANGE="${base_local}...$GRADED_HEAD" "$IDP/bin/idp-python-strict" \
     && say "ok    py-strict  diff base..HEAD" \
     || { say "FAIL  py-strict  diff base..HEAD; ruff check --select E9,F,B,S --fix; ruff format"; fail=1; }
   # 1d.5: crew#654, founder 2026-09-29 ("no theories without bayesian reasoning and evidence
@@ -1567,7 +1618,7 @@ if command -v kyverno >/dev/null && command -v helm >/dev/null; then
   # kyverno fixture or the cluster wiring, because then every render's verdict can change. A
   # dir with no changed file cannot render differently from main, where it was judged.
   kyv_scope="every dir"
-  if [ -n "${IDP_CI_BASE:-}" ] && changed=$(cd "$IDP" && git diff --name-only "$IDP_CI_BASE...HEAD" 2>/dev/null); then
+  if [ -n "${IDP_CI_BASE:-}" ] && changed=$(cd "$IDP" && git diff --name-only "$IDP_CI_BASE...$GRADED_HEAD" 2>/dev/null); then
     # clusters/oke/flux-system/ is Flux's own controllers (gotk-components.yaml) and the sync
     # wiring. Nothing in it is a postBuild substitution source and no platform render reads it, so
     # a change there cannot alter any render's verdict -- unlike clusters/oke/estate-config.yaml,

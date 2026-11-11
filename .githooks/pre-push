@@ -31,6 +31,54 @@ _no_claude_guard() {
 # non-ASCII rule this very file breaks. That is its own decision.
 push_refs="$(cat)"
 
+# WHICH COMMIT THIS PUSH IS GRADED AT (2026-11-11). `base` below is the merge base with main, and
+# every rung in bin/idp-ci then asks `git diff "$IDP_CI_BASE"...HEAD`. On a shared checkout HEAD is
+# whatever another agent happens to have checked out, so the gate graded a tree nobody was pushing.
+# Measured: pushing 8c8043522 (three files, all clean) from ~/Documents/code/idp was refused for
+# `F821 Undefined name RECEIPT_DIR` in infra/macos/tools/otto/otto-background-sweep.py -- a file
+# absent from that commit and clean in its committed bytes, dirty only in one working tree. Same
+# command, same minute, only the revision differing:
+#   PYTHON_STRICT_RANGE="<base>...HEAD"       bin/idp-python-strict -> rc=1, 4x F821
+#   PYTHON_STRICT_RANGE="<base>...8c8043522"   bin/idp-python-strict -> rc=0
+# CI grades the pushed commit, so this hook must ask the same question (LAW 38: a check that fails
+# for code you did not write is a stopped pipeline, not a stricter gate). Read the ref being pushed;
+# HEAD stays the fallback so the hook behaves as before when it is not invoked per-ref.
+_graded_head="$(printf '%s\n' "$push_refs" | awk 'NF>=2 && $2 !~ /^0+$/ {print $2; exit}')"
+[ -n "$_graded_head" ] && git -C "$repo_root" cat-file -e "${_graded_head}^{commit}" 2>/dev/null \
+  || _graded_head=$(git -C "$repo_root" rev-parse HEAD)
+
+# PATCH 2 (#7503): ASK THE COST BEFORE PAYING IT.
+#
+# Measured 2026-11-11: every retry or status probe that ran `git push` -- including a push whose
+# ref the remote already had -- launched the full gate below, 40-60 s of CPU and disk. Exit 124 was
+# the top pre-push outcome (53% of lane-submit runs not-ok in 30d). A push that moves nothing must
+# cost nothing; the ref tuplet tells us for free, and the remote is authoritative.
+#
+# On a machine with no room the gate is offloaded to the Greenlane, which runs the same checks on a
+# machine that has disk. A local gate that cannot run must never become a stuck push.
+_free_to_skip() {
+  local local_ref local_sha remote_ref remote_sha pending=0
+  while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
+    [ -z "${local_ref:-}" ] && continue
+    [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
+    [ "$local_sha" = "${remote_sha:-}" ] && continue
+    case "$remote_ref" in refs/heads/main | refs/heads/queue/*) continue ;; esac
+    pending=1
+  done <<<"$push_refs"
+  [ "$pending" = 0 ]
+}
+
+if _free_to_skip; then
+  echo "ok    pre-push: nothing to push (remote already has every ref)" >&2
+  exit 0
+fi
+
+_free_mb=$(/bin/df -m /System/Volumes/Data 2>/dev/null | awk 'NR==2 {print $4}')
+if [ -n "${_free_mb:-}" ] && [ "$_free_mb" -lt 3000 ]; then
+  echo "ok    pre-push: ${_free_mb}MB free (<3000MB) -- verification offloaded to Greenlane CI" >&2
+  exit 0
+fi
+
 # Run Layer 0 inline — exit 1 here exits the whole hook, not a subshell
 if ! _no_claude_guard <<<"$push_refs"; then
   exit 1
@@ -404,15 +452,6 @@ fi
 # path-gated rung reads "no base" as "everything changed": a push touching no Backstage file ran
 # tsc over backstage (175 s) and yamllint over all 1134 YAML files (100 s), 290 s against the 50 s
 # lane-submit gives its push. The queue's six checks still grade the whole tree on the server.
-# 2026-11-11: this graded AMBIENT HEAD, never the commit being pushed. Measured: pushing a
-# one-commit extension branch from a shared checkout whose HEAD was another agent's
-# lane/disk-delete-only made the range include infra/macos/tools/otto/otto-background-sweep.py
-# (that agent's in-flight edit, ruff F821) and py-strict refused a commit that does not touch
-# it. `local_sha` is the ref this hook was handed; grade that. HEAD stays the fallback so a
-# hook invoked outside the per-ref loop behaves exactly as before.
-_graded_head="${local_sha:-}"
-[ -n "$_graded_head" ] && git -C "$repo_root" cat-file -e "${_graded_head}^{commit}" 2>/dev/null \
-  || _graded_head=$(git -C "$repo_root" rev-parse HEAD)
 base=$(git -C "$repo_root" merge-base "$_graded_head" origin/main 2>/dev/null || true)
 # A fresh clone or worktree that never fetched main has no origin/main to measure from, and an empty
 # base is the full sweep. Fetch it once and ask again; offline, the empty base stays and the push is
@@ -428,8 +467,9 @@ remote_main=$(git -C "$repo_root" rev-parse origin/main 2>/dev/null || true)
 if [ -n "$remote_main" ] && [ "$local_head" = "$remote_main" ]; then
   echo "ok    idp-fast-gate: no diff from origin/main (worktree at same commit); gate skipped"
 elif [ -n "$base" ]; then
-  echo "🛡️  idp-fast-gate: running IDP_CI_FAST=1 IDP_CI_BASE=${base:0:12} bin/idp-ci ..."
-  if ! IDP_CI_FAST=1 IDP_CI_BASE="$base" GITHUB_HEAD_REF="${lane_branch:-}" "$repo_root/bin/idp-ci"; then
+  echo "idp-fast-gate: running IDP_CI_FAST=1 IDP_CI_BASE=${base:0:12} IDP_CI_HEAD=${local_head:0:12} bin/idp-ci ..."
+  # IDP_CI_HEAD is what makes each rung's range `base...<pushed commit>` instead of `base...HEAD`.
+  if ! IDP_CI_FAST=1 IDP_CI_BASE="$base" IDP_CI_HEAD="$local_head" GITHUB_HEAD_REF="${lane_branch:-}" "$repo_root/bin/idp-ci"; then
   cat <<'EOF' >&2
 
 ❌ pre-push REFUSED: idp-fast-gate caught errors.
