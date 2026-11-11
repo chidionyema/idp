@@ -142,7 +142,7 @@ a green check is not news; do not announce it. A claim of "blocked" carries its 
 that was run (`estate-execute <intent>` or `estate_invoke`), its exit status, and the line it
 printed. A blocker without an intent run behind it is a guess, and is not reported.
 
-### 3b. Instruction, plan, claim and proof are one chain — binding
+### 3b. Instruction, plan, claim and proof are one chain - binding
 
 Every prompt is captured by the machine-owned founder prompt collector. Every unit of work has one
 `INS-*` instruction. Before it can be claimed, its plan must name that instruction id and the
