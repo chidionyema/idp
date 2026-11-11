@@ -70,3 +70,27 @@ test('localhost and unowned Meridian metadata are release blocking, not warnings
   assert.match(result.stderr, /meridian.ai/);
   assert.match(result.stderr, /Meridian Intelligence/);
 }));
+
+test('unsubstantiated portfolio promises fail the production gate', () => withFixture(dir => {
+  const page = join(dir, 'app/page.tsx');
+  writeFileSync(page, readFileSync(page, 'utf8') + '\n// Blabka: More information will be shared');
+  const result = run(dir);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Blabka/);
+}));
+
+test('a same-origin CTA with an external-link affordance is rejected', () => withFixture(dir => {
+  const page = join(dir, 'app/page.tsx');
+  writeFileSync(page, readFileSync(page, 'utf8').replace('Work with us <span aria-hidden="true">→</span>', 'Work with us <span aria-hidden="true">↗</span>'));
+  const result = run(dir);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /same-origin link uses external-link arrow/);
+}));
+
+test('nested information architecture is a production contract', () => withFixture(dir => {
+  const page = join(dir, 'app/page.tsx');
+  writeFileSync(page, readFileSync(page, 'utf8').replace('02 / CONSULTANCY', '01 / CONSULTANCY'));
+  const result = run(dir);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /02 \/ CONSULTANCY/);
+}));
