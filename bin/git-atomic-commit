@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# git-atomic-commit — commit files into a branch WITHOUT touching the working tree or HEAD.
+#
+# WHY THIS EXISTS (#7918, founder 2026-11-11)
+#
+# The shared idp checkout is used by many agents at once. Measured this session: uncommitted work
+# was destroyed TWICE when a peer's branch operation moved HEAD underneath it. A /tmp worktree
+# avoids that, but worktrees cost ~294 MB each and get reaped under disk pressure, which loses the
+# work anyway -- and then agents fall back to the shared tree and the cycle repeats.
+#
+# A commit is a tree object plus a ref. Neither needs a checkout. This builds the tree directly
+# from blobs in the object store using a throwaway index, so:
+#   * HEAD is never moved and the shared working tree is never written
+#   * a peer's checkout/reset cannot discard the work, because the work is never in the tree
+#   * disk cost is a few hundred KB for the index, deleted on exit
+#
+# USAGE
+#   git-atomic-commit <repo_dir> <branch> <msg_file> <repo_path>:<source_file_on_disk> [more...]
+#
+#   bin/git-atomic-commit ~/Documents/code/idp lane/my-fix /tmp/msg.txt \
+#       bin/door:~/work/door.sh \
+#       tests/test_door.py:~/work/test_door.py
+#
+# The source file may live anywhere (a /tmp copy, another worktree). Only the bytes enter the repo.
+set -euo pipefail
+
+if [ "$#" -lt 4 ]; then
+    sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+    exit 2
+fi
+
+REPO_DIR="$1"; BRANCH="$2"; MSG_FILE="$3"; shift 3
+
+if [ ! -e "$REPO_DIR/.git" ]; then
+    echo "git-atomic-commit: $REPO_DIR is not a git checkout" >&2
+    exit 2
+fi
+if [ ! -s "$MSG_FILE" ]; then
+    echo "git-atomic-commit: commit message file $MSG_FILE is missing or empty" >&2
+    exit 2
+fi
+
+export GIT_DIR="$REPO_DIR/.git"
+# A private index file: the shared index is never read or written, so a peer's `git add` or
+# `git reset` cannot race with this, and this cannot stage a peer's files.
+GIT_INDEX_FILE="$(mktemp -t estate-idx-XXXXXX)"
+export GIT_INDEX_FILE
+trap 'rm -f "$GIT_INDEX_FILE"' EXIT
+
+# Parent: the branch tip if it exists, else current HEAD. Never `git checkout`.
+PARENT_SHA="$(git rev-parse --verify "refs/heads/${BRANCH}^{commit}" 2>/dev/null || git rev-parse --verify HEAD)"
+git read-tree "$PARENT_SHA"
+
+for pair in "$@"; do
+    repo_path="${pair%%:*}"
+    src_file="${pair#*:}"
+    if [ "$repo_path" = "$pair" ] || [ -z "$repo_path" ]; then
+        echo "git-atomic-commit: argument '$pair' is not <repo_path>:<source_file>" >&2
+        exit 2
+    fi
+    if [ ! -f "$src_file" ]; then
+        echo "git-atomic-commit: source file '$src_file' does not exist" >&2
+        exit 2
+    fi
+    blob_sha="$(git hash-object -w -- "$src_file")"
+    mode=100644
+    [ -x "$src_file" ] && mode=100755
+    git update-index --add --cacheinfo "${mode},${blob_sha},${repo_path}"
+done
+
+TREE_SHA="$(git write-tree)"
+NEW_SHA="$(git commit-tree "$TREE_SHA" -p "$PARENT_SHA" -F "$MSG_FILE")"
+git update-ref "refs/heads/${BRANCH}" "$NEW_SHA" "$PARENT_SHA" 2>/dev/null \
+    || git update-ref "refs/heads/${BRANCH}" "$NEW_SHA" ""
+
+echo "committed ${NEW_SHA} on ${BRANCH} (working tree and HEAD untouched)"
+echo "$NEW_SHA"
