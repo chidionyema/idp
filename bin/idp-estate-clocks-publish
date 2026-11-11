@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+"""Publish the Chronos clock board to the ref the founder's live surface already reads.
+
+WHY A REF AND NOT AN API (measured 2026-11-08). The founder's live surface is ARGON
+(`~/.estate/argon/.genesis/live-surface`, served on 127.0.0.1:3000, verified 200). ARGON
+already reads idp state by ONE shallow, TOKENLESS git fetch of `refs/greenlane/state`
+(`src/engine/greenlaneFeed.ts`), and its own comment gives the reason: "never a token and
+never through the GitHub REST rate limit (60 requests an hour without one, and the state is
+rewritten every tick)". The board must arrive the same way -- a second transport (an HTTP
+endpoint, a token, a second bus) would be a second channel to keep alive, which AGENTS.md
+section 6 calls a stitch. So Chronos publishes a sibling ref to the one that already works.
+
+WHAT IS PUBLISHED. The board `bin/idp-estate-clocks --json` produces, unchanged, plus the two
+timestamps every reader needs: `tickAt` (when the board was measured) and `publishedAt`. The
+`fetchedAt` that a reader stamps is the reader's own fact and is never written here -- a
+publisher that filled it in would be claiming to know when someone else looked.
+
+THE REFUSAL THAT MATTERS. An unreadable registry is BLIND, and a blind board must never be
+published: it would overwrite the last true board on the founder's surface with one that
+renders as healthy-looking emptiness. `bin/idp-estate-clocks` already exits 2 for a blind
+registry, so this refuses on exit 2 and publishes nothing. Exit 1 (a genuine MISSED_CYCLE) IS
+published -- a missed cadence is a finding the founder must see, not a reason to stay silent.
+
+Usage:
+    bin/idp-estate-clocks-publish                  # measure and publish to origin
+    bin/idp-estate-clocks-publish --dry-run        # print the payload, touch nothing
+    bin/idp-estate-clocks-publish --no-push        # build the commit locally, do not push
+
+Exit: 0 published, 2 BLIND / refused, 3 push failed.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(HERE)
+CLOCKS = os.path.join(HERE, "idp-estate-clocks")
+
+# The ref is a SIBLING of refs/greenlane/state, which src/engine/greenlaneFeed.ts already reads.
+# A new ref rather than a new key inside that ref: greenlane's state.json is written by
+# greenlane/github.py under a compare-and-swap lease owned by the lane, and a second writer into
+# the same file would be exactly the two-owners-one-file defect that stranded lanes b2953/b2954.
+STATE_REF = os.environ.get("ESTATE_CLOCKS_REF", "refs/chronos/state")
+STATE_FILE = "clocks.json"
+STATE_MSG = "chronos clock board"
+
+
+def run(
+    cmd: list[str], *, check: bool = True, stdin: str | None = None
+) -> tuple[int, str]:
+    p = subprocess.run(  # noqa: S603
+        cmd,
+        input=stdin,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+    )
+    if check and p.returncode != 0:
+        raise RuntimeError(
+            f"{' '.join(cmd)}: rc={p.returncode} {p.stderr.strip()[:600]}"
+        )
+    return p.returncode, (p.stdout or "").strip()
+
+
+def measure_registry() -> tuple[int, dict | None, str]:
+    """Run the detector and return (rc, board, raw).
+
+    The detector's exit codes ARE the verdict (AGENTS.md section 9: the exit code is the
+    verdict): 0 delivered, 1 a miss (a real finding, publishable), 2 BLIND (nothing graded).
+    """
+    rc, out = run([sys.executable, CLOCKS, "--json"], check=False)
+    if rc == 2:
+        return 2, None, out
+    if not out:
+        return 2, None, f"BLIND chronos: the detector printed no board (rc={rc})"
+    try:
+        board = json.loads(out)
+    except json.JSONDecodeError as exc:
+        return 2, None, f"BLIND chronos: the detector's board is not JSON: {exc}"
+    return rc, board, out
+
+
+def build_payload(board: dict) -> str:
+    """The board plus the two facts a reader cannot derive: when measured, when written.
+
+    `tickAt` is carried because the board is only as true as the moment it was measured, and a
+    founder looking at it must be able to see that moment -- the same contract greenlaneFeed
+    already honours by travelling `tickAt` with the state.
+    """
+    payload = {
+        "schema": "chronos/1",
+        "tickAt": int(time.time()),
+        "publishedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "board": board,
+    }
+    return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+
+
+def publish(text: str, *, push: bool = True, ref: str = STATE_REF) -> str:
+    """Write the payload to the ref with compare-and-swap, as greenlane writes its own.
+
+    force-with-lease, not a blind force push: two publishers racing must not silently drop one
+    another's board. The lease is captured before the write and the push is refused if origin
+    moved -- a lost publish costs one tick, and the next one re-measures from scratch.
+    """
+    lease = ""
+    rc, _ = run(["git", "rev-parse", "--verify", "-q", ref], check=False)
+    if rc == 0:
+        rc, remote = run(["git", "ls-remote", "--refs", "origin", ref], check=False)
+        if rc == 0 and remote:
+            lease = remote.split()[0]
+
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+        fh.write(text)
+        tmp = fh.name
+    try:
+        blob = run(["git", "hash-object", "-w", tmp])[1]
+    finally:
+        os.unlink(tmp)
+    tree = run(["git", "mktree"], stdin=f"100644 blob {blob}\t{STATE_FILE}\n")[1]
+    commit = run(["git", "commit-tree", tree, "-m", STATE_MSG])[1]
+    run(["git", "update-ref", ref, commit])
+    if not push:
+        return commit
+    run(
+        [
+            "git",
+            "push",
+            "-q",
+            f"--force-with-lease={ref}:{lease}",
+            "origin",
+            f"{commit}:{ref}",
+        ]
+    )
+    return commit
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(
+        description="Publish the Chronos board to the founder's channel."
+    )
+    ap.add_argument(
+        "--dry-run", action="store_true", help="print the payload, touch nothing"
+    )
+    ap.add_argument(
+        "--no-push", action="store_true", help="build the commit, do not push"
+    )
+    ap.add_argument("--ref", default=STATE_REF)
+    args = ap.parse_args(argv)
+
+    rc, board, raw = measure_registry()
+    if board is None:
+        # THE REFUSAL. Nothing was measured, so nothing may be published: an empty board on the
+        # founder's surface reads as "everything is fine" when the truth is "we cannot see".
+        print(f"REFUSED {raw}", file=sys.stderr)
+        print(
+            "REFUSED chronos: the registry could not be graded, so no board was published "
+            "(the last true board on the surface is kept, not replaced by a blind one)",
+            file=sys.stderr,
+        )
+        return 2
+
+    text = build_payload(board)
+    if args.dry_run:
+        sys.stdout.write(text)
+        print(
+            f"# would publish {len(text)} bytes to {args.ref}, verdict rc={rc}",
+            file=sys.stderr,
+        )
+        return 0
+
+    try:
+        commit = publish(text, push=not args.no_push, ref=args.ref)
+    except RuntimeError as exc:
+        print(f"FAILED chronos publish: {exc}", file=sys.stderr)
+        return 3
+
+    obligations = board.get("obligations") or board.get("clocks") or []
+    missed = [o for o in obligations if str(o.get("verdict", "")).startswith("MISS")]
+    print(
+        f"published chronos board to {args.ref} at {commit[:12]}: "
+        f"{len(obligations)} obligation(s), {len(missed)} missed, detector rc={rc}"
+    )
+    if args.no_push:
+        print(f"(local only, not pushed: git push origin {commit}:{args.ref})")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

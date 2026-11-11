@@ -1,0 +1,420 @@
+#!/usr/bin/env python3
+"""idp-estate-clocks -- Chronos: did every declared clock actually DELIVER?
+
+WHY THIS EXISTS. bin/estate-clocks renders the DECLARED cadence: it reads
+scheduler/schedule.yml, the cluster CronJobs and the workflow crons and writes
+docs/scheduling/CLOCKS.md. That table is true and it is not enough. idp#5918
+measured the difference: a */15 cron fired every ~3.3-7.1 h and a */5 every
+~3.2-9.7 h, a 20-70x dilution against the declaration. On 2026-11-08 the same
+read, against origin/main, scheduled runs only, gaps in minutes between
+consecutive runs:
+
+    estate-homes-drill  declares 17,47 * * * *  (30 min)  observed 360 207 246 381 411
+    ping                declares */5             (5 min)  observed 190 210 257 392 400
+    estate-state        declares */15           (15 min)  observed 196 209 256 400 404
+    conscience          declares 23 * * * *     (60 min)   last ran 2026-09-23T00:46:25Z
+
+`conscience` is a ghost clock. It is scheduled, it never failed in a way anyone
+escalated, and it has been dead for about six weeks. Nothing in the estate looks
+for that shape: the workflow is green (it did not run, so it did not fail), the
+declared table is accurate (it says hourly, correctly), and no alarm depends on
+it. This script is the missing reader.
+
+WHAT IT IS NOT. It never schedules, retries, dispatches or fixes anything. The
+scheduler and the executor keep that monopoly (AGENTS.md section 6: one of each
+layer). Chronos answers one question per obligation -- "did it actually run,
+inside its own tolerance?" -- and reports. A second scheduler would be the very
+stitch section 6 says to delete.
+
+WHERE THE TOLERANCE COMES FROM. Not from the cron expression. Setting tolerance
+to the declaration would redden on day one and the gate would be ignored;
+setting it to "anything" would be the gate that cannot fail (AGENTS.md R1). The
+tolerance is per-obligation in legions/estate-clocks.json, set above MEASURED
+reality and tightenable as the time base improves. The estate already writes
+that field -- health.max_heartbeat_age_minutes in legions/*.json, validated by
+legion/manifest.py -- so this script is the consumer of an existing contract,
+not the author of a new one.
+
+VERDICTS (the estate's own lane vocabulary, bin/idp-estate-homes):
+
+    MEASURED_OK     a scheduled run exists and its age is inside the tolerance
+    MISSED_CYCLE    a scheduled run exists and its age is outside the tolerance,
+                    or no scheduled run has ever been recorded
+    UNKNOWN         the runs exist but carry no usable timestamp -- never treated
+                    as OK (AGENTS.md: never treat UNKNOWN as healthy)
+    NOT_HERE        the workflow named by the obligation is not in the tree
+
+EXIT CODES follow scheduler/schedule.yml's `ok_exit` convention, so the estate's
+breaker does not open on a legitimate finding:
+
+    0  every active obligation delivered
+    1  at least one obligation MISSED_CYCLE (a finding, not a crash)
+    2  BLIND: the clock state could not be read at all (no gh, no repo, no
+       timeout) -- refused, because a gate that cannot see must not pass (R1)
+
+    bin/idp-estate-clocks                     grade every obligation, human board
+    bin/idp-estate-clocks --json              the same board, as data
+    bin/idp-estate-clocks --obligation ping   grade one
+    bin/idp-estate-clocks --gate              exit 1 on MISSED_CYCLE, 2 on BLIND
+    bin/idp-estate-clocks --now 2026-11-08T12:00:00Z   fix the clock (for tests)
+
+Deterministic and model-free: it reads what GitHub recorded and compares
+timestamps. No secrets, no writes, no narration.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+IDP = Path(__file__).resolve().parent.parent
+DEFAULT_REGISTRY = IDP / "legions" / "estate-clocks.json"
+DEFAULT_REPO = "chidionyema/idp"
+
+OK, MISSED, UNKNOWN, NOT_HERE = "MEASURED_OK", "MISSED_CYCLE", "UNKNOWN", "NOT_HERE"
+
+# How many recent runs to ask for.
+#
+# MEASURED CORRECTION, 2026-11-08, and it was this script's own board that caught
+# it. The first version asked for the newest 30 runs of ANY event and then
+# filtered for `schedule` locally. That is wrong whenever a workflow is busy on
+# other triggers: greenlane.yml had one scheduled run in its last 100 runs and
+# 56 workflow_run runs ahead of it, so the newest 30 held no scheduled run at
+# all and the board reported "no scheduled run has ever been recorded" about a
+# clock that had fired 40 minutes earlier. A false MISSED is worse than no
+# board: it teaches the estate to ignore the gate.
+#
+# The list endpoint accepts an `event` filter, so the filter belongs in the
+# query, not after it. Any page of scheduled-only runs is then entirely
+# relevant, and the count below is a page of the evidence rather than a race
+# against unrelated traffic.
+RUNS_PER_PAGE = 100
+
+
+def _utcnow() -> dt.datetime:
+    return dt.datetime.now(dt.timezone.utc)
+
+
+def _parse_iso(text: str) -> dt.datetime | None:
+    """Parse a GitHub timestamp. Returns None rather than guessing when the
+    value is missing or malformed -- an unparseable time is UNKNOWN, never now."""
+    if not text or not isinstance(text, str):
+        return None
+    try:
+        return dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _gh(args: list[str], timeout: int = 45) -> str:
+    """One gh call, returned as stdout. Raises RuntimeError so the caller can
+    turn it into BLIND rather than into an empty list that reads as 'no runs'."""
+    try:
+        proc = subprocess.run(
+            ["gh"] + args,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"gh not installed: {exc}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"gh timed out after {timeout}s") from exc
+    if proc.returncode != 0:
+        raise RuntimeError(f"gh {' '.join(args)}: {(proc.stderr or proc.stdout).strip()[:200]}")
+    return proc.stdout
+
+
+def _scheduled_runs(repo: str, workflow: str) -> list[dict]:
+    """Every scheduled run GitHub still remembers for one workflow, newest
+    first. One bulk call, never one per obligation per day -- the API budget is
+    shared with every other estate workflow.
+
+    Overridden by --runs-json in main(); see the note there on why the proof
+    must not depend on live history."""""
+    # event=schedule is applied BY the API, not after it: see RUNS_PER_PAGE. Only
+    # `schedule` runs measure cadence at all -- a workflow_dispatch or a push run
+    # proves the code works, not that the clock fires, and conflating them is how
+    # a dead cron hides behind a busy human.
+    raw = _gh(
+        [
+            "api",
+            f"repos/{repo}/actions/workflows/{workflow}/runs"
+            f"?per_page={RUNS_PER_PAGE}&event=schedule",
+            "--jq",
+            "[.workflow_runs[] | {event: .event, created: .created_at, "
+            "conclusion: .conclusion, url: .html_url, status: .status}]",
+        ]
+    )
+    try:
+        runs = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"{workflow}: unparseable runs payload: {exc}") from exc
+    if not isinstance(runs, list):
+        raise RuntimeError(f"{workflow}: runs payload was not a list")
+    # Defence in depth: the API filter is trusted, but a payload that ignored it
+    # must not silently inflate the gap list with human-triggered runs.
+    return [r for r in runs if r.get("event") == "schedule"]
+
+
+def grade(obligation: dict, repo: str, now: dt.datetime, runs_for=None) -> dict:
+    """Grade one obligation. Pure with respect to `now` and to `runs_for`, so the
+    test can pin the clock AND pin the history and the verdict is reproducible
+    without a network. `runs_for(workflow)` returns the scheduled runs; it is
+    injected so the proof is a test of the JUDGEMENT and not of today's API."""
+    oid = obligation.get("id", "?")
+    workflow = obligation.get("workflow", "")
+    tolerance = obligation.get("max_age_minutes")
+    runs_for = runs_for or (lambda wf: _scheduled_runs(repo, wf))
+
+    row: dict = {
+        "id": oid,
+        "workflow": workflow,
+        "declares": obligation.get("declares", ""),
+        "declares_human": obligation.get("declares_human", ""),
+        "max_age_minutes": tolerance,
+        "owner": obligation.get("owner", ""),
+        "evidence": obligation.get("evidence", ""),
+        "state": obligation.get("state", "active"),
+    }
+
+    if obligation.get("state") == "retired":
+        row.update(
+            verdict=OK,
+            age_minutes=None,
+            note="retired: silent on purpose, not graded",
+        )
+        return row
+
+    if obligation.get("kind") != "github-workflow":
+        row.update(verdict=UNKNOWN, age_minutes=None, note=f"unsupported kind {obligation.get('kind')!r}")
+        return row
+
+    if not isinstance(tolerance, (int, float)) or isinstance(tolerance, bool) or tolerance <= 0:
+        row.update(verdict=UNKNOWN, age_minutes=None, note="no positive max_age_minutes: nothing to grade against")
+        return row
+
+    if not (IDP / ".github" / "workflows" / workflow).exists():
+        row.update(verdict=NOT_HERE, age_minutes=None, note=f"{workflow} is not in the tree")
+        return row
+
+    try:
+        runs = runs_for(workflow)
+    except RuntimeError as exc:
+        row.update(verdict=UNKNOWN, age_minutes=None, note=str(exc))
+        return row
+
+    if not runs:
+        row.update(
+            verdict=MISSED,
+            age_minutes=None,
+            note="no scheduled run has ever been recorded: the clock is declared and has never fired",
+        )
+        return row
+
+    stamps = [(_parse_iso(r.get("created")), r) for r in runs]
+    stamps = [(t, r) for t, r in stamps if t is not None]
+    if not stamps:
+        row.update(
+            verdict=UNKNOWN,
+            age_minutes=None,
+            note="scheduled runs exist but none carried a usable timestamp",
+        )
+        return row
+
+    newest_at, newest = max(stamps, key=lambda pair: pair[0])
+    age = (now - newest_at).total_seconds() / 60.0
+
+    # The observed gap, for the board: the one number that shows declaration and
+    # delivery are different facts.
+    ordered = sorted(t for t, _ in stamps)
+    gaps = [
+        round((later - earlier).total_seconds() / 60.0)
+        for earlier, later in zip(ordered, ordered[1:])
+    ]
+
+    row.update(
+        age_minutes=round(age, 1),
+        last_scheduled=newest_at.isoformat().replace("+00:00", "Z"),
+        last_conclusion=newest.get("conclusion"),
+        last_url=newest.get("url"),
+        observed_gaps_minutes=gaps[:5],
+        runs_seen=len(runs),
+    )
+
+    if age <= tolerance:
+        row.update(verdict=OK, note=f"delivered {row['age_minutes']} min ago, tolerance {tolerance}")
+    else:
+        row.update(
+            verdict=MISSED,
+            note=(
+                f"last scheduled run was {row['age_minutes']} min ago, "
+                f"tolerance {tolerance}; declared {obligation.get('declares_human') or obligation.get('declares', '?')}"
+            ),
+        )
+    return row
+
+
+class RegistryBlind(Exception):
+    """The registry could not be read, so no obligation could be measured.
+
+    This is BLIND, not a finding. Measured 2026-11-08: a missing registry file
+    and a malformed one both exited 1, which is the code this gate reserves for
+    a clock that genuinely missed its cadence -- so an operator reading the exit
+    status could not tell "the estate stopped delivering" from "I could not
+    look", and a caller (a workflow, the Mac scheduler) treating 1 as a warning
+    would see the same number either way. AGENTS.md R1: a gate that cannot judge
+    must not report a judgement. main() turns this into exit 2.
+    """
+
+
+def load_registry(path: Path) -> dict:
+    """Load through the estate's own legion loader, so a malformed registry fails
+    the same way every other legion manifest fails -- one schema, one loader."""
+    sys.path.insert(0, str(IDP))
+    from legion.manifest import load_manifest, validate  # noqa: PLC0415
+
+    if not path.is_file():
+        raise RegistryBlind(f"{path}: the registry does not exist, so nothing can be graded")
+    try:
+        manifest = load_manifest(path)
+    except Exception as exc:  # noqa: BLE001 - any parse failure is BLIND, never a pass
+        raise RegistryBlind(f"{path}: the registry cannot be parsed: {exc}") from exc
+    errors = validate(manifest)
+    if errors:
+        raise RegistryBlind(f"{path}: invalid legion manifest: {'; '.join(errors)}")
+    obligations = manifest.get("obligations")
+    if not isinstance(obligations, list) or not obligations:
+        raise RegistryBlind(f"{path}: obligations must be a non-empty list")
+    return manifest
+
+
+def board_row(row: dict) -> str:
+    verdict = row["verdict"]
+    mark = {OK: "ok  ", MISSED: "MISS", UNKNOWN: "UNKN", NOT_HERE: "GONE"}.get(verdict, "????")
+    age = row.get("age_minutes")
+    age_s = f"{age:>8.1f}m" if isinstance(age, (int, float)) else "       - "
+    gaps = row.get("observed_gaps_minutes") or []
+    gap_s = ",".join(str(g) for g in gaps[:4]) if gaps else ""
+    return f"{mark}  {row['id']:<20} {age_s}  tol={row.get('max_age_minutes')}  declared={row.get('declares_human') or row.get('declares')}  gaps=[{gap_s}]"
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description="Grade delivered cadence, not declared cadence.")
+    ap.add_argument("--registry", default=str(DEFAULT_REGISTRY))
+    ap.add_argument("--repo", default=os.getenv("ESTATE_CLOCKS_REPO", DEFAULT_REPO))
+    ap.add_argument("--obligation", default="", help="grade one obligation id")
+    ap.add_argument("--json", action="store_true", help="the board as data")
+    ap.add_argument("--gate", action="store_true", help="exit 1 on a miss, 2 when blind")
+    ap.add_argument("--now", default="", help="pin the clock, for tests")
+    ap.add_argument(
+        "--runs-json",
+        default="",
+        help="read scheduled runs from a fixture file instead of GitHub (for tests)",
+    )
+    args = ap.parse_args(argv[1:])
+
+    now = _parse_iso(args.now) if args.now else _utcnow()
+    if now is None:
+        print(f"--now: not a timestamp: {args.now!r}", file=sys.stderr)
+        return 2
+
+    # WHY THE HISTORY IS INJECTABLE. The first draft of the proof pinned --now
+    # and read LIVE GitHub history, so it asserted 'inside tolerance' against a
+    # clock whose real last run was 595 minutes old: the proof failed for a
+    # reason that had nothing to do with the detector and everything to do with
+    # the weather on GitHub. A falsifier that depends on the world it is testing
+    # is not a falsifier. --runs-json makes the judgement the thing under test:
+    # same runs, two different `now`, opposite verdicts, no network at all.
+    runs_for = None
+    if args.runs_json:
+        fixture = json.loads(Path(args.runs_json).read_text(encoding="utf-8"))
+        if not isinstance(fixture, dict):
+            print("--runs-json: expected an object of workflow -> [runs]", file=sys.stderr)
+            return 2
+
+        def runs_for(wf: str, _f=fixture) -> list[dict]:  # noqa: F811
+            # The event filter is applied HERE too, not only in the API query.
+            # The first version trusted the fixture to hold scheduled runs only,
+            # and case 7 of the proof then showed a clock kept alive purely by
+            # workflow_dispatch/push grading as delivered: the injection point
+            # had quietly disabled the one filter the detector exists for. A
+            # fixture is untrusted input like any other.
+            return [r for r in _f.get(wf, []) if isinstance(r, dict) and r.get("event") == "schedule"]
+
+    try:
+        manifest = load_registry(Path(args.registry))
+    except RegistryBlind as blind_registry:
+        # BLIND exits 2 on every path, including this one: the gate could not
+        # look, so it must not report that the estate is well OR unwell.
+        print(f"BLIND chronos: {blind_registry}", file=sys.stderr)
+        return 2
+    wanted = [o for o in manifest["obligations"] if not args.obligation or o.get("id") == args.obligation]
+    if args.obligation and not wanted:
+        print(f"--obligation: no such obligation {args.obligation!r}", file=sys.stderr)
+        return 2
+
+    rows = [grade(o, args.repo, now, runs_for) for o in wanted]
+
+    missed = [r for r in rows if r["verdict"] == MISSED]
+    blind = [r for r in rows if r["verdict"] == UNKNOWN]
+    # NOT_HERE is a finding of the same rank as MISSED, not a neutral note. A
+    # clock the estate declares and that is no longer in the tree has stopped
+    # being measured by anything -- the workflow was renamed, deleted or moved,
+    # and the obligation now describes something that does not exist. The first
+    # version printed GONE and still exited 0; bin/idp-estate-clocks-proof
+    # caught it. A gate that reports a finding and passes is the R1 defect in a
+    # new coat.
+    gone = [r for r in rows if r["verdict"] == NOT_HERE]
+    payload = {
+        "legion": manifest.get("name"),
+        "repo": args.repo,
+        "observed_at": now.isoformat().replace("+00:00", "Z"),
+        "obligations": rows,
+        "summary": {
+            "graded": len(rows),
+            "ok": sum(1 for r in rows if r["verdict"] == OK),
+            "missed": len(missed),
+            "unknown": len(blind),
+            "not_here": sum(1 for r in rows if r["verdict"] == NOT_HERE),
+        },
+    }
+
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=False))
+    else:
+        print(f"chronos: delivered cadence of {len(rows)} declared clock(s) in {args.repo}")
+        print(f"observed at {payload['observed_at']}")
+        for row in rows:
+            print("  " + board_row(row))
+        for row in missed:
+            print(f"  MISS {row['id']}: {row.get('note')}")
+            if row.get("last_url"):
+                print(f"       last scheduled run {row['last_url']}")
+        for row in blind:
+            print(f"  UNKN {row['id']}: {row.get('note')}")
+        for row in gone:
+            print(f"  GONE {row['id']}: {row.get('note')}")
+        s = payload["summary"]
+        print(
+            f"\n{s['ok']} ok, {s['missed']} missed, {s['unknown']} unknown, "
+            f"{s['not_here']} not-here of {s['graded']}"
+        )
+
+    if not args.gate:
+        return 0
+    # BLIND outranks a finding: if any obligation could not be measured, the
+    # gate cannot claim the estate is well (AGENTS.md R1, a gate that cannot
+    # judge must not pass). MISSED and NOT_HERE are findings, not crashes -- 1.
+    if blind:
+        return 2
+    return 1 if (missed or gone) else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
