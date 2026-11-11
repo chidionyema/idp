@@ -85,7 +85,7 @@ async function inspect(page, route, width) {
         if (!el?.textContent?.includes(expected)) failures.push("section numbering drift: " + expected);
       }
       const luminance = rgb => {
-        const v = rgb.match(/\\d+(?:\\.\\d+)?/g)?.slice(0, 3).map(Number);
+        const v = rgb.match(/\d+(?:\.\d+)?/g)?.slice(0, 3).map(Number);
         if (!v || v.length !== 3) return 0;
         const c = v.map(x => { const n=x/255; return n<=.04045 ? n/12.92 : ((n+.055)/1.055)**2.4; });
         return .2126*c[0]+.7152*c[1]+.0722*c[2];
