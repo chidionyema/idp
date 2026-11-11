@@ -38,8 +38,23 @@ jobs:
             "nvidia/nemotron-3.5-lightning:free",
             "nvidia/nemotron-3.5-super-vl:free",
           ];
-          const selected = wanted.find(x=>free.includes(x)) || free[0];
-          if (!selected) throw new Error("No available anonymous free model in catalog");
+          const candidates = [...new Set([...wanted.filter(x=>free.includes(x)),...free])].slice(0,7);
+          let selected = null;
+          for (const id of candidates) {
+            const r = await fetch("https://ai-gateway.kilo.ai/api/v1/chat/completions",{
+              method:"POST",
+              headers:{"Content-Type":"application/json"},
+              body:JSON.stringify({model:id,messages:[{role:"user",content:"Respond with the single word READY."}],max_tokens:1536,temperature:0}),
+            });
+            let j = null;
+            try { j = await r.json(); } catch {}
+            const choice = j?.choices?.[0] || {};
+            const content = choice.message?.content;
+            console.log(JSON.stringify({model:id,http:r.status,outputChars:typeof content==="string"?content.length:0,
+              finish:choice.finish_reason || null,tokens:j?.usage?.completion_tokens || null}));
+            if (r.ok && typeof content==="string" && content.trim()) { selected=id; break; }
+          }
+          if (!selected) throw new Error("No listed public-free model returned usable text");
           appendFileSync(process.env.GITHUB_ENV,"HELM_MODEL="+selected+"\n");
           console.log("Selected model:",selected);
           NODE
