@@ -412,3 +412,15 @@
 
 /* Mobile navigation is a touch control, not an ornamental micro-label. */
 @media(max-width:850px){.mi-menu-toggle{font-size:13px;letter-spacing:.035em}}
+
+/* 320px customer journey: the ventures grid must never force a headline,
+   description or action beyond its own column. Large editorial scale returns
+   automatically at tablet and desktop widths. */
+.mi-portfolio-row > *{min-width:0}
+@media(max-width:620px){
+  .mi-portfolio-row{grid-template-columns:minmax(0,1fr)}
+  .mi-portfolio-row > div:nth-child(2){min-width:0}
+  .mi-portfolio-row h2{font-size:clamp(33px,9.8vw,46px);letter-spacing:-.07em;max-width:100%;overflow-wrap:anywhere}
+  .mi-portfolio-row p{overflow-wrap:break-word}
+  .mi-portfolio-row>a{white-space:normal;overflow-wrap:anywhere;justify-self:start}
+}
