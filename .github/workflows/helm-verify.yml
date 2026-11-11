@@ -1,0 +1,29 @@
+name: helm-verify
+on:
+  push:
+    branches: [research/helm-*]
+    paths:
+      - experiments/helm/**
+      - .github/workflows/helm-verify.yml
+  workflow_dispatch:
+concurrency:
+  group: helm-verify-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate research engine and agent adapter
+        run: node --test experiments/helm/helm.test.mjs experiments/helm/functional-bench.test.mjs experiments/helm/agent-adapter.test.mjs
+      - name: Compile and verify portable context seal
+        run: node experiments/helm/cli.mjs compile
+      - name: Pull sandbox image for independent functional graders
+        run: docker pull python:3.12-alpine
+      - name: Verify every oracle passes reference and rejects empty patch
+        run: node experiments/helm/functional-bench.mjs test
