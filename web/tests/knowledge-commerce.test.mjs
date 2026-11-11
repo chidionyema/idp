@@ -41,3 +41,11 @@ test('knowledge-commerce routes are discoverable and canonical while legal entit
   assert.ok(!src('app/fieldbooks/page.tsx').includes('Ltd.'), 'do not assert an unregistered company');
   assert.ok(!src('app/fieldbooks/page.tsx').includes('Registered number'), 'do not invent corporate identity');
 });
+
+test('premium knowledge headings must remain legible against dark background', () => {
+  const css=src('app/fieldbooks/fieldbooks.css');
+  assert.match(css, /\\.mi-chapter-hero h1\\{[^}]*color:#fff\\}/,
+    'chapter heading lost its explicit light foreground');
+  assert.match(css, /\\.mi-knowledge-hero h1\\{[^}]*color:#fff\\}/,
+    'collection heading lost its explicit light foreground');
+});
