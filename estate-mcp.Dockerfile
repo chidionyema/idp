@@ -38,7 +38,7 @@ ARG TARGETARCH
 # one kubectl installer idiom in this repository rather than two.
 RUN pip install --no-cache-dir "datasette==1.0a38" "datasette-mcp==0.1a0" "mcp==2.2.0" "pyyaml==6.0.3" \
  && apt-get update \
- && apt-get install -y --no-install-recommends curl \
+ && apt-get install -y --no-install-recommends curl ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && kubectl_version="$(curl -fsSL https://dl.k8s.io/release/stable.txt)" \
  && curl -fsSLo /usr/local/bin/kubectl \

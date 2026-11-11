@@ -25,7 +25,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -ldflags='-w -s' -o /
 FROM docker.io/library/alpine:3.21 AS spire
 ARG TARGETARCH
 ARG SPIRE_VERSION=1.15.3
-RUN apk add --no-cache curl && \
+RUN apk add --no-cache curl ca-certificates && \
     curl -fsSL "https://github.com/spiffe/spire/releases/download/v${SPIRE_VERSION}/spire-${SPIRE_VERSION}-linux-${TARGETARCH}-musl.tar.gz" -o /tmp/spire.tar.gz && \
     tar xzf /tmp/spire.tar.gz -C /tmp && \
     mv /tmp/spire-${SPIRE_VERSION}/bin/spire-agent /usr/local/bin/spire-agent && \
