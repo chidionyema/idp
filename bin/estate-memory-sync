@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+"""Replay local-primary memory facts to the Postgres replica when it returns."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+candidates = [
+    ROOT / "platform" / "estate" / "memory",
+    Path.home() / ".estate/memory/platform/estate/memory",
+    Path.home() / ".estate/runtime/idp/platform/estate/memory",
+]
+package = next((path for path in candidates if (path / "door.py").is_file()), None)
+if package is None:
+    print("BLIND memory-sync: memory package not installed")
+    raise SystemExit(2)
+sys.path.insert(0, str(package))
+
+import door  # noqa: E402
+import local  # noqa: E402
+
+
+def main() -> int:
+    secret = door.key()
+    if not secret:
+        print("BLIND memory-sync: MCP gateway key is unavailable")
+        return 2
+    pending = len(local.pending())
+    if pending == 0:
+        print("ok memory-sync: no pending local-primary facts")
+        return 0
+    try:
+        synced = door.sync_pending(secret, timeout=20)
+    except Exception as exc:
+        print(f"BLIND memory-sync: replica unavailable ({type(exc).__name__}: {exc})")
+        return 2
+    remaining = len(local.pending())
+    print(
+        f"ok memory-sync: pending={pending} synced={synced} remaining={remaining}"
+    )
+    return 0 if remaining == 0 else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

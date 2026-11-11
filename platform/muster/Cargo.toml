@@ -1,0 +1,9 @@
+[package]
+name = "muster"
+version = "0.1.0"
+edition = "2021"
+description = "LEGION formation engine core: receipt-gated execution, fractal K1 Chain kernel (design v0.6)"
+license = "proprietary"
+
+[dependencies]
+# zero dependencies by design: std only

@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://estate.mumchimp.com/schemas/estate.stack-intent.v1.schema.json",
+  "title": "Estate stack intent v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "intent_id",
+    "claim",
+    "idempotency_key",
+    "mode",
+    "scope",
+    "resolves",
+    "budget_usd",
+    "targets",
+    "approval",
+    "intent_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "estate.stack-intent.v1" },
+    "intent_id": { "type": "string", "minLength": 3, "maxLength": 128 },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo", "issue", "agent", "fencing_token"],
+      "properties": {
+        "repo": { "type": "string", "pattern": "^[^/]+/[^/]+$" },
+        "issue": { "type": "integer", "minimum": 1 },
+        "agent": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "fencing_token": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]+$"
+    },
+    "mode": { "enum": ["verify", "apply"] },
+    "scope": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["stack", "router", "dsh"] }
+    },
+    "resolves": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "budget_usd": { "type": "number", "minimum": 0, "maximum": 150 },
+    "targets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "substrate",
+        "router_url",
+        "router_models_url",
+        "dsh_health_url",
+        "opentofu_targets"
+      ],
+      "properties": {
+        "substrate": { "type": "string", "minLength": 1 },
+        "router_url": { "type": "string", "pattern": "^https://" },
+        "router_models_url": { "type": "string", "pattern": "^https://" },
+        "dsh_health_url": { "type": "string", "pattern": "^https://" },
+        "opentofu_targets": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "required": ["scheme", "signature"],
+      "properties": {
+        "scheme": { "const": "ed25519-founder" },
+        "signature": { "type": "string" }
+      }
+    },
+    "intent_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

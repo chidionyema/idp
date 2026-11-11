@@ -1,0 +1,29 @@
+id = "gemini"
+dialect = "openai"
+base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+request_path = "/chat/completions"
+api_key_file = "/run/secrets/pennyd/gemini/GEMINI_API_KEY"
+
+[auth]
+kind = "bearer"
+key_env = "GEMINI_API_KEY"
+
+[[models]]
+id = "gemini-3.5-flash"
+class = "paid"
+price_in_per_mtok = 1.5
+price_out_per_mtok = 9.0
+context_window = 1048576
+min_output_tokens = 256
+aliases = ["gemini", "vision", "gemini-3.5-flash", "claude-sonnet-tertiary"]
+fallbacks = ["minimax/MiniMax-M3.1-Flash"]
+
+[[models]]
+id = "gemini-2.5-flash"
+class = "paid"
+price_in_per_mtok = 0.3
+price_out_per_mtok = 2.5
+context_window = 1048576
+min_output_tokens = 256
+aliases = ["gemini-2.5-flash", "claude-haiku-secondary"]
+fallbacks = ["gemini/gemini-3.5-flash"]

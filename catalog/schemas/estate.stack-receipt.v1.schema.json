@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://estate.mumchimp.com/schemas/estate.stack-receipt.v1.schema.json",
+  "title": "Estate signed stack receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "receipt_id",
+    "controller",
+    "intent",
+    "mode",
+    "lease",
+    "stages",
+    "verification",
+    "generated_at",
+    "yield",
+    "payload_sha256",
+    "signature"
+  ],
+  "properties": {
+    "schema": { "const": "estate.stack-receipt.v1" },
+    "receipt_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "controller": {
+      "type": "object",
+      "required": ["version", "contract_schema", "contract_sha256"],
+      "properties": {
+        "version": { "type": "string" },
+        "contract_schema": { "const": "estate.stack-controller-contract.v1" },
+        "contract_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "intent": {
+      "type": "object",
+      "required": [
+        "path",
+        "id",
+        "sha256",
+        "claim",
+        "idempotency_key",
+        "resolves"
+      ]
+    },
+    "mode": { "enum": ["verify", "apply"] },
+    "lease": { "type": "object" },
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "stage",
+          "command",
+          "exit",
+          "line",
+          "sha256",
+          "measured",
+          "verdict"
+        ],
+        "properties": {
+          "stage": { "type": "string" },
+          "command": { "type": "string" },
+          "exit": { "type": "integer" },
+          "line": { "type": "string" },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "measured": { "type": "boolean" },
+          "verdict": { "enum": ["MEASURED_OK", "FAILED", "BLIND"] }
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "required": ["doors"],
+      "properties": {
+        "doors": {
+          "type": "object",
+          "required": ["measured_ok", "total", "required"],
+          "properties": {
+            "measured_ok": { "type": "integer", "minimum": 0 },
+            "total": { "type": "integer", "minimum": 0 },
+            "required": { "const": 14 }
+          }
+        }
+      }
+    },
+    "generated_at": { "type": "string" },
+    "yield": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict", "reason"],
+      "properties": {
+        "verdict": { "enum": ["OPEN", "CLOSED"] },
+        "reason": { "type": "string" }
+      }
+    },
+    "payload_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "signature": {
+      "type": "object",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "required": ["algorithm", "public_key", "value"],
+          "properties": {
+            "algorithm": { "const": "ed25519" },
+            "public_key": { "type": "string" },
+            "value": { "type": "string" }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "required": ["algorithm", "audience", "issuer", "token"],
+          "properties": {
+            "algorithm": { "const": "github-oidc" },
+            "audience": { "type": "string" },
+            "issuer": { "const": "https://token.actions.githubusercontent.com" },
+            "token": { "type": "string" }
+          }
+        }
+      ]
+    }
+  }
+}

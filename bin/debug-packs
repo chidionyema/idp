@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+"""bin/debug-packs -- ask the estate "has this been seen before?" before deriving it again.
+
+Founder instruction, 2026-11-10: "all edge cases all known and reached failure modes must be
+addressed and used as debugging packs for any future issues." An index nobody consults at the
+moment of failure is a document; this door is what makes it a debugging pack.
+
+Usage
+  bin/debug-packs                 the index, one line per pack
+  bin/debug-packs <words...>      search symptom, title, cause, remedy, law (every word must match)
+  bin/debug-packs --id DBG-004    one pack in full
+  bin/debug-packs --json <words>  machine-readable, for a hook to consume
+  bin/debug-packs --check         exit 2 if a pack names a falsifier that does not exist
+
+Exit codes follow the estate's door convention:
+  0  matched (or the index listed/checked clean)
+  3  nothing matched -- this defect is NEW; add a pack in the same change
+  2  BLIND: the index could not be read. Never report "no match" when you could not look.
+
+The 3 is deliberate: "no pack matched" means nothing is RECORDED, never that nothing is known.
+"""
+
+import json
+import sys
+from pathlib import Path
+
+EXIT_OK, EXIT_BLIND, EXIT_NEW = 0, 2, 3
+FIELDS = (
+    "id",
+    "title",
+    "symptom",
+    "cause",
+    "remedy",
+    "status",
+    "law",
+    "falsifier",
+    "external_ref",
+)
+
+
+def blind(msg: str) -> None:
+    """Exit 2, not 1. sys.exit("text") exits 1 -- a code the gate reads as a generic failure, not
+    as the estate's declared BLIND. This was measured: the outside-a-checkout test caught the door
+    answering 1 where its own docstring promised 2, which is exactly the shape of a door whose
+    contract and behaviour disagree."""
+    sys.exit_msg = (
+        msg  # kept for a caller that imports main(); the exit code is the contract
+    )
+    print(msg, file=sys.stderr)
+    sys.exit(EXIT_BLIND)
+
+
+def idp_root() -> Path:
+    """The checkout, resolved by probing -- a wrong root must name itself, not look like an empty
+    index. This is DBG-003 applied to a new door."""
+    root = Path(__file__).resolve().parent.parent
+    for probe in (
+        root / "docs" / "debugging-packs.json",
+        root / "bin" / "idp-edge-cutover",
+    ):
+        if not probe.exists():
+            blind(
+                f"BLIND  this script is not inside an idp checkout (it looked for {probe}). "
+                "Nothing was read."
+            )
+    return root
+
+
+def load():
+    path = idp_root() / "docs" / "debugging-packs.json"
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        blind(
+            f"BLIND  cannot read {path}: {exc}. The index is the memory; do not report "
+            "'nothing matched' when the store could not be opened."
+        )
+    packs = data.get("packs")
+    if not isinstance(packs, list) or not packs:
+        blind(
+            f"BLIND  {path} holds no packs list. An empty index is not an empty history."
+        )
+    return packs
+
+
+def search(packs, words):
+    """Every word must appear somewhere in the pack: AND, not OR. An OR search over prose matches
+    everything and teaches nothing."""
+    hits = []
+    for p in packs:
+        blob = " ".join(str(p.get(f, "")) for f in FIELDS).lower()
+        if all(w.lower() in blob for w in words):
+            hits.append(p)
+    return hits
+
+
+def show(p):
+    print(f"{p['id']}  [{p['status']}]  {p['title']}")
+    for field in ("symptom", "cause", "falsifier", "remedy", "law", "external_ref"):
+        if p.get(field):
+            print(f"    {field:<11} {p[field]}")
+    print()
+
+
+def main(argv):
+    packs = load()
+    if not argv:
+        for p in packs:
+            print(f"{p['id']}  [{p['status']:<9}] {p['title']}")
+        print(
+            f"\n{len(packs)} packs. Ask: bin/debug-packs <symptom words>, or --id DBG-004."
+        )
+        return EXIT_OK
+
+    if argv[0] == "--id":
+        if len(argv) < 2:
+            blind("BLIND  --id needs a pack id, e.g. --id DBG-004")
+        want = argv[1].upper()
+        for p in packs:
+            if p["id"].upper() == want:
+                show(p)
+                return EXIT_OK
+        print(
+            f"no pack {want} in {len(packs)} packs. Check the number, or add the pack."
+        )
+        return EXIT_NEW
+
+    if argv[0] == "--json":
+        hits = search(packs, argv[1:])
+        print(json.dumps(hits, indent=2))
+        return EXIT_OK if hits else EXIT_NEW
+
+    if argv[0] == "--check":
+        dead = []
+        for p in packs:
+            target = str(p.get("falsifier", "")).split("::")[0].split("#")[0]
+            if target and not (idp_root() / target).exists():
+                dead.append(f"{p['id']} -> {target}")
+        if dead:
+            print(
+                "BLIND  these packs name a falsifier that does not exist, so they cannot fire:"
+            )
+            for d in dead:
+                print(f"    {d}")
+            return EXIT_BLIND
+        print(f"ok  {len(packs)} packs, every named falsifier exists")
+        return EXIT_OK
+
+    hits = search(packs, argv)
+    if not hits:
+        print(
+            f"no pack matches {' '.join(argv)!r} across {len(packs)} known defects.\n"
+            "Conclude nothing is RECORDED, never that nothing is known -- then add a pack in the\n"
+            "same change (docs/debugging-packs.json)."
+        )
+        return EXIT_NEW
+    for p in hits:
+        show(p)
+    print(f"{len(hits)} of {len(packs)} packs match.")
+    return EXIT_OK
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

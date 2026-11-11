@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Print the auth method the selected ~/.oci/config profile actually carries.
+#
+# OCI has two profiles in daily use: an API-key profile and a security-token session profile.
+# Assuming security_token made the Cloudflare bootstrap unable to read its own vault on a
+# perfectly valid API-key profile; assuming api_key breaks every GitHub OIDC exchange. The
+# profile is the authority.
+set -euo pipefail
+
+profile="${1:-${OCI_CLI_PROFILE:-DEFAULT}}"
+config="${OCI_CONFIG_FILE:-$HOME/.oci/config}"
+
+python3 - "$config" "$profile" <<'PY'
+import configparser
+import sys
+
+path, profile = sys.argv[1:3]
+parser = configparser.RawConfigParser()
+if not parser.read(path):
+    raise SystemExit(f"OCI config {path!r} is not readable")
+if profile == "DEFAULT":
+    options = parser.defaults()
+elif parser.has_section(profile):
+    options = parser[profile]
+else:
+    raise SystemExit(f"OCI profile {profile!r} is not present in {path}")
+print("security_token" if "security_token_file" in options else "api_key")
+PY

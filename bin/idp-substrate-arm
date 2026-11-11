@@ -1,0 +1,317 @@
+#!/usr/bin/env bash
+# The estate's substrate, in one command: an Oracle Always Free ARM VM running k3s.
+# Founder order idp#7787 (2026-11-07): NO OKE. The OKE control plane was removed by the provider
+# (cluster-count=0, docs/incidents/2026-10-29-the-cluster-lost-its-control-plane.md), so the estate
+# has no substrate and 15 services answer HTTP 530 through a Cloudflare edge with no live origin.
+# idp#7735 named the target: k3s on the Always Free A1 ARM VM, $0. Its manifests are in k3s/ (13
+# documents, recovered verbatim from refs/archive/feat/k3s-legion-substrate and re-validated
+# 2026-11-10). What was missing was the two steps its README asked a human to do by hand
+# ("founder, ~15 min" / "founder, one line"). This door is those two steps, without the human.
+#
+#   bin/idp-substrate-arm                 the plan. Nothing created, nothing changed. Exit 0.
+#   bin/idp-substrate-arm --apply         create the VM (if absent) and install k3s on it.
+#   bin/idp-substrate-arm --status        what exists right now, measured from OCI.
+#   bin/idp-substrate-arm --preflight     check the toolchain; no OCI call that writes.
+#
+# Exit codes: 0 ok/present, 2 refused (bad argument or BLIND toolchain), 3 absent (--status found
+# no instance), 1 the apply failed. --status distinguishes "absent" (3) from "present" (0) so a
+# caller can branch on the measurement instead of grepping prose.
+#
+# Idempotent by construction: every step asks OCI what already exists and keeps what works. A second
+# --apply creates nothing and reinstalls nothing. Rejected: `oci compute instance launch` with a
+# baked-in availability domain (the A1 capacity differs per AD, so the AD is discovered and the
+# first AD with capacity wins); a script that installs k3s without --apply (an irreversible change
+# behind an accidental keystroke is not a door); storing the VM's SSH key in the vault from argv
+# (LAW 21 -- the key is generated to a 0600 file and only its public half ever leaves the machine).
+#
+# The VM is created with cloud-init that installs k3s itself, so there is no second SSH round trip
+# and no dependence on this laptop staying awake: the box converges on boot.
+set -euo pipefail
+
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+MODE=plan
+for a in "$@"; do
+  case "$a" in
+    --apply) MODE=apply ;;
+    --status) MODE=status ;;
+    --preflight) MODE=preflight ;;
+    -h|--help) sed -n 2,26p "$0"; exit 0 ;;
+    *) echo "refused: unknown argument '$a' (this door takes --apply, --status or --preflight)"; exit 2 ;;
+  esac
+done
+
+# ---- constants, all measured before they were written -------------------------------------------
+COMPARTMENT_NAME="${SUBSTRATE_COMPARTMENT:-estate}"
+SHAPE="${SUBSTRATE_SHAPE:-VM.Standard.A1.Flex}"
+# The Always Free A1 allowance is 4 OCPU / 24 GB, but a tenancy that already spends some of it has
+# less left. k3s/README.md asks for 4 OCPU / 24 GB as a SINGLE VM, which only fits when the whole
+# allowance is free; measured 2026-11-10 this tenancy reports `available: 2` per AD. The plan
+# therefore shrinks the shape to the allowance the tenancy actually has room for, and says so.
+OCPUS="${SUBSTRATE_OCPUS:-4}"
+MEM_GB="${SUBSTRATE_MEM_GB:-24}"
+BOOT_GB="${SUBSTRATE_BOOT_GB:-50}"
+INSTANCE_NAME="${SUBSTRATE_NAME:-estate-k3s}"
+IMAGE_OS="${SUBSTRATE_IMAGE_OS:-Canonical Ubuntu}"
+IMAGE_VER="${SUBSTRATE_IMAGE_VER:-22.04}"
+K3S_CHANNEL="${SUBSTRATE_K3S_CHANNEL:-stable}"
+KEY_DIR="${SUBSTRATE_KEY_DIR:-$HOME/.oci}"
+KEY_FILE="$KEY_DIR/${INSTANCE_NAME}_ssh"
+STATE_DIR="${SUBSTRATE_STATE_DIR:-$HOME/.estate/substrate}"
+STATE_FILE="$STATE_DIR/$INSTANCE_NAME.json"
+
+say()  { printf '%s\n' "$*"; }
+ok()   { printf 'ok       %s\n' "$*"; }
+skip() { printf 'keep     %s\n' "$*"; }
+bad()  { printf 'FAILED   %s\n' "$*" >&2; }
+die()  { bad "$*"; exit 1; }
+
+# ---- preflight ----------------------------------------------------------------------------------
+MISSING=""
+command -v oci >/dev/null || MISSING="$MISSING oci"
+command -v python3 >/dev/null || MISSING="$MISSING python3"
+if [ -n "$MISSING" ]; then
+  # BLIND is a refusal, never a pass: a toolchain we cannot see is not a toolchain we have (R1).
+  bad "BLIND: missing$MISSING -- cannot reach OCI without them"
+  exit 2
+fi
+[ "$MODE" = preflight ] && { ok "oci $(oci --version 2>/dev/null | tr -d '\n')"; ok "python3 $(python3 -V 2>&1 | awk '{print $2}')"; ok "compartment=$COMPARTMENT_NAME shape=$SHAPE (size chosen from the measured allowance at --apply; boot=${BOOT_GB}GB)"; exit 0; }
+
+# ---- OCI helpers --------------------------------------------------------------------------------
+# One JSON reader, so no jq dialect and no shell word-splitting of OCI output.
+ociq() { python3 -c "$1"; }
+
+tenancy_ocid() {
+  # The tenancy is the OCID the config already authenticates as. Asking IAM for it costs a call and
+  # returns nothing on a tenancy with no sub-compartments; reading the config is exact.
+  local ten
+  ten="${SUBSTRATE_TENANCY:-}"
+  if [ -z "$ten" ]; then
+    ten="$(awk -F= '/^tenancy[[:space:]]*=/{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2; exit}' "${OCI_CLI_CONFIG_FILE:-$HOME/.oci/config}" 2>/dev/null)"
+  fi
+  printf '%s' "$ten"
+}
+
+resolve_compartment() {
+  local ten; ten="$(tenancy_ocid)"
+  [ -n "$ten" ] || die "cannot read the tenancy from OCI (is ~/.oci/config valid?)"
+  if [ "$COMPARTMENT_NAME" = "$(oci iam tenancy get --query 'data.name' --raw-output 2>/dev/null)" ]; then
+    printf '%s' "$ten"; return 0
+  fi
+  local cid
+  cid="$(oci iam compartment list --all --compartment-id-in-subtree true \
+          --query "data[?name=='$COMPARTMENT_NAME'].id | [0]" --raw-output 2>/dev/null)"
+  [ -n "$cid" ] && [ "$cid" != "null" ] || die "compartment '$COMPARTMENT_NAME' not found in the tenancy"
+  printf '%s' "$cid"
+}
+
+find_instance() { # -> json object or empty
+  local comp; comp="$(resolve_compartment)"
+  oci compute instance list --compartment-id "$comp" --all \
+    --query "data[?\"display-name\"=='$INSTANCE_NAME'] | [0]" --output json 2>/dev/null
+}
+
+# A1 capacity is per-Availability-Domain. The allowance is not announced -- measure it.
+# `--raw-output` on an ARRAY prints the JSON punctuation ([, "ad", ]) rather than one element per
+# line, so the AD list is read as JSON and split by python: iterating the raw form asks OCI about an
+# AD literally named '[' and every availability probe then answers nothing, which reads as "the
+# allowance is exhausted" when it is not. That defect was measured on 2026-11-10 (the plan said
+# `capacity: NONE` while `available: 2` was true) and this is its fix.
+list_ads() {
+  oci iam availability-domain list --compartment-id "$(tenancy_ocid)" --output json 2>/dev/null \
+    | python3 -c 'import json,sys; [print(d["name"]) for d in json.load(sys.stdin).get("data",[])]'
+}
+
+ad_available() { # $1=comp $2=ad -> integer available A1 OCPUs (0 when unknown)
+  local avail
+  avail="$(oci limits resource-availability get --service-name compute \
+            --limit-name standard-a1-core-count --compartment-id "$1" \
+            --availability-domain "$2" --query 'data.available' --raw-output 2>/dev/null || true)"
+  avail="${avail%%.*}"
+  case "$avail" in ''|*[!0-9]*) printf '0' ;; *) printf '%s' "$avail" ;; esac
+}
+
+# The AD with the MOST room, as "<ad> <available>", so the caller can shrink the shape to fit
+# instead of reporting "none" when a smaller VM would have been created happily.
+best_ad_capacity() {
+  local comp="$1" ad avail best_ad="" best=0
+  for ad in $(list_ads); do
+    avail="$(ad_available "$comp" "$ad")"
+    if [ "$avail" -gt "$best" ]; then best="$avail"; best_ad="$ad"; fi
+  done
+  [ -n "$best_ad" ] && printf '%s %s' "$best_ad" "$best"
+  return 0
+}
+
+# ---- state --------------------------------------------------------------------------------------
+mkdir -p "$STATE_DIR" 2>/dev/null || true
+
+status_report() {
+  local inst comp best fit_ad fit_avail ocpus mem
+  comp="$(resolve_compartment)" || exit 1
+  inst="$(find_instance)"
+  ocpus="$OCPUS"; mem="$MEM_GB"
+  best="$(best_ad_capacity "$comp")"; fit_ad="${best% *}"; fit_avail="${best##* }"
+  if [ -n "$fit_ad" ] && [ "$fit_avail" -lt "$ocpus" ] 2>/dev/null; then
+    ocpus="$fit_avail"; mem=$(( fit_avail * 6 ))
+  fi
+  say "compartment: $COMPARTMENT_NAME"
+  say "allowance:   ${fit_avail:-0} A1 OCPU free in the best AD -> a ${ocpus} OCPU / ${mem} GB VM fits"
+  if [ -z "$inst" ] || [ "$inst" = "null" ]; then
+    say "instance:    ABSENT (no '$INSTANCE_NAME' in this compartment)"
+    exit 3
+  fi
+  printf '%s' "$inst" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+print("instance:    %s (%s)" % (d.get("id"), d.get("lifecycle-state")))
+print("shape:       %s" % d.get("shape"))
+p=d.get("shape-config") or {}
+print("ocpus/mem:   %s / %s" % (p.get("ocpus"), p.get("memory-in-gbs")))
+' || exit 1
+  exit 0
+}
+
+[ "$MODE" = status ] && status_report
+
+# ---- the plan -----------------------------------------------------------------------------------
+COMP="$(resolve_compartment)"
+EXISTING="$(find_instance)"
+EXISTING_STATE=""
+if [ -n "$EXISTING" ] && [ "$EXISTING" != "null" ]; then
+  EXISTING_STATE="$(printf '%s' "$EXISTING" | ociq 'import json,sys; print(json.load(sys.stdin).get("lifecycle-state",""))')"
+fi
+
+# Choose the shape that fits the allowance the tenancy actually has, not the one in the README.
+FIT_AD=""; FIT_AVAIL=0
+if [ -z "$EXISTING_STATE" ]; then
+  BEST="$(best_ad_capacity "$COMP")"
+  FIT_AD="${BEST% *}"; FIT_AVAIL="${BEST##* }"
+  if [ -n "$FIT_AD" ] && [ "$FIT_AVAIL" -lt "$OCPUS" ] 2>/dev/null; then
+    # 24 GB needs 4 OCPU on A1 (6 GB per OCPU), so memory follows the cores that fit.
+    MEM_GB=$(( FIT_AVAIL * 6 ))
+    OCPUS="$FIT_AVAIL"
+  fi
+fi
+
+say "== idp-substrate-arm ($MODE)"
+say "   target:   $INSTANCE_NAME  $SHAPE ${OCPUS}ocpu/${MEM_GB}GB  boot ${BOOT_GB}GB"
+say "   image:    $IMAGE_OS $IMAGE_VER (aarch64)"
+say "   k3s:      channel $K3S_CHANNEL, --disable traefik (the estate routes through Cloudflare)"
+say "   manifests: $IDP/k3s (13 documents, applied in order once the API answers)"
+
+if [ -n "$EXISTING_STATE" ]; then
+  skip "instance $INSTANCE_NAME exists ($EXISTING_STATE) -- nothing to create"
+else
+  if [ -z "$FIT_AD" ] || [ "$FIT_AVAIL" -le 0 ] 2>/dev/null; then
+    say "   capacity: NONE -- the A1 allowance is fully consumed; nothing can be created now"
+    [ "$MODE" = apply ] && die "no A1 capacity in any availability domain right now (Always Free ARM is exhausted)"
+  else
+    say "   capacity: $FIT_AD has $FIT_AVAIL OCPU free -> creating ${OCPUS} OCPU / ${MEM_GB} GB"
+    say "   step 1:   create instance '$INSTANCE_NAME' in $FIT_AD"
+  fi
+  say "   step 2:   cloud-init installs k3s $K3S_CHANNEL and writes /etc/rancher/k3s/k3s.yaml"
+  say "   step 3:   kubectl apply -f $IDP/k3s/00-namespace.yaml ... 40-langfuse.yaml"
+fi
+
+if [ "$MODE" = plan ]; then
+  say ""
+  say "plan only: nothing was created and nothing was changed. Re-run with --apply to act."
+  exit 0
+fi
+
+# ---- apply --------------------------------------------------------------------------------------
+say ""
+say "== applying"
+
+KEY_DIR_WAS=0; [ -d "$KEY_DIR" ] && KEY_DIR_WAS=1
+[ "$KEY_DIR_WAS" = 1 ] || mkdir -p "$KEY_DIR"
+
+if [ -f "$KEY_FILE" ]; then
+  skip "ssh keypair $KEY_FILE (kept: a new key would not get into a running box)"
+else
+  # Generated here; only the public half is ever sent to OCI. The private half never leaves 0600.
+  ssh-keygen -q -t ed25519 -N '' -C "idp-substrate-arm/$INSTANCE_NAME" -f "$KEY_FILE"
+  chmod 600 "$KEY_FILE"; chmod 644 "$KEY_FILE.pub"
+  ok "ssh keypair $KEY_FILE (0600, pubkey $(cut -c1-24 "$KEY_FILE.pub")...)"
+fi
+PUBKEY="$(cat "$KEY_FILE.pub")"
+
+if [ -z "$EXISTING_STATE" ]; then
+  AD="$FIT_AD"
+  [ -n "$AD" ] && [ "$FIT_AVAIL" -gt 0 ] 2>/dev/null || die "no A1 capacity in any availability domain right now"
+
+  IMAGE_ID="$(oci compute image list --compartment-id "$COMP" --all --operating-system "$IMAGE_OS" \
+    --shape "$SHAPE" \
+    --query "data[?contains(\"display-name\",'$IMAGE_VER')] | sort_by(@,&\"time-created\") | [-1].id" \
+    --raw-output 2>/dev/null || true)"
+  if [ -z "$IMAGE_ID" ] || [ "$IMAGE_ID" = "null" ]; then
+    # aarch64 images live in the tenancy's own compartment even when the shape-filtered SKU list is empty
+    IMAGE_ID="$(oci compute image list --compartment-id "$COMP" --all --operating-system "$IMAGE_OS" \
+      --query "data[?contains(\"display-name\",'$IMAGE_VER')] | sort_by(@,&\"time-created\") | [-1].id" \
+      --raw-output 2>/dev/null || true)"
+  fi
+  [ -n "$IMAGE_ID" ] && [ "$IMAGE_ID" != "null" ] || die "no $IMAGE_OS $IMAGE_VER image visible to this tenancy"
+
+  SUBNET_ID="$(oci network subnet list --compartment-id "$COMP" --all \
+    --query 'data[?contains("display-name", `public`)].id | [0]' --raw-output 2>/dev/null || true)"
+  if [ -z "$SUBNET_ID" ] || [ "$SUBNET_ID" = "null" ]; then
+    SUBNET_ID="$(oci network subnet list --compartment-id "$COMP" --all --query 'data[0].id' --raw-output 2>/dev/null || true)"
+  fi
+  [ -n "$SUBNET_ID" ] && [ "$SUBNET_ID" != "null" ] || die "no subnet in compartment '$COMPARTMENT_NAME' -- the VCN must exist first"
+
+  USERDATA="$(mktemp "${TMPDIR:-/tmp}/k3s-cloudinit.XXXXXX")"
+  cat >"$USERDATA" <<'CLOUDINIT'
+#!/bin/bash
+# Converges on boot: k3s up, api server local, nothing else assumed. Idempotent -- a re-run of
+# cloud-init keeps a running k3s rather than reinstalling it.
+set -euo pipefail
+exec > /var/log/estate-k3s-bootstrap.log 2>&1
+echo "== estate k3s bootstrap $(date -u +%FT%TZ)"
+if systemctl is-active --quiet k3s; then
+  echo "k3s already active; keeping it"; exit 0
+fi
+export INSTALL_K3S_CHANNEL="__CHANNEL__"
+curl -sfL https://get.k3s.io | sh -s - --disable traefik --write-kubeconfig-mode 0644
+for i in $(seq 1 60); do
+  if kubectl get --raw='/readyz' >/dev/null 2>&1; then echo "api ready after ${i}0s"; break; fi
+  sleep 5
+done
+kubectl get nodes || true
+echo "== done: k3s $(k3s --version | head -1)"
+CLOUDINIT
+  python3 - "$USERDATA" "$K3S_CHANNEL" <<'PY'
+import sys
+p, ch = sys.argv[1], sys.argv[2]
+s = open(p).read().replace("__CHANNEL__", ch)
+open(p, "w").write(s)
+PY
+
+  say "creating instance in $AD ..."
+  LAUNCHED="$(oci compute instance launch \
+    --compartment-id "$COMP" \
+    --availability-domain "$AD" \
+    --shape "$SHAPE" \
+    --shape-config "{\"ocpus\":$OCPUS,\"memoryInGBs\":$MEM_GB}" \
+    --image-id "$IMAGE_ID" \
+    --subnet-id "$SUBNET_ID" \
+    --display-name "$INSTANCE_NAME" \
+    --assign-public-ip true \
+    --metadata "{\"ssh_authorized_keys\":\"$PUBKEY\",\"user_data\":\"$(base64 <"$USERDATA" | tr -d '\n')\"}" \
+    --wait-for-state RUNNING \
+    --max-wait-seconds 600 \
+    --query 'data.id' --raw-output 2>&1)" || {
+      rm -f "$USERDATA"
+      die "oci compute instance launch failed: $(printf '%s' "$LAUNCHED" | tail -3 | tr '\n' ' ')"
+    }
+  rm -f "$USERDATA"
+  ok "instance $INSTANCE_NAME RUNNING ($LAUNCHED)"
+else
+  skip "instance $INSTANCE_NAME already $EXISTING_STATE -- not re-created"
+fi
+
+say ""
+say "== the box converges on its own"
+say "   cloud-init installs k3s and waits for /readyz; check with:"
+say "     bin/idp-substrate-arm --status"
+say "   then apply the stack: kubectl apply -f $IDP/k3s/00-namespace.yaml ... 40-langfuse.yaml"
+ok "substrate request accepted"

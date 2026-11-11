@@ -1,0 +1,21 @@
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata: {name: provider-oci}
+spec: {package: xpkg.upbound.io/upbound/provider-oci:v0.1.0}
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata: {name: provider-hetzner}
+spec: {package: xpkg.upbound.io/community/provider-hetzner:v0.1.0}  # verify current tag at deploy time
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata: {name: provider-cloudflare}
+spec: {package: xpkg.upbound.io/upbound/provider-cloudflare:v0.1.0}
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata: {name: provider-tailscale}
+spec: {package: xpkg.upbound.io/community/provider-tailscale:v0.1.0}  # verify current tag at deploy time
+---
+# ProviderConfigs carry credentials; created from estate-secrets at deploy time (never in git).

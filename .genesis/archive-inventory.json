@@ -1,0 +1,1623 @@
+{
+ "generated": "2026-11-09",
+ "count": 202,
+ "restore": "gh api -X POST repos/chidionyema/idp/git/refs -f ref=refs/heads/<branch> -f sha=<sha>",
+ "entries": [
+  {
+   "ref": "refs/archive/queue/b5087",
+   "branch": "queue/b5087",
+   "sha": "8fe9121fad8921dab217b79a79ac362aefa0bdf8",
+   "date": "2026-11-09T12:00:06+00:00",
+   "author": "agent",
+   "subject": "loop: the red lanes arrive with the session, recovery gets a number, refusals name the fix"
+  },
+  {
+   "ref": "refs/archive/wip/hygiene-20261109-idp",
+   "branch": "wip/hygiene-20261109-idp",
+   "sha": "b18f1bb2ed1c31f7aaa978d597915f5cda41a4f4",
+   "date": "2026-11-09T10:57:36+00:00",
+   "author": "agent",
+   "subject": "wip(hygiene): snapshot of lane/estate-delivery-laws working tree 2026-11-09"
+  },
+  {
+   "ref": "refs/archive/lane/propose/meridian-public-20261109",
+   "branch": "lane/propose/meridian-public-20261109",
+   "sha": "e5e52092acd14c7e0ee0da6b625632ddad04c56f",
+   "date": "2026-11-09T10:51:34+00:00",
+   "author": "Chidi Onyema",
+   "subject": "chore(meridian): remove unsourced client profiles and testimonials"
+  },
+  {
+   "ref": "refs/archive/propose/meridian-public-20261109",
+   "branch": "propose/meridian-public-20261109",
+   "sha": "e5e52092acd14c7e0ee0da6b625632ddad04c56f",
+   "date": "2026-11-09T10:51:34+00:00",
+   "author": "Chidi Onyema",
+   "subject": "chore(meridian): remove unsourced client profiles and testimonials"
+  },
+  {
+   "ref": "refs/archive/state/live-diagram",
+   "branch": "state/live-diagram",
+   "sha": "a76e3a788f5c0a10f0804f4b7189ee673e8d09c8",
+   "date": "2026-11-09T09:57:52+00:00",
+   "author": "estate-inventory",
+   "subject": "docs(inventory): estate inventory from the control planes, run 42596787059 (crew#740)"
+  },
+  {
+   "ref": "refs/archive/fix/recovery-run-command-pagination",
+   "branch": "fix/recovery-run-command-pagination",
+   "sha": "5f74b480f3f7b106c4621641673f4f015a3cb87a",
+   "date": "2026-11-09T09:35:08+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(recovery): escape JSON fixture braces in formatted fake CLI (#7387)"
+  },
+  {
+   "ref": "refs/archive/lane/fix/recovery-run-command-pagination",
+   "branch": "lane/fix/recovery-run-command-pagination",
+   "sha": "5f74b480f3f7b106c4621641673f4f015a3cb87a",
+   "date": "2026-11-09T09:35:08+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(recovery): escape JSON fixture braces in formatted fake CLI (#7387)"
+  },
+  {
+   "ref": "refs/archive/lane/estate-stack-controller-20261109",
+   "branch": "lane/estate-stack-controller-20261109",
+   "sha": "76e2b1f2f3b8499f61fdd7ccf2f4b23ab297db47",
+   "date": "2026-11-09T04:35:29+00:00",
+   "author": "agent",
+   "subject": "feat(estate): one signed stack controller with cloud OIDC proof"
+  },
+  {
+   "ref": "refs/archive/lane/dof-founder-temporary-disable-20261109",
+   "branch": "lane/dof-founder-temporary-disable-20261109",
+   "sha": "d53aa0ed52b69e5b13bf7cdf1912a057c3755c40",
+   "date": "2026-11-09T04:26:25+00:00",
+   "author": "Chidi Onyema",
+   "subject": "style(dof): ensure formatter-compliant function separation"
+  },
+  {
+   "ref": "refs/archive/lane/dof-disabled",
+   "branch": "lane/dof-disabled",
+   "sha": "7244b1ecdc891a9b8dce4d599fb0b1c3ac335237",
+   "date": "2026-11-09T04:19:13+00:00",
+   "author": "estate-agent",
+   "subject": "feat(dof): disable the Degree-of-Freedom gate on the founder's order"
+  },
+  {
+   "ref": "refs/archive/lane/dof-disable",
+   "branch": "lane/dof-disable",
+   "sha": "74e8af8caa8e972eeacc6bc81e16206d61b1242a",
+   "date": "2026-11-09T04:18:21+00:00",
+   "author": "agent",
+   "subject": "feat(dof): disable DoF until every open lane/branch/worktree is in main"
+  },
+  {
+   "ref": "refs/archive/lane/estate-delivery-laws",
+   "branch": "lane/estate-delivery-laws",
+   "sha": "05545226fb6eb2e47d9855e1bce9525af88a0140",
+   "date": "2026-11-09T04:17:19+00:00",
+   "author": "agent",
+   "subject": "fix(dof): move the DoF repair lock to edit time, and fix the lease reader's token"
+  },
+  {
+   "ref": "refs/archive/lane/memory-topology-evidence-20261109",
+   "branch": "lane/memory-topology-evidence-20261109",
+   "sha": "5e5bee97b241072e092ac76b036ea80318413417",
+   "date": "2026-11-09T03:11:30+00:00",
+   "author": "Chidi Onyema",
+   "subject": "research(memory): bind full indexed claims sweep and inflation/staleness measurements"
+  },
+  {
+   "ref": "refs/archive/lane/lane-where-ref-lag",
+   "branch": "lane/lane-where-ref-lag",
+   "sha": "ea66568ff2827e8594f850a5f75d8724d4470202",
+   "date": "2026-11-09T03:02:43+00:00",
+   "author": "estate-agent",
+   "subject": "fix(lane-where): a branch ls-remote has not caught up with is PENDING, not GONE"
+  },
+  {
+   "ref": "refs/archive/lane/estate-stack-controller",
+   "branch": "lane/estate-stack-controller",
+   "sha": "7c0c5bfa53349ad190ae7b02f0c1f298afd678b3",
+   "date": "2026-11-09T03:01:26+00:00",
+   "author": "agent",
+   "subject": "feat(stack): one commanded loop from approved intent to signed stack receipt"
+  },
+  {
+   "ref": "refs/archive/memory-census-20261109",
+   "branch": "memory-census-20261109",
+   "sha": "0dc07af2cf2be712630e7687cb72563c767701e2",
+   "date": "2026-11-09T02:57:38+00:00",
+   "author": "Chidi Onyema",
+   "subject": "research(memory): establish IDP Genesis estate-graph memory topology and evidence gaps"
+  },
+  {
+   "ref": "refs/archive/lane/retired-oke-admission-guard-20261109",
+   "branch": "lane/retired-oke-admission-guard-20261109",
+   "sha": "a6869d0dc1010fe89f1f7f73bbd9a2beb8dfa260",
+   "date": "2026-11-09T02:56:47+00:00",
+   "author": "Chidi Onyema",
+   "subject": "style(oci): keep retired-substrate regression hermetic and lintable"
+  },
+  {
+   "ref": "refs/archive/lane/estate-onboarding-arch-20261109",
+   "branch": "lane/estate-onboarding-arch-20261109",
+   "sha": "a5be5fb73b0335f97b97030e89c04f02156cf9ba",
+   "date": "2026-11-09T02:18:46+00:00",
+   "author": "Chidi Onyema",
+   "subject": "fix(onboarding): align architecture packet with non-authoritative runtime status"
+  },
+  {
+   "ref": "refs/archive/onboarding-arch-20261109",
+   "branch": "onboarding-arch-20261109",
+   "sha": "a5be5fb73b0335f97b97030e89c04f02156cf9ba",
+   "date": "2026-11-09T02:18:46+00:00",
+   "author": "Chidi Onyema",
+   "subject": "fix(onboarding): align architecture packet with non-authoritative runtime status"
+  },
+  {
+   "ref": "refs/archive/lane/opa-founder-fleet-enforcement-20261109",
+   "branch": "lane/opa-founder-fleet-enforcement-20261109",
+   "sha": "16297f5ad26a00633bb6a99f47e110cd5b633748",
+   "date": "2026-11-09T01:41:38+00:00",
+   "author": "Chidi Onyema",
+   "subject": "fix(estate): include the root-owned OPA guard in executor status proof"
+  },
+  {
+   "ref": "refs/archive/lane/dof-freeze-falsifier",
+   "branch": "lane/dof-freeze-falsifier",
+   "sha": "29156ad42bce6aa0cc9f5775b4bfa8ed73e286ac",
+   "date": "2026-11-09T01:38:21+00:00",
+   "author": "estate-agent",
+   "subject": "test(dof): pin both directions of the estate-doors self-repair fix"
+  },
+  {
+   "ref": "refs/archive/lane/dof-freeze-diagnosis",
+   "branch": "lane/dof-freeze-diagnosis",
+   "sha": "a9ed574f75c063ade956e301c93bfb892ada7110",
+   "date": "2026-11-09T01:26:44+00:00",
+   "author": "estate-agent",
+   "subject": "diagnose(dof): estate-doors cannot repair the gate that freezes it"
+  },
+  {
+   "ref": "refs/archive/lane/estate-sre-signal-plane-20261108-v7",
+   "branch": "lane/estate-sre-signal-plane-20261108-v7",
+   "sha": "3aebdc66806a9ac32c7b0783e09ace87dc45be32",
+   "date": "2026-11-09T00:58:20+00:00",
+   "author": "chidionyema",
+   "subject": "feat(sre): add one proactive estate signal plane"
+  },
+  {
+   "ref": "refs/archive/lane/run-command-empty-queue",
+   "branch": "lane/run-command-empty-queue",
+   "sha": "135aa2a3a7ac028d6c60fbdb7bd15eaf60a44efe",
+   "date": "2026-11-09T00:56:15+00:00",
+   "author": "estate-agent",
+   "subject": "fix(recovery): an empty Run Command answer is an empty queue, not BLIND"
+  },
+  {
+   "ref": "refs/archive/lane/genesis-commercial-proof-roadmap-20261108",
+   "branch": "lane/genesis-commercial-proof-roadmap-20261108",
+   "sha": "106b84707f35185958906aa228039b9d627edf39",
+   "date": "2026-11-08T23:58:26+00:00",
+   "author": "Chidi Onyema",
+   "subject": "docs(onboarding): expose product-proof brief in canonical commercial source"
+  },
+  {
+   "ref": "refs/archive/lane/flow-fleet-received-not-applied",
+   "branch": "lane/flow-fleet-received-not-applied",
+   "sha": "c8ee3d08132db4e7790540945cbb5b39cd40bd0f",
+   "date": "2026-11-08T23:52:15+00:00",
+   "author": "agent",
+   "subject": "fix(fleet): a proof-less `applied <seq>` is a clean refusal, not the help dump"
+  },
+  {
+   "ref": "refs/archive/lane/entropy-law-flow-20261108",
+   "branch": "lane/entropy-law-flow-20261108",
+   "sha": "0e0780d172cb1e1831a0ffb7c496977ddc6e22bb",
+   "date": "2026-11-08T23:40:59+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(genesis): define reflexive law falsifiers BEFORE enforcement implementation"
+  },
+  {
+   "ref": "refs/archive/lane/worktree-budget-zip-fix",
+   "branch": "lane/worktree-budget-zip-fix",
+   "sha": "fce0f72d028e94770cd01e882f7ed14e220c0c76",
+   "date": "2026-11-08T23:21:05+00:00",
+   "author": "agent",
+   "subject": "fix(disk): worktree creation budget refuses a birth under the floor; restore zip(strict=True)"
+  },
+  {
+   "ref": "refs/archive/lane/flow-machine-decider-20261108-2250",
+   "branch": "lane/flow-machine-decider-20261108-2250",
+   "sha": "9ac1045a11dbcf0cf4c5ab711d733651e5f288ac",
+   "date": "2026-11-08T23:05:37+00:00",
+   "author": "Chidi Onyema",
+   "subject": "policy(flow): move routine incident priority out of founder judgment residue"
+  },
+  {
+   "ref": "refs/archive/lane/genesis-offhost-20261108-2243",
+   "branch": "lane/genesis-offhost-20261108-2243",
+   "sha": "1ff915710cba4d9980034d170bc6345d42c90007",
+   "date": "2026-11-08T22:46:38+00:00",
+   "author": "Chidi Onyema",
+   "subject": "fix(genesis): match literal IPv4 loopback in off-host topology preflight"
+  },
+  {
+   "ref": "refs/archive/lane/router-recovery-ingress-guard-20261108",
+   "branch": "lane/router-recovery-ingress-guard-20261108",
+   "sha": "2a652b4d173cf2e165f7188f628ea222a41106e5",
+   "date": "2026-11-08T22:20:33+00:00",
+   "author": "Chidi Onyema",
+   "subject": "fix(router): justify pure-Python safety planner and existing pytest harness"
+  },
+  {
+   "ref": "refs/archive/lane/substrate-staleness-gate",
+   "branch": "lane/substrate-staleness-gate",
+   "sha": "1d515cb4f4a85da43c6c70afc4d898c7a4f95527",
+   "date": "2026-11-08T22:18:30+00:00",
+   "author": "agent",
+   "subject": "feat(guard): a substrate-staleness gate that refuses dated cluster claims quoted as live"
+  },
+  {
+   "ref": "refs/archive/lane/router-catalog-report-failclosed-20261108",
+   "branch": "lane/router-catalog-report-failclosed-20261108",
+   "sha": "29592310d62cec12695b5ab25b6237d68dcc402d",
+   "date": "2026-11-08T22:14:52+00:00",
+   "author": "Chidi Onyema",
+   "subject": "fix(router): preserve readable incident receipt formatting"
+  },
+  {
+   "ref": "refs/archive/lane-flow-fractal-operational-work-20261108",
+   "branch": "lane-flow-fractal-operational-work-20261108",
+   "sha": "0f6c09640499ad8a1e1d5ce472b224b958a83102",
+   "date": "2026-11-08T21:31:41+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(flow): prove single canonical <=300-line AGENTS, exact policy authority and archived prior law"
+  },
+  {
+   "ref": "refs/archive/lane/flow-fractal-operational-work-20261108",
+   "branch": "lane/flow-fractal-operational-work-20261108",
+   "sha": "0f6c09640499ad8a1e1d5ce472b224b958a83102",
+   "date": "2026-11-08T21:31:41+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(flow): prove single canonical <=300-line AGENTS, exact policy authority and archived prior law"
+  },
+  {
+   "ref": "refs/archive/proof/estate-legion-yield-20261108",
+   "branch": "proof/estate-legion-yield-20261108",
+   "sha": "d2c4ee5bea276e211b38705b6ebd9414c2b27891",
+   "date": "2026-11-08T19:52:42+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(estate): rerun private-sentinel 429 drill and bounded yield receipts"
+  },
+  {
+   "ref": "refs/archive/lane/legion-tool-first-7815-20261108",
+   "branch": "lane/legion-tool-first-7815-20261108",
+   "sha": "9d25a0198253b4ad55d87b81865166bc3d2d10a0",
+   "date": "2026-11-08T19:52:13+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(legion): distinguish safe failure class from private error detail"
+  },
+  {
+   "ref": "refs/archive/lane/session-yield-proof-first-20261108",
+   "branch": "lane/session-yield-proof-first-20261108",
+   "sha": "840758ff05fe44ee31dddea13c1bc0416419e110",
+   "date": "2026-11-08T19:50:14+00:00",
+   "author": "Chidi Onyema",
+   "subject": "fix(yield): reject impossible or worsening friction as resolved"
+  },
+  {
+   "ref": "refs/archive/feat/legion-failure-memory-20261108",
+   "branch": "feat/legion-failure-memory-20261108",
+   "sha": "78f7dc9f41b9ab621784762796c73deb029209d9",
+   "date": "2026-11-08T19:37:42+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(legion): fix literal backslash-n in provider failure fixtures"
+  },
+  {
+   "ref": "refs/archive/lane/dof-founder-claim-recovery-20261108",
+   "branch": "lane/dof-founder-claim-recovery-20261108",
+   "sha": "a6cbdd4d2fa0ee5758d04fdc51cbe311158f906c",
+   "date": "2026-11-08T17:04:25+00:00",
+   "author": "Chidi Onyema",
+   "subject": "security(dof): repair scoped flow without blind or mixed-commit authority"
+  },
+  {
+   "ref": "refs/archive/lane/estate-dof-scope",
+   "branch": "lane/estate-dof-scope",
+   "sha": "57fc6610d31a93cd041393e65547a82176f68b6f",
+   "date": "2026-11-08T16:47:47+00:00",
+   "author": "Chidi Onyema",
+   "subject": "security(dof): deny blind self-repair and mixed unsafe promotions"
+  },
+  {
+   "ref": "refs/archive/lane/reconcile-disk-door-tests",
+   "branch": "lane/reconcile-disk-door-tests",
+   "sha": "04af4d50993e389f10855c892bd1e5794f7a9dbd",
+   "date": "2026-11-08T15:37:55+00:00",
+   "author": "agent",
+   "subject": "test(disk): reconcile the disk-door tests with the engine-order and Python-watcher contracts"
+  },
+  {
+   "ref": "refs/archive/mutation/ldg-b8a43261685f",
+   "branch": "mutation/ldg-b8a43261685f",
+   "sha": "df52431ac9e4ecb893634778301b2e2424418ff8",
+   "date": "2026-11-08T14:38:18+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into mutation/ldg-b8a43261685f"
+  },
+  {
+   "ref": "refs/archive/feat/k3s-legion-substrate",
+   "branch": "feat/k3s-legion-substrate",
+   "sha": "53a01a9a9f6739bbba72fcd2eb25c5df99e1ff71",
+   "date": "2026-11-08T14:38:17+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into feat/k3s-legion-substrate"
+  },
+  {
+   "ref": "refs/archive/fix/cloud-router-client-default",
+   "branch": "fix/cloud-router-client-default",
+   "sha": "242a0be2a9b80f88eec3bbbf4b04fe7b216c5c7c",
+   "date": "2026-11-08T14:38:15+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into fix/cloud-router-client-default"
+  },
+  {
+   "ref": "refs/archive/feat/estate-temporal-automation-20261108",
+   "branch": "feat/estate-temporal-automation-20261108",
+   "sha": "7e23064ea2c71ce276241b463fa1dc6af770c453",
+   "date": "2026-11-08T14:38:12+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into feat/estate-temporal-automation-20261108"
+  },
+  {
+   "ref": "refs/archive/lane/feat/estate-temporal-automation-20261108",
+   "branch": "lane/feat/estate-temporal-automation-20261108",
+   "sha": "7e23064ea2c71ce276241b463fa1dc6af770c453",
+   "date": "2026-11-08T14:38:12+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into feat/estate-temporal-automation-20261108"
+  },
+  {
+   "ref": "refs/archive/feat/router-zai-cutover-20261108",
+   "branch": "feat/router-zai-cutover-20261108",
+   "sha": "2b4cf46f308e79ecd7aab264d7ab57d4815407aa",
+   "date": "2026-11-08T14:38:11+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into feat/router-zai-cutover-20261108"
+  },
+  {
+   "ref": "refs/archive/lane/feat/router-zai-cutover-20261108",
+   "branch": "lane/feat/router-zai-cutover-20261108",
+   "sha": "2b4cf46f308e79ecd7aab264d7ab57d4815407aa",
+   "date": "2026-11-08T14:38:11+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into feat/router-zai-cutover-20261108"
+  },
+  {
+   "ref": "refs/archive/lane/chronos-clock-registry",
+   "branch": "lane/chronos-clock-registry",
+   "sha": "7f71b1f256413800e22bbea8822e15f83cbdf218",
+   "date": "2026-11-08T13:16:42+00:00",
+   "author": "agent",
+   "subject": "disk-watch: never report a loss as successful reclamation"
+  },
+  {
+   "ref": "refs/archive/lane/governance-onboarding-truth-20261108",
+   "branch": "lane/governance-onboarding-truth-20261108",
+   "sha": "efd28522291014a7b8857313aa2688567c9f3446",
+   "date": "2026-11-08T12:57:12+00:00",
+   "author": "Chidi Onyema",
+   "subject": "fix(onboarding): eliminate Mac-only secret/Docker, old lane executor and fake universal cloud assumptions #7474"
+  },
+  {
+   "ref": "refs/archive/lane/ship-four-primitives",
+   "branch": "lane/ship-four-primitives",
+   "sha": "a3a5b4e55e3816391181d239fa3fc009cd688a77",
+   "date": "2026-11-08T12:36:28+00:00",
+   "author": "agent",
+   "subject": "fix(proof): the shipped verifier was failing on its own bugs, not the artifacts"
+  },
+  {
+   "ref": "refs/archive/lane/receipt-save-ledger",
+   "branch": "lane/receipt-save-ledger",
+   "sha": "beeee38fe155bb95ce1b58253de22491e03f3448",
+   "date": "2026-11-08T12:36:07+00:00",
+   "author": "agent",
+   "subject": "fix(receipt): make --save ledger a receipt instead of crashing"
+  },
+  {
+   "ref": "refs/archive/lane/one-tap-approvals",
+   "branch": "lane/one-tap-approvals",
+   "sha": "83165f80201e5bb605850d17942129c803d39a7f",
+   "date": "2026-11-08T12:12:58+00:00",
+   "author": "agent",
+   "subject": "Make a founder approval one tap, not a line of syntax to type"
+  },
+  {
+   "ref": "refs/archive/one-tap-approvals",
+   "branch": "one-tap-approvals",
+   "sha": "83165f80201e5bb605850d17942129c803d39a7f",
+   "date": "2026-11-08T12:12:58+00:00",
+   "author": "agent",
+   "subject": "Make a founder approval one tap, not a line of syntax to type"
+  },
+  {
+   "ref": "refs/archive/lane/prepush-gate-budget",
+   "branch": "lane/prepush-gate-budget",
+   "sha": "43dba8c26f6bf73ab6cafd5cea766da2e74009a7",
+   "date": "2026-11-08T12:07:37+00:00",
+   "author": "agent",
+   "subject": "Grade what the push changes so the fast gate fits the push budget"
+  },
+  {
+   "ref": "refs/archive/prepush-gate-budget",
+   "branch": "prepush-gate-budget",
+   "sha": "43dba8c26f6bf73ab6cafd5cea766da2e74009a7",
+   "date": "2026-11-08T12:07:37+00:00",
+   "author": "agent",
+   "subject": "Grade what the push changes so the fast gate fits the push budget"
+  },
+  {
+   "ref": "refs/archive/lane/continuity-morph-foundation-20261108",
+   "branch": "lane/continuity-morph-foundation-20261108",
+   "sha": "7498f0c22538f37c4382f8613dc479c96106d1b1",
+   "date": "2026-11-08T11:57:49+00:00",
+   "author": "Chidi Onyema",
+   "subject": "fix(tests): isolate readiness fixtures from morph execution setup"
+  },
+  {
+   "ref": "refs/archive/lane/executor-pipefail-verdict",
+   "branch": "lane/executor-pipefail-verdict",
+   "sha": "64cfb5551cc22adc4bad6cd8bd7e34a6cff12d5d",
+   "date": "2026-11-08T10:55:52+00:00",
+   "author": "agent",
+   "subject": "fix(executor): a truncation the caller asked for is not a failure either"
+  },
+  {
+   "ref": "refs/archive/lane/pi-handover-truth-20261108",
+   "branch": "lane/pi-handover-truth-20261108",
+   "sha": "ffbc0e681a853497defe679cea30248d48960aae",
+   "date": "2026-11-08T10:31:16+00:00",
+   "author": "Chidi Onyema",
+   "subject": "perf(greenlane): parallelize bounded failed-job evidence read"
+  },
+  {
+   "ref": "refs/archive/lane/guarded-paths-no-forged-signed-7770",
+   "branch": "lane/guarded-paths-no-forged-signed-7770",
+   "sha": "a638379333d7a70534c94a2b5a08c907902ddeba",
+   "date": "2026-11-08T10:16:04+00:00",
+   "author": "agent",
+   "subject": "docs(guarded-paths): the workflow header no longer promises the HMAC check (idp#7770)"
+  },
+  {
+   "ref": "refs/archive/estate-disk-measured",
+   "branch": "estate-disk-measured",
+   "sha": "1e7415a7dd902f45360415f794f55febbdff36eb",
+   "date": "2026-11-08T10:07:08+00:00",
+   "author": "agent",
+   "subject": "fix(disk): reclaim orphaned duplicate toolchain instead of listing it"
+  },
+  {
+   "ref": "refs/archive/lane/estate-disk-measured",
+   "branch": "lane/estate-disk-measured",
+   "sha": "1e7415a7dd902f45360415f794f55febbdff36eb",
+   "date": "2026-11-08T10:07:08+00:00",
+   "author": "agent",
+   "subject": "fix(disk): reclaim orphaned duplicate toolchain instead of listing it"
+  },
+  {
+   "ref": "refs/archive/approvals-visible",
+   "branch": "approvals-visible",
+   "sha": "f26f851815832a1ed8ce0b0f148c290840974009",
+   "date": "2026-11-08T09:53:05+00:00",
+   "author": "agent",
+   "subject": "Make a pending approval visible instead of a count in a black hole"
+  },
+  {
+   "ref": "refs/archive/lane/approvals-visible",
+   "branch": "lane/approvals-visible",
+   "sha": "f26f851815832a1ed8ce0b0f148c290840974009",
+   "date": "2026-11-08T09:53:05+00:00",
+   "author": "agent",
+   "subject": "Make a pending approval visible instead of a count in a black hole"
+  },
+  {
+   "ref": "refs/archive/lane/genesis-seven-proofs-20261108",
+   "branch": "lane/genesis-seven-proofs-20261108",
+   "sha": "daa7644ff7c14aefe9983cd73e2092b73a7fdedc",
+   "date": "2026-11-08T09:45:10+00:00",
+   "author": "Chidi Onyema",
+   "subject": "feat(onboarding): introduce seven proof evidence slots in existing context broker"
+  },
+  {
+   "ref": "refs/archive/lane/retire-backstage-fe",
+   "branch": "lane/retire-backstage-fe",
+   "sha": "6868896d0a4ae3cddda52bd78799cbc5d53ea6e6",
+   "date": "2026-11-08T09:40:47+00:00",
+   "author": "agent",
+   "subject": "Retire the unused /fleet Backstage frontend so it cannot starve the disk"
+  },
+  {
+   "ref": "refs/archive/retire-backstage-fe",
+   "branch": "retire-backstage-fe",
+   "sha": "6868896d0a4ae3cddda52bd78799cbc5d53ea6e6",
+   "date": "2026-11-08T09:40:47+00:00",
+   "author": "agent",
+   "subject": "Retire the unused /fleet Backstage frontend so it cannot starve the disk"
+  },
+  {
+   "ref": "refs/archive/cloud/dsh-web-20261108",
+   "branch": "cloud/dsh-web-20261108",
+   "sha": "60a9cad06cf53d920ff34405e9f53b90e2d4c001",
+   "date": "2026-11-08T08:49:06+00:00",
+   "author": "Chidi Onyema",
+   "subject": "dsh-catalog-request-user-agent"
+  },
+  {
+   "ref": "refs/archive/wip/hygiene-20261109-dof-7796",
+   "branch": "wip/hygiene-20261109-dof-7796",
+   "sha": "a22214b66cd1545d9c27b87629e7baa218f7042a",
+   "date": "2026-11-08T08:40:02+00:00",
+   "author": "agent",
+   "subject": "fix(dof): a commit that touches no paths depends on nothing"
+  },
+  {
+   "ref": "refs/archive/feat/repair-bdd-foreign-pr-6639-20261107",
+   "branch": "feat/repair-bdd-foreign-pr-6639-20261107",
+   "sha": "d5ce788227c68364b5d96a120e1a6ab83dd962a3",
+   "date": "2026-11-07T21:00:26+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(bdd): assert no foreign PR, pin PR event and reject unknown PR identity"
+  },
+  {
+   "ref": "refs/archive/lane/fix-foreign-bdd-6639-20261107",
+   "branch": "lane/fix-foreign-bdd-6639-20261107",
+   "sha": "d5ce788227c68364b5d96a120e1a6ab83dd962a3",
+   "date": "2026-11-07T21:00:26+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(bdd): assert no foreign PR, pin PR event and reject unknown PR identity"
+  },
+  {
+   "ref": "refs/archive/cloud/genesis-surface-preview-20261107-r8",
+   "branch": "cloud/genesis-surface-preview-20261107-r8",
+   "sha": "6e77f8747c95bf7cac2322224f2004d5f45f8de4",
+   "date": "2026-11-07T19:42:48+00:00",
+   "author": "chidionyema",
+   "subject": "feat(genesis): deploy the integrated founder surface to Cloudflare Pages"
+  },
+  {
+   "ref": "refs/archive/lane/legion-early-preflight-20261107",
+   "branch": "lane/legion-early-preflight-20261107",
+   "sha": "afde5d85f618eaca9f97f317c760878ca79d89f6",
+   "date": "2026-11-07T19:11:05+00:00",
+   "author": "Chidi Onyema",
+   "subject": "fix(legion): preserve YAML block indentation for private repair diagnostics"
+  },
+  {
+   "ref": "refs/archive/cloud/genesis-surface-preview-20261107-r7",
+   "branch": "cloud/genesis-surface-preview-20261107-r7",
+   "sha": "967e2352a28aff02b7af140fa7c15aee8907930f",
+   "date": "2026-11-07T18:51:45+00:00",
+   "author": "chidionyema",
+   "subject": "feat(genesis): deploy the integrated founder surface to Cloudflare Pages"
+  },
+  {
+   "ref": "refs/archive/cloud/genesis-surface-preview-20261107-r6",
+   "branch": "cloud/genesis-surface-preview-20261107-r6",
+   "sha": "16c896dad20eb96ee7b3dffcef8ccfe7fa3cd88f",
+   "date": "2026-11-07T18:47:07+00:00",
+   "author": "chidionyema",
+   "subject": "feat(genesis): deploy the integrated founder surface to Cloudflare Pages"
+  },
+  {
+   "ref": "refs/archive/cloud/genesis-surface-preview-20261107-r5",
+   "branch": "cloud/genesis-surface-preview-20261107-r5",
+   "sha": "b09080a1bca5da796e5d8b2f89a5bc2630d2df58",
+   "date": "2026-11-07T18:32:16+00:00",
+   "author": "chidionyema",
+   "subject": "feat(genesis): deploy the integrated founder surface to Cloudflare Pages"
+  },
+  {
+   "ref": "refs/archive/cloud/genesis-surface-preview-20261107-r4",
+   "branch": "cloud/genesis-surface-preview-20261107-r4",
+   "sha": "1d37724bf298e7c426dcb869387e681c9a66529e",
+   "date": "2026-11-07T18:27:15+00:00",
+   "author": "chidionyema",
+   "subject": "feat(genesis): deploy the integrated founder surface to Cloudflare Pages"
+  },
+  {
+   "ref": "refs/archive/cloud/genesis-surface-preview-20261107-r3",
+   "branch": "cloud/genesis-surface-preview-20261107-r3",
+   "sha": "8fe841358ffab0e57f1979966356cdbee1d591cd",
+   "date": "2026-11-07T18:13:40+00:00",
+   "author": "chidionyema",
+   "subject": "feat(genesis): deploy the integrated founder surface to Cloudflare Pages"
+  },
+  {
+   "ref": "refs/archive/lane/founder-recovery-policy-7480-20261107",
+   "branch": "lane/founder-recovery-policy-7480-20261107",
+   "sha": "7759a8c380621323477f31c64af5f47d67f4adde",
+   "date": "2026-11-07T17:58:19+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(estate): reject write-method and command injection through read intent"
+  },
+  {
+   "ref": "refs/archive/cloud/genesis-surface-preview-20261107-r2",
+   "branch": "cloud/genesis-surface-preview-20261107-r2",
+   "sha": "c7b3f26232e865bc6dca7ac429881f5fe4bebe7e",
+   "date": "2026-11-07T17:23:43+00:00",
+   "author": "chidionyema",
+   "subject": "feat(genesis): deploy the integrated founder surface to Cloudflare Pages"
+  },
+  {
+   "ref": "refs/archive/cloud/genesis-surface-preview-20261107",
+   "branch": "cloud/genesis-surface-preview-20261107",
+   "sha": "25c59872049b9768d324a3c229a4bbfc8650638e",
+   "date": "2026-11-07T16:58:05+00:00",
+   "author": "chidionyema",
+   "subject": "feat(genesis): deploy the integrated founder surface to Cloudflare Pages"
+  },
+  {
+   "ref": "refs/archive/lane/instruction-yield-links-7443",
+   "branch": "lane/instruction-yield-links-7443",
+   "sha": "cc8547662094f3c77d9bc495c1fa8c29dc62c0d6",
+   "date": "2026-11-07T14:39:55+00:00",
+   "author": "Chidi Onyema",
+   "subject": "feat(instruction): show unverified yield and exact next recovery action in one lookup"
+  },
+  {
+   "ref": "refs/archive/lane/context-admission-6156",
+   "branch": "lane/context-admission-6156",
+   "sha": "879c229a4f427b462c72a8fee4747d7b99463de5",
+   "date": "2026-11-07T13:52:19+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(memory): reject forged, stale, drifted and cross-agent topology ACKs"
+  },
+  {
+   "ref": "refs/archive/lane/estate-doors-recovery-proof-7334",
+   "branch": "lane/estate-doors-recovery-proof-7334",
+   "sha": "6ea7976f5115d890bace2a97f03c21a55fc262c8",
+   "date": "2026-11-07T13:33:15+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(recovery): migrate legacy close-on-UNKNOWN test to strict hold invariant"
+  },
+  {
+   "ref": "refs/archive/lane/continuity-admission-7790",
+   "branch": "lane/continuity-admission-7790",
+   "sha": "4d00bbf52b55c02ae640169b3f44b517229d101e",
+   "date": "2026-11-07T13:03:13+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(continuity): encrypted OCI checkpoint to fenced takeover integration scenarios"
+  },
+  {
+   "ref": "refs/archive/protocol/estate-node-v1-ship",
+   "branch": "protocol/estate-node-v1-ship",
+   "sha": "b1474d65244c67cf455c48c94fda4c5215031641",
+   "date": "2026-11-07T10:25:46+00:00",
+   "author": "chidionyema",
+   "subject": "chore(context): bind canonical claim to protocol evidence"
+  },
+  {
+   "ref": "refs/archive/wip/legion-success-door-integration-20261107",
+   "branch": "wip/legion-success-door-integration-20261107",
+   "sha": "f8b6ec58ce84428544107bc755aa65ff8cca1b36",
+   "date": "2026-11-07T08:38:50+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(legion): verify signed commit contains only preflight-verified active repair component"
+  },
+  {
+   "ref": "refs/archive/wip/legion-success-preflight-20261107",
+   "branch": "wip/legion-success-preflight-20261107",
+   "sha": "169459fe76fc67db03735dea9412ed8cfa53abc7",
+   "date": "2026-11-07T08:37:45+00:00",
+   "author": "Chidi Onyema",
+   "subject": "feat(legion): issue a machine-checked repair component for the existing DoF commit trailer"
+  },
+  {
+   "ref": "refs/archive/fix/disk-cleanup-zombie-lock",
+   "branch": "fix/disk-cleanup-zombie-lock",
+   "sha": "f9a094ae5fc60829d54c70c806a0ba4d943ccad4",
+   "date": "2026-11-07T08:20:40+00:00",
+   "author": "chidionyema",
+   "subject": "fix(disk-cleanup): recover dead worker locks"
+  },
+  {
+   "ref": "refs/archive/lane/legion-runner-deps-safety-20261107",
+   "branch": "lane/legion-runner-deps-safety-20261107",
+   "sha": "1c93dd0db200b8b9f99ee5c341cca65b0d6fa30d",
+   "date": "2026-11-07T07:23:22+00:00",
+   "author": "Chidi Onyema",
+   "subject": "fix(legion): write an actual newline when publishing pinned gate toolchain PATH"
+  },
+  {
+   "ref": "refs/archive/lane/dof-proof-refuse",
+   "branch": "lane/dof-proof-refuse",
+   "sha": "6fa194744b946dfed7ddbfbcfd5b4a49c83e2015",
+   "date": "2026-11-07T07:13:45+00:00",
+   "author": "claude-contractor",
+   "subject": "test(dof): unrelated work while llm-router/otto/estate-doors are down (must be REFUSED by dof-gate)"
+  },
+  {
+   "ref": "refs/archive/lane/idp-local-gate-offline",
+   "branch": "lane/idp-local-gate-offline",
+   "sha": "be7e329fb38f5b40106d2c81e0c0690b924e50e4",
+   "date": "2026-11-07T05:11:50+00:00",
+   "author": "estate-bot",
+   "subject": "chore(registry): regenerate the capability witness"
+  },
+  {
+   "ref": "refs/archive/feat/sb-fast-help-legion",
+   "branch": "feat/sb-fast-help-legion",
+   "sha": "d060e60029ca98eb232ff0d035def1116271528e",
+   "date": "2026-11-07T03:51:58+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into feat/sb-fast-help-legion"
+  },
+  {
+   "ref": "refs/archive/feat/legion-kit",
+   "branch": "feat/legion-kit",
+   "sha": "b03932f538a42780419cfabc36eea47eea5c02ef",
+   "date": "2026-11-07T00:16:44+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into feat/legion-kit"
+  },
+  {
+   "ref": "refs/archive/tmp/identity-probe",
+   "branch": "tmp/identity-probe",
+   "sha": "513c4e1981ff5580d6457ddfdbffa70097f0bb6a",
+   "date": "2026-11-07T00:06:49+00:00",
+   "author": "Chidi Onyema",
+   "subject": "feat(backstage): register One-Brain as a founder surface"
+  },
+  {
+   "ref": "refs/archive/security/remove-pr-oidc-trust-20261106",
+   "branch": "security/remove-pr-oidc-trust-20261106",
+   "sha": "72fab24569457a35a6cbab1c84f1a40a3ee8fc45",
+   "date": "2026-11-06T23:44:21+00:00",
+   "author": "chidionyema",
+   "subject": "Merge remote-tracking branch 'origin/main' into security/remove-pr-oidc-trust-20261106"
+  },
+  {
+   "ref": "refs/archive/lane/founder-zero-touch-7771",
+   "branch": "lane/founder-zero-touch-7771",
+   "sha": "953e96a131c0761b70b9a86f55e7b21858a3c709",
+   "date": "2026-11-06T23:32:14+00:00",
+   "author": "Chidi Onyema",
+   "subject": "feat(governance): require revision-bound production proof for operating verdict"
+  },
+  {
+   "ref": "refs/archive/fix/sandbox-host-executor",
+   "branch": "fix/sandbox-host-executor",
+   "sha": "fd693773bbc6fe4cb3800309b47e4b0d77918df9",
+   "date": "2026-11-06T23:13:35+00:00",
+   "author": "chidionyema",
+   "subject": "perf(executor): make intent discovery a single directory scan"
+  },
+  {
+   "ref": "refs/archive/lane/agent-loop-doc-v1",
+   "branch": "lane/agent-loop-doc-v1",
+   "sha": "25bf74377ecd577293c4a2b2bea4c1d3aec5bb6e",
+   "date": "2026-11-06T22:42:36+00:00",
+   "author": "agent",
+   "subject": "docs(runbook): how an agent's change reaches main, in one page"
+  },
+  {
+   "ref": "refs/archive/lane/loop-trio-v2",
+   "branch": "lane/loop-trio-v2",
+   "sha": "ff96a4467de239c194dfc5c8fe94d03c446107b8",
+   "date": "2026-11-06T22:28:33+00:00",
+   "author": "agent",
+   "subject": "loop: the red lanes arrive with the session, recovery gets a number, refusals name the fix"
+  },
+  {
+   "ref": "refs/archive/feature/one-brain-surface-registration",
+   "branch": "feature/one-brain-surface-registration",
+   "sha": "17f5bd9a686db8c144db034999cdfbf193923dee",
+   "date": "2026-11-06T22:08:10+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into feature/one-brain-surface-registration"
+  },
+  {
+   "ref": "refs/archive/wip/recovery-authoritative-incident-receipt-20261106",
+   "branch": "wip/recovery-authoritative-incident-receipt-20261106",
+   "sha": "573c2c154988d43760372351416004a5491de43f",
+   "date": "2026-11-06T21:43:18+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(recovery): block OCI command queue saturation without cancelling existing work"
+  },
+  {
+   "ref": "refs/archive/wip/incident-sensor-all-failures-20261106",
+   "branch": "wip/incident-sensor-all-failures-20261106",
+   "sha": "8028835578e1a56bf947b24e4c95710e7f63dd47",
+   "date": "2026-11-06T21:39:09+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(incident): prove the admitted first incident is the older P0"
+  },
+  {
+   "ref": "refs/archive/wip/oci-run-command-bounded-proof-20261106",
+   "branch": "wip/oci-run-command-bounded-proof-20261106",
+   "sha": "0104d285c01c5915721df169618853850971970f",
+   "date": "2026-11-06T21:25:19+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(recovery): require persistent main-only daily nonmutating health census"
+  },
+  {
+   "ref": "refs/archive/lane/lane-feedback-v3",
+   "branch": "lane/lane-feedback-v3",
+   "sha": "82604b8bf97cfc0cd835e2406efebc761284f9bc",
+   "date": "2026-11-06T21:19:14+00:00",
+   "author": "agent",
+   "subject": "ci(lane): a red lane becomes the ticket the agent is handed"
+  },
+  {
+   "ref": "refs/archive/lane/gemini-drive-relay-7760",
+   "branch": "lane/gemini-drive-relay-7760",
+   "sha": "2920b70d6c5f2a9c3f6ef8ab9e75dcd423e5156a",
+   "date": "2026-11-06T21:16:07+00:00",
+   "author": "Chidi Onyema",
+   "subject": "fix(genesis): format receipt digest and refusal output at receiver boundary"
+  },
+  {
+   "ref": "refs/archive/wip/recovery-host-readonly-volume-census-20261106",
+   "branch": "wip/recovery-host-readonly-volume-census-20261106",
+   "sha": "800dcf9965ddf740de771ec5b5c9e69c7c0bc381",
+   "date": "2026-11-06T20:06:31+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(recovery): refuse false-success missing volumes and protect main-only OCI census"
+  },
+  {
+   "ref": "refs/archive/wip/estate-db-rpo-not-copy-age-20261106",
+   "branch": "wip/estate-db-rpo-not-copy-age-20261106",
+   "sha": "8b0d15ce2d32df729ff2cd00d0aa0f4b4a97d8cc",
+   "date": "2026-11-06T19:53:50+00:00",
+   "author": "Chidi Onyema",
+   "subject": "fix(estate-db): distinguish future claimed data from impossible copy ancestry"
+  },
+  {
+   "ref": "refs/archive/wip/estate-backup-preserve-source-age-20261106",
+   "branch": "wip/estate-backup-preserve-source-age-20261106",
+   "sha": "65359a6fe3d4202701cf68c7f5c500fad5e0d187",
+   "date": "2026-11-06T19:44:10+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(estate-db): falsify checksum integrity with equal-length substituted bytes"
+  },
+  {
+   "ref": "refs/archive/wip/estate-backup-immediate-prove-20261106",
+   "branch": "wip/estate-backup-immediate-prove-20261106",
+   "sha": "f3f90614823d8f4246cbdde5b814a386bac2d424",
+   "date": "2026-11-06T19:26:57+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(estate-db): pin exactly one protected push trigger and document stdlib exception"
+  },
+  {
+   "ref": "refs/archive/wip/estate-backup-real-data-proof-20261106",
+   "branch": "wip/estate-backup-real-data-proof-20261106",
+   "sha": "92c7f80f4dd5b4abeffa6ee8a3b41b781d04dfea",
+   "date": "2026-11-06T19:01:04+00:00",
+   "author": "Chidi Onyema",
+   "subject": "fix(test): express actual SQL line breaks in recovery fixtures"
+  },
+  {
+   "ref": "refs/archive/wip/incident-ci-branch-attestation-20261106",
+   "branch": "wip/incident-ci-branch-attestation-20261106",
+   "sha": "aaa4a5a7bcdb56e2d052d6608f7771af8d945e25",
+   "date": "2026-11-06T18:52:36+00:00",
+   "author": "Chidi Onyema",
+   "subject": "fix(incident): malformed GitHub attempt fields fail closed, not crash verifier"
+  },
+  {
+   "ref": "refs/archive/wip/incident-worker-liveness-20261106",
+   "branch": "wip/incident-worker-liveness-20261106",
+   "sha": "61c89288c1e240c396f0d107de544b52367606c0",
+   "date": "2026-11-06T18:42:43+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(incident): falsify queue pending, missing ownership and repeated P0 escalation"
+  },
+  {
+   "ref": "refs/archive/wip/incident-close-proof-20261106",
+   "branch": "wip/incident-close-proof-20261106",
+   "sha": "b766a3cac4f67bfd6c4fb43d7d3e9438a8c63500",
+   "date": "2026-11-06T18:14:06+00:00",
+   "author": "Chidi Onyema",
+   "subject": "test(incident): reconcile delayed readback in real tick loop"
+  },
+  {
+   "ref": "refs/archive/adr/0051-approval-without-laptop",
+   "branch": "adr/0051-approval-without-laptop",
+   "sha": "6ec8eb392f2a9070bad50c6ca88745160545e793",
+   "date": "2026-11-06T16:21:50+00:00",
+   "author": "agent",
+   "subject": "fix(ci): the language-gate self-test must not inherit -n auto"
+  },
+  {
+   "ref": "refs/archive/lane/externally-pinned-certifier-verdict-20261106",
+   "branch": "lane/externally-pinned-certifier-verdict-20261106",
+   "sha": "bce779d07fe0a1789d8c69c8d9d2e4ef117a511d",
+   "date": "2026-11-06T14:35:57+00:00",
+   "author": "Chidi Onyema",
+   "subject": "fix(assurance): bind certifier nonce and canonical byte protocol across runtimes"
+  },
+  {
+   "ref": "refs/archive/preserve/mac-lane-macos-estate-resources",
+   "branch": "preserve/mac-lane-macos-estate-resources",
+   "sha": "8eac7e88eef30c34fa4f357c0259b3b943b33315",
+   "date": "2026-11-06T14:32:46+00:00",
+   "author": "agent",
+   "subject": "docs(adr): approval without the laptop - GitHub review is the signature"
+  },
+  {
+   "ref": "refs/archive/lane/HEAD",
+   "branch": "lane/HEAD",
+   "sha": "e1494b7f12bbaccae68d5352c0ac11b154e076a2",
+   "date": "2026-11-05T00:40:52+00:00",
+   "author": "agent",
+   "subject": "docs: 0050 the laptop is a thin client -- the router lives in the estate"
+  },
+  {
+   "ref": "refs/archive/estate/fleetview-mirror-dsh",
+   "branch": "estate/fleetview-mirror-dsh",
+   "sha": "b7b4502ff738983c17d30cefb23a10244f6c3941",
+   "date": "2026-11-03T07:04:11+00:00",
+   "author": "agent",
+   "subject": "fleetview: load the vault key from the daemon-readable mirror"
+  },
+  {
+   "ref": "refs/archive/lane/router-failure-mode-map",
+   "branch": "lane/router-failure-mode-map",
+   "sha": "ea33c2a388889f82145e7c60fe426ab567491672",
+   "date": "2026-11-02T14:27:02+00:00",
+   "author": "agent",
+   "subject": "docs(llm): correct the mode count to the measured 89"
+  },
+  {
+   "ref": "refs/archive/staged/memory-one-plane",
+   "branch": "staged/memory-one-plane",
+   "sha": "4e5336e877cb6c908d2baa2cd7aee4264a997184",
+   "date": "2026-10-31T14:41:56+00:00",
+   "author": "Claude",
+   "subject": "feat(context): a GitHub reader for the discovery oracle's grader, with its own question set"
+  },
+  {
+   "ref": "refs/archive/lane/catalog-completeness-gate",
+   "branch": "lane/catalog-completeness-gate",
+   "sha": "fe255574134b174b6e4d59483d87c964f4da7c13",
+   "date": "2026-10-31T13:29:13+00:00",
+   "author": "estate-bot",
+   "subject": "chore(registry): regenerate the capability witness"
+  },
+  {
+   "ref": "refs/archive/staged/memory-mess",
+   "branch": "staged/memory-mess",
+   "sha": "77a24965339477b879d25ee86ad0bc051aa7bf95",
+   "date": "2026-10-31T12:16:06+00:00",
+   "author": "Claude",
+   "subject": "chore(memory): register reflects the retirements, the review and three live probes"
+  },
+  {
+   "ref": "refs/archive/staged/memory-capture",
+   "branch": "staged/memory-capture",
+   "sha": "93528c8922a409956d7b8efb1793197ca22f5cc9",
+   "date": "2026-10-31T12:12:43+00:00",
+   "author": "Claude",
+   "subject": "feat(memory): machine-side claim brief and lane capture, wired into claim-open"
+  },
+  {
+   "ref": "refs/archive/staged/memory-canary",
+   "branch": "staged/memory-canary",
+   "sha": "9329eb096f52dc6c74f777fae6481d12452481ed",
+   "date": "2026-10-31T12:12:31+00:00",
+   "author": "Claude",
+   "subject": "feat(memory): cross-surface canary with null-for-unproven adapters and poison check"
+  },
+  {
+   "ref": "refs/archive/lane/gemini-recovery",
+   "branch": "lane/gemini-recovery",
+   "sha": "0a1a92ca728e94dcca19339d59f168a53b10242d",
+   "date": "2026-10-31T00:30:10+00:00",
+   "author": "agent",
+   "subject": "fix(lane): submit through governed helper under filesystem guard"
+  },
+  {
+   "ref": "refs/archive/lane/incident-ci-base-2",
+   "branch": "lane/incident-ci-base-2",
+   "sha": "8e990a58662bf10a30717f973f52067849c0739a",
+   "date": "2026-10-29T16:04:40+00:00",
+   "author": "pi-incident-loop",
+   "subject": "fix(ci): the root suite grades the candidate's own diff, and says BLIND when it cannot"
+  },
+  {
+   "ref": "refs/archive/lane/the-oci-door",
+   "branch": "lane/the-oci-door",
+   "sha": "bc956edda4682498b13d6cb58da4a97c1d451917",
+   "date": "2026-10-29T16:00:04+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "fix(router): the ledger counts lanes, the instrument reads refusals, and the render stops importing LiteLLM"
+  },
+  {
+   "ref": "refs/archive/lane/incident-ci-base",
+   "branch": "lane/incident-ci-base",
+   "sha": "3b4a579663b580921e5f15a533b7985b73b0b36f",
+   "date": "2026-10-29T12:21:48+00:00",
+   "author": "pi-incident-loop",
+   "subject": "fix(ci): the root suite grades the candidate's own diff, and says BLIND when it cannot"
+  },
+  {
+   "ref": "refs/archive/lane/memory-second-home",
+   "branch": "lane/memory-second-home",
+   "sha": "92e2e894876b1ba5285ab1f3f9ec99ccc12ab027",
+   "date": "2026-10-29T11:45:27+00:00",
+   "author": "estate-bot",
+   "subject": "chore(registry): regenerate the capability witness"
+  },
+  {
+   "ref": "refs/archive/lane/incident-cluster-control-plane",
+   "branch": "lane/incident-cluster-control-plane",
+   "sha": "5cd8a2c0727fceee06bb8df2ba86f3a2bc702a19",
+   "date": "2026-10-29T08:17:33+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "incident: the estate cannot find what it knows -- measured gaps, agent behaviour rules, and the one-pass acceptance test"
+  },
+  {
+   "ref": "refs/archive/lane/incident-loop",
+   "branch": "lane/incident-loop",
+   "sha": "1e49da0643a6283518a875fe59d2b89e716ead38",
+   "date": "2026-10-29T07:03:16+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "fix(estate): the loop finds its tree when it is staged into ~/.estate/bin"
+  },
+  {
+   "ref": "refs/archive/lane/router-boot-storm",
+   "branch": "lane/router-boot-storm",
+   "sha": "46e391d823ad5b0741ae6a9e188edac299fb4cce",
+   "date": "2026-10-29T02:14:06+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "router: diagnosis record and ruff format for the laptop-fallback fix"
+  },
+  {
+   "ref": "refs/archive/lane/founder-decision-door",
+   "branch": "lane/founder-decision-door",
+   "sha": "3ce9eaa89e9d332defa862feef7c6d3fa3d93a42",
+   "date": "2026-10-29T00:13:28+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "fix(otto): the founder's late answer is an answer, and a closed decision gives the estate its webhook back"
+  },
+  {
+   "ref": "refs/archive/lane/oci-nodepool-reconcile",
+   "branch": "lane/oci-nodepool-reconcile",
+   "sha": "0584cf44c86841f0321caf048a3b707746d79bf3",
+   "date": "2026-10-28T22:17:41+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "estate: oci-nodepool-reconcile door removes phantom OKE node records"
+  },
+  {
+   "ref": "refs/archive/lane/nsvee-enforcement-adr-3",
+   "branch": "lane/nsvee-enforcement-adr-3",
+   "sha": "33f51ab0c0b68c9a1bb91964e0409f2cc1cc82fa",
+   "date": "2026-10-28T21:41:09+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "nsvee: enforcement decided at the commit boundary, on top of current main"
+  },
+  {
+   "ref": "refs/archive/lane/nsvee-enforcement-adr-2",
+   "branch": "lane/nsvee-enforcement-adr-2",
+   "sha": "bcb7051b01a5ebf6b450357cc164842ff28ffb10",
+   "date": "2026-10-28T21:38:19+00:00",
+   "author": "estate-bot",
+   "subject": "chore(registry): regenerate the capability witness"
+  },
+  {
+   "ref": "refs/archive/lane/disk-cleanup-robust-v2",
+   "branch": "lane/disk-cleanup-robust-v2",
+   "sha": "ffb32adff31cfda3800230212cce30eed7c78f7e",
+   "date": "2026-10-28T21:26:22+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "disk: one walk answers every candidate's three questions, and a test never touches the real temp"
+  },
+  {
+   "ref": "refs/archive/lane/disk-reclaim-estate-home",
+   "branch": "lane/disk-reclaim-estate-home",
+   "sha": "76e6fc2d922ec367d48b6b906dd75ba6ac6f93cb",
+   "date": "2026-10-28T21:16:31+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "feat(estate): the disk-reclaim door reclaims the estate's own weight, and lets the estate's cleaner finish"
+  },
+  {
+   "ref": "refs/archive/lane/disk-cleanup-robust",
+   "branch": "lane/disk-cleanup-robust",
+   "sha": "e7b6e94a44024a5b53189e9619939aa70ca7b586",
+   "date": "2026-10-28T19:12:21+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "docs: the estate's state, in one place every agent already reads"
+  },
+  {
+   "ref": "refs/archive/lane/nsvee-enforcement-adr",
+   "branch": "lane/nsvee-enforcement-adr",
+   "sha": "a96c6e8f3f9e5041b9de7cb7e8086e88bb8269e0",
+   "date": "2026-10-28T16:49:04+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "facts: retire the last daily-TTL row, so the push fleet stops going red"
+  },
+  {
+   "ref": "refs/archive/lane/the-stewardship",
+   "branch": "lane/the-stewardship",
+   "sha": "e9c2b3d2d4516169acd0a57e856b357933344fd9",
+   "date": "2026-10-28T16:18:03+00:00",
+   "author": "pi",
+   "subject": "feat(stewardship): import the Estate Stewardship P0 package (ledger, bounded policy, comparison, tests)"
+  },
+  {
+   "ref": "refs/archive/lane/aei-ops-4",
+   "branch": "lane/aei-ops-4",
+   "sha": "506b77954b8214ae4530cd1b003e08886d1135ea",
+   "date": "2026-10-28T14:48:11+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "feat(observability): the AEI collector gets its own directory and its own Flux row (lane 2 of 2)"
+  },
+  {
+   "ref": "refs/archive/lane/the-continuity",
+   "branch": "lane/the-continuity",
+   "sha": "096f60d779ca14df4b9a24f35e2c99649cfbc31f",
+   "date": "2026-10-28T14:21:25+00:00",
+   "author": "pi",
+   "subject": "fix(estate): the rescue clock is wired to the loop that uses it"
+  },
+  {
+   "ref": "refs/archive/lane/mutation/ldg-bdaba7c6f4fa",
+   "branch": "lane/mutation/ldg-bdaba7c6f4fa",
+   "sha": "942f61df705dcb1dca929a9db3f3a05e55cbd9fa",
+   "date": "2026-10-28T06:46:39+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into mutation/ldg-bdaba7c6f4fa"
+  },
+  {
+   "ref": "refs/archive/mutation/ldg-bdaba7c6f4fa",
+   "branch": "mutation/ldg-bdaba7c6f4fa",
+   "sha": "942f61df705dcb1dca929a9db3f3a05e55cbd9fa",
+   "date": "2026-10-28T06:46:39+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into mutation/ldg-bdaba7c6f4fa"
+  },
+  {
+   "ref": "refs/archive/lane/mutation/ldg-86718951238a",
+   "branch": "lane/mutation/ldg-86718951238a",
+   "sha": "9d6a0a1ffb286532be8a58eaddbc2a4e4def4d23",
+   "date": "2026-10-28T06:27:22+00:00",
+   "author": "estate-mutation-ledger",
+   "subject": "the multi-domain mutation ledger admit scenario"
+  },
+  {
+   "ref": "refs/archive/mutation/ldg-86718951238a",
+   "branch": "mutation/ldg-86718951238a",
+   "sha": "9d6a0a1ffb286532be8a58eaddbc2a4e4def4d23",
+   "date": "2026-10-28T06:27:22+00:00",
+   "author": "estate-mutation-ledger",
+   "subject": "the multi-domain mutation ledger admit scenario"
+  },
+  {
+   "ref": "refs/archive/mutation/ldg-9c86398cb87f",
+   "branch": "mutation/ldg-9c86398cb87f",
+   "sha": "66da08a4ad7b10095edeab6f972feb27b3963ee8",
+   "date": "2026-10-28T06:20:47+00:00",
+   "author": "estate-mutation-ledger",
+   "subject": "the multi-domain mutation ledger admit scenario"
+  },
+  {
+   "ref": "refs/archive/lane/aei-ops-2",
+   "branch": "lane/aei-ops-2",
+   "sha": "55d9e4d9f3f72c0ee661acb3d27c5abcd22a101e",
+   "date": "2026-10-28T06:10:39+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "fix(catalog): the capability registry records the AEI plane, or the gate is right to fail"
+  },
+  {
+   "ref": "refs/archive/lane/mutation/ldg-d1eaa299b790",
+   "branch": "lane/mutation/ldg-d1eaa299b790",
+   "sha": "cc5255f8fdc4198fefb7b28c4e1cca0483a92065",
+   "date": "2026-10-28T05:52:07+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into mutation/ldg-d1eaa299b790"
+  },
+  {
+   "ref": "refs/archive/mutation/ldg-d1eaa299b790",
+   "branch": "mutation/ldg-d1eaa299b790",
+   "sha": "cc5255f8fdc4198fefb7b28c4e1cca0483a92065",
+   "date": "2026-10-28T05:52:07+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into mutation/ldg-d1eaa299b790"
+  },
+  {
+   "ref": "refs/archive/lane/mutation/ldg-a419407ef653",
+   "branch": "lane/mutation/ldg-a419407ef653",
+   "sha": "817d0a87f79a9f4a0a7225963cea3b8e9c7c0718",
+   "date": "2026-10-28T05:52:05+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into mutation/ldg-a419407ef653"
+  },
+  {
+   "ref": "refs/archive/mutation/ldg-a419407ef653",
+   "branch": "mutation/ldg-a419407ef653",
+   "sha": "817d0a87f79a9f4a0a7225963cea3b8e9c7c0718",
+   "date": "2026-10-28T05:52:05+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into mutation/ldg-a419407ef653"
+  },
+  {
+   "ref": "refs/archive/lane/aei-ops",
+   "branch": "lane/aei-ops",
+   "sha": "1a092a2bdfd2c53088242e731b92b0baf9c25e09",
+   "date": "2026-10-28T04:45:22+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "fix(ci): pytest 9.2.0 broke the acceptance suite on every candidate"
+  },
+  {
+   "ref": "refs/archive/lane/fix/pytest-9-2-pin",
+   "branch": "lane/fix/pytest-9-2-pin",
+   "sha": "e23bfdd87d1bdd762c4e7aece992163e73985fc0",
+   "date": "2026-10-28T04:31:44+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "fix(ci): pytest 9.2.0 broke the acceptance suite on every candidate"
+  },
+  {
+   "ref": "refs/archive/lane/atlas-complete",
+   "branch": "lane/atlas-complete",
+   "sha": "6aec84a30a44b02017a3bff7c5ede935d6d4ab8f",
+   "date": "2026-10-28T02:21:06+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "fix(greenlane): a binary file in a lane's diff does not kill the tick"
+  },
+  {
+   "ref": "refs/archive/lane/greenlane-binary-diff",
+   "branch": "lane/greenlane-binary-diff",
+   "sha": "0f5b5ee931f16b9f3a655ef61070e96fdb90ec4c",
+   "date": "2026-10-27T11:11:12+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "fix(greenlane): a binary file in a lane's diff does not kill the tick"
+  },
+  {
+   "ref": "refs/archive/lane/reconcile-symlinked-path",
+   "branch": "lane/reconcile-symlinked-path",
+   "sha": "db3a0430d98000989fd1d74f31242ec8a3a3871b",
+   "date": "2026-10-27T10:06:46+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "fix(reconcile): a checkout reached through a symlink is still the same checkout"
+  },
+  {
+   "ref": "refs/archive/lane/efda-cluster-startup-r1",
+   "branch": "lane/efda-cluster-startup-r1",
+   "sha": "2d8e20c63d0717ea9fa01f7116bb5720a7ff5d41",
+   "date": "2026-10-27T07:54:53+00:00",
+   "author": "pi",
+   "subject": "chore(facts): retire the daily-window intent-timeout fact that reddens every push"
+  },
+  {
+   "ref": "refs/archive/lane/efda-universal-coverage-r2",
+   "branch": "lane/efda-universal-coverage-r2",
+   "sha": "4f6664850729dfc5098066c996eb9b5655afde22",
+   "date": "2026-10-26T22:17:35+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "fix(efda): the manifests must satisfy the estate's own trivy scan"
+  },
+  {
+   "ref": "refs/archive/backup/preserve-20261026-efda",
+   "branch": "backup/preserve-20261026-efda",
+   "sha": "dbd0ebe69fbb59a6712d80d58a4df751329c3420",
+   "date": "2026-10-26T19:27:08+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "fix(spine): the S310 waiver belongs on the line the diagnostic is reported on"
+  },
+  {
+   "ref": "refs/archive/backup/preserve-20261026-lane-routing-law-cloud-default",
+   "branch": "backup/preserve-20261026-lane-routing-law-cloud-default",
+   "sha": "6c4e2576471b9af16eb5301ef0985b7c42c9275a",
+   "date": "2026-10-26T18:55:32+00:00",
+   "author": "pi",
+   "subject": "docs(law): the cloud router is the default route, the laptop router is the fallback"
+  },
+  {
+   "ref": "refs/archive/backup/preserve-20261026-router-front",
+   "branch": "backup/preserve-20261026-router-front",
+   "sha": "8aa1726b58bffe47018b0a966bfb7e9b80dded67",
+   "date": "2026-10-26T18:21:22+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "preserve: the router's front falls back to the cloud when the local lane refuses"
+  },
+  {
+   "ref": "refs/archive/backup/preserve-20261026-surface-spec",
+   "branch": "backup/preserve-20261026-surface-spec",
+   "sha": "1ba066127e9094a83d06a7db2e95477486500917",
+   "date": "2026-10-26T17:54:33+00:00",
+   "author": "lead-pm",
+   "subject": "preserve: the founder's five surfaces, reviewed against the packs and the kit"
+  },
+  {
+   "ref": "refs/archive/backup/preserve-20261026-lane-agentc-ledger-key",
+   "branch": "backup/preserve-20261026-lane-agentc-ledger-key",
+   "sha": "a1b88fc54476ae2cb8a869cb1a9db3d3dab29071",
+   "date": "2026-10-26T16:27:06+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "fix(ledger): the key arrives as the key, and the ledger must read it"
+  },
+  {
+   "ref": "refs/archive/mutation/ldg-f9ec63d03049",
+   "branch": "mutation/ldg-f9ec63d03049",
+   "sha": "8c3573de37278ed4430a49378098ff45708e66f2",
+   "date": "2026-10-26T16:11:53+00:00",
+   "author": "estate-mutation-ledger",
+   "subject": "the multi-domain mutation ledger admit scenario"
+  },
+  {
+   "ref": "refs/archive/backup/preserve-20261026-lane-oke-ollama-free-floor",
+   "branch": "backup/preserve-20261026-lane-oke-ollama-free-floor",
+   "sha": "30f51f10b418abd5747f802d732eed1ea91d6aa5",
+   "date": "2026-10-26T15:44:22+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "fix(router): the laptop's config had drifted from its source - the Mac ollama lanes were one render away from coming back"
+  },
+  {
+   "ref": "refs/archive/mutation/ldg-09f80c48e607",
+   "branch": "mutation/ldg-09f80c48e607",
+   "sha": "af5996285dbf25be62bdf5e2c717febd2520e519",
+   "date": "2026-10-26T13:42:41+00:00",
+   "author": "estate-mutation-ledger",
+   "subject": "the multi-domain mutation ledger admit scenario"
+  },
+  {
+   "ref": "refs/archive/backup/preserve-20261026-feature-agentc-ledger-key",
+   "branch": "backup/preserve-20261026-feature-agentc-ledger-key",
+   "sha": "72964d7305aa81d9aa1fc9bb7a43a797c8f2172c",
+   "date": "2026-10-26T13:05:20+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "fix(ledger): the key arrives as the key, and the ledger must read it"
+  },
+  {
+   "ref": "refs/archive/mutation/ldg-5240a1439d85",
+   "branch": "mutation/ldg-5240a1439d85",
+   "sha": "7595132dbfe629f63fb4d5b69780e9a413056dd9",
+   "date": "2026-10-26T12:18:28+00:00",
+   "author": "estate-mutation-ledger",
+   "subject": "the multi-domain mutation ledger admit scenario"
+  },
+  {
+   "ref": "refs/archive/lane/agentc-router-convergence",
+   "branch": "lane/agentc-router-convergence",
+   "sha": "68ee0a5b34bf954cc171a411daff81ed32b9b4a1",
+   "date": "2026-10-26T07:22:11+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "facts: re-measure the three rows whose 24h window closed"
+  },
+  {
+   "ref": "refs/archive/lane/face-intent-data",
+   "branch": "lane/face-intent-data",
+   "sha": "e2db68b45445aa1a42b4c57a09a42b0260e21a51",
+   "date": "2026-10-25T23:56:45+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "fix(hooks): the pre-push door tells the bdd proof which commit it is pushing"
+  },
+  {
+   "ref": "refs/archive/lane/agentc-catalog-migration",
+   "branch": "lane/agentc-catalog-migration",
+   "sha": "f6bc21784b2d9b01ba61845578d88c7d0a26a4a6",
+   "date": "2026-10-25T13:47:14+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "docs(diagnoses): the cluster ledger records nothing, and why"
+  },
+  {
+   "ref": "refs/archive/backup/preserve-20261026-lane-cloud-primary-front",
+   "branch": "backup/preserve-20261026-lane-cloud-primary-front",
+   "sha": "f70de013c620c4720819c7e119aed8dd98d8a84c",
+   "date": "2026-10-25T00:40:06+01:00",
+   "author": "estate-agents[bot]",
+   "subject": "front: cloud is the primary router; laptop slots are the fallback"
+  },
+  {
+   "ref": "refs/archive/lane/friction-off-laptop",
+   "branch": "lane/friction-off-laptop",
+   "sha": "198e13041122e75d9b0f2b5d1286c9d3f67afebe",
+   "date": "2026-10-24T14:47:20+01:00",
+   "author": "chidionyema",
+   "subject": "friction: materialise the bus into the ledger /fleet already reads"
+  },
+  {
+   "ref": "refs/archive/fix/router-ceiling-alias",
+   "branch": "fix/router-ceiling-alias",
+   "sha": "c950dd3ac850815928883463ea776d5c6cdc9309",
+   "date": "2026-10-23T05:51:12+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into fix/router-ceiling-alias"
+  },
+  {
+   "ref": "refs/archive/estate/router-lanes-backup",
+   "branch": "estate/router-lanes-backup",
+   "sha": "9bc682357bebb4871a760a22e5ebb46fd9a91152",
+   "date": "2026-10-22T22:52:33+00:00",
+   "author": "estate-router-backup",
+   "subject": "router backup: the lanes the database holds, recorded"
+  },
+  {
+   "ref": "refs/archive/lane/feat/image-build-light",
+   "branch": "lane/feat/image-build-light",
+   "sha": "6b5986c49d94bf306a7fa0a9b04c5e720ba05cad",
+   "date": "2026-10-22T22:31:21+01:00",
+   "author": "chidionyema",
+   "subject": "estate: a red post-merge image build that nothing rebuilt is a red light (#6875)"
+  },
+  {
+   "ref": "refs/archive/backup/preserve-20261027-fleetview-image-builds",
+   "branch": "backup/preserve-20261027-fleetview-image-builds",
+   "sha": "2f4b885823a429241286b1ad3e3994e1b8aa46ce",
+   "date": "2026-10-22T22:11:41+01:00",
+   "author": "pi",
+   "subject": "fleetview-backend: the image builds again, so the Face's backend can deploy"
+  },
+  {
+   "ref": "refs/archive/lane/epic-090-voice-hardening",
+   "branch": "lane/epic-090-voice-hardening",
+   "sha": "57af702ab35ca935e84fe2e2ad834deca8601dfa",
+   "date": "2026-10-22T16:07:50+01:00",
+   "author": "estate-agents[bot]",
+   "subject": "sovereign(runners): a refusal is not a success (EPIC-IDP-090 lane D)"
+  },
+  {
+   "ref": "refs/archive/eval/yarngpt2",
+   "branch": "eval/yarngpt2",
+   "sha": "87c1d72c7a27a76d5e7c06185bd712ee128a2881",
+   "date": "2026-10-22T11:49:19+01:00",
+   "author": "estate-agents[bot]",
+   "subject": "eval(yarngpt2): join step needs requests for faster-whisper"
+  },
+  {
+   "ref": "refs/archive/lane/--help",
+   "branch": "lane/--help",
+   "sha": "c3a7df33c01e7e883cc32f463302e8f5f46a0f62",
+   "date": "2026-10-22T09:08:06+01:00",
+   "author": "estate-agents[bot]",
+   "subject": "feat(research-engine): lead with Exa, keep SearXNG alongside"
+  },
+  {
+   "ref": "refs/archive/lane/fleet-declutter",
+   "branch": "lane/fleet-declutter",
+   "sha": "e76fc566855c36f2bc56e19e76f49e3aaa2c491a",
+   "date": "2026-10-21T22:06:08+01:00",
+   "author": "estate-agents[bot]",
+   "subject": "fix(fleet): declutter the Reactor -- define missing classes, drop empty cards and zero counters"
+  },
+  {
+   "ref": "refs/archive/backup/preserve-20261026-lane-active-memory-renders-text",
+   "branch": "backup/preserve-20261026-lane-active-memory-renders-text",
+   "sha": "9d3a76912682a3d597dbfb00e2f3c265fdb812a2",
+   "date": "2026-10-21T11:17:33+01:00",
+   "author": "estate-agents[bot]",
+   "subject": "active_memory: show the brief's facts, not \"- [fact]  (None)\""
+  },
+  {
+   "ref": "refs/archive/backup/preserve-20261026-lane-estate-mcp-build-ci-status",
+   "branch": "backup/preserve-20261026-lane-estate-mcp-build-ci-status",
+   "sha": "dd670df9672876a7dc2edb730bce8daccf00069a",
+   "date": "2026-10-21T09:59:31+01:00",
+   "author": "estate-agents[bot]",
+   "subject": "estate-mcp: the build check names ci.status, so the image builds again"
+  },
+  {
+   "ref": "refs/archive/lane/greenlane-live-view",
+   "branch": "lane/greenlane-live-view",
+   "sha": "a5846525b21aeb4a904cf3889501afdece223a5f",
+   "date": "2026-10-20T15:46:51+01:00",
+   "author": "estate-agents[bot]",
+   "subject": "feat(face,fleet): Greenlane live on /fleet and /face -- batch checks, lane reasons, timings, spoken news"
+  },
+  {
+   "ref": "refs/archive/lane/greenlane-image-first",
+   "branch": "lane/greenlane-image-first",
+   "sha": "e7dac2f7ceccb14c2d54369c359b7831db98ff38",
+   "date": "2026-10-20T06:22:13+01:00",
+   "author": "estate-agents[bot]",
+   "subject": "greenlane: the image bump forms the next batch first"
+  },
+  {
+   "ref": "refs/archive/lane/fix/safari-csp-mic",
+   "branch": "lane/fix/safari-csp-mic",
+   "sha": "cacf72b02ee8c9f88178b8bac710cb61320ee8f8",
+   "date": "2026-10-19T16:41:12+01:00",
+   "author": "estate-agents[bot]",
+   "subject": "ci(portal): the phone e2e grades the candidate build, not production"
+  },
+  {
+   "ref": "refs/archive/lane/dependabot/npm_and_yarn/platform/active-runtime/vitest-4.1.11",
+   "branch": "lane/dependabot/npm_and_yarn/platform/active-runtime/vitest-4.1.11",
+   "sha": "6fe21ab14b91234115a8abd489684ddd6700bee3",
+   "date": "2026-10-16T09:43:19+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into dependabot/npm_and_yarn/platform/active-runtime/vitest-4.1.11"
+  },
+  {
+   "ref": "refs/archive/chore/remove-greenlane-land",
+   "branch": "chore/remove-greenlane-land",
+   "sha": "2fc3de882122ba945a539f183e38d3cb9842e856",
+   "date": "2026-10-16T02:43:31+01:00",
+   "author": "estate-agent",
+   "subject": "chore: remove one-shot greenlane-land workflow"
+  },
+  {
+   "ref": "refs/archive/--branch",
+   "branch": "--branch",
+   "sha": "56122fc124d3f19445f82ae040907635c7caac1d",
+   "date": "2026-10-06T08:25:22+01:00",
+   "author": "Chidi Onyema",
+   "subject": "fix(voice): an iOS refusal names the OS, because tap-again cannot work there"
+  },
+  {
+   "ref": "refs/archive/--help",
+   "branch": "--help",
+   "sha": "ab1b0881a50038ad3f065ac8737155b3a1b378a0",
+   "date": "2026-10-03T00:55:25+01:00",
+   "author": "Chidi Onyema",
+   "subject": "quad-ledger: waive require-pod-probes with a dated exception, not a fake probe"
+  },
+  {
+   "ref": "refs/archive/consolidate/2026-09-29",
+   "branch": "consolidate/2026-09-29",
+   "sha": "fb237dcdca1962838c761cbc6819b692d31524e4",
+   "date": "2026-09-29T23:24:53+01:00",
+   "author": "Chidi Onyema",
+   "subject": "docs(auth): the founder key explained, how to sign, back it up, and recover it"
+  },
+  {
+   "ref": "refs/archive/consolidate/2026-09-28-final",
+   "branch": "consolidate/2026-09-28-final",
+   "sha": "b2aea3cba1dcdc9d5b4f5c1bc1adf539a0065bff",
+   "date": "2026-09-29T16:59:46+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into consolidate/2026-09-28-final"
+  },
+  {
+   "ref": "refs/archive/consolidate-2026-09-28-21Z",
+   "branch": "consolidate-2026-09-28-21Z",
+   "sha": "baca47abe9a2712cdaf94c641b3cba7f13e6574e",
+   "date": "2026-09-28T22:21:42+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into consolidate-2026-09-28-21Z"
+  },
+  {
+   "ref": "refs/archive/consolidate-2026-09-27-13Z",
+   "branch": "consolidate-2026-09-27-13Z",
+   "sha": "7893c00ab901066d9cfdb3a0ab84fdb10f1c6c90",
+   "date": "2026-09-27T14:48:24+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into consolidate-2026-09-27-13Z"
+  },
+  {
+   "ref": "refs/archive/flux/fast-intervals-v2",
+   "branch": "flux/fast-intervals-v2",
+   "sha": "e9fde73f6595aba20d27fddf4f0de0483d888319",
+   "date": "2026-09-26T09:31:59+01:00",
+   "author": "chidionyema",
+   "subject": "fix: remove non-manifest file from flux path X-Idp-Signed: 1571207ddcdef47dbf6f7a689316efa0b439d699aa1e836779a68a116b8de0c0"
+  },
+  {
+   "ref": "refs/archive/flux/fast-intervals",
+   "branch": "flux/fast-intervals",
+   "sha": "fe8e7a3eca5d7ee175466fdaeca140bfcb07e0a4",
+   "date": "2026-09-25T19:57:09+00:00",
+   "author": "estate-agents[bot]",
+   "subject": "Merge branch 'main' into flux/fast-intervals"
+  },
+  {
+   "ref": "refs/archive/coredns-fix",
+   "branch": "coredns-fix",
+   "sha": "9d582a420a632c055f315eefc979d40b708e5429",
+   "date": "2026-09-25T02:31:27+01:00",
+   "author": "chidionyema",
+   "subject": "feat(bin): idp-install-all -- one-shot estate bootstrap"
+  },
+  {
+   "ref": "refs/archive/agent-trunk",
+   "branch": "agent-trunk",
+   "sha": "7ba4ae963ed98658712d9dcce06bd1056c4e01f7",
+   "date": "2026-09-25T01:10:40+01:00",
+   "author": "chidionyema",
+   "subject": "test: add intent engine TDD tests + fix empty stdout on zero exit X-Idp-Signed: f6c5291858ad6429d13179bb8624653ae5910f75d4c69faca61c73636f1d197e"
+  }
+ ]
+}

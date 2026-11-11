@@ -1,0 +1,20 @@
+# Local bootstrap lane used until a direct Z.ai Coding Plan key is staged.
+# The installer replaces __PENNYD_HOME__ with the protected local stage path.
+id = "estate-cloud"
+dialect = "openai"
+base_url = "https://llm.mumchimp.com/v1"
+request_path = "/chat/completions"
+api_key_file = "__PENNYD_HOME__/secrets/litellm/LITELLM_API_KEY"
+
+[auth]
+kind = "bearer"
+key_env = "LITELLM_API_KEY"
+
+[[models]]
+id = "zai/glm-5.3"
+class = "paid"
+price_in_per_mtok = 0
+price_out_per_mtok = 0
+context_window = 200000
+aliases = ["glm"]
+fallbacks = ["minimax/MiniMax-M3.1-Flash", "deepseek/deepseek-chat"]

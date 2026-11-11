@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""Write one durable fact into the estate's unified memory plane.
+
+    bin/estate-remember "<name>" --type SYSTEM --desc "<one grounded sentence>"
+    bin/estate-remember --recall "what do we know about the doors"
+
+Why: reads were possible (bin/estate-brief) while writes were not, so shell-only agents wrote to
+a second store. One memory plane means one writer door, and this is it -- the same door and the
+same key the brief already uses.
+
+It never blocks a session: an unreachable door prints one line on stderr and exits 0.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import socket
+import sys
+
+sys.path.insert(
+    0,
+    os.path.join(
+        os.path.dirname(os.path.realpath(__file__)), "..", "platform", "estate", "memory"
+    ),
+)
+import door  # noqa: E402
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("name", nargs="?", default="")
+    ap.add_argument("--type", default="SYSTEM")
+    ap.add_argument("--desc", default="")
+    ap.add_argument("--recall", default="")
+    ap.add_argument("--timeout", type=float, default=10)
+    a = ap.parse_args(argv)
+    secret = door.key()
+    if not secret:
+        print("estate-remember: no memory key; nothing written", file=sys.stderr)
+        return 0
+    try:
+        if a.recall:
+            res = door.call("recall", {"query": a.recall}, secret, a.timeout)
+        else:
+            if not a.name or not a.desc:
+                print("estate-remember: needs a name and --desc", file=sys.stderr)
+                return 2
+            res = door.call("remember", {"name": a.name, "type": a.type, "content": a.desc},
+                            secret, a.timeout)
+    except (OSError, socket.timeout, ValueError) as e:
+        print(f"estate-remember: memory door did not answer ({type(e).__name__})", file=sys.stderr)
+        return 0
+    print(res if isinstance(res, str) else res.get("text") or res)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,326 @@
+#!/usr/bin/env python3
+"""Switch Claude Code and Claude Desktop between native Claude and Pennyd GLM."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+HOME = Path.home()
+STATE = HOME / ".estate" / "claude-surfaces"
+CC = Path(os.environ.get("CLAUDE_CONFIG_DIR", HOME / ".estate" / "harness" / "cc")) / "settings.json"
+DESKTOP_ROOT = HOME / "Library" / "Application Support" / "Claude"
+DESKTOP = DESKTOP_ROOT / "claude_desktop_config.json"
+DESKTOP_LIBRARY = (
+    HOME / "Library" / "Application Support" / "Claude-3p" / "configLibrary"
+)
+DESKTOP_CONFIG_ID = "11111111-1111-4111-8111-111111111111"
+HELPER = HOME / ".estate" / "bin" / "pennyd-client-key"
+BASE = os.environ.get("PENNYD_URL", "http://127.0.0.1:4200")
+PROVIDER_ENV = (
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_MODEL",
+    "ANTHROPIC_SMALL_FAST_MODEL",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    "ANTHROPIC_CUSTOM_HEADERS",
+)
+DESKTOP_MODELS = [
+    {
+        "name": "claude-sonnet-primary",
+        "labelOverride": "GLM 5.3",
+        "behavesAs": "claude-sonnet-5",
+        "maxEffort": "high",
+        "supports1m": True,
+        "prefer1m": True,
+    },
+    {
+        "name": "claude-haiku-primary",
+        "labelOverride": "GLM 5.3 Flash",
+        "behavesAs": "claude-haiku-4-5",
+        "maxEffort": "high",
+        "supports1m": True,
+        "prefer1m": True,
+    },
+    {
+        "name": "claude-opus-primary",
+        "labelOverride": "DeepSeek V4 Pro",
+        "behavesAs": "claude-opus-5",
+        "maxEffort": "high",
+        "supports1m": True,
+        "prefer1m": True,
+    },
+    {
+        "name": "claude-sonnet-secondary",
+        "labelOverride": "DeepSeek V4 Flash",
+        "behavesAs": "claude-sonnet-5",
+        "maxEffort": "high",
+        "supports1m": True,
+        "prefer1m": True,
+    },
+    {
+        "name": "claude-sonnet-tertiary",
+        "labelOverride": "Gemini 3.5 Flash",
+        "behavesAs": "claude-sonnet-5",
+        "maxEffort": "high",
+        "supports1m": True,
+        "prefer1m": True,
+    },
+    {
+        "name": "claude-haiku-secondary",
+        "labelOverride": "Gemini 2.5 Flash",
+        "behavesAs": "claude-haiku-4-5",
+        "maxEffort": "high",
+        "supports1m": True,
+        "prefer1m": True,
+    },
+    {
+        "name": "claude-sonnet-quaternary",
+        "labelOverride": "MiniMax M3",
+        "behavesAs": "claude-sonnet-5",
+        "maxEffort": "high",
+        "supports1m": True,
+        "prefer1m": True,
+    },
+    {
+        "name": "claude-haiku-tertiary",
+        "labelOverride": "MiniMax M3.1 Flash",
+        "behavesAs": "claude-haiku-4-5",
+        "maxEffort": "high",
+        "supports1m": True,
+        "prefer1m": True,
+    },
+    {
+        "name": "claude-haiku-legacy",
+        "labelOverride": "MiniMax M2.7",
+        "behavesAs": "claude-haiku-4-5",
+        "maxEffort": "high",
+        "supports1m": True,
+        "prefer1m": True,
+    },
+    {
+        "name": "claude-haiku-fast",
+        "labelOverride": "GPT-OSS 120B (Groq)",
+        "behavesAs": "claude-haiku-4-5",
+        "maxEffort": "medium",
+    },
+    {
+        "name": "claude-haiku-local",
+        "labelOverride": "Qwen 3.8 27B (Groq)",
+        "behavesAs": "claude-haiku-4-5",
+        "maxEffort": "medium",
+    },
+    {
+        "name": "claude-haiku-free",
+        "labelOverride": "Nemotron 3.5 Lightning (free)",
+        "behavesAs": "claude-haiku-4-5",
+        "maxEffort": "low",
+        "supports1m": True,
+        "prefer1m": True,
+    },
+]
+
+
+def load(path: Path) -> dict:
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+def write(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(value, indent=2) + "\n")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+
+
+def backup(path: Path, name: str) -> None:
+    STATE.mkdir(parents=True, exist_ok=True)
+    target = STATE / name
+    if target.exists() or not path.exists():
+        return
+    shutil.copy2(path, target)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    shutil.copy2(path, path.with_name(f"{path.name}.bak-claude-surface-{stamp}"))
+
+
+def backup_library() -> None:
+    STATE.mkdir(parents=True, exist_ok=True)
+    target = STATE / "desktop-library-original"
+    if target.exists() or not DESKTOP_LIBRARY.exists():
+        return
+    shutil.copytree(DESKTOP_LIBRARY, target)
+
+
+def native_model() -> str:
+    state = STATE / "native-model"
+    if state.exists():
+        return state.read_text().strip() or "sonnet"
+    original = load(STATE / "cc-original.json")
+    model = str(original.get("model") or "")
+    if model and model != "glm":
+        return model
+    return "sonnet"
+
+
+def switch_cc(mode: str) -> None:
+    backup(CC, "cc-original.json")
+    settings = load(CC)
+    env = settings.setdefault("env", {})
+    if mode == "glm":
+        env.update(
+            {
+                "ANTHROPIC_BASE_URL": BASE,
+                "ANTHROPIC_MODEL": "glm",
+                "ANTHROPIC_SMALL_FAST_MODEL": "glm",
+                "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm",
+                "ANTHROPIC_DEFAULT_SONNET_MODEL": "glm",
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm",
+                "ANTHROPIC_CUSTOM_HEADERS": "x-estate-surface: claude-code",
+            }
+        )
+        settings["model"] = "glm"
+        settings["apiKeyHelper"] = str(HELPER)
+    else:
+        for key in PROVIDER_ENV:
+            env.pop(key, None)
+        if not env:
+            settings.pop("env", None)
+        settings.pop("apiKeyHelper", None)
+        settings["model"] = native_model()
+    write(CC, settings)
+
+
+def switch_desktop(mode: str) -> None:
+    backup(DESKTOP, "desktop-original.json")
+    backup_library()
+    config = load(DESKTOP)
+    for key in list(config):
+        if key == "deploymentMode" or key.startswith("inference"):
+            config.pop(key, None)
+    if mode == "glm":
+        config["deploymentMode"] = "3p"
+        DESKTOP_LIBRARY.mkdir(parents=True, exist_ok=True)
+        meta_path = DESKTOP_LIBRARY / "_meta.json"
+        meta = load(meta_path)
+        entries = [
+            entry
+            for entry in meta.get("entries", [])
+            if entry.get("id") != DESKTOP_CONFIG_ID
+        ]
+        entries.append({"id": DESKTOP_CONFIG_ID, "name": "Estate GLM"})
+        meta["entries"] = entries
+        meta["appliedId"] = DESKTOP_CONFIG_ID
+        write(meta_path, meta)
+        write(
+            DESKTOP_LIBRARY / f"{DESKTOP_CONFIG_ID}.json",
+            {
+                "inferenceProvider": "gateway",
+                "inferenceGatewayBaseUrl": BASE,
+                "inferenceCredentialKind": "helper-script",
+                "inferenceCredentialHelper": str(HELPER),
+                "inferenceCredentialHelperSilentRefreshEnabled": True,
+                "inferenceGatewayAuthScheme": "bearer",
+                "inferenceModels": DESKTOP_MODELS,
+                "defaultModelEffort": "medium",
+                "alwaysStartWithDefaultModel": True,
+            },
+        )
+    else:
+        meta_path = DESKTOP_LIBRARY / "_meta.json"
+        if meta_path.exists():
+            meta = load(meta_path)
+            entries = [
+                entry
+                for entry in meta.get("entries", [])
+                if entry.get("id") != DESKTOP_CONFIG_ID
+            ]
+            if entries:
+                meta["entries"] = entries
+                if meta.get("appliedId") == DESKTOP_CONFIG_ID:
+                    meta["appliedId"] = entries[0]["id"]
+                write(meta_path, meta)
+            else:
+                meta_path.unlink(missing_ok=True)
+        (DESKTOP_LIBRARY / f"{DESKTOP_CONFIG_ID}.json").unlink(missing_ok=True)
+    write(DESKTOP, config)
+
+
+def restart_desktop() -> None:
+    if os.environ.get("CLAUDE_SURFACE_NO_RESTART") == "1":
+        return
+    subprocess.run(["pkill", "-TERM", "-x", "Claude"], check=False)
+    subprocess.Popen(
+        ["/Applications/Claude.app/Contents/MacOS/Claude"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def status() -> None:
+    settings = load(CC)
+    env = settings.get("env", {})
+    desktop = load(DESKTOP)
+    meta = load(DESKTOP_LIBRARY / "_meta.json")
+    active = next(
+        (
+            entry
+            for entry in meta.get("entries", [])
+            if entry.get("id") == meta.get("appliedId")
+        ),
+        {},
+    )
+    active_config = (
+        load(DESKTOP_LIBRARY / f"{meta['appliedId']}.json")
+        if meta.get("appliedId")
+        else {}
+    )
+    print(
+        json.dumps(
+            {
+                "claude_code": {
+                    "model": settings.get("model"),
+                    "base_url": env.get("ANTHROPIC_BASE_URL"),
+                    "credential_helper": settings.get("apiKeyHelper"),
+                },
+                "claude_desktop": {
+                    "deployment_mode": desktop.get("deploymentMode", "1p"),
+                    "active_profile": active.get("name"),
+                    "provider": active_config.get("inferenceProvider", "anthropic"),
+                    "base_url": active_config.get("inferenceGatewayBaseUrl"),
+                    "credential_helper": active_config.get(
+                        "inferenceCredentialHelper"
+                    ),
+                },
+            },
+            indent=2,
+        )
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("mode", choices=("glm", "claude", "toggle", "status"))
+    args = parser.parse_args()
+    if args.mode == "status":
+        status()
+        return 0
+    mode = args.mode
+    if mode == "toggle":
+        current = load(CC).get("model")
+        mode = "claude" if current == "glm" else "glm"
+    switch_cc(mode)
+    switch_desktop(mode)
+    restart_desktop()
+    status()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: intercloud-controller, namespace: intercloud}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: intercloud-controller}}
+  template:
+    metadata: {labels: {app: intercloud-controller}}
+    spec:
+      serviceAccountName: intercloud-controller
+      containers:
+      - name: controller
+        image: ghcr.io/chidionyema/intercloud:0.1.0
+        args: ["k8s"]  # k8s mode: K8sStore adapter over Lane/Approval CRs + Crossplane Claims
+        env:
+        - {name: SPOOLER_HMAC_KEY, valueFrom: {secretKeyRef: {name: estate-secrets, key: spooler-hmac}}}
+        resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {memory: 128Mi}}

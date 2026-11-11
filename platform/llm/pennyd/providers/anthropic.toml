@@ -1,0 +1,17 @@
+id = "anthropic"
+dialect = "anthropic"       # native Messages API; pennyd translates both ways
+base_url = "https://api.anthropic.com"
+request_path = "/v1/messages"
+
+[auth]
+kind = "header"
+name = "x-api-key"
+key_env = "ANTHROPIC_API_KEY"
+
+[[models]]
+id = "claude-haiku-4-5"
+class = "paid"
+price_in_per_mtok = 0.80
+price_out_per_mtok = 4.00
+context_window = 200000
+aliases = ["quality-chat"]

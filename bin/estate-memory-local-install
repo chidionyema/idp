@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Install and supervise the memory door's local fallback origin.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+LABEL="ai.estate.memory-local"
+PORT="${ESTATE_MEMORY_LOCAL_PORT:-8002}"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+TEMPLATE="$ROOT/launchd/ai.estate.memory-local.plist.tmpl"
+
+usage() {
+  printf 'usage: %s [install|status]\n' "$0"
+}
+
+render() {
+  local tmp
+  tmp="$(mktemp "$PLIST.XXXXXX")"
+  trap 'test ! -e "$tmp" || /bin/unlink "$tmp"' RETURN
+  sed "s|@HOME@|$HOME|g" "$TEMPLATE" >"$tmp"
+  plutil -lint "$tmp" >/dev/null
+  install -m 644 "$tmp" "$PLIST"
+  /bin/unlink "$tmp"
+  trap - RETURN
+}
+
+wait_healthy() {
+  local i
+  for i in $(seq 1 40); do
+    if curl -fsS --max-time 2 "http://127.0.0.1:$PORT/healthz" >/dev/null; then
+      return 0
+    fi
+    sleep 0.25
+  done
+  return 1
+}
+
+status() {
+  launchctl print "gui/$(id -u)/$LABEL" | sed -n '1,35p'
+  lsof -nP -iTCP:"$PORT" -sTCP:LISTEN
+  curl -fsS --max-time 5 "http://127.0.0.1:$PORT/healthz"
+}
+
+case "${1:-}" in
+  install)
+    "$ROOT/bin/estate-memory-install" --home-only
+    render
+    launchctl bootout "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true
+    launchctl bootstrap "gui/$(id -u)" "$PLIST"
+    launchctl kickstart -k "gui/$(id -u)/$LABEL"
+    wait_healthy
+    status
+    ;;
+  status)
+    status
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
