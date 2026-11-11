@@ -61,7 +61,7 @@ export function initialShotState(policy) {
     schema: "helm.shot-state.v1", instructionId: policy.instructionId,
     policyDigest: digest(policy), phase: "NEEDS_PROBE",
     probes: 0, shots: 0, grades: 0, pass: false,
-    currentShot: null, events: [], head: "0".repeat(64)
+    currentShot: null, events: [], head: digest(policy) // genesis hash pins the founder helmet across restarts
   };
 }
 
