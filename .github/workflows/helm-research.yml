@@ -21,10 +21,30 @@ jobs:
         run: node --test experiments/helm/helm.test.mjs
       - name: Compile and verify HELM seal
         run: node experiments/helm/cli.mjs compile
+      - name: Select a currently listed public-free model (one fixed ID per trial)
+        run: |
+          node --input-type=module <<'NODE'
+          import {appendFileSync} from "node:fs";
+          const r = await fetch("https://ai-gateway.kilo.ai/api/v1/models");
+          if (!r.ok) throw new Error("model catalog HTTP " + r.status);
+          const json = await r.json();
+          const ids = (json.data || []).map(x => x.id).filter(x => typeof x === "string");
+          const free = ids.filter(x => x.endsWith(":free"));
+          console.log(JSON.stringify({freeCount:free.length, sample:free.slice(0,20)}));
+          const wanted = [
+            "minimax/minimax-m3.1-flash:free",
+            "z-ai/glm-5:free",
+            "nvidia/nemotron-3.5-super-vl:free",
+            "nvidia/nemotron-3-ultra:free",
+          ];
+          const selected = wanted.find(x=>free.includes(x)) || free[0];
+          if (!selected) throw new Error("No available anonymous free model in catalog");
+          appendFileSync(process.env.GITHUB_ENV,"HELM_MODEL="+selected+"\n");
+          console.log("Selected model:",selected);
+          NODE
       - name: Execute actual model calls with four comparative arms
         env:
           HELM_INFERENCE_URL: https://ai-gateway.kilo.ai/api/v1/chat/completions
-          HELM_MODEL: minimax/minimax-m3.1-flash:free
           GITHUB_SHA: ${{ github.sha }}
         run: node experiments/helm/cli.mjs live
       - name: Preserve experiment and negative-result receipts
