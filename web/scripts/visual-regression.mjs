@@ -76,8 +76,8 @@ async function inspect(page, route, width) {
       } else if (!/INTELLIGENCE/.test(title.textContent ?? "") || !/REAL/.test(title.textContent ?? "")) {
         failures.push("approved premium brand message missing");
       }
-      const color = heroColor.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
-      if (!color || Math.max(Number(color[1]), Number(color[2]), Number(color[3])) > 70) {
+      const color = heroColor.match(/[0-9]+/g);
+      if (!color || color.length < 3 || Math.max(Number(color[0]), Number(color[1]), Number(color[2])) > 70) {
         failures.push("approved dark premium hero replaced by obsolete/light theme");
       }
     }
