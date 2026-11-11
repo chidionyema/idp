@@ -67,6 +67,19 @@ CEILING_SEC = 100
 # with a different volume.
 MIN_FREE_MB = int(os.environ.get("ESTATE_MIN_FREE_MB", "1500"))
 
+# Verbs that FREE or MEASURE space and consume none. The floor lets these through while it is
+# closed, so the floor can never refuse its own way out. Until 2026-11-11 the test was the
+# substring `"disk-cleanup" not in command`, which exempted one door by name and nothing else --
+# so under the floor, `launchctl bootout` on the resident job HOLDING the floor closed was itself
+# refused, and the machine could not free itself. Exemption is by shape now, never by a caller's
+# assertion: a caller able to exempt an arbitrary payload would be the hole.
+_SPACE_FREE_VERBS = re.compile(
+    r"(?:^|[\s;&|(])(?:/bin/|/usr/bin/)?"
+    r"(?:df|du|launchctl|pkill|kill|killall|rm|rmdir|unlink|truncate|find|ls|stat|wc)\b"
+    r"|disk-reclaim",
+    re.IGNORECASE,
+)
+
 
 def _free_mb(path: str = "/") -> Optional[int]:
     """Free space on the volume that holds `path`, in MB, or None if it cannot be read.
@@ -973,18 +986,23 @@ def execute_command(
     #     on this machine at all, so the advice was never acted on.
     #
     #     The refusal is stated in the units the caller can act on (MB free, the floor, and the one
-    #     command that frees space), and the cleanup itself is let through, or the door would refuse
-    #     the only call that fixes the condition it is complaining about (R38).
+    #     command that frees space), and work that frees or measures space is let through, or the
+    #     door would refuse the only calls that fix the condition it is complaining about (R38).
     free_mb = _free_mb()
-    if free_mb is not None and free_mb < MIN_FREE_MB and "disk-cleanup" not in command:
+    if (
+        free_mb is not None
+        and free_mb < MIN_FREE_MB
+        and not _SPACE_FREE_VERBS.search(command or "")
+    ):
         record_friction(
             "refuse-disk", command, detail=f"{free_mb} MB free, floor {MIN_FREE_MB} MB"
         )
         return _refusal(
             f"the volume has {free_mb} MB free, under this door's {MIN_FREE_MB} MB floor; a job "
             "started now makes the machine slower for every other agent running on it. Free space "
-            "first -- the estate's own cleaner is the door that does it",
-            detail="run: estate-execute disk-cleanup apply=true only_below_mb=10240 worktrees=true",
+            "first -- /bin/df says how much, rm frees it, and there is no resident cleaner to wait "
+            "on: the guardian was deleted 2026-11-11 because it was the cause, not the cure",
+            detail="run: /bin/df -m /System/Volumes/Data (then rm what you can spare)",
             free_mb=free_mb,
             floor_mb=MIN_FREE_MB,
         )
