@@ -27,3 +27,7 @@ jobs:
         run: docker pull python:3.12-alpine
       - name: Verify every oracle passes reference and rejects empty patch
         run: node experiments/helm/functional-bench.mjs test
+      - name: Re-execute durable real-model experience in independent sandbox
+        run: |
+          node experiments/helm/operational-memory.mjs replay experiments/helm/verified-experiences/intent-authority.v1.json
+          node -e 'const fs=require("node:fs");const j=JSON.parse(fs.readFileSync("experiments/helm/out/verified-program-replay.json"));if(j.passed!==1||j.total!==1||j.independentTestsPassed!==8||j.modelCalls!==0)process.exit(1);console.log("DURABLE_HELM_YIELD",{tests:j.independentTestsPassed,modelCalls:j.modelCalls});'
