@@ -29,6 +29,22 @@ test("Q1 compiles the existing context compiler's records without a duplicate in
   assert.equal(records[0].kind,"symbol");
 });
 
+test("Canonical ContextPlan items preserve engine rank, provenance, and refuse stale indices",()=>{
+  const plan={plan_hash:"plan-hash",provenance:{commit:"abc",index_commit:"abc"},
+    items:[
+      {rank:2,source:"B.py",excerpt:"def second(): pass",sha256:"digest-b"},
+      {rank:1,source:"A.py",excerpt:"def first(): pass",sha256:"digest-a"},
+    ]};
+  const evidence=evidenceFromCompiler(plan);
+  assert.deepEqual(evidence.map(x=>x.source),["B.py","A.py"]);
+  const compiled=compileContext({question:"anything",domain:"software"},evidence);
+  assert.deepEqual(compiled.included.map(x=>x.source),["B.py","A.py"]);
+  assert.deepEqual(compiled.included.map(x=>x.sha256),["digest-b","digest-a"]);
+  assert.deepEqual(compiled.included.map(x=>x.commit),["abc","abc"]);
+  assert.throws(()=>evidenceFromCompiler({...plan,provenance:{commit:"abc",index_commit:"old"}}),
+    /stale context index/);
+});
+
 test("Q2 refuses malformed, extra-key and unauthorized model actions", () => {
   assert.equal(parseAction("not JSON").ok,false);
   assert.equal(parseAction('{"opcode":"EXEC_SHELL","payload":"rm"}').ok,false);
