@@ -7,7 +7,7 @@
     "layer": 257,
     "service": 121,
     "tool": 480,
-    "workflow": 101
+    "workflow": 102
   },
   "records": [
     {
@@ -58001,6 +58001,62 @@
         "health",
         "proof",
         "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:workflow/gha-helm-research",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "helm-research -- the GitHub Actions workflow helm-research.yml.",
+      "contract": {
+        "inputs": [
+          "push",
+          "workflow_dispatch"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/helm-research.yml",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics",
+        "dependencies"
       ],
       "known_issues": [],
       "mirrors": []
