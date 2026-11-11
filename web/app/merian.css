@@ -444,3 +444,16 @@
 @media(max-width:380px){
   .mi-hero .mi-hero-title{font-size:clamp(2rem,9.5vw,2.65rem)}
 }
+
+/* Tablet artwork: reserve its own vertical stage. A circle larger than the
+ * art container previously intersected CTA buttons at 768px while CI passed. */
+@media(min-width:621px) and (max-width:850px){
+  .mi-hero-art{height:440px;min-height:440px;transform:none;margin-top:48px;overflow:visible}
+  .mi-orbit-outer{width:min(76%,310px)}
+  .mi-orbit-mid{width:min(63%,258px)}
+  .mi-orbit-inner{width:min(45%,185px)}
+  .mi-orbit-axis{width:min(75%,295px);height:24%}
+  .mi-art-label{font-size:10px;line-height:1.5;letter-spacing:.08em}
+  .mi-art-label-top{top:8px;left:0;right:auto}
+  .mi-art-label-bottom{bottom:10px;left:0;right:auto}
+}
