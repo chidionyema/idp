@@ -51,6 +51,20 @@ jobs:
         run: npm run typecheck
       - name: Verify public production build
         run: npm run build
+      - name: Install isolated browser driver, without changing the dependency lock
+        run: npm install --no-save --package-lock=false --ignore-scripts puppeteer-core@24.24.1
+      - name: Render and interact with actual mobile, tablet and desktop pages
+        env:
+          CHROME: /usr/bin/google-chrome
+        run: node scripts/visual-regression.mjs
+      - name: Retain reviewed screenshots even when browser acceptance fails
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: merdian-customer-visual-evidence
+          path: web/artifacts/visual/*.png
+          if-no-files-found: ignore
+          retention-days: 14
 
   public-readback:
     name: Public customer-view canary and incident notification
