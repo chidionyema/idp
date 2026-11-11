@@ -245,7 +245,8 @@ TBO + Three-Role Model
 
 ### Core Mechanisms (Already Built)
 - `platform/efficiency/cache_guardian.py` - System prompt caching
-- `platform/efficiency/token_killer.py` - Bash compression
+- `platform/llm/efficiency_gateway.py` - Output compression (`_collapse_runs`): adjacent
+  repeated lines in a tool result -> one line + count
 - `platform/efficiency/mcp_adapter.py` - Schema reduction
 - `platform/efficiency/budget_orchestrator.py` - Budget enforcement
 - `platform/efficiency/sol_pi.py` - NVIDIA harness (4 mechanisms)

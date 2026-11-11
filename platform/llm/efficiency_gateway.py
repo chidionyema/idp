@@ -1153,7 +1153,7 @@ class _AnthropicSteps:
         msgs = data.get("messages") or []
         steps: dict = {}
 
-        # [2] TokenKiller -- adjacent runs only, inside tool_result text
+        # [2] collapse-runs -- adjacent runs only, inside tool_result text
         runs = saved2 = 0
         for m in msgs:
             for b in _result_blocks(m):

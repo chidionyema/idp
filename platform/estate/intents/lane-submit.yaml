@@ -166,17 +166,21 @@ steps:
         exit 0
       fi
       if push_alive; then
-        # STILL RUNNING IS NOT FAILED. The handover has not happened yet and this step cannot say
-        # it has; it also cannot say it has not, and that difference is the whole defect this file
-        # has been fixing since #5814. Name the state, name the pid, name how to read the outcome.
-        echo "IN-FLIGHT lane-submit  $lane: the push (pid $push_pid) is still running after ${polls} observations; it reaches origin on its own once it completes" >&2
-        # The push's own output is where its verdict lands: the pre-push guard's refusal, or the
-        # network's error. Measured 2026-10-27: a push refused by the fast gate exits 0 from this
-        # step's point of view and fails a minute later, and the agent that has to read the log
-        # by hand should not have to guess which file it is.
+        # STILL RUNNING IS NOT FAILED, AND IT IS NOT OK EITHER (2026-11-11). Until this change the
+        # step printed IN-FLIGHT and exited 0, so the harness reported `[estate] status=ok` while
+        # the push was in flight -- and, measured twice this day, while the push had in fact been
+        # REFUSED by the pre-push gate (first `FAIL diagnosis-gate router change with no Diagnosis:`
+        # `commit-message line`, then `FAIL estate-diagnose H1 posterior 0.72 < 0.95`). The intake
+        # surfaces disagreed and the one that said ok was the wrong one: `git ls-remote` showed no
+        # lane ref at all. exit 0 here meant "I handed it over", and every caller read it as "it
+        # landed" -- AGENTS.md section 9 R1, a gate failing open, inside the door agents are told to
+        # trust. A verdict we cannot back is not a verdict: IN-FLIGHT is now non-zero. The push
+        # itself is untouched (it is in its own session and reaches origin on its own) -- what
+        # changed is what this step CLAIMS about it.
+        echo "IN-FLIGHT lane-submit  $lane: the push (pid $push_pid) is still running after ${polls} observations; it reaches origin on its own once it completes. NOT PROVEN: re-read it with bin/lane-where $lane, or the greenlane status below." >&2
         echo "        push log: $pushlog" >&2
         verdict
-        exit 0
+        exit 3
       fi
       wait "$push_pid" 2>/dev/null; rc=$?
       out=$(cat "$pushlog")
@@ -197,10 +201,11 @@ steps:
       fi
       if [ "$rc" -eq 0 ]; then
         # git says it sent it; origin's ref does not say so yet. Neither "landed" nor "failed" is a
-        # fact here, so say the fact.
-        echo "SENT    lane-submit  $lane: push exited 0, origin has not shown the ref after $((polls + i)) observations" >&2
+        # fact here, so say the fact -- and do not call it ok (2026-11-11, same class as IN-FLIGHT
+        # above: a state that is unproven is not a success).
+        echo "SENT    lane-submit  $lane: push exited 0, origin has not shown the ref after $((polls + i)) observations. NOT PROVEN: bin/lane-where $lane" >&2
         verdict
-        exit 0
+        exit 3
       fi
       if printf '%s' "$out" | grep -qiE 'non-fast-forward|fetch first|stale info'; then
         # the engine (greenlane/github.py land()) force-pushes a rebased commit onto the
