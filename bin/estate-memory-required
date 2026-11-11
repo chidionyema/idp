@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+"""Prove estate memory WORKS before any session is allowed to work (founder order, 2026-11-10).
+
+    estate-memory-required                 probe and report; exit 0 only if memory really works
+    estate-memory-required --json          machine-readable verdict
+    estate-memory-required --open-repair   open one bounded window to fix memory itself
+
+Why this exists. On 2026-11-10 `platform/estate/memory/local_store.py` was deleted uncommitted in a
+lane checkout. `door.py` imports it at module level, so the memory door died on import -- the
+write path still "succeeded" (a direct SQLite write), the read path was dead. `bin/estate-memory-enforce`
+noticed, and FAILED OPEN by design ("door unreachable" -> allow the edit). So the fleet ran with no
+memory: every session started blank, re-derived facts the estate already knew, and the founder had
+to repeat himself. That is the defect this file closes.
+
+The law it enforces: a session may not work without working memory. Not "should not" -- may not.
+
+Three states, and only one of them lets work happen:
+
+  OK        memory is importable AND a write is readable back.
+  BROKEN    memory is present but does not answer.      -> refuse all durable work.
+  ABSENT    the memory plane cannot be found at all.    -> refuse all durable work.
+
+There is no fourth state, and no "unknown means pass". An unreadable answer is BROKEN.
+
+The deadlock guard, because a gate that can strand the fleet is not a gate. Refusing forever on a
+broken memory plane would stop every agent from fixing it. So the refusal names the repair and
+allows exactly one class through: the repair files themselves, and only while a bounded window is
+open. Every window opens and closes in the ledger. It is deliberately narrow -- it is the
+capability to fix memory, not the capability to work without it.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import socket
+import subprocess
+import sys
+import time
+import uuid
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parent
+MEMORY_DIR = REPO / "platform" / "estate" / "memory"
+LEDGER = Path(
+    os.environ.get("ESTATE_MEMORY_LEDGER", Path.home() / ".estate" / "memory" / "required-ledger.jsonl")
+)
+WINDOW_SECONDS = int(os.environ.get("ESTATE_MEMORY_REPAIR_WINDOW", "3600"))
+
+# The files whose repair IS the fix. A session that may not touch these cannot repair memory.
+REPAIR_PATHS = (
+    "platform/estate/memory/",
+    "bin/estate-memory-",
+    "bin/local-origin-start.sh",
+    "tests/test_estate_memory_",
+)
+
+
+def _record(verdict: str, detail: str, **extra: object) -> None:
+    """Append to the ledger. Best effort: a ledger failure must never change a verdict."""
+    try:
+        LEDGER.parent.mkdir(parents=True, exist_ok=True)
+        row = {
+            "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "host": socket.gethostname(),
+            "pid": os.getpid(),
+            "verdict": verdict,
+            "detail": detail,
+            **extra,
+        }
+        with LEDGER.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, sort_keys=True) + "\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _importable() -> tuple[bool, str]:
+    """Can the door module even be imported? This is the check that would have caught 2026-11-10."""
+    probe = f"import sys; sys.path.insert(0, {str(MEMORY_DIR)!r}); import door; print('ok')"
+    try:
+        r = subprocess.run(
+            [sys.executable, "-c", probe],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            cwd=str(REPO),
+        )
+    except Exception as e:  # noqa: BLE001
+        return False, f"import probe did not run: {type(e).__name__}: {e}"
+    if r.returncode != 0:
+        lines = (r.stderr or r.stdout or "").strip().splitlines()
+        return False, (lines[-1] if lines else "import failed with no output")
+    return True, "door imports"
+
+
+def _roundtrip() -> tuple[bool, str]:
+    """Does a WRITE come back on a READ? That is the whole point of memory, and it is what broke.
+
+    A store that accepts writes and cannot read them is worse than no store: it makes every agent
+    believe it has learned something. So write a unique token, read it back, require the token.
+    """
+    token = f"required-probe-{uuid.uuid4().hex}"
+    probe = f"""
+import sys
+sys.path.insert(0, {str(MEMORY_DIR)!r})
+import door
+key = door.key()
+door.call("remember", {{"content": "memory self-test token " + {token!r},
+                       "subject": "memory-self-test", "kind": "fact"}}, key, timeout=20)
+out = door.call("recall", {{"query": {token!r}}}, key, timeout=20)
+blob = out if isinstance(out, str) else repr(out)
+print("FOUND" if {token!r} in blob else "MISSING")
+"""
+    try:
+        r = subprocess.run(
+            [sys.executable, "-c", probe],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=str(REPO),
+        )
+    except subprocess.TimeoutExpired:
+        return False, "round-trip timed out: the store accepts work and never answers"
+    except Exception as e:  # noqa: BLE001
+        return False, f"round-trip did not run: {type(e).__name__}: {e}"
+    if "FOUND" in (r.stdout or ""):
+        return True, "write is readable back"
+    lines = ((r.stderr or "") + (r.stdout or "")).strip().splitlines()
+    return False, (lines[-1] if lines else "wrote a token and could not read it back")
+
+
+def verdict() -> tuple[str, list[str]]:
+    """OK / BROKEN / ABSENT, with the reasons. Never returns a guessed state."""
+    if not MEMORY_DIR.is_dir():
+        return "ABSENT", [f"no memory plane at {MEMORY_DIR}"]
+    ok, why = _importable()
+    if not ok:
+        return "BROKEN", [f"the door cannot be imported: {why}"]
+    ok, why = _roundtrip()
+    if not ok:
+        return "BROKEN", [f"memory does not round-trip: {why}"]
+    return "OK", ["imports, and a write is readable back"]
+
+
+def repair_window_open() -> bool:
+    """Is a bounded repair window open? Opened by --open-repair, bounded by WINDOW_SECONDS."""
+    marker = LEDGER.parent / "repair-window.json"
+    try:
+        data = json.loads(marker.read_text())
+        return (time.time() - float(data.get("opened_at", 0))) < WINDOW_SECONDS
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def is_repair_path(path: str) -> bool:
+    """True only for the files whose repair is the fix. Nothing else qualifies."""
+    if not path:
+        return False
+    try:
+        rel = str(Path(path).resolve().relative_to(REPO))
+    except Exception:  # noqa: BLE001
+        return False
+    return any(rel.startswith(p) for p in REPAIR_PATHS)
+
+
+def main(argv: list[str]) -> int:
+    state, reasons = verdict()
+    if "--json" in argv:
+        print(json.dumps({"verdict": state, "reasons": reasons, "at": time.time()}, indent=2))
+    else:
+        print(f"memory: {state}")
+        for r in reasons:
+            print(f"  - {r}")
+
+    if state == "OK":
+        _record("pass", "; ".join(reasons))
+        return 0
+
+    _record(state.lower(), "; ".join(reasons))
+
+    # A gate that can strand the fleet is not a gate: name the repair, open one bounded window.
+    if "--open-repair" in argv and not repair_window_open():
+        marker = LEDGER.parent / "repair-window.json"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(json.dumps({"opened_at": time.time(), "for": state}))
+        _record("repair-window-opened", f"bounded {WINDOW_SECONDS}s to fix memory", state=state)
+        print(f"\nA repair window is open for {WINDOW_SECONDS}s: only memory repair files may be edited.")
+        return 0
+
+    if is_repair_path(os.environ.get("ESTATE_MEMORY_TARGET", "")) and repair_window_open():
+        print("\nThis path repairs memory and a window is open: allowed.")
+        return 0
+
+    print(
+        "\nA session may not work without working memory.\n"
+        "Repair it first:\n"
+        "  bin/estate-memory-required --open-repair     # bounded window to fix memory only\n"
+        "  git restore platform/estate/memory/          # the usual cause: a file deleted uncommitted\n"
+        "  bin/estate-memory-required                   # must print OK before any work\n"
+    )
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

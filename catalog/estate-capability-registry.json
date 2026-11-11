@@ -6,7 +6,7 @@
     "intent": 118,
     "layer": 256,
     "service": 121,
-    "tool": 476,
+    "tool": 477,
     "workflow": 101
   },
   "records": [
@@ -27215,6 +27215,7 @@
         "cap:tool/catalog-render",
         "cap:tool/claim-open",
         "cap:tool/estate-memory-enforce",
+        "cap:tool/idp-ci",
         "cap:tool/language-gate",
         "cap:tool/media-dept-baseline",
         "cap:tool/process-census",
@@ -27962,6 +27963,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/estate-memory-enforce",
         "cap:workflow/gha-submitqueue-speculative-advisory"
       ],
       "cost": {
@@ -29788,6 +29790,7 @@
       "consumers": [
         "cap:tool/estate-receipt",
         "cap:tool/estate-runtime-sync",
+        "cap:tool/idp-ci",
         "cap:workflow/gha-ci"
       ],
       "cost": {
@@ -29814,6 +29817,7 @@
       "summary": "Enforce that an agent uses estate memory AND declares its focus (Claude Code hook).",
       "contract": {
         "inputs": [
+          "--json",
           "--show-toplevel"
         ],
         "outputs": [
@@ -29840,7 +29844,9 @@
       },
       "consumers": [
         "cap:tool/claim-open",
-        "cap:tool/estate-surface-map"
+        "cap:tool/estate-memory-required",
+        "cap:tool/estate-surface-map",
+        "cap:tool/idp-ci"
       ],
       "cost": {
         "estimate": null,
@@ -29856,6 +29862,18 @@
         },
         {
           "id": "cap:tool/claim-open",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/dof-gate",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-memory-required",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
           "edge": "invokes"
         }
       ],
@@ -29985,6 +30003,63 @@
         },
         {
           "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/estate-memory-required",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "Prove estate memory WORKS before any session is allowed to work (founder order, 2026-11-10).",
+      "contract": {
+        "inputs": [
+          "--json",
+          "--open-repair"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-memory-enforce"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-memory-required",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-memory-enforce",
           "edge": "invokes"
         }
       ],
@@ -34873,6 +34948,10 @@
           "edge": "invokes"
         },
         {
+          "id": "cap:tool/claim-gate",
+          "edge": "invokes"
+        },
+        {
           "id": "cap:tool/db-gen",
           "edge": "invokes"
         },
@@ -34898,6 +34977,14 @@
         },
         {
           "id": "cap:tool/estate-face-vendor",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-law-gate",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-memory-enforce",
           "edge": "invokes"
         },
         {
@@ -53531,6 +53618,7 @@
         "cap:tool/estate-digest-worker",
         "cap:tool/estate-face-avatar",
         "cap:tool/estate-graph-drain",
+        "cap:tool/estate-memory-enforce",
         "cap:tool/estate-memory-mcp",
         "cap:tool/estate-patch",
         "cap:tool/estate-read",
