@@ -26,8 +26,8 @@ try {
     const {tasks, evidence} = read("fixtures/tasks.json");
     const url = process.env.HELM_INFERENCE_URL;
     const token = process.env.HELM_TOKEN;
-    const model = process.env.HELM_MODEL || "openai/gpt-4.1-mini";
-    if (!url || !token) throw new Error("HELM_INFERENCE_URL and HELM_TOKEN required; live trial not run");
+    const model = process.env.HELM_MODEL || "minimax/minimax-m3.1-flash:free";
+    if (!url) throw new Error("HELM_INFERENCE_URL required; live trial not run");
     // Three task pairs, four configurations = 12 first-round model calls.
     const chosen = tasks.slice(0, 3);
     const result = await evaluate({ tasks: chosen, evidence,
@@ -35,7 +35,7 @@ try {
       sha256: process.env.GITHUB_SHA || "local-unpinned", maxCalls: 24 });
     write("live-trial.json", result);
     console.log(JSON.stringify({ status: "LIVE_TRIAL_FINISHED", model, summary: result.summary,
-      source: result.sourceSha, failedCalls: result.results.reduce((n,r) =>
+      source: result.sourceSha, firstError: result.results.flatMap(r => r.attempts.filter(a=>a.error)).map(a=>a.error)[0] || null, failedCalls: result.results.reduce((n,r) =>
         n+r.attempts.filter(a=>a.error).length,0) }));
     if (result.results.some(row => row.attempts.some(a => a.error)))
       process.exitCode = 2;
