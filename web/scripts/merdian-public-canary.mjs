@@ -50,6 +50,11 @@ async function checkHome(origin) {
       html.includes('REAL');
     assert(identity, origin + ': public homepage is NOT the approved premium company design');
     assert(!html.includes(OLD), origin + ': retired consulting-only homepage resurfaced');
+    assert(!html.includes('Blabka'), origin + ': unsubstantiated placeholder venture shown to visitors');
+    assert(!html.includes('More information will be shared'), origin + ': content-debt promise published');
+    assert(html.includes('01 / MANIFESTO') && html.includes('02 / CONSULTANCY') &&
+      html.includes('03 / THE LABORATORY') && html.includes('04 / VENTURES + PRODUCTS'),
+      origin + ': information architecture drifted from canonical hierarchy');
     assert(!html.includes('http://localhost:3000'), origin + ': localhost leaked into SEO metadata');
     assert(!html.includes('https://meridian.ai'), origin + ': unowned domain leaked into public metadata');
     assert(html.includes('href="/consulting"') && html.includes('href="/research"'),
@@ -63,6 +68,10 @@ async function checkRoute(path, marker) {
   try {
     const { html, status } = await read(PRIMARY + path);
     assert(html.includes(marker), PRIMARY + path + ': required company section missing: ' + marker);
+    if (path === '/products') {
+      assert(!html.includes('Blabka'), PRIMARY + path + ': placeholder venture visible');
+      assert(!html.includes('Further details will be published'), PRIMARY + path + ': unsubstantiated promise visible');
+    }
     assert(!html.includes(OLD), PRIMARY + path + ': retired product promise resurfaced');
     assert(!html.includes('http://localhost:3000'), PRIMARY + path + ': localhost in HTML');
     audit.push({ origin: PRIMARY + path, status, marker: html.includes(marker) });
