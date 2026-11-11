@@ -34,11 +34,14 @@
       "domain": "commercial",
       "question": "The approved premium public homepage and all pages return HTTP 200, but GET /api/contact responds acceptingEnquiries:false. Is the design broken or commercial enquiries unavailable? State how to act and how the incident should be classified.",
       "oracle": {
-        "opcode": "RUN_FALSIFIER",
+        "opcodes": [
+          "RUN_FALSIFIER",
+          "DISPATCH_LEGION"
+        ],
         "contains": [
           "design",
           "enquir",
-          "disabled"
+          "unavailable"
         ]
       }
     },
