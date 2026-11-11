@@ -76,7 +76,7 @@ verification: independently observable criterion`}</pre></div>
       </div>
       <div className="mi-chapter-essay">
         <h2>What the operating model should report</h2>
-        <p>At the founder layer, show the instruction's identity, owner, last independently verified step, age, unresolved blocker and available next action. Summarise the exception before exposing raw traces. A connected event stream is not a success metric. A missing measurement must remain unknown, with a way to inspect and recover it.</p>
+        <p>At the founder layer, show the instruction&apos;s identity, owner, last independently verified step, age, unresolved blocker and available next action. Summarise the exception before exposing raw traces. A connected event stream is not a success metric. A missing measurement must remain unknown, with a way to inspect and recover it.</p>
         <p><strong>Working principle:</strong> engineering activity is an input; externally verified yield is the product. Build the system so that two different agents can independently distinguish those states.</p>
       </div>
       <aside className="mi-chapter-end"><span className="mi-eyebrow">NEXT / THE COMPLETE FIELD GUIDE</span><h2>THE EXCERPT IS<br/>JUST THE START.</h2><p>The full fieldbook expands these ideas into implementation patterns, exercises, threat scenarios, scorecards and a structured rollout plan. The merchant link will appear once the publisher account is verified.</p><Link href="/fieldbooks" className="mi-button mi-button-gold">Explore the complete fieldbook <span aria-hidden="true">↗</span></Link></aside>
