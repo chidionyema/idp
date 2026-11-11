@@ -3,3 +3,4 @@ Source candidate: 9d0dda681cd0047b28eb12de5d8f3e0c2c54c15f
 Arm ordering: alternated within task; model selected by live text-completion preflight.
 Fixture: experiments/helm/fixtures/tasks.json
 Research only. No production deployment.
+HELM_SHOT_SWEEP=2026-11-11 founder_directed 1_2_3_5_vs_control
