@@ -1,0 +1,24 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": {
+    "deploymentEnabled": {
+      "queue/**": false,
+      "lane/research/**": false,
+      "lane/architecture*": false,
+      "lane/drill-*": false,
+      "lane/memory-*": false,
+      "lane/credential-canary-*": false,
+      "lane/capability-registry-*": false,
+      "lane/lane-where-*": false,
+      "lane/prepush-*": false,
+      "lane/greenlane-*": false,
+      "lane/dependabot/github_actions/**": false,
+      "lane/fix/r7-homes-*": false,
+      "lane/digest-fresh": false,
+      "lane/aevum-evidence-*": false,
+      "proof/agent-sandbox-*": false,
+      "preserve/**": false,
+      "fix/r7-homes-*": false
+    }
+  }
+}
