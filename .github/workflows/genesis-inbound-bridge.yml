@@ -1,0 +1,39 @@
+name: Genesis authenticated Google inbound bridge
+on:
+  pull_request:
+    paths:
+      - 'bin/genesis-inbound-bridge.py'
+      - '.github/workflows/genesis-inbound-bridge.yml'
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: genesis-inbound-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  contract:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - run: python3 bin/genesis-inbound-bridge.py --self-test
+  poll:
+    if: ${{ github.event_name != 'pull_request' && vars.GENESIS_INBOUND_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - run: python3 bin/genesis-inbound-bridge.py --self-test
+      - name: Poll Google and record unverified repo-local instructions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GENESIS_GOOGLE_CLIENT_ID: ${{ secrets.GENESIS_GOOGLE_CLIENT_ID }}
+          GENESIS_GOOGLE_CLIENT_SECRET: ${{ secrets.GENESIS_GOOGLE_CLIENT_SECRET }}
+          GENESIS_GOOGLE_REFRESH_TOKEN: ${{ secrets.GENESIS_GOOGLE_REFRESH_TOKEN }}
+          GENESIS_DRIVE_FOLDER_ID: ${{ vars.GENESIS_DRIVE_FOLDER_ID }}
+          GENESIS_GMAIL_DRAFTS: 'true'
+        run: python3 bin/genesis-inbound-bridge.py --repo "$GITHUB_REPOSITORY"
