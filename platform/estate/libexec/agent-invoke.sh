@@ -141,10 +141,11 @@ if [ -z "$CLAUDE" ] || [ ! -x "$CLAUDE" ]; then
 fi
 
 CLAUDE_CONFIG_DIR="$HOME/.estate/harness/cc"
-FLEET_GATE="$HOME/.estate/gates/protocol_gate.py"
-FLEET_BUDGET_STATE="$LOG.budget.json"
-if ! /usr/bin/python3 "$FLEET_GATE" fleet-budget-init \
-  --settings "$CLAUDE_CONFIG_DIR/settings.json" --state "$FLEET_BUDGET_STATE" >>"$LOG" 2>&1; then
+FLEET_GATE="$HOME/.estate/libexec/fleet-task-budget.py"
+FLEET_SETTINGS="$LOG.settings.json"
+if ! FLEET_SECONDS=$(/usr/bin/python3 "$FLEET_GATE" init \
+  --harness "$CLAUDE_CONFIG_DIR/settings.json" --settings "$FLEET_SETTINGS" \
+  --state "$LOG.budget.json" 2>>"$LOG"); then
     printf '{"invoked": false, "invoked_via": "local-claude", "error": "fleet budget initialization failed"}\n'
     exit 4
 fi
@@ -166,8 +167,8 @@ $INCIDENT"
 (
 	cd "$REPO" 2>/dev/null || cd "$HOME" || exit 1
 	export CLAUDE_CONFIG_DIR
-	export ESTATE_FLEET_BUDGET_STATE="$FLEET_BUDGET_STATE"
-	bounded 1200 "$CLAUDE" -p "$PROMPT" --permission-mode acceptEdits --max-turns 21
+	bounded "$FLEET_SECONDS" "$CLAUDE" -p "$PROMPT" --permission-mode acceptEdits \
+		--max-turns 21 --settings "$FLEET_SETTINGS"
 	echo "exit=$?" >>"$LOG"
 ) >>"$LOG" 2>&1 </dev/null &
 PID=$!
