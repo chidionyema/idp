@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { compileContext, evidenceFromCompiler, parseAction, checkPython, assess,
   distill, seal, unseal, messagesFor, evaluate } from "./helm.mjs";
 
@@ -62,7 +63,7 @@ test("Q4 only yields training pairs with actually linked independent evidence", 
 });
 
 test("4KB seal enforces real bytes and detects tampering", () => {
-  const facts = Array.from({length:120},(_,i)=>({source:"s"+i,text:"Knowledge "+i+" ".repeat(100)}));
+  const facts = Array.from({length:500},(_,i)=>({source:"s"+i,text:"Knowledge "+i+" "+createHash("sha256").update("fact-"+i).digest("hex")}));
   const pack = seal({included:facts},4096);
   assert.ok(pack.bytes <= 4096);
   assert.ok(pack.dropped > 0);
