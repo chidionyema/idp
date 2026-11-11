@@ -196,7 +196,7 @@ async function postReply(sessionId: string, text: string, inReplyTo?: number): P
  *
  * The consequence was total, and the board reported success throughout: no directive was ever
  * claimed, so no steer was delivered, no stop honoured, no reply posted, no PID reported -- which
- * meant no kill either. Meanwhile `POST /nudge` answered 200 with "queued - delivered at its next
+ * meant no kill either. Meanwhile `POST /nudge` answered 200 with "queued · delivered at its next
  * turn", because the dispatcher only checked that this FILE existed, not that the id could ever
  * match. The directive files were sitting in the mailbox under exactly the right names.
  *
@@ -329,7 +329,7 @@ export default function (pi: ExtensionAPI) {
       const e = event as any;
       void postWork(ctx.sessionManager.getSessionId(), ctx.cwd, stepFor(e?.toolName, e?.input));
     } catch {
-      /* fail open - telemetry must never break a tool call */
+      /* fail open — telemetry must never break a tool call */
     }
   });
 
@@ -381,7 +381,7 @@ export default function (pi: ExtensionAPI) {
 
     if (await stopRequested(ctx.sessionManager.getSessionId())) {
       ctx.ui.notify("FleetView: stop requested by the board", "warning");
-      await postReply(ctx.sessionManager.getSessionId(), "stopping - stop requested by the board");
+      await postReply(ctx.sessionManager.getSessionId(), "stopping — stop requested by the board");
       // THE MARKER IS REMOVED BEFORE SHUTTING DOWN.
       //
       // A `.stop` file is a flag the loop checks at every turn boundary, and nothing deleted it --
@@ -445,7 +445,7 @@ export default function (pi: ExtensionAPI) {
       if (!text) return;
       await postReply(ctx.sessionManager.getSessionId(), text.slice(0, 2000));
     } catch {
-      /* fail open - see postReply */
+      /* fail open — see postReply */
     }
   });
 

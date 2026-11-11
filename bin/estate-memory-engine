@@ -1,0 +1,288 @@
+#!/usr/bin/env python3
+# @genesis-file: chidionyema/idp:bin/estate-memory-engine
+"""
+Genesis First-Principles Memory Engine (v1.0):
+- Tier 1: Active Focus Compiler (<1,200 tokens deterministic prompt header)
+- Tier 2: Active Operational Memory (live cross-session instructions & leases)
+- Tier 3: Bi-Temporal Semantic Knowledge Graph (automatic fact invalidation + point-in-time query)
+- Tier 4: Counterfactual Negative Memory Graveyard & Self-Falsifying Executable Facts
+"""
+import hashlib
+import json
+import os
+import sqlite3
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+DB_PATH = Path(os.environ.get("ESTATE_DB_PATH", os.path.expanduser("~/.estate/estate.db")))
+
+
+def connect_db() -> sqlite3.Connection:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        """
+        PRAGMA journal_mode = WAL;
+        PRAGMA synchronous = NORMAL;
+        PRAGMA foreign_keys = ON;
+        PRAGMA busy_timeout = 5000;
+
+        -- 1. Bi-Temporal Semantic Fact Graph (Event Time + Transaction Sequence Lineage)
+        CREATE TABLE IF NOT EXISTS bitemporal_facts (
+            fact_id TEXT PRIMARY KEY,
+            subject TEXT NOT NULL,
+            predicate TEXT NOT NULL,
+            object_val TEXT NOT NULL,
+            confidence REAL NOT NULL DEFAULT 1.0,
+            valid_from_ts INTEGER NOT NULL,
+            valid_to_ts INTEGER,                -- NULL means currently true in reality
+            tx_in_seq INTEGER NOT NULL,
+            tx_out_seq INTEGER,                 -- NULL means not superseded
+            source_receipt TEXT NOT NULL,
+            falsifier_cmd TEXT                  -- Optional shell probe that proves fact is still true
+        ) STRICT;
+
+        CREATE INDEX IF NOT EXISTS idx_bitemp_active
+        ON bitemporal_facts(subject, predicate) WHERE valid_to_ts IS NULL;
+
+        -- 2. Counterfactual Negative Memory ("Graveyard of Falsified Hypotheses")
+        CREATE TABLE IF NOT EXISTS negative_memory_graveyard (
+            grave_id TEXT PRIMARY KEY,
+            domain_scope TEXT NOT NULL,
+            attempted_action TEXT NOT NULL,
+            error_signature TEXT NOT NULL,
+            remediation_hint TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            hit_count INTEGER NOT NULL DEFAULT 1,
+            last_failed_ts INTEGER NOT NULL
+        ) STRICT;
+
+        -- 3. Active Operational Focus Cache
+        CREATE TABLE IF NOT EXISTS active_focus_pins (
+            pin_key TEXT PRIMARY KEY,
+            category TEXT NOT NULL,
+            content TEXT NOT NULL,
+            expires_at_ts INTEGER NOT NULL
+        ) STRICT;
+        """
+    )
+    conn.commit()
+    return conn
+
+
+def assert_bitemporal_fact(
+    conn: sqlite3.Connection,
+    subject: str,
+    predicate: str,
+    object_val: str,
+    source_receipt: str = "founder-direct",
+    falsifier_cmd: str = "",
+) -> dict:
+    """Atomically supersedes any conflicting active fact for (subject, predicate) and records the new truth."""
+    now = int(time.time())
+    seq_row = conn.execute("SELECT COALESCE(MAX(tx_in_seq), 0) + 1 AS next_seq FROM bitemporal_facts").fetchone()
+    next_seq = int(seq_row["next_seq"]) if seq_row else 1
+
+    # Invalidate older active facts for the same (subject, predicate) where value changed
+    cur = conn.execute(
+        """
+        UPDATE bitemporal_facts
+        SET valid_to_ts = ?1, tx_out_seq = ?2
+        WHERE subject = ?3 AND predicate = ?4 AND valid_to_ts IS NULL AND object_val != ?5
+        """,
+        (now, next_seq, subject, predicate, object_val),
+    )
+    superseded_count = cur.rowcount
+
+    fact_id = "FCT-" + hashlib.sha256(f"{subject}:{predicate}:{object_val}:{now}".encode()).hexdigest()[:12]
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO bitemporal_facts
+        (fact_id, subject, predicate, object_val, confidence, valid_from_ts, valid_to_ts, tx_in_seq, tx_out_seq, source_receipt, falsifier_cmd)
+        VALUES (?1, ?2, ?3, ?4, 1.0, ?5, NULL, ?6, NULL, ?7, ?8)
+        """,
+        (fact_id, subject, predicate, object_val, now, next_seq, source_receipt, falsifier_cmd),
+    )
+    conn.commit()
+    return {
+        "ok": True,
+        "fact_id": fact_id,
+        "subject": subject,
+        "predicate": predicate,
+        "object": object_val,
+        "superseded_previous": superseded_count,
+        "tx_seq": next_seq,
+    }
+
+
+def record_negative_memory(
+    conn: sqlite3.Connection,
+    domain_scope: str,
+    attempted_action: str,
+    error_signature: str,
+    remediation_hint: str,
+    session_id: str = "local",
+) -> dict:
+    now = int(time.time())
+    grave_id = "GRV-" + hashlib.sha256(f"{domain_scope}:{error_signature}".encode()).hexdigest()[:10]
+    conn.execute(
+        """
+        INSERT INTO negative_memory_graveyard
+        (grave_id, domain_scope, attempted_action, error_signature, remediation_hint, session_id, hit_count, last_failed_ts)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7)
+        ON CONFLICT(grave_id) DO UPDATE SET
+            hit_count = hit_count + 1,
+            last_failed_ts = excluded.last_failed_ts,
+            remediation_hint = excluded.remediation_hint
+        """,
+        (grave_id, domain_scope, attempted_action, error_signature, remediation_hint, session_id, now),
+    )
+    conn.commit()
+    return {"ok": True, "grave_id": grave_id}
+
+
+def run_executable_falsifiers(conn: sqlite3.Connection) -> dict:
+    """Re-executes falsifier probes on active facts; auto-invalidates any fact whose probe fails in reality."""
+    now = int(time.time())
+    rows = conn.execute(
+        "SELECT fact_id, subject, predicate, object_val, falsifier_cmd FROM bitemporal_facts WHERE valid_to_ts IS NULL AND falsifier_cmd != ''"
+    ).fetchall()
+    verified = 0
+    invalidated = []
+    for r in rows:
+        rc = subprocess.run(
+            r["falsifier_cmd"], shell=True, capture_output=True, timeout=30
+        ).returncode  # noqa: S602
+        if rc == 0:
+            verified += 1
+        else:
+            conn.execute(
+                "UPDATE bitemporal_facts SET valid_to_ts = ?1 WHERE fact_id = ?2",
+                (now, r["fact_id"]),
+            )
+            invalidated.append(f"{r['subject']}.{r['predicate']}")
+    conn.commit()
+    return {"verified_active_facts": verified, "auto_invalidated_drifted_facts": invalidated}
+
+
+def render_active_focus(conn: sqlite3.Connection, scope_query: str = "") -> str:
+    """Renders the ultra-compact <1,200-token Active Focus register for immediate LLM injection."""
+    lines = ["=== [GENESIS ACTIVE FOCUS REGISTER (BI-TEMPORAL TRUTH)] ==="]
+
+    # 1. Active Founder Instructions from ledger.jsonl
+    ledger_path = Path(os.path.expanduser("~/.estate/instructions/ledger.jsonl"))
+    if ledger_path.is_file():
+        # The ledger is heterogeneous: it carries `link` and `evidence` rows beside
+        # `instruction` rows. Only the latter have a body, so filter on type before
+        # picking the most recent -- a blank instruction line is worse than none.
+        instructions = []
+        for line in ledger_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if item.get("type") != "instruction":
+                continue
+            body = item.get("text") or item.get("intent") or item.get("title") or ""
+            if not body.strip():
+                continue
+            instructions.append(item)
+        if instructions:
+            lines.append("* ACTIVE FOUNDER INSTRUCTIONS:")
+            for item in instructions[-3:]:
+                ins_id = item.get("id") or "INS"
+                state = item.get("state") or "active"
+                body = item.get("text") or item.get("intent") or item.get("title") or ""
+                lines.append(f'  - [{ins_id}] ({state}): "{body[:110].replace(chr(10), " ")}"')
+
+    # 2. Currently Valid Bi-Temporal Facts (valid_to_ts IS NULL)
+    facts = conn.execute(
+        """
+        SELECT subject, predicate, object_val
+        FROM bitemporal_facts
+        WHERE valid_to_ts IS NULL
+        ORDER BY valid_from_ts DESC LIMIT 12
+        """
+    ).fetchall()
+    if facts:
+        lines.append("* CURRENT ESTATE FACTS (SUPERSEDED FACTS EXCLUDED):")
+        for f in facts:
+            lines.append(f"  - {f['subject']} :: {f['predicate']} = {f['object_val']}")
+
+    # 3. Counterfactual Negative Memory (Do Not Repeat Failed Actions)
+    graves = conn.execute(
+        """
+        SELECT domain_scope, attempted_action, error_signature, remediation_hint, hit_count
+        FROM negative_memory_graveyard
+        ORDER BY last_failed_ts DESC LIMIT 6
+        """
+    ).fetchall()
+    if graves:
+        lines.append("* COUNTERFACTUAL GRAVEYARD (DO NOT REPEAT THESE FAILED ACTIONS):")
+        for g in graves:
+            lines.append(
+                f"  - [{g['domain_scope']}] AVOID: `{g['attempted_action']}` "
+                f"(failed {g['hit_count']}x: {g['error_signature']}) -> DO: {g['remediation_hint']}"
+            )
+
+    lines.append("============================================================")
+    return "\n".join(lines)
+
+
+def bootstrap_estate_core_facts(conn: sqlite3.Connection) -> None:
+    """Seeds the authoritative post-OKE bi-temporal facts and negative memory antibodies."""
+    assert_bitemporal_fact(conn, "substrate.oke", "lifecycle_state", "RETIRED_BY_ORDER_IDP_7787", "idp#7787")
+    assert_bitemporal_fact(
+        conn, "llm.mumchimp.com", "target_architecture", "Cloudflare-Edge-Worker-Failover", "INS-00007"
+    )
+    assert_bitemporal_fact(conn, "macbook.host", "worktree_policy", "ZERO_LOCAL_WORKTREES_ALLOWED", "INS-00004")
+    assert_bitemporal_fact(
+        conn,
+        "bin/idp-disk-watch",
+        "implementation",
+        "resident-guardian-delegates-to-disk-cleanup-sh",
+        "INS-00011",
+        "test -f $HOME/.estate/bin/idp-disk-watch",
+    )
+    record_negative_memory(
+        conn,
+        "git-push",
+        "git worktree add /tmp/...",
+        "SSD_EXHAUSTION_1500MB_FLOOR",
+        "Use in-memory git plumbing on the single checkout; no worktrees",
+    )
+    record_negative_memory(
+        conn,
+        "pi-governance",
+        "8-step declare_plan / add_bdd interactive tool loop",
+        "78K_TOKEN_BURN_AND_LOCKDOWN_LOOP",
+        "Fix the root cause directly; do not add ceremony tools",
+    )
+
+
+def main(argv: list[str]) -> int:
+    conn = connect_db()
+    cmd = argv[1] if len(argv) > 1 else "render-focus"
+    if cmd == "bootstrap":
+        bootstrap_estate_core_facts(conn)
+        falsifier_res = run_executable_falsifiers(conn)
+        print(json.dumps({"bootstrapped": True, **falsifier_res}, indent=2))
+        print(render_active_focus(conn))
+    elif cmd == "assert-fact":
+        print(json.dumps(assert_bitemporal_fact(conn, argv[2], argv[3], argv[4]), indent=2))
+    elif cmd == "record-failure":
+        print(json.dumps(record_negative_memory(conn, argv[2], argv[3], argv[4], argv[5]), indent=2))
+    elif cmd == "verify-facts":
+        print(json.dumps(run_executable_falsifiers(conn), indent=2))
+    else:
+        print(render_active_focus(conn))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
