@@ -1,5 +1,4 @@
-HELM-002: five-task cross-domain learning test; report knowledge, action, schema, joint quality separately.
-Dataset: experiments/helm/fixtures/tasks.json
-Treat as exploratory: oracles revised after HELM-001, compare only within this trial.
-Source SHA is the commit of this trigger; provider selected by real text-completion preflight.
-Research only. Do not equate fixture success with deployed fleet uplift.
+HELM-003: model executive-control boundary tested after code change; five tasks, four arms, 20 first-round calls.
+Explicit experiment; not commercial or fleet deployment. Independent metrics: schema, knowledge, action, joint.
+Changed rule: EMIT_PATCH requires real patchTarget; operational SUBMIT_YIELD requires verifiedReceipt. HELM sees action semantics; other arms retain matching judge.
+Research caveat: all fixtures used in previous experiments, so this is an engineering regression/diagnostic comparison, not a held-out improvement estimate.
