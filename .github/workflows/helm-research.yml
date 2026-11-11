@@ -1,4 +1,4 @@
-# Internal Merdian research. GitHub Models is the model route for this isolated trial.
+# Internal Merdian research. Free Kilo endpoint; only synthetic/public fixtures.
 # No deployments, source modification, external secrets, or production permissions.
 name: helm-research
 on:
@@ -11,7 +11,6 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
-  models: read
 jobs:
   research:
     runs-on: ubuntu-24.04
@@ -24,9 +23,8 @@ jobs:
         run: node experiments/helm/cli.mjs compile
       - name: Execute actual model calls with four comparative arms
         env:
-          HELM_TOKEN: ${{ github.token }}
-          HELM_INFERENCE_URL: https://models.github.ai/inference/chat/completions
-          HELM_MODEL: openai/gpt-4.1-mini
+          HELM_INFERENCE_URL: https://ai-gateway.kilo.ai/api/v1/chat/completions
+          HELM_MODEL: minimax/minimax-m3.1-flash:free
           GITHUB_SHA: ${{ github.sha }}
         run: node experiments/helm/cli.mjs live
       - name: Preserve experiment and negative-result receipts
