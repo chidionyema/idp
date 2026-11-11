@@ -2527,10 +2527,24 @@ def render_decisions(report: dict) -> str:
                 "  {:9s} {:6d} runs over {:4d} capabilities".format(mode, runs, intents)
             )
     ratio = report.get("automation_ratio")
+    known = report.get("runs_30d_known", 0)
+    blind = report["modes"]["runs_by_mode"].get("unknown", 0)
+    blind_share = (blind / (known + blind)) if (known + blind) else None
+    # ADR 0044 D8 and AGENTS.md 3a: BLIND is a measured inability to observe, never a zero.
+    # The ratio is arithmetic over the runs whose source the estate can see, so publishing it
+    # alone reports a censored set as if it were the whole -- "100.0%" printed next to 958 runs
+    # nobody classified is a fail-open reading (GOV-016). The blind share rides on the same line.
     lines.append(
-        "  automation ratio: {} of the {} run(s) whose source the estate can see".format(
+        "  automation ratio: {} of the {} run(s) whose source the estate can see{}".format(
             "{:.1%}".format(ratio) if ratio is not None else "BLIND (no ledger)",
-            report.get("runs_30d_known", 0),
+            known,
+            (
+                "; {} run(s) BLIND -- source not in the registry ({:.1%} of {})".format(
+                    blind, blind_share, known + blind
+                )
+                if blind
+                else ""
+            ),
         )
     )
     triggers = report.get("triggers") or {}
