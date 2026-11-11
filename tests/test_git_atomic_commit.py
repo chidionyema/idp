@@ -12,7 +12,11 @@ import os
 import subprocess
 from pathlib import Path
 
-REPO = Path("/Users/roseonyema/Documents/code/idp")
+# The door under test is the one that SHIPS WITH THIS TEST, not a checkout that happens to sit
+# on the founder's laptop. A hardcoded path grades a stranger's tree on CI (where the path does
+# not exist) and the founder's dirty tree locally (where it does, and may be mid-edit). A gate
+# that asserts against the wrong repository is not a gate.
+REPO = Path(__file__).resolve().parents[1]
 DOOR = REPO / "bin" / "git-atomic-commit"
 
 

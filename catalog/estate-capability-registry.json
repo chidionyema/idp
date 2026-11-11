@@ -6,7 +6,7 @@
     "intent": 118,
     "layer": 257,
     "service": 121,
-    "tool": 487,
+    "tool": 490,
     "workflow": 102
   },
   "records": [
@@ -28473,7 +28473,9 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [],
+      "consumers": [
+        "cap:tool/idp-estate-clocks"
+      ],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -37954,6 +37956,202 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/idp-estate-clocks",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "idp-estate-clocks -- Chronos: did every declared clock actually DELIVER?",
+      "contract": {
+        "inputs": [
+          "--gate",
+          "--jq",
+          "--json",
+          "--now",
+          "--obligation",
+          "--registry",
+          "--repo",
+          "--runs-json"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/idp-estate-clocks-proof",
+        "cap:tool/idp-estate-clocks-publish",
+        "cap:workflow/gha-estate-homes-drill"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/idp-estate-clocks",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-clocks",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-estate-clocks-proof",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-estate-homes",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/idp-estate-clocks-proof",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "idp-estate-clocks-proof -- Chronos proves it CAN fail, before it is trusted.",
+      "contract": {
+        "inputs": [
+          "--gate",
+          "--json",
+          "--now",
+          "--registry",
+          "--repo",
+          "--runs-json"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/idp-estate-clocks",
+        "cap:workflow/gha-estate-homes-drill"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/idp-estate-clocks-proof",
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-estate-clocks",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/idp-estate-clocks-publish",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "Publish the Chronos clock board to the ref the founder's live surface already reads.",
+      "contract": {
+        "inputs": [
+          "--dry-run",
+          "--json",
+          "--no-push",
+          "--ref",
+          "--refs",
+          "--verify"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:workflow/gha-estate-homes-drill"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/idp-estate-clocks-publish",
+      "depends_on": [
+        {
+          "id": "cap:tool/idp-estate-clocks",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/idp-estate-db-backup",
       "schema_version": 1,
       "kind": "tool",
@@ -38180,6 +38378,7 @@
         "window_s": 2592000
       },
       "consumers": [
+        "cap:tool/idp-estate-clocks",
         "cap:workflow/gha-estate-homes-drill"
       ],
       "cost": {
@@ -57145,6 +57344,18 @@
       "writer": "repo",
       "path": ".github/workflows/estate-homes-drill.yml",
       "depends_on": [
+        {
+          "id": "cap:tool/idp-estate-clocks",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-estate-clocks-proof",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-estate-clocks-publish",
+          "edge": "invokes"
+        },
         {
           "id": "cap:tool/idp-estate-homes",
           "edge": "invokes"
