@@ -1,22 +1,27 @@
 #!/bin/sh
-# One deterministic disk tick. The governed cleaner owns every deletion and keep rule.
-set -u
-VOLUME=${DISK_GUARD_PATH:-/System/Volumes/Data}
-FLOOR_MB=${DISK_FLOOR_MB:-3000}
-CLEANUP=${DISK_WATCH_CLEANER:-$HOME/.estate/libexec/disk-cleanup.sh}
-HEARTBEAT=${DISK_WATCH_HEARTBEAT:-$HOME/.estate/heartbeats/disk-guardian.json}
-WATCH_BUDGET=${DISK_WATCH_BUDGET_S:-45}
-free_mb=$(df -m "$VOLUME" 2>/dev/null | awk 'NR==2 {print $4}')
-case "${free_mb:-}" in ''|*[!0-9]*) echo "BLIND disk-watch cannot read free space on $VOLUME"; exit 0;; esac
-state=healthy
-[ "$free_mb" -ge "$FLOOR_MB" ] || state=reclaiming
-mkdir -p "${HEARTBEAT%/*}" 2>/dev/null || true
-printf '{"at":"%s","state":"%s","free_mb":%s}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$state" "$free_mb" >"$HEARTBEAT.tmp" 2>/dev/null &&
-  mv -f "$HEARTBEAT.tmp" "$HEARTBEAT" 2>/dev/null || true
-echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) disk-watch free_mb=$free_mb floor_mb=$FLOOR_MB state=$state"
-[ "$state" = healthy ] && exit 0
-[ -x "$CLEANUP" ] || { echo "BLIND disk-watch cleaner missing: $CLEANUP"; exit 1; }
-DISK_CLEANUP_PHASES=${DISK_CLEANUP_PHASES:-caches,temp} DISK_CLEANUP_TARGET_MB=${DISK_CLEANUP_TARGET_MB:-6000} \
-  DISK_CLEANUP_INCREMENTAL=1 bash "$CLEANUP" true false "$FLOOR_MB" false "$WATCH_BUDGET"
-rc=$?
-case "$rc" in 0|4|5) exit 0;; 3|143) exit 0;; *) exit "$rc";; esac
+# DISABLED 2026-11-11 by founder order.
+#
+# This was the resident disk guardian: a KeepAlive launchd job taking one bounded reclaim
+# step per cycle below its floor.
+#
+# Measured before removal: 120 steps, last_freed_mb=3, free_before 1010 -> free_after 1013,
+# while the volume fell 1526 MB -> 1012 MB over the same period and the machine sat at
+# 26 MB free RAM with 80% swap. It was not cleaning the machine; it was another process
+# competing for the memory that was already exhausted. It also held the executor's
+# 1500 MB disk floor closed against every command -- including `launchctl bootout` and
+# `rm` on itself -- so the guard could not be disabled by any door it guarded. That circle
+# is the defect: a safeguard that blocks its own remedy.
+#
+# When the guardian was finally stopped, free space recovered on its own: 1012 MB -> 2335 MB.
+# The cleaner was never what freed the disk.
+#
+# The founder's ruling: needing 113 steps to clean a disk is the root cause, and worse
+# than anything else on the machine.
+#
+# REPLACEMENT: none, deliberately. Free space is a maintenance operation performed when it
+# is needed, with a budget and a RESULT line that prints free space before and after, not a
+# resident daemon. Do not reinstall this shape. If a cleanup is written later it must
+# (a) not be KeepAlive, (b) report freed MB against a target in one run, and
+# (c) never hold the executor's disk floor closed against its own off switch.
+echo "BLIND idp-disk-watch disabled 2026-11-11 (founder order): no disk guardian is installed." >&2
+exit 1

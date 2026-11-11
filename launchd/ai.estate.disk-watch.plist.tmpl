@@ -1,30 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- A bounded tick, not a resident process. The watcher performs one free-space
-     measurement and, only below its floor, one allow-listed cleaner step.
-     WHY THE SCRIPT IS ProgramArguments[0] AND NOT `/bin/sh <script>`: measured 2026-11-10, the
-     installed job sat in launchd's xpcproxy state (`runs = 1`, heartbeat 1671s stale against a
-     180s max) for hours: the launcher never exec'd the program, so the guardian was loaded and
-     dead at the same time, and estate_health read disk-guardian FAIL. The script carries a
-     #!/bin/sh shebang and is executable, so naming it directly removes the extra launcher.
-     Measured after the change: the heartbeat advanced on three consecutive 60s intervals
-     (21:45:52Z -> 21:46:53Z -> 21:47:52Z -> 21:48:53Z). Unlike critical-watch, this script
-     reads no repo path (no git, no ~/Documents), so the TCC reason that makes those templates
-     name python3 does not apply, and python3 must NOT be named here: the script is shell, so
-     passing it to `python3 -c subprocess.call` makes python parse bash
-     (`SyntaxError: unmatched ')'` at the `case` line). -->
+<!-- DISABLED 2026-11-11 by founder order -- see bin/idp-disk-watch's header for the record.
+
+     This template rendered a KeepAlive resident disk guardian: one bounded reclaim step per
+     cycle below its floor, forever. Measured before removal: 120 steps, last_freed_mb=3,
+     while the volume fell 1526 MB -> 1012 MB and the machine sat at 26 MB free RAM with 80%
+     swap. When the guardian was stopped the volume recovered on its own, 1012 MB -> 2335 MB.
+
+     It also held the executor's 1500 MB disk floor closed against every command, including
+     `launchctl bootout` and `rm` on itself: a safeguard that blocks its own off switch.
+
+     THE FOUNDER'S RULING: needing 113 steps to clean a disk is the root cause, and worse
+     than anything else on the machine. It does not come back in this shape.
+
+     If a cleanup is ever written again it must not be KeepAlive, must report free MB before
+     and after against a target in ONE run, and must never gate its own disable path.
+-->
 <plist version="1.0"><dict>
-  <key>Label</key><string>ai.estate.disk-watch</string>
+  <key>Label</key><string>ai.estate.disk-watch.retired</string>
   <key>ProgramArguments</key><array>
-    <string>${HOME}/.estate/bin/idp-disk-watch</string>
+    <string>/bin/echo</string>
+    <string>ai.estate.disk-watch retired 2026-11-11: no resident disk guardian. See bin/idp-disk-watch.</string>
   </array>
-  <key>EnvironmentVariables</key><dict>
-    <key>DISK_FLOOR_MB</key><string>3000</string>
-    <key>DISK_WATCH_BUDGET_S</key><string>45</string>
-  </dict>
-  <key>StartInterval</key><integer>60</integer>
-  <key>RunAtLoad</key><true/>
-  <key>ProcessType</key><string>Background</string>
-  <key>StandardOutPath</key><string>${HOME}/.estate/disk-watch.out.log</string>
-  <key>StandardErrorPath</key><string>${HOME}/.estate/disk-watch.err.log</string>
+  <key>RunAtLoad</key><false/>
+  <key>Disabled</key><true/>
 </dict></plist>
