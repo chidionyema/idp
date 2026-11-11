@@ -133,11 +133,18 @@ export function assess(task, raw, strict = true) {
   const got = parsed.action.payload.toLowerCase();
   const present = (expected.contains || []).every(s => got.includes(String(s).toLowerCase()));
   const absent = (expected.excludes || []).every(s => !got.includes(String(s).toLowerCase()));
+  // Knowledge and action fitness are distinct metrics. Never silently conflate
+  // correct factual diagnosis with an incorrectly chosen operation.
+  const groups = expected.anyContains || [];
+  const alternatives = groups.every(group => group.some(s => got.includes(String(s).toLowerCase())));
+  const contradiction = (expected.contradicts || []).some(s => got.includes(String(s).toLowerCase()));
+  const knowledgePass = present && absent && alternatives && !contradiction;
   const acceptable = expected.opcodes || (expected.opcode ? [expected.opcode] : []);
-  const actionCorrect = !acceptable.length || acceptable.includes(parsed.action.opcode);
-  const pass = staticPass && present && absent && actionCorrect;
-  return { pass, schemaPass: true, staticPass, reason: !staticPass ? staticReason :
-    pass ? "oracle-pass" : "oracle-fail", action: parsed.action };
+  const actionPass = !acceptable.length || acceptable.includes(parsed.action.opcode);
+  const pass = staticPass && knowledgePass && actionPass;
+  return { pass, knowledgePass, actionPass, schemaPass: true, staticPass,
+    reason: !staticPass ? staticReason : pass ? "oracle-pass" : "oracle-fail",
+    action: parsed.action };
 }
 
 /** Q4: only linked, independently verified superior trajectories can be preferred. */
@@ -291,6 +298,9 @@ export async function evaluate({ tasks, evidence, arms, model, url, token, sha25
   for (const arm of arms) {
     const rows = results.filter(row => row.arm === arm);
     summary[arm] = { passed: rows.filter(row => row.pass).length,
+      knowledgePassed: rows.filter(row => row.attempts.at(-1)?.result?.knowledgePass === true).length,
+      actionPassed: rows.filter(row => row.attempts.at(-1)?.result?.actionPass === true).length,
+      schemaPassed: rows.filter(row => row.attempts.at(-1)?.result?.schemaPass === true).length,
       total: rows.length, accuracy: rows.length ? rows.filter(row => row.pass).length / rows.length : null,
       failures: rows.filter(row => row.attempts.some(a => a.error)).length,
       calls: rows.reduce((n, r) => n + r.attempts.length, 0) };
