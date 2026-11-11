@@ -37,6 +37,16 @@ test("Q2 refuses malformed, extra-key and unauthorized model actions", () => {
   assert.equal(parseAction('{"opcode":"RUN_FALSIFIER","payload":"request more evidence"}').ok,true);
 });
 
+test("Q2 accepts structured semantic payload without granting command authority", () => {
+  const typed = parseAction({opcode:"DISPATCH_LEGION",payload:{status:"enquiries unavailable",design:"intact"}});
+  assert.equal(typed.ok,true);
+  assert.match(typed.action.payload,/enquiries unavailable/);
+  const taskWithAlternates = {oracle:{opcodes:["RUN_FALSIFIER","DISPATCH_LEGION"],
+    contains:["enquiries unavailable","design"]}};
+  assert.equal(assess(taskWithAlternates,
+    {opcode:"DISPATCH_LEGION",payload:{status:"enquiries unavailable",design:"intact"}}).pass,true);
+});
+
 test("Q3 detects a syntax error and bare except without executing the code", () => {
   assert.equal(checkPython("def broken(:\n pass").ok,false);
   assert.match(checkPython("try:\n x=1\nexcept:\n pass").error,/bare except/);
