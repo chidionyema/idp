@@ -36,14 +36,21 @@ steps:
     cmd: |
       df -k /System/Volumes/Data | awk 'NR==2 {printf "free before: %dM on %s\n", $4/1024, $9}'
   - name: clean
-    # One call, in the engine's order, with a budget it can finish inside the door. The cleaner's
-    # own status is carried out of the step: 0 every phase ran, 4 work still owed, 3 something
-    # that should be gone is still there, 5 another run holds the lock and is doing the work.
-    on_fail: continue
+    # RETIRED 2026-11-11 by founder order. This step ran
+    # ~/.estate/libexec/disk-cleanup.sh (1303 lines) in apply mode.
+    #
+    # MEASURED: as the resident guardian it completed 120 bounded steps at last_freed_mb=3
+    # while the volume fell 1526 MB -> 1012 MB, on a machine at 26 MB free RAM with 80% swap.
+    # When the guardian was stopped the volume recovered on its own, 1012 MB -> 2335 MB. The
+    # cleaner was never what freed the disk, and it held the executor's 1500 MB floor closed
+    # against every command, including `launchctl bootout` and `rm` on itself.
+    #
+    # USE `estate-execute disk-reclaim` INSTEAD. Its steps 1-4 are the narrow, measured reclaim
+    # path (duplicate local gate runs, finished pytest scratch, the estate's own run records,
+    # the stale dependency tree) and none of them needs this cleaner.
     cmd: |
-      env DISK_CLEANUP_TARGET_MB={{target_mb}} \
-        bash ~/.estate/libexec/disk-cleanup.sh true {{trash}} 0 {{worktrees}} 78
-      echo $? > ~/.estate/disk-free.rc
+      echo "BLIND disk-free retired 2026-11-11 (founder order): the cleaner it ran freed 3 MB/step while the volume fell. Use disk-reclaim." >&2
+      echo 1 > ~/.estate/disk-free.rc
   - name: after
     on_fail: continue
     cmd: |
