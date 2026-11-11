@@ -2,8 +2,8 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Merdian Intelligence | AI laboratory, consultancy and ventures",
-  description: "Merdian Intelligence researches artificial intelligence, engineers systems for organisations, and develops commercial AI ventures.",
+  title: "Meridian Intelligence | AI laboratory, consultancy and ventures",
+  description: "Meridian Intelligence researches artificial intelligence, engineers systems for organisations, and develops commercial AI ventures.",
 };
 
 const disciplines = [
@@ -20,7 +20,7 @@ export default function HomePage() {
         <div className="mi-hero-grid" aria-hidden="true" />
         <div className="mi-hero-glow" aria-hidden="true" />
         <div className="mi-shell mi-hero-shell">
-          <div className="mi-hero-topline"><span><i className="mi-live-dot" /> MERDIAN INTELLIGENCE</span><span>INDEPENDENT AI LABORATORY + CONSULTANCY</span><span>UK / GLOBAL</span></div>
+          <div className="mi-hero-topline"><span><i className="mi-live-dot" /> MERIDIAN INTELLIGENCE</span><span>INDEPENDENT AI LABORATORY + CONSULTANCY</span><span>UK / GLOBAL</span></div>
           <div className="mi-hero-composition">
             <div className="mi-hero-content">
               <div className="mi-hero-overline">RESEARCH THE UNKNOWN. ENGINEER THE POSSIBLE.</div>
@@ -55,7 +55,7 @@ export default function HomePage() {
           <p className="mi-eyebrow">01 / MANIFESTO</p>
           <div>
             <h2 id="mi-manifesto-title">Not another AI pitch.<br/><em>Real intelligence. Real work.</em></h2>
-            <p>Merdian exists at the intersection of science and commerce. We experiment continuously, build for real-world constraints and develop our own companies. The laboratory creates the advantage. Consulting brings it to clients. Products take it into new markets.</p>
+            <p>Meridian exists at the intersection of science and commerce. We experiment continuously, build for real-world constraints and develop our own companies. The laboratory creates the advantage. Consulting brings it to clients. Products take it into new markets.</p>
           </div>
           <div className="mi-manifesto-symbol" aria-hidden="true">M</div>
         </div>
@@ -84,7 +84,7 @@ export default function HomePage() {
             <Link href="/research" className="mi-button mi-button-gold">Explore research <span aria-hidden="true">→</span></Link>
           </div>
           <div className="mi-lab-board">
-            <div className="mi-lab-board-head"><span><i className="mi-live-dot"/> RESEARCH PROGRAMMES</span><span>MERDIAN / LAB</span></div>
+            <div className="mi-lab-board-head"><span><i className="mi-live-dot"/> RESEARCH PROGRAMMES</span><span>MERIDIAN / LAB</span></div>
             <div className="mi-lab-programme"><span>03.1</span><div><h3>Autonomous intelligence</h3><p>Agent execution, bounded recovery, human escalation, and outcome evidence</p></div></div>
             <div className="mi-lab-programme"><span>03.2</span><div><h3>AI systems & evaluation</h3><p>Baseline comparisons, adversarial test sets, quality, latency, and cost</p></div></div>
             <div className="mi-lab-programme"><span>03.3</span><div><h3>Trust & infrastructure</h3><p>Workload identity, traceability, recovery, and release verification</p></div></div>
@@ -96,7 +96,7 @@ export default function HomePage() {
       <section className="mi-ventures mi-section" aria-labelledby="mi-ventures-heading">
         <div className="mi-shell">
           <div className="mi-section-intro"><span className="mi-eyebrow">04 / VENTURES + PRODUCTS</span><p>FROM THE LABORATORY TO THE MARKET</p></div>
-          <div className="mi-split-heading"><h2 id="mi-ventures-heading">We don&apos;t only advise.<br/><span>We build businesses.</span></h2><div><p>Merdian connects research, client delivery, and venture development through the same evaluate–engineer–verify method. Each initiative is identified by its actual maturity.</p><Link className="mi-text-action" href="/products">Discover the portfolio <span aria-hidden="true">→</span></Link></div></div>
+          <div className="mi-split-heading"><h2 id="mi-ventures-heading">We don&apos;t only advise.<br/><span>We build businesses.</span></h2><div><p>Meridian connects research, client delivery, and venture development through the same evaluate–engineer–verify method. Each initiative is identified by its actual maturity.</p><Link className="mi-text-action" href="/products">Discover the portfolio <span aria-hidden="true">→</span></Link></div></div>
           <div className="mi-venture-grid">
             <article className="mi-venture mi-venture-mumchimp"><div className="mi-venture-top"><span>GROUP COMPANY / COMMERCE</span><span>04.1</span></div><div><div className="mi-venture-mark">m<span>.</span></div><h3>Mumchimp</h3><p>Research-backed business opportunities, built for people ready to act.</p></div><a href="https://mumchimp.com" target="_blank" rel="noopener noreferrer">Visit Mumchimp <span aria-hidden="true">↗</span></a></article>
             <article className="mi-venture mi-venture-genesis"><div className="mi-venture-top"><span>LABORATORY PRODUCT / AUTONOMY</span><span>04.2</span></div><div><div className="mi-venture-mark mi-genesis-mark">G<span>•</span></div><h3>Genesis</h3><p>The Autonomous Estate: an experimental operating system for coordinated AI agents and work.</p></div><Link href="/products">Explore the vision <span aria-hidden="true">→</span></Link></article>
@@ -106,7 +106,7 @@ export default function HomePage() {
       </section>
 
       <section className="mi-close" aria-labelledby="mi-close-heading">
-        <div className="mi-shell mi-close-inner"><span className="mi-eyebrow">NEXT / WORK WITH MERDIAN</span><h2 id="mi-close-heading">THE NEXT<br/>MOVE IS <em>YOURS.</em></h2><div className="mi-close-bottom"><p>Have an AI problem worth solving, a platform worth building or an idea worth testing? Bring it to Merdian.</p><Link href="/contact" className="mi-button mi-button-gold">Start a conversation <span aria-hidden="true">→</span></Link></div></div>
+        <div className="mi-shell mi-close-inner"><span className="mi-eyebrow">NEXT / WORK WITH MERIDIAN</span><h2 id="mi-close-heading">THE NEXT<br/>MOVE IS <em>YOURS.</em></h2><div className="mi-close-bottom"><p>Have an AI problem worth solving, a platform worth building or an idea worth testing? Bring it to Meridian.</p><Link href="/contact" className="mi-button mi-button-gold">Start a conversation <span aria-hidden="true">→</span></Link></div></div>
       </section>
     </>
   );
