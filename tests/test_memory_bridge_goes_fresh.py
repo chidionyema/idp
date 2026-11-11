@@ -84,7 +84,7 @@ def test_a_repaired_door_reaches_an_already_running_bridge(bridge):
     """The whole point: the process that was already alive sees the new code, through forward()."""
     module, door_path = bridge
     instance = module.Bridge()
-    instance.secret = "test-secret"  # noqa: S105 -- fixture value, never a credential
+    instance.secret = "test-secret"
 
     first = instance.forward(1, {"jsonrpc": "2.0", "id": 1})["result"]
     assert first["served_by"] == "original", "the first call must serve what is loaded"

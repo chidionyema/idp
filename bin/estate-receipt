@@ -48,6 +48,14 @@ sys.path.insert(0, _governance_path())
 from governance import receipt  # noqa: E402
 
 
+def _iso_utc(ts: float) -> str:
+    """The ledger stores ran_at as an ISO-8601 UTC string; compare like with like."""
+
+    import datetime
+
+    return datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).isoformat()
+
+
 def _self_test() -> int:
     """The gate this launcher owes the founder: it must be able to fail."""
     good = receipt.run_receipt(["true"], cwd=os.getcwd())
@@ -97,6 +105,17 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--file", default="")
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--cwd", default=os.getcwd())
+    ap.add_argument(
+        "--recent",
+        nargs="?",
+        const="3600",
+        type=str,
+        default=None,
+        help=(
+            "was a real executor run recorded in the last N seconds? reads the executor's "
+            "own step_runs ledger, so no hash is quoted in prose (default 3600, 0 = any)"
+        ),
+    )
     ap.add_argument("command", nargs=argparse.REMAINDER)
     args = ap.parse_args(argv[1:])
 
@@ -120,6 +139,43 @@ def main(argv: list[str]) -> int:
                 f"exit {stored.get('exit')} sha256 {stored.get('sha256')}"
             )
         return 0 if result["ok"] else 1
+
+    if args.recent is not None:
+        # The executor already records every step it ran -- cmd, exit_code, ran_at -- in
+        # ~/.estate/estate.db's step_runs. Asking the MODEL to run this tool and paste a
+        # sha256 into its prose is ceremony over data the machine holds already, and it is
+        # not a gate: the model can quote any hash it likes. Measured 2026-11-11: 16,044
+        # step_runs rows, the latest carrying cmd/exit_code/ran_at for a run that really
+        # happened. So the hook asks the ledger directly and the model quotes nothing.
+        # A window of 0 means "any run at all still on the ledger".
+        import sqlite3
+        import time as _time
+
+        db = os.environ.get("ESTATE_DB") or os.path.expanduser("~/.estate/estate.db")
+        window = float(args.recent)
+        since = _time.time() - window if window > 0 else 0.0
+        try:
+            con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+            row = con.execute(
+                "SELECT cmd, exit_code, ran_at FROM step_runs "
+                "WHERE exit_code = 0 AND ran_at >= ? ORDER BY rowid DESC LIMIT 1",
+                (_iso_utc(since),),
+            ).fetchone()
+            total = con.execute("SELECT COUNT(*) FROM step_runs").fetchone()[0]
+            con.close()
+        except sqlite3.Error as exc:
+            # BLIND is an honest answer, and a blind check must not pass a report.
+            print(f"BLIND   receipt  cannot read the executor ledger ({exc})")
+            return 2
+        if row:
+            print(f"ok  receipt  a real run is on the ledger: exit 0 at {row[2]}")
+            print(f"    {str(row[0]).strip()[:160]}")
+            return 0
+        print(
+            f"FAIL  receipt  no passing executor run in the last {window:g}s "
+            f"({total} on the ledger): this report is not backed by one"
+        )
+        return 1
 
     if args.has_receipt:
         text = ""
