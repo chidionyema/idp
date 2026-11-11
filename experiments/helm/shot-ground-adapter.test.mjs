@@ -18,7 +18,7 @@ const make=(shots=1,changes={},behavior={})=>{
     policy,store,permittedIntents:["repo.delivery"],
     contextProbe:async()=>{calls.probes++;if(behavior.failProbe)throw Error("network down");return {branch:"main",sha:SHA};},
     dispatchRegisteredIntent:async request=>{
-      calls.dispatches++;return {accepted:true,jobId:"job-"+calls.dispatches,request};
+      calls.dispatches++;if(behavior.failDispatch)throw Error("lost HTTP ACK");return {accepted:true,jobId:"job-"+calls.dispatches,request};
     }
   });
   const request={opcode:"CONTEXT_PROBE",taskDigest:helmDigest(CONTEXT),sourceSha:SHA};
@@ -106,9 +106,8 @@ test("two-shot only permits repair after independent grade",async()=>{
 });
 
 test("crash after external command returned unknown NEVER permits duplicate dispatch",async()=>{
-  const x=make(10);
+  const x=make(10,{}, {failDispatch:true});
   await x.gateway.probeOnce(x.request);
-  x.gateway.dispatchRegisteredIntent=async()=>{x.calls.dispatches++;throw Error("lost HTTP ACK");};
   await fail(()=>x.gateway.deliver(x.candidate),/lost HTTP ACK/);
   const recovered=new HelmGroundGateway({
     policy:x.policy,store:x.store,
