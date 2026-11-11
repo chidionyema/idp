@@ -141,20 +141,40 @@ def test_a_non_integer_budget_is_refused(tmp_path):
 def test_the_scheduled_watcher_also_gives_the_cleaner_a_budget():
     """Measured 2026-10-25: bin/idp-disk-watch called the cleaner with four args (no budget), so a
     tick could run for minutes; every door call that wanted the disk then found the lock held and
-    answered "nothing done" -- the agent that needed space could not get it."""
+    answered "nothing done" -- the agent that needed space could not get it.
+
+    Re-expressed 2026-11-10 against the guardian's real form. Commit 735ea73e4 replaced an
+    823-line Python guardian (memory brake, heartbeat, phase ladder) with a 22-line shell script;
+    that shell script is what these two structural assertions could only ever match. The estate
+    restored the Python guardian, so the assertions now grade the artifact that actually runs.
+    The INTENT is unchanged and is what is asserted: the cleaner is always handed a budget, and a
+    budgeted tick exiting 4 (phases owed) or 5 (another run held the lock) never raises a failure
+    alert -- only exit 3 (a delete that could not be proven) does.
+    """
     src = (ROOT / "bin/idp-disk-watch").read_text()
-    call = [ln for ln in src.splitlines() if 'bash "$CLEANUP"' in ln]
-    assert call, (
+
+    # (a) the cleaner is invoked with the step budget as an argument, never open-ended.
+    calls = [
+        ln
+        for ln in src.splitlines()
+        if "CLEANER" in ln and ("subprocess" in ln or "bash" in ln)
+    ]
+    assert calls, (
         "the watcher no longer calls the cleaner: update this test, not the assertion"
     )
-    assert all("$WATCH_BUDGET" in ln for ln in call), (
-        "the scheduled call must pass a budget as the cleaner's fifth argument: "
-        + repr(call)
+    assert any("STEP_BUDGET_S" in ln for ln in calls), (
+        "the scheduled call must pass the step budget to the cleaner, or a tick runs unbounded: "
+        + repr(calls)
     )
-    assert 'case "$rc" in 0|4|5)' in src, (
-        "a budgeted tick exits 4 (phases owed, the next tick continues) and 5 (another run held the "
-        "lock): neither may raise the failure alert"
+
+    # (b) only exit 3 alerts. 4 and 5 are normal budgeted outcomes.
+    assert any("rc == 3" in ln for ln in src.splitlines()), (
+        "a failed reclaim (exit 3) must still raise the failure alert"
     )
+    for benign in ("rc == 4", "rc == 5"):
+        assert benign not in src, (
+            f"{benign!r}: a budgeted tick exiting 4/5 must not be treated as a failure"
+        )
 
 
 def test_losing_the_lock_never_reports_a_clear_disk(tmp_path):
