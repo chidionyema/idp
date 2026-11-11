@@ -123,3 +123,4 @@ test("Paired eval records model-call errors honestly, applies bounded schema ret
 // HELM founder shot-control falsifiers exercise the real research acceptance path.
 import "./shot-control.test.mjs";
 import "./shot-trial.test.mjs";
+import "./shot-ground-adapter.test.mjs";
