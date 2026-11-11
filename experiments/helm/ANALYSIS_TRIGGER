@@ -1,0 +1,6 @@
+HELM research-grade analysis checkpoint.
+Original live held-out transfer source: GitHub Actions 42961560399.
+Do not alter the outcome labels: baseline 1/2, experience 0/2, but model-provider
+errors 1 vs 2; paired usable sample is ZERO. Analyze from the immutable raw
+trial artifact, publish JSON with unusable-pair count and explicit non-inference.
+This experiment does not perform new model calls.
