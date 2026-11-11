@@ -27427,6 +27427,10 @@
         {
           "id": "cap:tool/estate-memory-enforce",
           "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
         }
       ],
       "metrics": [],
@@ -54484,6 +54488,7 @@
         "cap:tool/arxiv-harvest",
         "cap:tool/budget_governor.py",
         "cap:tool/catalog-gen",
+        "cap:tool/claim-open",
         "cap:tool/diagnosis-gate",
         "cap:tool/diff-workspace",
         "cap:tool/dof-gate",
