@@ -92,6 +92,9 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Refuse tampered age bootstrap before running an agent
+        run: bash tests/test_agent_sandbox_age.sh
+
       - name: Install the harness and age
         env:
           HARNESS: ${{ github.event_name == 'issues' && 'gemini' || inputs.harness }}
