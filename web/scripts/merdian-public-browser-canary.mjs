@@ -16,7 +16,7 @@ export const PUBLIC_ORIGINS = [
   'https://meridian-intelligence-uk.vercel.app',
   'https://merian-intelligence.vercel.app',
 ];
-const output = path.join(path.dirname(dirname(fileURLToPath(import.meta.url))), 'artifacts', 'public-readback');
+const output = path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'artifacts', 'public-readback');
 mkdirSync(output, { recursive: true });
 const chrome = process.env.CHROME || '/usr/bin/google-chrome';
 const viewports = [390, 1440];
