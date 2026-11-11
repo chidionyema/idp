@@ -9,7 +9,6 @@ from typing import List
 
 from platform.efficiency import (
     CacheGuardian,
-    TokenKiller,
     MCPAdapter,
     TokenBudgetOrchestrator,
     SoLPi,
@@ -42,9 +41,8 @@ class N10Validator:
         self.start_time = None
         self.end_time = None
 
-        # Shared 8 mechanisms
+        # Shared 7 mechanisms (TokenKiller removed: it never called rtk and fabricated savings)
         self.cache_guardian = CacheGuardian()
-        self.token_killer = TokenKiller()
         self.mcp_adapter = MCPAdapter()
         self.budget_orchestrator = TokenBudgetOrchestrator()
         self.sol_pi = SoLPi()
@@ -72,11 +70,10 @@ class N10Validator:
         self.cache_guardian.restore_golden()
         cache_stats = self.cache_guardian.get_cache_stats()
 
-        # 2. Token killer
-        bash_output = "\n".join([f"line {i}" for i in range(50)])
-        self.token_killer.compress_output("cat file", bash_output)
-        killer_stats = self.token_killer.get_savings_stats()
-        tokens_saved += killer_stats.get("estimated_tokens_saved", 0)
+        # 2. (removed) platform/efficiency/token_killer.py was a stub that never called rtk,
+        # truncated to 10 lines, and FABRICATED its 'tokens saved' from a 5-tokens-per-line
+        # guess -- so this counter reported a saving no mechanism made. Output compression is
+        # owned by _collapse_runs in platform/llm/efficiency_gateway.py, on the real path.
 
         # 3. MCP adapter
         self.mcp_adapter.register_tool(f"tool_{agent_id}_1", {})

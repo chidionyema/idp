@@ -37,7 +37,10 @@ Feature: The estate efficiency gateway cuts tokens before every vendor call, mod
       And the hook runs again with a different system prompt
       Then cache_misses is 1
 
-  Rule: [2] TokenKiller removes repeated lines from tool results
+  Rule: [2] CollapseRuns removes repeated lines from tool results
+    # Named for the mechanism that actually runs (efficiency_gateway._collapse_runs). The old
+    # "TokenKiller" title referred to platform/efficiency/token_killer.py, which never called rtk
+    # and fabricated its savings; it was removed and this behaviour was never its (AGENTS.md 6).
 
     Scenario: Duplicate lines in a tool_result message are stripped
       Given a gateway instance
