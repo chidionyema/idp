@@ -20,8 +20,10 @@ export async function propose({task,contextPlan=null,evidence=[],model,url,token
     throw Error("maxAttempts must be 1..3");
   // The unauthenticated third-party model route may see public synthetic fixtures only.
   // A caller cannot attach a real repository compiler plan to that route.
-  if(url===PUBLIC_URL && !token && (contextPlan||task.classification!=="public-synthetic"))
-    throw Error("anonymous free provider may receive public-synthetic tasks only, never private ContextPlans");
+  if(url===PUBLIC_URL && contextPlan)
+    throw Error("public research gateway must never receive private ContextPlans, even with a token");
+  if(url===PUBLIC_URL && !token && task.classification!=="public-synthetic")
+    throw Error("anonymous free provider may receive public-synthetic tasks only");
   const authoritativeEvidence=contextPlan?evidenceFromCompiler(contextPlan):evidence;
   const messages=messagesFor("helm",task,authoritativeEvidence);
   const decisions=[];
