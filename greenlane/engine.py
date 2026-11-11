@@ -20,6 +20,8 @@ from __future__ import annotations
 import json
 import math
 import os
+
+from .learning import choose_batch_size, fingerprint, repeated_exact_failure
 from dataclasses import asdict, dataclass, field
 from typing import Optional, Protocol
 
@@ -52,6 +54,10 @@ HISTORY_KEEP = (
 )
 BOT_LANE = "flux/image-updates"  # the platform's own image lane: written by the image controller
 
+class UnavailableLaneObject(RuntimeError):
+    """Expected exact lane SHA unavailable to this runner; no merge conflict was proven."""
+
+
 
 @dataclass
 class Lane:
@@ -82,6 +88,7 @@ class Batch:
         tuple[str, str, str]
     ]  # (lane, head as pushed, head rebased onto the stack)
     started: float  # backend clock, minutes
+    policy: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -149,6 +156,7 @@ class State:
                 b["tip"],
                 [tuple(m) for m in b["members"]],
                 b["started"],
+                dict(b.get("policy") or {}),
             )
         return st
 
@@ -233,9 +241,13 @@ class Engine:
         batch_size: int = DEFAULT_BATCH,
         retries: int = DEFAULT_RETRIES,
         timeout: float = DEFAULT_TIMEOUT,
+        batch_policy: str = "fixed",
     ):
+        if batch_policy not in ("fixed", "adaptive", "adaptive-speed"):
+            raise ValueError(f"unknown batch policy {batch_policy}")
         self.b, self.s = backend, state
         self.batch_size, self.retries, self.timeout = batch_size, retries, timeout
+        self.batch_policy = batch_policy
         self.log: list[str] = []
 
     # -- one tick: observe, judge, act; safe to run again at any moment ---------------------
@@ -308,7 +320,7 @@ class Engine:
             # A known policy refusal remains actionable until the actual
             # incident or trusted base changes. Aging must not silently erase
             # the HEAD or demand a new agent push for an unrelated outage.
-            if lane.reason.startswith("trusted DoF ["):
+            if lane.reason.startswith(("trusted DoF [", "learned hold [")):
                 continue
             age_min = now - lane.arrived
             if age_min < RETIRE_AFTER_MIN:
@@ -352,11 +364,11 @@ class Engine:
                 lane is not None
                 and lane.head == head
                 and lane.status == RED
-                and lane.reason.startswith("trusted DoF [")
+                and lane.reason.startswith(("trusted DoF [", "learned hold ["))
                 and lane.judged_on
                 and (
                     lane.judged_on != self.b.main()
-                    or os.environ.get("GITHUB_EVENT_NAME") == "issues"
+                    or (lane.reason.startswith("trusted DoF [") and os.environ.get("GITHUB_EVENT_NAME") == "issues")
                 )
             ):
                 # A changed main or incident issue event may invalidate DoF's
@@ -463,7 +475,12 @@ class Engine:
             # against the current main before moving to PENDING. If the rebase succeeds the lane
             # tests cleanly against the current main; if it fails the conflict is genuine and
             # the rejudge counter will catch it on the next main move.
-            effective = self.b.rebase(lane.head, main, lane.name)
+            try:
+                effective = self.b.rebase(lane.head, main, lane.name)
+            except UnavailableLaneObject as exc:
+                lane.reason = f"waiting for exact Git object: {exc}"
+                self.log.append(f"deferred stale lane {lane.name}: {exc}")
+                continue
             if effective and effective != lane.head:
                 lane.head = effective
                 # Push immediately: CI tests origin/<lane>, not the in-memory lane.head.
@@ -592,7 +609,9 @@ class Engine:
             name, head, _ = b.members[0]
             lane = self.s.lanes[name]
             lane.attempts += 1
-            if lane.attempts <= self.retries:
+            cause = fingerprint(reason)
+            repeated = repeated_exact_failure(self.s.history, name, head, b.base, cause)
+            if lane.attempts <= self.retries and not repeated:
                 # A retry is not a priority. This used to be `self.s.queued.insert(0, [name])`,
                 # and `_start_batch` serves `queued` before the pending list -- so a lane that
                 # had already spent a full check suite ran as a ONE-lane batch in front of lanes
@@ -632,11 +651,15 @@ class Engine:
                 self._record(b, outcome, "retried", reason)
             else:
                 lane.status, lane.reason = RED, reason
-                # main red under it: the verdict says nothing about the lane (2026-09-30)
-                if self.b.main_red(b.base):
+                if repeated:
+                    # Exact cause, source and trusted baseline failed twice: no-op CI
+                    # repetitions cannot alter the source. A new head/main re-arms it.
+                    lane.reason = f"learned hold [{cause}]: fix source; {reason}"
                     lane.judged_on = b.base
-                self.b.report(name, head, RED, reason)
-                self._record(b, outcome, "parked", reason)
+                elif self.b.main_red(b.base):
+                    lane.judged_on = b.base
+                self.b.report(name, head, RED, lane.reason)
+                self._record(b, outcome, "learned-hold" if repeated else "parked", reason)
             self.log.append(
                 f"batch {b.id}: {name} red ({reason}); attempts={lane.attempts}"
             )
@@ -662,7 +685,11 @@ class Engine:
         r = {
             "id": b.id,
             "base": b.base[:12],
+            "base_full": b.base,
             "members": [m[0] for m in b.members],
+            "heads": [m[1] for m in b.members],
+            "policy": b.policy,
+            "failure_id": fingerprint(reason),
             "started": round(b.started, 2),
             "verdict_at": round(self.b.now(), 2),
             "outcome": outcome,
@@ -784,18 +811,28 @@ class Engine:
         # will fail the rebase check against the current main even though it could land
         # cleanly. Re-computing the effective HEAD fixes this.
         self._refresh_stale_lanes(base)
+        policy_receipt: dict = {"mode": "fixed", "size": self.batch_size}
         if self.s.queued:
             names = self.s.queued.pop(
                 0
             )  # bisection halves were admitted with their batch
+            policy_receipt = {"mode": "bisect", "size": len(names)}
         else:
             pend = sorted(
                 (l for l in self.s.lanes.values() if l.status == PENDING),
                 key=lambda l: l.seq,
             )
             names = []
+            capacity = self.batch_size
+            if self.batch_policy in ("adaptive", "adaptive-speed"):
+                overhead = 0.60 if self.batch_policy == "adaptive-speed" else 0.30
+                choice = choose_batch_size(self.s.history, len(pend), capacity, overhead)
+                capacity = choice.size
+                policy_receipt = choice.receipt()
+                policy_receipt["mode"] = self.batch_policy
+                policy_receipt["overhead_weight"] = overhead
             for l in pend:
-                if len(names) == self.batch_size:
+                if len(names) == capacity:
                     break
                 # A SUSPECT RUNS ALONE (2026-11-06). A lane with `attempts` has already gone
                 # red as a batch of one on this very head (a new head is a new Lane with zero
@@ -845,7 +882,14 @@ class Engine:
             # The lane's NAME goes with the head, because the name carries the class: a
             # generated flux/* lane is projected onto main from its image tags (idp#7140), and
             # a lane whose history carries anything else would otherwise never apply at all.
-            on_main = self.b.rebase(lane.head, base, n)
+            try:
+                on_main = self.b.rebase(lane.head, base, n)
+            except UnavailableLaneObject as exc:
+                # Isolate incomplete runner state to this one lane, not all of Greenlane.
+                lane.reason = f"waiting for exact Git object: {exc}"
+                self.b.report(n, lane.head, TESTING, lane.reason)
+                self.log.append(f"deferred {n}: {exc}")
+                continue
             if on_main is None:
                 # Genuine conflict with main. Charge the retry HERE, where the grade actually
                 # failed, so the count is consecutive failures against successive mains and not
@@ -874,7 +918,13 @@ class Engine:
                     self.b.report(n, lane.head, RED, why)
                     self.log.append(f"preflight held {n} against {base[:12]}: {why}")
                     continue
-            new = self.b.rebase(lane.head, tip, n)
+            try:
+                new = self.b.rebase(lane.head, tip, n)
+            except UnavailableLaneObject as exc:
+                lane.reason = f"waiting for exact Git object: {exc}"
+                self.b.report(n, lane.head, TESTING, lane.reason)
+                self.log.append(f"deferred {n}: {exc}")
+                continue
             if new is None:
                 # batch-order collision: main would take it, a batch-mate would not. Not a
                 # conflict -- it stays PENDING and is tried again, on its own if need be.
@@ -894,7 +944,8 @@ class Engine:
             self.s.lanes[n].status = TESTING
             self.s.lanes[n].reason = f"testing in {bid}"
             self.b.report(n, head, TESTING, f"testing in {bid} at {tip[:12]}")
-        self.s.batch = Batch(bid, base, tip, members, self.b.now())
+        self.s.batch = Batch(bid, base, tip, members, self.b.now(), policy_receipt)
         self.log.append(
-            f"batch {bid}: {len(members)} lane(s) on {base[:12]} -> candidate {tip[:12]}"
+            f"batch {bid}: {len(members)} lane(s) on {base[:12]} -> candidate {tip[:12]} "
+            f"policy={policy_receipt}"
         )

@@ -1,0 +1,111 @@
+#!/bin/bash
+# estate-fence-purge -- fence the spawner FIRST, then reclaim the disk in four bounded moves.
+#
+# WHY THE ORDER IS THE WHOLE POINT (founder, 2026-11-11). Every reclaim attempt that day failed for
+# the same reason, and it was not the cleaner's keep-list: it was that the cleaner ran WHILE new
+# worktrees were being born. Deleting a directory of small files takes longer than creating one, so
+# a foreground purge loses the race by construction. Measured 2026-11-11: `rm -rf` of a single
+# 2.7 GB cache was SIGTERMed at the executor's 100 s ceiling, freeing nothing, twice.
+#
+# The four moves, in this order, and the order is not negotiable:
+#
+#   1. FENCE.   Write the spawn fence so no new checkout can be born during the purge. Nothing is
+#               deleted while the spawner is still running.
+#   2. RENAME.  `mv <dir> <dir>.trash.$$` is O(1): the path is freed the instant it returns, no
+#               matter how many inodes are under it. This is the move that makes the reclaim real.
+#   3. PRUNE.   One `git worktree prune` drops the registrations of the trees just renamed.
+#   4. UNLINK.  The renamed trees are removed in the BACKGROUND at lowered priority (nice 19), so
+#               the ceiling cannot kill the reclaim and the machine stays usable while it drains.
+#
+# Usage:
+#   estate-fence-purge [--dry-run] [--roots <dir>[,<dir>...]]
+#
+# Exit codes: 0 reclaimed (or dry-run reported), 3 nothing to reclaim, 2 BLIND (could not measure).
+set -uo pipefail
+
+VOL="${ESTATE_VOLUME:-/System/Volumes/Data}"
+FENCE="${ESTATE_SPAWN_FENCE:-$HOME/.estate/NO_SPAWN_FENCE}"
+REPO="${ESTATE_IDP_REPO:-$HOME/Documents/code/idp}"
+DRY_RUN=0
+ROOTS=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) DRY_RUN=1; shift ;;
+    --roots)   ROOTS="${2:-}"; shift 2 ;;
+    *) echo "BLIND  fence-purge  unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+free_mb() { df -k "$VOL" 2>/dev/null | awk 'NR==2 {print int($4/1024)}'; }
+
+BEFORE="$(free_mb)"
+if [ -z "$BEFORE" ]; then
+  echo "BLIND  fence-purge  df could not read $VOL: free space is unknown, so nothing is purged" >&2
+  exit 2   # BLIND is never 0: an unmeasurable disk must not look like a clean one (R1)
+fi
+echo "ok     fence-purge  free before: ${BEFORE}M"
+
+# ---- move 1: FENCE -------------------------------------------------------------------------------
+if [ "$DRY_RUN" -eq 0 ]; then
+  mkdir -p "$(dirname "$FENCE")" && printf 'fenced %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$FENCE"
+  echo "ok     fence-purge  fenced: $FENCE (no new checkout may spawn)"
+else
+  echo "dry-run fence-purge  would fence: $FENCE"
+fi
+
+# ---- candidate roots -----------------------------------------------------------------------------
+if [ -z "$ROOTS" ]; then
+  ROOTS="$HOME/Documents/code/idp-worktrees,$HOME/.estate/worktrees,$HOME/.cache/idp-worktrees"
+fi
+
+T="$$"
+RENAMED=0
+IFS=',' read -r -a arr <<< "$ROOTS"
+for root in "${arr[@]}"; do
+  [ -n "$root" ] || continue
+  [ -d "$root" ] || continue
+  entries=$(ls -A "$root" 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$entries" -eq 0 ]; then
+    echo "skip   fence-purge  $root is empty"
+    continue
+  fi
+  sz=$(du -sk "$root" 2>/dev/null | awk '{print int($1/1024)}')
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "dry-run fence-purge  would rename ${sz}M  $root ($entries entries)"
+    continue
+  fi
+  # ---- move 2: RENAME (O(1)) ---------------------------------------------------------------------
+  if mv "$root" "$root.trash.$T" 2>/dev/null; then
+    echo "renamed fence-purge  ${sz}M  $root -> $root.trash.$T ($entries entries)"
+    RENAMED=$((RENAMED + 1))
+  else
+    echo "FAILED fence-purge  could not rename $root" >&2
+  fi
+done
+
+# ---- move 3: PRUNE -------------------------------------------------------------------------------
+if [ "$DRY_RUN" -eq 0 ] && [ -d "$REPO" ]; then
+  git -C "$REPO" worktree prune 2>/dev/null && echo "ok     fence-purge  worktree registrations pruned"
+fi
+
+AFTER_RENAME="$(free_mb)"
+echo "ok     fence-purge  free after rename: ${AFTER_RENAME}M (freed $((AFTER_RENAME - BEFORE))M)"
+
+# ---- move 4: UNLINK in the background, at lowered priority ---------------------------------------
+if [ "$DRY_RUN" -eq 0 ] && [ "$RENAMED" -gt 0 ]; then
+  for tr in "${arr[@]}".trash."$T"; do
+    [ -d "$tr" ] || continue
+    # nice 19 so the drain never competes with an agent; detached so the 100 s ceiling cannot kill it.
+    nohup nice -n 19 /bin/rm -rf "$tr" >/dev/null 2>&1 &
+    echo "ok     fence-purge  unlinking in background (pid $!): $tr"
+  done
+fi
+
+if [ "$DRY_RUN" -eq 0 ] && [ "$RENAMED" -eq 0 ] && [ "$AFTER_RENAME" -le "$BEFORE" ]; then
+  echo "ok     fence-purge  nothing to reclaim; the fence stays up until you lower it"
+  exit 3
+fi
+
+echo "ok     fence-purge  done. Lower the fence deliberately with: bin/estate-zero-worktree unfence"
+exit 0

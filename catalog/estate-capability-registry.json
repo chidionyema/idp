@@ -6,7 +6,7 @@
     "intent": 118,
     "layer": 257,
     "service": 121,
-    "tool": 480,
+    "tool": 485,
     "workflow": 102
   },
   "records": [
@@ -946,7 +946,7 @@
       "id": "cap:intent/disk-cleanup",
       "schema_version": 1,
       "kind": "intent",
-      "summary": "Free the laptop's data volume by deleting ONLY regenerable weight. Dry run by default: every target with its measured size. apply=true deletes the allow-list and nothing else, then proves it: each target must be gone (exit 3 if not), and the free space before and after is measured, not estimated. The allow-list is package-manager caches (yarn berry, go-build, pip, Homebrew, npm/npx, uv), the estate's own temp scratch (including the pytest scratch every local gate run leaves behind), and the Cargo target/ dirs of the idp main checkout. Under a floor it also reclaims re-installable toolchain weight: superseded node versions, old rustup toolchains, superseded claude-code builds, and the estate's own global npm packages that nothing in the estate runs -- keeping the newest of each family, any version the estate's own runtime names, anything a running process holds open, and rustup's default toolchain. THE ESTATE'S TOOL CACHE IS NEVER RECLAIMED (measured 2026-10-28). It looked like 1330M of regenerable tooling, and reclaiming it deleted kyverno, helm, kustomize, kubeconform, flux, conftest, temporal and the gate's own python -- so the estate's own gate then reported \"helm or kyverno CLI not installed\". A tool the estate's own doors use is not reclaimable weight. THE ORDER IS THE ENGINE'S, and there is only one: caches, then the toolchain tier, then docker, then worktrees, then temp, then the Chrome clones, then the report. The toolchain tier is SECOND because it is the only tier with real weight (2.2G measured) and because the phases after it are slow and usually yield nothing (a worktree is another agent's checkout; the container engine is not answering). Nothing is reclaimed past the target: the run stops the moment the volume is back above it. target_mb=N is that target (0 = no target). The executor's own floor is 1500 MB (MIN_FREE_MB in mcp/plugins/estate_executor.py) and it refuses to start a job below it, so a target at or above it is what keeps the estate's doors working. incremental=1 is the resident guardian's mode: the fast tiers only -- caches, the toolchain tier and the temp scratch -- with no HOME scan, no worktree walk and no docker probe. Every step is idempotent, so a step that did not finish is the next step's work. only_below_mb=N applies only while free space is under N MB. trash=true also empties ~/.Trash (the user's; opt-in only). worktrees=true also removes settled agent worktrees: clean, every commit on a branch/tag/remote, unlocked, idle 6h, no process inside, via `git worktree remove` without --force (restorable with `git worktree add`). A delete is bounded (DELETE_S, 30s) and resumable: rm of what is left continues where it stopped, so a run that is cut short says so and the work is still owed (exit 4) rather than failing. Exit 5 means another run holds the lock and is doing the work: that is not a failure, and the verdict prints the measured free space. class: mutate args: apply: {type: bool, default: false} trash: {type: bool, default: false} only_below_mb: {type: int, default: 0} worktrees: {type: bool, default: false} budget_s: {type: int, default: 78, description: \"seconds of work the cleaner may start; keep under door_s\"} target_mb: {type: int, default: 0, description: \"keep reclaiming until this much is free; 0 = no target\"} incremental: {type: int, default: 0, description: \"guardian mode: the fast tiers only, no HOME scan\"} # 95, and it used to declare nothing at all, so it inherited the ceiling: the dry run's du of HOME # (T_SCAN 300s) then hit the door at 100s and reported a timeout with no measurement in it. door_s: 95 halt_on_failure: true steps: - name: run # The cleaner's own status is carried out of the step, so the verdict below can say what # happened in one line -- including the case that is not a failure (5: another run holds the # lock and is doing the work). on_fail: continue cmd: | env DISK_CLEANUP_TARGET_MB={{target_mb}} DISK_CLEANUP_INCREMENTAL={{incremental}} \\ bash ~/.estate/libexec/disk-cleanup.sh {{apply}} {{trash}} {{only_below_mb}} {{worktrees}} {{budget_s}} echo $? > ~/.estate/disk-cleanup.rc - name: verdict cmd: | rc=$(cat ~/.estate/disk-cleanup.rc 2>/dev/null || echo 1) case \"$rc\" in 0) echo \"verdict: the cleaner ran\" ;; 5) echo \"verdict: another run holds the lock and is doing the work (the measured free space is above)\"; rc=0 ;; 4) echo \"verdict: the budget ran out with work still owed -- the resident guardian carries it, or run this door again\" ;; 3) echo \"verdict: a target survived deletion (see the lines above)\" ;; *) echo \"verdict: the cleaner could not run (rc=$rc)\" ;; esac exit \"$rc",
+      "summary": "Free the laptop's data volume by deleting ONLY regenerable weight. Dry run by default: every target with its measured size. apply=true deletes the allow-list and nothing else, then proves it: each target must be gone (exit 3 if not), and the free space before and after is measured, not estimated. The allow-list is package-manager caches (yarn berry, go-build, pip, Homebrew, npm/npx, uv), the estate's own temp scratch (including the pytest scratch every local gate run leaves behind), and the Cargo target/ dirs of the idp main checkout. Under a floor it also reclaims re-installable toolchain weight: superseded node versions, old rustup toolchains, superseded claude-code builds, and the estate's own global npm packages that nothing in the estate runs -- keeping the newest of each family, any version the estate's own runtime names, anything a running process holds open, and rustup's default toolchain. THE ESTATE'S TOOL CACHE IS NEVER RECLAIMED (measured 2026-10-28). It looked like 1330M of regenerable tooling, and reclaiming it deleted kyverno, helm, kustomize, kubeconform, flux, conftest, temporal and the gate's own python -- so the estate's own gate then reported \"helm or kyverno CLI not installed\". A tool the estate's own doors use is not reclaimable weight. THE ORDER IS THE ENGINE'S, and there is only one: caches, then the toolchain tier, then docker, then worktrees, then temp, then the Chrome clones, then the report. The toolchain tier is SECOND because it is the only tier with real weight (2.2G measured) and because the phases after it are slow and usually yield nothing (a worktree is another agent's checkout; the container engine is not answering). Nothing is reclaimed past the target: the run stops the moment the volume is back above it. target_mb=N is that target (0 = no target). The executor's own floor is 1500 MB (MIN_FREE_MB in mcp/plugins/estate_executor.py) and it refuses to start a job below it, so a target at or above it is what keeps the estate's doors working. incremental=1 is the resident guardian's mode: the fast tiers only -- caches, the toolchain tier and the temp scratch -- with no HOME scan, no worktree walk and no docker probe. Every step is idempotent, so a step that did not finish is the next step's work. only_below_mb=N applies only while free space is under N MB. trash=true also empties ~/.Trash (the user's; opt-in only). worktrees=true also removes settled agent worktrees: clean, every commit on a branch/tag/remote, unlocked, idle 6h, no process inside, via `git worktree remove` without --force (restorable with `git worktree add`). A delete is bounded (DELETE_S, 30s) and resumable: rm of what is left continues where it stopped, so a run that is cut short says so and the work is still owed (exit 4) rather than failing. Exit 5 means another run holds the lock and is doing the work: that is not a failure, and the verdict prints the measured free space. class: mutate args: apply: {type: bool, default: false} trash: {type: bool, default: false} only_below_mb: {type: int, default: 0} worktrees: {type: bool, default: false} budget_s: {type: int, default: 78, description: \"seconds of work the cleaner may start; keep under door_s\"} target_mb: {type: int, default: 0, description: \"keep reclaiming until this much is free; 0 = no target\"} incremental: {type: int, default: 0, description: \"guardian mode: the fast tiers only, no HOME scan\"} # 95, and it used to declare nothing at all, so it inherited the ceiling: the dry run's du of HOME # (T_SCAN 300s) then hit the door at 100s and reported a timeout with no measurement in it. door_s: 95 halt_on_failure: true steps: - name: run # RETIRED 2026-11-11 by founder order. This step ran # ~/.estate/libexec/disk-cleanup.sh, dry-run or apply. # # MEASURED: as the resident guardian it completed 120 bounded steps at last_freed_mb=3 # while the volume fell 1526 MB -> 1012 MB, on a machine at 26 MB free RAM with 80% swap. # When the guardian was stopped the volume recovered on its own, 1012 MB -> 2335 MB. The # cleaner was never what freed the disk, and its resident form held the executor's # 1500 MB floor closed against every command -- including `launchctl bootout` and `rm` on # itself -- so it could not be disabled by any door it guarded. # # USE `estate-execute disk-reclaim` INSTEAD. Its steps 1-4 are the narrow, measured reclaim # path (duplicate local gate runs, finished pytest scratch, the estate's own run records, # the stale dependency tree) and none of them needs this cleaner. cmd: | echo \"BLIND disk-cleanup retired 2026-11-11 (founder order): the cleaner freed 3 MB/step while the volume fell. Use disk-reclaim.\" >&2 echo 1 > ~/.estate/disk-cleanup.rc - name: verdict cmd: | rc=$(cat ~/.estate/disk-cleanup.rc 2>/dev/null || echo 1) case \"$rc\" in 0) echo \"verdict: the cleaner ran\" ;; 5) echo \"verdict: another run holds the lock and is doing the work (the measured free space is above)\"; rc=0 ;; 4) echo \"verdict: the budget ran out with work still owed -- the resident guardian carries it, or run this door again\" ;; 3) echo \"verdict: a target survived deletion (see the lines above)\" ;; *) echo \"verdict: the cleaner could not run (rc=$rc)\" ;; esac exit \"$rc",
       "contract": {
         "inputs": [
           "apply",
@@ -1003,7 +1003,7 @@
       "id": "cap:intent/disk-free",
       "schema_version": 1,
       "kind": "intent",
-      "summary": "Free space now, inside the door's 100s, by running the estate's own cleaner (platform/estate/libexec/disk-cleanup.sh) in apply mode under a budget it can finish. It deletes ONLY what the cleaner already allows -- package-manager caches, dangling images and build cache, settled agent worktrees it archives first, stale temp (including the pytest scratch every local gate run leaves behind), leftover Chrome code-sign clones, and (under its floor) re-installable toolchain weight -- and widens nothing. The estate's own tool cache is not weight: it holds the gate's python, kyverno, helm and the rest, and reclaiming it takes the estate's own doors down with it. worktrees=true by default because that is where the gigabytes are. ONE ORDER, AND IT IS THE ENGINE'S: caches, then the toolchain tier, then docker, then worktrees, then temp, then the Chrome clones. The toolchain tier is second because it is the only tier with real weight and the phases after it are slow and usually yield nothing; the door used to ask for the toolchain tier \"first\", which selected it but did not reorder it, so the worktree walk ran in front of the 2.2G and the door spent its budget there. Now one call, in the engine's order, spends the budget where the bytes are. Every phase either runs inside what is left of the budget or is SKIPPED BY NAME with the seconds it was denied, and free space is reported before and after, measured. A delete is bounded (30s) and resumable, so a run that is cut short says the work is still owed instead of failing. Exit 4 means work remains: the resident guardian (ai.estate.disk-watch) carries it, or run this door again -- every phase is idempotent. The RESIDENT GUARDIAN is the estate's continuous answer; this door is the on-demand sweep. Use when bin/idp-disk-guard says the volume is under the door's floor. class: mutate args: worktrees: {type: bool, default: true, description: \"also remove settled agent worktrees (archived first)\"} trash: {type: bool, default: false, description: \"also empty ~/.Trash (the user's; opt-in)\"} target_mb: {type: int, default: 0, description: \"keep reclaiming until this much is free; 0 = no target\"} # 95, not 100: the steps around the cleaning call need a few seconds, and a door that declares # exactly the ceiling spends its last second being killed. door_s: 95 halt_on_failure: false steps: - name: before cmd: | df -k /System/Volumes/Data | awk 'NR==2 {printf \"free before: %dM on %s\\n\", $4/1024, $9}' - name: clean # One call, in the engine's order, with a budget it can finish inside the door. The cleaner's # own status is carried out of the step: 0 every phase ran, 4 work still owed, 3 something # that should be gone is still there, 5 another run holds the lock and is doing the work. on_fail: continue cmd: | env DISK_CLEANUP_TARGET_MB={{target_mb}} \\ bash ~/.estate/libexec/disk-cleanup.sh true {{trash}} 0 {{worktrees}} 78 echo $? > ~/.estate/disk-free.rc - name: after on_fail: continue cmd: | df -k /System/Volumes/Data | awk 'NR==2 {printf \"free after: %dM on %s\\n\", $4/1024, $9}' - name: verdict cmd: | rc=$(cat ~/.estate/disk-free.rc 2>/dev/null || echo 1) case \"$rc\" in 0) echo \"verdict: every phase ran\" ;; 4) echo \"verdict: the budget was spent with work still owed -- the guardian continues it, or run disk-free again\" ;; 5) echo \"verdict: another run holds the lock and is doing the work (the measured free space is above)\"; rc=0 ;; 3) echo \"verdict: a target survived deletion (see the lines above)\" ;; *) echo \"verdict: the cleaner could not run (rc=$rc)\" ;; esac exit \"$rc",
+      "summary": "Free space now, inside the door's 100s, by running the estate's own cleaner (platform/estate/libexec/disk-cleanup.sh) in apply mode under a budget it can finish. It deletes ONLY what the cleaner already allows -- package-manager caches, dangling images and build cache, settled agent worktrees it archives first, stale temp (including the pytest scratch every local gate run leaves behind), leftover Chrome code-sign clones, and (under its floor) re-installable toolchain weight -- and widens nothing. The estate's own tool cache is not weight: it holds the gate's python, kyverno, helm and the rest, and reclaiming it takes the estate's own doors down with it. worktrees=true by default because that is where the gigabytes are. ONE ORDER, AND IT IS THE ENGINE'S: caches, then the toolchain tier, then docker, then worktrees, then temp, then the Chrome clones. The toolchain tier is second because it is the only tier with real weight and the phases after it are slow and usually yield nothing; the door used to ask for the toolchain tier \"first\", which selected it but did not reorder it, so the worktree walk ran in front of the 2.2G and the door spent its budget there. Now one call, in the engine's order, spends the budget where the bytes are. Every phase either runs inside what is left of the budget or is SKIPPED BY NAME with the seconds it was denied, and free space is reported before and after, measured. A delete is bounded (30s) and resumable, so a run that is cut short says the work is still owed instead of failing. Exit 4 means work remains: the resident guardian (ai.estate.disk-watch) carries it, or run this door again -- every phase is idempotent. The RESIDENT GUARDIAN is the estate's continuous answer; this door is the on-demand sweep. Use when bin/idp-disk-guard says the volume is under the door's floor. class: mutate args: worktrees: {type: bool, default: true, description: \"also remove settled agent worktrees (archived first)\"} trash: {type: bool, default: false, description: \"also empty ~/.Trash (the user's; opt-in)\"} target_mb: {type: int, default: 0, description: \"keep reclaiming until this much is free; 0 = no target\"} # 95, not 100: the steps around the cleaning call need a few seconds, and a door that declares # exactly the ceiling spends its last second being killed. door_s: 95 halt_on_failure: false steps: - name: before cmd: | df -k /System/Volumes/Data | awk 'NR==2 {printf \"free before: %dM on %s\\n\", $4/1024, $9}' - name: clean # RETIRED 2026-11-11 by founder order. This step ran # ~/.estate/libexec/disk-cleanup.sh (1303 lines) in apply mode. # # MEASURED: as the resident guardian it completed 120 bounded steps at last_freed_mb=3 # while the volume fell 1526 MB -> 1012 MB, on a machine at 26 MB free RAM with 80% swap. # When the guardian was stopped the volume recovered on its own, 1012 MB -> 2335 MB. The # cleaner was never what freed the disk, and it held the executor's 1500 MB floor closed # against every command, including `launchctl bootout` and `rm` on itself. # # USE `estate-execute disk-reclaim` INSTEAD. Its steps 1-4 are the narrow, measured reclaim # path (duplicate local gate runs, finished pytest scratch, the estate's own run records, # the stale dependency tree) and none of them needs this cleaner. cmd: | echo \"BLIND disk-free retired 2026-11-11 (founder order): the cleaner it ran freed 3 MB/step while the volume fell. Use disk-reclaim.\" >&2 echo 1 > ~/.estate/disk-free.rc - name: after on_fail: continue cmd: | df -k /System/Volumes/Data | awk 'NR==2 {printf \"free after: %dM on %s\\n\", $4/1024, $9}' - name: verdict cmd: | rc=$(cat ~/.estate/disk-free.rc 2>/dev/null || echo 1) case \"$rc\" in 0) echo \"verdict: every phase ran\" ;; 4) echo \"verdict: the budget was spent with work still owed -- the guardian continues it, or run disk-free again\" ;; 5) echo \"verdict: another run holds the lock and is doing the work (the measured free space is above)\"; rc=0 ;; 3) echo \"verdict: a target survived deletion (see the lines above)\" ;; *) echo \"verdict: the cleaner could not run (rc=$rc)\" ;; esac exit \"$rc",
       "contract": {
         "inputs": [
           "target_mb",
@@ -1054,7 +1054,7 @@
       "id": "cap:intent/disk-reclaim",
       "schema_version": 1,
       "kind": "intent",
-      "summary": "Reclaim the data volume when the executor's floor refuses every door (measured 2026-10-28: 426 MB free, floor 1500 MB, so every estate_execute and every git MCP tool refused while the machine was starved). Two actions, both narrow and both measured: 1. stop the local gate runs this machine is running TWICE. bin/idp-ci is a full sweep and two of them at once on a 113 GiB volume is what emptied it; the estate's real gate is the one GitHub Actions runs on the branch, so a duplicate LOCAL sweep is stopped rather than left to starve every other agent. Only the pids named by the caller are signalled, and only when their command line is the gate itself. 2. delete the pytest scratch directories of runs that FINISHED: pytest-of-* directories older than the age given, with no process holding anything open inside them (lsof decides, not the timestamp). A live test's scratch is never touched. 3. (added 2026-10-28) reclaim the ESTATE'S OWN regenerable weight, which no other door covers: the executor's per-job run records under ~/.estate/runs (one .log/.pid/.exit per job -- 73k files, 305M measured) older than a day, the harness job scratch under ~/.estate/harness/cc/jobs for jobs that FINISHED (>=3 days old, lsof-clean, no lock file), the estate's own logs and harness scratch caches, and the session transcripts of sessions that ended more than 14 days ago. Each of these is estate-owned and regenerable: a run record is a log, a finished job's scratch is its own leftover, a transcript of a session that is over is not the estate's memory (that is facts.jsonl, estate.db and the knowledge graph, none of which this touches). 4. (added 2026-10-28) a stale DEPENDENCY TREE: ~/.estate/frontend/idp/backstage/node_modules -- 2277M measured, 28 days stale, restored by `yarn install`. A dependency tree is a toolchain cache, the same class as the old toolchains the estate's own cleaner reclaims. 5. (added 2026-10-28) the estate's own cleaner gets to FINISH: disk-cleanup.sh is a multi-phase job (caches, docker, worktrees, temp, clones, the critical tier) that the 95s door kills mid-phase, so it prints nothing and the caller learns only that it was killed. It is started in the background with its own budget and its own log. Its rules are its own: a claimed worktree is never removed, uncommitted work is archived first. No agent's work is touched by any of this: no worktree a live claim covers, no ledger, no database, no toolchain the estate's runtime names. The run prints free space before and after, measured, and the lsof refusal for anything it left alone. class: mutate args: pids: {type: string, default: \"\", description: \"space-separated pids of local idp-ci runs to stop\"} age_min: {type: int, default: 180, description: \"minutes old before a pytest scratch dir may go\"} budget_s: {type: int, default: 60, description: \"seconds of work this run may start\"} rm_age_min: {type: int, default: 120, description: \"minutes old before a FINISHED job's run record may go\"} dry: {type: int, default: 0, description: \"1 = report what would go and remove nothing\"} door_s: 95 halt_on_failure: false steps: - name: before cmd: | df -k /System/Volumes/Data | awk 'NR==2 {printf \"free before: %dM on %s\\n\", $4/1024, $9}' - name: stop-the-duplicate-gates cmd: | for p in {{pids}}; do [ -n \"$p\" ] || continue cmd=$(ps -p \"$p\" -o command= 2>/dev/null) case \"$cmd\" in *bin/idp-ci*) echo \"stop     idp-ci pid $p: $cmd\" kill -TERM \"$p\" 2>/dev/null || echo \"ok       pid $p already gone\" ;; \"\") echo \"ok       pid $p is not running\" ;; *) echo \"skip     pid $p is not the gate: $cmd\" ;; esac done exit 0 - name: reclaim-the-finished-pytest-scratch cmd: | base=\"${TMPDIR%/}/pytest-of-$(id -un)\" [ -d \"$base\" ] || { echo \"ok       no pytest scratch at $base\"; exit 0; } now=$(date +%s) for d in \"$base\"/pytest-*; do [ -d \"$d\" ] || continue age=$(( (now - $(stat -f %m \"$d\")) / 60 )) if [ \"$age\" -lt {{age_min}} ]; then echo \"keep     $d (${age}m old, live or recent)\" continue fi if lsof +D \"$d\" >/dev/null 2>&1; then echo \"keep     $d (${age}m old, a process holds it open)\" continue fi sz=$(du -sk \"$d\" 2>/dev/null | awk '{print $1}') rm -rf \"$d\" echo \"removed  $d (${age}m old, ${sz}K)\" done exit 0 - name: reclaim-the-estate-s-own-stale-weight cmd: | # The estate's own home is 11.4G (measured 2026-10-28) and two of its parts are # regenerable by definition: the executor's per-job run records and the harness scratch # of runs that FINISHED. Age-gated and lsof-guarded: a live job is never touched. # The run record of a job that has FINISHED is a log of a past job, not the job: the # executor writes one .log/.pid/.exit per job and nothing ever read them again. The # estate produced 23913 of them in one day (measured 2026-10-28, 57M), which is the # estate's own weight growing under the floor that closes every door. # # The rule is age in MINUTES, not days, because the rate is the problem: a day of # records is a day of growth. A record is only removed when the job it belongs to has # an .exit file (the job finished) and that file is older than the age given, so a # RUNNING job's log, pid and exit are never touched. dry=1 reports and removes nothing. set -uo pipefail dry={{dry}} rm_age={{rm_age_min}} budget={{budget_s}} runs=\"$HOME/.estate/runs\" if [ -d \"$runs\" ]; then list=$(mktemp \"${TMPDIR:-/tmp}/runrec.XXXXXX\" 2>/dev/null || echo) if [ -z \"$list\" ]; then echo \"ok       no temp file for the run-record list\"; exit 0; fi find \"$runs\" -maxdepth 1 -type f -name '*.exit' -mmin +\"$rm_age\" > \"$list\" 2>/dev/null n=0 owed=0 # BOUNDED BY TIME, like the estate's own cleaner (DELETE_S): the phase stops when # its budget is spent and says what is still owed, and the next run continues # where it stopped. An unbounded loop over 24000 run records took longer than the # door and was killed mid-pass on 2026-10-28, which is how a reclaim that frees # space ends up freeing none of it. deadline=$(( $(date +%s) + budget )) while IFS= read -r f; do if [ $((n % 100)) -eq 0 ] && [ \"$(date +%s)\" -ge \"$deadline\" ]; then owed=$((owed + 1)) continue fi b=\"${f%.exit}\" if [ \"$dry\" = \"1\" ]; then echo \"would   $b\" else rm -f \"$b.exit\" \"$b.log\" \"$b.pid\" 2>/dev/null fi n=$((n+1)) done < \"$list\" rm -f \"$list\" if [ \"$dry\" = \"1\" ]; then echo \"would remove $n finished run record(s) older than ${rm_age}m\" else echo \"removed  $n finished run record(s) older than ${rm_age}m\" fi [ \"$owed\" -gt 0 ] && echo \"owed     $owed more run record(s) than the ${budget}s budget reached; the next run continues\" exit 0 fi exit 0 - name: reclaim-the-estate-s-finished-harness-jobs cmd: | # The harness scratch of a job that FINISHED (>=3 days old, lsof-clean, no lock file). # lsof +D recurses the whole tree and took minutes on a thrashing disk; +d lists the # directory's own open files, which is what decides \"is this job still running\". set -uo pipefail base=\"$HOME/.estate/harness/cc/jobs\" [ -d \"$base\" ] || { echo \"ok       no harness job scratch at $base\"; exit 0; } now=$(date +%s) for d in \"$base\"/*/; do [ -d \"$d\" ] || continue age=$(( (now - $(stat -f %m \"$d\" 2>/dev/null || echo 0)) / 86400 )) [ \"$age\" -ge 3 ] || { echo \"keep     $d (${age}d old, too recent)\"; continue; } if lsof -nP +d \"$d\" 2>/dev/null | tail -n +2 | grep -q .; then echo \"keep     $d (${age}d old, a process holds it open)\" continue fi if find \"$d\" -maxdepth 2 -name '*.lock' -print -quit 2>/dev/null | grep -q .; then echo \"keep     $d (${age}d old, a lock file is present)\" continue fi rm -rf \"$d\" echo \"removed  $d (${age}d old, finished)\" done exit 0 - name: reclaim-the-estate-s-own-logs-and-stale-transcripts cmd: | # (added 2026-10-28, second disk emergency: 1177M free, floor 1500M, every door closed) # The estate's own DERIVED weight, in three narrow rules. Nothing here is an agent's work, # a ledger, a database or a toolchain: logs, harness scratch caches, and session # transcripts from sessions that ended more than 14 days ago. # #   1. logs:  ~/.estate/*.log (and rotated *.log.1) untouched for a day, and ~/.estate/logs #      entries untouched for three days. A log is evidence of a past run, never the run. #   2. harness scratch: paste-cache, file-history, session-env, shell-snapshots untouched #      for three days. These are the harness's own caches, rebuilt on demand. #   3. transcripts: ~/.estate/harness/cc/projects/<project>/ untouched for 14 days. The #      session is over; the estate's durable memory is facts.jsonl, estate.db and the #      knowledge graph, none of which this touches. # # dry=1 reports the same set with its sizes and removes nothing. set -uo pipefail dry={{dry}} now=$(date +%s) freed=0 n=0 drop() { # path, age_days, why p=\"$1\"; a=\"$2\"; why=\"$3\" [ -e \"$p\" ] || return 0 sz=$(du -sk \"$p\" 2>/dev/null | awk '{print $1}') [ -n \"${sz:-}\" ] || sz=0 n=$((n+1)) freed=$((freed + sz)) if [ \"${sz:-0}\" -ge 1024 ]; then if [ \"$dry\" = \"1\" ]; then echo \"would   ${sz}K  $p (${a}d old, $why)\" else rm -rf \"$p\" 2>/dev/null && echo \"removed  ${sz}K  $p (${a}d old, $why)\" fi fi } est=\"$HOME/.estate\" # 1. logs for f in \"$est\"/*.log \"$est\"/*.log.1; do [ -f \"$f\" ] || continue age=$(( (now - $(stat -f %m \"$f\" 2>/dev/null || echo 0)) / 86400 )) [ \"$age\" -ge 1 ] || continue drop \"$f\" \"$age\" \"a log older than a day\" done for d in \"$est\"/logs/*; do [ -e \"$d\" ] || continue age=$(( (now - $(stat -f %m \"$d\" 2>/dev/null || echo 0)) / 86400 )) [ \"$age\" -ge 3 ] || continue drop \"$d\" \"$age\" \"estate log older than 3d\" done # 2. harness scratch caches for sub in paste-cache file-history session-env shell-snapshots; do for d in \"$est/harness/cc/$sub\"/*; do [ -e \"$d\" ] || continue age=$(( (now - $(stat -f %m \"$d\" 2>/dev/null || echo 0)) / 86400 )) [ \"$age\" -ge 3 ] || continue drop \"$d\" \"$age\" \"harness $sub older than 3d\" done done # 3. transcripts of sessions that ended for d in \"$est/harness/cc/projects\"/*/; do [ -d \"$d\" ] || continue age=$(( (now - $(stat -f %m \"$d\" 2>/dev/null || echo 0)) / 86400 )) [ \"$age\" -ge 14 ] || continue drop \"${d%/}\" \"$age\" \"session transcript older than 14d\" done echo \"total    $n item(s), $((freed / 1024))M of derived weight (dry=$dry)\" exit 0 - name: reclaim-the-stale-dependency-tree cmd: | # (added 2026-10-28, third disk emergency: 1083M free, floor 1500M, every door closed) # ~/.estate/frontend/idp is a CLONE the estate keeps for its frontend service, and its # backstage/node_modules is a dependency tree -- regenerable by `yarn install`, and here it # is a MONTH old (2026-09-30) and stale against the app files of 2026-10-27. A dependency # tree is the same class as a toolchain cache: the estate's own cleaner already reclaims # old toolchains under pressure. Nothing else in that clone is touched: the app sources, # the catalog, the .git and the yarn.lock all stay. # # dry=1 reports the size and removes nothing. set -uo pipefail dry={{dry}} nm=\"$HOME/.estate/frontend/idp/backstage/node_modules\" if [ ! -d \"$nm\" ]; then echo \"ok       no stale dependency tree at $nm\"; exit 0; fi age=$(( ($(date +%s) - $(stat -f %m \"$nm\" 2>/dev/null || echo 0)) / 86400 )) sz=$(du -sk \"$nm\" 2>/dev/null | awk '{print $1}') echo \"dependency tree: $nm, ${sz}K, ${age}d old\" if pgrep -f \"rm -rf $nm\" >/dev/null 2>&1; then echo \"progress a removal of that tree is already running; nothing new was started\" exit 0 fi if [ \"$age\" -lt 7 ]; then echo \"keep     it is younger than 7d\"; exit 0; fi if [ \"$dry\" = \"1\" ]; then echo \"would    remove the stale dependency tree (${sz}K)\"; exit 0; fi nohup /bin/rm -rf \"$nm\" >/dev/null 2>&1 & echo \"started  the removal in the background (pid $!) -- 2.3G of small files takes longer than this door's 95s budget; the next run of this intent reports whether it finished\" exit 0 - name: let-the-estates-own-cleaner-finish cmd: | # (added 2026-10-28) The estate's own cleaner is the sanctioned reclaim, but it is a multi- # phase job (caches, docker, worktrees, temp, clones, the critical tier) and the intent door # kills it at 95s mid-phase, so it prints NOTHING and the caller learns only that it was # killed. The script is the estate's, with the estate's rules (a claimed worktree is never # removed; uncommitted work is archived first; a toolchain the runtime names is kept), and it # takes a budget of its own. So it is started in the BACKGROUND with its own budget and its # output to a file, and a later run of this intent reports the pid. Nothing here decides # what to delete: that is the cleaner's job, and its log says what it did. pidf=/tmp/disk-cleanup-bg.pid outf=/tmp/disk-cleanup-bg.out if [ -f \"$pidf\" ] && kill -0 \"$(cat \"$pidf\" 2>/dev/null)\" 2>/dev/null; then echo \"progress the estate's cleaner is already running (pid $(cat \"$pidf\"))\" exit 0 fi nohup bash \"$HOME/.estate/libexec/disk-cleanup.sh\" true False 0 true 600 >\"$outf\" 2>&1 & echo $! >\"$pidf\" echo \"started  the estate's cleaner in the background (pid $(cat \"$pidf\")), 600s budget, log at $outf\" exit 0 - name: reclaim-the-build-cache cmd: | # Docker's BUILD CACHE and DANGLING images only. No volumes: a volume may hold the # estate's data (a local Postgres), and \"regenerable\" is a claim about a cache, not about # somebody's data. The estate's own cleaner prunes the same allow-list. export DOCKER_HOST=\"${DOCKER_HOST:-unix://$HOME/.rd/docker.sock}\" if ! command -v docker >/dev/null 2>&1; then echo \"ok       no docker cli\"; exit 0; fi if ! docker info >/dev/null 2>&1; then echo \"ok       the docker daemon is not answering\"; exit 0; fi docker system df 2>/dev/null | head -6 docker builder prune -af 2>&1 | tail -2 docker image prune -f 2>&1 | tail -2 exit 0 - name: after cmd: | df -k /System/Volumes/Data | awk 'NR==2 {printf \"free after: %dM on %s\\n\", $4/1024, $9}",
+      "summary": "Reclaim the data volume when the executor's floor refuses every door (measured 2026-10-28: 426 MB free, floor 1500 MB, so every estate_execute and every git MCP tool refused while the machine was starved). Two actions, both narrow and both measured: 1. stop the local gate runs this machine is running TWICE. bin/idp-ci is a full sweep and two of them at once on a 113 GiB volume is what emptied it; the estate's real gate is the one GitHub Actions runs on the branch, so a duplicate LOCAL sweep is stopped rather than left to starve every other agent. Only the pids named by the caller are signalled, and only when their command line is the gate itself. 2. delete the pytest scratch directories of runs that FINISHED: pytest-of-* directories older than the age given, with no process holding anything open inside them (lsof decides, not the timestamp). A live test's scratch is never touched. 3. (added 2026-10-28) reclaim the ESTATE'S OWN regenerable weight, which no other door covers: the executor's per-job run records under ~/.estate/runs (one .log/.pid/.exit per job -- 73k files, 305M measured) older than a day, the harness job scratch under ~/.estate/harness/cc/jobs for jobs that FINISHED (>=3 days old, lsof-clean, no lock file), the estate's own logs and harness scratch caches, and the session transcripts of sessions that ended more than 14 days ago. Each of these is estate-owned and regenerable: a run record is a log, a finished job's scratch is its own leftover, a transcript of a session that is over is not the estate's memory (that is facts.jsonl, estate.db and the knowledge graph, none of which this touches). 4. (added 2026-10-28) a stale DEPENDENCY TREE: ~/.estate/frontend/idp/backstage/node_modules -- 2277M measured, 28 days stale, restored by `yarn install`. A dependency tree is a toolchain cache, the same class as the old toolchains the estate's own cleaner reclaims. 5. (added 2026-10-28) the estate's own cleaner gets to FINISH: disk-cleanup.sh is a multi-phase job (caches, docker, worktrees, temp, clones, the critical tier) that the 95s door kills mid-phase, so it prints nothing and the caller learns only that it was killed. It is started in the background with its own budget and its own log. Its rules are its own: a claimed worktree is never removed, uncommitted work is archived first. No agent's work is touched by any of this: no worktree a live claim covers, no ledger, no database, no toolchain the estate's runtime names. The run prints free space before and after, measured, and the lsof refusal for anything it left alone. class: mutate args: pids: {type: string, default: \"\", description: \"space-separated pids of local idp-ci runs to stop\"} age_min: {type: int, default: 180, description: \"minutes old before a pytest scratch dir may go\"} budget_s: {type: int, default: 60, description: \"seconds of work this run may start\"} rm_age_min: {type: int, default: 120, description: \"minutes old before a FINISHED job's run record may go\"} dry: {type: int, default: 0, description: \"1 = report what would go and remove nothing\"} door_s: 95 halt_on_failure: false steps: - name: before cmd: | df -k /System/Volumes/Data | awk 'NR==2 {printf \"free before: %dM on %s\\n\", $4/1024, $9}' - name: stop-the-duplicate-gates cmd: | for p in {{pids}}; do [ -n \"$p\" ] || continue cmd=$(ps -p \"$p\" -o command= 2>/dev/null) case \"$cmd\" in *bin/idp-ci*) echo \"stop     idp-ci pid $p: $cmd\" kill -TERM \"$p\" 2>/dev/null || echo \"ok       pid $p already gone\" ;; \"\") echo \"ok       pid $p is not running\" ;; *) echo \"skip     pid $p is not the gate: $cmd\" ;; esac done exit 0 - name: reclaim-the-finished-pytest-scratch cmd: | base=\"${TMPDIR%/}/pytest-of-$(id -un)\" [ -d \"$base\" ] || { echo \"ok       no pytest scratch at $base\"; exit 0; } now=$(date +%s) for d in \"$base\"/pytest-*; do [ -d \"$d\" ] || continue age=$(( (now - $(stat -f %m \"$d\")) / 60 )) if [ \"$age\" -lt {{age_min}} ]; then echo \"keep     $d (${age}m old, live or recent)\" continue fi if lsof +D \"$d\" >/dev/null 2>&1; then echo \"keep     $d (${age}m old, a process holds it open)\" continue fi sz=$(du -sk \"$d\" 2>/dev/null | awk '{print $1}') rm -rf \"$d\" echo \"removed  $d (${age}m old, ${sz}K)\" done exit 0 - name: reclaim-the-estate-s-own-stale-weight cmd: | # The estate's own home is 11.4G (measured 2026-10-28) and two of its parts are # regenerable by definition: the executor's per-job run records and the harness scratch # of runs that FINISHED. Age-gated and lsof-guarded: a live job is never touched. # The run record of a job that has FINISHED is a log of a past job, not the job: the # executor writes one .log/.pid/.exit per job and nothing ever read them again. The # estate produced 23913 of them in one day (measured 2026-10-28, 57M), which is the # estate's own weight growing under the floor that closes every door. # # The rule is age in MINUTES, not days, because the rate is the problem: a day of # records is a day of growth. A record is only removed when the job it belongs to has # an .exit file (the job finished) and that file is older than the age given, so a # RUNNING job's log, pid and exit are never touched. dry=1 reports and removes nothing. set -uo pipefail dry={{dry}} rm_age={{rm_age_min}} budget={{budget_s}} runs=\"$HOME/.estate/runs\" if [ -d \"$runs\" ]; then list=$(mktemp \"${TMPDIR:-/tmp}/runrec.XXXXXX\" 2>/dev/null || echo) if [ -z \"$list\" ]; then echo \"ok       no temp file for the run-record list\"; exit 0; fi find \"$runs\" -maxdepth 1 -type f -name '*.exit' -mmin +\"$rm_age\" > \"$list\" 2>/dev/null n=0 owed=0 # BOUNDED BY TIME, like the estate's own cleaner (DELETE_S): the phase stops when # its budget is spent and says what is still owed, and the next run continues # where it stopped. An unbounded loop over 24000 run records took longer than the # door and was killed mid-pass on 2026-10-28, which is how a reclaim that frees # space ends up freeing none of it. deadline=$(( $(date +%s) + budget )) while IFS= read -r f; do if [ $((n % 100)) -eq 0 ] && [ \"$(date +%s)\" -ge \"$deadline\" ]; then owed=$((owed + 1)) continue fi b=\"${f%.exit}\" if [ \"$dry\" = \"1\" ]; then echo \"would   $b\" else rm -f \"$b.exit\" \"$b.log\" \"$b.pid\" 2>/dev/null fi n=$((n+1)) done < \"$list\" rm -f \"$list\" if [ \"$dry\" = \"1\" ]; then echo \"would remove $n finished run record(s) older than ${rm_age}m\" else echo \"removed  $n finished run record(s) older than ${rm_age}m\" fi [ \"$owed\" -gt 0 ] && echo \"owed     $owed more run record(s) than the ${budget}s budget reached; the next run continues\" exit 0 fi exit 0 - name: reclaim-the-estate-s-finished-harness-jobs cmd: | # The harness scratch of a job that FINISHED (>=3 days old, lsof-clean, no lock file). # lsof +D recurses the whole tree and took minutes on a thrashing disk; +d lists the # directory's own open files, which is what decides \"is this job still running\". set -uo pipefail base=\"$HOME/.estate/harness/cc/jobs\" [ -d \"$base\" ] || { echo \"ok       no harness job scratch at $base\"; exit 0; } now=$(date +%s) for d in \"$base\"/*/; do [ -d \"$d\" ] || continue age=$(( (now - $(stat -f %m \"$d\" 2>/dev/null || echo 0)) / 86400 )) [ \"$age\" -ge 3 ] || { echo \"keep     $d (${age}d old, too recent)\"; continue; } if lsof -nP +d \"$d\" 2>/dev/null | tail -n +2 | grep -q .; then echo \"keep     $d (${age}d old, a process holds it open)\" continue fi if find \"$d\" -maxdepth 2 -name '*.lock' -print -quit 2>/dev/null | grep -q .; then echo \"keep     $d (${age}d old, a lock file is present)\" continue fi rm -rf \"$d\" echo \"removed  $d (${age}d old, finished)\" done exit 0 - name: reclaim-the-estate-s-own-logs-and-stale-transcripts cmd: | # (added 2026-10-28, second disk emergency: 1177M free, floor 1500M, every door closed) # The estate's own DERIVED weight, in three narrow rules. Nothing here is an agent's work, # a ledger, a database or a toolchain: logs, harness scratch caches, and session # transcripts from sessions that ended more than 14 days ago. # #   1. logs:  ~/.estate/*.log (and rotated *.log.1) untouched for a day, and ~/.estate/logs #      entries untouched for three days. A log is evidence of a past run, never the run. #   2. harness scratch: paste-cache, file-history, session-env, shell-snapshots untouched #      for three days. These are the harness's own caches, rebuilt on demand. #   3. transcripts: ~/.estate/harness/cc/projects/<project>/ untouched for 14 days. The #      session is over; the estate's durable memory is facts.jsonl, estate.db and the #      knowledge graph, none of which this touches. # # dry=1 reports the same set with its sizes and removes nothing. set -uo pipefail dry={{dry}} now=$(date +%s) freed=0 n=0 drop() { # path, age_days, why p=\"$1\"; a=\"$2\"; why=\"$3\" [ -e \"$p\" ] || return 0 sz=$(du -sk \"$p\" 2>/dev/null | awk '{print $1}') [ -n \"${sz:-}\" ] || sz=0 n=$((n+1)) freed=$((freed + sz)) if [ \"${sz:-0}\" -ge 1024 ]; then if [ \"$dry\" = \"1\" ]; then echo \"would   ${sz}K  $p (${a}d old, $why)\" else rm -rf \"$p\" 2>/dev/null && echo \"removed  ${sz}K  $p (${a}d old, $why)\" fi fi } est=\"$HOME/.estate\" # 1. logs for f in \"$est\"/*.log \"$est\"/*.log.1; do [ -f \"$f\" ] || continue age=$(( (now - $(stat -f %m \"$f\" 2>/dev/null || echo 0)) / 86400 )) [ \"$age\" -ge 1 ] || continue drop \"$f\" \"$age\" \"a log older than a day\" done for d in \"$est\"/logs/*; do [ -e \"$d\" ] || continue age=$(( (now - $(stat -f %m \"$d\" 2>/dev/null || echo 0)) / 86400 )) [ \"$age\" -ge 3 ] || continue drop \"$d\" \"$age\" \"estate log older than 3d\" done # 2. harness scratch caches for sub in paste-cache file-history session-env shell-snapshots; do for d in \"$est/harness/cc/$sub\"/*; do [ -e \"$d\" ] || continue age=$(( (now - $(stat -f %m \"$d\" 2>/dev/null || echo 0)) / 86400 )) [ \"$age\" -ge 3 ] || continue drop \"$d\" \"$age\" \"harness $sub older than 3d\" done done # 3. transcripts of sessions that ended for d in \"$est/harness/cc/projects\"/*/; do [ -d \"$d\" ] || continue age=$(( (now - $(stat -f %m \"$d\" 2>/dev/null || echo 0)) / 86400 )) [ \"$age\" -ge 14 ] || continue drop \"${d%/}\" \"$age\" \"session transcript older than 14d\" done echo \"total    $n item(s), $((freed / 1024))M of derived weight (dry=$dry)\" exit 0 - name: reclaim-the-stale-dependency-tree cmd: | # (added 2026-10-28, third disk emergency: 1083M free, floor 1500M, every door closed) # ~/.estate/frontend/idp is a CLONE the estate keeps for its frontend service, and its # backstage/node_modules is a dependency tree -- regenerable by `yarn install`, and here it # is a MONTH old (2026-09-30) and stale against the app files of 2026-10-27. A dependency # tree is the same class as a toolchain cache: the estate's own cleaner already reclaims # old toolchains under pressure. Nothing else in that clone is touched: the app sources, # the catalog, the .git and the yarn.lock all stay. # # dry=1 reports the size and removes nothing. set -uo pipefail dry={{dry}} nm=\"$HOME/.estate/frontend/idp/backstage/node_modules\" if [ ! -d \"$nm\" ]; then echo \"ok       no stale dependency tree at $nm\"; exit 0; fi age=$(( ($(date +%s) - $(stat -f %m \"$nm\" 2>/dev/null || echo 0)) / 86400 )) sz=$(du -sk \"$nm\" 2>/dev/null | awk '{print $1}') echo \"dependency tree: $nm, ${sz}K, ${age}d old\" if pgrep -f \"rm -rf $nm\" >/dev/null 2>&1; then echo \"progress a removal of that tree is already running; nothing new was started\" exit 0 fi if [ \"$age\" -lt 7 ]; then echo \"keep     it is younger than 7d\"; exit 0; fi if [ \"$dry\" = \"1\" ]; then echo \"would    remove the stale dependency tree (${sz}K)\"; exit 0; fi nohup /bin/rm -rf \"$nm\" >/dev/null 2>&1 & echo \"started  the removal in the background (pid $!) -- 2.3G of small files takes longer than this door's 95s budget; the next run of this intent reports whether it finished\" exit 0 - name: let-the-estates-own-cleaner-finish cmd: | # RETIRED 2026-11-11 by founder order. This step started the 1303-line # platform/estate/libexec/disk-cleanup.sh in the background with a 600s budget. # # MEASURED, which is why it is gone: run as the resident guardian it completed 120 # bounded steps at last_freed_mb=3 while the volume fell 1526 MB -> 1012 MB, on a # machine at 26 MB free RAM and 80% swap. When the guardian was stopped the volume # recovered on its own, 1012 MB -> 2335 MB. The cleaner was never what freed the disk. # # It also held the executor's 1500 MB floor closed against every command -- including # `launchctl bootout` and `rm` on itself -- so it could not be disabled by any door it # guarded. A safeguard that blocks its own remedy is not a safeguard. # # Nothing is lost from THIS door: steps 1-4 above (duplicate local gate runs, finished # pytest scratch, the estate's own run records and stale dependency tree) are the ones # that actually reclaim weight, and they are narrow and measured on their own. Free # space is now a maintenance operation run when it is needed, not a daemon. echo \"ok       the estate's cleaner was retired 2026-11-11 (founder order): it freed 3 MB/step while the volume fell, and held the disk floor closed against its own off switch. Steps 1-4 of this intent are the reclaim path now.\" exit 0 - name: reclaim-the-build-cache cmd: | # Docker's BUILD CACHE and DANGLING images only. No volumes: a volume may hold the # estate's data (a local Postgres), and \"regenerable\" is a claim about a cache, not about # somebody's data. The estate's own cleaner prunes the same allow-list. export DOCKER_HOST=\"${DOCKER_HOST:-unix://$HOME/.rd/docker.sock}\" if ! command -v docker >/dev/null 2>&1; then echo \"ok       no docker cli\"; exit 0; fi if ! docker info >/dev/null 2>&1; then echo \"ok       the docker daemon is not answering\"; exit 0; fi docker system df 2>/dev/null | head -6 docker builder prune -af 2>&1 | tail -2 docker image prune -f 2>&1 | tail -2 exit 0 - name: after cmd: | df -k /System/Volumes/Data | awk 'NR==2 {printf \"free after: %dM on %s\\n\", $4/1024, $9}",
       "contract": {
         "inputs": [
           "age_min",
@@ -5990,7 +5990,7 @@
       "id": "cap:intent/work-audit",
       "schema_version": 1,
       "kind": "intent",
-      "summary": "Find work done in the last N days that never reached main. For every closed-unmerged PR, every worktree's uncommitted/untracked changes, every local branch commit on no remote and every stash in the window, it measures how many of the lines that work added are in the same file on origin/main now: LOST (<30%), PARTIAL (<90%), LANDED (hidden unless all=true). Also lists unticked \"- [ ]\" checkpoints in open issues updated in the window. Scans every repo under ~/Documents/code and the GitHub repos named in `github`. Read-only apart from `git fetch` and refs/work-audit/pr/* refs; full result in ~/.estate/work-audit/latest.json. class: read args: days: {type: int, default: 28} github: {type: string, default: \"chidionyema/idp,chidionyema/crew\"} all: {type: bool, default: false} steps: # Step bound removed 2026-10-25: time is declared once, as this intent's budget # (docs/decisions/0043-the-bound-lives-at-the-door.md). A number here could only be a # guess about someone else's work, and where it fired it invented a failure. - name: work-audit cmd: > python3 ~/.estate/libexec/work-audit.py {{days}} {{github}} {{all}}",
+      "summary": "Find work done in the last N days that never reached main, and say why it died. For every closed-unmerged PR, every pushed `lane/*` branch main never took, every worktree's uncommitted/untracked changes, every local branch commit on no remote and every stash in the window, it measures how many of the lines that work added are in the same file on origin/main now: LOST (<30%), PARTIAL (<90%), LANDED (hidden unless all=true), plus UNMEASURED when the clone is shallow (a truncated history answers \"not an ancestor\" for everything, so unreachable work is reported UNMEASURED, never LOST). Every PR row also carries `failing_checks`, `kill` (MECHANICAL = every failing check is cosmetic, so a normalizer could have fixed it; GENUINE = at least one substantive check failed, e.g. claim-gate/dof-gate/ci-success, so the change itself was refused; UNKNOWN = the checks could not be read) and, for LOST/PARTIAL/UNKNOWN, a `recover` command that fetches the head and diffs it against main. Also lists unticked \"- [ ]\" checkpoints in open issues updated in the window. Scans every repo under ~/Documents/code and the GitHub repos named in `github`. Read-only apart from `git fetch` and refs/work-audit/pr/* refs; full result in ~/.estate/work-audit/latest.json. BOUNDED, AND IT SAYS SO. Every source runs against a share of this door's real ceiling (local 26s, fetch 8s, PR 38s, checkpoints 9s), so the door always ends with a census instead of a 100s timeout. Whatever a budget cut off is named in `errors` -- \"N not examined, so they are not in this census\" -- because an absent row must never read as \"no work was lost\". A history walk cut short makes the affected row UNKNOWN, never LOST: the door refuses to accuse work of being lost on evidence it did not finish collecting. class: read args: days: {type: int, default: 28} github: {type: string, default: \"chidionyema/idp,chidionyema/crew\"} all: {type: bool, default: false} steps: # Step bound removed 2026-10-25: time is declared once, as this intent's budget # (docs/decisions/0043-the-bound-lives-at-the-door.md). A number here could only be a # guess about someone else's work, and where it fired it invented a failure. - name: work-audit cmd: > python3 ~/.estate/libexec/work-audit.py {{days}} {{github}} {{all}}",
       "contract": {
         "inputs": [
           "all",
@@ -10379,12 +10379,16 @@
       "summary": "work-audit: find work done in the last N days that never reached main.",
       "contract": {
         "inputs": [
+          "--batch",
           "--count",
           "--exclude-standard",
           "--include-untracked",
+          "--is-shallow-repository",
           "--no-color",
           "--no-index",
           "--no-merges",
+          "--no-renames",
+          "--no-tags",
           "--not",
           "--others",
           "--porcelain",
@@ -27264,6 +27268,8 @@
         "cap:tool/claim-open",
         "cap:tool/estate-memory-enforce",
         "cap:tool/idp-ci",
+        "cap:tool/idp-install-deps",
+        "cap:tool/idp-machine-submit",
         "cap:tool/language-gate",
         "cap:tool/media-dept-baseline",
         "cap:tool/process-census",
@@ -27350,6 +27356,7 @@
       "consumers": [
         "cap:tool/claim-gate",
         "cap:tool/estate-memory-enforce",
+        "cap:tool/idp-machine-submit",
         "cap:tool/media-dept-baseline",
         "cap:tool/process-census"
       ],
@@ -27675,6 +27682,59 @@
           "edge": "invokes"
         }
       ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/debug-packs",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "bin/debug-packs -- read and grade the estate's debugging-pack catalogue.",
+      "contract": {
+        "inputs": [
+          "--check",
+          "--json",
+          "--search",
+          "--show",
+          "--status"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/debug-packs",
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",
@@ -28363,9 +28423,7 @@
         "proven_at": null,
         "window_s": 2592000
       },
-      "consumers": [
-        "cap:tool/idp-disk-guard"
-      ],
+      "consumers": [],
       "cost": {
         "estimate": null,
         "unit": "usd"
@@ -29280,6 +29338,60 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/estate-fence-purge",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/bin/bash",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-zero-worktree"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-fence-purge",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-zero-worktree",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/estate-fleet",
       "schema_version": 1,
       "kind": "tool",
@@ -29317,7 +29429,8 @@
         "cap:tool/estate-fleet-telegram",
         "cap:tool/estate-fleet-voice",
         "cap:tool/estate-wait",
-        "cap:tool/idp-session-bootstrap"
+        "cap:tool/idp-session-bootstrap",
+        "cap:tool/uncalled-gate"
       ],
       "cost": {
         "estimate": null,
@@ -31529,7 +31642,8 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/estate-runtime-sync"
+        "cap:tool/estate-runtime-sync",
+        "cap:tool/uncalled-gate"
       ],
       "cost": {
         "estimate": null,
@@ -31931,6 +32045,62 @@
       "depends_on": [
         {
           "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/estate-zero-worktree",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate-zero-worktree -- refuse the spawn, do not clean up after it.",
+      "contract": {
+        "inputs": [
+          "--porcelain"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-fence-purge"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-zero-worktree",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-fence-purge",
           "edge": "invokes"
         }
       ],
@@ -36982,11 +37152,9 @@
       "id": "cap:tool/idp-disk-guard",
       "schema_version": 1,
       "kind": "tool",
-      "summary": "!/usr/bin/env bash",
+      "summary": "!/bin/sh",
       "contract": {
-        "inputs": [
-          "--quiet"
-        ],
+        "inputs": [],
         "outputs": [
           "stdout",
           "exit code"
@@ -37019,15 +37187,7 @@
       "path": "bin/idp-disk-guard",
       "depends_on": [
         {
-          "id": "cap:tool/estate-cleaner",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/idp-oci-login",
-          "edge": "invokes"
-        },
-        {
-          "id": "cap:tool/start",
+          "id": "cap:tool/idp-disk-watch",
           "edge": "invokes"
         }
       ],
@@ -37070,7 +37230,8 @@
         "window_s": 2592000
       },
       "consumers": [
-        "cap:tool/estate-runtime-sync"
+        "cap:tool/estate-runtime-sync",
+        "cap:tool/idp-disk-guard"
       ],
       "cost": {
         "estimate": null,
@@ -40708,6 +40869,10 @@
       "path": "bin/idp-install-deps",
       "depends_on": [
         {
+          "id": "cap:tool/claim-gate",
+          "edge": "invokes"
+        },
+        {
           "id": "cap:tool/idp-ci",
           "edge": "invokes"
         },
@@ -42678,6 +42843,70 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/idp-machine-submit",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/usr/bin/env bash",
+      "contract": {
+        "inputs": [
+          "--exclude-standard",
+          "--name-only",
+          "--others"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/idp-machine-submit",
+      "depends_on": [
+        {
+          "id": "cap:tool/claim-gate",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/claim-open",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/idp-main-green-gate",
       "schema_version": 1,
       "kind": "tool",
@@ -43321,7 +43550,6 @@
       },
       "consumers": [
         "cap:tool/cloud-agnostic-gate",
-        "cap:tool/idp-disk-guard",
         "cap:tool/idp-estate-audit",
         "cap:tool/idp-estate-backup",
         "cap:tool/idp-flux-bootstrap",
@@ -53875,7 +54103,6 @@
         "cap:tool/idp-clean-tree",
         "cap:tool/idp-clickhouse-system-log-ttl",
         "cap:tool/idp-cluster-state",
-        "cap:tool/idp-disk-guard",
         "cap:tool/idp-dispatch-install",
         "cap:tool/idp-door-heartbeat",
         "cap:tool/idp-epistemic",
@@ -53896,6 +54123,7 @@
         "cap:tool/idp-kyverno-render",
         "cap:tool/idp-linear-dispatch",
         "cap:tool/idp-login-drill",
+        "cap:tool/idp-machine-submit",
         "cap:tool/idp-oke-break-glass",
         "cap:tool/idp-pipeverdict",
         "cap:tool/idp-portal",
@@ -54566,6 +54794,65 @@
         },
         {
           "id": "cap:tool/port-gate",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/uncalled-gate",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "uncalled-gate -- refuse a mechanism that was built and that nothing calls.",
+      "contract": {
+        "inputs": [
+          "--fixture",
+          "--json"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/uncalled-gate",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-fleet",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/estate-supervisor",
           "edge": "invokes"
         }
       ],

@@ -23,7 +23,7 @@ FROM docker.io/debian:bookworm-slim
 # daemon itself, not a file that exists.
 RUN apt-get update \
  && apt-get upgrade -y \
- && apt-get install -y --no-install-recommends curl \
+ && apt-get install -y --no-install-recommends curl ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --uid 10001 --create-home --home-dir /data/home engine
 # build-multiarch.yml builds this file for BOTH linux/amd64 and linux/arm64, so the asset is

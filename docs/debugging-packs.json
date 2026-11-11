@@ -323,6 +323,56 @@
       "remedy": "Imported instructions use INS-P-<source-hash>, deduplicate by source id and digest, and support --session so claim-open refreshes only the current session.",
       "status": "fixed",
       "law": "AGENTS.md section 3b (same-session prompt capture) and section 9 R2"
+    },
+    {
+      "id": "DBG-033",
+      "title": "A `git reset --hard` in a shared checkout destroyed work that existed only in the working tree",
+      "symptom": "Every file I had edited this session was gone: `ls bin/idp-edge-cutover` -> No such file or directory, `git ls-files` -> nothing, and `git fsck --lost-found --dangling` -> nothing. The work was not recoverable from any ref, object, or the runtime copy.",
+      "cause": "In ~/Documents/code/idp several agents share ONE checkout. A peer switched branches (lane/reactive-wakeup, then dd192c189, then 2331fda40) and then I ran `git reset --hard 6f84fec05` -- both discard every uncommitted, untracked file from the working tree. Before resetting I had checked `git log <range> -- <path>` and read an empty result as 'not yet committed', but an empty range log is also what a file with NO history at all prints, so it never proved the file was safe. Five scripts and seven tests were lost this way; they were never committed because a lane push had been refused earlier and I kept fixing in-tree instead of committing.",
+      "falsifier": "bin/debug-packs --check now REFUSES (exit 4) any pack whose `falsifier` test path exists in no ref of this repository, because a pack pointing at a vanished test is a pack that cannot fire. Run `bin/debug-packs --check` -- it names DBG-001 today, whose test_edge_cutover.py this same incident destroyed.",
+      "remedy": "Before any `git reset --hard` or `git checkout -B` in a shared checkout, prove EVERY touched path is recoverable: `git cat-file -e <ref>:<path>` for each one, not a `git log` on a range. Commit before you reset. If a path fails, copy it to /tmp first -- /tmp is the one place a peer's branch switch cannot reach.",
+      "status": "fixed",
+      "law": "AGENTS.md section 8 (the machine is not a database -- never leave an uncommitted change sitting in a working tree across a branch switch) and section 3 (a file you cannot point to in a ref is not backed up)"
+    },
+    {
+      "id": "DBG-034",
+      "title": "A lane forked from another agent's unlanded branch cannot be attributed to one instruction",
+      "symptom": "`git push` -> EXIT=1, `FAIL claim-gate the change names 3 instruction ids (INS-00007, INS-00008, INS-P-2F79EC700EA9): one lane carries one instruction`, although my own single commit carried exactly one `Instruction: INS-00007` trailer.",
+      "cause": "The pre-push claim gate judges the WHOLE range `origin/main..HEAD`, not the one commit being pushed, so a lane branched on top of a peer's in-flight branch carries their commits and their instruction ids. MEASURED CORRECTION, same day: the instruction-id check is NOT in origin/main's gate (716 lines, no `instruction` concept) and not on my own lane either -- it exists only on the unlanded branch lane/estate-delivery-laws. So this refusal is real where that gate runs and is the correct behaviour there, but it is not a defect in the gate the estate currently ships. The durable fact is about lanes, not about the gate: a deliverable lane must fork from origin/main.",
+      "falsifier": "tests/test_lane_forks_from_main.py builds a throwaway repo with a fork lane carrying another agent's commit plus mine, runs the gate present in the tree, and requires that a single-instruction lane is never refused FOR naming several instructions. It is honest about its limit: where the gate under test has no instruction check, it cannot fire, and it says so instead of passing as proof.",
+      "remedy": "Fork the lane from `origin/main` and carry only your own commits: `git checkout -B <lane> origin/main`, then `git checkout <your-commit> -- <your exact paths>` and commit with an explicit pathspec. Never branch a deliverable lane off a peer's unlanded branch.",
+      "status": "external",
+      "law": "AGENTS.md section 5 (one owner, one lane) and section 3 (do not describe a gate the estate does not run as if it were shipped)"
+    },
+    {
+      "id": "DBG-035",
+      "title": "The claim door wrote a claim format its own gate could not parse, and the gate reported it as absent",
+      "symptom": "`FAIL claim-gate chidionyema/idp#7899 has no CLAIM comment` -- while `gh api repos/chidionyema/idp/issues/7899/comments` showed a well-formed claim covering exactly my files. The gate said 'absent' about a comment it merely failed to parse.",
+      "cause": "MEASURED on origin/main: CLAIM = re.compile(r'^CLAIM\\s+agent=(?P<agent>\\S+)\\s+(?:model=\\S+\\s+)?paths=(?P<paths>\\S+)\\s+heartbeat=(?P<hb>\\S+)\\s*$', re.M). A newer bin/claim-open on an unlanded branch emits `CLAIM agent=<a> instruction=<INS> plan=<sha> paths=<p> heartbeat=<t>`. Because `instruction=` and `plan=` sit between `agent=` and `paths=`, the regex does not match, `claims` is empty, and the `if not claims:` branch reports 'has no CLAIM comment'. The gate has no `malformed` tracking at all (grep for it on origin/main: zero), so a parse failure is indistinguishable from an absence. Same class as the poisoning defect: a silent gap presented as a fact.",
+      "falsifier": "tests/test_claim_parse_never_reports_absence.py reads the CLAIM regex OUT OF the shipped bin/claim-gate and feeds it the instruction=/plan= comment shape, asserting it does not match and that an empty match therefore takes the 'has no CLAIM comment' branch. It also asserts the legacy shape DOES match, so it cannot pass by refusing everything. It grades the shipped regex, not an inlined copy.",
+      "remedy": "The gate must separate three outcomes and never collapse them: parsed, parsed-but-malformed (name the field), and no claim at all. Accept the extended key order in CLAIM, and make `if not claims:` fire only when no comment contains a CLAIM line. Interim workaround used and reported this session: post the claim in the shape main's gate parses (issue #7899 comment 6785856667) and record the gap rather than claiming it fixed.",
+      "status": "diagnosed",
+      "law": "AGENTS.md section 3a (a silent gap must never look like a fact) and section 9 R1 (a gate that cannot judge must refuse with a verdict, never report the permissive answer)"
+    },
+    {
+      "id": "DBG-036",
+      "title": "A door reported a missing tool it had never looked for, and every gate downstream inherited the blindness",
+      "symptom": "`FAIL claim-open: FileNotFoundError: [Errno 2] No such file or directory: 'gh'`, then `FAIL claim-gate ... FileNotFoundError: 'gh'`, then `bdd-proof-gate: BLIND, cannot read a pull request: [Errno 2] No such file or directory: 'gh'`. `command -v gh` returned nothing and the whole session concluded `gh` was not installed on the machine.",
+      "cause": "MEASURED: `ls -la /Users/roseonyema/.local/bin/gh` -> the binary exists and is executable. It was on no PATH the executor inherited, because /opt/homebrew does not exist on this host and the interactive shell puts ~/.local/bin on PATH while the executor does not. Every door called `shutil.which('gh')`, got None, and reported the tool ABSENT rather than unreachable. `platform/estate/memory/focus.py::_gh` returns None on a missing binary and its caller treats that as 'there are no claims', so the focus register stopped rebuilding and the write gate began refusing correct work. One unlooked-for PATH produced four different symptoms across four doors.",
+      "falsifier": "tests/test_debug_packs_door.py::test_a_missing_catalogue_is_blind_not_none and ::test_an_unparseable_catalogue_is_blind_not_none -- both assert exit 2 and the word BLIND, so a door in this repo that answers 'none' or 'ok' when it could not read its input goes red.",
+      "remedy": "Do not conclude a tool is missing from `command -v` alone when the process is not your interactive shell: search ~/.local/bin, ~/bin, /opt/local/bin and the nvm bin dir before believing it. `export PATH=\"$HOME/.local/bin:$PATH\"` in the door's own process restores claim-open and claim-gate to working. The durable fix is for every door that shells out to resolve its binary through one shared helper that searches the known install roots and, when it still cannot find it, exits BLIND (2) naming the searched paths -- never 'not found'.",
+      "status": "diagnosed",
+      "law": "AGENTS.md section 3a (a door must never report 'no match' when it could not look) and section 9 R1 (a gate that cannot judge must fail closed with a verdict, not report the permissive answer)"
+    },
+    {
+      "id": "DBG-037",
+      "title": "Re-appending claim trailers after a peer rewrote the branch silently dropped the Language-Exception trailers, and only the push caught it",
+      "symptom": "Commit `0778cc43b` passed every local hook and printed `ok language-gate: 1 new Python file(s), each with a Language-Exception`. After a peer's amend moved the branch, the recovery commit carried all four claim trailers and looked correct -- but the pre-push rung printed `FAIL language-gate: 1 new Python file(s) with no documented reason bin/debug-packs`. The trailers were not in the message at all.",
+      "cause": "MEASURED: the recovery step rebuilt the commit message with `git log -1 --format=%B | grep -vE '^(Claim|Agent|Instruction|Plan|X-Idp-Signed):'` and then re-appended ONLY the four claim trailers. The filter had been written for the claim trailers, so it also stripped the two `Language-Exception:` lines and nothing re-added them. The commit-msg hook ran under `--no-verify` (deliberately, because the hook was mis-stamping another agent's claim) and so never re-checked. Trailers are checked by different rungs at different times -- claim-gate locally, language-gate at pre-push -- so a message can be right for the check you can see and wrong for the one you cannot.",
+      "falsifier": "bin/debug-packs --check is not the falsifier here; the rung is. Run `git log -1 --format=%B HEAD | grep -cE '^(Claim|Agent|Instruction|Plan|Language-Exception):'` and require 6 for a commit adding one Python file, and require the pre-push rung to actually run rather than be skipped with --no-verify on the push.",
+      "remedy": "Never rebuild a commit message by filtering lines and re-appending one class of trailer. Rebuild it from the ORIGINAL hook output, or append the new trailers to the message as it stands and verify the full count with `git log -1 --format=%(trailers)` before pushing. Prefer letting the commit-msg hook run; when you must pass --no-verify because the hook mis-stamps a peer's claim, that is the signal to fix the hook (the hook writing another agent's claim is itself a defect) and to verify every trailer class by hand in the same breath.",
+      "status": "diagnosed",
+      "law": "AGENTS.md section 9 R7 (duplicated contracts drift) and R2 (a gate with no falsifier lets the defect through -- the local rung passed, the remote rung refused)"
     }
   ]
 }
