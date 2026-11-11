@@ -87,11 +87,13 @@ export function parseAction(raw, permitted = [...OPCODES]) {
     return { ok: false, error: "action must be object", action: null };
   if (Object.keys(value).some(k => !["opcode", "payload"].includes(k)) ||
       !OPCODES.has(value.opcode) || !permitted.includes(value.opcode) ||
-      typeof value.payload !== "string" || !value.payload.trim() || value.payload.length > 12000) {
+      !(typeof value.payload === "string" || (typeof value.payload === "object" && !Array.isArray(value.payload) && value.payload !== null)) ||
+      JSON.stringify(value.payload).length > 12000 || !JSON.stringify(value.payload).trim()) {
     return { ok: false, error: "action contract violation", action: null };
   }
   // A model output is merely a proposal. It never authorizes execution.
-  return { ok: true, action: { opcode: value.opcode, payload: value.payload }, error: null };
+  return { ok: true, action: { opcode: value.opcode,
+    payload: typeof value.payload === "string" ? value.payload : JSON.stringify(value.payload) }, error: null };
 }
 
 /** Q3: Python syntax/AST verification only. No generated code is executed here. */
@@ -131,7 +133,8 @@ export function assess(task, raw, strict = true) {
   const got = parsed.action.payload.toLowerCase();
   const present = (expected.contains || []).every(s => got.includes(String(s).toLowerCase()));
   const absent = (expected.excludes || []).every(s => !got.includes(String(s).toLowerCase()));
-  const actionCorrect = !expected.opcode || parsed.action.opcode === expected.opcode;
+  const acceptable = expected.opcodes || (expected.opcode ? [expected.opcode] : []);
+  const actionCorrect = !acceptable.length || acceptable.includes(parsed.action.opcode);
   const pass = staticPass && present && absent && actionCorrect;
   return { pass, schemaPass: true, staticPass, reason: !staticPass ? staticReason :
     pass ? "oracle-pass" : "oracle-fail", action: parsed.action };
