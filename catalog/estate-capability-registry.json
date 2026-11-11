@@ -4,9 +4,9 @@
   "source": "repository only (bin/, platform/estate/intents, platform/, clusters/)",
   "counts": {
     "intent": 118,
-    "layer": 256,
+    "layer": 257,
     "service": 121,
-    "tool": 477,
+    "tool": 479,
     "workflow": 101
   },
   "records": [
@@ -8069,6 +8069,54 @@
       "rung": null,
       "writer": "repo",
       "path": "platform/estate/governance/supervisor.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:layer/platform-estate-governance-thin_client",
+      "schema_version": 1,
+      "kind": "layer",
+      "summary": "The Darwin thin-client guard: a laptop is a thin client, not a build farm.",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive",
+        "depends_on": []
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:platform"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "platform/estate/governance/thin_client.py",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -29444,7 +29492,8 @@
       "consumers": [
         "cap:tool/catalog-render",
         "cap:tool/estate-fleet-telegram",
-        "cap:tool/estate-read"
+        "cap:tool/estate-read",
+        "cap:tool/pin-open"
       ],
       "cost": {
         "estimate": null,
@@ -29870,6 +29919,10 @@
         },
         {
           "id": "cap:tool/estate-memory-required",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/pin-open",
           "edge": "invokes"
         },
         {
@@ -32272,6 +32325,59 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/founder-decision",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/gate-can-fail",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "bin/gate-can-fail -- prove a gate is able to reject before trusting it to accept.",
+      "contract": {
+        "inputs": [
+          "--bad-cmd",
+          "--gate",
+          "--good-cmd",
+          "--self-test",
+          "--timeout"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/gate-can-fail",
       "depends_on": [],
       "metrics": [],
       "blind": [
@@ -34916,6 +35022,7 @@
         "cap:tool/memory-gate",
         "cap:tool/nodesoftware-operator-gate",
         "cap:tool/ns-fence-gate",
+        "cap:tool/pin-open",
         "cap:tool/port-gate",
         "cap:tool/process-census",
         "cap:tool/test-catalog-projection",
@@ -52141,6 +52248,74 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/pin-open",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "pin-open: a session with an open issue cannot work on anything else (founder, 2026-11-10).",
+      "contract": {
+        "inputs": [
+          "--blocks",
+          "--do",
+          "--err",
+          "--json",
+          "--proof"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-memory-enforce"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/pin-open",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-founder",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/idp-ci",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/placement-audit",
       "schema_version": 1,
       "kind": "tool",
@@ -53690,6 +53865,7 @@
         "cap:tool/mcp-up",
         "cap:tool/ns-fence-gate",
         "cap:tool/pi-observe",
+        "cap:tool/pin-open",
         "cap:tool/prm_grader.py",
         "cap:tool/reasoning_gateway_hook.py",
         "cap:tool/room-eye",
