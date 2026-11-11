@@ -1,0 +1,20 @@
+id: no-python-bare-except
+language: python
+rule:
+  pattern: |
+    try:
+      $$$
+    except:
+      $$$
+message: "LAW_ZERO_SILENT_FAILURES: Bare except is forbidden. Catch specific exceptions and log to step_runs."
+severity: error
+---
+id: no-rust-unwrap-or-panic
+language: rust
+rule:
+  any:
+    - pattern: $EXPR.unwrap()
+    - pattern: panic!($$$)
+    - pattern: todo!($$$)
+message: "LAW_RUST_TOTALITY: unwrap(), panic!(), and todo!() are forbidden in production crates. Return Result<T, E>."
+severity: error
