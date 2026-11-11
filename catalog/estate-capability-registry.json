@@ -6,7 +6,7 @@
     "intent": 118,
     "layer": 257,
     "service": 121,
-    "tool": 480,
+    "tool": 481,
     "workflow": 102
   },
   "records": [
@@ -27675,6 +27675,59 @@
           "edge": "invokes"
         }
       ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/debug-packs",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "bin/debug-packs -- read and grade the estate's debugging-pack catalogue.",
+      "contract": {
+        "inputs": [
+          "--check",
+          "--json",
+          "--search",
+          "--show",
+          "--status"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/debug-packs",
+      "depends_on": [],
       "metrics": [],
       "blind": [
         "health",
