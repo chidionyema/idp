@@ -1430,10 +1430,863 @@ def is_full_read(r, rec):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Codex harness (2026-11-11): Codex Desktop rollouts
+# ---------------------------------------------------------------------------
+#
+# Codex Desktop writes one JSONL rollout per thread under
+# <CODEX_HOME>/sessions/YYYY/MM/DD/rollout-<timestamp>-<uuid>.jsonl. The rollout is the
+# transcript of record. The producer's own file oracle is the `FileChange` item inside
+# `event_msg.item_completed`: `changes[path].unified_diff` is a git-style hunk-only diff
+# (no ---/+++ headers) and `item.id` is exactly the producing tool call's `call_id`, so
+# every diff is joined to its call by identity, never by proximity (AGENTS.md 3a: the
+# producer's oracle is the judge).
+
+CODEX_HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+CODEX_ROLLOUT = re.compile(
+    r"rollout-(\d{4}-\d{2}-\d{2}T[\d:.-]+)-([0-9a-f-]{36})\.jsonl$"
+)
+
+
+class CodexDiffError(Exception):
+    """A producer diff that does not apply to the candidate base."""
+
+
+def codex_ms(ts):
+    """Codex timestamps are ISO-8601 UTC strings; normalise them to epoch milliseconds."""
+    if isinstance(ts, bool):
+        return 0
+    if isinstance(ts, (int, float)):
+        return int(ts)
+    if not isinstance(ts, str):
+        return 0
+    text = ts.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        dt = datetime.datetime.fromisoformat(text)
+    except ValueError:
+        return 0
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    return int(dt.timestamp() * 1000)
+
+
+def codex_in_window(ts, window):
+    if not window:
+        return True
+    start, end = window
+    if start and ts < start:
+        return False
+    if end and ts >= end:
+        return False
+    return True
+
+
+def codex_split_hunks(diff):
+    """Split a git-style hunk-only diff into (old_start, old_count, new_start, new_count, body)."""
+    hunks = []
+    cur = None
+    for raw in (diff or "").splitlines():
+        m = CODEX_HUNK.match(raw)
+        if m:
+            cur = (
+                int(m.group(1)),
+                int(m.group(2) or 1),
+                int(m.group(3)),
+                int(m.group(4) or 1),
+                [],
+            )
+            hunks.append(cur)
+            continue
+        if cur is None:
+            continue
+        if raw.startswith("\\"):  # "\ No newline at end of file"
+            continue
+        cur[4].append(raw)
+    return hunks
+
+
+def _codex_locate(lines, expect, approx):
+    """Find `expect` in `lines` at or near `approx` (git-style bounded fuzz)."""
+    n = len(expect)
+    if not n:
+        return max(0, min(approx, len(lines)))
+
+    def same(a, b):
+        return a.rstrip("\n") == b.rstrip("\n")
+
+    if approx >= 0 and approx + n <= len(lines):
+        if all(same(lines[approx + i], expect[i]) for i in range(n)):
+            return approx
+    for delta in range(1, 41):
+        for cand in (approx - delta, approx + delta):
+            if cand < 0 or cand + n > len(lines):
+                continue
+            if all(same(lines[cand + i], expect[i]) for i in range(n)):
+                return cand
+    return None
+
+
+def codex_apply(diff, base, reverse=False):
+    """Apply (or reverse) a Codex producer diff to `base`; returns the new text.
+
+    Codex's diffs are hunk-only, so the ---/+++ headers FR.apply_unified_patch tolerates
+    are simply absent; the hunk headers carry the line numbers.
+    """
+    nl = "\r\n" if "\r\n" in (base or "") else "\n"
+    lines = (base or "").splitlines(keepends=True)
+    for hunk in codex_split_hunks(diff):
+        old_start, _old_count, new_start, _new_count, body = hunk
+        if reverse:
+            expect = [l[1:] for l in body if l[:1] in (" ", "+")]
+            replace = [l[1:] for l in body if l[:1] in (" ", "-")]
+            approx = new_start - 1
+        else:
+            expect = [l[1:] for l in body if l[:1] in (" ", "-")]
+            replace = [l[1:] for l in body if l[:1] in (" ", "+")]
+            approx = old_start - 1
+        idx = _codex_locate(lines, expect, approx)
+        if idx is None:
+            raise CodexDiffError("hunk at %d does not apply" % (approx + 1))
+        out = list(lines[:idx])
+        for line in replace:
+            out.append(line + nl if line else line)
+        out.extend(lines[idx + len(expect) :])
+        lines = out
+    return "".join(lines)
+
+
+def _codex_text_of(content):
+    """Flatten a Codex content block (list of typed parts) into plain text."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, dict):
+        content = [content]
+    if not isinstance(content, list):
+        return ""
+    parts = []
+    for item in content:
+        if isinstance(item, str):
+            parts.append(item)
+        elif isinstance(item, dict):
+            text = item.get("text")
+            if isinstance(text, str):
+                parts.append(text)
+    return "\n".join(p for p in parts if p)
+
+
+def parse_codex(path, rec):
+    """Index one Codex rollout: sessions, environments, conversation, calls, file changes."""
+    window = rec.codex_window
+    info = dict(
+        session=os.path.basename(path),
+        agent="codex",
+        file=path,
+        model=None,
+        cwd=None,
+        started=None,
+        ended=None,
+        prompt=None,
+        tool_calls=0,
+        intents=collections.Counter(),
+        plans=[],
+        files=set(),
+    )
+    cx = dict(
+        thread_id=None,
+        session_id=None,
+        originator=None,
+        cli_version=None,
+        source=None,
+        thread_source=None,
+        model_provider=None,
+        model=None,
+        parent_thread_id=None,
+        agent_path=None,
+        workspace_roots=[],
+        environments={},
+        filesystem_roots=[],
+        sandbox_policy=None,
+        approval_policy=None,
+        permission_profile=None,
+        collaboration_mode=None,
+        effort=None,
+        turns=0,
+        records=0,
+        records_in_window=0,
+        tool_calls=0,
+        tool_calls_in_window=0,
+        subagents=[],
+        compactions=0,
+        turn_aborts=0,
+        token_totals={},
+        history_mode=None,
+    )
+    conv = []
+    seen_conv = set()
+    calls = {}
+    patch_inputs = {}
+    ordinal = 0
+    with open(path, errors="replace") as f:
+        for line in f:
+            try:
+                r = json.loads(line)
+            except Exception as err:  # noqa: BLE001 -- a bad record costs that record
+                rec.parse_errors.append(
+                    dict(file=path, error="json: %s: %s" % (type(err).__name__, err))
+                )
+                continue
+            if not isinstance(r, dict):
+                continue
+            ordinal += 1
+            payload = r.get("payload")
+            if not isinstance(payload, dict):
+                payload = {}
+            ts = codex_ms(r.get("timestamp"))
+            rtype = r.get("type")
+            cx["records"] += 1
+            in_window = codex_in_window(ts, window)
+            if in_window:
+                cx["records_in_window"] += 1
+            if ts:
+                if not info["started"] or ts < info["started"]:
+                    info["started"] = ts
+                if not info["ended"] or ts > info["ended"]:
+                    info["ended"] = ts
+
+            if rtype == "session_meta":
+                cx["thread_id"] = payload.get("session_id") or payload.get("id")
+                cx["session_id"] = payload.get("id") or payload.get("session_id")
+                cx["originator"] = payload.get("originator")
+                cx["cli_version"] = payload.get("cli_version")
+                cx["model_provider"] = payload.get("model_provider")
+                cx["history_mode"] = payload.get("history_mode")
+                src = payload.get("source")
+                if isinstance(src, dict):
+                    cx["source"] = (
+                        src.get("subagent") or src.get("app") or json.dumps(src)
+                    )
+                    cx["parent_thread_id"] = src.get("parent_thread_id") or src.get(
+                        "parent_id"
+                    )
+                else:
+                    cx["source"] = src
+                cx["thread_source"] = payload.get("thread_source")
+                cx["parent_thread_id"] = (
+                    payload.get("parent_thread_id") or cx["parent_thread_id"]
+                )
+                cx["agent_path"] = payload.get("agent_path")
+                roots = payload.get("runtime_workspace_roots")
+                if isinstance(roots, list):
+                    cx["workspace_roots"] = [str(x) for x in roots]
+                if payload.get("cwd"):
+                    info["cwd"] = payload.get("cwd")
+                    cx["environments"].setdefault(
+                        "local",
+                        {
+                            "cwd": payload.get("cwd"),
+                            "status": "available",
+                            "shell": "bash",
+                        },
+                    )
+                prov = payload.get("provenance")
+                if isinstance(prov, dict) and prov.get("model"):
+                    cx["model"] = prov.get("model")
+                base = payload.get("base_instructions")
+                if isinstance(base, dict) and base.get("text") and not info["prompt"]:
+                    info["prompt"] = base["text"][:2000]
+
+            elif rtype == "turn_context":
+                cx["turns"] += 1
+                if payload.get("cwd"):
+                    info["cwd"] = payload.get("cwd")
+                if payload.get("model"):
+                    cx["model"] = payload.get("model")
+                    info["model"] = payload.get("model")
+                cx["sandbox_policy"] = payload.get("sandbox_policy")
+                cx["approval_policy"] = payload.get("approval_policy")
+                cx["permission_profile"] = payload.get("permission_profile")
+                cm = payload.get("collaboration_mode")
+                if isinstance(cm, dict):
+                    cx["collaboration_mode"] = cm.get("mode")
+                if payload.get("effort"):
+                    cx["effort"] = payload.get("effort")
+
+            elif rtype == "world_state":
+                state = payload.get("state")
+                if isinstance(state, dict):
+                    envs = state.get("environments")
+                    if isinstance(envs, dict):
+                        inner = envs.get("environments")
+                        if isinstance(inner, dict):
+                            cx["environments"].update(inner)
+                        if envs.get("current_date"):
+                            cx["current_date"] = envs.get("current_date")
+                        if envs.get("timezone"):
+                            cx["timezone"] = envs.get("timezone")
+                    if state.get("model"):
+                        cx["model"] = state.get("model")
+                        info["model"] = state.get("model")
+                    fs = state.get("filesystem")
+                    if isinstance(fs, str):
+                        roots = re.findall(r"<root>(.*?)</root>", fs)
+                        if roots:
+                            cx["filesystem_roots"] = roots
+
+            elif rtype == "response_item":
+                itype = payload.get("type")
+                if itype == "function_call":
+                    cx["tool_calls"] += 1
+                    if in_window:
+                        cx["tool_calls_in_window"] += 1
+                    info["tool_calls"] += 1
+                    cid = payload.get("call_id") or payload.get("id")
+                    name = payload.get("name")
+                    raw_args = payload.get("arguments")
+                    args = {}
+                    if isinstance(raw_args, str):
+                        try:
+                            args = json.loads(raw_args)
+                        except ValueError:
+                            args = {"_raw": raw_args[:400]}
+                    elif isinstance(raw_args, dict):
+                        args = raw_args
+                    calls[cid] = dict(name=name, args=args, ts=ts, in_window=in_window)
+                    cmd = None
+                    if name == "exec_command":
+                        cmd = args.get("cmd")
+                        if isinstance(cmd, list):
+                            cmd = " ".join(str(x) for x in cmd)
+                    elif name == "js":
+                        code = args.get("code")
+                        cmd = ("js: " + code) if isinstance(code, str) else None
+                    elif name == "request_permissions":
+                        cmd = "request_permissions " + json.dumps(args)[:300]
+                    elif name in ("spawn_agent", "followup_task", "wait_agent"):
+                        cmd = "%s %s" % (name, json.dumps(args)[:300])
+                    if cmd:
+                        ingest_command(cmd, rec.ledger, info["session"], ts, name)
+                    if name == "spawn_agent" and isinstance(args, dict):
+                        cx["subagents"].append(
+                            dict(
+                                ts=ts,
+                                agent_path=args.get("agent_path") or args.get("name"),
+                                model=args.get("model"),
+                                in_window=in_window,
+                            )
+                        )
+                elif itype == "custom_tool_call":
+                    cx["tool_calls"] += 1
+                    if in_window:
+                        cx["tool_calls_in_window"] += 1
+                    info["tool_calls"] += 1
+                    cid = payload.get("call_id") or payload.get("id")
+                    calls[cid] = dict(
+                        name=payload.get("name"),
+                        args={"input": payload.get("input")},
+                        ts=ts,
+                        in_window=in_window,
+                    )
+                    if payload.get("name") == "apply_patch":
+                        patch_inputs[cid] = payload.get("input")
+                elif itype == "message":
+                    role = payload.get("role")
+                    text = _codex_text_of(payload.get("content"))
+                    if text:
+                        key = (role, sha(text))
+                        if key not in seen_conv:
+                            seen_conv.add(key)
+                            conv.append(
+                                dict(
+                                    ts=ts,
+                                    ordinal=ordinal,
+                                    role=role,
+                                    text=text,
+                                    source="response_item.message",
+                                )
+                            )
+                elif itype == "agent_message":
+                    text = _codex_text_of(payload.get("content")) or str(
+                        payload.get("text") or ""
+                    )
+                    if text:
+                        key = ("assistant", sha(text))
+                        if key not in seen_conv:
+                            seen_conv.add(key)
+                            conv.append(
+                                dict(
+                                    ts=ts,
+                                    ordinal=ordinal,
+                                    role="assistant",
+                                    text=text,
+                                    source="response_item.agent_message",
+                                )
+                            )
+
+            elif rtype == "event_msg":
+                etype = payload.get("type")
+                if etype == "item_completed":
+                    item = payload.get("item")
+                    if not isinstance(item, dict):
+                        item = {}
+                    itype = item.get("type")
+                    item_id = item.get("id")
+                    if itype in ("UserMessage", "AgentMessage"):
+                        role = "user" if itype == "UserMessage" else "assistant"
+                        text = _codex_text_of(item.get("content"))
+                        if text:
+                            key = (role, sha(text))
+                            if key not in seen_conv:
+                                seen_conv.add(key)
+                                conv.append(
+                                    dict(
+                                        ts=ts,
+                                        ordinal=ordinal,
+                                        role=role,
+                                        text=text,
+                                        source="event_msg.item_completed",
+                                        phase=item.get("phase"),
+                                    )
+                                )
+                    elif itype == "CommandExecution":
+                        cid = item_id
+                        out = item.get("aggregated_output")
+                        if not isinstance(out, str):
+                            out = ""
+                        argv = item.get("command")
+                        if isinstance(argv, list):
+                            cmdline = " ".join(str(x) for x in argv)
+                        else:
+                            cmdline = str(argv or "")
+                        exit_code = item.get("exit_code")
+                        is_error = bool(exit_code) and exit_code != 0
+                        rec.results[cid] = dict(
+                            text=out,
+                            text_ref=None,
+                            is_error=is_error,
+                            patch_ref=None,
+                        )
+                        if cmdline:
+                            ingest_command(
+                                cmdline, rec.ledger, info["session"], ts, "exec_command"
+                            )
+                    elif itype == "FileChange":
+                        changes = item.get("changes")
+                        if isinstance(changes, dict):
+                            for raw_path, ch in changes.items():
+                                if not isinstance(ch, dict):
+                                    continue
+                                target = canon(raw_path)
+                                info["files"].add(target)
+                                rec.codex_changes.append(
+                                    dict(
+                                        session=info["session"],
+                                        ts=ts,
+                                        ordinal=ordinal,
+                                        call_id=item_id,
+                                        path=target,
+                                        raw_path=raw_path,
+                                        change_type=ch.get("type") or "update",
+                                        diff=ch.get("unified_diff") or "",
+                                        move_path=canon(ch["move_path"])
+                                        if ch.get("move_path")
+                                        else None,
+                                        in_window=in_window,
+                                    )
+                                )
+                    elif itype == "McpToolCall":
+                        result = item.get("result")
+                        text = ""
+                        is_error = False
+                        if isinstance(result, dict):
+                            text = _codex_text_of(result.get("content"))
+                            is_error = bool(result.get("isError"))
+                        rec.results[item_id] = dict(
+                            text=text, text_ref=None, is_error=is_error, patch_ref=None
+                        )
+                    elif itype == "SubAgentActivity":
+                        agent = dict(
+                            ts=ts,
+                            agent_thread_id=item.get("agent_thread_id"),
+                            agent_path=item.get("agent_path"),
+                            kind=item.get("kind"),
+                            model=item.get("model"),
+                            reasoning_effort=item.get("reasoning_effort"),
+                            in_window=in_window,
+                        )
+                        cx["subagents"].append(agent)
+                    elif itype == "ContextCompaction":
+                        cx["compactions"] += 1
+                elif etype == "turn_aborted":
+                    cx["turn_aborts"] += 1
+                elif etype == "token_count":
+                    info2 = payload.get("info")
+                    if isinstance(info2, dict):
+                        last = info2.get("last_token_usage")
+                        if isinstance(last, dict):
+                            for k, v in last.items():
+                                if isinstance(v, (int, float)):
+                                    cx["token_totals"][k] = (
+                                        cx["token_totals"].get(k, 0) + v
+                                    )
+
+            elif rtype == "token_usage_record":
+                usage = payload.get("usage")
+                if isinstance(usage, dict):
+                    for k, v in usage.items():
+                        if isinstance(v, (int, float)):
+                            cx["token_totals"][k] = cx["token_totals"].get(k, 0) + v
+
+    conv.sort(key=lambda c: (c["ts"], c["ordinal"]))
+    info["codex"] = cx
+    info["conversation"] = len(conv)
+    rec.sessions.append(info)
+    rec.codex_conversations.append(dict(session=info["session"], records=conv))
+    rec.codex_calls.setdefault(info["session"], {}).update(calls)
+    rec.codex_patch_inputs.setdefault(info["session"], {}).update(patch_inputs)
+    return info
+
+
+def codex_reconstruct(rec, store, git_budget=200):
+    """Rebuild every path Codex changed from the producer's own diffs.
+
+    The chain for a path is the producer diffs in wall-clock order. The pre-image is
+    recovered by reversing the producer diffs against the on-disk bytes and then proving
+    the chain by applying it forward again (AGENTS.md 3a: the producer's oracle is the
+    judge). A git blob is the fallback base. When no base survives, the path is recorded
+    as EDIT-ONLY, never silently dropped.
+    """
+    by_path = collections.defaultdict(list)
+    for ch in rec.codex_changes:
+        by_path[ch["path"]].append(ch)
+    reconstructed = {}
+    for path, evs in by_path.items():
+        evs.sort(key=lambda e: (e["ts"], e["ordinal"]))
+        types = [e["change_type"] for e in evs]
+        base = None
+        base_label = "none"
+        states = []
+        if types and types[0] == "add":
+            base, base_label = "", "producer-add"
+        else:
+            disk = read_text(path)
+            if disk is not None and all(t == "update" for t in types):
+                cur = disk
+                ok = True
+                for e in reversed(evs):
+                    try:
+                        cur = codex_apply(e["diff"], cur, reverse=True)
+                    except CodexDiffError:
+                        ok = False
+                        break
+                if ok:
+                    fwd = cur
+                    try:
+                        for e in evs:
+                            fwd = codex_apply(e["diff"], fwd)
+                    except CodexDiffError:
+                        ok = False
+                    if ok and fwd == disk:
+                        base, base_label = cur, "disk-reverse-verified"
+            if base is None and git_budget > 0:
+                git_budget -= 1
+                try:
+                    for label, text in git_candidates(path, limit=1):
+                        fwd = text
+                        try:
+                            for e in evs:
+                                fwd = codex_apply(e["diff"], fwd)
+                        except CodexDiffError:
+                            continue
+                        base, base_label = text, label
+                        break
+                except Exception:  # noqa: BLE001 -- git is a best-effort base source
+                    base = None
+        if base is None:
+            states = [None] * len(evs)
+            base_label = "no-base"
+        else:
+            cur = base
+            for e in evs:
+                if e["change_type"] == "delete":
+                    states.append(None)
+                    cur = ""
+                    continue
+                try:
+                    cur = codex_apply(e["diff"], cur)
+                except CodexDiffError:
+                    states.append(None)
+                    continue
+                states.append(cur)
+        for e, content in zip(evs, states, strict=False):
+            cid = "codex:%s:%s" % (e["call_id"], e["path"])
+            if e["change_type"] == "delete":
+                rec.add_op(
+                    dict(
+                        agent="codex",
+                        kind="delete",
+                        session=e["session"],
+                        ts=e["ts"],
+                        tool="codex-filechange",
+                        call_id=cid,
+                        path=e["path"],
+                        content_ref=None,
+                        args_ref=rec.store.put(
+                            json.dumps(
+                                dict(
+                                    call_id=e["call_id"],
+                                    change_type=e["change_type"],
+                                    move_path=e["move_path"],
+                                    diff_head=e["diff"].splitlines()[:1],
+                                )
+                            )
+                        ),
+                        cwd=None,
+                        in_window=e["in_window"],
+                    )
+                )
+                rec.results[cid] = dict(
+                    text="", text_ref=None, is_error=False, patch_ref=None
+                )
+                continue
+            ref = rec.store.put(content) if content is not None else None
+            rec.add_op(
+                dict(
+                    agent="codex",
+                    kind="write",
+                    session=e["session"],
+                    ts=e["ts"],
+                    tool="codex-filechange",
+                    call_id=cid,
+                    path=e["path"],
+                    content_ref=ref,
+                    args_ref=rec.store.put(
+                        json.dumps(
+                            dict(
+                                call_id=e["call_id"],
+                                change_type=e["change_type"],
+                                move_path=e["move_path"],
+                                base_source=base_label,
+                                diff_head=e["diff"].splitlines()[:1],
+                            )
+                        )
+                    ),
+                    cwd=None,
+                    in_window=e["in_window"],
+                )
+            )
+            rec.results[cid] = dict(
+                text="", text_ref=None, is_error=False, patch_ref=None
+            )
+            if e["move_path"]:
+                rec.add_op(
+                    dict(
+                        agent="codex",
+                        kind="write",
+                        session=e["session"],
+                        ts=e["ts"],
+                        tool="codex-move",
+                        call_id=cid + ":move",
+                        path=e["move_path"],
+                        content_ref=ref,
+                        args_ref=None,
+                        cwd=None,
+                        in_window=e["in_window"],
+                    )
+                )
+                rec.results[cid + ":move"] = dict(
+                    text="", text_ref=None, is_error=False, patch_ref=None
+                )
+        reconstructed[path] = dict(
+            events=len(evs),
+            base_source=base_label,
+            content_known=sum(1 for s in states if s is not None),
+        )
+    return reconstructed
+
+
+def _quote_ident(name):
+    """Quote a SQLite identifier. The names come from sqlite_master or PRAGMA."""
+    return '"' + str(name).replace('"', '""') + '"'
+
+
+def _sql_count(table):
+    return "SELECT COUNT(*) FROM " + _quote_ident(table)  # noqa: S608 - quoted, from sqlite_master
+
+
+def _sql_select(table, cols=None):
+    if cols:
+        return (
+            "SELECT "  # noqa: S608 - quoted identifiers, from sqlite_master / PRAGMA
+            + ", ".join(_quote_ident(c) for c in cols)
+            + " FROM "
+            + _quote_ident(table)
+        )
+    return "SELECT * FROM " + _quote_ident(table)  # noqa: S608 - quoted, from sqlite_master
+
+
+def codex_object_store(path, window, rec):
+    """Read the Codex thread-history object store and cross-check it against the rollouts."""
+    import sqlite3
+
+    out = dict(
+        path=path,
+        exists=os.path.exists(path),
+        tables={},
+        threads=[],
+        totals={},
+        window_items=0,
+        duplicate_items=0,
+        by_type={},
+        read_only=True,
+    )
+    if not out["exists"]:
+        return out
+    con = sqlite3.connect("file:%s?mode=ro" % path, uri=True)
+    con.row_factory = sqlite3.Row
+    try:
+        tabs = [
+            r[0]
+            for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        ]
+        for t in tabs:
+            try:
+                out["tables"][t] = con.execute(_sql_count(t)).fetchone()[0]
+            except sqlite3.Error:
+                out["tables"][t] = None
+        if "thread_items" in tabs:
+            cols = [r[1] for r in con.execute("PRAGMA table_info(thread_items)")]
+            tcol = "thread_id" if "thread_id" in cols else None
+            tscol = next(
+                (
+                    c
+                    for c in ("created_at", "created_at_ms", "timestamp", "updated_at")
+                    if c in cols
+                ),
+                None,
+            )
+            typecol = next(
+                (c for c in ("item_type", "type", "kind") if c in cols), None
+            )
+            idcol = next((c for c in ("id", "item_id", "uuid") if c in cols), None)
+            sel = ", ".join([c for c in (tcol, tscol, typecol, idcol) if c])
+            seen = set()
+            per_thread = collections.defaultdict(
+                lambda: dict(
+                    items=0,
+                    window=0,
+                    first=None,
+                    last=None,
+                    by_type=collections.Counter(),
+                )
+            )
+            for row in con.execute(_sql_select("thread_items", [sel])):
+                d = dict(row)
+                tid = d.get(tcol)
+                raw_ts = d.get(tscol)
+                ts = codex_ms(raw_ts) if isinstance(raw_ts, str) else int(raw_ts or 0)
+                if ts and ts < 10**11:
+                    ts *= 1000
+                itype = d.get(typecol)
+                iid = d.get(idcol)
+                key = (tid, iid)
+                if key in seen:
+                    out["duplicate_items"] += 1
+                    continue
+                seen.add(key)
+                t = per_thread[tid]
+                t["items"] += 1
+                t["by_type"][str(itype)] += 1
+                if ts:
+                    t["first"] = ts if not t["first"] else min(t["first"], ts)
+                    t["last"] = ts if not t["last"] else max(t["last"], ts)
+                if codex_in_window(ts, window):
+                    t["window"] += 1
+                    out["window_items"] += 1
+                    out["by_type"][str(itype)] = out["by_type"].get(str(itype), 0) + 1
+            out["threads"] = [
+                dict(
+                    thread_id=tid,
+                    items=t["items"],
+                    window_items=t["window"],
+                    first=iso(t["first"]) if t["first"] else None,
+                    last=iso(t["last"]) if t["last"] else None,
+                    by_type=dict(t["by_type"].most_common(20)),
+                )
+                for tid, t in sorted(per_thread.items(), key=lambda kv: str(kv[0]))
+            ]
+            out["totals"] = dict(
+                threads=len(per_thread),
+                items=sum(t["items"] for t in per_thread.values()),
+                window_items=out["window_items"],
+                duplicate_items=out["duplicate_items"],
+            )
+    except sqlite3.Error as err:
+        out["error"] = str(err)
+    finally:
+        con.close()
+    return out
+
+
+def codex_catalog(path):
+    """Read the Codex Desktop local thread catalog (read-only) for host/thread evidence."""
+    import sqlite3
+
+    out = dict(path=path, exists=os.path.exists(path), tables={}, threads=[], hosts=[])
+    if not out["exists"]:
+        return out
+    con = sqlite3.connect("file:%s?mode=ro" % path, uri=True)
+    con.row_factory = sqlite3.Row
+    try:
+        tabs = [
+            r[0]
+            for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        ]
+        out["tables"] = {t: con.execute(_sql_count(t)).fetchone()[0] for t in tabs}
+        for t in ("local_thread_catalog", "local_thread_catalog_hosts"):
+            if t not in tabs:
+                continue
+            rows = []
+            for row in con.execute(_sql_select(t)):
+                d = dict(row)
+                for k, v in list(d.items()):
+                    if isinstance(v, bytes):
+                        d[k] = v.decode("utf-8", "replace")
+                rows.append(d)
+            if t == "local_thread_catalog":
+                out["threads"] = rows
+            else:
+                out["hosts"] = rows
+    except sqlite3.Error as err:
+        out["error"] = str(err)
+    finally:
+        con.close()
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cline", default=HOME + "/.cline/data/sessions")
     ap.add_argument("--pi", default=HOME + "/.pi/agent/sessions")
+    ap.add_argument(
+        "--codex",
+        action="append",
+        default=[],
+        help="a Codex sessions root (repeatable): <root>/YYYY/MM/DD/rollout-*.jsonl",
+    )
+    ap.add_argument(
+        "--codex-window-start", default="", help="ISO-8601 UTC window start"
+    )
+    ap.add_argument("--codex-window-end", default="", help="ISO-8601 UTC window end")
+    ap.add_argument(
+        "--codex-object-store", default="", help="Codex thread_history sqlite"
+    )
+    ap.add_argument(
+        "--codex-catalog", default="", help="Codex Desktop local_thread_catalog db"
+    )
     ap.add_argument("--out", default="")
     ap.add_argument("--limit-sessions", type=int, default=0)
     ap.add_argument("--no-git", action="store_true")
@@ -1489,11 +2342,30 @@ def main():
     store = Store(os.path.join(a.out, ".store"))
     rec = Recorder(store)
 
+    # The Codex window is a record-timestamp window, not a filename or mtime window.
+    rec.codex_window = (
+        codex_ms(a.codex_window_start) if a.codex_window_start else 0,
+        codex_ms(a.codex_window_end) if a.codex_window_end else 0,
+    )
+    rec.codex_changes = []
+    rec.codex_conversations = []
+    rec.codex_calls = {}
+    rec.codex_patch_inputs = {}
+
     cline_files = sorted(glob.glob(a.cline + "/*/*.messages.json"))
     pi_files = sorted(glob.glob(a.pi + "/*/*.jsonl"))
+    codex_files = []
+    for root in a.codex:
+        codex_files.extend(
+            sorted(
+                glob.glob(os.path.join(root, "**", "rollout-*.jsonl"), recursive=True)
+            )
+        )
+    codex_files = sorted(set(codex_files))
     if a.limit_sessions:
         cline_files = cline_files[: a.limit_sessions]
         pi_files = pi_files[: a.limit_sessions]
+        codex_files = codex_files[: a.limit_sessions]
 
     # 2026-10-31: a session that cannot be parsed must cost that session, not the corpus.
     # The parse is already guarded per record; this is the outer wall that keeps a file that
@@ -1512,6 +2384,19 @@ def main():
             rec.parse_errors.append(
                 dict(file=p, error="%s: %s" % (type(err).__name__, err))
             )
+    codex_sessions = []
+    for p in codex_files:
+        try:
+            codex_sessions.append(parse_codex(p, rec))
+        except Exception as err:  # noqa: BLE001
+            rec.parse_errors.append(
+                dict(file=p, error="%s: %s" % (type(err).__name__, err))
+            )
+    codex_reconstruction = (
+        codex_reconstruct(rec, store, git_budget=0 if a.no_git else 200)
+        if rec.codex_changes
+        else {}
+    )
     if rec.parse_errors:
         json.dump(rec.parse_errors, open(a.out + "/parse_errors.json", "w"), indent=1)
         print(
@@ -1520,10 +2405,12 @@ def main():
         )
 
     print(
-        "indexed: %d cline sessions, %d pi sessions, %d ops, %d reads, %d results, store %.1f MiB"
+        "indexed: %d cline sessions, %d pi sessions, %d codex rollouts, %d ops, %d reads, "
+        "%d results, store %.1f MiB"
         % (
             len(cline_files),
             len(pi_files),
+            len(codex_files),
             len(rec.ops),
             len(rec.reads),
             len(rec.results),
@@ -1574,6 +2461,10 @@ def main():
                 failed_ops=s.failed,
                 holes=s.holes,
                 covered_ops=s.covered,
+                in_window=any(
+                    codex_in_window(e.get("ts") or 0, rec.codex_window)
+                    for e in s.events
+                ),
             )
         )
 
@@ -1596,6 +2487,7 @@ def main():
         "failed_ops",
         "holes",
         "covered_ops",
+        "in_window",
     ]
     with open(a.out + "/manifest.csv", "w", newline="") as f:
         w = csv.writer(f)
@@ -1620,6 +2512,7 @@ def main():
                     r["failed_ops"],
                     r["holes"],
                     r["covered_ops"],
+                    r["in_window"],
                 ]
             )
 
@@ -1637,6 +2530,77 @@ def main():
     with open(a.out + "/commands_ledger.jsonl", "w") as f:
         for l in rec.ledger:
             f.write(json.dumps(l) + "\n")
+
+    # 2026-11-11: the Codex conversation, environments and cross-check artifacts. The
+    # conversation is the transcript of record (rollout), the object store is the
+    # projection, and the two are counted against each other so a gap is named.
+    if rec.codex_conversations:
+        os.makedirs(os.path.join(a.out, "conversation"), exist_ok=True)
+        for block in rec.codex_conversations:
+            name = os.path.basename(block["session"])
+            with open(os.path.join(a.out, "conversation", name + ".jsonl"), "w") as f:
+                for rec_row in block["records"]:
+                    f.write(json.dumps(rec_row, default=str) + "\n")
+    environments = []
+    for s in rec.sessions:
+        cx = s.get("codex")
+        if not cx:
+            continue
+        environments.append(
+            dict(
+                session=s["session"],
+                thread_id=cx.get("thread_id"),
+                session_id=cx.get("session_id"),
+                parent_thread_id=cx.get("parent_thread_id"),
+                originator=cx.get("originator"),
+                source=cx.get("source"),
+                thread_source=cx.get("thread_source"),
+                cli_version=cx.get("cli_version"),
+                model=cx.get("model"),
+                model_provider=cx.get("model_provider"),
+                cwd=s.get("cwd"),
+                workspace_roots=cx.get("workspace_roots"),
+                filesystem_roots=cx.get("filesystem_roots"),
+                environments=cx.get("environments"),
+                sandbox_policy=cx.get("sandbox_policy"),
+                approval_policy=cx.get("approval_policy"),
+                permission_profile=cx.get("permission_profile"),
+                collaboration_mode=cx.get("collaboration_mode"),
+                effort=cx.get("effort"),
+                turns=cx.get("turns"),
+                records=cx.get("records"),
+                records_in_window=cx.get("records_in_window"),
+                tool_calls=cx.get("tool_calls"),
+                tool_calls_in_window=cx.get("tool_calls_in_window"),
+                conversation=s.get("conversation"),
+                subagents=cx.get("subagents"),
+                compactions=cx.get("compactions"),
+                turn_aborts=cx.get("turn_aborts"),
+                token_totals=cx.get("token_totals"),
+                started=iso(s.get("started")),
+                ended=iso(s.get("ended")),
+                files=s.get("files"),
+            )
+        )
+    if environments:
+        json.dump(
+            environments, open(a.out + "/environments.json", "w"), indent=1, default=str
+        )
+    if codex_reconstruction:
+        json.dump(
+            codex_reconstruction,
+            open(a.out + "/codex_reconstruction.json", "w"),
+            indent=1,
+            default=str,
+        )
+    if a.codex_object_store:
+        obj = codex_object_store(a.codex_object_store, rec.codex_window, rec)
+        json.dump(
+            obj, open(a.out + "/codex_object_store.json", "w"), indent=1, default=str
+        )
+    if a.codex_catalog:
+        cat = codex_catalog(a.codex_catalog)
+        json.dump(cat, open(a.out + "/codex_catalog.json", "w"), indent=1, default=str)
 
     by = collections.defaultdict(collections.Counter)
     for r in rows:
