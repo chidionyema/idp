@@ -22,12 +22,12 @@ node experiments/helm/cli.mjs from-compiler /tmp/estate-context.json
 
 # Explicitly provisioned model route (GitHub Actions uses built-in models:read):
 export HELM_INFERENCE_URL=https://ai-gateway.kilo.ai/api/v1/chat/completions
-export HELM_MODEL=minimax/minimax-m3.1-flash:free
+export HELM_MODEL=cohere/north-mini-code:free
 # For an authenticated estate model route, provide HELM_TOKEN via managed secrets.
 node experiments/helm/cli.mjs live
 ```
 
-The GitHub Actions `helm-research` workflow runs a bounded 12-call, 3-task × 4-arm trial via Kilo's anonymous free-model route. Send public/synthetic benchmarks only: the free inference provider may record prompts and outputs. It writes the candidate and baseline outputs, per-call timings, schema/semantic decisions, token counts when provided and source SHA as a JSON artifact. A provider refusal or missing token is reported, not counted as a successful trial.
+The GitHub Actions `helm-research` workflow runs a bounded 20-first-call, 5-task × 4-arm trial via Kilo's anonymous free-model route. Send public/synthetic benchmarks only: the free inference provider may record prompts and outputs. It writes the candidate and baseline outputs, per-call timings, schema/semantic decisions, token counts when provided and source SHA as a JSON artifact. A provider refusal, unavailable model, empty completion or timeout is reported separately and is never counted as an answer. The score reports knowledge and action fitness independently as well as strict joint correctness.
 
 **Arms:** baseline; generic skills; evidence-only memory; HELM (bounded context + constrained action contract + syntax verification + one repair attempt). Prompt order alternates by task. Initial tasks are **known synthetic/replayed estate incidents**, not freshly executed fleet actions. This trial can establish the value of evidence injection on independently graded tasks, not production/fleet uplift or causal proof at scale.
 
@@ -53,3 +53,7 @@ Do not train on the oracle file or copy task-specific labels into the prompt. St
 - SWE-bench-Live: https://swe-bench-live.github.io/ — recommends independent executable agent traces and leakage checks.
 
 **Commercial:** no HELM product listing or performance claims until repeated credible agent-run outcomes justify them.
+
+## Reproducibility counterexample
+
+HELM-001 initially scored 2/3 joint passes against memory's 1/3, but the next independent run scored 0/3 against memory's 2/3. Model-provider errors and brittle lexical/opcode grading made this unstable. Source run IDs: 42951727380 and 42952186577. HELM-002 preregisters separate factual, opcode, schema, and joint metrics and introduces a previously unseen operations task. **None of these tiny experiments demonstrates a fleet-level effect or credible commercial uplift.**
