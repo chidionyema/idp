@@ -53,8 +53,8 @@ export default function DemoPage() {
                   { label: "Mode", desc: "Demo = synthetic. Set LITELLM_PROXY_URL for live calls." },
                 ].map((t) => (
                   <div key={t.label} style={{ display: "flex", gap: "12px", fontFamily: "var(--mono)", fontSize: "11px" }}>
-                    <span style={{ color: "var(--accent)", fontWeight: 500, flexShrink: 0 }}>{t.label}</span>
-                    <span style={{ color: "var(--ink-3)" }}>{t.desc}</span>
+                    <span className="mi-demo-label">{t.label}</span>
+                    <span className="mi-demo-desc">{t.desc}</span>
                   </div>
                 ))}
               </div>

@@ -26,7 +26,7 @@
 .mi-hero-composition{position:relative;display:grid;grid-template-columns:minmax(0,1.28fr) minmax(300px,.72fr);align-items:center;min-height:680px;padding:64px 0 90px}
 .mi-hero-content{position:relative;z-index:2}
 .mi-hero-overline{font:500 11px var(--mono);letter-spacing:.16em;color:#eac47e;margin-bottom:28px}
-.mi-hero .mi-hero-title{font-family:var(--sans);font-weight:750;font-size:clamp(64px,7.6vw,132px);letter-spacing:-.089em;line-height:.91;color:#fff;max-width:none;white-space:nowrap}
+.mi-hero .mi-hero-title{font-family:var(--sans);font-weight:750;font-size:clamp(64px,7.6vw,132px);letter-spacing:-.032em;line-height:.91;color:#fff;max-width:none;white-space:nowrap}
 .mi-hero-comma,.mi-gold-stop{color:#eac47e}
 .mi-hero-outline{color:transparent;-webkit-text-stroke:1px #d8d7d0}
 .mi-hero-intro{max-width:560px;color:#bbc3ce;line-height:1.8;font-size:clamp(16px,1.4vw,19px);margin-top:38px}
@@ -82,7 +82,7 @@
 .mi-lab-programme{display:grid;grid-template-columns:40px 1fr 20px;gap:18px;padding:30px 0;border-top:1px solid rgba(255,255,255,.12)}
 .mi-lab-programme>span{font:500 11px var(--mono);color:#d4ae70}.mi-lab-programme h3{font:650 clamp(18px,2vw,27px)/1.2 var(--sans);color:#f6f7f4;letter-spacing:-.045em}
 .mi-lab-programme p{font:400 12px/1.65 var(--sans);color:#a4b4c4;margin-top:8px}.mi-lab-programme>b{color:#eac47e;font-size:17px;font-weight:400}
-.mi-ventures{background:#eae8e2}.mi-venture-grid{display:grid;grid-template-columns:1.07fr 1fr 1fr;gap:11px}
+.mi-ventures{background:#eae8e2}.mi-venture-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
 .mi-venture{min-height:420px;display:flex;flex-direction:column;justify-content:space-between;padding:30px;overflow:hidden}
 .mi-venture-top{display:flex;justify-content:space-between;gap:10px;font:500 10px var(--mono);letter-spacing:.08em;opacity:.7}
 .mi-venture h3{font:720 clamp(29px,3.1vw,49px)/1.15 var(--sans);letter-spacing:-.055em;color:inherit}
@@ -93,7 +93,7 @@
 .mi-venture-mumchimp{background:#142335;color:white}.mi-venture-genesis{background:#d9bd8f;color:#142335}.mi-venture-blabka{background:#d5dad8;color:#142335}
 .mi-venture-genesis .mi-venture-mark span{color:#496e83}
 .mi-close{background:#0b1421;color:#fff;padding:105px 0 115px}
-.mi-close h2{font:780 clamp(66px,10vw,165px)/.96 var(--sans);letter-spacing:-.09em;color:#fff;margin:35px 0 40px}
+.mi-close h2{font:780 clamp(66px,10vw,165px)/.96 var(--sans);letter-spacing:-.025em;color:#fff;margin:35px 0 40px}
 .mi-close h2 em{color:#eac47e;font-style:normal}
 .mi-close-bottom{display:flex;justify-content:space-between;gap:50px;align-items:flex-end;border-top:1px solid rgba(255,255,255,.17);padding-top:34px}
 .mi-close-bottom p{color:#abbac9;font-size:17px;line-height:1.7;max-width:500px}
@@ -160,7 +160,7 @@
 .mi-menu-toggle{min-height:44px;min-width:44px}
 .mi-mobile-panel a{min-height:48px}
 .mi-service-card:focus-within,.mi-venture:focus-within{outline:2px solid #b98d4c;outline-offset:3px}
-.mi-hero .mi-hero-title{font-size:clamp(3.15rem,7.45vw,8.25rem);letter-spacing:-.075em}
+.mi-hero .mi-hero-title{font-size:clamp(3.15rem,7.45vw,8.25rem);letter-spacing:-.03em}
 .mi-hero-intro{max-width:58ch}
 .mi-hero-art{isolation:isolate}
 .mi-footer-giant{font-size:clamp(5.5rem,19.5vw,20rem);line-height:.85}
@@ -175,7 +175,7 @@
  .mi-nav-actions{gap:12px}
 }
 @media(max-width:620px){
- .mi-hero .mi-hero-title{font-size:clamp(2.65rem,10.5vw,4.5rem);letter-spacing:-.075em}
+ .mi-hero .mi-hero-title{font-size:clamp(2.65rem,10.5vw,4.5rem);letter-spacing:-.03em}
  .mi-hero-topline,.mi-hero-bottom{letter-spacing:.045em}
  .mi-hero-bottom{flex-wrap:wrap;gap:12px}
  .mi-hero-art{max-width:100%;overflow:hidden}
@@ -412,3 +412,74 @@
 
 /* Mobile navigation is a touch control, not an ornamental micro-label. */
 @media(max-width:850px){.mi-menu-toggle{font-size:13px;letter-spacing:.035em}}
+
+/* Public credibility remediation, 2026-11-11.
+ * Light surfaces use a tested darker editorial accent; dark surfaces keep gold.
+ * Display spacing prioritises whole-word legibility over maximum compression. */
+.mi-manifesto .mi-eyebrow,
+.mi-services .mi-eyebrow,
+.mi-ventures .mi-eyebrow,
+.mi-contact-section .mi-eyebrow,
+.mi-insights-section .mi-eyebrow,
+.mi-portfolio-list .mi-eyebrow{color:var(--ink-2)}
+.mi-hero .mi-hero-title{word-spacing:.075em}
+.mi-close h2{word-spacing:.09em;letter-spacing:-.025em}
+.mi-hero-outline{margin-right:.08em}
+.mi-venture-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.mi-lab-programme{grid-template-columns:64px minmax(0,1fr)}
+@media(max-width:620px){
+  .mi-venture-grid{grid-template-columns:minmax(0,1fr)}
+  .mi-hero-actions{display:flex;flex-direction:column;align-items:stretch}
+  .mi-hero-actions>.mi-button{width:100%;justify-content:space-between}
+  .mi-hero-art{height:300px;overflow:visible;transform:none}
+  .mi-orbit-outer{width:min(70%,205px)}
+  .mi-orbit-mid{width:min(57%,170px)}
+  .mi-orbit-inner{width:min(40%,120px)}
+  .mi-orbit-axis{width:min(63%,185px)}
+  .mi-art-label{font-size:var(--type-tiny);letter-spacing:.035em;line-height:1.5;z-index:2}
+  .mi-art-label-top{top:0;left:0;right:auto;max-width:100%}
+  .mi-art-label-bottom{bottom:0;left:0;right:auto;max-width:100%;white-space:normal}
+  .mi-close h2{word-spacing:.1em}
+}
+@media(max-width:380px){
+  .mi-hero .mi-hero-title{font-size:clamp(2rem,9.5vw,2.65rem)}
+}
+
+/* Tablet artwork: reserve its own vertical stage. A circle larger than the
+ * art container previously intersected CTA buttons at 768px while CI passed. */
+@media(min-width:621px) and (max-width:850px){
+  .mi-hero-art{height:440px;min-height:440px;transform:none;margin-top:48px;overflow:visible}
+  .mi-orbit-outer{width:min(76%,310px)}
+  .mi-orbit-mid{width:min(63%,258px)}
+  .mi-orbit-inner{width:min(45%,185px)}
+  .mi-orbit-axis{width:min(75%,295px);height:24%}
+  .mi-art-label{font-size:var(--type-caption);line-height:1.5;letter-spacing:.08em}
+  .mi-art-label-top{top:8px;left:0;right:auto}
+  .mi-art-label-bottom{bottom:10px;left:0;right:auto}
+}
+
+/* A full-width venture row cannot inherit the desktop 56px wordmark at 320px. */
+.mi-portfolio-row>*{min-width:0;max-width:100%}
+.mi-portfolio-row p{overflow-wrap:anywhere}
+@media(max-width:620px){
+  .mi-portfolio-row{grid-template-columns:minmax(0,1fr)}
+  .mi-portfolio-row h2{font-size:clamp(30px,8vw,48px);letter-spacing:-.035em;overflow-wrap:anywhere}
+  .mi-portfolio-row>a{white-space:normal;overflow-wrap:anywhere;justify-self:start}
+}
+
+/* Explicit small-type design tokens, shared by mobile art and error messages. */
+:root { --type-tiny: 9px; --type-caption: 10px; --type-label: 11px; }
+
+/* P0 UI-kit contract: semantic classes instead of per-render inline colours.
+   These preserve the existing error and demo hierarchy at narrow viewports. */
+.mi-error-eyebrow {
+  font-family: var(--mono);
+  font-size: var(--type-label);
+  color: var(--signal);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  margin-bottom: 16px;
+}
+.mi-error-body { color: var(--ink-3); margin-bottom: 32px; }
+.mi-demo-label { color: var(--accent); font-weight: 500; flex-shrink: 0; }
+.mi-demo-desc { color: var(--ink-3); }

@@ -55,6 +55,22 @@ hand the founder a proposal in place of an experiment. Claim: chidionyema/idp#79
 
 ---
 
+## Public/commercial UI — credibility is part of release correctness
+
+**All surface-building and releasing agents:** before touching a public site, read
+[the commercial public UI release standard](docs/standards/commercial-public-ui-quality.md).
+For commercial/customer-facing surfaces, test institutional credibility, copy-to-proof fit,
+navigational semantics, section hierarchy, WCAG AA contrast, mobile label geometry, CTA
+operation, and live customer readback. A clean build or Vercel READY state is insufficient.
+A public defect requires direct remediation **plus** compensating action: sibling-page sweep,
+falsifying regression test, CI/browser screenshot evidence, independently verified live origin,
+and explicit incident closure. Never silently rebrand on the basis of URL spelling or unverified
+QA assertions; use founder-approved identity authority. This is effect-scoped: do not impose
+commercial release gates on isolated internal research.
+See the 2026-11-11 Meridian release-class failure for the concrete negative-test pattern.
+
+---
+
 ## 0. Agent cognitive architecture: the seven gates
 
 **Operating principle:** you are an autonomous orchestration agent operating in a deterministic
