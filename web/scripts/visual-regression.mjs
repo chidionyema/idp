@@ -14,7 +14,7 @@ const port = 3112;
 const base = `http://127.0.0.1:${port}`;
 const chrome = process.env.CHROME || "/usr/bin/google-chrome";
 const viewports = [320, 390, 768, 1440];
-const routes = ["/", "/research", "/writing/agentic-routing-for-enterprise", "/contact"];
+const routes = ["/", "/consulting", "/research", "/products", "/case-studies", "/writing/agentic-routing-for-enterprise", "/contact"];
 const failures = [];
 const outDir = path.join(root, "artifacts", "visual");
 mkdirSync(outDir, { recursive: true });
@@ -50,8 +50,8 @@ async function inspect(page, route, width) {
       if (box.left < -4 || box.right > innerWidth + 4) {
         failures.push(element.tagName + "." + String(element.className).slice(0,40) + " extends outside viewport");
       }
-      if (element.matches("button,input,textarea") && style.fontSize && parseFloat(style.fontSize) < 12) {
-        failures.push("interactive control with unreadable font");
+      if (element.matches("input,textarea") && style.fontSize && parseFloat(style.fontSize) < 16) {
+        failures.push("text input below 16px (mobile readability/zoom risk)");
       }
     }
 
@@ -66,6 +66,20 @@ async function inspect(page, route, width) {
       const menu = document.querySelector(".mi-menu-toggle");
       if (!menu || !visible(menu)) failures.push("mobile navigation toggle missing");
       else if (menu.getBoundingClientRect().height < 44) failures.push("mobile menu touch target smaller than 44px");
+    }
+    if (route === "/") {
+      const hero = document.querySelector(".mi-hero");
+      const title = document.querySelector(".mi-hero-title");
+      const heroColor = hero ? getComputedStyle(hero).backgroundColor : "";
+      if (!hero || !visible(hero) || !title || !visible(title)) {
+        failures.push("premium company hero not rendered");
+      } else if (!/INTELLIGENCE/.test(title.textContent ?? "") || !/REAL/.test(title.textContent ?? "")) {
+        failures.push("approved premium brand message missing");
+      }
+      const color = heroColor.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+      if (!color || Math.max(Number(color[1]), Number(color[2]), Number(color[3])) > 70) {
+        failures.push("approved dark premium hero replaced by obsolete/light theme");
+      }
     }
     if (route === "/research") {
       const workspace = document.querySelector(".mi-qa-workspace");
