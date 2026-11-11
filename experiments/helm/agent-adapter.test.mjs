@@ -37,7 +37,14 @@ test("Anonymous free provider cannot ingest internal compiler source",async()=>{
   await assert.rejects(()=>propose({model:"cohere/north-mini-code:free",
     url:"https://ai-gateway.kilo.ai/api/v1/chat/completions",
     contextPlan:plan,task:{id:"T",question:"Fix it",classification:"public-synthetic"}}),
-    /public-synthetic tasks only/);
+    /must never receive private ContextPlans/);
+});
+
+test("Even an authenticated public Kilo caller cannot export the canonical compiler plan",async()=>{
+  await assert.rejects(()=>propose({model:"cohere/north-mini-code:free",
+    url:"https://ai-gateway.kilo.ai/api/v1/chat/completions",token:"fake",
+    contextPlan:plan,task:{id:"T",question:"Do not export",classification:"private"}}),
+    /must never receive private ContextPlans/);
 });
 
 test("Stale ContextPlan fails before inference, with no fabrications",async()=>{
