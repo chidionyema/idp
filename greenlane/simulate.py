@@ -70,8 +70,9 @@ class Report:
 
 
 class ChaosBackend:
-    def __init__(self, rng: random.Random, p_flaky: float, ci_ticks: int):
+    def __init__(self, rng: random.Random, p_flaky: float, ci_ticks: int, realistic_ci: bool = False):
         self.rng, self.p_flaky, self.ci_ticks = rng, p_flaky, ci_ticks
+        self.realistic_ci = realistic_ci
         self.clock = 0.0
         self.commits: dict[str, Commit] = {}
         self._trees: dict[str, frozenset] = {}
@@ -175,7 +176,7 @@ class ChaosBackend:
         elif green:
             v = ("green", "")
         else:
-            v = ("red", "bdd failed")
+            v = ("red", "ci-success failure https://github.com/o/idp/actions/runs/100/job/200 -- offline-gate > FAIL static validation: independent source does not satisfy rule") if self.realistic_ci else ("red", "bdd failed")
         self.verdicts[(bid, tip)] = v
         return v
 
@@ -272,11 +273,13 @@ def run(
     arrivals_per_tick: int = 25,
     bot_lane_every: int = 4,
     reload_state: bool = False,
+    batch_policy: str = "fixed",
+    realistic_ci: bool = False,
 ) -> Report:
     rng = random.Random(seed)  # noqa: S311 -- a simulation, not a secret
-    b = ChaosBackend(rng, p_flaky, ci_ticks)
+    b = ChaosBackend(rng, p_flaky, ci_ticks, realistic_ci=realistic_ci)
     st = State()
-    eng = Engine(b, st, batch_size=batch_size, timeout=ci_ticks * 40)
+    eng = Engine(b, st, batch_size=batch_size, timeout=ci_ticks * 40, batch_policy=batch_policy)
     files = [f"f{i}" for i in range(200)]
     created = 0
     arrived = 0
@@ -337,7 +340,7 @@ def run(
             # a GitHub tick is a fresh process: the state must survive JSON and back, every tick
             st = State.loads(st.dumps())
             log = eng.log
-            eng = Engine(b, st, batch_size=batch_size, timeout=ci_ticks * 40)
+            eng = Engine(b, st, batch_size=batch_size, timeout=ci_ticks * 40, batch_policy=batch_policy)
             eng.log = log
         eng.tick()
         # the observation the founder makes after the platform has handled the event: an open
