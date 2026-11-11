@@ -63,13 +63,15 @@ jobs:
           appendFileSync(process.env.GITHUB_ENV,"HELM_MODEL="+winner+"\n");
           console.log("HELM_YIELD_SELECTED_MODEL="+winner);
           NODE
-      - name: Generate, independently verify, retain and replay code
+      - name: Generate code and independently verify its functionality
         env:
           HELM_INFERENCE_URL: https://ai-gateway.kilo.ai/api/v1/chat/completions
           HELM_MAX_OUTPUT_TOKENS: "4096"
           HELM_YIELD_TASK_ID: FUNC-INTENT-AUTHORITY
           GITHUB_SHA: ${{ github.sha }}
         run: node experiments/helm/functional-bench.mjs yield
+      - name: Retain only verified model output and independently replay with zero model calls
+        run: node experiments/helm/operational-memory.mjs harvest experiments/helm/out/yield-trial.json
       - name: Publish immutable trial and replay receipts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
