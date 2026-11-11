@@ -140,7 +140,14 @@ export function assess(task, raw, strict = true) {
   const contradiction = (expected.contradicts || []).some(s => got.includes(String(s).toLowerCase()));
   const knowledgePass = present && absent && alternatives && !contradiction;
   const acceptable = expected.opcodes || (expected.opcode ? [expected.opcode] : []);
-  const actionPass = !acceptable.length || acceptable.includes(parsed.action.opcode);
+  // Executive-control semantics are enforced independently of model confidence.
+  // A patch opcode cannot be accepted unless the task names a concrete patch target.
+  // A claim of operational yield cannot be accepted without out-of-process evidence.
+  const patchAdmissible = parsed.action.opcode !== "EMIT_PATCH" || Boolean(task.patchTarget);
+  const yieldAdmissible = parsed.action.opcode !== "SUBMIT_YIELD" ||
+    task.requiresOperationalProof !== true || task.verifiedReceipt === true;
+  const actionPass = (!acceptable.length || acceptable.includes(parsed.action.opcode)) &&
+    patchAdmissible && yieldAdmissible;
   const pass = staticPass && knowledgePass && actionPass;
   return { pass, knowledgePass, actionPass, schemaPass: true, staticPass,
     reason: !staticPass ? staticReason : pass ? "oracle-pass" : "oracle-fail",
@@ -204,7 +211,12 @@ const SKILL = "Think systematically; be precise, reuse tools and evidence, check
 
 export function messagesFor(arm, task, evidence) {
   if (!["baseline", "skills", "memory", "helm"].includes(arm)) throw new Error("invalid arm");
-  const system = SYSTEM + (arm === "skills" ? " " + SKILL : "");
+  const motor = arm === "helm" ?
+    " Executive-control semantics: EMIT_PATCH only if a concrete source file must change; " +
+    "RUN_FALSIFIER when observation or independent verification is missing; " +
+    "DISPATCH_LEGION only when delegating an executable task; " +
+    "SUBMIT_YIELD only for a concluded informational response or independently proven operational outcome." : "";
+  const system = SYSTEM + (arm === "skills" ? " " + SKILL : "") + motor;
   const messages = [{ role: "system", content: system }];
   if (arm === "memory" || arm === "helm") {
     const compiled = compileContext(task, evidence, 3000);
