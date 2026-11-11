@@ -29,7 +29,7 @@ jobs:
     defaults:
       run:
         working-directory: web
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout candidate
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -51,6 +51,20 @@ jobs:
         run: npm run typecheck
       - name: Verify public production build
         run: npm run build
+      - name: Install pinned browser inspection harness
+        run: npm install --no-save --no-package-lock --ignore-scripts --no-audit --no-fund puppeteer-core@24.20.0
+      - name: Require Chrome on runner
+        run: test -x /usr/bin/google-chrome
+      - name: Verify rendered UI at four viewport widths
+        run: npm run test:visual
+      - name: Retain actual mobile and desktop evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: merdian-public-browser-evidence
+          path: web/artifacts/visual/
+          if-no-files-found: warn
+          retention-days: 14
 
   public-readback:
     name: Public customer-view canary and incident notification
@@ -109,6 +123,10 @@ jobs:
             exit 1
           fi
           if [[ -n "$existing" ]]; then
-            gh issue close "$existing" --comment "Independent visitor readback recovered on all checked public origins and customer routes. Evidence: $RUN_URL"
+            # A read-only GET can prove page readiness but cannot prove a real
+            # enquiry was delivered to the approved commercial inbox.
+            gh issue comment "$existing" --body "Read-only visitor canary is green on checked origins. This is NOT closure: independently verify a synthetic, tagged enquiry receipt and the exact production deployment before closing. Evidence: $RUN_URL"
+            echo "Public page probe green; P0 incident remains open pending contact delivery and deployment proof."
+          else
+            echo "Public visitor readback green; no existing incident."
           fi
-          echo "Public site identity verified; no open regression incident."

@@ -14,7 +14,7 @@ const port = 3112;
 const base = `http://127.0.0.1:${port}`;
 const chrome = process.env.CHROME || "/usr/bin/google-chrome";
 const viewports = [320, 390, 768, 1440];
-const routes = ["/", "/research", "/writing/agentic-routing-for-enterprise", "/contact"];
+const routes = ["/", "/consulting", "/products", "/research", "/writing/agentic-routing-for-enterprise", "/contact"];
 const failures = [];
 const outDir = path.join(root, "artifacts", "visual");
 mkdirSync(outDir, { recursive: true });
@@ -66,6 +66,74 @@ async function inspect(page, route, width) {
       const menu = document.querySelector(".mi-menu-toggle");
       if (!menu || !visible(menu)) failures.push("mobile navigation toggle missing");
       else if (menu.getBoundingClientRect().height < 44) failures.push("mobile menu touch target smaller than 44px");
+    }
+    if (route === "/") {
+      const body = document.body.textContent ?? "";
+      if (/Blabka|More information will be shared|Further details will be published/.test(body)) {
+        failures.push("public placeholder content was rendered");
+      }
+      for (const anchor of document.querySelectorAll('a[href^="/"]')) {
+        if (anchor.textContent?.includes("↗")) failures.push("internal link uses external arrow: " + anchor.getAttribute("href"));
+      }
+      const markers = [
+        ["01 / MANIFESTO", document.querySelector(".mi-manifesto .mi-eyebrow")],
+        ["02 / CONSULTANCY", document.querySelector(".mi-services .mi-eyebrow")],
+        ["03 / THE LABORATORY", document.querySelector(".mi-lab .mi-eyebrow")],
+        ["04 / VENTURES + PRODUCTS", document.querySelector(".mi-ventures .mi-eyebrow")],
+      ];
+      for (const [expected, el] of markers) {
+        if (!el?.textContent?.includes(expected)) failures.push("section numbering drift: " + expected);
+      }
+      const luminance = rgb => {
+        const v = rgb.match(/\d+(?:\.\d+)?/g)?.slice(0, 3).map(Number);
+        if (!v || v.length !== 3) return 0;
+        const c = v.map(x => { const n=x/255; return n<=.04045 ? n/12.92 : ((n+.055)/1.055)**2.4; });
+        return .2126*c[0]+.7152*c[1]+.0722*c[2];
+      };
+      for (const selector of [".mi-manifesto", ".mi-services", ".mi-ventures"]) {
+        const section=document.querySelector(selector);
+        const eyebrow=section?.querySelector(".mi-eyebrow");
+        if (!section || !eyebrow) { failures.push("contrast landmark absent: "+selector); continue; }
+        const bg=luminance(getComputedStyle(section).backgroundColor);
+        const fg=luminance(getComputedStyle(eyebrow).color);
+        const ratio=(Math.max(bg,fg)+.05)/(Math.min(bg,fg)+.05);
+        if (ratio<4.5) failures.push(selector+" eyebrow contrast "+ratio.toFixed(2)+":1 below WCAG AA");
+      }
+      for (const selector of [".mi-hero-title", ".mi-close h2"]) {
+        const el=document.querySelector(selector);
+        if (!el) continue;
+        const style=getComputedStyle(el);
+        const spacing=parseFloat(style.letterSpacing) / parseFloat(style.fontSize);
+        if (Number.isFinite(spacing) && spacing<-.055) failures.push(selector+" letter-spacing crushes word boundaries");
+      }
+      const art=document.querySelector(".mi-hero-art");
+      const ring=art?.querySelector(".mi-orbit-outer")?.getBoundingClientRect();
+      const top=art?.querySelector(".mi-art-label-top")?.getBoundingClientRect();
+      const bottom=art?.querySelector(".mi-art-label-bottom")?.getBoundingClientRect();
+      const buttons=[...document.querySelectorAll(".mi-hero-actions .mi-button")];
+      const intersects=(a,b)=> a.left<b.right && a.right>b.left && a.top<b.bottom && a.bottom>b.top;
+      if (!ring || !top || !bottom) failures.push("hero orbital graphic labels missing");
+      else {
+        for (const [label,r] of [["upper",top],["lower",bottom]]) {
+          if (width<=850 && intersects(r,ring)) failures.push(label+" orbital label intersects outer diagram");
+          if (r.right>innerWidth+2 || r.left<0) failures.push(label+" orbital caption clipped at viewport");
+        }
+        if (width<=850 && buttons.some(button=>intersects(button.getBoundingClientRect(),ring))) {
+          failures.push("orbital geometry intersects a hero action on mobile/tablet");
+        }
+      }
+      if (width<=620) {
+        if (buttons.length!==2 || buttons[1].getBoundingClientRect().top < buttons[0].getBoundingClientRect().bottom-2) {
+          failures.push("mobile hero actions are not full-width stacked");
+        }
+      }
+    }
+    if (route === "/products") {
+      if (document.body.textContent?.includes("Blabka")) failures.push("public portfolio placeholder remains");
+      if (!document.querySelector(".mi-portfolio-row")) failures.push("venture portfolio content missing");
+    }
+    if (route === "/consulting" && !document.body.textContent?.includes("Applied AI engineering")) {
+      failures.push("consultancy engineering offering missing");
     }
     if (route === "/research") {
       const workspace = document.querySelector(".mi-qa-workspace");

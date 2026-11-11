@@ -12,6 +12,8 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
+import { migrationAdmission } from './consumer-migration.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const kitRoot = join(here, '..');
@@ -22,6 +24,20 @@ if (existsSync(appsDir)) for (const d of readdirSync(appsDir)) {
   if (existsSync(join(appsDir, d, 'package.json')) && !list.some((c) => c.root === `apps/${d}`)) list.push({ root: `apps/${d}`, css: 'src/styles/global.css', note: 'auto-discovered app' });
 }
 const today = new Date().toISOString().slice(0, 10);
+// A legacy migration deadline must not turn unrelated emergency fixes red.
+// Resolve the actual candidate-vs-main diff, rather than treating time alone
+// as proof a stylesheet regressed. Missing Git evidence is fail-closed.
+function stylesheetChanged(path) {
+  try {
+    const base = execFileSync('git', ['merge-base', 'HEAD', 'origin/main'], { cwd: repo, encoding: 'utf8' }).trim();
+    if (!base) return null;
+    const committed = execFileSync('git', ['diff', '--name-only', base, 'HEAD', '--', path], { cwd: repo, encoding: 'utf8' }).trim();
+    const working = execFileSync('git', ['status', '--porcelain', '--', path], { cwd: repo, encoding: 'utf8' }).trim();
+    return Boolean(committed || working);
+  } catch {
+    return null;
+  }
+}
 let fail = 0;
 for (const c of list) {
   const root = c.root.startsWith('~') ? c.root.replace('~', process.env.HOME ?? '') : join(repo, c.root);
@@ -30,8 +46,22 @@ for (const c of list) {
   const text = existsSync(css) ? readFileSync(css, 'utf8') : '';
   const ok = /@estate\/ui-kit/.test(text);
   if (!ok) {
-    if (c.migrate_by && c.migrate_by >= today) { console.log(`warn   ${c.root}: no kit import yet; legacy until ${c.migrate_by}`); continue; }
-    console.error(`REFUSE ${c.root}: ${c.css} does not import @estate/ui-kit${c.migrate_by ? ` (deadline ${c.migrate_by} passed)` : ''}`);
+    // CSS disappearance always fails: it is not harmless unchanged baseline debt.
+    if (!existsSync(css)) {
+      console.error(`REFUSE ${c.root}: required stylesheet ${c.css} missing`);
+      fail = 1;
+      continue;
+    }
+    const changed = c.migrate_by && c.migrate_by < today
+      ? stylesheetChanged(c.root + '/' + c.css) : null;
+    const admission = migrationAdmission({
+      hasImport: false, migrationDeadline: c.migrate_by, today, stylesheetChanged: changed,
+    });
+    if (admission.accept) {
+      console.warn(`warn   ${c.root}: ${admission.reason}; migration still owed, not declared complete`);
+      continue;
+    }
+    console.error(`REFUSE ${c.root}: ${admission.reason}; ${c.css} must import @estate/ui-kit`);
     fail = 1;
     continue;
   }

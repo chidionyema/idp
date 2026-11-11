@@ -26,17 +26,19 @@ function required(file, value) {
 function forbidden(file, value) {
   if (source(file).includes(value)) failures.push(file + ': obsolete/public-invalid ' + value);
 }
-const canon = 'https://merdian-intelligence.vercel.app';
+const canon = 'https://meridian-intelligence-uk.vercel.app';
 for (const [file, markers] of Object.entries({
   'app/page.tsx': [
     'mi-hero-title', 'mi-hero', 'INTELLIGENCE', 'MADE', 'REAL',
+    '01 / MANIFESTO', '02 / CONSULTANCY', '03 / THE LABORATORY', '04 / VENTURES + PRODUCTS',
+    '02.1', '02.2', '02.3', '02.4', '03.1', '03.2', '03.3',
     'CONSULTANCY', 'LABORATORY', 'VENTURES', '/consulting', '/research',
   ],
-  'app/layout.tsx': ['./merian.css', 'Merdian Intelligence', 'MERDIAN_SITE_URL'],
-  'app/merian.css': ['.mi-hero', '.mi-header', '.mi-footer', '.mi-interior', 'prefers-reduced-motion'],
+  'app/layout.tsx': ['./merian.css', 'Meridian Intelligence', 'MERIDIAN_SITE_URL'],
+  'app/merian.css': ['.mi-hero', '.mi-header', '.mi-footer', '.mi-interior', 'prefers-reduced-motion', '.mi-services .mi-eyebrow', 'color:#6b4a16', '.mi-hero-actions', '.mi-art-label-top'],
   'components/Nav.tsx': ['mi-header', 'mi-nav-links', 'Consultancy', 'Laboratory', 'Ventures', 'mi-mobile-panel'],
-  'components/Footer.tsx': ['mi-footer', 'MERDIAN INTELLIGENCE'],
-  'app/products/page.tsx': ['mi-interior', 'Mumchimp'],
+  'components/Footer.tsx': ['mi-footer', 'MERIDIAN INTELLIGENCE'],
+  'app/products/page.tsx': ['mi-interior', 'Mumchimp', 'Genesis'],
   'app/consulting/page.tsx': ['mi-interior', 'Applied AI engineering'],
   'app/contact/page.tsx': ['mi-interior', 'validateContact(form)'],
   'app/robots.ts': ['MERDIAN_SITE_URL'],
@@ -49,7 +51,26 @@ for (const file of [
   'app/consulting/page.tsx', 'app/robots.ts', 'app/sitemap.ts',
 ]) {
   forbidden(file, 'meridian.ai');
-  forbidden(file, 'Meridian Intelligence');
+  forbidden(file, 'Merdian Intelligence');
+}
+// Visitor-facing corporate identity must not regress to the deprecated spelling.
+// Legacy environment variable names are permitted for compatibility, but visible copy is not.
+for (const file of [
+  'app/page.tsx', 'app/layout.tsx', 'app/manifest.ts', 'app/opengraph-image.tsx',
+  'components/Logo.tsx', 'components/Nav.tsx', 'components/Footer.tsx',
+  'content/site.ts', 'app/products/page.tsx', 'app/research/page.tsx',
+  'app/consulting/page.tsx', 'app/contact/page.tsx', 'app/contact/layout.tsx',
+  'app/case-studies/page.tsx', 'app/tooling/page.tsx', 'app/writing/page.tsx',
+  'app/writing/[slug]/page.tsx',
+]) {
+  forbidden(file, 'Merdian');
+  forbidden(file, 'MERDIAN INTELLIGENCE');
+}
+// Content debt and false affordances are release failures, not editorial follow-up.
+for (const file of ['app/page.tsx', 'app/products/page.tsx']) {
+  for (const phrase of ['Blabka', 'More information will be shared', 'Further details will be published', 'Part of the Merdian product portfolio.']) {
+    forbidden(file, phrase);
+  }
 }
 for (const file of ['app/page.tsx','app/layout.tsx','app/robots.ts','app/sitemap.ts']) {
   forbidden(file, 'http://localhost');
@@ -59,6 +80,14 @@ for (const file of ['app/page.tsx','app/layout.tsx']) {
 }
 for (const file of ['app/layout.tsx','app/robots.ts','app/sitemap.ts']) {
   required(file, canon);
+}
+// A directional external-link glyph on same-origin navigation is misleading.
+for (const file of ['app/page.tsx', 'app/products/page.tsx']) {
+  const markup = source(file);
+  const internal = /<(?:Link|a)\b[^>]*href=["']\/(?!\/)[^"']*["'][^>]*>[\s\S]*?<\/(?:Link|a)>/g;
+  for (const link of markup.matchAll(internal)) {
+    if (link[0].includes('↗')) failures.push(file + ': same-origin link uses external-link arrow ↗');
+  }
 }
 if (!source('app/page.tsx').includes('href="/consulting"') || !source('app/page.tsx').includes('href="/research"')) {
   failures.push('app/page.tsx: customer consultancy and laboratory links missing');

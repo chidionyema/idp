@@ -3,14 +3,14 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Our approach",
-  description: "How Merdian Intelligence distinguishes experiments, prototypes and customer-ready engineering.",
+  description: "How Meridian Intelligence distinguishes experiments, prototypes and customer-ready engineering.",
 };
 
 export default function CaseStudiesPage() {
   return <div className="mi-interior">
     <section className="mi-page-hero" aria-labelledby="approach-heading">
       <div className="mi-shell">
-        <span className="mi-eyebrow">MERDIAN / HOW WE WORK</span>
+        <span className="mi-eyebrow">MERIDIAN / HOW WE WORK</span>
         <h1 id="approach-heading">SHOW THE WORK.<br/><em>PROVE THE RESULT.</em></h1>
         <div className="mi-page-hero-bottom">
           <p>Claims are easy. Evidence takes work. We keep research findings, prototypes and operating products distinct, so decisions are based on what has been demonstrated.</p>

@@ -40,9 +40,9 @@ export function LogoMark({ size = 22, tone = "ink" }: { size?: number; tone?: To
 
 export function Logo({ tone = "ink", size = 22 }: { tone?: Tone; size?: number }) {
   return (
-    <Link href="/" className={`logo${tone === "light" ? " logo-light" : ""}`} aria-label="Merdian Intelligence — home">
+    <Link href="/" className={`logo${tone === "light" ? " logo-light" : ""}`} aria-label="Meridian Intelligence — home">
       <LogoMark size={size} tone={tone} />
-      <span className="logo-word">Merdian<span className="logo-dot">.</span></span>
+      <span className="logo-word">Meridian<span className="logo-dot">.</span></span>
     </Link>
   );
 }
