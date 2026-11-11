@@ -1,0 +1,154 @@
+description: >
+  otto.mumchimp.com and llm.mumchimp.com are unreachable from the public internet
+  (http=000 / TLS reset, and Cloudflare 530 "error code: 1033"). Measured
+  2026-11-11: the cause is NOT the tunnel and NOT the origin services. The tunnel
+  d77a438e-996e-4eac-9c1b-96b3dc07d9f1 ("neon-tunnel") is healthy, registers four
+  QUIC connections against the London edge, and its REMOTE configuration already
+  carries exactly the right ingress:
+
+    otto.mumchimp.com -> http://localhost:8099   (OTTO ingress, /healthz = 200)
+    llm.mumchimp.com  -> http://localhost:4200   (pennyd, /v1/models = 200)
+    http_status:404
+
+  Both origins answer on loopback. The break is one layer below: neither hostname
+  resolves to the tunnel. otto.mumchimp.com is a plain A record to an Oracle VM
+  (193.123.184.22) that never enters Cloudflare's proxy, and llm.mumchimp.com is a
+  proxied A record the edge has no healthy origin for. Both need a CNAME to
+  d77a438e-996e-4eac-9c1b-96b3dc07d9f1, and the credential on this machine cannot
+  write it: ~/.cloudflared/cert.pem is an ARGO TUNNEL TOKEN whose apiToken verifies
+  as ACTIVE but returns HTTP 403 on GET /zones/{zone}/dns_records. A token with
+  Zone.DNS:Edit is required; no amount of local config or restarting can substitute.
+
+  This record exists because the failure was repeatedly misdiagnosed as "the tunnel
+  is down" or "the cluster is down", costing turns and founder repetition.
+
+question: >
+  Is the public unreachability of the OTTO and pennyd hostnames caused by the
+  tunnel/origin services, or by DNS and the credential that edits it? A wrong answer
+  sends the next agent to rebuild a healthy tunnel, or to wait on a retired cluster,
+  instead of obtaining the one permission that is actually missing.
+
+hypotheses:
+  - name: H1
+    description: >
+      The tunnel or its origin services are broken, so the edge has nothing to route
+      to and 1033 is a service fault.
+    prior: 0.3
+  - name: H2
+    description: >
+      The tunnel and origins are healthy and correctly configured; the hostnames do
+      not point at the tunnel, and the local credential lacks Zone.DNS:Edit to fix it.
+    prior: 0.7
+n_eff_divisor: 1
+
+evidence:
+  - name: >
+      the tunnel registers live QUIC connections and the origin services answer on
+      loopback (cloudflared run logged "Registered tunnel connection" for connIndex
+      0-3, locations lhr19/lhr13/lhr21/lhr01; curl 127.0.0.1:8099/healthz -> 200;
+      curl 127.0.0.1:4200/v1/models -> 200)
+    observed:
+      tunnel_registered_connections: 4
+      otto_origin_healthy: 1
+      pennyd_origin_healthy: 1
+    likelihoods:
+      H1:
+        tunnel_registered_connections: 0.05
+        otto_origin_healthy: 0.05
+        pennyd_origin_healthy: 0.05
+      H2:
+        tunnel_registered_connections: 0.98
+        otto_origin_healthy: 0.98
+        pennyd_origin_healthy: 0.98
+  - name: >
+      the tunnel's remote ingress is already the correct three rules, read from
+      GET /accounts/{acct}/cfd_tunnel/{id}/configurations
+    observed:
+      remote_ingress_correct: 1
+    likelihoods:
+      H1:
+        remote_ingress_correct: 0.2
+      H2:
+        remote_ingress_correct: 0.97
+  - name: >
+      DNS does not point at the tunnel, and the public result was unchanged before and
+      after the tunnel came up (dig: otto -> 193.123.184.22 raw A, no CNAME; llm ->
+      104.21.61.91/172.67.208.146 proxied A, no CNAME; https://otto.mumchimp.com
+      http=000 and https://llm.mumchimp.com http=530 1033 both before and after)
+    observed:
+      hostnames_cname_to_tunnel: 0
+      result_changed_when_tunnel_came_up: 0
+    likelihoods:
+      H1:
+        hostnames_cname_to_tunnel: 0.15
+        result_changed_when_tunnel_came_up: 0.7
+      H2:
+        hostnames_cname_to_tunnel: 0.02
+        result_changed_when_tunnel_came_up: 0.03
+  - name: >
+      the credential can authenticate but cannot edit DNS (/user/tokens/verify success
+      true status ACTIVE; /zones ok with 0 items; GET /zones/{zone}/dns_records HTTP
+      403 code 10000; cloudflared tunnel route dns --overwrite-dns exits 1
+      "Failed to add route: code: 10000, reason: Authentication error")
+    observed:
+      token_active: 1
+      token_can_edit_dns: 0
+    likelihoods:
+      H1:
+        token_active: 0.6
+        token_can_edit_dns: 0.5
+      H2:
+        token_active: 0.98
+        token_can_edit_dns: 0.97
+
+verdict:
+  concluded: H2
+  posterior: 0.99
+  reasoning: >
+    The tunnel and both origins are simultaneously healthy and correctly routed, and
+    the public symptom did not move when the tunnel came up. Only DNS and the missing
+    DNS permission remain, and that is exactly the layer that cannot be fixed from
+    this machine.
+
+remedy:
+  owner: founder
+  reason: >
+    Zone.DNS:Edit is a credential only the account owner can issue; it cannot be
+    derived, guessed or worked around locally.
+  steps:
+    - >
+      Create a Cloudflare API token with Zone.DNS:Edit (and Zone:Read) scoped to
+      mumchimp.com, then either write it to ~/.cloudflared/cert.pem in the ARGO
+      TUNNEL TOKEN shape the CLI expects, or export it for a direct API call.
+    - >
+      Point both hostnames at the tunnel as proxied CNAMEs to
+      d77a438e-996e-4eac-9c1b-96b3dc07d9f1.cfargotunnel.com (replace the A record for
+      otto, and the proxied A records for llm).
+    - >
+      Re-measure: https://otto.mumchimp.com/healthz must return 200 from OTTO and
+      https://llm.mumchimp.com/v1/models must return 200 from pennyd. Until both are
+      200, 1033 is the expected answer and no other cause should be investigated.
+
+second_order_effects:
+  - >
+    Reaching OTTO over HTTPS is a precondition for the Telegram webhook, so the
+    founder-widget proof cannot be taken until DNS moves; a local /healthz 200 on
+    8099 is not that proof.
+  - >
+    pennyd's cloud door and OTTO's public door are the same tunnel, so repairing DNS
+    restores both at once; conversely an outage of either hostname implicates DNS
+    before it implicates either service.
+  - >
+    The local ~/.cloudflared/config.yml ingress is ignored while a remote
+    configuration exists, so editing the local file alone changes nothing and must
+    never be recorded as a fix.
+  - >
+    cloudflared is currently a nohup'd process under /tmp, which does not survive a
+    reboot and is lost if /tmp is cleaned. Supervising it from a durable path is
+    required before this route can be called durable rather than merely working.
+
+files:
+  - ~/.cloudflared/config.yml
+  - ~/.cloudflared/d77a438e-996e-4eac-9c1b-96b3dc07d9f1.json
+  - ~/.cloudflared/cert.pem
+  - catalog/ports.md
