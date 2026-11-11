@@ -28,7 +28,14 @@ HOOK = REPO / "extensions" / "active-focus-memory" / "index.ts"
 
 
 def _installed() -> Path:
-    return Path.home() / ".pi" / "agent" / "extensions" / "active-focus-memory" / "index.ts"
+    return (
+        Path.home()
+        / ".pi"
+        / "agent"
+        / "extensions"
+        / "active-focus-memory"
+        / "index.ts"
+    )
 
 
 def test_the_repo_copy_is_the_file_that_is_installed() -> None:
@@ -51,7 +58,9 @@ def test_the_budget_is_longer_than_the_engine_costs() -> None:
     assert match, "the extension no longer declares a timeout budget"
     budget_ms = int(match.group(1))
     documented = re.search(r"Measured cost is ~([\d.]+)\s*s", src)
-    assert documented, "the measured engine cost is no longer documented next to the budget"
+    assert documented, (
+        "the measured engine cost is no longer documented next to the budget"
+    )
     measured_ms = float(documented.group(1)) * 1000
     assert budget_ms >= measured_ms * 2, (
         f"budget {budget_ms} ms is not at least 2x the measured {measured_ms:.0f} ms -- "
@@ -65,7 +74,9 @@ def test_a_failed_render_is_never_a_failed_session() -> None:
     render = src.split("function renderFocus", 1)
     assert len(render) == 2, "renderFocus is gone from the extension"
     body = render[1].split("\n}", 1)[0]
-    assert "catch" in body, "renderFocus no longer catches: a failed compile would throw"
+    assert "catch" in body, (
+        "renderFocus no longer catches: a failed compile would throw"
+    )
     assert re.search(r"catch\s*\{[\s\S]*?return null", body), (
         "renderFocus does not return null on failure -- it would throw at session start"
     )
@@ -74,7 +85,9 @@ def test_a_failed_render_is_never_a_failed_session() -> None:
 def test_the_header_is_inserted_once_guarded_by_a_live_marker() -> None:
     """Inserting unconditionally would stack N copies and spend the budget the register protects."""
     src = HOOK.read_text()
-    assert "alreadyPresent(" in src, "the extension no longer guards against duplicate headers"
+    assert "alreadyPresent(" in src, (
+        "the extension no longer guards against duplicate headers"
+    )
     assert "event.messages" in src, (
         "the marker is not checked against the live message list: after a compaction the "
         "header would not come back"

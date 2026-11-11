@@ -143,8 +143,16 @@ while IFS=" " read -r local_ref local_sha remote_ref remote_sha; do
   [ "$local_sha" = "$remote_sha" ] && continue
   [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
   # #7434: a new branch arrives with remote sha 0000, whose diff is empty; judge it against main.
-  from="$remote_sha"
-  [ "$from" = "0000000000000000000000000000000000000000" ] && from="$(git merge-base origin/main "$local_sha" 2>/dev/null || git rev-parse origin/main 2>/dev/null || echo "")"
+  # A lane that was REBUILT on current main has the same problem with a real remote sha: the
+  # diff `$remote_sha..$local_sha` spans everything that landed on main in between, so the hook
+  # graded 15 Python files where the agent had touched 2 -- including a peer's
+  # bin/idp-agent-base-apply.py, refused for S603/S607 the lane never wrote (measured
+  # 2026-11-11 on lane/chronos-clock-recovery-20261111). Judge what the agent CHANGED, which is
+  # its diff from the merge-base with main, in both cases. A guard that taxes an agent for work
+  # it did not do is AGENTS.md section 9 R14; the check is not weakened, the recognition is
+  # widened -- every file the branch actually introduces or modifies is still graded.
+  from="$(git merge-base origin/main "$local_sha" 2>/dev/null || git rev-parse origin/main 2>/dev/null || echo "")"
+  [ -z "$from" ] && from="$remote_sha"
   diff_files=$(git diff --name-only --diff-filter=ACMR "$from" "$local_sha" 2>/dev/null || true)
   # Layer 1c (#7434): ruff on the pushed Python, with the system ruff, so it runs in every
   # checkout -- sparse worktrees carry no bin/idp-ci, and the fast gate below skips there.

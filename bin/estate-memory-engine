@@ -243,11 +243,11 @@ def bootstrap_estate_core_facts(conn: sqlite3.Connection) -> None:
     assert_bitemporal_fact(conn, "macbook.host", "worktree_policy", "ZERO_LOCAL_WORKTREES_ALLOWED", "INS-00004")
     assert_bitemporal_fact(
         conn,
-        "bin/idp-disk-watch",
+        "bin/estate-cache-trim",
         "implementation",
-        "resident-guardian-delegates-to-disk-cleanup-sh",
+        "one-posix-shell-script-no-agent-no-door",
         "INS-00011",
-        "test -f $HOME/.estate/bin/idp-disk-watch",
+        "test -f $HOME/Documents/code/idp/bin/estate-cache-trim",
     )
     record_negative_memory(
         conn,

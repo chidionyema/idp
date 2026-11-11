@@ -18,6 +18,12 @@ discarded.
 
 That silent drop is the class, and it is estate-wide: any agent can pass any door an argument
 it does not declare and be told `ok`. The tests below refuse it.
+
+Language-Exception: tests/test_lane_submit_grades_the_sha_it_was_given.py -- the guard under test
+is a Python program (`platform/estate/bin/estate-execute`) whose argument resolution and step
+interpolation are only observable by reading that file's own source and intent YAML; there is no
+non-Python surface that can witness an argument being silently dropped, so the falsifier must be
+Python.
 """
 
 from __future__ import annotations
