@@ -67,6 +67,62 @@ async function inspect(page, route, width) {
       if (!menu || !visible(menu)) failures.push("mobile navigation toggle missing");
       else if (menu.getBoundingClientRect().height < 44) failures.push("mobile menu touch target smaller than 44px");
     }
+    if (route === "/") {
+      const body = document.body.textContent ?? "";
+      if (/Blabka|More information will be shared|Further details will be published/.test(body)) {
+        failures.push("public placeholder content was rendered");
+      }
+      for (const anchor of document.querySelectorAll('a[href^="/"]')) {
+        if (anchor.textContent?.includes("↗")) failures.push("internal link uses external arrow: " + anchor.getAttribute("href"));
+      }
+      const markers = [
+        ["01 / MANIFESTO", document.querySelector(".mi-manifesto .mi-eyebrow")],
+        ["02 / CONSULTANCY", document.querySelector(".mi-services .mi-eyebrow")],
+        ["03 / THE LABORATORY", document.querySelector(".mi-lab .mi-eyebrow")],
+        ["04 / VENTURES + PRODUCTS", document.querySelector(".mi-ventures .mi-eyebrow")],
+      ];
+      for (const [expected, el] of markers) {
+        if (!el?.textContent?.includes(expected)) failures.push("section numbering drift: " + expected);
+      }
+      const luminance = rgb => {
+        const v = rgb.match(/[\\d.]+/g)?.slice(0, 3).map(Number);
+        if (!v || v.length !== 3) return 0;
+        const c = v.map(x => { const n=x/255; return n<=.04045 ? n/12.92 : ((n+.055)/1.055)**2.4; });
+        return .2126*c[0]+.7152*c[1]+.0722*c[2];
+      };
+      for (const selector of [".mi-manifesto", ".mi-services", ".mi-ventures"]) {
+        const section=document.querySelector(selector);
+        const eyebrow=section?.querySelector(".mi-eyebrow");
+        if (!section || !eyebrow) { failures.push("contrast landmark absent: "+selector); continue; }
+        const bg=luminance(getComputedStyle(section).backgroundColor);
+        const fg=luminance(getComputedStyle(eyebrow).color);
+        const ratio=(Math.max(bg,fg)+.05)/(Math.min(bg,fg)+.05);
+        if (ratio<4.5) failures.push(selector+" eyebrow contrast "+ratio.toFixed(2)+":1 below WCAG AA");
+      }
+      for (const selector of [".mi-hero-title", ".mi-close h2"]) {
+        const el=document.querySelector(selector);
+        if (!el) continue;
+        const style=getComputedStyle(el);
+        const spacing=parseFloat(style.letterSpacing) / parseFloat(style.fontSize);
+        if (Number.isFinite(spacing) && spacing<-.055) failures.push(selector+" letter-spacing crushes word boundaries");
+      }
+      if (width<=620) {
+        const art=document.querySelector(".mi-hero-art");
+        const ring=art?.querySelector(".mi-orbit-outer")?.getBoundingClientRect();
+        const top=art?.querySelector(".mi-art-label-top")?.getBoundingClientRect();
+        const bottom=art?.querySelector(".mi-art-label-bottom")?.getBoundingClientRect();
+        if (!ring || !top || !bottom) failures.push("mobile orbital labels missing");
+        else {
+          if (top.bottom>ring.top-4) failures.push("orbital top label intersects illustration");
+          if (bottom.top<ring.bottom+4) failures.push("orbital bottom label intersects illustration");
+          if (bottom.right>innerWidth+2) failures.push("orbital caption clipped at viewport");
+        }
+        const actions=[...document.querySelectorAll(".mi-hero-actions .mi-button")];
+        if (actions.length!==2 || actions[1].getBoundingClientRect().top < actions[0].getBoundingClientRect().bottom-2) {
+          failures.push("mobile hero actions are not full-width stacked");
+        }
+      }
+    }
     if (route === "/research") {
       const workspace = document.querySelector(".mi-qa-workspace");
       const input = document.querySelector("#mi-research-question");
