@@ -92,8 +92,37 @@ def save_json(path: str, data: dict) -> None:
             json.dump(data, f)
 
 
+def resolve_tool(name: str) -> str:
+    """Find a tool the way a login shell would, not the way this process's PATH happens to be.
+
+    Measured 2026-11-11: the executor runs with a PATH that omits ~/.local/bin, where gh lives on
+    this machine. A bare `shutil.which("gh")` therefore returned None, and the caller read that
+    as "there are no claims" -- an empty result indistinguishable from a real absence, so the
+    write-guard refused every edit in the estate for a reason it could not show. One resolver,
+    used by both the reader and the writer of a claim, is what stops the two drifting apart.
+    """
+    found = shutil.which(name)
+    if found:
+        return found
+    for d in (
+        os.path.expanduser("~/.local/bin"),
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        os.path.expanduser("~/.rd/bin"),
+    ):
+        cand = os.path.join(d, name)
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    return ""
+
+
+def gh_is_available() -> bool:
+    """True when a gh binary can actually be run, so a caller can say BLIND instead of "none"."""
+    return bool(resolve_tool("gh"))
+
+
 def _gh(args: list, timeout: float):
-    gh = shutil.which("gh")
+    gh = resolve_tool("gh")
     if not gh:
         return None
     try:
