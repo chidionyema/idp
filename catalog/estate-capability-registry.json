@@ -27265,6 +27265,7 @@
         "cap:tool/estate-memory-enforce",
         "cap:tool/idp-ci",
         "cap:tool/idp-install-deps",
+        "cap:tool/idp-machine-submit",
         "cap:tool/language-gate",
         "cap:tool/media-dept-baseline",
         "cap:tool/process-census",
@@ -27351,6 +27352,7 @@
       "consumers": [
         "cap:tool/claim-gate",
         "cap:tool/estate-memory-enforce",
+        "cap:tool/idp-machine-submit",
         "cap:tool/media-dept-baseline",
         "cap:tool/process-census"
       ],
@@ -42778,7 +42780,20 @@
       "rung": null,
       "writer": "repo",
       "path": "bin/idp-machine-submit",
-      "depends_on": [],
+      "depends_on": [
+        {
+          "id": "cap:tool/claim-gate",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/claim-open",
+          "edge": "invokes"
+        },
+        {
+          "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
       "metrics": [],
       "blind": [
         "health",
@@ -54007,6 +54022,7 @@
         "cap:tool/idp-kyverno-render",
         "cap:tool/idp-linear-dispatch",
         "cap:tool/idp-login-drill",
+        "cap:tool/idp-machine-submit",
         "cap:tool/idp-oke-break-glass",
         "cap:tool/idp-pipeverdict",
         "cap:tool/idp-portal",
