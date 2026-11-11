@@ -11,12 +11,12 @@
     "voice:self-test": "node scripts/voice-lint.mjs --self-test",
     "lint": "next lint --max-warnings 0",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/contact.test.ts",
+    "test": "node --experimental-strip-types --test tests/contact.test.ts tests/commercial-storefront.test.ts",
     "test:smoke": "node --test tests/smoke.test.mjs",
     "verify": "npm run typecheck && npm run voice && npm run lint && npm test && npm run test:public && npm run build && npm run test:smoke",
     "test:visual": "node scripts/visual-regression.mjs",
     "release:contract": "node scripts/merdian-public-release-gate.mjs",
-    "test:public": "node --test tests/merian-positioning.test.mjs tests/merdian-release-gate.test.mjs"
+    "test:public": "node --test tests/merian-positioning.test.mjs tests/merdian-release-gate.test.mjs tests/knowledge-commerce.test.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",
