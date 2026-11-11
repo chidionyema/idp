@@ -243,6 +243,86 @@
       "remedy": "126 (not executable) and 127 (not found) are now BLIND on both the bad and the good side, handled before the rejection branch. Found by the door's own self-test, not by a reviewer.",
       "status": "fixed",
       "law": "section 9 R1 + section 3 (a test that executes nothing is not a test)"
+    },
+    {
+      "id": "DBG-025",
+      "title": "The swarm: five agents report one failure and nothing moves",
+      "symptom": "An agent meets a failure, cannot fix it quickly, writes a note or a durable record saying the thing is down or blocked, and starts other work. A second agent hits the same failure and writes its own note. The founder reads the same complaint several times while the failure itself is untouched, and each agent looks busy.",
+      "cause": "Reporting was modelled as progress. Nothing in the path made an OPEN failure bind the next agent: the session-start and edit-time hooks checked memory, focus and the DoF lease, but never asked whether a failure was already open and unresolved. Recording was a side effect an agent could take and then leave, so the cost of leaving fell on the founder's reading time rather than on the agent.",
+      "falsifier": "tests/test_pin_open.py::test_the_same_issue_cannot_be_logged_twice",
+      "remedy": "Run `bin/pin-open` before starting work; it exits 3 PINNED with the open entry. Record a failure once with `bin/pin-open open <issue> --err <error> --do <step>`; a duplicate is refused exit 4. Close it only with evidence: `bin/pin-open resolve <id> --proof <command and output>`. The edit-time hook `bin/estate-memory-enforce pre` refuses the first durable edit of a pinned session, and a step needing a human reaches the founder on TELEGRAM_HOME_CHANNEL only.",
+      "status": "fixed",
+      "law": "AGENTS.md section 3 (proof, not assertion) and section 9 R9 (fixes and rulings stay in one session)"
+    },
+    {
+      "id": "DBG-026",
+      "title": "The claim writer, merge gate and context broker drift apart",
+      "symptom": "A claim is accepted by one path and rejected by another, or one consumer silently ignores fields the writer emits. Agents spend turns rediscovering the grammar and the same issue changes meaning by entry point.",
+      "cause": "The CLAIM grammar was copied as separate regular expressions in the writer, merge gate and broker. Copies do not fail when one grows a new mandatory field, so instruction and plan bindings could exist in one path and vanish in another.",
+      "falsifier": "tests/test_estate_context_claims.py::test_the_broker_and_gate_share_one_claim_parser",
+      "remedy": "Use platform/estate/context/claim_contract.py as the only parser and formatter. The gate and broker import it directly; the test proves both resolve the same source file.",
+      "status": "fixed",
+      "law": "AGENTS.md section 3b (instruction, plan, claim and proof are one chain)"
+    },
+    {
+      "id": "DBG-027",
+      "title": "A claim exists without an instruction or plan digest",
+      "symptom": "The founder can see a live claim but cannot answer which instruction it serves or which plan it executes. The work is owned by nobody in the instruction ledger and no proof can close it.",
+      "cause": "The old claim accepted only agent, paths and heartbeat. Ownership without provenance was treated as sufficient, so a claim could not be joined back to the prompt that authorised it.",
+      "falsifier": "tests/test_claim_contract.py::test_a_claim_requires_an_instruction_and_plan_digest",
+      "remedy": "The shared parser requires agent, instruction, plan, paths and heartbeat, validates the INS-* id and requires a 64-character SHA-256 plan digest.",
+      "status": "fixed",
+      "law": "AGENTS.md section 3b (instruction, plan, claim and proof are one chain)"
+    },
+    {
+      "id": "DBG-028",
+      "title": "A commit points at a different instruction or plan from its claim",
+      "symptom": "The issue claims one instruction and plan, while the commit lands under a different id or digest. Reviewers read two incompatible accounts of the same work.",
+      "cause": "Claim comments and commit trailers were independent strings with no cross-check, so a plan revision or hand-edited trailer could leave the records inconsistent.",
+      "falsifier": "tests/test_claim_gate.py::test_claim_plan_must_match_the_commit_trailer",
+      "remedy": "claim-gate requires Instruction: and Plan: trailers and compares both to the newest CLAIM comment. Any mismatch refuses the lane.",
+      "status": "fixed",
+      "law": "AGENTS.md section 3b (instruction, plan, claim and proof are one chain)"
+    },
+    {
+      "id": "DBG-029",
+      "title": "A claim opens before the plan maps edge cases and second-order effects",
+      "symptom": "Implementation starts from a goal and a list of subgoals, but no BDD scenario, edge case or knock-on effect was recorded. Failures are discovered after code exists and the work returns for another round.",
+      "cause": "claim-open accepted paths and ownership without validating the referenced plan. Planning was advisory at the point where execution became real.",
+      "falsifier": "tests/test_claim_open_worktree.py::test_claim_open_requires_a_complete_plan_and_returns_its_digest",
+      "remedy": "claim-open loads the session plan, requires its instruction_id to match, requires BDD/edge cases/second-order effects for every subgoal, and refuses before posting the claim.",
+      "status": "fixed",
+      "law": "AGENTS.md section 3b (instruction, plan, claim and proof are one chain)"
+    },
+    {
+      "id": "DBG-030",
+      "title": "An instruction is marked verified without the complete proof chain",
+      "symptom": "The founder board says verified although there is no stored plan, no claim or no evidence. The green state is an assertion attached to a prompt.",
+      "cause": "The instruction state machine checked evidence only, and the previous check could also be bypassed by inconsistent records. The finite combinations were never enumerated or tested.",
+      "falsifier": "tests/test_instruction_claim_failure_matrix.py::test_verified_state_is_exhaustive_over_plan_claim_and_evidence",
+      "remedy": "verification_problems enumerates plan, claim and evidence. The matrix test exercises all eight combinations and verified is permitted only when all three are present.",
+      "status": "fixed",
+      "law": "AGENTS.md section 3b and section 9 R2 (a gate must be able to fail)"
+    },
+    {
+      "id": "DBG-031",
+      "title": "The installed prompt collector cannot import its own runtime modules",
+      "symptom": "founder-prompt-collector exits with ModuleNotFoundError: plan or governance.optimus, so the prompt ledger appears stable because nothing new was collected.",
+      "cause": "The collector assumed its installed root (~/.estate) carried the checkout layout. plan.py existed there without the required governance/optimus.py, and discovery accepted the first partial match.",
+      "falsifier": "tests/test_founder_prompt_collector.py::test_installed_collector_resolves_modules_from_the_runtime_tree",
+      "remedy": "Resolve only a runtime root containing both platform/estate/memory/plan.py and platform/estate/governance/optimus.py; use IDP_ROOT, the checkout, the estate runtime and the Documents checkout in that order. Tests copy the collector into an installed-shaped tree.",
+      "status": "fixed",
+      "law": "AGENTS.md section 3b and section 9 R1 (a gate that cannot run has not passed)"
+    },
+    {
+      "id": "DBG-032",
+      "title": "Machine prompt import duplicates or loses instructions",
+      "symptom": "Running the importer twice doubles the board, or a failed run leaves prompts absent while reporting success.",
+      "cause": "Prompt imports need a deterministic identity and an idempotent write. Session-scoped imports also need to avoid scanning unrelated history on every claim.",
+      "falsifier": "tests/test_instruction_tracker.py::test_import_prompts_is_machine_owned_and_idempotent",
+      "remedy": "Imported instructions use INS-P-<source-hash>, deduplicate by source id and digest, and support --session so claim-open refreshes only the current session.",
+      "status": "fixed",
+      "law": "AGENTS.md section 3b (same-session prompt capture) and section 9 R2"
     }
   ]
 }

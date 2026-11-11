@@ -612,12 +612,17 @@ def cmd_hook(a):
             try:
                 deny, adv = budget_pre(d)
             except Exception as e:
-                log(dict(event="budget_error_failopen", err=str(e)[:200]))
-                print(
-                    "protocol_gate: budget layer error, failing open: %s" % e,
-                    file=sys.stderr,
+                # R1, repaired 2026-11-11: this branch used to `_allow_out(a)` -- a budget layer
+                # that could not run (a timeout, a spawn failure, an unreadable store) silently
+                # became a budget that said YES. The failure mode of the guard was to allow, which
+                # is not a guard. The spend could not be measured, so the turn is denied and the
+                # unmeasured budget is named.
+                log(dict(event="budget_error_failclosed", err=str(e)[:200]))
+                _deny_out(
+                    a,
+                    "budget layer error, so the spend could not be measured: %s" % e,
                 )
-                _allow_out(a)
+                return
             if deny:
                 _deny_out(a, deny)
             ci = conv_inject(d)
@@ -650,7 +655,11 @@ def cmd_hook(a):
     try:
         budget_post(d)
     except Exception as e:
-        log(dict(event="budget_error_failopen", err=str(e)[:200]))
+        # Post-phase bookkeeping: the work has ALREADY run, so refusing the turn here would be a
+        # lie about what happened. The name says so instead of reading as a fail-open -- a live
+        # event called `budget_error_failopen` answers a grep for fail-opens with a benign branch
+        # and teaches the next agent the wrong lesson.
+        log(dict(event="budget_post_error_after_the_work_ran", err=str(e)[:200]))
     res = d.get("tool_response") or d.get("result") or d.get("output") or ""
     txt = res if isinstance(res, str) else json.dumps(res)
     if (tool or "").lower().split("__")[-1] in SAFE_TOOLS:

@@ -1,0 +1,324 @@
+#!/usr/bin/env python3
+"""pin-open: a session with an open issue cannot work on anything else (founder, 2026-11-10).
+
+THE LAW, in the founder's words:
+
+  "any agent that tried to report an issue already logged once must be forced to resolve it, not
+   getting swarm until the issue moves"
+  "they cant work on anything else - pin the agent session down to that issue"
+  "make sure the message is clear"
+  "what they need to do and the error atc"
+  "not to me to the telegram, i dont want agents chatting to me and assume im on laptop"
+  "an instruction once given has no reason to pause until operational"
+
+WEDGED ON: an issue is open. While it is, the agent may only work on it. Any attempt to START
+something else is refused with a non-zero exit, so the swarm never happens -- five agents hit one
+failure and file five notes while nothing moves, and the founder pays the reading time five times.
+
+THE SECOND LAW: "if you report a failure, logging it again is not progress, resolving it is."
+An attempt to record an ALREADY-OPEN failure is REFUSED (exit 4), not quietly deduplicated: the
+caller is handed the open entry, the recorded error, and the single step owed.
+
+THE MESSAGE CARRIES WHAT AN AGENT NEEDS TO ACT. A refusal that says "blocked" is a wall an agent
+routes around (AGENTS.md section 9 R14). Every refusal names, in order:
+
+  1. THE ERROR     -- verbatim, so the agent need not rediscover a failure already measured
+  2. WEDGED ON     -- the entry, its issue, and what it blocks
+  3. WHAT TO DO    -- the one concrete next step, and the command that proves it done
+  4. WHY YOU       -- this is your work now; reporting it again is not progress
+
+FOUNDER ESCALATION GOES TO TELEGRAM ONLY, and only when the owed step needs a human. The founder is
+not assumed to be at the laptop and agents do not chat at him: a step that is ordinary work raises
+no message at all. A step needing approval, a credential, spend or an irreversible action is sent
+once to TELEGRAM_HOME_CHANNEL through the estate's existing edge (bin/estate-founder's own
+telegram call shape). Never a second copy of that edge (AGENTS.md section 6).
+
+    bin/pin-open                     verdict for this session: exit 0 clear, exit 3 pinned
+    bin/pin-open --json              the verdict as data, for a hook to gate on
+    bin/pin-open list                what is open
+    bin/pin-open open <issue> --err "<error>" --do "<owed step>" [--blocks "<what it stops>"]
+    bin/pin-open resolve <id> --proof "<command and its output>"
+
+Exit codes:
+  0  CLEAR     nothing open, or the issue was just resolved with proof
+  3  PINNED    an issue is open; this session may start no other work
+  4  REFUSED   the caller tried to record an issue that is ALREADY OPEN, or resolve with no proof
+  2  BLIND     the ledger could not be read -- never a pass (AGENTS.md section 9 R1)
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import time
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+LEDGER = Path(
+    os.environ.get("ESTATE_PIN_LEDGER")
+    or (Path.home() / ".estate" / "state" / "pin-open.json")
+)
+
+EXIT_OK = 0
+EXIT_BLIND = 2
+EXIT_PINNED = 3
+EXIT_REFUSED = 4
+
+#: A step whose text names one of these needs a human, and only then is Telegram touched. Anything
+#: else is ordinary work: paging the founder for it is the babysitting this door exists to remove.
+_NEEDS_HUMAN = (
+    "approve",
+    "approval",
+    "decide",
+    "decision",
+    "permission",
+    "rotate",
+    "credential",
+    "secret",
+    "token",
+    "spend",
+    "budget",
+    "billing",
+    "irreversible",
+    "destroy",
+    "consent",
+)
+
+
+def blind(why: str) -> int:
+    """BLIND is a measured inability to look, never a pass.
+
+    `sys.exit("string")` exits 1, NOT the declared code, which turns a BLIND into a generic failure
+    and lets a caller read "some error" instead of "the door could not see".
+    """
+    print(f"BLIND pin-open: {why}", file=sys.stderr)
+    print(
+        "  NOT clear: nothing was proven open or closed. Fix the ledger, re-run bin/pin-open.",
+        file=sys.stderr,
+    )
+    return EXIT_BLIND
+
+
+def _load() -> dict:
+    if not LEDGER.exists():
+        return {"version": 1, "entries": []}
+    return json.loads(LEDGER.read_text())
+
+
+def _save(d: dict) -> None:
+    LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    tmp = LEDGER.with_suffix(".tmp")
+    tmp.write_text(json.dumps(d, indent=1))
+    tmp.replace(LEDGER)
+
+
+def _open(d: dict) -> list:
+    return [e for e in d.get("entries", []) if e.get("state") == "open"]
+
+
+def _match(d: dict, key: str):
+    """Find an open entry by id, issue or a fragment of its error.
+
+    The second agent rarely knows the first agent's id; it knows the SYMPTOM. Matching the error
+    text is what makes "the same complaint twice" detectable at all.
+    """
+    k = (key or "").strip().lower()
+    if not k:
+        return None
+    for e in _open(d):
+        hay = " ".join(
+            str(e.get(f, "")) for f in ("id", "issue", "error", "do")
+        ).lower()
+        if k in hay:
+            return e
+    return None
+
+
+def render(e: dict) -> str:
+    """The four things an agent needs. Never shortened to one sentence."""
+    return "\n".join(
+        [
+            "",
+            "  THE ERROR",
+            f"    {e.get('error') or '(not recorded)'}",
+            "",
+            "  WEDGED ON",
+            f"    {e.get('id')}   issue={e.get('issue') or '-'}   opened={e.get('at')}   by={e.get('by') or '-'}",
+            *([f"    blocks: {e['blocks']}"] if e.get("blocks") else []),
+            "",
+            "  WHAT TO DO",
+            f"    {e.get('do') or '(none recorded -- resolve it and say exactly how it was proven)'}",
+            f'    prove it done:   bin/pin-open resolve {e.get("id")} --proof "<command and its output>"',
+            "",
+            "  WHY YOU",
+            "    This failure is already logged. Logging it again is the swarm the founder banned:",
+            "    the second report costs him the same reading time and moves nothing. You are pinned",
+            "    to this issue until it moves. That is the only work you may start.",
+            "",
+        ]
+    )
+
+
+def _page_founder(e: dict) -> str:
+    """Page the founder ON TELEGRAM ONLY, through the existing edge. Never chat at him in-session."""
+    text = (
+        "PINNED: an agent needs you\n\n"
+        f"issue: {e.get('issue') or e.get('id')}\n"
+        f"error: {str(e.get('error', ''))[:400]}\n\n"
+        f"needs: {str(e.get('do', ''))[:400]}\n"
+        f'close: bin/pin-open resolve {e.get("id")} --proof "..."'
+    )
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chan = os.environ.get("TELEGRAM_HOME_CHANNEL")
+    if not token or not chan:
+        return "not sent: TELEGRAM_BOT_TOKEN / TELEGRAM_HOME_CHANNEL unset (source the vault)"
+    data = urllib.parse.urlencode(
+        {"chat_id": chan, "text": text, "disable_web_page_preview": "true"}
+    ).encode()
+    try:
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{token}/sendMessage", data=data, method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=20) as r:  # noqa: S310
+            json.loads(r.read())
+        return "sent to the founder on TELEGRAM"
+    except Exception as exc:  # the page is a courtesy; the pin is the law
+        return f"not sent: {type(exc).__name__}: {exc}"
+
+
+def cmd_verdict(as_json: bool) -> int:
+    try:
+        d = _load()
+    except Exception as exc:
+        return blind(f"{LEDGER} could not be read: {type(exc).__name__}: {exc}")
+    open_e = _open(d)
+    self_id = os.environ.get("ESTATE_PIN_SELF", "")
+    mine = _match(d, self_id) if self_id else None
+    if mine:
+        open_e = [mine] + [e for e in open_e if e is not mine]
+    if as_json:
+        print(json.dumps({"pinned": bool(open_e), "open": open_e}, indent=1))
+        return EXIT_PINNED if open_e else EXIT_OK
+    if not open_e:
+        print("CLEAR pin-open: nothing open. Start work and drive it to operational.")
+        return EXIT_OK
+    print(
+        "PINNED pin-open: this session may start NO other work until the issue below moves."
+    )
+    print(render(open_e[0]))
+    if len(open_e) > 1:
+        print("  also open: " + ", ".join(str(x.get("id")) for x in open_e[1:]))
+    return EXIT_PINNED
+
+
+def cmd_open(issue: str, err: str, do: str, blocks: str) -> int:
+    try:
+        d = _load()
+    except Exception as exc:
+        return blind(f"the ledger could not be read: {type(exc).__name__}: {exc}")
+    hit = _match(d, issue) or (err and _match(d, err[:80]))
+    if hit:
+        print(
+            f"REFUSED pin-open: '{issue}' is ALREADY OPEN as {hit.get('id')}. Do not log it again."
+        )
+        print(render(hit))
+        print(
+            "  Logging the same failure twice is the swarm. Resolve it, or close it with proof."
+        )
+        return EXIT_REFUSED
+    eid = f"pin-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{abs(hash(issue)) % 100000:05d}"
+    entry = {
+        "id": eid,
+        "issue": issue,
+        "error": err,
+        "do": do,
+        "blocks": blocks,
+        "state": "open",
+        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "by": os.environ.get("ESTATE_AGENT", "estate-agent"),
+        "route": "",
+    }
+    if any(w in (do or "").lower() for w in _NEEDS_HUMAN):
+        entry["route"] = _page_founder(entry)
+        print(f"ESCALATED pin-open: this step needs a human. {entry['route']}")
+    d.setdefault("entries", []).append(entry)
+    _save(d)
+    print(f"OPEN pin-open: {eid} recorded for '{issue}'.")
+    print(render(entry))
+    return EXIT_PINNED
+
+
+def cmd_resolve(ident: str, proof: str) -> int:
+    try:
+        d = _load()
+    except Exception as exc:
+        return blind(f"the ledger could not be read: {type(exc).__name__}: {exc}")
+    hit = _match(d, ident)
+    if not hit:
+        print(f"nothing open matches '{ident}' -- there is no issue to close.")
+        return EXIT_OK
+    if not (proof or "").strip():
+        print(
+            "REFUSED pin-open: a resolution needs PROOF -- say how it was proven, not that it was."
+        )
+        print('  e.g. --proof "bin/idp-ci: exit 0, All checks passed!"')
+        return EXIT_REFUSED
+    hit["state"] = "resolved"
+    hit["proof"] = proof
+    hit["resolved_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    _save(d)
+    print(f"RESOLVED pin-open: {hit.get('id')}. Proof recorded: {proof[:120]}")
+    return EXIT_OK
+
+
+def cmd_list() -> int:
+    try:
+        d = _load()
+    except Exception as exc:
+        return blind(f"the ledger could not be read: {type(exc).__name__}: {exc}")
+    open_e = _open(d)
+    if not open_e:
+        print("no open pins.")
+        return EXIT_OK
+    for e in open_e:
+        print(f"{e.get('id')}  {e.get('issue') or '-'}  {str(e.get('error', ''))[:90]}")
+    return EXIT_OK
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument(
+        "cmd",
+        nargs="?",
+        default="verdict",
+        choices=["verdict", "open", "resolve", "list"],
+    )
+    ap.add_argument("ident", nargs="?", default="")
+    ap.add_argument("--err", default="")
+    ap.add_argument("--do", default="")
+    ap.add_argument("--blocks", default="")
+    ap.add_argument("--proof", default="")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args(argv)
+    if a.cmd == "open":
+        if not a.ident:
+            return blind(
+                "'open' needs an issue: bin/pin-open open '#7351' --err '...' --do '...'"
+            )
+        return cmd_open(a.ident, a.err, a.do, a.blocks)
+    if a.cmd == "resolve":
+        if not a.ident:
+            return blind(
+                "'resolve' needs an id: bin/pin-open resolve pin-... --proof '...'"
+            )
+        return cmd_resolve(a.ident, a.proof)
+    if a.cmd == "list":
+        return cmd_list()
+    return cmd_verdict(a.json)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
