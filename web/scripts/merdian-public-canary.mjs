@@ -66,29 +66,33 @@ async function checkHome(origin) {
     failures.push(origin + ': ' + (error instanceof Error ? error.message : String(error)));
   }
 }
-async function checkRoute(path, marker) {
+async function checkRoute(origin, path, marker) {
   try {
-    const { html, status } = await read(PRIMARY + path);\n    assert(!html.includes('Merdian Intelligence'), PRIMARY + path + ': legacy spelling on sibling page');
-    assert(html.includes(marker), PRIMARY + path + ': required company section missing: ' + marker);
+    const { html, status } = await read(origin + path);\n    assert(!html.includes('Merdian Intelligence'), origin + path + ': legacy spelling on sibling page');
+    assert(html.includes(marker), origin + path + ': required company section missing: ' + marker);
     if (path === '/products') {
-      assert(!html.includes('Blabka'), PRIMARY + path + ': placeholder venture visible');
-      assert(!html.includes('Further details will be published'), PRIMARY + path + ': unsubstantiated promise visible');
+      assert(!html.includes('Blabka'), origin + path + ': placeholder venture visible');
+      assert(!html.includes('Further details will be published'), origin + path + ': unsubstantiated promise visible');
     }
-    assert(!html.includes(OLD), PRIMARY + path + ': retired product promise resurfaced');
-    assert(!html.includes('http://localhost:3000'), PRIMARY + path + ': localhost in HTML');
-    audit.push({ origin: PRIMARY + path, status, marker: html.includes(marker) });
+    assert(!html.includes(OLD), origin + path + ': retired product promise resurfaced');
+    assert(!html.includes('http://localhost:3000'), origin + path + ': localhost in HTML');
+    audit.push({ origin: origin + path, status, marker: html.includes(marker) });
   } catch (error) {
-    failures.push(PRIMARY + path + ': ' + (error instanceof Error ? error.message : String(error)));
+    failures.push(origin + path + ': ' + (error instanceof Error ? error.message : String(error)));
   }
 }
 
-for (const origin of ORIGINS) await checkHome(origin);
-for (const [path, marker] of [
-  ['/consulting', 'mi-interior'],
-  ['/research', 'mi-interior'],
-  ['/products', 'mi-interior'],
-  ['/contact', 'mi-interior'],
-]) await checkRoute(path, marker);
+// Every alias gets the same visitor-facing sibling route audit; checking the
+// homepage on all origins and interior only on PRIMARY previously missed drift.
+for (const origin of ORIGINS) {
+  await checkHome(origin);
+  for (const [path, marker] of [
+    ['/consulting', 'mi-interior'],
+    ['/research', 'mi-interior'],
+    ['/products', 'mi-interior'],
+    ['/contact', 'mi-interior'],
+  ]) await checkRoute(origin, path, marker);
+}
 // Customer conversion must be operational, not just a pretty contact page.
 // Read-only probe: does not submit PII or create a synthetic sales enquiry.
 try {
@@ -108,7 +112,7 @@ for (const path of ['/robots.txt', '/sitemap.xml']) {
     assert(!html.includes('meridian.ai'), PRIMARY + path + ': unowned domain leaked into indexable metadata');
     audit.push({ origin: PRIMARY + path, status });
   } catch (error) {
-    failures.push(PRIMARY + path + ': ' + (error instanceof Error ? error.message : String(error)));
+    failures.push(origin + path + ': ' + (error instanceof Error ? error.message : String(error)));
   }
 }
 const summary = {
