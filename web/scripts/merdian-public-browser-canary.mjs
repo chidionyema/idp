@@ -37,7 +37,7 @@ try {
       try {
         await page.setViewport({ width, height: 900, deviceScaleFactor: 1, isMobile: width <= 430, hasTouch: width <= 430 });
         await page.setCacheEnabled(false);
-        const response = await page.goto(origin + '/?ui_canary=' + Date.now(), { waitUntil: 'domcontentloaded', timeout: 30000 });
+        const response = await page.goto(origin + '/?ui_canary=' + Date.now(), { waitUntil: 'load', timeout: 30000 });
         if (!response || !response.ok()) throw new Error('Homepage HTTP ' + (response?.status() ?? 'missing'));
         await page.evaluate(() => document.fonts.ready);
         const result = await page.evaluate(({ width }) => {
