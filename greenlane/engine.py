@@ -243,7 +243,7 @@ class Engine:
         timeout: float = DEFAULT_TIMEOUT,
         batch_policy: str = "fixed",
     ):
-        if batch_policy not in ("fixed", "adaptive"):
+        if batch_policy not in ("fixed", "adaptive", "adaptive-speed"):
             raise ValueError(f"unknown batch policy {batch_policy}")
         self.b, self.s = backend, state
         self.batch_size, self.retries, self.timeout = batch_size, retries, timeout
@@ -824,10 +824,13 @@ class Engine:
             )
             names = []
             capacity = self.batch_size
-            if self.batch_policy == "adaptive":
-                choice = choose_batch_size(self.s.history, len(pend), capacity)
+            if self.batch_policy in ("adaptive", "adaptive-speed"):
+                overhead = 0.60 if self.batch_policy == "adaptive-speed" else 0.30
+                choice = choose_batch_size(self.s.history, len(pend), capacity, overhead)
                 capacity = choice.size
                 policy_receipt = choice.receipt()
+                policy_receipt["mode"] = self.batch_policy
+                policy_receipt["overhead_weight"] = overhead
             for l in pend:
                 if len(names) == capacity:
                     break

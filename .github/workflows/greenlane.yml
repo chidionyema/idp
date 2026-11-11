@@ -126,6 +126,7 @@ jobs:
           # `statuses: write` above; the App token holds no statuses permission (#5576). Passed
           # to report() alone, never to git, so pushes and merges still start workflows.
           GREENLANE_STATUS_TOKEN: ${{ github.token }}
+          GREENLANE_BATCH_POLICY: ${{ vars.GREENLANE_BATCH_POLICY || 'adaptive-speed' }}
           GIT_AUTHOR_NAME: estate-agents[bot]
           GIT_AUTHOR_EMAIL: estate-agents[bot]@users.noreply.github.com
           GIT_COMMITTER_NAME: estate-agents[bot]

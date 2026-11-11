@@ -105,7 +105,7 @@ def _tick_once(judge_only: bool = False) -> int:
     )
     b.fetch()
     st = State.loads(b.load_state_text())
-    eng = Engine(b, st, batch_policy=os.environ.get("GREENLANE_BATCH_POLICY", "adaptive"))
+    eng = Engine(b, st, batch_policy=os.environ.get("GREENLANE_BATCH_POLICY", "adaptive-speed"))
     try:
         batch_before = st.batch.id if st.batch else None
         eng.tick(judge_only=judge_only)

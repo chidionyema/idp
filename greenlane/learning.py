@@ -79,7 +79,7 @@ def _expected_checks(batch: int, p: float) -> float:
     return checks
 
 
-def choose_batch_size(history: Sequence[Mapping], waiting: int, ceiling: int) -> Decision:
+def choose_batch_size(history: Sequence[Mapping], waiting: int, ceiling: int, overhead: float = 0.30) -> Decision:
     """Evaluate bounded alternative sizes on one observation per exact lane/head/base.
 
     Historical states lacking exact member SHAs cannot train the policy. A
@@ -90,18 +90,34 @@ def choose_batch_size(history: Sequence[Mapping], waiting: int, ceiling: int) ->
     observations: dict[tuple[str, str, str], bool] = {}
     for row in history[-_HISTORY:]:
         names, heads, base = row.get("members"), row.get("heads"), row.get("base_full")
-        if (not isinstance(names, list) or len(names) != 1
-            or not isinstance(heads, list) or len(heads) != 1
-            or not isinstance(base, str) or len(base) != 40
-            or row.get("outcome") not in ("landed", "red", "land-refused")):
+        if (not isinstance(names, list) or not names
+            or not isinstance(heads, list) or len(heads) != len(names)
+            or not isinstance(base, str) or len(base) != 40):
             continue
-        key = (str(names[0]), str(heads[0]), base)
-        observations.setdefault(key, row["outcome"] == "landed")
+        outcome = row.get("outcome")
+        if outcome == "landed":
+            # A passing combined candidate proves ALL participating heads
+            # succeeded in context. Ignoring these positives caused severe
+            # survivor/selection bias: only isolated failure-heads trained.
+            for name, head in zip(names, heads):
+                observations.setdefault((str(name), str(head), base), True)
+        elif outcome in ("red", "land-refused") and len(names) == 1:
+            # A failing multi-head batch does NOT identify which head failed.
+            observations.setdefault((str(names[0]), str(heads[0]), base), False)
     n = len(observations)
     p = (sum(observations.values()) + 3.0) / (n + 4.0)
     if n < 8:
-        size = min(cap, 2)
+        # Until the current source's evidence is large enough, retain the
+        # proven fixed-batch baseline. Cold-start at two doubled ticks on a
+        # reliable workload in the first measured tournament.
+        size = cap
     else:
-        size = min((v for v in _SIZES if v <= cap),
-                   key=lambda v: (_expected_checks(v, p) / v, v))
+        # A batch has non-CI scheduling/landing overhead too. A transparent
+        # 0.30 candidate-equivalent preference for lower latency balances
+        # expected CI volume with release throughput; the tournament checks
+        # whether that trade-off actually wins across reliability regimes.
+        size = min(
+            (v for v in _SIZES if v <= cap),
+            key=lambda v: ((_expected_checks(v, p) + overhead) / v, v),
+        )
     return Decision(size, n, p, _expected_checks(size, p) / size)
