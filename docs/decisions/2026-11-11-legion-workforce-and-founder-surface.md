@@ -145,3 +145,14 @@ The proposed memory engine likewise is not ready to serve as the canonical estat
 **Evidence status at time of writing:** GitHub's default branch has the existing agent-sandbox cloud workflow and Greenlane runbook. The supplied INS-00011 installer and proposed multi-formation CLI are not proven deployed there. This decision record itself does not prove operational Legion, production deployment, CI success, or founder-surface integration. The next acceptable update is a cloud run plus verifiable effect receipt.
 
 **Doctrine:** More capability first, then stronger falsification; every worker minute must buy execution, intelligence, or a measured improvement. More agents without real jobs, verifiers and evidence are just more noise.
+
+
+## Competitive benchmark — Gemini 4 Carbon / Antigravity /swarm (verified 2026-11-11)
+
+Google announced Carbon on 2026-11-10 and describes /swarm as a preview in Antigravity. The public reference documents specialized parallel agents, heterogeneous model roles, isolated Git worktrees, a shared agent message board, a live **Board**, a per-agent **Roster**, and a replayable **Graph** of collaboration: https://antigravity.google/blog/gemini-4-carbon-in-google-antigravity and https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-4-carbon-now-available/.
+
+**Founder Surface design implication:** Genesis must compete in *observability and control*, not just visual polish. At minimum, an authenticated mission should expose a live timeline, formation graph/DAG, actual per-worker model/role, tool actions, state/fencing, claim/lease, context freshness, evidence links, cost, failed hypotheses, test verdicts and final impact. Drill-down should reveal exactly what a worker saw, why it acted, and which assertions remain unverified. Replaying a mission must work after the initiating session ends.
+
+**Differentiation to test:** Unlike a developer-tool swarm alone, the estate aims for durable voice/mobile/web command, zero-laptop cloud continuity, cross-repo governed Greenlane, recovery after total worker loss, independent observation of **running production effects**, bitemporal memory, and fleet-wide visibility-gap alarms. These are aspirations until real workflows substantiate them. Google's reported benchmark rankings are vendor claims, not estate test results.
+
+**Carbon admission:** Its November 2026 availability is not proof that the estate has an authorized account/key or live routing to the model. When authorized, route Carbon through the same worker and evaluator contracts; measure its marginal value as architect, Centurion coordinator, Red adversary and hard-bug Tournament contender versus Argon and cheaper alternatives. Respect actual billing and budgets, especially simultaneous swarm quota consumption. The founder's expected December fleet onboarding remains a planning milestone, not proof of present estate integration.
