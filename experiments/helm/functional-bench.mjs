@@ -175,18 +175,10 @@ if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url))
     console.log(JSON.stringify({grade:"FUNCTIONAL_TRIAL_RECORDED",mode,model,summary:result.summary,
       corpusSha256:result.corpusSha256,sourceSha:result.codeSha}));
     if(mode==="yield"){
-      const {harvestVerified,replayVerified}=await import("./operational-memory.mjs");
-      const memory=harvestVerified({trial:result,tasks:[singleTask]});
-      atomicWrite(memory,"verified-program-memory.json");
-      const replay=replayVerified({memory,tasks:[singleTask]});
-      atomicWrite(replay,"verified-program-replay.json");
-      console.log(JSON.stringify({status:"END_TO_END_EXPERIENCE_YIELD",
-        accepted:memory.accepted,
-        replayed:replay.passed,independentTestsPassed:replay.independentTestsPassed,
-        replayModelCalls:replay.modelCalls,
-        modelCalls:result.summary.helm.attempts,
-        errors:result.summary.helm.providerErrors}));
-      if(replay.passed<1 || replay.passed!==memory.accepted)process.exitCode=2;
+      // The separate operational-memory CLI harvests the saved trial receipt.
+      // Do not dynamically import it here: that module imports this benchmark
+      // and a circular top-level await deadlocks ESM module initialisation.
+      if(result.summary.helm.passed<1)process.exitCode=2;
     }else if(Object.values(result.summary).some(x=>x.providerErrors>0))process.exitCode=2;
   }else throw Error("usage: node functional-bench.mjs [test|live]");
 }
