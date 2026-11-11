@@ -124,3 +124,4 @@ test("Paired eval records model-call errors honestly, applies bounded schema ret
 import "./shot-control.test.mjs";
 import "./shot-trial.test.mjs";
 import "./shot-ground-adapter.test.mjs";
+import "./shot-argon-sqlite.test.mjs";
