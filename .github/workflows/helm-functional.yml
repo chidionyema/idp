@@ -33,7 +33,7 @@ jobs:
           if(!list.ok)throw Error("model catalog status "+list.status);
           const j=await list.json();
           const free=(j.data||[]).map(m=>m.id).filter(id=>typeof id==="string"&&id.endsWith(":free"));
-          const preference=["cohere/north-mini-code:free","liquid/lfm-3-1.7b:free","nvidia/nemotron-3.5-lightning:free"];
+          const preference=["liquid/lfm-3-1.7b:free","cohere/north-mini-code:free","thinkingmachines/inkling-2-small:free","nvidia/nemotron-3.5-lightning:free"];
           const candidates=[...new Set([...preference.filter(id=>free.includes(id)),...free])].slice(0,5);
           let selected="";
           for(const model of candidates){
@@ -42,13 +42,13 @@ jobs:
             try{
               const r=await fetch(endpoint+"/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},
                 signal:controller.signal,body:JSON.stringify({model,
-                  messages:[{role:"user",content:"Respond with the word READY only."}],
-                  temperature:0,max_tokens:1536})});
+                  messages:[{role:"system",content:"Return only a JSON object with opcode and payload."},{role:"user",content:"Implement Python def add(a,b): return a+b. Use opcode EMIT_PATCH and payload as Python source."}],
+                  temperature:0,max_tokens:3072})});
               const json=await r.json().catch(()=>null);
               const answer=json?.choices?.[0]?.message?.content;
               console.log(JSON.stringify({model,status:r.status,answerLength:typeof answer==="string"?answer.length:0,
                 finish:json?.choices?.[0]?.finish_reason||null}));
-              if(r.ok && typeof answer==="string"&&answer.trim()){selected=model;break;}
+              if(r.ok && typeof answer==="string"&&answer.includes("def add")){selected=model;break;}
             }catch(e){console.log("preflight "+model+": "+String(e.message).slice(0,100))}
             finally{clearTimeout(timer)}
           }
@@ -59,6 +59,7 @@ jobs:
       - name: Execute independent 3-task Python functional benchmark across five arms
         env:
           HELM_INFERENCE_URL: https://ai-gateway.kilo.ai/api/v1/chat/completions
+          HELM_MAX_OUTPUT_TOKENS: "4096"
           GITHUB_SHA: ${{ github.sha }}
         run: node experiments/helm/functional-bench.mjs live
       - name: Preserve exact test and negative-result receipts
