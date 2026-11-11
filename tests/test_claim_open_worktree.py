@@ -245,9 +245,11 @@ def test_claim_open_refreshes_and_imports_the_current_sessions_prompts(
 ):
     mod = _load()
     calls: list[list[str]] = []
+    timeouts: list[int] = []
 
     def fake_run(argv, **kwargs):
         calls.append(argv)
+        timeouts.append(kwargs.get("timeout", 0))
         return subprocess.CompletedProcess(argv, 0, "", "")
 
     monkeypatch.setattr(mod, "run", fake_run)
@@ -261,6 +263,7 @@ def test_claim_open_refreshes_and_imports_the_current_sessions_prompts(
         "--session",
         "session-1",
     ]
+    assert timeouts == [60, 60]
 
 
 def test_a_stalled_subprocess_is_bounded_and_named(monkeypatch):

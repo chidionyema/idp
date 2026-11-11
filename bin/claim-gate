@@ -64,6 +64,15 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+PLATFORM_ESTATE = Path(__file__).resolve().parent.parent / "platform" / "estate"
+if str(PLATFORM_ESTATE) not in sys.path:
+    sys.path.insert(0, str(PLATFORM_ESTATE))
+
+from context.claim_contract import (  # noqa: E402
+    ClaimContractError,
+    parse_claim_line,
+)
+
 DEPENDABOT = "dependabot[bot]"
 MAX_AGE = timedelta(hours=2)
 HEAD_TRAILER = re.compile(r"^Greenlane-Head:\s*([0-9a-f]{7,40})\s*$", re.M)
@@ -73,11 +82,8 @@ _PRS: dict[
 ] = {}  # (repo, sha) -> (pull request number, author)
 CLAIM_REF = re.compile(r"^Claim:\s*(?:([\w.-]+/[\w.-]+))?#(\d+)\s*$", re.M)
 AGENT = re.compile(r"^Agent:\s*(\S+)\s*$", re.M)
-CLAIM = re.compile(
-    r"^CLAIM\s+agent=(?P<agent>\S+)\s+(?:model=\S+\s+)?paths=(?P<paths>\S+)\s+"
-    r"heartbeat=(?P<hb>\S+)\s*$",
-    re.M,
-)
+INSTRUCTION = re.compile(r"^Instruction:\s*(INS-[A-Za-z0-9-]{3,120})\s*$", re.M)
+PLAN = re.compile(r"^Plan:\s*([0-9a-fA-F]{64})\s*$", re.M)
 PROOF = re.compile(r"^Proof:\s*(?P<ids>[^\n]+?)\s*$", re.M)
 
 # The truth obligation. The estate had a process for ownership and a process for code and no
@@ -424,6 +430,26 @@ def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> lis
         return [
             "no `Agent: <name>` line: the change must say which agent's claim it lands on"
         ]
+    instructions = sorted(set(INSTRUCTION.findall(text)))
+    if not instructions:
+        return [
+            "no `Instruction: <INS-id>` line: the change must name the founder instruction "
+            "its plan serves"
+        ]
+    if len(instructions) > 1:
+        return [
+            "the change names %d instruction ids (%s): one lane carries one instruction"
+            % (len(instructions), ", ".join(instructions))
+        ]
+    instruction = instructions[0]
+    plans = sorted({value.lower() for value in PLAN.findall(text)})
+    if not plans:
+        return [
+            "no `Plan: <sha256>` line: the change must name the exact plan it executes"
+        ]
+    if len(plans) > 1:
+        return ["the change names %d plan digests: one lane executes one plan" % len(plans)]
+    plan_digest = plans[0]
     # 2026-10-12: `git log --format=%B` prints newest first, so `agents[-1]` was the OLDEST
     # commit's trailer. A range naming two agents therefore passed whenever the claim holder
     # happened to be the older one; measured on this tree, a range naming idp-60 and idp-99 was
@@ -450,19 +476,49 @@ def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> lis
         # 2026-10-10: no `in-progress` label check. The label was a second way to say the same
         # thing the heartbeat already says, and the only thing it added was one more requirement
         # to satisfy before a change could land. Liveness is the heartbeat, below.
-        claims = [m for c in comments for m in CLAIM.finditer(c.get("body", ""))]
+        # 2026-11-11: a CLAIM comment is HISTORY once a later one supersedes it. The contract
+        # that a claim must name an `instruction` and a `plan` arrived after thousands of claims
+        # were already posted, so an issue carrying one comment from before it could never be
+        # claimed again: the gate parsed every line, appended a failure for each legacy comment,
+        # and refused even when the NEWEST comment was perfectly formed. Measured on idp#7878,
+        # which carried 10 legacy comments and a valid current one and still refused. Only a
+        # malformed claim that is still the claim of record is a problem; a superseded one is
+        # what it is -- superseded -- and this gate grades the claim of record, `claims[-1]`.
+        claims = []
+        malformed: list[str] = []
+        for comment in comments:
+            for line in str(comment.get("body") or "").splitlines():
+                if not line.strip().startswith("CLAIM "):
+                    continue
+                try:
+                    claims.append(parse_claim_line(line))
+                    malformed.clear()  # a well-formed claim supersedes the malformed ones before it
+                except ClaimContractError as exc:
+                    malformed.append(str(exc))
+                    claims.clear()  # it is now the claim of record, and it does not parse
+        if malformed:
+            for exc in malformed:
+                problems.append(f"{where} has a malformed CLAIM comment: {exc}")
         if not claims:
             problems.append(f"{where} has no CLAIM comment")
             continue
         c = claims[-1]
-        if c["agent"] != agent:
-            problems.append(f"{where} is claimed by {c['agent']}, not {agent}")
+        if c.agent != agent:
+            problems.append(f"{where} is claimed by {c.agent}, not {agent}")
             continue
-        try:
-            hb = datetime.fromisoformat(c["hb"].replace("Z", "+00:00"))
-        except ValueError:
-            problems.append(f"{where} heartbeat {c['hb']!r} is not a UTC ISO time")
+        if c.instruction != instruction:
+            problems.append(
+                f"{where} claim names instruction {c.instruction}, not the commit trailer "
+                f"{instruction}"
+            )
             continue
+        if c.plan != plan_digest:
+            problems.append(
+                f"{where} claim names plan {c.plan[:12]}, not the commit trailer "
+                f"{plan_digest[:12]}"
+            )
+            continue
+        hb = c.heartbeat
         # 2026-10-14: an old heartbeat alone no longer refuses. The two hours exist so an
         # abandoned claim stops blocking OTHER agents (AGENTS.md §5.4): once lapsed, anyone may
         # post their own CLAIM, and that newer comment fails the `claimed by` check above. Until
@@ -471,9 +527,9 @@ def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> lis
         # that waited two hours red with no change to it -- #6198 and #6208, measured 10-14, the
         # moment Greenlane (the only thing that re-stamps a waiting lane's heartbeat) went red.
         if hb > now + MAX_AGE:
-            problems.append(f"{where} heartbeat {c['hb']!r} is in the future")
+            problems.append(f"{where} heartbeat {c.heartbeat.isoformat()} is in the future")
             continue
-        globs = [g for g in c["paths"].split(",") if g]
+        globs = list(c.paths)
         covered |= {f for f in files if any(covered_by(f, g) for g in globs)}
     # demo-render pushes updated demo GIFs onto every lane branch whenever main advances.
     # They are auto-generated infrastructure, not product changes, and do not belong to any agent's

@@ -19,17 +19,10 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
-import re
 from typing import Iterable, Mapping, Sequence
 
 from .broker import Decision, path_allowed
-
-# bin/claim-gate's CLAIM, verbatim (line 71). Kept in step by a test that reads the gate.
-CLAIM = re.compile(
-    r"^CLAIM\s+agent=(?P<agent>\S+)\s+(?:model=\S+\s+)?paths=(?P<paths>\S+)\s+"
-    r"heartbeat=(?P<hb>\S+)\s*$",
-    re.M,
-)
+from .claim_contract import ClaimContractError, parse_claim_lines
 
 # The heartbeat's own rule, from bin/claim-gate: two hours is the life of a claim. A claim with
 # no heartbeat for that long is released, and the next agent may take the issue.
@@ -41,35 +34,37 @@ class Claim:
     """One CLAIM comment: who, which paths, and when it was last alive."""
 
     agent: str
+    instruction: str
+    plan: str
     paths: tuple[str, ...]
-    heartbeat: dt.datetime | None
+    heartbeat: dt.datetime
     raw: str = ""
 
     @property
     def alive(self) -> bool:
         """True while the heartbeat is inside its two hours."""
-        if self.heartbeat is None:
-            return False
         return dt.datetime.now(dt.timezone.utc) - self.heartbeat < HEARTBEAT_MAX_AGE
 
 
 def parse_claims(text: str) -> list[Claim]:
     """Every CLAIM comment in a body of comment text."""
     out: list[Claim] = []
-    for m in CLAIM.finditer(text or ""):
-        hb: dt.datetime | None = None
+    lines = [
+        line for line in (text or "").splitlines() if line.strip().startswith("CLAIM ")
+    ]
+    for line in lines:
         try:
-            hb = dt.datetime.fromisoformat(m.group("hb").replace("Z", "+00:00"))
-            if hb.tzinfo is None:
-                hb = hb.replace(tzinfo=dt.timezone.utc)
-        except ValueError:
-            hb = None
+            parsed = parse_claim_lines(line)[0]
+        except (ClaimContractError, IndexError):
+            continue
         out.append(
             Claim(
-                agent=m.group("agent"),
-                paths=tuple(p for p in m.group("paths").split(",") if p),
-                heartbeat=hb,
-                raw=m.group(0),
+                agent=parsed.agent,
+                instruction=parsed.instruction,
+                plan=parsed.plan,
+                paths=parsed.paths,
+                heartbeat=parsed.heartbeat,
+                raw=parsed.raw,
             )
         )
     return out
@@ -159,7 +154,8 @@ def verify_claim(
             {"issue": issue_number, "state": issue_state},
         )
     claims = parse_claims(issue_comments)
-    mine = paths_held_by(claims, agent)
+    mine_claims = [claim for claim in claims if claim.agent == agent]
+    mine = paths_held_by(mine_claims, agent)
     if not mine:
         return Decision(
             False,
@@ -199,6 +195,8 @@ def verify_claim(
         {
             "issue": issue_number,
             "agent": agent,
+            "instruction": mine_claims[-1].instruction,
+            "plan": mine_claims[-1].plan,
             "claimed": mine,
             "requested": list(requested_paths),
         },
@@ -221,9 +219,9 @@ def claim_state(
         "agent": agent,
         "holds": paths_held_by(claims, agent),
         "others_hold": paths_held_by_others(claims, agent),
-        "heartbeat": mine[-1].heartbeat.isoformat()
-        if mine and mine[-1].heartbeat
-        else None,
+        "instruction": mine[-1].instruction if mine else "",
+        "plan": mine[-1].plan if mine else "",
+        "heartbeat": mine[-1].heartbeat.isoformat() if mine else None,
         "alive": bool(mine and mine[-1].alive),
     }
 

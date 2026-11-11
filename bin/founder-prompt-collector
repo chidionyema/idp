@@ -1,0 +1,420 @@
+#!/usr/bin/env python3
+"""Collect founder prompts from harness-owned transcripts, with source timestamps.
+
+    founder-prompt-collector collect
+    founder-prompt-collector check --session ID
+
+The collector never asks an agent to submit a prompt. It reads the session records written by
+Codex, Pi, Claude and OpenCode, deduplicates by exact content, redacts credentials, and appends
+one machine-generated row to ~/.estate/state/founder-prompts.jsonl.
+"""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+import re
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+HOME = Path.home()
+ROOT = Path(__file__).resolve().parents[1]
+RUNTIME_CANDIDATES = (
+    Path(os.environ.get("IDP_ROOT", "")),
+    ROOT,
+    ROOT / "runtime/idp",
+    HOME / "Documents/code/idp",
+)
+for candidate in RUNTIME_CANDIDATES:
+    if (
+        not candidate
+        or not (candidate / "platform/estate/memory/plan.py").is_file()
+        or not (candidate / "platform/estate/governance/optimus.py").is_file()
+    ):
+        continue
+    sys.path.insert(0, str(candidate / "platform/estate/memory"))
+    sys.path.insert(0, str(candidate / "platform/estate"))
+    ROOT = candidate
+    break
+else:
+    raise SystemExit(
+        "founder-prompt-collector: no idp runtime containing "
+        "platform/estate/memory/plan.py and governance/optimus.py was found"
+    )
+import plan  # noqa: E402
+from governance import optimus  # noqa: E402
+
+SCHEMA = "estate.founder-prompt.v1"
+CACHE_VERSION = "cache-v2"
+SECRETS = (
+    re.compile(
+        r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
+        re.S,
+    ),
+    re.compile(r"\bsk-[A-Za-z0-9_-]{16,}\b"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{16,}\b"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{12,}"),
+)
+MACHINE_CONTEXT = re.compile(
+    r"<(environment_context|in-app-browser-context|app-context|response-annotations)>"
+    r".*?</\1>",
+    re.S,
+)
+MY_REQUEST = re.compile(r"^##\s+My request:\s*$", re.M)
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def ledger_path() -> Path:
+    return Path(
+        os.environ.get("ESTATE_FOUNDER_PROMPT_LEDGER", "~/.estate/state/founder-prompts.jsonl")
+    ).expanduser()
+
+
+def cache_path() -> Path:
+    return Path(
+        os.environ.get(
+            "ESTATE_FOUNDER_PROMPT_CACHE", "~/.estate/state/founder-prompts.sources.json"
+        )
+    ).expanduser()
+
+
+def redact(text: str) -> tuple[str, list[str]]:
+    labels = []
+    clean = text
+    for pattern, label in zip(
+        SECRETS, ("private-key", "api-key", "github-token", "slack-token", "aws-key", "bearer")
+    ):
+        clean, count = pattern.subn(f"[REDACTED:{label}]", clean)
+        if count:
+            labels.append(f"{label}:{count}")
+    return clean, labels
+
+
+def founder_text(text: str) -> str:
+    """Remove harness/UI envelopes so the ledger carries the founder's words."""
+    clean = MACHINE_CONTEXT.sub("", text)
+    markers = list(MY_REQUEST.finditer(clean))
+    if markers:
+        clean = clean[markers[-1].end() :]
+    return clean.strip()
+
+
+def text_parts(value) -> str:
+    if isinstance(value, str):
+        return value
+    if not isinstance(value, list):
+        return ""
+    parts = []
+    for item in value:
+        if isinstance(item, str):
+            parts.append(item)
+        elif isinstance(item, dict) and item.get("type") in ("text", "input_text"):
+            text = item.get("text")
+            if isinstance(text, str):
+                parts.append(text)
+    return "\n".join(parts)
+
+
+def codex_prompt(row: dict) -> tuple[str, str] | None:
+    payload = row.get("payload") or {}
+    if row.get("type") == "response_item" and payload.get("type") == "message":
+        if payload.get("role") != "user":
+            return None
+        text = text_parts(payload.get("content"))
+    elif (
+        row.get("type") == "event_msg"
+        and payload.get("type") == "item_completed"
+        and (payload.get("item") or {}).get("type") == "UserMessage"
+    ):
+        text = text_parts((payload.get("item") or {}).get("content"))
+    else:
+        return None
+    stamp = row.get("timestamp")
+    return (text, stamp) if text and stamp else None
+
+
+def pi_prompt(row: dict) -> tuple[str, str] | None:
+    message = row.get("message") or {}
+    if row.get("type") != "message" or message.get("role") != "user":
+        return None
+    text = text_parts(message.get("content"))
+    stamp = row.get("timestamp")
+    if not stamp and isinstance(message.get("timestamp"), (int, float)):
+        stamp = datetime.fromtimestamp(
+            message["timestamp"] / 1000, timezone.utc
+        ).isoformat().replace("+00:00", "Z")
+    return (text, stamp) if text and stamp else None
+
+
+def claude_prompt(row: dict) -> tuple[str, str] | None:
+    message = row.get("message") or {}
+    if row.get("type") != "user" or row.get("isSidechain"):
+        return None
+    if message.get("role") != "user":
+        return None
+    content = message.get("content")
+    if isinstance(content, list) and any(
+        isinstance(item, dict) and item.get("type") == "tool_result" for item in content
+    ):
+        return None
+    text = text_parts(content)
+    stamp = row.get("timestamp")
+    return (text, stamp) if text and stamp else None
+
+
+SOURCES = (
+    (
+        "codex",
+        "ESTATE_CODEX_SESSION_GLOB",
+        "~/.codex/sessions/**/*.jsonl",
+        codex_prompt,
+    ),
+    (
+        "pi",
+        "ESTATE_PI_SESSION_GLOB",
+        "~/.pi/agent/sessions/**/*.jsonl",
+        pi_prompt,
+    ),
+    (
+        "claude",
+        "ESTATE_CLAUDE_SESSION_GLOB",
+        "~/.claude/projects/**/*.jsonl",
+        claude_prompt,
+    ),
+    (
+        "opencode",
+        "ESTATE_OPENCODE_SESSION_GLOB",
+        "~/.local/share/opencode/storage/**/*.jsonl",
+        claude_prompt,
+    ),
+)
+
+
+def transcript_session(path: Path, rows: list[dict]) -> str:
+    for row in rows:
+        if row.get("type") == "session" and isinstance(row.get("id"), str):
+            return row["id"]
+        if isinstance(row.get("sessionId"), str):
+            return row["sessionId"]
+        payload = row.get("payload") or {}
+        if isinstance(payload.get("session_id"), str):
+            return payload["session_id"]
+    return path.stem
+
+
+def found_prompts(cache: dict[str, str]) -> tuple[list[dict], dict[str, str]]:
+    found = []
+    updated = dict(cache)
+    for source, override, default, parser in SOURCES:
+        pattern = os.environ.get(override, default)
+        for raw_path in sorted(Path("/").glob(os.path.expanduser(pattern).lstrip("/"))):
+            stat = raw_path.stat()
+            fingerprint = f"{CACHE_VERSION}:{stat.st_mtime_ns}:{stat.st_size}"
+            if cache.get(str(raw_path)) == fingerprint:
+                continue
+            try:
+                lines = raw_path.read_text(errors="replace").splitlines()
+            except OSError:
+                continue
+            rows = []
+            for line in lines:
+                if not line.strip():
+                    continue
+                try:
+                    rows.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+            session = transcript_session(raw_path, rows)
+            for ordinal, row in enumerate(rows):
+                parsed = parser(row)
+                if not parsed:
+                    continue
+                text, stamp = parsed
+                original_hash = hashlib.sha256(text.encode()).hexdigest()
+                prompt_id = hashlib.sha256(
+                    f"{source}|{session}|{str(stamp)[:19]}|{original_hash}".encode()
+                ).hexdigest()[:20]
+                clean, redactions = redact(founder_text(text))
+                found.append(
+                    {
+                        "schema": SCHEMA,
+                        "id": f"founder-{prompt_id}",
+                        "source": source,
+                        "session": session,
+                        "occurred_at": stamp,
+                        "observed_at": now_iso(),
+                        "ordinal": ordinal,
+                        "transcript": str(raw_path),
+                        "raw_sha256": original_hash,
+                        "redactions": redactions,
+                        "text": clean,
+                    }
+                )
+            updated[str(raw_path)] = fingerprint
+    return found, updated
+
+
+def collect() -> tuple[int, int]:
+    path = ledger_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_suffix(".lock")
+    added = 0
+    with lock_path.open("a+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        cache = {}
+        cache_file = cache_path()
+        if cache_file.is_file():
+            try:
+                value = json.loads(cache_file.read_text())
+                if isinstance(value, dict):
+                    cache = {str(k): str(v) for k, v in value.items()}
+            except (OSError, ValueError):
+                pass
+        existing_rows = []
+        duplicate = False
+        existing = set()
+        if path.is_file():
+            for line in path.read_text(errors="replace").splitlines():
+                try:
+                    row = json.loads(line)
+                    row_id = row["id"]
+                except (ValueError, KeyError):
+                    continue
+                if row_id in existing:
+                    duplicate = True
+                    continue
+                existing.add(row_id)
+                existing_rows.append(row)
+        repaired = False
+        for row in existing_rows:
+            clean = founder_text(str(row.get("text") or ""))
+            if row.get("text") != clean:
+                row["text"] = clean
+                repaired = True
+        candidates, updated_cache = found_prompts(cache)
+        by_id = {row["id"]: row for row in existing_rows}
+        rows = []
+        changed = repaired
+        for row in candidates:
+            if row["id"] in by_id:
+                previous = by_id[row["id"]]
+                if (
+                    previous.get("text") != row.get("text")
+                    or previous.get("redactions") != row.get("redactions")
+                ):
+                    by_id[row["id"]] = row
+                    changed = True
+                continue
+            existing.add(row["id"])
+            by_id[row["id"]] = row
+            rows.append(row)
+        if duplicate or changed:
+            tmp = path.with_suffix(".dedupe")
+            tmp.write_text(
+                "".join(
+                    json.dumps(row, sort_keys=True) + "\n"
+                    for row in by_id.values()
+                )
+            )
+            tmp.replace(path)
+            os.chmod(path, 0o600)
+        elif rows:
+            with path.open("a", encoding="utf-8") as handle:
+                for row in rows:
+                    handle.write(json.dumps(row, sort_keys=True) + "\n")
+            os.chmod(path, 0o600)
+            added = len(rows)
+        if updated_cache != cache:
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            tmp = cache_file.with_suffix(".tmp")
+            tmp.write_text(json.dumps(updated_cache, indent=2, sort_keys=True) + "\n")
+            tmp.replace(cache_file)
+        fcntl.flock(lock, fcntl.LOCK_UN)
+    return added, len(existing)
+
+
+def check(session: str) -> dict:
+    path = ledger_path()
+    collect_error = ""
+    try:
+        collect()
+    except PermissionError as exc:
+        collect_error = str(exc)
+        if not path.is_file() or time.time() - path.stat().st_mtime > 180:
+            raise ValueError(f"collector lock busy and ledger is stale: {exc}") from exc
+    rows = []
+    if path.is_file():
+        for line in path.read_text(errors="replace").splitlines():
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if row.get("session") == session:
+                rows.append(row)
+    rows.sort(key=lambda row: row.get("occurred_at", ""))
+    proof_rows = [
+        {
+            "id": row.get("id"),
+            "occurred_at": row.get("occurred_at"),
+            "raw_sha256": row.get("raw_sha256"),
+        }
+        for row in rows
+    ]
+    digest = hashlib.sha256(
+        json.dumps(proof_rows, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    return {
+        "session": session,
+        "count": len(rows),
+        "first_at": rows[0]["occurred_at"] if rows else None,
+        "last_at": rows[-1]["occurred_at"] if rows else None,
+        "ledger_sha256": digest,
+        "collector_state": "lock-busy-fresh-ledger" if collect_error else "fresh",
+    }
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("collect")
+    check_p = sub.add_parser("check")
+    check_p.add_argument("--session", default="")
+    args = ap.parse_args(argv)
+    if args.cmd == "collect":
+        added, total = collect()
+        optimus.emit(
+            optimus.metric(
+                source="founder-prompt-collector",
+                subject="founder-prompts",
+                name="prompts.captured",
+                value=added,
+                unit="prompts",
+                status="OK",
+                window="tick",
+                evidence=f"{total} prompt rows in {ledger_path()}",
+                labels={"incremental": "true"},
+            )
+        )
+        print(json.dumps({"ok": True, "added": added, "total": total}, sort_keys=True))
+        return 0
+    session = args.session.strip() or plan.runtime_session_id()
+    if not session:
+        print("REFUSED founder-prompts: no session identity", file=sys.stderr)
+        return 1
+    result = check(session)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0 if result["count"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

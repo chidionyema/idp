@@ -341,3 +341,59 @@ laws:
       check:
         type: command
         argv: ["python3", "bin/architecture-diagram-check"]
+
+  - id: GOV-017
+    law: >-
+      Every claim names the instruction it executes and the digest of the complete plan it
+      executes. The claim comment, merge gate and context broker consume one shared typed
+      parser; a claim missing either join is refused.
+    source: founder, 2026-11-11 ("when claiming include instruction id"; "everything joined up")
+    severity: block
+    check:
+      type: grep_present
+      path: bin/claim-gate
+      pattern: "parse_claim_line"
+    falsifier:
+      files:
+        bin/claim-gate: "print('no typed claim contract')\n"
+      check:
+        type: grep_present
+        path: bin/claim-gate
+        pattern: "parse_claim_line"
+
+  - id: GOV-018
+    law: >-
+      An instruction cannot be verified without a stored plan digest, a claim and evidence.
+      Any missing leg is BLIND and refuses the state transition.
+    source: founder, 2026-11-11 ("no cheating"; "must not be fakeable")
+    severity: block
+    check:
+      type: grep_present
+      path: bin/instruction
+      pattern: "verification_problems"
+    falsifier:
+      files:
+        bin/instruction: "print('two verdicts only')\n"
+      check:
+        type: grep_present
+        path: bin/instruction
+        pattern: "verification_problems"
+
+  - id: GOV-019
+    law: >-
+      No agent session may claim work before its same-session founder prompts have been
+      machine-collected and imported into the instruction ledger. Collection failure refuses the
+      claim rather than silently leaving a prompt untracked.
+    source: founder, 2026-11-11 ("during the same session"; "no one tracks multiple prompts")
+    severity: block
+    check:
+      type: grep_present
+      path: bin/claim-open
+      pattern: "collect_current_session"
+    falsifier:
+      files:
+        bin/claim-open: "print('no prompt capture')\n"
+      check:
+        type: grep_present
+        path: bin/claim-open
+        pattern: "collect_current_session"
