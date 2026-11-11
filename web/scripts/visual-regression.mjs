@@ -14,7 +14,7 @@ const port = 3112;
 const base = `http://127.0.0.1:${port}`;
 const chrome = process.env.CHROME || "/usr/bin/google-chrome";
 const viewports = [320, 390, 768, 1440];
-const routes = ["/", "/research", "/writing/agentic-routing-for-enterprise", "/contact"];
+const routes = ["/", "/consulting", "/products", "/research", "/writing/agentic-routing-for-enterprise", "/contact"];
 const failures = [];
 const outDir = path.join(root, "artifacts", "visual");
 mkdirSync(outDir, { recursive: true });
@@ -127,6 +127,13 @@ async function inspect(page, route, width) {
           failures.push("mobile hero actions are not full-width stacked");
         }
       }
+    }
+    if (route === "/products") {
+      if (document.body.textContent?.includes("Blabka")) failures.push("public portfolio placeholder remains");
+      if (!document.querySelector(".mi-portfolio-row")) failures.push("venture portfolio content missing");
+    }
+    if (route === "/consulting" && !document.body.textContent?.includes("Applied AI engineering")) {
+      failures.push("consultancy engineering offering missing");
     }
     if (route === "/research") {
       const workspace = document.querySelector(".mi-qa-workspace");
