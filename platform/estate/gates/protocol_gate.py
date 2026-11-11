@@ -571,6 +571,76 @@ def _allow_out(a, adv=""):
     sys.exit(0)
 
 
+FLEET_MAX_CALLS = 20
+FLEET_MAX_SECONDS = 20 * 60
+
+
+def cmd_fleet_budget_init(a):
+    """Bind the cap before launching a managed Claude task."""
+    with open(a.settings) as settings_file:
+        settings = json.load(settings_file)
+    pre = settings.get("hooks", {}).get("PreToolUse", [])
+    registrations = [
+        group.get("matcher", "")
+        for group in pre
+        for hook in group.get("hooks", [])
+        if hook.get("type") == "command"
+        and re.search(
+            r"protocol_gate\.py[\"']?\s+hook\s+pre(?:\s|$)", hook.get("command", "")
+        )
+    ]
+    if (
+        settings.get("disableAllHooks")
+        or len(registrations) != 1
+        or registrations[0] not in {"", "*"}
+    ):
+        sys.exit(
+            "Fleet task refused: expected one PreToolUse protocol gate for all tools"
+        )
+    with open(a.state, "x") as state:
+        json.dump(
+            {
+                "started": time.clock_gettime(time.CLOCK_MONOTONIC),
+                "calls": 0,
+                "denials": 0,
+            },
+            state,
+        )
+
+
+def fleet_budget_pre(path):
+    """Reserve one dispatch under a process-wide lock, including parallel tools."""
+    import fcntl
+
+    with open(path, "r+") as state:
+        fcntl.flock(state, fcntl.LOCK_EX)
+        record = json.load(state)
+        elapsed = time.clock_gettime(time.CLOCK_MONOTONIC) - record["started"]
+        if elapsed < 0 or elapsed >= FLEET_MAX_SECONDS:
+            reason = "deadline"
+        elif record["calls"] >= FLEET_MAX_CALLS:
+            reason = "tool_call_cap"
+        else:
+            reason = None
+            record["calls"] += 1
+        if reason:
+            record["denials"] += 1
+            record["last_denial"] = reason
+        record["elapsed_seconds"] = round(elapsed, 3)
+        state.seek(0)
+        json.dump(record, state)
+        state.truncate()
+        state.flush()
+        os.fsync(state.fileno())
+    if reason:
+        return (
+            f"FLEET_BUDGET_EXHAUSTED: {reason} "
+            f"({record['calls']}/{FLEET_MAX_CALLS} calls, "
+            f"{elapsed:.3f}/{FLEET_MAX_SECONDS} seconds)"
+        )
+    return None
+
+
 def cmd_hook(a):
     try:
         d = json.load(sys.stdin)
@@ -596,6 +666,15 @@ def cmd_hook(a):
                 tr.get("output") if tr.get("output") is not None else json.dumps(tr)
             )
     if a.phase == "pre":
+        if "ESTATE_FLEET_BUDGET_STATE" in os.environ:
+            try:
+                refusal = fleet_budget_pre(os.environ["ESTATE_FLEET_BUDGET_STATE"])
+            except (OSError, ValueError, KeyError, TypeError):
+                _deny_out(
+                    a, "FLEET_BUDGET_UNAVAILABLE: managed task state is unreadable"
+                )
+            if refusal:
+                _deny_out(a, refusal)
         if re.search(
             r"\.estate/seal/(key|hmac)|ESTATE_SEAL_KEY", json.dumps(inp)
         ):  # the agent never touches the signing key (v0: same-uid, so this is a fence, not isolation)
@@ -1968,6 +2047,10 @@ def cmd_converge(a):
 def main():
     ap = argparse.ArgumentParser()
     sp = ap.add_subparsers(dest="c", required=True)
+    s = sp.add_parser("fleet-budget-init")
+    s.add_argument("--state", required=True)
+    s.add_argument("--settings", required=True)
+    s.set_defaults(f=cmd_fleet_budget_init)
     s = sp.add_parser("probe-http")
     s.add_argument("url")
     s.set_defaults(f=cmd_probe_http)
