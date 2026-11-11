@@ -242,13 +242,16 @@ export async function inference({ url, token, model, messages, timeoutMs = 25000
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    const requestedOutputTokens=Number(process.env.HELM_MAX_OUTPUT_TOKENS||1536);
+    if(!Number.isInteger(requestedOutputTokens)||requestedOutputTokens<128||requestedOutputTokens>8192)
+      throw new Error("invalid HELM_MAX_OUTPUT_TOKENS; expected 128..8192");
     let response;
     let retries = 0;
     for (let attempt = 0; attempt < 3; attempt++) {
       response = await fetch(url, { method: "POST",
         headers: { "Content-Type": "application/json",
           ...(token ? { "Authorization": "Bearer " + token } : {}) },
-        body: JSON.stringify({ model, messages, temperature: 0, max_tokens: 1536 }),
+        body: JSON.stringify({ model, messages, temperature: 0, max_tokens: requestedOutputTokens }),
         signal: controller.signal });
       if (response.status !== 429 || attempt === 2) break;
       await response.text();
