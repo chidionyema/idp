@@ -67,12 +67,17 @@ try {
             if(!document.body.textContent?.includes("MERCHANT CONNECTION PENDING")) errors.push("absent checkout is not disclosed");
           }
           if(route.includes("from-prompt")) {
+            const heroHeading=document.querySelector(".mi-chapter-hero h1");
+            const color=heroHeading ? getComputedStyle(heroHeading).color.match(/[0-9]+/g)?.slice(0,3).map(Number) : null;
+            if(!color || color.length < 3 || Math.min(...color) < 215) errors.push("dark chapter hero has unreadable title contrast");
             if(!document.body.textContent?.includes("Revoked-authority test")) errors.push("technical free chapter truncated");
             if(!document.body.textContent?.includes("Release-regression test")) errors.push("chapter acceptance suite missing");
           }
           return {errors,heading:title?.textContent?.replace(/\s+/g," ").slice(0,100)};
         },{route});
         failures.push(...result.errors.map(x=>route+" "+width+"px "+x));
+        // Capture the actual route under test before navigation mutates this page.
+        await page.screenshot({path:path.join(screenshots,route.replaceAll("/","_")||"_home")+"-"+width+".png",fullPage:false});
         if(route==="/fieldbooks"&&width===390) {
           await page.click('a[href="/fieldbooks/from-prompt-to-proof"]');
           await page.waitForSelector(".mi-chapter-hero h1",{timeout:10000});
@@ -86,7 +91,6 @@ try {
           const hrefs=await page.$$eval("#mi-mobile-nav a", a=>a.map(el=>el.getAttribute("href")));
           assert.ok(hrefs.includes("/fieldbooks"),"mobile commerce link missing");
         }
-        await page.screenshot({path:path.join(screenshots,route.replaceAll("/","_")||"_home")+"-"+width+".png",fullPage:false});
       } catch(error) {
         failures.push(route+" "+width+"px "+(error instanceof Error?error.message:String(error)));
       } finally { await page.close(); }
