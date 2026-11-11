@@ -56,6 +56,7 @@ FSM_STATES = ("init", "planning", "tool_use", "synthesis", "terminal")
 class SessionWorkflow:
     def __init__(self) -> None:
         self.session_id: str = ""
+        self.instruction_id: str | None = None
         self.repo: str | None = None
         self.task: str = ""
         self.runner: str = "echo"
@@ -162,6 +163,7 @@ class SessionWorkflow:
     def _state(self) -> dict[str, Any]:
         return {
             "session_id": self.session_id,
+            "instruction_id": self.instruction_id,
             "repo": self.repo,
             "task": self.task,
             "step": self.step,
@@ -191,6 +193,7 @@ class SessionWorkflow:
         record = {
             "ts": self.updated_at,
             "session_id": self.session_id,
+            "instruction_id": self.instruction_id,
             "kind": kind,
             "by": by,
             "text": text,
@@ -294,6 +297,7 @@ class SessionWorkflow:
     @workflow.run
     async def run(self, params: dict[str, Any]) -> dict[str, Any]:
         self.session_id = params["session_id"]
+        self.instruction_id = params.get("instruction_id")
         self.repo = params.get("repo")
         self.task = params["task"]
         self.runner = params.get("runner", "echo")
