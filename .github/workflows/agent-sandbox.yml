@@ -102,7 +102,7 @@ jobs:
             pi|gemini)   npm install -g --silent @earendil-works/pi-coding-agent@0.86.1 ;;
             *)           echo "::error::unknown harness"; exit 1 ;;
           esac
-          sudo apt-get update -qq && sudo apt-get install -y -qq age
+          bash bin/agent-sandbox-age
 
       - name: Run the agent (its output goes to a file, never to this public log)
         env:
@@ -245,7 +245,7 @@ jobs:
         run: |
           set -euo pipefail
           [ -n "$AGE_KEY" ] || { echo "::error::AGENT_TRANSCRIPT_AGE_KEY is not set"; exit 1; }
-          sudo apt-get update -qq && sudo apt-get install -y -qq age
+          bash bin/agent-sandbox-age
           work="$RUNNER_TEMP/work"; mkdir -p "$work"
           printf '%s\n' "$AGE_KEY" > "$RUNNER_TEMP/key"; chmod 600 "$RUNNER_TEMP/key"
           age -d -i "$RUNNER_TEMP/key" "$RUNNER_TEMP/sealed/work.tar.age" | tar -C "$work" -xf - transcript.jsonl
@@ -298,7 +298,7 @@ jobs:
           AGE_KEY: ${{ secrets.AGENT_TRANSCRIPT_AGE_KEY }}
         run: |
           set -euo pipefail
-          sudo apt-get update -qq && sudo apt-get install -y -qq age
+          bash bin/agent-sandbox-age
           work="$RUNNER_TEMP/work"; mkdir -p "$work"
           printf '%s\n' "$AGE_KEY" > "$RUNNER_TEMP/key"; chmod 600 "$RUNNER_TEMP/key"
           age -d -i "$RUNNER_TEMP/key" "$RUNNER_TEMP/sealed/work.tar.age" | tar -C "$work" -xf - patch base
