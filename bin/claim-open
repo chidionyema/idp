@@ -39,6 +39,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -97,6 +98,31 @@ def run(cmd: list[str], **kw: object) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _resolve_tool(name: str) -> str:
+    """Find a tool the way a login shell would, not the way this process's PATH happens to be.
+
+    The executor runs with a PATH that does not include ~/.local/bin, so a bare `gh` raises
+    FileNotFoundError and every caller hand-wraps it -- the environment-fighting defect class,
+    not a fix. Resolving once here means every caller, and every session, gets the same answer.
+    """
+    found = shutil.which(name)
+    if found:
+        return found
+    for d in (
+        os.path.expanduser("~/.local/bin"),
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        os.path.expanduser("~/.rd/bin"),
+    ):
+        cand = os.path.join(d, name)
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    return name  # let the caller fail naming the tool it could not run
+
+
+GH = _resolve_tool("gh")
+
+
 def git(*a: str) -> str:
     p = run(["git", *a])
     if p.returncode != 0:
@@ -105,7 +131,7 @@ def git(*a: str) -> str:
 
 
 def gh(*a: str, check: bool = True) -> str:
-    p = run(["gh", *a])
+    p = run([GH, *a])
     if check and p.returncode != 0:
         sys.exit(f"FAIL    claim-open  gh {' '.join(a)}: {p.stderr.strip()[:300]}")
     return p.stdout
