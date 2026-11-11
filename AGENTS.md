@@ -67,7 +67,7 @@ falsifying regression test, CI/browser screenshot evidence, independently verifi
 and explicit incident closure. Never silently rebrand on the basis of URL spelling or unverified
 QA assertions; use founder-approved identity authority. This is effect-scoped: do not impose
 commercial release gates on isolated internal research.
-See the 2026-11-11 Merdian release-class failure for the concrete negative-test pattern.
+See the 2026-11-11 Meridian release-class failure for the concrete negative-test pattern.
 
 ---
 
