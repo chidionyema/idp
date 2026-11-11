@@ -41,7 +41,15 @@ export function generateMetadata(): Metadata {
     description: "Independent AI laboratory, technology consultancy and venture builder. Research, engineering and commercially useful AI systems.",
     openGraph: { type: "website", locale: "en_US", url: base.href, siteName: "Meridian Intelligence", images: [{ url: "/opengraph-image", width: 1200, height: 630 }] },
     twitter: { card: "summary_large_image" },
-    robots: { index: true, follow: true },
+    // Every page states its own canonical URL. A relative canonical resolves
+    // against the route it sits on, so each page points at itself and nothing
+    // points at the home page by accident.
+    alternates: { canonical: "./" },
+    // No `robots` here on purpose. Next.js adds its own `noindex` to the
+    // not-found route, and a layout-level `index, follow` shipped both tags on
+    // the same 404. Search engines discard conflicting directives, so the 404
+    // was left indexable. A page without a robots tag is indexable anyway, and
+    // the 404 keeps the single tag it needs.
   };
 }
 

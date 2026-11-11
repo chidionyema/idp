@@ -1,15 +1,15 @@
 "use client";
 import { useState, useEffect } from "react";
+import { models as MODELS } from "@/content/models";
 
-const MODELS = [
-  { key: "gpt-4o-mini", label: "GPT-4o Mini", cost: "$0.15" },
-  { key: "deepseek-chat", label: "DeepSeek V3", cost: "$0.27" },
-  { key: "claude-sonnet-4", label: "Claude Sonnet 4", cost: "$3.00" },
-  { key: "gemini-2.0-flash", label: "Gemini 2.0 Flash", cost: "Free" },
-];
+const PLAYGROUND_MODELS = MODELS.map((m) => ({
+  key: m.key,
+  label: m.label,
+  cost: `$${m.inputPer1M.toFixed(2)}`,
+}));
 
 export function HeroPlayground() {
-  const [selected, setSelected] = useState("gpt-4o-mini");
+  const [selected, setSelected] = useState("gpt-6-luna");
   const [message, setMessage] = useState("How does agentic routing reduce LLM costs at scale?");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ response: string; model: string; latency: number; totalTokens: number; costUsd: number; mode: string } | null>(null);
@@ -54,7 +54,7 @@ export function HeroPlayground() {
         <div>
           <p style={{ fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-3)", marginBottom: "8px" }}>Model</p>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-            {MODELS.map((m) => (
+            {PLAYGROUND_MODELS.map((m) => (
               <button key={m.key} type="button" onClick={() => setSelected(m.key)}
                 style={{
                   display: "flex", justifyContent: "space-between", alignItems: "center",
@@ -85,7 +85,7 @@ export function HeroPlayground() {
         {!result && !loading && !error && <p style={{ fontFamily: "var(--mono)", fontSize: "12px", color: "var(--ink-3)" }}>Response will appear here…</p>}
         {loading && (
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <p style={{ fontFamily: "var(--mono)", fontSize: "12px", color: "var(--ink-3)" }}><span className="pulse-dot" style={{ marginRight: "8px" }} />{MODELS.find((m) => m.key === selected)?.label} is thinking…</p>
+            <p style={{ fontFamily: "var(--mono)", fontSize: "12px", color: "var(--ink-3)" }}><span className="pulse-dot" style={{ marginRight: "8px" }} />{PLAYGROUND_MODELS.find((m) => m.key === selected)?.label} is thinking…</p>
             <div style={{ height: "3px", background: "var(--rule)", borderRadius: "2px", overflow: "hidden" }}><div style={{ height: "100%", width: "55%", background: "var(--accent)", opacity: 0.6 }} /></div>
           </div>
         )}
