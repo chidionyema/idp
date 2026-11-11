@@ -1,0 +1,239 @@
+#!/usr/bin/env python3
+"""estate-zero-worktree -- refuse the spawn, do not clean up after it.
+
+WHY THIS EXISTS (founder, 2026-11-11, executive order). The MacBook is a stateless thin client.
+Agents were materialising full repository worktrees on it -- fourteen registered worktrees, each a
+complete copy of the tracked tree, several locked inside /private/tmp and harness scratch.
+Measured that day: 1010 MB free against a 1500 MB executor floor, so EVERY door refused every
+command, including the commands that would have freed space. The estate's own home (~/.estate) had
+grown to 6.1 GB, itself a git repository with a working tree.
+
+A REACTIVE CLEANER CANNOT WIN THIS, and the law of section 9 is that a class is closed, not the
+instance. The cleaner races the spawner: hydrating a worktree takes seconds, rm -rf of a tree of
+small files takes longer than the executor's 100s ceiling (measured 2026-11-11: one 2.7 GB cache
+removal was SIGTERMed at the ceiling), so while one tree is being deleted five sessions have
+already made another. That is a positive-feedback loop, and the estate's answer to a loop is to
+BUDGET it and BREAK it at the source (R5), not to run it faster.
+
+THE INVARIANTS, each enforced here rather than written in a document:
+
+  1. ZERO_LOCAL_WORKTREES. A command that would create a checkout on this host -- git worktree
+     add, git clone, or a dependency install that materialises node_modules -- is REFUSED with
+     exit 78 (EX_CONFIG). The audit/patch path needs none of it: git's packfile already holds
+     every commit, so git show <ref>:<path>, git diff-tree and cat-file --batch read 300 commits
+     in milliseconds and write nothing.
+  2. A CONCURRENCY CAP. At most MAX_CONCURRENT local worktrees may exist at once. Per-session
+     copies stampeding to fourteen is the amplifier; a cap turns it into a queue.
+  3. THE MACHINE IS NOT A BUILD FARM. Verification belongs to the Greenlane / GitHub Actions,
+     never to local compiles. Build verbs are refused, naming the door that does them.
+  4. FENCE-FIRST PURGE (bin/estate-fence-purge). Under the floor the purge fences the spawner
+     BEFORE deleting, renames O(1) so the path frees at once, and unlinks in the background at
+     lowered priority -- never a foreground rm -rf, which is the call the ceiling kills and how a
+     reclaim ends up freeing nothing.
+
+Exit codes are verdicts a caller can branch on:
+
+    0             allowed
+    78 EX_CONFIG  refused: would create a local checkout or a local build
+    2  BLIND      could not classify, so refused rather than guessed
+
+BLIND IS REFUSED, NOT ALLOWED (R1). A guard that cannot tell what a command does must never be the
+reason the thing it exists to stop gets through.
+
+Usage:
+    estate-zero-worktree check -- "<command>"     # 0 allow, 78 refuse, 2 blind
+    estate-zero-worktree count                    # local worktrees now vs the cap
+    estate-zero-worktree fence | unfence          # raise/lower the spawn fence
+    estate-zero-worktree json                     # machine-readable state
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+EXIT_ALLOW = 0
+EXIT_BLIND = 2
+EXIT_REFUSED = 78
+EX_CONFIG = EXIT_REFUSED
+
+MAX_CONCURRENT = int(os.environ.get("ESTATE_MAX_LOCAL_WORKTREES", "4"))
+
+FENCE = Path(os.environ.get("ESTATE_SPAWN_FENCE", os.path.expanduser("~/.estate/NO_SPAWN_FENCE")))
+REPO = Path(os.environ.get("ESTATE_IDP_REPO", os.path.expanduser("~/Documents/code/idp")))
+GIT = shutil.which("git") or "/usr/bin/git"
+
+SPAWN_VERBS = (
+    (r"\bgit\b[^;|&\n]*\bworktree\b[^;|&\n]*\badd\b",
+     "git worktree add: a full local checkout"),
+    (r"\bgit\b[^;|&\n]*\bclone\b",
+     "git clone: a full local checkout (read the bare object store instead)"),
+    (r"\b(?:npm|pnpm)\b[^;|&\n]*\b(?:install|i|ci|add)\b",
+     "a dependency install: local node_modules"),
+    (r"\byarn\b[^;|&\n]*\b(?:install|add)\b", "yarn install: a local node_modules tree"),
+)
+
+BUILD_VERBS = (
+    (r"\bcargo\b[^;|&\n]*\b(?:build|check|test)\b", "cargo build: the Greenlane / Actions verifies"),
+    (r"\bdocker\b[^;|&\n]*\bbuild\b", "docker build: build-multiarch.yml builds, not this host"),
+)
+
+READ_ONLY = (
+    r"^\s*(?:rg|grep|ag|fd|cat|bat|less|head|tail|ls|wc|sort|uniq|jq|awk|sed|diff|stat|du|df"
+    r"|find|file|md5|shasum|sha256sum|xxd|od)\b",
+    r"^\s*git\b[^;|&\n]*\b(?:show|log|diff|diff-tree|status|rev-parse|cat-file|ls-remote|fetch"
+    r"|merge-base|describe)\b",
+    r"^\s*git\b[^;|&\n]*\bworktree\s+list\b",
+)
+
+
+def _classify(command):
+    """Return (exit_code, reason) for a command that does not spawn a checkout.
+
+    ORDER MATTERS: read-only is proved FIRST, so a search for the string "git worktree add" is a
+    read and not a spawn (R38: refusing a search is refusing correct work). The spawn table is
+    then consulted only for a command that has not been proved read-only.
+    """
+    if not command or not command.strip():
+        return EXIT_BLIND, "empty command: nothing to classify, so nothing is allowed"
+    for pat in READ_ONLY:
+        if re.search(pat, command):
+            return EXIT_ALLOW, "a read-only probe: it creates nothing"
+    for pat, why in BUILD_VERBS:
+        if re.search(pat, command):
+            return EX_CONFIG, "refused: %s (idp/AGENTS.md section 2)" % why
+    for pat, why in SPAWN_VERBS:
+        if re.search(pat, command):
+            return EX_CONFIG, "refused: %s (founder executive order, 2026-11-11)" % why
+    return EXIT_ALLOW, "no spawn or build verb in command position"
+
+
+def _would_spawn(command):
+    """True unless the command is PROVED read-only.
+
+    This is the only question the spawn fence answers, and its default is DENY: an unrecognised
+    command is treated as a spawn while a purge is in flight. The alternative -- "only stop the
+    verbs on our list" -- was measured failing on 2026-11-11: `bin/greenlane-lane build --all` is
+    not in the table, so the fence waved it through while a purge ran, which is the race the fence
+    exists to prevent. A list of forbidden shapes can always be one shape short; a list of proved
+    reads cannot, because the read table is the thing we are confident about.
+
+    The one thing this must never do is refuse a read: a purge that stops every agent MEASURING
+    the disk is a purge nobody can watch finish (R38).
+    """
+    for pat in READ_ONLY:
+        if re.search(pat, command):
+            return False
+    return True
+
+
+def _worktree_count():
+    """How many worktrees git knows about, or None when it cannot be measured (BLIND)."""
+    try:
+        out = subprocess.run(
+            [GIT, "-C", str(REPO), "worktree", "list", "--porcelain"],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return sum(1 for line in out.stdout.splitlines() if line.startswith("worktree "))
+
+
+def _declares_spawn(command):
+    """True when the command names a verb the estate knows creates a checkout or a local build."""
+    if any(re.search(pat, command) for pat in READ_ONLY):
+        return False
+    return any(re.search(pat, command) for pat, _ in SPAWN_VERBS + BUILD_VERBS)
+
+
+def _fenced():
+    return FENCE.exists()
+
+
+def cmd_check(command):
+    code, why = _classify(command)
+    if code == EXIT_ALLOW and _fenced() and _would_spawn(command):
+        # THE FENCE STOPS THE SPAWN, NOT THE OBSERVER. A read is still allowed while a purge runs,
+        # so the disk can be measured by the agent watching the purge free it.
+        code = EX_CONFIG
+        why = "refused: the spawn fence is up at %s (a purge is in flight)" % FENCE
+    if code == EXIT_ALLOW and _declares_spawn(command):
+        # THE CAP BOUNDS SPAWNS, NOT OBSERVATION. Refusing `df` because fourteen worktrees exist
+        # would be the estate refusing the measurement that tells it to fix the fourteen (R38).
+        # The cap uses the DECLARED table, not the fence's deny-by-default: an unrecognised command
+        # is not evidence of a fifteenth worktree, so it is not capped.
+        n = _worktree_count()
+        if n is not None and n >= MAX_CONCURRENT:
+            code = EX_CONFIG
+            why = (
+                "refused: %d local worktrees already exist against a cap of %d;"
+                " reuse one, or free it with bin/estate-fence-purge" % (n, MAX_CONCURRENT)
+            )
+    verdict = "ALLOW" if code == EXIT_ALLOW else "REFUSE" if code == EXIT_REFUSED else "BLIND"
+    print("%s  zero-worktree  %s" % (verdict, why))
+    return code
+
+
+def cmd_count():
+    n = _worktree_count()
+    if n is None:
+        print("BLIND  count  git worktree list could not answer: the count is unknown, not zero")
+        return EXIT_BLIND
+    print("ok     count  %d local worktree(s) against a cap of %d" % (n, MAX_CONCURRENT))
+    return EXIT_ALLOW if n < MAX_CONCURRENT else EXIT_REFUSED
+
+
+def cmd_fence():
+    try:
+        FENCE.parent.mkdir(parents=True, exist_ok=True)
+        FENCE.write_text("fenced\n")
+    except OSError as exc:
+        print("BLIND  fence  could not write %s: %s" % (FENCE, exc))
+        return EXIT_BLIND
+    print("ok     fence  %s is up: no new local checkout may spawn" % FENCE)
+    return EXIT_ALLOW
+
+
+def cmd_unfence():
+    try:
+        FENCE.unlink(missing_ok=True)
+    except OSError as exc:
+        print("BLIND  unfence  could not remove %s: %s" % (FENCE, exc))
+        return EXIT_BLIND
+    print("ok     unfence  %s is down" % FENCE)
+    return EXIT_ALLOW
+
+
+def main(argv):
+    if not argv:
+        print("BLIND  zero-worktree  no verb given: nothing was classified")
+        return EXIT_BLIND
+    verb, rest = argv[0], argv[1:]
+    if verb == "check":
+        if "--" in rest:
+            rest = rest[rest.index("--") + 1:]
+        return cmd_check(" ".join(rest))
+    if verb == "count":
+        return cmd_count()
+    if verb == "fence":
+        return cmd_fence()
+    if verb == "unfence":
+        return cmd_unfence()
+    if verb == "json":
+        n = _worktree_count()
+        print(json.dumps({"worktrees": n, "max_concurrent": MAX_CONCURRENT,
+                          "fenced": _fenced(), "blind": n is None}))
+        return EXIT_BLIND if n is None else EXIT_ALLOW
+    print("BLIND  zero-worktree  unknown verb %r: nothing was classified" % verb)
+    return EXIT_BLIND
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
