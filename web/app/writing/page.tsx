@@ -4,14 +4,14 @@ import { posts } from "@/content/posts";
 
 export const metadata: Metadata = {
   title: "Insights",
-  description: "Research notes and technical thinking from Merdian Intelligence on agent systems, AI evaluation and secure engineering.",
+  description: "Research notes and technical thinking from Meridian Intelligence on agent systems, AI evaluation and secure engineering.",
 };
 
 export default function WritingPage() {
   return <div className="mi-interior">
     <section className="mi-page-hero" aria-labelledby="insights-heading">
       <div className="mi-shell">
-        <span className="mi-eyebrow">MERDIAN / INSIGHTS</span>
+        <span className="mi-eyebrow">MERIDIAN / INSIGHTS</span>
         <h1 id="insights-heading">IDEAS NEED<br/><em>EVIDENCE.</em></h1>
         <div className="mi-page-hero-bottom"><p>Notes from the laboratory. Methods, trade-offs and technical arguments. A written hypothesis is a starting point for testing.</p><Link href="/research" className="mi-button mi-button-gold">Explore the laboratory <span aria-hidden="true">↗</span></Link></div>
       </div>
