@@ -32,10 +32,11 @@ jobs:
           const free = ids.filter(x => x.endsWith(":free"));
           console.log(JSON.stringify({freeCount:free.length, sample:free.slice(0,20)}));
           const wanted = [
-            "minimax/minimax-m3.1-flash:free",
-            "z-ai/glm-5:free",
+            "cohere/north-mini-code:free",
+            "liquid/lfm-3-1.7b:free",
+            "thinkingmachines/inkling-2-small:free",
+            "nvidia/nemotron-3.5-lightning:free",
             "nvidia/nemotron-3.5-super-vl:free",
-            "nvidia/nemotron-3-ultra:free",
           ];
           const selected = wanted.find(x=>free.includes(x)) || free[0];
           if (!selected) throw new Error("No available anonymous free model in catalog");
