@@ -28,7 +28,7 @@ export default function HomePage() {
                 INTELLIGENCE<span className="mi-hero-comma">,</span><br/>
                 <span className="mi-hero-outline">MADE</span> REAL<span className="mi-gold-stop">.</span>
               </h1>
-              <p className="mi-hero-intro">We are an AI research laboratory, technology consultancy and company builder. We turn new intelligence into systems people can use, businesses can trust and ventures that can grow.</p>
+              <p className="mi-hero-intro">We research where AI breaks, engineer systems that work beyond the demo, and turn the lessons into ventures, technical education and consultancy. The result is intelligence you can actually use.</p>
               <div className="mi-hero-actions">
                 <Link href="/consulting" className="mi-button mi-button-gold">Work with us <span aria-hidden="true">↗</span></Link>
                 <Link href="/research" className="mi-button mi-button-outline">Enter the laboratory <span aria-hidden="true">↗</span></Link>
@@ -80,7 +80,7 @@ export default function HomePage() {
           <div className="mi-lab-copy">
             <span className="mi-eyebrow">02 / THE LABORATORY</span>
             <h2 id="mi-lab-heading">Curiosity<br/>is an <em>operating</em><br/>principle.</h2>
-            <p>Our lab tests emerging models, agent architectures and new ways to automate work. Hypotheses become controlled trials. Results become knowledge. Promising discoveries become products or client capabilities.</p>
+            <p>Our lab works on the difficult edge of applied AI: autonomous workflows, durable instructions, model evaluation, secure actions and operational evidence. We publish transferable principles, protect proprietary implementation and commercialise what stands up to testing.</p>
             <Link href="/research" className="mi-button mi-button-gold">Explore research <span aria-hidden="true">↗</span></Link>
           </div>
           <div className="mi-lab-board">
@@ -90,6 +90,19 @@ export default function HomePage() {
             <div className="mi-lab-programme"><span>03</span><div><h3>Trust & infrastructure</h3><p>Identity, reliability, observability and operational proof</p></div><b>↗</b></div>
             <div className="mi-lab-board-foot"><span>METHOD / HYPOTHESIS → EXPERIMENT → EVIDENCE</span><span>↗</span></div>
           </div>
+        </div>
+      </section>
+
+      <section className="mi-proof-band" aria-labelledby="mi-fieldbooks-heading">
+        <div className="mi-shell">
+          <span className="mi-eyebrow">04 / ORIGINAL INTELLIGENCE</span>
+          <h2 id="mi-fieldbooks-heading" className="mi-wide-statement">NOT ANOTHER<br/>AI CONTENT MILL.<br/><em>KNOWLEDGE THAT HOLDS UP.</em></h2>
+          <div className="mi-proof-grid">
+            <div><h3>From prompt to proof.</h3><p>What it takes to convert agent-generated plans into durable instructions, authorised actions and independently verified outcomes.</p></div>
+            <div><h3>From failure to method.</h3><p>We develop practices around real failure classes: lost state, unsafe execution, stale dashboards and visual release regressions.</p></div>
+            <div><h3>From expertise to value.</h3><p>Original fieldbooks, open technical chapters, applied masterclasses and senior engineering partnerships.</p></div>
+          </div>
+          <div style={{marginTop:40}}><Link href="/fieldbooks" className="mi-button mi-button-gold">Explore Merdian Fieldbooks <span aria-hidden="true">↗</span></Link></div>
         </div>
       </section>
 
