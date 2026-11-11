@@ -57,6 +57,31 @@ FOCUS_TIMEOUT_S = 8.0
 STUCK_AFTER_S = 3 * 3600
 
 
+def _is_fresh(stamp, now: float, ttl: float) -> bool:
+    """Is a cached entry stamped `stamp` still inside its TTL at `now`?
+
+    A stamp in the FUTURE is never fresh. The plain `now - stamp < ttl` test accepts one,
+    because the difference is negative and therefore smaller than any TTL -- so a cache
+    written once with a clock-skewed timestamp is treated as fresh forever and the register
+    freezes. Measured on this estate 2026-11-11: the focus register was stamped
+    2026-11-11T10:13:15Z while the clock read 09:00:15Z, a 73-minute skew, so `now - at` was
+    -4380 and every newly opened claim was invisible to the focus gate while the gate kept
+    refusing writes against claims that had already landed or changed scope.
+
+    So: a future stamp is skew, not freshness -- and an entry we cannot date is not fresh
+    either. Both land on 'expired', which costs one re-read; the alternative costs every
+    agent its focus gate, silently, for as long as the skew persists.
+    """
+    try:
+        stamp = float(stamp or 0)
+    except (TypeError, ValueError):
+        return False
+    if stamp <= 0:
+        return False
+    age = now - stamp
+    return 0 <= age < ttl
+
+
 def _home() -> str:
     return os.environ.get("ESTATE_MEMORY_HOME") or os.path.join(
         os.path.expanduser("~"), ".estate", "memory"
@@ -142,7 +167,7 @@ def claim_state(num: int, prefix: str, cache: dict, path: str):
     def ok(h):
         return (
             isinstance(h, dict)
-            and now - h.get("at", 0) < STATE_TTL_S
+            and _is_fresh(h.get("at", 0), now, STATE_TTL_S)
             and h.get("state") in ("OPEN", "CLOSED")
         )
 
@@ -289,7 +314,7 @@ def live_focus(path: str = "", now: float = 0.0):
     path = path or focus_cache_path()
     now = now or time.time()
     hit = load_json(path)
-    if now - hit.get("at", 0) < FOCUS_TTL_S and isinstance(hit.get("rows"), list):
+    if _is_fresh(hit.get("at", 0), now, FOCUS_TTL_S) and isinstance(hit.get("rows"), list):
         return hit["rows"]
     # A heartbeat is a comment, and a comment updates its issue: every live claim is on an issue
     # touched inside the lapse window. Asking only for those, newest first, keeps the answer
