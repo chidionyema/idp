@@ -15,6 +15,7 @@ import {messagesFor,inference,parseAction,checkPython} from "./helm.mjs";
 const sha = s => createHash("sha256").update(s).digest("hex");
 const image = "python:3.12-alpine";
 const sample = JSON.parse(readFileSync(new URL("./fixtures/functional.json",import.meta.url),"utf8"));
+const references=JSON.parse(readFileSync(new URL("./fixtures/functional-references.json",import.meta.url),"utf8"));
 const arms = ["baseline","skills","memory","memory_repair","helm"];
 
 function programFromAction(raw) {
@@ -141,13 +142,17 @@ export function summarise(records,armNames=arms) {
 if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   const mode=process.argv[2]||"test";
   if(mode==="test"){
-    // Independently test grader sensitivity and specificity, without any remote model.
-    const wrong=runIndependentTests(sample.cases[0],"def classify_surface(*a):\n return 'HEALTHY'\n");
-    if(wrong.passed)throw Error("oracle accepted an intentionally incorrect implementation");
-    const correct=runIndependentTests(sample.cases[1],
-      "def choose_intent(requested, registry, retrieved_memory):\n return requested if isinstance(requested,str) and bool(requested) and registry.get(requested) is True else 'DENY'\n");
-    if(!correct.passed)throw Error("known-good functional test failed: "+correct.detail);
-    console.log(JSON.stringify({grade:"SMOKE_PASS",wrong,correct}));
+    // Two-sided oracle contract: every test must accept a known-good implementation
+    // and reject an empty patch. This catches broken or vacuous benchmarks.
+    const evidence=[];
+    for(const c of sample.cases){
+      const empty=runIndependentTests(c,"# intentionally empty patch\n");
+      if(empty.passed)throw Error("vacuous oracle accepted empty patch: "+c.id);
+      const correct=runIndependentTests(c,references[c.id]);
+      if(!correct.passed)throw Error("invalid oracle/reference for "+c.id+": "+correct.detail);
+      evidence.push({id:c.id,negativeRejected:true,referencePassed:true,tests:correct.tests});
+    }
+    console.log(JSON.stringify({grade:"TWO_SIDED_ORACLES_PASS",evidence}));
   }else if(mode==="live"){
     const model=process.env.HELM_MODEL;
     const url=process.env.HELM_INFERENCE_URL;
