@@ -6,7 +6,7 @@ import {HelmGroundGateway,FixtureShotStore} from "./shot-ground-adapter.mjs";
 const SHA="c".repeat(40);
 const CONTEXT="task authorised by Argon";
 const plan=["BUILD","TEST","COMMIT","PUSH","GREENLANE","VERIFY"];
-const make=(shots=1,changes={})=>{
+const make=(shots=1,changes={},behavior={})=>{
   const policy=shotPolicy({
     instructionId:"INS-GROUND-01",taskDigest:helmDigest(CONTEXT),
     sourceSha:SHA,model:"agent-router-v1",shots,
@@ -16,7 +16,7 @@ const make=(shots=1,changes={})=>{
   const calls={probes:0,dispatches:0};
   const gateway=new HelmGroundGateway({
     policy,store,permittedIntents:["repo.delivery"],
-    contextProbe:async()=>{calls.probes++;return {branch:"main",sha:SHA};},
+    contextProbe:async()=>{calls.probes++;if(behavior.failProbe)throw Error("network down");return {branch:"main",sha:SHA};},
     dispatchRegisteredIntent:async request=>{
       calls.dispatches++;return {accepted:true,jobId:"job-"+calls.dispatches,request};
     }
@@ -57,12 +57,10 @@ test("a second probe cannot call tool even when model tries",async()=>{
 });
 
 test("a failing probe consumes the one tool grant BEFORE its side effect",async()=>{
-  const x=make();
-  let calls=0;
-  x.gateway.contextProbe=async()=>{calls++;throw Error("network down");};
+  const x=make(1,{}, {failProbe:true});
   await fail(()=>x.gateway.probeOnce(x.request),/network down/);
   await fail(()=>x.gateway.probeOnce(x.request),/probe budget spent/);
-  assert.equal(calls,1);
+  assert.equal(x.calls.probes,1);
   assert.equal((await x.gateway.snapshot()).contextProbes,1);
 });
 
@@ -194,4 +192,17 @@ test("context request cannot fetch stale or unrelated source",async()=>{
     ...x.request,sourceSha:"d".repeat(40)
   }),/stale context request/);
   assert.equal(x.calls.probes,0);
+});
+
+test("overriding a public field cannot access or bypass private tool capabilities",async()=>{
+  const x=make();
+  assert.equal(x.gateway.store,undefined);
+  assert.equal(x.gateway.contextProbe,undefined);
+  assert.equal(x.gateway.dispatchRegisteredIntent,undefined);
+  x.gateway.contextProbe=async()=>{throw Error("BYPASS");};
+  x.gateway.dispatchRegisteredIntent=async()=>{throw Error("BYPASS");};
+  await x.gateway.probeOnce(x.request);
+  await x.gateway.deliver(x.candidate);
+  assert.equal(x.calls.probes,1);
+  assert.equal(x.calls.dispatches,1);
 });
