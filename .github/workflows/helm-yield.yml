@@ -1,0 +1,80 @@
+# HELM closed-loop science: fresh model output -> independent test -> retained experience
+# -> independent replay without additional model inference.
+name: helm-yield
+on:
+  push:
+    branches: [research/helm-*]
+    paths: [experiments/helm/YIELD_TRIGGER]
+  workflow_dispatch:
+concurrency:
+  group: helm-yield-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  yield:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify HELM engine, agent adapter and experience-memory invariants
+        run: node --test experiments/helm/helm.test.mjs experiments/helm/functional-bench.test.mjs experiments/helm/agent-adapter.test.mjs experiments/helm/operational-memory.test.mjs
+      - name: Prepare isolated grader
+        run: docker pull python:3.12-alpine
+      - name: Verify independent oracle passes reference and rejects empty patch
+        run: node experiments/helm/functional-bench.mjs test
+      - name: Select a real, text-producing, current free model
+        run: |
+          node --input-type=module <<'NODE'
+          import {appendFileSync} from "node:fs";
+          const base="https://ai-gateway.kilo.ai/api/v1";
+          const r=await fetch(base+"/models");
+          if(!r.ok)throw Error("catalog status "+r.status);
+          const available=new Set((await r.json()).data?.map(x=>x.id)||[]);
+          const candidates=[
+            "cohere/north-mini-code:free",
+            "liquid/lfm-3-1.7b:free",
+            "nvidia/nemotron-3.5-lightning:free",
+            "thinkingmachines/inkling-2-small:free"
+          ];
+          let winner=null;
+          for(const model of candidates.filter(x=>available.has(x))){
+            const controller=new AbortController();
+            const timer=setTimeout(()=>controller.abort(),16000);
+            try{
+              const answer=await fetch(base+"/chat/completions",{
+                method:"POST",signal:controller.signal,
+                headers:{"Content-Type":"application/json"},
+                body:JSON.stringify({model,temperature:0,max_tokens:3072,
+                  messages:[{role:"system",content:"Return a JSON object with opcode EMIT_PATCH and a Python source-code payload."},
+                    {role:"user",content:"Implement def double(n): return n*2 in Python."}]})
+              });
+              const j=await answer.json().catch(()=>null);
+              const content=j?.choices?.[0]?.message?.content||"";
+              console.log(JSON.stringify({model,http:answer.status,contentChars:content.length,
+                outputTokens:j?.usage?.completion_tokens||0,finish:j?.choices?.[0]?.finish_reason||"unknown"}));
+              if(answer.ok && content.includes("def double")){winner=model;break;}
+            }catch(e){console.log(JSON.stringify({model,error:String(e.message).slice(0,130)}))}
+            finally{clearTimeout(timer)}
+          }
+          if(!winner)throw Error("No listed free model returned usable source code in preflight");
+          appendFileSync(process.env.GITHUB_ENV,"HELM_MODEL="+winner+"\n");
+          console.log("HELM_YIELD_SELECTED_MODEL="+winner);
+          NODE
+      - name: Generate, independently verify, retain and replay code
+        env:
+          HELM_INFERENCE_URL: https://ai-gateway.kilo.ai/api/v1/chat/completions
+          HELM_MAX_OUTPUT_TOKENS: "4096"
+          HELM_YIELD_TASK_ID: FUNC-INTENT-AUTHORITY
+          GITHUB_SHA: ${{ github.sha }}
+        run: node experiments/helm/functional-bench.mjs yield
+      - name: Publish immutable trial and replay receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: helm-closed-loop-${{ github.run_id }}
+          path: experiments/helm/out/*.json
+          retention-days: 14
+          if-no-files-found: warn
