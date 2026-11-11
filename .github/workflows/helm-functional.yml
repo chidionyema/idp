@@ -19,7 +19,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Verify both HELM and independent functional harness
-        run: node --test experiments/helm/helm.test.mjs experiments/helm/functional-bench.test.mjs
+        run: node --test experiments/helm/helm.test.mjs experiments/helm/functional-bench.test.mjs experiments/helm/agent-adapter.test.mjs
       - name: Prepare network-isolated unprivileged Python test image
         run: docker pull python:3.12-alpine
       - name: Verify independent tests reject wrong code and accept known-good code
