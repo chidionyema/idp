@@ -93,8 +93,9 @@ export async function runFunctional({tasks=sample.cases,evidence=sample.evidence
       const attempts=[];
       const repairEnabled=arm==="helm"||arm==="memory_repair";
       for(let n=0;n<(repairEnabled?maxAttempts:1);n++){
+        const calledAt=performance.now();
         try{
-          const reply=await fn({url,token,model,messages,timeoutMs:25000});
+          const reply=await fn({url,token,model,messages,timeoutMs:45000});
           const payload=programFromAction(reply.answer);
           const outcome=payload.ok?testFn(task,payload.code):
             {passed:false,kind:"schema-or-static",tests:0,detail:payload.reason};
@@ -110,6 +111,7 @@ export async function runFunctional({tasks=sample.cases,evidence=sample.evidence
             String(outcome.detail).slice(0,900)+". Return a revised valid JSON EMIT_PATCH action, payload complete corrected Python source."});
         }catch(error){
           attempts.push({n:n+1,passed:false,kind:"provider-error",tests:0,
+            latencyMs:Math.round(performance.now()-calledAt),
             detail:String(error.message||error).slice(0,250)});
           break;
         }
