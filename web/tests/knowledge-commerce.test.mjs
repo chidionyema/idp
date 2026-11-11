@@ -44,8 +44,8 @@ test('knowledge-commerce routes are discoverable and canonical while legal entit
 
 test('premium knowledge headings must remain legible against dark background', () => {
   const css=src('app/fieldbooks/fieldbooks.css');
-  assert.match(css, /\\.mi-chapter-hero h1\\{[^}]*color:#fff\\}/,
-    'chapter heading lost its explicit light foreground');
-  assert.match(css, /\\.mi-knowledge-hero h1\\{[^}]*color:#fff\\}/,
-    'collection heading lost its explicit light foreground');
+  const chapter=css.split('.mi-chapter-hero h1{')[1]?.split('}')[0] ?? '';
+  const collection=css.split('.mi-knowledge-hero h1{')[1]?.split('}')[0] ?? '';
+  assert.ok(chapter.includes('color:#fff'), 'chapter heading lost its explicit light foreground');
+  assert.ok(collection.includes('color:#fff'), 'collection heading lost its explicit light foreground');
 });
