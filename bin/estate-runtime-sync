@@ -101,6 +101,8 @@ def git_env(extra=None) -> dict:
     if extra:
         env.update(extra)
     return env
+
+
 # The live board's data; the tree links to it, never copies it.
 DATA = HOME / "Documents/code/idp/catalog"
 LOG, INBOX = STATE / "runtime-sync.log", STATE / "alerts/inbox.jsonl"
@@ -162,9 +164,31 @@ def launchers() -> list[str]:
     # Plus every bin/ file a launchd template runs from ~/.estate/bin. The hand list alone left
     # idp-disk-watch installed a day stale (2026-09-28: its 20G early cleanup merged, never ran,
     # disk hit 265M free).
+    #
+    # 2026-11-11: it happened again, one layer down. Reading the templates off DISK made delivery
+    # depend on which directories this sparse checkout happens to contain: `launchd/` is not
+    # checked out in every tree, so `launchd/*.tmpl` globbed to nothing and the retired guardian
+    # was filtered out of the install set entirely. `main` said retired; the laptop ran the old
+    # binary for 21h58m. The tracked listing is the authority -- ask git, then the disk.
     names = set(LAUNCHERS)
-    for t in (TREE / "launchd").glob("*.tmpl"):
-        names.update(re.findall(r"\$\{HOME\}/\.estate/bin/([\w.-]+)", t.read_text()))
+    tracked = git(
+        "ls-tree", "-r", "--name-only", "HEAD", "launchd/", check=False
+    ).splitlines()
+    templates = [p for p in tracked if p.endswith(".tmpl")]
+    if not templates:
+        templates = [str(t) for t in (TREE / "launchd").glob("*.tmpl")]
+    for rel in templates:
+        try:
+            text = git("show", f"HEAD:{rel}", check=False)
+        except (RuntimeError, OSError):
+            continue
+        names.update(re.findall(r"\$\{HOME\}/\.estate/bin/([\w.-]+)", text))
+        # A RETIRED template stops naming its program: ai.estate.disk-watch.plist.tmpl now runs
+        # /bin/echo and <key>Disabled</key><true/>. So retiring a guardian removes it from the
+        # install set, and the old binary sits in ~/.estate/bin forever with nothing to replace
+        # it -- the retirement deleting its own delivery path. Read the retirement note too: a
+        # template that mentions bin/<name> in its own header still owns that file.
+        names.update(re.findall(r"\bbin/([\w.-]+)", text))
     return sorted(names)
 
 
@@ -320,6 +344,33 @@ def stage() -> list[str]:
             (STATE / "bin" / name).chmod(0o755)
             notes.append(f"bin/{name}")
     return notes
+
+
+def drift() -> list[str]:
+    """Report every installed launcher whose bytes differ from the tracked file.
+
+    Added 2026-11-11 after the disk guardian: `main` had retired `bin/idp-disk-watch` to a
+    tombstone, and the machine was still running a 22-line pre-retirement copy out of
+    `~/.estate/bin`. Nothing was wrong with the retirement -- the runtime was simply older than
+    the repo, and no code anywhere asked the question. A disable expressed only as "the new file
+    exits 1" cannot stop an old file that is already installed and running, so the comparison is
+    the check that makes a stale install a finding instead of an invisible default.
+
+    This is a report, not a repair: `sync` copies, `drift` tells you whether you need to.
+    A named launcher that is absent from the runtime is drift too -- that is a guardian nobody
+    installed, which is the same failure seen from the other side.
+    """
+    stale: list[str] = []
+    for name in launchers():
+        tracked = TREE / "bin" / name
+        installed = STATE / "bin" / name
+        if not tracked.exists():
+            continue
+        if not installed.exists():
+            stale.append(f"bin/{name}: not installed")
+        elif not filecmp.cmp(tracked, installed, False):
+            stale.append(f"bin/{name}: differs from the tracked file")
+    return stale
 
 
 def kickstart(label: str) -> None:
@@ -636,7 +687,6 @@ def alert(text: str) -> None:
             )
             + "\n"
         )
-
 
 
 SERVICES = [
@@ -961,14 +1011,18 @@ def sync_pi_extensions() -> tuple:
     changed.extend(loose_changed)
     loose_on_main = sorted(p.name for p in src_root.iterdir() if p.is_file())
     loose_installed = sorted(p.name for p in PI_EXTENSIONS.iterdir() if p.is_file())
-    loose_not_on_main = [n for n in loose_installed if n not in loose_on_main and n.endswith(".ts")]
+    loose_not_on_main = [
+        n for n in loose_installed if n not in loose_on_main and n.endswith(".ts")
+    ]
 
     notes = []
     if changed:
         shown = ", ".join(changed[:6]) + ("..." if len(changed) > 6 else "")
         notes.append(f"pi extensions +{len(changed)} ({shown})")
     if not_installed:
-        notes.append(f"pi extensions on main, not installed here: {', '.join(not_installed)}")
+        notes.append(
+            f"pi extensions on main, not installed here: {', '.join(not_installed)}"
+        )
     if not_on_main:
         notes.append(f"pi extensions installed, not on main: {', '.join(not_on_main)}")
     # DRIFT IS LAW THAT NEVER PASSED REVIEW (2026-11-11). These files ENFORCE estate rules -- pi-governance
@@ -1011,6 +1065,18 @@ def main() -> int:
         git("checkout", "-q", "--force", "--detach", after)
     link_data()
     notes = ([scrubbed] if scrubbed else []) + stage()
+    # Say out loud whether the runtime is the repo. A silent install is how the disk guardian
+    # stayed a pre-retirement binary for 21h58m while `main` said it was retired.
+    stale = drift()
+    if stale:
+        notes.append(
+            f"runtime drift: {len(stale)} launcher(s) not on main -- {', '.join(stale[:4])}"
+        )
+        alert(
+            "runtime drift: "
+            + "; ".join(stale[:6])
+            + " -- the runtime is not the repo; `estate-runtime-sync sync` re-installs them"
+        )
     if origin_note:
         notes.append(origin_note)
     force = sys.argv[1:] == ["--restart"]
