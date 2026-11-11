@@ -79,16 +79,16 @@ function atomicWrite(result,path) {
 }
 
 export async function runFunctional({tasks=sample.cases,evidence=sample.evidence,model,url,token,
-  maxAttempts=2,fn=inference,testFn=runIndependentTests,sourceSha="local",write=()=>{}}={}) {
+  maxAttempts=2,armSet=arms,fn=inference,testFn=runIndependentTests,sourceSha="local",write=()=>{}}={}) {
   if(!model||!url)throw Error("model and HTTPS inference URL required");
   const records=[];
   const out={schema:"helm.functional.receipt.v1",kind:fn===inference?"real-model":"fixture-model",
     codeSha:sourceSha,model,createdAt:new Date().toISOString(),
     corpusSha256:sha(JSON.stringify(tasks)),oracleMode:"independent Python unittest in isolated Docker",
-    arms,records,summary:null};
+    arms:armSet,records,summary:null};
   for(let t=0;t<tasks.length;t++){
     const task=tasks[t];
-    const order=t%2===0?arms:[...arms].reverse();
+    const order=t%2===0?armSet:[...armSet].reverse();
     for(const arm of order){
       const messages=messagesFor(arm,task,evidence);
       const attempts=[];
@@ -128,7 +128,7 @@ export async function runFunctional({tasks=sample.cases,evidence=sample.evidence
       records.push({taskId:task.id,arm,passed:final?.passed===true,attempts,
         sourceSha,taskSha:sha(task.question),oracleSha:sha(task.oracle),
         ...(final?.passed===true && verifiedProgram ? {verifiedProgram} : {})});
-      out.summary=summarise(records,arms);
+      out.summary=summarise(records,armSet);
       write(out);
     }
   }
@@ -161,14 +161,32 @@ if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url))
       evidence.push({id:c.id,negativeRejected:true,referencePassed:true,tests:correct.tests});
     }
     console.log(JSON.stringify({grade:"TWO_SIDED_ORACLES_PASS",evidence}));
-  }else if(mode==="live"){
+  }else if(mode==="live" || mode==="yield"){
     const model=process.env.HELM_MODEL;
     const url=process.env.HELM_INFERENCE_URL;
+    const singleTask=sample.cases.find(t=>t.id===(process.env.HELM_YIELD_TASK_ID||"FUNC-INTENT-AUTHORITY"));
+    if(mode==="yield" && !singleTask)throw Error("unknown HELM_YIELD_TASK_ID");
+    const trialName=mode==="yield"?"yield-trial.json":"functional-trial.json";
     const result=await runFunctional({model,url,token:process.env.HELM_TOKEN,
+      tasks:mode==="yield"?[singleTask]:sample.cases,
+      armSet:mode==="yield"?["helm"]:arms,
       sourceSha:process.env.GITHUB_SHA||"local",
-      write:x=>atomicWrite(x,"functional-trial.json")});
-    console.log(JSON.stringify({grade:"FUNCTIONAL_TRIAL_RECORDED",model,summary:result.summary,
+      write:x=>atomicWrite(x,trialName)});
+    console.log(JSON.stringify({grade:"FUNCTIONAL_TRIAL_RECORDED",mode,model,summary:result.summary,
       corpusSha256:result.corpusSha256,sourceSha:result.codeSha}));
-    if(Object.values(result.summary).some(x=>x.providerErrors>0))process.exitCode=2;
+    if(mode==="yield"){
+      const {harvestVerified,replayVerified}=await import("./operational-memory.mjs");
+      const memory=harvestVerified({trial:result,tasks:[singleTask]});
+      atomicWrite(memory,"verified-program-memory.json");
+      const replay=replayVerified({memory,tasks:[singleTask]});
+      atomicWrite(replay,"verified-program-replay.json");
+      console.log(JSON.stringify({status:"END_TO_END_EXPERIENCE_YIELD",
+        accepted:memory.accepted,
+        replayed:replay.passed,independentTestsPassed:replay.independentTestsPassed,
+        replayModelCalls:replay.modelCalls,
+        modelCalls:result.summary.helm.attempts,
+        errors:result.summary.helm.providerErrors}));
+      if(replay.passed<1 || replay.passed!==memory.accepted)process.exitCode=2;
+    }else if(Object.values(result.summary).some(x=>x.providerErrors>0))process.exitCode=2;
   }else throw Error("usage: node functional-bench.mjs [test|live]");
 }
