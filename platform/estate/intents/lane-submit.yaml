@@ -106,6 +106,30 @@ steps:
       # patching ~/.estate/intents/lane-submit.yaml alone is reverted by the next sync.
       case "$lane" in lane/*) ;; *) lane="lane/$lane" ;; esac
       sha=$(git rev-parse HEAD)
+      # ASK BEFORE YOU PUSH (2026-11-11). Measured on this estate: `git push --dry-run` -- which sends
+      # NO objects -- still ran the pre-push hook (bin/idp-ci, 40-60s) and exceeded the executor's
+      # 100s ceiling in a single job (exit 124). So on a branch that is ALREADY on origin, which is
+      # the normal case for any retry, `git push` spends the whole gate before git discovers there is
+      # nothing to send. Downstream, this step then waits out its 18 x 2s observation window because
+      # the push really is alive (it is running the gate, not sending), and dies at its 50s cap
+      # reporting `TIMEOUT / OPTIMISATION REQUIRED / halted` for a lane that is fully handed over.
+      # Measured twice on 2026-11-11, on two lanes pushed hours earlier: 50s burned per false failure.
+      # This is one of the causes behind #7503 (lane-submit 53% not-ok in 30d) and the same class as
+      # #5814 -- the step could not tell `already done` from `failed`.
+      #
+      # The comparison this step already makes AFTER the push costs ONE `ls-remote`, and it is the
+      # answer to the question the step never asked. Asking it FIRST makes the whole observation
+      # window unnecessary when the answer is `already there`, and costs one call when it is not.
+      # A verification step must be able to observe `already done` without spending its budget.
+      # Read-only and fail-open to the real push: if `ls-remote` cannot answer, `on_now` is empty and
+      # the step proceeds exactly as before, so a network hiccup can never report a false handover.
+      on_now=$(git ls-remote --heads origin "$lane" 2>/dev/null | awk '{print $1}')
+      if [ "$on_now" = "$sha" ]; then
+        echo "ok      lane-submit  $lane = $(git rev-parse --short HEAD) already on origin (nothing to push)"
+        echo "        verdict: gh api repos/$repo/commits/$sha/status --jq '.statuses[]|select(.context==\"greenlane\")|.state+\" \"+.description'"
+        echo "        that is the whole observation - the lane proves this branch on top of the current main, then lands it"
+        exit 0
+      fi
       pushlog=$(mktemp -t lane-submit-push.XXXXXX)
       # THE PUSH MUST OUTLIVE THIS STEP (2026-10-27). Measured twice today: the step was
       # SIGTERMed at its 50s ceiling while the push was still running, and the push DIED WITH IT
