@@ -1,0 +1,37 @@
+# HELM research evidence: non-generative paired trial analysis.
+name: helm-trial-analysis
+on:
+  push:
+    branches: [research/helm-*]
+    paths: [experiments/helm/ANALYSIS_TRIGGER]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify research statistical invariants
+        run: node --test experiments/helm/research-eval.test.mjs
+      - name: Recover original complete transfer experiment, never a manual paraphrase
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p experiments/helm/out
+          gh run download 42961560399 --repo "$GITHUB_REPOSITORY" \
+            --name helm-transfer-42961560399 --dir experiments/helm/out
+          test -s experiments/helm/out/transfer-trial.json
+      - name: Produce matched provider-censored analysis with explicit uncertainty
+        run: node experiments/helm/research-eval.mjs experiments/helm/out/transfer-trial.json experiments/helm/out/matched-analysis.json
+      - name: Persist all evidence for independent replay
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: helm-trial-analysis-${{ github.run_id }}
+          path: experiments/helm/out/matched-analysis.json
+          retention-days: 14
+          if-no-files-found: error
