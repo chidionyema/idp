@@ -31,15 +31,15 @@ const dmMono = localFont({
 // measured 9.1 s cold and 1.4-2.9 s on a repeat from the same laptop, on a 300m CPU pod. A value
 // known at build time keeps the pages static, which is what a brochure site wants; the canonical
 // link, the OpenGraph url and every relative OG image resolve against it.
-const SITE_URL = process.env.MERDIAN_SITE_URL ?? process.env.MERIAN_SITE_URL ?? "https://merdian-intelligence.vercel.app";
+const SITE_URL = process.env.MERIDIAN_SITE_URL ?? process.env.MERDIAN_SITE_URL ?? process.env.MERIAN_SITE_URL ?? "https://meridian-intelligence-uk.vercel.app";
 
 export function generateMetadata(): Metadata {
   const base = new URL(SITE_URL);
   return {
     metadataBase: base,
-    title: { default: "Merdian Intelligence", template: "%s | Merdian Intelligence" },
+    title: { default: "Meridian Intelligence", template: "%s | Meridian Intelligence" },
     description: "Independent AI laboratory, technology consultancy and venture builder. Research, engineering and commercially useful AI systems.",
-    openGraph: { type: "website", locale: "en_US", url: base.href, siteName: "Merdian Intelligence", images: [{ url: "/opengraph-image", width: 1200, height: 630 }] },
+    openGraph: { type: "website", locale: "en_US", url: base.href, siteName: "Meridian Intelligence", images: [{ url: "/opengraph-image", width: 1200, height: 630 }] },
     twitter: { card: "summary_large_image" },
     robots: { index: true, follow: true },
   };
@@ -48,9 +48,9 @@ export function generateMetadata(): Metadata {
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "Organization",
-  name: "Merdian Intelligence",
+  name: "Meridian Intelligence",
   description: "AI research laboratory and product development business",
-  ...(process.env.MERDIAN_SITE_URL ? {url: process.env.MERDIAN_SITE_URL} : {}),
+  url: SITE_URL,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
