@@ -27264,6 +27264,7 @@
         "cap:tool/claim-open",
         "cap:tool/estate-memory-enforce",
         "cap:tool/idp-ci",
+        "cap:tool/idp-install-deps",
         "cap:tool/language-gate",
         "cap:tool/media-dept-baseline",
         "cap:tool/process-census",
@@ -40762,6 +40763,10 @@
       "writer": "repo",
       "path": "bin/idp-install-deps",
       "depends_on": [
+        {
+          "id": "cap:tool/claim-gate",
+          "edge": "invokes"
+        },
         {
           "id": "cap:tool/idp-ci",
           "edge": "invokes"
