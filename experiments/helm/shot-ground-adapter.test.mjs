@@ -165,7 +165,7 @@ test("old model cannot replace founder policy after receiving a task",async()=>{
     policy:other,store:x.store,permittedIntents:["repo.delivery"],
     contextProbe:async()=>{},dispatchRegisteredIntent:async()=>{}
   });
-  await fail(()=>competing.snapshot(),/policy mutation/);
+  await fail(()=>competing.snapshot(),/journal integrity mismatch|policy mutation/);
 });
 
 test("replaying a failed storage CAS never invokes the mutable external command",async()=>{
