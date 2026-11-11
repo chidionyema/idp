@@ -5,3 +5,4 @@ Fixture: experiments/helm/fixtures/tasks.json
 Research only. No production deployment.
 HELM_SHOT_SWEEP=2026-11-11 founder_directed 1_2_3_5_vs_control
 HELM_GROUND_CAS_AND_SHOT_MATRIX=2026-11-11T14:03Z
+HELM_SHOT_CLOUD_FALSIFIERS_RERUN=2026-11-11T14:10Z
