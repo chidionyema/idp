@@ -35,15 +35,13 @@
             "hold-out",
             "held-out",
             "validation"
-          ],
-          [
-            "not trained",
-            "has not learned",
-            "training job",
-            "training step",
-            "actual training",
-            "weight update"
           ]
+        ],
+        "contradicts": [
+          "already learned",
+          "has already learned",
+          "weights are now updated",
+          "new weights are present"
         ]
       }
     },
@@ -117,7 +115,8 @@
             "trace"
           ]
         ]
-      }
+      },
+      "requiresOperationalProof": true
     }
   ],
   "evidence": [
