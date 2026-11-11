@@ -6,8 +6,8 @@
     "intent": 118,
     "layer": 258,
     "service": 121,
-    "tool": 492,
-    "workflow": 102
+    "tool": 493,
+    "workflow": 103
   },
   "records": [
     {
@@ -32884,6 +32884,58 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/genesis-inbound-bridge.py",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "Gmail Drafts / Drive [GENESIS-OUTBOX] -> repo-local GitHub issue intake.",
+      "contract": {
+        "inputs": [
+          "--repo",
+          "--self-test"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:workflow/gha-genesis-inbound-bridge"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/genesis-inbound-bridge.py",
+      "depends_on": [],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/git-atomic-commit",
       "schema_version": 1,
       "kind": "tool",
@@ -58511,6 +58563,66 @@
       "depends_on": [
         {
           "id": "cap:tool/idp-set-root",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:workflow/gha-genesis-inbound-bridge",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "Genesis authenticated Google inbound bridge -- the GitHub Actions workflow genesis-inbound-bridge.yml.",
+      "contract": {
+        "inputs": [
+          "pull_request",
+          "schedule",
+          "workflow_dispatch"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/genesis-inbound-bridge.yml",
+      "depends_on": [
+        {
+          "id": "cap:tool/genesis-inbound-bridge.py",
           "edge": "invokes"
         }
       ],
