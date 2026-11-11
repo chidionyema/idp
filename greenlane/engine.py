@@ -52,6 +52,10 @@ HISTORY_KEEP = (
 )
 BOT_LANE = "flux/image-updates"  # the platform's own image lane: written by the image controller
 
+class UnavailableLaneObject(RuntimeError):
+    """Expected exact lane SHA unavailable to this runner; no merge conflict was proven."""
+
+
 
 @dataclass
 class Lane:
@@ -463,7 +467,12 @@ class Engine:
             # against the current main before moving to PENDING. If the rebase succeeds the lane
             # tests cleanly against the current main; if it fails the conflict is genuine and
             # the rejudge counter will catch it on the next main move.
-            effective = self.b.rebase(lane.head, main, lane.name)
+            try:
+                effective = self.b.rebase(lane.head, main, lane.name)
+            except UnavailableLaneObject as exc:
+                lane.reason = f"waiting for exact Git object: {exc}"
+                self.log.append(f"deferred stale lane {lane.name}: {exc}")
+                continue
             if effective and effective != lane.head:
                 lane.head = effective
                 # Push immediately: CI tests origin/<lane>, not the in-memory lane.head.
@@ -845,7 +854,14 @@ class Engine:
             # The lane's NAME goes with the head, because the name carries the class: a
             # generated flux/* lane is projected onto main from its image tags (idp#7140), and
             # a lane whose history carries anything else would otherwise never apply at all.
-            on_main = self.b.rebase(lane.head, base, n)
+            try:
+                on_main = self.b.rebase(lane.head, base, n)
+            except UnavailableLaneObject as exc:
+                # Isolate incomplete runner state to this one lane, not all of Greenlane.
+                lane.reason = f"waiting for exact Git object: {exc}"
+                self.b.report(n, lane.head, TESTING, lane.reason)
+                self.log.append(f"deferred {n}: {exc}")
+                continue
             if on_main is None:
                 # Genuine conflict with main. Charge the retry HERE, where the grade actually
                 # failed, so the count is consecutive failures against successive mains and not
@@ -874,7 +890,13 @@ class Engine:
                     self.b.report(n, lane.head, RED, why)
                     self.log.append(f"preflight held {n} against {base[:12]}: {why}")
                     continue
-            new = self.b.rebase(lane.head, tip, n)
+            try:
+                new = self.b.rebase(lane.head, tip, n)
+            except UnavailableLaneObject as exc:
+                lane.reason = f"waiting for exact Git object: {exc}"
+                self.b.report(n, lane.head, TESTING, lane.reason)
+                self.log.append(f"deferred {n}: {exc}")
+                continue
             if new is None:
                 # batch-order collision: main would take it, a batch-mate would not. Not a
                 # conflict -- it stays PENDING and is tried again, on its own if need be.
