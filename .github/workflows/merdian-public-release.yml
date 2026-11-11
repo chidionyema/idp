@@ -12,6 +12,7 @@ on:
       - ".github/workflows/merdian-public-release.yml"
   schedule:
     - cron: "*/30 * * * *"
+    - cron: "13 */6 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -57,12 +58,18 @@ jobs:
         env:
           CHROME: /usr/bin/google-chrome
         run: node scripts/visual-regression.mjs
+      - name: Independently render the currently public premium aliases
+        env:
+          CHROME: /usr/bin/google-chrome
+        run: node scripts/merdian-public-browser-canary.mjs
       - name: Retain reviewed screenshots even when browser acceptance fails
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: merdian-customer-visual-evidence
-          path: web/artifacts/visual/*.png
+          path: |
+            web/artifacts/visual/*.png
+            web/artifacts/public-readback/*.jpg
           if-no-files-found: ignore
           retention-days: 14
 
@@ -93,21 +100,48 @@ jobs:
           echo "code=$code" >> "$GITHUB_OUTPUT"
           cat "$RUNNER_TEMP/merdian-readback.json"
           exit 0
+      - name: Install browser probe dependencies for six-hourly visual readback
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.schedule == '13 */6 * * *'
+        working-directory: web
+        run: npm install --no-save --package-lock=false --ignore-scripts puppeteer-core@24.24.1
+      - name: Render visitor experience across all public aliases
+        id: browser
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.schedule == '13 */6 * * *'
+        shell: bash
+        env:
+          CHROME: /usr/bin/google-chrome
+        run: |
+          set +e
+          node web/scripts/merdian-public-browser-canary.mjs > "$RUNNER_TEMP/merdian-public-visual.json" 2>&1
+          code=$?
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/merdian-public-visual.json"
+          cat "$RUNNER_TEMP/merdian-public-visual.json" >> "$RUNNER_TEMP/merdian-readback.json"
+          exit 0
+      - name: Preserve customer-visible browser evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: merdian-live-browser-readback
+          path: web/artifacts/public-readback/*.jpg
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Open one P0 incident on regression; close only after independent recovery
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RESULT: ${{ steps.probe.outputs.code }}
+          BROWSER_RESULT: ${{ steps.browser.outputs.code }}
           RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           marker="P0 MERDIAN_PUBLIC_REGRESSION - customer-facing identity"
           existing="$(gh issue list --state open --limit 200 --json number,title --jq ".[] | select(.title == \"$marker\") | .number" | head -1)"
-          if [[ "$RESULT" != "0" ]]; then
+          if [[ "$RESULT" != "0" || ( -n "$BROWSER_RESULT" && "$BROWSER_RESULT" != "0" ) ]]; then
             if [[ -z "$existing" ]]; then
               {
-                printf 'Independent public readback detected a customer-facing Meridian website regression.\n\n'
+                printf 'Independent public browser/identity readback detected a customer-facing Merdian website regression.\n\n'
                 printf 'Run: %s\n\n' "$RUN_URL"
                 printf 'Actual visitor evidence:\n\n'
                 printf '%s\n' '```'
