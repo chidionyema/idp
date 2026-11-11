@@ -220,11 +220,19 @@ export async function inference({ url, token, model, messages, timeoutMs = 25000
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { method: "POST",
-      headers: { "Content-Type": "application/json",
-        ...(token ? { "Authorization": "Bearer " + token } : {}) },
-      body: JSON.stringify({ model, messages, temperature: 0, max_tokens: 1536 }),
-      signal: controller.signal });
+    let response;
+    let retries = 0;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      response = await fetch(url, { method: "POST",
+        headers: { "Content-Type": "application/json",
+          ...(token ? { "Authorization": "Bearer " + token } : {}) },
+        body: JSON.stringify({ model, messages, temperature: 0, max_tokens: 1536 }),
+        signal: controller.signal });
+      if (response.status !== 429 || attempt === 2) break;
+      await response.text();
+      retries++;
+      await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+    }
     const txt = await response.text();
     if (!response.ok) throw new Error("provider HTTP " + response.status + " " + txt.slice(0, 140));
     let json;
@@ -240,7 +248,7 @@ export async function inference({ url, token, model, messages, timeoutMs = 25000
         " completionTokens=" + (json.usage?.completion_tokens ?? "unknown"));
     }
     return { answer, latencyMs: Math.round(performance.now() - started),
-      usage: json.usage || null, modelReturned: json.model || null };
+      usage: json.usage || null, modelReturned: json.model || null, providerRetries: retries };
   } finally { clearTimeout(timer); }
 }
 
@@ -262,7 +270,7 @@ export async function evaluate({ tasks, evidence, arms, model, url, token, sha25
           const response = await infer({ url, token, model, messages });
           const assessment = assess(task, response.answer, arm === "helm");
           attempts.push({ latencyMs: response.latencyMs, usage: response.usage,
-            returnedModel: response.modelReturned, result: assessment,
+            returnedModel: response.modelReturned, providerRetries: response.providerRetries || 0, result: assessment,
             answerSha256: sha(response.answer), answer: response.answer });
           // In HELM, only schema/static defects may trigger feedback; never leak the gold oracle.
           if (assessment.schemaPass && assessment.staticPass) break;
