@@ -218,7 +218,7 @@ test("a configured enquiry is delivered to a real local webhook before confirmat
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        name: "Merdian Canary",
+        name: "Meridian Canary",
         email: "synthetic@example.test",
         company: "Synthetic Lab",
         message: "A synthetic test enquiry, not a real customer record.",
