@@ -10,7 +10,7 @@ const ORIGINS = [
   'https://meridian-intelligence-uk.vercel.app',
   'https://merian-intelligence.vercel.app',
 ];
-const PRIMARY = ORIGINS[0];
+const PRIMARY = ORIGINS[1];
 const failures = [];
 const audit = [];
 const OLD = 'AI infrastructure consulting for companies shipping production LLM systems';
@@ -23,7 +23,7 @@ async function read(url) {
       const response = await fetch(url + cacheBuster, {
         redirect: 'follow',
         cache: 'no-store',
-        headers: { 'user-agent': 'Merdian-Public-Release-Canary/1.0', accept: 'text/html, */*' },
+        headers: { 'user-agent': 'Meridian-Public-Release-Canary/2.0', accept: 'text/html, */*' },
         signal: AbortSignal.timeout(15000),
       });
       const html = await response.text();
@@ -42,7 +42,8 @@ function assert(condition, reason) {
 async function checkHome(origin) {
   try {
     const { html, status } = await read(origin + '/');
-    const identity = html.includes('Merdian Intelligence') &&
+    const identity = html.includes('Meridian Intelligence') &&
+      !html.includes('Merdian Intelligence') &&
       html.includes('mi-hero-title') &&
       html.includes('mi-hero') &&
       html.includes('mi-services-grid') &&
@@ -50,7 +51,7 @@ async function checkHome(origin) {
       html.includes('REAL');
     assert(identity, origin + ': public homepage is NOT the approved premium company design');
     assert(!html.includes(OLD), origin + ': retired consulting-only homepage resurfaced');
-    assert(!html.includes('Blabka'), origin + ': unsubstantiated placeholder venture shown to visitors');
+    assert(!html.includes('Blabka'), origin + ': unsubstantiated placeholder venture shown to visitors');\n    assert(!html.includes('MERDIAN INTELLIGENCE'), origin + ': uppercase legacy spelling survived');
     assert(!html.includes('More information will be shared'), origin + ': content-debt promise published');
     assert(html.includes('01 / MANIFESTO') && html.includes('02 / CONSULTANCY') &&
       html.includes('03 / THE LABORATORY') && html.includes('04 / VENTURES + PRODUCTS'),
@@ -66,7 +67,7 @@ async function checkHome(origin) {
 }
 async function checkRoute(path, marker) {
   try {
-    const { html, status } = await read(PRIMARY + path);
+    const { html, status } = await read(PRIMARY + path);\n    assert(!html.includes('Merdian Intelligence'), PRIMARY + path + ': legacy spelling on sibling page');
     assert(html.includes(marker), PRIMARY + path + ': required company section missing: ' + marker);
     if (path === '/products') {
       assert(!html.includes('Blabka'), PRIMARY + path + ': placeholder venture visible');
@@ -118,8 +119,8 @@ const summary = {
 };
 console.log(JSON.stringify(summary, null, 2));
 if (failures.length) {
-  console.error('MERDIAN PUBLIC SITE INCIDENT — ' + failures.join('; '));
+  console.error('MERIDIAN PUBLIC SITE INCIDENT — ' + failures.join('; '));
   process.exitCode = 1;
 } else {
-  console.log('MERDIAN PUBLIC READBACK: PASS');
+  console.log('MERIDIAN PUBLIC READBACK: PASS');
 }
