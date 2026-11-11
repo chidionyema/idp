@@ -60,7 +60,7 @@
 .mi-knowledge-close p:not(.mi-eyebrow){font-size:19px;line-height:1.65;color:#455b6a;margin-bottom:25px;max-width:580px}
 .mi-chapter-hero{background:radial-gradient(ellipse at 80% 25%,#23415d 0%,#0d1d30 60%,#0a1320);color:#fff;padding:clamp(65px,8vw,120px) 0 75px}
 .mi-chapter-back{display:inline-flex;color:#eac47e;border-bottom:1px solid #d2ac6e;min-height:44px;align-items:center;font:650 11px var(--mono);letter-spacing:.09em;margin-bottom:85px}
-.mi-chapter-hero h1{font:790 clamp(55px,7.2vw,109px)/.98 var(--sans);letter-spacing:-.079em;margin:22px 0 29px}
+.mi-chapter-hero h1{font:790 clamp(55px,7.2vw,109px)/.98 var(--sans);letter-spacing:-.079em;margin:22px 0 29px;color:#fff}
 .mi-chapter-hero>div>p:not(.mi-eyebrow){font-size:clamp(17px,2vw,22px);line-height:1.65;color:#d5e2f0;max-width:750px}
 .mi-chapter-meta{display:flex;flex-wrap:wrap;gap:14px 30px;border-top:1px solid #5a7285;padding-top:23px;margin-top:55px;font:650 11px var(--mono);color:#d8c494;letter-spacing:.06em}
 .mi-chapter-body{padding-top:clamp(65px,7vw,120px);padding-bottom:clamp(70px,8vw,125px)}
