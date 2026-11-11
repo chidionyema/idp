@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   title: "Fieldbooks | Practical AI Systems Engineering",
   description: "Original fieldbooks and applied training from Merdian Intelligence. From prompt to proof: engineering autonomous systems, trustworthy operations and real outcomes.",
   alternates: { canonical: "/fieldbooks" },
-  openGraph: { title: "From Prompt to Proof | Merdian Fieldbooks", description: "Technical knowledge for people who need AI systems to deliver, not merely demonstrate." },
+  openGraph: { title: "From Prompt to Proof | Merdian Fieldbooks", description: "Technical knowledge for teams building AI systems that deliver verifiable outcomes beyond demos." },
 };
 
 const chapters = [
