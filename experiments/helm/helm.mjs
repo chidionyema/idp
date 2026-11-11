@@ -220,7 +220,7 @@ export async function inference({ url, token, model, messages, timeoutMs = 25000
     const response = await fetch(url, { method: "POST",
       headers: { "Content-Type": "application/json",
         ...(token ? { "Authorization": "Bearer " + token } : {}) },
-      body: JSON.stringify({ model, messages, temperature: 0, max_tokens: 320 }),
+      body: JSON.stringify({ model, messages, temperature: 0, max_tokens: 1536 }),
       signal: controller.signal });
     const txt = await response.text();
     if (!response.ok) throw new Error("provider HTTP " + response.status + " " + txt.slice(0, 140));
@@ -230,7 +230,12 @@ export async function inference({ url, token, model, messages, timeoutMs = 25000
       " content-type=" + response.headers.get("content-type") +
       " body=" + JSON.stringify(txt.slice(0, 48))); }
     const answer = json.choices?.[0]?.message?.content;
-    if (typeof answer !== "string" || !answer.trim()) throw new Error("no text answer");
+    if (typeof answer !== "string" || !answer.trim()) {
+      const choice = json.choices?.[0] || {};
+      throw new Error("no text answer; finish=" + (choice.finish_reason || "unknown") +
+        " messageKeys=" + Object.keys(choice.message || {}).join(",") +
+        " completionTokens=" + (json.usage?.completion_tokens ?? "unknown"));
+    }
     return { answer, latencyMs: Math.round(performance.now() - started),
       usage: json.usage || null, modelReturned: json.model || null };
   } finally { clearTimeout(timer); }
