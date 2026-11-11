@@ -1,0 +1,71 @@
+# Read-only, research-only functional agent test; no estate deployments, no paid models.
+name: helm-functional
+on:
+  push:
+    branches: [research/helm-*]
+    paths: [experiments/helm/FUNCTIONAL_TRIGGER]
+  workflow_dispatch:
+concurrency:
+  group: helm-functional-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  functional:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify both HELM and independent functional harness
+        run: node --test experiments/helm/helm.test.mjs experiments/helm/functional-bench.test.mjs
+      - name: Prepare network-isolated unprivileged Python test image
+        run: docker pull python:3.12-alpine
+      - name: Verify independent tests reject wrong code and accept known-good code
+        run: node experiments/helm/functional-bench.mjs test
+      - name: Select current free model, verify real text completion
+        run: |
+          node --input-type=module <<'NODE'
+          import {appendFileSync} from "node:fs";
+          const endpoint="https://ai-gateway.kilo.ai/api/v1";
+          const list=await fetch(endpoint+"/models");
+          if(!list.ok)throw Error("model catalog status "+list.status);
+          const j=await list.json();
+          const free=(j.data||[]).map(m=>m.id).filter(id=>typeof id==="string"&&id.endsWith(":free"));
+          const preference=["cohere/north-mini-code:free","liquid/lfm-3-1.7b:free","nvidia/nemotron-3.5-lightning:free"];
+          const candidates=[...new Set([...preference.filter(id=>free.includes(id)),...free])].slice(0,5);
+          let selected="";
+          for(const model of candidates){
+            const controller=new AbortController();
+            const timer=setTimeout(()=>controller.abort(),15000);
+            try{
+              const r=await fetch(endpoint+"/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},
+                signal:controller.signal,body:JSON.stringify({model,
+                  messages:[{role:"user",content:"Respond with the word READY only."}],
+                  temperature:0,max_tokens:1536})});
+              const json=await r.json().catch(()=>null);
+              const answer=json?.choices?.[0]?.message?.content;
+              console.log(JSON.stringify({model,status:r.status,answerLength:typeof answer==="string"?answer.length:0,
+                finish:json?.choices?.[0]?.finish_reason||null}));
+              if(r.ok && typeof answer==="string"&&answer.trim()){selected=model;break;}
+            }catch(e){console.log("preflight "+model+": "+String(e.message).slice(0,100))}
+            finally{clearTimeout(timer)}
+          }
+          if(!selected)throw Error("No usable free model produced a text completion");
+          appendFileSync(process.env.GITHUB_ENV,"HELM_MODEL="+selected+"\n");
+          console.log("HELM_MODEL selected: "+selected);
+          NODE
+      - name: Execute independent 3-task Python functional benchmark across five arms
+        env:
+          HELM_INFERENCE_URL: https://ai-gateway.kilo.ai/api/v1/chat/completions
+          GITHUB_SHA: ${{ github.sha }}
+        run: node experiments/helm/functional-bench.mjs live
+      - name: Preserve exact test and negative-result receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: helm-functional-${{ github.run_id }}
+          path: experiments/helm/out/*.json
+          retention-days: 14
+          if-no-files-found: warn
