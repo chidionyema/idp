@@ -159,9 +159,9 @@
       "owner": "pi",
       "why_it_is_critical": "the executor refuses to start a job when the data volume has less than MIN_FREE_MB (1500MB) free, so under the floor every agent's door is closed and the estate stops",
       "liveness": {
-        "type": "heartbeat_file",
-        "path": "~/.estate/heartbeats/disk-guardian.json",
-        "max_age_s": 180
+        "type": "command",
+        "cmd": "/bin/df -m /System/Volumes/Data | /usr/bin/awk 'NR==2 {exit !($4 >= 1500)}'",
+        "expect_rc": 0
       },
       "goal": {
         "type": "free_space_mb",
@@ -172,7 +172,7 @@
         "runner": "claude",
         "repo": "/Users/roseonyema/Documents/code/idp",
         "budget": 20,
-        "task": "The estate's disk reclaim guardian (ai.estate.disk-watch) is not healthy. The evidence is in ~/.estate/incidents/latest.json: read it, then make the volume healthy again WITHOUT deleting another agent's work, another agent's dirty or claimed worktree, the founder's running Chrome, or any live tooling. The cleaner is ~/.estate/libexec/disk-cleanup.sh: run it in incremental mode with DISK_CLEANUP_TARGET_MB=2500, one bounded step at a time. If the guardian process is not loaded, load it: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.estate.disk-watch.plist. Report what you measured, not what you intended."
+        "task": "The data volume is under the executor's 1500 MB floor, so every door refuses. The evidence is in ~/.estate/incidents/latest.json. Free space by deleting derivable or disposable weight, and measure it: '/bin/df -m /System/Volumes/Data' before and after. Run 'estate-execute disk-reclaim'. NEVER delete another agent's work, a dirty or claimed worktree, the founder's running Chrome, or any live tooling. THERE IS NO RESIDENT DISK GUARDIAN AND NO CLEANER SCRIPT: both were deleted by founder order on 2026-11-11, after 120 bounded steps were measured freeing 3 MB while the volume fell 500 MB. Do not install one and do not look for one. Report what you measured, not what you intended."
       }
     },
     {

@@ -53,7 +53,7 @@ def test_a_full_volume_is_refused_with_the_number_the_floor_and_the_way_out(tmp_
     assert out["accepted"] is False
     assert "200 MB free" in out["error"]
     assert "1500 MB floor" in out["error"]
-    assert "disk-cleanup" in out["detail"]
+    assert "disk-reclaim" in out["detail"]  # the way out is named, and it still exists
     assert out["free_mb"] == 200 and out["floor_mb"] == 1500
     assert ex.calls == []  # nothing was started on a full machine
 
@@ -72,12 +72,27 @@ def test_the_refusal_is_written_to_the_friction_ledger(tmp_path):
     assert "200 MB" in disk[0]["detail"]
 
 
-def test_the_cleaner_itself_is_never_refused_or_the_refusal_is_unsatisfiable(tmp_path):
+def test_the_reclaim_door_is_never_refused_or_the_refusal_is_unsatisfiable(tmp_path):
     # A guard whose own instruction is refused by itself is the defect, not the remedy (R38).
+    # `disk-cleanup` was deleted 2026-11-11; `disk-reclaim` is the door the refusal now names, so
+    # it is the one that must never be refused while the floor is closed.
+    door, ex = _door(tmp_path, free_mb=200)
+
+    out = door.execute_command("estate-execute disk-reclaim", cwd=str(tmp_path), executor=ex)
+
+    assert "MB free" not in out.get("error", "")
+    assert len(ex.calls) == 1
+
+
+def test_unloading_a_job_is_never_refused_or_the_floor_blocks_its_own_exit(tmp_path):
+    """The circular case measured 2026-11-11: under the floor, `launchctl bootout` on the resident
+    job holding the floor closed was itself refused. Unloading a job consumes no space, so the
+    floor must never refuse it -- otherwise the floor is the only thing standing between the
+    machine and the space it needs."""
     door, ex = _door(tmp_path, free_mb=200)
 
     out = door.execute_command(
-        "estate-execute disk-cleanup apply=true", cwd=str(tmp_path), executor=ex
+        "launchctl bootout gui/501/ai.estate.disk-watch", cwd=str(tmp_path), executor=ex
     )
 
     assert "MB free" not in out.get("error", "")

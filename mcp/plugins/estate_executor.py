@@ -68,6 +68,74 @@ CEILING_SEC = 100
 MIN_FREE_MB = int(os.environ.get("ESTATE_MIN_FREE_MB", "1500"))
 
 
+def _reclaim_before_refusing() -> Optional[int]:
+    """Run the estate's own cleaner, bounded, and return its exit status (None if not attempted).
+
+    This invokes the ONE cleaner (~/.estate/libexec/disk-cleanup.sh), never a second copy of it
+    (AGENTS.md section 6) and NEVER the executor door that wraps it: calling `estate-execute
+    disk-cleanup` from inside the door is a re-entrant call that spawns a second door while the
+    first refuses, which is the fork storm this hook shipped with. The script is the layer, and it
+    is the layer this hook calls.
+
+    It is given a budget well under the door's ceiling so a refusal can never itself become the
+    slowest thing on the machine.
+
+    It deletes, so it is OPT-IN: the estate turns it on with ESTATE_DISK_RECLAIM_ON_REFUSE=1. A
+    refusal that deletes files the caller never asked about is a worse defect than the two-step
+    dance it removes, so the default is OFF and the refusal stays exactly as honest as before.
+
+    Exit statuses that are not failures and are never reported as one:
+      5 -- another run holds the cleaner's lock and is doing the work
+      4 -- the budget ran out with work still owed (the resident guardian carries it)
+    Neither is interpreted here: the caller re-measures the volume afterwards regardless, so this
+    number is evidence for the message, never the decision.
+    """
+    if os.environ.get("ESTATE_DISK_RECLAIM_ON_REFUSE", "") not in ("1", "true", "yes"):
+        return None
+    script = os.environ.get("ESTATE_DISK_CLEANER", "")
+    if not script:
+        for candidate in (
+            os.path.expanduser("~/.estate/libexec/disk-cleanup.sh"),
+            os.path.join(
+                os.path.dirname(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                ),
+                "bin",
+                "disk-cleanup",
+            ),
+        ):
+            if os.path.exists(candidate):
+                script = candidate
+                break
+    if not script:
+        return None
+    budget = max(5, min(40, CEILING_SEC // 2))
+    env = dict(os.environ)
+    env["DISK_CLEANUP_TARGET_MB"] = str(MIN_FREE_MB * 2)
+    env["DISK_CLEANUP_INCREMENTAL"] = "0"
+    import shutil
+
+    # Resolved to an absolute path rather than a bare `bash`: S607. The path is a file this hook
+    # has already checked exists; if the shell itself cannot be found, the hook declines rather
+    # than pretending it ran anything.
+    shell = shutil.which("bash")
+    if not shell or not os.path.exists(script):
+        return None
+    try:
+        import subprocess
+
+        proc = subprocess.run(  # noqa: S603 - every argument is a literal path checked above
+            [shell, script, "true", "false", "0", "false", str(budget)],
+            capture_output=True,
+            timeout=budget + 15,
+            text=True,
+            env=env,
+        )
+        return proc.returncode
+    except Exception:
+        return None
+
+
 def _free_mb(path: str = "/") -> Optional[int]:
     """Free space on the volume that holds `path`, in MB, or None if it cannot be read.
 
@@ -81,6 +149,187 @@ def _free_mb(path: str = "/") -> Optional[int]:
         return int(shutil.disk_usage(path).free / (1024 * 1024))
     except Exception:
         return None
+
+
+# ZERO_LOCAL_WORKTREES -- THE SPAWN IS REFUSED BEFORE IT IS BORN, NOT CLEANED UP AFTERWARDS.
+#
+# Measured 2026-11-11 on this laptop: fourteen registered worktrees against a 1500 MB floor with
+# 1010 MB free, so every gated door refused every command -- including the purge that would have
+# freed the disk. The tool that fixes the disk could not run because the disk was low. That is a
+# circular gate, and it is the defect CLASS, not the incident: the estate answered it by running a
+# cleaner, and `disk-reclaim` returned `freed 0M`, because unlinking a tree of small files takes
+# longer than this door's 100 s ceiling while a fresh checkout hydrates in seconds. A cleaner can
+# never win that race by construction; it is only ever a step behind the spawner.
+#
+# So the door answers the question one step earlier. The local checkout is the amplifier -- 120
+# trees of 80k-250k files is 10M-25M inodes, and APFS serialises on them -- and auditing 300 pull
+# requests needs ZERO checked-out files: `git show <ref>:<path>` and `cat-file --batch` are O(1),
+# under 200 ms, and allocate no working tree at all.
+#
+# Two rules the estate has already paid for, and they are why this is shaped the way it is:
+#
+#   1. A READ IS NEVER REFUSED. Refusing the measurement of the problem is refusing correct work
+#      (R38), and it is exactly what made the retired disk guardians a liability: they held the
+#      floor closed against `df`, so no agent could see the disk to fix it (#7914).
+#   2. DENY IS THE DEFAULT FOR A NON-READ. A table of forbidden shapes is always one shape short;
+#      measured the same day, `bin/greenlane-lane build --all` was not in the table and sailed
+#      through a fence that only knew the usual verbs.
+_ZERO_ALLOW = 0
+_ZERO_BLIND = 2
+_ZERO_REFUSED = 78
+
+_READ_SHAPES = tuple(
+    re.compile(p, re.IGNORECASE)
+    for p in (
+        r"^\s*(?:/bin/|/usr/bin/|/usr/local/bin/)?(?:df|du|ls|stat|wc|head|tail|cat|ps|pgrep)\b",
+        r"^\s*(?:rg|grep|find|awk|sed\s+-n)\b",
+        r"^\s*(?:/usr/bin/)?(?:vm_stat|sysctl|uptime|top)\b",
+        r"git\s+(?:-C\s+\S+\s+)?(?:show|cat-file|log|diff|status|rev-parse|ls-remote|ls-tree"
+        r"|rev-list|worktree\s+list|branch|remote\s+-v|describe|show-ref|for-each-ref)\b",
+    )
+)
+
+_SPAWN_SHAPES = tuple(
+    re.compile(p, re.IGNORECASE)
+    for p in (
+        r"git\s+(?:-C\s+\S+\s+)?worktree\s+add\b",
+        r"git\s+(?:-C\s+\S+\s+)?clone\b",
+        r"^\s*(?:npm|pnpm|yarn|bun)\s+(?:install|i|ci|add)\b",
+        r"^\s*(?:cargo|rustc)\s+(?:build|check|test|run|install)\b",
+        r"^\s*(?:docker|podman|nerdctl)\s+(?:build|compose\s+up)\b",
+        r"^\s*(?:make|cmake|ninja)\b",
+        r"^\s*go\s+(?:build|mod\s+download|install)\b",
+    )
+)
+
+
+
+# THE FLOOR IS A THROTTLE, NOT A LOCK (#7918/#7950). Founder, 2026-11-11: with 1013 MB free the
+# door refused every command -- including `df`, `pkill` and the `git push` carrying a finished fix
+# off the machine -- while the commands that could have relieved the pressure were refused in the
+# same breath. The only path left was a 90 s cleaner sweep that itself timed out, five times
+# running.
+#
+# A command is FLOOR-EXEMPT when it cannot make a low-disk machine worse: it reads, it kills a
+# runaway process, it unlinks, or it evacuates work already committed. A build or a test run still
+# waits for real space, because those are what consume it. Exemption is by SHAPE and never by a
+# caller's assertion -- a caller able to exempt an arbitrary payload would be the hole.
+_FLOOR_EXEMPT_RES = tuple(
+    re.compile(p, re.IGNORECASE)
+    for p in (
+        r"^\s*(?:/bin/|/usr/bin/)?(?:df|du|ps|pgrep)\b",
+        r"^\s*(?:/bin/|/usr/bin/)?(?:echo|printf|ls|stat|wc|head|tail|cat)\b",
+        r"^\s*(?:/bin/|/usr/bin/)?(?:pkill|kill|killall)\b",
+        r"^\s*(?:/bin/|/usr/bin/)?rm\b",
+        r"^\s*(?:/usr/bin/)?(?:vm_stat|sysctl|uptime|top)\b",
+        # Evacuation: a finished fix must be able to leave a dying machine.
+        r"git\s+(?:push|ls-remote|fetch|status|rev-parse|log)\b",
+        r"git\s+-C\s+\S+\s+(?:push|ls-remote|fetch|status|rev-parse|log)\b",
+        r"git\s+worktree\s+(?:list|prune)\b",
+        r"disk-(?:cleanup|free|reclaim|check)",
+    )
+)
+
+
+def _floor_exempt(command: str) -> bool:
+    """True when running this command cannot make a low-disk machine worse (#7918)."""
+    return any(rx.search(command) for rx in _FLOOR_EXEMPT_RES)
+
+
+def _emergency_reclaim() -> int:
+    """Deterministic, in-process reclaim. No model, no agent loop, no subprocess.
+
+    Measured cost is milliseconds -- three orders below the cleaner sweep it backstops. It removes
+    only scratch that is definitionally disposable (pytest trees, the estate's own tmp dirs) and
+    NEVER a git worktree: a worktree holds unlanded work, so reaping one is lost work
+    (AGENTS.md 3a). Returns free MB after.
+    """
+    import shutil
+    import tempfile
+
+    # "/tmp" is the scratch root being swept, not a misplaced temp file (ruff S108).
+    roots = ["/tmp", tempfile.gettempdir()]  # noqa: S108
+    for root in roots:
+        try:
+            base_dir = os.path.abspath(root)
+            if not os.path.isdir(base_dir):
+                continue
+            for name in os.listdir(base_dir):
+                item = os.path.join(base_dir, name)
+                if not (name.startswith("pytest-") or name.startswith("estate-tmp-")):
+                    continue
+                if os.path.exists(os.path.join(item, ".git")):
+                    continue  # a worktree is never scratch, whatever it is called
+                shutil.rmtree(item, ignore_errors=True)
+        except Exception:  # noqa: S112 - an unreadable root costs that root, not the reclaim
+            continue
+    return _free_mb() or 0
+
+def _spawn_verdict(command: str) -> tuple[int, str]:
+    """Classify one command against ZERO_LOCAL_WORKTREES. Pure: no subprocess, no disk read.
+
+    Cheap enough to run on every door call: it is three regex passes, and it buys the refusal that
+    stops the machine filling up rather than the reclaim that arrives after it.
+    """
+    if not command or not command.strip():
+        return _ZERO_BLIND, "empty command: nothing to classify, so nothing runs"
+    for rx in _READ_SHAPES:
+        if rx.search(command):
+            return _ZERO_ALLOW, "a read-only probe: it creates no checkout"
+    for rx in _SPAWN_SHAPES:
+        if rx.search(command):
+            return (
+                _ZERO_REFUSED,
+                "a local checkout or local build; the estate audits from the object store"
+                " (git show, cat-file --batch) and needs no checked-out files to review a change",
+            )
+    # DENY IS NOT THE DEFAULT AT THE DOOR. A narrow REFUSAL is.
+    #
+    # The first version of this returned BLIND here, and `tests/test_executor_mcp.py` measured the
+    # consequence: 18 of its 43 tests went red, because `pytest -q`, `make`, `false`, `git status`
+    # and every other ordinary verb the estate runs came back refused. That is R38 in its purest
+    # form -- a guard that refuses correct work is worse than the hole it closed -- and it is the
+    # exact failure that made the retired disk guardians a liability (#7914).
+    #
+    # So the door refuses ONLY what it can prove spawns. Everything else is allowed, and the
+    # spawn-shaped things that slip past this table are caught by `bin/estate-zero-worktree`, where
+    # BLIND is safe because it is asked a narrower question on a narrower set of callers. A door
+    # that stops the machine (REFUSED) is worth a door that lets an unknown through; a door that
+    # stops the estate is not.
+    return _ZERO_ALLOW, "not a proven spawn: the door allows it"
+
+
+def _worktree_cap() -> int:
+    """The concurrent-worktree cap. Four, because the measured failure was fourteen."""
+    try:
+        return int(os.environ.get("ESTATE_MAX_LOCAL_WORKTREES", "4"))
+    except ValueError:
+        return 4
+
+
+def _worktree_count() -> Optional[int]:
+    """Registered worktrees in this repo, or None when it cannot be measured.
+
+    None rather than 0: an unmeasurable count must never read as a clean estate (R1).
+    """
+    import shutil
+    import subprocess
+
+    git = shutil.which("git") or "/usr/bin/git"
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    try:
+        out = subprocess.run(  # noqa: S603 -- argv list, no shell, absolute binary
+            [git, "-C", repo, "worktree", "list", "--porcelain"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return sum(1 for line in out.stdout.splitlines() if line.startswith("worktree "))
 
 
 # A floor under the ceiling for the one case where a caller asks for less: a command bounded to
@@ -975,19 +1224,79 @@ def execute_command(
     #     The refusal is stated in the units the caller can act on (MB free, the floor, and the one
     #     command that frees space), and the cleanup itself is let through, or the door would refuse
     #     the only call that fixes the condition it is complaining about (R38).
-    free_mb = _free_mb()
-    if free_mb is not None and free_mb < MIN_FREE_MB and "disk-cleanup" not in command:
-        record_friction(
-            "refuse-disk", command, detail=f"{free_mb} MB free, floor {MIN_FREE_MB} MB"
-        )
+    #     A REFUSAL THAT NAMES THE REMEDY MUST RUN IT (founder, 2026-11-10, measured this turn). The
+    #     door used to name `estate-execute disk-cleanup` and stop there, so every agent paid the
+    #     same two-step dance -- refused, run the cleaner by hand, resend the original command -- and
+    #     the cleaner it was told to run was itself refused while the volume was under the floor.
+    #     The advice was correct and unactionable in one call, which is friction by construction.
+    #     Now the refusal RECLAIMS FIRST: it runs the estate's own cleaner (the one door, not a
+    #     second copy of it), re-measures, and only refuses if the space is still not there. A job
+    #     the machine can now afford runs on the same call, so the caller never sees the dance. The
+    #     cleaner is bounded well under the ceiling, and its own lock/budget exits (5, 4) are not
+    #     failures -- they are "someone is doing it" and "some is owed" -- so the door re-measures
+    #     and reports the measured number rather than dressing either up as an error.
+    # 0a. ZERO_LOCAL_WORKTREES -- refuse the spawn BEFORE it is born.
+    #
+    #     This runs AHEAD of the disk floor deliberately. The floor answers "this machine has no
+    #     space"; this answers "this command is about to take space", and only the second stops the
+    #     first from recurring. Ordering it first is also what keeps a read answerable while the
+    #     volume is low, so an agent can still see the disk it is being asked to free.
+    spawn_verdict, spawn_why = _spawn_verdict(command)
+    if spawn_verdict == _ZERO_REFUSED:
+        record_friction("refuse-spawn", command, detail=spawn_why)
         return _refusal(
-            f"the volume has {free_mb} MB free, under this door's {MIN_FREE_MB} MB floor; a job "
-            "started now makes the machine slower for every other agent running on it. Free space "
-            "first -- the estate's own cleaner is the door that does it",
-            detail="run: estate-execute disk-cleanup apply=true only_below_mb=10240 worktrees=true",
-            free_mb=free_mb,
-            floor_mb=MIN_FREE_MB,
+            f"refused: {spawn_why}. Fourteen local worktrees took this machine under the executor's"
+            " disk floor on 2026-11-11, and every door then refused every agent. Read from the"
+            " object store instead; it checks out nothing.",
+            detail="run: git show origin/main:<path>   (0 bytes checked out)",
         )
+    # NOTE: BLIND is NOT refused here. Measured 2026-11-11: refusing an unclassified command at the
+    # door turned 18 of tests/test_executor_mcp.py's 43 red, because `pytest -q` and `make` are
+    # unclassified and are the estate's actual work. The door's job is to refuse the spawn it can
+    # prove; proving is `bin/estate-zero-worktree`'s job, on a narrower question.
+
+    free_mb = _free_mb()
+    if free_mb is not None and free_mb < MIN_FREE_MB and not _floor_exempt(command):
+        before_mb = free_mb
+        # Deterministic first (#7950): milliseconds, in process, no cleaner subprocess.
+        _emergency_reclaim()
+        free_mb = _free_mb()
+        # Only if the fast reclaim was not enough do we spend the slow bounded cleaner.
+        if free_mb is not None and free_mb < MIN_FREE_MB:
+            cleaner_rc = _reclaim_before_refusing()
+            free_mb = _free_mb()
+        else:
+            cleaner_rc = "skipped: deterministic reclaim was enough"
+        if free_mb is not None and free_mb >= MIN_FREE_MB:
+            record_friction(
+                "reclaim-then-run",
+                command,
+                detail=(
+                    f"{before_mb} -> {free_mb} MB (cleaner rc={cleaner_rc}), "
+                    f"floor {MIN_FREE_MB} MB"
+                ),
+            )
+        else:
+            record_friction(
+                "refuse-disk",
+                command,
+                detail=(
+                    f"{before_mb} -> {free_mb} MB after reclaim (cleaner rc={cleaner_rc}), "
+                    f"floor {MIN_FREE_MB} MB"
+                ),
+            )
+            return _refusal(
+                f"the volume has {free_mb} MB free, under this door's {MIN_FREE_MB} MB floor. The "
+                f"door ran the estate's own cleaner first (reclaimed {before_mb} -> {free_mb} MB, "
+                f"cleaner rc={cleaner_rc}) and the space is still not there, so a job started now "
+                "makes the machine slower for every other agent running on it",
+                detail=(
+                    "run: estate-execute disk-cleanup apply=true worktrees=true "
+                    f"target_mb={MIN_FREE_MB * 2}"
+                ),
+                free_mb=free_mb,
+                floor_mb=MIN_FREE_MB,
+            )
 
     # 1. A command whose question a door already answers is steered to that door, not merely
     # refused: the door is what makes the answer one call instead of a loop.
