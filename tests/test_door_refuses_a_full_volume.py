@@ -60,7 +60,10 @@ def test_a_full_volume_is_refused_with_the_number_the_floor_and_the_way_out(tmp_
     assert out["accepted"] is False
     assert "200 MB free" in out["error"]
     assert "1500 MB floor" in out["error"]
-    assert "disk-cleanup" in out["detail"]
+    # The way out must be named, and it must be a thing that actually exists and actually frees
+    # space. `disk-cleanup` was deleted 2026-11-11, so the refusal names the measurement and the
+    # action instead of a door that is gone.
+    assert "/bin/df" in out["detail"] or "rm" in out["detail"]
     assert out["free_mb"] == 200 and out["floor_mb"] == 1500
     assert ex.calls == []  # nothing was started on a full machine
 
@@ -79,12 +82,27 @@ def test_the_refusal_is_written_to_the_friction_ledger(tmp_path):
     assert "200 MB" in disk[0]["detail"]
 
 
-def test_the_cleaner_itself_is_never_refused_or_the_refusal_is_unsatisfiable(tmp_path):
+def test_the_reclaim_door_is_never_refused_or_the_refusal_is_unsatisfiable(tmp_path):
     # A guard whose own instruction is refused by itself is the defect, not the remedy (R38).
+    # `disk-cleanup` was deleted 2026-11-11; `disk-reclaim` is the door the refusal now names, so
+    # it is the one that must never be refused while the floor is closed.
+    door, ex = _door(tmp_path, free_mb=200)
+
+    out = door.execute_command("estate-execute disk-reclaim", cwd=str(tmp_path), executor=ex)
+
+    assert "MB free" not in out.get("error", "")
+    assert len(ex.calls) == 1
+
+
+def test_unloading_a_job_is_never_refused_or_the_floor_blocks_its_own_exit(tmp_path):
+    """The circular case measured 2026-11-11: under the floor, `launchctl bootout` on the resident
+    job holding the floor closed was itself refused. Unloading a job consumes no space, so the
+    floor must never refuse it -- otherwise the floor is the only thing standing between the
+    machine and the space it needs."""
     door, ex = _door(tmp_path, free_mb=200)
 
     out = door.execute_command(
-        "estate-execute disk-cleanup apply=true", cwd=str(tmp_path), executor=ex
+        "launchctl bootout gui/501/ai.estate.disk-watch", cwd=str(tmp_path), executor=ex
     )
 
     assert "MB free" not in out.get("error", "")
@@ -212,74 +230,27 @@ def test_the_cleaner_is_not_run_when_the_volume_cannot_be_measured(tmp_path):
     assert len(ex.calls) == 1
 
 
-def test_a_reclaim_that_cannot_run_still_refuses_honestly(tmp_path):
-    # The cleaner is missing or crashed: the door must not pretend it freed space.
-    door, ex, calls = _door_tracking_reclaim(tmp_path, free_readings=[200, 200])
-    door._reclaim_before_refusing = lambda: None
-
-    out = door.execute_command("git status", cwd=str(tmp_path), executor=ex)
-
-    assert out["accepted"] is False
-    assert "cleaner rc=None" in out["error"]
-    assert ex.calls == []
-
-
-def test_the_reclaim_is_off_unless_the_estate_opts_in(monkeypatch):
-    # A refusal that DELETES files the caller never asked about is a worse defect than the two-step
-    # dance it removes. Default OFF, and the refusal stays honest when it is off.
-    monkeypatch.delenv("ESTATE_DISK_RECLAIM_ON_REFUSE", raising=False)
-    spec = importlib.util.spec_from_file_location("door_optin_off", _MODULE)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    assert mod._reclaim_before_refusing() is None, (
-        "with no opt-in the hook must do nothing, so no refusal deletes anything unasked"
-    )
-
-
-def test_no_test_leaves_the_real_cleaner_live(tmp_path):
-    # A door built for a test must not be able to spawn the real cleaner: that both deletes files
-    # on the host and blocks in fork() behind the real executor (the hang this file shipped with).
-    door, _ex = _door(tmp_path, free_mb=10)
-    assert door._reclaim_before_refusing() == 0, (
-        "the default test door must stub the reclaim hook, not run the real cleaner"
-    )
-
-
-def test_the_reclaim_is_recorded_in_the_friction_ledger(tmp_path):
-    door, ex, calls = _door_tracking_reclaim(tmp_path, free_readings=[200, 9000])
-
-    door.execute_command("git status", cwd=str(tmp_path), executor=ex)
-
-    lines = [
-        json.loads(l) for l in door.FRICTION_PATH.read_text().splitlines() if l.strip()
-    ]
-    kinds = [l["kind"] for l in lines]
-    assert "reclaim-then-run" in kinds, (
-        "a reclaim that unblocked work is the estate's evidence that the friction was real"
-    )
-
-
-def test_the_reclaim_hook_invokes_the_estate_cleaner_and_is_bounded():
-    # The hook itself, un-stubbed, must call the one cleaner SCRIPT and bound its own runtime, or a
-    # refusal could outlast the work it guards (the 100s ceiling is the door's, not its own).
+def test_the_reclaim_hook_resurrects_nothing():
+    # FALSIFIER for the founder's order, 2026-11-11: the disk guardian family is DELETED from
+    # source, not retired. The floor used to shell out to the estate's cleaner from inside the
+    # door. If that call ever comes back, the family has grown back and this fails.
     text = _MODULE.read_text()
     start = text.index("def _reclaim_before_refusing")
     end = text.index("\ndef ", start + 1)
     source = text[start:end]
-    assert "disk-cleanup.sh" in source, (
-        "must call the cleaner script, the layer that does the work"
+    assert "disk-cleanup.sh" not in source, (
+        "the door must not invoke the deleted cleaner: it was the cause of the full disk, not"
+        " the cure (113 steps to do what one rm does)"
     )
-    assert "timeout=" in source, "a refusal must never outlast the work it guards"
-    assert "target_mb=" in source or "DISK_CLEANUP_TARGET_MB" in source
+    assert "return None" in source, "the hook is a named no-op so the floor block still runs"
 
 
-def test_the_reclaim_never_calls_the_executor_door_from_inside_the_door():
-    # Re-entrancy: spawning `estate-execute` from inside the door spawns a second door while the
-    # first refuses. That is the fork storm this hook shipped with; the script is the layer.
+def test_the_only_way_out_of_the_floor_is_a_command_that_frees_space():
+    # The floor must never blockade its own exit. Each of these is a command that frees or measures
+    # space, so the floor has to let it run while closed -- otherwise the machine cannot recover.
     text = _MODULE.read_text()
-    start = text.index("def _reclaim_before_refusing")
-    end = text.index("\ndef ", start + 1)
-    source = text[start:end]
-    assert "bin/estate-execute" not in source, (
-        "the hook must not invoke the door that is running it"
-    )
+    start = text.index("_SPACE_FREE_VERBS = re.compile")
+    source = text[start : text.index("\n)\n", start)]
+    for verb in ("df", "du", "rm", "launchctl", "find"):
+        assert verb in source, f"{verb} must stay exempt or the floor blocks its own way out"
+    assert "disk-cleanup" not in source, "the deleted door is not a way out"

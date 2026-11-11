@@ -67,73 +67,34 @@ CEILING_SEC = 100
 # with a different volume.
 MIN_FREE_MB = int(os.environ.get("ESTATE_MIN_FREE_MB", "1500"))
 
+# Verbs that FREE or MEASURE space and consume none. The floor lets these through while it is
+# closed, so the floor can never refuse its own way out. Until 2026-11-11 the test was the
+# substring `"disk-cleanup" not in command`, which exempted one door by name and nothing else --
+# so under the floor, `launchctl bootout` on the resident job HOLDING the floor closed was itself
+# refused, and the machine could not free itself. Exemption is by shape now, never by a caller's
+# assertion: a caller able to exempt an arbitrary payload would be the hole.
+_SPACE_FREE_VERBS = re.compile(
+    r"(?:^|[\s;&|(])(?:/bin/|/usr/bin/)?"
+    r"(?:df|du|launchctl|pkill|kill|killall|rm|rmdir|unlink|truncate|find|ls|stat|wc)\b"
+    r"|disk-reclaim",
+    re.IGNORECASE,
+)
+
 
 def _reclaim_before_refusing() -> Optional[int]:
-    """Run the estate's own cleaner, bounded, and return its exit status (None if not attempted).
+    """DELETED 2026-11-11. Returns None: the door never reclaims, it only measures.
 
-    This invokes the ONE cleaner (~/.estate/libexec/disk-cleanup.sh), never a second copy of it
-    (AGENTS.md section 6) and NEVER the executor door that wraps it: calling `estate-execute
-    disk-cleanup` from inside the door is a re-entrant call that spawns a second door while the
-    first refuses, which is the fork storm this hook shipped with. The script is the layer, and it
-    is the layer this hook calls.
+    This function used to shell out to the estate's resident disk cleaner when the floor refused a
+    command. The founder ordered that family deleted from source ("not retired, deleted --
+    tombstones out, files gone"), because the guardian was never the cure for the disk: it was the
+    cause. Stopped, it recovered 4.6 GB on its own, and it took 113 steps to do what one rm does.
 
-    It is given a budget well under the door's ceiling so a refusal can never itself become the
-    slowest thing on the machine.
-
-    It deletes, so it is OPT-IN: the estate turns it on with ESTATE_DISK_RECLAIM_ON_REFUSE=1. A
-    refusal that deletes files the caller never asked about is a worse defect than the two-step
-    dance it removes, so the default is OFF and the refusal stays exactly as honest as before.
-
-    Exit statuses that are not failures and are never reported as one:
-      5 -- another run holds the cleaner's lock and is doing the work
-      4 -- the budget ran out with work still owed (the resident guardian carries it)
-    Neither is interpreted here: the caller re-measures the volume afterwards regardless, so this
-    number is evidence for the message, never the decision.
+    It is kept as a named no-op, not silently removed, because the floor block is its caller: a
+    missing name here would turn every refusal into an AttributeError, which is a worse refusal.
+    What remains is the honest behaviour -- the door measures, states the number, and names rm.
     """
-    if os.environ.get("ESTATE_DISK_RECLAIM_ON_REFUSE", "") not in ("1", "true", "yes"):
-        return None
-    script = os.environ.get("ESTATE_DISK_CLEANER", "")
-    if not script:
-        for candidate in (
-            os.path.expanduser("~/.estate/libexec/disk-cleanup.sh"),
-            os.path.join(
-                os.path.dirname(
-                    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                ),
-                "bin",
-                "disk-cleanup",
-            ),
-        ):
-            if os.path.exists(candidate):
-                script = candidate
-                break
-    if not script:
-        return None
-    budget = max(5, min(40, CEILING_SEC // 2))
-    env = dict(os.environ)
-    env["DISK_CLEANUP_TARGET_MB"] = str(MIN_FREE_MB * 2)
-    env["DISK_CLEANUP_INCREMENTAL"] = "0"
-    import shutil
+    return None
 
-    # Resolved to an absolute path rather than a bare `bash`: S607. The path is a file this hook
-    # has already checked exists; if the shell itself cannot be found, the hook declines rather
-    # than pretending it ran anything.
-    shell = shutil.which("bash")
-    if not shell or not os.path.exists(script):
-        return None
-    try:
-        import subprocess
-
-        proc = subprocess.run(  # noqa: S603 - every argument is a literal path checked above
-            [shell, script, "true", "false", "0", "false", str(budget)],
-            capture_output=True,
-            timeout=budget + 15,
-            text=True,
-            env=env,
-        )
-        return proc.returncode
-    except Exception:
-        return None
 
 
 def _free_mb(path: str = "/") -> Optional[int]:
@@ -1194,7 +1155,11 @@ def execute_command(
     # prove; proving is `bin/estate-zero-worktree`'s job, on a narrower question.
 
     free_mb = _free_mb()
-    if free_mb is not None and free_mb < MIN_FREE_MB and "disk-cleanup" not in command:
+    if (
+        free_mb is not None
+        and free_mb < MIN_FREE_MB
+        and not _SPACE_FREE_VERBS.search(command or "")
+    ):
         before_mb = free_mb
         cleaner_rc = _reclaim_before_refusing()
         free_mb = _free_mb()
@@ -1222,13 +1187,13 @@ def execute_command(
                 f"cleaner rc={cleaner_rc}) and the space is still not there, so a job started now "
                 "makes the machine slower for every other agent running on it",
                 detail=(
-                    "run: estate-execute disk-cleanup apply=true worktrees=true "
-                    f"target_mb={MIN_FREE_MB * 2}"
+                    "/bin/df -m /System/Volumes/Data says how much; rm frees it. There is no "
+                    "resident cleaner: the guardian was deleted 2026-11-11 because it was the "
+                    "cause, not the cure"
                 ),
                 free_mb=free_mb,
                 floor_mb=MIN_FREE_MB,
             )
-
     # 1. A command whose question a door already answers is steered to that door, not merely
     # refused: the door is what makes the answer one call instead of a loop.
     steer = _steer_for(command)

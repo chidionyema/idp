@@ -31,7 +31,9 @@ DEFAULT_REPOS = [
     HOME / "Documents/code/argon",
     HOME / "Documents/code/argon-sync",
 ]
-RECEIPT_DIR = Path(os.environ.get("OTTO_SWEEP_DIR", HOME / ".estate/otto/sweep"))
+# The disk guardian family (bin/idp-disk-watch, bin/idp-disk-guard, disk-cleanup.sh and the
+# disk-sentinel tree) was DELETED by founder order on 2026-11-11. The sentinel path is kept as a
+# constant only so the .exists() guard below stays false; nothing is restored from it.
 DISK_SENTINEL = HOME / ".local/share/disk-sentinel/sentinel.sh"
 
 
