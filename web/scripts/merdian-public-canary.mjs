@@ -11,7 +11,8 @@ const ORIGINS = [
   'https://merian-intelligence.vercel.app',
 ];
 const PRIMARY = ORIGINS[0];
-const failures = [];
+const failures = []; // P0: public-site identity/route regression
+const commercialBlockers = []; // pre-domain launch readiness; not a visual regression
 const audit = [];
 const OLD = 'AI infrastructure consulting for companies shipping production LLM systems';
 
@@ -84,7 +85,13 @@ try {
   const { html, status } = await read(PRIMARY + '/api/contact');
   const statusBody = JSON.parse(html);
   const accepting = statusBody && statusBody.acceptingEnquiries === true;
-  assert(accepting, PRIMARY + '/api/contact: enquiry delivery unavailable (acceptingEnquiries != true)');
+  // A deliberately unavailable inbox before company/domain setup is a commercial
+  // readiness blocker, not evidence the premium visual identity regressed.
+  if (typeof statusBody?.acceptingEnquiries !== 'boolean') {
+    failures.push(PRIMARY + '/api/contact: readiness endpoint returned an invalid contract');
+  } else if (!accepting) {
+    commercialBlockers.push(PRIMARY + '/api/contact: verified enquiry delivery still unavailable');
+  }
   audit.push({ origin: PRIMARY + '/api/contact', status, accepting });
 } catch (error) {
   failures.push(PRIMARY + '/api/contact: ' + (error instanceof Error ? error.message : String(error)));
@@ -105,6 +112,9 @@ const summary = {
   primary: PRIMARY,
   checked: audit.length,
   failures,
+  commercialBlockers,
+  identity: failures.length ? 'regressed' : 'approved-design-present',
+  commerce: commercialBlockers.length ? 'awaiting-inbox-activation' : 'configured',
   evidence: audit,
 };
 console.log(JSON.stringify(summary, null, 2));
@@ -112,5 +122,8 @@ if (failures.length) {
   console.error('MERDIAN PUBLIC SITE INCIDENT — ' + failures.join('; '));
   process.exitCode = 1;
 } else {
-  console.log('MERDIAN PUBLIC READBACK: PASS');
+  console.log('MERDIAN PUBLIC IDENTITY READBACK: PASS');
+  if (commercialBlockers.length) {
+    console.warn('MERDIAN COMMERCIAL READINESS PENDING — ' + commercialBlockers.join('; '));
+  }
 }
