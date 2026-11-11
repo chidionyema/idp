@@ -269,7 +269,7 @@ export async function shotTrialMain({env=process.env}={}){
   const limits=parseLimits(env.HELM_SHOT_LIMITS||"1,2,3,5");
   // Only this hardcoded repository-owned public corpus may be explicitly classified
   // synthetic. Never relabel arbitrary user or private tasks in runShotMatrix.
-  const tasks=corpus.tasks.slice(0,Number(env.HELM_SHOT_TASKS||1)).map(
+  const tasks=corpus.tasks.slice(0,Number(env.HELM_SHOT_TASKS||2)).map(
     t=>({...t,classification:"public-synthetic"})
   );
   const sourceSha=env.GITHUB_SHA||
