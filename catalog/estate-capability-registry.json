@@ -6,7 +6,7 @@
     "intent": 118,
     "layer": 257,
     "service": 121,
-    "tool": 483,
+    "tool": 485,
     "workflow": 102
   },
   "records": [
@@ -5990,7 +5990,7 @@
       "id": "cap:intent/work-audit",
       "schema_version": 1,
       "kind": "intent",
-      "summary": "Find work done in the last N days that never reached main. For every closed-unmerged PR, every worktree's uncommitted/untracked changes, every local branch commit on no remote and every stash in the window, it measures how many of the lines that work added are in the same file on origin/main now: LOST (<30%), PARTIAL (<90%), LANDED (hidden unless all=true). Also lists unticked \"- [ ]\" checkpoints in open issues updated in the window. Scans every repo under ~/Documents/code and the GitHub repos named in `github`. Read-only apart from `git fetch` and refs/work-audit/pr/* refs; full result in ~/.estate/work-audit/latest.json. class: read args: days: {type: int, default: 28} github: {type: string, default: \"chidionyema/idp,chidionyema/crew\"} all: {type: bool, default: false} steps: # Step bound removed 2026-10-25: time is declared once, as this intent's budget # (docs/decisions/0043-the-bound-lives-at-the-door.md). A number here could only be a # guess about someone else's work, and where it fired it invented a failure. - name: work-audit cmd: > python3 ~/.estate/libexec/work-audit.py {{days}} {{github}} {{all}}",
+      "summary": "Find work done in the last N days that never reached main, and say why it died. For every closed-unmerged PR, every pushed `lane/*` branch main never took, every worktree's uncommitted/untracked changes, every local branch commit on no remote and every stash in the window, it measures how many of the lines that work added are in the same file on origin/main now: LOST (<30%), PARTIAL (<90%), LANDED (hidden unless all=true), plus UNMEASURED when the clone is shallow (a truncated history answers \"not an ancestor\" for everything, so unreachable work is reported UNMEASURED, never LOST). Every PR row also carries `failing_checks`, `kill` (MECHANICAL = every failing check is cosmetic, so a normalizer could have fixed it; GENUINE = at least one substantive check failed, e.g. claim-gate/dof-gate/ci-success, so the change itself was refused; UNKNOWN = the checks could not be read) and, for LOST/PARTIAL/UNKNOWN, a `recover` command that fetches the head and diffs it against main. Also lists unticked \"- [ ]\" checkpoints in open issues updated in the window. Scans every repo under ~/Documents/code and the GitHub repos named in `github`. Read-only apart from `git fetch` and refs/work-audit/pr/* refs; full result in ~/.estate/work-audit/latest.json. BOUNDED, AND IT SAYS SO. Every source runs against a share of this door's real ceiling (local 26s, fetch 8s, PR 38s, checkpoints 9s), so the door always ends with a census instead of a 100s timeout. Whatever a budget cut off is named in `errors` -- \"N not examined, so they are not in this census\" -- because an absent row must never read as \"no work was lost\". A history walk cut short makes the affected row UNKNOWN, never LOST: the door refuses to accuse work of being lost on evidence it did not finish collecting. class: read args: days: {type: int, default: 28} github: {type: string, default: \"chidionyema/idp,chidionyema/crew\"} all: {type: bool, default: false} steps: # Step bound removed 2026-10-25: time is declared once, as this intent's budget # (docs/decisions/0043-the-bound-lives-at-the-door.md). A number here could only be a # guess about someone else's work, and where it fired it invented a failure. - name: work-audit cmd: > python3 ~/.estate/libexec/work-audit.py {{days}} {{github}} {{all}}",
       "contract": {
         "inputs": [
           "all",
@@ -10379,12 +10379,16 @@
       "summary": "work-audit: find work done in the last N days that never reached main.",
       "contract": {
         "inputs": [
+          "--batch",
           "--count",
           "--exclude-standard",
           "--include-untracked",
+          "--is-shallow-repository",
           "--no-color",
           "--no-index",
           "--no-merges",
+          "--no-renames",
+          "--no-tags",
           "--not",
           "--others",
           "--porcelain",
@@ -29336,6 +29340,60 @@
       "mirrors": []
     },
     {
+      "id": "cap:tool/estate-fence-purge",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "!/bin/bash",
+      "contract": {
+        "inputs": [],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-zero-worktree"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-fence-purge",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-zero-worktree",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
       "id": "cap:tool/estate-fleet",
       "schema_version": 1,
       "kind": "tool",
@@ -31989,6 +32047,62 @@
       "depends_on": [
         {
           "id": "cap:tool/start",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:tool/estate-zero-worktree",
+      "schema_version": 1,
+      "kind": "tool",
+      "summary": "estate-zero-worktree -- refuse the spawn, do not clean up after it.",
+      "contract": {
+        "inputs": [
+          "--porcelain"
+        ],
+        "outputs": [
+          "stdout",
+          "exit code"
+        ],
+        "errors": [
+          "non-zero exit"
+        ],
+        "cost_class": "cheap",
+        "latency_class": "interactive"
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:bin"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [
+        "cap:tool/estate-fence-purge"
+      ],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": "bin/estate-zero-worktree",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-fence-purge",
           "edge": "invokes"
         }
       ],
