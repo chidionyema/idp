@@ -23,6 +23,19 @@ registry → consolidation with the founder → vision lock → autonomy waves.
 
 ---
 
+## Product and founder UI quality — binding surface contract
+
+Every agent touching a website, customer app, Telegram surface or founder
+interface must read `docs/standards/estate-ui-excellence.md` and use
+`packages/estate-ui-kit` where appropriate. Preserve each product's separate
+visual identity. For a public company site, no production promotion without
+actual browser/visitor proof and protected public aliases. For a founder surface,
+no fabricated operational state, no unsupported voice action and no loss of
+One Eye or specialist perspective. The executable checks and the observed
+deployment receipt — not a prose assertion — determine release readiness.
+
+---
+
 ## 0. Agent cognitive architecture: the seven gates
 
 **Operating principle:** you are an autonomous orchestration agent operating in a deterministic
