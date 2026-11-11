@@ -12,6 +12,38 @@ export interface Post {
 // traceable measurements: never turn an illustrative design into a claimed deployment.
 export const posts: Post[] = [
   {
+    slug: "persistent-operational-intelligence",
+    title: "When an AI Agent's Work Outlives Its Session",
+    date: "2026-11-11",
+    readTime: "4 min read",
+    excerpt: "A laboratory experiment in preserving independently verified agent work across sessions—and what it does not yet prove.",
+    body: `A useful AI system should leave behind more than a transcript. When an agent completes a task, can another agent inherit an actual working result, verify it independently and continue without repeating the original inference?
+
+This is one of the questions we are investigating at Merdian Intelligence. It sits at the intersection of agent memory, executable verification, distributed systems and the economics of artificial intelligence.
+
+## From recollection to operational evidence
+
+Remembering that a task was completed is different from possessing a reproducible result. A written summary can be inaccurate, stale or disconnected from the deployed revision. A verified executable artifact provides a stronger foundation: it can be checked against its original requirements and tested again after a session disappears.
+
+In one narrow internal laboratory trial, a model-generated Python authorization function passed eight independently authored tests. Another temporary runner subsequently recovered that exact implementation, independently retested it and replayed the result without another model call. The verified implementation was retained in version-controlled research material for subsequent checks.
+
+That is evidence for exact-task reuse—not proof that an agent has acquired general intelligence or learned new model weights.
+
+## Measure what the next agent can actually do
+
+Our evaluation separates successful inference from successful execution. We preserve the task definition, result fingerprint, test expectations, revision identity and observed failures. Independent checks must accept a reference result and reject an empty implementation.
+
+If a task or its test definition changes, a remembered solution should be treated as unverified until it passes the new test. Success is not inherited merely because an earlier agent claimed it.
+
+## The harder unanswered question
+
+Can verified experience from one task improve an agent's performance on a genuinely new task? Our initial related-task comparisons did not establish that advantage; third-party model availability and inconsistent completions interfered with the experiment.
+
+The next stage is controlled, repeated comparison across models, genuinely held-out tasks and measurable costs. A research programme should report the experiments that did not establish its hypothesis as carefully as those that did.
+
+For organisations adopting autonomous systems, the long-term opportunity is not simply a larger memory. It is a way to preserve trustworthy operational knowledge—and establish which parts are actually transferable.`,
+  },
+  {
     slug: "agentic-routing-for-enterprise",
     title: "Agentic Routing for the Enterprise",
     date: "2025-01-15",
