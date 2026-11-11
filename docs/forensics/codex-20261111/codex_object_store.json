@@ -1,0 +1,963 @@
+{
+ "path": "/Users/roseonyema/.estate/quarantine/codex-company-assets-20261111T1020Z/thread_history_1.sqlite",
+ "exists": true,
+ "tables": {
+  "_sqlx_migrations": 8,
+  "thread_turns": 416,
+  "thread_items": 40721,
+  "thread_history_projection_state": 75,
+  "thread_realtime_items": 0
+ },
+ "threads": [
+  {
+   "thread_id": "01a17a10-80d6-7061-882a-7c5ef61b6d11",
+   "items": 750,
+   "window_items": 0,
+   "first": "2026-10-26T21:18:41.699Z",
+   "last": "2026-10-26T23:08:13.030Z",
+   "by_type": {
+    "commandExecution": 359,
+    "reasoning": 239,
+    "agentMessage": 58,
+    "userMessage": 51,
+    "fileChange": 24,
+    "webSearch": 18,
+    "contextCompaction": 1
+   }
+  },
+  {
+   "thread_id": "01a17ecb-54e5-7c81-8f89-6d7c6e4104d7",
+   "items": 5,
+   "window_items": 0,
+   "first": "2026-10-27T19:29:35.698Z",
+   "last": "2026-10-28T19:07:13.981Z",
+   "by_type": {
+    "userMessage": 5
+   }
+  },
+  {
+   "thread_id": "01a17f53-0dac-75b2-bbd4-422c65a8664d",
+   "items": 14,
+   "window_items": 0,
+   "first": "2026-10-27T21:46:28.568Z",
+   "last": "2026-10-29T14:33:47.522Z",
+   "by_type": {
+    "userMessage": 14
+   }
+  },
+  {
+   "thread_id": "01a17f7e-6c95-7973-9577-cdad1f486e44",
+   "items": 1,
+   "window_items": 0,
+   "first": "2026-10-27T22:32:49.129Z",
+   "last": "2026-10-27T22:32:49.129Z",
+   "by_type": {
+    "userMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a183fa-2b42-7932-b339-74aeee539652",
+   "items": 1,
+   "window_items": 0,
+   "first": "2026-10-28T19:26:20.559Z",
+   "last": "2026-10-28T19:26:20.559Z",
+   "by_type": {
+    "userMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a183fa-a20b-7b73-96ed-ee07563b54ca",
+   "items": 1,
+   "window_items": 0,
+   "first": "2026-10-28T19:26:50.451Z",
+   "last": "2026-10-28T19:26:50.451Z",
+   "by_type": {
+    "userMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a183fb-4990-7292-b058-f6fd45e03443",
+   "items": 1,
+   "window_items": 0,
+   "first": "2026-10-28T19:27:35.865Z",
+   "last": "2026-10-28T19:27:35.865Z",
+   "by_type": {
+    "userMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a18615-67b7-7693-afaa-433364642338",
+   "items": 1,
+   "window_items": 0,
+   "first": "2026-10-29T05:15:40.924Z",
+   "last": "2026-10-29T05:15:40.924Z",
+   "by_type": {
+    "userMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a18650-04a8-74d0-bc9c-8aff7fa4ca1e",
+   "items": 1,
+   "window_items": 0,
+   "first": "2026-10-29T06:19:31.505Z",
+   "last": "2026-10-29T06:19:31.505Z",
+   "by_type": {
+    "userMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a18659-5bbe-7590-a95f-0bcb29ef9e13",
+   "items": 1,
+   "window_items": 0,
+   "first": "2026-10-29T06:29:40.233Z",
+   "last": "2026-10-29T06:29:40.233Z",
+   "by_type": {
+    "userMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a186f2-ea74-7bf1-86ef-1e2dc7cbfd52",
+   "items": 2,
+   "window_items": 0,
+   "first": "2026-10-29T09:17:30.792Z",
+   "last": "2026-10-29T09:17:33.662Z",
+   "by_type": {
+    "userMessage": 1,
+    "agentMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a18767-96a0-7f31-bfa2-275d191ade0d",
+   "items": 2,
+   "window_items": 0,
+   "first": "2026-10-29T11:24:56.834Z",
+   "last": "2026-10-29T11:24:58.971Z",
+   "by_type": {
+    "userMessage": 1,
+    "agentMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a18802-865c-7a43-a603-b83419c39a26",
+   "items": 598,
+   "window_items": 0,
+   "first": "2026-10-29T14:14:31.015Z",
+   "last": "2026-10-29T17:23:54.949Z",
+   "by_type": {
+    "reasoning": 327,
+    "commandExecution": 123,
+    "fileChange": 92,
+    "agentMessage": 41,
+    "userMessage": 9,
+    "webSearch": 5,
+    "contextCompaction": 1
+   }
+  },
+  {
+   "thread_id": "01a18830-a71e-7653-b7df-7b705e722c23",
+   "items": 1217,
+   "window_items": 0,
+   "first": "2024-01-01T00:18:16.839Z",
+   "last": "2026-10-30T23:55:59.681Z",
+   "by_type": {
+    "reasoning": 518,
+    "commandExecution": 421,
+    "fileChange": 136,
+    "agentMessage": 89,
+    "userMessage": 19,
+    "sleep": 17,
+    "mcpToolCall": 16,
+    "contextCompaction": 1
+   }
+  },
+  {
+   "thread_id": "01a189ce-a191-7122-b722-57e02652d632",
+   "items": 276,
+   "window_items": 0,
+   "first": "2026-10-29T22:36:35.143Z",
+   "last": "2026-10-30T11:17:22.461Z",
+   "by_type": {
+    "reasoning": 113,
+    "commandExecution": 96,
+    "agentMessage": 27,
+    "fileChange": 26,
+    "userMessage": 13,
+    "webSearch": 1
+   }
+  },
+  {
+   "thread_id": "01a189cf-07d0-7cf0-8719-f1a262802fdb",
+   "items": 1630,
+   "window_items": 0,
+   "first": "2026-10-29T22:37:09.576Z",
+   "last": "2026-10-31T00:43:40.146Z",
+   "by_type": {
+    "commandExecution": 652,
+    "reasoning": 625,
+    "fileChange": 174,
+    "agentMessage": 108,
+    "userMessage": 34,
+    "sleep": 27,
+    "webSearch": 7,
+    "contextCompaction": 3
+   }
+  },
+  {
+   "thread_id": "01a18a6a-f0be-7480-a6a0-df556ea8a6d1",
+   "items": 8,
+   "window_items": 0,
+   "first": "2026-10-30T01:27:16.887Z",
+   "last": "2026-10-30T01:28:06.985Z",
+   "by_type": {
+    "commandExecution": 3,
+    "agentMessage": 2,
+    "reasoning": 2,
+    "userMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a18a6c-b279-7b43-98eb-32c3371157f2",
+   "items": 3,
+   "window_items": 0,
+   "first": "2026-10-30T01:29:06.840Z",
+   "last": "2026-10-30T01:29:14.239Z",
+   "by_type": {
+    "userMessage": 1,
+    "reasoning": 1,
+    "agentMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a19058-4895-7a91-8ac9-b597c4b3dd1e",
+   "items": 1,
+   "window_items": 0,
+   "first": "2026-10-31T05:04:44.457Z",
+   "last": "2026-10-31T05:04:44.457Z",
+   "by_type": {
+    "userMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a19058-ce0e-73b3-b146-a5fd460fc2e2",
+   "items": 1,
+   "window_items": 0,
+   "first": "2026-10-31T05:05:14.402Z",
+   "last": "2026-10-31T05:05:14.402Z",
+   "by_type": {
+    "userMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a199ab-4e2e-7fe0-be74-5b5eca03f865",
+   "items": 2,
+   "window_items": 0,
+   "first": "2026-11-02T00:31:48.678Z",
+   "last": "2026-11-02T00:32:10.530Z",
+   "by_type": {
+    "userMessage": 2
+   }
+  },
+  {
+   "thread_id": "01a199b9-e526-7ce0-a929-7202f22caaa1",
+   "items": 1,
+   "window_items": 0,
+   "first": "2026-11-02T00:47:42.371Z",
+   "last": "2026-11-02T00:47:42.371Z",
+   "by_type": {
+    "userMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a199bb-da12-7292-b7ef-e8966ef971a0",
+   "items": 1,
+   "window_items": 0,
+   "first": "2026-11-02T00:49:53.005Z",
+   "last": "2026-11-02T00:49:53.005Z",
+   "by_type": {
+    "userMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a199bc-b9f4-7f40-8268-97a575164b7b",
+   "items": 213,
+   "window_items": 0,
+   "first": "2026-11-02T00:50:47.843Z",
+   "last": "2026-11-02T04:27:27.934Z",
+   "by_type": {
+    "reasoning": 95,
+    "commandExecution": 63,
+    "agentMessage": 28,
+    "mcpToolCall": 15,
+    "userMessage": 6,
+    "webSearch": 5,
+    "contextCompaction": 1
+   }
+  },
+  {
+   "thread_id": "01a19a80-4d0b-76c0-a7b9-e0bc335087f6",
+   "items": 45,
+   "window_items": 0,
+   "first": "2026-11-02T04:24:34.369Z",
+   "last": "2026-11-02T04:33:41.779Z",
+   "by_type": {
+    "reasoning": 18,
+    "mcpToolCall": 13,
+    "agentMessage": 6,
+    "commandExecution": 3,
+    "webSearch": 3,
+    "userMessage": 1,
+    "contextCompaction": 1
+   }
+  },
+  {
+   "thread_id": "01a19a98-5f1f-73b2-ade2-8c3459bc9ded",
+   "items": 178,
+   "window_items": 0,
+   "first": "2026-11-02T04:50:46.354Z",
+   "last": "2026-11-02T07:03:26.533Z",
+   "by_type": {
+    "reasoning": 68,
+    "commandExecution": 47,
+    "agentMessage": 36,
+    "mcpToolCall": 22,
+    "userMessage": 5
+   }
+  },
+  {
+   "thread_id": "01a19a99-a1e9-7ef2-bbc9-836cb6b53d0b",
+   "items": 189,
+   "window_items": 0,
+   "first": "2026-11-02T04:52:20.438Z",
+   "last": "2026-11-02T20:47:27.533Z",
+   "by_type": {
+    "reasoning": 81,
+    "commandExecution": 45,
+    "agentMessage": 29,
+    "userMessage": 10,
+    "mcpToolCall": 9,
+    "collabAgentToolCall": 7,
+    "webSearch": 6,
+    "contextCompaction": 1,
+    "fileChange": 1
+   }
+  },
+  {
+   "thread_id": "01a19afd-c529-70f1-a0bf-d29efb5545a3",
+   "items": 33,
+   "window_items": 0,
+   "first": "2026-11-02T06:41:28.470Z",
+   "last": "2026-11-02T06:46:03.684Z",
+   "by_type": {
+    "mcpToolCall": 19,
+    "reasoning": 9,
+    "agentMessage": 4,
+    "userMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a19afe-3d91-75e0-b713-fd8c6bf8d562",
+   "items": 24,
+   "window_items": 0,
+   "first": "2026-11-02T06:41:57.087Z",
+   "last": "2026-11-02T06:45:43.873Z",
+   "by_type": {
+    "reasoning": 10,
+    "mcpToolCall": 10,
+    "agentMessage": 3,
+    "userMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a19afe-6821-7cc3-96c2-d0282ca0ec67",
+   "items": 20,
+   "window_items": 0,
+   "first": "2026-11-02T06:42:09.986Z",
+   "last": "2026-11-02T06:46:12.505Z",
+   "by_type": {
+    "reasoning": 8,
+    "mcpToolCall": 8,
+    "agentMessage": 3,
+    "userMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a19afe-b25d-73e0-b611-2dbf07dc0f6c",
+   "items": 20,
+   "window_items": 0,
+   "first": "2026-11-02T06:42:29.065Z",
+   "last": "2026-11-02T06:45:25.429Z",
+   "by_type": {
+    "reasoning": 8,
+    "mcpToolCall": 8,
+    "agentMessage": 3,
+    "userMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a19aff-8cec-7db0-9017-fddeb8a7ef1c",
+   "items": 16,
+   "window_items": 0,
+   "first": "2026-11-02T06:43:22.812Z",
+   "last": "2026-11-02T06:46:14.165Z",
+   "by_type": {
+    "mcpToolCall": 7,
+    "reasoning": 6,
+    "agentMessage": 2,
+    "userMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a19aff-b157-7ec3-abb6-d7f36125b681",
+   "items": 16,
+   "window_items": 0,
+   "first": "2026-11-02T06:43:36.321Z",
+   "last": "2026-11-02T06:45:48.352Z",
+   "by_type": {
+    "reasoning": 6,
+    "mcpToolCall": 6,
+    "agentMessage": 3,
+    "userMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a19f96-a752-7f90-98c5-24b0258f10a0",
+   "items": 243,
+   "window_items": 0,
+   "first": "2026-11-03T04:07:17.728Z",
+   "last": "2026-11-03T19:06:46.638Z",
+   "by_type": {
+    "reasoning": 125,
+    "commandExecution": 74,
+    "agentMessage": 23,
+    "mcpToolCall": 13,
+    "userMessage": 4,
+    "fileChange": 3,
+    "contextCompaction": 1
+   }
+  },
+  {
+   "thread_id": "01a1a2e6-3c2e-7e71-b941-02d8a3d52694",
+   "items": 4657,
+   "window_items": 0,
+   "first": "2026-11-03T19:32:47.394Z",
+   "last": "2026-11-05T02:44:03.840Z",
+   "by_type": {
+    "commandExecution": 1932,
+    "reasoning": 1839,
+    "fileChange": 359,
+    "agentMessage": 292,
+    "userMessage": 93,
+    "subAgentActivity": 82,
+    "collabAgentToolCall": 44,
+    "mcpToolCall": 13,
+    "contextCompaction": 3
+   }
+  },
+  {
+   "thread_id": "01a1a682-71d8-7e92-b212-96f56d966dff",
+   "items": 306,
+   "window_items": 0,
+   "first": "2026-11-04T12:22:24.010Z",
+   "last": "2026-11-04T14:12:58.922Z",
+   "by_type": {
+    "reasoning": 142,
+    "commandExecution": 104,
+    "fileChange": 34,
+    "subAgentActivity": 13,
+    "collabAgentToolCall": 9,
+    "agentMessage": 4
+   }
+  },
+  {
+   "thread_id": "01a1a692-68fa-7ce0-b198-dea0ebd300d8",
+   "items": 666,
+   "window_items": 0,
+   "first": "2026-11-04T12:39:54.437Z",
+   "last": "2026-11-04T15:59:24.533Z",
+   "by_type": {
+    "reasoning": 396,
+    "commandExecution": 179,
+    "fileChange": 63,
+    "collabAgentToolCall": 10,
+    "subAgentActivity": 10,
+    "agentMessage": 7,
+    "mcpToolCall": 1
+   }
+  },
+  {
+   "thread_id": "01a1a6c1-fbd5-7522-a6de-00fe507a8058",
+   "items": 3,
+   "window_items": 0,
+   "first": "2026-11-04T13:31:37.605Z",
+   "last": "2026-11-04T13:34:35.234Z",
+   "by_type": {
+    "agentMessage": 2,
+    "reasoning": 1
+   }
+  },
+  {
+   "thread_id": "01a1a6cb-1e39-79f2-af15-2b81c14e389a",
+   "items": 3,
+   "window_items": 0,
+   "first": "2026-11-04T13:41:34.373Z",
+   "last": "2026-11-04T14:01:57.774Z",
+   "by_type": {
+    "agentMessage": 2,
+    "reasoning": 1
+   }
+  },
+  {
+   "thread_id": "01a1a723-2f5a-7222-9a07-956b2bc0086c",
+   "items": 34,
+   "window_items": 0,
+   "first": "2026-11-04T15:18:14.905Z",
+   "last": "2026-11-04T15:22:40.905Z",
+   "by_type": {
+    "commandExecution": 20,
+    "reasoning": 11,
+    "agentMessage": 3
+   }
+  },
+  {
+   "thread_id": "01a1a723-351c-7cb2-96bb-5a6825fa8fb8",
+   "items": 30,
+   "window_items": 0,
+   "first": "2026-11-04T15:18:18.300Z",
+   "last": "2026-11-04T15:21:25.975Z",
+   "by_type": {
+    "commandExecution": 19,
+    "reasoning": 9,
+    "agentMessage": 2
+   }
+  },
+  {
+   "thread_id": "01a1a76f-92ca-70c1-9adb-c274fa5901c8",
+   "items": 17,
+   "window_items": 0,
+   "first": "2026-11-04T16:46:23.118Z",
+   "last": "2026-11-04T17:02:30.271Z",
+   "by_type": {
+    "commandExecution": 10,
+    "reasoning": 4,
+    "agentMessage": 3
+   }
+  },
+  {
+   "thread_id": "01a1a76f-9d80-7a12-8b5c-2f6f08799686",
+   "items": 472,
+   "window_items": 0,
+   "first": "2026-11-04T17:00:50.212Z",
+   "last": "2026-11-04T17:47:56.796Z",
+   "by_type": {
+    "commandExecution": 273,
+    "reasoning": 150,
+    "fileChange": 32,
+    "agentMessage": 16,
+    "contextCompaction": 1
+   }
+  },
+  {
+   "thread_id": "01a1a7b7-1b94-7361-b041-9b92860e85a7",
+   "items": 3,
+   "window_items": 0,
+   "first": "2026-11-04T17:59:22.294Z",
+   "last": "2026-11-04T18:01:40.191Z",
+   "by_type": {
+    "agentMessage": 2,
+    "reasoning": 1
+   }
+  },
+  {
+   "thread_id": "01a1a7b7-516f-7762-aa01-fc54e277095e",
+   "items": 3,
+   "window_items": 0,
+   "first": "2026-11-04T17:59:33.478Z",
+   "last": "2026-11-04T18:01:54.549Z",
+   "by_type": {
+    "agentMessage": 2,
+    "reasoning": 1
+   }
+  },
+  {
+   "thread_id": "01a1a7e6-dec5-7df1-8f08-52b6489aba2e",
+   "items": 25,
+   "window_items": 0,
+   "first": "2026-11-04T18:51:43.007Z",
+   "last": "2026-11-04T19:04:59.878Z",
+   "by_type": {
+    "commandExecution": 13,
+    "reasoning": 8,
+    "agentMessage": 4
+   }
+  },
+  {
+   "thread_id": "01a1a7e7-0629-7b00-957e-a9171bf6f9c2",
+   "items": 84,
+   "window_items": 0,
+   "first": "2026-11-04T18:52:04.948Z",
+   "last": "2026-11-04T19:05:04.742Z",
+   "by_type": {
+    "commandExecution": 53,
+    "reasoning": 29,
+    "agentMessage": 2
+   }
+  },
+  {
+   "thread_id": "01a1a808-0176-7b11-9529-7904543b921a",
+   "items": 42,
+   "window_items": 0,
+   "first": "2026-11-04T19:27:49.951Z",
+   "last": "2026-11-04T23:03:40.178Z",
+   "by_type": {
+    "commandExecution": 27,
+    "reasoning": 12,
+    "agentMessage": 3
+   }
+  },
+  {
+   "thread_id": "01a1a808-4a08-70a3-956a-2187248ef152",
+   "items": 22,
+   "window_items": 0,
+   "first": "2026-11-04T19:28:06.924Z",
+   "last": "2026-11-04T22:59:21.820Z",
+   "by_type": {
+    "commandExecution": 15,
+    "reasoning": 5,
+    "agentMessage": 2
+   }
+  },
+  {
+   "thread_id": "01a1a8d3-da30-77e0-b3e0-225640213c23",
+   "items": 63,
+   "window_items": 0,
+   "first": "2026-11-04T23:10:32.637Z",
+   "last": "2026-11-04T23:19:48.034Z",
+   "by_type": {
+    "commandExecution": 39,
+    "reasoning": 21,
+    "agentMessage": 3
+   }
+  },
+  {
+   "thread_id": "01a1a8d4-5b0d-7ce2-948e-8f95f6cdec7e",
+   "items": 64,
+   "window_items": 0,
+   "first": "2026-11-04T23:11:06.808Z",
+   "last": "2026-11-04T23:20:58.115Z",
+   "by_type": {
+    "commandExecution": 40,
+    "reasoning": 21,
+    "agentMessage": 3
+   }
+  },
+  {
+   "thread_id": "01a1a8e4-1ec0-7100-94fe-f705da7d7710",
+   "items": 34,
+   "window_items": 0,
+   "first": "2026-11-04T23:28:29.425Z",
+   "last": "2026-11-04T23:39:11.502Z",
+   "by_type": {
+    "commandExecution": 21,
+    "reasoning": 10,
+    "agentMessage": 3
+   }
+  },
+  {
+   "thread_id": "01a1a8e4-870a-7fa1-920b-dfc09024348f",
+   "items": 29,
+   "window_items": 0,
+   "first": "2026-11-04T23:28:56.217Z",
+   "last": "2026-11-04T23:35:26.674Z",
+   "by_type": {
+    "commandExecution": 15,
+    "reasoning": 11,
+    "agentMessage": 3
+   }
+  },
+  {
+   "thread_id": "01a1a8f5-3cc3-79b3-a4d7-39c7e6236d1f",
+   "items": 76,
+   "window_items": 0,
+   "first": "2026-11-04T23:47:01.668Z",
+   "last": "2026-11-05T00:09:09.650Z",
+   "by_type": {
+    "commandExecution": 42,
+    "reasoning": 31,
+    "agentMessage": 3
+   }
+  },
+  {
+   "thread_id": "01a1a8f5-ad06-7db3-9c71-cf9b64bea30c",
+   "items": 133,
+   "window_items": 0,
+   "first": "2026-11-04T23:47:51.316Z",
+   "last": "2026-11-05T00:37:51.169Z",
+   "by_type": {
+    "commandExecution": 67,
+    "reasoning": 61,
+    "agentMessage": 5
+   }
+  },
+  {
+   "thread_id": "01a1a920-b9ac-7550-8a35-43f7fbd5bae1",
+   "items": 25,
+   "window_items": 0,
+   "first": "2026-11-05T00:34:59.303Z",
+   "last": "2026-11-05T01:12:45.569Z",
+   "by_type": {
+    "commandExecution": 15,
+    "reasoning": 6,
+    "agentMessage": 4
+   }
+  },
+  {
+   "thread_id": "01a1a921-a2a4-7f32-93ce-56549e4bef53",
+   "items": 18,
+   "window_items": 0,
+   "first": "2026-11-05T00:36:40.946Z",
+   "last": "2026-11-05T01:12:19.023Z",
+   "by_type": {
+    "commandExecution": 8,
+    "reasoning": 5,
+    "agentMessage": 5
+   }
+  },
+  {
+   "thread_id": "01a1a94b-a684-71e2-96af-ad30d1c575e5",
+   "items": 33,
+   "window_items": 0,
+   "first": "2026-11-05T01:21:25.472Z",
+   "last": "2026-11-05T01:26:44.198Z",
+   "by_type": {
+    "commandExecution": 20,
+    "reasoning": 11,
+    "agentMessage": 2
+   }
+  },
+  {
+   "thread_id": "01a1a94b-f3e9-76c0-a59d-c4958ff9f86c",
+   "items": 38,
+   "window_items": 0,
+   "first": "2026-11-05T01:22:10.440Z",
+   "last": "2026-11-05T01:29:32.058Z",
+   "by_type": {
+    "commandExecution": 26,
+    "reasoning": 10,
+    "agentMessage": 2
+   }
+  },
+  {
+   "thread_id": "01a1a957-3e7b-7122-a581-abeec2448e56",
+   "items": 33,
+   "window_items": 0,
+   "first": "2026-11-05T01:34:14.452Z",
+   "last": "2026-11-05T01:39:30.007Z",
+   "by_type": {
+    "commandExecution": 23,
+    "reasoning": 7,
+    "agentMessage": 3
+   }
+  },
+  {
+   "thread_id": "01a1a957-a9d0-7b03-8ee9-90fbc5c55e9c",
+   "items": 8,
+   "window_items": 0,
+   "first": "2026-11-05T01:35:13.770Z",
+   "last": "2026-11-05T01:36:41.951Z",
+   "by_type": {
+    "commandExecution": 4,
+    "reasoning": 3,
+    "agentMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a1a969-be26-7962-b173-f304dcbff525",
+   "items": 16,
+   "window_items": 0,
+   "first": "2026-11-05T01:55:16.187Z",
+   "last": "2026-11-05T02:06:45.004Z",
+   "by_type": {
+    "commandExecution": 7,
+    "reasoning": 6,
+    "agentMessage": 3
+   }
+  },
+  {
+   "thread_id": "01a1a96a-9afd-79a2-9755-a9f870654df0",
+   "items": 30,
+   "window_items": 0,
+   "first": "2026-11-05T01:55:53.510Z",
+   "last": "2026-11-05T02:07:43.454Z",
+   "by_type": {
+    "commandExecution": 17,
+    "reasoning": 10,
+    "agentMessage": 3
+   }
+  },
+  {
+   "thread_id": "01a1a97e-4909-7dd1-9fff-7f143cf9e746",
+   "items": 23,
+   "window_items": 0,
+   "first": "2026-11-05T02:17:04.313Z",
+   "last": "2026-11-05T02:23:37.697Z",
+   "by_type": {
+    "commandExecution": 15,
+    "reasoning": 6,
+    "agentMessage": 2
+   }
+  },
+  {
+   "thread_id": "01a1a97e-cf56-7eb0-aec7-8bf78bc88631",
+   "items": 54,
+   "window_items": 0,
+   "first": "2026-11-05T02:17:45.220Z",
+   "last": "2026-11-05T02:36:20.312Z",
+   "by_type": {
+    "commandExecution": 31,
+    "reasoning": 17,
+    "agentMessage": 2,
+    "subAgentActivity": 2,
+    "collabAgentToolCall": 2
+   }
+  },
+  {
+   "thread_id": "01a1a98a-dd08-7ef0-ba32-f83352251d24",
+   "items": 12,
+   "window_items": 0,
+   "first": "2026-11-05T02:30:58.758Z",
+   "last": "2026-11-05T02:33:11.999Z",
+   "by_type": {
+    "commandExecution": 7,
+    "reasoning": 3,
+    "agentMessage": 2
+   }
+  },
+  {
+   "thread_id": "01a1aa6b-0fd3-7a62-a6bb-ee7729054db4",
+   "items": 12991,
+   "window_items": 0,
+   "first": "2026-11-05T06:35:34.268Z",
+   "last": "2026-11-07T19:53:27.192Z",
+   "by_type": {
+    "commandExecution": 5988,
+    "reasoning": 5023,
+    "agentMessage": 695,
+    "fileChange": 600,
+    "mcpToolCall": 347,
+    "userMessage": 328,
+    "contextCompaction": 10
+   }
+  },
+  {
+   "thread_id": "01a1b3f6-6477-7330-9b47-25e7e50c4073",
+   "items": 5,
+   "window_items": 0,
+   "first": "2026-11-07T03:03:54.741Z",
+   "last": "2026-11-07T03:04:15.215Z",
+   "by_type": {
+    "reasoning": 2,
+    "agentMessage": 2,
+    "userMessage": 1
+   }
+  },
+  {
+   "thread_id": "01a1b794-49c1-75b2-a407-dff29bf475e5",
+   "items": 4645,
+   "window_items": 0,
+   "first": "2026-11-07T19:55:29.203Z",
+   "last": "2026-11-09T04:38:51.942Z",
+   "by_type": {
+    "commandExecution": 2209,
+    "reasoning": 1965,
+    "fileChange": 240,
+    "agentMessage": 149,
+    "userMessage": 39,
+    "mcpToolCall": 39,
+    "contextCompaction": 4
+   }
+  },
+  {
+   "thread_id": "01a1bfce-fceb-7cb2-a92e-9590a8ddcd49",
+   "items": 10487,
+   "window_items": 7829,
+   "first": "2026-11-09T10:16:34.840Z",
+   "last": "2026-11-11T10:20:41.949Z",
+   "by_type": {
+    "reasoning": 4470,
+    "commandExecution": 4045,
+    "fileChange": 683,
+    "mcpToolCall": 523,
+    "agentMessage": 485,
+    "userMessage": 258,
+    "subAgentActivity": 12,
+    "contextCompaction": 8,
+    "collabAgentToolCall": 3
+   }
+  },
+  {
+   "thread_id": "01a1c88c-2dba-7a20-bab4-365c06f7a613",
+   "items": 10,
+   "window_items": 10,
+   "first": "2026-11-11T02:59:56.119Z",
+   "last": "2026-11-11T03:00:24.781Z",
+   "by_type": {
+    "agentMessage": 4,
+    "reasoning": 3,
+    "userMessage": 3
+   }
+  },
+  {
+   "thread_id": "01a1c982-6f23-7ee3-a329-4bfd5a9f6c08",
+   "items": 5,
+   "window_items": 5,
+   "first": "2026-11-11T07:29:00.830Z",
+   "last": "2026-11-11T07:32:28.679Z",
+   "by_type": {
+    "agentMessage": 3,
+    "reasoning": 2
+   }
+  },
+  {
+   "thread_id": "01a1c982-78a6-7b31-b744-fcdd34c340a7",
+   "items": 4,
+   "window_items": 4,
+   "first": "2026-11-11T07:29:08.249Z",
+   "last": "2026-11-11T07:32:28.917Z",
+   "by_type": {
+    "reasoning": 2,
+    "agentMessage": 2
+   }
+  },
+  {
+   "thread_id": "01a1c982-7d36-7980-b319-4e8bcf3503a0",
+   "items": 3,
+   "window_items": 3,
+   "first": "2026-11-11T07:29:10.634Z",
+   "last": "2026-11-11T07:32:28.297Z",
+   "by_type": {
+    "agentMessage": 2,
+    "reasoning": 1
+   }
+  }
+ ],
+ "totals": {
+  "threads": 74,
+  "items": 40721,
+  "window_items": 7851,
+  "duplicate_items": 0
+ },
+ "window_items": 7851,
+ "duplicate_items": 0,
+ "by_type": {
+  "reasoning": 3320,
+  "userMessage": 198,
+  "commandExecution": 2962,
+  "agentMessage": 393,
+  "fileChange": 519,
+  "mcpToolCall": 438,
+  "contextCompaction": 6,
+  "subAgentActivity": 12,
+  "collabAgentToolCall": 3
+ },
+ "read_only": true
+}

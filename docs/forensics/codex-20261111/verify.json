@@ -1,0 +1,3224 @@
+[
+ {
+  "path": "/Users/roseonyema/.bash_profile",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/.codex/config.toml",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/.codex/hooks/bash_env.sh",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/.codex/hooks/foreground_guard.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/.codex/hooks/foreground_runner.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/.codex/hooks/stop_continue.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/.codex/requirements.toml",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/.config/opencode/opencode.jsonc",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/.dsh/profiles/web/cordis.patch.yml",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/.estate/bin/dsh-router-catalog",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/.estate/bin/dsh-web-launchd",
+  "stream": "infra-oci-disk",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/.estate/bin/dsh-web-no-open-launchd",
+  "stream": "infra-oci-disk",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/.estate/bin/estate-notify-done",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/.estate/bin/founder-prompt-collector",
+  "stream": "founder-surfaces",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/.estate/bin/ticket-view-server",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/.estate/bin/ticket_view_server.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/.estate/founder-delivery-queue.json",
+  "stream": "founder-surfaces",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/.estate/memory/bin/estate-memory-mcp",
+  "stream": "memory-discovery",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/.estate/memory/platform/estate/memory/door.py",
+  "stream": "memory-discovery",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/.estate/memory/platform/estate/memory/local.py",
+  "stream": "memory-discovery",
+  "location": "other",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/.estate/pennyd/pennyd.toml",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/.estate/runtime/idp/bin/estate-memory-mcp",
+  "stream": "memory-discovery",
+  "location": "other",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/.estate/runtime/idp/platform/estate/memory/door.py",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/.estate/runtime/idp/platform/estate/memory/local.py",
+  "stream": "memory-discovery",
+  "location": "other",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/AGENTS.md",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/.apply_patch_probe",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/outputs/pennyd-adversarial-review.md",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/audit-optimus-coverage.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/backfill-session-tracker.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/backup-files-20261111.txt",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/build-final-report.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/cleanup-stuck-dsh.sh",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/create-dsh-live-proof.mjs",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/dsh-output-continuity-fix.md",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/dsh-start-turn.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/dsh-web-no-open.sh",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/emit-delivery-optimus.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/environment-snapshot-20261111-0739Z.json",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/estate-recovery-2026-11-11-0230Z/REOPEN-WORK.md",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/export-instruction-inventory.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/extract-dsh-contract.mjs",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/final-publish.sh",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/finalize-delivery-queue.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/founder-five-workstreams-prompt.md",
+  "stream": "founder-surfaces",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/inspect-dsh-session.mjs",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/inspect-memory-pids.sh",
+  "stream": "memory-discovery",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/optimus-metrics-files.txt",
+  "stream": "metrics",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/probe-pennyd-output.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/prove-memory-bridge.py",
+  "stream": "memory-discovery",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/publish-final-report-queue.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/refresh-published-hashes.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/remove-extra-ticket-surface.sh",
+  "stream": "founder-surfaces",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/render-founder-tickets.py",
+  "stream": "founder-surfaces",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/replication-files-20261111.txt",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/restart-dsh-web.sh",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/restart-stale-memory-bridges.sh",
+  "stream": "memory-discovery",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/router-review-20261111/CHANGES.md",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/router-review-20261111/GEMINI-REVIEW-BLOCKED.md",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/router-review-20261111/MEASURED.md",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/router-review-20261111/ask-gemini-once.py",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/router-review-20261111/launch-gemini-review.sh",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/router-review-20261111/run-gemini-review.sh",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/ship-final-report.sh",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/signal-dsh-inspector.sh",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/start-dsh-web-detached.sh",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/start-ticket-view.sh",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/submit-dsh-web.sh",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/telegram-backup-restore-proof.sh",
+  "stream": "founder-surfaces",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/telegram-optimus-proof.sh",
+  "stream": "founder-surfaces",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/telegram-replication-proof.sh",
+  "stream": "founder-surfaces",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/telegram-restore-existing-proof.sh",
+  "stream": "founder-surfaces",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/verify-dsh-catalog-policy.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/verify-memory-bridge-local.py",
+  "stream": "memory-discovery",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/ai.estate.disk-watch.plist",
+  "stream": "governance-gates",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/autonomy-stop-gate/sample-queue.json",
+  "stream": "governance-gates",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/autonomy-stop-gate/stop_continue.py",
+  "stream": "governance-gates",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/autonomy-stop-gate/test_stop_continue.py",
+  "stream": "governance-gates",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/autonomy-stop-gate/verify_stop_continue.py",
+  "stream": "governance-gates",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/claude-restart-once.plist",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/codex-config-recovery-link",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/disk-cleanup.sh",
+  "stream": "infra-oci-disk",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/dsh-workspace-fix-20261111/code/dsh_cloud.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/dsh-workspace-fix-20261111/code/dsh_model_capacity.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/dsh-workspace-fix-20261111/tests/test_dsh_model_capacity.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/dsh-workspace-fix-20261111/tests/test_dsh_router_catalog.py",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/foreground-guard/test_foreground_guard.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/idp-disk-watch",
+  "stream": "founder-surfaces",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/idp-tracker-deploy-20261111/bin/founder-prompt-collector",
+  "stream": "founder-surfaces",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/idp-tracker-deploy-20261111/bin/founder-prompt-submit",
+  "stream": "founder-surfaces",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/idp-tracker-deploy-20261111/bin/instruction",
+  "stream": "founder-surfaces",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/idp-tracker-deploy-20261111/tests/test_founder_prompt_collector.py",
+  "stream": "founder-surfaces",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/idp-tracker-deploy-20261111/tests/test_founder_prompt_submit.py",
+  "stream": "founder-surfaces",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/idp-tracker-deploy-20261111/tests/test_instruction_tracker.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/memory-bridge-live-20261111/bin/estate-memory-mcp",
+  "stream": "memory-discovery",
+  "location": "other",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/memory-bridge-live-20261111/platform/estate/memory/door.py",
+  "stream": "memory-discovery",
+  "location": "other",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/memory-bridge-live-20261111/tests/test_memory_bridge_local_without_key.py",
+  "stream": "memory-discovery",
+  "location": "other",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/Cargo.toml",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/penny-core/src/anthropic.rs",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/penny-core/src/budget.rs",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/penny-core/src/decision_log.rs",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/penny-core/src/dialect.rs",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/penny-core/src/keys.rs",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/penny-core/src/ledger.rs",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/penny-core/src/providers.rs",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/penny-core/src/router.rs",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/penny-core/src/shaping.rs",
+  "stream": "metrics",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/pennyd/Cargo.toml",
+  "stream": "headless-agents",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/pennyd/src/gateway.rs",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/pennyd/src/main.rs",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/pennyd/src/metrics.rs",
+  "stream": "metrics",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/pennyd/tests/gateway_test.rs",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/.github/workflows/ci.yml",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/Dockerfile",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/README.md",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/config.example.toml",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/penny-core/Cargo.toml",
+  "stream": "metrics",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/penny-core/src/anthropic.rs",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/penny-core/src/budget.rs",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/penny-core/src/decision_log.rs",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/penny-core/src/dialect.rs",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/penny-core/src/keys.rs",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/penny-core/src/ledger.rs",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/penny-core/src/providers.rs",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/penny-core/src/router.rs",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/penny-core/src/shaping.rs",
+  "stream": "metrics",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/pennyd/Cargo.toml",
+  "stream": "headless-agents",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/pennyd/src/gateway.rs",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/pennyd/src/lanes.rs",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/pennyd/src/settle_stream.rs",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/pennyd/tests/gateway_test.rs",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/deploy/config.toml",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/deploy/deployment.yaml",
+  "stream": "router-spof",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/deploy/external-secret.yaml",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/deploy/keys.example.toml",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/deploy/kustomization.yaml",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/deploy/pvc.yaml",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/kustomization.yaml",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/providers/deepseek.toml",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/providers/zai.toml",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/rust-toolchain.toml",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/test_disk_cleanup.py",
+  "stream": "infra-oci-disk",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/test_pennyd_platform.py",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/argon/AGENTS.md",
+  "stream": "founder-surfaces",
+  "location": "repo",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/argon/bin/otto-concierge.py",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/argon/docs/specs/optimus-metric-contract.md",
+  "stream": "metrics",
+  "location": "repo",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/argon/package.json",
+  "stream": "founder-surfaces",
+  "location": "repo",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/argon/schemas/optimus-metric-v1.schema.json",
+  "stream": "metrics",
+  "location": "repo",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/argon/server.ts",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/argon/src/engine/optimusMetrics.test.ts",
+  "stream": "metrics",
+  "location": "repo",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/argon/src/engine/optimusMetrics.ts",
+  "stream": "metrics",
+  "location": "repo",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/.githooks/commit-msg",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/.githooks/pre-commit",
+  "stream": "founder-surfaces",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/.githooks/pre-push",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/.github/workflows/agent-sandbox.yml",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/.github/workflows/ci.yml",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/AGENTS.md",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/backstage/packages/app/src/modules/home/Ops.test.tsx",
+  "stream": "memory-discovery",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/backstage/packages/app/src/modules/home/founder.test.ts",
+  "stream": "founder-surfaces",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/bin/claim-gate",
+  "stream": "governance-gates",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/bin/claim-open",
+  "stream": "governance-gates",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/bin/claude-surface",
+  "stream": "founder-surfaces",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/bin/estate-dsh-links",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/bin/estate-memory-install",
+  "stream": "memory-discovery",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/bin/estate-memory-local-install",
+  "stream": "memory-discovery",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/bin/estate-memory-sync",
+  "stream": "memory-discovery",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/bin/estate-supervisor",
+  "stream": "headless-agents",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/bin/failure-mode-gate",
+  "stream": "governance-gates",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/bin/founder-prompt-collector",
+  "stream": "founder-surfaces",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/bin/idp-bootstrap-cloudflare",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/bin/idp-cloud",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/bin/idp-oci-auth",
+  "stream": "infra-oci-disk",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/bin/instruction",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/bin/local-origin-start.sh",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/bin/operationalise-reminder",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/bin/pennyd-client-key",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/bin/pennyd-model",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/conftest.py",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/docs/debug-packs/2026-11-11-instruction-claim-chain.md",
+  "stream": "governance-gates",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/docs/debugging-packs.json",
+  "stream": "docs-tickets",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/docs/decisions/2026-11-11-one-instruction-plan-claim-contract.md",
+  "stream": "governance-gates",
+  "location": "repo",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/docs/failure-packs/2026-11-11-instruction-claim-chain.md",
+  "stream": "governance-gates",
+  "location": "repo",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/docs/specs/2026-11-11-instruction-plan-claim-contract.md",
+  "stream": "governance-gates",
+  "location": "repo",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/docs/superpowers/plans/2026-11-11-instruction-claim-contract.md",
+  "stream": "governance-gates",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/extensions/pi-plan-lock/cases.json",
+  "stream": "governance-gates",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/extensions/pi-plan-lock/plan.test.ts",
+  "stream": "governance-gates",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/extensions/pi-plan-lock/plan.ts",
+  "stream": "governance-gates",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/launchd/ai.estate.memory-local.plist.tmpl",
+  "stream": "memory-discovery",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/estate/context/claim_contract.py",
+  "stream": "governance-gates",
+  "location": "repo",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/estate/context/claims.py",
+  "stream": "governance-gates",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/estate/governance/executor_permission.py",
+  "stream": "headless-agents",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/estate/governance/founder-surfaces.yaml",
+  "stream": "router-spof",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/estate/governance/laws.yaml",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/estate/governance/ledger.py",
+  "stream": "router-spof",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/estate/governance/plan_links.py",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/estate/governance/supervisor.py",
+  "stream": "headless-agents",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/estate/intents/lane-submit.yaml",
+  "stream": "estate-intent",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/estate/libexec/critical-probe.py",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/estate/memory/door.py",
+  "stream": "memory-discovery",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/estate/memory/local.py",
+  "stream": "memory-discovery",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/estate/memory/local_store.py",
+  "stream": "memory-discovery",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/estate/memory/plan.py",
+  "stream": "memory-discovery",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/intercloud/FAILURE_MODES.md",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/intercloud/src/controller.rs",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/intercloud/src/k8s.rs",
+  "stream": "infra-oci-disk",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/intercloud/src/lib.rs",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/kustomization.yaml",
+  "stream": "router-spof",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/Dockerfile",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/FAILURE_MODES.md",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/Makefile",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/README.md",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/penny-core/src/anthropic.rs",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/penny-core/src/budget.rs",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/penny-core/src/cache.rs",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/penny-core/src/config.rs",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/penny-core/src/decision_log.rs",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/penny-core/src/dialect.rs",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/penny-core/src/ledger.rs",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/penny-core/src/providers.rs",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/penny-core/src/router.rs",
+  "stream": "router-spof",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/penny-core/src/shaping.rs",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/pennyd/Cargo.toml",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/pennyd/src/catalog.rs",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/pennyd/src/gateway.rs",
+  "stream": "router-spof",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/pennyd/src/lanes.rs",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/pennyd/src/lib.rs",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/pennyd/src/main.rs",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/pennyd/src/metrics.rs",
+  "stream": "metrics",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/pennyd/src/settle_stream.rs",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/pennyd/src/trace.rs",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/pennyd/tests/gateway_test.rs",
+  "stream": "router-spof",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/deployment.yaml",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/kustomization.yaml",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/launchd/com.estate.pennyd.plist",
+  "stream": "infra-oci-disk",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/launchd/install.sh",
+  "stream": "infra-oci-disk",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/local/configure_clients.py",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/local/estate-cloud.toml",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/recovery/build-bundle.sh",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/recovery/estate-pennyd.service",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/recovery/install-on-host.sh",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/recovery/pennyd.toml",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/recovery/prepare-keys",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/kustomization.yaml",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/providers/README.md",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/providers/anthropic.toml",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/providers/deepseek.toml",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/providers/gemini.toml",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/providers/groq.toml",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/providers/minimax.toml",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/providers/ollama.toml",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/providers/openrouter.toml",
+  "stream": "router-spof",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/providers/zai.toml",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/llm/pennyd/rust-toolchain.toml",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/muster/FAILURE_MODES.md",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/muster/INTEGRATION.md",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/muster/README.md",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/muster/src/lib.rs",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/oci/recovery/run-command.py",
+  "stream": "infra-oci-disk",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/platform/unified-memory-server/security_core.py",
+  "stream": "router-spof",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/tests/estate/test_founder_governance.py",
+  "stream": "founder-surfaces",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/tests/estate/test_pennyd_platform.py",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/tests/estate/test_plan_links.py",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/tests/estate/test_recovery_door_transport.py",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/tests/test_agent_sandbox_workflow.py",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/tests/test_claim_contract.py",
+  "stream": "governance-gates",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/tests/test_claim_gate.py",
+  "stream": "governance-gates",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/tests/test_claim_open_worktree.py",
+  "stream": "governance-gates",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/tests/test_claude_surface_switch.py",
+  "stream": "founder-surfaces",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/tests/test_debugging_packs.py",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/tests/test_estate_context_claims.py",
+  "stream": "governance-gates",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/tests/test_estate_memory_install.py",
+  "stream": "memory-discovery",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/tests/test_estate_memory_local_store.py",
+  "stream": "memory-discovery",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/tests/test_estate_plan.py",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "SAFE-COMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/tests/test_failure_mode_gate.py",
+  "stream": "governance-gates",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/tests/test_founder_prompt_collector.py",
+  "stream": "founder-surfaces",
+  "location": "repo",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/tests/test_idp_oci_auth.py",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/tests/test_instruction_claim_failure_matrix.py",
+  "stream": "governance-gates",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/tests/test_instruction_tracker.py",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/code/idp/tests/test_operationalise_reminder.py",
+  "stream": "unclassified",
+  "location": "repo",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "in-place publication was not requested: content kept in the quarantine tree"
+ },
+ {
+  "path": "/Users/roseonyema/Documents/deepseek-harness/default-workspace/dsh-web-launchd",
+  "stream": "infra-oci-disk",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Documents/deepseek-harness/default-workspace/ins-00006/HANDOVER.md",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Library/LaunchAgents/ai.estate.dsh-web.plist",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/Users/roseonyema/Library/LaunchAgents/com.estate.pennyd.plist",
+  "stream": "unclassified",
+  "location": "other",
+  "state": "ON-DISK-UNCOMMITTED",
+  "note": "",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/dsh-web-restart.sh",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/estate-cmd.sh",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/estate-rust-bundle-review.8olnvc/muster/src/lib.rs",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-claim-7844.json",
+  "stream": "governance-gates",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-collab-7844-final.json",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-collab-7844.json",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/.githooks/commit-msg",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/.githooks/pre-commit",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/.vscode/settings.json",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/.vscode/tasks.json",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/AGENTS.md",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/bin/data-governance-gate",
+  "stream": "governance-gates",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/bin/estate-admission",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/bin/estate-local-maintenance",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/bin/estate-plan",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/bin/founder-prompt-collect",
+  "stream": "founder-surfaces",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/bin/founder-prompt-collector",
+  "stream": "founder-surfaces",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/bin/governance-source-gate",
+  "stream": "governance-gates",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/bin/guardrail-yield-gate",
+  "stream": "governance-gates",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/bin/idp-disk-watch",
+  "stream": "infra-oci-disk",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/bin/language-gate",
+  "stream": "governance-gates",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/bin/optimus-emit",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/bin/patch-provenance-gate",
+  "stream": "governance-gates",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/bin/proof-asset-catalog",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/bin/yield-proof-gate",
+  "stream": "governance-gates",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/docs/debug-packs/2026-11-10-agent-admission-shift-left.md",
+  "stream": "docs-tickets",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/docs/failure-packs/2026-11-10-agent-admission-shift-left.md",
+  "stream": "docs-tickets",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/docs/research/2026-11-10-agent-admission-and-shift-left.md",
+  "stream": "docs-tickets",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/docs/research/2026-11-10-yield-study-protocol.md",
+  "stream": "docs-tickets",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/docs/yield/2026-11-10-agent-admission-shift-left.md",
+  "stream": "docs-tickets",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/launchd/ai.estate.disk-watch.plist.tmpl",
+  "stream": "infra-oci-disk",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/launchd/ai.estate.founder-prompts.plist.tmpl",
+  "stream": "founder-surfaces",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/platform/estate/bin/estate-execute",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/platform/estate/data/data-map.yaml",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/platform/estate/governance/guardrail-yield.yaml",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/platform/estate/governance/optimus.py",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/platform/estate/memory/plan.py",
+  "stream": "memory-discovery",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/estate/test_disk_cleanup.py",
+  "stream": "infra-oci-disk",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/estate/test_disk_watch.py",
+  "stream": "infra-oci-disk",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/estate/test_epistemic_loop.py",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/estate/test_plan_gate_door.py",
+  "stream": "governance-gates",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/test_commit_msg_keys_a_fresh_worktree.py",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/test_commit_msg_stamp_is_a_trailer.py",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/test_data_governance_gate.py",
+  "stream": "governance-gates",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/test_early_python_feedback.py",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/test_estate_admission.py",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/test_estate_local_maintenance.py",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/test_estate_plan.py",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/test_founder_prompt_collector.py",
+  "stream": "founder-surfaces",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/test_governance_source_gate.py",
+  "stream": "governance-gates",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/test_greenlane_github.py",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/test_guardrail_yield_gate.py",
+  "stream": "governance-gates",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/test_language_gate.py",
+  "stream": "governance-gates",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/test_optimus_emit.py",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/test_patch_provenance_gate.py",
+  "stream": "governance-gates",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/test_precommit_applies_ruff_format.py",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/test_proof_asset_catalog.py",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-drill-vault-credentials/tests/test_yield_proof_gate.py",
+  "stream": "governance-gates",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-PARTIAL",
+  "note": "some edits did not apply cleanly",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-memory-cloud-primary/bin/idp-bootstrap-cloudflare",
+  "stream": "memory-discovery",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-memory-cloud-primary/bin/idp-cloud",
+  "stream": "memory-discovery",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-memory-cloud-primary/bin/idp-oci-auth",
+  "stream": "memory-discovery",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/idp-memory-cloud-primary/platform/oci/recovery/run-command.py",
+  "stream": "memory-discovery",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-memory-cloud-primary/tests/estate/test_recovery_door_transport.py",
+  "stream": "memory-discovery",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/idp-memory-cloud-primary/tests/test_idp_oci_auth.py",
+  "stream": "memory-discovery",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-RESTORABLE",
+  "note": "",
+  "restored_to": null,
+  "held": "volatile temp: quarantined, not re-created"
+ },
+ {
+  "path": "/private/tmp/penny-hash-check/Cargo.toml",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/penny-hash-check/src/main.rs",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/pennyd-command-content.json",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/pennyd-command-target.json",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/pennyd-ledger-repair.sh",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/pennyd-output-cap.patch",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/pennyd-restart-only.sh",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/sleep-probe.plist",
+  "stream": "unclassified",
+  "location": "VOLATILE-tmp",
+  "state": "ON-DISK-DIFFERS",
+  "note": "disk differs from the agents' final content (edited after, or edits lost)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/wt-bridge/bin/estate-memory-mcp",
+  "stream": "memory-discovery",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/wt-bridge/platform/estate/memory/door.py",
+  "stream": "memory-discovery",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/wt-bridge/tests/test_estate_memory_install.py",
+  "stream": "memory-discovery",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ },
+ {
+  "path": "/private/tmp/wt-bridge/tests/test_memory_bridge_goes_fresh.py",
+  "stream": "memory-discovery",
+  "location": "VOLATILE-tmp",
+  "state": "MISSING-UNRECOVERABLE",
+  "note": "edit-only in transcript; needs a base copy (checkpoint stash or git history)",
+  "restored_to": null,
+  "held": ""
+ }
+]

@@ -1,0 +1,351 @@
+# On-disk verification
+
+restored in place this run: 0
+copied into quarantine this run: 0
+
+| state | files |
+|---|---|
+| ON-DISK-DIFFERS | 89 |
+| MISSING-UNRECOVERABLE | 75 |
+| ON-DISK-UNCOMMITTED | 60 |
+| SAFE-COMMITTED | 49 |
+| MISSING-PARTIAL | 44 |
+| MISSING-RESTORABLE | 41 |
+
+## Restore plan
+
+| target | location | files |
+|---|---|---|
+| held | VOLATILE-tmp | 34 |
+| quarantine | other | 7 |
+| quarantine | repo | 44 |
+
+## Held back from an in-place restore
+
+- in-place publication was not requested: 51 file(s)
+- volatile temp: 34 file(s)
+
+## By stream
+
+- docs-tickets: MISSING-PARTIAL=3, MISSING-RESTORABLE=2, SAFE-COMMITTED=1
+- estate-intent: SAFE-COMMITTED=1
+- founder-surfaces: ON-DISK-DIFFERS=14, MISSING-PARTIAL=4, ON-DISK-UNCOMMITTED=3, SAFE-COMMITTED=3, MISSING-UNRECOVERABLE=3, MISSING-RESTORABLE=1
+- governance-gates: MISSING-PARTIAL=11, SAFE-COMMITTED=9, MISSING-RESTORABLE=9, ON-DISK-DIFFERS=4, MISSING-UNRECOVERABLE=4, ON-DISK-UNCOMMITTED=1
+- headless-agents: SAFE-COMMITTED=3, ON-DISK-UNCOMMITTED=2
+- infra-oci-disk: MISSING-UNRECOVERABLE=7, ON-DISK-UNCOMMITTED=4, ON-DISK-DIFFERS=1, MISSING-PARTIAL=1, SAFE-COMMITTED=1
+- memory-discovery: MISSING-UNRECOVERABLE=14, SAFE-COMMITTED=8, ON-DISK-DIFFERS=4, MISSING-RESTORABLE=3, MISSING-PARTIAL=3, ON-DISK-UNCOMMITTED=2
+- metrics: ON-DISK-DIFFERS=5, ON-DISK-UNCOMMITTED=4, MISSING-UNRECOVERABLE=1
+- router-spof: ON-DISK-UNCOMMITTED=14, SAFE-COMMITTED=6, ON-DISK-DIFFERS=6, MISSING-UNRECOVERABLE=3, MISSING-PARTIAL=1
+- unclassified: ON-DISK-DIFFERS=55, MISSING-UNRECOVERABLE=43, ON-DISK-UNCOMMITTED=30, MISSING-RESTORABLE=26, MISSING-PARTIAL=21, SAFE-COMMITTED=17
+
+## Needs attention (not safely committed)
+
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/.bash_profile  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/.codex/config.toml  
+- MISSING-RESTORABLE  /Users/roseonyema/.codex/hooks/bash_env.sh  
+- MISSING-RESTORABLE  /Users/roseonyema/.codex/hooks/foreground_guard.py  
+- MISSING-RESTORABLE  /Users/roseonyema/.codex/hooks/foreground_runner.py  
+- MISSING-RESTORABLE  /Users/roseonyema/.codex/hooks/stop_continue.py  
+- MISSING-PARTIAL  /Users/roseonyema/.codex/requirements.toml  some edits did not apply cleanly
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/.config/opencode/opencode.jsonc  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/.dsh/profiles/web/cordis.patch.yml  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/.estate/bin/dsh-router-catalog  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/.estate/bin/dsh-web-launchd  
+- ON-DISK-DIFFERS  /Users/roseonyema/.estate/bin/dsh-web-no-open-launchd  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/.estate/bin/estate-notify-done  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/.estate/bin/founder-prompt-collector  
+- ON-DISK-DIFFERS  /Users/roseonyema/.estate/bin/ticket-view-server  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/.estate/bin/ticket_view_server.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/.estate/founder-delivery-queue.json  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/.estate/memory/bin/estate-memory-mcp  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/.estate/memory/platform/estate/memory/door.py  
+- MISSING-UNRECOVERABLE  /Users/roseonyema/.estate/memory/platform/estate/memory/local.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/.estate/pennyd/pennyd.toml  
+- MISSING-UNRECOVERABLE  /Users/roseonyema/.estate/runtime/idp/platform/estate/memory/local.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/AGENTS.md  
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/.apply_patch_probe  
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/outputs/pennyd-adversarial-review.md  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/audit-optimus-coverage.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/backfill-session-tracker.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/backup-files-20261111.txt  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/build-final-report.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/cleanup-stuck-dsh.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/create-dsh-live-proof.mjs  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/dsh-output-continuity-fix.md  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/dsh-start-turn.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/dsh-web-no-open.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/emit-delivery-optimus.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/environment-snapshot-20261111-0739Z.json  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/estate-recovery-2026-11-11-0230Z/REOPEN-WORK.md  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/export-instruction-inventory.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/extract-dsh-contract.mjs  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/final-publish.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/finalize-delivery-queue.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/founder-five-workstreams-prompt.md  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/inspect-dsh-session.mjs  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/inspect-memory-pids.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/optimus-metrics-files.txt  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/probe-pennyd-output.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/prove-memory-bridge.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/publish-final-report-queue.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/refresh-published-hashes.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/remove-extra-ticket-surface.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/render-founder-tickets.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/replication-files-20261111.txt  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/restart-dsh-web.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/restart-stale-memory-bridges.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/router-review-20261111/CHANGES.md  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/router-review-20261111/GEMINI-REVIEW-BLOCKED.md  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/router-review-20261111/MEASURED.md  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/router-review-20261111/ask-gemini-once.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/router-review-20261111/launch-gemini-review.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/router-review-20261111/run-gemini-review.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/ship-final-report.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/signal-dsh-inspector.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/start-dsh-web-detached.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/start-ticket-view.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/submit-dsh-web.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/telegram-backup-restore-proof.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/telegram-optimus-proof.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/telegram-replication-proof.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/telegram-restore-existing-proof.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/verify-dsh-catalog-policy.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/recovery/verify-memory-bridge-local.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/ai.estate.disk-watch.plist  
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/autonomy-stop-gate/sample-queue.json  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/autonomy-stop-gate/stop_continue.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/autonomy-stop-gate/test_stop_continue.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/autonomy-stop-gate/verify_stop_continue.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/claude-restart-once.plist  disk differs from the agents' final content (edited after, or edits lost)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/codex-config-recovery-link  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/disk-cleanup.sh  
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/foreground-guard/test_foreground_guard.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/idp-disk-watch  
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/idp-tracker-deploy-20261111/bin/founder-prompt-collector  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/idp-tracker-deploy-20261111/bin/founder-prompt-submit  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/idp-tracker-deploy-20261111/bin/instruction  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/idp-tracker-deploy-20261111/tests/test_founder_prompt_collector.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/idp-tracker-deploy-20261111/tests/test_founder_prompt_submit.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/idp-tracker-deploy-20261111/tests/test_instruction_tracker.py  
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/memory-bridge-live-20261111/bin/estate-memory-mcp  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/memory-bridge-live-20261111/platform/estate/memory/door.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/memory-bridge-live-20261111/tests/test_memory_bridge_local_without_key.py  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/Cargo.toml  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/penny-core/src/anthropic.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/penny-core/src/budget.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/penny-core/src/decision_log.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/penny-core/src/dialect.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/penny-core/src/keys.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/penny-core/src/ledger.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/penny-core/src/providers.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/penny-core/src/router.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/penny-core/src/shaping.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/pennyd/Cargo.toml  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/pennyd/src/gateway.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/pennyd/src/main.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/pennyd/src/metrics.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v2/pennyd/crates/pennyd/tests/gateway_test.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/.github/workflows/ci.yml  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/Dockerfile  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/README.md  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/config.example.toml  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/penny-core/Cargo.toml  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/penny-core/src/anthropic.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/penny-core/src/budget.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/penny-core/src/decision_log.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/penny-core/src/dialect.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/penny-core/src/keys.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/penny-core/src/ledger.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/penny-core/src/providers.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/penny-core/src/router.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/penny-core/src/shaping.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/pennyd/Cargo.toml  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/pennyd/src/gateway.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/pennyd/src/lanes.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/pennyd/src/settle_stream.rs  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/crates/pennyd/tests/gateway_test.rs  
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/deploy/config.toml  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/deploy/deployment.yaml  
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/deploy/external-secret.yaml  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/deploy/keys.example.toml  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/deploy/kustomization.yaml  
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/deploy/pvc.yaml  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/kustomization.yaml  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/providers/deepseek.toml  
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/providers/zai.toml  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/pennyd-v3/pennyd/rust-toolchain.toml  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/test_disk_cleanup.py  
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/Codex/2026-11-09/wgats-th/work/test_pennyd_platform.py  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/code/argon/AGENTS.md  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/code/argon/bin/otto-concierge.py  
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/code/argon/docs/specs/optimus-metric-contract.md  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/code/argon/package.json  
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/code/argon/schemas/optimus-metric-v1.schema.json  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/code/argon/server.ts  
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/code/argon/src/engine/optimusMetrics.test.ts  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/code/argon/src/engine/optimusMetrics.ts  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/code/idp/.githooks/pre-push  
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/bin/claude-surface  some edits did not apply cleanly
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/bin/estate-dsh-links  some edits did not apply cleanly
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/bin/estate-memory-local-install  some edits did not apply cleanly
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/bin/estate-memory-sync  some edits did not apply cleanly
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/bin/failure-mode-gate  some edits did not apply cleanly
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/bin/founder-prompt-collector  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/bin/idp-oci-auth  some edits did not apply cleanly
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/bin/instruction  some edits did not apply cleanly
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/code/idp/bin/local-origin-start.sh  
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/code/idp/bin/operationalise-reminder  
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/code/idp/bin/pennyd-client-key  
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/code/idp/bin/pennyd-model  
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/docs/debug-packs/2026-11-11-instruction-claim-chain.md  some edits did not apply cleanly
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/code/idp/docs/decisions/2026-11-11-one-instruction-plan-claim-contract.md  
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/code/idp/docs/failure-packs/2026-11-11-instruction-claim-chain.md  
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/code/idp/docs/specs/2026-11-11-instruction-plan-claim-contract.md  
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/docs/superpowers/plans/2026-11-11-instruction-claim-contract.md  some edits did not apply cleanly
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/launchd/ai.estate.memory-local.plist.tmpl  some edits did not apply cleanly
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/code/idp/platform/estate/context/claim_contract.py  
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/estate/memory/local.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/code/idp/platform/intercloud/FAILURE_MODES.md  
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/intercloud/src/controller.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/intercloud/src/k8s.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/intercloud/src/lib.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/Dockerfile  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/FAILURE_MODES.md  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/Makefile  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/README.md  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/penny-core/src/anthropic.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/penny-core/src/budget.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/penny-core/src/cache.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/penny-core/src/config.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/penny-core/src/decision_log.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/penny-core/src/dialect.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/penny-core/src/ledger.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/penny-core/src/providers.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/penny-core/src/router.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/penny-core/src/shaping.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/pennyd/Cargo.toml  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/pennyd/src/catalog.rs  some edits did not apply cleanly
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/pennyd/src/gateway.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/pennyd/src/lanes.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/pennyd/src/lib.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/pennyd/src/main.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/pennyd/src/metrics.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/pennyd/src/settle_stream.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/pennyd/src/trace.rs  
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/crates/pennyd/tests/gateway_test.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/deployment.yaml  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/kustomization.yaml  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/launchd/com.estate.pennyd.plist  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/launchd/install.sh  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/local/configure_clients.py  
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/local/estate-cloud.toml  some edits did not apply cleanly
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/recovery/build-bundle.sh  some edits did not apply cleanly
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/recovery/estate-pennyd.service  
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/recovery/install-on-host.sh  
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/recovery/pennyd.toml  
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/deploy/recovery/prepare-keys  
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/kustomization.yaml  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/providers/README.md  
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/providers/anthropic.toml  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/providers/deepseek.toml  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/providers/gemini.toml  some edits did not apply cleanly
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/providers/groq.toml  some edits did not apply cleanly
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/providers/minimax.toml  some edits did not apply cleanly
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/providers/ollama.toml  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/providers/openrouter.toml  some edits did not apply cleanly
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/providers/zai.toml  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/code/idp/platform/llm/pennyd/rust-toolchain.toml  
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/platform/muster/FAILURE_MODES.md  some edits did not apply cleanly
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/code/idp/platform/muster/INTEGRATION.md  
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/code/idp/platform/muster/README.md  
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/platform/muster/src/lib.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/tests/estate/test_pennyd_platform.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/tests/test_claim_contract.py  some edits did not apply cleanly
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/tests/test_claude_surface_switch.py  some edits did not apply cleanly
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/tests/test_debugging_packs.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/tests/test_failure_mode_gate.py  some edits did not apply cleanly
+- MISSING-UNRECOVERABLE  /Users/roseonyema/Documents/code/idp/tests/test_founder_prompt_collector.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-RESTORABLE  /Users/roseonyema/Documents/code/idp/tests/test_idp_oci_auth.py  
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/tests/test_instruction_claim_failure_matrix.py  some edits did not apply cleanly
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/tests/test_instruction_tracker.py  some edits did not apply cleanly
+- MISSING-PARTIAL  /Users/roseonyema/Documents/code/idp/tests/test_operationalise_reminder.py  some edits did not apply cleanly
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Documents/deepseek-harness/default-workspace/dsh-web-launchd  
+- ON-DISK-DIFFERS  /Users/roseonyema/Documents/deepseek-harness/default-workspace/ins-00006/HANDOVER.md  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Library/LaunchAgents/ai.estate.dsh-web.plist  
+- ON-DISK-UNCOMMITTED  /Users/roseonyema/Library/LaunchAgents/com.estate.pennyd.plist  
+- ON-DISK-DIFFERS  /private/tmp/dsh-web-restart.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /private/tmp/estate-cmd.sh  disk differs from the agents' final content (edited after, or edits lost)
+- MISSING-UNRECOVERABLE  /private/tmp/estate-rust-bundle-review.8olnvc/muster/src/lib.rs  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /private/tmp/idp-claim-7844.json  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- ON-DISK-DIFFERS  /private/tmp/idp-collab-7844-final.json  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /private/tmp/idp-collab-7844.json  disk differs from the agents' final content (edited after, or edits lost)
+- MISSING-UNRECOVERABLE  /private/tmp/idp-drill-vault-credentials/.githooks/commit-msg  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /private/tmp/idp-drill-vault-credentials/.githooks/pre-commit  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-RESTORABLE  /private/tmp/idp-drill-vault-credentials/.vscode/settings.json  
+- MISSING-PARTIAL  /private/tmp/idp-drill-vault-credentials/.vscode/tasks.json  some edits did not apply cleanly
+- MISSING-UNRECOVERABLE  /private/tmp/idp-drill-vault-credentials/AGENTS.md  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-RESTORABLE  /private/tmp/idp-drill-vault-credentials/bin/data-governance-gate  
+- MISSING-PARTIAL  /private/tmp/idp-drill-vault-credentials/bin/estate-admission  some edits did not apply cleanly
+- MISSING-PARTIAL  /private/tmp/idp-drill-vault-credentials/bin/estate-local-maintenance  some edits did not apply cleanly
+- MISSING-UNRECOVERABLE  /private/tmp/idp-drill-vault-credentials/bin/estate-plan  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-RESTORABLE  /private/tmp/idp-drill-vault-credentials/bin/founder-prompt-collect  
+- MISSING-PARTIAL  /private/tmp/idp-drill-vault-credentials/bin/founder-prompt-collector  some edits did not apply cleanly
+- MISSING-PARTIAL  /private/tmp/idp-drill-vault-credentials/bin/governance-source-gate  some edits did not apply cleanly
+- MISSING-PARTIAL  /private/tmp/idp-drill-vault-credentials/bin/guardrail-yield-gate  some edits did not apply cleanly
+- MISSING-UNRECOVERABLE  /private/tmp/idp-drill-vault-credentials/bin/idp-disk-watch  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /private/tmp/idp-drill-vault-credentials/bin/language-gate  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-RESTORABLE  /private/tmp/idp-drill-vault-credentials/bin/optimus-emit  
+- MISSING-RESTORABLE  /private/tmp/idp-drill-vault-credentials/bin/patch-provenance-gate  
+- MISSING-PARTIAL  /private/tmp/idp-drill-vault-credentials/bin/proof-asset-catalog  some edits did not apply cleanly
+- MISSING-PARTIAL  /private/tmp/idp-drill-vault-credentials/bin/yield-proof-gate  some edits did not apply cleanly
+- MISSING-PARTIAL  /private/tmp/idp-drill-vault-credentials/docs/debug-packs/2026-11-10-agent-admission-shift-left.md  some edits did not apply cleanly
+- MISSING-PARTIAL  /private/tmp/idp-drill-vault-credentials/docs/failure-packs/2026-11-10-agent-admission-shift-left.md  some edits did not apply cleanly
+- MISSING-RESTORABLE  /private/tmp/idp-drill-vault-credentials/docs/research/2026-11-10-agent-admission-and-shift-left.md  
+- MISSING-RESTORABLE  /private/tmp/idp-drill-vault-credentials/docs/research/2026-11-10-yield-study-protocol.md  
+- MISSING-PARTIAL  /private/tmp/idp-drill-vault-credentials/docs/yield/2026-11-10-agent-admission-shift-left.md  some edits did not apply cleanly
+- MISSING-UNRECOVERABLE  /private/tmp/idp-drill-vault-credentials/launchd/ai.estate.disk-watch.plist.tmpl  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /private/tmp/idp-drill-vault-credentials/launchd/ai.estate.founder-prompts.plist.tmpl  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /private/tmp/idp-drill-vault-credentials/platform/estate/bin/estate-execute  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-PARTIAL  /private/tmp/idp-drill-vault-credentials/platform/estate/data/data-map.yaml  some edits did not apply cleanly
+- MISSING-PARTIAL  /private/tmp/idp-drill-vault-credentials/platform/estate/governance/guardrail-yield.yaml  some edits did not apply cleanly
+- MISSING-RESTORABLE  /private/tmp/idp-drill-vault-credentials/platform/estate/governance/optimus.py  
+- MISSING-UNRECOVERABLE  /private/tmp/idp-drill-vault-credentials/platform/estate/memory/plan.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /private/tmp/idp-drill-vault-credentials/tests/estate/test_disk_cleanup.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /private/tmp/idp-drill-vault-credentials/tests/estate/test_disk_watch.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /private/tmp/idp-drill-vault-credentials/tests/estate/test_epistemic_loop.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /private/tmp/idp-drill-vault-credentials/tests/estate/test_plan_gate_door.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /private/tmp/idp-drill-vault-credentials/tests/test_commit_msg_keys_a_fresh_worktree.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /private/tmp/idp-drill-vault-credentials/tests/test_commit_msg_stamp_is_a_trailer.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-RESTORABLE  /private/tmp/idp-drill-vault-credentials/tests/test_data_governance_gate.py  
+- MISSING-PARTIAL  /private/tmp/idp-drill-vault-credentials/tests/test_early_python_feedback.py  some edits did not apply cleanly
+- MISSING-PARTIAL  /private/tmp/idp-drill-vault-credentials/tests/test_estate_admission.py  some edits did not apply cleanly
+- MISSING-PARTIAL  /private/tmp/idp-drill-vault-credentials/tests/test_estate_local_maintenance.py  some edits did not apply cleanly
+- MISSING-UNRECOVERABLE  /private/tmp/idp-drill-vault-credentials/tests/test_estate_plan.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-PARTIAL  /private/tmp/idp-drill-vault-credentials/tests/test_founder_prompt_collector.py  some edits did not apply cleanly
+- MISSING-RESTORABLE  /private/tmp/idp-drill-vault-credentials/tests/test_governance_source_gate.py  
+- MISSING-UNRECOVERABLE  /private/tmp/idp-drill-vault-credentials/tests/test_greenlane_github.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-RESTORABLE  /private/tmp/idp-drill-vault-credentials/tests/test_guardrail_yield_gate.py  
+- MISSING-UNRECOVERABLE  /private/tmp/idp-drill-vault-credentials/tests/test_language_gate.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-RESTORABLE  /private/tmp/idp-drill-vault-credentials/tests/test_optimus_emit.py  
+- MISSING-PARTIAL  /private/tmp/idp-drill-vault-credentials/tests/test_patch_provenance_gate.py  some edits did not apply cleanly
+- MISSING-UNRECOVERABLE  /private/tmp/idp-drill-vault-credentials/tests/test_precommit_applies_ruff_format.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-RESTORABLE  /private/tmp/idp-drill-vault-credentials/tests/test_proof_asset_catalog.py  
+- MISSING-PARTIAL  /private/tmp/idp-drill-vault-credentials/tests/test_yield_proof_gate.py  some edits did not apply cleanly
+- MISSING-UNRECOVERABLE  /private/tmp/idp-memory-cloud-primary/bin/idp-bootstrap-cloudflare  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /private/tmp/idp-memory-cloud-primary/bin/idp-cloud  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-RESTORABLE  /private/tmp/idp-memory-cloud-primary/bin/idp-oci-auth  
+- MISSING-UNRECOVERABLE  /private/tmp/idp-memory-cloud-primary/platform/oci/recovery/run-command.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /private/tmp/idp-memory-cloud-primary/tests/estate/test_recovery_door_transport.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-RESTORABLE  /private/tmp/idp-memory-cloud-primary/tests/test_idp_oci_auth.py  
+- ON-DISK-DIFFERS  /private/tmp/penny-hash-check/Cargo.toml  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /private/tmp/penny-hash-check/src/main.rs  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /private/tmp/pennyd-command-content.json  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /private/tmp/pennyd-command-target.json  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /private/tmp/pennyd-ledger-repair.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /private/tmp/pennyd-output-cap.patch  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /private/tmp/pennyd-restart-only.sh  disk differs from the agents' final content (edited after, or edits lost)
+- ON-DISK-DIFFERS  /private/tmp/sleep-probe.plist  disk differs from the agents' final content (edited after, or edits lost)
+- MISSING-UNRECOVERABLE  /private/tmp/wt-bridge/bin/estate-memory-mcp  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /private/tmp/wt-bridge/platform/estate/memory/door.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /private/tmp/wt-bridge/tests/test_estate_memory_install.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
+- MISSING-UNRECOVERABLE  /private/tmp/wt-bridge/tests/test_memory_bridge_goes_fresh.py  edit-only in transcript; needs a base copy (checkpoint stash or git history)
