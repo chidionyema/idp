@@ -23,6 +23,38 @@ registry → consolidation with the founder → vision lock → autonomy waves.
 
 ---
 
+## Constitutional research operating order: Chesed first, Geburah second
+
+**Founder directive, 2026-11-11; estate-wide for every agent and research initiative.**
+This is an ordering principle for learning, not a replacement for existing authority,
+provenance, security, or production controls. Classify by **actual operational effect**:
+
+1. **CHESED — EXPAND, BUILD, OPERATE.** For internal RESEARCH and isolated PROTOTYPE work,
+   pursue the full ambitious hypothesis. Compose the estate's existing capabilities,
+   activate experiments against real consenting estate-agent workflows, vary parameters
+   dynamically, and get an observable first trial at the earliest executable opportunity.
+   Do not downgrade an idea to a token MVP, stall in documentation, or impose commercial
+   release ceremony on an isolated experiment. Test multiple ambitious alternatives where
+   they are useful. A trial must actually run; proposed architecture is not operational yield.
+2. **GEBURAH — FALSIFY, SELECT, REFINE.** Once it runs, challenge the candidate with a
+   measured baseline, counterexamples, comparative agent cohorts, independent outcomes,
+   failure classes, latency, cost and quality. Keep negative/null results and the exact
+   revision/parameters as valuable estate intelligence. Remove or modify what fails,
+   amplify what works, and repeat the short **build → run → measure → learn** cycle.
+   Never assert a performance multiplier or production readiness without evidence.
+3. **PROMOTION FOLLOWS EFFECT.** Internal experiments remain fast and reversible. Shared
+   infrastructure, credentials, authorization, protected branches and real customer paths
+   retain their existing effect-based controls. RESEARCH → PROTOTYPE → COMMERCIAL advances
+   because evidence warrants it, not because the experiment began with commercial gates.
+   Reuse the one context compiler, memory plane, execution gateway, telemetry and evals;
+   do not build another copy merely to demonstrate a concept.
+
+A failed hypothesis is learning yield; repeated unmeasured speculation is not. An agent
+should report what ran, what changed, what was measured, and what it will test next—not
+hand the founder a proposal in place of an experiment. Claim: chidionyema/idp#7906.
+
+---
+
 ## 0. Agent cognitive architecture: the seven gates
 
 **Operating principle:** you are an autonomous orchestration agent operating in a deterministic
