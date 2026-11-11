@@ -106,19 +106,24 @@ async function inspect(page, route, width) {
         const spacing=parseFloat(style.letterSpacing) / parseFloat(style.fontSize);
         if (Number.isFinite(spacing) && spacing<-.055) failures.push(selector+" letter-spacing crushes word boundaries");
       }
-      if (width<=620) {
-        const art=document.querySelector(".mi-hero-art");
-        const ring=art?.querySelector(".mi-orbit-outer")?.getBoundingClientRect();
-        const top=art?.querySelector(".mi-art-label-top")?.getBoundingClientRect();
-        const bottom=art?.querySelector(".mi-art-label-bottom")?.getBoundingClientRect();
-        if (!ring || !top || !bottom) failures.push("mobile orbital labels missing");
-        else {
-          if (top.bottom>ring.top-4) failures.push("orbital top label intersects illustration");
-          if (bottom.top<ring.bottom+4) failures.push("orbital bottom label intersects illustration");
-          if (bottom.right>innerWidth+2) failures.push("orbital caption clipped at viewport");
+      const art=document.querySelector(".mi-hero-art");
+      const ring=art?.querySelector(".mi-orbit-outer")?.getBoundingClientRect();
+      const top=art?.querySelector(".mi-art-label-top")?.getBoundingClientRect();
+      const bottom=art?.querySelector(".mi-art-label-bottom")?.getBoundingClientRect();
+      const buttons=[...document.querySelectorAll(".mi-hero-actions .mi-button")];
+      const intersects=(a,b)=> a.left<b.right && a.right>b.left && a.top<b.bottom && a.bottom>b.top;
+      if (!ring || !top || !bottom) failures.push("hero orbital graphic labels missing");
+      else {
+        for (const [label,r] of [["upper",top],["lower",bottom]]) {
+          if (width<=850 && intersects(r,ring)) failures.push(label+" orbital label intersects outer diagram");
+          if (r.right>innerWidth+2 || r.left<0) failures.push(label+" orbital caption clipped at viewport");
         }
-        const actions=[...document.querySelectorAll(".mi-hero-actions .mi-button")];
-        if (actions.length!==2 || actions[1].getBoundingClientRect().top < actions[0].getBoundingClientRect().bottom-2) {
+        if (width<=850 && buttons.some(button=>intersects(button.getBoundingClientRect(),ring))) {
+          failures.push("orbital geometry intersects a hero action on mobile/tablet");
+        }
+      }
+      if (width<=620) {
+        if (buttons.length!==2 || buttons[1].getBoundingClientRect().top < buttons[0].getBoundingClientRect().bottom-2) {
           failures.push("mobile hero actions are not full-width stacked");
         }
       }
