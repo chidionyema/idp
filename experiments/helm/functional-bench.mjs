@@ -92,6 +92,7 @@ export async function runFunctional({tasks=sample.cases,evidence=sample.evidence
     for(const arm of order){
       const messages=messagesFor(arm,task,evidence);
       const attempts=[];
+      let verifiedProgram=null;
       const repairEnabled=arm==="helm"||arm==="memory_repair";
       for(let n=0;n<(repairEnabled?maxAttempts:1);n++){
         const calledAt=performance.now();
@@ -104,7 +105,13 @@ export async function runFunctional({tasks=sample.cases,evidence=sample.evidence
             usage:reply.usage||null,modelReturned:reply.modelReturned||null,
             outputShape:payload.ok?"python-action":payload.reason,
             ...outcome});
-          if(outcome.passed)break;
+          if(outcome.passed){
+            // Preserve only program bytes that actually passed independent execution.
+            // Source is public/synthetic fixture data; do not collect estate-private code here.
+            verifiedProgram={source:payload.code,sha256:sha(payload.code),
+              testCount:outcome.tests,modelReturned:reply.modelReturned||model};
+            break;
+          }
           if(!repairEnabled||n+1>=maxAttempts)break;
           messages.push({role:"assistant",content:reply.answer});
           // Independent test feedback, never the hidden oracle source or gold implementation.
@@ -119,7 +126,8 @@ export async function runFunctional({tasks=sample.cases,evidence=sample.evidence
       }
       const final=attempts.at(-1);
       records.push({taskId:task.id,arm,passed:final?.passed===true,attempts,
-        sourceSha,taskSha:sha(task.question),oracleSha:sha(task.oracle)});
+        sourceSha,taskSha:sha(task.question),oracleSha:sha(task.oracle),
+        ...(final?.passed===true && verifiedProgram ? {verifiedProgram} : {})});
       out.summary=summarise(records,arms);
       write(out);
     }
