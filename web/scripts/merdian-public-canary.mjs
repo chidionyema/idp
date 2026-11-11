@@ -68,7 +68,8 @@ async function checkHome(origin) {
 }
 async function checkRoute(origin, path, marker) {
   try {
-    const { html, status } = await read(origin + path);\n    assert(!html.includes('Merdian Intelligence'), origin + path + ': legacy spelling on sibling page');
+    const { html, status } = await read(origin + path);
+    assert(!html.includes('Merdian Intelligence'), origin + path + ': legacy spelling on sibling page');
     assert(html.includes(marker), origin + path + ': required company section missing: ' + marker);
     if (path === '/products') {
       assert(!html.includes('Blabka'), origin + path + ': placeholder venture visible');
@@ -112,7 +113,7 @@ for (const path of ['/robots.txt', '/sitemap.xml']) {
     assert(!html.includes('meridian.ai'), PRIMARY + path + ': unowned domain leaked into indexable metadata');
     audit.push({ origin: PRIMARY + path, status });
   } catch (error) {
-    failures.push(origin + path + ': ' + (error instanceof Error ? error.message : String(error)));
+    failures.push(PRIMARY + path + ': ' + (error instanceof Error ? error.message : String(error)));
   }
 }
 const summary = {
