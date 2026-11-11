@@ -602,26 +602,39 @@ else say "FAIL  yamllint is not installed -- run bin/idp-install-deps"; fail=1; 
 # and its live gate manufactured work -- it refused rules whose only grader was a job the founder
 # had just deleted, which is a table defending itself rather than the estate.
 
-# The bdd-proof gate, named here on purpose. It is a rule in rules.yaml like the rest, but its
-# live case -- reading the most recent pull request on this repository and refusing one that
-# carries no BDD-PROOF block -- needs a line in this file that says the gate's name, so
-# bin/idp-rules can check that the claim in rules.yaml is still true (pointer_is_stale). The
-# registry above runs it; this line is what makes that fact checkable rather than asserted.
+# The bdd-proof gate. It grades the pull request THIS RUN is about -- the one the GitHub event
+# names (the event payload carries its number, its body and its head sha, so the common case
+# needs no token at all), or the one whose head branch is this run's branch. It grades it with
+# the SAME predicate the JSON mode uses: the block exists, it carries a passing run, and it
+# names this pull request's own head commit.
 #
-# THE `|| true` IS LOAD-BEARING AND MUST NOT BE REMOVED UNTIL live_pr() CHANGES (measured
-# 2026-09-13, the reason this comment is here rather than a second silent exception). The gate's
-# live_pr() runs `gh pr list --state all --limit 1` with no reference to the branch under test,
-# so on this repository it grades THE NEWEST PULL REQUEST ANY SESSION OPENED, not this run's.
-# Called during CI for branch feat/async-dispatch it answered about PR #3398 flux/image-updates
-# -- another session's work. Making this line fail the run would therefore fail a correct branch
-# for a foreign pull request's missing proof block, which is precisely the guard-that-refuses-
-# correct-work defect (R38). The suppression stays until live_pr() takes the PR under test
-# (GitHub exposes it as the pull_request payload; see bin/idp-bdd-proof-gate, input named in
-# its own docstring as "a pull request as JSON on stdin"). The BLIND that made this line look
-# broken was itself only a symptom of the missing token: with GH_TOKEN set the gate reads a pull
-# request and returns a real verdict, so the line is no longer blind -- it is simply aimed at the
-# wrong pull request, which no change to this file can fix.
-python3 "$IDP/bin/idp-bdd-proof-gate" --live || true
+# THE `|| true` IS GONE (2026-11-11, P0 on issue #7467). It was load-bearing against a gate
+# that picked the NEWEST pull request on the repository instead of the one under test: called
+# for branch feat/async-dispatch it answered about PR #3398 flux/image-updates -- another
+# session's work -- so a correct branch was refused for a foreign pull request's missing proof
+# block (the guard-that-refuses-correct-work defect, R38). That gate is gone: there is no
+# newest-pull-request fallback any more. So the suppression now hides exactly the two
+# failures that matter -- a pull request that carries no proof, and a gate that could not
+# look at all (no token, gh failed). A blind proof is not a proof, and a proof on some other
+# commit is not a proof of this pull request.
+#
+# The gate's four verdicts are four verdicts here, and the three-way ledger records which:
+#   0 PROVED          the pull request carries proof on its own head commit  -> ok
+#   1 REFUSED         no block, no passing run, or the run is not on this head -> FAIL
+#   2 BLIND           the pull request could not be read -> BLIND, which blocks like FAIL
+#   3 NOT APPLICABLE  there is no pull request under test (a push that has none) -> ok, with
+#                     the line saying in words that nothing was proved. "No proof" and "a
+#                     proof" are two different facts, and this one says which it is.
+rung "bddproof" 60
+bdd_out=$(python3 "$IDP/bin/idp-bdd-proof-gate" --live 2>&1); bdd_rc=$?
+bdd_last=$(printf '%s' "$bdd_out" | tail -1)
+case "$bdd_rc" in
+  0) say "ok    bddproof $bdd_last"; rung_done ok "" ;;
+  3) say "ok    bddproof $bdd_last -- no proof was graded, and none is claimed"
+     rung_done ok "no pull request under test" ;;
+  2) rung_blind "bddproof" "$bdd_last" ;;
+  *) say "FAIL  bddproof $bdd_last"; rung_done FAIL "$bdd_last"; fail=1 ;;
+esac
 
 # 1c.3 schema, every intent's args block against the door that runs it (bin/schema-conformance).
 #      The estate's agent door (platform/estate/bin/estate-execute, resolve_args) accepts any
