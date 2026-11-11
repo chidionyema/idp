@@ -5,7 +5,7 @@ import { compileContext, evidenceFromCompiler, parseAction, checkPython, assess,
   distill, seal, unseal, messagesFor, evaluate } from "./helm.mjs";
 
 const task = { id:"x", domain:"software", question:"How do I repair a Python except handler?",
-  language:"python", oracle:{ opcode:"EMIT_PATCH", contains:["except ValueError"] }};
+  language:"python", patchTarget:"example.py", oracle:{ opcode:"EMIT_PATCH", contains:["except ValueError"] }};
 const evidence = [
   {domain:"software",source:"repo:file.py",text:"Python handler should catch ValueError",verified:true},
   {domain:"finance",source:"other:financials",text:"Confidential finance detail",verified:true},
@@ -67,6 +67,18 @@ test("Contradictory diagnoses are not scored correct by keyword overlap", () => 
     payload:"The design is broken but enquiries are unavailable; design intact elsewhere"});
   assert.equal(honest.knowledgePass,true);
   assert.equal(contradictory.knowledgePass,false);
+});
+
+test("Motor cortex rejects model patch without target and unproven operational-yield claim",()=>{
+  const patchTask={oracle:{},question:"Explain company name"};
+  const patch=assess(patchTask,{opcode:"EMIT_PATCH",payload:"Merdian Intelligence"});
+  assert.equal(patch.actionPass,false);
+  const yieldTask={oracle:{},requiresOperationalProof:true};
+  assert.equal(assess(yieldTask,{opcode:"SUBMIT_YIELD",payload:"Done"}).actionPass,false);
+  assert.equal(assess({...yieldTask,verifiedReceipt:true},
+    {opcode:"SUBMIT_YIELD",payload:"Done"}).actionPass,true);
+  const cont=assess(patchTask,{opcode:"RUN_FALSIFIER",payload:"Investigate"});
+  assert.equal(cont.actionPass,true);
 });
 
 test("Q3 detects a syntax error and bare except without executing the code", () => {
