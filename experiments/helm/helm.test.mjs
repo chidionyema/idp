@@ -47,6 +47,28 @@ test("Q2 accepts structured semantic payload without granting command authority"
     {opcode:"DISPATCH_LEGION",payload:{status:"enquiries unavailable",design:"intact"}}).pass,true);
 });
 
+test("Independent knowledge accuracy does not conflate model opcode choice", () => {
+  const factual = {oracle:{opcode:"SUBMIT_YIELD",
+    contains:["merdian intelligence","consultancy","laboratory","ventures"]}};
+  const out=assess(factual,{opcode:"EMIT_PATCH",
+    payload:"Merdian Intelligence – Consultancy, Laboratory, Ventures"});
+  assert.equal(out.knowledgePass,true);
+  assert.equal(out.actionPass,false);
+  assert.equal(out.pass,false);
+});
+
+test("Contradictory diagnoses are not scored correct by keyword overlap", () => {
+  const requirement={oracle:{contains:["enquir","design"],
+    anyContains:[["unavailable","disabled"],["intact","no design changes"]],
+    contradicts:["the design is broken"]}};
+  const honest=assess(requirement,{opcode:"RUN_FALSIFIER",
+    payload:"Design intact; enquiries unavailable"});
+  const contradictory=assess(requirement,{opcode:"RUN_FALSIFIER",
+    payload:"The design is broken but enquiries are unavailable; design intact elsewhere"});
+  assert.equal(honest.knowledgePass,true);
+  assert.equal(contradictory.knowledgePass,false);
+});
+
 test("Q3 detects a syntax error and bare except without executing the code", () => {
   assert.equal(checkPython("def broken(:\n pass").ok,false);
   assert.match(checkPython("try:\n x=1\nexcept:\n pass").error,/bare except/);
