@@ -35,7 +35,7 @@ for (const [file, markers] of Object.entries({
     'CONSULTANCY', 'LABORATORY', 'VENTURES', '/consulting', '/research',
   ],
   'app/layout.tsx': ['./merian.css', 'Meridian Intelligence', 'MERIDIAN_SITE_URL'],
-  'app/merian.css': ['.mi-hero', '.mi-header', '.mi-footer', '.mi-interior', 'prefers-reduced-motion', '.mi-services .mi-eyebrow', 'color:#6b4a16', '.mi-hero-actions', '.mi-art-label-top'],
+  'app/merian.css': ['.mi-hero', '.mi-header', '.mi-footer', '.mi-interior', 'prefers-reduced-motion', '.mi-services .mi-eyebrow', '.mi-hero-actions', '.mi-art-label-top'],
   'components/Nav.tsx': ['mi-header', 'mi-nav-links', 'Consultancy', 'Laboratory', 'Ventures', 'mi-mobile-panel'],
   'components/Footer.tsx': ['mi-footer', 'MERIDIAN INTELLIGENCE'],
   'app/products/page.tsx': ['mi-interior', 'Mumchimp', 'Genesis'],
@@ -53,6 +53,32 @@ for (const file of [
   forbidden(file, 'meridian.ai');
   forbidden(file, 'Merdian Intelligence');
 }
+// Light-surface editorial labels must remain legible after visual redesign.
+// Resolve the approved semantic token instead of pinning an arbitrary old CSS
+// literal that blocked a verified new visual system in Vercel build b3c6c35.
+const globals = source('app/globals.css');
+const css = source('app/merian.css');
+const inkToken = globals.match(/--ink-2\s*:\s*(#[0-9a-f]{6})\s*;/i);
+const bgToken = globals.match(/--bg\s*:\s*(#[0-9a-f]{6})\s*;/i);
+if (!/\.mi-manifesto\s+\.mi-eyebrow,\s*\.mi-services\s+\.mi-eyebrow,[\s\S]*?\{\s*color:\s*var\(--ink-2\)\s*\}/.test(css)) {
+  failures.push('app/merian.css: light-surface eyebrow semantic contrast override missing');
+}
+function luminance(hex) {
+  const channels = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const values = channels.map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  return values[0] * 0.2126 + values[1] * 0.7152 + values[2] * 0.0722;
+}
+if (!inkToken || !bgToken) {
+  failures.push('app/globals.css: light-surface foreground/background contrast tokens missing');
+} else {
+  const ink = luminance(inkToken[1]);
+  const bg = luminance(bgToken[1]);
+  const ratio = (Math.max(ink, bg) + 0.05) / (Math.min(ink, bg) + 0.05);
+  if (ratio < 4.5) {
+    failures.push('app/globals.css: light-surface eyebrow contrast below WCAG AA 4.5:1');
+  }
+}
+
 // Visitor-facing corporate identity must not regress to the deprecated spelling.
 // Legacy environment variable names are permitted for compatibility, but visible copy is not.
 for (const file of [
