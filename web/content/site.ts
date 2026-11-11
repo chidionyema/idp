@@ -9,6 +9,7 @@ export const site = {
     { href: "/writing", label: "Insights" },
   ],
   research: [
+    { title: "Persistent operational intelligence", year: "2026", kind: "Applied AI research", href: "/writing/persistent-operational-intelligence", blurb: "Can agents retain independently verified work across sessions? We have proved exact-task reuse; generalisation is the next question." },
     { title: "Agentic routing experiments", year: "2026", kind: "Research", href: "/writing/agentic-routing-for-enterprise", blurb: "How can routing decisions improve quality, cost and latency? We use repeatable comparisons and explicit failure cases." },
     { title: "AI workload identity", year: "2026", kind: "Security research", href: "/writing/spiffe-for-ai-workloads", blurb: "Exploring trust boundaries and short-lived credentials for AI services. Research is not proof of an accredited deployment." },
     { title: "Agent observability and evaluation", year: "2026", kind: "Experimental method", blurb: "Reproducible traces, baselines and regression tests for multi-step agent work. Failed experiments feed the next trial." },
