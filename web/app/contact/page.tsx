@@ -76,7 +76,7 @@ export default function ContactPage() {
     <div className="mi-interior">
       <section className="mi-page-hero mi-contact-hero" aria-labelledby="contact-heading">
         <div className="mi-shell">
-          <span className="mi-eyebrow">MERDIAN / START A CONVERSATION</span>
+          <span className="mi-eyebrow">MERIDIAN / START A CONVERSATION</span>
           <h1 id="contact-heading">LET&apos;S BUILD<br/><em>SOMETHING REAL.</em></h1>
           <div className="mi-page-hero-bottom">
             <p>Bring the challenge. An architecture decision, an AI system to build, or a research question worth testing. We&apos;ll start with what matters.</p>
