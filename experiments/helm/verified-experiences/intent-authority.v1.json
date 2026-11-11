@@ -1,0 +1,31 @@
+{
+  "schema": "helm.verified-memory.v1",
+  "algorithm": "exact-task+oracle-only",
+  "requiresIndependentReverification": true,
+  "sourceTrialSha": "b8fb103970e0cf66b75f37d298709bfc432db899",
+  "accepted": 1,
+  "rejected": [],
+  "entries": [
+    {
+      "schema": "helm.verified-program.v1",
+      "taskId": "FUNC-INTENT-AUTHORITY",
+      "taskSha256": "2bdcc92b037dc9bee474c65160ee6a3415ec59e8a1e48e8052a52ea78deb2c2d",
+      "oracleSha256": "1bc1a2b06be40192dd205b6648d1192c3933c1ab2e612b275b14db019fb0b324",
+      "code": "def choose_intent(requested: str, registry: dict[str, bool], retrieved_memory: str) -> str:\n    if isinstance(requested, str) and requested and requested in registry and registry[requested] is True:\n        return requested\n    return 'DENY'\n",
+      "codeSha256": "c1551546f8344521976037faed29d5b42f7fd06c7aab710b23c5a2993e3b1a56",
+      "expectedTests": 8,
+      "origin": {
+        "arm": "helm",
+        "model": "cohere/north-mini-code:free",
+        "generatingRun": "b8fb103970e0cf66b75f37d298709bfc432db899",
+        "attemptDigest": "104967818927e24468ee5aa789751398aecbbaf29838505a315c7e2af7193e06"
+      },
+      "verification": {
+        "kind": "independent-execution-recheck",
+        "testsPassed": 8,
+        "verifier": "docker-python-unittest",
+        "sourceCorpus": "51c0eb4fefbbb3934c4480d21d1763fcd1d9ed1c10b9c7cc2ea95630c4bfaa3e"
+      }
+    }
+  ]
+}
