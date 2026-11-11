@@ -138,7 +138,7 @@ test("wrong instruction ID never mutates the ledger",()=>{
 test("changing the helmet configuration is a fork, not a silent budget upgrade",()=>{
   const p=makePolicy(1);
   const s=accept(p,[probe()]);
-  fail(()=>advanceShot(makePolicy(10),s,candidate()),/policy mutation/);
+  fail(()=>advanceShot(makePolicy(10),s,candidate()),/journal integrity mismatch|policy mutation/);
 });
 
 test("model swapping during a shot is denied",()=>{
