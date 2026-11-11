@@ -10,9 +10,12 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const script = join(root, 'scripts', 'merdian-public-release-gate.mjs');
 const sources = [
   'app/page.tsx', 'app/layout.tsx', 'app/merian.css',
-  'components/Nav.tsx', 'components/Footer.tsx',
-  'app/products/page.tsx', 'app/consulting/page.tsx',
-  'app/contact/page.tsx', 'app/robots.ts', 'app/sitemap.ts',
+  'app/manifest.ts', 'app/opengraph-image.tsx',
+  'components/Logo.tsx', 'components/Nav.tsx', 'components/Footer.tsx',
+  'content/site.ts', 'app/products/page.tsx', 'app/research/page.tsx',
+  'app/consulting/page.tsx', 'app/contact/page.tsx', 'app/contact/layout.tsx',
+  'app/case-studies/page.tsx', 'app/tooling/page.tsx', 'app/writing/page.tsx',
+  'app/writing/[slug]/page.tsx', 'app/robots.ts', 'app/sitemap.ts',
 ];
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'merdian-release-contract-'));
@@ -61,14 +64,14 @@ test('an incomplete company design, missing a pillar or dark visual system, cann
   assert.match(result.stderr, /Missing public release source/);
 }));
 
-test('localhost and unowned Meridian metadata are release blocking, not warnings', () => withFixture(dir => {
+test('localhost, unowned domains and legacy brand metadata block release', () => withFixture(dir => {
   const layout = join(dir, 'app/layout.tsx');
-  writeFileSync(layout, readFileSync(layout, 'utf8') + '\n// http://localhost:3000 meridian.ai Meridian Intelligence');
+  writeFileSync(layout, readFileSync(layout, 'utf8') + '\n// http://localhost:3000 meridian.ai Merdian Intelligence');
   const result = run(dir);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /localhost/);
   assert.match(result.stderr, /meridian.ai/);
-  assert.match(result.stderr, /Meridian Intelligence/);
+  assert.match(result.stderr, /Merdian Intelligence/);
 }));
 
 test('unsubstantiated portfolio promises fail the production gate', () => withFixture(dir => {
@@ -93,4 +96,20 @@ test('nested information architecture is a production contract', () => withFixtu
   const result = run(dir);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /02 \/ CONSULTANCY/);
+}));
+
+test('an old name in a sibling customer page blocks the release', () => withFixture(dir => {
+  const path = join(dir, 'app/products/page.tsx');
+  writeFileSync(path, readFileSync(path, 'utf8') + '\n// Merdian Intelligence');
+  const result = run(dir);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /app\/products\/page.tsx: obsolete\/public-invalid Merdian/);
+}));
+
+test('missing the canonical Meridian identity fails the release', () => withFixture(dir => {
+  const path = join(dir, 'app/layout.tsx');
+  writeFileSync(path, readFileSync(path, 'utf8').replaceAll('Meridian Intelligence', 'Other Company'));
+  const result = run(dir);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /missing Meridian Intelligence/);
 }));
