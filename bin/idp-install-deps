@@ -259,13 +259,74 @@ else
   printf '      (required for docker compose validation rung in bin/idp-ci)\n'
 fi
 
-# PATH -- point to the right shell rc file for the OS
-_RC="$HOME/.zshrc"; [ "$OS" = "linux" ] && _RC="$HOME/.bashrc"
-if ! echo "$PATH" | tr ':' '\n' | grep -qx "$TOOLS_DIR"; then
-  printf '\nWARN  deps    %s not on PATH\n' "$TOOLS_DIR"
-  printf '      add to %s:\n' "$_RC"
-  printf '        export PATH="%s:$PATH"\n\n' "$TOOLS_DIR"
+# PATH -- make the tools RESOLVABLE, do not ask a human to edit a profile.
+#
+# This block used to print "add export PATH=... to ~/.zshrc" and return success. Measured
+# 2026-11-11 on this machine: the line WAS in ~/.zshrc and `zsh -lc 'echo $PATH'` still did not
+# contain TOOLS_DIR, while `sh -c 'echo $PATH'` never reads a profile at all. Non-interactive
+# shells are exactly where the executor, the pre-push hook and launchd run, so the advice could
+# never reach the place that needed it -- and the installer exited 0 while saying so.
+#
+# The consequence was not cosmetic. `rg` is the command AGENTS.md section 10 REQUIRES agents to
+# use instead of `grep -r`; with ~/.local/bin off the gate's PATH every search returned 0 hits
+# with a clean exit, so "this does not exist" and "the binary is missing" were the same answer.
+# `gh` was the same class: absent entirely, and every claim-gate died with FileNotFoundError
+# instead of returning a verdict.
+#
+# So: link each tool into a directory a NON-INTERACTIVE shell already searches. /usr/local/bin
+# is on the default PATH of every shell here (measured: env -i sh -c 'echo $PATH' ->
+# /usr/gnu/bin:/usr/local/bin:/bin:/usr/bin:. ) and is user-writable on this machine, so no
+# sudo and no second copy of the binary -- a symlink into the real install.
+_LINK_DIR="/usr/local/bin"
+# The question is NOT "is this dir on MY PATH" -- an interactive shell has ~/.local/bin and the
+# gate shell does not, so asking that way links nothing precisely when it matters (measured: the
+# first version of this block ran with ~/.local/bin on PATH, concluded it was reachable, and left
+# `rg` unresolvable to every gate). Ask the gate's own shell instead.
+_gate_reaches() {
+  env -i HOME="$HOME" sh -c "command -v $1" >/dev/null 2>&1
+}
+_need_path=()
+for _t in "$TOOLS_DIR" "$HOME/.local/bin"; do
+  [ -d "$_t" ] || continue
+  for _f in "$_t"/*; do
+    [ -f "$_f" ] && [ -x "$_f" ] || continue
+    _gate_reaches "$(basename "$_f")" || { _need_path+=("$_t"); break; }
+  done
+done
+if [ "${#_need_path[@]}" -gt 0 ]; then
+  if [ -d "$_LINK_DIR" ] && [ -w "$_LINK_DIR" ]; then
+    _linked=0
+    for _d in "${_need_path[@]}"; do
+      [ -d "$_d" ] || continue
+      for _f in "$_d"/*; do
+        [ -f "$_f" ] && [ -x "$_f" ] || continue
+        _n=$(basename "$_f")
+        # skip a tool the gate shell already reaches through some other directory: never shadow
+        # a different binary that is already resolvable.
+        _gate_reaches "$_n" && continue
+        ln -sf "$_f" "$_LINK_DIR/$_n" 2>/dev/null && _linked=$((_linked + 1))
+      done
+    done
+    _ok "$_linked tool(s) linked into $_LINK_DIR so non-interactive shells resolve them"
+  else
+    # No writable PATH dir to link into. Say WHICH tool is unreachable and fail: a green install
+    # whose tools no gate can find is the defect this block exists to prevent.
+    _fail "$_LINK_DIR is not writable; these installs stay unreachable to gates: ${_need_path[*]}"
+  fi
 fi
+
+# The tool AGENTS.md names, proven resolvable from a shell with NO profile at all. This is a
+# refusal, not a warning: an agent whose `rg` is missing reports "no matches" for a thing that
+# exists, which is a wrong answer wearing a green exit code.
+for _t in rg gh; do
+  if _gate_reaches "$_t"; then
+    :
+  elif [ -x "$HOME/.local/bin/$_t" ]; then
+    _fail "$_t exists at ~/.local/bin/$_t but no non-interactive shell resolves it"
+  else
+    _fail "$_t is not installed (AGENTS.md section 10 requires rg; claim-gate requires gh)"
+  fi
+done
 
 [ "$fail" -eq 0 ] && printf 'ok    deps    all estate-tools at CI-pinned versions\n'
 exit "$fail"
