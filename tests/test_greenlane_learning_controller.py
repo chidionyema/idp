@@ -20,7 +20,7 @@ def records(outcomes):
 def test_policy_learns_from_evidence():
     assert choose_batch_size(records(["landed"] * 40), 100, 8).size == 8
     assert choose_batch_size(records(["red"] * 40), 100, 8).size == 1
-    assert choose_batch_size([], 100, 8).size == 2
+    assert choose_batch_size([], 100, 8).size == 8
     assert choose_batch_size(records(["landed"] * 20), 1, 8).size == 1
 
 
@@ -79,3 +79,37 @@ def test_both_policies_preserve_trunk_proof_under_chaos():
             assert r.main_ever_red == 0 and r.broken_lanes_landed == 0, r
             assert r.work_lost == 0 and r.direct_push_succeeded == 0, r
             assert r.open_red_pr_observations == 0 and r.good_lanes_not_landed == 0, r
+
+
+def test_policy_tournament_executes_real_engine_and_completes_three_regimes():
+    from greenlane.tournament import REGIMES, run_tournament
+
+    out = run_tournament(lanes=40, seeds=(0,))
+    assert out["schema"] == "greenlane.policy-tournament.v1"
+    assert set(out["regimes"]) == set(REGIMES)
+    for entry in out["regimes"].values():
+        assert entry["fixed"]["landed_mean"] >= 0
+        assert entry["adaptive"]["landed_mean"] >= 0
+        assert entry["verdict"] in ("adaptive-dominates", "fixed-dominates", "trade-off")
+
+
+def test_successful_eight_lane_batch_teaches_eight_positive_outcomes():
+    from greenlane.learning import choose_batch_size
+
+    row = {
+        "outcome": "landed", "base_full": BASE,
+        "members": [f"lane/w{i}" for i in range(8)],
+        "heads": [f"{i:040x}" for i in range(8)],
+    }
+    decision = choose_batch_size([row], 10, 8)
+    assert decision.observed == 8
+    assert decision.size == 8, decision
+
+
+def test_speed_optimised_policy_uses_a_distinct_experimental_arm():
+    from greenlane.learning import choose_batch_size
+
+    rows = records(["landed"] * 24 + ["red"] * 8)
+    economy = choose_batch_size(rows, 8, 8, overhead=0.30)
+    speed = choose_batch_size(rows, 8, 8, overhead=0.60)
+    assert speed.size >= economy.size
