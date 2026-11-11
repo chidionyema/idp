@@ -678,6 +678,32 @@ def run_steps(conn, ticket_id, intent, args, depth=0):
                         close_ticket(conn, ticket_id, "halted", f"step {idx+1} ({step_name}) refused: {fs_reason}")
                         return "halted"
                     continue
+                # The machine boundary (platform/estate/governance/thin_client.py). A Darwin
+                # laptop is a thin client, not a build farm: above 16 load or below 10 GB free,
+                # heavy work is refused with a replacement door rather than ground through until
+                # the machine wedges. Fail-open on import, like fs_guard above: a guard that
+                # cannot load must not become the outage. INS-20261110-1750-INFRA-PERMANENT.
+                try:
+                    from governance import thin_client as _thin_client
+
+                    tc_ok, tc_reason, tc_replacement = _thin_client.verdict(cmd, os.getcwd())
+                except Exception:
+                    tc_ok, tc_reason, tc_replacement = True, "", ""
+                if not tc_ok:
+                    if tc_replacement:
+                        log(f"  SHUNTED: {tc_reason}")
+                        log(f"  replacement: {tc_replacement}")
+                        rc, stdout = 0, tc_replacement
+                        log_step(conn, ticket_id, idx, cmd, rc, 0)
+                        continue
+                    log(f"  REFUSED: MACHINE BOUNDARY: {tc_reason}")
+                    rc, stdout = 2, ""
+                    log_step(conn, ticket_id, idx, cmd, rc, 0)
+                    failed += 1
+                    if on_fail == "halt":
+                        close_ticket(conn, ticket_id, "halted", f"step {idx+1} ({step_name}) refused: MACHINE BOUNDARY: {tc_reason}")
+                        return "halted"
+                    continue
                 try:
                     result = subprocess.run(  # noqa: S602
                         cmd, shell=True, capture_output=True, text=True, timeout=step_timeout
