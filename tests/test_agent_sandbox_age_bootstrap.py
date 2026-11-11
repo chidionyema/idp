@@ -26,17 +26,17 @@ def test_bogus_archive_never_reaches_install() -> None:
         tmp = Path(raw)
         curl = tmp / "curl"
         curl.write_text(
-            "#!/bin/sh\\n"
-            "while [ \\"$#\\" -gt 0 ]; do\\n"
-            "  if [ \\"$1\\" = '--output' ]; then\\n"
-            "    shift; printf 'tampered' > \\"$1\\"; exit 0\\n"
-            "  fi\\n"
-            "  shift\\n"
-            "done\\nexit 2\\n"
+            "#!/bin/sh\n"
+            "while [ \"$#\" -gt 0 ]; do\n"
+            "  if [ \"$1\" = '--output' ]; then\n"
+            "    shift; printf 'tampered' > \"$1\"; exit 0\n"
+            "  fi\n"
+            "  shift\n"
+            "done\nexit 2\n"
         )
         curl.chmod(0o755)
         sudo = tmp / "sudo"
-        sudo.write_text("#!/bin/sh\\ntouch \\"$RUNNER_TEMP/sudo_called\\"\\nexit 99\\n")
+        sudo.write_text("#!/bin/sh\ntouch \"$RUNNER_TEMP/sudo_called\"\nexit 99\n")
         sudo.chmod(0o755)
         env = {**os.environ, "PATH": f"{tmp}:{os.environ['PATH']}", "RUNNER_TEMP": raw}
         result = subprocess.run(["bash", str(SCRIPT)], env=env, capture_output=True, text=True, timeout=15)
