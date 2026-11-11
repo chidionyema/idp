@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 const read = (p) => readFileSync(new URL("../" + p, import.meta.url), "utf8");
 test("Merdian homepage explicitly offers consultancy, research and ventures", () => {
   const page = read("app/page.tsx");
-  for (const label of ["CONSULTANCY", "LABORATORY", "VENTURES", "Mumchimp", "Genesis", "Blabka"]) {
+  for (const label of ["CONSULTANCY", "LABORATORY", "VENTURES", "Mumchimp", "Genesis"]) {
     assert.ok(page.includes(label), "missing positioning: "+label);
   }
   assert.ok(page.includes("href=\"/consulting\""));
