@@ -23,6 +23,10 @@ concurrency:
 
 jobs:
   drill:
+    permissions:
+      contents: read
+      issues: write
+      id-token: write  # required by OCI exchange; not granted to Chronos
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
