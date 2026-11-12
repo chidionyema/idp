@@ -10,6 +10,7 @@
 jobs:
   # KARMA read-only observation through existing Chronos Dagster (not a new scheduler).
   ai.estate.karma-observe:
+    description: KARMA observes CI execution and missing FLOW/QUAD-to-yield links; unverified is never settled.
     runs_on: cluster
     runs_on_ref: chidionyema/idp#7452
     command:
