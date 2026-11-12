@@ -64,7 +64,7 @@ export default function HomePage() {
 
       <section className="mi-future-section mi-section" aria-labelledby="meridian-future-work">
         <div className="mi-shell mi-future-grid">
-          <div><span className="mi-eyebrow">OUR NEXT CHAPTER / THE FUTURE OF WORK</span>
+          <div><span className="mi-eyebrow">OUR NEXT CHAPTER / A BETTER WAY TO WORK</span>
             <h2 id="meridian-future-work">Research the future.<br/><em>Build something better.</em></h2>
             <p>Meridian's work begins with research, grows through experimentation and finds its purpose in products and businesses that improve people's lives.</p>
             <p>One question we keep returning to: what if people could spend less time chasing work and more time doing it?</p>
