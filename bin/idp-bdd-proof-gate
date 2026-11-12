@@ -69,22 +69,22 @@ EXIT_NOT_APPLICABLE = 3
 # the claim this gate exists to refuse, so a bare `passed` never counts.
 #
 # Accepted shapes, one per family:
-#   cucumber / behave / pytest-bdd : "31 scenarios (31 passed)", "0 failed", "5 features passed"
+#   cucumber / behave / pytest-bdd : "31 scenarios (31 passed)", "5 features (5 passed)"
 #   jest-cucumber / vitest-cucumber: "Tests: 31 passed, 31 total"
 #   go test -run TestBDD           : "--- PASS: TestBDDGateway (0.02s)"
 #   pytest with bdd plugin         : "142 passed in 4.51s"
 PASS_PATTERNS = [
     # cucumber family summaries
-    re.compile(r"\b\d+\s+scenarios?\b[^\n]{0,40}\b\d+\s+passed\b", re.I),
-    re.compile(r"\b\d+\s+features?\b[^\n]{0,40}\b\d+\s+passed\b", re.I),
-    re.compile(r"\b0\s+failed\b", re.I),
+    re.compile(r"\b[1-9]\d*\s+scenarios?\b[^\n]{0,40}\b[1-9]\d*\s+passed\b", re.I),
+    re.compile(r"\b[1-9]\d*\s+features?\b[^\n]{0,40}\b[1-9]\d*\s+passed\b", re.I),
+    # A bare '0 failed' proves no execution; require at least one passing test.
     # jest / vitest
-    re.compile(r"Tests:\s*\d+\s+passed", re.I),
-    re.compile(r"\b\d+\s+passed,\s*\d+\s+total\b", re.I),
+    re.compile(r"Tests:\s*[1-9]\d*\s+passed", re.I),
+    re.compile(r"\b[1-9]\d*\s+passed,\s*[1-9]\d*\s+total\b", re.I),
     # go
     re.compile(r"^---\s*PASS:\s*\w", re.M),
     # pytest
-    re.compile(r"\b\d+\s+passed\s+in\s+[\d.]+s", re.I),
+    re.compile(r"\b[1-9]\d*\s+passed\s+in\s+[\d.]+s", re.I),
 ]
 
 # A block that only asserts in prose, with no runner output at all. Refused separately so
