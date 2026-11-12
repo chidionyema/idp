@@ -313,15 +313,23 @@ def karma_call(kwargs: dict, response_obj: Any, outcome: str = "success") -> dic
         usage = response_obj.get("usage", usage)
     if usage is None:
         stream = kwargs.get("complete_streaming_response")
-        usage = stream.get("usage") if isinstance(stream, dict) else getattr(stream, "usage", None)
+        usage = (
+            stream.get("usage")
+            if isinstance(stream, dict)
+            else getattr(stream, "usage", None)
+        )
     if hasattr(usage, "model_dump"):
         usage = usage.model_dump()
     if not isinstance(usage, dict):
-        usage = {k: getattr(usage, k, None) for k in
-                 ("prompt_tokens", "completion_tokens", "total_tokens")}
+        usage = {
+            k: getattr(usage, k, None)
+            for k in ("prompt_tokens", "completion_tokens", "total_tokens")
+        }
+
     def count(key):
         value = usage.get(key)
         return value if type(value) is int and 0 <= value <= 10**12 else None
+
     provider = kwargs.get("custom_llm_provider") or params.get("custom_llm_provider")
     return {
         "schema": "estate.karma.call.v1",
@@ -329,7 +337,9 @@ def karma_call(kwargs: dict, response_obj: Any, outcome: str = "success") -> dic
         "instruction_link": "CALLER_ASSERTED" if iid else "MISSING",
         "provider": provider if isinstance(provider, str) and provider else "UNKNOWN",
         "requested_model": str(kwargs.get("model") or "UNKNOWN"),
-        "returned_model": observed_model if isinstance(observed_model, str) and observed_model else "UNKNOWN",
+        "returned_model": observed_model
+        if isinstance(observed_model, str) and observed_model
+        else "UNKNOWN",
         "model_revision": "UNKNOWN",
         "model_revision_attestation": "MISSING",
         "agent_generation": "UNKNOWN",

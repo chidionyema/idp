@@ -5,6 +5,7 @@ Consumes the GitHub run evidence estate-state ALREADY gathered, optionally the
 QUAD-backed router action JSONL. Does not call models, write a new store, alter
 authority, self-verify reward, or assume a missing value is zero.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -18,9 +19,12 @@ def valid_time(value):
     if not isinstance(value, str):
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(
-            timezone.utc
-        ).isoformat().replace("+00:00", "Z")
+        return (
+            datetime.fromisoformat(value.replace("Z", "+00:00"))
+            .astimezone(timezone.utc)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
     except (ValueError, OverflowError):
         return None
 
@@ -58,14 +62,16 @@ def reconcile(runs, actions=None, *, sha="UNKNOWN", observed_at=None):
         workflow = repo + "/" + str(item.get("workflow") or "UNKNOWN")
         by_workflow[workflow][conclusion] += 1
         if len(examples) < 20 and conclusion in ("failure", "cancelled", "timed_out"):
-            examples.append({
-                "run_id": ident if key else None,
-                "sha": item.get("sha") or "UNKNOWN",
-                "workflow": workflow,
-                "event_at": time,
-                "conclusion": conclusion,
-                "independent_production_yield": "UNKNOWN",
-            })
+            examples.append(
+                {
+                    "run_id": ident if key else None,
+                    "sha": item.get("sha") or "UNKNOWN",
+                    "workflow": workflow,
+                    "event_at": time,
+                    "conclusion": conclusion,
+                    "independent_production_yield": "UNKNOWN",
+                }
+            )
     quad_source = "NOT_CONNECTED" if actions is None else "ROUTER_SOURCE_UNVERIFIED"
     groups = Counter()
     known_tokens = 0
@@ -97,16 +103,17 @@ def reconcile(runs, actions=None, *, sha="UNKNOWN", observed_at=None):
         "schema": "estate.karma.readback.v1",
         "code_name": "KARMA",
         "main_sha": sha,
-        "observed_at": valid_time(observed_at) if observed_at else datetime.now(
-            timezone.utc
-        ).isoformat().replace("+00:00", "Z"),
+        "observed_at": valid_time(observed_at)
+        if observed_at
+        else datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "observation_clock": "RUNNER_HOST_UNATTESTED",
         "chronos": "ESTATE_STATE_EXISTING_SCHEDULE",
         "ci": {
             "observed_runs": sum(status.values()),
             "conclusions": dict(sorted(status.items())),
-            "workflow_counts": {k: dict(sorted(v.items()))
-                                for k, v in sorted(by_workflow.items())},
+            "workflow_counts": {
+                k: dict(sorted(v.items())) for k, v in sorted(by_workflow.items())
+            },
             "duplicates": duplicates,
             "missing_run_ids": missing_ids,
             "missing_or_invalid_times": missing_times,
@@ -129,7 +136,8 @@ def reconcile(runs, actions=None, *, sha="UNKNOWN", observed_at=None):
             "yield_quality": "NO_INDEPENDENT_SETTLEMENT_WITNESS",
         },
         "coverage_gaps": [
-            "QUAD_ROUTER_SOURCE_NOT_CONNECTED" if actions is None
+            "QUAD_ROUTER_SOURCE_NOT_CONNECTED"
+            if actions is None
             else "QUAD_METADATA_NOT_SIGNATURE_ATTESTED",
             "ACCEPTED_INSTRUCTION_REGISTRY_NOT_CONNECTED",
             "CI_TO_INSTRUCTION_CAUSAL_LINK_NOT_VERIFIED",
@@ -149,7 +157,9 @@ def reconcile(runs, actions=None, *, sha="UNKNOWN", observed_at=None):
 def main(argv=None):
     p = argparse.ArgumentParser(description="KARMA readback on existing evidence")
     p.add_argument("--runs", required=True)
-    p.add_argument("--actions", default=None, help="optional trusted-access router JSONL")
+    p.add_argument(
+        "--actions", default=None, help="optional trusted-access router JSONL"
+    )
     p.add_argument("--out", required=True)
     p.add_argument("--summary", default=None)
     p.add_argument("--main-sha", default="UNKNOWN")
@@ -164,15 +174,19 @@ def main(argv=None):
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n", encoding="utf8")
     ci = result["ci"]
-    summary = (f"KARMA: {ci['observed_runs']} CI observations, "
-               f"{ci['conclusions'].get('failure', 0)} failed, "
-               f"{ci['missing_run_ids']} missing run IDs; "
-               f"QUAD={result['quad']['source']}; "
-               "verified yield=UNKNOWN; billed cost=UNKNOWN")
+    summary = (
+        f"KARMA: {ci['observed_runs']} CI observations, "
+        f"{ci['conclusions'].get('failure', 0)} failed, "
+        f"{ci['missing_run_ids']} missing run IDs; "
+        f"QUAD={result['quad']['source']}; "
+        "verified yield=UNKNOWN; billed cost=UNKNOWN"
+    )
     print(summary)
     if a.summary:
         with open(a.summary, "a", encoding="utf8") as sink:
-            sink.write("\n### KARMA — Chronos-observed research readback\n" + summary + "\n")
+            sink.write(
+                "\n### KARMA — Chronos-observed research readback\n" + summary + "\n"
+            )
     return 0
 
 

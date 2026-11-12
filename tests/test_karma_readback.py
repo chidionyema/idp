@@ -1,4 +1,5 @@
 """KARMA's falsifiers: no fake cost, model version, custody or yield."""
+
 import importlib.machinery
 import importlib.util
 from pathlib import Path
@@ -20,8 +21,11 @@ router = load("karma_router_tests", "platform/llm/action_ledger.py")
 
 def run(run_id=71, conclusion="failure"):
     return {
-        "repo": "idp", "workflow": "ci", "id": run_id,
-        "conclusion": conclusion, "sha": "a" * 40,
+        "repo": "idp",
+        "workflow": "ci",
+        "id": run_id,
+        "conclusion": conclusion,
+        "sha": "a" * 40,
         "created_at": "2026-11-12T12:00:00Z",
     }
 
@@ -51,16 +55,26 @@ def test_unknown_cost_remains_unknown_not_free():
 
 def test_provider_group_uses_returned_model_but_cannot_claim_opaque_version():
     events = [
-        {"karma": {
-            "schema": "estate.karma.call.v1", "provider": "vendor",
-            "returned_model": "fast", "model_revision": "v9",
-            "instruction_id": None, "total_tokens": 17,
-        }},
-        {"karma": {
-            "schema": "estate.karma.call.v1", "provider": "vendor",
-            "returned_model": "fast", "model_revision": "UNKNOWN",
-            "instruction_id": "FLOW-42", "total_tokens": 5,
-        }},
+        {
+            "karma": {
+                "schema": "estate.karma.call.v1",
+                "provider": "vendor",
+                "returned_model": "fast",
+                "model_revision": "v9",
+                "instruction_id": None,
+                "total_tokens": 17,
+            }
+        },
+        {
+            "karma": {
+                "schema": "estate.karma.call.v1",
+                "provider": "vendor",
+                "returned_model": "fast",
+                "model_revision": "UNKNOWN",
+                "instruction_id": "FLOW-42",
+                "total_tokens": 5,
+            }
+        },
     ]
     r = readback.reconcile([], events)
     assert r["quad"]["model_calls_observed"] == 2
@@ -118,7 +132,6 @@ def test_unreadable_run_source_is_an_error_not_a_clean_snapshot():
 
     with pytest.raises(ValueError):
         readback.reconcile({"status": "BLIND"})
-
 
 
 def test_router_persists_karmas_usage_in_signed_action_and_existing_fleet_outbox(
