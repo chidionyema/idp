@@ -100,6 +100,11 @@ export default function HomePage() {
           <div className="mi-venture-grid">
             <article className="mi-venture mi-venture-mumchimp"><div className="mi-venture-top"><span>GROUP COMPANY / COMMERCE</span><span>04.1</span></div><div><div className="mi-venture-mark">m<span>.</span></div><h3>Mumchimp</h3><p>Research-backed business opportunities, built for people ready to act.</p></div><a href="https://mumchimp.com" target="_blank" rel="noopener noreferrer">Visit Mumchimp <span aria-hidden="true">↗</span></a></article>
             <article className="mi-venture mi-venture-genesis"><div className="mi-venture-top"><span>LABORATORY PRODUCT / AUTONOMY</span><span>04.2</span></div><div><div className="mi-venture-mark mi-genesis-mark">G<span>•</span></div><h3>Genesis</h3><p>The Autonomous Estate: an experimental operating system for coordinated AI agents and work.</p></div><Link href="/products">Explore the vision <span aria-hidden="true">→</span></Link></article>
+            <article className="mi-venture mi-venture-chronos">
+              <div className="mi-venture-top"><span>AUTONOMOUS OPERATIONS / RESEARCH CONCEPT</span><span>04.3</span></div>
+              <div className="mi-chronos-card-body"><div><h3>Chronos<span className="mi-gold-stop">.</span></h3><p>Time-aware operations for autonomous work. Obligations that survive interruption, proof of what actually happened and a recovery path for missed moments.</p><small>RESEARCH CONCEPT · NOT GENERALLY AVAILABLE</small></div><div className="mi-chronos-card-mark" aria-hidden="true">C<em>·</em></div></div>
+              <Link href="/products/chronos">Explore Chronos <span aria-hidden="true">→</span></Link>
+            </article>
             
           </div>
         </div>

@@ -32,13 +32,14 @@ for (const [file, markers] of Object.entries({
     'mi-hero-title', 'mi-hero', 'INTELLIGENCE', 'MADE', 'REAL',
     '01 / MANIFESTO', '02 / CONSULTANCY', '03 / THE LABORATORY', '04 / VENTURES + PRODUCTS',
     '02.1', '02.2', '02.3', '02.4', '03.1', '03.2', '03.3',
-    'CONSULTANCY', 'LABORATORY', 'VENTURES', '/consulting', '/research',
+    'CONSULTANCY', 'LABORATORY', 'VENTURES', '/consulting', '/research', 'Chronos', '/products/chronos',
   ],
   'app/layout.tsx': ['./merian.css', 'Meridian Intelligence', 'MERIDIAN_SITE_URL'],
-  'app/merian.css': ['.mi-hero', '.mi-header', '.mi-footer', '.mi-interior', 'prefers-reduced-motion', '.mi-services .mi-eyebrow', '.mi-hero-actions', '.mi-art-label-top'],
+  'app/merian.css': ['.mi-hero', '.mi-header', '.mi-footer', '.mi-interior', 'prefers-reduced-motion', '.mi-services .mi-eyebrow', '.mi-hero-actions', '.mi-art-label-top', '.mi-chronos-hero'],
   'components/Nav.tsx': ['mi-header', 'mi-nav-links', 'Consultancy', 'Laboratory', 'Ventures', 'mi-mobile-panel'],
   'components/Footer.tsx': ['mi-footer', 'MERIDIAN INTELLIGENCE'],
-  'app/products/page.tsx': ['mi-interior', 'Mumchimp', 'Genesis'],
+  'app/products/page.tsx': ['mi-interior', 'Mumchimp', 'Genesis', 'Chronos', '/products/chronos', 'NOT GENERALLY AVAILABLE'],
+  'app/products/chronos/page.tsx': ['mi-interior mi-chronos', 'CHRONOS', 'RESEARCH CONCEPT', 'NOT GENERALLY AVAILABLE', '/contact'],
   'app/consulting/page.tsx': ['mi-interior', 'Applied AI engineering'],
   'app/contact/page.tsx': ['mi-interior', 'validateContact(form)'],
   'app/robots.ts': ['MERDIAN_SITE_URL'],
@@ -48,7 +49,7 @@ for (const [file, markers] of Object.entries({
 }
 for (const file of [
   'app/page.tsx', 'app/layout.tsx', 'components/Nav.tsx', 'components/Footer.tsx',
-  'app/consulting/page.tsx', 'app/robots.ts', 'app/sitemap.ts',
+  'app/consulting/page.tsx', 'app/products/chronos/page.tsx', 'app/robots.ts', 'app/sitemap.ts',
 ]) {
   forbidden(file, 'meridian.ai');
   forbidden(file, 'Merdian Intelligence');
@@ -87,6 +88,7 @@ for (const file of [
   'content/site.ts', 'app/products/page.tsx', 'app/research/page.tsx',
   'app/consulting/page.tsx', 'app/contact/page.tsx', 'app/contact/layout.tsx',
   'app/case-studies/page.tsx', 'app/tooling/page.tsx', 'app/writing/page.tsx',
+  'app/products/chronos/page.tsx',
   'app/writing/[slug]/page.tsx',
 ]) {
   forbidden(file, 'Merdian');

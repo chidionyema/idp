@@ -483,3 +483,76 @@
 .mi-error-body { color: var(--ink-3); margin-bottom: 32px; }
 .mi-demo-label { color: var(--accent); font-weight: 500; flex-shrink: 0; }
 .mi-demo-desc { color: var(--ink-3); }
+
+
+/* CHRONOS / Meridian temporal operations research. Same commercial identity, distinct product language. */
+.mi-chronos{--chrono-ink:#09111e;--chrono-gold:#eac47e;--chrono-muted:#c3cfdb}
+.mi-chronos-hero{background:radial-gradient(circle at 79% 40%,#183c5b,#09111e 53%,#080e18 100%);color:#fff;position:relative;overflow:hidden}
+.mi-chronos-hero:before{content:"";position:absolute;inset:0;opacity:.17;background-image:linear-gradient(#88b0cc25 1px,transparent 1px),linear-gradient(90deg,#88b0cc25 1px,transparent 1px);background-size:70px 70px}
+.mi-chronos-hero-grid{position:relative;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,.8fr);gap:30px;align-items:center;min-height:760px;padding-block:105px 120px}
+.mi-chronos-identity{display:flex;align-items:center;gap:16px;margin-top:35px;font:700 13px var(--mono);letter-spacing:.3em;color:#f4d99d}
+.mi-chronos-emblem{font:780 40px/1 var(--sans);letter-spacing:-.12em}
+.mi-chronos-emblem span{color:#eac47e}
+.mi-chronos-hero h1{font:780 clamp(65px,7.6vw,120px)/.98 var(--sans);letter-spacing:-.075em;margin:30px 0;color:#fff;max-width:830px}
+.mi-chronos-hero h1 em{font-style:normal;color:#eac47e}
+.mi-chronos-intro{font-size:clamp(17px,1.6vw,21px);line-height:1.7;color:#e3eaf1;max-width:620px}
+.mi-chronos-maturity{display:flex;align-items:center;gap:10px;width:fit-content;color:#f1d3a2;border:1px solid #c6a56b;padding:10px 14px;font:700 10px/1.5 var(--mono);letter-spacing:.12em;margin-top:26px}
+.mi-chronos-maturity span{width:7px;height:7px;border-radius:50%;background:#eac47e}
+.mi-chronos-hero-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:28px}
+.mi-chronos-clock{position:relative;min-height:450px;display:grid;place-items:center}
+.mi-chronos-ring{position:absolute;border-radius:50%;aspect-ratio:1}
+.mi-chronos-ring-one{width:min(100%,470px);border:1px solid #dbb67f7a;background:repeating-conic-gradient(from 10deg,#d8b9792d 0deg,#d8b9792d 1deg,transparent 1deg,transparent 12deg);mask-image:radial-gradient(transparent 50%,black 51%);animation:mi-chronos-rotate 85s linear infinite}
+.mi-chronos-ring-two{width:min(72%,340px);border:1px dashed #c6ddeb9e;animation:mi-chronos-rotate 90s linear infinite reverse}
+.mi-chronos-ring-three{width:min(52%,245px);border:1px solid #a0c0db75;box-shadow:0 0 65px #4475a835}
+.mi-chronos-axis{position:absolute;background:#9eb9cd2b}
+.mi-chronos-axis-h{height:1px;width:100%}.mi-chronos-axis-v{height:100%;width:1px}
+.mi-chronos-clock-center{z-index:1;width:170px;height:170px;border-radius:50%;background:radial-gradient(circle at 40% 30%,#304b5c,#0b1624 80%);border:1px solid #eac47e;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:12px;box-shadow:0 0 80px #dfbc7840}
+.mi-chronos-clock-center>span{font:700 70px/1 var(--sans);color:#f3d699}.mi-chronos-clock-center small{font:650 10px var(--mono);letter-spacing:.1em;color:#d4e4ef}
+.mi-chronos-clock-index{position:absolute;color:#d9e7f1;font:650 10px var(--mono);letter-spacing:.14em}
+.mi-chronos-clock-index-a{top:16px;right:15px}.mi-chronos-clock-index-b{bottom:17px;left:20px}
+@keyframes mi-chronos-rotate{to{transform:rotate(360deg)}}
+.mi-chronos-thesis{padding:105px 0;background:#f4f2eb}
+.mi-chronos-thesis-grid{display:grid;grid-template-columns:minmax(140px,.28fr) minmax(0,.72fr);gap:50px}
+.mi-chronos-thesis h2{font:750 clamp(36px,4.7vw,72px)/1.12 var(--sans);letter-spacing:-.05em;color:#162439}
+.mi-chronos-thesis h2 em{font-style:normal;color:#956627}
+.mi-chronos-thesis p{font-size:17px;line-height:1.9;max-width:760px;color:#405365;margin-top:27px}
+.mi-chronos-rhythm{padding:98px 0 100px;background:#102237;color:#fff}
+.mi-chronos-section-intro{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:48px;align-items:end}
+.mi-chronos-section-intro>.mi-eyebrow{grid-column:1/-1}
+.mi-chronos-section-intro h2{color:inherit;font:760 clamp(36px,4.2vw,66px)/1.12 var(--sans);letter-spacing:-.055em}
+.mi-chronos-section-intro h2 em{font-style:normal;color:#dfbb80}
+.mi-chronos-section-intro p{font-size:15px;color:#d0dfeb;line-height:1.85}
+.mi-chronos-rhythm-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:#547089}
+.mi-chronos-rhythm-cell{background:#142c44;padding:27px;min-height:215px}
+.mi-chronos-rhythm-index{font:650 11px var(--mono);color:#e0c18b;letter-spacing:.1em}
+.mi-chronos-rhythm-cell h3{margin-top:30px;font:750 29px var(--sans);letter-spacing:-.04em;color:#fff}
+.mi-chronos-rhythm-cell p{font-size:13px;line-height:1.7;color:#d0deea;margin-top:13px}
+.mi-chronos-rhythm-note{font:550 12px/1.8 var(--sans);color:#c0d4e5;margin-top:22px;max-width:900px}
+.mi-chronos-principles{padding:105px 0;background:#faf9f4}
+.mi-chronos-principles .mi-chronos-section-intro{color:#142539}
+.mi-chronos-principles .mi-chronos-section-intro h2 em{color:#9d702d}
+.mi-chronos-principle-list{border-top:1px solid #c8d1d7}
+.mi-chronos-principle{display:grid;grid-template-columns:75px minmax(190px,.7fr) minmax(0,1.2fr);gap:24px;align-items:start;padding:38px 0;border-bottom:1px solid #c8d1d7}
+.mi-chronos-principle>span{font:650 12px var(--mono);color:#92662e}
+.mi-chronos-principle h3{font:750 clamp(22px,2.6vw,34px)/1.2 var(--sans);letter-spacing:-.045em;color:#182b3c}
+.mi-chronos-principle p{font-size:15px;line-height:1.8;color:#435768}
+.mi-chronos-outro{background:#080f1a;padding:110px 0 120px;color:#fff}
+.mi-chronos-outro-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:clamp(30px,6vw,100px);align-items:end}
+.mi-chronos-outro h2{font:780 clamp(40px,5.4vw,82px)/1.05 var(--sans);letter-spacing:-.055em;color:#fff;margin-top:24px}
+.mi-chronos-outro h2 em{font-style:normal;color:#eac47e}
+.mi-chronos-outro p{font-size:16px;line-height:1.8;color:#d3e0eb;margin-bottom:21px}
+.mi-chronos-outro .mi-chronos-disclosure{font-size:12px;color:#c5d2df;border-left:2px solid #d4b47b;padding-left:17px;margin-bottom:28px}
+.mi-venture-chronos{grid-column:1/-1;background:linear-gradient(125deg,#0b1729,#1c3e59);color:#fff;min-height:330px;border:1px solid #6c879e}
+.mi-venture-chronos .mi-venture-top{color:#efcc92;opacity:1}
+.mi-venture-chronos .mi-chronos-card-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(160px,.4fr);gap:30px;align-items:center;margin:30px 0}
+.mi-venture-chronos .mi-chronos-card-body h3{font:750 clamp(35px,4vw,66px)/1.05 var(--sans);color:#fff;letter-spacing:-.05em}
+.mi-venture-chronos .mi-chronos-card-body p{max-width:56ch;font-size:16px;color:#d8e5f0;opacity:1}
+.mi-venture-chronos .mi-chronos-card-body small{display:block;font:650 11px var(--mono);color:#e8ca98;margin-top:20px;letter-spacing:.1em}
+.mi-chronos-card-mark{text-align:center;font:750 clamp(100px,15vw,200px)/1 var(--sans);letter-spacing:-.1em;color:#efcd8b}
+.mi-chronos-card-mark em{font-style:normal;color:#9ac0d0}
+.mi-venture-chronos>a{border-color:#6e8da4;color:#f6f8fc}
+.mi-chronos :is(a,button):focus-visible,.mi-venture-chronos a:focus-visible{outline:3px solid #f7d99e;outline-offset:4px}
+@media(max-width:950px){.mi-chronos-hero-grid{grid-template-columns:minmax(0,1fr);min-height:0;padding-block:80px}.mi-chronos-clock{min-height:330px}.mi-chronos-ring-one{width:300px}.mi-chronos-ring-two{width:215px}.mi-chronos-ring-three{width:155px}.mi-chronos-clock-center{width:118px;height:118px}.mi-chronos-clock-center>span{font-size:49px}.mi-chronos-clock-index-a{top:0}.mi-chronos-thesis-grid{grid-template-columns:1fr;gap:16px}.mi-chronos-principle{grid-template-columns:45px minmax(140px,.7fr) 1.3fr}}
+@media(max-width:620px){.mi-chronos-hero-grid{padding-block:65px;gap:0}.mi-chronos-hero h1{font-size:clamp(44px,11.7vw,73px);letter-spacing:-.05em;overflow-wrap:anywhere}.mi-chronos-clock{min-height:290px;margin-top:27px}.mi-chronos-hero-actions{flex-direction:column}.mi-chronos-hero-actions .mi-button{width:100%}.mi-chronos-thesis,.mi-chronos-rhythm,.mi-chronos-principles,.mi-chronos-outro{padding:70px 0}.mi-chronos-section-intro,.mi-chronos-outro-grid{grid-template-columns:1fr}.mi-chronos-rhythm-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.mi-chronos-rhythm-cell{padding:19px;min-height:225px}.mi-chronos-rhythm-cell h3{font-size:24px}.mi-chronos-principle{grid-template-columns:35px 1fr;gap:13px}.mi-chronos-principle p{grid-column:2}.mi-venture-chronos .mi-chronos-card-body{grid-template-columns:1fr}.mi-chronos-card-mark{display:none}.mi-venture-chronos{min-height:360px}}
+@media(max-width:375px){.mi-chronos-identity{font-size:11px;letter-spacing:.15em}.mi-chronos-hero h1{font-size:clamp(38px,10.5vw,50px)}.mi-chronos-rhythm-grid{grid-template-columns:1fr}.mi-chronos-rhythm-cell{min-height:145px}.mi-chronos-rhythm-cell h3{margin-top:16px}}
+@media(prefers-reduced-motion:reduce){.mi-chronos-ring{animation:none!important}}

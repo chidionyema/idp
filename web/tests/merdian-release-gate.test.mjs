@@ -15,6 +15,7 @@ const sources = [
   'content/site.ts', 'app/products/page.tsx', 'app/research/page.tsx',
   'app/consulting/page.tsx', 'app/contact/page.tsx', 'app/contact/layout.tsx',
   'app/case-studies/page.tsx', 'app/tooling/page.tsx', 'app/writing/page.tsx',
+  'app/products/chronos/page.tsx',
   'app/writing/[slug]/page.tsx', 'app/robots.ts', 'app/sitemap.ts',
 ];
 function fixture() {
