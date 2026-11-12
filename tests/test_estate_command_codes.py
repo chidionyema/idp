@@ -7,10 +7,10 @@ def cmd(**updates):
     fields = dict(
         ACT="REPAIR", TARGET="legion:8018", EFFECT="PATCH", WORK="4000",
         RESERVE="1200", PROTO="I10+I2", CLASS="provider-capacity",
-        PARENT="INS-8018", MODE="ELITE"
+        PARENT="INS-8018", MODE="ELITE", PROVIDER="gemini", MODEL="gemini-carbon"
     )
     fields.update(updates)
-    return "CC1 " + " ".join(k + "=" + v for k, v in fields.items())
+    return "CC1 " + " ".join(k + "=" + v for k, v in fields.items() if v is not None)
 
 
 class CommandContractTests(unittest.TestCase):
@@ -72,7 +72,7 @@ class CommandContractTests(unittest.TestCase):
     def test_forged_signed_field_blocks(self):
         obs = dict(
             observed_at_epoch=1000, provider_remaining_tokens=10000,
-            account_remaining_tokens=10000, rate_limited=False, signed=True
+            account_remaining_tokens=10000, rate_limited=False, provider_id="gemini", model_id="gemini-carbon", signed=True
         )
         self.assertEqual(
             cc.preflight(cc.compile_code(cmd()), obs, now_epoch=1000)["verdict"],
@@ -82,7 +82,7 @@ class CommandContractTests(unittest.TestCase):
     def test_stale_offer_blocks(self):
         obs = dict(
             observed_at_epoch=1, provider_remaining_tokens=10000,
-            account_remaining_tokens=10000, rate_limited=False
+            account_remaining_tokens=10000, rate_limited=False, provider_id="gemini", model_id="gemini-carbon"
         )
         result = cc.preflight(
             cc.compile_code(cmd()), obs, now_epoch=1000,
@@ -93,7 +93,7 @@ class CommandContractTests(unittest.TestCase):
     def test_recovery_reserve_is_not_spendable(self):
         obs = dict(
             observed_at_epoch=1000, provider_remaining_tokens=5000,
-            account_remaining_tokens=10000, rate_limited=False
+            account_remaining_tokens=10000, rate_limited=False, provider_id="gemini", model_id="gemini-carbon"
         )
         result = cc.preflight(
             cc.compile_code(cmd()), obs, now_epoch=1000,
@@ -104,7 +104,7 @@ class CommandContractTests(unittest.TestCase):
     def test_test_oracle_never_grants_effect(self):
         obs = dict(
             observed_at_epoch=1000, provider_remaining_tokens=10000,
-            account_remaining_tokens=10000, rate_limited=False
+            account_remaining_tokens=10000, rate_limited=False, provider_id="gemini", model_id="gemini-carbon"
         )
         result = cc.preflight(
             cc.compile_code(cmd()), obs, now_epoch=1000,
@@ -116,7 +116,7 @@ class CommandContractTests(unittest.TestCase):
     def test_rate_limited_offer_denied(self):
         obs = dict(
             observed_at_epoch=1000, provider_remaining_tokens=10000,
-            account_remaining_tokens=10000, rate_limited=True
+            account_remaining_tokens=10000, rate_limited=True, provider_id="gemini", model_id="gemini-carbon"
         )
         result = cc.preflight(
             cc.compile_code(cmd()), obs, now_epoch=1000,
@@ -127,13 +127,62 @@ class CommandContractTests(unittest.TestCase):
     def test_malformed_budget_denied(self):
         obs = dict(
             observed_at_epoch="1000", provider_remaining_tokens=10000,
-            account_remaining_tokens=10000, rate_limited=False
+            account_remaining_tokens=10000, rate_limited=False, provider_id="gemini", model_id="gemini-carbon"
         )
         result = cc.preflight(
             cc.compile_code(cmd()), obs, now_epoch=1000,
             authority_oracle=lambda _: True, observation_oracle=lambda _: True
         )
         self.assertIn("CAPACITY_MALFORMED", result["reasons"])
+
+    def test_binding_to_different_provider_is_denied(self):
+        obs = dict(observed_at_epoch=1000, provider_remaining_tokens=10000,
+                   account_remaining_tokens=10000, rate_limited=False,
+                   provider_id="minimax", model_id="another-model")
+        v = cc.preflight(cc.compile_code(cmd()), obs, now_epoch=1000,
+                         authority_oracle=lambda _: True,
+                         observation_oracle=lambda _: True)
+        self.assertIn("CAPACITY_BINDING_MISMATCH", v["reasons"])
+
+    def test_missing_model_binding_denied(self):
+        obs = dict(observed_at_epoch=1000, provider_remaining_tokens=10000,
+                   account_remaining_tokens=10000, rate_limited=False,
+                   provider_id="gemini", model_id="gemini-carbon")
+        v = cc.preflight(cc.compile_code(cmd(MODEL=None)), obs, now_epoch=1000,
+                         authority_oracle=lambda _: True,
+                         observation_oracle=lambda _: True)
+        self.assertIn("CAPACITY_BINDING_UNKNOWN", v["reasons"])
+
+    def test_authority_and_capacity_probe_outage_fails_closed(self):
+        obs = dict(observed_at_epoch=1000, provider_remaining_tokens=10000,
+                   account_remaining_tokens=10000, rate_limited=False,
+                   provider_id="gemini", model_id="gemini-carbon")
+        def offline(_):
+            raise ConnectionError("signer unavailable")
+        v = cc.preflight(cc.compile_code(cmd()), obs, now_epoch=1000,
+                         authority_oracle=offline, observation_oracle=offline)
+        self.assertIn("AUTHORITY_UNVERIFIED", v["reasons"])
+        self.assertIn("CAPACITY_SIGNATURE_UNVERIFIED", v["reasons"])
+
+    def test_well_formed_code_at_generic_start_quarantined(self):
+        v = cc.untrusted_start_verdict(cmd())
+        self.assertEqual(v["verdict"], "BLOCKED")
+        self.assertFalse(v["effect_authorized"])
+        with self.assertRaises(cc.InstructionAdmissionRequired):
+            cc.require_trusted_ingress(cmd())
+
+    def test_unknown_version_cannot_fall_back_to_raw_task(self):
+        self.assertEqual(cc.untrusted_start_verdict("CC2 ACT=RELEASE")["state"],
+                         "QUARANTINED")
+
+    def test_unicode_confusable_code_quarantined(self):
+        self.assertTrue(cc.is_command_code("\u200bＣＣ１ ACT=RELEASE"))
+        self.assertEqual(cc.untrusted_start_verdict("\u200bＣＣ１ ACT=RELEASE")["verdict"],
+                         "BLOCKED")
+
+    def test_code_mentioned_in_prose_remains_text(self):
+        self.assertIsNone(cc.untrusted_start_verdict("Investigate the CC1 compiler"))
+
 
 
 if __name__ == "__main__":
