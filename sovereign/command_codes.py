@@ -7,10 +7,11 @@ import hashlib
 import json
 import re
 import shlex
+import unicodedata
 
 VERSION = "estate.command.v1"
 REQUIRED = {"ACT", "TARGET", "EFFECT", "WORK", "RESERVE", "PROTO"}
-OPTIONAL = {"MODE", "CLASS", "PARENT"}
+OPTIONAL = {"MODE", "CLASS", "PARENT", "PROVIDER", "MODEL"}
 ACTIONS = {"OBSERVE", "DIAGNOSE", "REPAIR", "RELEASE", "CORRECT_PROTOCOL"}
 EFFECTS = {"READ", "PATCH", "PRIVILEGED"}
 ATOM = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/+#-]*$")
@@ -76,6 +77,8 @@ def compile_code(raw):
         "failure_class": atom(fields["CLASS"], "CLASS") if "CLASS" in fields else None,
         "parent_obligation": atom(fields["PARENT"], "PARENT") if "PARENT" in fields else None,
         "mode": atom(fields.get("MODE", "NORMAL"), "MODE"),
+        "provider": atom(fields["PROVIDER"], "PROVIDER") if "PROVIDER" in fields else None,
+        "model": atom(fields["MODEL"], "MODEL") if "MODEL" in fields else None,
     }
     payload = json.dumps(result, sort_keys=True, separators=(",", ":")).encode()
     result.update(
@@ -100,14 +103,30 @@ def preflight(
     reasons = []
     if not isinstance(command, dict) or command.get("schema") != VERSION:
         reasons.append("UNKNOWN_COMMAND_CONTRACT")
-    if authority_oracle is None or authority_oracle(command) is not True:
+    try:
+        authority_verified = authority_oracle is not None and authority_oracle(command) is True
+    except Exception:
+        authority_verified = False
+    if not authority_verified:
         reasons.append("AUTHORITY_UNVERIFIED")
+    try:
+        capacity_verified = (
+            isinstance(observation, dict) and observation_oracle is not None
+            and observation_oracle(observation) is True
+        )
+    except Exception:
+        capacity_verified = False
     if not isinstance(observation, dict) or observation_oracle is None:
         reasons.append("CAPACITY_UNVERIFIED")
-    elif observation_oracle(observation) is not True:
+    elif not capacity_verified:
         reasons.append("CAPACITY_SIGNATURE_UNVERIFIED")
     else:
         try:
+            if not command.get("provider") or not command.get("model"):
+                reasons.append("CAPACITY_BINDING_UNKNOWN")
+            elif (observation.get("provider_id") != command["provider"]
+                  or observation.get("model_id") != command["model"]):
+                reasons.append("CAPACITY_BINDING_MISMATCH")
             at = observation["observed_at_epoch"]
             provider = observation["provider_remaining_tokens"]
             account = observation["account_remaining_tokens"]
@@ -132,3 +151,52 @@ def preflight(
         "effect_authorized": False,
         "next_boundary": "TRUSTED_DOF_ACTION_DOOR",
     }
+
+
+class InstructionAdmissionRequired(PermissionError):
+    """Generic Sovereign Bus task ingress cannot grant typed command authority."""
+
+    def __init__(self, verdict):
+        self.verdict = verdict
+        super().__init__(verdict["reason"])
+
+
+def is_command_code(task):
+    """Recognize reserved code versions, including full-width Unicode spellings."""
+    if not isinstance(task, str):
+        return False
+    normalized = unicodedata.normalize("NFKC", task).lstrip("\ufeff\u200b \t\r\n")
+    return re.match(r"^CC[0-9]+(?=\W|$)", normalized) is not None
+
+
+def untrusted_start_verdict(task):
+    """Refuse CCx payloads until independently authenticated at instruction intake.
+
+    No caller-controlled by, signed or mode field can obtain a capability.
+    This is a scoped negative canary, not a substitute for OPA/DoF at effect time.
+    """
+    if not is_command_code(task):
+        return None
+    try:
+        normalized = unicodedata.normalize("NFKC", task).lstrip("\ufeff\u200b \t\r\n")
+        compiled = compile_code(normalized)
+        digest = compiled["digest_sha256"]
+        reason = "AUTHENTICATED_INSTRUCTION_GATEWAY_REQUIRED"
+    except CommandError:
+        digest = None
+        reason = "INVALID_OR_UNKNOWN_COMMAND_CONTRACT"
+    return {
+        "verdict": "BLOCKED",
+        "state": "QUARANTINED",
+        "reason": reason,
+        "command_digest_sha256": digest,
+        "effect_authorized": False,
+        "verified_yield": "UNKNOWN",
+        "next_boundary": "AUTHENTICATED_INSTRUCTION_GATEWAY",
+    }
+
+
+def require_trusted_ingress(task):
+    verdict = untrusted_start_verdict(task)
+    if verdict is not None:
+        raise InstructionAdmissionRequired(verdict)
