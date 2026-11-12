@@ -8,6 +8,8 @@ import importlib.util
 import json
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,16 +20,38 @@ spec.loader.exec_module(mod)
 
 
 def live_runs(repo, timeout_s=20):
-    """Exactly one authenticated, read-only list call; 100 latest runs max."""
-    proc = subprocess.run(
-        ["gh", "api", f"repos/{repo}/actions/runs?per_page=100"],
-        capture_output=True, text=True, timeout=timeout_s, check=False,
+    """One bounded read; credentialless fallback ONLY for the public IDP repo."""
+    path = f"repos/{repo}/actions/runs?per_page=100"
+    proc = None
+    try:
+        proc = subprocess.run(
+            ["gh", "api", path],
+            capture_output=True, text=True, timeout=timeout_s, check=False,
+        )
+        if proc.returncode == 0:
+            payload = json.loads(proc.stdout)
+            if not isinstance(payload, dict) or not isinstance(payload.get("workflow_runs"), list):
+                raise RuntimeError("GitHub run response missing workflow_runs")
+            return payload["workflow_runs"]
+    except FileNotFoundError:
+        pass
+    # Never replace private authenticated evidence with untrusted public guesses.
+    # GitHub's public endpoint needs no model token or cloud credential; the
+    # existing Chronos cluster may have neither gh nor GH_TOKEN provisioned.
+    if repo != "chidionyema/idp":
+        raise RuntimeError(f"authenticated Github observation unavailable: {repo}")
+    req = urllib.request.Request(
+        "https://api.github.com/" + path,
+        headers={"Accept": "application/vnd.github+json",
+                 "User-Agent": "idp-karma-observer/1.0"},
     )
-    if proc.returncode:
-        raise RuntimeError(f"github run history unavailable: exit {proc.returncode}")
-    payload = json.loads(proc.stdout)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_s) as response:
+            payload = json.load(response)
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise RuntimeError("public GitHub observation unavailable") from exc
     if not isinstance(payload, dict) or not isinstance(payload.get("workflow_runs"), list):
-        raise RuntimeError("GitHub run response missing workflow_runs")
+        raise RuntimeError("public GitHub response missing workflow_runs")
     return payload["workflow_runs"]
 
 
