@@ -14,6 +14,7 @@ on:
   workflow_dispatch: {}
 
 permissions:
+  id-token: write   # the OIDC token the drill job trades for its OCI session (as vault-reads.yml)
   contents: read
   issues: write
 
