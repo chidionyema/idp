@@ -1,0 +1,128 @@
+# button: Check argon's main branch for commits that skipped provenance
+# founder: Every 10 minutes, runs argon's own provenance verifier (loaded from a pinned trusted commit) over new commits on argon main and opens an issue naming any that fail. Runs here because argon's own runner can stop without a verdict.
+#
+# argon-guardian-relay -- argon's guardian, on a runner that cannot be switched off by a bill.
+#
+# 2026-11-12: argon's guardian workflows failed 10/10 from 2026-11-06 with "The job was not started
+# because recent account payments have failed". No step ran, nothing alerted, and 34 of the next 37
+# commits on argon main fail argon's own verifier. Public-repository runners on this account do not
+# meter minutes, so the guard lives here. argon is private and this repository is public:
+# bin/argon-guardian-relay prints commit SHAs and failure counts only, never messages or paths, and
+# argon is cloned with a token narrowed to contents:read on that one repository.
+#
+# Detect-only: this relay names unverified commits; it does not revert argon (that needs a write
+# token and argon's receipt key, which this repository does not hold). A silent relay is itself an
+# incident: BLIND (exit 2) fails the run, so the guard can never go quiet and read as a pass.
+name: argon-guardian-relay
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: argon-guardian-relay
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Decode the App key
+        id: pem
+        env:
+          PEM_B64: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
+        run: |
+          set -euo pipefail
+          [ -n "$PEM_B64" ] || { echo "BLIND   argon-guardian  SEED_GITHUB_APP_PEM_B64 is not set"; exit 2; }
+          pem=$(printf %s "$PEM_B64" | base64 -d)
+          while IFS= read -r line; do [ -n "$line" ] && echo "::add-mask::$line"; done <<< "$pem"
+          { echo "key<<PEM_EOF"; printf '%s\n' "$pem"; echo "PEM_EOF"; } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app
+        with:
+          app-id: ${{ secrets.SEED_GITHUB_APP_ID }}
+          private-key: ${{ steps.pem.outputs.key }}
+          owner: ${{ github.repository_owner }}
+          repositories: argon
+          permission-contents: read
+
+      - name: Fetch argon (no checkout, no file contents printed)
+        env:
+          TOKEN: ${{ steps.app.outputs.token }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/argon"
+          git init -q "$dir"
+          git -C "$dir" remote add origin "https://github.com/$OWNER/argon"
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git -C "$dir" -c "http.extraHeader=Authorization: Basic $auth" fetch -q --filter=blob:none origin main \
+            || { echo "BLIND   argon-guardian  argon could not be fetched with the read-only App token"; exit 2; }
+          guardian=$(jq -r .guardian_sha platform/argon-guardian/trust.json)
+          echo "END_SHA=$(git -C "$dir" rev-parse refs/remotes/origin/main)" >> "$GITHUB_ENV"
+          git -C "$dir" -c "http.extraHeader=Authorization: Basic $auth" show "$guardian:ops/git/verify_handoff.mjs" \
+            > "$RUNNER_TEMP/verify_handoff.mjs" \
+            || { echo "BLIND   argon-guardian  trusted verifier missing at $guardian"; exit 2; }
+
+      - name: Last verified head
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/verified-head
+          key: argon-guardian-head-${{ github.run_id }}
+          restore-keys: argon-guardian-head-
+
+      - name: Verify argon main
+        id: verify
+        env:
+          TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -uo pipefail
+          base=$(cat "$RUNNER_TEMP/verified-head" 2>/dev/null || jq -r .initial_base platform/argon-guardian/trust.json)
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git -C "$RUNNER_TEMP/argon" config http.extraHeader "Authorization: Basic $auth"
+          python3 -I bin/argon-guardian-relay --repo "$RUNNER_TEMP/argon" \
+            --verifier "$RUNNER_TEMP/verify_handoff.mjs" --base "$base" --end "$END_SHA" \
+            --founder-chat-sha256 "$(jq -r .founder_chat_sha256 platform/argon-guardian/trust.json)" \
+            --json "$RUNNER_TEMP/summary.json" | tee "$RUNNER_TEMP/relay.out"
+          rc=${PIPESTATUS[0]}
+          git -C "$RUNNER_TEMP/argon" config --unset http.extraHeader || true
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          { echo '### argon-guardian-relay'; echo '```'; cat "$RUNNER_TEMP/relay.out"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$rc" = 0 ]; then printf %s "$END_SHA" > "$RUNNER_TEMP/verified-head"; fi
+          exit 0
+
+      - name: Remember the verified head
+        if: steps.verify.outputs.rc == '0'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/verified-head
+          key: argon-guardian-head-${{ github.run_id }}
+
+      - name: Name the unverified commits on one issue
+        if: steps.verify.outputs.rc == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          title="[guardian] argon main carries commits that fail provenance"
+          body=$(printf 'argon-guardian-relay, run %s (%s UTC).\n\nSHAs and failure counts only; argon is private.\n\n```\n%s\n```\n\nClose this only when a relay run over the same range exits 0.' \
+            "$GITHUB_RUN_ID" "$(date -u +%FT%TZ)" "$(cat "$RUNNER_TEMP/relay.out")")
+          n=$(gh issue list --repo "$REPO" --state open --search "\"$title\" in:title" --json number -q '.[0].number')
+          if [ -n "$n" ]; then gh issue edit "$n" --repo "$REPO" --body "$body" >/dev/null; else gh issue create --repo "$REPO" --title "$title" --body "$body" >/dev/null; fi
+
+      - name: Verdict
+        run: |
+          rc='${{ steps.verify.outputs.rc }}'
+          [ "$rc" = 0 ] || { echo "argon-guardian-relay exit ${rc:-missing}"; exit 1; }

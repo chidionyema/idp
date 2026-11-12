@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""argon-guardian-relay -- argon's provenance guardian, run where a runner always exists.
+
+WHY (2026-11-12). argon is private. Its guardian workflows (provenance-guardian, provenance-gate,
+genesis-main-guardian, genesis-lane) failed 10 of 10 runs from 2026-11-06 23:33 on with GitHub's
+"The job was not started because recent account payments have failed or your spending limit needs
+to be increased". The jobs never started, so no step failed and nothing alerted. In those six days
+37 commits reached argon main; argon's own verifier (ops/git/verify_handoff.mjs) refuses 34 of
+them. The defect class is not "minutes ran out": it is a guard whose only runner can disappear
+without a verdict, so its silence reads as consent.
+
+WHAT THIS DOES. Runs argon's verifier, loaded from a pinned trusted argon commit (never from the
+tree being judged), over a range of argon commits, and reduces its report to what a public log may
+carry: commit SHA, ok, failure count. argon is private and this repository is public, so commit
+messages, paths and failure text never reach stdout. Exit codes are the contract:
+
+    0  every commit in the range verifies, or the range is empty (nothing new)
+    1  at least one commit is refused (the SHAs are listed)
+    2  BLIND: the verifier could not run or produced no report. Never a pass.
+
+    bin/argon-guardian-relay --repo DIR --verifier FILE --base SHA --end SHA \
+        --founder-chat-sha256 HEX [--json]
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+SHA = re.compile(r"^[0-9a-f]{40}$")
+
+
+def blind(msg: str) -> int:
+    print(f"BLIND   argon-guardian  {msg}")
+    return 2
+
+
+def git(repo: str, *args: str) -> str:
+    # Fixed program, arguments validated as full SHAs before any call.
+    return subprocess.run([shutil.which("git") or "/usr/bin/git", "-C", repo, *args],  # noqa: S603
+                          capture_output=True, text=True, check=True).stdout.strip()
+
+
+def relay(repo: str, verifier: str, base: str, end: str, founder_sha: str,
+          timeout_s: int = 90) -> tuple[int, dict]:
+    for name, value in (("base", base), ("end", end)):
+        if not SHA.match(value or ""):
+            return blind(f"{name} is not a full lowercase SHA"), {}
+    if not re.match(r"^[0-9a-f]{64}$", founder_sha or ""):
+        return blind("trusted founder chat digest is missing or malformed"), {}
+    if not os.path.isfile(verifier):
+        return blind("trusted verifier is not on disk"), {}
+    if base == end:
+        print(f"ok      argon-guardian  {end[:12]} nothing new since the last verified head")
+        return 0, {"ok": True, "commits": []}
+    try:
+        git(repo, "merge-base", "--is-ancestor", base, end)
+    except subprocess.CalledProcessError:
+        print(f"FAIL    argon-guardian  {base[:12]} is not an ancestor of {end[:12]}: history was rewritten")
+        return 1, {"ok": False, "rewritten": True, "base": base, "end": end, "commits": []}
+    env = {k: v for k, v in os.environ.items() if k not in ("GENESIS_BASE_SHA", "GENESIS_END_SHA")}
+    env.update(GENESIS_BASE_SHA=base, GENESIS_END_SHA=end, GENESIS_FOUNDER_CHAT_SHA256=founder_sha)
+    try:
+        node = shutil.which("node")
+        if not node:
+            return blind("node is not installed"), {}
+        # The verifier is the trusted file loaded from the pinned guardian commit, not the judged tree.
+        run = subprocess.run([node, verifier], cwd=repo, env=env, capture_output=True,  # noqa: S603
+                             text=True, timeout=timeout_s)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return blind(f"verifier did not complete ({type(exc).__name__})"), {}
+    try:
+        report = json.loads(run.stdout)
+        commits = report["commits"]
+    except (ValueError, KeyError, TypeError):
+        return blind(f"verifier exited {run.returncode} with no readable report"), {}
+    if not commits:
+        return blind("verifier returned an empty report for a non-empty range"), {}
+    rows = [{"sha": c.get("sha", ""), "ok": bool(c.get("ok")),
+             "failures": len(c.get("failures") or [])} for c in commits]
+    refused = [r for r in rows if not r["ok"]]
+    summary = {"ok": not refused, "base": base, "end": end, "commits": rows}
+    for r in refused:
+        print(f"REFUSED argon-guardian  {r['sha']} ({r['failures']} failure(s))")
+    if refused:
+        print(f"FAIL    argon-guardian  {len(refused)}/{len(rows)} commit(s) on argon fail provenance")
+        return 1, summary
+    print(f"ok      argon-guardian  {len(rows)} commit(s) verified up to {end[:12]}")
+    return 0, summary
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--repo", required=True)
+    ap.add_argument("--verifier", required=True)
+    ap.add_argument("--base", required=True)
+    ap.add_argument("--end", required=True)
+    ap.add_argument("--founder-chat-sha256", required=True)
+    ap.add_argument("--json", help="write the reduced summary (SHAs and counts only) here")
+    a = ap.parse_args(argv)
+    rc, summary = relay(a.repo, a.verifier, a.base, a.end, a.founder_chat_sha256)
+    if a.json and summary:
+        with open(a.json, "w") as fh:
+            json.dump(summary, fh)
+    return rc
+
+
+if __name__ == "__main__":
+    sys.exit(main())
