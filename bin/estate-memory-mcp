@@ -250,10 +250,33 @@ class Bridge:
                 self.retire_ghosts(name, reply["result"])
         return reply
 
+    def _local_answers(self, msg: dict) -> bool:
+        """Whether the local-primary origin would answer msg, so a missing key is not fatal."""
+        try:
+            return _fresh_door()._local_memory(msg) is not None
+        except Exception:  # noqa: BLE001 - a broken local store must not change the refusal
+            return False
+
     def forward(self, mid, msg: dict) -> dict:
-        """The door's reply to msg, or a refusal saying why there is none."""
+        """The door's reply to msg, or a refusal saying why there is none.
+
+        THE KEY IS RESOLVED LAZILY, NOT FIRST. `door.post()` begins with `_local_memory(msg)`
+        and returns that answer whenever it has one; the local-primary store needs no
+        credential. Resolving the key before calling `post()` therefore refused a caller the
+        working local origin could have served, and reported it as a missing credential --
+        which is how the same outage arrived twice under two different names (2026-11-12,
+        and the pi transport's "URLError: EOF" is the same failure seen from the other side).
+
+        So: ask the door first with whatever secret we have (possibly none), and let the
+        REMOTE path be the one that requires it. `_remote_post` still refuses an empty secret
+        rather than sending an unauthenticated request to an https door, so this widens
+        recognition of a working origin; it does not weaken the check (AGENTS.md 9, R14).
+        """
         secret = self.key()
-        if not secret:
+        if not secret and not self._local_answers(msg):
+            # NEITHER origin could serve it: the local store declined (its answer is not None
+            # when it serves) AND there is no credential for the replica. Only now is a missing
+            # key the true reason, and only now is it the true message.
             env = door.MANIFEST["door"]["key_env"]
             return refuse(
                 mid,
