@@ -88,10 +88,10 @@
     "@substrate"
   ],
   "control": {
-    "mode": "disabled",
+    "mode": "enforced",
     "directive": "founder-directive-2026-11-09",
     "scope": "global-dof-only",
-    "reason": "Founder-directed temporary removal of only DoF global incident freeze; all other policies unchanged",
+    "reason": "Founder directive 2026-11-12: find the cage and lock the agent in. Re-armed from disabled; the reenableOnlyAfter backlog field was read by no code, so a control gated on it could never arm.",
     "reenableOnlyAfter": "independently reconciled backlog of accepted tickets, branches, worktrees and reviewed changes, verified against main and runtime yield",
     "lastVerifiedBacklog": null,
     "suspendedComponents": []
