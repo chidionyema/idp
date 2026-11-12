@@ -15,7 +15,9 @@ export interface InvestorGrant {
   grantId: string;
   displayName: string;
   subject: string;
+  issuedAt: string;
   expiresAt: string;
+  lastActivityAt: string;
   permissions: InvestorPermission[];
   identityVerifiedAt: string;
 }
@@ -96,16 +98,24 @@ export function parseInvestorGrant(raw: unknown, now: number): InvestorGrant | n
       raw.revoked !== false) return null;
   const grantId = cleanText(raw.grantId, 128), subject = cleanText(raw.subject, 160);
   const displayName = cleanText(raw.displayName, 80);
-  const expires = parseTime(raw.expiresAt), verified = parseTime(raw.identityVerifiedAt);
+  // Grant age and inactivity are different security controls. The broker must
+  // atomically reject expired, revoked or idle sessions BEFORE touching lastActivityAt.
+  // This web application trusts only the authenticated broker's current introspection.
+  const issued = parseTime(raw.issuedAt), expires = parseTime(raw.expiresAt);
+  const lastActivity = parseTime(raw.lastActivityAt), verified = parseTime(raw.identityVerifiedAt);
   if (!grantId || !/^[a-zA-Z0-9:_-]{8,128}$/.test(grantId) || !subject ||
-      !displayName || expires === null || verified === null ||
-      expires <= now || expires > now + MAX_GRANT_WINDOW_MS ||
-      verified > now + 5000 || verified < now - MAX_SESSION_WINDOW_MS) return null;
+      !displayName || issued === null || expires === null || lastActivity === null ||
+      verified === null || issued > now + 5000 || expires <= now ||
+      expires <= issued || expires - issued > MAX_GRANT_WINDOW_MS ||
+      lastActivity < issued || lastActivity > now + 5000 || lastActivity >= expires ||
+      now - lastActivity >= MAX_SESSION_WINDOW_MS || verified > now + 5000) return null;
   if (!Array.isArray(raw.permissions) || raw.permissions.length === 0 ||
       raw.permissions.length > PERMISSIONS.length ||
       raw.permissions.some(p => !PERMISSIONS.includes(p as InvestorPermission)) ||
       new Set(raw.permissions).size !== raw.permissions.length) return null;
-  return { grantId, subject, displayName, expiresAt: raw.expiresAt as string,
+  return { grantId, subject, displayName,
+    issuedAt: raw.issuedAt as string, expiresAt: raw.expiresAt as string,
+    lastActivityAt: raw.lastActivityAt as string,
     identityVerifiedAt: raw.identityVerifiedAt as string,
     permissions: raw.permissions as InvestorPermission[] };
 }
