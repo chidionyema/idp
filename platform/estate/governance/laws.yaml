@@ -341,3 +341,38 @@ laws:
       check:
         type: command
         argv: ["python3", "bin/architecture-diagram-check"]
+
+  - id: GOV-015
+    law: >-
+      Machine-first and reuse-before-code. A new executable or workflow cannot enter
+      the estate merely because an agent proposes it. Its originating commit must
+      name an already registered MACHINE decider, an implementation that exists in
+      the pre-change base tree, and an executable test changed in the candidate.
+      The existing Greenlane and law-gate decide admission; independent operational
+      verification and live cross-surface rollout decide eventual yield. A
+      proposal, markdown explanation or self-certified new capability is not proof.
+    source: founder, 2026-11-12, reinforce existing T-7 / I10 / FLOW, not a new engine
+    severity: block
+    check:
+      type: diff_reuse_convergence
+      base: origin/main
+      head: HEAD
+    falsifier:
+      files:
+        policy/agent-decisions.json: |
+          {"schema_version":1,"decisions":[{"id":"dec:submit","mode":"machine","decided_by":"cap:intent/lane-submit"}]}
+        bin/lane-submit: |
+          #!/bin/sh
+          exit 0
+      mutation:
+        files:
+          src/new_executor.py: |
+            def pretend_new_scheduler():
+                return True
+          tests/test_new_executor.py: |
+            def test_it_exists():
+                assert True
+      check:
+        type: diff_reuse_convergence
+        base: origin/main
+        head: HEAD
