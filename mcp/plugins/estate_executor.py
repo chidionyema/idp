@@ -199,6 +199,76 @@ def _spawn_verdict(command: str) -> tuple[int, str]:
     return _ZERO_REFUSED, reason
 
 
+def _hook_bypass_verdict(command: str) -> tuple[int, str]:
+    """Refuse a command that would skip the repo's own pre-commit gate.
+
+    Founder, 2026-11-12: "no agenbt can do that ever again i nee string mathyematic al
+    gyabatees and i need to knwohow you plan to prove it".
+
+    The hole: `.githooks/pre-commit` is healthy and APPLIES `ruff format` to staged
+    Python. Measured 2026-11-12, `x = {1,3,2}` was committed and the hook rewrote it to
+    `x = {1, 2, 3}`. But `--no-verify` and `core.hooksPath=/dev/null` skip it silently,
+    so an agent (this one) shipped unformatted code and fast-gate failed three jobs on
+    PR #7981 hours later. That is R3: a deterministic check running in CI instead of at
+    write time.
+
+    BLIND is deliberately NOT a refusal here. An unloadable matcher must not stop the
+    estate (R38) -- the tap records it and the CI side still checks formatting.
+    """
+    if not command or not command.strip():
+        return _ZERO_BLIND, "empty command: nothing to classify"
+    module = _hook_bypass_module()
+    if module is None:
+        return _ZERO_BLIND, (
+            "the hook-bypass matcher could not be loaded, so this command is unclassified"
+        )
+    reason = module.bypass_reason(command)
+    if reason is None:
+        return _ZERO_ALLOW, "not a proven hook bypass: the door allows it"
+    return _ZERO_REFUSED, reason
+
+
+def _hook_bypass_module():
+    """Load the matcher from the estate runtime, then the repo, then nothing.
+
+    The recovery path must not depend on what it recovers (R6), so a missing copy is a
+    BLIND answer rather than a crash.
+    """
+    import importlib.util
+
+    for candidate in _hook_bypass_candidates():
+        if not os.path.exists(candidate):
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location(
+                "estate_hook_bypass", candidate
+            )
+            if spec is None or spec.loader is None:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+        except Exception:  # noqa: BLE001, S112 - a broken copy must not stop the door
+            # Deliberately swallowed: the caller records BLIND. Refusing every command
+            # because one copy of the matcher is unreadable is the outage R38 names.
+            continue
+    return None
+
+
+def _hook_bypass_candidates() -> list[str]:
+    here = os.path.dirname(os.path.abspath(__file__))
+    roots = [
+        os.path.expanduser("~/.estate/runtime/idp"),
+        os.path.dirname(os.path.dirname(here)),
+        os.environ.get("IDP_ROOT", ""),
+    ]
+    return [
+        os.path.join(root, "platform", "estate", "governance", "hook_bypass.py")
+        for root in roots
+        if root
+    ]
+
+
 def _worktree_cap() -> int:
     """The configured local-worktree cap. The policy layer owns it; this only reads it."""
     tc = _thin_client()
@@ -252,6 +322,11 @@ _FLOOR_EXEMPT_RES = tuple(
         # `rm -rf ~` on a machine already under disk pressure -- the opposite of the intent.
         r"(?:/bin/)?rm\s+(?:-[a-zA-Z]+\s+)*/?(?:private/)?tmp(?:/\S*)?/?",
         r"(?:/usr/bin/)?(?:vm_stat|sysctl|uptime|top)(?:\s.*)?",
+        # Unloading a job consumes no space, and the job most likely to be holding the floor closed
+        # is the resident one. Measured 2026-11-11: `launchctl bootout` on that job was refused by
+        # the floor for being under the floor -- the floor standing between the machine and the
+        # space it needed. A guard that blockades its own exit is the outage (R38, #7918).
+        r"(?:/bin/)?launchctl\s+(?:bootout|unload|remove|stop)(?:\s.*)?",
         # Evacuation: a finished fix must be able to leave a dying machine.
         r"git\s+(?:push|ls-remote|fetch|status|rev-parse|log)(?:\s.*)?",
         r"git\s+-C\s+\S+\s+(?:push|ls-remote|fetch|status|rev-parse|log)(?:\s.*)?",
@@ -1271,18 +1346,38 @@ def execute_command(
         # can prove; proving is `bin/estate-zero-worktree`'s job, on a narrower question.
         record_friction("refuse-spawn-blind", command, detail=spawn_why)
 
+    # A hook bypass is refused outright: it is not a spawn question and it is not blind. The
+    # matcher is a pure function over the command string (platform/estate/governance/
+    # hook_bypass.py), so the same command always gets the same answer and anyone can re-derive
+    # it. Skipping `.githooks/pre-commit` is how unformatted Python reached CI on PR #7981.
+    bypass_verdict, bypass_why = _hook_bypass_verdict(command)
+    if bypass_verdict == _ZERO_REFUSED:
+        record_friction("refuse-hook-bypass", command, detail=bypass_why)
+        return _refusal(
+            bypass_why,
+            detail=(
+                "REFUSED: this command would skip .githooks/pre-commit, the write-time "
+                "ruff format/lint gate. Run the commit WITHOUT --no-verify / hooksPath "
+                "override and the hook formats the staged files for you. Named as a violation "
+                "of AGENTS.md section 9 R3 (deterministic checks run late instead of at write "
+                "time). Rule: platform/estate/governance/hook_bypass.py"
+            ),
+            exit_code=_ZERO_REFUSED,
+        )
+    if bypass_verdict == _ZERO_BLIND:
+        record_friction("refuse-hook-bypass-blind", command, detail=bypass_why)
+
     free_mb = _free_mb()
     if free_mb is not None and free_mb < MIN_FREE_MB and not _floor_exempt(command):
         before_mb = free_mb
-        # Deterministic first (#7950): milliseconds, in process, no cleaner subprocess.
+        # Deterministic first (#7950): milliseconds, in process, no subprocess. This is the ONLY
+        # reclaim the door does. The slow cleaner it used to spend here was DELETED 2026-11-11 on
+        # the founder's order ("not retired, deleted -- tombstones out, files gone"): it was the
+        # cause of the full disk, not the cure, and it took 113 steps to do what one rm does.
+        # What it cannot free, the refusal names honestly and the caller frees.
         _emergency_reclaim()
         free_mb = _free_mb()
-        # Only if the fast reclaim was not enough do we spend the slow bounded cleaner.
-        if free_mb is not None and free_mb < MIN_FREE_MB:
-            cleaner_rc = _reclaim_before_refusing()
-            free_mb = _free_mb()
-        else:
-            cleaner_rc = "skipped: deterministic reclaim was enough"
+        cleaner_rc = "none: the slow cleaner was deleted 2026-11-11"
         if free_mb is not None and free_mb >= MIN_FREE_MB:
             record_friction(
                 "reclaim-then-run",
