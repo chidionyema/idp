@@ -17,13 +17,15 @@ SHA = "a" * 40
 
 
 def run(**kwargs):
-    return {"id": 123, "name": "ci", "head_sha": SHA, "status": "completed",
+    row = {"id": 123, "name": "ci", "head_sha": SHA, "status": "completed",
             "conclusion": "success", "created_at": "2026-11-12T13:00:00Z",
             "run_started_at": "2026-11-12T13:00:01Z",
             "updated_at": "2026-11-12T13:01:00Z", "event": "push",
             "actor": {"login": "agent"}, "run_attempt": 1,
             "html_url": "https://github.com/chidionyema/idp/actions/runs/123",
-            **kwargs}
+            }
+    row.update(kwargs)
+    return row
 
 
 class KarmaTests(unittest.TestCase):
