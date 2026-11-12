@@ -18,8 +18,10 @@ from typing import Any, Awaitable, Callable
 
 import httpx
 from temporalio import activity
+from temporalio.exceptions import ApplicationError
 
 from sovereign import config
+from sovereign import command_codes
 
 RunnerFn = Callable[
     [str, "str | None", int, list, "str | None"], Awaitable[dict[str, Any]]
@@ -173,6 +175,16 @@ async def run(
     steer: list[str],
     session_id: str | None = None,
 ) -> dict[str, Any]:
+    # Shared effect boundary for normal and shadow Temporal activities.
+    # A failed code-admission decision is permanent: do not retry/spend.
+    refusal = command_codes.untrusted_start_verdict(task)
+    if refusal is not None:
+        raise ApplicationError(
+            refusal["reason"],
+            refusal,
+            type="ESTATE_COMMAND_ADMISSION_DENIED",
+            non_retryable=True,
+        )
     fn = REGISTRY.get(runner)
     if fn is None:
         output = f"unknown runner: {runner}"
