@@ -47,6 +47,7 @@ def _run_gate(
     return subprocess.run(
         [sys.executable, str(GATE), base, head],
         cwd=repo,
+        check=False,
         capture_output=True,
         text=True,
     )
@@ -103,6 +104,7 @@ def test_staged_new_python_file_is_judged_before_the_commit_exists(tmp_path):
     result = subprocess.run(
         [sys.executable, str(GATE), "--message-file", str(message)],
         cwd=tmp_path,
+        check=False,
         capture_output=True,
         text=True,
     )
@@ -122,6 +124,7 @@ def test_staged_python_exception_is_read_from_the_pending_message(tmp_path):
     result = subprocess.run(
         [sys.executable, str(GATE), "--message-file", str(message)],
         cwd=tmp_path,
+        check=False,
         capture_output=True,
         text=True,
     )
@@ -200,3 +203,43 @@ def test_trailer_must_name_the_exact_path(tmp_path):
     result = _run_gate(tmp_path)
     assert result.returncode == 1, result.stderr
     assert "bin/newtool.py" in result.stderr
+
+
+def test_nested_greenlane_squash_recovers_original_python_exception(tmp_path):
+    # Reproduces queue/b5470: the queue points to a signed Greenlane
+    # squash that points to the real source head. Before the fix, the
+    # intermediate squash hides the Language-Exception from the gate.
+    _init(tmp_path)
+    _greenlane_squash(
+        tmp_path, "Language-Exception: bin/newtool -- documented Python boundary"
+    )
+    middle = _git(tmp_path, "rev-parse", "HEAD").stdout.strip()
+    _git(tmp_path, "checkout", "-q", "--detach", "base_point")
+    _git(tmp_path, "checkout", "-q", middle, "--", "bin/newtool")
+    _commit_all(tmp_path, f"queue squash\n\nGreenlane-Head: {middle}\n")
+    verdict = _run_gate(tmp_path)
+    assert verdict.returncode == 0, verdict.stderr
+
+
+def test_nested_greenlane_squash_without_exception_still_refuses(tmp_path):
+    # A nested provenance pointer is not itself a waiver.
+    _init(tmp_path)
+    _greenlane_squash(tmp_path, "")
+    middle = _git(tmp_path, "rev-parse", "HEAD").stdout.strip()
+    _git(tmp_path, "checkout", "-q", "--detach", "base_point")
+    _git(tmp_path, "checkout", "-q", middle, "--", "bin/newtool")
+    _commit_all(tmp_path, f"queue squash\n\nGreenlane-Head: {middle}\n")
+    verdict = _run_gate(tmp_path)
+    assert verdict.returncode == 1, verdict.stderr
+    assert "bin/newtool" in verdict.stderr
+
+
+def test_missing_nested_greenlane_source_cannot_authorize_new_python(tmp_path):
+    # The tool must never manufacture provenance when the source SHA is gone.
+    _init(tmp_path)
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "newtool").write_text('#!/usr/bin/env python3\nprint("hi")\n')
+    _commit_all(tmp_path, "lost provenance\n\nGreenlane-Head: " + ("d" * 40) + "\n")
+    verdict = _run_gate(tmp_path)
+    assert verdict.returncode == 1, verdict.stderr
+    assert "bin/newtool" in verdict.stderr
