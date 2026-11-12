@@ -14,7 +14,7 @@ const port = 3112;
 const base = `http://127.0.0.1:${port}`;
 const chrome = process.env.CHROME || "/usr/bin/google-chrome";
 const viewports = [320, 390, 768, 1440];
-const routes = ["/", "/consulting", "/products", "/research", "/writing/agentic-routing-for-enterprise", "/contact"];
+const routes = ["/", "/consulting", "/products", "/products/chronos", "/research", "/writing/agentic-routing-for-enterprise", "/contact", "/investors", "/investors/room", "/investors/unavailable"];
 const failures = [];
 const outDir = path.join(root, "artifacts", "visual");
 mkdirSync(outDir, { recursive: true });
@@ -128,6 +128,29 @@ async function inspect(page, route, width) {
         }
       }
     }
+    if (route === "/investors") {
+      const text = document.body.textContent || "";
+      if (!text.includes("Research") || !text.includes("Experiment") || !text.includes("Commercialise")) {
+        failures.push("Meridian research / experimentation / commercialisation identity missing");
+      }
+      if (!document.querySelector('a[href="/investors/room"]')) failures.push("secure Genesis/OTTO entry point missing");
+      if (!document.querySelector('a[href="/contact?topic=investor"]')) failures.push("investor conversation route missing");
+    }
+    if (route === "/products/chronos") {
+      const text = document.body.textContent || "";
+      if (!text.includes("CONCEPT WALKTHROUGH") || !text.includes("in development")) failures.push("concept versus live disclosure missing");
+      const steps = document.querySelectorAll(".mi-chronos-step");
+      if (steps.length !== 3) failures.push("Chronos working-week scenes missing");
+    }
+    if (route === "/investors/room") {
+      const text = document.body.textContent || "";
+      if (!text.includes("READ-ONLY ACCESS")) failures.push("investor room scope not visible");
+      if (!document.querySelector(".mi-investor-access-block")) failures.push("anonymous visitor must see access refusal");
+      if (document.querySelector(".mi-investor-viewport")) failures.push("anonymous visitor saw protected viewing surface");
+    }
+    if (route === "/investors/unavailable" && !document.body.textContent?.includes("no Genesis or OTTO information has been shared")) {
+      failures.push("unconfigured investor identity must give a clear humane refusal");
+    }
     if (route === "/products") {
       if (document.body.textContent?.includes("Blabka")) failures.push("public portfolio placeholder remains");
       if (!document.querySelector(".mi-portfolio-row")) failures.push("venture portfolio content missing");
@@ -193,12 +216,21 @@ try {
       if (route === "/contact") {
         await page.waitForFunction(() => !document.body.textContent?.includes("Checking availability."), { timeout: 6000 });
       }
+      if (route === "/investors/room") {
+        await page.waitForFunction(() => Boolean(document.querySelector(".mi-investor-access-block")), { timeout: 7000 });
+      }
+
       const report = await inspect(page, route, width);
       failures.push(...report.failures.map(f => `${width}px ${route}: ${f}`));
       await page.screenshot({
         path: path.join(outDir, `${route.replaceAll("/", "_") || "home"}-${width}.png`),
         fullPage: true,
       });
+      if (route === "/products/chronos" && width === 390) {
+        await page.click(".mi-chronos-step:nth-child(2)");
+        const second = await page.$eval(".mi-chronos-scene h3", el => el.textContent || "");
+        if (!second.includes("work doesn't get lost")) failures.push("Chronos concept walkthrough second step does not update");
+      }
       if (route === "/research" && width === 390) {
         const suggestion = await page.$(".mi-qa-suggestion");
         assert.ok(suggestion, "research suggestions missing");
