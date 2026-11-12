@@ -111,12 +111,12 @@ def publish(text: str, *, push: bool = True, ref: str = STATE_REF) -> str:
     another's board. The lease is captured before the write and the push is refused if origin
     moved -- a lost publish costs one tick, and the next one re-measures from scratch.
     """
-    lease = ""
-    rc, _ = run(["git", "rev-parse", "--verify", "-q", ref], check=False)
-    if rc == 0:
-        rc, remote = run(["git", "ls-remote", "--refs", "origin", ref], check=False)
-        if rc == 0 and remote:
-            lease = remote.split()[0]
+    # A fresh Actions checkout has no local refs/chronos/state, even when
+    # origin already has one. The lease must come from origin, not local refs.
+    rc, remote = run(["git", "ls-remote", "--refs", "origin", ref], check=False)
+    if rc != 0:
+        raise RuntimeError(f"cannot read remote Chronos lease for {ref}: rc={rc}")
+    lease = remote.split()[0] if remote else ""
 
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
         fh.write(text)
