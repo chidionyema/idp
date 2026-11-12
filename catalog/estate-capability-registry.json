@@ -38253,8 +38253,7 @@
           "--json",
           "--no-push",
           "--ref",
-          "--refs",
-          "--verify"
+          "--refs"
         ],
         "outputs": [
           "stdout",
