@@ -175,6 +175,14 @@ jobs:
         run: |
           set -uo pipefail
           bin/idp-router-lanes --config platform/llm/config.yaml --zone-from clusters/oke/estate-config.yaml --out "$RUNNER_TEMP/lanes.json" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: KARMA - account for observed CI and missing QUAD evidence without inference
+        run: |
+          set -euo pipefail
+          python3 platform/estate/karma/readback.py \
+            --runs "$RUNNER_TEMP/runs.json" \
+            --out "$RUNNER_TEMP/karma.json" \
+            --main-sha "$GITHUB_SHA" \
+            --summary "$GITHUB_STEP_SUMMARY"
       - name: build and validate against platform/estate-state/schema.json
         env:
           GH_TOKEN: ${{ github.token }} # the document's clock is GitHub's Date header (crew#583)
@@ -184,6 +192,7 @@ jobs:
           bin/idp-estate-state-build --cluster-receipt "$RUNNER_TEMP/cluster.txt" --feed "$RUNNER_TEMP/feed.md" \
             --rulings "$RUNNER_TEMP/rulings.json" --drill-log "$RUNNER_TEMP/drill.log" --drill-at "$(cat "$RUNNER_TEMP/drill.at")" \
             --issues "$RUNNER_TEMP/issues.json" --runs "$RUNNER_TEMP/runs.json" --window-hours 6 \
+            --karma "$RUNNER_TEMP/karma.json" \
             --registry platform/vendors/consoles.yaml --secrets "$RUNNER_TEMP/secrets.json" \
             --apply-run "$RUNNER_TEMP/apply-run.json" --apply-log "$RUNNER_TEMP/apply.log" --lanes "$RUNNER_TEMP/lanes.json" \
             --prs "$RUNNER_TEMP/prs.json" --incidents "$RUNNER_TEMP/incidents.json" \
@@ -194,14 +203,7 @@ jobs:
           set -euo pipefail
           bin/idp-reports-render flux-state --cluster-receipt "$RUNNER_TEMP/cluster.txt" --out-dir "$RUNNER_TEMP/reports" | tee -a "$GITHUB_STEP_SUMMARY"
           bin/idp-reports-render forge-spend --ledger forge/experiments --cap 5 --out-dir "$RUNNER_TEMP/reports" | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: KARMA - account for observed CI and missing QUAD evidence without inference
-        run: |
-          set -euo pipefail
-          python3 platform/estate/karma/readback.py \
-            --runs "$RUNNER_TEMP/runs.json" \
-            --out "$RUNNER_TEMP/reports/karma.json" \
-            --main-sha "$GITHUB_SHA" \
-            --summary "$GITHUB_STEP_SUMMARY"
+          cp "$RUNNER_TEMP/karma.json" "$RUNNER_TEMP/reports/karma.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: estate-reports-flux
