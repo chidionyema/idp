@@ -706,11 +706,18 @@ class GitHubBackend:
         try:
             return self.git("merge-base", onto, head)
         except RuntimeError as original:
-            markers = ("not a valid commit name", "bad object", "invalid object name",
-                       "unknown revision", "not a valid object name")
+            markers = (
+                "not a valid commit name",
+                "bad object",
+                "invalid object name",
+                "unknown revision",
+                "not a valid object name",
+            )
             if not any(s in str(original).lower() for s in markers):
                 raise
-            if not self.git("rev-parse", "-q", "--verify", f"{onto}^{{commit}}", check=False):
+            if not self.git(
+                "rev-parse", "-q", "--verify", f"{onto}^{{commit}}", check=False
+            ):
                 raise  # broken trusted base, not an isolated lane failure
             if not re.fullmatch(r"[0-9a-f]{40}", head) or not (
                 lane.startswith("lane/") or lane == BOT_LANE
@@ -729,7 +736,9 @@ class GitHubBackend:
                     self.git("fetch", "-q", "--no-tags", "origin", head)
                 except RuntimeError:
                     pass  # one further bounded attempt; do not switch to a new head
-                local = self.git("rev-parse", "-q", "--verify", f"{head}^{{commit}}", check=False)
+                local = self.git(
+                    "rev-parse", "-q", "--verify", f"{head}^{{commit}}", check=False
+                )
                 observed = self.git("ls-remote", "--heads", "origin", ref)
                 remote = observed.split()[0] if observed.strip() else ""
                 if remote != head:
@@ -1039,7 +1048,17 @@ class GitHubBackend:
                     ),
                     "",
                 )
-                line = self._fail_line(str(j.get("id", "")))
+                # An unallocated Actions job executed no tests. Do not download
+                # a nonexistent log or classify CI admission as a source defect.
+                no_runner = (
+                    j.get("conclusion") == "failure"
+                    and j.get("runner_id") in (0, None)
+                    and j.get("steps") == []
+                )
+                if no_runner:
+                    line = "runner-not-allocated: zero test steps executed"
+                else:
+                    line = self._fail_line(str(j.get("id", "")))
                 parts.append(
                     j.get("name", "?")
                     + (f" > {step}" if step else "")
