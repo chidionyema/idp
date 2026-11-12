@@ -11,6 +11,9 @@ jobs:
   fast-gate:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }   # python-strict grades the range base...HEAD
@@ -18,23 +21,9 @@ jobs:
       # every Mac runs as a commit hook, so CI and the hook can never disagree (one copy, LAW 43).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { repository: chidionyema/estate, path: .estate-hooks }
-      # Founder mandate 2026-09-03 (the CI purge): a commit authored by a bot or an
-      # estate agent skips this gate whole — the job still reports green so every
-      # `needs: fast-gate` job downstream runs.
-      - name: bot exemption
-        id: actor
-        env:
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          ACTOR: ${{ github.actor }}
-        run: |
-          case "${PR_AUTHOR:-$ACTOR}" in
-            *'[bot]'|estate-agent*) echo "bot=1" >> "$GITHUB_OUTPUT"; echo "bot/agent author (${PR_AUTHOR:-$ACTOR}): fast-gate skipped";;
-            *) echo "bot=0" >> "$GITHUB_OUTPUT";;
-          esac
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        if: steps.actor.outputs.bot != '1'
         with: { python-version: "3.12", cache: pip, cache-dependency-path: sovereign/requirements*.txt }
-      - if: steps.actor.outputs.bot != '1'
+      - name: install Python gate dependencies
         # numpy: bin/idp-ci runs `python3 bin/estate-face-avatar --check` whenever the face tree or
         # the generator is touched, and that generator imports numpy at module level (line 54). This
         # lane installed only ruff/pyyaml/yamllint, so the rung died with
@@ -45,14 +34,18 @@ jobs:
         # (ci.yml:436, "the generator's Python (numpy), or the avatar check is a traceback"). Same
         # rung, same dependency: install it here too.
         run: pip install -q ruff==0.15.18 pyyaml yamllint==1.37.1 pytest==8.4.2 -r sovereign/requirements.txt   # pyyaml: the hardcode and pipeverdict rungs; ruff: the pin ci.yml's bdd job uses; shellcheck ships on ubuntu-24.04; yamllint: bin/idp-ci --check gates its YAML rung on `command -v yamllint`, which was never installed here or on any laptop -- the rung has been silently a no-op since it was written; numpy (via requirements.txt): the face-avatar rung; pytest: the schema rung runs its own proof (tests/test_schema_conformance.py) whenever a lane touches an intent, and CI run 40220387223 failed it with "No module named pytest" -- pinned to the laptop version that proves the rung green
-      - if: steps.actor.outputs.bot != '1'
+      - uses: ./.github/actions/estate-tools
+      - name: prove fast-gate wiring with falsifying contract tests
+        run: python3 -m unittest discover -s tests -p 'test_fast_gate_workflow_contract.py' -v
+      - name: fast gate (all actors, fail closed)
+        env:
+          GH_TOKEN: ${{ github.token }}
         # Diff-scoped like every laptop push: without IDP_CI_BASE the ruff-fmt/yamllint
         # rungs grade the WHOLE repo, so one pre-existing drift anywhere fails every lane
         # regardless of its own diff (2026-10-25: two files landed green on main, then a
         # formatting-verdict change made them stale and the whole migration queue went red).
         run: IDP_CI_FAST=1 IDP_CI_BASE=$(git merge-base origin/main HEAD) bin/idp-ci
       - name: python-strict (estate standard, one copy)
-        if: steps.actor.outputs.bot != '1'
         run: |
           base=$(git merge-base origin/main HEAD 2>/dev/null || git rev-parse HEAD~1)
           PYTHON_STRICT_RANGE="${base}...HEAD" .estate-hooks/guards/hooks/python-strict-default
