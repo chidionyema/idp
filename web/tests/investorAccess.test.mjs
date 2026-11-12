@@ -12,8 +12,10 @@ const config = { origin: "https://investor-broker.estate.example", serviceToken:
 const validGrant = {
   issuer: "meridian-investor-broker", decision: "allow", identityVerified: true, revoked: false,
   grantId: "investor-grant-001", subject: "guest:111", displayName: "Approved guest",
-  expiresAt: new Date(time + 5 * 24 * 60 * 60_000).toISOString(),
-  identityVerifiedAt: new Date(time - 60_000).toISOString(),
+  issuedAt: new Date(time - 2 * 86400_000).toISOString(),
+  expiresAt: new Date(time + 5 * 86400_000).toISOString(),
+  lastActivityAt: new Date(time - 60_000).toISOString(),
+  identityVerifiedAt: new Date(time - 2 * 86400_000).toISOString(),
   permissions: ["investor:genesis:view", "investor:otto:view"],
 };
 const projection = {
@@ -54,12 +56,22 @@ test("named, current, non-revoked, verified, scoped grant required on every requ
   const ok = parseInvestorGrant(validGrant, time);
   assert.ok(ok);
   assert.equal(ok.permissions.length, 2);
-  assert.ok(parseInvestorGrant({...validGrant, expiresAt: new Date(time + 7 * 86400_000).toISOString()}, time), '7 days allowed');
+  assert.ok(parseInvestorGrant({...validGrant,
+    issuedAt: new Date(time - 60_000).toISOString(),
+    lastActivityAt: new Date(time - 30_000).toISOString(),
+    expiresAt: new Date(time - 60_000 + 7 * 86400_000).toISOString()}, time), 'seven-day grant accepted');
+  assert.ok(parseInvestorGrant(validGrant, time), 'active session remains valid even when MFA occurred days ago');
   for (const changed of [
     { decision: "deny" }, { revoked: true }, { identityVerified: false },
     { issuer: "evil-issuer" }, { expiresAt: new Date(time - 1).toISOString() },
     { expiresAt: new Date(time + 8 * 86400_000).toISOString() },
-    { identityVerifiedAt: new Date(time - 31 * 60_000).toISOString() },
+    { issuedAt: undefined }, { lastActivityAt: undefined },
+    { issuedAt: new Date(time + 60_000).toISOString() },
+    { issuedAt: new Date(time - 3 * 86400_000).toISOString() },
+    { lastActivityAt: new Date(time - 30 * 60_000).toISOString() },
+    { lastActivityAt: new Date(time + 60_000).toISOString() },
+    { lastActivityAt: new Date(time - 3 * 86400_000).toISOString() },
+    { identityVerifiedAt: new Date(time + 60_000).toISOString() },
     { permissions: ["investor:genesis:view", "admin:execute"] },
     { permissions: ["investor:otto:view", "investor:otto:view"] },
     { permissions: [] }, { displayName: "<script>" },
