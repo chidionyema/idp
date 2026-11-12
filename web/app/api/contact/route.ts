@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
       console.error(`[contact] delivery failed: upstream returned ${res.status}`);
       return NextResponse.json({ ok: false, error: "delivery_failed" }, { status: 502 });
     }
-    if (provider === "mailjet" && !mailjetAccepted(await res.json().catch(() => null))) {
+    if (provider === "mailjet" && !mailjetAccepted(await res.json().catch(() => null), mailjet!.recipientEmail)) {
       console.error("[contact] Mailjet did not accept the message");
       return NextResponse.json({ ok: false, error: "delivery_failed" }, { status: 502 });
     }

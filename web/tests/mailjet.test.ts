@@ -42,10 +42,22 @@ test("Mailjet payload uses verified sender and customer reply-to, never customer
 });
 
 test("Mailjet per-message rejection and malformed responses fail closed", () => {
-  assert.equal(mailjetAccepted({ Messages: [{ Status: "success" }] }), true);
+  assert.equal(mailjetAccepted({ Messages: [{ Status: "success", To: [{ Email: "inbox@example.net", MessageUUID: "uuid-1", MessageID: 123 }] }] }, "inbox@example.net"), true);
   assert.equal(mailjetAccepted({ Messages: [{ Status: "error" }] }), false);
   assert.equal(mailjetAccepted({ Messages: [] }), false);
   assert.equal(mailjetAccepted({ Messages: [{ Status: "success" }, { Status: "error" }] }), false);
   assert.equal(mailjetAccepted({ error: "failed" }), false);
   assert.equal(mailjetAccepted(null), false);
+});
+
+test("Mailjet must confirm the exact recipient and issue a tracking identifier", () => {
+  const success = (email: string, extra: Record<string, unknown> = {}) =>
+    ({ Messages: [{ Status: "success", To: [{ Email: email, MessageUUID: "uuid-1", MessageID: 123, ...extra }] }] });
+  assert.equal(mailjetAccepted(success("inbox@example.net"), "inbox@example.net"), true);
+  assert.equal(mailjetAccepted(success("INBOX@example.net"), "inbox@example.net"), true);
+  assert.equal(mailjetAccepted(success("wrong@example.net"), "inbox@example.net"), false);
+  assert.equal(mailjetAccepted({ Messages: [{ Status: "success" }] }, "inbox@example.net"), false);
+  assert.equal(mailjetAccepted({ Messages: [{ Status: "success", To: [] }] }, "inbox@example.net"), false);
+  assert.equal(mailjetAccepted({ Messages: [{ Status: "success", To: [{ Email: "inbox@example.net" }] }] }, "inbox@example.net"), false);
+  assert.equal(mailjetAccepted({ Messages: [{ Status: "success", To: [{ Email: "inbox@example.net", MessageUUID: "", MessageID: "" }] }] }, "inbox@example.net"), false);
 });

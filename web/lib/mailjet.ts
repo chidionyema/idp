@@ -49,11 +49,22 @@ export function mailjetPayload(
   };
 }
 
-/** Mailjet may reply HTTP 200 with a per-message failure. */
-export function mailjetAccepted(body: unknown): boolean {
+/** An HTTP 200 is not acceptance unless Mailjet identifies the intended recipient. */
+export function mailjetAccepted(body: unknown, expectedRecipient: string): boolean {
   if (!body || typeof body !== "object" || !("Messages" in body)) return false;
   const messages = body.Messages;
-  return Array.isArray(messages) && messages.length === 1 &&
-    messages[0] !== null && typeof messages[0] === "object" &&
-    messages[0].Status === "success";
+  if (!Array.isArray(messages) || messages.length !== 1) return false;
+  const message = messages[0];
+  if (!message || typeof message !== "object" || message.Status !== "success") return false;
+  const recipients = message.To;
+  if (!Array.isArray(recipients) || recipients.length !== 1) return false;
+  const recipient = recipients[0];
+  if (!recipient || typeof recipient !== "object" ||
+      typeof recipient.Email !== "string" ||
+      recipient.Email.toLowerCase() !== expectedRecipient.toLowerCase()) return false;
+  const uuid = recipient.MessageUUID;
+  const id = recipient.MessageID;
+  return (typeof uuid === "string" && uuid.trim().length > 0) ||
+    (typeof id === "number" && Number.isSafeInteger(id) && id > 0) ||
+    (typeof id === "string" && /^[1-9][0-9]*$/.test(id));
 }
