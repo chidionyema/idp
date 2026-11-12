@@ -661,3 +661,36 @@ could not be measured says so, never PASS.
 The live surfaces are the estate graph (`growmos context` — every row above is a node there),
 `crew/STATE.md` (the generated snapshot; regenerate it, never trust it), and `/fleet` (the live
 board). This block is dated **2026-10-28**: when it disagrees with those, they are right.
+
+<!-- LIVE_ESTATE_PREFLIGHT_START -->
+## LIVE ESTATE PREFLIGHT — 2026-11-12T06:52:47Z
+
+### State (do not guess)
+- **Disk free:** 2427 MB · floor 1500 MB · preempt 2000 MB
+- **Router:** pennyd 127.0.0.1:4200 · surface 127.0.0.1:3000 (#projector, #omega)
+- **Estate bus:** http://127.0.0.1:4300/ (preflight, map, state, artifacts)
+- **Must read:** /Users/roseonyema/Documents/code/idp/docs/ESTATE_MAP.md
+- **Today:** /Users/roseonyema/.estate/state/DAILY_LOG.md
+- **Blocked on founder:** 3 · cloudflare_dns_bus, github_required_check, github_actions_runner
+- **Law:** never ask for a fact the estate can answer; read /capabilities on the bus.
+- **Control plane 4090:** 302 to 127.0.0.1:3000/
+- **Receipts:** bin/estate-receipt -- <cmd> before any completion claim
+- **Memory door:** /Users/roseonyema/Documents/code/idp/platform/estate/memory/door.py
+- **Preflight file:** /Users/roseonyema/.estate/state/SESSION_PREFLIGHT.md
+
+### Repositories
+- **idp** lane/disk-delete-only @ 296b50756 · dirty=11 · remote lanes=[origin/lane/a-retired-guardian-cannot-still-guard, origin/lane/cache-trim-leaves-a-receipt, origin/lane/otto-main114-rollout-20261111]
+- **argon-src** lane/genesis-port @ 8838e85 · dirty=12 · remote lanes=[origin/lane/company-operating-calendar-20261111, origin/lane/genesis-legion-mission-control-20261111, origin/lane/genesis-architecture]
+- **argon-runtime** main @ da1536c · dirty=155 · remote lanes=[origin/lane/company-operating-calendar-20261111, origin/lane/genesis-architecture, origin/lane/arch-diagram-probe]
+
+### Peer handoffs (unclaimed)
+- [CODEX_PATCH_READY] /Users/roseonyema/Documents/Codex/2026-11-11/yiu-n/outputs/genesis-face-fleet-roundtable.patch
+- [CODEX_PATCH_READY] /Users/roseonyema/Documents/Codex/2026-11-11/yiu-n/outputs/idp-direct-executor-thin-client.patch
+- [CODEX_PATCH_READY] /Users/roseonyema/Documents/Codex/2026-11-11/yiu-n/outputs/idp-cloudflare-cutover-hardening.patch
+- [CODEX_PATCH_READY] /Users/roseonyema/Documents/Codex/2026-11-11/yiu-n/outputs/merdian-vercel-cutover.patch
+- [CODEX_PATCH_READY] /Users/roseonyema/Documents/Codex/2026-11-11/yiu-n/outputs/otto-private-office-release.patch
+- [AI_STUDIO_STAGED] check AISTUDIO_BUNDLE_URL before claiming
+
+### Recently landed artifacts
+- (none recorded)
+<!-- LIVE_ESTATE_PREFLIGHT_END -->
