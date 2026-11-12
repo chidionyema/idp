@@ -4,16 +4,24 @@ Pure reducer; no independent event store or executor. Caller supplies a real
 external verifier. Without it, no acceptance, payment, reward or yield may
 become authoritative. Idempotent IDs, causal parents, explicit unknowns.
 """
+
 from __future__ import annotations
 
 import datetime as dt
 from collections import Counter
 
-KINDS = frozenset({
-    "INSTRUCTION_ACCEPTED", "OWNERSHIP_HANDBACK", "COST_OBSERVED",
-    "YIELD_SUBMITTED", "YIELD_INDEPENDENTLY_VERIFIED",
-    "ANCESTRAL_FAILURE", "CORRECTION_VERIFIED", "OBLIGATION_WITHDRAWN",
-})
+KINDS = frozenset(
+    {
+        "INSTRUCTION_ACCEPTED",
+        "OWNERSHIP_HANDBACK",
+        "COST_OBSERVED",
+        "YIELD_SUBMITTED",
+        "YIELD_INDEPENDENTLY_VERIFIED",
+        "ANCESTRAL_FAILURE",
+        "CORRECTION_VERIFIED",
+        "OBLIGATION_WITHDRAWN",
+    }
+)
 
 
 def utc(value):
@@ -42,7 +50,11 @@ def project(events, verify_external=None):
     events_by_id = {}
     tallies = Counter()
     for number, e in enumerate(events):
-        if not isinstance(e, dict) or not isinstance(e.get("event_id"), str) or not e["event_id"]:
+        if (
+            not isinstance(e, dict)
+            or not isinstance(e.get("event_id"), str)
+            or not e["event_id"]
+        ):
             gaps.append({"index": number, "reason": "INVALID_EVENT_ID"})
             continue
         eid = e["event_id"]
@@ -59,7 +71,9 @@ def project(events, verify_external=None):
             gaps.append({"event": eid, "reason": "RECORD_TIME_UNTRUSTED"})
             continue
         parents = e.get("parent_event_ids")
-        if not isinstance(parents, list) or any(not isinstance(p, str) for p in parents):
+        if not isinstance(parents, list) or any(
+            not isinstance(p, str) for p in parents
+        ):
             gaps.append({"event": eid, "reason": "CAUSAL_PARENTS_UNDECLARED"})
             continue
         if any(p not in events_by_id for p in parents):
@@ -129,20 +143,36 @@ def project(events, verify_external=None):
         elif kind == "COST_OBSERVED":
             inc = e.get("tokens_in")
             out = e.get("tokens_out")
-            if not isinstance(inc, int) or isinstance(inc, bool) or inc < 0 or not isinstance(out, int) or isinstance(out, bool) or out < 0:
+            if (
+                not isinstance(inc, int)
+                or isinstance(inc, bool)
+                or inc < 0
+                or not isinstance(out, int)
+                or isinstance(out, bool)
+                or out < 0
+            ):
                 gaps.append({"event": eid, "reason": "INVALID_RESOURCE_COUNT"})
                 continue
             current["costs"]["tokens_in"] += inc
             current["costs"]["tokens_out"] += out
             # Token quantity never determines billed cost without price source.
             if e.get("billing_verified") is True:
-                gaps.append({"event": eid, "reason": "BILLING_ASSERTION_REQUIRES_SEPARATE_PRICING_AUTHORITY"})
+                gaps.append(
+                    {
+                        "event": eid,
+                        "reason": "BILLING_ASSERTION_REQUIRES_SEPARATE_PRICING_AUTHORITY",
+                    }
+                )
             current["money_cost"] = None
         elif kind == "YIELD_SUBMITTED":
             current["yield_evidence"] = e.get("evidence_digest") or None
             current["state"] = "AWAITING_INDEPENDENT_YIELD"
         elif kind == "YIELD_INDEPENDENTLY_VERIFIED":
-            if actor == current["current_agent"] or not e.get("evidence_digest") or e["evidence_digest"] != current["yield_evidence"]:
+            if (
+                actor == current["current_agent"]
+                or not e.get("evidence_digest")
+                or e["evidence_digest"] != current["yield_evidence"]
+            ):
                 gaps.append({"event": eid, "reason": "SELF_GRADED_OR_UNLINKED_YIELD"})
                 continue
             current["verified_yield"] = True
@@ -151,26 +181,44 @@ def project(events, verify_external=None):
             if not e.get("failure_class") or not e.get("ancestor_event_id"):
                 gaps.append({"event": eid, "reason": "UNATTRIBUTABLE_ANCESTOR_ERROR"})
                 continue
-            current["failures_inherited"].append({
-                "failure_class": e["failure_class"],
-                "ancestor_event_id": e["ancestor_event_id"],
-                "outstanding": True,
-            })
+            current["failures_inherited"].append(
+                {
+                    "failure_class": e["failure_class"],
+                    "ancestor_event_id": e["ancestor_event_id"],
+                    "outstanding": True,
+                }
+            )
         elif kind == "CORRECTION_VERIFIED":
             ancestor = e.get("ancestor_event_id")
-            if not ancestor or actor == current["current_agent"] or not e.get("falsifier_digest"):
-                gaps.append({"event": eid, "reason": "CORRECTION_NOT_INDEPENDENTLY_PROVEN"})
+            if (
+                not ancestor
+                or actor == current["current_agent"]
+                or not e.get("falsifier_digest")
+            ):
+                gaps.append(
+                    {"event": eid, "reason": "CORRECTION_NOT_INDEPENDENTLY_PROVEN"}
+                )
                 continue
-            debt = next((x for x in current["failures_inherited"] if
-                         x["ancestor_event_id"] == ancestor and x["outstanding"]), None)
+            debt = next(
+                (
+                    x
+                    for x in current["failures_inherited"]
+                    if x["ancestor_event_id"] == ancestor and x["outstanding"]
+                ),
+                None,
+            )
             if debt is None:
-                gaps.append({"event": eid, "reason": "NO_OUTSTANDING_ANCESTRAL_FAILURE"})
+                gaps.append(
+                    {"event": eid, "reason": "NO_OUTSTANDING_ANCESTRAL_FAILURE"}
+                )
                 continue
             debt["outstanding"] = False
             current["verified_corrections"].append(eid)
         elif kind == "OBLIGATION_WITHDRAWN":
             if actor == current["current_agent"] or not e.get("reason"):
-                gaps.append({"event": eid, "reason": "WITHDRAWAL_REQUIRES_SEPARATE_AUTHORITY"})
+                gaps.append(
+                    {"event": eid, "reason": "WITHDRAWAL_REQUIRES_SEPARATE_AUTHORITY"}
+                )
                 continue
             current["state"] = "WITHDRAWN_WITH_REASON"
         current["latest_event"] = eid
@@ -182,11 +230,15 @@ def project(events, verify_external=None):
         "authority": "DERIVED_FROM_EXTERNALLY_VERIFIED_QUAD_FLOW_RECEIPTS",
         "operational_effect": "READ_ONLY_NOT_AN_EXECUTOR",
         "obligations": obligations,
-        "unresolved": [oid for oid, o in obligations.items() if o["state"] not in
-                       ("SETTLED_VERIFIED", "WITHDRAWN_WITH_REASON")],
+        "unresolved": [
+            oid
+            for oid, o in obligations.items()
+            if o["state"] not in ("SETTLED_VERIFIED", "WITHDRAWN_WITH_REASON")
+        ],
         "outstanding_ancestor_failures": sum(
             sum(1 for f in o["failures_inherited"] if f["outstanding"])
-            for o in obligations.values()),
+            for o in obligations.values()
+        ),
         "counts_by_event": dict(sorted(tallies.items())),
         "gaps": gaps,
     }

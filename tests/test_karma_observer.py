@@ -1,4 +1,5 @@
 """KARMA negative-space and causal custody falsifiers: never self-award yield."""
+
 import importlib.util
 import importlib.machinery
 import io
@@ -20,13 +21,20 @@ SHA = "a" * 40
 
 
 def run(**kwargs):
-    row = {"id": 123, "name": "ci", "head_sha": SHA, "status": "completed",
-            "conclusion": "success", "created_at": "2026-11-12T13:00:00Z",
-            "run_started_at": "2026-11-12T13:00:01Z",
-            "updated_at": "2026-11-12T13:01:00Z", "event": "push",
-            "actor": {"login": "agent"}, "run_attempt": 1,
-            "html_url": "https://github.com/chidionyema/idp/actions/runs/123",
-            }
+    row = {
+        "id": 123,
+        "name": "ci",
+        "head_sha": SHA,
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-11-12T13:00:00Z",
+        "run_started_at": "2026-11-12T13:00:01Z",
+        "updated_at": "2026-11-12T13:01:00Z",
+        "event": "push",
+        "actor": {"login": "agent"},
+        "run_attempt": 1,
+        "html_url": "https://github.com/chidionyema/idp/actions/runs/123",
+    }
     row.update(kwargs)
     return row
 
@@ -40,15 +48,19 @@ class KarmaTests(unittest.TestCase):
         self.assertIsNone(row["verified_yield"])
         self.assertIsNone(row["resource_cost"])
         self.assertEqual(result["coverage"]["unlinked_to_obligation"], 1)
-        self.assertEqual(result["coverage"]["yield_coverage"],
-                         "UNKNOWN_NO_INDEPENDENT_OBLIGATION_JOINS")
+        self.assertEqual(
+            result["coverage"]["yield_coverage"],
+            "UNKNOWN_NO_INDEPENDENT_OBLIGATION_JOINS",
+        )
 
     def test_pending_or_skipped_never_becomes_positive_yield(self):
         a = run(id=33, conclusion=None, status="queued")
         b = run(id=34, conclusion="skipped")
         result = mod.observe_runs("chidionyema/idp", [a, b], NOW)
-        self.assertEqual([row["verdict"] for row in result["runs"]],
-                         ["PENDING_NOT_YIELD", "NO_EXECUTION_YIELD"])
+        self.assertEqual(
+            [row["verdict"] for row in result["runs"]],
+            ["PENDING_NOT_YIELD", "NO_EXECUTION_YIELD"],
+        )
 
     def test_actor_does_not_magically_provide_quad_or_model_version(self):
         result = mod.observe_runs("chidionyema/idp", [run()], NOW)
@@ -80,9 +92,17 @@ class KarmaTests(unittest.TestCase):
     def test_missing_observation_source_fails_blind_not_green(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / "missing.json"
-            result = subprocess.run([sys.executable, str(ROOT / "bin/idp-karma-observe"),
-                                     "--runs-json", str(p), "--json"],
-                                    capture_output=True, text=True)
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "bin/idp-karma-observe"),
+                    "--runs-json",
+                    str(p),
+                    "--json",
+                ],
+                capture_output=True,
+                text=True,
+            )
             self.assertEqual(result.returncode, 2)
             self.assertEqual(json.loads(result.stdout)["state"], "BLIND")
 
@@ -90,9 +110,19 @@ class KarmaTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / "runs.json"
             p.write_text(json.dumps({"workflow_runs": [run()]}), encoding="utf-8")
-            result = subprocess.run([sys.executable, str(ROOT / "bin/idp-karma-observe"),
-                                     "--runs-json", str(p), "--now", NOW, "--json"],
-                                    capture_output=True, text=True)
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "bin/idp-karma-observe"),
+                    "--runs-json",
+                    str(p),
+                    "--now",
+                    NOW,
+                    "--json",
+                ],
+                capture_output=True,
+                text=True,
+            )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(result.stdout)["coverage"]["runs_accepted"], 1)
 
@@ -110,15 +140,23 @@ class KarmaTests(unittest.TestCase):
         class Response(io.BytesIO):
             def __enter__(self):
                 return self
+
             def __exit__(self, *_):
                 self.close()
 
         payload = json.dumps({"workflow_runs": [run()]}).encode()
-        with patch.object(cli.subprocess, "run", side_effect=FileNotFoundError), \
-             patch.object(cli.urllib.request, "urlopen", return_value=Response(payload)) as opening:
+        with (
+            patch.object(cli.subprocess, "run", side_effect=FileNotFoundError),
+            patch.object(
+                cli.urllib.request, "urlopen", return_value=Response(payload)
+            ) as opening,
+        ):
             self.assertEqual(len(cli.live_runs("chidionyema/idp")), 1)
             self.assertEqual(opening.call_count, 1)
-            self.assertIn("api.github.com/repos/chidionyema/idp", opening.call_args.args[0].full_url)
+            self.assertIn(
+                "api.github.com/repos/chidionyema/idp",
+                opening.call_args.args[0].full_url,
+            )
 
     def test_private_repo_is_never_silently_assumed_public_or_free(self):
         path = ROOT / "bin/idp-karma-observe"
@@ -126,8 +164,10 @@ class KarmaTests(unittest.TestCase):
         spec = importlib.util.spec_from_loader("karma_private_cli", loader)
         cli = importlib.util.module_from_spec(spec)
         loader.exec_module(cli)
-        with patch.object(cli.subprocess, "run", side_effect=FileNotFoundError), \
-             patch.object(cli.urllib.request, "urlopen") as opening:
+        with (
+            patch.object(cli.subprocess, "run", side_effect=FileNotFoundError),
+            patch.object(cli.urllib.request, "urlopen") as opening,
+        ):
             with self.assertRaises(RuntimeError):
                 cli.live_runs("chidionyema/argon")
             opening.assert_not_called()
