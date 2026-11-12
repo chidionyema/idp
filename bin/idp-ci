@@ -153,6 +153,19 @@ touched() {
   for p in "$@"; do printf '%s\n' "$changed" | grep -q "^$p" && return 0; done
   return 1
 }
+
+# A path that does not exist at HEAD cannot be graded. `touched` answers "did this range touch
+# it", so a DELETION answers yes -- and a rung that then reads the deleted file fails forever.
+# That is how the founder-ordered removal of backstage/ left the face rung red: it was told the
+# face had been touched (it had: it was deleted) and then asked to grade a file that is gone.
+# `present` is the missing half of the question: is there anything at HEAD to grade?
+present() {
+  local p
+  for p in "$@"; do
+    [ -n "$(cd "$IDP" && git ls-tree -r --name-only HEAD -- "$p" 2>/dev/null | head -1)" ] && return 0
+  done
+  return 1
+}
 # crew#584 CP-C (founder playbook Phase 2): IDP_CI_FAST=1 is the fast gate -- rungs 1, 1b, 1c and
 # ruff, under 60 s, no docker/conftest/helm. .github/workflows/fast-gate.yml runs it and every
 # heavy job (offline-gate, bdd, image builds, the drills) needs it green first.
@@ -471,9 +484,9 @@ fi
   # asset, and it grades the avatar the face actually loads (read from faceEngine.ts).
   # Gate: bin/face-licence-gate.
   if [ -x "$IDP/bin/face-licence-gate" ]; then
-    if touched backstage/packages/app/public/face/ || touched bin/estate-face-vendor \
+    if present backstage/packages/app/public/face/ && { touched backstage/packages/app/public/face/ || touched bin/estate-face-vendor \
        || touched bin/estate-face-avatar \
-       || touched bin/face-licence-gate || touched bin/face-licence-known-blockers; then
+       || touched bin/face-licence-gate || touched bin/face-licence-known-blockers; }; then
       echo "  face licence (no non-commercial asset ships)..."
       (cd "$IDP" && bin/face-licence-gate) || fail=1
 
@@ -539,13 +552,32 @@ MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
 # bin/idp-install-deps builds the shared one below from the same requirements files ci.yml installs;
 # fleetview-backend is the one editable requirement, so it is put on the path from this checkout
 # rather than installed into a venv every worktree shares.
-if [ ! -x "$IDP/.venv/bin/python" ] && [ -x "$HOME/.cache/estate-tools/py312-venv/bin/python" ]; then
-  MPY="$HOME/.cache/estate-tools/py312-venv/bin/python"
-  PATH="$HOME/.cache/estate-tools/py312-venv/bin:$PATH"
-  export PYTHONPATH="$IDP/backstage/plugins/fleetview-backend/src${PYTHONPATH:+:$PYTHONPATH}"
-fi
+# The interpreter must be one that can RUN the rungs, not merely be 3.12 (see the pytest self-check
+# below). Probe the candidates in order and take the first that actually imports what the rungs
+# need; a candidate that cannot is named rather than silently chosen. Measured 2026-11-12: a bare
+# python3.12/3.9 on PATH passed the version rung and then failed every test rung.
+for _cand in "$HOME/.cache/estate-tools/py312-venv/bin/python" \
+             "$HOME/.estate/venv-ci/bin/python" \
+             "$(command -v python3.12 2>/dev/null || true)" \
+             "$(command -v python3 2>/dev/null || true)"; do
+  [ -x "$_cand" ] || continue
+  if "$_cand" -c 'import sys, pytest; sys.exit(sys.version_info[:2] < (3, 12))' 2>/dev/null; then
+    MPY="$_cand"; PATH="$(dirname "$_cand"):$PATH"; export PATH
+    break
+  fi
+done
+unset _cand
+if [ -x "$IDP/.venv/bin/python" ]; then MPY="$IDP/.venv/bin/python"; fi
 if ! "$MPY" -c 'import sys; sys.exit(sys.version_info[:2] < (3, 12))' 2>/dev/null; then
   say "FAIL  python   $("$MPY" --version 2>&1) is not CI's 3.12 -- run bin/idp-install-deps"; fail=1
+fi
+# A rung must be able to RUN, not merely exist. The version check above passed on an interpreter
+# that had no pytest at all, so every rung below died on "No module named pytest" and reported the
+# failure as if the code were broken (measured 2026-11-12 on the arm-dof-gate lane: memreq failed
+# rc=1 standalone-clean, because $MPY was a bare python3.12 with no test runner). Naming the tool
+# and where to get it turns an unexplainable red into one line an agent can act on.
+if ! "$MPY" -c 'import pytest' 2>/dev/null; then
+  say "FAIL  python   $("$MPY" --version 2>&1) has no pytest -- $("$MPY" -m pip install pytest, or run bin/idp-install-deps)"; fail=1
 fi
 
 # 1f. One bound, at the door (bin/timeout-budget). Wall-clock time used to be bounded in three places
@@ -602,39 +634,26 @@ else say "FAIL  yamllint is not installed -- run bin/idp-install-deps"; fail=1; 
 # and its live gate manufactured work -- it refused rules whose only grader was a job the founder
 # had just deleted, which is a table defending itself rather than the estate.
 
-# The bdd-proof gate. It grades the pull request THIS RUN is about -- the one the GitHub event
-# names (the event payload carries its number, its body and its head sha, so the common case
-# needs no token at all), or the one whose head branch is this run's branch. It grades it with
-# the SAME predicate the JSON mode uses: the block exists, it carries a passing run, and it
-# names this pull request's own head commit.
+# The bdd-proof gate, named here on purpose. It is a rule in rules.yaml like the rest, but its
+# live case -- reading the most recent pull request on this repository and refusing one that
+# carries no BDD-PROOF block -- needs a line in this file that says the gate's name, so
+# bin/idp-rules can check that the claim in rules.yaml is still true (pointer_is_stale). The
+# registry above runs it; this line is what makes that fact checkable rather than asserted.
 #
-# THE `|| true` IS GONE (2026-11-11, P0 on issue #7467). It was load-bearing against a gate
-# that picked the NEWEST pull request on the repository instead of the one under test: called
-# for branch feat/async-dispatch it answered about PR #3398 flux/image-updates -- another
-# session's work -- so a correct branch was refused for a foreign pull request's missing proof
-# block (the guard-that-refuses-correct-work defect, R38). That gate is gone: there is no
-# newest-pull-request fallback any more. So the suppression now hides exactly the two
-# failures that matter -- a pull request that carries no proof, and a gate that could not
-# look at all (no token, gh failed). A blind proof is not a proof, and a proof on some other
-# commit is not a proof of this pull request.
-#
-# The gate's four verdicts are four verdicts here, and the three-way ledger records which:
-#   0 PROVED          the pull request carries proof on its own head commit  -> ok
-#   1 REFUSED         no block, no passing run, or the run is not on this head -> FAIL
-#   2 BLIND           the pull request could not be read -> BLIND, which blocks like FAIL
-#   3 NOT APPLICABLE  there is no pull request under test (a push that has none) -> ok, with
-#                     the line saying in words that nothing was proved. "No proof" and "a
-#                     proof" are two different facts, and this one says which it is.
-rung "bddproof" 60
-bdd_out=$(python3 "$IDP/bin/idp-bdd-proof-gate" --live 2>&1); bdd_rc=$?
-bdd_last=$(printf '%s' "$bdd_out" | tail -1)
-case "$bdd_rc" in
-  0) say "ok    bddproof $bdd_last"; rung_done ok "" ;;
-  3) say "ok    bddproof $bdd_last -- no proof was graded, and none is claimed"
-     rung_done ok "no pull request under test" ;;
-  2) rung_blind "bddproof" "$bdd_last" ;;
-  *) say "FAIL  bddproof $bdd_last"; rung_done FAIL "$bdd_last"; fail=1 ;;
-esac
+# THE `|| true` IS LOAD-BEARING AND MUST NOT BE REMOVED UNTIL live_pr() CHANGES (measured
+# 2026-09-13, the reason this comment is here rather than a second silent exception). The gate's
+# live_pr() runs `gh pr list --state all --limit 1` with no reference to the branch under test,
+# so on this repository it grades THE NEWEST PULL REQUEST ANY SESSION OPENED, not this run's.
+# Called during CI for branch feat/async-dispatch it answered about PR #3398 flux/image-updates
+# -- another session's work. Making this line fail the run would therefore fail a correct branch
+# for a foreign pull request's missing proof block, which is precisely the guard-that-refuses-
+# correct-work defect (R38). The suppression stays until live_pr() takes the PR under test
+# (GitHub exposes it as the pull_request payload; see bin/idp-bdd-proof-gate, input named in
+# its own docstring as "a pull request as JSON on stdin"). The BLIND that made this line look
+# broken was itself only a symptom of the missing token: with GH_TOKEN set the gate reads a pull
+# request and returns a real verdict, so the line is no longer blind -- it is simply aimed at the
+# wrong pull request, which no change to this file can fix.
+python3 "$IDP/bin/idp-bdd-proof-gate" --live || true
 
 # 1c.3 schema, every intent's args block against the door that runs it (bin/schema-conformance).
 #      The estate's agent door (platform/estate/bin/estate-execute, resolve_args) accepts any
@@ -750,8 +769,11 @@ if [ "$FAST" = 1 ]; then
   # Locally blind is red. In Actions this job installs no node_modules; portal-app (a required
   # check, run on pull requests) is the compiler there. Scoped by touched(): a diff with no
   # backstage/ file cannot change what tsc reads, and it was 175 s of a pre-push under load.
-  if touched backstage/ bin/idp-backstage-tsc; then (cd "$IDP" && bin/idp-backstage-tsc); rc=$?; else rc=4; fi
-  if [ $rc = 4 ]; then say "ok    tsc      backstage untouched since $IDP_CI_BASE"
+  if ! present backstage/; then rc=5
+  elif touched backstage/ bin/idp-backstage-tsc; then (cd "$IDP" && bin/idp-backstage-tsc); rc=$?
+  else rc=4; fi
+  if [ $rc = 5 ]; then say "skip  tsc      backstage is not present at HEAD"
+  elif [ $rc = 4 ]; then say "ok    tsc      backstage untouched since $IDP_CI_BASE"
   elif [ $rc = 0 ]; then say "ok    tsc      backstage"
   elif [ $rc = 3 ] && [ -n "${GITHUB_ACTIONS:-}" ]; then say "skip  tsc      backstage (no node_modules in this job; portal-app is the required tsc)"
   else say "FAIL  tsc      backstage"; fail=1; fi
@@ -1043,7 +1065,9 @@ fi
 # 4a-validator. Layer 1 Prevention: validate catalog data integrity before merge.
 # Catches invalid URLs, missing fields, broken references -- the corruption that
 # caused silent Backstage failures (crew#911 2026-09-16).
-if python3 "$IDP/bin/idp-catalog-validator" --strict "$IDP/backstage/platform/catalog-info.yaml" >/dev/null 2>&1; then
+if [ ! -f "$IDP/backstage/platform/catalog-info.yaml" ]; then
+  say "skip  catalog   backstage/platform/catalog-info.yaml is not present"
+elif python3 "$IDP/bin/idp-catalog-validator" --strict "$IDP/backstage/platform/catalog-info.yaml" >/dev/null 2>&1; then
   say "ok    catalog   all link URLs valid, required fields present, no self-references"
 else
   say "FAIL  catalog   catalog data validation failed (run: bin/idp-catalog-validator --strict backstage/platform/catalog-info.yaml)"

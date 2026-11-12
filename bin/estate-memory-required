@@ -166,7 +166,14 @@ def is_repair_path(path: str) -> bool:
 
 def main(argv: list[str]) -> int:
     state, reasons = verdict()
-    if "--json" in argv:
+    as_json = "--json" in argv
+    # --json is a CONTRACT, not a formatting preference: a caller that asked for JSON parses the
+    # whole of stdout. Printing the repair guidance on stdout after the document made every strict
+    # reader fail with "Extra data" exactly when the door was BROKEN -- i.e. the one moment the
+    # report mattered. The guidance goes to stderr under --json, so the document stays parseable
+    # and the human still sees what to do. Proven by tests/test_memory_json_is_parseable.py.
+    guide = sys.stderr if as_json else sys.stdout
+    if as_json:
         print(json.dumps({"verdict": state, "reasons": reasons, "at": time.time()}, indent=2))
     else:
         print(f"memory: {state}")
@@ -185,11 +192,14 @@ def main(argv: list[str]) -> int:
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(json.dumps({"opened_at": time.time(), "for": state}))
         _record("repair-window-opened", f"bounded {WINDOW_SECONDS}s to fix memory", state=state)
-        print(f"\nA repair window is open for {WINDOW_SECONDS}s: only memory repair files may be edited.")
+        print(
+            f"\nA repair window is open for {WINDOW_SECONDS}s: only memory repair files may be edited.",
+            file=guide,
+        )
         return 0
 
     if is_repair_path(os.environ.get("ESTATE_MEMORY_TARGET", "")) and repair_window_open():
-        print("\nThis path repairs memory and a window is open: allowed.")
+        print("\nThis path repairs memory and a window is open: allowed.", file=guide)
         return 0
 
     print(
@@ -197,7 +207,8 @@ def main(argv: list[str]) -> int:
         "Repair it first:\n"
         "  bin/estate-memory-required --open-repair     # bounded window to fix memory only\n"
         "  git restore platform/estate/memory/          # the usual cause: a file deleted uncommitted\n"
-        "  bin/estate-memory-required                   # must print OK before any work\n"
+        "  bin/estate-memory-required                   # must print OK before any work\n",
+        file=guide,
     )
     return 1
 
