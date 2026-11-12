@@ -11,6 +11,7 @@ const session = "s".repeat(48);
 const config = { origin: "https://investor-broker.estate.example", serviceToken:"t".repeat(48) };
 const validGrant = {
   issuer: "meridian-investor-broker", decision: "allow", identityVerified: true, revoked: false,
+  mfaVerified: true, mfaVerifiedAt: new Date(time - 2 * 60_000).toISOString(),
   grantId: "investor-grant-001", subject: "guest:111", displayName: "Approved guest",
   issuedAt: new Date(time - 2 * 86400_000).toISOString(),
   expiresAt: new Date(time + 5 * 86400_000).toISOString(),
@@ -63,6 +64,9 @@ test("named, current, non-revoked, verified, scoped grant required on every requ
   assert.ok(parseInvestorGrant(validGrant, time), 'active session remains valid even when MFA occurred days ago');
   for (const changed of [
     { decision: "deny" }, { revoked: true }, { identityVerified: false },
+    { mfaVerified: false }, { mfaVerifiedAt: undefined },
+    { mfaVerifiedAt: new Date(time - 15 * 60_000).toISOString() },
+    { mfaVerifiedAt: new Date(time + 60_000).toISOString() },
     { issuer: "evil-issuer" }, { expiresAt: new Date(time - 1).toISOString() },
     { expiresAt: new Date(time + 8 * 86400_000).toISOString() },
     { issuedAt: undefined }, { lastActivityAt: undefined },
@@ -154,5 +158,9 @@ test("private investor room never links directly to founder operations or embeds
   assert.match(activate,/timingSafeEqual/);
   assert.match(activate,/authorizeInvestor/);
   assert.match(activate,/httpOnly: true, secure: true/);
+  assert.doesNotMatch(activate,/new URL\([^\n]+req\.url/,"redirect must never reflect request Host");
+  assert.doesNotMatch(entry,/new URL\([^\n]+req\.url/,"login errors must not reflect request Host");
+  assert.match(activate,/validBrokerOrigin\(process\.env\.MERIDIAN_SITE_URL/);
+  assert.match(entry,/validBrokerOrigin\(process\.env\.MERIDIAN_SITE_URL/);
   assert.match(exit,/cookies\.delete/);
 });

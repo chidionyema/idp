@@ -20,6 +20,7 @@ export interface InvestorGrant {
   lastActivityAt: string;
   permissions: InvestorPermission[];
   identityVerifiedAt: string;
+  mfaVerifiedAt: string;
 }
 
 export interface InvestorFact { label: string; value: string }
@@ -48,6 +49,8 @@ type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
 const SESSION_PATTERN = /^[A-Za-z0-9._~+/-]{24,4096}$/;
 const PERMISSIONS: readonly InvestorPermission[] = ["investor:genesis:view", "investor:otto:view"];
 const MAX_SESSION_WINDOW_MS = 30 * 60 * 1000;
+// A durable invitation is not proof of a recent second factor. Require a fresh broker attestation.
+const MAX_MFA_AGE_MS = 15 * 60 * 1000;
 // Founder-approved default investor grant ceiling: seven days, enforced on every request.
 const MAX_GRANT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -95,7 +98,7 @@ export function validSessionCookie(cookie: unknown): cookie is string {
 export function parseInvestorGrant(raw: unknown, now: number): InvestorGrant | null {
   if (!isObject(raw) || raw.decision !== "allow" ||
       raw.issuer !== "meridian-investor-broker" || raw.identityVerified !== true ||
-      raw.revoked !== false) return null;
+      raw.revoked !== false || raw.mfaVerified !== true) return null;
   const grantId = cleanText(raw.grantId, 128), subject = cleanText(raw.subject, 160);
   const displayName = cleanText(raw.displayName, 80);
   // Grant age and inactivity are different security controls. The broker must
@@ -103,9 +106,11 @@ export function parseInvestorGrant(raw: unknown, now: number): InvestorGrant | n
   // This web application trusts only the authenticated broker's current introspection.
   const issued = parseTime(raw.issuedAt), expires = parseTime(raw.expiresAt);
   const lastActivity = parseTime(raw.lastActivityAt), verified = parseTime(raw.identityVerifiedAt);
+  const mfaAt = parseTime(raw.mfaVerifiedAt);
   if (!grantId || !/^[a-zA-Z0-9:_-]{8,128}$/.test(grantId) || !subject ||
       !displayName || issued === null || expires === null || lastActivity === null ||
-      verified === null || issued > now + 5000 || expires <= now ||
+      verified === null || mfaAt === null || mfaAt > now + 5000 ||
+      now - mfaAt >= MAX_MFA_AGE_MS || issued > now + 5000 || expires <= now ||
       expires <= issued || expires - issued > MAX_GRANT_WINDOW_MS ||
       lastActivity < issued || lastActivity > now + 5000 || lastActivity >= expires ||
       now - lastActivity >= MAX_SESSION_WINDOW_MS || verified > now + 5000) return null;
@@ -117,6 +122,7 @@ export function parseInvestorGrant(raw: unknown, now: number): InvestorGrant | n
     issuedAt: raw.issuedAt as string, expiresAt: raw.expiresAt as string,
     lastActivityAt: raw.lastActivityAt as string,
     identityVerifiedAt: raw.identityVerifiedAt as string,
+    mfaVerifiedAt: raw.mfaVerifiedAt as string,
     permissions: raw.permissions as InvestorPermission[] };
 }
 

@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
-import { NextRequest, NextResponse } from "next/server";
-import { brokerConfig } from "@/lib/investorAccess";
+import { NextResponse } from "next/server";
+import { brokerConfig, validBrokerOrigin } from "@/lib/investorAccess";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,22 +10,16 @@ export const dynamic = "force-dynamic";
  * A random state + PKCE challenge is bound to this exact Meridian host.
  * No invite token, operational password or estate credential is accepted here.
  */
-export async function GET(req: NextRequest) {
+export async function GET() {
   const config = brokerConfig();
-  const site = process.env.MERIDIAN_SITE_URL ?? "";
-  let redirectOrigin: string;
-  try {
-    const url = new URL(site);
-    if (url.protocol !== "https:" || url.username || url.password || url.search ||
-        url.hash || url.pathname !== "/" || url.port || !url.hostname.includes(".")) throw Error("invalid");
-    redirectOrigin = url.origin;
-  } catch {
-    const response = NextResponse.redirect(new URL("/investors/unavailable", req.url), 303);
-    response.headers.set("Cache-Control", "private, no-store");
-    return response;
+  const redirectOrigin = validBrokerOrigin(process.env.MERIDIAN_SITE_URL ?? "");
+  if (!redirectOrigin) {
+    return NextResponse.json({ error: "investor_access_unavailable" }, {
+      status: 503, headers: { "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" },
+    });
   }
   if (!config) {
-    const response = NextResponse.redirect(new URL("/investors/unavailable", req.url), 303);
+    const response = NextResponse.redirect(new URL("/investors/unavailable", redirectOrigin), 303);
     response.headers.set("Cache-Control", "private, no-store");
     return response;
   }

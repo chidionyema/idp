@@ -19,6 +19,7 @@ export default function ChronosPage() {
       <div className="mi-shell">
         <span className="mi-eyebrow">MERIDIAN / CHRONOS · IN DEVELOPMENT</span>
         <h1 id="chronos-hero-title">WORK HAS A RHYTHM.<br/><em>LET&apos;S MAKE IT BETTER.</em></h1>
+        <p className="mi-chronos-disclosure">Chronos is in development. The interactive walkthrough below illustrates an intended experience, not a live service or measured customer outcome.</p>
         <div className="mi-page-hero-bottom">
           <p>Chronos is our vision for a working day with less chasing, fewer forgotten handovers and more time for the things people do best.</p>
           <Link href="/contact?topic=chronos" className="mi-button mi-button-gold">Discuss Chronos <span aria-hidden="true">→</span></Link>

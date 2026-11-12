@@ -35,13 +35,18 @@ accountability, and what changes in a working day. Internal reviewers may use ja
   expiry, revocation and read-only disclosure scope. No second password store.
 - The site implements a broker consumer and fail-closed contract, not that
   broker service. Missing broker configuration must deny access.
-- Login: same-origin start uses 256-bit state and PKCE S256. Broker verifies
+- Login: same-origin start uses 256-bit state and PKCE S256. All callback and
+  failure redirects derive from the operator-configured canonical HTTPS site,
+  never a request Host/Origin header. Broker verifies
   named investor, MFA, invitation, subject, state, one-time handoff code, code
   verifier and registered redirect. Auth callback introspects the returned
   short-lived opaque session again before setting any cookie.
 - Session cookie is __Host-meridian-investor, HttpOnly, Secure, SameSite Lax,
-  no Domain, lifetime at most 15 minutes. Identity freshness limit is 30
-  minutes. Grant max accepted window is 14 days, shorter by invitation.
+  no Domain, lifetime at most 15 minutes. The broker must explicitly attest
+  mfaVerified=true and mfaVerifiedAt no older than 15 minutes on each
+  introspection; an old identityVerifiedAt alone is not recent MFA.
+  The separate idle-session ceiling is 30 minutes. The maximum accepted grant
+  window is seven days, shorter by invitation.
 - Every API read posts the opaque session and audience to the separately
   authenticated broker endpoint /v1/investor/introspect. It MUST check current
   durable revocation/expiry, named identity, active grant and resource scopes.
@@ -69,7 +74,8 @@ accountability, and what changes in a working day. Internal reviewers may use ja
 1. No/malformed cookie -> 401, zero private bytes, no network call.
 2. Disabled/revoked/expired grant -> denied on NEXT request despite a cookie.
 3. Shared invitation, stolen handoff, invalid state, PKCE or redirect -> denied.
-4. Unverified identity, absent MFA, wrong issuer/subject/audience/scope -> denied.
+4. Unverified identity, absent/stale MFA (including a seven-day-old verified
+   identity with no fresh second factor), wrong issuer/subject/audience/scope -> denied.
 5. No broker, network outage, timeout, malformed/stale/fixture data -> explicit
    refusal or unavailable state. No synthetic metrics.
 6. Probe HTTP methods, CORS, caching, reflected Host, header spoof, SSRF,

@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { authorizeInvestor, brokerConfig, validSessionCookie } from "@/lib/investorAccess";
+import { authorizeInvestor, brokerConfig, validBrokerOrigin, validSessionCookie } from "@/lib/investorAccess";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,8 +13,14 @@ const safeEqual = (a: string, b: string) =>
   a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
 export async function GET(req: NextRequest) {
+  const canonicalSite = validBrokerOrigin(process.env.MERIDIAN_SITE_URL ?? "");
+  if (!canonicalSite) {
+    return NextResponse.json({ error: "investor_access_unavailable" }, {
+      status: 503, headers: { "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" },
+    });
+  }
   const failed = (reason: string) => {
-    const url = new URL("/investors", req.url);
+    const url = new URL("/investors", canonicalSite);
     url.searchParams.set("access", reason);
     const res = NextResponse.redirect(url, 303);
     res.cookies.delete(FLOW);
@@ -37,7 +43,7 @@ export async function GET(req: NextRequest) {
       method: "POST", cache: "no-store", redirect: "error",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + config.serviceToken },
       body: JSON.stringify({ clientId: "meridian-investor-room", code,
-        redirectUri: new URL("/investors/activate", process.env.MERIDIAN_SITE_URL).href,
+        redirectUri: canonicalSite + "/investors/activate",
         state, verifier: parts[1] }),
       signal: AbortSignal.timeout(4500),
     });
@@ -49,7 +55,7 @@ export async function GET(req: NextRequest) {
     if (auth.state !== "allowed") return failed("denied");
     const validForSeconds = Math.min(900, Math.floor((Date.parse(auth.grant.expiresAt) - Date.now()) / 1000));
     if (validForSeconds <= 0) return failed("expired");
-    const res = NextResponse.redirect(new URL("/investors/room", req.url), 303);
+    const res = NextResponse.redirect(new URL("/investors/room", canonicalSite), 303);
     res.headers.set("Cache-Control", "private, no-store");
     res.headers.set("Referrer-Policy", "no-referrer");
     res.cookies.delete(FLOW);
