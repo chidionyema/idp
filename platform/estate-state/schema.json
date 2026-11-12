@@ -809,6 +809,84 @@
           }
         }
       }
+    },
+    "karma": {
+      "type": "object",
+      "required": [
+        "status",
+        "source_main_sha",
+        "observation_time",
+        "ci_observed_runs",
+        "ci_failures",
+        "model_calls_observed",
+        "model_source_status",
+        "unlinked_instruction_calls",
+        "verified_obligation_settlements",
+        "billable_cost",
+        "coverage_gaps",
+        "investor_claim_status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "BLIND",
+            "OBSERVED_WITH_GAPS"
+          ]
+        },
+        "source_main_sha": {
+          "type": "string"
+        },
+        "observation_time": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ci_observed_runs": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "ci_failures": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "model_calls_observed": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "model_source_status": {
+          "type": "string"
+        },
+        "unlinked_instruction_calls": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "verified_obligation_settlements": {
+          "type": "null"
+        },
+        "billable_cost": {
+          "type": "null"
+        },
+        "coverage_gaps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "investor_claim_status": {
+          "const": "RESEARCH_STAGE_NOT_INDEPENDENTLY_VERIFIED"
+        }
+      }
     }
   }
 }
