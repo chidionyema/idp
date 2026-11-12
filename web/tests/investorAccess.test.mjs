@@ -54,10 +54,11 @@ test("named, current, non-revoked, verified, scoped grant required on every requ
   const ok = parseInvestorGrant(validGrant, time);
   assert.ok(ok);
   assert.equal(ok.permissions.length, 2);
+  assert.ok(parseInvestorGrant({...validGrant, expiresAt: new Date(time + 7 * 86400_000).toISOString()}, time), '7 days allowed');
   for (const changed of [
     { decision: "deny" }, { revoked: true }, { identityVerified: false },
     { issuer: "evil-issuer" }, { expiresAt: new Date(time - 1).toISOString() },
-    { expiresAt: new Date(time + 16 * 86400_000).toISOString() },
+    { expiresAt: new Date(time + 8 * 86400_000).toISOString() },
     { identityVerifiedAt: new Date(time - 31 * 60_000).toISOString() },
     { permissions: ["investor:genesis:view", "admin:execute"] },
     { permissions: ["investor:otto:view", "investor:otto:view"] },
