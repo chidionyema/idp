@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+"""backstage-refused — the single door that answers "may I fetch Backstage onto this machine?".
+
+Backstage is FROZEN HISTORY. Founder, 2026-11-12 (idp#8000): a 2.4 GB Backstage install sat in
+~/.estate/frontend for a product (Genesis) that never imported it. It was deleted and must not come
+back. The reason is recorded once, in:
+
+    docs/decisions/2026-11-12-backstage-is-frozen-history.md
+
+Call it before any clone/install/bootstrap that could bring Backstage back:
+
+    bin/backstage-refused "$@" || exit 1
+
+Exit 0  the request does not fetch Backstage -- proceed.
+Exit 1  the request fetches Backstage -- refused, naming the decision record.
+
+The design point, and the reason this is Python rather than a regex: there are TWO questions, and
+one clever regex answers both of them wrongly.
+
+  1. NOMINATION -- does an argument name Backstage itself? (`@backstage/x`, `backstage.io`,
+     `/path/to/backstage`, `github.com/backstage/...`) Then the request is about Backstage, and
+     whatever verb precedes it, the door refuses.
+  2. FETCH -- is a package manager or git acting on a target whose last segment is `backstage`?
+     (`npm install backstage`, `git clone .../backstage/backstage`)
+
+Reading *about* Backstage is research, not a fetch: `grep -r backstage docs/`, `cat .../backstage-
+is-frozen.md`, `echo the backdrop is not the backstage` all pass. A guard that refuses correct work
+is an outage (AGENTS.md section 12), so the falsifier grades both halves:
+`tests/test_backstage_stays_frozen.py`.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import sys
+
+RECORD = "docs/decisions/2026-11-12-backstage-is-frozen-history.md"
+
+# A path segment that IS backstage: /x/backstage, ./backstage, backstage/, a trailing segment.
+SEGMENT = re.compile(r"(^|[/\\])backstage([/\\]|$)", re.IGNORECASE)
+# A package scope or the product's own hostnames / repo slugs.
+NOMINATED = re.compile(
+    r"(@backstage/|backstage-io/|backstage\.io|backstage\.github\.io|github\.com/backstage)",
+    re.IGNORECASE,
+)
+# The verbs that BRING something onto this machine, and the words that let them skip flags.
+FETCH_VERBS = {
+    "install", "add", "i", "ci", "clone", "new", "create", "exec", "dlx",
+    "get", "fetch", "pull", "update", "upgrade", "bootstrap", "vendor",
+}
+# Reading about a thing is never fetching it. These verbs exempt their arguments from nomination.
+READONLY_VERBS = {
+    "grep", "rg", "cat", "head", "tail", "less", "more", "echo", "printf", "ls",
+    "find", "wc", "diff", "git-grep", "sed", "awk", "pytest", "python", "python3",
+}
+
+REFUSAL = """REFUSED: Backstage is frozen history on this machine (idp#8000).
+
+Founder, 2026-11-12: "oprevent it being downloaded on tis machine, it must remoin frozen as
+hsotory for furrueleanring how not to do backstage".
+
+A 2,419 MB Backstage install (node_modules alone 2,287 MB) sat in ~/.estate/frontend for Genesis,
+which never imported it. It was deleted. Nothing recreates it.
+
+The reason, the measurements and the lesson are recorded once in:
+    {record}
+
+The lesson, in one line: do not install a layer until a real caller in the estate imports it.
+A capability with no caller is not a capability, it is disk.
+
+If you believe this refusal is wrong, that is a decision for the founder, not a flag to add.
+""".format(record=RECORD)
+
+
+def nominates_backstage(arg: str) -> bool:
+    """Does this single argument name Backstage itself?"""
+    low = arg.lower().strip()
+    if low == "backstage":
+        # A bare argument that IS the name is a package-manager target, never prose.
+        return True
+    if NOMINATED.search(low):
+        return True
+    # A path whose segment is exactly backstage: /Users/x/.estate/frontend/idp/backstage
+    return bool(SEGMENT.search(low))
+
+
+def fetches_backstage(tokens: list) -> bool:
+    """Is a package manager or git acting on a Backstage target?"""
+    # Reading about a thing is never fetching it: when the command itself is a read-only tool, the
+    # whole invocation is research and passes. (`grep -r backstage docs/` must never be refused.)
+    if tokens and os.path.basename(tokens[0]).lower() in READONLY_VERBS:
+        return False
+    for index, token in enumerate(tokens):
+        if token.lower() not in FETCH_VERBS:
+            continue
+        # Look at what this verb acts on: skip flags, then grade the first real target.
+        for later in tokens[index + 1 :]:
+            if later.startswith("-"):
+                continue
+            if nominates_backstage(later):
+                return True
+            break  # only the immediate target of this verb
+    return False
+
+
+def decides(args: list) -> bool:
+    """True when the request fetches Backstage and must be refused."""
+    if not args:
+        return False
+    # The first token is the command; if it is a read-only tool, nothing here fetches anything.
+    head = os.path.basename(args[0]).lower()
+    if head in READONLY_VERBS:
+        return False
+    if fetches_backstage(args):
+        return True
+    # Every argument is also graded on its own: a path segment `.../backstage`, `--prefix ./backstage`,
+    # `install backstage`, `@backstage/cli` -- each nominates the product regardless of verb shape.
+    return any(nominates_backstage(a) for a in args)
+
+
+def main(argv: list) -> int:
+    args = list(argv)
+    if not sys.stdin.isatty():
+        try:
+            piped = sys.stdin.read()
+        except (OSError, UnicodeDecodeError):
+            piped = ""
+        if piped:
+            # An install script names its package in its body; grade each line as its own command.
+            args.extend(line for line in piped.splitlines() if line.strip())
+    if decides(args):
+        sys.stderr.write(REFUSAL)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

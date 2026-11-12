@@ -232,12 +232,22 @@ def note_claim(num: int) -> None:
 
     The ledger is read through gh and cached; without the note, bin/estate-memory-enforce
     refuses the first edit after claim-open as unclaimed. A failed note costs only that delay.
+
+    The cached register is also DROPPED, because noting the number is not enough: the cache also
+    holds the claim's path list, so a claim extended with --paths keeps the previous paths until
+    FOCUS_TTL_S (300 s) expires and every edit to a newly claimed file is refused as unclaimed.
+    Dropping the cache costs one `gh issue list` on the next read and removes a false refusal that
+    would otherwise block the agent for up to five minutes.
     """
     sys.path.insert(0, os.path.join(IDP, "platform", "estate", "memory"))
     try:
         import focus  # noqa: PLC0415 -- optional: a checkout without it still claims
 
         focus.note_claim(num)
+        # The stale register would still serve the OLD paths; make the next read re-read issues.
+        cache = focus.focus_cache_path()
+        if os.path.exists(cache):
+            os.unlink(cache)
     except (ImportError, OSError) as e:
         print(f"warn    claim-open  focus note not written ({e}): the hook sees it next poll")
 
