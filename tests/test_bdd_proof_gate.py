@@ -495,3 +495,57 @@ def test_the_exit_codes_are_the_documented_ones() -> None:
     assert mod.EXIT_REFUSED == 1
     assert mod.EXIT_BLIND == 2
     assert mod.EXIT_NOT_APPLICABLE == 3
+
+
+def test_zero_executed_bdd_evidence_is_refused_in_json_and_live(tmp_path: Path) -> None:
+    """A zero-failure report is not evidence that any test executed."""
+    zero_runs = (
+        "0 failed",
+        "0 passed, 0 failed",
+        "0 scenarios (0 passed)",
+        "0 features (0 passed)",
+        "Tests: 0 passed, 0 total",
+        "0 passed in 0.01s",
+    )
+    for evidence in zero_runs:
+        body = proof_body(HEAD, evidence)
+        rc, out, err = run_gate(
+            [],
+            clean_env(),
+            stdin=json.dumps(
+                {"title": "zero-test negative", "headRefOid": HEAD, "body": body}
+            ),
+        )
+        assert rc == 1, f"JSON admitted {evidence!r}: rc={rc} out={out} err={err}"
+        ev = event_file(
+            tmp_path,
+            {"pull_request": {"number": 4242, "body": body, "head": {"sha": HEAD}}},
+        )
+        rc, out, err = run_gate(["--live"], clean_env(GITHUB_EVENT_PATH=str(ev)))
+        assert rc == 1, f"LIVE admitted {evidence!r}: rc={rc} out={out} err={err}"
+
+
+def test_nonzero_bdd_evidence_remains_proved_in_json_and_live(tmp_path: Path) -> None:
+    """Fail closed on zero execution without rejecting real nonzero counts."""
+    positive_runs = (
+        "31 scenarios (31 passed), 0 failed",
+        "Tests: 1 passed, 1 total",
+        "1 passed in 0.01s",
+        "--- PASS: TestBDDGateway (0.02s)",
+    )
+    for evidence in positive_runs:
+        body = proof_body(HEAD, evidence)
+        rc, out, err = run_gate(
+            [],
+            clean_env(),
+            stdin=json.dumps(
+                {"title": "nonzero positive", "headRefOid": HEAD, "body": body}
+            ),
+        )
+        assert rc == 0, f"JSON refused {evidence!r}: rc={rc} out={out} err={err}"
+        ev = event_file(
+            tmp_path,
+            {"pull_request": {"number": 4242, "body": body, "head": {"sha": HEAD}}},
+        )
+        rc, out, err = run_gate(["--live"], clean_env(GITHUB_EVENT_PATH=str(ev)))
+        assert rc == 0, f"LIVE refused {evidence!r}: rc={rc} out={out} err={err}"
