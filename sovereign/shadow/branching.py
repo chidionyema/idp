@@ -15,6 +15,7 @@ from typing import Any
 from temporalio.client import Client
 
 from sovereign import config
+from sovereign import command_codes
 from sovereign.shadow import config_keys as ck
 from sovereign.shadow.workflow import BranchParentWorkflow
 
@@ -45,6 +46,8 @@ def params(
     metered one. Requires time_box_s and step_s in that case -- no
     default is invented for either, since a wrong default silently
     picked would be a worse failure than an explicit ValueError."""
+    # Reject before any parent workflow can fork branches.
+    command_codes.require_trusted_ingress(task)
     resolved_count = count
     if resolved_count is None and tier is not None:
         if time_box_s is None or step_s is None:
@@ -94,6 +97,7 @@ def child_ids(parent_id: str, count: int) -> list[str]:
 async def start(
     client: Client, p: dict[str, Any], task_queue: str | None = None
 ) -> dict[str, Any]:
+    command_codes.require_trusted_ingress(p.get("task"))
     handle = await client.start_workflow(
         BranchParentWorkflow.run,
         p,
@@ -110,6 +114,7 @@ async def start(
 async def start_on_estate(
     task: str, *, runner: str, repo: str | None, budget: int, count: int | None
 ) -> dict[str, Any]:
+    command_codes.require_trusted_ingress(task)
     client = await Client.connect(
         config.TEMPORAL_ADDRESS, namespace=config.TEMPORAL_NAMESPACE
     )
