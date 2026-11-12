@@ -68,7 +68,7 @@ export default function HomePage() {
             <h2 id="meridian-future-work">Research the future.<br/><em>Build something better.</em></h2>
             <p>Meridian&apos;s work begins with research, grows through experimentation and finds its purpose in products and businesses that improve people&apos;s lives.</p>
             <p>One question we keep returning to: what if people could spend less time chasing work and more time doing it?</p>
-            <div className="mi-hero-actions">
+            <div className="mi-future-actions">
               <Link href="/products/chronos" className="mi-button mi-button-gold">Meet Chronos <span aria-hidden="true">→</span></Link>
               <Link href="/investors" className="mi-button mi-button-dark">Explore our vision <span aria-hidden="true">→</span></Link>
             </div>
