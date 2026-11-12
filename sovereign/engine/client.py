@@ -10,6 +10,7 @@ import uuid
 from typing import Any, Literal
 
 from sovereign import config
+from sovereign import command_codes
 from sovereign.engine import fsm
 from sovereign.engine import receipts as receipts_mod
 
@@ -41,6 +42,9 @@ async def start(
     budget: int = 0,
     critical: bool = False,
 ) -> dict[str, Any]:
+    # CC1 is not task prose: untrusted direct callers must never bypass intake.
+    # This runs before Temporal is contacted, at the shared Otto/CLI client seam.
+    command_codes.require_trusted_ingress(task)
     client = await get_client()
     session_id = _new_session_id()
     params = {
