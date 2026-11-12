@@ -111,3 +111,58 @@ def test_dry_run_touches_nothing():
     rc = mod.main(["--dry-run"])
     assert rc == 0, rc
     assert called == [], "dry-run must not write a ref"
+
+
+def _fake_git_publisher(monkeypatch, mod, *, remote_sha, lookup_rc=0):
+    calls = []
+
+    def fake_run(cmd, *, check=True, stdin=None):
+        calls.append(cmd)
+        if cmd[:2] == ["git", "rev-parse"]:
+            return 1, ""  # a fresh Actions checkout has no local chronos ref
+        if cmd[:3] == ["git", "ls-remote", "--refs"]:
+            return lookup_rc, f"{remote_sha}\trefs/chronos/state" if remote_sha else ""
+        if cmd[:2] == ["git", "hash-object"]:
+            return 0, "b" * 40
+        if cmd[:2] == ["git", "mktree"]:
+            return 0, "c" * 40
+        if cmd[:2] == ["git", "commit-tree"]:
+            return 0, "d" * 40
+        if cmd[:2] == ["git", "update-ref"]:
+            return 0, ""
+        if cmd[:2] == ["git", "push"]:
+            return 0, ""
+        raise AssertionError(f"unexpected git command: {cmd}")
+
+    monkeypatch.setattr(mod, "run", fake_run)
+    return calls
+
+
+def test_fresh_runner_uses_existing_remote_lease_not_empty_lease(monkeypatch):
+    mod = _load()
+    sha = "a" * 40
+    calls = _fake_git_publisher(monkeypatch, mod, remote_sha=sha)
+    assert mod.publish('{"schema":"chronos/1"}') == "d" * 40
+    assert ["git", "ls-remote", "--refs", "origin", mod.STATE_REF] in calls
+    pushes = [c for c in calls if c[:2] == ["git", "push"]]
+    assert len(pushes) == 1
+    assert f"--force-with-lease={mod.STATE_REF}:{sha}" in pushes[0]
+
+
+def test_remote_lease_lookup_failure_refuses_publish_before_writing(monkeypatch):
+    import pytest
+
+    mod = _load()
+    calls = _fake_git_publisher(monkeypatch, mod, remote_sha="", lookup_rc=128)
+    with pytest.raises(RuntimeError, match="cannot read remote Chronos lease"):
+        mod.publish('{"schema":"chronos/1"}')
+    assert not any(c[:2] == ["git", "push"] for c in calls)
+    assert not any(c[:2] == ["git", "update-ref"] for c in calls)
+
+
+def test_first_ever_remote_ref_can_be_created_with_empty_lease(monkeypatch):
+    mod = _load()
+    calls = _fake_git_publisher(monkeypatch, mod, remote_sha="")
+    assert mod.publish('{"schema":"chronos/1"}') == "d" * 40
+    pushes = [c for c in calls if c[:2] == ["git", "push"]]
+    assert f"--force-with-lease={mod.STATE_REF}:" in pushes[0]
