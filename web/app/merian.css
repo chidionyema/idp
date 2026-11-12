@@ -492,7 +492,7 @@
 .mi-future-grid h2{font:750 clamp(42px,5.7vw,88px)/1.01 var(--sans);letter-spacing:-.06em;margin:21px 0 34px}
 .mi-future-grid h2 em{font-family:var(--serif);font-weight:500;color:#90601c}
 .mi-future-grid p{font-size:clamp(16px,1.35vw,20px);line-height:1.8;color:#39495b;max-width:670px;margin:15px 0}
-.mi-future-grid .mi-hero-actions{margin-top:32px}
+.mi-future-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:32px}
 .mi-future-grid .mi-button-dark{background:#14253d;color:white;border:1px solid #14253d}
 .mi-future-panel{background:#13263d;color:#f8f5ee;padding:clamp(26px,4vw,54px);border:1px solid #314a64;box-shadow:24px 24px 0 #e3dbcc}
 .mi-future-panel>span{font:600 10px var(--mono);letter-spacing:.14em;color:#eac47e;display:block;margin-bottom:23px}
@@ -639,3 +639,5 @@
 @media(max-width:800px){.mi-future-grid,.mi-investor-opening-grid,.mi-chronos-human-grid,.mi-chronos-scene{grid-template-columns:1fr}.mi-investor-product-grid,.mi-investor-ideas,.mi-chronos-benefits-grid{grid-template-columns:1fr}.mi-investor-product-grid article,.mi-investor-ideas article,.mi-chronos-benefit{min-height:0}.mi-chronos-scene-example{border-left:0;border-top:1px solid #52718a}.mi-investor-room-boundary{flex-direction:column;align-items:flex-start}.mi-investor-product-grid h3{margin-top:25px}}
 @media(max-width:620px){.mi-future-section,.mi-investor-opening,.mi-investor-proof,.mi-investor-principles,.mi-investor-products,.mi-chronos-opening,.mi-chronos-benefits,.mi-chronos-human{padding-block:66px}.mi-future-panel{box-shadow:10px 10px 0 #e3dbcc}.mi-investor-journey{grid-template-columns:repeat(2,minmax(0,1fr))}.mi-investor-choice-head{display:block}.mi-investor-refresh{margin-top:18px;width:100%}.mi-investor-choices{grid-template-columns:1fr}.mi-investor-choices>button{min-height:160px}.mi-investor-viewport-head{flex-direction:column}.mi-investor-facts{grid-template-columns:1fr}.mi-investor-room-topline{font-size:9px;line-height:1.5}.mi-investor-room-hero h1{margin-top:46px}.mi-chronos-walkthrough-heading{display:block}.mi-chronos-concept-badge{display:inline-block;margin:15px 0}.mi-chronos-steps{grid-template-columns:1fr}.mi-chronos-step{min-height:54px}.mi-investor-room-buttons .mi-button{width:100%}}
 @media(prefers-reduced-motion:reduce){.mi-investor-page *,.mi-chronos-page *,.mi-investor-room *{animation:none!important;transition:none!important}}
+
+@media(max-width:620px){.mi-future-actions{flex-direction:column}.mi-future-actions .mi-button{width:100%}}
