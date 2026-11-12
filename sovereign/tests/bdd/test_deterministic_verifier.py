@@ -1063,7 +1063,21 @@ def test_rule_4_has_two_enforcement_points() -> None:
         and not line.startswith("tests/")
         and not line.endswith("_test.py")
         and not line.endswith("test_deterministic_verifier.py")
+        # Rule 4's executable admission boundaries, NOT every observer that
+        # emits the word UNATTESTED. A signed-action telemetry source records
+        # an outcome, but cannot itself admit/deny a workload.
+        and (
+            line == "bin/idp-gateway-emit"
+            or line.startswith(("platform/executor/", "platform/verification/"))
+        )
     )
+    for observational_source in (
+        "platform/estate/karma/readback.py",
+        "platform/llm/action_ledger.py",
+    ):
+        assert observational_source not in enforcing, (
+            "KARMA telemetry must not be mistaken for a Rule 4 enforcement point"
+        )
     assert enforcing == [
         "bin/idp-gateway-emit",
         "platform/executor/daemon.py",
