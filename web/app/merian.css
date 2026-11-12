@@ -532,7 +532,7 @@
 .mi-chronos-principles .mi-chronos-section-intro{color:#142539}
 .mi-chronos-principles .mi-chronos-section-intro h2 em{color:#9d702d}
 .mi-chronos-principle-list{border-top:1px solid #c8d1d7}
-.mi-chronos-principle{display:grid;grid-template-columns:75px minmax(190px,.7fr) minmax(0,1.2fr);gap:24px;align-items:start;padding:38px 0;border-bottom:1px solid #c8d1d7}
+.mi-chronos-principle{display:grid;grid-template-columns:75px minmax(190px,.7fr) minmax(0,1.2fr);gap:24px;align-items:flex-start;padding:38px 0;border-bottom:1px solid #c8d1d7}
 .mi-chronos-principle>span{font:650 12px var(--mono);color:#92662e}
 .mi-chronos-principle h3{font:750 clamp(22px,2.6vw,34px)/1.2 var(--sans);letter-spacing:-.045em;color:#182b3c}
 .mi-chronos-principle p{font-size:15px;line-height:1.8;color:#435768}
