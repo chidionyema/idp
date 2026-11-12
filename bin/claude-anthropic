@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""Launch authentic Claude Code without inherited GLM/Z.ai gateway overrides.
+
+Run as: python3 bin/claude-anthropic [normal Claude arguments]
+           python3 bin/claude-anthropic --verify-live
+
+Never rewrites personal/managed settings, reads secrets, or claims a live
+Anthropic provider from static config. Intended for the estate-owned Claude
+Code launch path, not for other model-agnostic workers.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+
+CANONICAL_BASE = "https://api.anthropic.com"
+# Remove *all* transport and model aliases that can turn Claude Code into a
+# third-party GLM client even when the binary is called "claude".
+DROP = frozenset(
+    {
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_CUSTOM_HEADERS",
+        "ANTHROPIC_MODEL",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        "ANTHROPIC_SMALL_FAST_MODEL",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+        "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
+    }
+)
+# Do not forward any inherited ANTHROPIC_API_KEY: it may be a Z.ai Coding Plan
+# credential masquerading as an Anthropic key. Use Claude Code OAuth directly.
+# Authentic API-key mode is deliberately not offered by this entrypoint.
+FORBIDDEN_FORWARD = frozenset({"ANTHROPIC_API_KEY"})
+
+
+def direct_env(parent: dict[str, str]) -> dict[str, str]:
+    clean = {
+        key: value
+        for key, value in parent.items()
+        if key not in DROP and key not in FORBIDDEN_FORWARD
+    }
+    clean["ANTHROPIC_BASE_URL"] = CANONICAL_BASE
+    return clean
+
+
+def settings_override() -> str:
+    return json.dumps(
+        {
+            "model": "sonnet",
+            "env": {
+                "ANTHROPIC_BASE_URL": CANONICAL_BASE,
+                "ANTHROPIC_AUTH_TOKEN": "",
+                "ANTHROPIC_CUSTOM_HEADERS": "",
+                "ANTHROPIC_MODEL": "",
+                "CLAUDE_CODE_USE_BEDROCK": "",
+                "CLAUDE_CODE_USE_VERTEX": "",
+                "CLAUDE_CODE_USE_FOUNDRY": "",
+            },
+        },
+        separators=(",", ":"),
+    )
+
+
+def validate_args(args: list[str]) -> None:
+    # A later model or settings override would defeat the provider fence.
+    for arg in args:
+        if arg in (
+            "--model",
+            "--settings",
+            "--api-key",
+            "--allow-vaulted-anthropic-api-key",
+            "--system-prompt",
+            "--append-system-prompt",
+        ) or arg.startswith(
+            (
+                "--model=",
+                "--settings=",
+                "--api-key=",
+            )
+        ):
+            raise ValueError(
+                "PROVIDER_OVERRIDE_REFUSED: use estate-supplied Claude settings"
+            )
+
+
+def effective_binary() -> str:
+    binary = shutil.which("claude")
+    if not binary:
+        raise RuntimeError("CLAUDE_CODE_BINARY_UNAVAILABLE")
+    return binary
+
+
+def live_probe(binary: str, env: dict[str, str]) -> int:
+    # A CLI executable, configured name or successful login is NOT model proof.
+    # Claude Code's JSON modelUsage (where present) is authoritative for this
+    # request; absence refuses certification rather than claiming success.
+    cmd = [
+        binary,
+        "--settings",
+        settings_override(),
+        "--model",
+        "sonnet",
+        "--output-format",
+        "json",
+        "-p",
+        "Reply with the exact word READY.",
+    ]
+    result = subprocess.run(
+        cmd, env=env, capture_output=True, text=True, timeout=120, check=False
+    )
+    if result.returncode:
+        print(
+            "CLAUDE_PROVIDER_PROBE_FAILED exit=" + str(result.returncode),
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        reply = json.loads(result.stdout)
+    except ValueError:
+        print("CLAUDE_PROVIDER_PROBE_INVALID_RECEIPT", file=sys.stderr)
+        return 2
+    if reply.get("is_error") is True:
+        print("CLAUDE_PROVIDER_PROBE_ERROR", file=sys.stderr)
+        return 2
+    usage = reply.get("modelUsage")
+    observed = list(usage) if isinstance(usage, dict) else []
+    if not observed or any(not item.startswith("claude-") for item in observed):
+        print("CLAUDE_PROVIDER_UNVERIFIED", file=sys.stderr)
+        return 2
+    print(
+        json.dumps(
+            {
+                "state": "CLAUDE_MODEL_OBSERVED",
+                "models": observed,
+                "configured_route": CANONICAL_BASE,
+            },
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def main(args: list[str]) -> int:
+    verify = False
+    if "--verify-live" in args:
+        args = [arg for arg in args if arg != "--verify-live"]
+        verify = True
+    validate_args(args)
+    binary = effective_binary()
+    clean = direct_env(os.environ)
+    if verify:
+        if args:
+            raise ValueError("PROBE_DOES_NOT_TAKE_EXTRA_ARGUMENTS")
+        return live_probe(binary, clean)
+    cmd = [binary, "--settings", settings_override(), "--model", "sonnet", *args]
+    # Exec preserves the terminal, signals and exit code.
+    os.execvpe(binary, cmd, clean)
+    return 0  # execvpe does not return in production
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main(sys.argv[1:]))
+    except (ValueError, RuntimeError) as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2)
