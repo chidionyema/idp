@@ -42,9 +42,18 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
-MEMORY_DIR = REPO / "platform" / "estate" / "memory"
+# ESTATE_MEMORY_DIR exists so the NOT-OK paths are reachable from a test. Without it the verdict
+# is whatever this checkout's memory plane happens to be, and a test for "what does the door print
+# when it is broken" can only be written by breaking the real plane -- which is how the appended-
+# guidance defect survived: no test could drive the branch it lived on.
+MEMORY_DIR = Path(
+    os.environ.get("ESTATE_MEMORY_DIR") or (REPO / "platform" / "estate" / "memory")
+)
 LEDGER = Path(
-    os.environ.get("ESTATE_MEMORY_LEDGER", Path.home() / ".estate" / "memory" / "required-ledger.jsonl")
+    os.environ.get(
+        "ESTATE_MEMORY_LEDGER",
+        Path.home() / ".estate" / "memory" / "required-ledger.jsonl",
+    )
 )
 WINDOW_SECONDS = int(os.environ.get("ESTATE_MEMORY_REPAIR_WINDOW", "3600"))
 
@@ -77,7 +86,9 @@ def _record(verdict: str, detail: str, **extra: object) -> None:
 
 def _importable() -> tuple[bool, str]:
     """Can the door module even be imported? This is the check that would have caught 2026-11-10."""
-    probe = f"import sys; sys.path.insert(0, {str(MEMORY_DIR)!r}); import door; print('ok')"
+    probe = (
+        f"import sys; sys.path.insert(0, {str(MEMORY_DIR)!r}); import door; print('ok')"
+    )
     try:
         r = subprocess.run(
             [sys.executable, "-c", probe],
@@ -174,7 +185,11 @@ def main(argv: list[str]) -> int:
     # and the human still sees what to do. Proven by tests/test_memory_json_is_parseable.py.
     guide = sys.stderr if as_json else sys.stdout
     if as_json:
-        print(json.dumps({"verdict": state, "reasons": reasons, "at": time.time()}, indent=2))
+        print(
+            json.dumps(
+                {"verdict": state, "reasons": reasons, "at": time.time()}, indent=2
+            )
+        )
     else:
         print(f"memory: {state}")
         for r in reasons:
@@ -191,14 +206,21 @@ def main(argv: list[str]) -> int:
         marker = LEDGER.parent / "repair-window.json"
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(json.dumps({"opened_at": time.time(), "for": state}))
-        _record("repair-window-opened", f"bounded {WINDOW_SECONDS}s to fix memory", state=state)
+        _record(
+            "repair-window-opened",
+            f"bounded {WINDOW_SECONDS}s to fix memory",
+            state=state,
+        )
         print(
             f"\nA repair window is open for {WINDOW_SECONDS}s: only memory repair files may be edited.",
             file=guide,
         )
         return 0
 
-    if is_repair_path(os.environ.get("ESTATE_MEMORY_TARGET", "")) and repair_window_open():
+    if (
+        is_repair_path(os.environ.get("ESTATE_MEMORY_TARGET", ""))
+        and repair_window_open()
+    ):
         print("\nThis path repairs memory and a window is open: allowed.", file=guide)
         return 0
 

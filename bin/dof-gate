@@ -13,6 +13,7 @@ cannot loosen the rules that judge it. An unreadable incident list is health unp
 gate fails closed to the `dof-probe` component, which NEVER authorizes protected changes without separately authenticated authority.
 Exit 0 admitted / full lease, 1 refused, 3 lease is repair-only.
 """
+
 from __future__ import annotations
 
 import fnmatch
@@ -29,7 +30,9 @@ REGISTRY = "catalog/dof-registry.json"
 
 
 def git(*args: str) -> str:
-    return subprocess.run(["git", *args], capture_output=True, text=True, timeout=20, check=True).stdout.strip()
+    return subprocess.run(
+        ["git", *args], capture_output=True, text=True, timeout=20, check=True
+    ).stdout.strip()
 
 
 def load_registry(base: str | None) -> tuple[dict, bool]:
@@ -49,7 +52,9 @@ def glob_match(pattern: str, path: str) -> bool:
 
 
 def scope_of(registry: dict, comp_id: str) -> tuple[list, dict]:
-    comp = registry["components"].get(comp_id) or {"repairScope": registry.get("defaultRepairScope", [])}
+    comp = registry["components"].get(comp_id) or {
+        "repairScope": registry.get("defaultRepairScope", [])
+    }
     out = []
     for p in comp["repairScope"]:
         # '@substrate' is the whole deploy surface. It is only honest when the substrate
@@ -68,11 +73,14 @@ def is_independent(registry: dict, changed: list) -> list:
         return []
     policy = registry.get("safeWorkScope") or {}
     allowed = policy.get("allowPatterns") or []
-    never_safe = (registry.get("substrateScope") or []) + (
-        registry.get("immutableWhileRed") or []
-    ) + (policy.get("neverSafe") or [])
+    never_safe = (
+        (registry.get("substrateScope") or [])
+        + (registry.get("immutableWhileRed") or [])
+        + (policy.get("neverSafe") or [])
+    )
     return [
-        p for p in changed
+        p
+        for p in changed
         if any(glob_match(g, p) for g in allowed)
         and not any(glob_match(g, p) for g in never_safe)
     ]
@@ -109,21 +117,36 @@ def open_incidents(registry: dict) -> list:
         while page <= 10:
             req = urllib.request.Request(
                 f"https://api.github.com/repos/{REPO}/issues?state=open&per_page=100&page={page}",
-                headers={"Accept": "application/vnd.github+json", "User-Agent": "idp-dof-gate",
-                         **({"Authorization": f"Bearer {token}"} if token else {})},
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": "idp-dof-gate",
+                    **({"Authorization": f"Bearer {token}"} if token else {}),
+                },
             )
             with urllib.request.urlopen(req, timeout=15) as res:
                 batch = json.load(res)
             for issue in batch:
                 m = rx.match(issue.get("title", ""))
                 if m and "pull_request" not in issue:
-                    found.append({"id": m.group("id"), "issue": issue["number"], "updated_at": issue["updated_at"]})
+                    found.append(
+                        {
+                            "id": m.group("id"),
+                            "issue": issue["number"],
+                            "updated_at": issue["updated_at"],
+                        }
+                    )
             if len(batch) < 100:
                 return found
             page += 1
         return found
     except Exception as exc:  # noqa: BLE001 -- any failure to see is health unproven
-        return [{"id": "dof-probe", "issue": None, "evidence": f"incident list unreadable: {exc}"}]
+        return [
+            {
+                "id": "dof-probe",
+                "issue": None,
+                "evidence": f"incident list unreadable: {exc}",
+            }
+        ]
 
 
 def trailers(message: str) -> dict:
@@ -144,7 +167,9 @@ def evaluate(registry: dict, incidents: list, message: str, changed: list) -> di
     first = incidents[0]
     key = dedupe_key(incidents, changed)
     refusal = {
-        "admitted": False, "refused": True, "level": "L2",
+        "admitted": False,
+        "refused": True,
+        "level": "L2",
         "open_incidents": [{"id": i["id"], "issue": i.get("issue")} for i in incidents],
         "required_trailer": f"Genesis-Resolves: {first['id']}",
         "dedupe_key": key,
@@ -180,19 +205,38 @@ def evaluate(registry: dict, incidents: list, message: str, changed: list) -> di
         }
     if resolves not in failing:
         reason = f"Genesis-Resolves '{resolves}' is not an open incident"
-        return {**refusal, "reason": reason, "unblocker": unblocker(registry, incidents, changed)}
+        return {
+            **refusal,
+            "reason": reason,
+            "unblocker": unblocker(registry, incidents, changed),
+        }
     scope, comp = scope_of(registry, resolves)
     # Even a registry selfRepair flag cannot bypass immutable protected controls.
     # This must instead use the separately authenticated trusted bootstrap path.
-    frozen = [p for p in changed if any(glob_match(g, p) for g in registry.get("immutableWhileRed", []))]
+    frozen = [
+        p
+        for p in changed
+        if any(glob_match(g, p) for g in registry.get("immutableWhileRed", []))
+    ]
     if frozen:
-        return {**refusal, "reason": "the gate is immutable while a critical service is down", "files": frozen}
+        return {
+            **refusal,
+            "reason": "the gate is immutable while a critical service is down",
+            "files": frozen,
+        }
     stray = [p for p in changed if not any(glob_match(g, p) for g in scope)]
     if stray:
-        return {**refusal, "reason": f"files outside {resolves} repairScope", "files": stray,
-                "unblocker": unblocker(registry, incidents, changed)}
-    return {"admitted": True, "reason": f"resolves {resolves} (issue #{failing[resolves].get('issue')}) within repairScope",
-            "dedupe_key": key}
+        return {
+            **refusal,
+            "reason": f"files outside {resolves} repairScope",
+            "files": stray,
+            "unblocker": unblocker(registry, incidents, changed),
+        }
+    return {
+        "admitted": True,
+        "reason": f"resolves {resolves} (issue #{failing[resolves].get('issue')}) within repairScope",
+        "dedupe_key": key,
+    }
 
 
 def clean_merge(sha: str) -> bool:
@@ -200,7 +244,9 @@ def clean_merge(sha: str) -> bool:
     if len(parents) < 2:
         return False
     try:
-        return git("merge-tree", "--write-tree", *parents).splitlines()[0] == git("rev-parse", f"{sha}^{{tree}}")
+        return git("merge-tree", "--write-tree", *parents).splitlines()[0] == git(
+            "rev-parse", f"{sha}^{{tree}}"
+        )
     except subprocess.CalledProcessError:
         return False
 
@@ -235,7 +281,9 @@ def suspended_result(registry: dict, lease: bool = False) -> dict:
     if lease:
         result.update({"level": "SUSPENDED", "lease": "full", "open_incidents": None})
     else:
-        result.update({"ok": True, "level": "SUSPENDED", "commits": [], "open_incidents": None})
+        result.update(
+            {"ok": True, "level": "SUSPENDED", "commits": [], "open_incidents": None}
+        )
     return result
 
 
@@ -247,8 +295,11 @@ def main(argv: list) -> int:
             return 0
         incidents = active_incidents(registry, open_incidents(registry))
         lease = {
-            "repo": REPO, "level": "L2" if incidents else "L0",
-            "lease": f"repair-only: Genesis-Resolves: {incidents[0]['id']}" if incidents else "full",
+            "repo": REPO,
+            "level": "L2" if incidents else "L0",
+            "lease": f"repair-only: Genesis-Resolves: {incidents[0]['id']}"
+            if incidents
+            else "full",
             "open_incidents": incidents,
         }
         print(json.dumps(lease, indent=2))
@@ -260,30 +311,66 @@ def main(argv: list) -> int:
         return 0
     incidents = active_incidents(registry, open_incidents(registry))
     decisions = []
-    for sha in [s for s in git("rev-list", "--reverse", f"{base}..{head}").splitlines() if s]:
+    for sha in [
+        s for s in git("rev-list", "--reverse", f"{base}..{head}").splitlines() if s
+    ]:
         if bootstrap:
             d = {"admitted": True, "reason": "bootstrap: base has no DoF registry"}
         elif clean_merge(sha):
             d = {"admitted": True, "reason": "clean merge of judged parents"}
         else:
-            changed = [p for p in git("diff-tree", "--root", "--no-commit-id", "--name-only", "-r", sha).splitlines() if p]
-            d = evaluate(registry, incidents, git("log", "-1", "--format=%B", sha), changed)
+            changed = [
+                p
+                for p in git(
+                    "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", sha
+                ).splitlines()
+                if p
+            ]
+            d = evaluate(
+                registry, incidents, git("log", "-1", "--format=%B", sha), changed
+            )
         decisions.append({"sha": sha, **d})
     ok = all(d["admitted"] for d in decisions)
     if control_mode(registry) == "observe":
-        print(json.dumps({"gate": "dof", "mode": "observe", "enforcement": "OBSERVE_ONLY",
-                          "would_admit": ok, "other_security_checks": "UNCHANGED",
-                          "commits": decisions}, indent=2))
+        print(
+            json.dumps(
+                {
+                    "gate": "dof",
+                    "mode": "observe",
+                    "enforcement": "OBSERVE_ONLY",
+                    "would_admit": ok,
+                    "other_security_checks": "UNCHANGED",
+                    "commits": decisions,
+                },
+                indent=2,
+            )
+        )
         return 0
-    print(json.dumps({"gate": "dof", "ok": ok, "level": "L2" if incidents else "L0", "bootstrap": bootstrap,
-                      "open_incidents": incidents, "commits": decisions}, indent=2))
+    print(
+        json.dumps(
+            {
+                "gate": "dof",
+                "ok": ok,
+                "level": "L2" if incidents else "L0",
+                "bootstrap": bootstrap,
+                "open_incidents": incidents,
+                "commits": decisions,
+            },
+            indent=2,
+        )
+    )
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a") as fh:
-            fh.write(f"## DoF level: {'L2' if incidents else 'L0'}\n| incident | issue |\n|---|---|\n")
+            fh.write(
+                f"## DoF level: {'L2' if incidents else 'L0'}\n| incident | issue |\n|---|---|\n"
+            )
             fh.writelines(f"| {i['id']} | #{i.get('issue')} |\n" for i in incidents)
             fh.write("\n| commit | decision | reason |\n|---|---|---|\n")
-            fh.writelines(f"| {d['sha'][:9]} | {'admitted' if d['admitted'] else 'REFUSED'} | {d['reason']} |\n" for d in decisions)
+            fh.writelines(
+                f"| {d['sha'][:9]} | {'admitted' if d['admitted'] else 'REFUSED'} | {d['reason']} |\n"
+                for d in decisions
+            )
     return 0 if ok else 1
 
 

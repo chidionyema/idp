@@ -1,99 +1,93 @@
 {
-  "spec": "chidionyema/argon-sync docs/DOF-GOVERNANCE-v1.md (cloud layer)",
-  "revision": "2026-11-09-founder-temporary-suspension-v2",
-  "why": "An open critical incident constrains changes that DEPEND on it; unrelated low-effect docs and non-protected tests may proceed only under explicit safeWorkScope.allowPatterns. Unknown or privileged effects require incident-scoped repairs with authenticated authority. Incident visibility failure cannot mint authority from commit trailers.",
-  "incident_title_regex": "^\\[lane\\] (?P<id>[a-z0-9-]+): a lane is down$",
-  "immutableWhileRed": [
-    "bin/dof-gate",
-    "catalog/dof-registry.json",
-    "tests/test_dof_gate.py",
-    ".github/workflows/ci.yml"
-  ],
-  "substrateScope": [
-    "clusters/**",
-    "deploy/**",
-    "infra/**",
-    "flux/**",
-    "platform/llm/**",
-    "llm/**",
-    "platform/ladder/**",
-    "platform/otto-gateway/**",
-    "platform/otto-golden/**",
-    "platform/otto-golden-secret/**",
-    "bin/idp-oke-*",
-    "bin/idp-estate-homes",
-    "bin/idp-otto-homes",
-    ".github/workflows/oke-*.yml",
-    ".github/workflows/estate-homes-drill.yml",
-    "docs/diagnoses/**",
-    ".growmos/**"
-  ],
-  "components": {
-    "llm-router": {
-      "repairProtocol": "issue body of the open [lane] llm-router incident",
-      "repairScope": [
-        "llm/**",
-        "platform/llm/**",
+    "spec": "chidionyema/argon-sync docs/DOF-GOVERNANCE-v1.md (cloud layer)",
+    "revision": "2026-11-09-founder-temporary-suspension-v2",
+    "why": "An open critical incident constrains changes that DEPEND on it; unrelated low-effect docs and non-protected tests may proceed only under explicit safeWorkScope.allowPatterns. Unknown or privileged effects require incident-scoped repairs with authenticated authority. Incident visibility failure cannot mint authority from commit trailers.",
+    "incident_title_regex": "^\\[lane\\] (?P<id>[a-z0-9-]+): a lane is down$",
+    "immutableWhileRed": [
+        "bin/dof-gate",
+        "catalog/dof-registry.json",
+        "tests/test_dof_gate.py",
+        ".github/workflows/ci.yml",
+    ],
+    "substrateScope": [
         "clusters/**",
         "deploy/**",
+        "infra/**",
         "flux/**",
-        "docs/diagnoses/**"
-      ]
-    },
-    "otto": {
-      "repairProtocol": "issue body of the open [lane] otto incident",
-      "repairScope": [
+        "platform/llm/**",
+        "llm/**",
+        "platform/ladder/**",
         "platform/otto-gateway/**",
         "platform/otto-golden/**",
         "platform/otto-golden-secret/**",
-        "bin/idp-otto-homes",
-        "docs/diagnoses/**"
-      ]
-    },
-    "estate-doors": {
-      "repairProtocol": "issue body of the open [lane] estate-doors incident",
-      "repairScope": [
         "bin/idp-oke-*",
         "bin/idp-estate-homes",
-        "clusters/**",
-        "deploy/**",
-        "flux/**",
+        "bin/idp-otto-homes",
         ".github/workflows/oke-*.yml",
         ".github/workflows/estate-homes-drill.yml",
-        "docs/diagnoses/**"
-      ]
-    },
-    "dof-probe": {
-      "repairProtocol": "BLIND incident inventory is not a real repair ticket. Restore independently authenticated incident visibility or obtain an independently signed, patch-bound trusted recovery permit; never treat Genesis-Resolves:dof-probe as approval.",
-      "selfRepair": false,
-      "repairScope": []
-    }
-  },
-  "safeWorkScope": {
-    "why": "Only reviewed, explicitly listed low-effect paths are eligible while a different service is unavailable. Outside substrateScope alone is NOT proof of independence; protected controls and mixes with unknown effects are always blocked.",
-    "rule": "EVERY changed path must match allowPatterns and NO changed path may match substrateScope, immutableWhileRed or neverSafe; no trailer may bootstrap an unreadable incident inventory.",
-    "allowPatterns": [
-      "README.md",
-      "docs/specs/**",
-      "tests/**"
+        "docs/diagnoses/**",
+        ".growmos/**",
     ],
-    "neverSafe": [
-      "bin/dof-gate",
-      "catalog/dof-registry.json",
-      "tests/test_dof_gate.py",
-      ".github/workflows/ci.yml"
-    ]
-  },
-  "defaultRepairScope": [
-    "@substrate"
-  ],
-  "control": {
-    "mode": "enforced",
-    "directive": "founder-directive-2026-11-09",
-    "scope": "global-dof-only",
-    "reason": "Founder directive 2026-11-12: find the cage and lock the agent in. Re-armed from disabled; the reenableOnlyAfter backlog field was read by no code, so a control gated on it could never arm.",
-    "reenableOnlyAfter": "independently reconciled backlog of accepted tickets, branches, worktrees and reviewed changes, verified against main and runtime yield",
-    "lastVerifiedBacklog": null,
-    "suspendedComponents": []
-  }
+    "components": {
+        "llm-router": {
+            "repairProtocol": "issue body of the open [lane] llm-router incident",
+            "repairScope": [
+                "llm/**",
+                "platform/llm/**",
+                "clusters/**",
+                "deploy/**",
+                "flux/**",
+                "docs/diagnoses/**",
+            ],
+        },
+        "otto": {
+            "repairProtocol": "issue body of the open [lane] otto incident",
+            "repairScope": [
+                "platform/otto-gateway/**",
+                "platform/otto-golden/**",
+                "platform/otto-golden-secret/**",
+                "bin/idp-otto-homes",
+                "docs/diagnoses/**",
+            ],
+        },
+        "estate-doors": {
+            "repairProtocol": "issue body of the open [lane] estate-doors incident",
+            "repairScope": [
+                "bin/idp-oke-*",
+                "bin/idp-estate-homes",
+                "clusters/**",
+                "deploy/**",
+                "flux/**",
+                ".github/workflows/oke-*.yml",
+                ".github/workflows/estate-homes-drill.yml",
+                "docs/diagnoses/**",
+            ],
+        },
+        "dof-probe": {
+            "repairProtocol": "BLIND incident inventory is not a real repair ticket. Restore independently authenticated incident visibility or obtain an independently signed, patch-bound trusted recovery permit; never treat Genesis-Resolves:dof-probe as approval.",
+            "selfRepair": false,
+            "repairScope": [],
+        },
+    },
+    "safeWorkScope": {
+        "why": "Only reviewed, explicitly listed low-effect paths are eligible while a different service is unavailable. Outside substrateScope alone is NOT proof of independence; protected controls and mixes with unknown effects are always blocked.",
+        "rule": "EVERY changed path must match allowPatterns and NO changed path may match substrateScope, immutableWhileRed or neverSafe; no trailer may bootstrap an unreadable incident inventory.",
+        "allowPatterns": ["README.md", "docs/specs/**", "tests/**"],
+        "neverSafe": [
+            "bin/dof-gate",
+            "catalog/dof-registry.json",
+            "tests/test_dof_gate.py",
+            ".github/workflows/ci.yml",
+        ],
+    },
+    "defaultRepairScope": ["@substrate"],
+    "control": {
+        "mode": "enforced",
+        "directive": "founder-directive-2026-11-09",
+        "scope": "global-dof-only",
+        "reason": "Founder directive 2026-11-12: find the cage and lock the agent in. Re-armed from disabled; the reenableOnlyAfter backlog field was read by no code, so a control gated on it could never arm.",
+        "reenableOnlyAfter": "independently reconciled backlog of accepted tickets, branches, worktrees and reviewed changes, verified against main and runtime yield",
+        "lastVerifiedBacklog": null,
+        "suspendedComponents": [],
+    },
 }
