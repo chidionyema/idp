@@ -61,7 +61,7 @@ test("named, current, non-revoked, verified, scoped grant required on every requ
     issuedAt: new Date(time - 60_000).toISOString(),
     lastActivityAt: new Date(time - 30_000).toISOString(),
     expiresAt: new Date(time - 60_000 + 7 * 86400_000).toISOString()}, time), 'seven-day grant accepted');
-  assert.ok(parseInvestorGrant(validGrant, time), 'active session remains valid even when MFA occurred days ago');
+  assert.ok(parseInvestorGrant(validGrant, time), 'historic identity verification is permitted only with separately attested fresh MFA');
   for (const changed of [
     { decision: "deny" }, { revoked: true }, { identityVerified: false },
     { mfaVerified: false }, { mfaVerifiedAt: undefined },
