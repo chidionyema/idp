@@ -111,3 +111,99 @@ def test_dry_run_touches_nothing():
     rc = mod.main(["--dry-run"])
     assert rc == 0, rc
     assert called == [], "dry-run must not write a ref"
+
+
+def _git(cwd, *args):
+    import subprocess
+
+    env = {
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@estate.invalid",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@estate.invalid",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_SYSTEM": "/dev/null",
+        "PATH": __import__("os").environ["PATH"],
+    }
+    p = subprocess.run(  # noqa: S603
+        ["git", *args], cwd=cwd, capture_output=True, text=True, env=env
+    )
+    assert p.returncode == 0, (args, p.stderr)
+    return p.stdout.strip()
+
+
+def _origin_with_a_published_board(tmp_path, monkeypatch):
+    """A bare origin that already holds refs/chronos/state, and a FRESH clone that never saw it.
+
+    That is every scheduled runner: actions/checkout fetches the branch, never refs/chronos/*.
+    """
+    for key, val in (
+        ("GIT_AUTHOR_NAME", "t"),
+        ("GIT_AUTHOR_EMAIL", "t@estate.invalid"),
+        ("GIT_COMMITTER_NAME", "t"),
+        ("GIT_COMMITTER_EMAIL", "t@estate.invalid"),
+        ("GIT_CONFIG_GLOBAL", "/dev/null"),
+        ("GIT_CONFIG_SYSTEM", "/dev/null"),
+    ):
+        monkeypatch.setenv(key, val)
+    origin = tmp_path / "origin.git"
+    seed = tmp_path / "seed"
+    runner = tmp_path / "runner"
+    _git(tmp_path, "init", "-q", "--bare", str(origin))
+    _git(tmp_path, "init", "-q", "-b", "main", str(seed))
+    (seed / "f").write_text("1\n")
+    _git(seed, "add", "f")
+    _git(seed, "commit", "-q", "-m", "seed")
+    _git(seed, "push", "-q", str(origin), "main", "main:refs/chronos/state")
+    _git(tmp_path, "clone", "-q", "-b", "main", str(origin), str(runner))
+    first = _git(origin, "rev-parse", "refs/chronos/state")
+    assert _git(runner, "for-each-ref", "refs/chronos") == "", (
+        "the clone must not hold the ref"
+    )
+    return origin, seed, runner, first
+
+
+def test_a_fresh_runner_that_never_fetched_the_ref_still_publishes_over_it(
+    tmp_path, monkeypatch
+):
+    """Run 43265495031 (2026-11-12): `! [rejected] ... refs/chronos/state (stale info)`.
+
+    The lease was read only when the ref existed LOCALLY. A fresh checkout has no local
+    refs/chronos/state, so the lease was empty, which tells git "the ref must not exist" --
+    and once the first board was published every later runner was refused. The lease is the
+    REMOTE's value, so it is read from the remote whatever the local clone holds.
+    """
+    mod = _load()
+    origin, _seed, runner, first = _origin_with_a_published_board(tmp_path, monkeypatch)
+    monkeypatch.setattr(mod, "REPO_ROOT", runner)
+    commit = mod.publish(
+        mod.build_payload({"legion": "estate-clocks", "obligations": []})
+    )
+    now = _git(origin, "rev-parse", "refs/chronos/state")
+    assert now == commit and now != first, (first, commit, now)
+
+
+def test_a_publisher_that_lost_the_race_is_refused_and_the_winner_stays(
+    tmp_path, monkeypatch
+):
+    """The falsifier for the fix above: reading the lease from origin must not become a blind force."""
+    import pytest
+
+    mod = _load()
+    origin, seed, runner, _first = _origin_with_a_published_board(tmp_path, monkeypatch)
+    monkeypatch.setattr(mod, "REPO_ROOT", runner)
+    real_run = mod.run
+
+    def racing_run(cmd, **kw):
+        if cmd[:2] == ["git", "push"]:
+            (seed / "f").write_text("winner\n")
+            _git(seed, "commit", "-q", "-am", "winner")
+            _git(seed, "push", "-q", "-f", str(origin), "main:refs/chronos/state")
+        return real_run(cmd, **kw)
+
+    monkeypatch.setattr(mod, "run", racing_run)
+    with pytest.raises(RuntimeError):
+        mod.publish(mod.build_payload({"legion": "estate-clocks", "obligations": []}))
+    assert _git(origin, "rev-parse", "refs/chronos/state") == _git(
+        seed, "rev-parse", "main"
+    )
