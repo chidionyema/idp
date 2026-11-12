@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 type Surface = "genesis" | "otto";
@@ -36,14 +36,18 @@ export function InvestorRoom() {
   const [selected, setSelected] = useState<Surface>("genesis");
   const [now, setNow] = useState(() => Date.now());
   const [refreshing, setRefreshing] = useState(false);
+  // A slower old response must never resurrect data after a newer revocation.
+  const readVersion = useRef(0);
 
   const refresh = useCallback(async () => {
+    const version = ++readVersion.current;
     setRefreshing(true);
     try {
       const response = await fetch("/api/investors/surfaces", {
         credentials: "same-origin", cache: "no-store", headers: { Accept: "application/json" },
         signal: AbortSignal.timeout(8000),
       });
+      if (version !== readVersion.current) return;
       if (response.status === 401 || response.status === 403) {
         setData(null); setState("access_required"); return;
       }
@@ -51,6 +55,7 @@ export function InvestorRoom() {
         setData(null); setState("service_unavailable"); return;
       }
       const body: unknown = await response.json();
+      if (version !== readVersion.current) return;
       if (!body || typeof body !== "object" || !("schema" in body) ||
           body.schema !== "meridian.investor.room.v1" || !("readOnly" in body) ||
           body.readOnly !== true || !("surfaces" in body) || !Array.isArray(body.surfaces) ||
@@ -61,8 +66,8 @@ export function InvestorRoom() {
       setData(body as Room);
       setState("ready"); setNow(Date.now());
     } catch {
-      setData(null); setState("service_unavailable");
-    } finally { setRefreshing(false); }
+      if (version === readVersion.current) { setData(null); setState("service_unavailable"); }
+    } finally { if (version === readVersion.current) setRefreshing(false); }
   }, []);
 
   useEffect(() => {
