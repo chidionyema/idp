@@ -1,0 +1,40 @@
+name: karma-core-format-once
+on:
+  push:
+    branches: [lane/karma-live-observation-20261112]
+    paths: [.github/workflows/karma-format-once-20261112.yml]
+permissions:
+  contents: write
+jobs:
+  format-verify-retire:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: lane/karma-live-observation-20261112
+          persist-credentials: true
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Format, independently re-test, commit repair and remove this temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q ruff==0.15.18 pytest==8.4.2
+          python -m ruff format platform/estate/karma/contracts.py platform/estate/karma/observer.py tests/test_karma_contracts.py tests/test_karma_observer.py
+          python -m ruff format --check platform/estate/karma/contracts.py platform/estate/karma/observer.py tests/test_karma_contracts.py tests/test_karma_observer.py
+          python -m pytest -q tests/test_karma_contracts.py tests/test_karma_observer.py
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config core.hooksPath .githooks
+          git add -- platform/estate/karma/contracts.py platform/estate/karma/observer.py tests/test_karma_contracts.py tests/test_karma_observer.py
+          git rm -- .github/workflows/karma-format-once-20261112.yml
+          git commit -m "fix(karma): format verified reducer and observer; retire proof workflow" \
+            -m "Claim: chidionyema/idp#7452
+          Agent: chatgpt-github
+          Language-Exception: bin/idp-karma-observe -- Maintain existing Python CLI and stdlib GitHub receiver contract, no added runtime dependency.
+          Language-Exception: platform/estate/karma/contracts.py -- Pure Python event projection integrates the existing Python estate receipt and test seams without a new service.
+          Language-Exception: platform/estate/karma/observer.py -- Python stdlib adapter integrates existing gh and Chronos operations without a new process."
+          git push origin HEAD:lane/karma-live-observation-20261112
