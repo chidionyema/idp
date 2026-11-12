@@ -1039,7 +1039,18 @@ class GitHubBackend:
                     ),
                     "",
                 )
-                line = self._fail_line(str(j.get("id", "")))
+                # An unallocated Actions job executed no tests. Do not download
+                # a nonexistent log or classify CI admission as a source defect.
+                no_runner = (
+                    j.get("conclusion") == "failure"
+                    and j.get("runner_id") in (0, None)
+                    and j.get("steps") == []
+                )
+                line = (
+                    "runner-not-allocated: zero test steps executed"
+                    if no_runner
+                    else self._fail_line(str(j.get("id", "")))
+                )
                 parts.append(
                     j.get("name", "?")
                     + (f" > {step}" if step else "")
