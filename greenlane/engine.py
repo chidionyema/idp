@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import subprocess
 
 from .learning import choose_batch_size, fingerprint, repeated_exact_failure
 from dataclasses import asdict, dataclass, field
@@ -48,15 +49,37 @@ HEARTBEAT_EVERY_MIN = (
 REJUDGE_LIMIT = (
     8  # consecutive main moves a CONFLICT lane is re-queued across before it is parked
 )
+# Issue #5618: one independently proven historical repair, not a general RED bypass.
+# Greenlane b5423 landed the shared gate repair and the exact-main cloud job
+# https://github.com/chidionyema/idp/actions/runs/43143345221/job/130935344047
+# executed the ten contract falsifiers. Check the ACTUAL main workflow blobs again
+# before reviving either old failure; a newer changed gate is not this proof.
+_VERIFIED_FAST_GATE_MAIN = "f7a19cee746893d1ce992e2ef65bdffb33fcb83b"
+_VERIFIED_FAST_GATE_BLOBS = {
+    ".github/workflows/build-multiarch.yml": "d02dd7d3f9ec25da0c9d1951934bd267af4e0802",
+    ".github/workflows/ci.yml": "a7facbe8531a6f0372294ae1a5ab9bb028d09fc2",
+    ".github/workflows/fast-gate.yml": "e2e9ec70e9c4de1cdb4a17751ea815829b831c20",
+}
+_RECOVERABLE_OLD_FAST_GATE = {
+    "lane/meridian-contact-mailjet-extract-20261111": (
+        "22d69b0c6686a557d07759772001e960b4305442",
+        "43074841259",
+    ),
+    "lane/otto-main114-rollout-20261111": (
+        "c2526b73794fd0795991c1e27b420903a6a8b7bb",
+        "43083819999",
+    ),
+}
+
 RETIRE_AFTER_MIN = 1440  # 24 hours: a lane held this long without moving is parked; I4 keeps the branch
 HISTORY_KEEP = (
     200  # batch verdicts and landings kept for the latency read; the state is one blob
 )
 BOT_LANE = "flux/image-updates"  # the platform's own image lane: written by the image controller
 
+
 class UnavailableLaneObject(RuntimeError):
     """Expected exact lane SHA unavailable to this runner; no merge conflict was proven."""
-
 
 
 @dataclass
@@ -77,6 +100,9 @@ class Lane:
         0.0  # backend clock (minutes) the engine last stamped this lane's claim
     )
     arrived: float = 0.0  # backend clock (minutes) the engine first saw this lane; 0.0 = before this field
+    recovered_gate_sha: str = (
+        ""  # durable one-shot budget for the exact repaired cause/head
+    )
 
 
 @dataclass
@@ -249,6 +275,7 @@ class Engine:
         self.batch_size, self.retries, self.timeout = batch_size, retries, timeout
         self.batch_policy = batch_policy
         self.log: list[str] = []
+        self._repair_proof_cache: dict[str, bool] = {}
 
     # -- one tick: observe, judge, act; safe to run again at any moment ---------------------
     def tick(self, judge_only: bool = False) -> State:
@@ -348,6 +375,61 @@ class Engine:
             seen[head] = self.b.now()
         return seen[head]
 
+    def _verified_fast_gate_baseline(self, main: str) -> bool:
+        """Fail closed unless main has the independently tested b5423 gate bytes.
+
+        A green verdict alone can conceal skipped checks; the exact three tested
+        workflow blobs and the required-check verdict are both necessary.
+        No candidate is declared green here: it must still pass its own gates.
+        """
+        if main in self._repair_proof_cache:
+            return self._repair_proof_cache[main]
+        valid = False
+        try:
+            verdict, _ = self.b.checks(main)
+            if verdict == "green":
+                paths = sorted(_VERIFIED_FAST_GATE_BLOBS)
+                result = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                    ["git", "ls-tree", main, "--", *paths],  # noqa: S607
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=15,
+                )
+                if result.returncode == 0:
+                    actual = {}
+                    for line in result.stdout.splitlines():
+                        meta, sep, path = line.partition("\t")
+                        parts = meta.split()
+                        if sep and len(parts) == 3 and parts[1] == "blob":
+                            actual[path] = parts[2]
+                    valid = actual == _VERIFIED_FAST_GATE_BLOBS
+        except (OSError, ValueError, subprocess.TimeoutExpired, RuntimeError):
+            valid = False
+        self._repair_proof_cache[main] = valid
+        return valid
+
+    def _rearm_proven_old_gate_failure(self, lane: Lane) -> bool:
+        proof = _RECOVERABLE_OLD_FAST_GATE.get(lane.name)
+        if (
+            not proof
+            or lane.head != proof[0]
+            or lane.status != RED
+            or lane.judged_on
+            or lane.recovered_gate_sha
+            or lane.attempts < 3
+            or "fast-gate / fast-gate failure" not in lane.reason
+            or "bin/idp-ci" not in lane.reason
+            or f"/actions/runs/{proof[1]}/" not in lane.reason
+        ):
+            return False
+        if not self._verified_fast_gate_baseline(self.b.main()):
+            return False
+        lane.recovered_gate_sha = _VERIFIED_FAST_GATE_MAIN
+        lane.status, lane.reason, lane.attempts = PENDING, "", 0
+        self.log.append(f"rearmed one proven repaired fast-gate cause: {lane.name}")
+        return True
+
     def _observe_lanes(self) -> None:
         heads = self.b.lanes()
         for name, head in heads.items():
@@ -360,6 +442,8 @@ class Engine:
             if name in self.s.retired:
                 del self.s.retired[name]  # a different head is a new claim
             lane = self.s.lanes.get(name)
+            if lane is not None and lane.head == head:
+                self._rearm_proven_old_gate_failure(lane)
             if (
                 lane is not None
                 and lane.head == head
@@ -368,7 +452,10 @@ class Engine:
                 and lane.judged_on
                 and (
                     lane.judged_on != self.b.main()
-                    or (lane.reason.startswith("trusted DoF [") and os.environ.get("GITHUB_EVENT_NAME") == "issues")
+                    or (
+                        lane.reason.startswith("trusted DoF [")
+                        and os.environ.get("GITHUB_EVENT_NAME") == "issues"
+                    )
                 )
             ):
                 # A changed main or incident issue event may invalidate DoF's
@@ -659,7 +746,9 @@ class Engine:
                 elif self.b.main_red(b.base):
                     lane.judged_on = b.base
                 self.b.report(name, head, RED, lane.reason)
-                self._record(b, outcome, "learned-hold" if repeated else "parked", reason)
+                self._record(
+                    b, outcome, "learned-hold" if repeated else "parked", reason
+                )
             self.log.append(
                 f"batch {b.id}: {name} red ({reason}); attempts={lane.attempts}"
             )
@@ -826,7 +915,9 @@ class Engine:
             capacity = self.batch_size
             if self.batch_policy in ("adaptive", "adaptive-speed"):
                 overhead = 0.60 if self.batch_policy == "adaptive-speed" else 0.30
-                choice = choose_batch_size(self.s.history, len(pend), capacity, overhead)
+                choice = choose_batch_size(
+                    self.s.history, len(pend), capacity, overhead
+                )
                 capacity = choice.size
                 policy_receipt = choice.receipt()
                 policy_receipt["mode"] = self.batch_policy
