@@ -7,7 +7,7 @@
     "layer": 260,
     "service": 121,
     "tool": 491,
-    "workflow": 102
+    "workflow": 103
   },
   "records": [
     {
@@ -29090,7 +29090,8 @@
       },
       "consumers": [
         "cap:tool/diagnosis-gate",
-        "cap:tool/idp-ci"
+        "cap:tool/idp-ci",
+        "cap:workflow/gha-karma-readback-format-once-20261112"
       ],
       "cost": {
         "estimate": null,
@@ -58827,6 +58828,65 @@
         "proof",
         "metrics",
         "dependencies"
+      ],
+      "known_issues": [],
+      "mirrors": []
+    },
+    {
+      "id": "cap:workflow/gha-karma-readback-format-once-20261112",
+      "schema_version": 1,
+      "kind": "workflow",
+      "summary": "karma-readback-format-and-falsify-once -- the GitHub Actions workflow karma-readback-format-once-20261112.yml.",
+      "contract": {
+        "inputs": [
+          "push"
+        ],
+        "outputs": [
+          "job verdicts",
+          "artifacts"
+        ],
+        "errors": [
+          "non-zero exit",
+          "a required check that never reports"
+        ],
+        "cost_class": "free",
+        "latency_class": "batch",
+        "uses": [
+          "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"
+        ]
+      },
+      "owner": "@chidionyema",
+      "plane": "idp",
+      "health": {
+        "state": "declared",
+        "observed_at": null,
+        "source": "idp:.github/workflows"
+      },
+      "proof": {
+        "receipt": null,
+        "proven_at": null,
+        "window_s": 2592000
+      },
+      "consumers": [],
+      "cost": {
+        "estimate": null,
+        "unit": "usd"
+      },
+      "rung": null,
+      "writer": "repo",
+      "path": ".github/workflows/karma-readback-format-once-20261112.yml",
+      "depends_on": [
+        {
+          "id": "cap:tool/estate-diagnose",
+          "edge": "invokes"
+        }
+      ],
+      "metrics": [],
+      "blind": [
+        "health",
+        "proof",
+        "metrics"
       ],
       "known_issues": [],
       "mirrors": []
