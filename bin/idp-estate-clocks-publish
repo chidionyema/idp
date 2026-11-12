@@ -111,12 +111,12 @@ def publish(text: str, *, push: bool = True, ref: str = STATE_REF) -> str:
     another's board. The lease is captured before the write and the push is refused if origin
     moved -- a lost publish costs one tick, and the next one re-measures from scratch.
     """
-    lease = ""
-    rc, _ = run(["git", "rev-parse", "--verify", "-q", ref], check=False)
-    if rc == 0:
-        rc, remote = run(["git", "ls-remote", "--refs", "origin", ref], check=False)
-        if rc == 0 and remote:
-            lease = remote.split()[0]
+    # The lease is ORIGIN's value, read from origin. It was once read only when the ref existed
+    # locally, and a fresh runner checkout never holds refs/chronos/*: the lease stayed empty,
+    # which asks git to prove the ref does not exist, so every publish after the first was
+    # refused as "stale info" (run 43265495031). An unreadable origin is not an absent ref.
+    _, remote = run(["git", "ls-remote", "--refs", "origin", ref])
+    lease = remote.split()[0] if remote else ""
 
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
         fh.write(text)
