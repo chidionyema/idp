@@ -38583,6 +38583,7 @@
           "--feed",
           "--incidents",
           "--issues",
+          "--karma",
           "--lanes",
           "--main-sha",
           "--now",
