@@ -46,7 +46,8 @@ type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
 const SESSION_PATTERN = /^[A-Za-z0-9._~+/-]{24,4096}$/;
 const PERMISSIONS: readonly InvestorPermission[] = ["investor:genesis:view", "investor:otto:view"];
 const MAX_SESSION_WINDOW_MS = 30 * 60 * 1000;
-const MAX_GRANT_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+// Founder-approved default investor grant ceiling: seven days, enforced on every request.
+const MAX_GRANT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 const cleanText = (v: unknown, max = 150): string | null =>
   typeof v === "string" && v.length > 0 && v.length <= max && !/[\u0000-\u001f<>]/.test(v) ? v : null;
