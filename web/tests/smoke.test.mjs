@@ -24,6 +24,9 @@ const ROUTES = [
   "/contact",
   "/demo",
   "/research",
+  "/investors",
+  "/investors/room",
+  "/products/chronos",
   "/tooling",
   "/writing",
   "/tools/cost-calculator",
@@ -334,4 +337,24 @@ test("research answers are excerpts from published notes with working section li
     body: JSON.stringify({ query: "   " }),
   });
   assert.equal(invalid.status, 400);
+});
+
+test("investor research is visible but its private data never leaks without identity", async () => {
+  const publicIntro = await fetch(`${BASE}/investors`);
+  assert.equal(publicIntro.status, 200);
+  assert.match(await publicIntro.text(), /RESEARCH \/ EXPERIMENTATION \/ COMMERCIALISATION/);
+
+  const protectedData = await fetch(`${BASE}/api/investors/surfaces`, { cache: "no-store" });
+  assert.equal(protectedData.status, 401, "an anonymous browser must not obtain Genesis or OTTO projections");
+  assert.equal(protectedData.headers.get("cache-control"), "private, no-store, max-age=0");
+  const body = await protectedData.text();
+  assert.match(body, /access_required/);
+  assert.doesNotMatch(body, /yieldReceipts|workflow_runs|chat_id|bot_token|secret/i);
+
+  const room = await fetch(`${BASE}/investors/room`);
+  assert.equal(room.status, 200);
+  assert.match(await room.text(), /noindex/);
+  const join = await fetch(`${BASE}/investors/access`, { redirect:"manual" });
+  // CI explicitly has no investor broker credentials; fail closed, not a made-up login.
+  if (!process.env.INVESTOR_BROKER_ORIGIN) assert.equal(join.status, 503);
 });
