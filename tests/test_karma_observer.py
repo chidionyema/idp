@@ -1,5 +1,8 @@
 """KARMA negative-space and causal custody falsifiers: never self-award yield."""
 import importlib.util
+import importlib.machinery
+import io
+from unittest.mock import patch
 import json
 import subprocess
 import sys
@@ -96,6 +99,38 @@ class KarmaTests(unittest.TestCase):
     def test_naive_unknown_utc_rejected(self):
         with self.assertRaises(ValueError):
             mod.observe_runs("chidionyema/idp", [run()], "2026-11-12T14:00:00")
+
+    def test_public_idp_uses_credentialless_chronos_fallback_when_gh_is_absent(self):
+        path = ROOT / "bin/idp-karma-observe"
+        loader = importlib.machinery.SourceFileLoader("karma_live_cli", str(path))
+        spec = importlib.util.spec_from_loader("karma_live_cli", loader)
+        cli = importlib.util.module_from_spec(spec)
+        loader.exec_module(cli)
+
+        class Response(io.BytesIO):
+            def __enter__(self):
+                return self
+            def __exit__(self, *_):
+                self.close()
+
+        payload = json.dumps({"workflow_runs": [run()]}).encode()
+        with patch.object(cli.subprocess, "run", side_effect=FileNotFoundError), \
+             patch.object(cli.urllib.request, "urlopen", return_value=Response(payload)) as opening:
+            self.assertEqual(len(cli.live_runs("chidionyema/idp")), 1)
+            self.assertEqual(opening.call_count, 1)
+            self.assertIn("api.github.com/repos/chidionyema/idp", opening.call_args.args[0].full_url)
+
+    def test_private_repo_is_never_silently_assumed_public_or_free(self):
+        path = ROOT / "bin/idp-karma-observe"
+        loader = importlib.machinery.SourceFileLoader("karma_private_cli", str(path))
+        spec = importlib.util.spec_from_loader("karma_private_cli", loader)
+        cli = importlib.util.module_from_spec(spec)
+        loader.exec_module(cli)
+        with patch.object(cli.subprocess, "run", side_effect=FileNotFoundError), \
+             patch.object(cli.urllib.request, "urlopen") as opening:
+            with self.assertRaises(RuntimeError):
+                cli.live_runs("chidionyema/argon")
+            opening.assert_not_called()
 
 
 if __name__ == "__main__":
