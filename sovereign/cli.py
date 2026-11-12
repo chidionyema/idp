@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from sovereign import config
+from sovereign import command_codes
 from sovereign.engine import client as engine_client
 
 
@@ -45,6 +46,12 @@ def _add_json(p: argparse.ArgumentParser) -> None:
 
 
 def cmd_start(args: argparse.Namespace) -> int:
+    # Reject typed commands even on the shadow/branching path before dispatch.
+    # This is a refusal, NOT a substitute for authenticated policy admission.
+    refused = command_codes.untrusted_start_verdict(args.task)
+    if refused is not None:
+        _emit(refused, args.json)
+        return config.CLI_EXIT_USAGE_ERROR
     budget_resolved = config.get("budget.default", cli_value=args.budget)
     if budget_resolved.value is None:
         print("budget required", file=sys.stderr)
