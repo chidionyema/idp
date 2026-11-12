@@ -3,12 +3,15 @@
 Failure: 43181846037/job/131059462475, missing ACTIONS_ID_TOKEN_REQUEST_URL.
 The token is scoped to the drill job, never the unrelated Chronos observer.
 """
+
 from pathlib import Path
 
 import pytest
 import yaml
 
-WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/estate-homes-drill.yml"
+WORKFLOW = (
+    Path(__file__).resolve().parents[1] / ".github/workflows/estate-homes-drill.yml"
+)
 
 
 def _valid(text: str) -> bool:
@@ -37,8 +40,17 @@ def test_oidc_permission_mutations_fail_closed(bad):
     if bad == "read":
         mutated = source.replace("      id-token: write", "      id-token: read", 1)
     elif bad == "none":
-        mutated = "\n".join(line for line in source.splitlines() if not line.strip().startswith("id-token:")) + "\n"
+        mutated = (
+            "\n".join(
+                line
+                for line in source.splitlines()
+                if not line.strip().startswith("id-token:")
+            )
+            + "\n"
+        )
     else:
-        mutated = source.replace("      actions: read", "      id-token: write\n      actions: read", 1)
+        mutated = source.replace(
+            "      actions: read", "      id-token: write\n      actions: read", 1
+        )
     assert mutated != source
     assert not _valid(mutated)
