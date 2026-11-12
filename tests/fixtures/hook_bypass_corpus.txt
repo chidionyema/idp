@@ -1,0 +1,70 @@
+# Labelled corpus for platform/estate/governance/hook_bypass.py
+#
+# Format:  REFUSE <command>   -- must be classified as a hook bypass
+#          PASS   <command>   -- must be admitted, because it is honest work
+#
+# Every line is a string the estate has actually seen, or a near-miss that proves the
+# matcher is not a one-clever-regex (founder, 2026-11-12: "i nee string mathyematic al
+# gyabatees"). A single misclassification fails the gate.
+#
+# `classify()` scores this file and prints `misclassified=N/TOTAL`. Only N=0 passes.
+
+# --- the bypasses, in every spelling observed or plausible -------------------------
+REFUSE git commit --no-verify -m "wip"
+REFUSE git commit -m "wip" --no-verify
+REFUSE git commit --no-verify
+REFUSE git commit -n -m "wip"
+REFUSE git -c core.hooksPath=/dev/null commit -m "wip"
+REFUSE git -c core.hookspath=/dev/null commit -m "wip"
+REFUSE git --config core.hooksPath=/dev/null commit -m "wip"
+REFUSE git -ccore.hooksPath=/dev/null commit -m "wip"
+REFUSE GIT_CONFIG_GLOBAL=/dev/null git commit -m "wip"
+REFUSE GIT_CONFIG_SYSTEM=/dev/null git commit -m "wip"
+REFUSE cd /Users/roseonyema/Documents/code/idp && git commit --no-verify -m "wip"
+REFUSE cd repo && git commit --no-verify -m "probe: does the hook format"
+REFUSE git commit -am "wip" --no-verify
+REFUSE git merge --no-verify feature
+REFUSE git cherry-pick --no-verify abc123
+REFUSE git revert --no-verify abc123
+REFUSE git am --no-verify < patch.mbox
+REFUSE git rebase --no-verify main
+REFUSE git tag --no-verify v1.0.0
+# `-n` is --no-verify on `commit` ALONE. Measured from `git <verb> -h` 2026-11-12:
+# commit -n, --no-verify | cherry-pick -n, --no-commit | revert -n, --no-commit.
+REFUSE git commit -n -m "sneaking past the hook"
+REFUSE git commit -nm "sneaking past the hook"
+REFUSE git commit -nm"sneaking past the hook"
+REFUSE git commit -anm "all and sneaking"
+PASS git cherry-pick -n abc123
+PASS git revert -n abc123
+PASS git cherry-pick --no-commit abc123
+PASS git rebase -n main
+REFUSE git push --no-verify origin lane/x
+REFUSE /usr/bin/git commit --no-verify -m "wip"
+REFUSE git --no-pager commit --no-verify -m "wip"
+REFUSE echo skip && git commit --no-verify -m "wip"
+REFUSE git commit --no-verify -m "a"
+
+# --- honest work that must NOT be refused ----------------------------------------
+# A gate that refuses correct work is an outage (AGENTS.md section 12).
+PASS git commit -m "fix --no-verify references in docs"
+PASS git commit -m "explain core.hooksPath in the runbook"
+PASS git commit --no-gpg-sign -m "unsigned is not unverified"
+PASS git commit -m "wip"
+PASS git status
+PASS git log --oneline -5
+PASS git diff --stat
+PASS git push origin lane/x
+PASS git push -n origin lane/x
+PASS git status --no-verify
+PASS bin/idp-ci
+PASS /usr/bin/python3 -m ruff format bin/x.py
+PASS /usr/bin/python3 -m pytest tests/ -q
+PASS echo "git commit --no-verify -m wip"
+PASS printf 'git commit --no-verify\n'
+PASS grep -r "no-verify" docs/
+PASS git -c user.name=Agent commit -m "a legitimate config override"
+PASS git commit -F /tmp/msg.txt
+PASS git commit -m "-n is not a flag here, it is a message"
+PASS ls -l .githooks/pre-commit
+PASS bash -n .githooks/pre-commit
