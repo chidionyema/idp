@@ -34,7 +34,7 @@ export default function InvestorsPage() {
       <div className="mi-investor-ideas">{principles.map(x=><article key={x.n}><span>{x.n}</span><h3>{x.title}</h3><p>{x.text}</p></article>)}</div>
     </div></section>
     <section className="mi-section mi-investor-products" aria-labelledby="investor-products"><div className="mi-shell">
-      <div className="mi-section-intro"><span className="mi-eyebrow">03 / THE OPPORTUNITY</span><p>OUR IDEAS, SEEN THROUGH PEOPLE'S LIVES</p></div>
+      <div className="mi-section-intro"><span className="mi-eyebrow">03 / THE OPPORTUNITY</span><p>OUR IDEAS, SEEN THROUGH PEOPLE&apos;S LIVES</p></div>
       <h2 id="investor-products">What could a better workplace look like?</h2>
       <div className="mi-investor-product-grid">
         <article className="mi-investor-product-primary"><span>CHRONOS / IN DEVELOPMENT</span><h3>Less time chasing.<br/>More time creating.</h3><p>Imagine a working week with clear priorities, thoughtful handovers, timely decisions and fewer interruptions. Chronos is our developing vision for making that possible.</p><Link href="/products/chronos">Explore Chronos <span aria-hidden="true">→</span></Link><small>Concept walkthrough — not a launched product</small></article>
@@ -45,11 +45,11 @@ export default function InvestorsPage() {
     <section className="mi-section mi-investor-proof" aria-labelledby="investor-proof"><div className="mi-shell mi-investor-opening-grid">
       <span className="mi-eyebrow">04 / A RELATIONSHIP BUILT ON TRUST</span>
       <div><h2 id="investor-proof">Ambition matters.<br/><em>So does honesty.</em></h2>
-        <p>We&apos;re building for the long term. During a private briefing we distinguish clearly between concepts, working experiments and demonstrated results. We won't present research as a finished customer product.</p>
+        <p>We&apos;re building for the long term. During a private briefing we distinguish clearly between concepts, working experiments and demonstrated results. We won&apos;t present research as a finished customer product.</p>
         <p>Approved guests can explore selected, current, read-only Genesis and OTTO views for a limited time. Identity checks, permission boundaries and automatic expiry protect the private operational estate.</p>
         <div className="mi-investor-journey">
           <div><span>01</span><strong>Discover Meridian</strong><small>Start here, openly</small></div>
-          <div><span>02</span><strong>Talk to us</strong><small>See if there's a fit</small></div>
+          <div><span>02</span><strong>Talk to us</strong><small>See if there&apos;s a fit</small></div>
           <div><span>03</span><strong>Receive an invitation</strong><small>Named guest, limited time</small></div>
           <div><span>04</span><strong>Explore privately</strong><small>Genesis and OTTO, view only</small></div>
         </div>
@@ -60,7 +60,7 @@ export default function InvestorsPage() {
       </div>
     </div></section>
     <section className="mi-close mi-investor-close" aria-labelledby="investor-close"><div className="mi-shell mi-close-inner">
-      <span className="mi-eyebrow">05 / LET'S MEET</span>
+      <span className="mi-eyebrow">05 / LET&apos;S MEET</span>
       <h2 id="investor-close">THE FUTURE OF WORK<br/><em>STARTS WITH PEOPLE.</em></h2>
       <div className="mi-close-bottom"><p>We&apos;d welcome a thoughtful conversation about the research, products and businesses we&apos;re building—and what the next chapter could become.</p>
         <Link href="/contact?topic=investor" className="mi-button mi-button-gold">Start the conversation <span aria-hidden="true">→</span></Link>
