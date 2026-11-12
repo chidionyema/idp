@@ -515,6 +515,134 @@ def check_executor_permission(root: str, spec: Dict[str, Any]) -> Tuple[bool, st
     )
 
 
+
+def check_diff_reuse_convergence(root: str, spec: Dict[str, Any]) -> Tuple[bool, str]:
+    """Machine-first admission for NEW executable capability surfaces.
+
+    This is GOV-015 on the estate's EXISTING law-gate, not another policy engine.
+    It reads Git's actual candidate/base range, the existing T-7 machine-decider
+    register, and the existing implementation in the BASE tree (not a newly
+    invented file). It refuses unknown or unverifiable source evidence.
+    Existing implementations may still be changed normally; broadening this
+    rule requires an independently demonstrated canary first.
+    """
+    base = str(spec.get("base") or "origin/main")
+    head = str(spec.get("head") or "HEAD")
+    code, listing = _git(root, ["diff", "--name-status", f"{base}...{head}"])
+    if code != 0:
+        return False, "BLIND: cannot resolve candidate and main diff; no admission verdict"
+
+    changed: List[Tuple[str, str]] = []
+    for line in listing.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 2:
+            return False, "BLIND: invalid Git name-status response"
+        status, filename = parts[0], parts[-1]
+        if not filename or not status:
+            return False, "BLIND: a changed path was not identifiable"
+        changed.append((status, filename))
+
+    def is_test(filename: str) -> bool:
+        return (
+            filename.startswith(("tests/", "test/", "specs/"))
+            or "/tests/" in filename
+            or "/test_" in filename
+            or os.path.basename(filename).startswith("test_")
+            or ".test." in filename
+            or filename.endswith(".feature")
+        )
+
+    def is_executable(filename: str) -> bool:
+        if is_test(filename) or filename.startswith(
+            ("docs/", "vendor/", "third_party/", ".cache/", "generated/")
+        ):
+            return False
+        if filename.startswith(".github/workflows/"):
+            return filename.endswith((".yml", ".yaml"))
+        ext = os.path.splitext(filename)[1].lower()
+        if ext in (".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx",
+                   ".rs", ".go", ".sh", ".bash", ".rb"):
+            return True
+        if filename.startswith(("bin/", "scripts/")) and not ext:
+            content = _read(root, filename)
+            return bool(content and content.startswith("#!"))
+        return False
+
+    added = [
+        filename for status, filename in changed
+        if status.startswith("A") and is_executable(filename)
+    ]
+    if not added:
+        return True, "no newly introduced executable or workflow in bounded diff"
+
+    changed_tests = {
+        filename for _status, filename in changed if is_test(filename)
+    }
+    if not changed_tests:
+        return False, (
+            "NEW EXECUTABLE REFUSED: no executable falsifier/test changed alongside "
+            + ", ".join(added[:5])
+        )
+
+    decision_register = _read(root, "policy/agent-decisions.json")
+    try:
+        register = json.loads(decision_register or "")
+        deciders = {
+            row.get("decided_by") for row in register.get("decisions", [])
+            if isinstance(row, dict) and row.get("mode") == "machine"
+            and isinstance(row.get("decided_by"), str)
+            and row["decided_by"].startswith("cap:")
+        }
+    except (ValueError, TypeError, AttributeError):
+        return False, "BLIND: existing T-7 machine-decider register unreadable"
+    if not deciders:
+        return False, "BLIND: no registered machine-capability owner"
+
+    problems = []
+    accepted = []
+    for filename in added:
+        code, message = _git(
+            root, ["log", "-1", "--format=%B", f"{base}..{head}", "--", filename]
+        )
+        if code != 0 or not message.strip():
+            problems.append(filename + ": no attributable candidate commit")
+            continue
+
+        capability = re.search(
+            r"^Existing-Capability:\s*(cap:[a-zA-Z0-9._/-]+)\s*$",
+            message, re.MULTILINE,
+        )
+        implementation = re.search(
+            r"^Existing-Implementation:\s*([a-zA-Z0-9._/-]+)\s*$",
+            message, re.MULTILINE,
+        )
+        proof = re.search(r"^Proof:\s*(\S[^\n]+)$", message, re.MULTILINE)
+        if not capability or capability.group(1) not in deciders:
+            problems.append(filename + ": Existing-Capability is not a registered machine decider")
+            continue
+        if not implementation:
+            problems.append(filename + ": Existing-Implementation trailer missing")
+            continue
+        source = implementation.group(1)
+        if source.startswith(("/", ".")) or ".." in source.split("/"):
+            problems.append(filename + ": unsafe existing implementation path")
+            continue
+        in_base, _detail = _git(root, ["cat-file", "-e", f"{base}:{source}"])
+        if in_base != 0:
+            problems.append(filename + ": claimed implementation absent from BASE tree")
+            continue
+        if not proof or not any(test in proof.group(1) for test in changed_tests):
+            problems.append(filename + ": Proof must name a changed executable test")
+            continue
+        accepted.append(filename)
+
+    if problems:
+        return False, "NEW EXECUTABLE REFUSED: " + "; ".join(problems[:8])
+    return True, (
+        f"{len(accepted)} new executable(s) trace to an existing machine decider, "
+        "pre-existing implementation and changed test; runtime yield remains separately verified"
+    )
+
 CHECKS = {
     "file_exists": check_file_exists,
     "file_absent": check_file_absent,
@@ -527,6 +655,7 @@ CHECKS = {
     "diff_cosmetic": check_diff_cosmetic,
     "diff_proof_required": check_diff_proof_required,
     "diff_spec_trace": check_diff_spec_trace,
+    "diff_reuse_convergence": check_diff_reuse_convergence,
     "router_fallbacks": check_router_fallbacks,
     "executor_permission": check_executor_permission,
 }
