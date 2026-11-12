@@ -8,6 +8,7 @@ disabled, and it fails if the gate admits a commit that resolves nothing.
 
 Proven capable of failing: with control.mode set back to "disabled" both tests below fail.
 """
+
 from __future__ import annotations
 
 import json
@@ -45,13 +46,23 @@ def test_the_gate_refuses_a_commit_that_resolves_nothing(tmp_path) -> None:
 
     def git(*args: str) -> str:
         return subprocess.run(
-            ["git", *args], cwd=ROOT, capture_output=True, text=True,
-            check=True, timeout=60, env={**os.environ, **env},
+            ["git", *args],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=60,
+            env={**os.environ, **env},
         ).stdout.strip()
 
     blob = git("hash-object", "-w", str(REGISTRY))
     git("read-tree", "HEAD")
-    git("update-index", "--add", "--cacheinfo", f"100644,{blob},catalog/dof-registry.json")
+    git(
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        f"100644,{blob},catalog/dof-registry.json",
+    )
     arm = git("commit-tree", git("write-tree"), "-p", "HEAD", "-m", "arm the cage")
     (tmp_path / "unrelated.txt").write_text("nothing to resolve\n")
     git("read-tree", arm)
@@ -60,7 +71,11 @@ def test_the_gate_refuses_a_commit_that_resolves_nothing(tmp_path) -> None:
     nxt = git("commit-tree", git("write-tree"), "-p", arm, "-m", "an ordinary commit")
 
     proc = subprocess.run(
-        [str(GATE), arm, nxt], cwd=ROOT, capture_output=True, text=True, timeout=90,
+        [str(GATE), arm, nxt],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=90,
     )
     payload = json.loads(proc.stdout)
     if payload.get("mode") == "disabled":
@@ -69,4 +84,6 @@ def test_the_gate_refuses_a_commit_that_resolves_nothing(tmp_path) -> None:
     assert payload["ok"] is False
     refused = [c for c in payload["commits"] if c.get("refused")]
     assert refused, "no commit was refused while a critical service is down"
-    assert "Genesis-Resolves" in refused[0]["reason"] + refused[0].get("required_trailer", "")
+    assert "Genesis-Resolves" in refused[0]["reason"] + refused[0].get(
+        "required_trailer", ""
+    )
