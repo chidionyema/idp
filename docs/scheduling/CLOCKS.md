@@ -95,8 +95,8 @@ Regenerate with `bin/estate-clocks`; the test tests/test_estate_clocks.py fails 
 | `com.prospector.launchd-held` | Mac scheduler (Dagster) · retiring | 45 1,7,13,19 * * * | `scheduler/schedule.yml` | `~/Documents/code/prospector/.venv/bin/python ~/.claude/scripts/estate/launchd_re` |
 | `com.prospector.log-rotation` | Mac scheduler (Dagster) · retiring | 25 4,10,16,22 * * * | `scheduler/schedule.yml` | `~/Documents/code/prospector-live/.venv/bin/python -m ops.automations.log_rotatio` |
 | `com.prospector.process-audit` | Mac scheduler (Dagster) · retiring | 53 1,7,13,19 * * * | `scheduler/schedule.yml` | `~/Documents/code/prospector/.venv/bin/python ~/.claude/scripts/estate/launchd_re` |
-| `ai.estate.karma-observe` | Mac scheduler (Dagster) · runs_on=cluster | 41 */2 * * * | `scheduler/schedule.yml` | KARMA observes CI execution and missing FLOW/QUAD-to-yield links; unverified is never settled. |
 | `ai.estate.api-key-warden` | Mac scheduler (Dagster) · runs_on=cluster | 17 */4 * * * | `scheduler/schedule.yml` | python -m warden.warden |
+| `ai.estate.karma-observe` | Mac scheduler (Dagster) · runs_on=cluster | 41 */2 * * * | `scheduler/schedule.yml` | KARMA observes CI execution and missing FLOW/QUAD-to-yield links; unverified is never settled. |
 | `com.estate.research-engine` | Mac scheduler (Dagster) · runs_on=cluster | 23 * * * * | `scheduler/schedule.yml` | `/usr/local/bin/kubectl create job research-engine-$(date -u +%Y%m%d%H%M%S) --fro` |
 | `agent-workforce` | cluster · agent-workforce | */15 * * * * | `platform/agent-workforce/cronjob.yaml` | The crew's identity in the cluster is a name and nothing else. No Role, no RoleBinding, no |
 | `cluster-state` | cluster · backstage | */15 * * * * | `platform/state/cluster-state.yaml` | Founder, 2026-08-26: "zero-touch OCI auth, no local oci session authenticate." |
