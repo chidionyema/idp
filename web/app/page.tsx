@@ -66,7 +66,7 @@ export default function HomePage() {
         <div className="mi-shell mi-future-grid">
           <div><span className="mi-eyebrow">OUR NEXT CHAPTER / A BETTER WAY TO WORK</span>
             <h2 id="meridian-future-work">Research the future.<br/><em>Build something better.</em></h2>
-            <p>Meridian's work begins with research, grows through experimentation and finds its purpose in products and businesses that improve people's lives.</p>
+            <p>Meridian&apos;s work begins with research, grows through experimentation and finds its purpose in products and businesses that improve people&apos;s lives.</p>
             <p>One question we keep returning to: what if people could spend less time chasing work and more time doing it?</p>
             <div className="mi-hero-actions">
               <Link href="/products/chronos" className="mi-button mi-button-gold">Meet Chronos <span aria-hidden="true">→</span></Link>
@@ -121,7 +121,7 @@ export default function HomePage() {
           <div className="mi-venture-grid">
             <article className="mi-venture mi-venture-mumchimp"><div className="mi-venture-top"><span>GROUP COMPANY / COMMERCE</span><span>04.1</span></div><div><div className="mi-venture-mark">m<span>.</span></div><h3>Mumchimp</h3><p>Research-backed business opportunities, built for people ready to act.</p></div><a href="https://mumchimp.com" target="_blank" rel="noopener noreferrer">Visit Mumchimp <span aria-hidden="true">↗</span></a></article>
             <article className="mi-venture mi-venture-genesis"><div className="mi-venture-top"><span>LABORATORY PRODUCT / AUTONOMY</span><span>04.2</span></div><div><div className="mi-venture-mark mi-genesis-mark">G<span>•</span></div><h3>Genesis</h3><p>The Autonomous Estate: an experimental operating system for coordinated AI agents and work.</p></div><Link href="/products">Explore the vision <span aria-hidden="true">→</span></Link></article>
-            <article className="mi-venture mi-venture-chronos"><div className="mi-venture-top"><span>PRODUCT VISION / FUTURE OF WORK</span><span>04.3</span></div><div><div className="mi-venture-mark">C<span>·</span></div><h3>Chronos</h3><p>Less time chasing updates. More time for meaningful work. A product concept we're developing.</p></div><Link href="/products/chronos">Explore the concept <span aria-hidden="true">→</span></Link></article>
+            <article className="mi-venture mi-venture-chronos"><div className="mi-venture-top"><span>PRODUCT VISION / FUTURE OF WORK</span><span>04.3</span></div><div><div className="mi-venture-mark">C<span>·</span></div><h3>Chronos</h3><p>Less time chasing updates. More time for meaningful work. A product concept we&apos;re developing.</p></div><Link href="/products/chronos">Explore the concept <span aria-hidden="true">→</span></Link></article>
           </div>
         </div>
       </section>
