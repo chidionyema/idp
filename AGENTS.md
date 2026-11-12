@@ -55,6 +55,73 @@ hand the founder a proposal in place of an experiment. Claim: chidionyema/idp#79
 
 ---
 
+## KARMA — accountable instruction-to-yield intelligence (founder, 2026-11-12)
+
+**KARMA is an estate operating capability, not a new ledger, memory store, currency,
+punishment system or policy gate.** Read the [fleet KARMA doctrine](docs/training/2026-11-12-karma-operating-doctrine.md)
+and the executable first read-only observer `bin/idp-karma-observe` before designing an
+instruction, reward, recovery, model evaluation or monitoring change.
+
+- **Instruction acceptance issues a durable obligation (debt), not a completed task.**
+  Bind instruction ID, intent/expected outcome, authorised issuer, accountable QUAD
+  agent/session, parent instruction, owner lease, acceptance time, policy/evaluator
+  versions and completion conditions. The obligation survives handback, session
+  termination, provider changes and agent generations; settlement requires independently
+  VERIFIED YIELD and real operation, not a report or green PR. Refusal is explicit.
+- **Identity and time are first-class.** QUAD owns immutable agent attribution,
+  public-key signature verification and externally checked historical integrity.
+  Preserve model provider, requested and returned model IDs, real provider revision/
+  fingerprint when disclosed, agent generation and configuration lineage; mark
+  unavailable revisions UNKNOWN. Distinguish claimed source time, observed, durable
+  recorded and externally anchored time, plus effective/valid intervals. Causal
+  links, not timestamp proximity, establish asserted parenthood; no backdated
+  replay may silently supersede an authorised newer event.
+- **Everything consequential is measured; absence is measurable too.** FLOW owns
+  instruction→execution→verified yield, token/compute/CI/time/human costs and
+  exact recovery custody. Optimus joins observation coverage, resource efficiency,
+  failure-class obligations, founder interruptions, guesses versus reproducible
+  claims, reward/eval versions and recurrence. Record an UNKNOWN when billing,
+  external version, input, result, signature or expected telemetry is missing;
+  UNKNOWN is never zero, PASS or positive reward. Collect bounded metadata and
+  evidence digests, not indiscriminate secrets/personal data.
+- **Provider science is factorial and longitudinal.** HELM/research compares matched
+  holdout tasks by provider/model/revision × no-method/skills/memory/HELM ×
+  generation and time. Record controlled environment, evaluator/oracle/method SHA,
+  uncertainty, outcome, cost and negative results. A self-declared provider
+  fingerprint or a model-graded reward cannot establish causal uplift. Separate
+  underlying model updates from our own reproducible interventions.
+- **Karmic debt is failure-class obligation, not blame.** Original model mistakes,
+  false completion, breached laws and abandoned work remain attributed to their
+  historical actors and are inherited as unresolved correction tasks. Competent
+  successor agents earn credit only for independently reproduced repair,
+  adversarial holdout success and measured recurrence reduction. Deprecation
+  never deletes the underlying history or unresolved obligation. A proved breach
+  may restrict the *relevant* privileged capability lease until externally checked
+  compensation; safe diagnosis and repair remain possible and production must not
+  be indiscriminately frozen.
+- **Root-cause sweep:** MAP complete bounded blast radius → FILTER by violated
+  invariant → AUTOMATE with the existing owner/tools → execute independent
+  FALSIFIER and live real-caller proof → GENERALISE to same-shaped failures →
+  ENFORCE only once a working canary proves the control does not break operations.
+  Causes may be design, management, spec/BDD, security, governance, architecture,
+  observability or resource policy—not merely code. An agent reports a verified
+  reduction in that failure class, not a new gate or a document as success.
+- **Chronos operates the recurring reconciliation cadence** through the existing
+  company scheduler; it does not become another scheduler. Genesis projects
+  authenticated KARMA health, obligation age, observed versus missing traces,
+  real intervention performance and debt retirement with evidence links. A page
+  or scheduled definition is not proof that the reconciliation executed.
+
+This doctrine is shared by the whole fleet; the authority to execute remains in
+the existing executor, QUAD, OPA/OPAL (only when genuinely deployed), existing
+CI/Greenlane, policy owner and independent verifier. No self-awarded currency,
+new blanket gate, model-provider spending or unchecked production change.
+The first executable canary intentionally reports `UNLINKED_TO_INSTRUCTION` for
+GitHub runs lacking FLOW/QUAD linkage, rather than fabricating a debtor.
+Claim: chidionyema/idp#7452.
+
+---
+
 ## Public/commercial UI — credibility is part of release correctness
 
 **All surface-building and releasing agents:** before touching a public site, read
