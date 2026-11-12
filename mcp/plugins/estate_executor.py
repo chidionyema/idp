@@ -278,6 +278,10 @@ def _segment_is_exempt(segment: str) -> bool:
     # exemption that trusts the literal prefix is the hole dressed as a shape.
     if ".." in stripped:
         return False
+    # sort is a read-only filter EXCEPT -o/--output, which writes a file. Allow the shape
+    # without those flags so a diagnostic pipeline (du | sort | head) is not refused.
+    if re.fullmatch(r"(?:/usr/bin/)?sort(?:\s+(?!--?output|-o)\S+)*", stripped):
+        return True
     return any(rx.fullmatch(stripped) for rx in _FLOOR_EXEMPT_RES)
 
 
