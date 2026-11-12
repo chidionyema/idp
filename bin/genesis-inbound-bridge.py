@@ -5,6 +5,7 @@ Only the authenticated Google account's drafts and an explicitly configured
 Drive folder are sources. Inbound text is unverified data, not shell commands,
 signed Git instructions or production release authority. Run on GitHub Actions.
 """
+
 import argparse
 import base64
 import hashlib
@@ -17,8 +18,13 @@ import urllib.parse
 import urllib.request
 
 PREFIX = "[GENESIS-OUTBOX]"
-REPOS = {"chidionyema/argon", "chidionyema/idp", "chidionyema/hermes-agent",
-         "chidionyema/hermes-config", "chidionyema/hermes-operator"}
+REPOS = {
+    "chidionyema/argon",
+    "chidionyema/idp",
+    "chidionyema/hermes-agent",
+    "chidionyema/hermes-config",
+    "chidionyema/hermes-operator",
+}
 MAX_BODY = 30000
 
 
@@ -28,9 +34,17 @@ class BridgeError(Exception):
 
 def api(url, token, method="GET", body=None):
     payload = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(url, data=payload, method=method, headers={
-        "Authorization": "Bearer " + token, "User-Agent": "genesis-inbound-bridge/1",
-        "Accept": "application/json", **({"Content-Type": "application/json"} if payload else {})})
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        method=method,
+        headers={
+            "Authorization": "Bearer " + token,
+            "User-Agent": "genesis-inbound-bridge/1",
+            "Accept": "application/json",
+            **({"Content-Type": "application/json"} if payload else {}),
+        },
+    )
     try:
         with urllib.request.urlopen(req, timeout=25) as response:
             raw = response.read(500000)
@@ -45,15 +59,26 @@ def api(url, token, method="GET", body=None):
 
 
 def oauth():
-    names = ("GENESIS_GOOGLE_CLIENT_ID", "GENESIS_GOOGLE_CLIENT_SECRET",
-             "GENESIS_GOOGLE_REFRESH_TOKEN")
+    names = (
+        "GENESIS_GOOGLE_CLIENT_ID",
+        "GENESIS_GOOGLE_CLIENT_SECRET",
+        "GENESIS_GOOGLE_REFRESH_TOKEN",
+    )
     if any(not os.environ.get(name) for name in names):
         raise BridgeError("Google OAuth credentials are missing; intake NOT ACTIVE")
-    data = urllib.parse.urlencode({
-        "client_id": os.environ[names[0]], "client_secret": os.environ[names[1]],
-        "refresh_token": os.environ[names[2]], "grant_type": "refresh_token"}).encode()
-    request = urllib.request.Request("https://oauth2.googleapis.com/token", data=data,
-                                     headers={"Content-Type": "application/x-www-form-urlencoded"})
+    data = urllib.parse.urlencode(
+        {
+            "client_id": os.environ[names[0]],
+            "client_secret": os.environ[names[1]],
+            "refresh_token": os.environ[names[2]],
+            "grant_type": "refresh_token",
+        }
+    ).encode()
+    request = urllib.request.Request(
+        "https://oauth2.googleapis.com/token",
+        data=data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
     try:
         with urllib.request.urlopen(request, timeout=25) as response:
             token = json.load(response).get("access_token")
@@ -67,8 +92,10 @@ def oauth():
 def gmail_body(part):
     mime = part.get("mimeType", "")
     if mime.startswith("multipart/"):
-        return next((value for child in part.get("parts", [])
-                     if (value := gmail_body(child))), "")
+        return next(
+            (value for child in part.get("parts", []) if (value := gmail_body(child))),
+            "",
+        )
     if mime not in ("", "text/plain", "application/json"):
         return ""
     raw = part.get("body", {}).get("data", "")
@@ -93,13 +120,18 @@ def gmail_drafts(token):
             scanned += 1
             if scanned > 1000:
                 raise BridgeError("Gmail pagination exceeded bounded scan")
-            draft = api(root + "/" + urllib.parse.quote(record["id"], safe="") + "?format=full", token)
+            draft = api(
+                root + "/" + urllib.parse.quote(record["id"], safe="") + "?format=full",
+                token,
+            )
             message = draft.get("message", {})
             if "DRAFT" not in message.get("labelIds", []):
                 continue
             payload = message.get("payload", {})
-            headers = {h.get("name", "").lower(): h.get("value", "")
-                       for h in payload.get("headers", [])}
+            headers = {
+                h.get("name", "").lower(): h.get("value", "")
+                for h in payload.get("headers", [])
+            }
             name = headers.get("subject", "")
             if name.startswith(PREFIX):
                 yield "gmail:" + record["id"], name, gmail_body(payload)
@@ -130,8 +162,11 @@ def drive_docs(token, folder):
     next_page = None
     scanned = 0
     while True:
-        params = {"q": "'" + folder + "' in parents and trashed = false",
-                  "pageSize": 100, "fields": "nextPageToken,files(id,name,mimeType)"}
+        params = {
+            "q": "'" + folder + "' in parents and trashed = false",
+            "pageSize": 100,
+            "fields": "nextPageToken,files(id,name,mimeType)",
+        }
         if next_page:
             params["pageToken"] = next_page
         result = api(root + "?" + urllib.parse.urlencode(params), token)
@@ -157,17 +192,31 @@ def drive_docs(token, folder):
 
 
 def parse_dispatch(subject, raw, repo):
-    if not subject.startswith(PREFIX) or not raw.strip() or len(raw.encode()) > MAX_BODY:
+    if (
+        not subject.startswith(PREFIX)
+        or not raw.strip()
+        or len(raw.encode()) > MAX_BODY
+    ):
         raise BridgeError("empty, oversized or unmarked dispatch")
     try:
         envelope = json.loads(raw)
     except ValueError:
-        tag = re.search(r"\[(argon|idp|hermes-agent|hermes-config|hermes-operator)\]", subject)
+        tag = re.search(
+            r"\[(argon|idp|hermes-agent|hermes-config|hermes-operator)\]", subject
+        )
         if not tag:
             raise BridgeError("plain text requires [repo] tag in the subject")
-        envelope = {"v": 1, "repo": "chidionyema/" + tag.group(1),
-                    "title": subject.replace(PREFIX, "").strip(), "body": raw.strip()}
-    if not isinstance(envelope, dict) or envelope.get("v") != 1 or envelope.get("repo") not in REPOS:
+        envelope = {
+            "v": 1,
+            "repo": "chidionyema/" + tag.group(1),
+            "title": subject.replace(PREFIX, "").strip(),
+            "body": raw.strip(),
+        }
+    if (
+        not isinstance(envelope, dict)
+        or envelope.get("v") != 1
+        or envelope.get("repo") not in REPOS
+    ):
         raise BridgeError("invalid version or unauthorized repo")
     if envelope["repo"] != repo:
         return None
@@ -181,21 +230,28 @@ def parse_dispatch(subject, raw, repo):
         raise BridgeError("invalid body")
     if "\x00" in title + body:
         raise BridgeError("NUL content refused")
-    return {"title": title.strip(), "body": body.strip(),
-            "instruction_id": str(envelope.get("instruction_id", "unspecified"))[:128]}
+    return {
+        "title": title.strip(),
+        "body": body.strip(),
+        "instruction_id": str(envelope.get("instruction_id", "unspecified"))[:128],
+    }
 
 
 def previous_ids(gh, repo):
     found = set()
     for page in range(1, 11):
-        query = urllib.parse.urlencode({"state": "all", "labels": "genesis-inbound",
-                                        "per_page": 100, "page": page})
+        query = urllib.parse.urlencode(
+            {"state": "all", "labels": "genesis-inbound", "per_page": 100, "page": page}
+        )
         rows = api("https://api.github.com/repos/" + repo + "/issues?" + query, gh)
         if not isinstance(rows, list):
             raise BridgeError("GitHub issue inventory not a list")
         for row in rows:
-            marker = re.search(r"^GENESIS-INBOUND-ID: ([0-9a-f]{64})$",
-                               row.get("body") or "", re.MULTILINE)
+            marker = re.search(
+                r"^GENESIS-INBOUND-ID: ([0-9a-f]{64})$",
+                row.get("body") or "",
+                re.MULTILINE,
+            )
             if marker:
                 found.add(marker.group(1))
         if len(rows) < 100:
@@ -210,20 +266,37 @@ def ensure_label(gh, repo):
     except BridgeError as error:
         if "HTTP 404" not in str(error):
             raise
-        api(root, gh, "POST", {"name": "genesis-inbound", "color": "54617d",
-                              "description": "Unverified Google outbox instruction, not operational proof"})
+        api(
+            root,
+            gh,
+            "POST",
+            {
+                "name": "genesis-inbound",
+                "color": "54617d",
+                "description": "Unverified Google outbox instruction, not operational proof",
+            },
+        )
 
 
 def publish(gh, repo, key, entry, source):
     quoted = "\n".join("> " + line for line in entry["body"].splitlines())
-    body = ("GENESIS-INBOUND-ID: " + key + "\n\n"
-            "State: RECEIVED_UNVERIFIED. No execution, approval, or deployment asserted.\n\n"
-            "Instruction: " + entry["instruction_id"] + "\n"
-            "Source-kind: " + source.split(":")[0] + "\n\n"
-            "### Untrusted dispatch data\n\n" + quoted)
-    api("https://api.github.com/repos/" + repo + "/issues", gh, "POST",
-        {"title": "[GENESIS-INBOUND] " + entry["title"][:110], "body": body,
-         "labels": ["genesis-inbound"]})
+    body = (
+        "GENESIS-INBOUND-ID: " + key + "\n\n"
+        "State: RECEIVED_UNVERIFIED. No execution, approval, or deployment asserted.\n\n"
+        "Instruction: " + entry["instruction_id"] + "\n"
+        "Source-kind: " + source.split(":")[0] + "\n\n"
+        "### Untrusted dispatch data\n\n" + quoted
+    )
+    api(
+        "https://api.github.com/repos/" + repo + "/issues",
+        gh,
+        "POST",
+        {
+            "title": "[GENESIS-INBOUND] " + entry["title"][:110],
+            "body": body,
+            "labels": ["genesis-inbound"],
+        },
+    )
 
 
 def run(repo):
@@ -248,7 +321,9 @@ def run(repo):
             entry = parse_dispatch(title, body, repo)
             if not entry:
                 continue
-            key = hashlib.sha256((source + "\0" + title + "\0" + body).encode()).hexdigest()
+            key = hashlib.sha256(
+                (source + "\0" + title + "\0" + body).encode()
+            ).hexdigest()
             if key in receipts:
                 continue
             publish(gh, repo, key, entry, source)
@@ -259,7 +334,10 @@ def run(repo):
 
 def selftest():
     assert parse_dispatch("[GENESIS-OUTBOX][argon] Test", "body", "chidionyema/argon")
-    assert parse_dispatch("[GENESIS-OUTBOX][idp] Test", "body", "chidionyema/argon") is None
+    assert (
+        parse_dispatch("[GENESIS-OUTBOX][idp] Test", "body", "chidionyema/argon")
+        is None
+    )
     try:
         parse_dispatch("[GENESIS-OUTBOX][idp] Test", "body", "chidionyema/idp")
     except BridgeError:
