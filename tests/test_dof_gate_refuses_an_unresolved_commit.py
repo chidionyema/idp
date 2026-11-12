@@ -84,6 +84,15 @@ def test_the_gate_refuses_a_commit_that_resolves_nothing(tmp_path) -> None:
     assert payload["ok"] is False
     refused = [c for c in payload["commits"] if c.get("refused")]
     assert refused, "no commit was refused while a critical service is down"
-    assert "Genesis-Resolves" in refused[0]["reason"] + refused[0].get(
-        "required_trailer", ""
-    )
+
+    # TWO ADMISSIBLE REFUSAL PATHS, and a test that demanded only the first was measuring the
+    # network, not the gate (found 2026-11-12: GitHub rate-limited the incident query, the gate
+    # went BLIND, and this test failed with a TypeError while the gate was behaving correctly).
+    #
+    #   1. incidents readable -> the gate names the trailer that would resolve them;
+    #   2. incidents unreadable -> the gate refuses BLIND, because "cannot see" is never "pass"
+    #      (AGENTS.md section 9, root cause R1).
+    #
+    # Both are refusals, which is the property under test. Silence or admission would fail.
+    blob = json.dumps(refused[0])
+    assert "Genesis-Resolves" in blob or "BLIND" in blob, blob
