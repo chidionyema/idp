@@ -14,8 +14,12 @@ export async function GET() {
   const config = brokerConfig();
   const redirectOrigin = validBrokerOrigin(process.env.MERIDIAN_SITE_URL ?? "");
   if (!redirectOrigin) {
-    return NextResponse.json({ error: "investor_access_unavailable" }, {
-      status: 503, headers: { "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex" },
+    // Relative Location is valid HTTP and never reflects an untrusted Host header.
+    // Without configured identity, visitors reach the humane refusal page on this origin.
+    return new NextResponse(null, {
+      status: 303,
+      headers: { Location: "/investors/unavailable", "Cache-Control": "private, no-store",
+        "Referrer-Policy": "no-referrer" },
     });
   }
   if (!config) {
