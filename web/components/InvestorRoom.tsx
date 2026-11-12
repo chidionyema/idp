@@ -147,7 +147,7 @@ export function InvestorRoom() {
         </section>
         <section className="mi-investor-room-boundary"><div><span className="mi-eyebrow">WHAT THIS ACCESS MEANS</span>
           <h2>Open about progress.<br/><em>Careful with trust.</em></h2>
-          <p>This room is a deliberately limited window into our research, not an operational console. It doesn't allow you to speak to live agents, change work, see confidential data or approve decisions.</p>
+          <p>This room is a deliberately limited window into our research, not an operational console. It doesn&apos;t allow you to speak to live agents, change work, see confidential data or approve decisions.</p>
         </div><form action="/investors/leave" method="post"><button type="submit" className="mi-button mi-button-dark">Leave investor room <span aria-hidden="true">→</span></button></form></section>
       </>}
     </div>
