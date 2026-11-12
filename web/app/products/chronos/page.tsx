@@ -87,8 +87,8 @@ export default function ChronosPage() {
 
     <section className="mi-chronos-outro" aria-labelledby="chronos-outro-heading">
       <div className="mi-shell mi-chronos-outro-grid">
-        <div><span className="mi-eyebrow">04 / RESEARCH COLLABORATIONS</span><h2 id="chronos-outro-heading">WHAT HAPPENS<br/><em>WHEN NOBODY'S WATCHING?</em></h2></div>
-        <div><p>Chronos is being explored as part of Meridian's autonomous-systems research. We are interested in serious conversations with teams facing persistent scheduling, recovery or agent-operations problems.</p>
+        <div><span className="mi-eyebrow">04 / RESEARCH COLLABORATIONS</span><h2 id="chronos-outro-heading">WHAT HAPPENS<br/><em>WHEN NOBODY&apos;S WATCHING?</em></h2></div>
+        <div><p>Chronos is being explored as part of Meridian&apos;s autonomous-systems research. We are interested in serious conversations with teams facing persistent scheduling, recovery or agent-operations problems.</p>
           <p className="mi-chronos-disclosure">Current status: research and concept validation. No commercial availability, contracted service guarantee or verified customer integration is implied.</p>
           <Link className="mi-button mi-button-gold" href="/contact">Talk to Meridian <span aria-hidden="true">→</span></Link>
         </div>
