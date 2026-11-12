@@ -54,9 +54,9 @@ HISTORY_KEEP = (
 )
 BOT_LANE = "flux/image-updates"  # the platform's own image lane: written by the image controller
 
+
 class UnavailableLaneObject(RuntimeError):
     """Expected exact lane SHA unavailable to this runner; no merge conflict was proven."""
-
 
 
 @dataclass
@@ -368,7 +368,10 @@ class Engine:
                 and lane.judged_on
                 and (
                     lane.judged_on != self.b.main()
-                    or (lane.reason.startswith("trusted DoF [") and os.environ.get("GITHUB_EVENT_NAME") == "issues")
+                    or (
+                        lane.reason.startswith("trusted DoF [")
+                        and os.environ.get("GITHUB_EVENT_NAME") == "issues"
+                    )
                 )
             ):
                 # A changed main or incident issue event may invalidate DoF's
@@ -611,7 +614,11 @@ class Engine:
             lane.attempts += 1
             cause = fingerprint(reason)
             repeated = repeated_exact_failure(self.s.history, name, head, b.base, cause)
-            if lane.attempts <= self.retries and not repeated:
+            # An admission block does not become green by re-running the
+            # identical source/baseline. Keep the failed lane visible for the
+            # owner; a changed HEAD or baseline re-arms the lifecycle.
+            admission_blocked = "runner-not-allocated:" in reason
+            if lane.attempts <= self.retries and not repeated and not admission_blocked:
                 # A retry is not a priority. This used to be `self.s.queued.insert(0, [name])`,
                 # and `_start_batch` serves `queued` before the pending list -- so a lane that
                 # had already spent a full check suite ran as a ONE-lane batch in front of lanes
@@ -651,6 +658,9 @@ class Engine:
                 self._record(b, outcome, "retried", reason)
             else:
                 lane.status, lane.reason = RED, reason
+                if admission_blocked:
+                    lane.reason = f"infra admission hold [no-runner]: {reason}"
+                    lane.judged_on = b.base
                 if repeated:
                     # Exact cause, source and trusted baseline failed twice: no-op CI
                     # repetitions cannot alter the source. A new head/main re-arms it.
@@ -659,7 +669,12 @@ class Engine:
                 elif self.b.main_red(b.base):
                     lane.judged_on = b.base
                 self.b.report(name, head, RED, lane.reason)
-                self._record(b, outcome, "learned-hold" if repeated else "parked", reason)
+                action = "parked"
+                if repeated:
+                    action = "learned-hold"
+                if admission_blocked:
+                    action = "runner-admission-hold"
+                self._record(b, outcome, action, reason)
             self.log.append(
                 f"batch {b.id}: {name} red ({reason}); attempts={lane.attempts}"
             )
@@ -826,7 +841,9 @@ class Engine:
             capacity = self.batch_size
             if self.batch_policy in ("adaptive", "adaptive-speed"):
                 overhead = 0.60 if self.batch_policy == "adaptive-speed" else 0.30
-                choice = choose_batch_size(self.s.history, len(pend), capacity, overhead)
+                choice = choose_batch_size(
+                    self.s.history, len(pend), capacity, overhead
+                )
                 capacity = choice.size
                 policy_receipt = choice.receipt()
                 policy_receipt["mode"] = self.batch_policy
