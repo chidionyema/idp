@@ -292,7 +292,61 @@ def _last_hash(path: str) -> str:
         return "0" * 64
 
 
-def record(kwargs: dict, response_obj: Any) -> dict | None:
+def karma_call(kwargs: dict, response_obj: Any, outcome: str = "success") -> dict:
+    """KARMA observation: never confuse reported model/usage with verified yield."""
+    params = kwargs.get("litellm_params") or {}
+    meta = params.get("metadata") or {}
+    req = _request(kwargs)
+    body = req.get("body")
+    body_meta = body.get("metadata") if isinstance(body, dict) else {}
+    if not isinstance(meta, dict):
+        meta = {}
+    if not isinstance(body_meta, dict):
+        body_meta = {}
+    iid = meta.get("instruction_id") or body_meta.get("instruction_id")
+    if not isinstance(iid, str) or not re.fullmatch(r"[A-Za-z0-9._:-]{3,128}", iid):
+        iid = None
+    observed_model = getattr(response_obj, "model", None)
+    usage = getattr(response_obj, "usage", None)
+    if isinstance(response_obj, dict):
+        observed_model = response_obj.get("model", observed_model)
+        usage = response_obj.get("usage", usage)
+    if usage is None:
+        stream = kwargs.get("complete_streaming_response")
+        usage = stream.get("usage") if isinstance(stream, dict) else getattr(stream, "usage", None)
+    if hasattr(usage, "model_dump"):
+        usage = usage.model_dump()
+    if not isinstance(usage, dict):
+        usage = {k: getattr(usage, k, None) for k in
+                 ("prompt_tokens", "completion_tokens", "total_tokens")}
+    def count(key):
+        value = usage.get(key)
+        return value if type(value) is int and 0 <= value <= 10**12 else None
+    provider = kwargs.get("custom_llm_provider") or params.get("custom_llm_provider")
+    return {
+        "schema": "estate.karma.call.v1",
+        "instruction_id": iid,
+        "instruction_link": "CALLER_ASSERTED" if iid else "MISSING",
+        "provider": provider if isinstance(provider, str) and provider else "UNKNOWN",
+        "requested_model": str(kwargs.get("model") or "UNKNOWN"),
+        "returned_model": observed_model if isinstance(observed_model, str) and observed_model else "UNKNOWN",
+        "model_revision": "UNKNOWN",
+        "model_revision_attestation": "MISSING",
+        "agent_generation": "UNKNOWN",
+        "input_tokens": count("prompt_tokens"),
+        "output_tokens": count("completion_tokens"),
+        "total_tokens": count("total_tokens"),
+        "billed_cost": None,
+        "cost_status": "UNKNOWN_NOT_ZERO",
+        "outcome": outcome,
+        "observed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "clock_quality": "ROUTER_HOST_UNATTESTED",
+        "metadata_integrity": "NOT_SIGNED_BY_LEGACY_ELPIS_ENVELOPE",
+        "yield_verdict": "NOT_INDEPENDENTLY_VERIFIED",
+    }
+
+
+def record(kwargs: dict, response_obj: Any, outcome: str = "success") -> dict | None:
     """Sign this call, chain it into the ledger, enqueue it for the bus. Returns the row."""
     if _is_drain(kwargs):
         return None
@@ -320,6 +374,7 @@ def record(kwargs: dict, response_obj: Any) -> dict | None:
         "created_at": stamp,
         "signature": signature,
         "parent": _last_hash(path),
+        "karma": karma_call(kwargs, response_obj, outcome),
     }
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n")
@@ -342,6 +397,7 @@ def _enqueue(runtime: str, session: str, stamp: str, row: dict) -> None:
             "result_hash": row["result_hash"],
             "parent": row["parent"],
             "agent_id": row["agent_id"],
+            "karma": row["karma"],
         },
     }
     con = sqlite3.connect(outbox_path(), timeout=2.0)
@@ -404,6 +460,12 @@ class ActionLedger(CustomLogger):
             record(kwargs, response_obj)
         except Exception as exc:  # noqa: BLE001 - the ledger may never fail the request
             log.warning("[action_ledger] not recorded: %s", exc)
+
+    async def async_log_failure_event(self, kwargs, response_obj, start_time, end_time):
+        try:
+            record(kwargs, response_obj, outcome="failure")
+        except Exception as exc:  # noqa: BLE001 - telemetry must not mask model failures
+            log.warning("[action_ledger] failure not recorded: %s", exc)
 
 
 proxy_handler_instance = ActionLedger()
