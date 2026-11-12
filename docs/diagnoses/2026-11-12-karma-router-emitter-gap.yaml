@@ -1,0 +1,41 @@
+description: >-
+  KARMA LiteLLM source instrumentation diagnosis, restricted to the verified
+  Git base 3138d4ec1f3f72bcd4943fb1296cb354aa38bdfd and candidate diff.
+  This evaluates why the existing legacy signed-action payload cannot
+  expose KARMA provider/model/instruction metadata. It does NOT establish
+  that the live router has deployed this change or that a QUAD signature
+  authenticates KARMA fields. Competing hypotheses were assessed against
+  the binary pre-change source property (emitter present/absent), not claimed
+  production observations.
+hypotheses:
+  - name: H1
+    description: >-
+      Original action-ledger emitter does not write a KARMA subrecord;
+      adding a typed enrichment to the existing outbox is needed.
+    prior: 0.3333333333333333
+  - name: H2
+    description: >-
+      Original emitter already supplies KARMA metadata but the fleet outbox
+      drops that metadata.
+    prior: 0.3333333333333333
+  - name: H3
+    description: >-
+      Original emitter and outbox already supply KARMA metadata, but only
+      the estate-state reader fails to expose it.
+    prior: 0.3333333333333334
+evidence:
+  - name: Base Git source (original action_ledger.py before KARMA patch)
+    observed:
+      emitter_missing: 1
+      emitter_present: 0
+    likelihoods:
+      H1:
+        emitter_missing: 0.99
+        emitter_present: 0.01
+      H2:
+        emitter_missing: 0.005
+        emitter_present: 0.995
+      H3:
+        emitter_missing: 0.005
+        emitter_present: 0.995
+n_eff_divisor: 1
