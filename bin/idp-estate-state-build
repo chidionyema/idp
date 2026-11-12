@@ -609,6 +609,10 @@ def build(a, now: dt.datetime) -> dict:
     runs = read_json(a.runs)
     if runs is None:
         blind.append("workflow runs not read")
+    karma = read_json(getattr(a, "karma", None))
+    if not isinstance(karma, dict) or karma.get("schema") != "estate.karma.readback.v1":
+        blind.append("KARMA: existing CI/QUAD evidence readback unavailable")
+        karma = None
     freeze, board, p0, findings = parse_issues(issues or [])
     # version 2 inputs; each missing one is a BLIND line, never a green row
     registry = read_yaml(getattr(a, "registry", None))
@@ -686,6 +690,24 @@ def build(a, now: dt.datetime) -> dict:
             ),
         },
     }
+    # The founder state door must not turn activity or a self-assigned score
+    # into independently verified instruction settlement.
+    ci = karma.get("ci", {}) if karma else {}
+    quad = karma.get("quad", {}) if karma else {}
+    doc["karma"] = {
+        "status": "OBSERVED_WITH_GAPS" if karma else "BLIND",
+        "source_main_sha": str(karma.get("main_sha") or "UNKNOWN") if karma else "UNKNOWN",
+        "observation_time": karma.get("observed_at") if karma else None,
+        "ci_observed_runs": ci.get("observed_runs") if isinstance(ci.get("observed_runs"), int) else None,
+        "ci_failures": (ci.get("conclusions") or {}).get("failure") if karma else None,
+        "model_calls_observed": quad.get("model_calls_observed"),
+        "model_source_status": str(quad.get("source") or "NOT_CONNECTED"),
+        "unlinked_instruction_calls": quad.get("missing_instruction_link"),
+        "verified_obligation_settlements": None,
+        "billable_cost": None,
+        "coverage_gaps": karma.get("coverage_gaps", []) if karma else ["KARMA_NOT_OBSERVED"],
+        "investor_claim_status": "RESEARCH_STAGE_NOT_INDEPENDENTLY_VERIFIED",
+    }
     return doc, blind
 
 
@@ -718,6 +740,7 @@ def main(argv=None) -> int:
         help="JSON list of open issues, see .github/workflows/estate-state.yml",
     )
     p.add_argument("--runs", help="JSON list of workflow runs over the window")
+    p.add_argument("--karma", help="read-only KARMA evidence from this Chronos tick")
     p.add_argument("--window-hours", type=int, default=6)
     p.add_argument(
         "--main-sha", action="append", type=_repo_sha, help="repo=sha, repeatable"
