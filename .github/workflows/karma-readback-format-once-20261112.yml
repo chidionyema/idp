@@ -137,7 +137,10 @@ jobs:
           fi
           grep -q "failed" "$tmp/mutation.log"
           cp "$tmp/readback.clean.py" platform/estate/karma/readback.py
-          python -m pytest -q tests/test_karma_readback.py "$tmp/test_karma_bdd.py" | tee "$tmp/restored.log"
+          # Timestamp/size based Python pyc validation can retain the negative-control mutant
+          # if the source was restored inside the same second. Invalidate before verification.
+          rm -f platform/estate/karma/__pycache__/readback.*.pyc
+          PYTHONDONTWRITEBYTECODE=1 python -m pytest -q tests/test_karma_readback.py "$tmp/test_karma_bdd.py" | tee "$tmp/restored.log"
           git diff --check
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
