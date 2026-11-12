@@ -355,6 +355,12 @@ test("investor research is visible but its private data never leaks without iden
   assert.equal(room.status, 200);
   assert.match(await room.text(), /noindex/);
   const join = await fetch(`${BASE}/investors/access`, { redirect:"manual" });
-  // CI explicitly has no investor broker credentials; fail closed, not a made-up login.
-  if (!process.env.INVESTOR_BROKER_ORIGIN) assert.equal(join.status, 503);
+  // Without identity credentials, never issue a session; show a humane restricted-access page.
+  if (!process.env.INVESTOR_BROKER_ORIGIN) {
+    assert.equal(join.status, 303);
+    assert.match(join.headers.get("location") || "", /\/investors\/unavailable$/);
+    const fallback = await fetch(`${BASE}/investors/unavailable`);
+    assert.equal(fallback.status, 200);
+    assert.match(await fallback.text(), /noindex/);
+  }
 });
