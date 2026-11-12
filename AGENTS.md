@@ -55,6 +55,73 @@ hand the founder a proposal in place of an experiment. Claim: chidionyema/idp#79
 
 ---
 
+## KARMA — every accepted instruction carries consequences
+
+**Founder directive, 2026-11-12. Code-name KARMA.** This is the operational
+scientific synthesis, not a new product silo. **An accepted instruction issues a
+durable obligation**: a named owner owes independently evidenced yield or an
+explicit accountable terminal disposition. QUAD binds principal/agent/session
+and inherited custody; FLOW tracks instruction-to-verified-yield; shared memory
+preserves usable corrective lessons; Optimus measures cost, coverage, outcomes
+and recurrence; HELM tests cognition; Chronos owns ongoing observation cadence.
+Never create another ledger, memory, scheduler, policy authority or paid model
+loop. Existing code: `platform/llm/action_ledger.py`, QUAD/Elpis, and
+`platform/estate/karma/readback.py`; the latter runs on the pre-existing
+cloud `estate-state` schedule, not another cron.
+
+- **Contract:** stable instruction/parent IDs, issuer/owner, admission verdict,
+  scope, expected research or real-world outcome, independent acceptance oracle,
+  due/recovery conditions, evidence, handbacks, and unsettled obligations. The
+  session ending, provider changing or model retiring NEVER erases the debt.
+- **Identity:** QUAD agent URN/session/lease/principal distinct from provider,
+  requested vs returned model, truly pinned/attested revision or UNKNOWN, model
+  and estate-agent generations, skill/context/policy/evaluator digests. A model
+  alias is not an immutable provider build; do not invent a version.
+- **Causal time:** preserve event time, observed/recorded/verified time,
+  externally anchored time, validity interval, source clock confidence, causal
+  predecessor and lost/late/duplicate observations. Signed bytes are not proof
+  of correct behaviour; temporal proximity is not proof of causality.
+- **Accounting:** count token input/output/cache, provider charges where billed
+  receipts exist, CI runner usage, compute, energy if measured, delays, founder
+  interruption, safety and recovery costs **per obligation**. Separate measured,
+  estimated and unknown. UNKNOWN cost is not free. Verified research findings
+  are legitimate research yield; green CI alone is not shipped production yield.
+  Scores with incompatible units cannot be naively subtracted as dollars.
+- **Karma/ancestral correction:** every independent finding can create a named
+  failure-class obligation that a successor inherits with falsifying examples.
+  Reward only reproducible and independently evaluated correction, verified
+  deployment and reduced recurrence, not self-graded output, apology or busywork.
+  Old models may be deprecated, not erased. Restrictions are scoped to affected
+  high-risk capabilities and safe repair remains available; model scores never
+  mint their own credentials or human legal liability.
+- **Science:** compare provider A/B revisions × estate baseline/skills/memory/
+  HELM on matched held-out tasks, graded by an independent evaluator; report
+  provider-only improvement, estate uplift, interaction, uncertainty, cost,
+  negative/null trials and unmeasured denominators. Require real trajectories
+  and retained verification rather than research diagrams.
+- **Fix classes, not tickets:** MAP all relevant sources -> FILTER by a tested
+  invariant -> AUTOMATE the bounded repair -> PROVE a deliberately failing
+  falsifier and real operational outcome -> GENERALISE across same-shaped
+  defects -> continually MONITOR. Root cause might be governance, BDD/spec,
+  secrets, architecture, scheduling, observability, permissions, data, or
+  incentives; avoid a ritual of generating documents and hard gates without
+  measured yield. Only deploy a new mandatory policy after a real canary works.
+- **Founder/investor truth:** Genesis can eventually query instructions, cost,
+  evidence gaps, ancestry, recovery, model evolution and verified outcomes.
+  Investor surfaces show selected sanitised research demonstrations, clearly
+  labelled experimental. No external claim of operational KARMA from a commit,
+  green test or fixture alone.
+
+**CURRENT PROOF FLOOR:** the KARMA router metadata is marked
+`NOT_SIGNED_BY_LEGACY_ELPIS_ENVELOPE`; the Chronos readback can prove observed
+GitHub CI runs but cannot yet verify production settlement or obtain live QUAD
+data on the cloud runner. Missing sources are UNKNOWN, never a positive score.
+The next canary must connect verified custody, provider outcome and live caller
+without adding a competing store. Existing owner IDP #7452, model-evolution
+research under `experiments/model-evolution/`.
+
+---
+
 ## Public/commercial UI — credibility is part of release correctness
 
 **All surface-building and releasing agents:** before touching a public site, read
