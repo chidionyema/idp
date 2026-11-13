@@ -99,3 +99,18 @@ def test_precedent_retrieval_is_bounded_and_handles_invalid_history():
     )
     assert len(rows) == 20
     assert rows[0]["case_id"] == "case-00"
+
+
+
+def test_authenticated_founder_issue_action_cannot_bypass_shared_memory():
+    """IssueOps must institutionalise the founder case before waking a worker."""
+    workflow = (BIN.parent.parent / ".github" / "workflows" / "estate-issueops.yml").read_text()
+    assert 'github.actor == vars.ESTATE_FOUNDER_LOGIN' in workflow
+    assert '[ -n "$FOUNDER" ] && [ "$AUTHOR" = "$FOUNDER" ]' in workflow
+    assert 'bin/estate-founder-intake --file "$INPUT" --json' in workflow
+    assert 'bin/estate-founder-intake --file "$INPUT" --no-publish' not in workflow
+    assert 'publish.get("ok") is not True' in workflow
+    assert 'raise SystemExit(2)' in workflow
+    assert workflow.index('UNIFIED_MEMORY_NOT_PUBLISHED') < workflow.index(
+        "Run the task on the estate (the executor door)"
+    )
