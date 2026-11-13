@@ -67,7 +67,14 @@ jobs:
           set -euo pipefail
           [ -n "$APP_ID" ] && [ -n "$PEM_B64" ] || { echo "BLIND   pacemaker  GitHub App id or key is not set"; exit 2; }
           cf() { curl -sS -H "Authorization: Bearer $TOKEN" "$@"; }
-          ns=$(cf "$API/accounts/$ACCOUNT/storage/kv/namespaces?per_page=100" | jq -r --arg t "$KV_TITLE" '.result[] | select(.title==$t) | .id' | head -1)
+          # Same lesson as founder-passkey-deploy (runs 43350977453, 43351278166): an account grant
+          # can lag the mint by seconds, and a null result must be named, not iterated.
+          for i in 1 2 3 4 5 6 7 8; do
+            lst=$(cf "$API/accounts/$ACCOUNT/storage/kv/namespaces?per_page=100" || true)
+            jq -e '.success == true' <<<"$lst" >/dev/null 2>&1 && break; sleep 6; done
+          jq -e '.success == true' <<<"$lst" >/dev/null 2>&1 || {
+            echo "FAIL    pacemaker  KV list refused: $(jq -c '.errors' <<<"$lst" 2>/dev/null || echo 'non-JSON answer')"; exit 1; }
+          ns=$(jq -r --arg t "$KV_TITLE" '.result[] | select(.title==$t) | .id' <<<"$lst" | head -1)
           if [ -z "$ns" ]; then
             ns=$(cf -X POST -H 'Content-Type: application/json' -d "$(jq -nc --arg t "$KV_TITLE" '{title:$t}')" \
               "$API/accounts/$ACCOUNT/storage/kv/namespaces" | jq -r '.result.id // empty')
